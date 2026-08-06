@@ -1762,6 +1762,54 @@ mod tests {
         ));
     }
 
+    // Break caught: a stale analysis origin could reference a board_id that
+    // was removed from the compiler wire, silently resolving to nothing.
+    #[test]
+    fn resolve_analysis_result_rejects_unknown_board_id() {
+        let scene = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler analysis fixture must deserialize");
+        let origins = [DialogueSegmentOriginV1::AnalysisResult {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: "analysis_scene_8_5".into(),
+            board_id: "nonexistent_board".into(),
+        }];
+
+        let error = resolve_dialogue_segments(CHAPTER_ID, &scene, &origins)
+            .expect_err("unknown board_id must not resolve");
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+        assert!(error.message.contains("analysis board:nonexistent_board"));
+    }
+
+    // Break caught: duplicate board IDs in the compiler wire could ambiguously
+    // resolve a result origin to more than one board.
+    #[test]
+    fn resolve_analysis_result_rejects_ambiguous_board_id() {
+        let mut scene = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler analysis fixture must deserialize");
+        let SceneJson::Analysis(ref mut analysis) = scene else {
+            panic!("fixture must be analysis");
+        };
+        // Duplicate the first board to create an ambiguous board_id.
+        let first_board = analysis.boards[0].clone();
+        analysis.boards.push(first_board);
+
+        let board_id = analysis.boards[0].common().id.clone();
+        let origins = [DialogueSegmentOriginV1::AnalysisResult {
+            chapter_id: CHAPTER_ID.into(),
+            scene_id: "analysis_scene_8_5".into(),
+            board_id,
+        }];
+
+        let error = resolve_dialogue_segments(CHAPTER_ID, &scene, &origins)
+            .expect_err("ambiguous board_id must not resolve");
+        assert_eq!(error.code, "dialogueSegmentResolutionFailed");
+        assert!(error.message.contains("ambiguously resolves"));
+    }
+
     #[test]
     fn origin_deserialization_rejects_redundant_interaction_identity() {
         let value = json!({

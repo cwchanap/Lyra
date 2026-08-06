@@ -1278,6 +1278,38 @@ mod tests {
         );
     }
 
+    // Break caught: analysis_dialogue_groups could return an empty or
+    // mis-ordered group list, silently breaking save-content identity.
+    #[test]
+    fn analysis_dialogue_groups_follows_compiler_origin_order() {
+        let parsed = serde_json::from_str::<SceneJson>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("analysis fixture must deserialize");
+        let SceneJson::Analysis(scene) = parsed else {
+            panic!("compiler fixture must deserialize as analysis");
+        };
+
+        let groups = analysis_dialogue_groups(&scene);
+
+        // intro + 3 boards + outro = 5 groups.
+        assert_eq!(groups.len(), scene.boards.len() + 2);
+        assert_eq!(groups[0].len(), scene.intro.len());
+        assert_eq!(
+            groups[1].len(),
+            scene.boards[0].common().result_dialogue.len()
+        );
+        assert_eq!(
+            groups[2].len(),
+            scene.boards[1].common().result_dialogue.len()
+        );
+        assert_eq!(
+            groups[3].len(),
+            scene.boards[2].common().result_dialogue.len()
+        );
+        assert_eq!(groups[4].len(), scene.outro.len());
+    }
+
     #[test]
     fn deserializes_dialogue_line_with_portrait() {
         let json = r#"{

@@ -1447,6 +1447,20 @@ mod tests {
         assert!(progress_error.message.contains("Analysis scene"));
     }
 
+    // Break caught: restore helpers could panic on an analysis scene instead
+    // of returning empty manifests/asset refs for the unsupported scene kind.
+    #[test]
+    fn restore_helpers_return_empty_for_analysis_scene() {
+        let analysis = serde_json::from_str::<SceneJson>(include_str!(
+            "../test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("analysis compiler fixture must deserialize");
+
+        assert!(evidence_manifest(&analysis).is_empty());
+        assert!(statement_manifest(&analysis).is_empty());
+        assert!(scene_asset_refs(&analysis).is_empty());
+    }
+
     fn investigation_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {
         let (_guard, resources, mut engine) = resources_and_engine();
         engine

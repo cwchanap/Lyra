@@ -1226,6 +1226,14 @@ mod tests {
         (_guard, engine)
     }
 
+    // Note: validate_inventory_record's `SceneJson::Linear(_) |
+    // SceneJson::Analysis(_) => false` arm is a defensive exhaustiveness
+    // fallback. It is unreachable in practice because
+    // validate_scene_records_against_catalog (called during scene loading)
+    // rejects any catalog evidence entry pointing to a Linear or Analysis scene
+    // before packaged_acquisition_scene can return one. The arm exists to keep
+    // the match exhaustive, not to be exercised at runtime.
+
     #[test]
     fn captures_active_linear_checkpoint_as_exact_wire_value() {
         let (_guard, mut engine) = fixture_engine();

@@ -1961,6 +1961,308 @@ mod tests {
         }
     }
 
+    fn story_catalog_for_loader_with_story_and_analysis_refs() -> StoryCatalog {
+        let resources = unique_temp_dir();
+        fs::write(
+            resources.join("story_catalog.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schemaVersion": 2,
+                "facts": [
+                    {"id": "fact_a", "label": "Fact A", "summary": "s", "details": "d", "category": "timeline"},
+                ],
+                "questions": [
+                    {"id": "question_a", "label": "Q A", "summary": "s", "resolvedByFactIds": ["fact_a"]},
+                ],
+                "objectives": [
+                    {"id": "objective_primary", "label": "Primary", "summary": "s", "kind": "primary", "sortOrder": 0},
+                    {"id": "objective_secondary", "label": "Secondary", "summary": "s", "kind": "secondary", "sortOrder": 1},
+                ],
+                "authorizations": [
+                    {"id": "authorization_a", "label": "Auth A", "summary": "s", "grantingAuthority": "analysis_authority"},
+                ],
+                "sourceGroups": [],
+                "evidenceIndex": [],
+                "statementsIndex": [],
+                "analysisScenes": [
+                    {"chapterId": "chapter_1", "sceneId": "analysis_scene_1"},
+                ],
+                "analysisBoards": [
+                    {"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_1"},
+                ],
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let catalog = StoryCatalog::load(&resources).unwrap();
+        let _ = fs::remove_dir_all(resources);
+        catalog
+    }
+
+    fn story_analysis_scene(unlock: Value, reveals: Value) -> Value {
+        json!({
+            "type": "analysis",
+            "id": "analysis_scene_1",
+            "title": "Story analysis",
+            "summary": "Fixture analysis scene.",
+            "intro": [],
+            "boards": [{
+                "id": "board_1",
+                "label": "Board",
+                "kind": "classify",
+                "prompt": "Classify.",
+                "unlock": unlock,
+                "reveals": reveals,
+                "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                "cards": [],
+                "groups": [],
+                "acceptedGroupByCard": {},
+                "resultDialogue": []
+            }],
+            "outro": []
+        })
+    }
+
+    // Break caught: analysis scenes loaded through the story validation path
+    // could skip board reveal and unlock validation entirely.
+    #[test]
+    fn validates_analysis_scene_board_reveals_and_unlocks_against_catalog() {
+        let catalog = story_catalog_for_loader_with_story_and_analysis_refs();
+
+        // Valid reveals and unlock referencing catalog definitions.
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!({"predicate": "fact_asserted", "id": "fact_a"}),
+                json!([
+                    {"kind": "assertFact", "factId": "fact_a"},
+                    {"kind": "revealQuestion", "questionId": "question_a"},
+                    {"kind": "revealObjective", "objectiveId": "objective_primary"},
+                ]),
+            ),
+        );
+
+        load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .expect("valid analysis board reveals and unlock should pass");
+        let _ = fs::remove_dir_all(resources);
+    }
+
+    // Break caught: analysis board unlock expressions could reference unknown
+    // story definitions because validate_story_analysis_unlock_expr was
+    // never exercised.
+    #[test]
+    fn rejects_analysis_board_unlock_with_unresolved_story_references() {
+        let catalog = story_catalog_for_loader_with_story_and_analysis_refs();
+
+        let cases = [
+            (
+                json!({"predicate": "fact_asserted", "id": "missing_fact"}),
+                "unresolved story predicate fact:missing_fact",
+            ),
+            (
+                json!({"predicate": "question_resolved", "id": "missing_question"}),
+                "unresolved story predicate question:missing_question",
+            ),
+            (
+                json!({"predicate": "objective_completed", "id": "missing_objective"}),
+                "unresolved story predicate objective:missing_objective",
+            ),
+            (
+                json!({"predicate": "authorization_granted", "id": "missing_authorization"}),
+                "unresolved story predicate authorization:missing_authorization",
+            ),
+            (
+                json!({
+                    "predicate": "analysis_scene_completed",
+                    "chapterId": "chapter_1",
+                    "sceneId": "analysis_scene_missing"
+                }),
+                "unresolved story predicate analysisScene:chapter_1@analysis_scene_missing",
+            ),
+            (
+                json!({
+                    "predicate": "analysis_board_completed",
+                    "chapterId": "chapter_1",
+                    "sceneId": "analysis_scene_1",
+                    "boardId": "board_missing"
+                }),
+                "unresolved story predicate analysisBoard:chapter_1@analysis_scene_1@board_missing",
+            ),
+        ];
+
+        for (unlock, expected) in cases {
+            let resources = unique_temp_dir();
+            write_scene_json(
+                &resources,
+                "analysis_scene_1.json",
+                story_analysis_scene(unlock, json!([])),
+            );
+
+            let error = load_scene_with_catalog(
+                &resources,
+                &catalog,
+                "chapter_1",
+                "chapter_1/analysis_scene_1.json",
+            )
+            .unwrap_err();
+
+            assert_eq!(error.code, "sceneValidationFailed");
+            assert!(error.message.contains(expected), "{error:?}");
+            let _ = fs::remove_dir_all(resources);
+        }
+    }
+
+    // Break caught: composite StoryUnlockExpr variants (AtLeast, Combinator)
+    // could nest unresolved predicates without recursive validation.
+    #[test]
+    fn validates_composite_analysis_board_unlock_expressions_recursively() {
+        let catalog = story_catalog_for_loader_with_story_and_analysis_refs();
+
+        // Valid composite: AtLeast with two valid conditions.
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!({
+                    "op": "at_least",
+                    "count": 1,
+                    "conditions": [
+                        {"predicate": "fact_asserted", "id": "fact_a"},
+                        {"predicate": "analysis_board_completed",
+                         "chapterId": "chapter_1",
+                         "sceneId": "analysis_scene_1",
+                         "boardId": "board_1"}
+                    ]
+                }),
+                json!([]),
+            ),
+        );
+        load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .expect("valid composite unlock should pass");
+        let _ = fs::remove_dir_all(resources);
+
+        // Valid combinator: And with two valid branches.
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!({
+                    "op": "and",
+                    "left": {"predicate": "fact_asserted", "id": "fact_a"},
+                    "right": {"predicate": "question_resolved", "id": "question_a"}
+                }),
+                json!([]),
+            ),
+        );
+        load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .expect("valid combinator unlock should pass");
+        let _ = fs::remove_dir_all(resources);
+
+        // Invalid: AtLeast with an unresolved nested condition.
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!({
+                    "op": "at_least",
+                    "count": 1,
+                    "conditions": [
+                        {"predicate": "fact_asserted", "id": "missing_fact"}
+                    ]
+                }),
+                json!([]),
+            ),
+        );
+        let error = load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error
+            .message
+            .contains("unresolved story predicate fact:missing_fact"));
+        let _ = fs::remove_dir_all(resources);
+
+        // Invalid: Combinator with an unresolved right branch.
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!({
+                    "op": "or",
+                    "left": {"predicate": "fact_asserted", "id": "fact_a"},
+                    "right": {"predicate": "objective_completed", "id": "missing_objective"}
+                }),
+                json!([]),
+            ),
+        );
+        let error = load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error
+            .message
+            .contains("unresolved story predicate objective:missing_objective"));
+        let _ = fs::remove_dir_all(resources);
+    }
+
+    // Break caught: analysis board reveals could reference unknown story
+    // targets because validate_story_analysis_scene_references was never
+    // exercised end-to-end.
+    #[test]
+    fn rejects_analysis_board_reveals_with_unresolved_story_targets() {
+        let catalog = story_catalog_for_loader_with_story_and_analysis_refs();
+
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!(null),
+                json!([{"kind": "assertFact", "factId": "missing_fact"}]),
+            ),
+        );
+        let error = load_scene_with_catalog(
+            &resources,
+            &catalog,
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error
+            .message
+            .contains("unresolved story target fact:missing_fact"));
+        let _ = fs::remove_dir_all(resources);
+    }
+
     // Break caught: catalog membership, rather than ad hoc slug validation,
     // must reject an unregistered qualified reference.
     #[test]
