@@ -587,6 +587,20 @@ function materializeThresholdSelections(input: {
   };
   const candidateCount = 1 << input.eligibleIds.length;
 
+  const requirementSatisfiedIds = new Set(
+    input.eligibleIds.filter((id) => {
+      const record = input.recordsByCardId.get(id);
+      if (!record) return false;
+      return (
+        validateCaseRecordRequirement(
+          { id: record.target.id, provenance: record.provenance },
+          requirement,
+          input.requirementLocation,
+        ).length === 0
+      );
+    }),
+  );
+
   for (let candidate = 0; candidate < candidateCount; candidate += 1) {
     const selection = input.eligibleIds.filter(
       (_, index) => (candidate & (1 << index)) !== 0,
@@ -595,6 +609,7 @@ function materializeThresholdSelections(input: {
       !isAcceptedThresholdSelection({
         ...input,
         eligibleIdSet,
+        requirementSatisfiedIds,
         selection,
         requirement,
       })
@@ -609,6 +624,7 @@ function materializeThresholdSelections(input: {
 
 function isAcceptedThresholdSelection(input: {
   eligibleIdSet: ReadonlySet<string>;
+  requirementSatisfiedIds: ReadonlySet<string>;
   selection: readonly string[];
   recordsByCardId: ReadonlyMap<string, CompiledCaseRecord>;
   minimumSelected: number;
@@ -627,14 +643,9 @@ function isAcceptedThresholdSelection(input: {
 
   const records: CompiledCaseRecord[] = [];
   for (const cardId of input.selection) {
+    if (!input.requirementSatisfiedIds.has(cardId)) return false;
     const record = input.recordsByCardId.get(cardId);
     if (!record) return false;
-    const requirementErrors = validateCaseRecordRequirement(
-      { id: record.target.id, provenance: record.provenance },
-      input.requirement,
-      input.requirementLocation,
-    );
-    if (requirementErrors.length > 0) return false;
     records.push(record);
   }
 

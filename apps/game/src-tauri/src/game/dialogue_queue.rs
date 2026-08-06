@@ -1121,7 +1121,6 @@ fn resolve_origin_items<'a>(
     }
 }
 
-#[allow(dead_code)] // Used by Task 7's closed origin resolver.
 fn resolve_analysis_result<'a>(
     scene: &'a AnalysisSceneJson,
     board_id: &str,

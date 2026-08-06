@@ -30,6 +30,7 @@ import type {
   JSONTestimonyLine,
   JSONVisualAssetCue,
   StoryCatalogJsonV2,
+  StoryUnlockExpr,
   VisualAssetCue,
 } from "./types";
 import type {
@@ -336,7 +337,7 @@ function emitAnalysisBoard(board: AnalysisBoardJson): JSONAnalysisBoard {
     id: board.id,
     label: board.label,
     prompt: board.prompt,
-    unlock: board.unlock,
+    unlock: copyStoryUnlockExpr(board.unlock),
     reveals: board.reveals.map(copyStoryRevealTarget),
     feedback: { ...board.feedback },
     cards: board.cards.map((card) => ({
@@ -379,6 +380,31 @@ function copyStoryRevealTarget(
   target: JSONAnalysisBoardCommon["reveals"][number],
 ) {
   return { ...target };
+}
+
+function copyStoryUnlockExpr(
+  expr: StoryUnlockExpr | null,
+): StoryUnlockExpr | null {
+  if (expr === null) return null;
+  return copyUnlockExpr(expr);
+}
+
+function copyUnlockExpr(expr: StoryUnlockExpr): StoryUnlockExpr {
+  if ("op" in expr) {
+    if (expr.op === "at_least") {
+      return {
+        op: "at_least",
+        count: expr.count,
+        conditions: expr.conditions.map(copyUnlockExpr),
+      };
+    }
+    return {
+      op: expr.op,
+      left: copyUnlockExpr(expr.left),
+      right: copyUnlockExpr(expr.right),
+    };
+  }
+  return { ...expr };
 }
 
 export class CaseRecordEmissionError extends Error implements CompileError {
