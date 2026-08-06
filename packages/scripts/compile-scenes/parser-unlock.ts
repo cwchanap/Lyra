@@ -29,6 +29,7 @@ import type {
   InterrogationUnlockExpr,
   InvestigationLocalPredicate,
   PositiveExpression,
+  StoryUnlockExpr,
   StoryPredicate,
   UnlockExpr,
 } from "./types";
@@ -39,6 +40,10 @@ export type ParseResult =
 
 export type InterrogationParseResult =
   | { ok: true; value: InterrogationUnlockExpr }
+  | { ok: false; error: CompileError };
+
+export type StoryParseResult =
+  | { ok: true; value: StoryUnlockExpr }
   | { ok: false; error: CompileError };
 
 type PositiveParseResult<P> =
@@ -126,6 +131,14 @@ export function parseInterrogationUnlockExpr(
     line,
     parseInterrogationPredicate,
   );
+}
+
+export function parseStoryUnlockExpr(
+  source: string,
+  sourceFile: string,
+  line: number,
+): StoryParseResult {
+  return parsePositiveExpression(source, sourceFile, line, parseStoryPredicate);
 }
 
 function parsePositiveExpression<P>(
@@ -510,6 +523,24 @@ function parseStoryPredicate(t: Tokens): PredicateParseResult<StoryPredicate> {
         `Expected "asserted" after fact:${id}.`,
       );
     return { ok: true, value: { predicate: "fact_asserted", id } };
+  }
+  if (t.consume("question:")) {
+    const id = t.consumeId();
+    if (!id)
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingId",
+        "Missing question id.",
+      );
+    if (!t.consumeWord("resolved"))
+      return failure(
+        t.sourceFile,
+        t.line,
+        "unlockMissingVerb",
+        `Expected "resolved" after question:${id}.`,
+      );
+    return { ok: true, value: { predicate: "question_resolved", id } };
   }
   if (t.consume("objective:")) {
     const id = t.consumeId();

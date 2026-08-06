@@ -241,6 +241,8 @@ export type InterrogationUnlockExpr = PositiveExpression<
   InterrogationLocalPredicate | StoryPredicate
 >;
 
+export type StoryUnlockExpr = PositiveExpression<StoryPredicate>;
+
 // ----- AST: per-file parser output -------------------------------------------
 
 export type Located<T> = T & { sourceFile: string; line: number };
@@ -473,6 +475,81 @@ export type ASTTestimonyLine = Located<{
 export type ASTInterrogationOutro = {
   unlock: "auto" | InterrogationUnlockExpr;
   dialogue: DialogueItem[];
+};
+
+export type ASTAnalysisScene = Located<{
+  kind: "analysisScene";
+  id: string;
+  title: string;
+  summary: string;
+  intro: DialogueItem[];
+  boards: ASTAnalysisBoard[];
+  outro: DialogueItem[];
+  assetRefs: AssetRef[];
+}>;
+
+export type ASTAnalysisBoard =
+  | ASTClassifyBoard
+  | ASTOrderBoard
+  | ASTThresholdBoard;
+
+export type ASTAnalysisBoardCommon = Located<{
+  id: string;
+  label: string;
+  prompt: Located<{ value: string }>;
+  unlock: Located<{ value: StoryUnlockExpr }> | null;
+  reveals: Located<{ value: StoryRevealTarget[] }>;
+  feedback: ASTAnalysisFeedback;
+  cards: ASTAnalysisCard[];
+  resultDialogue: DialogueItem[];
+}>;
+
+export type ASTAnalysisFeedback = {
+  incomplete: Located<{ value: string }>;
+  incorrect: Located<{ value: string }>;
+  hint: Located<{ value: string }> | null;
+};
+
+export type ASTAnalysisCard = Located<{
+  id: string;
+  label: string;
+  source: Located<{ value: InventoryTarget }>;
+  summary: Located<{ value: string }>;
+}>;
+
+export type ASTAnalysisCardId = Located<{ value: string }>;
+
+export type ASTAnalysisGroup = Located<{
+  id: string;
+  label: string;
+  description: Located<{ value: string }>;
+  acceptedCards: ASTAnalysisCardId[];
+}>;
+
+export type ASTClassifyBoard = ASTAnalysisBoardCommon & {
+  kind: "classify";
+  groups: ASTAnalysisGroup[];
+};
+
+export type ASTAnalysisFixedAnchor = Located<{
+  cardId: string;
+  position: number;
+}>;
+
+export type ASTOrderBoard = ASTAnalysisBoardCommon & {
+  kind: "order";
+  acceptedOrder: ASTAnalysisCardId[];
+  fixedAnchors: ASTAnalysisFixedAnchor[];
+};
+
+export type ASTThresholdBoard = ASTAnalysisBoardCommon & {
+  kind: "threshold";
+  eligibleCards: ASTAnalysisCardId[];
+  minimumSelected: Located<{ value: number }>;
+  minimumDistinctSourceGroups: Located<{ value: number }>;
+  requiredProofCapabilities: Array<Located<{ value: ProofCapability }>>;
+  allowedProceduralStatuses: Array<Located<{ value: ProceduralStatus }>>;
+  requireSourceGroup: Located<{ value: boolean }>;
 };
 
 // ----- JSON: emitter output (mirrors spec §3b) -------------------------------
