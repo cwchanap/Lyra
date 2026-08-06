@@ -1,6 +1,7 @@
 import type { AnalysisDefinitionRegistry } from "./analysis-definition-registry";
 import type {
   ASTChapter,
+  AnalysisSceneRecord,
   CompileError,
   ASTInquiryQuestion,
   ASTInterrogationScene,
@@ -12,6 +13,7 @@ import type {
   StoryPredicate,
   StoryRevealTarget,
 } from "./types";
+import type { NormalizedAnalysisScene } from "./validator-analysis";
 import {
   isStoryPredicate,
   isStoryRevealTarget,
@@ -1669,6 +1671,12 @@ type NodeDraft = ReachabilityNode & {
   requiresInboundReveal: boolean;
 };
 
+type AnalysisReachabilityRecord = AnalysisSceneRecord & {
+  normalized: NormalizedAnalysisScene;
+};
+
+type ReachabilitySceneRecord = SceneRecord | AnalysisReachabilityRecord;
+
 /**
  * Converts the family-specific scene ASTs into one deterministic, finite node
  * model. Catalog and analysis definitions remain validation inputs rather than
@@ -1680,20 +1688,49 @@ export function buildReachabilityNodes(input: {
   scenes: SceneRecord[];
   catalog: ASTStoryCatalog;
   analysisRegistry: AnalysisDefinitionRegistry;
+  analysisScenes?: readonly AnalysisSceneRecord[];
+  normalizedAnalysisScenes?: readonly NormalizedAnalysisScene[];
 }): ReachabilityNode[] {
-  const records = orderedSceneRecords(input.chapters, input.scenes);
+  const normalizedByScene = new Map(
+    (input.normalizedAnalysisScenes ?? []).map((scene) => [
+      `${scene.chapterId}@${scene.sceneId}`,
+      scene,
+    ]),
+  );
+  const analysisScenes: AnalysisReachabilityRecord[] = (
+    input.analysisScenes ?? []
+  ).flatMap((scene) => {
+    const normalized = normalizedByScene.get(
+      `${scene.chapterId}@${scene.ast.id}`,
+    );
+    return normalized === undefined ? [] : [{ ...scene, normalized }];
+  });
+  const records = orderedSceneRecords(
+    input.chapters,
+    input.scenes,
+    analysisScenes,
+  );
   const nodes: NodeDraft[] = [];
   let previousOutroKey: string | null = null;
   let firstScene = true;
 
   for (const record of records) {
     const scope = sceneScope(record);
-    const sceneNodes = buildSceneNodes({
-      record,
-      scope,
-      entryPredecessors: previousOutroKey === null ? [] : [previousOutroKey],
-      firstScene,
-    });
+    const sceneNodes = isAnalysisReachabilityRecord(record)
+      ? buildAnalysisNodes({
+          record,
+          scope,
+          entryPredecessors:
+            previousOutroKey === null ? [] : [previousOutroKey],
+          firstScene,
+        })
+      : buildSceneNodes({
+          record,
+          scope,
+          entryPredecessors:
+            previousOutroKey === null ? [] : [previousOutroKey],
+          firstScene,
+        });
     nodes.push(...sceneNodes);
     previousOutroKey = `${scope.prefix}/outro`;
     firstScene = false;
@@ -1715,14 +1752,15 @@ export function buildReachabilityNodes(input: {
 function orderedSceneRecords(
   chapters: ASTChapter[],
   scenes: SceneRecord[],
-): SceneRecord[] {
+  analysisScenes: AnalysisReachabilityRecord[],
+): ReachabilitySceneRecord[] {
   const recordsByManifestKey = new Map(
-    scenes.map(
+    [...scenes, ...analysisScenes].map(
       (record) => [`${record.chapterId}/${record.file}`, record] as const,
     ),
   );
-  const ordered: SceneRecord[] = [];
-  const included = new Set<SceneRecord>();
+  const ordered: ReachabilitySceneRecord[] = [];
+  const included = new Set<ReachabilitySceneRecord>();
   const orderedChapters = [...chapters].sort(
     (left, right) =>
       left.number - right.number || left.dirName.localeCompare(right.dirName),
@@ -1737,7 +1775,7 @@ function orderedSceneRecords(
     }
   }
 
-  const unlisted = scenes
+  const unlisted = [...scenes, ...analysisScenes]
     .filter((record) => !included.has(record))
     .sort(
       (left, right) =>
@@ -1746,6 +1784,12 @@ function orderedSceneRecords(
     );
   ordered.push(...unlisted);
   return ordered;
+}
+
+function isAnalysisReachabilityRecord(
+  record: ReachabilitySceneRecord,
+): record is AnalysisReachabilityRecord {
+  return record.ast.kind === "analysisScene";
 }
 
 function buildSceneNodes(input: {
@@ -1791,6 +1835,71 @@ function buildSceneNodes(input: {
     entryPredecessors: input.entryPredecessors,
     firstScene: input.firstScene,
   });
+}
+
+function buildAnalysisNodes(input: {
+  record: AnalysisReachabilityRecord;
+  scope: SceneScope;
+  entryPredecessors: string[];
+  firstScene: boolean;
+}): NodeDraft[] {
+  const { record, scope } = input;
+  const authoredBoardsById = new Map(
+    record.ast.boards.map((board) => [board.id, board] as const),
+  );
+  const nodes: NodeDraft[] = [];
+  const boardKeys: string[] = [];
+  const boardCompletionAtoms: ReachabilityAtom[] = [];
+
+  for (const board of record.normalized.boards) {
+    const authored = authoredBoardsById.get(board.id);
+    if (authored === undefined) continue;
+    const boardKey = `${scope.prefix}/board:${board.id}`;
+    const boardCompletionAtom = analysisBoardCompletionAtom(scope, board.id);
+    boardKeys.push(boardKey);
+    boardCompletionAtoms.push(boardCompletionAtom);
+    nodes.push(
+      node({
+        key: boardKey,
+        requirement: "mandatory",
+        legacyCompatibilityMode: false,
+        initiallyReachable: board.unlock === null && input.firstScene,
+        condition: normalizeAnalysisExpression(board.unlock),
+        implicitPrerequisites: uniquePredicates(
+          board.cards.map((card) => ({
+            predicate: "atom" as const,
+            atom: `${card.source.kind}:${card.source.id}`,
+          })),
+        ),
+        effects: [
+          addAtomEffect(boardCompletionAtom, -1),
+          ...effectsFromStoryReveals(board.reveals),
+        ],
+        strictPredecessorKeys: input.entryPredecessors,
+        sourceFile: authored.sourceFile,
+        line: authored.line,
+      }),
+    );
+  }
+
+  nodes.push(
+    node({
+      key: `${scope.prefix}/outro`,
+      requirement: "mandatory",
+      legacyCompatibilityMode: false,
+      initiallyReachable: false,
+      implicitPrerequisites: boardCompletionAtoms.map((atom) => ({
+        predicate: "atom" as const,
+        atom,
+      })),
+      effects: [addAtomEffect(analysisSceneCompletionAtom(scope), 0)],
+      strictPredecessorKeys: boardKeys,
+      sourceFile: record.ast.sourceFile,
+      line: record.ast.line,
+    }),
+  );
+
+  return nodes;
 }
 
 function buildInvestigationNodes(input: {
@@ -2381,6 +2490,13 @@ function normalizeInterrogationExpression(
   );
 }
 
+function normalizeAnalysisExpression(
+  expression: NormalizedAnalysisScene["boards"][number]["unlock"],
+): PositiveExpression<ReachabilityPredicate> | null {
+  if (expression === null) return null;
+  return normalizeExpression(expression, storyPredicateAtom);
+}
+
 function normalizeExpression<P extends object>(
   expression: PositiveExpression<P>,
   atomForPredicate: (predicate: P) => ReachabilityAtom,
@@ -2481,6 +2597,16 @@ function effectsFromInvestigationReveals(
         return [];
     }
   });
+}
+
+function effectsFromStoryReveals(
+  reveals: StoryRevealTarget[],
+): ReachabilityEffect[] {
+  return reveals.map((target, targetIndex) => ({
+    kind: "story" as const,
+    target,
+    targetIndex,
+  }));
 }
 
 function effectsFromInterrogationReveals(
@@ -2646,6 +2772,17 @@ function interrogationPhaseAtom(
   return `phase_completed:${scope.chapterId}@${scope.sceneId}@${id}`;
 }
 
+function analysisBoardCompletionAtom(
+  scope: SceneScope,
+  boardId: string,
+): ReachabilityAtom {
+  return `analysis_board_completed:${scope.chapterId}@${scope.sceneId}@${boardId}`;
+}
+
+function analysisSceneCompletionAtom(scope: SceneScope): ReachabilityAtom {
+  return `analysis_scene_completed:${scope.chapterId}@${scope.sceneId}`;
+}
+
 function nodeCompletionAtom(
   key: string,
   scope: SceneScope,
@@ -2663,7 +2800,10 @@ function nodeCompletionAtom(
   return null;
 }
 
-function sceneScope(record: SceneRecord): SceneScope {
+function sceneScope(record: {
+  chapterId: string;
+  ast: { id: string };
+}): SceneScope {
   return {
     chapterId: record.chapterId,
     sceneId: record.ast.id,

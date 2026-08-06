@@ -615,6 +615,255 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 
+  it("compiles the complete analysis Chapter 1 corpus through qualified progression", () => {
+    // Break caught: without analysis reachability nodes, the later mandatory
+    // hotspot cannot satisfy its qualified analysis-scene prerequisite even
+    // though every board card has a real prior acquisition path.
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-chapter-1-"),
+    );
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    try {
+      const result = compile({
+        sourceRoot: "packages/scripts/__fixtures__/analysis-chapter-1",
+        outputRoot: outRoot,
+      });
+      if (!result.ok) throw new Error(formatErrors(result.errors));
+
+      expect(result.scenesCompiled).toBe(3);
+      expect(readJson("chapters.json").chapters[0].scenes).toEqual([
+        {
+          type: "investigation",
+          file: "chapter_1/investigation_scene_1.json",
+        },
+        { type: "analysis", file: "chapter_1/analysis_scene_8_5.json" },
+        {
+          type: "investigation",
+          file: "chapter_1/investigation_scene_2.json",
+        },
+      ]);
+
+      const analysis = readJson("chapter_1/analysis_scene_8_5.json");
+      expect(analysis.boards.map((board: { id: string }) => board.id)).toEqual([
+        "evidence_packages",
+        "local_event_sequence",
+        "narrow_request_basis",
+      ]);
+      expect(analysis.boards[0].acceptedGroupByCard).toEqual({
+        miyake_call: "miyake_small_lies",
+        l_corridor_replay: "earlier_third_party",
+        external_credential_event: "earlier_third_party",
+      });
+      expect(analysis.boards[1]).toMatchObject({
+        acceptedOrder: ["event_1841", "event_1842", "event_1843", "event_1844"],
+        fixedAnchors: [{ cardId: "event_1841", position: 1 }],
+      });
+      expect(analysis.boards[2]).toMatchObject({
+        minimumSelected: 2,
+        acceptedSelections: [
+          ["lock_sequence", "manager_timing"],
+          ["lock_sequence", "manager_timing", "phone_notification"],
+          ["lock_sequence", "phone_notification"],
+        ],
+      });
+
+      expect(readJson("story_catalog.json").analysisScenes).toEqual([
+        { chapterId: "chapter_1", sceneId: "analysis_scene_8_5" },
+      ]);
+      expect(readJson("story_catalog.json").analysisBoards).toEqual([
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_8_5",
+          boardId: "evidence_packages",
+        },
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_8_5",
+          boardId: "local_event_sequence",
+        },
+        {
+          chapterId: "chapter_1",
+          sceneId: "analysis_scene_8_5",
+          boardId: "narrow_request_basis",
+        },
+      ]);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    {
+      name: "analysis_output_unreachable",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/analysis_scene_8_5.md",
+          "- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@local_event_sequence completed",
+          "- **Unlock:** fact:blocked_analysis_output asserted",
+        );
+        replaceFixtureText(
+          sourceRoot,
+          "story_catalog.md",
+          "## Objectives",
+          [
+            "### Fact: 被阻斷的分析輸出 {#blocked_analysis_output}",
+            "",
+            "- **Summary:** 此命題沒有任何可達的產生者。",
+            "- **Details:** 用來驗證分析輸出沒有被固定點虛構出來。",
+            "- **Category:** fixture",
+            "",
+            "## Objectives",
+          ].join("\n"),
+        );
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/investigation_scene_2.md",
+          "analysis_scene:chapter_1@analysis_scene_8_5 completed",
+          "fact:two_independent_lock_contradictions_identified asserted",
+        );
+      },
+      expected: [
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/investigation_scene_2.md",
+          line: 17,
+        },
+      ],
+    },
+    {
+      name: "analysis_card_source_unobtainable",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/investigation_scene_1.md",
+          "evidence:lock_sequence, evidence:phone_notification, statement:manager_timing",
+          "evidence:lock_sequence, statement:manager_timing",
+        );
+      },
+      expected: [
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/analysis_scene_8_5.md",
+          line: 86,
+        },
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/investigation_scene_2.md",
+          line: 17,
+        },
+      ],
+    },
+    {
+      name: "analysis_statement_source_unobtainable",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/investigation_scene_1.md",
+          "evidence:phone_notification, statement:manager_timing",
+          "evidence:phone_notification",
+        );
+      },
+      expected: [
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/analysis_scene_8_5.md",
+          line: 86,
+        },
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/investigation_scene_2.md",
+          line: 17,
+        },
+      ],
+    },
+    {
+      name: "analysis_board_self_reference",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/analysis_scene_8_5.md",
+          "- **Prompt:** 把每張卡放進它真正支持的命題。\n- **Reveals:**",
+          "- **Prompt:** 把每張卡放進它真正支持的命題。\n- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@evidence_packages completed\n- **Reveals:**",
+        );
+      },
+      expected: [
+        {
+          code: "positiveSelfReference",
+          sourceFile: "chapter_1/analysis_scene_8_5.md",
+          line: 11,
+        },
+      ],
+    },
+    {
+      name: "analysis_board_positive_cycle",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/analysis_scene_8_5.md",
+          "- **Prompt:** 把每張卡放進它真正支持的命題。\n- **Reveals:**",
+          "- **Prompt:** 把每張卡放進它真正支持的命題。\n- **Unlock:** analysis_board:chapter_1@analysis_scene_8_5@local_event_sequence completed\n- **Reveals:**",
+        );
+      },
+      expected: [
+        {
+          code: "positiveDependencyCycle",
+          sourceFile: "chapter_1/analysis_scene_8_5.md",
+          line: 11,
+        },
+      ],
+    },
+  ])("reports $name through the real compiler", ({ mutate, expected }) => {
+    // Break caught: analysis sources, outputs, and board prerequisites could
+    // otherwise be validated structurally while bypassing HPA-257's fixed
+    // point and source-located diagnostics.
+    const sourceRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-reachability-"),
+    );
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-analysis-reachability-out-"),
+    );
+    try {
+      cpSync("packages/scripts/__fixtures__/analysis-chapter-1", sourceRoot, {
+        recursive: true,
+      });
+      mutate(sourceRoot);
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      for (const diagnostic of expected) {
+        expect(result.errors).toContainEqual(
+          expect.objectContaining(diagnostic),
+        );
+      }
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps absent qualified analysis registration rejected", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-absent-analysis-registration-"),
+    );
+    try {
+      const result = compile({
+        sourceRoot:
+          "packages/scripts/__fixtures__/invalid/hpa_257_absent_analysis_registration",
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors).toContainEqual(
+        expect.objectContaining({ code: "unresolvedAnalysisPredicate" }),
+      );
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("emits story asset manifest for an asset-enabled fixture", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-assets-scenes-"),
@@ -659,6 +908,20 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 });
+
+function replaceFixtureText(
+  sourceRoot: string,
+  relativePath: string,
+  before: string,
+  after: string,
+): void {
+  const path = resolve(sourceRoot, relativePath);
+  const source = readFileSync(path, "utf-8");
+  if (!source.includes(before)) {
+    throw new Error(`Fixture mutation target missing from ${relativePath}.`);
+  }
+  writeFileSync(path, source.replace(before, after));
+}
 
 describe("snapshot: valid fixture JSON output", () => {
   let outRoot: string;

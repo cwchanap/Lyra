@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { createAnalysisDefinitionRegistry } from "./analysis-definition-registry";
+import {
+  createAnalysisDefinitionRegistry,
+  createAnalysisDefinitionRegistryFromScenes,
+} from "./analysis-definition-registry";
+import { compileCaseRecordCorpus } from "./case-record-provenance";
+import { parseAnalysisScene } from "./parser-analysis";
+import { parseInvestigationScene } from "./parser-investigation";
+import { parseStoryCatalog } from "./parser-story-catalog";
 import {
   analyzeReachability,
   buildReachabilityNodes,
@@ -7,6 +15,7 @@ import {
   evaluateMust,
   type ReachabilityNode,
 } from "./reachability";
+import { validateAnalysisScenes } from "./validator-analysis";
 import type {
   ASTChapter,
   ASTCharacter,
@@ -842,6 +851,122 @@ describe("buildReachabilityNodes", () => {
         code: "requiredContentUnreachable",
         nodeKey: consumerKey,
       }),
+    );
+  });
+
+  it("maps normalized analysis cards, board effects, and scene completion through HPA-257", () => {
+    // Break caught: an adapter could make the final scene reachable without
+    // preserving every displayed card source, each board atom, or the
+    // all-board prerequisite for the qualified scene-completion atom.
+    const { catalog, nodes } = analysisChapterFixture();
+    const nodesByKey = new Map(nodes.map((node) => [node.key, node]));
+    const evidenceBoard =
+      "chapter_1/analysis_scene_8_5/board:evidence_packages";
+    const orderBoard =
+      "chapter_1/analysis_scene_8_5/board:local_event_sequence";
+    const thresholdBoard =
+      "chapter_1/analysis_scene_8_5/board:narrow_request_basis";
+    const analysisOutro = "chapter_1/analysis_scene_8_5/outro";
+
+    expect(nodesByKey.get(evidenceBoard)).toMatchObject({
+      requirement: "mandatory",
+      strictPredecessorKeys: [
+        "chapter_1/investigation_scene_1/outro",
+        "chapter_1/investigation_scene_1/hotspot:acquire_analysis_sources",
+      ],
+      implicitPrerequisites: [
+        { predicate: "atom", atom: "evidence:miyake_call_record" },
+        { predicate: "atom", atom: "evidence:l_corridor_replay" },
+        { predicate: "atom", atom: "evidence:external_credential_event" },
+      ],
+      effects: [
+        {
+          kind: "addAtom",
+          atom: "analysis_board_completed:chapter_1@analysis_scene_8_5@evidence_packages",
+          targetIndex: -1,
+        },
+        {
+          kind: "story",
+          target: {
+            kind: "assertFact",
+            factId: "miyake_known_lies_are_unrelated_to_murder",
+          },
+          targetIndex: 0,
+        },
+        {
+          kind: "story",
+          target: {
+            kind: "assertFact",
+            factId: "earlier_external_entry_exists",
+          },
+          targetIndex: 1,
+        },
+      ],
+    });
+    expect(nodesByKey.get(orderBoard)).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/investigation_scene_1/outro",
+        evidenceBoard,
+        "chapter_1/investigation_scene_1/hotspot:acquire_analysis_sources",
+      ],
+      condition: {
+        predicate: "atom",
+        atom: "analysis_board_completed:chapter_1@analysis_scene_8_5@evidence_packages",
+      },
+    });
+    expect(nodesByKey.get(thresholdBoard)).toMatchObject({
+      strictPredecessorKeys: [
+        "chapter_1/investigation_scene_1/outro",
+        orderBoard,
+        "chapter_1/investigation_scene_1/hotspot:acquire_analysis_sources",
+      ],
+      implicitPrerequisites: [
+        { predicate: "atom", atom: "evidence:lock_sequence" },
+        { predicate: "atom", atom: "evidence:phone_notification" },
+        { predicate: "atom", atom: "statement:manager_timing" },
+      ],
+    });
+    expect(nodesByKey.get(analysisOutro)).toMatchObject({
+      requirement: "mandatory",
+      strictPredecessorKeys: [evidenceBoard, orderBoard, thresholdBoard],
+      implicitPrerequisites: [
+        {
+          predicate: "atom",
+          atom: "analysis_board_completed:chapter_1@analysis_scene_8_5@evidence_packages",
+        },
+        {
+          predicate: "atom",
+          atom: "analysis_board_completed:chapter_1@analysis_scene_8_5@local_event_sequence",
+        },
+        {
+          predicate: "atom",
+          atom: "analysis_board_completed:chapter_1@analysis_scene_8_5@narrow_request_basis",
+        },
+      ],
+      effects: [
+        {
+          kind: "addAtom",
+          atom: "analysis_scene_completed:chapter_1@analysis_scene_8_5",
+          targetIndex: 0,
+        },
+      ],
+    });
+
+    const result = analyzeReachability({ nodes, catalog });
+    for (const atom of [
+      "analysis_board_completed:chapter_1@analysis_scene_8_5@evidence_packages",
+      "analysis_board_completed:chapter_1@analysis_scene_8_5@local_event_sequence",
+      "analysis_board_completed:chapter_1@analysis_scene_8_5@narrow_request_basis",
+      "analysis_scene_completed:chapter_1@analysis_scene_8_5",
+      "fact_asserted:miyake_known_lies_are_unrelated_to_murder",
+      "fact_asserted:merge_time_is_not_event_time",
+      "fact_asserted:two_independent_lock_contradictions_identified",
+      "objective_completed:prepare_narrow_lock_request",
+    ]) {
+      expect(result.mayAtoms).toContain(atom);
+    }
+    expect(result.reachableNodeKeys).toContain(
+      "chapter_1/investigation_scene_2/hotspot:advance_after_analysis",
     );
   });
 });
@@ -2408,6 +2533,76 @@ function record(
   ast: ASTInvestigationScene | ASTInterrogationScene | ASTLinearScene,
 ): SceneRecord {
   return { chapterId, file, ast };
+}
+
+function analysisChapterFixture() {
+  const fixtureRoot = "packages/scripts/__fixtures__/analysis-chapter-1";
+  const readFixture = (path: string) =>
+    readFileSync(`${fixtureRoot}/${path}`, "utf-8");
+  const parsedCatalog = parseStoryCatalog(
+    readFixture("story_catalog.md"),
+    "story_catalog.md",
+  );
+  if (!parsedCatalog.ok) throw new Error(parsedCatalog.errors[0]!.message);
+  const parsedSource = parseInvestigationScene(
+    readFixture("chapter_1/investigation_scene_1.md"),
+    "chapter_1/investigation_scene_1.md",
+    "investigation_scene_1",
+  );
+  if (!parsedSource.ok) throw new Error(parsedSource.error.message);
+  const parsedAnalysis = parseAnalysisScene(
+    readFixture("chapter_1/analysis_scene_8_5.md"),
+    "chapter_1/analysis_scene_8_5.md",
+    "analysis_scene_8_5",
+  );
+  if (!parsedAnalysis.ok) throw new Error(parsedAnalysis.error.message);
+  const parsedFollowUp = parseInvestigationScene(
+    readFixture("chapter_1/investigation_scene_2.md"),
+    "chapter_1/investigation_scene_2.md",
+    "investigation_scene_2",
+  );
+  if (!parsedFollowUp.ok) throw new Error(parsedFollowUp.error.message);
+
+  const scenes = [
+    record("chapter_1", "investigation_scene_1.md", parsedSource.value),
+    record("chapter_1", "investigation_scene_2.md", parsedFollowUp.value),
+  ];
+  const analysisScenes = [
+    {
+      chapterId: "chapter_1",
+      file: "analysis_scene_8_5.md",
+      ast: parsedAnalysis.value,
+    },
+  ];
+  const analysisRegistry =
+    createAnalysisDefinitionRegistryFromScenes(analysisScenes);
+  const caseRecords = compileCaseRecordCorpus(parsedCatalog.value, scenes);
+  if (!caseRecords.ok) throw new Error(caseRecords.errors[0]!.message);
+  const normalized = validateAnalysisScenes({
+    scenes: analysisScenes,
+    catalog: parsedCatalog.value,
+    caseRecords: caseRecords.value,
+    analysisRegistry,
+  });
+  if (!normalized.ok) throw new Error(normalized.errors[0]!.message);
+
+  return {
+    catalog: parsedCatalog.value,
+    nodes: buildReachabilityNodes({
+      chapters: [
+        chapter("chapter_1", [
+          "investigation_scene_1.md",
+          "analysis_scene_8_5.md",
+          "investigation_scene_2.md",
+        ]),
+      ],
+      scenes,
+      catalog: parsedCatalog.value,
+      analysisRegistry,
+      analysisScenes,
+      normalizedAnalysisScenes: normalized.value,
+    }),
+  };
 }
 
 function storyCatalog(): ASTStoryCatalog {
