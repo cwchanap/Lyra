@@ -331,6 +331,58 @@ pub enum UnlockExpr {
     },
 }
 
+/// Compiler-owned positive expression for analysis boards. Unlike
+/// `UnlockExpr`, this closed wire admits only story predicates; investigation
+/// and interrogation-local predicates are invalid analysis resources.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(untagged, rename_all_fields = "camelCase", deny_unknown_fields)]
+pub enum StoryUnlockExpr {
+    AtLeast {
+        #[serde(rename = "op")]
+        _op: AtLeastOperator,
+        count: usize,
+        conditions: Vec<StoryUnlockExpr>,
+    },
+    Combinator {
+        op: Combinator,
+        left: Box<StoryUnlockExpr>,
+        right: Box<StoryUnlockExpr>,
+    },
+    FactAsserted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateFactAsserted,
+        id: String,
+    },
+    QuestionResolved {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateQuestionResolved,
+        id: String,
+    },
+    ObjectiveCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateObjectiveCompleted,
+        id: String,
+    },
+    AuthorizationGranted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAuthorizationGranted,
+        id: String,
+    },
+    AnalysisSceneCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisSceneCompleted,
+        chapter_id: String,
+        scene_id: String,
+    },
+    AnalysisBoardCompleted {
+        #[serde(rename = "predicate")]
+        _predicate: PredicateAnalysisBoardCompleted,
+        chapter_id: String,
+        scene_id: String,
+        board_id: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged, rename_all_fields = "camelCase")]
 pub enum InterrogationUnlockExpr {
@@ -596,7 +648,7 @@ pub struct AnalysisBoardJsonCommon {
     pub id: String,
     pub label: String,
     pub prompt: String,
-    pub unlock: Option<UnlockExpr>,
+    pub unlock: Option<StoryUnlockExpr>,
     pub reveals: Vec<StoryRevealTarget>,
     pub feedback: AnalysisFeedbackJson,
     pub cards: Vec<AnalysisCardJson>,
@@ -1149,7 +1201,7 @@ mod tests {
         };
         assert!(matches!(
             common.unlock,
-            Some(UnlockExpr::AnalysisBoardCompleted { .. })
+            Some(StoryUnlockExpr::AnalysisBoardCompleted { .. })
         ));
         assert_eq!(
             accepted_order,
@@ -1173,6 +1225,57 @@ mod tests {
             common.cards[2].source,
             InventoryTarget::Statement { ref id } if id == "manager_timing"
         ));
+    }
+
+    fn compiler_analysis_scene_with_unlock(unlock: serde_json::Value) -> serde_json::Value {
+        let mut scene = serde_json::from_str::<serde_json::Value>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler fixture must be valid JSON");
+        scene["boards"][1]["unlock"] = unlock;
+        scene
+    }
+
+    // Break caught: analysis boards could deserialize investigation-local
+    // predicates even though the compiler permits only story predicates.
+    #[test]
+    fn rejects_local_analysis_board_unlock_before_loader_validation() {
+        let error =
+            serde_json::from_value::<SceneJson>(compiler_analysis_scene_with_unlock(json!(
+                { "predicate": "evidence_collected", "id": "miyake_call_record" }
+            )))
+            .expect_err("analysis boards must reject local unlock predicates");
+
+        assert!(
+            error
+                .to_string()
+                .contains("data did not match any variant of untagged enum StoryUnlockExpr"),
+            "{error}"
+        );
+    }
+
+    // Break caught: unknown unlock fields could be silently ignored by the
+    // permissive shared unlock model instead of rejecting malformed wire data.
+    #[test]
+    fn rejects_unknown_analysis_board_unlock_fields_before_loader_validation() {
+        let error =
+            serde_json::from_value::<SceneJson>(compiler_analysis_scene_with_unlock(json!(
+                {
+                    "predicate": "analysis_board_completed",
+                    "chapterId": "chapter_1",
+                    "sceneId": "analysis_scene_8_5",
+                    "boardId": "evidence_packages",
+                    "unexpected": true
+                }
+            )))
+            .expect_err("analysis boards must reject unknown unlock fields");
+
+        assert!(
+            error
+                .to_string()
+                .contains("data did not match any variant of untagged enum StoryUnlockExpr"),
+            "{error}"
+        );
     }
 
     #[test]

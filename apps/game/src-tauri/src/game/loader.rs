@@ -5,7 +5,8 @@ use crate::game::schema::{
     AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
     InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
     InterrogationSceneJson, InterrogationUnlockExpr, InvestigationRevealTarget,
-    InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget, UnlockExpr,
+    InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget,
+    StoryUnlockExpr, UnlockExpr,
 };
 use crate::game::story::{ObjectiveKind, StoryCatalog};
 use std::collections::{HashMap, HashSet};
@@ -506,7 +507,7 @@ fn validate_story_analysis_scene_references(
         }
         let targets = common.reveals.iter().collect::<Vec<_>>();
         validate_story_reveal_batch(&targets, file_rel)?;
-        validate_story_unlock_expr(common.unlock.as_ref(), catalog, file_rel)?;
+        validate_story_analysis_unlock_expr(common.unlock.as_ref(), catalog, file_rel)?;
     }
     Ok(())
 }
@@ -722,6 +723,49 @@ fn validate_story_unlock_expr(
             ..
         } => validate_analysis_board_predicate(catalog, chapter_id, scene_id, board_id, file_rel),
         _ => Ok(()),
+    }
+}
+
+fn validate_story_analysis_unlock_expr(
+    unlock: Option<&StoryUnlockExpr>,
+    catalog: &StoryCatalog,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    let Some(expr) = unlock else { return Ok(()) };
+    match expr {
+        StoryUnlockExpr::AtLeast { conditions, .. } => {
+            for condition in conditions {
+                validate_story_analysis_unlock_expr(Some(condition), catalog, file_rel)?;
+            }
+            Ok(())
+        }
+        StoryUnlockExpr::Combinator { left, right, .. } => {
+            validate_story_analysis_unlock_expr(Some(left), catalog, file_rel)?;
+            validate_story_analysis_unlock_expr(Some(right), catalog, file_rel)
+        }
+        StoryUnlockExpr::FactAsserted { id, .. } => {
+            validate_story_fact(catalog, id, file_rel, "predicate")
+        }
+        StoryUnlockExpr::QuestionResolved { id, .. } => {
+            validate_story_question(catalog, id, file_rel, "predicate")
+        }
+        StoryUnlockExpr::ObjectiveCompleted { id, .. } => {
+            validate_story_objective(catalog, id, file_rel, "predicate")
+        }
+        StoryUnlockExpr::AuthorizationGranted { id, .. } => {
+            validate_story_authorization(catalog, id, file_rel, "predicate")
+        }
+        StoryUnlockExpr::AnalysisSceneCompleted {
+            chapter_id,
+            scene_id,
+            ..
+        } => validate_analysis_scene_predicate(catalog, chapter_id, scene_id, file_rel),
+        StoryUnlockExpr::AnalysisBoardCompleted {
+            chapter_id,
+            scene_id,
+            board_id,
+            ..
+        } => validate_analysis_board_predicate(catalog, chapter_id, scene_id, board_id, file_rel),
     }
 }
 
