@@ -695,6 +695,51 @@ describe("compile (end-to-end against valid fixture)", () => {
 
   it.each([
     {
+      name: "first_manifest_analysis_unobtainable_card_source",
+      mutate(sourceRoot: string) {
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/chapter.md",
+          [
+            "1. investigation_scene_1.md",
+            "2. analysis_scene_8_5.md",
+            "3. investigation_scene_2.md",
+          ].join("\n"),
+          [
+            "1. analysis_scene_8_5.md",
+            "2. investigation_scene_1.md",
+            "3. investigation_scene_2.md",
+          ].join("\n"),
+        );
+        // Keep the displayed evidence definitions valid, but make their only
+        // reveal producer follow the first manifest analysis scene.
+        replaceFixtureTail(
+          sourceRoot,
+          "chapter_1/analysis_scene_8_5.md",
+          "## Board: 本機事件順序 {#local_event_sequence}",
+          [
+            "## Outro",
+            "",
+            "**相馬律**：我們只證明了第三者存在。下一步才是把那個空位填上。",
+            "",
+          ].join("\n"),
+        );
+        replaceFixtureText(
+          sourceRoot,
+          "chapter_1/investigation_scene_1.md",
+          "- **Reveals:** [evidence:miyake_call_record, evidence:l_corridor_replay, evidence:external_credential_event, evidence:event_1841, evidence:event_1842, evidence:event_1843, evidence:event_1844, evidence:lock_sequence, evidence:phone_notification, statement:manager_timing]",
+          "- **Reveals:** []",
+        );
+      },
+      expected: [
+        {
+          code: "requiredContentUnreachable",
+          sourceFile: "chapter_1/analysis_scene_8_5.md",
+          line: 11,
+        },
+      ],
+    },
+    {
       name: "analysis_output_unreachable",
       mutate(sourceRoot: string) {
         replaceFixtureText(
@@ -921,6 +966,21 @@ function replaceFixtureText(
     throw new Error(`Fixture mutation target missing from ${relativePath}.`);
   }
   writeFileSync(path, source.replace(before, after));
+}
+
+function replaceFixtureTail(
+  sourceRoot: string,
+  relativePath: string,
+  marker: string,
+  replacement: string,
+): void {
+  const path = resolve(sourceRoot, relativePath);
+  const source = readFileSync(path, "utf-8");
+  const markerIndex = source.indexOf(marker);
+  if (markerIndex === -1) {
+    throw new Error(`Fixture tail marker missing from ${relativePath}.`);
+  }
+  writeFileSync(path, source.slice(0, markerIndex) + replacement);
 }
 
 describe("snapshot: valid fixture JSON output", () => {
