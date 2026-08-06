@@ -686,6 +686,20 @@ function validateBoardReveals(
         "analysisBoardGrantAuthorizationForbidden",
         `Analysis board "${board.id}" may not grant authorization "${target.authorizationId}".`,
       );
+      if (
+        !catalog.authorizations.some(
+          (authorization) => authorization.id === target.authorizationId,
+        )
+      ) {
+        errors.push(
+          ...validateStoryRevealTargets({
+            targets: [target],
+            catalog,
+            representedAuthority: null,
+            location: board.reveals,
+          }),
+        );
+      }
       continue;
     }
     permittedTargets.push(target);

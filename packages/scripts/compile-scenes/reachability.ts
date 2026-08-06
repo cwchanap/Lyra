@@ -1722,7 +1722,6 @@ export function buildReachabilityNodes(input: {
           scope,
           entryPredecessors:
             previousOutroKey === null ? [] : [previousOutroKey],
-          firstScene,
         })
       : buildSceneNodes({
           record,
@@ -1841,7 +1840,6 @@ function buildAnalysisNodes(input: {
   record: AnalysisReachabilityRecord;
   scope: SceneScope;
   entryPredecessors: string[];
-  firstScene: boolean;
 }): NodeDraft[] {
   const { record, scope } = input;
   const authoredBoardsById = new Map(

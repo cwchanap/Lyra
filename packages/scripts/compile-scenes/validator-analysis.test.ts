@@ -547,4 +547,30 @@ describe("analysis semantic validation", () => {
       }),
     );
   });
+
+  it("reports an unknown grant_authorization target alongside the forbidden output", () => {
+    // Break caught: filtering forbidden grants before catalog validation hid
+    // misspelled authorization IDs from authors.
+    const scene = parse(
+      classifySource({ reveals: "[grant_authorization:missing_access]" }),
+    );
+    const result = validate([scene], recordsFor("card_a", "card_b"));
+
+    expect(result).toMatchObject({ ok: false });
+    if (result.ok) return;
+    expect(result.errors).toContainEqual({
+      code: "analysisBoardGrantAuthorizationForbidden",
+      sourceFile: "chapter_1/analysis_scene_1.md",
+      line: 8,
+      message: expect.stringContaining('"missing_access"'),
+    });
+    expect(result.errors).toContainEqual({
+      code: "storyRevealUnresolved",
+      sourceFile: "chapter_1/analysis_scene_1.md",
+      line: 8,
+      message: expect.stringContaining(
+        'unknown authorization "missing_access"',
+      ),
+    });
+  });
 });
