@@ -1438,7 +1438,7 @@ mod tests {
         let progress_error = restore_scene(
             "chapter_1",
             &analysis,
-            &SceneProgressSnapshotV1::Linear,
+            &SceneProgressSnapshot::Linear,
             None,
             None,
         )
