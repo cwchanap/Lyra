@@ -326,6 +326,7 @@ export function emitAnalysisScene(
     id: scene.sceneId,
     title: scene.title,
     summary: scene.summary,
+    assetRefs: emitAssetRefs(scene.assetRefs),
     intro: emitDialogueItems(scene.intro),
     boards: scene.boards.map(emitAnalysisBoard),
     outro: emitDialogueItems(scene.outro),
@@ -334,40 +335,40 @@ export function emitAnalysisScene(
 
 function emitAnalysisBoard(board: AnalysisBoardJson): JSONAnalysisBoard {
   const common: JSONAnalysisBoardCommon = {
-    id: board.id,
-    label: board.label,
-    prompt: board.prompt,
-    unlock: copyStoryUnlockExpr(board.unlock),
-    reveals: board.reveals.map(copyStoryRevealTarget),
-    feedback: { ...board.feedback },
-    cards: board.cards.map((card) => ({
+    id: board.common.id,
+    label: board.common.label,
+    prompt: board.common.prompt,
+    unlock: copyStoryUnlockExpr(board.common.unlock),
+    reveals: board.common.reveals.map(copyStoryRevealTarget),
+    feedback: { ...board.common.feedback },
+    cards: board.common.cards.map((card) => ({
       id: card.id,
       label: card.label,
       source: { ...card.source },
       summary: card.summary,
     })),
-    resultDialogue: emitDialogueItems(board.resultDialogue),
+    resultDialogue: emitDialogueItems(board.common.resultDialogue),
   };
 
   switch (board.kind) {
     case "classify":
       return {
-        ...common,
         kind: "classify",
+        common,
         groups: board.groups.map((group) => ({ ...group })),
         acceptedGroupByCard: { ...board.acceptedGroupByCard },
       };
     case "order":
       return {
-        ...common,
         kind: "order",
+        common,
         acceptedOrder: [...board.acceptedOrder],
         fixedAnchors: board.fixedAnchors.map((anchor) => ({ ...anchor })),
       };
     case "threshold":
       return {
-        ...common,
         kind: "threshold",
+        common,
         minimumSelected: board.minimumSelected,
         acceptedSelections: board.acceptedSelections.map((selection) => [
           ...selection,

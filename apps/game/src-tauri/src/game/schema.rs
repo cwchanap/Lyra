@@ -637,6 +637,8 @@ pub struct AnalysisSceneJson {
     pub id: String,
     pub title: String,
     pub summary: String,
+    #[serde(default)]
+    pub asset_refs: Vec<AssetRefJson>,
     pub intro: Vec<DialogueItem>,
     pub boards: Vec<AnalysisBoardJson>,
     pub outro: Vec<DialogueItem>,
@@ -698,19 +700,16 @@ pub struct AnalysisFixedAnchorJson {
 )]
 pub enum AnalysisBoardJson {
     Classify {
-        #[serde(flatten)]
         common: AnalysisBoardJsonCommon,
         groups: Vec<AnalysisGroupJson>,
         accepted_group_by_card: BTreeMap<String, String>,
     },
     Order {
-        #[serde(flatten)]
         common: AnalysisBoardJsonCommon,
         accepted_order: Vec<String>,
         fixed_anchors: Vec<AnalysisFixedAnchorJson>,
     },
     Threshold {
-        #[serde(flatten)]
         common: AnalysisBoardJsonCommon,
         minimum_selected: usize,
         accepted_selections: Vec<Vec<String>>,
@@ -1232,7 +1231,7 @@ mod tests {
             "test_fixtures/analysis_scene_8_5.json"
         ))
         .expect("compiler fixture must be valid JSON");
-        scene["boards"][1]["unlock"] = unlock;
+        scene["boards"][1]["common"]["unlock"] = unlock;
         scene
     }
 
@@ -1276,6 +1275,36 @@ mod tests {
                 .contains("data did not match any variant of untagged enum StoryUnlockExpr"),
             "{error}"
         );
+    }
+
+    // Regression: the nested common board representation must reject unknown
+    // fields at the common level (not just inside StoryUnlockExpr). The prior
+    // flatten + deny_unknown_fields combination was undocumented serde behavior;
+    // nesting common makes the strictness guaranteed.
+    #[test]
+    fn rejects_unknown_analysis_board_common_field() {
+        let mut scene = serde_json::from_str::<serde_json::Value>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler fixture must be valid JSON");
+        scene["boards"][0]["common"]["unexpectedCommonField"] = json!(true);
+        let error = serde_json::from_value::<SceneJson>(scene)
+            .expect_err("analysis boards must reject unknown common fields");
+        assert!(error.to_string().contains("unknown field"), "{error}");
+    }
+
+    // Regression: the nested common board representation must reject unknown
+    // fields at the variant level (e.g. an unexpected key alongside `groups`).
+    #[test]
+    fn rejects_unknown_analysis_board_variant_field() {
+        let mut scene = serde_json::from_str::<serde_json::Value>(include_str!(
+            "test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("compiler fixture must be valid JSON");
+        scene["boards"][0]["unexpectedVariantField"] = json!(true);
+        let error = serde_json::from_value::<SceneJson>(scene)
+            .expect_err("analysis boards must reject unknown variant fields");
+        assert!(error.to_string().contains("unknown field"), "{error}");
     }
 
     // Break caught: analysis_dialogue_groups could return an empty or

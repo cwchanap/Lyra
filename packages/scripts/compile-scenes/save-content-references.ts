@@ -7,6 +7,7 @@ import type {
   VisualAssetCue,
 } from "./types";
 import type { CompileError } from "./types";
+import type { AnalysisSceneRecord } from "./types";
 import type { SceneRecord } from "./validator";
 
 type SemanticReference = {
@@ -260,9 +261,41 @@ function configuredSemanticIds(config: AssetConfig): Map<string, number> {
   return occurrences(ids);
 }
 
+function analysisSceneReferences(
+  scene: AnalysisSceneRecord,
+): SemanticReference[] {
+  const refs: SemanticReference[] = scene.ast.assetRefs.map((ref) => ({
+    assetId: ref.assetId,
+    sourceFile: scene.ast.sourceFile,
+    line: scene.ast.line,
+  }));
+  addDialogueReferences(
+    scene.ast.intro,
+    scene.ast.sourceFile,
+    scene.ast.line,
+    refs,
+  );
+  for (const board of scene.ast.boards) {
+    addDialogueReferences(
+      board.resultDialogue,
+      scene.ast.sourceFile,
+      scene.ast.line,
+      refs,
+    );
+  }
+  addDialogueReferences(
+    scene.ast.outro,
+    scene.ast.sourceFile,
+    scene.ast.line,
+    refs,
+  );
+  return refs;
+}
+
 /** Verifies every emitted semantic asset reference resolves exactly once. */
 export function validateSaveContentReferences(input: {
   scenes: readonly SceneRecord[];
+  analysisScenes?: readonly AnalysisSceneRecord[];
   config: AssetConfig;
   manifest: AssetManifest;
 }): CompileError[] {
@@ -272,31 +305,33 @@ export function validateSaveContentReferences(input: {
   const configuredCounts = configuredSemanticIds(input.config);
   const errors: CompileError[] = [];
   const seen = new Set<string>();
+  const allReferences: SemanticReference[] = [];
   for (const scene of input.scenes)
-    for (const reference of sceneReferences(scene)) {
-      const manifestCount = manifestCounts.get(reference.assetId) ?? 0;
-      if (manifestCount !== 1) {
-        const key = `${reference.assetId}:asset manifest`;
+    allReferences.push(...sceneReferences(scene));
+  for (const scene of input.analysisScenes ?? [])
+    allReferences.push(...analysisSceneReferences(scene));
+  for (const reference of allReferences) {
+    const manifestCount = manifestCounts.get(reference.assetId) ?? 0;
+    if (manifestCount !== 1) {
+      const key = `${reference.assetId}:asset manifest`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        errors.push(error(reference, "asset manifest", manifestCount));
+      }
+    }
+    if (
+      reference.assetId.startsWith("portrait.") ||
+      reference.assetId.startsWith("audio.")
+    ) {
+      const configuredCount = configuredCounts.get(reference.assetId) ?? 0;
+      if (configuredCount !== 1) {
+        const key = `${reference.assetId}:asset configuration`;
         if (!seen.has(key)) {
           seen.add(key);
-          errors.push(error(reference, "asset manifest", manifestCount));
-        }
-      }
-      if (
-        reference.assetId.startsWith("portrait.") ||
-        reference.assetId.startsWith("audio.")
-      ) {
-        const configuredCount = configuredCounts.get(reference.assetId) ?? 0;
-        if (configuredCount !== 1) {
-          const key = `${reference.assetId}:asset configuration`;
-          if (!seen.has(key)) {
-            seen.add(key);
-            errors.push(
-              error(reference, "asset configuration", configuredCount),
-            );
-          }
+          errors.push(error(reference, "asset configuration", configuredCount));
         }
       }
     }
+  }
   return errors;
 }

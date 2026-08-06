@@ -14,6 +14,7 @@ import type {
   ASTOrderBoard,
   ASTStoryCatalog,
   ASTThresholdBoard,
+  AssetRef,
   CaseRecordMetadataRequirement,
   CompiledCaseRecord,
   CompiledCaseRecordCorpus,
@@ -58,20 +59,23 @@ export type AnalysisBoardJsonCommon = {
   resultDialogue: DialogueItem[];
 };
 
-export type ClassifyBoardJson = AnalysisBoardJsonCommon & {
+export type ClassifyBoardJson = {
   kind: "classify";
+  common: AnalysisBoardJsonCommon;
   groups: Array<{ id: string; label: string; description: string }>;
   acceptedGroupByCard: Record<string, string>;
 };
 
-export type OrderBoardJson = AnalysisBoardJsonCommon & {
+export type OrderBoardJson = {
   kind: "order";
+  common: AnalysisBoardJsonCommon;
   acceptedOrder: string[];
   fixedAnchors: Array<{ cardId: string; position: number }>;
 };
 
-export type ThresholdBoardJson = AnalysisBoardJsonCommon & {
+export type ThresholdBoardJson = {
   kind: "threshold";
+  common: AnalysisBoardJsonCommon;
   minimumSelected: number;
   acceptedSelections: string[][];
 };
@@ -86,6 +90,7 @@ export type NormalizedAnalysisScene = {
   sceneId: string;
   title: string;
   summary: string;
+  assetRefs: AssetRef[];
   intro: DialogueItem[];
   boards: AnalysisBoardJson[];
   outro: DialogueItem[];
@@ -131,6 +136,7 @@ export function validateAnalysisScenes(input: {
       sceneId: scene.ast.id,
       title: scene.ast.title,
       summary: scene.ast.summary,
+      assetRefs: [...scene.ast.assetRefs],
       intro: [...scene.ast.intro],
       boards,
       outro: [...scene.ast.outro],
@@ -162,20 +168,20 @@ function normalizeBoard(
   switch (board.kind) {
     case "classify":
       return {
-        ...common,
         kind: "classify",
+        common,
         ...normalizeClassifyBoard(board, cards, errors),
       };
     case "order":
       return {
-        ...common,
         kind: "order",
+        common,
         ...normalizeOrderBoard(board, cards, errors),
       };
     case "threshold":
       return {
-        ...common,
         kind: "threshold",
+        common,
         ...normalizeThresholdBoard(board, cards, errors),
       };
   }

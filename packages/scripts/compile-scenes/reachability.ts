@@ -1850,10 +1850,13 @@ function buildAnalysisNodes(input: {
   const boardCompletionAtoms: ReachabilityAtom[] = [];
 
   for (const board of record.normalized.boards) {
-    const authored = authoredBoardsById.get(board.id);
+    const authored = authoredBoardsById.get(board.common.id);
     if (authored === undefined) continue;
-    const boardKey = `${scope.prefix}/board:${board.id}`;
-    const boardCompletionAtom = analysisBoardCompletionAtom(scope, board.id);
+    const boardKey = `${scope.prefix}/board:${board.common.id}`;
+    const boardCompletionAtom = analysisBoardCompletionAtom(
+      scope,
+      board.common.id,
+    );
     boardKeys.push(boardKey);
     boardCompletionAtoms.push(boardCompletionAtom);
     nodes.push(
@@ -1862,9 +1865,9 @@ function buildAnalysisNodes(input: {
         requirement: "mandatory",
         legacyCompatibilityMode: false,
         initiallyReachable: false,
-        condition: normalizeAnalysisExpression(board.unlock),
+        condition: normalizeAnalysisExpression(board.common.unlock),
         implicitPrerequisites: uniquePredicates(
-          board.cards.map((card) => ({
+          board.common.cards.map((card) => ({
             predicate: "atom" as const,
             atom: `${card.source.kind}:${card.source.id}`,
           })),
@@ -1874,7 +1877,7 @@ function buildAnalysisNodes(input: {
           // distinct from story reveal targetIndex values (>= 0) and the scene
           // completion atom's slot (0).
           addAtomEffect(boardCompletionAtom, -1),
-          ...effectsFromStoryReveals(board.reveals),
+          ...effectsFromStoryReveals(board.common.reveals),
         ],
         strictPredecessorKeys: input.entryPredecessors,
         sourceFile: authored.sourceFile,
@@ -2492,7 +2495,7 @@ function normalizeInterrogationExpression(
 }
 
 function normalizeAnalysisExpression(
-  expression: NormalizedAnalysisScene["boards"][number]["unlock"],
+  expression: NormalizedAnalysisScene["boards"][number]["common"]["unlock"],
 ): PositiveExpression<ReachabilityPredicate> | null {
   if (expression === null) return null;
   return normalizeExpression(expression, storyPredicateAtom);

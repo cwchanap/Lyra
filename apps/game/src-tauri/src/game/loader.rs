@@ -2027,19 +2027,22 @@ mod tests {
             "id": "analysis_scene_1",
             "title": "Story analysis",
             "summary": "Fixture analysis scene.",
+            "assetRefs": [],
             "intro": [],
             "boards": [{
-                "id": "board_1",
-                "label": "Board",
                 "kind": "classify",
-                "prompt": "Classify.",
-                "unlock": unlock,
-                "reveals": reveals,
-                "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
-                "cards": [],
+                "common": {
+                    "id": "board_1",
+                    "label": "Board",
+                    "prompt": "Classify.",
+                    "unlock": unlock,
+                    "reveals": reveals,
+                    "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                    "cards": [],
+                    "resultDialogue": []
+                },
                 "groups": [],
-                "acceptedGroupByCard": {},
-                "resultDialogue": []
+                "acceptedGroupByCard": {}
             }],
             "outro": []
         })
