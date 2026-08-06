@@ -52,6 +52,8 @@ function bundle(
       sourceGroups: [],
       evidenceIndex: [],
       statementsIndex: [],
+      analysisScenes: [],
+      analysisBoards: [],
     },
   };
 }
@@ -102,6 +104,8 @@ describe("buildSaveContentManifest", () => {
         facts: [],
         sourceGroups: [],
         schemaVersion: 2,
+        analysisScenes: [],
+        analysisBoards: [],
       },
       chapters: [
         {

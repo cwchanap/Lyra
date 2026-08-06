@@ -14,14 +14,17 @@ import {
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { compile, formatErrors } from "./compile-scenes/orchestrator";
-import { createAnalysisDefinitionRegistry } from "./compile-scenes/analysis-definition-registry";
+import { createAnalysisDefinitionRegistryFromScenes } from "./compile-scenes/analysis-definition-registry";
 import { enrichScenesWithAssets } from "./compile-scenes/assets/enrich";
 import type { AssetConfig } from "./compile-scenes/assets/config";
 import { parseChapter } from "./compile-scenes/parser-chapter";
+import { parseAnalysisScene } from "./compile-scenes/parser-analysis";
 import { parseInterrogationScene } from "./compile-scenes/parser-interrogation";
 import { parseInvestigationScene } from "./compile-scenes/parser-investigation";
 import { parseLinearScene } from "./compile-scenes/parser-linear";
+import { emptyStoryCatalog } from "./compile-scenes/parser-story-catalog";
 import { buildSaveContentManifest } from "./compile-scenes/save-content-manifest";
+import { validateStoryPredicateReferences } from "./compile-scenes/story-catalog";
 import type { SceneRecord } from "./compile-scenes/validator";
 
 const VALID_STORY_CATALOG = readFileSync(
@@ -357,35 +360,65 @@ describe("compile (end-to-end against valid fixture)", () => {
     }
   });
 
-  it("accepts qualified analysis predicates only with an injected synthetic registry", () => {
-    const outRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-hpa-257-registry-"),
+  it("resolves a later qualified analysis predicate from genuine parsed scenes", () => {
+    // Break caught: synthetic CompileOptions injection could make the old
+    // fixture pass while authored analysis files never supplied definitions.
+    const source = (boardId: string, unlock?: string) =>
+      [
+        "# Scene 1: 分析",
+        "- **Summary:** 測試分析。",
+        "## Intro",
+        "**相馬律**：開始吧。",
+        `## Board: 分析 {#${boardId}}`,
+        "- **Kind:** classify",
+        "- **Prompt:** 整理卡片。",
+        ...(unlock ? [`- **Unlock:** ${unlock}`] : []),
+        "- **Reveals:** []",
+        "- **Incomplete Feedback:** 尚未完成。",
+        "- **Incorrect Feedback:** 不正確。",
+        "### Card: 卡片 {#card_a}",
+        "- **Source:** evidence:record_a",
+        "- **Summary:** 材料摘要。",
+        "### Group: 分類 {#group_a}",
+        "- **Description:** 分類說明。",
+        "- **Accepted Cards:** [card_a]",
+        "### Result Dialogue",
+        "**相馬律**：完成。",
+        "## Outro",
+        "**相馬律**：下一步。",
+      ].join("\n");
+    const first = parseAnalysisScene(
+      source("board_1"),
+      "chapter_9/analysis_scene_1.md",
+      "analysis_scene_1",
     );
-    try {
-      const result = compile({
-        sourceRoot:
-          "packages/scripts/__fixtures__/invalid/hpa_257_absent_analysis_registration",
-        outputRoot: outRoot,
-        analysisRegistry: createAnalysisDefinitionRegistry({
-          scenes: [{ chapterId: "chapter_9", sceneId: "analysis_scene_1" }],
-          boards: [
-            {
-              chapterId: "chapter_9",
-              sceneId: "analysis_scene_1",
-              boardId: "board_1",
-            },
-          ],
-        }),
-      });
-      if (!result.ok) {
-        throw new Error("Compile failed:\n" + formatErrors(result.errors));
-      }
-      expect(hpa257DiagnosticCodes(result.warnings)).toEqual([
-        "optionalContentUnreachable",
-      ]);
-    } finally {
-      rmSync(outRoot, { recursive: true, force: true });
-    }
+    const later = parseAnalysisScene(
+      source(
+        "board_2",
+        "analysis_board:chapter_9@analysis_scene_1@board_1 completed",
+      ),
+      "chapter_9/analysis_scene_2.md",
+      "analysis_scene_2",
+    );
+    if (!first.ok || !later.ok)
+      throw new Error("analysis fixture parse failed");
+
+    const scenes = [
+      { chapterId: "chapter_9", file: "analysis_scene_1.md", ast: first.value },
+      { chapterId: "chapter_9", file: "analysis_scene_2.md", ast: later.value },
+    ];
+    const unlock = later.value.boards[0]?.unlock;
+    if (!unlock || "op" in unlock.value)
+      throw new Error("expected leaf unlock");
+
+    expect(
+      validateStoryPredicateReferences({
+        catalog: emptyStoryCatalog("story_catalog.md"),
+        scenes: [],
+        analysisRegistry: createAnalysisDefinitionRegistryFromScenes(scenes),
+        additionalReferences: [{ predicate: unlock.value, location: unlock }],
+      }),
+    ).toEqual([]);
   });
 
   it("emits story asset manifest for an asset-enabled fixture", () => {
@@ -1316,6 +1349,8 @@ describe("compile (global story catalog)", () => {
         sourceGroups: [],
         evidenceIndex: [],
         statementsIndex: [],
+        analysisScenes: [],
+        analysisBoards: [],
       });
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });

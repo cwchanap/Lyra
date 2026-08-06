@@ -43,10 +43,8 @@ import {
   validateStoryCatalog,
   validateStoryPredicateReferences,
 } from "./story-catalog";
-import {
-  createAnalysisDefinitionRegistry,
-  type AnalysisDefinitionRegistry,
-} from "./analysis-definition-registry";
+import { createAnalysisDefinitionRegistryFromScenes } from "./analysis-definition-registry";
+import { validateAnalysisScenes } from "./validator-analysis";
 import {
   analyzeReachability,
   buildReachabilityNodes,
@@ -71,6 +69,7 @@ import { materializeSemanticDefaults } from "./semantic-defaults";
 import { validateSaveContentReferences } from "./save-content-references";
 import type {
   ASTChapter,
+  AnalysisSceneRecord,
   ASTStoryCatalog,
   CompileError,
   CompiledCaseRecordCorpus,
@@ -95,11 +94,6 @@ export type CompileOptions = {
    * `process.cwd()` when omitted for backward compatibility.
    */
   repoRoot?: string;
-  /**
-   * Synthetic analysis definitions used only by compiler fixtures until
-   * HPA-259 supplies production registrations.
-   */
-  analysisRegistry?: AnalysisDefinitionRegistry;
 };
 
 export type AssetReport = {
@@ -127,11 +121,12 @@ export type CompileResult =
   | { ok: false; errors: CompileError[] };
 
 export function compile(opts: CompileOptions): CompileResult {
-  const analysisRegistry =
-    opts.analysisRegistry ??
-    createAnalysisDefinitionRegistry({ scenes: [], boards: [] });
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
+  // Task 5 owns manifest dispatch that fills this collection. Keeping the
+  // typed ownership here makes registry/catalog derivation authoritative now
+  // without an eager scan or a synthetic CompileOptions injection seam.
+  const analysisScenes: AnalysisSceneRecord[] = [];
   const errors: CompileError[] = [];
   const warnings: CompileError[] = [];
   const skippedReservedFiles = new Set<string>();
@@ -394,7 +389,10 @@ export function compile(opts: CompileOptions): CompileResult {
     }
   }
 
-  // 4. Validate.
+  // 4. Validate. Task 5 populates analysisScenes during manifest dispatch;
+  // derive its definition registry only after that parse phase is complete.
+  const analysisRegistry =
+    createAnalysisDefinitionRegistryFromScenes(analysisScenes);
   const validationErrors = validate({
     chapters,
     scenes,
@@ -412,13 +410,21 @@ export function compile(opts: CompileOptions): CompileResult {
     ...storyCatalogErrors,
     ...storyPredicateReferenceErrors,
   );
-  // The abstract-effect simulation relies on the normal validator/catalog
-  // boundary having resolved every modeled target. Do not attempt it over a
-  // partial or semantically invalid corpus.
+  // Preserve the established HPA-257 reachability eligibility boundary:
+  // structural, story-catalog, and ordinary story-predicate diagnostics block
+  // it, while later case-record and analysis semantic diagnostics are reported
+  // before (and alongside) the existing reachability analysis.
   const shouldAnalyzeReachability = errors.length === 0;
   const caseRecordResult = compileCaseRecordCorpus(storyCatalog, scenes);
   if (caseRecordResult.ok) {
     warnings.push(...caseRecordResult.value.warnings);
+    const analysisValidation = validateAnalysisScenes({
+      scenes: analysisScenes,
+      catalog: storyCatalog,
+      caseRecords: caseRecordResult.value,
+      analysisRegistry,
+    });
+    if (!analysisValidation.ok) errors.push(...analysisValidation.errors);
   } else {
     errors.push(...caseRecordResult.errors);
   }
@@ -509,7 +515,11 @@ export function compile(opts: CompileOptions): CompileResult {
     resolve(opts.outputRoot, "chapters.json"),
     JSON.stringify(idx, null, 2) + "\n",
   );
-  const emittedStoryCatalog = emitStoryCatalog(storyCatalog, caseRecords);
+  const emittedStoryCatalog = emitStoryCatalog(
+    storyCatalog,
+    caseRecords,
+    analysisScenes,
+  );
   writeFileSync(
     resolve(opts.outputRoot, "story_catalog.json"),
     JSON.stringify(emittedStoryCatalog, null, 2) + "\n",
