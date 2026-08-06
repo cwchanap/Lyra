@@ -7,10 +7,12 @@ import {
   isStoryRevealTarget,
   localInterrogationReveals,
   localInvestigationReveals,
+  type ValidatorInput,
   validate,
 } from "./validator";
 import type {
   ASTChapter,
+  ASTAnalysisScene,
   ASTEvidence,
   ASTInquiryPhase,
   ASTInquiryQuestion,
@@ -19,6 +21,7 @@ import type {
   ASTInvestigationScene,
   ASTLinearScene,
   ASTStoryCatalog,
+  AnalysisSceneRecord,
   ASTTestimony,
   ASTTestimonyLine,
   DialogueItem,
@@ -35,6 +38,19 @@ const mkLinearScene = (id: string): ASTLinearScene => ({
   summary: id,
   summaryAuthored: false,
   queue: [],
+  assetRefs: [],
+  sourceFile: `${id}.md`,
+  line: 1,
+});
+
+const mkAnalysisScene = (id: string): ASTAnalysisScene => ({
+  kind: "analysisScene",
+  id,
+  title: id,
+  summary: id,
+  intro: [],
+  boards: [],
+  outro: [],
   assetRefs: [],
   sourceFile: `${id}.md`,
   line: 1,
@@ -459,6 +475,45 @@ describe("validator", () => {
         line: 7,
       }),
     );
+  });
+
+  it("accounts for manifest-owned analysis records when checking cross-kind scene IDs", () => {
+    // Break caught: an analysis file could bypass the chapter accounting and
+    // let an ambiguous scene ID survive until a later runtime lookup.
+    const analysis: AnalysisSceneRecord = {
+      chapterId: "chapter_1",
+      file: "analysis_scene_a.md",
+      ast: {
+        ...mkAnalysisScene("shared_scene"),
+        sourceFile: "chapter_1/analysis_scene_a.md",
+        line: 7,
+      },
+    };
+    const errors = validate({
+      chapters: [mkChapter(1, ["scene_a.md", "analysis_scene_a.md"])],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "scene_a.md",
+          ast: {
+            ...mkLinearScene("shared_scene"),
+            sourceFile: "chapter_1/scene_a.md",
+          },
+        },
+      ],
+      analysisScenes: [analysis],
+    } satisfies ValidatorInput);
+
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "duplicateSceneId",
+        sourceFile: "chapter_1/analysis_scene_a.md",
+        line: 7,
+      }),
+    );
+    expect(
+      errors.some((error) => error.code === "chapterManifestMissingFile"),
+    ).toBe(false);
   });
 
   it("allows the same scene ID in different chapters", () => {

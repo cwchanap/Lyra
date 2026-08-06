@@ -12,6 +12,7 @@
 // =============================================================================
 
 import type {
+  AnalysisSceneRecord,
   ASTChapter,
   ASTInquiryPhase,
   ASTInquiryQuestion,
@@ -57,6 +58,11 @@ export type StoryPredicateReference = {
 export type ValidatorInput = {
   chapters: ASTChapter[];
   scenes: SceneRecord[];
+  /**
+   * Analysis records retain their compiler-only semantic lifecycle, but they
+   * participate in manifest accounting and cross-kind scene-id uniqueness.
+   */
+  analysisScenes?: readonly AnalysisSceneRecord[];
   /**
    * Files the orchestrator skipped because they use a reserved (future)
    * scene-type prefix. The chapter-manifest "file exists" check must treat
@@ -333,26 +339,33 @@ export function validate(input: ValidatorInput): CompileError[] {
     Map<string, { sourceFile: string; line: number }>
   >();
 
-  // ---- Pass 1: build global registries. ----
-  for (const rec of input.scenes) {
+  const registerSceneId = (
+    chapterId: string,
+    scene: { id: string; sourceFile: string; line: number },
+  ) => {
     const chapterSceneIds =
-      sceneIdsByChapter.get(rec.chapterId) ??
+      sceneIdsByChapter.get(chapterId) ??
       new Map<string, { sourceFile: string; line: number }>();
-    sceneIdsByChapter.set(rec.chapterId, chapterSceneIds);
-    const previousScene = chapterSceneIds.get(rec.ast.id);
+    sceneIdsByChapter.set(chapterId, chapterSceneIds);
+    const previousScene = chapterSceneIds.get(scene.id);
     if (previousScene) {
       errors.push({
         code: "duplicateSceneId",
-        message: `Scene id "${rec.ast.id}" declared twice in ${rec.chapterId}: ${previousScene.sourceFile}:${previousScene.line} and ${rec.ast.sourceFile}:${rec.ast.line}.`,
-        sourceFile: rec.ast.sourceFile,
-        line: rec.ast.line,
+        message: `Scene id "${scene.id}" declared twice in ${chapterId}: ${previousScene.sourceFile}:${previousScene.line} and ${scene.sourceFile}:${scene.line}.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
       });
-    } else {
-      chapterSceneIds.set(rec.ast.id, {
-        sourceFile: rec.ast.sourceFile,
-        line: rec.ast.line,
-      });
+      return;
     }
+    chapterSceneIds.set(scene.id, {
+      sourceFile: scene.sourceFile,
+      line: scene.line,
+    });
+  };
+
+  // ---- Pass 1: build global registries. ----
+  for (const rec of input.scenes) {
+    registerSceneId(rec.chapterId, rec.ast);
 
     if (
       rec.ast.kind !== "investigationScene" &&
@@ -396,6 +409,9 @@ export function validate(input: ValidatorInput): CompileError[] {
       }
     }
   }
+  for (const rec of input.analysisScenes ?? []) {
+    registerSceneId(rec.chapterId, rec.ast);
+  }
 
   const guaranteedInventoryBeforeScene =
     buildGuaranteedInventoryBeforeScene(input);
@@ -427,7 +443,7 @@ export function validate(input: ValidatorInput): CompileError[] {
   const failedParse = input.failedParseFiles ?? new Set<string>();
   for (const chapter of input.chapters) {
     const sceneFilesInChapter = new Set(
-      input.scenes
+      [...input.scenes, ...(input.analysisScenes ?? [])]
         .filter((s) => s.chapterId === chapter.dirName)
         .map((s) => s.file),
     );

@@ -1,8 +1,10 @@
 import type {
+  ASTAnalysisScene,
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
   CompileError,
+  JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
@@ -20,8 +22,16 @@ export const INVENTORY_PHASE_ID = "inventory";
 
 export type EmittedSceneRecordV1 = {
   chapterId: string;
-  json: JSONLinearScene | JSONInvestigationScene | JSONInterrogationScene;
-  sourceAst?: ASTLinearScene | ASTInvestigationScene | ASTInterrogationScene;
+  json:
+    | JSONLinearScene
+    | JSONInvestigationScene
+    | JSONInterrogationScene
+    | JSONAnalysisScene;
+  sourceAst?:
+    | ASTLinearScene
+    | ASTInvestigationScene
+    | ASTInterrogationScene
+    | ASTAnalysisScene;
 };
 
 export type DerivedDialogueSegment = {
@@ -87,7 +97,43 @@ export function deriveDialogueSegments(
           ? scene.sourceAst
           : undefined,
       );
+    case "analysis":
+      return deriveAnalysisSegments(
+        scene.chapterId,
+        scene.json,
+        scene.sourceAst?.kind === "analysisScene" ? scene.sourceAst : undefined,
+      );
   }
+}
+
+function deriveAnalysisSegments(
+  chapterId: string,
+  scene: JSONAnalysisScene,
+  sourceAst?: ASTAnalysisScene,
+): DerivedDialogueSegment[] {
+  const segments: DerivedDialogueSegment[] = [
+    {
+      origin: { type: "analysisIntro", chapterId, sceneId: scene.id },
+      items: scene.intro,
+      ...sourceFields(sourceAst),
+    },
+    ...scene.boards.map((board, index) => ({
+      origin: {
+        type: "analysisResult" as const,
+        chapterId,
+        sceneId: scene.id,
+        boardId: board.id,
+      },
+      items: board.resultDialogue,
+      ...sourceFields(sourceAst?.boards[index]),
+    })),
+    {
+      origin: { type: "analysisOutro", chapterId, sceneId: scene.id },
+      items: scene.outro,
+      ...sourceFields(sourceAst),
+    },
+  ];
+  return nonEmptySegments(segments);
 }
 
 function deriveLinearSegments(

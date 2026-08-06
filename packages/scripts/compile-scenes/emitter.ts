@@ -19,6 +19,9 @@ import type {
   CompileError,
   DialogueItem,
   JSONChaptersIndex,
+  JSONAnalysisBoard,
+  JSONAnalysisBoardCommon,
+  JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
@@ -29,6 +32,10 @@ import type {
   StoryCatalogJsonV2,
   VisualAssetCue,
 } from "./types";
+import type {
+  AnalysisBoardJson,
+  NormalizedAnalysisScene,
+} from "./validator-analysis";
 
 export function emitStoryCatalog(
   catalog: ASTStoryCatalog,
@@ -309,6 +316,71 @@ export function emitInterrogationScene(
   };
 }
 
+/** Emits only the Task-4-normalized analysis definition, never authored rules. */
+export function emitAnalysisScene(
+  scene: NormalizedAnalysisScene,
+): JSONAnalysisScene {
+  return {
+    type: "analysis",
+    id: scene.sceneId,
+    title: scene.title,
+    summary: scene.summary,
+    intro: emitDialogueItems(scene.intro),
+    boards: scene.boards.map(emitAnalysisBoard),
+    outro: emitDialogueItems(scene.outro),
+  };
+}
+
+function emitAnalysisBoard(board: AnalysisBoardJson): JSONAnalysisBoard {
+  const common: JSONAnalysisBoardCommon = {
+    id: board.id,
+    label: board.label,
+    prompt: board.prompt,
+    unlock: board.unlock,
+    reveals: board.reveals.map(copyStoryRevealTarget),
+    feedback: { ...board.feedback },
+    cards: board.cards.map((card) => ({
+      id: card.id,
+      label: card.label,
+      source: { ...card.source },
+      summary: card.summary,
+    })),
+    resultDialogue: emitDialogueItems(board.resultDialogue),
+  };
+
+  switch (board.kind) {
+    case "classify":
+      return {
+        ...common,
+        kind: "classify",
+        groups: board.groups.map((group) => ({ ...group })),
+        acceptedGroupByCard: { ...board.acceptedGroupByCard },
+      };
+    case "order":
+      return {
+        ...common,
+        kind: "order",
+        acceptedOrder: [...board.acceptedOrder],
+        fixedAnchors: board.fixedAnchors.map((anchor) => ({ ...anchor })),
+      };
+    case "threshold":
+      return {
+        ...common,
+        kind: "threshold",
+        minimumSelected: board.minimumSelected,
+        acceptedSelections: board.acceptedSelections.map((selection) => [
+          ...selection,
+        ]),
+      };
+  }
+}
+
+function copyStoryRevealTarget(
+  target: JSONAnalysisBoardCommon["reveals"][number],
+) {
+  return { ...target };
+}
+
 export class CaseRecordEmissionError extends Error implements CompileError {
   readonly code = "caseRecordEmissionMismatch";
 
@@ -464,6 +536,7 @@ export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
 function inferType(
   filename: string,
 ): JSONChaptersIndex["chapters"][number]["scenes"][number]["type"] {
+  if (filename.startsWith("analysis_scene_")) return "analysis";
   if (filename.startsWith("interrogation_scene_")) return "interrogation";
   if (filename.startsWith("investigation_scene_")) return "investigation";
   if (filename.startsWith("scene_")) return "linear";

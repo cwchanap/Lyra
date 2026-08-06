@@ -1,5 +1,6 @@
 import { sha256CanonicalJson } from "./canonical-json";
 import type {
+  JSONAnalysisScene,
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
@@ -30,12 +31,21 @@ export type DialogueSegmentOriginV1 =
       sceneId: string;
       phaseId: string;
       segmentId: string;
-    };
+    }
+  | { type: "analysisIntro"; chapterId: string; sceneId: string }
+  | {
+      type: "analysisResult";
+      chapterId: string;
+      sceneId: string;
+      boardId: string;
+    }
+  | { type: "analysisOutro"; chapterId: string; sceneId: string };
 
 export type EmittedSceneJsonV1 =
   | JSONLinearScene
   | JSONInvestigationScene
-  | JSONInterrogationScene;
+  | JSONInterrogationScene
+  | JSONAnalysisScene;
 
 export type SaveContentBundleV1 = {
   chapters: Array<{
