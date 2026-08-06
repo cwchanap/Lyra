@@ -24,9 +24,14 @@ import { parseSceneHeader } from "./parser-scene-header";
 import {
   parseVisualAssetCue,
   rejectReservedAssetMetadata,
-  rejectUnknownAssetMetadata,
   VISUAL_ASSET_METADATA_KEYS,
 } from "./parser-assets";
+import {
+  consumeDialogueUntilHeading,
+  consumeMetadata,
+  describeToken as describe,
+  parseFailure as fail,
+} from "./parser-common";
 import {
   parseEvidenceManifest,
   parseStatementManifest,
@@ -1038,94 +1043,9 @@ function consumePhaseBodyToken(
   );
 }
 
-function consumeMetadata(
-  cur: Cursor,
-): { ok: true; value: Meta } | { ok: false; error: CompileError } {
-  const out: Meta = {};
-  while (true) {
-    const next = cur.peek();
-    if (!next || next.kind !== "metadata") return { ok: true, value: out };
-    cur.next();
-    out[next.key] = next.value;
-  }
-}
-
 type DialogueResult =
   | { ok: true; value: DialogueItem[] }
   | { ok: false; error: CompileError };
-
-function consumeDialogueUntilHeading(
-  cur: Cursor,
-  _atOrAboveLevel: number,
-): DialogueResult {
-  // Stops at ANY heading regardless of level. Every dialogue body in this
-  // grammar terminates at the next heading (the next structural block, e.g.
-  // a Subject, Question, Phase, or Outro heading), so a level-aware check
-  // would silently swallow headings whose level exceeds the cutoff. The
-  // level parameter is kept for documentation but no longer affects
-  // behavior.
-  //
-  // Unknown/metadata tokens inside a dialogue body are a hard error -- they
-  // indicate authoring mistakes (typo'd dialogue line, stray metadata) that
-  // would otherwise be silently lost.
-  const out: DialogueItem[] = [];
-  while (true) {
-    const next = cur.peek();
-    if (!next) break;
-    if (next.kind === "heading") break;
-    cur.next();
-    if (next.kind === "sceneTag") {
-      const meta: Record<string, string> = {};
-      const metadataLines: Record<string, number> = {};
-      while (cur.peek()?.kind === "metadata") {
-        const metadata = cur.next()!;
-        if (metadata.kind === "metadata") {
-          meta[metadata.key] = metadata.value;
-          metadataLines[metadata.key] = metadata.line;
-        }
-      }
-      const bad = rejectUnknownAssetMetadata(
-        meta,
-        VISUAL_ASSET_METADATA_KEYS,
-        cur.sourceFile,
-        next.line,
-        metadataLines,
-      );
-      if (bad) return { ok: false, error: bad };
-      out.push({
-        kind: "sceneTag",
-        text: next.text,
-        assetCue:
-          Object.keys(meta).length > 0 ? parseVisualAssetCue(meta) : null,
-      });
-    } else if (next.kind === "action")
-      out.push({ kind: "action", text: next.text });
-    else if (next.kind === "dialogue") {
-      out.push({
-        kind: "line",
-        speaker: next.speaker,
-        text: next.text,
-        expression: next.expression,
-        portrait: null,
-      });
-    } else if (next.kind === "metadata") {
-      return fail(
-        cur.sourceFile,
-        next.line,
-        "strayMetadataInDialogueBody",
-        `Stray metadata in dialogue body: ${next.key}.`,
-      );
-    } else if (next.kind === "unknown") {
-      return fail(
-        cur.sourceFile,
-        next.line,
-        "unrecognizedDialogueLine",
-        `Unrecognized line in dialogue body: ${next.text}.`,
-      );
-    }
-  }
-  return { ok: true, value: out };
-}
 
 // Like consumeDialogueUntilHeading, but for a ##### Line body: the suspect's
 // dialogue is immediately followed by "- **Key:** value" metadata fields
@@ -1260,30 +1180,4 @@ function validateStatus(
     "invalidStatusValue",
     `Status must be "locked" or "unlocked"; got "${raw}".`,
   );
-}
-
-function describe(tok: Token): string {
-  switch (tok.kind) {
-    case "heading":
-      return `H${tok.level} "${tok.text}"`;
-    case "metadata":
-      return `metadata ${tok.key}`;
-    case "sceneTag":
-      return `[場景：${tok.text}]`;
-    case "action":
-      return `[${tok.text}]`;
-    case "dialogue":
-      return `**${tok.speaker}**：${tok.text}`;
-    case "unknown":
-      return `unknown(${tok.text})`;
-  }
-}
-
-function fail(
-  sourceFile: string,
-  line: number,
-  code: string,
-  message: string,
-): { ok: false; error: CompileError } {
-  return { ok: false, error: { code, message, sourceFile, line } };
 }
