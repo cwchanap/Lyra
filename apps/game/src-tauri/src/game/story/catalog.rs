@@ -32,6 +32,8 @@ pub(crate) struct StoryCatalog {
     predecessor_by_target: SupersessionIndex,
     #[allow(dead_code)] // Consumed by the public lineage task that follows.
     successor_by_target: SupersessionIndex,
+    analysis_scenes: BTreeSet<AnalysisSceneRef>,
+    analysis_boards: BTreeSet<AnalysisBoardRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
@@ -92,15 +94,27 @@ struct StoryCatalogJsonV2 {
     source_groups: Vec<SourceGroupDefinitionJsonV2>,
     evidence_index: Vec<CaseRecordDefinitionJsonV2>,
     statements_index: Vec<CaseRecordDefinitionJsonV2>,
-    // The compiler emits catalog-level analysis references in v2. This loader
-    // accepts and discards them; analysis runtime behavior is intentionally
-    // outside the story catalog's current ownership.
-    #[allow(dead_code)]
     #[serde(default)]
-    analysis_scenes: Vec<serde_json::Value>,
-    #[allow(dead_code)]
+    analysis_scenes: Vec<AnalysisSceneRef>,
     #[serde(default)]
-    analysis_boards: Vec<serde_json::Value>,
+    analysis_boards: Vec<AnalysisBoardRef>,
+}
+
+/// Compiler-emitted, fully qualified immutable analysis-scene reference.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AnalysisSceneRef {
+    chapter_id: String,
+    scene_id: String,
+}
+
+/// Compiler-emitted, fully qualified immutable analysis-board reference.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct AnalysisBoardRef {
+    chapter_id: String,
+    scene_id: String,
+    board_id: String,
 }
 
 // Minimal envelope used to gate the version before deserializing the
@@ -212,6 +226,8 @@ impl StoryCatalog {
             source_group_by_id: BTreeMap::new(),
             predecessor_by_target: BTreeMap::new(),
             successor_by_target: BTreeMap::new(),
+            analysis_scenes: BTreeSet::new(),
+            analysis_boards: BTreeSet::new(),
         }
     }
 
@@ -357,6 +373,29 @@ impl StoryCatalog {
         self.authorizations.iter()
     }
 
+    /// The compiler's qualified reference arrays are the sole runtime lookup
+    /// authority for analysis predicates. They deliberately carry no mutable
+    /// completion state.
+    pub(in crate::game) fn has_analysis_scene(&self, chapter_id: &str, scene_id: &str) -> bool {
+        self.analysis_scenes.contains(&AnalysisSceneRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+        })
+    }
+
+    pub(in crate::game) fn has_analysis_board(
+        &self,
+        chapter_id: &str,
+        scene_id: &str,
+        board_id: &str,
+    ) -> bool {
+        self.analysis_boards.contains(&AnalysisBoardRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            board_id: board_id.into(),
+        })
+    }
+
     #[allow(dead_code)] // Shared validation for the public lineage queries above.
     fn require_case_record(&self, target: &InventoryTarget) -> Result<(), GameError> {
         if self.case_record(target).is_some() {
@@ -378,8 +417,8 @@ impl StoryCatalog {
             source_groups,
             evidence_index,
             statements_index,
-            analysis_scenes: _,
-            analysis_boards: _,
+            analysis_scenes,
+            analysis_boards,
         } = json;
 
         let fact_by_id = definition_index(path, "fact", &facts, |definition| &definition.id)?;
@@ -468,6 +507,8 @@ impl StoryCatalog {
             source_group_by_id,
             predecessor_by_target,
             successor_by_target,
+            analysis_scenes: analysis_scenes.into_iter().collect(),
+            analysis_boards: analysis_boards.into_iter().collect(),
         })
     }
 }
@@ -959,6 +1000,10 @@ mod tests {
         let catalog = StoryCatalog::load(dir.path()).unwrap();
 
         assert!(catalog.case_record_targets().is_empty());
+        assert!(catalog.has_analysis_scene("chapter_1", "analysis_scene_1"));
+        assert!(catalog.has_analysis_board("chapter_1", "analysis_scene_1", "board_1"));
+        assert!(!catalog.has_analysis_scene("chapter_1", "analysis_scene_missing"));
+        assert!(!catalog.has_analysis_board("chapter_1", "analysis_scene_1", "board_missing"));
     }
 
     #[test]

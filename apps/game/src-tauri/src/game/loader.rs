@@ -2,10 +2,10 @@
 use crate::game::error::GameError;
 use crate::game::provenance::validate_scene_records_against_catalog;
 use crate::game::schema::{
-    ChaptersIndexJson, CombinedInterrogationRevealTarget, InterrogationOutroUnlock,
-    InterrogationPhaseJson, InterrogationRevealTarget, InterrogationSceneJson,
-    InterrogationUnlockExpr, InvestigationRevealTarget, InvestigationSceneJson, OutroUnlock,
-    RevealTarget, SceneJson, StoryRevealTarget, UnlockExpr,
+    AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
+    InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
+    InterrogationSceneJson, InterrogationUnlockExpr, InvestigationRevealTarget,
+    InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget, UnlockExpr,
 };
 use crate::game::story::{ObjectiveKind, StoryCatalog};
 use std::collections::{HashMap, HashSet};
@@ -58,6 +58,9 @@ fn validate_scene_references(scene: &SceneJson, file_rel: &str) -> Result<(), Ga
         SceneJson::Linear(_) => Ok(()),
         SceneJson::Investigation(scene) => validate_investigation_scene_references(scene, file_rel),
         SceneJson::Interrogation(scene) => validate_interrogation_scene_references(scene, file_rel),
+        // Analysis authoring, solution, and provenance validation are compiler
+        // owned. Rust only consumes the closed immutable wire below.
+        SceneJson::Analysis(_) => Ok(()),
     }
 }
 
@@ -485,7 +488,27 @@ fn validate_story_scene_references(
         SceneJson::Interrogation(scene) => {
             validate_story_interrogation_scene_references(scene, catalog, file_rel)
         }
+        SceneJson::Analysis(scene) => {
+            validate_story_analysis_scene_references(scene, catalog, file_rel)
+        }
     }
+}
+
+fn validate_story_analysis_scene_references(
+    scene: &AnalysisSceneJson,
+    catalog: &StoryCatalog,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    for board in &scene.boards {
+        let common = board.common();
+        for target in &common.reveals {
+            validate_story_reveal_target(target, catalog, file_rel)?;
+        }
+        let targets = common.reveals.iter().collect::<Vec<_>>();
+        validate_story_reveal_batch(&targets, file_rel)?;
+        validate_story_unlock_expr(common.unlock.as_ref(), catalog, file_rel)?;
+    }
+    Ok(())
 }
 
 fn validate_story_investigation_scene_references(
@@ -691,13 +714,13 @@ fn validate_story_unlock_expr(
             chapter_id,
             scene_id,
             ..
-        } => validate_analysis_scene_predicate(chapter_id, scene_id, file_rel),
+        } => validate_analysis_scene_predicate(catalog, chapter_id, scene_id, file_rel),
         UnlockExpr::AnalysisBoardCompleted {
             chapter_id,
             scene_id,
             board_id,
             ..
-        } => validate_analysis_board_predicate(chapter_id, scene_id, board_id, file_rel),
+        } => validate_analysis_board_predicate(catalog, chapter_id, scene_id, board_id, file_rel),
         _ => Ok(()),
     }
 }
@@ -735,13 +758,13 @@ fn validate_story_interrogation_unlock_expr(
             chapter_id,
             scene_id,
             ..
-        } => validate_analysis_scene_predicate(chapter_id, scene_id, file_rel),
+        } => validate_analysis_scene_predicate(catalog, chapter_id, scene_id, file_rel),
         InterrogationUnlockExpr::AnalysisBoardCompleted {
             chapter_id,
             scene_id,
             board_id,
             ..
-        } => validate_analysis_board_predicate(chapter_id, scene_id, board_id, file_rel),
+        } => validate_analysis_board_predicate(catalog, chapter_id, scene_id, board_id, file_rel),
         _ => Ok(()),
     }
 }
@@ -879,42 +902,34 @@ fn validate_story_authorization(
 }
 
 fn validate_analysis_scene_predicate(
+    catalog: &StoryCatalog,
     chapter_id: &str,
     scene_id: &str,
     file_rel: &str,
 ) -> Result<(), GameError> {
-    validate_analysis_slug("chapterId", chapter_id, file_rel)?;
-    validate_analysis_slug("sceneId", scene_id, file_rel)?;
-    Err(GameError::scene_validation_failed(format!(
-        "{file_rel}: analysis_scene_completed is unavailable before HPA-259 because no production analysis registry is packaged",
-    )))
+    if catalog.has_analysis_scene(chapter_id, scene_id) {
+        Ok(())
+    } else {
+        Err(GameError::scene_validation_failed(format!(
+            "{file_rel}: unresolved story predicate analysisScene:{chapter_id}@{scene_id}",
+        )))
+    }
 }
 
 fn validate_analysis_board_predicate(
+    catalog: &StoryCatalog,
     chapter_id: &str,
     scene_id: &str,
     board_id: &str,
     file_rel: &str,
 ) -> Result<(), GameError> {
-    validate_analysis_slug("chapterId", chapter_id, file_rel)?;
-    validate_analysis_slug("sceneId", scene_id, file_rel)?;
-    validate_analysis_slug("boardId", board_id, file_rel)?;
-    Err(GameError::scene_validation_failed(format!(
-        "{file_rel}: analysis_board_completed is unavailable before HPA-259 because no production analysis registry is packaged",
-    )))
-}
-
-fn validate_analysis_slug(field: &str, value: &str, file_rel: &str) -> Result<(), GameError> {
-    if value.is_empty()
-        || !value
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
-    {
-        return Err(GameError::scene_validation_failed(format!(
-            "{file_rel}: analysis {field} must be a snake_case slug: {value}",
-        )));
+    if catalog.has_analysis_board(chapter_id, scene_id, board_id) {
+        Ok(())
+    } else {
+        Err(GameError::scene_validation_failed(format!(
+            "{file_rel}: unresolved story predicate analysisBoard:{chapter_id}@{scene_id}@{board_id}",
+        )))
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1063,6 +1078,37 @@ mod tests {
 
     fn story_catalog_for_loader() -> StoryCatalog {
         story_catalog_for_loader_with_resolvers(&["fact_a"])
+    }
+
+    fn story_catalog_for_loader_with_analysis_refs() -> StoryCatalog {
+        let resources = unique_temp_dir();
+        fs::write(
+            resources.join("story_catalog.json"),
+            serde_json::to_vec_pretty(&json!({
+                "schemaVersion": 2,
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": [],
+                "sourceGroups": [],
+                "evidenceIndex": [],
+                "statementsIndex": [],
+                "analysisScenes": [{
+                    "chapterId": "chapter_1",
+                    "sceneId": "analysis_scene_1"
+                }],
+                "analysisBoards": [{
+                    "chapterId": "chapter_1",
+                    "sceneId": "analysis_scene_1",
+                    "boardId": "board_1"
+                }]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let catalog = StoryCatalog::load(&resources).unwrap();
+        let _ = fs::remove_dir_all(resources);
+        catalog
     }
 
     fn write_scene_json(resources_dir: &Path, file_name: &str, scene: Value) {
@@ -1771,8 +1817,8 @@ mod tests {
     }
 
     // Break caught: hand-edited story predicates can reference unknown catalog
-    // definitions, or package analysis predicates before HPA-259 supplies the
-    // required production registry.
+    // definitions, including qualified analysis definitions absent from the
+    // compiler-emitted catalog arrays.
     #[test]
     fn validates_story_predicate_references_against_the_loaded_catalog() {
         let cases = [
@@ -1798,7 +1844,7 @@ mod tests {
                     "chapterId": "chapter_1",
                     "sceneId": "analysis_scene_1"
                 }),
-                "analysis_scene_completed is unavailable before HPA-259",
+                "unresolved story predicate analysisScene:chapter_1@analysis_scene_1",
             ),
         ];
 
@@ -1825,10 +1871,56 @@ mod tests {
         }
     }
 
-    // Break caught: qualified analysis references can contain arbitrary path or
-    // separator characters before the intentionally-absent registry rejection.
+    // Break caught: typed catalog lookup must gate both investigation and
+    // interrogation predicates instead of retaining HPA-257's blanket reject.
     #[test]
-    fn rejects_malformed_analysis_reference_slug_segments_before_registry_lookup() {
+    fn accepts_catalog_qualified_analysis_predicates() {
+        let cases = [
+            (
+                "investigation_scene_1.json",
+                story_investigation_scene(
+                    json!({
+                        "predicate": "analysis_scene_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1"
+                    }),
+                    json!([]),
+                ),
+            ),
+            (
+                "interrogation_scene_1.json",
+                story_interrogation_scene(
+                    json!({
+                        "predicate": "analysis_board_completed",
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1",
+                        "boardId": "board_1"
+                    }),
+                    json!([]),
+                ),
+            ),
+        ];
+
+        for (file_name, scene) in cases {
+            let resources = unique_temp_dir();
+            write_scene_json(&resources, file_name, scene);
+
+            load_scene_with_catalog(
+                &resources,
+                &story_catalog_for_loader_with_analysis_refs(),
+                "chapter_1",
+                &format!("chapter_1/{file_name}"),
+            )
+            .expect("compiler-qualified analysis predicate should resolve");
+
+            let _ = fs::remove_dir_all(resources);
+        }
+    }
+
+    // Break caught: catalog membership, rather than ad hoc slug validation,
+    // must reject an unregistered qualified reference.
+    #[test]
+    fn rejects_unregistered_analysis_references() {
         let cases = [
             story_investigation_scene(
                 json!({
@@ -1868,7 +1960,12 @@ mod tests {
             .unwrap_err();
 
             assert_eq!(error.code, "sceneValidationFailed");
-            assert!(error.message.contains("snake_case slug"), "{error:?}");
+            assert!(
+                error
+                    .message
+                    .contains("unresolved story predicate analysis"),
+                "{error:?}"
+            );
             let _ = fs::remove_dir_all(resources);
         }
     }

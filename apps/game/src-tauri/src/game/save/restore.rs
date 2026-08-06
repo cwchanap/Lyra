@@ -364,6 +364,15 @@ fn restore_active_queue(
     saved: &ActiveDialogueStateV1,
     next_queue_gen: u64,
 ) -> Result<ActiveDialogueQueue, GameError> {
+    if saved
+        .segment_origins
+        .iter()
+        .any(DialogueSegmentOriginV1::is_analysis)
+    {
+        return Err(invalid_progress(
+            "Analysis dialogue origins cannot be restored before HPA-260 provides analysis progress.",
+        ));
+    }
     if saved.queue_gen == 0 || saved.queue_gen >= next_queue_gen {
         return Err(GameError::invalid_save_cursor());
     }
@@ -395,6 +404,10 @@ fn restore_scene(
     active_snapshot: Option<&ActiveDialogueStateV1>,
 ) -> Result<SceneRuntime, GameError> {
     match (packaged, progress) {
+        (SceneJson::Analysis(definition), _) => Err(invalid_progress(format!(
+            "Analysis scene '{}' cannot be restored before HPA-260 provides analysis progress.",
+            definition.id
+        ))),
         (SceneJson::Linear(definition), SceneProgressSnapshot::Linear) => {
             let queue = active_queue.ok_or_else(GameError::invalid_save_cursor)?;
             let mut scene = LinearSceneState::from_json(
@@ -850,7 +863,7 @@ fn evidence_manifest(scene: &SceneJson) -> &[crate::game::schema::EvidenceJson] 
     match scene {
         SceneJson::Investigation(scene) => &scene.evidence_manifest,
         SceneJson::Interrogation(scene) => &scene.evidence_manifest,
-        SceneJson::Linear(_) => &[],
+        SceneJson::Linear(_) | SceneJson::Analysis(_) => &[],
     }
 }
 
@@ -858,7 +871,7 @@ fn statement_manifest(scene: &SceneJson) -> &[crate::game::schema::StatementJson
     match scene {
         SceneJson::Investigation(scene) => &scene.statement_manifest,
         SceneJson::Interrogation(scene) => &scene.statement_manifest,
-        SceneJson::Linear(_) => &[],
+        SceneJson::Linear(_) | SceneJson::Analysis(_) => &[],
     }
 }
 
@@ -1113,6 +1126,7 @@ fn scene_asset_refs(scene: &SceneJson) -> &[crate::game::schema::AssetRefJson] {
         SceneJson::Linear(scene) => &scene.asset_refs,
         SceneJson::Investigation(scene) => &scene.asset_refs,
         SceneJson::Interrogation(scene) => &scene.asset_refs,
+        SceneJson::Analysis(_) => &[],
     }
 }
 
@@ -1393,6 +1407,44 @@ mod tests {
             phase_id: "phase_1".into(),
             segment_id: segment_id.into(),
         }
+    }
+
+    // Break caught: save restore could reconstruct an immutable analysis
+    // dialogue carrier even though mutable analysis progress is unsupported.
+    #[test]
+    fn restore_rejects_analysis_dialogue_origins_and_analysis_scene_progress() {
+        let (_guard, resources, _) = resources_and_engine();
+        let definitions = load_current_definitions(&resources).unwrap();
+        let active = ActiveDialogueStateV1 {
+            segment_origins: vec![DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_8_5".into(),
+                board_id: "evidence_packages".into(),
+            }],
+            active_segment_index: 0,
+            item_cursor: 0,
+            queue_gen: 1,
+        };
+
+        let origin_error = restore_active_queue(&definitions, &active, 2)
+            .expect_err("analysis dialogue origins must not be restored before HPA-260");
+        assert_eq!(origin_error.code, "invalidSaveProgress");
+        assert!(origin_error.message.contains("Analysis dialogue origins"));
+
+        let analysis = serde_json::from_str::<SceneJson>(include_str!(
+            "../test_fixtures/analysis_scene_8_5.json"
+        ))
+        .expect("analysis compiler fixture must deserialize");
+        let progress_error = restore_scene(
+            "chapter_1",
+            &analysis,
+            &SceneProgressSnapshotV1::Linear,
+            None,
+            None,
+        )
+        .expect_err("analysis scene progress must remain unsupported");
+        assert_eq!(progress_error.code, "invalidSaveProgress");
+        assert!(progress_error.message.contains("Analysis scene"));
     }
 
     fn investigation_engine() -> (tempfile::TempDir, PathBuf, GameEngine) {

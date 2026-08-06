@@ -168,6 +168,7 @@ pub(in crate::game) fn validate_scene_records_against_catalog(
             &scene.evidence_manifest,
             &scene.statement_manifest,
         ),
+        SceneJson::Analysis(scene) => (scene.id.as_str(), &[], &[]),
     };
     let mut scene_record_counts = BTreeMap::new();
     for definition in evidence {

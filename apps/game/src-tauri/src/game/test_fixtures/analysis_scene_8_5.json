@@ -1,0 +1,257 @@
+{
+  "type": "analysis",
+  "id": "analysis_scene_8_5",
+  "title": "短暫誤判整理點",
+  "summary": "相馬與早坂整理目前真正成立的命題。",
+  "intro": [
+    {
+      "kind": "sceneTag",
+      "text": "雨鐘後場，相馬臨時整理板前。",
+      "assetCue": null
+    },
+    {
+      "kind": "line",
+      "speaker": "早坂茜",
+      "text": "先把我們能證明的東西分開。",
+      "portrait": null
+    }
+  ],
+  "boards": [
+    {
+      "id": "evidence_packages",
+      "label": "證據包整理",
+      "prompt": "把每張卡放進它真正支持的命題。",
+      "unlock": null,
+      "reveals": [
+        {
+          "kind": "assertFact",
+          "factId": "miyake_known_lies_are_unrelated_to_murder"
+        },
+        {
+          "kind": "assertFact",
+          "factId": "earlier_external_entry_exists"
+        }
+      ],
+      "feedback": {
+        "incomplete": "每張卡都必須放進一個證據包。",
+        "incorrect": "至少有一張卡被放進錯誤命題。",
+        "hint": "先問每一項資料真正能證明什麼。"
+      },
+      "cards": [
+        {
+          "id": "miyake_call",
+          "label": "三宅母親通話紀錄",
+          "source": {
+            "kind": "evidence",
+            "id": "miyake_call_record"
+          },
+          "summary": "解釋三宅隱瞞通話的原因。"
+        },
+        {
+          "id": "l_corridor_replay",
+          "label": "L 型後場視角重演",
+          "source": {
+            "kind": "evidence",
+            "id": "l_corridor_replay"
+          },
+          "summary": "證明三宅當時站位看不見內側倉庫。"
+        },
+        {
+          "id": "external_credential_event",
+          "label": "外包憑證事件",
+          "source": {
+            "kind": "evidence",
+            "id": "external_credential_event"
+          },
+          "summary": "證明有人比三宅更早從承包商動線進入。"
+        }
+      ],
+      "resultDialogue": [
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "我們洗掉的是三宅那段錯誤故事。",
+          "portrait": null
+        },
+        {
+          "kind": "line",
+          "speaker": "相馬律",
+          "text": "但還沒證明誰該被放回時間線。",
+          "portrait": null
+        }
+      ],
+      "kind": "classify",
+      "groups": [
+        {
+          "id": "miyake_small_lies",
+          "label": "三宅的小謊",
+          "description": "只解釋生活壓力造成的隱瞞。"
+        },
+        {
+          "id": "earlier_third_party",
+          "label": "更早的第三者",
+          "description": "支持更早外部進入者存在的資料。"
+        }
+      ],
+      "acceptedGroupByCard": {
+        "external_credential_event": "earlier_third_party",
+        "l_corridor_replay": "earlier_third_party",
+        "miyake_call": "miyake_small_lies"
+      }
+    },
+    {
+      "id": "local_event_sequence",
+      "label": "本機事件順序",
+      "prompt": "把本機事件排回原始先後。",
+      "unlock": {
+        "predicate": "analysis_board_completed",
+        "chapterId": "chapter_1",
+        "sceneId": "analysis_scene_8_5",
+        "boardId": "evidence_packages"
+      },
+      "reveals": [
+        {
+          "kind": "assertFact",
+          "factId": "merge_time_is_not_event_time"
+        }
+      ],
+      "feedback": {
+        "incomplete": "所有事件都必須放進時間線。",
+        "incorrect": "本機事件順序仍有錯誤。",
+        "hint": null
+      },
+      "cards": [
+        {
+          "id": "event_1841",
+          "label": "維護模式開啟",
+          "source": {
+            "kind": "evidence",
+            "id": "event_1841"
+          },
+          "summary": "本機事件 1841。"
+        },
+        {
+          "id": "event_1842",
+          "label": "外包憑證開門",
+          "source": {
+            "kind": "evidence",
+            "id": "event_1842"
+          },
+          "summary": "本機事件 1842。"
+        },
+        {
+          "id": "event_1843",
+          "label": "員工憑證開門",
+          "source": {
+            "kind": "evidence",
+            "id": "event_1843"
+          },
+          "summary": "本機事件 1843。"
+        },
+        {
+          "id": "event_1844",
+          "label": "伺服器合併完成",
+          "source": {
+            "kind": "evidence",
+            "id": "event_1844"
+          },
+          "summary": "本機事件 1844。"
+        }
+      ],
+      "resultDialogue": [
+        {
+          "kind": "line",
+          "speaker": "相馬律",
+          "text": "本機只告訴我們先後，沒有告訴我們精確秒數。",
+          "portrait": null
+        }
+      ],
+      "kind": "order",
+      "acceptedOrder": ["event_1841", "event_1842", "event_1843", "event_1844"],
+      "fixedAnchors": [
+        {
+          "cardId": "event_1841",
+          "position": 1
+        }
+      ]
+    },
+    {
+      "id": "narrow_request_basis",
+      "label": "有限調取申請基礎",
+      "prompt": "選出足以支持有限調取申請的獨立矛盾。",
+      "unlock": {
+        "predicate": "analysis_board_completed",
+        "chapterId": "chapter_1",
+        "sceneId": "analysis_scene_8_5",
+        "boardId": "local_event_sequence"
+      },
+      "reveals": [
+        {
+          "kind": "assertFact",
+          "factId": "two_independent_lock_contradictions_identified"
+        },
+        {
+          "kind": "completeObjective",
+          "objectiveId": "prepare_narrow_lock_request"
+        }
+      ],
+      "feedback": {
+        "incomplete": "至少選出兩項紀錄。",
+        "incorrect": "這組紀錄仍不足以支持申請。",
+        "hint": null
+      },
+      "cards": [
+        {
+          "id": "lock_sequence",
+          "label": "門鎖本機順序",
+          "source": {
+            "kind": "evidence",
+            "id": "lock_sequence"
+          },
+          "summary": "提供事件先後與摘要時間不一致的證明。"
+        },
+        {
+          "id": "phone_notification",
+          "label": "死者手機通知",
+          "source": {
+            "kind": "evidence",
+            "id": "phone_notification"
+          },
+          "summary": "提供獨立時間錨。"
+        },
+        {
+          "id": "manager_timing",
+          "label": "店長時間證詞",
+          "source": {
+            "kind": "statement",
+            "id": "manager_timing"
+          },
+          "summary": "提供另一個可被程序固定的時間來源。"
+        }
+      ],
+      "resultDialogue": [
+        {
+          "kind": "line",
+          "speaker": "早坂茜",
+          "text": "現在有兩條獨立矛盾，可以把申請送進審查。",
+          "portrait": null
+        }
+      ],
+      "kind": "threshold",
+      "minimumSelected": 2,
+      "acceptedSelections": [
+        ["lock_sequence", "manager_timing"],
+        ["lock_sequence", "manager_timing", "phone_notification"],
+        ["lock_sequence", "phone_notification"]
+      ]
+    }
+  ],
+  "outro": [
+    {
+      "kind": "line",
+      "speaker": "相馬律",
+      "text": "我們只證明了第三者存在。下一步才是把那個空位填上。",
+      "portrait": null
+    }
+  ]
+}

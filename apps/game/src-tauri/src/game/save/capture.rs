@@ -706,7 +706,7 @@ fn validate_inventory_record(
                 .iter()
                 .any(|item| item.id == id.as_str()),
         },
-        SceneJson::Linear(_) => false,
+        SceneJson::Linear(_) | SceneJson::Analysis(_) => false,
     };
     if !found {
         return Err(GameError::inventory_record_definition_mismatch());
@@ -750,6 +750,15 @@ fn validate_active_dialogue(
         return Err(capture_error("Next queue generation cannot be zero."));
     }
     if let Some(active) = active {
+        if active
+            .segment_origins
+            .iter()
+            .any(DialogueSegmentOriginV1::is_analysis)
+        {
+            return Err(capture_error(
+                "Analysis dialogue origins cannot be captured before HPA-260 provides analysis progress.",
+            ));
+        }
         if active.segment_origins.is_empty() {
             return Err(capture_error("An active dialogue queue has no segments."));
         }
@@ -1184,6 +1193,31 @@ mod tests {
             phase_id: "phase_1".into(),
             segment_id: segment_id.into(),
         }
+    }
+
+    fn analysis_intro_origin() -> DialogueSegmentOriginV1 {
+        DialogueSegmentOriginV1::AnalysisIntro {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_8_5".into(),
+        }
+    }
+
+    // Break caught: a future accidental analysis queue could be captured as a
+    // partial checkpoint even though no Analysis progress snapshot exists.
+    #[test]
+    fn capture_rejects_analysis_dialogue_origins_before_serializing_a_checkpoint() {
+        let active = ActiveDialogueStateV1 {
+            segment_origins: vec![analysis_intro_origin()],
+            active_segment_index: 0,
+            item_cursor: 0,
+            queue_gen: 1,
+        };
+
+        let error = validate_active_dialogue(Some(&active), 2)
+            .expect_err("analysis origins are unreachable before HPA-260");
+
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("Analysis dialogue origins"));
     }
 
     fn fixture_engine() -> (tempfile::TempDir, GameEngine) {
