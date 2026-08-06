@@ -92,6 +92,15 @@ struct StoryCatalogJsonV2 {
     source_groups: Vec<SourceGroupDefinitionJsonV2>,
     evidence_index: Vec<CaseRecordDefinitionJsonV2>,
     statements_index: Vec<CaseRecordDefinitionJsonV2>,
+    // The compiler emits catalog-level analysis references in v2. This loader
+    // accepts and discards them; analysis runtime behavior is intentionally
+    // outside the story catalog's current ownership.
+    #[allow(dead_code)]
+    #[serde(default)]
+    analysis_scenes: Vec<serde_json::Value>,
+    #[allow(dead_code)]
+    #[serde(default)]
+    analysis_boards: Vec<serde_json::Value>,
 }
 
 // Minimal envelope used to gate the version before deserializing the
@@ -369,6 +378,8 @@ impl StoryCatalog {
             source_groups,
             evidence_index,
             statements_index,
+            analysis_scenes: _,
+            analysis_boards: _,
         } = json;
 
         let fact_by_id = definition_index(path, "fact", &facts, |definition| &definition.id)?;
@@ -916,6 +927,38 @@ mod tests {
 
         let empty = StoryCatalog::empty();
         assert!(empty.facts().next().is_none());
+    }
+
+    #[test]
+    fn loads_compiler_generated_catalog_with_analysis_reference_arrays() {
+        let dir = TestDir::new("compiler-analysis-references");
+        write_catalog_value(
+            dir.path(),
+            &json!({
+                "schemaVersion": 2,
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": [],
+                "sourceGroups": [],
+                "evidenceIndex": [],
+                "statementsIndex": [],
+                "analysisScenes": [
+                    {"chapterId": "chapter_1", "sceneId": "analysis_scene_1"}
+                ],
+                "analysisBoards": [
+                    {
+                        "chapterId": "chapter_1",
+                        "sceneId": "analysis_scene_1",
+                        "boardId": "board_1"
+                    }
+                ]
+            }),
+        );
+
+        let catalog = StoryCatalog::load(dir.path()).unwrap();
+
+        assert!(catalog.case_record_targets().is_empty());
     }
 
     #[test]
