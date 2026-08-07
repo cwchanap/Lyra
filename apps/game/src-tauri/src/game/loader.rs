@@ -1124,28 +1124,28 @@ mod tests {
         story_catalog_for_loader_with_resolvers(&["fact_a"])
     }
 
-    fn story_catalog_for_loader_with_analysis_refs() -> StoryCatalog {
+    fn story_catalog_with_arrays(
+        facts: &[Value],
+        questions: &[Value],
+        objectives: &[Value],
+        authorizations: &[Value],
+        analysis_scenes: &[Value],
+        analysis_boards: &[Value],
+    ) -> StoryCatalog {
         let resources = unique_temp_dir();
         fs::write(
             resources.join("story_catalog.json"),
             serde_json::to_vec_pretty(&json!({
                 "schemaVersion": 2,
-                "facts": [],
-                "questions": [],
-                "objectives": [],
-                "authorizations": [],
+                "facts": facts,
+                "questions": questions,
+                "objectives": objectives,
+                "authorizations": authorizations,
                 "sourceGroups": [],
                 "evidenceIndex": [],
                 "statementsIndex": [],
-                "analysisScenes": [{
-                    "chapterId": "chapter_1",
-                    "sceneId": "analysis_scene_1"
-                }],
-                "analysisBoards": [{
-                    "chapterId": "chapter_1",
-                    "sceneId": "analysis_scene_1",
-                    "boardId": "board_1"
-                }]
+                "analysisScenes": analysis_scenes,
+                "analysisBoards": analysis_boards
             }))
             .unwrap(),
         )
@@ -1153,6 +1153,24 @@ mod tests {
         let catalog = StoryCatalog::load(&resources).unwrap();
         let _ = fs::remove_dir_all(resources);
         catalog
+    }
+
+    fn story_catalog_for_loader_with_analysis_refs() -> StoryCatalog {
+        story_catalog_with_arrays(
+            &[],
+            &[],
+            &[],
+            &[],
+            &[json!({
+                "chapterId": "chapter_1",
+                "sceneId": "analysis_scene_1"
+            })],
+            &[json!({
+                "chapterId": "chapter_1",
+                "sceneId": "analysis_scene_1",
+                "boardId": "board_1"
+            })],
+        )
     }
 
     fn write_scene_json(resources_dir: &Path, file_name: &str, scene: Value) {
@@ -1985,40 +2003,25 @@ mod tests {
     }
 
     fn story_catalog_for_loader_with_story_and_analysis_refs() -> StoryCatalog {
-        let resources = unique_temp_dir();
-        fs::write(
-            resources.join("story_catalog.json"),
-            serde_json::to_vec_pretty(&json!({
-                "schemaVersion": 2,
-                "facts": [
-                    {"id": "fact_a", "label": "Fact A", "summary": "s", "details": "d", "category": "timeline"},
-                ],
-                "questions": [
-                    {"id": "question_a", "label": "Q A", "summary": "s", "resolvedByFactIds": ["fact_a"]},
-                ],
-                "objectives": [
-                    {"id": "objective_primary", "label": "Primary", "summary": "s", "kind": "primary", "sortOrder": 0},
-                    {"id": "objective_secondary", "label": "Secondary", "summary": "s", "kind": "secondary", "sortOrder": 1},
-                ],
-                "authorizations": [
-                    {"id": "authorization_a", "label": "Auth A", "summary": "s", "grantingAuthority": "analysis_authority"},
-                ],
-                "sourceGroups": [],
-                "evidenceIndex": [],
-                "statementsIndex": [],
-                "analysisScenes": [
-                    {"chapterId": "chapter_1", "sceneId": "analysis_scene_1"},
-                ],
-                "analysisBoards": [
-                    {"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_1"},
-                ],
-            }))
-            .unwrap(),
+        story_catalog_with_arrays(
+            &[
+                json!({"id": "fact_a", "label": "Fact A", "summary": "s", "details": "d", "category": "timeline"}),
+            ],
+            &[
+                json!({"id": "question_a", "label": "Q A", "summary": "s", "resolvedByFactIds": ["fact_a"]}),
+            ],
+            &[
+                json!({"id": "objective_primary", "label": "Primary", "summary": "s", "kind": "primary", "sortOrder": 0}),
+                json!({"id": "objective_secondary", "label": "Secondary", "summary": "s", "kind": "secondary", "sortOrder": 1}),
+            ],
+            &[
+                json!({"id": "authorization_a", "label": "Auth A", "summary": "s", "grantingAuthority": "analysis_authority"}),
+            ],
+            &[json!({"chapterId": "chapter_1", "sceneId": "analysis_scene_1"})],
+            &[
+                json!({"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_1"}),
+            ],
         )
-        .unwrap();
-        let catalog = StoryCatalog::load(&resources).unwrap();
-        let _ = fs::remove_dir_all(resources);
-        catalog
     }
 
     fn story_analysis_scene(unlock: Value, reveals: Value) -> Value {

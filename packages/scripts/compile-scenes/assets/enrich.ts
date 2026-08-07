@@ -117,6 +117,24 @@ export function enrichScenesWithAssets(input: {
       );
     }
   }
+  // Invariant: every record in input.scenes and analysisScenes must have a
+  // corresponding enriched entry. A missing entry means orderedScenes did not
+  // cover the full input — previously this silently fell back to the unenriched
+  // record, leaking stale/empty asset data into the output.
+  const missingScene = input.scenes.find((scene) => !enrichedScenes.has(scene));
+  if (missingScene) {
+    throw new Error(
+      `enrichScenesWithAssets: orderedScenes did not include scene "${missingScene.chapterId}/${missingScene.file}" (${missingScene.ast.id}); every input.scenes record must appear in orderedScenes.`,
+    );
+  }
+  const missingAnalysis = analysisScenes.find(
+    (scene) => !enrichedAnalysisScenes.has(scene),
+  );
+  if (missingAnalysis) {
+    throw new Error(
+      `enrichScenesWithAssets: orderedScenes did not include analysis scene "${missingAnalysis.chapterId}/${missingAnalysis.file}" (${missingAnalysis.ast.id}); every input.analysisScenes record must appear in orderedScenes.`,
+    );
+  }
   const manifest = buildAssetManifest({
     entries: [...requests.values()],
     config: input.config,
@@ -124,9 +142,9 @@ export function enrichScenesWithAssets(input: {
   const warnings = checkAssetExistence(manifest.entries, input.repoRoot);
 
   return {
-    scenes: input.scenes.map((scene) => enrichedScenes.get(scene) ?? scene),
+    scenes: input.scenes.map((scene) => enrichedScenes.get(scene)!),
     analysisScenes: analysisScenes.map(
-      (scene) => enrichedAnalysisScenes.get(scene) ?? scene,
+      (scene) => enrichedAnalysisScenes.get(scene)!,
     ),
     manifest,
     warnings,
