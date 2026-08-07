@@ -17,7 +17,7 @@ You are authoring **interactive investigation scenes** for the detective game. E
 
 ## REQUIRED BACKGROUND
 
-You MUST be familiar with **`writing-detective-game-dialogue`** before using this skill. That skill owns the base dialogue rules: line format (`**角色名**：`), ≤100 Chinese char limit, bracketed stage directions, scene tags, phone-call convention, foreshadowing discipline, Traditional Chinese rules, and the per-chapter foreshadowing allow/deny lists.
+You MUST be familiar with **`writing-detective-game-dialogue`** before using this skill. That skill owns the base dialogue rules: line format (`**角色名**：`), ≤100 Chinese char limit, narration assignment, bracketed stage directions, scene tags and purposeful background prompts, catalog labels / portrait modes / expression choreography, phone-call convention, foreshadowing discipline, Traditional Chinese rules, and the per-chapter foreshadowing allow/deny lists.
 
 This skill describes only the **structural wrapper** around dialogue — the block hierarchy and reveal/unlock logic specific to investigation scenes. All dialogue *inside* block bodies follows the base dialogue skill's rules unchanged.
 
@@ -488,6 +488,7 @@ Do not author authorization:<id> granted as a production unlock gate in HPA-257/
 - **Persistence:** once unlocked, a sub-location stays unlocked for the rest of the scene. Backtracking is allowed.
 - **Scene tag:** every sub-location must have its own `[場景：...]` tag immediately after the metadata. Different physical space → different AI image prompt.
 - **Asset metadata:** `[場景：...]`, `Background Prompt`, and `Image Prompt` are semantic production prompts, not filesystem paths. Writers never author paths.
+- **Sibling visual continuity:** sibling sub-locations can vary in angle/focus but preserve adjacency, hotspot readability, visible floor/standee clearance, and case props. Apply the base dialogue skill's purposeful-background rules rather than inventing local cast or expression guidance.
 - **Transition dialogue:** the body of a sub-location block (between metadata and the first nested H3) plays once on first entry.
 - **First-entry reveals:** `Reveals:` on a sub-location triggers when the player first enters it — useful for environmental discoveries not tied to a specific hotspot.
 - **Character placement:** characters belong to exactly one sub-location. If the same person needs to be in two physical areas, declare them once per sub-location with topics appropriate to that location. Duplication is accepted; it keeps "who is here right now" trivially answerable.
@@ -535,6 +536,7 @@ When asked to write an `investigation_scene_<N>.md`:
    - Every locked block has either an `Unlock` or an inbound `Reveals`
    - First sub-location is `Status: unlocked`
    - Every sub-location has a `[場景：...]` tag
+   - Sibling sub-location views preserve adjacency, hotspot readability, visible floor/standee clearance, and case props while varying angle/focus only when useful
    - All `Reveals` and `Unlock` references resolve
 
 ## Common mistakes

@@ -17,8 +17,9 @@ cross-examination.
 ## Required Background
 
 Read `writing-detective-game-dialogue` first. Reuse its dialogue rules exactly:
-Traditional Chinese player-facing text, `**角色名**：內容`, bracketed stage
-directions, `[場景：...]` tags, and short dialogue lines.
+Traditional Chinese player-facing text, `**角色名**：內容`, narration assignment,
+bracketed stage directions, `[場景：...]` tags, global catalog/portrait/expression
+rules, purposeful background prompts, and short dialogue lines.
 
 Read `writing-investigation-scene` for evidence and statement manifest rules.
 Interrogation scenes reuse those manifest formats.
@@ -216,6 +217,11 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
   `static/assets/config/audio.yaml`, or `none`)
 - **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then
   one `### Subject:` and one or more `### Question:` blocks.
+
+A new phase background is justified only when visible environmental/dramatic
+state materially changes. A new question or testimony beat alone does not
+justify a new background; inherit the base dialogue skill's prompt and
+continuity rules.
 
 Use `Required: false` for optional branches. If a phase has `Unlock`, its
 `Status` must be `locked`. A locked phase must be reachable by either its own
@@ -615,6 +621,8 @@ reference。
    `## Evidence Manifest`, `## Statement Manifest`, `## Outro`.
 5. Self-check that every phase has exactly one scene tag and one Subject with
    `Role`/`Bio`.
+   Add a new phase background only for a material visible environmental or
+   dramatic-state change.
 6. Self-check that every `Contradiction` line also has `Challenge`,
    `On Correct`, and `On Wrong Evidence`; that every `#### Testimony` has
    `On Loop`; and that any testimony with a `Contradiction` line also has
