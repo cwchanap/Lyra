@@ -6,3 +6,10 @@ characters:
     expressions:
       standard:
         prompt: neutral
+
+  - id: witness
+    displayNames: ["證人"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
