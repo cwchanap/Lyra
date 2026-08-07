@@ -148,6 +148,12 @@ describe("enrichScenesWithAssets", () => {
     expect(
       result.errors.filter((error) => error.code === "assetFirstCueMissingBgs"),
     ).toHaveLength(1);
+    // enrichAnalysisScene still writes the background ref even when BGM/BGS
+    // are omitted on the first cue.
+    expect(result.analysisScenes[0]?.ast.assetRefs).toContainEqual({
+      type: "background",
+      assetId: "background.chapter_1.analysis_scene_1.tag_001",
+    });
   });
 
   it("keeps an analysis scene between ordinary scenes in manifest order", () => {
@@ -183,6 +189,77 @@ describe("enrichScenesWithAssets", () => {
       "background.chapter_1.scene_3.tag_001",
     ]);
     expect(result.errors).toEqual([]);
+    // enrichAnalysisScene writes background + audio refs for the full cue.
+    expect(result.analysisScenes[0]?.ast.assetRefs).toContainEqual({
+      type: "background",
+      assetId: "background.chapter_1.analysis_scene_2.tag_001",
+    });
+    expect(result.analysisScenes[0]?.ast.assetRefs).toContainEqual({
+      type: "audio",
+      assetId: "audio.bgm.rain_mystery_low",
+    });
+    expect(result.analysisScenes[0]?.ast.assetRefs).toContainEqual({
+      type: "audio",
+      assetId: "audio.bgs.street_rain",
+    });
+  });
+
+  it("strips analysis-scene cues, portraits, and assetRefs when assets are disabled", () => {
+    const ast: ASTAnalysisScene = {
+      kind: "analysisScene",
+      id: "analysis_scene_disabled",
+      title: "Disabled",
+      summary: "Disabled",
+      intro: [
+        {
+          kind: "sceneTag",
+          text: "Analysis room",
+          assetCue: visualCue("Analysis room."),
+        },
+        {
+          kind: "line",
+          speaker: "早坂茜",
+          expression: "concerned",
+          portrait: null,
+          text: "線索在這裡。",
+        },
+      ],
+      boards: [],
+      outro: [],
+      assetRefs: [],
+      sourceFile: "chapter_1/analysis_scene_disabled.md",
+      line: 1,
+    };
+    const analysisScene: AnalysisSceneRecord = {
+      chapterId: "chapter_1",
+      file: "analysis_scene_disabled.md",
+      ast,
+    };
+    const disabled = { ...config(), enabled: false };
+
+    const result = enrichScenesWithAssets({
+      scenes: [],
+      analysisScenes: [analysisScene],
+      config: disabled,
+    });
+
+    expect(result.errors).toEqual([]);
+    expect(result.manifest).toEqual({ enabled: false, entries: [] });
+    const enriched = result.analysisScenes[0];
+    expect(enriched?.ast.assetRefs).toEqual([]);
+    const introTag =
+      enriched?.ast.intro[0]?.kind === "sceneTag"
+        ? enriched.ast.intro[0]
+        : null;
+    expect(introTag?.assetCue).toEqual({
+      backgroundPrompt: null,
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    });
+    const introLine =
+      enriched?.ast.intro[1]?.kind === "line" ? enriched.ast.intro[1] : null;
+    expect(introLine?.portrait).toBeNull();
   });
 
   it("adds background, portrait, evidence, audio refs, and manifest requests", () => {
