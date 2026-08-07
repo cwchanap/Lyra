@@ -46,7 +46,14 @@ with `bun run scenes:compile`.
    Use the reported `assetId`, expected path, type, and authored prompt.
 2. Read `static/assets/config/policy.yaml` before generating. Use its global
    style prompt, type prompt, dimensions, format, and transparency requirement.
-3. Build one prompt per distinct asset. Include:
+3. Before generating a same-location background sibling, inspect the existing
+   sibling asset(s) with `view_image` or equivalent project inspection. Record
+   the stable anchors that must persist and the intended delta for the new
+   view (for example camera angle, focal area, lighting, occupancy, or a
+   materially changed case prop). If no sibling exists, record that fact
+   instead of inventing continuity. Do this before prompt writing or image
+   generation.
+4. Build one prompt per distinct asset. Include:
    - use case `illustration-story` for story backgrounds/portraits/evidence
    - target asset type and final path
    - the authored `Background Prompt` or `Image Prompt`
@@ -61,21 +68,21 @@ with `bun run scenes:compile`.
    - for portraits: explicitly request a vertical 3:4 character portrait
    - for evidence: explicitly request a square 1:1 object-focused icon
    - for portraits/evidence: transparent output workflow from `imagegen`
-4. Use the built-in `image_gen` tool by default. For batches, issue one
+5. Use the built-in `image_gen` tool by default. For batches, issue one
    built-in call per asset; do not switch to CLI fallback just because there
    are many images.
-5. For project-bound assets, copy the selected generated image from
+6. For project-bound assets, copy the selected generated image from
    `$CODEX_HOME/generated_images/...` into the expected workspace path. Keep
    the original generated file in place.
-6. Normalize the workspace PNG to the policy dimensions:
+7. Normalize the workspace PNG to the policy dimensions:
    - backgrounds: exact policy canvas, opaque PNG, preserving aspect ratio
    - portraits: exact policy canvas, RGBA, subject fitted without cropping and
      bottom-aligned
    - evidence: exact policy canvas, RGBA, subject fitted without cropping and
      centered
-7. Inspect representative outputs with `view_image`, especially after alpha
+8. Inspect representative outputs with `view_image`, especially after alpha
    removal, cropping, or resizing.
-8. Run verification:
+9. Run verification:
    - `bun run scenes:compile`
    - a dimension scan for touched asset types
    - focused UI/e2e checks when portrait or evidence dimensions/layout changed
@@ -148,6 +155,8 @@ model's requirements.
 - Cropping transparent assets by visible pixels but forgetting to repack them
   to the declared canvas.
 - Treating `batch` as permission to use CLI fallback.
+- Generating a same-location background variant without inspecting its sibling
+  assets and recording stable anchors plus the intended delta first.
 - Adding filesystem paths to authored scene Markdown; writers author semantic
   prompts, not paths.
 - Claiming assets are fixed without rerunning `scenes:compile` and dimension

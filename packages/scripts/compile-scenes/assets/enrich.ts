@@ -421,13 +421,6 @@ function enrichLine(
 ): DialogueItem {
   const character = context.config.characters.byDisplayName.get(item.speaker);
   if (!character) {
-    // Narrator-style lines (unknown speaker, no expression) are exempt from
-    // character lookup — they never need a portrait.  Only error when the
-    // author explicitly requested an expression, which implies a portrait was
-    // expected.
-    if (!item.expression) {
-      return { ...item, portrait: null };
-    }
     context.errors.push(
       compileError(
         context.scene.ast.sourceFile,
