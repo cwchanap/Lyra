@@ -339,9 +339,9 @@ it("errors for unknown speaker without expression", () => {
 });
 ```
 
-- [ ] **Step 2: Add analysis-carrier strict-gate coverage**
+- [ ] **Step 2: Add strict-gate coverage for analysis carriers and no-portrait reuse across all scene families**
 
-Create table cases for `intro`, `resultDialogue`, and `outro`, each containing an unknown line. For every case call:
+**Unknown-speaker analysis coverage:** create table cases for `intro`, `resultDialogue`, and `outro`, each containing an uncatalogued line. For every case call:
 
 ```ts
 enrichScenesWithAssets({
@@ -353,13 +353,50 @@ enrichScenesWithAssets({
 
 and assert `assetUnknownSpeaker`.
 
+**Known no-portrait coverage:** add a helper no-portrait catalog character:
+
+```ts
+const narrator = {
+  id: "narrator",
+  displayNames: ["旁白"],
+  portraitMode: "none" as const,
+  visualPrompt: null,
+  referenceAssetId: null,
+  expressions: new Map(),
+};
+```
+
+Use existing scene-fixture builders to place `**旁白**：hi` with no expression into:
+
+```text
+linear queue
+investigation dialogue carrier
+interrogation dialogue carrier
+analysis Intro
+analysis board Result Dialogue
+analysis Outro
+```
+
+For every case assert:
+
+```ts
+expect(result.errors.map((e) => e.code)).not.toContain("assetUnknownSpeaker");
+expect(result.errors.map((e) => e.code)).not.toContain(
+  "assetExpressionOnNoPortraitSpeaker",
+);
+```
+
+and assert the enriched line's `portrait` is `null`.
+
+Keep the existing expression-on-no-portrait test as the negative counterpart.
+
 - [ ] **Step 3: Verify RED**
 
 ```bash
 bun run test:scripts -- packages/scripts/compile-scenes/assets/enrich.test.ts
 ```
 
-Expected: new tests fail because current `enrichLine()` silently returns `portrait: null` for an unknown/no-expression line.
+Expected: new unknown/no-expression tests fail because current `enrichLine()` silently returns `portrait: null`; the existing no-portrait behavior remains green.
 
 - [ ] **Step 4: Delete only the silent fallback**
 
@@ -741,9 +778,18 @@ for path in paths:
     width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
         ">IIBBBBB", data[16:29]
     )
+    offset = 8
+    has_trns = False
+    while offset + 12 <= len(data):
+        length = struct.unpack(">I", data[offset:offset + 4])[0]
+        chunk_type = data[offset + 4:offset + 8]
+        has_trns |= chunk_type == b"tRNS"
+        offset += 12 + length
+        if chunk_type == b"IEND":
+            break
     assert (width, height) == (1920, 1080), f"wrong size {width}x{height}: {path}"
-    assert color_type in (0, 2), f"background must have no alpha channel (color type {color_type}): {path}"
-    print(f"OK {path}: {width}x{height}, color_type={color_type}")
+    assert color_type in (0, 2) and not has_trns, f"background must be opaque: {path}"
+    print(f"OK {path}: {width}x{height}, color_type={color_type}, no tRNS")
 PY
 ```
 
