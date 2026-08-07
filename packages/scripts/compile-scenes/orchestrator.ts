@@ -83,7 +83,10 @@ import type {
   CompiledCaseRecordCorpus,
 } from "./types";
 import { loadAssetConfig } from "./assets/config";
-import { enrichScenesWithAssets } from "./assets/enrich";
+import {
+  enrichScenesWithAssets,
+  type OrderedAssetScene,
+} from "./assets/enrich";
 import type { AssetManifest } from "./assets/manifest";
 
 export type CompileOptions = {
@@ -382,9 +385,34 @@ export function compile(opts: CompileOptions): CompileResult {
     scenes.forEach((scene, i) => {
       scenes[i] = materializeSemanticDefaults(scene);
     });
+    const scenesByManifestKey = new Map(
+      scenes.map((scene) => [`${scene.chapterId}/${scene.file}`, scene]),
+    );
+    const analysisScenesByManifestKey = new Map(
+      analysisScenes.map((scene) => [
+        `${scene.chapterId}/${scene.file}`,
+        scene,
+      ]),
+    );
+    const orderedScenes: OrderedAssetScene[] = [];
+    for (const chapter of chapters) {
+      for (const file of chapter.sceneFiles) {
+        const key = `${chapter.dirName}/${file}`;
+        const scene = scenesByManifestKey.get(key);
+        if (scene) {
+          orderedScenes.push({ kind: "scene", record: scene });
+          continue;
+        }
+        const analysisScene = analysisScenesByManifestKey.get(key);
+        if (analysisScene) {
+          orderedScenes.push({ kind: "analysis", record: analysisScene });
+        }
+      }
+    }
     const enriched = enrichScenesWithAssets({
       scenes,
       analysisScenes,
+      orderedScenes,
       config: assetConfig.value,
       ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
     });

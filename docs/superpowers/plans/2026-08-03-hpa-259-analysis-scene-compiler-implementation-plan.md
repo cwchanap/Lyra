@@ -282,20 +282,23 @@ Validate rule 6 separately because the helper’s capability check is per record
 The compiler emits:
 
 ```ts
-type ClassifyBoardJson = AnalysisBoardJsonCommon & {
+type ClassifyBoardJson = {
   kind: "classify";
+  common: AnalysisBoardJsonCommon;
   groups: Array<{ id: string; label: string; description: string }>;
   acceptedGroupByCard: Record<string, string>;
 };
 
-type OrderBoardJson = AnalysisBoardJsonCommon & {
+type OrderBoardJson = {
   kind: "order";
+  common: AnalysisBoardJsonCommon;
   acceptedOrder: string[];
   fixedAnchors: Array<{ cardId: string; position: number }>;
 };
 
-type ThresholdBoardJson = AnalysisBoardJsonCommon & {
+type ThresholdBoardJson = {
   kind: "threshold";
+  common: AnalysisBoardJsonCommon;
   minimumSelected: number;
   acceptedSelections: string[][];
 };
