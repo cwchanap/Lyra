@@ -97,7 +97,7 @@ Tasks 6–9 after PR A lands:
 
 - [ ] **Step 1: Create the scenario document**
 
-Use:
+Use this structure with all sections filled from actual runs:
 
 ```markdown
 # HPA-561 Story Scene Skill Pressure Scenarios
@@ -112,10 +112,18 @@ Use:
 ### GREEN result
 
 ## RED 2 — Reusable visible speaker missing catalog contract
-...
+### Exact prompt
+### Baseline result
+### Failure/rationalization
+### GREEN acceptance
+### GREEN result
 
 ## RED 3 — Bracket-only emotional transition
-...
+### Exact prompt
+### Baseline result
+### Failure/rationalization
+### GREEN acceptance
+### GREEN result
 
 ## Control — Calm standard scene
 ### Exact prompt
@@ -477,7 +485,7 @@ bun run scenes:compile
 
 Expected:
 
-- no `assetUnknownSpeaker` errors for the frozen current Chapter 1 corpus;
+- no `assetUnknownSpeaker` errors for the current manifest;
 - no expression-on-no-portrait errors for `旁白`, commuters, or `學生`;
 - only explicitly expected new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
 
@@ -531,7 +539,7 @@ export type BackgroundCueAuditResult = {
 
 - [ ] **Step 2: Enumerate cue occurrences from compiled output**
 
-After a successful `bun run scenes:compile`, read:
+After `bun run scenes:compile`, read:
 
 ```text
 docs/stories_plan/chapter_1/chapter.md
@@ -539,25 +547,15 @@ apps/game/src-tauri/resources/scenes/chapter_1/<scene>.json
 apps/game/src-tauri/resources/assets/manifest.json
 ```
 
-For every manifest-listed emitted scene, recursively walk JSON. Whenever an object owns a `backgroundAssetId` property, emit one occurrence row even if multiple occurrences reuse the same asset ID.
+For every manifest-listed emitted scene, recursively walk JSON. Whenever an object owns `backgroundAssetId`, emit one occurrence row even when occurrences reuse an asset ID.
 
-Use a JSON-pointer-like path such as:
-
-```text
-/queue/0
-/intro/0
-/sublocations/2
-/phases/1
-/boards/0/resultDialogue/0
-```
-
-Set:
+Use a JSON-pointer-like path such as `/queue/0`, `/intro/0`, `/sublocations/2`, `/phases/1`, or `/boards/0/resultDialogue/0`, and set:
 
 ```ts
 cueKey = `${sceneFile}::${cuePath}`;
 ```
 
-Map non-null IDs through the asset manifest for `expectedPath`; set `fileMissing` from disk existence. Do **not** infer physical `locationFamily` from asset IDs.
+Map non-null IDs through the asset manifest for `expectedPath`; set `fileMissing` from disk existence. Do not infer physical `locationFamily` from asset IDs.
 
 - [ ] **Step 3: Add report coverage checking**
 
@@ -568,30 +566,21 @@ export function checkBackgroundAuditCoverage(
 ): string[];
 ```
 
-Read the first table column under `## Cue decisions`. Return problems for missing, stale, duplicate cue keys and invalid/blank Decision/Priority values.
-
-Allowed decisions:
+Read the first column under `## Cue decisions`. Return problems for missing, stale, duplicate cue keys and invalid/blank Decision/Priority.
 
 ```ts
-new Set(["keep", "prompt-adjust", "regenerate", "add-variant"])
-```
-
-Allowed priorities:
-
-```ts
-new Set(["A", "B"])
+const allowedDecisions = new Set([
+  "keep",
+  "prompt-adjust",
+  "regenerate",
+  "add-variant",
+]);
+const allowedPriorities = new Set(["A", "B"]);
 ```
 
 - [ ] **Step 4: Write tests**
 
-Cover:
-
-1. two occurrences reusing one asset -> two cue keys;
-2. null `backgroundAssetId` -> still enumerated;
-3. analysis Intro/Result/Outro -> enumerated;
-4. missing expected file -> `fileMissing: true`;
-5. unreadable/malformed input -> structured problem;
-6. report check rejects missing/stale/duplicate/invalid decision/priority rows.
+Cover two occurrences reusing one asset, null `backgroundAssetId`, analysis Intro/Result/Outro, missing file, structured input problems, and all report coverage error classes.
 
 - [ ] **Step 5: Run focused tests**
 
@@ -619,8 +608,6 @@ Support:
 bun run background-cues:audit --chapter chapter_1
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
-
-The first prints deterministic items/problems. The second exits non-zero on structured input problems or report coverage/decision errors.
 
 - [ ] **Step 7: Run checks**
 
@@ -657,8 +644,10 @@ Expected: all commands exit 0. `scenes:compile` may report only the accepted new
 
 - [ ] **Step 2: Verify diff boundary**
 
+Because PR A starts from `main`, run:
+
 ```bash
-git diff --name-only <PR_A_BASE>...HEAD
+git diff --name-only main...HEAD
 ```
 
 PR A contains skills, strict catalog enforcement/config, scenario evidence, and background-audit tooling only. No broad scene prose/background changes.
@@ -667,7 +656,7 @@ PR A contains skills, strict catalog enforcement/config, scenario evidence, and 
 
 Review one-registry/YAGNI boundary, unknown-speaker coverage through analysis traversal, explicit `店主` / `學生` / `增田圭` decisions, and audit-tool mechanical/semantic boundary.
 
-Merge PR A before final PR B acceptance, or explicitly stack PR B on PR A.
+Merge PR A before final PR B acceptance. If PR B is prepared as a temporary stack, rebase it onto `main` immediately after PR A merges before final review.
 
 ---
 
@@ -748,14 +737,7 @@ git commit -m "docs: audit Chapter 1 backgrounds and add approved portraits"
 
 - [ ] **Step 1: Write accepted delta before every edit**
 
-Each Priority A row states:
-
-```text
-narrative/spatial function
-stable continuity anchors
-intended camera/composition delta
-lighting/weather/occupancy delta if any
-```
+Each Priority A row states narrative/spatial function, stable continuity anchors, intended camera/composition delta, and lighting/weather/occupancy delta when relevant.
 
 - [ ] **Step 2: Edit only corresponding authored prompt/cue**
 
@@ -841,14 +823,16 @@ For analysis, explicitly include Intro, every Result Dialogue, and Outro in Axis
 
 - [ ] **Step 3: Save consolidated Phase 4 output verbatim**
 
+Create `semantic-content-reaudit.md` with three sections in this exact order:
+
 ```markdown
 # Chapter 1 Semantic Content Re-audit
 
 ## Frozen manifest
-...
+<copy the exact ordered chapter.md scene list>
 
 ## Initial seven-axis review
-<verbatim consolidated reviewing-story-scenes report>
+<paste the complete consolidated Phase 4 report without rewriting its findings>
 ```
 
 - [ ] **Step 4: Commit initial review before scene edits**
@@ -871,13 +855,13 @@ No unrelated prose cleanup.
 
 - [ ] **Step 6: Append resolution log**
 
-For each original Blocker/Important:
+For each original Blocker/Important append:
 
 ```markdown
-- `<original file:line + finding>` — **Resolved/Accepted** — <exact evidence/change>
+- `file:line — original finding text` — **Resolved** — exact changed path/evidence
 ```
 
-Do not rewrite the initial review block.
+If the user explicitly accepts a finding without a code/content change, use **Accepted** and record the acceptance evidence. Do not rewrite the initial review block.
 
 - [ ] **Step 7: Compile + focused re-review**
 
@@ -889,11 +873,10 @@ Run at least Axis 3 and Axis 5 on every changed scene.
 
 - [ ] **Step 8: Run full seven-axis review again**
 
-Append under:
+Append the complete new consolidated Phase 4 report under:
 
 ```markdown
 ## Final seven-axis review
-...
 ```
 
 Completion condition:
@@ -954,8 +937,10 @@ No parser/AST/runtime schema changes for speaker classification and no Rust/Svel
 
 - [ ] **Step 8: Inspect PR B diff**
 
+PR B starts from `main` after PR A merges, so run:
+
 ```bash
-git diff --name-only <PR_B_BASE>...HEAD
+git diff --name-only main...HEAD
 ```
 
 Every path is attributable to portrait assets, background audit/accepted Priority A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
