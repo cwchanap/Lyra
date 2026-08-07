@@ -39,7 +39,7 @@ Tasks 1–5:
 - strict existing-catalog enforcement plus the minimal `characters.yaml` migration required to keep production compilation green;
 - background-cue audit script and tests.
 
-PR A contains no broad scene prose rewrite and no background art regeneration. It may temporarily expose only the explicitly expected missing portrait-file warnings for the newly portrait-bearing `店主` and `增田圭` catalog entries; PR B resolves those asset warnings.
+PR A contains no broad scene prose rewrite and no background/portrait art regeneration. It may temporarily expose only the explicitly expected missing portrait-file warnings for the newly portrait-bearing `店主` and `增田圭` catalog entries; PR B resolves those asset warnings.
 
 ### PR B — Chapter 1 content and visual acceptance
 
@@ -132,8 +132,6 @@ Use:
 
 - [ ] **Step 2: Run RED 1 — narration fallback**
 
-Exact pressure:
-
 ```text
 Using the current Lyra dialogue-writing skill, draft a short scene ending in which
 an on-screen detective looks at the evidence, physically closes the folder, and
@@ -141,11 +139,9 @@ states their own conclusion. Preserve the current repo format and do not add new
 characters. Return only authored scene Markdown.
 ```
 
-GREEN acceptance: visible action is bracketed; the detective owns the conclusion; `旁白` is not used as a generic action/conclusion fallback.
+GREEN acceptance: visible action is bracketed; the detective owns the conclusion; `旁白` is not used as generic action/conclusion fallback.
 
 - [ ] **Step 3: Run RED 2 — reusable visible speaker missing catalog contract**
-
-Exact pressure:
 
 ```text
 Using the current Lyra dialogue-writing skill, draft a scene featuring a named,
@@ -154,18 +150,18 @@ not yet exist in characters.yaml. Use repository sources. Return authored scene
 Markdown plus any required asset/catalog escalation.
 ```
 
-GREEN acceptance: the writer explicitly requires a global character-catalog decision; it does not silently rely on portraitless compilation.
+GREEN acceptance: the writer explicitly requires a global catalog decision; it does not rely on portraitless compilation.
 
 - [ ] **Step 4: Run RED 3 — bracket-only emotional transition**
 
-Choose a current catalog character with an available non-standard slug and use:
+Choose a current catalog character with an available non-standard slug:
 
 ```text
 Draft a short exchange where the character visibly moves from calm to pressured.
 Use repository-defined expressions only. Return authored scene Markdown.
 ```
 
-GREEN acceptance: meaningful portrait transition is authored when the available slug fits; brackets alone are not treated as portrait state.
+GREEN acceptance: a meaningful portrait transition is authored when the available slug fits; brackets alone are not treated as portrait state.
 
 - [ ] **Step 5: Record baseline results truthfully**
 
@@ -188,7 +184,7 @@ git commit -m "test: record focused story skill pressure scenarios"
 
 - [ ] **Step 1: Correct narration contradictions in the base dialogue skill**
 
-Use this ownership table as the authoritative rule:
+Use:
 
 ```markdown
 | Meaning | Authored form |
@@ -198,7 +194,7 @@ Use this ownership table as the authoritative rule:
 | Time/location transition, unavailable information, intentional voiceover | `**旁白**：...` |
 ```
 
-Rewrite the warehouse example so visible action/architecture/body discovery is bracketed. Keep intentional opening/closing voiceover explicitly labeled as such.
+Rewrite the warehouse example so visible action/architecture/body discovery is bracketed. Keep intentional voiceover explicitly labeled.
 
 - [ ] **Step 2: Replace local-vs-catalog guidance with one-catalog guidance**
 
@@ -212,8 +208,6 @@ never rely on an uncatalogued speaker compiling portraitless
 ```
 
 - [ ] **Step 3: Add catalog-bounded expression choreography**
-
-Teach:
 
 ```text
 bracketed emotion does not select a portrait
@@ -240,15 +234,15 @@ Never create a variant solely to increase image count.
 
 - [ ] **Step 5: Extend investigation/interrogation guidance**
 
-Investigation: sibling sub-locations can vary in angle/focus but must preserve adjacency, hotspot readability, visible floor/standee clearance, and case-significant props.
+Investigation: sibling sub-locations can vary in angle/focus but preserve adjacency, hotspot readability, visible floor/standee clearance, and case props.
 
 Interrogation: a new phase background is justified only when visible environmental/dramatic state materially changes.
 
 - [ ] **Step 6: Extend Axis 3 in `reviewing-story-scenes`**
 
-Rename to `Voice, style, narration & expression` and add the narration/expression rules above. Apply to all four scene types; for analysis review Intro, every Result Dialogue, and Outro.
+Rename to `Voice, style, narration & expression`. Add narration/expression rules. Apply to all four scene types; for analysis inspect Intro, every Result Dialogue, and Outro.
 
-- [ ] **Step 7: Extend Axis 5 without changing its severity/report format**
+- [ ] **Step 7: Extend Axis 5 without changing severity/report format**
 
 Keep existing completeness/compiled-ID/file checks, then add:
 
@@ -260,11 +254,11 @@ purposeful variation
 same-view false-positive control
 ```
 
-Do not create a second severity vocabulary or findings ledger.
+Do not create a second findings format.
 
 - [ ] **Step 8: Harden image-generation continuity**
 
-Require inspection of sibling same-location assets before generation and record stable anchors plus intended delta. Keep final policy-canvas verification.
+Require sibling same-location asset inspection and record stable anchors plus intended delta before generation. Keep final policy-canvas verification.
 
 - [ ] **Step 9: Simplify orchestrator handoff**
 
@@ -272,7 +266,7 @@ Pass source paths/catalog escalation rules; do not relay an ephemeral cast table
 
 - [ ] **Step 10: Respect HPA-552 ownership**
 
-Do not create the dedicated analysis authoring skill. If HPA-552 has landed independently, only ensure it references/inherits the hardened base dialogue rules.
+Do not create the dedicated analysis skill. If HPA-552 landed independently, only ensure it references/inherits the base rules.
 
 - [ ] **Step 11: Run post-change verification**
 
@@ -294,7 +288,7 @@ Draft a Rain Bell manager exchange using repository sources. Do not tell the
 writer which display label to choose.
 ```
 
-Acceptance: repository catalog/roster label is used; no new alias is invented.
+Acceptance: repository catalog/roster label is used.
 
 **Analysis inheritance spot check**
 
@@ -304,7 +298,7 @@ Outro for narration/expression/portrait/background issues using the hardened
 review skill.
 ```
 
-Acceptance: all three analysis dialogue carriers are covered.
+Acceptance: all analysis dialogue carriers are covered.
 
 - [ ] **Step 12: Commit**
 
@@ -328,13 +322,11 @@ git commit -m "docs: harden story semantic and visual review"
 - Modify: `packages/scripts/compile-scenes/assets/enrich.test.ts`
 - Modify: `static/assets/config/characters.yaml`
 
-**Consumes:** hardened speaker/portrait guidance from Task 2.
+**Consumes:** Task 2 guidance.
 
 **Produces:** one strict global catalog contract; no parser/AST changes.
 
-- [ ] **Step 1: Add a failing test for an unknown speaker without expression**
-
-Add beside the existing no-portrait tests:
+- [ ] **Step 1: Add a failing unknown-speaker/no-expression test**
 
 ```ts
 it("errors for unknown speaker without expression", () => {
@@ -349,38 +341,38 @@ it("errors for unknown speaker without expression", () => {
       },
     ]),
   ];
-
   const result = enrichScenesWithAssets({ scenes, config: config() });
-
   expect(result.errors.map((error) => error.code)).toContain(
     "assetUnknownSpeaker",
   );
 });
 ```
 
-- [ ] **Step 2: Add strict-gate coverage for analysis dialogue carriers**
+- [ ] **Step 2: Add analysis-carrier strict-gate coverage**
 
-Construct one `ASTAnalysisScene` containing an unknown line in each carrier in separate table cases:
+Create table cases for `intro`, `resultDialogue`, and `outro`, each containing an unknown line. For every case call:
 
 ```ts
-const cases = ["intro", "resultDialogue", "outro"] as const;
+enrichScenesWithAssets({
+  scenes: [],
+  analysisScenes: [scene],
+  config: config(),
+});
 ```
 
-For every case, call `enrichScenesWithAssets({ scenes: [], analysisScenes: [scene], config: config() })` and assert `assetUnknownSpeaker`.
+and assert `assetUnknownSpeaker`.
 
-This proves HPA-259's existing `enrichAnalysisScene()` traversal is sufficient; do not add another walker.
-
-- [ ] **Step 3: Run focused tests and verify RED**
+- [ ] **Step 3: Verify RED**
 
 ```bash
 bun run test:scripts -- packages/scripts/compile-scenes/assets/enrich.test.ts
 ```
 
-Expected: the new unknown/no-expression tests fail because current `enrichLine()` silently returns `portrait: null`.
+Expected: new tests fail because current `enrichLine()` silently returns `portrait: null` for an unknown/no-expression line.
 
 - [ ] **Step 4: Delete only the silent fallback**
 
-Replace the current unknown-speaker branch with:
+Use:
 
 ```ts
 const character = context.config.characters.byDisplayName.get(item.speaker);
@@ -399,9 +391,7 @@ if (!character) {
 
 Keep the existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpeaker` path unchanged.
 
-- [ ] **Step 5: Add the intentional no-portrait catalog entries**
-
-Add entries with empty expressions:
+- [ ] **Step 5: Add intentional no-portrait catalog entries**
 
 ```yaml
   - id: narrator
@@ -449,8 +439,6 @@ Add entries with empty expressions:
 
 - [ ] **Step 6: Add the explicit Scene P1 `店主` portrait contract**
 
-Use:
-
 ```yaml
   - id: stationery_owner
     displayNames: ["店主"]
@@ -472,7 +460,7 @@ Do not alias this to `店長高瀨`.
 
 - [ ] **Step 7: Add the `增田圭` portrait contract**
 
-Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and a `standard` expression matching his ordinary Scene P2 presentation. Do not invent later-chapter sealed traits.
+Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and a `standard` expression matching his ordinary Scene P2 presentation. Do not invent sealed traits.
 
 - [ ] **Step 8: Run focused tests**
 
@@ -480,8 +468,6 @@ Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a
 bun run test:scripts -- packages/scripts/compile-scenes/assets/enrich.test.ts
 bun run check:scripts
 ```
-
-Expected: PASS.
 
 - [ ] **Step 9: Run production compilation**
 
@@ -493,9 +479,9 @@ Expected:
 
 - no `assetUnknownSpeaker` errors for the frozen current Chapter 1 corpus;
 - no expression-on-no-portrait errors for `旁白`, commuters, or `學生`;
-- only the newly expected portrait-file warnings for `stationery_owner` and `masuda_kei` may remain from this task.
+- only explicitly expected new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
 
-If additional unknown labels appear because the manifest changed, classify them using Task 2 guidance; do not weaken the compiler.
+If the manifest changed and additional unknown labels appear, classify them using Task 2 guidance; do not weaken the compiler.
 
 - [ ] **Step 10: Commit**
 
@@ -516,9 +502,9 @@ git commit -m "feat: require all scene speakers in character catalog"
 - Modify: `packages/scripts/package.json`
 - Modify: root `package.json`
 
-**Produces:** compiler-owned background inventory and a mechanical report-coverage check. Artistic classification remains outside the script.
+**Produces:** compiler-owned background inventory and mechanical report-coverage checking. Artistic classification remains outside the script.
 
-- [ ] **Step 1: Define the audit result**
+- [ ] **Step 1: Define audit types**
 
 ```ts
 export type BackgroundCueAuditItem = {
@@ -543,9 +529,9 @@ export type BackgroundCueAuditResult = {
 };
 ```
 
-- [ ] **Step 2: Implement deterministic cue enumeration from compiled output**
+- [ ] **Step 2: Enumerate cue occurrences from compiled output**
 
-The command first requires a successful `bun run scenes:compile`, then reads:
+After a successful `bun run scenes:compile`, read:
 
 ```text
 docs/stories_plan/chapter_1/chapter.md
@@ -553,9 +539,9 @@ apps/game/src-tauri/resources/scenes/chapter_1/<scene>.json
 apps/game/src-tauri/resources/assets/manifest.json
 ```
 
-For every manifest-listed emitted scene, recursively walk JSON objects/arrays. Whenever an object owns a `backgroundAssetId` property, emit one occurrence row even when multiple occurrences reuse the same asset ID.
+For every manifest-listed emitted scene, recursively walk JSON. Whenever an object owns a `backgroundAssetId` property, emit one occurrence row even if multiple occurrences reuse the same asset ID.
 
-Use a JSON-pointer-like `cuePath` such as:
+Use a JSON-pointer-like path such as:
 
 ```text
 /queue/0
@@ -571,13 +557,9 @@ Set:
 cueKey = `${sceneFile}::${cuePath}`;
 ```
 
-Map non-null `backgroundAssetId` through the asset manifest for `expectedPath`; `fileMissing` is `true` when that path does not exist.
+Map non-null IDs through the asset manifest for `expectedPath`; set `fileMissing` from disk existence. Do **not** infer physical `locationFamily` from asset IDs.
 
-Do **not** infer `locationFamily` from the asset ID.
-
-- [ ] **Step 3: Add a report-coverage checker**
-
-Export:
+- [ ] **Step 3: Add report coverage checking**
 
 ```ts
 export function checkBackgroundAuditCoverage(
@@ -586,13 +568,7 @@ export function checkBackgroundAuditCoverage(
 ): string[];
 ```
 
-Read the first table column from rows under the report's `## Cue decisions` table. Return problems for:
-
-- mechanical cue key missing from report;
-- report cue key not in current mechanical inventory;
-- duplicate cue key;
-- blank/unsupported Decision;
-- blank/unsupported Priority.
+Read the first table column under `## Cue decisions`. Return problems for missing, stale, duplicate cue keys and invalid/blank Decision/Priority values.
 
 Allowed decisions:
 
@@ -606,18 +582,18 @@ Allowed priorities:
 new Set(["A", "B"])
 ```
 
-- [ ] **Step 4: Write tests before CLI wiring**
+- [ ] **Step 4: Write tests**
 
 Cover:
 
-1. two occurrences reusing one background asset produce two `cueKey` rows;
-2. a null `backgroundAssetId` is still enumerated;
-3. analysis Intro/Result Dialogue/Outro cue objects are enumerated;
-4. missing expected file sets `fileMissing: true`;
-5. structured problems are returned for unreadable/malformed inputs;
-6. coverage check rejects missing, stale, duplicate, invalid-decision, and invalid-priority rows.
+1. two occurrences reusing one asset -> two cue keys;
+2. null `backgroundAssetId` -> still enumerated;
+3. analysis Intro/Result/Outro -> enumerated;
+4. missing expected file -> `fileMissing: true`;
+5. unreadable/malformed input -> structured problem;
+6. report check rejects missing/stale/duplicate/invalid decision/priority rows.
 
-- [ ] **Step 5: Run tests**
+- [ ] **Step 5: Run focused tests**
 
 ```bash
 bun run test:scripts -- packages/scripts/compile-scenes/background-cues-audit.test.ts
@@ -625,28 +601,28 @@ bun run test:scripts -- packages/scripts/compile-scenes/background-cues-audit.te
 
 - [ ] **Step 6: Wire CLI scripts**
 
-In `packages/scripts/package.json` add:
+`packages/scripts/package.json`:
 
 ```json
 "background-cues:audit": "bun run compile-scenes/background-cues-audit.ts"
 ```
 
-In root `package.json` add:
+Root `package.json`:
 
 ```json
 "background-cues:audit": "bun run --cwd packages/scripts background-cues:audit"
 ```
 
-CLI modes:
+Support:
 
 ```bash
 bun run background-cues:audit --chapter chapter_1
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-The first prints deterministic mechanical rows/problems; the second exits non-zero on structured problems or coverage/decision problems.
+The first prints deterministic items/problems. The second exits non-zero on structured input problems or report coverage/decision errors.
 
-- [ ] **Step 7: Run focused and broad script checks**
+- [ ] **Step 7: Run checks**
 
 ```bash
 bun run test:scripts -- packages/scripts/compile-scenes/background-cues-audit.test.ts
@@ -677,9 +653,9 @@ bun run scenes:compile
 bun run lint
 ```
 
-Expected: all commands exit 0. `scenes:compile` may report only the explicitly accepted missing portrait PNG warnings introduced for `stationery_owner` and `masuda_kei`; record the exact warning list in the PR.
+Expected: all commands exit 0. `scenes:compile` may report only the accepted new missing portrait PNG warnings for `stationery_owner` and `masuda_kei`; record exact warnings in the PR.
 
-- [ ] **Step 2: Verify the diff boundary**
+- [ ] **Step 2: Verify diff boundary**
 
 ```bash
 git diff --name-only <PR_A_BASE>...HEAD
@@ -689,25 +665,20 @@ PR A contains skills, strict catalog enforcement/config, scenario evidence, and 
 
 - [ ] **Step 3: Open/review PR A under HPA-561**
 
-Require focused review of:
+Review one-registry/YAGNI boundary, unknown-speaker coverage through analysis traversal, explicit `店主` / `學生` / `增田圭` decisions, and audit-tool mechanical/semantic boundary.
 
-- one-registry/YAGNI boundary;
-- unknown-speaker test coverage across analysis traversal;
-- explicit `店主` / `學生` / `增田圭` decisions;
-- audit-script mechanical vs semantic boundary.
-
-Merge PR A before starting final PR B acceptance fixes, or base PR B explicitly on PR A if working stacked.
+Merge PR A before final PR B acceptance, or explicitly stack PR B on PR A.
 
 ---
 
-### Task 6: Generate accepted portrait assets and run the background-variety audit
+### Task 6: Generate approved portraits and run the background-variety audit
 
 **Files:**
 - Create: `docs/stories_plan/chapter_1/background-variety-audit.md`
 - Create/update: portrait PNGs required by Task 3.
-- Read: frozen manifest, generated background inventory, same-location background assets.
+- Read: frozen manifest, generated background inventory, same-location assets.
 
-- [ ] **Step 1: Generate the accepted new portrait files**
+- [ ] **Step 1: Generate approved portrait files**
 
 Use `.claude/skills/generating-lyra-image-assets/SKILL.md` and `static/assets/config/policy.yaml` for:
 
@@ -717,68 +688,52 @@ portrait.stationery_owner.flustered
 portrait.masuda_kei.standard
 ```
 
-Do not add expressions beyond the catalog contract without a new concrete finding.
+Do not add expressions beyond the catalog contract without a concrete finding.
 
 - [ ] **Step 2: Freeze the exact production manifest**
 
-Copy the current ordered `docs/stories_plan/chapter_1/chapter.md` scene list into the report header with audit date/ruleset. If HPA-265 has inserted a production analysis scene, include it automatically.
+Copy current ordered `chapter.md` scene list into the report header with audit date/ruleset. If HPA-265 inserted production analysis, include it automatically.
 
-- [ ] **Step 3: Generate the mechanical background inventory**
+- [ ] **Step 3: Generate mechanical background inventory**
 
 ```bash
 bun run scenes:compile
 bun run background-cues:audit --chapter chapter_1
 ```
 
-- [ ] **Step 4: Create `## Cue decisions` from the mechanical `cueKey`s**
-
-Use:
+- [ ] **Step 4: Create `## Cue decisions`**
 
 ```markdown
 | Cue key | Location family | Current function | Continuity anchors | Variety finding | Decision | Priority | Proposed function | Disposition |
 |---|---|---|---|---|---|---|---|---|
 ```
 
-The first column is copied exactly from the tool. Human/agent judgment fills every other column.
+Copy `cueKey` exactly from the tool. Human/agent judgment fills other columns.
 
 - [ ] **Step 5: Group by physical location family**
 
-For each family inspect together:
+Inspect entrances/exits, windows, fixed furniture, geometry/corridor direction, case props, palette/materials, adjacency, camera angle/distance, focal emphasis, lighting/weather/occupancy.
 
-```text
-entrances/exits
-windows
-fixed furniture
-geometry/corridor direction
-case-significant props
-palette/materials
-adjacency
-camera angle/distance
-focal emphasis
-lighting/weather/occupancy
-```
-
-- [ ] **Step 6: Assign one decision and priority to every cue**
+- [ ] **Step 6: Assign one decision and priority per cue**
 
 Priority A only for comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity. Otherwise Priority B.
 
 - [ ] **Step 7: Record a same-view false-positive control**
 
-Keep at least one uninterrupted scene/cue sequence as `keep` and explain why a new view would be gratuitous.
+Keep at least one uninterrupted sequence as `keep` and explain why changing it would be gratuitous.
 
-- [ ] **Step 8: Run mechanical coverage check**
+- [ ] **Step 8: Check coverage mechanically**
 
 ```bash
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-Expected: exit 0 before asset changes begin.
+Expected: exit 0 before asset changes.
 
-- [ ] **Step 9: Commit the audit and portraits before background regeneration**
+- [ ] **Step 9: Commit audit + portraits before background regeneration**
 
 ```bash
-git add docs/stories_plan/chapter_1/background-variety-audit.md \
-  static/assets/portraits
+git add docs/stories_plan/chapter_1/background-variety-audit.md static/assets/portraits
 git commit -m "docs: audit Chapter 1 backgrounds and add approved portraits"
 ```
 
@@ -787,13 +742,13 @@ git commit -m "docs: audit Chapter 1 backgrounds and add approved portraits"
 ### Task 7: Implement only Priority A background changes
 
 **Files:**
-- Modify: only scene prompts/cues named by Priority A rows.
-- Create/update: only accepted backgrounds under `static/assets/backgrounds/chapter_1/**`.
-- Update: background audit dispositions.
+- Modify only scene prompts/cues named by Priority A rows.
+- Create/update only accepted backgrounds under `static/assets/backgrounds/chapter_1/**`.
+- Update audit dispositions.
 
-- [ ] **Step 1: Write the accepted delta before every edit**
+- [ ] **Step 1: Write accepted delta before every edit**
 
-Each Priority A row must state:
+Each Priority A row states:
 
 ```text
 narrative/spatial function
@@ -802,30 +757,28 @@ intended camera/composition delta
 lighting/weather/occupancy delta if any
 ```
 
-- [ ] **Step 2: Edit only the corresponding authored prompt/cue**
+- [ ] **Step 2: Edit only corresponding authored prompt/cue**
 
-Do not add scene tags solely to increase image count.
+Do not add scene tags solely for image count.
 
-- [ ] **Step 3: Compile after authored changes**
+- [ ] **Step 3: Compile**
 
 ```bash
 bun run scenes:compile
 ```
 
-- [ ] **Step 4: Commit authored cue changes separately from art**
+- [ ] **Step 4: Commit authored cue changes separately**
 
 ```bash
 git add docs/stories_plan/chapter_1
 git commit -m "docs: improve Priority A Chapter 1 background cues"
 ```
 
-- [ ] **Step 5: Generate/regenerate accepted Priority A PNGs only**
+- [ ] **Step 5: Generate/regenerate Priority A PNGs only**
 
-Inspect sibling same-location assets first; preserve documented anchors.
+Inspect sibling same-location assets first and preserve documented anchors.
 
-- [ ] **Step 6: Verify touched background dimensions and opacity with a concrete command**
-
-Run:
+- [ ] **Step 6: Verify touched background dimensions/opacity**
 
 ```bash
 python3 - <<'PY'
@@ -849,11 +802,9 @@ for path in paths:
 PY
 ```
 
-This is portable Python standard-library validation; it does not rely on macOS `sips`, ImageMagick, or Pillow.
+- [ ] **Step 7: Review each location family together**
 
-- [ ] **Step 7: Review each complete location family together**
-
-Reject any variant that implies a different physical place.
+Reject variants implying a different physical place.
 
 - [ ] **Step 8: Update dispositions and rerun coverage**
 
@@ -866,32 +817,29 @@ Priority B remains documented and ungenerated.
 - [ ] **Step 9: Commit art/dispositions**
 
 ```bash
-git add static/assets/backgrounds/chapter_1 \
-  docs/stories_plan/chapter_1/background-variety-audit.md
+git add static/assets/backgrounds/chapter_1 docs/stories_plan/chapter_1/background-variety-audit.md
 git commit -m "feat: add Priority A Chapter 1 background variants"
 ```
 
 ---
 
-### Task 8: Use `reviewing-story-scenes` as the semantic re-audit authority
+### Task 8: Use `reviewing-story-scenes` as semantic re-audit authority
 
 **Files:**
 - Create: `docs/stories_plan/chapter_1/semantic-content-reaudit.md`
 - Read: frozen manifest and normal seven-axis sources.
 
-- [ ] **Step 1: Freeze the production manifest again**
+- [ ] **Step 1: Freeze production manifest again**
 
-Copy the exact current `chapter.md` scene list into the report header. This is intentionally a fresh snapshot because production content may have changed since Task 6.
+Copy exact current `chapter.md` scene list into the report header. This is a fresh snapshot because production content may have changed since Task 6.
 
-- [ ] **Step 2: Invoke the hardened `reviewing-story-scenes` skill**
+- [ ] **Step 2: Invoke hardened `reviewing-story-scenes`**
 
-Run its normal seven-axis workflow over every manifest-listed production scene. Do not invent a new 10-column ledger or alternate severity vocabulary.
+Run its normal seven-axis workflow over every manifest-listed production scene. Do not invent a new ledger or severity vocabulary.
 
-For analysis scenes, explicitly include Intro, every board Result Dialogue, and Outro in Axis 3/5 coverage.
+For analysis, explicitly include Intro, every Result Dialogue, and Outro in Axis 3/5.
 
-- [ ] **Step 3: Save the consolidated Phase 4 output verbatim**
-
-Write it under:
+- [ ] **Step 3: Save consolidated Phase 4 output verbatim**
 
 ```markdown
 # Chapter 1 Semantic Content Re-audit
@@ -903,31 +851,27 @@ Write it under:
 <verbatim consolidated reviewing-story-scenes report>
 ```
 
-This preserves the existing `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` verdict and the skill's original Blocker/Important findings.
-
-- [ ] **Step 4: Commit the initial review before editing scenes**
+- [ ] **Step 4: Commit initial review before scene edits**
 
 ```bash
 git add docs/stories_plan/chapter_1/semantic-content-reaudit.md
 git commit -m "docs: record Chapter 1 semantic re-audit"
 ```
 
-- [ ] **Step 5: Resolve every Blocker/Important finding with minimal changes**
-
-Use finding type:
+- [ ] **Step 5: Resolve every Blocker/Important with minimal changes**
 
 ```text
 speaker/identity -> correct global catalog label/config
 narration -> brackets or character dialogue as appropriate
-expression -> existing configured slug unless a separately justified asset is needed
+expression -> existing configured slug unless new asset is separately justified
 background -> accepted Priority A integration only
 ```
 
-Do not perform unrelated prose cleanup.
+No unrelated prose cleanup.
 
-- [ ] **Step 6: Append a resolution log**
+- [ ] **Step 6: Append resolution log**
 
-For each original Blocker/Important finding, append:
+For each original Blocker/Important:
 
 ```markdown
 - `<original file:line + finding>` — **Resolved/Accepted** — <exact evidence/change>
@@ -935,17 +879,17 @@ For each original Blocker/Important finding, append:
 
 Do not rewrite the initial review block.
 
-- [ ] **Step 7: Compile and re-review every changed scene**
+- [ ] **Step 7: Compile + focused re-review**
 
 ```bash
 bun run scenes:compile
 ```
 
-Run at least Axis 3 and Axis 5 on every changed scene before the final full review.
+Run at least Axis 3 and Axis 5 on every changed scene.
 
-- [ ] **Step 8: Run the full seven-axis review again**
+- [ ] **Step 8: Run full seven-axis review again**
 
-Append the new consolidated report under:
+Append under:
 
 ```markdown
 ## Final seven-axis review
@@ -960,11 +904,11 @@ no remaining Blocker findings
 no remaining Important findings
 ```
 
-Minor/deferred observations may remain as normal review output or the resolution log.
+Minor/deferred observations may remain.
 
 - [ ] **Step 9: Commit focused fixes and final report**
 
-Keep speaker/identity, narration/expression, and visual fixes in separate commits where practical; then commit the final report update.
+Keep speaker/identity, narration/expression, and visual fixes in separate commits where practical; then commit final report update.
 
 ---
 
@@ -976,9 +920,7 @@ Keep speaker/identity, narration/expression, and visual fixes in separate commit
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-Expected: exit 0.
-
-- [ ] **Step 2: Run full code/content regression commands**
+- [ ] **Step 2: Run full regression commands**
 
 ```bash
 bun run format:check
@@ -988,29 +930,27 @@ bun run scenes:compile
 bun run lint
 ```
 
-Expected: all commands exit 0.
+Expected: all exit 0.
 
-- [ ] **Step 3: Rerun the portable touched-background PNG check from Task 7**
+- [ ] **Step 3: Rerun Task 7 portable background PNG check**
 
 Expected: every touched Chapter 1 background is opaque `1920x1080`.
 
-- [ ] **Step 4: Verify portrait warnings are resolved**
+- [ ] **Step 4: Verify portrait warnings resolved**
 
-`scenes:compile` must no longer report the accepted missing portrait files for `stationery_owner` or `masuda_kei`.
+`scenes:compile` no longer reports missing `stationery_owner` or `masuda_kei` portrait files.
 
 - [ ] **Step 5: Verify semantic gate**
 
-Read the final section of `semantic-content-reaudit.md` and confirm it is the consolidated `reviewing-story-scenes` report with verdict `SHIP` and no Blocker/Important findings.
+Final `semantic-content-reaudit.md` section is the consolidated `reviewing-story-scenes` report with verdict `SHIP` and no Blocker/Important findings. Do not substitute hand-entered counters.
 
-Do not substitute hand-entered counters for this review result.
+- [ ] **Step 6: Verify story boundary**
 
-- [ ] **Step 6: Verify story scope boundary**
-
-Inspect changed story files and confirm no unrelated culprit, timeline, evidence-package, unlock-chain, scene-order, reveal-ladder, or sealed-reveal change.
+No unrelated culprit, timeline, evidence-package, unlock-chain, scene-order, reveal-ladder, or sealed-reveal change.
 
 - [ ] **Step 7: Verify runtime boundary**
 
-Confirm there are no parser/AST/runtime schema changes for speaker classification and no Rust/Svelte changes. HPA-259 analysis JSON remains untouched apart from normal regenerated content.
+No parser/AST/runtime schema changes for speaker classification and no Rust/Svelte changes.
 
 - [ ] **Step 8: Inspect PR B diff**
 
@@ -1018,16 +958,16 @@ Confirm there are no parser/AST/runtime schema changes for speaker classificatio
 git diff --name-only <PR_B_BASE>...HEAD
 ```
 
-Every path must be attributable to portrait assets, background audit/accepted Priority A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
+Every path is attributable to portrait assets, background audit/accepted Priority A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
 
 ## Plan Self-Review
 
-- **Reuse:** `characters.yaml`, `portraitMode: none`, existing expression diagnostics, HPA-259 analysis traversal, evidence-audit scripting pattern, and seven-axis semantic review are all reused rather than duplicated.
-- **Compiler scope:** one production behavior change — delete silent unknown/no-expression fallback.
-- **No second registry:** no `Local Speakers`, no AST/header work, no runtime-omission test ceremony.
-- **Order:** skills land before catalog/content migration consumes their guidance.
-- **Current content decisions:** `店主` portrait; `學生` no portrait; `增田圭` portrait; narrator/commuters no portrait.
-- **Audit accountability:** mechanical background inventory/coverage is scripted; semantic severity remains owned by `reviewing-story-scenes`.
-- **Prompt eval:** only three genuine baseline RED scenarios; calm/label-drift/analysis checks run post-change.
-- **Verification:** `bun run lint` is included even though current CI primarily runs scene compilation/type/build gates; touched background dimension/opacity verification has an explicit portable command.
+- **Reuse:** existing `characters.yaml`, `portraitMode: none`, no-portrait expression diagnostics, HPA-259 analysis traversal, evidence-audit script precedent, and seven-axis review are reused.
+- **Compiler scope:** one behavior change — delete silent unknown/no-expression fallback.
+- **No second registry:** no `Local Speakers`, AST/header work, or runtime-omission ceremony.
+- **Order:** skills before production migration.
+- **Current decisions:** `店主` portrait; `學生` no portrait; `增田圭` portrait; narrator/commuters no portrait.
+- **Audit accountability:** background inventory/coverage is scripted; semantic severity stays with `reviewing-story-scenes`.
+- **Prompt eval:** three genuine baseline scenarios only; calm/label-drift/analysis checks are post-change.
+- **Verification:** includes `bun run lint`; touched background dimension/opacity has a concrete portable command.
 - **Reviewability:** contract/tooling and content/art are separate implementation PRs under one HPA-561 ticket.
