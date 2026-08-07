@@ -147,16 +147,9 @@ Camera angle, distance, focal emphasis, crop, lighting, weather, and occupancy m
 
 ### Decision/priority policy
 
-Every reviewed cue gets one decision:
+Every reviewed cue gets one decision: `keep`, `prompt-adjust`, `regenerate`, or `add-variant`.
 
-```text
-keep
-prompt-adjust
-regenerate
-add-variant
-```
-
-And one priority:
+Every cue gets one priority:
 
 - **A** — comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity;
 - **B** — serviceable cosmetic polish.
