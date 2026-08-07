@@ -92,7 +92,7 @@ The skills teach one catalog:
 - unresolved identity -> stop and resolve the global label/mode;
 - never rely on an uncatalogued speaker compiling portraitless.
 
-Global display-name uniqueness is useful: label drift becomes visible instead of two scenes independently inventing overlapping speaker identities.
+Global display-name uniqueness gives every repeated authored label one explicit catalog contract. Whether two uses are semantically the same person still remains a review/canon question; the compiler does not infer identity.
 
 ### Narration ownership
 
@@ -117,7 +117,7 @@ Correct the contradictory warehouse example in the base dialogue skill.
 
 Do not create a parallel semantic-audit vocabulary or findings format.
 
-`reviewing-story-scenes` remains the single semantic review authority with its existing seven axes, Blocker/Important findings, `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` verdicts, source-cited findings, and consolidated Phase 4 report.
+`reviewing-story-scenes` remains the single semantic review authority with its existing seven axes, Blocker/Important finding severities, `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` verdicts, source-cited findings, and consolidated Phase 4 report.
 
 ### Axis 3 — Voice, style, narration & expression
 
@@ -255,7 +255,7 @@ This separates code/tooling review from art/content review without creating extr
 Primary proof:
 
 - unknown speaker without expression now fails;
-- `portraitMode: none` speakers compile portraitless and reject expressions;
+- `portraitMode: none` speakers compile portraitless and reject expressions across linear, investigation, interrogation, and analysis dialogue paths;
 - analysis Intro/Result/Outro obey the same strict rule through existing enrichment;
 - three RED -> GREEN skill scenarios plus post-change control/spot checks;
 - mechanical background inventory and coverage check;
