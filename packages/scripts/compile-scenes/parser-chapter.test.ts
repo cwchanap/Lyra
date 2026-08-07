@@ -132,4 +132,26 @@ describe("parseChapter", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("chapterMalformedSceneRow");
   });
+
+  it("rejects a scene file listed more than once", () => {
+    // Duplicate manifest filenames used to slip through parseChapter and only
+    // surface as an uncaught throw inside enrichScenesWithAssets' orderedScenes
+    // invariant (and only when assets were enabled). Rejecting at the manifest
+    // keeps that invariant internal and gives writers a source-located error.
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+
+## Scenes
+1. scene_1.md
+2. scene_1.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterDuplicateSceneFile");
+    expect(result.error.line).toBe(7);
+    expect(result.error.message).toContain("scene_1.md");
+  });
 });

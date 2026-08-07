@@ -33,6 +33,14 @@ export function parseChapter(
   let summary: string | null = null;
   let inScenes = false;
   const sceneFiles: string[] = [];
+  // Track scene filenames seen so far so a duplicate manifest row is rejected
+  // here, at the source, rather than slipping through and turning the
+  // enrichScenesWithAssets orderedScenes invariant into an uncaught throw
+  // (which only fires when assets are enabled). The validator's
+  // duplicateSceneId check covers duplicate scene *IDs* loaded from distinct
+  // files; duplicate *filenames* never reach it because the orchestrator's
+  // manifest-key Map collapses them first.
+  const seenSceneFiles = new Set<string>();
   let headerLine = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -69,7 +77,17 @@ export function parseChapter(
     if (inScenes) {
       const m = NUMBERED_FILE_RE.exec(line);
       if (m) {
-        sceneFiles.push(m[2] ?? "");
+        const file = m[2] ?? "";
+        if (seenSceneFiles.has(file)) {
+          return fail(
+            sourceFile,
+            lineNum,
+            "chapterDuplicateSceneFile",
+            `Scene file "${file}" is listed more than once.`,
+          );
+        }
+        seenSceneFiles.add(file);
+        sceneFiles.push(file);
       } else if (/^\d+\.\s/.test(line)) {
         // Looks like a numbered entry but doesn't match the strict pattern
         // (e.g. missing .md extension, trailing text, wrong format).
