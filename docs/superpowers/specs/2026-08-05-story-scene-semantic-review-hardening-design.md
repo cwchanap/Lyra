@@ -2,21 +2,22 @@
 
 ## Status
 
-Approved consolidated design for HPA-561 on the post-HPA-259 baseline.
+Approved consolidated design, revised after reuse review against the post-HPA-259 codebase.
 
-HPA-561 is one feature with one implementation flow. The background-variety audit and the existing-content semantic re-audit are acceptance phases of the same work, not independent subsystems, so this document is the single design authority for the ticket.
+HPA-561 is one feature with one design and one implementation plan. The revised design deliberately reuses the existing character catalog, asset compiler, audit-script pattern, and seven-axis scene-review skill instead of introducing parallel registries or review formats.
 
 ## Goal
 
 Improve Chapter 1 authored-scene reliability and presentation quality by:
 
-1. replacing silent unknown-speaker portrait fallback with a durable scene-authored speaker contract;
+1. closing the silent unknown-speaker portrait fallback through the existing global character catalog;
 2. hardening narration, expression, portrait, and background-variety authoring/review rules;
-3. applying the new rules to the production Chapter 1 manifest and closing every Blocker/Important finding without turning the work into a broad rewrite.
+3. applying those rules to the production Chapter 1 manifest through a mechanically assisted background audit and the existing seven-axis semantic review;
+4. fixing every material finding without turning the work into a broad Chapter 1 rewrite.
 
 ## Post-HPA-259 baseline
 
-HPA-259 is merged and is no longer a future dependency. The repository now has four compiler-driven scene types:
+HPA-259 is merged. The repository already supports four compiler-driven scene types:
 
 - linear;
 - investigation;
@@ -25,491 +26,373 @@ HPA-259 is merged and is no longer a future dependency. The repository now has f
 
 Analysis scenes already have:
 
-- `ASTAnalysisScene` with `intro`, `boards[].resultDialogue`, and `outro` dialogue containers;
-- `parser-analysis.ts` with a required-Summary analysis header contract;
-- `parser-common.ts` shared parser helpers;
-- `enrichAnalysisScene()` and ordered asset enrichment;
+- `ASTAnalysisScene` with Intro, board Result Dialogue, and Outro dialogue;
+- a separate required-Summary parser contract;
+- `enrichAnalysisScene()` using the common dialogue asset-enrichment path;
 - immutable analysis JSON/Rust catalog wire and analysis dialogue origins.
 
-HPA-561 extends these landed seams. It must not reintroduce a three-scene-type assumption, duplicate analysis traversal, or unify the full header architecture simply to add one metadata field.
+HPA-561 extends those seams. It does not add another analysis traversal and does not change HPA-259 board semantics.
 
-Production Chapter 1 currently still uses `scene_8_5.md`. HPA-265 may later replace it with `analysis_scene_8_5.md`; HPA-561 must work correctly in either state.
+## Reuse decision: one character registry
 
-## Observed quality gaps
-
-Chapter 1 playtesting exposed three confirmed failures:
-
-- scene-closing conclusions were authored as `旁白` even though they were character-owned interpretation or summary;
-- speaking characters could silently become `portrait: null` without durable author intent;
-- bracketed emotional beats did not change portraits while dialogue omitted appropriate available expression slugs.
-
-Cataloged-label drift is a related prospective risk. It was not the cause of `店主` in `scene_p1.md`: the stationery-shop `店主` and Rain Bell `店長高瀨` are separate characters.
-
-The background system also has a presentation-quality gap: existing rules primarily verify that a background prompt/asset exists, but do not explicitly review repeated near-identical composition where a materially different viewpoint or state would improve spatial clarity, investigation readability, pacing, or reveal emphasis.
-
-## Architectural boundary
-
-Adopt a hybrid structural/semantic boundary.
-
-### Compiler owns deterministic speaker membership
-
-With assets enabled, every dialogue speaker must be exactly one of:
-
-1. a configured `characters.yaml` display name;
-2. reserved `旁白`;
-3. a speaker declared by that scene's `Local Speakers` metadata.
-
-Anything else is `assetUnknownSpeaker`.
-
-A declared local speaker is intentionally portraitless and may not author an expression slug.
-
-### Skills/review own contextual meaning
-
-The compiler does not decide whether:
-
-- a local label is semantically an alias for a reusable/cataloged character;
-- a one-shot character deserves a portrait;
-- narration ownership is appropriate;
-- an expression change is artistically justified;
-- a background needs a different camera/composition variant.
-
-Those remain writing/review responsibilities.
-
-## Durable `Local Speakers` contract
-
-### Authored syntax
-
-Legacy scene types retain their existing optional-Summary behavior:
-
-```markdown
-# Scene P0: 雨中的東京
-- **Summary:** 東京雨夜裡，KAGAMI 試點悄悄成為城市日常。
-- **Local Speakers:** 上班族, 路人甲, 路人乙
-```
-
-When a legacy scene omits an authored Summary, `Local Speakers` appears immediately after H1.
-
-Analysis scenes retain HPA-259's required Summary:
-
-```markdown
-# Scene 8.5: 短暫誤判整理點
-- **Summary:** 相馬與早坂整理目前真正成立的命題。
-- **Local Speakers:** 工作人員
-
-## Intro
-...
-```
-
-Rules:
-
-- `Local Speakers` may appear once.
-- It appears immediately after Summary when Summary exists.
-- Entries are comma-separated, trimmed, non-empty, and unique.
-- Leading/trailing empty members are invalid.
-- `旁白` is reserved and cannot be declared local.
-- Catalog overlap is invalid when assets are enabled: a registered display name must use its catalog contract instead of being redeclared local.
-- The metadata is compiler-only and never appears in emitted runtime JSON.
-
-## Parser architecture
-
-Do not unify the complete legacy and analysis header parsers.
-
-HPA-259 intentionally gave analysis scenes a separate required-Summary header parser, while linear/investigation/interrogation use `parseSceneHeader()` with optional Summary fallback.
-
-Add one narrow helper in the landed `parser-common.ts` seam:
+The existing asset catalog already models both portrait-bearing and portraitless speakers:
 
 ```ts
-parseOptionalLocalSpeakers(tokens, sourceFile, startIndex)
+portraitMode: "portrait" | "none"
 ```
 
-It owns only:
+For `portraitMode: "none"`, the current compiler already:
 
-- immediate `Local Speakers` recognition;
-- comma-list syntax;
-- empty/duplicate entry checks;
-- reserved `旁白` rejection;
-- duplicate/misplaced metadata diagnostics;
-- returned source locations and next-token index.
+- emits `portrait: null`;
+- rejects authored expressions through `assetExpressionOnNoPortraitSpeaker`;
+- does not require `expressions.standard`;
+- rejects duplicate `displayNames` globally.
 
-Then:
+Therefore HPA-561 will **not** add `Local Speakers`, `ASTLocalSpeaker`, scene-header metadata, or a second speaker registry.
+
+The actual compiler defect is the existing fallback that allows an unknown speaker with no expression to silently compile as `portrait: null`.
+
+### Revised deterministic contract
+
+When assets are enabled, every dialogue speaker must resolve through `characters.yaml`.
 
 ```text
-linear / investigation / interrogation
-  parseSceneHeader()
-    -> optional Summary
-    -> parseOptionalLocalSpeakers(...)
+known catalog speaker
+  -> portraitMode: portrait -> existing portrait/expression enrichment
+  -> portraitMode: none     -> portrait: null, expression forbidden
 
-analysis
-  parseAnalysisHeader()
-    -> required Summary
-    -> parseOptionalLocalSpeakers(...)
+unknown speaker
+  -> assetUnknownSpeaker
 ```
 
-Catalog overlap is not parser-owned because parser code does not have the asset catalog. It is validated during asset enrichment.
+No speaker is exempt merely because an expression was omitted.
 
-## AST and runtime boundary
+When assets are disabled, preserve the existing semantic-only workflow; catalog membership remains an asset-enrichment concern.
 
-Add one compile-time-only local-speaker field to all four AST scene types:
+## Current Chapter 1 migration decisions
 
-```ts
-type ASTLocalSpeaker = Located<{ name: string }>;
+The current production manifest must still be frozen at implementation time, but the present review identifies seven scene speaker labels absent from `characters.yaml`. `旁白` is also absent from the catalog today and works only because of the same silent fallback.
 
-localSpeakers: ASTLocalSpeaker[];
-```
+If the manifest is unchanged, the strict gate therefore requires eight display-name contracts or deliberate authored-label corrections.
 
-Apply it to:
+| Display name | Catalog treatment | Design decision |
+|---|---|---|
+| `旁白` | `portraitMode: none` | System narrator; one global no-portrait contract, no compiler special case. |
+| `上班族` | `portraitMode: none` | Anonymous one-shot commuter. |
+| `路人甲` | `portraitMode: none` | Anonymous one-shot passerby. |
+| `路人乙` | `portraitMode: none` | Anonymous one-shot passerby. |
+| `路人丙` | `portraitMode: none` | Anonymous one-shot passerby. |
+| `學生` | `portraitMode: none` | Brief one-shot participant in Scene P1; no portrait asset required. |
+| `店主` | `portraitMode: portrait` | Primary opposing speaker throughout the Scene P1 mini-case; visually important enough for a real portrait contract. She is **not** `店長高瀨`. |
+| `增田圭` | `portraitMode: portrait` | Visible, case-significant recurring Chapter 1 character; real portrait contract required. |
 
-- `ASTLinearScene`;
-- `ASTInvestigationScene`;
-- `ASTInterrogationScene`;
-- `ASTAnalysisScene`.
+### `店主` visual scope
 
-Do not add it to emitted JSON types or Rust/Svelte schemas.
+Keep this deliberately small:
 
-HPA-561 therefore introduces no additional runtime scene field beyond the HPA-259 baseline. This wording is deliberate: HPA-259 already added the analysis runtime/catalog wire; HPA-561 does not roll it back or claim the whole runtime schema is unchanged relative to the pre-HPA-259 branch.
+- one stable character identity;
+- `standard` expression;
+- one additional pressure/exposure expression such as `flustered`;
+- no large expression pack.
 
-## Asset-enrichment behavior
+This gives the long Scene P1 exchange a meaningful visual transition without creating unnecessary asset work.
 
-HPA-259 already added analysis asset traversal. Reuse it.
+### `學生` and anonymous labels
 
-Existing analysis enrichment already visits:
+`portraitMode: none` is intentional. These entries exist to make speaker identity explicit and compiler-checked, not to create visual assets.
 
-- `intro`;
-- every `boards[].resultDialogue`;
-- `outro`.
+If a later scene turns one of these generic labels into a reusable visible character, promote/rename it deliberately rather than adding scene-local metadata.
 
-Extend the common enrichment context with the scene's local-speaker set and make `enrichLine()` classify speakers consistently for all four scene types:
+## Semantic authoring rules
 
-1. configured catalog speaker -> existing portrait/no-portrait logic;
-2. reserved `旁白` -> `portrait: null`;
-3. declared local speaker -> `portrait: null`;
-4. anything else -> `assetUnknownSpeaker`.
+### Speaker/portrait decision
 
-Before dialogue enrichment, reject any local declaration that overlaps a configured display name.
+The writing/review skills should teach one catalog, not catalog-vs-local selection:
 
-A declared local with an expression is a focused compile error because local speakers have no expression contract.
+- reusable or visually important speaker -> catalog with `portraitMode: portrait`;
+- intentional faceless/system/very minor speaker -> catalog with `portraitMode: none`;
+- unresolved speaker identity -> stop and resolve the catalog/label decision;
+- never rely on an unknown-speaker fallback.
 
-When assets are disabled, `Local Speakers` syntax still validates but catalog membership remains unenforced, preserving the existing asset-enabled boundary.
-
-## Authoring guidance
-
-### Speaker decision
-
-- recurring or case-significant visible speaker -> global catalog;
-- true one-shot faceless speaker -> scene `Local Speakers`;
-- `旁白` -> reserved system speaker;
-- unresolved reusable/local decision -> stop and escalate;
-- never declare local merely to suppress portrait-generation work.
+Global display-name uniqueness is a useful constraint: it makes label drift visible rather than allowing two scenes to independently invent the same ambiguous label.
 
 ### Narration ownership
 
 | Meaning | Authored form |
 |---|---|
-| visible movement, body language, atmosphere, room/object state | `[ ... ]` |
-| present-character conclusion, judgment, interpretation, reaction | character dialogue |
-| time/location transition, unavailable information, intentional voiceover | `**旁白**：...` |
+| Visible movement, body language, atmosphere, room/object state | `[ ... ]` |
+| Present-character conclusion, judgment, interpretation, reaction | character dialogue |
+| Time/location transition, unavailable information, intentional voiceover | `**旁白**：...` |
 
-The base writing skill's contradictory warehouse example must be corrected during implementation.
+The contradictory warehouse example in the base dialogue skill must be corrected.
 
 ### Expression choreography
 
-- bracketed emotion does not select a portrait asset;
-- use only expression slugs that exist for that character;
-- use a suitable non-standard slug at a meaningful state transition when one exists;
-- do not switch expression every line;
-- standard-only catalogs and calm scenes do not create blockers merely for remaining standard.
+- bracketed emotion does not change portrait state;
+- use only expression slugs that exist in `characters.yaml`;
+- use a suitable existing non-standard slug at a meaningful state transition;
+- do not switch portraits line-by-line;
+- standard-only catalogs and calm scenes are valid;
+- adding a new expression asset requires a concrete visible need, not a quota.
 
-## Semantic review changes
+## Review-skill changes
+
+Do not create a parallel semantic-audit vocabulary or findings format.
+
+`reviewing-story-scenes` remains the single semantic review authority and keeps its existing:
+
+- seven independent axes;
+- Blocker / Important finding severity;
+- `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` verdicts;
+- source-cited one-line findings;
+- consolidated Phase 4 report.
 
 ### Axis 3 — Voice, style, narration & expression
 
-Apply to all four scene types.
-
-For analysis scenes, inspect:
-
-- Intro dialogue;
-- every board Result Dialogue;
-- Outro dialogue.
-
-Check:
+Extend the existing Voice & Style axis to include:
 
 - narration ownership;
-- dialogue/visible-direction/portrait-expression coherence;
-- meaningful emotional transitions left flat only when a suitable configured slug exists;
+- bracket/dialogue/portrait-expression coherence;
+- meaningful transitions left flat despite an available configured slug;
 - excessive expression flicker;
-- no false positive for standard-only or calm sequences.
+- false-positive protection for calm or standard-only characters.
 
-### Axis 5 — Visual asset coverage & variety
+Apply to all four scene types. For analysis scenes, inspect Intro, every Result Dialogue, and Outro.
 
-Keep deterministic coverage/spatial checks before subjective variety checks:
+### Axis 5 — Visual asset coverage & purposeful variety
 
-1. background/first-cue completeness and compiled asset identity;
-2. local-speaker contract;
-3. catalog/alias/reusable-character appropriateness;
-4. compiled portrait/expression asset IDs and missing files;
-5. spatial usability;
-6. recurring-location continuity;
-7. purposeful background variety;
-8. same-view false-positive control.
+Keep the existing completeness checks, then add:
 
-For analysis scenes, inspect compiler-produced portrait/background refs from Intro/Result/Outro using HPA-259's existing enrichment path.
+1. portrait/catalog appropriateness;
+2. compiled portrait/expression correctness;
+3. background spatial usability and continuity;
+4. purposeful variation;
+5. same-view false-positive protection.
 
-## Background-variety acceptance phase
+A repeated background is not a finding merely because it remains on screen. Flag it only when a different viewpoint/state would materially improve comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, reasoning state, or a meaningful environmental change.
 
-### Scope
-
-At the start of this phase:
-
-1. read `docs/stories_plan/chapter_1/chapter.md`;
-2. freeze its exact ordered production scene list into `docs/stories_plan/chapter_1/background-variety-audit.md`;
-3. inspect every player-visible background cue in those manifest-listed files.
-
-Coverage includes:
-
-- linear `[場景：...]` tags;
-- investigation sub-locations and dialogue scene tags;
-- interrogation phases and dialogue scene tags;
-- production analysis Intro, board Result Dialogue, and Outro scene tags when a manifest-listed `analysis_scene_*.md` exists.
-
-Synthetic HPA-259 fixtures are excluded.
+## Background-variety design
 
 ### Variety must have a job
 
-A new or regenerated background is justified only when it improves at least one concrete function:
+A new or regenerated background is justified only for a concrete function:
 
-- **orientation** — establish a room, route, entrance, or relationship between spaces;
-- **investigation readability** — make hotspots, standee placement, or source areas understandable;
-- **evidence focus** — emphasize a case-significant object/area without fabricating unreadable text;
-- **pressure** — visually support confrontation, hearing, or revelation;
-- **reasoning state** — support a materially different analytical or procedural beat;
-- **aftermath/state** — show a meaningful time, weather, occupancy, lighting, or post-incident change.
+- orientation;
+- investigation readability;
+- evidence focus;
+- pressure/reveal emphasis;
+- reasoning/procedural state;
+- meaningful time/weather/lighting/occupancy/aftermath state.
 
-A background does not deserve a variant merely because it has remained on screen for several dialogue lines.
+No image-count quota.
 
 ### Continuity anchors
 
-Variants of one location family must preserve stable facts players rely on:
+Same-location variants preserve:
 
 - entrances/exits;
 - window positions;
 - fixed furniture;
-- room geometry;
-- corridor direction;
+- room geometry and corridor direction;
 - case-significant props;
 - signature palette/materials;
 - believable adjacency between sub-locations.
 
-Camera angle, distance, focal emphasis, foreground crop, lighting, occupancy, and weather may change when the narrative function changes.
+Camera angle, distance, focal emphasis, foreground crop, lighting, weather, and occupancy may change when the narrative function changes.
 
-### Audit record
+### Priority policy
 
-Create `docs/stories_plan/chapter_1/background-variety-audit.md` with the frozen manifest and one row per cue:
+Each reviewed cue receives one decision:
 
-| Field | Meaning |
-|---|---|
-| Scene/source | authored file and cue line/block |
-| Asset ID/path | compiled background identity |
-| Location family | recurring physical space |
-| Current function | orientation/dialogue/investigation/etc. |
-| Continuity anchors | stable spatial/canon facts |
-| Variety finding | why current composition is sufficient or repetitive |
-| Decision | `keep`, `prompt-adjust`, `regenerate`, `add-variant` |
-| Priority | `A` or `B` |
-| Proposed function | required narrative/spatial delta |
-| Disposition | implemented/deferred/accepted |
+- `keep`;
+- `prompt-adjust`;
+- `regenerate`;
+- `add-variant`.
 
-Priority A affects comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity. Priority B is serviceable cosmetic polish and remains documented only.
+And one priority:
 
-### Skill/generation rules
+- **Priority A** — affects comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity;
+- **Priority B** — serviceable cosmetic polish.
 
-- Base dialogue skill: background function, camera angle/distance, focal area, continuity anchors, lighting/weather/occupancy, UI-safe lower composition.
-- Investigation skill: sibling sub-locations distinct but spatially coherent and standee/hotspot safe.
-- Interrogation skill: a new phase variant only when visible environmental/dramatic state materially changes.
-- HPA-552 remains owner of the analysis authoring skill; production analysis scenes inherit the shared base rules.
-- Image generation must inspect sibling same-location assets and record continuity anchors plus intended delta before generation.
-- Generate/regenerate only accepted Priority A assets; do not create variants to hit an image-count target.
-- Final touched backgrounds remain opaque `1920x1080` PNGs.
+Implement Priority A only. Priority B remains documented.
 
-## Existing-content semantic re-audit acceptance phase
+## Mechanical background-audit support
 
-### Corpus authority
+Do not manually transcribe compiler-owned data into a large table.
 
-Do not hard-code HPA-561 to a permanent 16-file corpus.
-
-At re-audit start:
-
-1. read `docs/stories_plan/chapter_1/chapter.md`;
-2. copy its exact ordered production scene list into `docs/stories_plan/chapter_1/semantic-content-reaudit.md`;
-3. freeze that list for the rest of the audit;
-4. audit every listed scene regardless of scene type.
-
-The current baseline still contains 16 files and still lists `scene_8_5.md`. If HPA-265 has replaced it with `analysis_scene_8_5.md` by execution time, that production analysis scene is automatically included. Synthetic HPA-259 fixtures are excluded.
-
-### Scene-type coverage
-
-- **Linear:** complete queue.
-- **Investigation:** Intro, sub-location transitions, hotspot inspect/reexamine, character topic/reexamine, evidence On Collect/Reexamine, statement On Acquire/Reexamine, and Outro.
-- **Interrogation:** Intro, phase entry dialogue, testimony loops, challenge/correct/wrong dialogue, authored result/reveal dialogue, and Outro.
-- **Analysis:** when production-manifest-listed, Intro, every board Result Dialogue, and Outro.
-
-HPA-561 does not re-review HPA-259 hidden accepted answers, threshold math, or board validation unless a semantic story/canon issue directly exposes a problem.
-
-### Audit dimensions
-
-#### Speaker/local/portrait contract
-
-- exact catalog labels for reusable speakers;
-- valid Local Speakers intent for true one-shot faceless speakers;
-- no reusable/case-significant character incorrectly declared local;
-- reserved `旁白` handling;
-- compiled `portrait: null` matches authored intent;
-- missing reusable portrait files remain explicit asset work.
-
-#### Narration ownership
-
-Every `旁白` line must be a true transition, unavailable information, or intentional voiceover. Flag visible action/atmosphere/object state better expressed in brackets and present-character conclusions/judgments/reactions better owned by the character.
-
-#### Expression choreography
-
-Check only actual slugs in `characters.yaml`. Important requires either a suitable existing non-standard slug ignored across a meaningful transition or an authored expression that contradicts the visible state. Standard-only or calm scenes are not Important merely for staying standard.
-
-#### Background-variety integration
-
-Cross-check `background-variety-audit.md`: applicable cues are covered, accepted Priority A changes are integrated, continuity remains coherent, and no unnecessary image change is demanded merely to satisfy variety.
-
-### Severity policy
-
-**Blocker:** material identity, canon, viewpoint, or player-understanding failure.
-
-**Important:** unresolved visible reusable portrait treatment, cataloged label drift, major narrator fallback, meaningful ignored expression despite an available slug, or unimplemented accepted Priority A background issue.
-
-**Minor/deferred:** polish without material comprehension, identity, canon, or pacing impact.
-
-### Finding format
-
-Every finding records:
-
-- ID;
-- severity;
-- exact authored path and line;
-- scene/block;
-- rule area;
-- offending quote;
-- authority;
-- why it matters;
-- remediation direction;
-- final disposition.
-
-Record the finding before editing it.
-
-Required final state:
+Add one small audit script modeled on `evidence-sources-audit.ts`:
 
 ```text
-Open Blockers: 0
-Open Important: 0
-Minor/deferred: documented
+packages/scripts/compile-scenes/background-cues-audit.ts
+packages/scripts/compile-scenes/background-cues-audit.test.ts
+bun run background-cues:audit
 ```
 
-### Editing boundary
+The script reads the production Chapter 1 manifest plus compiled scene/asset outputs and emits deterministic mechanical rows for every player-visible background cue:
 
-Finding-driven fixes may change:
+```ts
+type BackgroundCueAuditItem = {
+  cueKey: string;
+  sceneFile: string;
+  sceneType: "linear" | "investigation" | "interrogation" | "analysis";
+  cuePath: string;
+  backgroundAssetId: string | null;
+  expectedPath: string | null;
+  fileMissing: boolean;
+};
+```
 
-- `Local Speakers` metadata;
-- speaker labels;
-- narration/bracket ownership;
-- expression annotations;
-- reusable portrait catalog/assets;
-- accepted Priority A background prompts/assets.
+It also emits structured `problems[]` instead of silently skipping malformed/missing inputs.
 
-They must not change culprit, case logic, evidence packages, reveal ladder, unlock chains, scene order, sealed-reveal timing, or Chapter 1 canon beyond the minimal accepted correction.
+The script does **not** infer the physical location family or artistic quality. Those remain human/agent review judgments.
 
-## Ticket relationships
+### Human report
 
-- **HPA-259:** merged baseline; no longer a blocker.
-- **HPA-552:** owns `.claude/skills/writing-analysis-scene/SKILL.md`; HPA-561 hardens shared base rules and semantic review instead of duplicating that skill.
-- **HPA-265:** may replace the production Beat 8.5 transition; manifest-driven audits automatically handle either state and do not block on HPA-265.
-- **HPA-260:** runtime analysis behavior is outside HPA-561.
+Create:
 
-## Verification strategy
+```text
+docs/stories_plan/chapter_1/background-variety-audit.md
+```
+
+Use the generated `cueKey` as the stable first column, then add only judgment fields:
+
+```markdown
+| Cue key | Location family | Current function | Continuity anchors | Variety finding | Decision | Priority | Proposed function | Disposition |
+```
+
+The audit command should support a check mode that verifies every current mechanical `cueKey` appears exactly once in the report. Coverage becomes mechanically checkable while judgment remains semantic.
+
+If HPA-265 has inserted a production `analysis_scene_*.md`, it is included automatically. Synthetic HPA-259 fixtures are excluded.
+
+## Existing-content semantic re-audit
+
+Do not invent a second findings ledger or severity vocabulary.
+
+At audit start:
+
+1. freeze the exact current `docs/stories_plan/chapter_1/chapter.md` manifest;
+2. invoke the hardened `reviewing-story-scenes` skill over that frozen corpus;
+3. save its consolidated report to:
+
+```text
+docs/stories_plan/chapter_1/semantic-content-reaudit.md
+```
+
+The initial report is read-only and uses the skill's existing output format.
+
+After fixes, append a short resolution section mapping each original Blocker/Important finding to its disposition/evidence, then rerun the full seven-axis review and append the final consolidated report.
+
+Completion requires the final review verdict to be `SHIP` with no remaining Blocker or Important findings. Minor/deferred observations may remain documented.
+
+This keeps one review authority and avoids hand-entered counters claiming a state the review did not produce.
+
+## Skill verification strategy
+
+Use prompt-eval pressure tests, but only where they pay for themselves.
+
+### Baseline RED scenarios
+
+Run three baseline scenarios before editing skills:
+
+1. narration fallback;
+2. reusable/visible speaker missing a catalog contract;
+3. bracket-only emotional transition with an available non-standard expression.
+
+### Post-change verification
+
+Rerun those three as GREEN, then run:
+
+4. calm/standard scene false-positive control;
+5. catalog-label drift spot check;
+6. analysis-scene inheritance spot check.
+
+The last two are GREEN-only spot checks; they do not need fabricated baseline failures.
+
+## Delivery shape
+
+HPA-561 remains one Linear ticket and one spec/plan, but implementation should be reviewable as **two PRs**.
+
+### Implementation PR A — contract and tooling
+
+Contains:
+
+- skill/review/orchestrator hardening;
+- strict global speaker-catalog enforcement;
+- current Chapter 1 `characters.yaml` migration needed to keep compilation green;
+- focused portrait assets required by the explicit `店主` / `增田圭` decisions;
+- background-cue audit script and tests.
+
+No broad scene prose/background rewrite.
+
+### Implementation PR B — Chapter 1 acceptance
+
+After PR A lands:
+
+- freeze production Chapter 1 manifest;
+- run background audit and fill judgment columns;
+- implement Priority A prompt/background changes;
+- invoke seven-axis semantic re-audit;
+- fix recorded Blocker/Important findings;
+- rerun review to `SHIP`;
+- retain Priority B / Minor observations as documented follow-up.
+
+This keeps compiler/tooling review separate from art/content review without creating more architecture or tickets.
+
+## Verification
 
 Primary proof:
 
-- focused parser tests for `Local Speakers` across legacy and analysis headers;
-- focused enrichment tests proving the same speaker classification on legacy and analysis dialogue;
-- emitter/fixture proof that `Local Speakers` never enters runtime JSON;
-- honest RED/GREEN skill pressure scenarios and false-positive controls;
-- manifest-driven background audit;
-- grouped before/after location-family review;
-- manifest-driven semantic content re-audit;
-- final zero-open-Blocker/Important report.
+- unknown speaker without expression now fails;
+- `portraitMode: none` speakers compile portraitless and reject expressions;
+- analysis Intro/Result/Outro use the same strict catalog rule through existing enrichment;
+- three RED -> GREEN skill scenarios plus three post-change controls/spot checks;
+- mechanical background cue inventory and coverage check;
+- grouped before/after location-family review for Priority A backgrounds;
+- final seven-axis semantic review verdict `SHIP`.
 
-Broad regression checks:
+Final regression commands for code/tooling changes:
 
 ```bash
 bun run format:check
 bun run check:scripts
 bun run test:scripts
 bun run scenes:compile
+bun run lint
 ```
 
-Run Rust/full application checks only if implementation unexpectedly touches runtime-facing code; the intended design does not.
+Rust/app tests remain unnecessary unless implementation unexpectedly changes runtime-facing code.
 
 ## Non-goals
 
-- full header-parser unification;
-- semantic alias inference in the compiler;
-- narration/emotion/image-similarity classifiers;
-- automatic expression choice;
-- arbitrary expression/background-count thresholds;
-- a third character/location registry;
-- an eighth review axis;
-- a new Rust/Svelte/runtime JSON field for `Local Speakers`;
-- HPA-260 runtime work;
-- HPA-552 analysis-skill duplication;
-- synthetic analysis-scene background work;
-- wholesale Chapter 1 rewrite or background regeneration;
-- Chapter 2 or later content audit.
+- no `Local Speakers` metadata or second speaker registry;
+- no scene-header/AST changes for speaker classification;
+- no semantic alias/narration/emotion/image-similarity classifier;
+- no automatic expression choice;
+- no arbitrary expression/background-count thresholds;
+- no new review severity vocabulary or parallel semantic ledger;
+- no generic location registry;
+- no eighth review axis;
+- no HPA-260 runtime work;
+- no HPA-552 analysis-skill duplication;
+- no synthetic analysis-scene background work;
+- no wholesale Chapter 1 rewrite/background regeneration;
+- no Chapter 2 audit.
 
 ## Acceptance criteria
 
-### Durable speaker contract
-
-- `Local Speakers` works for linear, investigation, interrogation, and analysis scenes.
-- HPA-259's required-Summary analysis header behavior remains intact.
-- `Local Speakers` parsing is shared through one narrow helper, not four copies.
-- All four AST scene types carry compiler-only local-speaker source data.
-- Asset-enabled enrichment rejects every undeclared unknown speaker across all four scene types.
-- Analysis Intro/Result/Outro reuse the existing HPA-259 enrichment traversal.
-- Declared local speakers compile portraitless and cannot author expressions.
-- Cataloged speakers cannot be redundantly declared local.
-- `旁白` remains reserved.
-- `Local Speakers` never appears in emitted runtime JSON.
-
-### Authoring/review rules
-
-- The base writing skill's narration/expression guidance is corrected and hardened.
-- Investigation/interrogation background rules support purposeful variety without visual churn.
-- Semantic review recognizes all four scene types and applies Axis 3/5 correctly to analysis dialogue.
-- HPA-552 remains owner of the dedicated analysis authoring skill.
-
-### Background audit
-
-- The production Chapter 1 manifest is frozen at audit start.
-- Every player-visible background cue in that frozen manifest receives `keep`, `prompt-adjust`, `regenerate`, or `add-variant` plus Priority A/B.
-- Every new/regenerated background has a distinct narrative/spatial function.
-- Recurring-location variants preserve documented continuity anchors.
-- Every Priority A item is implemented or explicitly accepted with evidence; Priority B remains documented.
-- At least one uninterrupted same-view scene remains `keep` as a false-positive control.
-- Touched background PNGs are opaque `1920x1080`.
-
-### Existing-content re-audit
-
-- The production Chapter 1 manifest is frozen at re-audit start rather than permanently hard-coded.
-- Every manifest-listed scene is audited regardless of scene type.
-- Production analysis scenes are included automatically if present; synthetic HPA-259 fixtures are excluded.
-- Every finding cites exact authored path/line and is recorded before editing.
-- All Blocker and Important findings are fixed or explicitly accepted with evidence.
-- Final full-corpus review reports zero open Blocker and Important findings.
-- Minor/deferred findings remain documented.
-- Fixes remain finding-driven and do not become an unrelated Chapter 1 rewrite.
-- Canon, evidence logic, unlock chains, reveal timing, and scene order remain intact.
+- Unknown dialogue speakers fail asset-enabled compilation even without an expression.
+- The strict gate is implemented by deleting the silent fallback, not by adding new parser/AST metadata.
+- Every intentional portraitless speaker is represented through existing `portraitMode: none`.
+- `旁白` is cataloged as a no-portrait system speaker rather than compiler-special-cased.
+- `店主` receives a real portrait contract and remains distinct from `店長高瀨`.
+- `學生` remains explicit but portraitless.
+- `增田圭` receives a real portrait contract.
+- Skills are hardened before production speaker/content migration consumes them.
+- Axis 3/5 changes apply to all four scene types and reuse `reviewing-story-scenes` as the semantic authority.
+- Baseline skill verification is limited to three genuine RED scenarios; prospective checks are GREEN-only.
+- Background mechanical data is generated by a script; artistic decisions remain human/agent reviewed.
+- Background audit coverage is mechanically checkable against the current manifest.
+- Priority A background findings are implemented; Priority B remains documented.
+- The semantic re-audit is the consolidated output of `reviewing-story-scenes`, not a parallel review format.
+- Final semantic review is `SHIP` with no Blocker/Important findings.
+- Implementation is delivered as separate contract/tooling and content/asset PRs under HPA-561.
