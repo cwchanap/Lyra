@@ -5,8 +5,15 @@ import { describe, expect, it } from "vitest";
 import { enrichScenesWithAssets } from "./enrich";
 import { emitLinearScene } from "../emitter";
 import type { AssetConfig } from "./config";
-import type { ASTInterrogationPhase, DialogueItem } from "../types";
+import type {
+  ASTAnalysisScene,
+  ASTInterrogationPhase,
+  AnalysisSceneRecord,
+  DialogueItem,
+  VisualAssetCue,
+} from "../types";
 import type { SceneRecord } from "../validator";
+import type { OrderedAssetScene } from "./enrich";
 
 function config(): AssetConfig {
   const character = {
@@ -69,7 +76,115 @@ function config(): AssetConfig {
   };
 }
 
+function visualCue(backgroundPrompt: string): VisualAssetCue {
+  return {
+    backgroundPrompt,
+    backgroundAssetId: null,
+    bgm: { channel: "bgm", assetId: "rain_mystery_low" },
+    bgs: { channel: "bgs", assetId: "street_rain" },
+  };
+}
+
+function linearSceneWithCue(id: string, cue: VisualAssetCue): SceneRecord {
+  return {
+    chapterId: "chapter_1",
+    file: `${id}.md`,
+    ast: {
+      kind: "linearScene",
+      id,
+      title: id,
+      summary: id,
+      summaryAuthored: false,
+      queue: [{ kind: "sceneTag", text: id, assetCue: cue }],
+      assetRefs: [],
+      sourceFile: `chapter_1/${id}.md`,
+      line: 1,
+    },
+  };
+}
+
+function analysisSceneWithCue(
+  id: string,
+  cue: VisualAssetCue,
+): AnalysisSceneRecord {
+  const ast: ASTAnalysisScene = {
+    kind: "analysisScene",
+    id,
+    title: id,
+    summary: id,
+    intro: [{ kind: "sceneTag", text: id, assetCue: cue }],
+    boards: [],
+    outro: [],
+    assetRefs: [],
+    sourceFile: `chapter_1/${id}.md`,
+    line: 1,
+  };
+  return { chapterId: "chapter_1", file: `${id}.md`, ast };
+}
+
 describe("enrichScenesWithAssets", () => {
+  it("preserves manifest order when an analysis scene is the first visual cue", () => {
+    const analysisScene = analysisSceneWithCue("analysis_scene_1", {
+      ...visualCue("Analysis room."),
+      bgm: null,
+      bgs: null,
+    });
+    const scene = linearSceneWithCue("scene_2", visualCue("Hallway."));
+    const orderedScenes: OrderedAssetScene[] = [
+      { kind: "analysis", record: analysisScene },
+      { kind: "scene", record: scene },
+    ];
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      analysisScenes: [analysisScene],
+      orderedScenes,
+      config: config(),
+    });
+
+    expect(
+      result.errors.filter((error) => error.code === "assetFirstCueMissingBgm"),
+    ).toHaveLength(1);
+    expect(
+      result.errors.filter((error) => error.code === "assetFirstCueMissingBgs"),
+    ).toHaveLength(1);
+  });
+
+  it("keeps an analysis scene between ordinary scenes in manifest order", () => {
+    const first = linearSceneWithCue("scene_1", visualCue("First."));
+    const analysisScene = analysisSceneWithCue(
+      "analysis_scene_2",
+      visualCue("Analysis room."),
+    );
+    const last = linearSceneWithCue("scene_3", {
+      ...visualCue("Last."),
+      bgm: null,
+      bgs: null,
+    });
+    const orderedScenes: OrderedAssetScene[] = [
+      { kind: "scene", record: first },
+      { kind: "analysis", record: analysisScene },
+      { kind: "scene", record: last },
+    ];
+
+    const result = enrichScenesWithAssets({
+      scenes: [first, last],
+      analysisScenes: [analysisScene],
+      orderedScenes,
+      config: config(),
+    });
+    const backgroundIds = result.manifest.entries
+      .filter((entry) => entry.type === "background")
+      .map((entry) => entry.assetId);
+
+    expect(backgroundIds).toEqual([
+      "background.chapter_1.scene_1.tag_001",
+      "background.chapter_1.analysis_scene_2.tag_001",
+      "background.chapter_1.scene_3.tag_001",
+    ]);
+    expect(result.errors).toEqual([]);
+  });
+
   it("adds background, portrait, evidence, audio refs, and manifest requests", () => {
     const scenes: SceneRecord[] = [
       {

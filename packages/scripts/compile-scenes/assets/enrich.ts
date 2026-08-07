@@ -50,9 +50,14 @@ export type AssetEnrichmentResult = {
   errors: CompileError[];
 };
 
+export type OrderedAssetScene =
+  | { kind: "scene"; record: SceneRecord }
+  | { kind: "analysis"; record: AnalysisSceneRecord };
+
 export function enrichScenesWithAssets(input: {
   scenes: SceneRecord[];
   analysisScenes?: AnalysisSceneRecord[];
+  orderedScenes?: readonly OrderedAssetScene[];
   config: AssetConfig;
   /**
    * Repository root that manifest `expectedPath` values are relative to.
@@ -78,12 +83,40 @@ export function enrichScenesWithAssets(input: {
   const errors: CompileError[] = [];
   const requests = new Map<string, ManifestDraft>();
   const corpusState = { hadVisualCue: false };
-  const scenes = input.scenes.map((scene) =>
-    enrichScene(scene, input.config, requests, errors, corpusState),
-  );
-  const enrichedAnalysisScenes = analysisScenes.map((scene) =>
-    enrichAnalysisScene(scene, input.config, requests, errors, corpusState),
-  );
+  const orderedScenes = input.orderedScenes ?? [
+    ...input.scenes.map((record) => ({ kind: "scene" as const, record })),
+    ...analysisScenes.map((record) => ({ kind: "analysis" as const, record })),
+  ];
+  const enrichedScenes = new Map<SceneRecord, SceneRecord>();
+  const enrichedAnalysisScenes = new Map<
+    AnalysisSceneRecord,
+    AnalysisSceneRecord
+  >();
+  for (const orderedScene of orderedScenes) {
+    if (orderedScene.kind === "scene") {
+      enrichedScenes.set(
+        orderedScene.record,
+        enrichScene(
+          orderedScene.record,
+          input.config,
+          requests,
+          errors,
+          corpusState,
+        ),
+      );
+    } else {
+      enrichedAnalysisScenes.set(
+        orderedScene.record,
+        enrichAnalysisScene(
+          orderedScene.record,
+          input.config,
+          requests,
+          errors,
+          corpusState,
+        ),
+      );
+    }
+  }
   const manifest = buildAssetManifest({
     entries: [...requests.values()],
     config: input.config,
@@ -91,8 +124,10 @@ export function enrichScenesWithAssets(input: {
   const warnings = checkAssetExistence(manifest.entries, input.repoRoot);
 
   return {
-    scenes,
-    analysisScenes: enrichedAnalysisScenes,
+    scenes: input.scenes.map((scene) => enrichedScenes.get(scene) ?? scene),
+    analysisScenes: analysisScenes.map(
+      (scene) => enrichedAnalysisScenes.get(scene) ?? scene,
+    ),
     manifest,
     warnings,
     errors,
