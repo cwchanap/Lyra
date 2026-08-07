@@ -6,7 +6,7 @@ on:
     tags: ["*"]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
   schedule:
     - cron: "17 4 * * *"
   workflow_dispatch:
@@ -17,6 +17,7 @@ concurrency:
 
 jobs:
   content-revision-golden:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Content revision golden (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     permissions:
@@ -41,6 +42,7 @@ jobs:
         run: bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/semantic-defaults.test.ts packages/scripts/compile-scenes/save-content-references.test.ts packages/scripts/compile-scenes/save-content-manifest.test.ts
 
   lint-frontend:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Frontend – check & build
     runs-on: ubuntu-latest
     steps:
@@ -70,6 +72,7 @@ jobs:
         run: bun run build
 
   lint-rust:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Rust – check & clippy
     runs-on: ubuntu-latest
     steps:
@@ -120,6 +123,7 @@ jobs:
         run: cargo doc --no-deps --document-private-items --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 
   unit-tests-frontend:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Frontend Unit Tests
     runs-on: ubuntu-latest
     steps:
@@ -156,6 +160,7 @@ jobs:
           flags: frontend
 
   unit-tests-rust:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Rust Unit Tests
     runs-on: ubuntu-latest
     steps:
@@ -196,6 +201,7 @@ jobs:
           flags: rust
 
   e2e-plan:
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     name: Plan Tauri E2E
     runs-on: ubuntu-latest
     permissions:
@@ -396,7 +402,7 @@ jobs:
   e2e:
     name: Tauri E2E
     needs: [e2e-plan, e2e-execution]
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
