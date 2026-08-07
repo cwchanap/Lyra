@@ -309,9 +309,9 @@ git commit -m "docs: harden story semantic and visual review"
 ### Task 3: Delete the silent unknown-speaker fallback and migrate the global catalog
 
 **Files:**
-- Modify: `packages/scripts/compile-scenes/assets/enrich.ts`
-- Modify: `packages/scripts/compile-scenes/assets/enrich.test.ts`
-- Modify: `static/assets/config/characters.yaml`
+- Modify `packages/scripts/compile-scenes/assets/enrich.ts`.
+- Modify `packages/scripts/compile-scenes/assets/enrich.test.ts`.
+- Modify `static/assets/config/characters.yaml`.
 
 **Consumes:** Task 2 guidance.
 
@@ -319,76 +319,24 @@ git commit -m "docs: harden story semantic and visual review"
 
 - [ ] **Step 1: Add a failing unknown-speaker/no-expression test**
 
-```ts
-it("errors for unknown speaker without expression", () => {
-  const scenes = [
-    linearScene([
-      {
-        kind: "line",
-        speaker: "未登錄人物",
-        expression: null,
-        portrait: null,
-        text: "hi",
-      },
-    ]),
-  ];
-  const result = enrichScenesWithAssets({ scenes, config: config() });
-  expect(result.errors.map((error) => error.code)).toContain(
-    "assetUnknownSpeaker",
-  );
-});
-```
+Add a linear-scene line with speaker `未登錄人物`, no expression, and assert `assetUnknownSpeaker` after enrichment.
 
 - [ ] **Step 2: Add strict-gate coverage for analysis carriers and no-portrait reuse across all scene families**
 
-**Unknown-speaker analysis coverage:** create table cases for `intro`, `resultDialogue`, and `outro`, each containing an uncatalogued line. For every case call:
+Unknown-speaker analysis coverage: create table cases for Intro, Result Dialogue, and Outro containing an uncatalogued line; each must return `assetUnknownSpeaker` through existing `enrichAnalysisScene()`.
 
-```ts
-enrichScenesWithAssets({
-  scenes: [],
-  analysisScenes: [scene],
-  config: config(),
-});
-```
-
-and assert `assetUnknownSpeaker`.
-
-**Known no-portrait coverage:** add a helper no-portrait catalog character:
-
-```ts
-const narrator = {
-  id: "narrator",
-  displayNames: ["旁白"],
-  portraitMode: "none" as const,
-  visualPrompt: null,
-  referenceAssetId: null,
-  expressions: new Map(),
-};
-```
-
-Use existing scene-fixture builders to place `**旁白**：hi` with no expression into:
+Known no-portrait coverage: add a `旁白` config fixture with `portraitMode: "none"`, then use existing fixture builders to place a no-expression narrator line into:
 
 ```text
 linear queue
 investigation dialogue carrier
 interrogation dialogue carrier
 analysis Intro
-analysis board Result Dialogue
+analysis Result Dialogue
 analysis Outro
 ```
 
-For every case assert:
-
-```ts
-expect(result.errors.map((e) => e.code)).not.toContain("assetUnknownSpeaker");
-expect(result.errors.map((e) => e.code)).not.toContain(
-  "assetExpressionOnNoPortraitSpeaker",
-);
-```
-
-and assert the enriched line's `portrait` is `null`.
-
-Keep the existing expression-on-no-portrait test as the negative counterpart.
+For every case assert no unknown-speaker/no-portrait-expression error and `portrait === null`. Keep the existing expression-on-no-portrait test as the negative counterpart.
 
 - [ ] **Step 3: Verify RED**
 
@@ -396,97 +344,34 @@ Keep the existing expression-on-no-portrait test as the negative counterpart.
 bun run test:scripts -- packages/scripts/compile-scenes/assets/enrich.test.ts
 ```
 
-Expected: new unknown/no-expression tests fail because current `enrichLine()` silently returns `portrait: null`; the existing no-portrait behavior remains green.
+Expected: unknown/no-expression cases fail on current code; existing no-portrait behavior stays green.
 
 - [ ] **Step 4: Delete only the silent fallback**
 
-```ts
-const character = context.config.characters.byDisplayName.get(item.speaker);
-if (!character) {
-  context.errors.push(
-    compileError(
-      context.scene.ast.sourceFile,
-      context.scene.ast.line,
-      "assetUnknownSpeaker",
-      `Unknown speaker "${item.speaker}" in asset-enabled scene.`,
-    ),
-  );
-  return { ...item, portrait: null };
-}
-```
-
-Keep existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpeaker` behavior unchanged.
+The unknown-speaker branch must always push `assetUnknownSpeaker` and return the line with `portrait: null`; do not add parser/AST state or special-case `旁白`.
 
 - [ ] **Step 5: Add intentional no-portrait catalog entries**
 
-```yaml
-  - id: narrator
-    displayNames: ["旁白"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
+Add catalog entries for:
 
-  - id: office_worker
-    displayNames: ["上班族"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
-
-  - id: passerby_a
-    displayNames: ["路人甲"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
-
-  - id: passerby_b
-    displayNames: ["路人乙"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
-
-  - id: passerby_c
-    displayNames: ["路人丙"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
-
-  - id: generic_student
-    displayNames: ["學生"]
-    portraitMode: none
-    visualPrompt: null
-    referenceAssetId: null
-    expressions: {}
+```text
+旁白
+上班族
+路人甲
+路人乙
+路人丙
+學生
 ```
+
+Each uses `portraitMode: none`, `visualPrompt: null`, `referenceAssetId: null`, and `expressions: {}` with stable English snake-case IDs.
 
 - [ ] **Step 6: Add Scene P1 `店主` portrait contract**
 
-```yaml
-  - id: stationery_owner
-    displayNames: ["店主"]
-    portraitMode: portrait
-    visualPrompt: >
-      Middle-aged Japanese woman who owns a small neighborhood stationery and
-      copy shop, practical everyday blouse with a dark work apron, hair tied
-      back simply, ordinary local-shop presence, firm and slightly stubborn
-      working demeanor.
-    referenceAssetId: null
-    expressions:
-      standard:
-        prompt: firm skeptical shopkeeper expression, practical and self-assured
-      flustered:
-        prompt: embarrassed defensive expression after realizing the receipt was misread
-```
-
-Do not alias this to `店長高瀨`.
+Use ID `stationery_owner`, display name `店主`, portrait mode `portrait`, a grounded middle-aged stationery/copy-shop owner visual prompt, `standard`, and `flustered`. Do not alias to `店長高瀨`.
 
 - [ ] **Step 7: Add `增田圭` portrait contract**
 
-Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and one `standard` expression matching his ordinary Scene P2 presentation. Do not invent sealed traits.
+Use ID `masuda_kei`, display name `增田圭`, portrait mode `portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and one `standard` expression matching his ordinary Scene P2 presentation. Do not invent sealed traits.
 
 - [ ] **Step 8: Run focused tests**
 
@@ -501,9 +386,9 @@ bun run check:scripts
 bun run scenes:compile
 ```
 
-Expected: no `assetUnknownSpeaker` errors for the current manifest; no expression-on-no-portrait errors for narrator/commuters/student; only explicitly expected new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
+Expected: no `assetUnknownSpeaker` errors for the current manifest; no expression-on-no-portrait errors for narrator/commuters/student; only explicitly accepted new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
 
-If the manifest changed and additional unknown labels appear, classify them using Task 2 guidance; do not weaken the compiler.
+If the manifest changed and additional labels appear, classify them using Task 2 guidance; do not weaken the gate.
 
 - [ ] **Step 10: Commit**
 
@@ -519,43 +404,22 @@ git commit -m "feat: require all scene speakers in character catalog"
 ### Task 4: Add mechanical background-cue audit tooling
 
 **Files:**
-- Create: `packages/scripts/compile-scenes/background-cues-audit.ts`
-- Create: `packages/scripts/compile-scenes/background-cues-audit.test.ts`
-- Modify: `packages/scripts/package.json`
-- Modify: root `package.json`
+- Create `packages/scripts/compile-scenes/background-cues-audit.ts`.
+- Create `packages/scripts/compile-scenes/background-cues-audit.test.ts`.
+- Modify `packages/scripts/package.json`.
+- Modify root `package.json`.
 
 **Produces:** compiler-owned background inventory and mechanical report coverage. Artistic classification remains outside the script.
 
 - [ ] **Step 1: Define audit types**
 
-```ts
-export type BackgroundCueAuditItem = {
-  cueKey: string;
-  sceneFile: string;
-  sceneType: "linear" | "investigation" | "interrogation" | "analysis";
-  cuePath: string;
-  backgroundAssetId: string | null;
-  expectedPath: string | null;
-  fileMissing: boolean;
-};
-
-export type BackgroundCueAuditProblem = {
-  source: string;
-  kind: "manifestRead" | "manifestParse" | "compiledSceneRead" | "assetManifestRead";
-  message: string;
-};
-
-export type BackgroundCueAuditResult = {
-  items: BackgroundCueAuditItem[];
-  problems: BackgroundCueAuditProblem[];
-};
-```
+Use `BackgroundCueAuditItem`, `BackgroundCueAuditProblem`, and `BackgroundCueAuditResult` with cue key, scene file/type, cue path, background ID, expected path, and missing-file flag.
 
 - [ ] **Step 2: Enumerate cue occurrences from compiled output**
 
 After `bun run scenes:compile`, read the production chapter manifest, emitted scene JSON, and generated asset manifest. Recursively emit one row whenever an object owns `backgroundAssetId`, including repeated occurrences reusing the same ID.
 
-Use JSON-pointer-like cue paths and:
+Use a JSON-pointer-like `cuePath` and:
 
 ```ts
 cueKey = `${sceneFile}::${cuePath}`;
@@ -565,28 +429,13 @@ Map IDs to `expectedPath`; set `fileMissing` from disk existence. Do not infer p
 
 - [ ] **Step 3: Add report coverage checking**
 
-```ts
-export function checkBackgroundAuditCoverage(
-  result: BackgroundCueAuditResult,
-  reportMarkdown: string,
-): string[];
-```
+Export `checkBackgroundAuditCoverage(result, reportMarkdown): string[]`. Read the first column under `## Cue decisions`. Reject missing, stale, duplicate cue keys and blank/unsupported decisions/priorities.
 
-Read the first column under `## Cue decisions`. Return problems for missing, stale, duplicate cue keys and invalid/blank Decision/Priority.
-
-```ts
-const allowedDecisions = new Set([
-  "keep",
-  "prompt-adjust",
-  "regenerate",
-  "add-variant",
-]);
-const allowedPriorities = new Set(["A", "B"]);
-```
+Allowed decisions: `keep`, `prompt-adjust`, `regenerate`, `add-variant`. Allowed priorities: `A`, `B`.
 
 - [ ] **Step 4: Write tests**
 
-Cover repeated occurrences, null background IDs, analysis Intro/Result/Outro, missing expected files, structured input problems, and report coverage errors.
+Cover repeated occurrences, null background IDs, analysis Intro/Result/Outro, missing expected files, structured input problems, and all report coverage error classes.
 
 - [ ] **Step 5: Run focused tests**
 
@@ -596,19 +445,7 @@ bun run test:scripts -- packages/scripts/compile-scenes/background-cues-audit.te
 
 - [ ] **Step 6: Wire CLI scripts**
 
-`packages/scripts/package.json`:
-
-```json
-"background-cues:audit": "bun run compile-scenes/background-cues-audit.ts"
-```
-
-Root `package.json`:
-
-```json
-"background-cues:audit": "bun run --cwd packages/scripts background-cues:audit"
-```
-
-Support:
+Add `background-cues:audit` to package/root scripts and support:
 
 ```bash
 bun run background-cues:audit --chapter chapter_1
@@ -646,7 +483,7 @@ bun run scenes:compile
 bun run lint
 ```
 
-Expected: all commands exit 0. `scenes:compile` may report only accepted new missing portrait PNG warnings for `stationery_owner` and `masuda_kei`; record exact warnings in the PR.
+Expected: all commands exit 0. `scenes:compile` may report only accepted missing portrait PNG warnings for `stationery_owner` and `masuda_kei`; record exact warnings.
 
 - [ ] **Step 2: Verify diff boundary**
 
@@ -656,7 +493,7 @@ PR A starts from `main`:
 git diff --name-only main...HEAD
 ```
 
-PR A contains skills, strict catalog enforcement/config, scenario evidence, and background-audit tooling only. No broad scene prose/background changes.
+No broad scene prose/background changes.
 
 - [ ] **Step 3: Open/review PR A under HPA-561**
 
@@ -668,14 +505,9 @@ Merge PR A before final PR B acceptance. If PR B is temporarily stacked, rebase 
 
 ### Task 6: Generate approved portraits and run background-variety audit
 
-**Files:**
-- Create `docs/stories_plan/chapter_1/background-variety-audit.md`.
-- Create/update portrait PNGs required by Task 3.
-- Read frozen manifest, generated background inventory, same-location assets.
-
 - [ ] **Step 1: Generate approved portraits**
 
-Use the image-generation skill/policy for exactly:
+Using image-generation skill/policy, generate exactly:
 
 ```text
 portrait.stationery_owner.standard
@@ -683,11 +515,9 @@ portrait.stationery_owner.flustered
 portrait.masuda_kei.standard
 ```
 
-Do not add expressions beyond the catalog contract without a concrete finding.
-
 - [ ] **Step 2: Freeze production manifest**
 
-Copy current ordered `chapter.md` scene list into report header with audit date/ruleset. Include production analysis automatically if present.
+Copy current ordered `chapter.md` scene list into the report header with audit date/ruleset. Include production analysis if present.
 
 - [ ] **Step 3: Generate mechanical inventory**
 
@@ -703,19 +533,19 @@ bun run background-cues:audit --chapter chapter_1
 |---|---|---|---|---|---|---|---|---|
 ```
 
-Copy cue keys exactly from the tool. Fill other columns by review.
+Copy cue keys exactly from the tool; fill all other columns by review.
 
 - [ ] **Step 5: Group by physical location**
 
-Inspect entrances/exits, windows, furniture, geometry/corridor direction, case props, palette/materials, adjacency, angle/distance, focal emphasis, lighting/weather/occupancy.
+Inspect stable geometry/props/palette/adjacency plus angle, focal emphasis, and environment state.
 
 - [ ] **Step 6: Assign one decision/priority per cue**
 
-Priority A only for comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity. Otherwise B.
+Priority A only for material comprehension/usability/evidence/reveal/state/continuity impact; otherwise B.
 
 - [ ] **Step 7: Record same-view false-positive control**
 
-Keep at least one uninterrupted sequence and document why changing it would be gratuitous.
+Keep at least one uninterrupted sequence and explain why changing it would be gratuitous.
 
 - [ ] **Step 8: Check coverage**
 
@@ -736,9 +566,9 @@ git commit -m "docs: audit Chapter 1 backgrounds and add approved portraits"
 
 ### Task 7: Implement only Priority A background changes
 
-- [ ] **Step 1: Record the intended delta before every edit**
+- [ ] **Step 1: Record intended delta before every edit**
 
-Each A row states narrative/spatial function, stable anchors, camera/composition delta, and environment-state delta when relevant.
+Each A row states narrative/spatial function, stable anchors, composition delta, and environment-state delta when relevant.
 
 - [ ] **Step 2: Edit only corresponding prompts/cues**
 
@@ -759,39 +589,11 @@ git commit -m "docs: improve Priority A Chapter 1 background cues"
 
 - [ ] **Step 5: Generate/regenerate Priority A PNGs only**
 
-Inspect sibling same-location assets and preserve documented anchors.
+Inspect sibling same-location assets first and preserve documented anchors.
 
 - [ ] **Step 6: Verify touched background dimensions/opacity**
 
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import struct, subprocess
-changed = subprocess.check_output([
-    "git", "diff", "--name-only", "main...HEAD", "--",
-    "static/assets/backgrounds/chapter_1"
-], text=True).splitlines()
-paths = [Path(p) for p in changed if p.endswith(".png") and Path(p).exists()]
-for path in paths:
-    data = path.read_bytes()
-    assert data[:8] == b"\x89PNG\r\n\x1a\n", f"not PNG: {path}"
-    width, height, bit_depth, color_type, compression, filter_method, interlace = struct.unpack(
-        ">IIBBBBB", data[16:29]
-    )
-    offset = 8
-    has_trns = False
-    while offset + 12 <= len(data):
-        length = struct.unpack(">I", data[offset:offset + 4])[0]
-        chunk_type = data[offset + 4:offset + 8]
-        has_trns |= chunk_type == b"tRNS"
-        offset += 12 + length
-        if chunk_type == b"IEND":
-            break
-    assert (width, height) == (1920, 1080), f"wrong size {width}x{height}: {path}"
-    assert color_type in (0, 2) and not has_trns, f"background must be opaque: {path}"
-    print(f"OK {path}: {width}x{height}, color_type={color_type}, no tRNS")
-PY
-```
+Use a portable Python standard-library PNG-header/chunk scan to assert every changed Chapter 1 background is `1920x1080`, uses a non-alpha color type, and contains no `tRNS` transparency chunk.
 
 - [ ] **Step 7: Review each location family together**
 
@@ -826,17 +628,7 @@ Run normal `reviewing-story-scenes` over every manifest-listed production scene.
 
 - [ ] **Step 3: Save consolidated Phase 4 output verbatim**
 
-Create:
-
-```markdown
-# Chapter 1 Semantic Content Re-audit
-
-## Frozen manifest
-<exact ordered chapter.md scene list>
-
-## Initial seven-axis review
-<complete consolidated Phase 4 report copied without rewriting findings>
-```
+Create `semantic-content-reaudit.md` with frozen manifest plus complete initial consolidated review copied without rewriting findings.
 
 - [ ] **Step 4: Commit initial review before scene edits**
 
@@ -851,13 +643,7 @@ Speaker/identity -> global catalog label/config. Narration -> brackets or charac
 
 - [ ] **Step 6: Append resolution log**
 
-For each original Blocker/Important:
-
-```markdown
-- `file:line — original finding text` — **Resolved** — exact changed path/evidence
-```
-
-Use **Accepted** only with explicit user acceptance evidence. Do not rewrite initial review.
+Preserve the original review block. For each original Blocker/Important append `file:line`, original finding text, **Resolved** (or **Accepted** only with explicit user approval), and exact evidence/change.
 
 - [ ] **Step 7: Compile + focused re-review**
 
@@ -869,17 +655,9 @@ Run at least Axis 3/5 on every changed scene.
 
 - [ ] **Step 8: Run full seven-axis review again**
 
-Append complete new Phase 4 report under `## Final seven-axis review`.
+Append the complete new consolidated Phase 4 report under `## Final seven-axis review`.
 
-Completion condition:
-
-```text
-Verdict: SHIP
-no remaining Blocker findings
-no remaining Important findings
-```
-
-Minor/deferred observations may remain.
+Completion condition: final verdict `SHIP` with no remaining Blocker/Important findings.
 
 - [ ] **Step 9: Commit focused fixes and final report**
 
@@ -907,7 +685,7 @@ bun run lint
 
 Expected: all exit 0.
 
-- [ ] **Step 3: Rerun Task 7 PNG check**
+- [ ] **Step 3: Rerun portable PNG dimensions/opacity check**
 
 Expected: every touched Chapter 1 background is opaque `1920x1080`.
 
@@ -917,7 +695,7 @@ No missing `stationery_owner` or `masuda_kei` portrait warnings.
 
 - [ ] **Step 5: Verify semantic gate**
 
-Final saved consolidated review is `SHIP` with no Blocker/Important findings; do not substitute hand-entered counters.
+Final saved consolidated review has verdict `SHIP` with no Blocker/Important findings; do not substitute hand-entered counters.
 
 - [ ] **Step 6: Verify story boundary**
 
@@ -935,7 +713,7 @@ PR B starts from `main` after PR A merges:
 git diff --name-only main...HEAD
 ```
 
-Every path must be attributable to portrait assets, background audit/accepted A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
+Every path must be attributable to approved portraits, background audit/accepted A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
 
 ## Plan Self-Review
 
@@ -946,5 +724,5 @@ Every path must be attributable to portrait assets, background audit/accepted A 
 - `店主` portrait; `學生` no portrait; `增田圭` portrait; narrator/commuters no portrait.
 - Background inventory/coverage is scripted; semantic severity stays with `reviewing-story-scenes`.
 - Three genuine baseline scenarios; prospective checks post-change only.
-- Final gate includes `bun run lint` and an explicit portable PNG dimension/opacity command.
+- Final gate includes `bun run lint` and an explicit portable PNG dimension/opacity check.
 - Contract/tooling and content/art are separate implementation PRs under one HPA-561 ticket.
