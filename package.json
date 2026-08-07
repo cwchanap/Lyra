@@ -26,6 +26,7 @@
     "format:check": "prettier . --check --ignore-unknown",
     "scenes:compile": "bun run --cwd packages/scripts compile-scenes",
     "scenes:watch": "bun run --cwd packages/scripts compile-scenes --watch",
+    "background-cues:audit": "bun run --cwd packages/scripts background-cues:audit",
     "evidence-sources:audit": "bun run --cwd packages/scripts evidence-sources:audit",
     "audio:validate": "bun run --cwd packages/scripts audio:validate",
     "audio:apply": "bun run --cwd packages/scripts audio:apply",

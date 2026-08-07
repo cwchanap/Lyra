@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "compile-scenes": "bun run compile-scenes.ts",
+    "background-cues:audit": "bun run compile-scenes/background-cues-audit.ts",
     "evidence-sources:audit": "bun run compile-scenes/evidence-sources-audit.ts",
     "validate-docs-scenes": "bun run validate-docs-scenes.ts",
     "audio:validate": "bun run audio/cli.ts validate",
