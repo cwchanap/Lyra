@@ -97,7 +97,7 @@ Tasks 6–9 after PR A lands:
 
 - [ ] **Step 1: Create the scenario document**
 
-Use this structure with all sections filled from actual runs:
+Use this structure with every section populated from the actual run:
 
 ```markdown
 # HPA-561 Story Scene Skill Pressure Scenarios
@@ -227,16 +227,7 @@ standard-only / calm scenes remain valid
 
 - [ ] **Step 4: Add purposeful background-prompt guidance**
 
-For each materially new view, prompt for:
-
-```text
-narrative/spatial function
-camera angle and distance
-focal area
-stable continuity anchors
-lighting/weather/occupancy state
-UI-safe lower composition
-```
+For each materially new view, prompt for narrative/spatial function, camera angle/distance, focal area, stable continuity anchors, lighting/weather/occupancy state, and UI-safe lower composition.
 
 Never create a variant solely to increase image count.
 
@@ -248,25 +239,17 @@ Interrogation: a new phase background is justified only when visible environment
 
 - [ ] **Step 6: Extend Axis 3 in `reviewing-story-scenes`**
 
-Rename to `Voice, style, narration & expression`. Add narration/expression rules. Apply to all four scene types; for analysis inspect Intro, every Result Dialogue, and Outro.
+Rename to `Voice, style, narration & expression`. Apply to all four scene types; for analysis inspect Intro, every Result Dialogue, and Outro.
 
 - [ ] **Step 7: Extend Axis 5 without changing severity/report format**
 
-Keep existing completeness/compiled-ID/file checks, then add:
-
-```text
-catalog/portrait appropriateness
-spatial usability
-same-location continuity
-purposeful variation
-same-view false-positive control
-```
+Keep existing completeness/compiled-ID/file checks, then add catalog/portrait appropriateness, spatial usability, same-location continuity, purposeful variation, and same-view false-positive protection.
 
 Do not create a second findings format.
 
 - [ ] **Step 8: Harden image-generation continuity**
 
-Require sibling same-location asset inspection and record stable anchors plus intended delta before generation. Keep final policy-canvas verification.
+Require sibling same-location asset inspection and record stable anchors plus intended delta before generation.
 
 - [ ] **Step 9: Simplify orchestrator handoff**
 
@@ -380,8 +363,6 @@ Expected: new tests fail because current `enrichLine()` silently returns `portra
 
 - [ ] **Step 4: Delete only the silent fallback**
 
-Use:
-
 ```ts
 const character = context.config.characters.byDisplayName.get(item.speaker);
 if (!character) {
@@ -397,7 +378,7 @@ if (!character) {
 }
 ```
 
-Keep the existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpeaker` path unchanged.
+Keep existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpeaker` behavior unchanged.
 
 - [ ] **Step 5: Add intentional no-portrait catalog entries**
 
@@ -445,7 +426,7 @@ Keep the existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpea
     expressions: {}
 ```
 
-- [ ] **Step 6: Add the explicit Scene P1 `店主` portrait contract**
+- [ ] **Step 6: Add Scene P1 `店主` portrait contract**
 
 ```yaml
   - id: stationery_owner
@@ -466,9 +447,9 @@ Keep the existing `portraitMode === "none"` and `assetExpressionOnNoPortraitSpea
 
 Do not alias this to `店長高瀨`.
 
-- [ ] **Step 7: Add the `增田圭` portrait contract**
+- [ ] **Step 7: Add `增田圭` portrait contract**
 
-Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and a `standard` expression matching his ordinary Scene P2 presentation. Do not invent sealed traits.
+Add `id: masuda_kei`, `displayNames: ["增田圭"]`, `portraitMode: portrait`, a canonical visual prompt derived from `docs/stories_plan/characters.md`, and one `standard` expression matching his ordinary Scene P2 presentation. Do not invent sealed traits.
 
 - [ ] **Step 8: Run focused tests**
 
@@ -483,11 +464,7 @@ bun run check:scripts
 bun run scenes:compile
 ```
 
-Expected:
-
-- no `assetUnknownSpeaker` errors for the current manifest;
-- no expression-on-no-portrait errors for `旁白`, commuters, or `學生`;
-- only explicitly expected new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
+Expected: no `assetUnknownSpeaker` errors for the current manifest; no expression-on-no-portrait errors for narrator/commuters/student; only explicitly expected new portrait-file warnings for `stationery_owner` and `masuda_kei` may remain.
 
 If the manifest changed and additional unknown labels appear, classify them using Task 2 guidance; do not weaken the compiler.
 
@@ -510,7 +487,7 @@ git commit -m "feat: require all scene speakers in character catalog"
 - Modify: `packages/scripts/package.json`
 - Modify: root `package.json`
 
-**Produces:** compiler-owned background inventory and mechanical report-coverage checking. Artistic classification remains outside the script.
+**Produces:** compiler-owned background inventory and mechanical report coverage. Artistic classification remains outside the script.
 
 - [ ] **Step 1: Define audit types**
 
@@ -539,23 +516,15 @@ export type BackgroundCueAuditResult = {
 
 - [ ] **Step 2: Enumerate cue occurrences from compiled output**
 
-After `bun run scenes:compile`, read:
+After `bun run scenes:compile`, read the production chapter manifest, emitted scene JSON, and generated asset manifest. Recursively emit one row whenever an object owns `backgroundAssetId`, including repeated occurrences reusing the same ID.
 
-```text
-docs/stories_plan/chapter_1/chapter.md
-apps/game/src-tauri/resources/scenes/chapter_1/<scene>.json
-apps/game/src-tauri/resources/assets/manifest.json
-```
-
-For every manifest-listed emitted scene, recursively walk JSON. Whenever an object owns `backgroundAssetId`, emit one occurrence row even when occurrences reuse an asset ID.
-
-Use a JSON-pointer-like path such as `/queue/0`, `/intro/0`, `/sublocations/2`, `/phases/1`, or `/boards/0/resultDialogue/0`, and set:
+Use JSON-pointer-like cue paths and:
 
 ```ts
 cueKey = `${sceneFile}::${cuePath}`;
 ```
 
-Map non-null IDs through the asset manifest for `expectedPath`; set `fileMissing` from disk existence. Do not infer physical `locationFamily` from asset IDs.
+Map IDs to `expectedPath`; set `fileMissing` from disk existence. Do not infer physical location family from asset IDs.
 
 - [ ] **Step 3: Add report coverage checking**
 
@@ -580,7 +549,7 @@ const allowedPriorities = new Set(["A", "B"]);
 
 - [ ] **Step 4: Write tests**
 
-Cover two occurrences reusing one asset, null `backgroundAssetId`, analysis Intro/Result/Outro, missing file, structured input problems, and all report coverage error classes.
+Cover repeated occurrences, null background IDs, analysis Intro/Result/Outro, missing expected files, structured input problems, and report coverage errors.
 
 - [ ] **Step 5: Run focused tests**
 
@@ -640,11 +609,11 @@ bun run scenes:compile
 bun run lint
 ```
 
-Expected: all commands exit 0. `scenes:compile` may report only the accepted new missing portrait PNG warnings for `stationery_owner` and `masuda_kei`; record exact warnings in the PR.
+Expected: all commands exit 0. `scenes:compile` may report only accepted new missing portrait PNG warnings for `stationery_owner` and `masuda_kei`; record exact warnings in the PR.
 
 - [ ] **Step 2: Verify diff boundary**
 
-Because PR A starts from `main`, run:
+PR A starts from `main`:
 
 ```bash
 git diff --name-only main...HEAD
@@ -654,22 +623,22 @@ PR A contains skills, strict catalog enforcement/config, scenario evidence, and 
 
 - [ ] **Step 3: Open/review PR A under HPA-561**
 
-Review one-registry/YAGNI boundary, unknown-speaker coverage through analysis traversal, explicit `店主` / `學生` / `增田圭` decisions, and audit-tool mechanical/semantic boundary.
+Review one-registry/YAGNI boundary, analysis traversal coverage, explicit `店主` / `學生` / `增田圭` decisions, and audit-tool mechanical/semantic boundary.
 
-Merge PR A before final PR B acceptance. If PR B is prepared as a temporary stack, rebase it onto `main` immediately after PR A merges before final review.
+Merge PR A before final PR B acceptance. If PR B is temporarily stacked, rebase it onto `main` immediately after PR A merges.
 
 ---
 
-### Task 6: Generate approved portraits and run the background-variety audit
+### Task 6: Generate approved portraits and run background-variety audit
 
 **Files:**
-- Create: `docs/stories_plan/chapter_1/background-variety-audit.md`
-- Create/update: portrait PNGs required by Task 3.
-- Read: frozen manifest, generated background inventory, same-location assets.
+- Create `docs/stories_plan/chapter_1/background-variety-audit.md`.
+- Create/update portrait PNGs required by Task 3.
+- Read frozen manifest, generated background inventory, same-location assets.
 
-- [ ] **Step 1: Generate approved portrait files**
+- [ ] **Step 1: Generate approved portraits**
 
-Use `.claude/skills/generating-lyra-image-assets/SKILL.md` and `static/assets/config/policy.yaml` for:
+Use the image-generation skill/policy for exactly:
 
 ```text
 portrait.stationery_owner.standard
@@ -679,11 +648,11 @@ portrait.masuda_kei.standard
 
 Do not add expressions beyond the catalog contract without a concrete finding.
 
-- [ ] **Step 2: Freeze the exact production manifest**
+- [ ] **Step 2: Freeze production manifest**
 
-Copy current ordered `chapter.md` scene list into the report header with audit date/ruleset. If HPA-265 inserted production analysis, include it automatically.
+Copy current ordered `chapter.md` scene list into report header with audit date/ruleset. Include production analysis automatically if present.
 
-- [ ] **Step 3: Generate mechanical background inventory**
+- [ ] **Step 3: Generate mechanical inventory**
 
 ```bash
 bun run scenes:compile
@@ -697,29 +666,29 @@ bun run background-cues:audit --chapter chapter_1
 |---|---|---|---|---|---|---|---|---|
 ```
 
-Copy `cueKey` exactly from the tool. Human/agent judgment fills other columns.
+Copy cue keys exactly from the tool. Fill other columns by review.
 
-- [ ] **Step 5: Group by physical location family**
+- [ ] **Step 5: Group by physical location**
 
-Inspect entrances/exits, windows, fixed furniture, geometry/corridor direction, case props, palette/materials, adjacency, camera angle/distance, focal emphasis, lighting/weather/occupancy.
+Inspect entrances/exits, windows, furniture, geometry/corridor direction, case props, palette/materials, adjacency, angle/distance, focal emphasis, lighting/weather/occupancy.
 
-- [ ] **Step 6: Assign one decision and priority per cue**
+- [ ] **Step 6: Assign one decision/priority per cue**
 
-Priority A only for comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity. Otherwise Priority B.
+Priority A only for comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, meaningful state change, or canon/continuity. Otherwise B.
 
-- [ ] **Step 7: Record a same-view false-positive control**
+- [ ] **Step 7: Record same-view false-positive control**
 
-Keep at least one uninterrupted sequence as `keep` and explain why changing it would be gratuitous.
+Keep at least one uninterrupted sequence and document why changing it would be gratuitous.
 
-- [ ] **Step 8: Check coverage mechanically**
+- [ ] **Step 8: Check coverage**
 
 ```bash
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-Expected: exit 0 before asset changes.
+Expected: exit 0 before background regeneration.
 
-- [ ] **Step 9: Commit audit + portraits before background regeneration**
+- [ ] **Step 9: Commit audit + portraits**
 
 ```bash
 git add docs/stories_plan/chapter_1/background-variety-audit.md static/assets/portraits
@@ -730,16 +699,11 @@ git commit -m "docs: audit Chapter 1 backgrounds and add approved portraits"
 
 ### Task 7: Implement only Priority A background changes
 
-**Files:**
-- Modify only scene prompts/cues named by Priority A rows.
-- Create/update only accepted backgrounds under `static/assets/backgrounds/chapter_1/**`.
-- Update audit dispositions.
+- [ ] **Step 1: Record the intended delta before every edit**
 
-- [ ] **Step 1: Write accepted delta before every edit**
+Each A row states narrative/spatial function, stable anchors, camera/composition delta, and environment-state delta when relevant.
 
-Each Priority A row states narrative/spatial function, stable continuity anchors, intended camera/composition delta, and lighting/weather/occupancy delta when relevant.
-
-- [ ] **Step 2: Edit only corresponding authored prompt/cue**
+- [ ] **Step 2: Edit only corresponding prompts/cues**
 
 Do not add scene tags solely for image count.
 
@@ -758,7 +722,7 @@ git commit -m "docs: improve Priority A Chapter 1 background cues"
 
 - [ ] **Step 5: Generate/regenerate Priority A PNGs only**
 
-Inspect sibling same-location assets first and preserve documented anchors.
+Inspect sibling same-location assets and preserve documented anchors.
 
 - [ ] **Step 6: Verify touched background dimensions/opacity**
 
@@ -766,7 +730,6 @@ Inspect sibling same-location assets first and preserve documented anchors.
 python3 - <<'PY'
 from pathlib import Path
 import struct, subprocess
-
 changed = subprocess.check_output([
     "git", "diff", "--name-only", "main...HEAD", "--",
     "static/assets/backgrounds/chapter_1"
@@ -807,32 +770,26 @@ git commit -m "feat: add Priority A Chapter 1 background variants"
 
 ### Task 8: Use `reviewing-story-scenes` as semantic re-audit authority
 
-**Files:**
-- Create: `docs/stories_plan/chapter_1/semantic-content-reaudit.md`
-- Read: frozen manifest and normal seven-axis sources.
-
 - [ ] **Step 1: Freeze production manifest again**
 
-Copy exact current `chapter.md` scene list into the report header. This is a fresh snapshot because production content may have changed since Task 6.
+Copy exact current scene list into report header.
 
-- [ ] **Step 2: Invoke hardened `reviewing-story-scenes`**
+- [ ] **Step 2: Invoke hardened seven-axis review**
 
-Run its normal seven-axis workflow over every manifest-listed production scene. Do not invent a new ledger or severity vocabulary.
-
-For analysis, explicitly include Intro, every Result Dialogue, and Outro in Axis 3/5.
+Run normal `reviewing-story-scenes` over every manifest-listed production scene. Do not invent a new ledger/severity vocabulary. Include analysis Intro/Result/Outro in Axis 3/5 if present.
 
 - [ ] **Step 3: Save consolidated Phase 4 output verbatim**
 
-Create `semantic-content-reaudit.md` with three sections in this exact order:
+Create:
 
 ```markdown
 # Chapter 1 Semantic Content Re-audit
 
 ## Frozen manifest
-<copy the exact ordered chapter.md scene list>
+<exact ordered chapter.md scene list>
 
 ## Initial seven-axis review
-<paste the complete consolidated Phase 4 report without rewriting its findings>
+<complete consolidated Phase 4 report copied without rewriting findings>
 ```
 
 - [ ] **Step 4: Commit initial review before scene edits**
@@ -842,26 +799,19 @@ git add docs/stories_plan/chapter_1/semantic-content-reaudit.md
 git commit -m "docs: record Chapter 1 semantic re-audit"
 ```
 
-- [ ] **Step 5: Resolve every Blocker/Important with minimal changes**
+- [ ] **Step 5: Resolve every Blocker/Important minimally**
 
-```text
-speaker/identity -> correct global catalog label/config
-narration -> brackets or character dialogue as appropriate
-expression -> existing configured slug unless new asset is separately justified
-background -> accepted Priority A integration only
-```
-
-No unrelated prose cleanup.
+Speaker/identity -> global catalog label/config. Narration -> brackets or character dialogue. Expression -> existing configured slug unless separately justified. Background -> accepted Priority A only. No unrelated prose cleanup.
 
 - [ ] **Step 6: Append resolution log**
 
-For each original Blocker/Important append:
+For each original Blocker/Important:
 
 ```markdown
 - `file:line — original finding text` — **Resolved** — exact changed path/evidence
 ```
 
-If the user explicitly accepts a finding without a code/content change, use **Accepted** and record the acceptance evidence. Do not rewrite the initial review block.
+Use **Accepted** only with explicit user acceptance evidence. Do not rewrite initial review.
 
 - [ ] **Step 7: Compile + focused re-review**
 
@@ -869,15 +819,11 @@ If the user explicitly accepts a finding without a code/content change, use **Ac
 bun run scenes:compile
 ```
 
-Run at least Axis 3 and Axis 5 on every changed scene.
+Run at least Axis 3/5 on every changed scene.
 
 - [ ] **Step 8: Run full seven-axis review again**
 
-Append the complete new consolidated Phase 4 report under:
-
-```markdown
-## Final seven-axis review
-```
+Append complete new Phase 4 report under `## Final seven-axis review`.
 
 Completion condition:
 
@@ -891,19 +837,19 @@ Minor/deferred observations may remain.
 
 - [ ] **Step 9: Commit focused fixes and final report**
 
-Keep speaker/identity, narration/expression, and visual fixes in separate commits where practical; then commit final report update.
+Keep speaker/identity, narration/expression, and visual fixes separately reviewable where practical.
 
 ---
 
 ### Task 9: Final PR B verification gate
 
-- [ ] **Step 1: Verify background report coverage**
+- [ ] **Step 1: Verify background coverage**
 
 ```bash
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-- [ ] **Step 2: Run full regression commands**
+- [ ] **Step 2: Run regressions**
 
 ```bash
 bun run format:check
@@ -915,44 +861,44 @@ bun run lint
 
 Expected: all exit 0.
 
-- [ ] **Step 3: Rerun Task 7 portable background PNG check**
+- [ ] **Step 3: Rerun Task 7 PNG check**
 
 Expected: every touched Chapter 1 background is opaque `1920x1080`.
 
 - [ ] **Step 4: Verify portrait warnings resolved**
 
-`scenes:compile` no longer reports missing `stationery_owner` or `masuda_kei` portrait files.
+No missing `stationery_owner` or `masuda_kei` portrait warnings.
 
 - [ ] **Step 5: Verify semantic gate**
 
-Final `semantic-content-reaudit.md` section is the consolidated `reviewing-story-scenes` report with verdict `SHIP` and no Blocker/Important findings. Do not substitute hand-entered counters.
+Final saved consolidated review is `SHIP` with no Blocker/Important findings; do not substitute hand-entered counters.
 
 - [ ] **Step 6: Verify story boundary**
 
-No unrelated culprit, timeline, evidence-package, unlock-chain, scene-order, reveal-ladder, or sealed-reveal change.
+No unrelated culprit/timeline/evidence-package/unlock/scene-order/reveal-ladder/sealed-reveal changes.
 
 - [ ] **Step 7: Verify runtime boundary**
 
-No parser/AST/runtime schema changes for speaker classification and no Rust/Svelte changes.
+No parser/AST/runtime schema or Rust/Svelte changes for speaker classification.
 
 - [ ] **Step 8: Inspect PR B diff**
 
-PR B starts from `main` after PR A merges, so run:
+PR B starts from `main` after PR A merges:
 
 ```bash
 git diff --name-only main...HEAD
 ```
 
-Every path is attributable to portrait assets, background audit/accepted Priority A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
+Every path must be attributable to portrait assets, background audit/accepted A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
 
 ## Plan Self-Review
 
-- **Reuse:** existing `characters.yaml`, `portraitMode: none`, no-portrait expression diagnostics, HPA-259 analysis traversal, evidence-audit script precedent, and seven-axis review are reused.
-- **Compiler scope:** one behavior change — delete silent unknown/no-expression fallback.
-- **No second registry:** no `Local Speakers`, AST/header work, or runtime-omission ceremony.
-- **Order:** skills before production migration.
-- **Current decisions:** `店主` portrait; `學生` no portrait; `增田圭` portrait; narrator/commuters no portrait.
-- **Audit accountability:** background inventory/coverage is scripted; semantic severity stays with `reviewing-story-scenes`.
-- **Prompt eval:** three genuine baseline scenarios only; calm/label-drift/analysis checks are post-change.
-- **Verification:** includes `bun run lint`; touched background dimension/opacity has a concrete portable command.
-- **Reviewability:** contract/tooling and content/art are separate implementation PRs under one HPA-561 ticket.
+- Existing character catalog, `portraitMode: none`, no-portrait expression diagnostics, HPA-259 analysis traversal, evidence-audit script precedent, and seven-axis review are reused.
+- Compiler change is only deleting silent unknown/no-expression fallback.
+- No `Local Speakers`, AST/header work, or runtime-omission ceremony.
+- Skills precede migration.
+- `店主` portrait; `學生` no portrait; `增田圭` portrait; narrator/commuters no portrait.
+- Background inventory/coverage is scripted; semantic severity stays with `reviewing-story-scenes`.
+- Three genuine baseline scenarios; prospective checks post-change only.
+- Final gate includes `bun run lint` and an explicit portable PNG dimension/opacity command.
+- Contract/tooling and content/art are separate implementation PRs under one HPA-561 ticket.
