@@ -218,7 +218,7 @@ At audit start:
 5. append a resolution section mapping original findings to evidence;
 6. rerun the complete seven-axis review and append the final consolidated report.
 
-Completion requires final verdict `SHIP` with no remaining Blocker/Important findings. Minor/deferred observations may remain documented.
+Completion requires the final consolidated review to have verdict `SHIP` and no remaining Blocker/Important findings. Minor/deferred observations may remain documented.
 
 This makes the existing skill, not hand-entered counters, the semantic acceptance authority.
 
@@ -260,7 +260,7 @@ Primary proof:
 - three RED -> GREEN skill scenarios plus post-change control/spot checks;
 - mechanical background inventory and coverage check;
 - grouped location-family review for Priority A assets;
-- final seven-axis review verdict `SHIP`.
+- final seven-axis review verdict `SHIP` with no Blocker/Important findings.
 
 Final checks:
 
