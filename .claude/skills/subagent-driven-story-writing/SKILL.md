@@ -79,8 +79,18 @@ Because the agent has none of your context, every brief carries all of:
   `using-superpowers`." Write the file and nothing else.
 - **The beat excerpt** from the construction plan (the content spec).
 - **The matching addendum voice + Do/Don't** for the characters present.
-- **Roster + canon corrections** that override stale skill examples (name the
-  wrong value explicitly: "suspect is X, NEVER Y — ignore Y in skill examples").
+- **Authoritative source paths + source-located canon corrections.** Give the
+  writer the actual story bible, `characters.md`,
+  `static/assets/config/characters.yaml`, plan, and addendum paths to read;
+  include a concrete correction only when it is source-located (for example,
+  "suspect is X, NEVER Y — ignore Y in skill examples"). Do not relay an
+  ephemeral cast table: it drifts from the sources.
+- **Catalog escalation rule.** `characters.yaml` is the only visual-speaker
+  catalog: reusable or visually important speakers require
+  `portraitMode: portrait`; intentional faceless/system/very minor speakers
+  require `portraitMode: none`; an unknown identity must stop for a catalog
+  label/mode decision. Writers must not rely on an uncatalogued speaker
+  compiling portraitless or create a local speaker registry.
 - **Asset policy:** if `static/assets/config/policy.yaml` has `enabled: false`,
   "author semantic content only — no `Background Prompt`/`BGM`/`BGS`/`Image
   Prompt`/asset metadata." Writers author intent, never filesystem paths.
@@ -160,6 +170,7 @@ restate the axes, verdict, or finding format in the brief, the skill owns them:
 | One subagent for a whole beat's sub-scenes, or per sub-scene | One agent per **scene file**. |
 | Skipping the RED gate | Run compile before authoring so you trust the GREEN gate. |
 | Letting writers invent IDs | Orchestrator owns IDs; put them in the brief. |
+| Passing a hand-maintained cast table | Pass authoritative source paths and the catalog escalation rule; writers read the global catalog themselves. |
 | Shipping on a clean compile alone | The compiler can't catch a canon contradiction or flat voice — the review gate is mandatory. |
 | Committing unprompted | Commit only when the user asks; branch off `main`. |
 

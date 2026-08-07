@@ -261,3 +261,222 @@ review skill.
 **NOT RUN (intentional).** This is a GREEN-only post-hardening check; the
 hardened review rule does not exist in the baseline. Its later acceptance is
 coverage of Intro, every Result Dialogue, and Outro.
+
+## Post-change verification
+
+The historical `NOT RUN` labels above describe the pre-change baseline only.
+After the six skill edits, each exact prompt was rerun by a fresh-context,
+read-only `gpt-5.6-terra` verifier at `max` reasoning. The requested Luna route
+was unavailable in this session, so Terra/max was the approved available
+fallback. Verifiers read the relevant hardened skill and repository sources,
+but did not read this scenario artifact or modify the worktree.
+
+| Check | Result | Acceptance evidence |
+|---|---|---|
+| RED 1 — narration fallback | PASS (GREEN) | Visible evidence/folder actions are bracketed; 相馬律 states the conclusion; no `旁白` fallback. |
+| RED 2 — missing catalog contract | PASS (GREEN) | The writer returns an explicit global `characters.yaml` `displayNames` / `portraitMode: portrait` escalation. |
+| RED 3 — bracket-only pressure transition | PASS (GREEN) | A meaningful calm-to-pressure transition moves 三宅蒼太 from configured `standard` to `strained`. |
+| Calm control | PASS | A calm administrative exchange leaves `standard` implicit; no false-positive expression change. |
+| Catalog-label drift | PASS | The writer selects `店長高瀨`, the catalog and roster label, without being told it. |
+| Analysis inheritance | PASS (coverage) | Intro, all three Result Dialogue blocks, and Outro are explicitly inspected. The focused review correctly returns one expression finding in the fixture; the spot-check acceptance is carrier coverage, not a `SHIP` verdict. |
+
+### RED 1 — Narration fallback (GREEN)
+
+```markdown
+# Scene 8.5: 短暫誤判整理點
+
+- **Summary:** 相馬重新檢視現場證物，確認三宅不該被摘要放進殺人時間。
+
+[場景：雨鐘咖啡館後場辦公角落，深夜，窗外仍下著雨。工作燈映著攤開的卷宗夾、維護紀錄與外包憑證，堆疊紙箱旁的維護螢幕暗著。]
+- **Background Prompt:** Narrative function: a quiet deduction pause before the next lead; eye-level medium-wide view of Rain Bell cafe's back-office corner, focal area an open worn leather case folder with maintenance records and a contractor credential on the desk, continuity anchors stacked boxes, dark maintenance screen, and rain-streaked back-alley window, warm task-lamp lighting against the wet night, no characters, keep the lower composition clear for dialogue UI, no readable text.
+- **BGM:** none
+- **BGS:** bgs_cafe_backroom_office
+
+[相馬律把本機順序、三宅的通話紀錄與濕傘套排成一列。]
+
+[他俯身看著外包憑證，視線停在比三宅更早的那筆事件上。]
+
+**相馬律**：三宅說了謊。
+
+**相馬律**：但他的謊，沒有把他帶進內側倉庫。
+
+[相馬律將證物收回卷宗夾，闔上封面，扣緊金屬搭扣。]
+
+**相馬律**：結論很清楚：三宅不該被放在那個時間。
+```
+
+Assessment: PASS. Every visible movement, evidence state, and folder action is
+bracketed. The present detective owns the judgment in dialogue, and the result
+does not use `旁白`.
+
+### RED 2 — Reusable visible speaker missing catalog contract (GREEN)
+
+````markdown
+## Required asset/catalog escalation
+
+Before production use, add the named witness **橘直人**:
+
+- `docs/stories_plan/characters.md`: add his setting, procedural/guarded voice, and boundary that he only verifies the limited contractor records—not the murder.
+- `static/assets/config/characters.yaml`: add `tachibana_naoto` with `displayNames: ["橘直人"]` and `portraitMode: portrait`, plus a restrained middle-aged contractor-records supervisor visual and at least `standard` expression art. Do not fall back to the generic `承包商主管` label.
+
+```markdown
+# Scene 9: 工單上的名字
+
+- **Summary:** 相馬與早坂在承包商資料窗口取得限定工單，讓較早進入後場的外包憑證第一次對上北見修一。
+
+[場景：KAGAMI 外包資料審查辦公室的承包商聯絡窗口，白日，窗外雨勢未歇。冷白日光穿過玻璃隔板，灰色檔案櫃與限定調閱回函排在桌上，空出的下方留給對話 UI。]
+- **Background Prompt:** Procedural contractor-record handoff that narrows an external-credential lead; medium eye-level view across a glass service partition toward an empty desk with a limited reply packet as the focal point, gray filing cabinets and rain-streaked daylight as stable anchors, cool quiet office, no characters or readable text, uncluttered lower third for dialogue UI.
+- **BGM:** none
+- **BGS:** bgs_contractor_office_day
+
+[玻璃隔板後，橘直人把限定範圍的調閱回函推到桌面。他四十多歲，灰襯衫的袖口磨得發白，右手始終壓著文件一角。]
+
+**黑瀨徹**：協力請求我提了。範圍就是後場門鎖，二十二點五十到二十三點十分。
+
+**橘直人**：我照這個範圍交。範圍外的資料，不能多給。
+
+**早坂茜**[stern]：夠了。我們只需要確認那組外包憑證是怎麼排進來的。
+
+**相馬律**：這張臨時維護工單，對應一組外包維護憑證？
+
+[橘直人翻開工單與權限表，指尖停在相同的編號上。]
+
+**橘直人**：對。工單和憑證得一起看，拆開看，很容易指錯人。
+
+**相馬律**：K 開頭的人不只一個。
+
+**橘直人**：另一位的憑證上週已停用。當晚進不了後場。
+
+**相馬律**：所以這張工單和這組憑證，只對到北見修一。
+
+[橘直人沒有點頭太快，只把回函往前推了半寸。]
+
+**橘直人**：這份回函能確認的，只有他當晚有這組權限。
+
+**橘直人**：他進去後做了什麼，不在我的紀錄裡。
+
+**早坂茜**：這就夠我們往下一步查。來源和範圍，都要一起帶進審查會。
+
+**黑瀨徹**：交付紀錄我會固定。別讓這份回函又只剩一張截圖。
+
+**橘直人**：我會簽字。資料交到哪裡，也該留得住。
+
+[相馬把工單、權限表與交付紀錄疊齊，目光停在北見修一的名字上。]
+
+**相馬律**：空位有名字了。
+
+**早坂茜**：名字不是結論。接下來，拿證據把他留在那個位置。
+```
+````
+
+Assessment: PASS. The reusable visible witness does not rely on portraitless
+compilation: the response makes an explicit global catalog label and portrait
+mode decision before production use.
+
+### RED 3 — Bracket-only emotional transition (GREEN)
+
+```markdown
+# Scene 0: 收據上的空白
+
+- **Summary:** 三宅蒼太面對一張收據時，終於承認自己漏說了一段時間。
+
+[場景：早坂法律事務所會議室，傍晚，雨後。窗外柏油路仍泛著水光，桌上攤著打卡紀錄與一只未拆的飯糰袋，檯燈照出安靜而緊繃的紙面。]
+
+- **Background Prompt:** Medium-wide seated-eye-level view of a quiet Japanese law office consultation table, narratively framing a client's composure giving way under procedural pressure; focus on a timecard and unopened rice-ball bag, stable document stack and desk-lamp anchors, rain-wet dusk glow beyond the window, unoccupied background, clear lower composition for dialogue UI.
+- **BGM:** none
+- **BGS:** bgs_law_office_quiet
+
+[三宅蒼太把雙手放在膝上，目光停在打卡紀錄上。]
+
+**三宅蒼太**[standard]：我知道紀錄看起來不好。可我記得的事，沒有少。
+
+[早坂茜把一張收據推到他面前。]
+
+**早坂茜**[stern]：這張收據的時間，和你剛才說的差了二十分鐘。
+
+[三宅蒼太的指尖捏緊飯糰袋，塑膠包裝發出短促的皺響。]
+
+**三宅蒼太**[strained]：我……我以為不提也沒關係。那不是殺人的事。
+```
+
+Assessment: PASS. The result uses repository-defined slugs and puts the
+meaningful visual pressure transition on 三宅蒼太's configured `strained`
+portrait rather than leaving it only in brackets.
+
+### Calm control
+
+```markdown
+[場景：KAGAMI 證據摘要審查會入口，上午，窗外細雨未歇。玻璃門映著濕亮街景，櫃檯上整齊放著收件夾與號碼牌。]
+
+**書記官**：早坂律師，申請資料已核對。請在這裡簽收副本。
+
+[早坂茜以拇指順過文件側邊，確認頁序。]
+
+**早坂茜**：頁數正確。收件時間也請登錄。
+
+**書記官**：已登錄。審查開始前，會送交各席。
+
+**早坂茜**：好，謝謝。
+```
+
+Assessment: PASS. No meaningful expression change is invented; omitted
+expressions correctly remain `standard`.
+
+### Catalog-label drift spot check
+
+```markdown
+[場景：雨鐘咖啡館後場的店長辦公角落，夜晚，雨聲被後巷鐵門隔開。小螢幕待機，帳本與紙箱堆在暖黃燈下。]
+
+- **Background Prompt:** Rain Bell cafe manager office corner at night, warm practical lamp, idle maintenance screen, stacked account books and cardboard boxes, rain-muted rear alley beyond, no characters, no readable UI text.
+- **BGM:** none
+- **BGS:** bgs_cafe_backroom_office
+
+[相馬律站在維護螢幕前，沒有碰它。]
+
+**相馬律**：這一頁，你平常都會看？
+
+**店長高瀨**[tired]：看門有沒有卡住。
+
+**店長高瀨**：還有維護模式，有沒有忘了關。
+
+**相馬律**：上面的紀錄呢？
+
+[店長把抹布攥在手裡，搖了一下頭。]
+
+**店長高瀨**：我不懂那些。門能開，晚上能鎖，就夠我忙了。
+
+**相馬律**：所以你拍下來，是怕明天又出問題。
+
+**店長高瀨**[tired]：對。我以為那只是店裡的小毛病。
+
+**相馬律**：先別急著怪自己。這張圖得讓鑑識重新固定。
+```
+
+Assessment: PASS. `店長高瀨` matches both the roster heading and the global
+catalog's `displayNames`; the response does not invent a `Rain Bell manager`
+label.
+
+### Analysis inheritance spot check
+
+```markdown
+## Review Report: Scene 8.5《短暫誤判整理點》
+
+**Inspected carriers:** Intro (lines 7–9); Result Dialogue after `evidence_packages` (45–49), `local_event_sequence` (82–84), and `narrow_request_basis` (116–118); Outro (120–122).
+
+### Verdict: FIX-RECOMMENDED
+
+### Findings
+
+Important — `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md:118` — 「現在有兩條獨立矛盾，可以把申請送進審查。」is the decisive transition into the procedural request, but has no expression; `static/assets/config/characters.yaml:25-26` provides 早坂茜’s fitting `stern` state. Apply that configured expression on this transition only.
+
+### Strengths
+
+- All inspected conclusions and judgments remain in present-character dialogue; no generic narration misassignment.
+- Both authored labels resolve to catalogued portrait speakers.
+- The other Result Dialogue carriers and Outro do not require non-standard expression changes; 相馬律 has only `standard` configured.
+```
+
+Assessment: PASS for the spot-check acceptance. The hardened Axis 3 names and
+inspects Intro, every `Result Dialogue`, and Outro, then uses the existing
+severity/verdict report format to record a concrete expression finding. The
+fixture itself is not changed by this skill-hardening task.

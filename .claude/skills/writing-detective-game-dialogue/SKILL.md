@@ -23,28 +23,41 @@ Use when the user asks you to:
 
 ## Core principles (non-negotiable)
 
-1. **Dialogue drives the plot.** Don't let 旁白 carry narration. Use 旁白 only for time skips, environment shifts when no one is present, or short transitional beats.
+1. **Dialogue drives the plot.** Don't let 旁白 carry visible narration or a present character's conclusion. Use it only for the limited cases in the narration assignment below.
 2. **Each dialogue line ≤ ~100 Chinese characters.** No paragraph-length lines. Long content must be split across multiple consecutive lines (same speaker repeats label, or alternates with brackets).
 3. **Fixed line format:** `**角色名稱**：對白內容`
    - Character name in Markdown **bold**.
    - Full-width colon `：` between name and dialogue.
    - One blank line between dialogue lines.
-4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read `characters.md` (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry.**
+4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read `characters.md` (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry; resolve the on-screen label and portrait mode in `characters.yaml`.**
 5. **Scene tags on every scene change.** `[場景：...]` block at the top of every new scene, covering 地點 / 時間 / 天氣 / 氛圍 / 視覺要素 — feeds AI background-image generation.
-6. **All non-dialogue content lives in `[ ]` brackets** — facial expressions, body language, atmospheric beats, prop movement. Brackets are filtered out of the in-game dialogue UI; they serve as production reference only.
+6. **Visible non-dialogue content lives in `[ ]` brackets** — facial expressions, body language, atmospheric beats, room/object state, and prop movement. Brackets are filtered out of the in-game dialogue UI; they serve as production reference only.
 7. **Traditional Chinese only.** No simplified characters. No raw Japanese kanji forms (経 → 經, 実 → 實). Japanese-style proper names (相馬律, 早坂茜, 神谷澪) are kept as-is.
+
+### Narration assignment
+
+| Meaning | Authored form |
+|---|---|
+| Visible movement, body language, atmosphere, room/object state | `[ ... ]` |
+| Present-character conclusion, judgment, interpretation, reaction | character dialogue |
+| Time/location transition, unavailable information, intentional voiceover | `**旁白**：...` |
+
+`旁白` is an explicit, narrow voiceover channel; never use it as a generic
+fallback for things the player can see or for a conclusion a present character
+can state.
 
 ## Format examples
 
-### Scene opening
+### Scene opening with intentional voiceover
+
+The `旁白` line below is explicitly an intentional time/location transition;
+the visible setting and action remain bracketed.
 
 ```
 [場景：吉祥寺雨鐘咖啡館，深夜。外頭下著細雨，店內燈光昏黃。
 吧台後傳出咖啡機的低鳴，空氣中混著金木犀拿鐵的香氣。]
 
-**旁白**：雨鐘咖啡館，平時是這條街上最安靜的地方。
-
-**旁白**：但今晚，這份安靜被打破了。
+**旁白**：幾分鐘後，鏡頭回到吉祥寺雨鐘咖啡館。
 
 [相馬律推開店門，雨水從傘尖滴落。]
 
@@ -72,17 +85,19 @@ Wrong (one long line):
 **旁白**：相馬律走進倉庫，倉庫的空氣比外面更冷，地上有一灘看似剛擦過但仍微濕的水痕，左側的舊門被滾輪貨架半掩著，深處則躺著一具早已沒有體溫的身體。
 ```
 
-Right (split + push visual details into brackets):
+Right (split + keep every visible detail in brackets):
 ```
-**旁白**：相馬律走進倉庫。
+**旁白**：幾分鐘後，鏡頭轉到倉庫入口。
 
-**旁白**：空氣比外面更冷。
+[相馬律走進倉庫。]
+
+[倉庫的空氣比外面更冷。]
 
 [地上有一灘看似剛擦過、卻仍微濕的水痕。]
 
-**旁白**：左側的舊門，被滾輪貨架半掩著。
+[左側的舊門被滾輪貨架半掩著。]
 
-**旁白**：而倉庫深處，躺著一具早已沒有體溫的身體。
+[倉庫深處躺著一具早已沒有體溫的身體。]
 ```
 
 ### Phone calls (project convention)
@@ -110,6 +125,15 @@ Every `[場景：...]` block must cover:
 
 Keep it concise, concrete, image-promptable.
 
+### Purposeful background prompts
+
+For each materially new view, its `Background Prompt` must state the view's
+narrative/spatial function, camera angle or distance, focal area, stable
+continuity anchors, lighting/weather/occupancy state, and UI-safe lower
+composition. Preserve anchors that make adjacent views legible; change only
+what the story or space makes materially different. Never create a variant
+solely to increase image count.
+
 ## Asset metadata when assets are enabled
 
 When the project asset workflow is enabled, every `[場景：...]` tag in a linear scene must be followed immediately by production metadata:
@@ -126,6 +150,22 @@ When the project asset workflow is enabled, every `[場景：...]` tag in a line
 - The first scene tag in an asset-enabled corpus must explicitly set both BGM and BGS. Later scene tags may omit a channel to keep the previous value.
 - Writers never write filesystem paths.
 - Dialogue may request speaker expression with `**角色名**[expression_slug]：台詞`. Omitted expression means `standard`.
+
+### Expression choreography (catalog-bounded)
+
+Before authoring an expression, inspect that speaker's configured expression
+slugs in `static/assets/config/characters.yaml`. If a meaningful state
+transition has a fitting configured non-standard slug, put it on the dialogue
+where the transition lands; do not leave that portrait transition only in a
+bracket.
+
+```text
+bracketed emotion does not select a portrait
+use configured slugs only
+switch on meaningful state transitions
+avoid line-by-line flicker
+standard-only / calm scenes remain valid
+```
 
 ## File organisation
 
@@ -186,6 +226,7 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 - `General Plan.md` — the eight-chapter master outline. **Do not modify.** Read it to understand cross-chapter foreshadowing pacing.
 - `第_X_章_..._詳細計劃.md` — per-chapter setup, characters, clues, timeline. **Read before** writing that chapter's script.
 - `characters.md` — consolidated cast reference (see below). **Read before** writing any character's dialogue.
+- `static/assets/config/characters.yaml` — the global runtime speaker catalog for authored display labels, portrait intent, and configured expression slugs. **Read before** writing any speaker who appears on-screen.
 - `chapter_X/scene_<N>.md` — the output of this skill (one file per scene).
 
 ### Character reference (`stories_plan/characters.md`)
@@ -204,25 +245,48 @@ Use it like this:
   a sealed reveal. This is the per-character companion to the chapter-level foreshadowing rules
   in `General Plan.md`.
 - If `characters.md` and the story bible ever disagree, the **story bible wins** (characters.md says so).
-- Adding a new named character? Add their entry to `characters.md` in the same four-field shape.
+- Adding a new named character? Add the story-voice entry to `characters.md`
+  when planning requires it, and resolve the global catalog label and
+  `portraitMode` under the rule below before production use.
+
+### Global visual speaker catalog (`static/assets/config/characters.yaml`)
+
+`characters.md` governs story voice and spoiler seals. The global catalog
+governs the runtime label, portrait intent, and available expression slugs;
+it is the only visual-speaker contract. Resolve an authored bold speaker label
+against its catalog `displayNames` rather than inventing or shortening one.
+
+```text
+reusable or visually important speaker -> characters.yaml portraitMode: portrait
+intentional faceless/system/very minor speaker -> characters.yaml portraitMode: none
+unknown/unresolved identity -> stop and resolve catalog label/mode
+never rely on an uncatalogued speaker compiling portraitless
+```
+
+For a missing or unresolved speaker, return an explicit asset/catalog
+escalation before production use: identify the needed global `displayNames`
+label and `portraitMode` decision. Do not create a local speaker list or treat
+an entry in `characters.md` as a substitute for the global catalog.
 
 ## Writing workflow
 
 When asked to write any part of a chapter:
 
 1. **Read the matching `_詳細計劃.md`** in full — characters, timeline, clue placement, foreshadow seeds.
-2. **Read `characters.md`** for every character who speaks in this scene — lock their 台詞風格 and 禁止 entries before drafting lines.
+2. **Read `characters.md` and `static/assets/config/characters.yaml`** for every speaker in this scene — lock their 台詞風格 / 禁止, catalog display label, portrait mode, and configured expression slugs before drafting lines.
 3. **Check `General Plan.md` for the chapter's row** — which foreshadows are seeded *this* chapter, and critically, which secrets **must not yet be revealed** (青葉火災, 雨宮真實身份, KAGAMI 大陰謀 framing, etc.).
 4. **Confirm scope with the user before writing** — which Part(s)? If unclear, write one Part and stop, so tone can be reviewed before scaling.
 5. **Plan the Part structure** — opening scene tag, 3–5 conversation beats, ending moment. Output the plan first when scope is ambiguous.
 6. **Write each Part starting with `[場景：...]`**.
-7. **Advance plot via dialogue**, 旁白 only when necessary.
+7. **Advance plot via dialogue**, using `旁白` only for the narration-assignment cases above.
 8. **Self-check before reporting done:**
    - Any line >100 Chinese characters? Split it.
    - Any action/expression inline with dialogue? Move it into `[ ]`.
    - Every scene change has a scene tag?
    - No simplified Chinese? No 経/実-style kanji?
    - Does each character's voice match their `characters.md` 台詞風格, with no 禁止 / 🔒 line crossed?
+   - Does every speaker resolve to the global catalog label and an intentional `portraitMode`, with no uncatalogued portraitless fallback?
+   - Does each meaningful visual state transition use a fitting configured expression slug when one exists, without flickering on every line?
    - Foreshadows match the chapter's pacing in `General Plan.md`?
 
 ## Quick reference
@@ -242,8 +306,9 @@ When asked to write any part of a chapter:
 
 | Mistake | Fix |
 |---|---|
-| Prose-style paragraph in 旁白 | Split into multiple short lines; push visuals into `[ ]` brackets |
-| Single 旁白 >100 chars | Split across consecutive 旁白 lines |
+| Visible action, body language, atmosphere, room/object state in 旁白 | Move it into `[ ]`; reserve `旁白` for time/location transition, unavailable information, or intentional voiceover |
+| Present character's conclusion in 旁白 | Let that character state it in dialogue |
+| Single intentional 旁白 >100 chars | Split across consecutive intentional voiceover lines |
 | Action written inside dialogue line | Move to a bracketed line above or below |
 | Scene change with no `[場景：...]` | Add one covering all four required elements |
 | Simplified Chinese / raw Japanese kanji | Convert to Traditional (経→經, 実→實, 関→關, etc.) |
