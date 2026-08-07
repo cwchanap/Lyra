@@ -33,12 +33,7 @@ The existing asset catalog already models both portrait-bearing and portraitless
 portraitMode: "portrait" | "none"
 ```
 
-For `portraitMode: "none"`, the compiler already:
-
-- emits `portrait: null`;
-- rejects expressions through `assetExpressionOnNoPortraitSpeaker`;
-- does not require `expressions.standard`;
-- rejects duplicate `displayNames` globally.
+For `portraitMode: "none"`, the compiler already emits `portrait: null`, rejects expressions through `assetExpressionOnNoPortraitSpeaker`, does not require `expressions.standard`, and rejects duplicate `displayNames` globally.
 
 Therefore HPA-561 will **not** add `Local Speakers`, `ASTLocalSpeaker`, scene-header metadata, or a second speaker registry.
 
@@ -80,14 +75,7 @@ If the manifest is unchanged, the strict gate therefore needs eight display-name
 
 ### `店主` portrait scope
 
-Keep the visual contract small:
-
-- one stable character identity;
-- `standard` expression;
-- one pressure/exposure expression such as `flustered`;
-- no large expression pack.
-
-This matches her sustained Scene P1 role without creating unnecessary asset work.
+Keep the visual contract small: one stable identity, `standard`, and one pressure/exposure expression such as `flustered`. Do not create a large expression pack.
 
 ### Portraitless generic labels
 
@@ -133,25 +121,13 @@ Do not create a parallel semantic-audit vocabulary or findings format.
 
 ### Axis 3 — Voice, style, narration & expression
 
-Extend Voice & Style to check:
-
-- narration ownership;
-- bracket/dialogue/portrait-expression coherence;
-- meaningful transitions left flat despite a suitable configured slug;
-- excessive expression flicker;
-- false-positive protection for calm/standard-only sequences.
+Extend Voice & Style to check narration ownership, bracket/dialogue/portrait-expression coherence, meaningful transitions left flat despite a suitable configured slug, excessive expression flicker, and false-positive protection for calm/standard-only sequences.
 
 Apply to all four scene types. For analysis, inspect Intro, every Result Dialogue, and Outro.
 
 ### Axis 5 — Visual asset coverage & purposeful variety
 
-Keep existing completeness/compiled-ID/file checks, then add:
-
-1. catalog/portrait appropriateness;
-2. compiled portrait/expression correctness;
-3. background spatial usability and continuity;
-4. purposeful variation;
-5. same-view false-positive protection.
+Keep existing completeness/compiled-ID/file checks, then add catalog/portrait appropriateness, compiled portrait/expression correctness, background spatial usability/continuity, purposeful variation, and same-view false-positive protection.
 
 Repeated art is not a finding by itself. Flag only when another viewpoint/state would materially improve comprehension, investigation usability, evidence focus, major reveal/confrontation emphasis, reasoning state, or meaningful environment state.
 
@@ -219,13 +195,7 @@ The script does **not** infer physical location family or artistic quality. Defa
 
 ### Human background report
 
-Create:
-
-```text
-docs/stories_plan/chapter_1/background-variety-audit.md
-```
-
-Use generated `cueKey` values as the stable first column:
+Create `docs/stories_plan/chapter_1/background-variety-audit.md` with generated `cueKey` values as the stable first column:
 
 ```markdown
 | Cue key | Location family | Current function | Continuity anchors | Variety finding | Decision | Priority | Proposed function | Disposition |
@@ -245,7 +215,7 @@ At audit start:
 2. invoke hardened `reviewing-story-scenes` over that corpus;
 3. save its consolidated report verbatim to `docs/stories_plan/chapter_1/semantic-content-reaudit.md`;
 4. fix Blocker/Important findings using minimal finding-backed changes;
-5. append a resolution section mapping the original findings to evidence;
+5. append a resolution section mapping original findings to evidence;
 6. rerun the complete seven-axis review and append the final consolidated report.
 
 Completion requires final verdict `SHIP` with no remaining Blocker/Important findings. Minor/deferred observations may remain documented.
@@ -254,17 +224,13 @@ This makes the existing skill, not hand-entered counters, the semantic acceptanc
 
 ## Skill verification strategy
 
-Use only three baseline pressure scenarios that correspond to observed gaps:
+Use only three baseline pressure scenarios corresponding to observed gaps:
 
 1. narration fallback;
 2. reusable visible speaker missing catalog treatment;
 3. bracket-only emotional transition with an available expression.
 
-After skill changes, rerun those three as GREEN and add:
-
-4. calm/standard false-positive control;
-5. catalog-label drift GREEN-only spot check;
-6. analysis-inheritance GREEN-only spot check.
+After skill changes, rerun those three as GREEN and add a calm/standard false-positive control, catalog-label drift GREEN-only spot check, and analysis-inheritance GREEN-only spot check.
 
 Do not manufacture baseline failures for prospective risks.
 
@@ -274,26 +240,13 @@ HPA-561 remains one Linear ticket and one spec/plan, but implementation is deliv
 
 ### PR A — contract and tooling
 
-Contains:
+Contains skill/review/orchestrator hardening, strict global speaker-catalog enforcement, the minimal `characters.yaml` migration required to keep production compilation green, and the background-cue audit script/tests.
 
-- skill/review/orchestrator hardening;
-- strict global speaker-catalog enforcement;
-- minimal `characters.yaml` migration required to keep production compilation green;
-- background-cue audit script and tests.
-
-No broad scene rewrite and no background/portrait art generation. The two newly portrait-bearing entries may temporarily produce only their explicitly expected missing-file warnings; PR B resolves those warnings.
+No broad scene rewrite and no background/portrait art generation. The two newly portrait-bearing entries may temporarily produce only their explicitly expected missing-file warnings; PR B resolves them.
 
 ### PR B — Chapter 1 content and visual acceptance
 
-After PR A lands:
-
-- generate the approved `店主` and `增田圭` portraits;
-- run/fill the background audit;
-- implement Priority A prompt/background changes;
-- invoke the seven-axis semantic re-audit;
-- fix recorded Blocker/Important findings;
-- rerun review to `SHIP`;
-- retain Priority B / Minor findings as documented follow-up.
+After PR A lands, generate approved `店主`/`增田圭` portraits, run/fill the background audit, implement Priority A prompt/background changes, invoke the seven-axis semantic re-audit, fix recorded Blocker/Important findings, rerun review to `SHIP`, and retain Priority B/Minor findings as documented follow-up.
 
 This separates code/tooling review from art/content review without creating extra architecture or Linear tickets.
 
@@ -309,7 +262,7 @@ Primary proof:
 - grouped location-family review for Priority A assets;
 - final seven-axis review verdict `SHIP`.
 
-Final code/tooling/content checks:
+Final checks:
 
 ```bash
 bun run format:check
