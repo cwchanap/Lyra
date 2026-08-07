@@ -139,3 +139,71 @@ characters:
     expressions:
       standard:
         prompt: neutral guarded expression, procedural reluctance
+
+  - id: stationery_owner
+    displayNames: ["店主"]
+    portraitMode: portrait
+    visualPrompt: >
+      Middle-aged Japanese owner of a small stationery and copy shop, practical
+      work clothes, a calm neighborhood-shop presence, accustomed to handling
+      paper goods and copy orders, distinct from the Rain Bell cafe manager.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: practical attentive expression, ready to help a customer
+      flustered:
+        prompt: briefly flustered expression, hands paused over a stack of copied papers
+
+  - id: masuda_kei
+    displayNames: ["增田圭"]
+    portraitMode: portrait
+    visualPrompt: >
+      KAGAMI outsourced data reviewer in ordinary low-profile work attire,
+      quiet discreet bearing shaped by routine lock-data confirmation visits,
+      cautious self-protective presence, no dramatic styling.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: quiet reserved expression, ordinary cafe-regular composure
+
+  - id: narrator
+    displayNames: ["旁白"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: office_worker
+    displayNames: ["上班族"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: passerby_a
+    displayNames: ["路人甲"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: passerby_b
+    displayNames: ["路人乙"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: passerby_c
+    displayNames: ["路人丙"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: student
+    displayNames: ["學生"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}

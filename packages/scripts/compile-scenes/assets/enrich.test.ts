@@ -6,6 +6,7 @@ import { enrichScenesWithAssets } from "./enrich";
 import { emitLinearScene } from "../emitter";
 import type { AssetConfig } from "./config";
 import type {
+  ASTAnalysisBoard,
   ASTAnalysisScene,
   ASTInterrogationPhase,
   AnalysisSceneRecord,
@@ -120,6 +121,88 @@ function analysisSceneWithCue(
     line: 1,
   };
   return { chapterId: "chapter_1", file: `${id}.md`, ast };
+}
+
+type AnalysisDialogueCarrier = "intro" | "result dialogue" | "outro";
+
+function analysisSceneWithDialogueCarrier(
+  carrier: AnalysisDialogueCarrier,
+  dialogue: DialogueItem[],
+): AnalysisSceneRecord {
+  const scene = analysisSceneWithCue(
+    "analysis_scene_dialogue",
+    visualCue("Analysis room."),
+  );
+
+  if (carrier === "intro") {
+    return { ...scene, ast: { ...scene.ast, intro: dialogue } };
+  }
+
+  if (carrier === "outro") {
+    return { ...scene, ast: { ...scene.ast, outro: dialogue } };
+  }
+
+  const board: ASTAnalysisBoard = {
+    kind: "classify",
+    id: "board",
+    label: "Board",
+    prompt: {
+      value: "Choose the evidence.",
+      sourceFile: "chapter_1/analysis_scene_dialogue.md",
+      line: 2,
+    },
+    unlock: null,
+    reveals: {
+      value: [],
+      sourceFile: "chapter_1/analysis_scene_dialogue.md",
+      line: 3,
+    },
+    feedback: {
+      incomplete: {
+        value: "Incomplete.",
+        sourceFile: "chapter_1/analysis_scene_dialogue.md",
+        line: 4,
+      },
+      incorrect: {
+        value: "Incorrect.",
+        sourceFile: "chapter_1/analysis_scene_dialogue.md",
+        line: 5,
+      },
+      hint: null,
+    },
+    cards: [],
+    resultDialogue: dialogue,
+    groups: [],
+    sourceFile: "chapter_1/analysis_scene_dialogue.md",
+    line: 1,
+  };
+
+  return { ...scene, ast: { ...scene.ast, boards: [board] } };
+}
+
+function noPortraitConfig(): AssetConfig {
+  const configured = config();
+  const narrator = {
+    id: "narrator",
+    displayNames: ["旁白"],
+    portraitMode: "none" as const,
+    visualPrompt: null,
+    referenceAssetId: null,
+    expressions: new Map(),
+  };
+  configured.characters.byId.set(narrator.id, narrator);
+  configured.characters.byDisplayName.set("旁白", narrator);
+  return configured;
+}
+
+function noPortraitLine(): Extract<DialogueItem, { kind: "line" }> {
+  return {
+    kind: "line",
+    speaker: "旁白",
+    expression: null,
+    portrait: null,
+    text: "雨夜，街道無人。",
+  };
 }
 
 describe("enrichScenesWithAssets", () => {
@@ -478,42 +561,48 @@ describe("enrichScenesWithAssets", () => {
     );
   });
 
-  it("exempts narrator-style lines (unknown speaker, no expression) from character lookup", () => {
-    const scenes: SceneRecord[] = [
-      {
-        chapterId: "chapter_1",
-        file: "scene_0.md",
-        ast: {
-          kind: "linearScene",
-          id: "scene_0",
-          title: "接案",
-          summary: "接案",
-          summaryAuthored: false,
-          queue: [
-            {
-              kind: "line",
-              speaker: "旁白",
-              expression: null,
-              portrait: null,
-              text: "雨夜，街道無人。",
-            },
-          ],
-          assetRefs: [],
-          sourceFile: "chapter_1/scene_0.md",
-          line: 1,
+  it("errors for unknown speakers without expression when assets are enabled", () => {
+    const scenes = [
+      linearScene([
+        {
+          kind: "line",
+          speaker: "未登錄人物",
+          expression: null,
+          portrait: null,
+          text: "這個身分不在目錄中。",
         },
-      },
+      ]),
     ];
     const result = enrichScenesWithAssets({ scenes, config: config() });
     expect(result.errors.some((e) => e.code === "assetUnknownSpeaker")).toBe(
-      false,
+      true,
     );
-    const line =
-      result.scenes[0]?.ast.kind === "linearScene"
-        ? result.scenes[0].ast.queue[0]
-        : null;
-    expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
   });
+
+  it.each(["intro", "result dialogue", "outro"] as const)(
+    "errors for unknown speakers without expression in analysis %s",
+    (carrier) => {
+      const analysisScene = analysisSceneWithDialogueCarrier(carrier, [
+        {
+          kind: "line",
+          speaker: "未登錄人物",
+          expression: null,
+          portrait: null,
+          text: "這個身分不在目錄中。",
+        },
+      ]);
+
+      const result = enrichScenesWithAssets({
+        scenes: [],
+        analysisScenes: [analysisScene],
+        config: config(),
+      });
+
+      expect(result.errors.map((error) => error.code)).toContain(
+        "assetUnknownSpeaker",
+      );
+    },
+  );
 
   it("errors for unknown expressions", () => {
     const scenes = [
@@ -569,36 +658,122 @@ describe("enrichScenesWithAssets", () => {
     expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
   });
 
-  it("does not error for no-portrait speaker without expression", () => {
-    const noPortraitConfig = config();
-    const noPortraitCharacter = {
-      id: "narrator",
-      displayNames: ["旁白"],
-      portraitMode: "none" as const,
-      visualPrompt: null,
-      referenceAssetId: null,
-      expressions: new Map(),
-    };
-    noPortraitConfig.characters.byId.set("narrator", noPortraitCharacter);
-    noPortraitConfig.characters.byDisplayName.set("旁白", noPortraitCharacter);
-    const scenes = [
-      linearScene([
-        {
-          kind: "line",
-          speaker: "旁白",
-          expression: null,
-          portrait: null,
-          text: "hi",
-        },
-      ]),
-    ];
-    const result = enrichScenesWithAssets({ scenes, config: noPortraitConfig });
-    expect(
-      result.errors.some(
-        (e) => e.code === "assetExpressionOnNoPortraitSpeaker",
-      ),
-    ).toBe(false);
-  });
+  it.each([
+    {
+      carrier: "linear queue",
+      run: () => {
+        const result = enrichScenesWithAssets({
+          scenes: [linearScene([noPortraitLine()])],
+          config: noPortraitConfig(),
+        });
+        const scene = result.scenes[0]?.ast;
+        return {
+          result,
+          line: scene?.kind === "linearScene" ? scene.queue[0] : undefined,
+        };
+      },
+    },
+    {
+      carrier: "investigation dialogue carrier",
+      run: () => {
+        const scene = investigationScene({ imagePrompt: "Receipt." });
+        if (scene.ast.kind !== "investigationScene") {
+          throw new Error("Expected investigation scene fixture.");
+        }
+        scene.ast.intro = [noPortraitLine()];
+        const result = enrichScenesWithAssets({
+          scenes: [scene],
+          config: noPortraitConfig(),
+        });
+        const enriched = result.scenes[0]?.ast;
+        return {
+          result,
+          line:
+            enriched?.kind === "investigationScene"
+              ? enriched.intro[0]
+              : undefined,
+        };
+      },
+    },
+    {
+      carrier: "interrogation dialogue carrier",
+      run: () => {
+        const scene = interrogationScene();
+        if (scene.ast.kind !== "interrogationScene") {
+          throw new Error("Expected interrogation scene fixture.");
+        }
+        scene.ast.intro = [noPortraitLine()];
+        const result = enrichScenesWithAssets({
+          scenes: [scene],
+          config: noPortraitConfig(),
+        });
+        const enriched = result.scenes[0]?.ast;
+        return {
+          result,
+          line:
+            enriched?.kind === "interrogationScene"
+              ? enriched.intro[0]
+              : undefined,
+        };
+      },
+    },
+    {
+      carrier: "analysis Intro",
+      run: () => {
+        const analysisScene = analysisSceneWithDialogueCarrier("intro", [
+          noPortraitLine(),
+        ]);
+        const result = enrichScenesWithAssets({
+          scenes: [],
+          analysisScenes: [analysisScene],
+          config: noPortraitConfig(),
+        });
+        return { result, line: result.analysisScenes[0]?.ast.intro[0] };
+      },
+    },
+    {
+      carrier: "analysis Result Dialogue",
+      run: () => {
+        const analysisScene = analysisSceneWithDialogueCarrier(
+          "result dialogue",
+          [noPortraitLine()],
+        );
+        const result = enrichScenesWithAssets({
+          scenes: [],
+          analysisScenes: [analysisScene],
+          config: noPortraitConfig(),
+        });
+        return {
+          result,
+          line: result.analysisScenes[0]?.ast.boards[0]?.resultDialogue[0],
+        };
+      },
+    },
+    {
+      carrier: "analysis Outro",
+      run: () => {
+        const analysisScene = analysisSceneWithDialogueCarrier("outro", [
+          noPortraitLine(),
+        ]);
+        const result = enrichScenesWithAssets({
+          scenes: [],
+          analysisScenes: [analysisScene],
+          config: noPortraitConfig(),
+        });
+        return { result, line: result.analysisScenes[0]?.ast.outro[0] };
+      },
+    },
+  ])(
+    "keeps catalogued no-portrait speakers portraitless in $carrier",
+    ({ run }) => {
+      const { result, line } = run();
+      const errorCodes = result.errors.map((error) => error.code);
+
+      expect(errorCodes).not.toContain("assetUnknownSpeaker");
+      expect(errorCodes).not.toContain("assetExpressionOnNoPortraitSpeaker");
+      expect(line?.kind === "line" ? line.portrait : undefined).toBeNull();
+    },
+  );
 
   it("errors for unknown audio while still reporting missing background prompts", () => {
     const scenes = [
