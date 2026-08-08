@@ -102,6 +102,25 @@ After explicit user approval of the P1 structural remedy, the current production
 - Corrected Axis 3/7 source and runtime-visible presentation findings: concrete Hayasaka P1 errand/non-takeover, narration/terminology cleanups, concise dialogue and all rendered metadata/action/tag carriers, including transition actions and backdrop scene tags. Current compiled JSON has no visible carrier over 100 Han.
 - Preserved every required evidence package, unlock, phase, contradiction, proof order, reveal boundary, asset identity, and main-case timing contract through targeted writer and compiler checks.
 
+### Per-finding resolution ledger
+
+The following rows retain the original finding text verbatim at its material assertion, followed by the specific resolution evidence. There were no original Blocker findings.
+
+| Original file:line | Original finding text | Disposition and exact evidence/change |
+| --- | --- | --- |
+| `investigation_scene_1.md:17` | `「把每件事擺到該在的位置，至少能少傷到一個人。」 gives 相馬 a polished moral maxim during his opening self-talk, rather than his specified short, unshowy practical voice.` | **Resolved.** The opening was reduced to a concrete practical self-check while the filing action carries his orderliness; final Axis 3 report `final-cycle-axis-3-voice-style.md` is `SHIP`. |
+| `investigation_scene_3.md:68` | `「撐著店靠的是慣性多於精力」, an unobservable judgment about 高瀨’s inner motivation rather than visible action/state.` | **Resolved.** The bracket now carries only visible tired counter work and the everyday routine is spoken by 高瀨; final Axis 3 report is `SHIP`. |
+| `interrogation_scene_4.md:84` | `三宅’s first material admission ... defaults to standard despite the configured strained portrait being specifically tense and trying not to panic.` | **Resolved.** The first admission selects `三宅蒼太[strained]`; the catalogued `strained.png` was added and final Axis 3/5 reports are `SHIP`. |
+| `interrogation_scene_10.md:192` | `範圍限定 ...` `reads as a six-field system lecture from 早坂.` | **Resolved.** The player-facing gate language is limited to the approved plain-language purpose and the addendum’s UI vocabulary; final Axis 3 report is `SHIP`. |
+| `scene_0.md:50-52` | `The direct hand-off ... labels that desk scene 「午後」, but the immediately following authored scene opens ... 「清晨」.` | **Resolved.** The transition now states the following-morning handoff consistently with the opening investigation context; final Axis 4 report is `SHIP`. |
+| `investigation_scene_3.md:205` | `The planted object is 「走廊牆上那個舊掛鐘」 ... but its payoff relocates it to ... 「內側倉庫」.` | **Resolved.** The false continuous-sightline claim was removed: the manager mentions the old clock in Scene 3, and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`; final Axis 4/5 reruns are `SHIP`. |
+| `investigation_scene_3.md:455` | `The first investigation ends only with 「先回去整理。今天看到的，比想像中多。」, while ... 三宅 already [is] alone in a police waiting area.` | **Resolved.** A short 黑瀨-arranged inquiry handoff was added before the hearing; final Axis 4 report is `SHIP`. |
+| `investigation_scene_8.md:100` | `從後場辦公角落望出去，能隱約看見前場門邊那座傘架 has no visual target in the selected plate.` | **Resolved.** The existing `front_umbrella_stand` now names the visible doorway/direction toward the front room and its existing authored rect was moved to the doorway (`investigation_scene_8.layout.json`); no plate or asset was replaced. Final Axis 5 rerun is `SHIP`. |
+| `investigation_scene_7.md:98-102; investigation_scene_7.md:146-154; investigation_scene_8.md:197-215` | `Chapter-wide aggregate starvation: direct package support is 37/58 (64%), while life is only 9/58 (16%) and atmosphere/foreshadowing only 7/58 (12%).` | **Resolved.** Targeted carriers were rebalanced without removing required packages; final Axis 6 reports 64 current carriers, with the main case at the required `24/18/12/6` split, and is `SHIP`. |
+| `scene_p1.md:32` | `After two brief solo setup lines, the 82-spoken-line linear mini-case enters immediately into the dispute.` | **Resolved under explicit user approval of the structural remedy.** `scene_p1.md` was replaced by `investigation_scene_p1.md` plus `analysis_scene_p1_5.md`: four local practice points, early partner grounding, a threshold compare board, and explicit wrong-choice feedback. Final Axis 6/7 reports are `SHIP`. |
+| `scene_6.md:37` | `The designated breathing beat turns into a spoken evidence recap.` | **Resolved.** The rest/partner-life beat was restored and the recap was compacted while preserving the evidence route; final Axis 7 report is `SHIP`. |
+| `scene_8_5.md:51` | `The other designated breathing point is likewise dominated by a case summary.` | **Resolved.** The pause now retains concrete partner rest and working-history texture without changing proof progression; final Axis 7 report is `SHIP`. |
+
 ## Final seven-axis review
 
 ### Phase 4 consolidation
