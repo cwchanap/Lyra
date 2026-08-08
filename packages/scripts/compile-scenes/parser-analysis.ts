@@ -15,13 +15,14 @@ import type {
   ASTAnalysisFeedback,
   ASTAnalysisFixedAnchor,
   ASTAnalysisGroup,
+  ASTAnalysisSelectionFeedback,
   ASTAnalysisScene,
   ASTClassifyBoard,
   ASTOrderBoard,
   ASTThresholdBoard,
+  AnalysisCardSource,
   CompileError,
   DialogueItem,
-  InventoryTarget,
   InvestigationRevealTarget,
   Located,
   ProceduralStatus,
@@ -426,6 +427,7 @@ function parseBoard(cur: Cursor): ParseResult<ASTAnalysisBoard> {
 
   const cards: ASTAnalysisCard[] = [];
   const groups: ASTAnalysisGroup[] = [];
+  const incorrectSelections: ASTAnalysisSelectionFeedback[] = [];
   let resultDialogue: DialogueItem[] | null = null;
 
   while (true) {
@@ -437,7 +439,7 @@ function parseBoard(cur: Cursor): ParseResult<ASTAnalysisBoard> {
         cur.sourceFile,
         next.line,
         "analysisBoardUnexpectedToken",
-        `Expected an H3 Card, Group, or Result Dialogue block; got: ${describeToken(next)}.`,
+        `Expected an H3 Card, Group, Incorrect Selection, or Result Dialogue block; got: ${describeToken(next)}.`,
       );
     }
     if (next.level !== 3) {
@@ -445,7 +447,7 @@ function parseBoard(cur: Cursor): ParseResult<ASTAnalysisBoard> {
         cur.sourceFile,
         next.line,
         "analysisBoardUnexpectedHeading",
-        `Expected an H3 Card, Group, or Result Dialogue block; got: ${describeToken(next)}.`,
+        `Expected an H3 Card, Group, Incorrect Selection, or Result Dialogue block; got: ${describeToken(next)}.`,
       );
     }
 
@@ -467,6 +469,20 @@ function parseBoard(cur: Cursor): ParseResult<ASTAnalysisBoard> {
       const group = parseGroup(cur);
       if (!group.ok) return group;
       groups.push(group.value);
+      continue;
+    }
+    if (next.text === "Incorrect Selection") {
+      if (kind.value !== "threshold") {
+        return fail(
+          cur.sourceFile,
+          next.line,
+          "analysisBoardSelectionFeedbackNotAllowed",
+          `Board ${head.anchorId} has Kind ${kind.value}; Incorrect Selection blocks are allowed only for threshold boards.`,
+        );
+      }
+      const selectionFeedback = parseIncorrectSelectionFeedback(cur);
+      if (!selectionFeedback.ok) return selectionFeedback;
+      incorrectSelections.push(selectionFeedback.value);
       continue;
     }
     if (next.text === "Result Dialogue") {
@@ -522,6 +538,10 @@ function parseBoard(cur: Cursor): ParseResult<ASTAnalysisBoard> {
     id: head.anchorId,
     label,
     ...common.value,
+    feedback: {
+      ...common.value.feedback,
+      incorrectSelections,
+    },
     cards,
     resultDialogue,
     sourceFile: cur.sourceFile,
@@ -666,6 +686,7 @@ function parseCommonBoardMetadata(
         incomplete: incomplete.value,
         incorrect: incorrect.value,
         hint,
+        incorrectSelections: [],
       },
     },
   };
@@ -817,6 +838,65 @@ function parseGroup(cur: Cursor): ParseResult<ASTAnalysisGroup> {
       acceptedCards: acceptedCards.value,
       sourceFile: cur.sourceFile,
       line: head.line,
+    },
+  };
+}
+
+function parseIncorrectSelectionFeedback(
+  cur: Cursor,
+): ParseResult<ASTAnalysisSelectionFeedback> {
+  const head = cur.next();
+  if (!head || head.kind !== "heading" || head.level !== 3) {
+    return fail(
+      cur.sourceFile,
+      head?.line ?? 1,
+      "internalParserState",
+      "parseIncorrectSelectionFeedback called off-position.",
+    );
+  }
+  if (head.anchorId) {
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "analysisBoardIncorrectSelectionHasAnchor",
+      "Incorrect Selection is direct board feedback and must not declare an anchor.",
+    );
+  }
+
+  const metadata = consumeAnalysisMetadata(cur);
+  if (!metadata.ok) return metadata;
+  const unknownMetadata = rejectUnknownMetadata(
+    metadata.value,
+    new Set(["Cards", "Feedback"]),
+    cur.sourceFile,
+    head.line,
+    "Incorrect Selection",
+  );
+  if (!unknownMetadata.ok) return unknownMetadata;
+  const cards = parseCardIdList(
+    metadata.value,
+    "Cards",
+    cur,
+    head.line,
+    "Incorrect Selection",
+  );
+  if (!cards.ok) return cards;
+  const feedback = requiredText(
+    metadata.value,
+    "Feedback",
+    cur,
+    head.line,
+    "analysisIncorrectSelectionMissingFeedback",
+    "Incorrect Selection requires Feedback.",
+    "analysisIncorrectSelectionBlankFeedback",
+  );
+  if (!feedback.ok) return feedback;
+
+  return {
+    ok: true,
+    value: {
+      cards: cards.value,
+      feedback: feedback.value,
     },
   };
 }
@@ -1172,19 +1252,22 @@ function parseCardSource(
   raw: string,
   sourceFile: string,
   line: number,
-): ParseResult<InventoryTarget> {
-  const match = /^(evidence|statement):([a-z0-9_]+)$/.exec(raw);
+): ParseResult<AnalysisCardSource> {
+  const match = /^(evidence|statement|practice):([a-z0-9_]+)$/.exec(raw);
   if (!match) {
     return fail(
       sourceFile,
       line,
       "analysisCardInvalidSource",
-      `Card Source must be evidence:<id> or statement:<id>; got \`${raw}\`.`,
+      `Card Source must be evidence:<id>, statement:<id>, or practice:<id>; got \`${raw}\`.`,
     );
   }
   return {
     ok: true,
-    value: { kind: match[1] as InventoryTarget["kind"], id: match[2] ?? "" },
+    value: {
+      kind: match[1] as AnalysisCardSource["kind"],
+      id: match[2] ?? "",
+    },
   };
 }
 

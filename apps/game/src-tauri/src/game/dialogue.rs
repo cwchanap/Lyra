@@ -155,6 +155,10 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|queue| queue.current().cloned()),
+            SceneRuntime::Analysis(scene) => scene
+                .pending_queue
+                .as_ref()
+                .and_then(|queue| queue.current().cloned()),
         }
     }
 
@@ -163,6 +167,7 @@ impl GameEngine {
             SceneRuntime::Linear(s) => s.title.clone(),
             SceneRuntime::Investigation(inv) => inv.title().to_string(),
             SceneRuntime::Interrogation(scene) => scene.title().to_string(),
+            SceneRuntime::Analysis(scene) => scene.title().to_string(),
         }
     }
 
@@ -185,6 +190,10 @@ impl GameEngine {
                     .pending_queue
                     .as_ref()
                     .and_then(|queue| queue.current().cloned()),
+                SceneRuntime::Analysis(scene) => scene
+                    .pending_queue
+                    .as_ref()
+                    .and_then(|queue| queue.current().cloned()),
             };
             match tag {
                 Some(DialogueItem::SceneTag { text, asset_cue }) => {
@@ -199,6 +208,10 @@ impl GameEngine {
                             .as_mut()
                             .is_none_or(|queue| queue.advance()),
                         SceneRuntime::Interrogation(scene) => scene
+                            .pending_queue
+                            .as_mut()
+                            .is_none_or(|queue| queue.advance()),
+                        SceneRuntime::Analysis(scene) => scene
                             .pending_queue
                             .as_mut()
                             .is_none_or(|queue| queue.advance()),
@@ -278,6 +291,9 @@ impl GameEngine {
             SceneRuntime::Investigation(inv) => {
                 inv.pending_queue = Some(queue);
             }
+            SceneRuntime::Analysis(scene) => {
+                scene.pending_queue = Some(queue);
+            }
             SceneRuntime::Linear(_) => {
                 return Err(GameError::internal(
                     "dialogue queue installed outside queued scene".into(),
@@ -334,6 +350,11 @@ impl GameEngine {
                     if self.try_advance_interrogation(command_id, next_ordinal)? {
                         self.advance_scene(command_id, next_ordinal)?;
                     }
+                }
+            }
+            SceneRuntime::Analysis(_) => {
+                if self.try_advance_analysis(command_id, next_ordinal)? {
+                    self.advance_scene(command_id, next_ordinal)?;
                 }
             }
             SceneRuntime::Linear(_) => unreachable!("linear exhaustion returned above"),
@@ -567,6 +588,13 @@ impl GameEngine {
                 })
             }),
             SceneRuntime::Interrogation(scene) => scene.pending_queue.as_ref().and_then(|queue| {
+                Some(QueueToken {
+                    scene_id: scene.def.id.clone(),
+                    queue_gen: queue.queue_gen(),
+                    cursor: queue.flattened_cursor().ok()?,
+                })
+            }),
+            SceneRuntime::Analysis(scene) => scene.pending_queue.as_ref().and_then(|queue| {
                 Some(QueueToken {
                     scene_id: scene.def.id.clone(),
                     queue_gen: queue.queue_gen(),

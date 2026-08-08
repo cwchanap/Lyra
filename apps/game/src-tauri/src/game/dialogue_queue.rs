@@ -406,15 +406,14 @@ mod persistence_adapter_tests {
         );
     }
 
-    // Break caught: a stale save could carry analysis dialogue origins that
-    // the engine cannot reconstruct before HPA-260 owns mutable analysis
-    // progress. The guard must fail closed before any packaged scene is read.
+    // Analysis origins are now restored through the same packaged-scene
+    // boundary as other dialogue origins. A missing packaged scene therefore
+    // yields the ordinary load error rather than a legacy analysis ban.
     #[test]
-    fn restore_rejects_analysis_dialogue_origins_before_reading_packaged_scenes() {
+    fn restore_analysis_dialogue_origins_load_their_packaged_scene() {
         let (resources, engine) = fixture();
-        // Remove the source scene so any attempt to read packaged scenes for
-        // the analysis origin would fail with a filesystem error instead of
-        // the typed guard. The guard must fire first.
+        // Remove the source scene: reaching the filesystem error proves the
+        // Analysis origin passed the generic restore contract.
         std::fs::remove_file(
             resources
                 .path()
@@ -436,7 +435,7 @@ mod persistence_adapter_tests {
             &engine,
             CONTENT_REVISION,
             &saved,
-            "invalidSaveProgress",
+            "sceneLoadFailed",
         );
     }
 
@@ -661,13 +660,6 @@ mod persistence_adapter_tests {
 }
 
 impl DialogueSegmentOriginV1 {
-    pub(in crate::game) fn is_analysis(&self) -> bool {
-        matches!(
-            self,
-            Self::AnalysisIntro { .. } | Self::AnalysisResult { .. } | Self::AnalysisOutro { .. }
-        )
-    }
-
     pub(super) fn chapter_id(&self) -> &str {
         match self {
             Self::LinearScene { chapter_id, .. }
@@ -953,17 +945,6 @@ impl crate::game::GameEngine {
                 packaged_revision,
             ));
         }
-        if saved
-            .segment_origins
-            .iter()
-            .any(DialogueSegmentOriginV1::is_analysis)
-        {
-            return Err(GameError::new(
-                "invalidSaveProgress",
-                "Analysis dialogue origins cannot be restored before HPA-260 provides analysis progress.",
-            ));
-        }
-
         let mut segments = Vec::with_capacity(saved.segment_origins.len());
         let mut loaded_chapters: HashMap<String, Vec<SceneJson>> = HashMap::new();
         for origin in &saved.segment_origins {
@@ -1016,6 +997,7 @@ impl crate::game::GameEngine {
             crate::game::scenes::SceneRuntime::Linear(scene) => scene.queue.as_ref(),
             crate::game::scenes::SceneRuntime::Investigation(scene) => scene.pending_queue.as_ref(),
             crate::game::scenes::SceneRuntime::Interrogation(scene) => scene.pending_queue.as_ref(),
+            crate::game::scenes::SceneRuntime::Analysis(scene) => scene.pending_queue.as_ref(),
         }
     }
 }

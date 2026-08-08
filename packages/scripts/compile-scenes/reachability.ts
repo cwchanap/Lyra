@@ -2584,6 +2584,7 @@ function effectsFromInvestigationReveals(
     switch (target.kind) {
       case "evidence":
       case "statement":
+      case "practice":
         return [addAtomEffect(`${target.kind}:${target.id}`, targetIndex)];
       // Local hotspot/topic reveals only unlock those blocks at runtime; they
       // do not investigate or discuss them. Their own normalized execution
@@ -2660,6 +2661,7 @@ function inboundTargetsFromInvestigationReveals(
         return [`sublocation:${target.id}`];
       case "evidence":
       case "statement":
+      case "practice":
         return [];
     }
   });

@@ -169,6 +169,7 @@ function analysisSceneWithDialogueCarrier(
         line: 5,
       },
       hint: null,
+      incorrectSelections: [],
     },
     cards: [],
     resultDialogue: dialogue,

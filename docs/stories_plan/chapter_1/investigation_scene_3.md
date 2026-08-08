@@ -65,11 +65,13 @@
 
 [場景：吉祥寺咖啡館「雨鐘」前場，雨夜，閉店後。]
 
-[店裡只剩半盞燈。店長高瀨站在收銀台旁，圍裙套在鬆垮的休閒服外面，手上無意識地擦著已經乾淨的檯面——那種開店十年的疲倦壓在眉間，撐著店靠的是慣性多於精力。片瀨美咲在角落收拾，嬌小的身形套在制服圍裙裡，耳邊別著一根彩色髮圈，小耳環晃了一下，一邊收東西一邊偷瞄手機上的時間。]
+[店裡只剩半盞燈。店長高瀨站在收銀台旁，圍裙套在鬆垮的休閒服外面，肩膀微微垂著，手上無意識地擦著已經乾淨的檯面。]
+
+[片瀨美咲在角落收拾，嬌小的身形套在制服圍裙裡，耳邊別著一根彩色髮圈，小耳環晃了一下，一邊收東西一邊偷瞄手機上的時間。]
 
 [殘留在空氣裡的咖啡渣味混著潮濕的雨氣。玻璃門外的路燈把雨水拉成一條條歪斜的線，打在門面上的雨聲比店裡所有的聲音都大。洗杯機偶爾排一口氣，收銀抽屜被推回去時硬幣盤輕輕一響，雨打在後巷鐵門上。]
 
-[店長高瀨抹了一下檯面，視線掃過空著的桌椅，像在確認一件看過幾百次的事。]
+[店長高瀨又抹了一下檯面。]
 
 **店長高瀨**[tired]：平常這個時間，三宅會把椅子翻上桌，音樂轉小。每天都這樣。
 
@@ -99,13 +101,13 @@
 
 [然後他繼續往下看，沒有多問。]
 
-### Hotspot: 收銀 POS 與訂單紀錄 {#counter_admin_records}
-- **Description:** 收銀台後方的 POS 與訂單，是店長保管當晚點單的地方。
+### Hotspot: 收銀終端與訂單紀錄 {#counter_admin_records}
+- **Description:** 收銀台後方的收銀終端與訂單，是店長保管當晚點單的地方。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Visible cafe counter POS terminal and paper order slips beside it as the source object for the night's drink orders; no readable document text.
 - **Reveals:** [evidence:two_coffee_order]
 
-[相馬律翻看 POS 旁的訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
+[相馬律翻看收銀終端旁的訂單，指尖沿著紙邊慢慢滑過去，停在其中一筆。]
 
 **相馬律**：增田點了兩杯。
 
@@ -118,12 +120,12 @@
 **店長高瀨**：店裡標杯習慣寫首字母，方便分。不是全名。
 
 ### Hotspot: 閉店回放小螢幕 {#closing_playback_screen}
-- **Description:** POS 旁的小螢幕，可以調出閉店前二三十秒的監視器回放。
+- **Description:** 收銀終端旁的小螢幕，可以調出閉店前二三十秒的監視器回放。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Small cafe counter playback monitor screen showing a brief grainy closing-time surveillance clip as the source object; unreadable timestamp, no UI text.
 - **Reveals:** [evidence:cctv_screenshot]
 
-[相馬律在 POS 旁的小螢幕調出閉店回放。畫面大約二三十秒。]
+[相馬律在收銀終端旁的小螢幕調出閉店回放。畫面大約二三十秒。]
 
 **相馬律**：三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。
 
@@ -202,7 +204,7 @@
 
 **店長高瀨**：這間店開了十年了。本來是住宅改的，走廊才這麼窄。
 
-[三人走過吧台後方，走廊牆上那個舊掛鐘指著慢了幾分鐘的時間。]
+[三人走過吧台後方。店長提起那座舊掛鐘。]
 
 **店長高瀨**：那個鐘又慢了。
 
@@ -216,10 +218,10 @@
 
 **早坂茜**：那就進去看看。
 
-#### Topic: 走廊舊掛鐘 {#corridor_clock}
+#### Topic: 入口舊掛鐘 {#corridor_clock}
 - **Status:** unlocked
 
-[相馬律看了一眼走廊那個舊掛鐘。店長注意到了。]
+[相馬律記起店長剛提過的那座舊掛鐘。店長注意到了。]
 
 **店長高瀨**[tired]：那個鐘常慢。前任老闆留下的，我一直沒丟。
 
@@ -231,7 +233,7 @@
 
 **店長高瀨**：換了我就懶得校了。反正客人也不看。
 
-**相馬律**：這個一直走著，只是慢。
+**相馬律**：先別拿它來判斷時間。
 
 #### Topic: 增田為何能在後場 {#masuda_backroom}
 - **Status:** unlocked
@@ -285,18 +287,16 @@
 
 [相馬律看了看架上的清潔劑和抹布。]
 
-**相馬律**：閉店要拿的東西都在這。就在走廊前段。
+[鐵架最下層塞著一疊洗得發白的抹布，清潔劑味混著從後巷滲來的雨氣。]
+
+**店長高瀨**：下雨天最麻煩。地一濕，抹布怎麼換都不夠。
 
 ### Hotspot: 蛋糕盒與紙杯箱 {#cake_cup_boxes}
 - **Description:** 架子旁堆著幾個空蛋糕盒和一箱紙杯。
 
-[相馬律看著那堆盒子和紙杯箱。]
+[空蛋糕盒壓著紙杯箱，邊角被濕氣熏得有點軟。]
 
-**相馬律**：紙杯、蛋糕盒，也都放在這一段。
-
-[早坂茜雙手抱著提包帶子，站在相馬身後半步，視線掃過那堆紙箱。]
-
-**早坂茜**：要拿這些，不必走到最裡面。
+**店長高瀨**：紙杯一到就先堆這裡。明天開店前，又得補一箱。
 
 ### Hotspot: 閉店維護告示板 {#wall_notice_board}
 - **Description:** 走廊牆上掛著一塊閉店維護流程告示板。
@@ -343,9 +343,9 @@
 ### Hotspot: 高貨架 {#tall_shelf}
 - **Description:** 入口一進來就是幾排比人高的貨架。
 
-[相馬律抬頭看那排高貨架。]
+[高貨架上塞著備品罐和折扁的紙箱，架頂積著一層薄灰。]
 
-**相馬律**：這麼高，後面藏什麼都看不到。
+**店長高瀨**：豆子、紙杯、糖包，全堆在這裡。補貨的日子，連轉身都難。
 
 ### Hotspot: 內側感應燈 {#inner_sensor_light}
 - **Description:** 天花板裝著感應燈，這個位置沒有亮起來。
@@ -360,7 +360,7 @@
 - **Scene Source Prompt:** Inner storage entrance sightline blocked by high shelves, half-open fire door, and L-shaped corridor geometry, with no map or posted document.
 - **Reveals:** [evidence:backroom_floorplan]
 
-[相馬律站在入口，把剛才走過的路線在腦中接起來。]
+[相馬律站在入口，抬眼望向走廊轉角，再看向高貨架。]
 
 **相馬律**：前場、走廊、內側倉庫。是個 L 型。
 
@@ -421,7 +421,7 @@
 **相馬律**：二十三點零七分五十秒。先記下這個時間。
 
 ### evidence:closing_routine {#closing_routine}
-- **Name:** 閉店維護 routine 紀錄
+- **Name:** 閉店維護例行紀錄
 - **Description:** 後場告示板上的閉店維護流程：22:50 閉店開始、22:52 維護模式開啟，部分項目未完成。
 - **Details:** 維護紀錄冊未蓋章、維護模式未關，流程未走完即中斷。
 - **Source Sublocation:** corridor
@@ -452,4 +452,4 @@
 
 [他沒有再多說，只是又看了一眼那個轉角。]
 
-**相馬律**：先回去整理。今天看到的，比想像中多。
+**相馬律**：好。黑瀨刑警安排了警署詢問。先聽三宅怎麼說，不急著下結論。

@@ -34,6 +34,8 @@ pub(in crate::game) struct StoryState {
     pub(super) objectives: BTreeMap<String, ObjectiveProgress>,
     pub(super) authorizations: BTreeMap<String, AuthorizationProgress>,
     pub(super) active_primary_objective_id: Option<String>,
+    pub(super) completed_analysis_scenes: BTreeSet<AnalysisSceneProgressKey>,
+    pub(super) completed_analysis_boards: BTreeSet<AnalysisBoardProgressKey>,
 }
 
 impl StoryUnlockContext for StoryState {
@@ -53,21 +55,21 @@ impl StoryUnlockContext for StoryState {
             .is_some_and(|progress| progress.completed)
     }
 
-    fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
-        // HPA-259 owns analysis-scene completion state. Until that runtime
-        // contract exists, HPA-257 must not infer completion from StoryState.
-        false
+    fn analysis_scene_completed(&self, chapter_id: &str, scene_id: &str) -> bool {
+        self.completed_analysis_scenes
+            .contains(&AnalysisSceneProgressKey {
+                chapter_id: chapter_id.into(),
+                scene_id: scene_id.into(),
+            })
     }
 
-    fn analysis_board_completed(
-        &self,
-        _chapter_id: &str,
-        _scene_id: &str,
-        _board_id: &str,
-    ) -> bool {
-        // HPA-260 owns analysis-board completion state. Keep the production
-        // fallback fail-closed while synthetic evaluator tests exercise it.
-        false
+    fn analysis_board_completed(&self, chapter_id: &str, scene_id: &str, board_id: &str) -> bool {
+        self.completed_analysis_boards
+            .contains(&AnalysisBoardProgressKey {
+                chapter_id: chapter_id.into(),
+                scene_id: scene_id.into(),
+                board_id: board_id.into(),
+            })
     }
 
     fn authorization_granted(&self, id: &str) -> bool {
@@ -111,6 +113,25 @@ pub(crate) struct StoryStateSnapshot {
     pub objectives: BTreeMap<String, ObjectiveProgressSnapshot>,
     pub authorizations: BTreeMap<String, AuthorizationProgressSnapshot>,
     pub active_primary_objective_id: Option<String>,
+    #[serde(default)]
+    pub completed_analysis_scenes: BTreeSet<AnalysisSceneProgressKey>,
+    #[serde(default)]
+    pub completed_analysis_boards: BTreeSet<AnalysisBoardProgressKey>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AnalysisSceneProgressKey {
+    pub chapter_id: String,
+    pub scene_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AnalysisBoardProgressKey {
+    pub chapter_id: String,
+    pub scene_id: String,
+    pub board_id: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -176,17 +197,13 @@ impl AssertionOrigin {
     /// Returns `Err` when the origin kind cannot be resolved against current
     /// packaged definitions and therefore must not be persisted.
     ///
-    /// `AnalysisBoard` awaits HPA-260's package-backed board registry;
-    /// `StoryEvent` awaits a package-backed story-event registry. Until those
+    /// `StoryEvent` awaits a package-backed story-event registry. Until that
     /// registries exist, mutation and capture must reject these origins so
     /// that every saved state can be restored — the persistence contract must
     /// be symmetric.
     pub(super) fn ensure_origin_kind_is_persistable(&self) -> Result<(), String> {
         match self {
-            Self::AnalysisBoard { .. } => Err(
-                "analysis board origins are not persistable until HPA-260 adds a package-backed board registry"
-                    .to_string(),
-            ),
+            Self::AnalysisBoard { .. } => Ok(()),
             Self::SceneEvent {
                 block_kind: StoryEventBlockKind::StoryEvent,
                 ..
@@ -322,6 +339,8 @@ impl StoryState {
                 })
                 .collect(),
             active_primary_objective_id: self.active_primary_objective_id.clone(),
+            completed_analysis_scenes: self.completed_analysis_scenes.clone(),
+            completed_analysis_boards: self.completed_analysis_boards.clone(),
         }
     }
 
@@ -383,6 +402,8 @@ impl StoryState {
                 })
                 .collect(),
             active_primary_objective_id: snapshot.active_primary_objective_id,
+            completed_analysis_scenes: snapshot.completed_analysis_scenes,
+            completed_analysis_boards: snapshot.completed_analysis_boards,
         })
     }
 
@@ -495,6 +516,24 @@ fn validate_snapshot(
             .first_origin
             .ensure_origin_kind_is_persistable()
             .map_err(invalid_snapshot)?;
+    }
+
+    for key in &snapshot.completed_analysis_scenes {
+        if !catalog.has_analysis_scene(&key.chapter_id, &key.scene_id) {
+            return Err(invalid_snapshot(format!(
+                "analysis scene progress references unknown analysis scene '{}/{}'",
+                key.chapter_id, key.scene_id
+            )));
+        }
+    }
+
+    for key in &snapshot.completed_analysis_boards {
+        if !catalog.has_analysis_board(&key.chapter_id, &key.scene_id, &key.board_id) {
+            return Err(invalid_snapshot(format!(
+                "analysis board progress references unknown board '{}/{}/{}'",
+                key.chapter_id, key.scene_id, key.board_id
+            )));
+        }
     }
 
     if let Some(objective_id) = &snapshot.active_primary_objective_id {
@@ -683,6 +722,8 @@ mod tests {
             objectives: BTreeMap::new(),
             authorizations: BTreeMap::new(),
             active_primary_objective_id: None,
+            completed_analysis_scenes: BTreeSet::new(),
+            completed_analysis_boards: BTreeSet::new(),
         }
     }
 
@@ -751,6 +792,8 @@ mod tests {
                 },
             )]),
             active_primary_objective_id: Some("primary_a".into()),
+            completed_analysis_scenes: BTreeSet::new(),
+            completed_analysis_boards: BTreeSet::new(),
         }
     }
 
@@ -772,7 +815,9 @@ mod tests {
                 "questions": {},
                 "objectives": {},
                 "authorizations": {},
-                "activePrimaryObjectiveId": null
+                "activePrimaryObjectiveId": null,
+                "completedAnalysisScenes": [],
+                "completedAnalysisBoards": []
             })
         );
     }
@@ -1015,23 +1060,15 @@ mod tests {
 
     #[test]
     fn rejects_well_formed_but_unresolvable_origin_kinds() {
-        // These origins have valid slug segments but reference origin kinds
-        // that have no package-backed registry yet. The persistence contract
-        // must be symmetric: if restore cannot resolve them, capture and
-        // mutation must not accept them either.
-        let origins = [
-            AssertionOrigin::AnalysisBoard {
-                chapter_id: "chapter_1".into(),
-                scene_id: "scene_1".into(),
-                board_id: "board_1".into(),
-            },
-            AssertionOrigin::SceneEvent {
-                chapter_id: "chapter_1".into(),
-                scene_id: "scene_1".into(),
-                block_kind: StoryEventBlockKind::StoryEvent,
-                block_id: "block_1".into(),
-            },
-        ];
+        // StoryEvent has valid slug segments but still has no package-backed
+        // registry. Analysis boards now do have a packaged definition path,
+        // so they are deliberately accepted by the persistability boundary.
+        let origins = [AssertionOrigin::SceneEvent {
+            chapter_id: "chapter_1".into(),
+            scene_id: "scene_1".into(),
+            block_kind: StoryEventBlockKind::StoryEvent,
+            block_id: "block_1".into(),
+        }];
 
         for origin in origins {
             let mut snapshot = empty_snapshot();
@@ -1057,6 +1094,28 @@ mod tests {
                 "validate_snapshot must reject unresolvable authorization origin kind"
             );
         }
+    }
+
+    #[test]
+    fn accepts_well_formed_analysis_board_origins() {
+        let origin = AssertionOrigin::AnalysisBoard {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        };
+        let mut snapshot = empty_snapshot();
+        snapshot
+            .facts
+            .insert("fact_alpha".into(), asserted_fact(origin.clone()));
+        snapshot.authorizations.insert(
+            "authorization_a".into(),
+            AuthorizationProgressSnapshot {
+                first_origin: origin,
+            },
+        );
+
+        StoryState::from_snapshot(&catalog(), snapshot)
+            .expect("analysis board origins are now persistable");
     }
 
     #[test]

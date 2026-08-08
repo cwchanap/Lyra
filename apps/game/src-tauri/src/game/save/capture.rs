@@ -1,8 +1,9 @@
 use super::schema::{
-    AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
-    DialogueHistorySnapshotV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
-    InventorySnapshotV1, InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshot,
-    SaveSummary, SceneProgressSnapshot, StatementInventoryEntryV1,
+    AnalysisBoardCardsSnapshotV1, AnalysisBoardGroupSnapshotV1, AudioCueSnapshotV1,
+    CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1,
+    EvidenceInventoryEntryV1, InterrogationOverrideRefV1, InventorySnapshotV1,
+    InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshot, SaveSummary,
+    SceneProgressSnapshot, StatementInventoryEntryV1,
 };
 use crate::game::dialogue::DIALOGUE_HISTORY_LIMIT;
 use crate::game::dialogue_queue::{
@@ -10,12 +11,13 @@ use crate::game::dialogue_queue::{
 };
 use crate::game::navigation::{load_chapter_scene_jsons, scene_json_identity, scene_json_summary};
 use crate::game::provenance::{validate_inventory_record_against_catalog, CaseRecordProvenance};
+use crate::game::scenes::analysis::AnalysisSceneState;
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget, InvestigationSceneJson,
-    SceneJson,
+    AnalysisBoardJson, AnalysisSceneJson, InterrogationPhaseJson, InterrogationSceneJson,
+    InventoryTarget, InvestigationSceneJson, SceneJson,
 };
 use crate::game::state::ChapterManifest;
 use crate::game::story::StoryState;
@@ -225,7 +227,8 @@ pub(crate) fn scene_may_retain_summary(scene: &SceneProgressSnapshot) -> bool {
         SceneProgressSnapshot::GameComplete => true,
         SceneProgressSnapshot::Linear
         | SceneProgressSnapshot::Investigation { .. }
-        | SceneProgressSnapshot::Interrogation { .. } => false,
+        | SceneProgressSnapshot::Interrogation { .. }
+        | SceneProgressSnapshot::Analysis { .. } => false,
     }
 }
 
@@ -329,6 +332,7 @@ fn capture_scene_progress_with_active(
                 discussed_topic_ids,
                 entered_sublocation_ids,
                 unlocked_overrides,
+                practice_card_ids: scene.practice_card_ids.iter().cloned().collect(),
             })
         }
         (SceneRuntime::Interrogation(scene), SceneJson::Interrogation(packaged)) => {
@@ -407,6 +411,50 @@ fn capture_scene_progress_with_active(
                 unlocked_overrides,
                 entered_phase_ids,
                 line_content_segment_index,
+            })
+        }
+        (SceneRuntime::Analysis(scene), SceneJson::Analysis(packaged)) => {
+            validate_analysis_progress(scene, packaged)?;
+            validate_analysis_intro(scene, active_dialogue, engine.next_queue_gen)?;
+            validate_outro_commit(
+                scene.outro_played,
+                active_dialogue,
+                |origin| matches!(origin, DialogueSegmentOriginV1::AnalysisOutro { .. }),
+                "analysis",
+            )?;
+            let selected_card_ids_by_board = scene
+                .selected_card_ids_by_board
+                .iter()
+                .map(|(board_id, card_ids)| AnalysisBoardCardsSnapshotV1 {
+                    board_id: board_id.clone(),
+                    card_ids: card_ids.iter().cloned().collect(),
+                })
+                .collect();
+            let ordered_card_ids_by_board = scene
+                .ordered_card_ids_by_board
+                .iter()
+                .map(|(board_id, card_ids)| AnalysisBoardCardsSnapshotV1 {
+                    board_id: board_id.clone(),
+                    card_ids: card_ids.clone(),
+                })
+                .collect();
+            let group_by_card_by_board = scene
+                .group_by_card_by_board
+                .iter()
+                .map(|(board_id, group_by_card)| AnalysisBoardGroupSnapshotV1 {
+                    board_id: board_id.clone(),
+                    group_by_card: group_by_card.clone(),
+                })
+                .collect();
+            Ok(SceneProgressSnapshot::Analysis {
+                intro_played: scene.intro_played,
+                outro_played: scene.outro_played,
+                completed_board_ids: scene.completed_board_ids.iter().cloned().collect(),
+                selected_card_ids_by_board,
+                ordered_card_ids_by_board,
+                group_by_card_by_board,
+                practice_card_ids: scene.practice_card_ids.iter().cloned().collect(),
+                last_feedback: scene.last_feedback.clone(),
             })
         }
         _ => Err(capture_error(
@@ -566,6 +614,96 @@ fn validate_interrogation_progress(
             }
             _ => {}
         }
+    }
+    Ok(())
+}
+
+fn validate_analysis_progress(
+    scene: &AnalysisSceneState,
+    packaged: &AnalysisSceneJson,
+) -> Result<(), GameError> {
+    let board = |board_id: &str| {
+        packaged
+            .boards
+            .iter()
+            .find(|board| board.common().id == board_id)
+    };
+    for board_id in &scene.completed_board_ids {
+        if board(board_id).is_none() {
+            return Err(capture_error(format!(
+                "Completed analysis board '{board_id}' is unknown."
+            )));
+        }
+    }
+    for (board_id, card_ids) in &scene.selected_card_ids_by_board {
+        let Some(AnalysisBoardJson::Threshold { common, .. }) = board(board_id) else {
+            return Err(capture_error(format!(
+                "Threshold selection references unknown or non-threshold board '{board_id}'."
+            )));
+        };
+        for card_id in card_ids {
+            if !common.cards.iter().any(|card| card.id == *card_id) {
+                return Err(capture_error(format!(
+                    "Threshold selection references unknown card '{card_id}'."
+                )));
+            }
+        }
+    }
+    for (board_id, card_ids) in &scene.ordered_card_ids_by_board {
+        let Some(AnalysisBoardJson::Order { common, .. }) = board(board_id) else {
+            return Err(capture_error(format!(
+                "Order selection references unknown or non-order board '{board_id}'."
+            )));
+        };
+        if card_ids
+            .iter()
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+            != card_ids.len()
+        {
+            return Err(capture_error("Order selection contains duplicate cards."));
+        }
+        for card_id in card_ids {
+            if !common.cards.iter().any(|card| card.id == *card_id) {
+                return Err(capture_error(format!(
+                    "Order selection references unknown card '{card_id}'."
+                )));
+            }
+        }
+    }
+    for (board_id, group_by_card) in &scene.group_by_card_by_board {
+        let Some(AnalysisBoardJson::Classify { common, groups, .. }) = board(board_id) else {
+            return Err(capture_error(format!(
+                "Classification references unknown or non-classify board '{board_id}'."
+            )));
+        };
+        for (card_id, group_id) in group_by_card {
+            if !common.cards.iter().any(|card| card.id == *card_id)
+                || !groups.iter().any(|group| group.id == *group_id)
+            {
+                return Err(capture_error(
+                    "Classification selection references an unknown card or group.",
+                ));
+            }
+        }
+    }
+    let practice_ids: std::collections::BTreeSet<_> = packaged
+        .boards
+        .iter()
+        .flat_map(|board| &board.common().cards)
+        .filter_map(|card| match &card.source {
+            crate::game::schema::AnalysisCardSource::Practice { id } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    if scene
+        .practice_card_ids
+        .iter()
+        .any(|practice_id| !practice_ids.contains(practice_id.as_str()))
+    {
+        return Err(capture_error(
+            "Analysis practice card is not declared by the packaged board.",
+        ));
     }
     Ok(())
 }
@@ -750,15 +888,6 @@ fn validate_active_dialogue(
         return Err(capture_error("Next queue generation cannot be zero."));
     }
     if let Some(active) = active {
-        if active
-            .segment_origins
-            .iter()
-            .any(DialogueSegmentOriginV1::is_analysis)
-        {
-            return Err(capture_error(
-                "Analysis dialogue origins cannot be captured before HPA-260 provides analysis progress.",
-            ));
-        }
         if active.segment_origins.is_empty() {
             return Err(capture_error("An active dialogue queue has no segments."));
         }
@@ -868,6 +997,37 @@ fn validate_interrogation_intro(
     if !scene.intro_played {
         return Err(capture_error(
             "Interrogation capture occurred before initial queue priming.",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_analysis_intro(
+    scene: &AnalysisSceneState,
+    active: Option<&ActiveDialogueStateV1>,
+    next_queue_gen: u64,
+) -> Result<(), GameError> {
+    validate_intro_generation(
+        scene.intro_queue_gen,
+        next_queue_gen,
+        crate::game::scenes::analysis::RESTORED_CONSUMED_INTRO_QUEUE_GEN,
+    )?;
+    let active_intro = active.is_some_and(|queue| {
+        queue.segment_origins.iter().any(|origin| {
+            matches!(
+                origin,
+                DialogueSegmentOriginV1::AnalysisIntro { scene_id, .. } if scene_id == scene.id()
+            )
+        })
+    });
+    if active_intro && (!scene.intro_played || active.unwrap().queue_gen != scene.intro_queue_gen) {
+        return Err(capture_error(
+            "Active analysis intro has inconsistent played/generation state.",
+        ));
+    }
+    if !scene.intro_played {
+        return Err(capture_error(
+            "Analysis capture occurred before initial queue priming.",
         ));
     }
     Ok(())
@@ -1202,10 +1362,10 @@ mod tests {
         }
     }
 
-    // Break caught: a future accidental analysis queue could be captured as a
-    // partial checkpoint even though no Analysis progress snapshot exists.
+    // Analysis queues are now paired with an Analysis scene progress snapshot
+    // and must be accepted by the shared active-dialogue validation boundary.
     #[test]
-    fn capture_rejects_analysis_dialogue_origins_before_serializing_a_checkpoint() {
+    fn capture_accepts_analysis_dialogue_origins_with_analysis_progress_support() {
         let active = ActiveDialogueStateV1 {
             segment_origins: vec![analysis_intro_origin()],
             active_segment_index: 0,
@@ -1213,11 +1373,8 @@ mod tests {
             queue_gen: 1,
         };
 
-        let error = validate_active_dialogue(Some(&active), 2)
-            .expect_err("analysis origins are unreachable before HPA-260");
-
-        assert_eq!(error.code, "invalidSaveCapture");
-        assert!(error.message.contains("Analysis dialogue origins"));
+        validate_active_dialogue(Some(&active), 2)
+            .expect("analysis origins are persisted with Analysis scene progress");
     }
 
     fn fixture_engine() -> (tempfile::TempDir, GameEngine) {
@@ -1294,7 +1451,9 @@ mod tests {
                         "questions": {},
                         "objectives": {"objective_truth": {"completed": false}},
                         "authorizations": {},
-                        "activePrimaryObjectiveId": "objective_truth"
+                        "activePrimaryObjectiveId": "objective_truth",
+                        "completedAnalysisScenes": [],
+                        "completedAnalysisBoards": []
                     },
                     "dialogueHistory": {
                         "entries": [{
@@ -1575,6 +1734,7 @@ mod tests {
                         topic_id: "alibi".into(),
                     },
                 ],
+                practice_card_ids: vec![],
             }
         );
         assert_eq!(

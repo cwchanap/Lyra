@@ -196,6 +196,11 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 );
                 return;
             }
+            ModeView::Analysis { .. } => {
+                let view = engine.view().unwrap();
+                assert!(view.chapter.index < view.chapter.total);
+                return;
+            }
             ModeView::GameComplete => {
                 // Verify chapter index is clamped.
                 let view = engine.view().unwrap();
@@ -308,7 +313,8 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
         || match &view.scene {
             SceneView::Linear { index, .. }
             | SceneView::Investigation { index, .. }
-            | SceneView::Interrogation { index, .. } => *index > 2,
+            | SceneView::Interrogation { index, .. }
+            | SceneView::Analysis { index, .. } => *index > 2,
         };
     assert!(
         reached_next_scene_or_complete,

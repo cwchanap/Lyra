@@ -197,9 +197,13 @@ function thresholdSource(
     requiredProofCapabilities?: string;
     allowedStatuses?: string;
     requireSourceGroup?: boolean;
+    sourceKind?: "evidence" | "practice";
+    sources?: Record<string, string>;
+    incorrectSelections?: Array<{ cards: string; feedback: string }>;
   } = {},
 ): string {
   const cards = options.cards ?? ["card_a", "card_b"];
+  const sourceKind = options.sourceKind ?? "evidence";
   return [
     "# Scene 1: 閾值",
     "- **Summary:** 選擇材料。",
@@ -219,8 +223,13 @@ function thresholdSource(
     `- **Require Source Group:** ${options.requireSourceGroup ?? false}`,
     ...cards.flatMap((id) => [
       `### Card: ${id} {#${id}}`,
-      `- **Source:** evidence:${id}`,
+      `- **Source:** ${sourceKind}:${options.sources?.[id] ?? id}`,
       `- **Summary:** ${id} 摘要。`,
+    ]),
+    ...(options.incorrectSelections ?? []).flatMap((selection) => [
+      "### Incorrect Selection",
+      `- **Cards:** ${selection.cards}`,
+      `- **Feedback:** ${selection.feedback}`,
     ]),
     "### Result Dialogue",
     "**相馬律**：完成。",
@@ -532,6 +541,93 @@ describe("analysis semantic validation", () => {
       ["card_b"],
       ["card_b", "card_c"],
       ["card_c"],
+    ]);
+  });
+
+  it("materializes the P1 practice threshold without Case File provenance", () => {
+    // Break caught: the Prologue notebook must accept the demonstrated
+    // receipt + paper-jam + handwritten-ledger comparison without pretending
+    // that any of those practice cards is a global evidence record.
+    const cards = [
+      "receipt_reprint",
+      "register_paper_jam",
+      "cctv_change",
+      "handwritten_ledger",
+    ];
+    const scene = parse(
+      thresholdSource({
+        cards,
+        eligible: "[receipt_reprint, register_paper_jam, handwritten_ledger]",
+        minimumSelected: 3,
+        allowedStatuses: "[]",
+        sourceKind: "practice",
+        sources: {
+          receipt_reprint: "p1_receipt_reprint",
+          register_paper_jam: "p1_register_paper_jam",
+          cctv_change: "p1_cctv_change",
+          handwritten_ledger: "p1_handwritten_ledger",
+        },
+      }),
+    );
+    const result = validate([scene], corpus([]));
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const board = result.value[0]?.boards[0];
+    if (!board || board.kind !== "threshold")
+      throw new Error("expected threshold board");
+    expect(board.acceptedSelections).toEqual([
+      ["handwritten_ledger", "receipt_reprint", "register_paper_jam"],
+    ]);
+  });
+
+  it("preserves P1-specific wrong-choice feedback beside generic feedback", () => {
+    // Break caught: a generic error cannot explain why the true CCTV/change
+    // observation is still insufficient, nor why receipt-only would make the
+    // student look more suspicious.
+    const scene = parse(
+      thresholdSource({
+        cards: [
+          "receipt_reprint",
+          "register_paper_jam",
+          "cctv_change",
+          "handwritten_ledger",
+        ],
+        eligible: "[receipt_reprint, register_paper_jam, handwritten_ledger]",
+        minimumSelected: 3,
+        allowedStatuses: "[]",
+        sourceKind: "practice",
+        incorrectSelections: [
+          {
+            cards: "[cctv_change]",
+            feedback:
+              "找零和離開都是真的，但只證明他在 17:38 已離開，還不能說明 17:42 的收據。",
+          },
+          {
+            cards: "[receipt_reprint]",
+            feedback:
+              "單看這張 17:42 收據，反而會讓學生更像在事後補了一張說法。",
+          },
+        ],
+      }),
+    );
+    const result = validate([scene], corpus([]));
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    const board = result.value[0]?.boards[0];
+    if (!board || board.kind !== "threshold")
+      throw new Error("expected threshold board");
+    expect(board.common.feedback.incorrectSelections).toEqual([
+      {
+        cards: ["cctv_change"],
+        feedback:
+          "找零和離開都是真的，但只證明他在 17:38 已離開，還不能說明 17:42 的收據。",
+      },
+      {
+        cards: ["receipt_reprint"],
+        feedback: "單看這張 17:42 收據，反而會讓學生更像在事後補了一張說法。",
+      },
     ]);
   });
 

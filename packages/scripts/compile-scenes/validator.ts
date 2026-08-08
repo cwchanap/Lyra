@@ -413,6 +413,8 @@ export function validate(input: ValidatorInput): CompileError[] {
     registerSceneId(rec.chapterId, rec.ast);
   }
 
+  validatePracticeCardBindings(input, errors);
+
   const guaranteedInventoryBeforeScene =
     buildGuaranteedInventoryBeforeScene(input);
   const corpusContext: CorpusContext = {
@@ -472,6 +474,186 @@ export function validate(input: ValidatorInput): CompileError[] {
   }
 
   return errors;
+}
+
+/**
+ * Practice cards are a deliberately narrow bridge from one investigation
+ * scene into the immediately following analysis board. They are neither
+ * evidence nor statements: keeping their binding here prevents them from
+ * joining the global case-record corpus or surviving past their tutorial.
+ */
+function validatePracticeCardBindings(
+  input: ValidatorInput,
+  errors: CompileError[],
+): void {
+  const analysisByManifestKey = new Map(
+    (input.analysisScenes ?? []).map((scene) => [
+      `${scene.chapterId}/${scene.file}`,
+      scene,
+    ]),
+  );
+  const sceneByManifestKey = new Map(
+    input.scenes.map((scene) => [`${scene.chapterId}/${scene.file}`, scene]),
+  );
+  const practiceCardKeys = new Map<
+    string,
+    { sourceFile: string; line: number; sceneId: string; boardId: string }
+  >();
+  const practiceCardsByAnalysisKey = new Map<
+    string,
+    Map<string, Array<{ sourceFile: string; line: number }>>
+  >();
+
+  const practiceCardIdsForAnalysis = (analysis: AnalysisSceneRecord) => {
+    const analysisKey = `${analysis.chapterId}/${analysis.file}`;
+    const cached = practiceCardsByAnalysisKey.get(analysisKey);
+    if (cached) return cached;
+    const cardIds = new Map<
+      string,
+      Array<{ sourceFile: string; line: number }>
+    >();
+    for (const board of analysis.ast.boards) {
+      for (const card of board.cards) {
+        if (card.source.value.kind !== "practice") continue;
+        const key = `${analysis.chapterId}/${card.source.value.id}`;
+        const previous = practiceCardKeys.get(key);
+        if (previous) {
+          errors.push({
+            code: "practiceCardSourceDuplicate",
+            message: `Practice card "${card.source.value.id}" is already scoped to ${previous.sceneId}/${previous.boardId}; one practice id may belong to only one analysis board.`,
+            sourceFile: card.source.sourceFile,
+            line: card.source.line,
+          });
+        } else {
+          practiceCardKeys.set(key, {
+            sourceFile: card.source.sourceFile,
+            line: card.source.line,
+            sceneId: analysis.ast.id,
+            boardId: board.id,
+          });
+        }
+        const entries = cardIds.get(card.source.value.id) ?? [];
+        entries.push({
+          sourceFile: card.source.sourceFile,
+          line: card.source.line,
+        });
+        cardIds.set(card.source.value.id, entries);
+      }
+    }
+    practiceCardsByAnalysisKey.set(analysisKey, cardIds);
+    return cardIds;
+  };
+
+  for (const chapter of input.chapters) {
+    const files = chapter.sceneFiles;
+    for (let index = 0; index < files.length; index += 1) {
+      const analysisFile = files[index];
+      if (!analysisFile) continue;
+      const analysis = analysisByManifestKey.get(
+        `${chapter.dirName}/${analysisFile}`,
+      );
+      if (!analysis) continue;
+
+      const cardIds = practiceCardIdsForAnalysis(analysis);
+      if (cardIds.size === 0) continue;
+      const predecessorFile = index === 0 ? undefined : files[index - 1];
+      const predecessor = predecessorFile
+        ? sceneByManifestKey.get(`${chapter.dirName}/${predecessorFile}`)
+        : undefined;
+      const collected = new Map<
+        string,
+        Array<{ sourceFile: string; line: number }>
+      >();
+
+      if (predecessor?.ast.kind === "investigationScene") {
+        forEachPracticeReveal(predecessor.ast, (id, location) => {
+          const entries = collected.get(id) ?? [];
+          entries.push(location);
+          collected.set(id, entries);
+        });
+      }
+
+      for (const [id, cards] of cardIds) {
+        const collectors = collected.get(id) ?? [];
+        if (collectors.length === 1) continue;
+        for (const card of cards) {
+          errors.push({
+            code: "practiceCardSourceUnbound",
+            message:
+              collectors.length === 0
+                ? `Practice card "${id}" must be revealed exactly once by the immediately preceding investigation scene before analysis scene "${analysis.ast.id}".`
+                : `Practice card "${id}" is revealed ${collectors.length} times by the immediately preceding investigation scene; practice cards require one collection source.`,
+            sourceFile: card.sourceFile,
+            line: card.line,
+          });
+        }
+      }
+
+      for (const [id, collectors] of collected) {
+        if (cardIds.has(id)) continue;
+        for (const collector of collectors) {
+          errors.push({
+            code: "practiceRevealUnbound",
+            message: `Practice reveal "${id}" has no card on immediately following analysis scene "${analysis.ast.id}".`,
+            sourceFile: collector.sourceFile,
+            line: collector.line,
+          });
+        }
+      }
+    }
+  }
+
+  for (const rec of input.scenes) {
+    if (rec.ast.kind !== "investigationScene") continue;
+    const chapter = input.chapters.find(
+      (candidate) => candidate.dirName === rec.chapterId,
+    );
+    const sceneIndex = chapter?.sceneFiles.indexOf(rec.file) ?? -1;
+    const nextFile =
+      sceneIndex >= 0 ? chapter?.sceneFiles[sceneIndex + 1] : undefined;
+    const nextAnalysis = nextFile
+      ? analysisByManifestKey.get(`${rec.chapterId}/${nextFile}`)
+      : undefined;
+    const nextPracticeIds = nextAnalysis
+      ? practiceCardIdsForAnalysis(nextAnalysis)
+      : new Map<string, Array<{ sourceFile: string; line: number }>>();
+
+    forEachPracticeReveal(rec.ast, (id, location) => {
+      if (nextPracticeIds.has(id)) return;
+      errors.push({
+        code: "practiceRevealUnbound",
+        message: `Practice reveal "${id}" must target a card on the immediately following analysis scene.`,
+        sourceFile: location.sourceFile,
+        line: location.line,
+      });
+    });
+  }
+}
+
+function forEachPracticeReveal(
+  scene: ASTInvestigationScene,
+  visit: (id: string, location: { sourceFile: string; line: number }) => void,
+): void {
+  const inspect = (
+    reveals: InvestigationRevealTarget[],
+    sourceFile: string,
+    line: number,
+  ) => {
+    for (const reveal of reveals) {
+      if (reveal.kind === "practice") visit(reveal.id, { sourceFile, line });
+    }
+  };
+  for (const sublocation of scene.sublocations) {
+    inspect(sublocation.reveals, sublocation.sourceFile, sublocation.line);
+    for (const hotspot of sublocation.hotspots) {
+      inspect(hotspot.reveals, hotspot.sourceFile, hotspot.line);
+    }
+    for (const character of sublocation.characters) {
+      for (const topic of character.topics) {
+        inspect(topic.reveals, topic.sourceFile, topic.line);
+      }
+    }
+  }
 }
 
 function validateInterrogationScene(
@@ -2141,6 +2323,12 @@ function validateInvestigationScene(
               line,
             });
           }
+          break;
+        case "practice":
+          // Practice cards are intentionally scoped across the immediately
+          // following analysis board. Their ownership is validated once for
+          // the whole manifest by validatePracticeCardBindings above; they
+          // are not local evidence and must never enter the case-record flow.
           break;
         case "hotspot":
           if (!localHotspot.has(r.id))

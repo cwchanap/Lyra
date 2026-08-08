@@ -269,6 +269,70 @@ describe("analysis-board parser grammar", () => {
     });
   });
 
+  it("accepts a P1-local practice-card source without treating it as evidence", () => {
+    // Break caught: the prologue notebook must be a board-local tutorial
+    // source, never an ordinary evidence record that can enter the Case File.
+    const result = parseAnalysisScene(
+      VALID_SOURCE.replace(
+        "- **Source:** evidence:platform_photo",
+        "- **Source:** practice:p1_receipt_reprint",
+      ),
+      "chapter_1/analysis_scene_p1_5.md",
+      "analysis_scene_p1_5",
+    );
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) return;
+    expect(result.value.boards[0]?.cards[0]?.source.value).toEqual({
+      kind: "practice",
+      id: "p1_receipt_reprint",
+    });
+  });
+
+  it("parses explicit threshold feedback for a wrong selected card set", () => {
+    // Break caught: P1 needs a distinct rebuttal when a player presents the
+    // CCTV/change observation alone, rather than collapsing it into generic
+    // incomplete feedback.
+    const result = parseAnalysisScene(
+      VALID_SOURCE.replace(
+        "### Result Dialogue\n**相馬律**：現在可以正式調閱站務檔案。",
+        [
+          "### Incorrect Selection",
+          "- **Cards:** [reacquired_video]",
+          "- **Feedback:** 這段影像只說明人離開，還沒有說明憑證記錄的是哪個時間。",
+          "",
+          "### Result Dialogue",
+          "**相馬律**：現在可以正式調閱站務檔案。",
+        ].join("\n"),
+      ),
+      "chapter_1/analysis_scene_p1_5.md",
+      "analysis_scene_p1_5",
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      value: {
+        boards: [
+          expect.anything(),
+          expect.anything(),
+          {
+            feedback: {
+              incorrectSelections: [
+                {
+                  cards: [{ value: "reacquired_video" }],
+                  feedback: {
+                    value:
+                      "這段影像只說明人離開，還沒有說明憑證記錄的是哪個時間。",
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+  });
+
   it.each([
     {
       name: "a nonnumeric scene number",

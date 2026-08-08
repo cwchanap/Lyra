@@ -233,6 +233,7 @@ describe("parseInvestigationScene", () => {
 
 [場景：相馬事務所外，清晨，細雨。]
 - **Background Prompt:** Rainy detective office exterior.
+- **Background Asset ID:** background.chapter_1.scene_p1.tag_001
 
 **A**：hi
 
@@ -262,7 +263,7 @@ describe("parseInvestigationScene", () => {
       text: "相馬事務所外，清晨，細雨。",
       assetCue: {
         backgroundPrompt: "Rainy detective office exterior.",
-        backgroundAssetId: null,
+        backgroundAssetId: "background.chapter_1.scene_p1.tag_001",
       },
     });
   });

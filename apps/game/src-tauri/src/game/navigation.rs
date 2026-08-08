@@ -7,6 +7,7 @@ use super::command_tx::CommandMutation;
 use super::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use super::loader;
 use super::provenance::validate_catalog_record_origin_coverage;
+use super::scenes::analysis::AnalysisSceneState;
 use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
 use super::scenes::linear::LinearSceneState;
@@ -175,6 +176,7 @@ impl GameEngine {
         let mut intro_queue = None;
         let mut needs_linear_prime = false;
         let mut needs_interrogation_advance = false;
+        let mut needs_analysis_advance = false;
         let needs_initial_sub = match &mut self.scene {
             SceneRuntime::Linear(_) => {
                 needs_linear_prime = true;
@@ -216,6 +218,24 @@ impl GameEngine {
                     false
                 }
             }
+            SceneRuntime::Analysis(scene) => {
+                if !scene.intro_played && !scene.def.intro.is_empty() {
+                    intro_queue = DialogueSegment::new(
+                        DialogueSegmentOriginV1::AnalysisIntro {
+                            chapter_id: chapter_id.clone(),
+                            scene_id: scene.def.id.clone(),
+                        },
+                        scene.def.intro.clone(),
+                    )
+                    .map(|segment| (vec![segment], scene.intro_queue_gen));
+                    scene.intro_played = true;
+                    false
+                } else {
+                    scene.intro_played = true;
+                    needs_analysis_advance = true;
+                    false
+                }
+            }
         };
         if needs_linear_prime {
             let exhausted = matches!(
@@ -236,6 +256,9 @@ impl GameEngine {
         if needs_interrogation_advance
             && self.try_advance_interrogation(command_id, next_ordinal)?
         {
+            self.advance_scene(command_id, next_ordinal)?;
+        }
+        if needs_analysis_advance && self.try_advance_analysis(command_id, next_ordinal)? {
             self.advance_scene(command_id, next_ordinal)?;
         }
         Ok(())
@@ -265,13 +288,21 @@ impl GameEngine {
             .ok_or_else(|| GameError::chapter_load_failed("scene index out of bounds".into()))?
             .clone();
         let chapter_id = self.chapters[next_chapter_idx].id.clone();
-        let new_scene = load_scene_runtime(
+        let mut new_scene = load_scene_runtime(
             &self.resources_dir,
             &self.story_catalog,
             &chapter_id,
             &scene_ref,
             queue_gen,
         )?;
+        // Tutorial practice material is a scene-local handoff, not Case File
+        // inventory. Only an investigation advancing directly into analysis
+        // can carry it; every other scene boundary naturally clears it.
+        if let (SceneRuntime::Investigation(current), SceneRuntime::Analysis(next)) =
+            (&self.scene, &mut new_scene)
+        {
+            next.practice_card_ids = current.practice_card_ids.clone();
+        }
 
         self.rollback_scope(|engine| {
             engine.current_chapter_idx = next_chapter_idx;
@@ -506,10 +537,9 @@ fn scene_runtime_from_json(
         SceneJson::Interrogation(j) => Ok(SceneRuntime::Interrogation(Box::new(
             InterrogationSceneState::from_json(j, queue_gen),
         ))),
-        // HPA-259 intentionally stops at the immutable resource boundary.
-        // Returning before a navigation transaction mutates the engine keeps
-        // an attempted entry transactional until HPA-260 owns runtime state.
-        SceneJson::Analysis(_) => Err(GameError::unsupported_scene_type("analysis")),
+        SceneJson::Analysis(j) => Ok(SceneRuntime::Analysis(Box::new(
+            AnalysisSceneState::from_json(j, queue_gen),
+        ))),
     }
 }
 
@@ -1577,10 +1607,10 @@ mod tests {
         let _ = fs::remove_dir_all(d);
     }
 
-    // Break caught: the immutable analysis definition could reach normal
-    // navigation and be silently treated as a playable runtime scene.
+    // Break caught: analysis definitions must receive mutable runtime state
+    // when normal navigation enters the compiled analysis pathway.
     #[test]
-    fn load_scene_runtime_rejects_analysis_with_a_typed_unsupported_error() {
+    fn load_scene_runtime_accepts_analysis_scene() {
         use std::fs;
         use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1598,7 +1628,7 @@ mod tests {
         )
         .unwrap();
 
-        let error = load_scene_runtime(
+        let runtime = load_scene_runtime(
             &resources,
             &StoryCatalog::empty(),
             "chapter_1",
@@ -1608,17 +1638,17 @@ mod tests {
             },
             1,
         )
-        .expect_err("analysis has no mutable runtime before HPA-260");
+        .expect("analysis scenes should have mutable runtime state");
 
-        assert_eq!(error.code, "unsupportedSceneType");
-        assert!(error.message.contains("analysis"));
+        assert!(matches!(runtime, SceneRuntime::Analysis(_)));
         let _ = fs::remove_dir_all(resources);
     }
 
-    // Break caught: a failed analysis jump could partially replace the live
-    // scene before the unsupported runtime error is returned.
+    // Break caught: a normal navigation jump must activate the compiled
+    // analysis runtime rather than retaining the legacy unsupported-scene
+    // behavior.
     #[test]
-    fn jump_to_analysis_is_transactional_and_fail_closed() {
+    fn jump_to_analysis_activates_the_compiled_analysis_runtime() {
         let resources = acquisition_navigation_resources(
             "analysis-jump-transaction",
             r#"{
@@ -1654,19 +1684,17 @@ mod tests {
             .expect("analysis metadata should remain discoverable");
         assert_eq!(index.chapters[0].scenes[1].scene_type, SceneType::Analysis);
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        let before = engine.view().unwrap();
-        let before_revision = engine.durable_revision;
-
-        let error = engine
+        let view = engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect_err("analysis jump must be rejected before mutation");
+            .expect("analysis jump should activate the compiled runtime");
 
-        assert_eq!(error.code, "unsupportedSceneType");
-        assert_eq!(engine.durable_revision, before_revision);
-        assert!(matches!(before.scene, SceneView::Linear { ref id, .. } if id == "scene_0"));
         assert!(matches!(
-            engine.view().unwrap().scene,
-            SceneView::Linear { ref id, .. } if id == "scene_0"
+            view.scene,
+            SceneView::Analysis { ref id, .. } if id == "analysis_scene_1"
+        ));
+        assert!(matches!(
+            view.mode,
+            ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
         ));
         let _ = std::fs::remove_dir_all(resources);
     }

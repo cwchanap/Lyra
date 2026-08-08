@@ -136,6 +136,78 @@ describe("production Chapter 1 authoring", () => {
 });
 
 describe("compile (end-to-end against valid fixture)", () => {
+  it("rejects a practice card that is not collected by its owning tutorial", () => {
+    // Break caught: a practice source must not become a free-floating analysis
+    // card; without a preceding tutorial collection it could bypass the
+    // Prologue Notebook boundary and appear in unrelated analysis scenes.
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "scene-practice-source-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "scene-practice-output-"));
+    try {
+      const chapterDir = resolve(sourceRoot, "chapter_1");
+      mkdirSync(chapterDir, { recursive: true });
+      writeFileSync(
+        resolve(chapterDir, "chapter.md"),
+        [
+          "# Chapter 1: 練習欄驗收",
+          "",
+          "**Summary:** 練習欄只可由其教學場景取得。",
+          "",
+          "## Scenes",
+          "",
+          "1. analysis_scene_p1_5.md",
+        ].join("\n"),
+      );
+      writeFileSync(
+        resolve(chapterDir, "analysis_scene_p1_5.md"),
+        [
+          "# Scene 1.5: 練習欄",
+          "",
+          "- **Summary:** 這張卡必須有同一段教學取得來源。",
+          "",
+          "## Intro",
+          "",
+          "**相馬律**：先把手上的練習資料放好。",
+          "",
+          "## Board: 重印時間 {#p1_reprint_time_board}",
+          "",
+          "- **Kind:** classify",
+          "- **Prompt:** 將練習卡放進正確結論。",
+          "- **Reveals:** []",
+          "- **Incomplete Feedback:** 還沒有完成。",
+          "- **Incorrect Feedback:** 這樣還不對。",
+          "",
+          "### Card: 重印收據 {#receipt}",
+          "",
+          "- **Source:** practice:p1_receipt_reprint",
+          "- **Summary:** 這張收據帶有重印標記。",
+          "",
+          "### Group: 重印時間 {#reprint_time}",
+          "",
+          "- **Description:** 收據記的是重印時間。",
+          "- **Accepted Cards:** [receipt]",
+          "",
+          "### Result Dialogue",
+          "",
+          "**相馬律**：這張卡不該憑空出現。",
+          "",
+          "## Outro",
+          "",
+          "**相馬律**：先回去調查。",
+        ].join("\n"),
+      );
+
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result).toMatchObject({ ok: false });
+      if (result.ok) return;
+      expect(result.errors.map((error) => error.code)).toContain(
+        "practiceCardSourceUnbound",
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("compiles the valid fixture without errors and emits expected files", () => {
     const outRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-"));
     try {

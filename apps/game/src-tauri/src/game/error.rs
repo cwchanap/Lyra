@@ -331,6 +331,54 @@ impl GameError {
             format!("Interrogation question '{id}' does not exist."),
         )
     }
+    pub fn unknown_analysis_board(id: &str) -> Self {
+        Self::new(
+            "unknownAnalysisBoard",
+            format!("Analysis board '{id}' does not exist in the current scene."),
+        )
+    }
+    pub fn unknown_analysis_scene(chapter_id: &str, scene_id: &str) -> Self {
+        Self::new(
+            "unknownAnalysisScene",
+            format!("Analysis scene '{scene_id}' does not exist in chapter '{chapter_id}'."),
+        )
+    }
+    pub fn unknown_analysis_card(board_id: &str, card_id: &str) -> Self {
+        Self::new(
+            "unknownAnalysisCard",
+            format!("Analysis card '{card_id}' does not exist on board '{board_id}'."),
+        )
+    }
+    pub fn analysis_board_completed(id: &str) -> Self {
+        Self::new(
+            "analysisBoardCompleted",
+            format!("Analysis board '{id}' is already complete."),
+        )
+    }
+    pub fn analysis_board_kind_mismatch(id: &str, expected: &str) -> Self {
+        Self::new(
+            "analysisBoardKindMismatch",
+            format!("Analysis board '{id}' does not accept a {expected} submission."),
+        )
+    }
+    pub fn analysis_selection_invalid(board_id: &str) -> Self {
+        Self::new(
+            "analysisSelectionInvalid",
+            format!("Analysis selection for board '{board_id}' is invalid."),
+        )
+    }
+    pub fn locked_analysis_board(id: &str) -> Self {
+        Self::new(
+            "lockedAnalysisBoard",
+            format!("Analysis board '{id}' is not unlocked yet."),
+        )
+    }
+    pub fn unavailable_analysis_card(board_id: &str, card_id: &str) -> Self {
+        Self::new(
+            "unavailableAnalysisCard",
+            format!("Analysis card '{card_id}' is not available on board '{board_id}'."),
+        )
+    }
     pub fn locked_interrogation_question(id: &str) -> Self {
         Self::new(
             "lockedInterrogationQuestion",

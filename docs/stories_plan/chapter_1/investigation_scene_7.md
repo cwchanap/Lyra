@@ -20,7 +20,9 @@
 
 **早坂茜**：旁註不代表不存在。
 
-[黑瀨徹已經站在後場門口內側，朝兩人擺了下手。他穿著一件皺巴巴的外套，肩膀撐得有些歪，腳下的皮鞋鞋面佈滿細碎刮痕——跑現場跑出來的那種。臉上皺紋很深，尤其是眼尾，像是在強光下盯了太多年證物袋。粗大的手指隨意搭在門框上，穩穩的。]
+[黑瀨徹已經站在後場門口內側，朝兩人擺了下手。他穿著一件皺巴巴的外套，肩膀撐得有些歪，腳下的皮鞋鞋面佈滿細碎刮痕——跑現場跑出來的那種。]
+
+[臉上皺紋很深，尤其是眼尾，像是在強光下盯了太多年證物袋。粗大的手指隨意搭在門框上，穩穩的。]
 
 **黑瀨徹**：你們說要看『店裡沒寫進摘要的動線』，就是這裡？
 
@@ -65,11 +67,11 @@
 
 **黑瀨徹**：剩下一條，不見得說謊，也不見得幫得上忙。那種最麻煩。
 
-[相馬律又低頭看了一眼螢幕。「雨會替東京洗掉腳印」這句話不像線索，倒像有人隔著什麼在看他。]
+[相馬律又低頭看了一眼螢幕。]
 
 **相馬律**：……這句話，不像隨便寫的。
 
-**早坂茜**：不是原檔。像某個外包縮圖板流出的一角。
+**早坂茜**：不是核准片段。像某個外包縮圖板流出的一角。
 
 **相馬律**：挑釁？故意丟一句話讓我們亂猜。
 
@@ -95,11 +97,11 @@
 - **Scene Source Prompt:** Wet transparent umbrella sleeve hanging from the backroom wall hook as the visible source clue.
 - **Reveals:** [evidence:wet_umbrella_sleeve]
 
-[相馬律伸手碰了碰傘套邊角，指尖沾濕。]
+[相馬律輕碰傘套邊角，又收回手。門外雨聲敲在鐵門上。]
 
-**相馬律**：這個還是濕的。比地上的水痕新。
+**黑瀨徹**：雨大的夜，店裡總有人把傘套掛錯地方。明早開門，還得一個個分。
 
-**黑瀨徹**：人進來，總會把外面的東西帶進來。
+**早坂茜**：明早天一亮，店裡還是得開門。
 
 ### Hotspot: 後巷排水口的雨聲 {#alley_drain_rain}
 - **Description:** 後巷盡頭的排水口，雨水匯成一條細流，不斷流走。
@@ -143,39 +145,39 @@
 - **Status:** unlocked
 - **Reveals:** [evidence:coffee_last_cup_record]
 
-[相馬律在手機上調出收銀出杯摘要，黑瀨徹站在門邊，只看一眼。]
+[相馬律在手機上調出收銀出杯摘要。螢幕冷光落在一只倒扣的紙杯上，杯緣留著洗不掉的咖啡漬。]
 
-**相馬律**：最後一筆出杯。兩杯，間隔很短。
+**黑瀨徹**：關店前的單子最容易亂。人都盯著門鎖、垃圾和末班車。
 
-**相馬律**：這不能告訴我們他幾點死。
+**黑瀨徹**：誰還記得杯子喝沒喝完。
 
-**早坂茜**：但能告訴我們，那個人不是 23:08 之後才出現。
-
-**相馬律**：增田在等人。而且那個人，比摘要說的更早就到了。
+**早坂茜**：所以店裡才有這麼多寫到一半的備註。
 
 ## Sub-location: 內側倉庫 {#inner}
 - **Status:** locked
 - **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows, stopped old wall clock, shelf impact mark on floor, hard sensor light.
 
-[場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影，深處有一台停擺的舊掛鐘，地上一道貨架撞痕。]
+[場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影；入口內側牆上的舊掛鐘正對著走廊盡頭，地上一道貨架撞痕。]
 
-[感應燈延遲了兩秒才亮，光線偏白偏硬，把高貨架的影子拉成一道道斜長的柵欄。空氣裡混著潮濕的水泥味和陳年咖啡豆的酸氣，隱約還有一股金屬鏽味。走進去之後，才發現空間比門口看起來小得多——貨架把每一寸都吃掉了，站三個人就覺得擠。那種冷不是溫度的冷，是一個房間裡剛發生過什麼、還沒散乾淨的那種涼。]
+[感應燈延遲了兩秒才亮，光線偏白偏硬，把高貨架的影子拉成一道道斜長的柵欄。空氣裡混著潮濕的水泥味和陳年咖啡豆的酸氣，隱約還有一股金屬鏽味。]
+
+[走進去之後，才發現空間比門口看起來小得多——貨架把每一寸都吃掉了，站三個人就覺得擠。那種冷不是溫度的冷，是一個房間裡剛發生過什麼、還沒散乾淨的那種涼。]
 
 [相馬律與早坂茜跟著黑瀨徹走進深處。黑瀨徹的步伐穩而慢，像是在確認腳下每一寸地面。]
 
 **相馬律**：原來摘要裡那些時間，都是從這裡來的。
 
 ### Hotspot: 舊掛鐘 {#old_clock}
-- **Description:** 牆上一台停擺的舊掛鐘，指針卡在接近 22:59。
+- **Description:** 剛跨過防火門就能看見、掛在內側倉庫入口內側牆上的舊掛鐘，指針卡在接近 22:59。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Stopped old wall clock mounted in the inner storage room as the visible source object, with clock face readable only as a vague late-night position.
 - **Reveals:** [evidence:old_clock_photo]
 
-[相馬律抬頭看那台停住的掛鐘。他微微吸了一口氣，嘴角繃了一下。]
+[相馬律停在剛跨過防火門就能看見的入口內側牆下。這正是店長先前提過的那台舊掛鐘，指針仍卡在接近 22:59；高貨架後方才是被陰影吞住的倉庫深處。]
 
-**相馬律**：停在快 22:59。撞停的？
+**相馬律**：走廊盡頭那台。店長說它常慢。
 
-**黑瀨徹**：一台舊鐘。我不會單靠它定時間。
+**黑瀨徹**：開店的人記得這種東西。客人不會走到這。
 
 ### Hotspot: 死者手機掉落位置 {#phone_drop}
 - **Description:** 貨架旁的撞痕，旁邊是死者手機掉落的位置。
@@ -195,11 +197,11 @@
 - **Scene Source Prompt:** Stainless steel cafe bean can on the storage-room shelf as the visible source object, with wipe marks and dent visible.
 - **Reveals:** [evidence:murder_weapon_candidate]
 
-[相馬律戴上手套，拿起那只金屬罐。他沒有馬上翻看，而是先掂了掂重量，然後緩緩轉動罐身，像在確認每一面——對著燈看罐口時，手指停住了。]
+[相馬律戴上手套，拿起那只金屬罐。罐底還黏著一小角褪色的補貨貼紙，字跡被擦得只剩幾筆。]
 
-**相馬律**：擦過了。罐口這裡，凹了一小塊。
+**黑瀨徹**：這種罐，店裡用到字都磨掉。明天還要補豆，誰也不會特地換。
 
-**黑瀨徹**：不是什麼複雜的東西。順手抄起來就能打人。
+**早坂茜**：小店就是這樣。能用的東西，總要撐到用不動。
 
 ### Hotspot: 防火門旁遮蔽視角 {#miyake_replay}
 - **Description:** 半掩防火門旁的門框與高貨架，形成三宅 23:06 站位的遮蔽視角。
@@ -207,7 +209,7 @@
 - **Scene Source Prompt:** Visible half-open fire door, doorway frame, and adjacent high shelf geometry used as the local sightline carrier for Miyake's 23:06 replay; no final replay card or readable overlay in the background.
 - **Reveals:** [evidence:miyake_pov_replay]
 
-[相馬律走到三宅 23:06 站過的位置，按指示停住，轉頭環視一圈。他的重心慢慢從左腳移到右腳，像是身體先於意識感覺到這個角度的限制。]
+[相馬律走到三宅 23:06 站過的位置，按指示停住，轉頭環視一圈。他的重心慢慢從左腳移到右腳。]
 
 [眼前：清潔用品架、蛋糕盒、紙杯箱、半掩的防火門、高貨架投下的陰影。]
 
@@ -217,7 +219,7 @@
 
 **早坂茜**：高貨架擋死了視線。
 
-[早坂茜靠在貨架邊，雙臂交疊，安靜地消化這個結論。]
+[早坂茜靠在貨架邊，雙臂交疊。]
 
 **相馬律**：所以他站在這，不代表他知道屍體在裡面。
 
@@ -239,7 +241,7 @@
 **黑瀨徹**：擦痕只說有人在這轉過彎。是誰，得再對。
 
 ### Hotspot: 半掩防火門與巡查路徑 {#takase_replay}
-- **Description:** 半掩防火門與門前地面，對應店長 23:20 從前場走進內側倉庫的發現動線 replay。
+- **Description:** 半掩防火門與門前地面，對應店長 23:20 從前場走進內側倉庫的發現動線重現。
 - **Evidence Source:** implied
 - **Scene Source Prompt:** Visible half-open fire door and doorway floor used as the local sightline carrier for the manager's 23:20 discovery replay; no final replay card or readable overlay in the background.
 - **Reveals:** [evidence:takase_2320_replay]
@@ -248,7 +250,9 @@
 
 **相馬律**：前場對帳卡住了。片瀨美咲趕末班車，漏了維護紀錄冊的確認。
 
-**早坂茜**：所以店長走到後場，看見那本還沒蓋章的維護紀錄冊——就是白板上那個沒勾的項目。
+**早坂茜**：所以店長走到後場，看見那本還沒蓋章的維護紀錄冊。
+
+**早坂茜**：就是白板上那個沒勾的項目。
 
 [相馬律推開半掩的防火門，感應燈亮起。]
 
@@ -413,7 +417,7 @@
 **黑瀨徹**：但跟 22:58 不衝突。我只給你這些。
 
 ### evidence:miyake_pov_replay {#miyake_pov_replay}
-- **Name:** 三宅視角 replay
+- **Name:** 三宅視角重現
 - **Description:** 站在三宅 23:06 站位上的後場視線記錄。
 - **Details:** 從該站位看得見清潔用品架、蛋糕盒、紙杯箱、半掩防火門與高貨架陰影，但看不到增田倒下位置、舊掛鐘與深處血跡。它只證明三宅看不見屍體，不構成完整的不在場證明。
 - **Source Sublocation:** inner
@@ -426,8 +430,8 @@
 **早坂茜**：看不見，不等於不在場。先記著這條界線。
 
 ### evidence:takase_2320_replay {#takase_2320_replay}
-- **Name:** 店長 23:20 發現 replay
-- **Description:** 店長 23:20 從前場走進內側倉庫、發現增田鞋尖的動線 replay。
+- **Name:** 店長 23:20 發現重現
+- **Description:** 店長 23:20 從前場走進內側倉庫、發現增田鞋尖的動線重現。
 - **Details:** 前場對帳卡住、片瀨美咲趕末班車漏了維護紀錄冊確認，店長才會在 23:20 走到後場，看見那本還沒蓋章的維護紀錄冊——對應閉店告示板上沒勾的那一欄。推開半掩防火門、感應燈亮，才露出高貨架後方的鞋尖。它解釋了 23:20 發現延遲的生活原因。
 - **Source Sublocation:** inner
 - **Image Prompt:** Manager discovery replay card from a cafe backroom, half-open fire door, sensor light cone, shoe-tip peeking from behind a high shelf, no readable labels, isolated evidence icon.

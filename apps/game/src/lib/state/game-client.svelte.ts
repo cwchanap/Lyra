@@ -65,6 +65,8 @@ export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
   "withdraw_interrogation",
   "resume_interrogation_testimony",
   "complete_interrogation_phase",
+  "set_analysis_selection",
+  "submit_analysis_selection",
 ]);
 
 async function httpInvoke<T>(
@@ -531,4 +533,10 @@ export async function resumeInterrogationTestimony() {
 }
 export async function completeInterrogationPhase() {
   await dispatchGameCommand("complete_interrogation_phase", {});
+}
+export async function setAnalysisSelection(boardId: string, cardIds: string[]) {
+  await dispatchGameCommand("set_analysis_selection", { boardId, cardIds });
+}
+export async function submitAnalysisSelection(boardId: string) {
+  await dispatchGameCommand("submit_analysis_selection", { boardId });
 }

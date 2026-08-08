@@ -63,6 +63,11 @@ export type Mode =
     } & VisualAssetCue)
   | ({ type: "explore"; sublocationId: string } & VisualAssetCue)
   | ({ type: "interrogation"; phaseId: string } & VisualAssetCue)
+  | ({
+      type: "analysis";
+      boardId: string;
+      lastFeedback: string | null;
+    } & VisualAssetCue)
   | { type: "gameComplete" };
 
 export type ChapterView = {
@@ -147,6 +152,45 @@ export type CrossExamView = {
   presenting: boolean;
 };
 
+export type AnalysisCardView = {
+  id: string;
+  label: string;
+  summary: string;
+  available: boolean;
+};
+
+export type AnalysisBoardView =
+  | {
+      kind: "classify";
+      id: string;
+      label: string;
+      prompt: string;
+      cards: AnalysisCardView[];
+      groups: Array<{ id: string; label: string; description: string }>;
+      selectedGroupsByCard: Record<string, string>;
+      completed: boolean;
+    }
+  | {
+      kind: "order";
+      id: string;
+      label: string;
+      prompt: string;
+      cards: AnalysisCardView[];
+      orderedCardIds: string[];
+      fixedAnchors: Array<{ cardId: string; position: number }>;
+      completed: boolean;
+    }
+  | {
+      kind: "threshold";
+      id: string;
+      label: string;
+      prompt: string;
+      cards: AnalysisCardView[];
+      minimumSelected: number;
+      selectedCardIds: string[];
+      completed: boolean;
+    };
+
 export type SceneView =
   | {
       kind: "linear";
@@ -175,6 +219,15 @@ export type SceneView =
       total: number;
       currentPhaseId: string | null;
       visiblePhases: InterrogationPhaseView[];
+    }
+  | {
+      kind: "analysis";
+      id: string;
+      title: string;
+      summary: string;
+      index: number;
+      total: number;
+      visibleBoards: AnalysisBoardView[];
     };
 
 export type SceneNavigationIndex = {
@@ -185,7 +238,7 @@ export type SceneNavigationIndex = {
     scenes: Array<{
       id: string;
       title: string;
-      type: "linear" | "investigation" | "interrogation";
+      type: "linear" | "investigation" | "interrogation" | "analysis";
       index: number;
     }>;
   }>;

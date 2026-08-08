@@ -51,6 +51,11 @@ export type SpriteLayout = {
 export type RevealTarget =
   | { kind: "evidence"; id: string }
   | { kind: "statement"; id: string }
+  /**
+   * A tutorial-only card kept outside the global Case File. Practice cards
+   * are scoped by compiler validation to one downstream analysis board.
+   */
+  | { kind: "practice"; id: string }
   | { kind: "topic"; characterId: string; topicId: string }
   | { kind: "hotspot"; id: string }
   | { kind: "sublocation"; id: string };

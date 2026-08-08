@@ -1,7 +1,9 @@
+pub mod analysis;
 pub mod interrogation;
 pub mod investigation;
 pub mod linear;
 
+use analysis::AnalysisSceneState;
 use interrogation::InterrogationSceneState;
 use investigation::InvestigationSceneState;
 use linear::LinearSceneState;
@@ -11,6 +13,7 @@ pub enum SceneRuntime {
     Linear(LinearSceneState),
     Investigation(Box<InvestigationSceneState>),
     Interrogation(Box<InterrogationSceneState>),
+    Analysis(Box<AnalysisSceneState>),
 }
 
 impl SceneRuntime {
@@ -19,6 +22,7 @@ impl SceneRuntime {
             SceneRuntime::Linear(s) => &s.id,
             SceneRuntime::Investigation(s) => s.id(),
             SceneRuntime::Interrogation(s) => s.id(),
+            SceneRuntime::Analysis(s) => s.id(),
         }
     }
     pub fn title(&self) -> &str {
@@ -26,6 +30,7 @@ impl SceneRuntime {
             SceneRuntime::Linear(s) => &s.title,
             SceneRuntime::Investigation(s) => s.title(),
             SceneRuntime::Interrogation(s) => s.title(),
+            SceneRuntime::Analysis(s) => s.title(),
         }
     }
 }

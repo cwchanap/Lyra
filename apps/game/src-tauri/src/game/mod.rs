@@ -38,22 +38,25 @@ use navigation::{
     find_scene_json_by_id, load_chapter_manifests, load_scene_runtime,
     scene_navigation_index_from_chapters,
 };
+use scenes::analysis::{AnalysisSubmission, AnalysisSubmissionOutcome};
 use scenes::interrogation::{
     phase_id, phase_required, CrossExam, InterrogationSceneAndInventoryCtx,
 };
 use scenes::investigation::InvestigationSceneState;
 use scenes::SceneRuntime;
 use schema::{
-    DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus, SceneJson, SceneType,
+    AnalysisBoardJson, DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus,
+    SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
 use story_location::StoryLocationIndex;
 use view::{
-    AudioCueView, ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
+    AnalysisBoardView, AnalysisCardView, AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView,
+    ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
     InterrogationPhaseView, PendingAcquisitionView, SceneView, SubjectView, SublocationView,
     TopicView,
 };
@@ -177,6 +180,7 @@ impl GameEngine {
                 SceneRuntime::Linear(_) => SceneType::Linear,
                 SceneRuntime::Investigation(_) => SceneType::Investigation,
                 SceneRuntime::Interrogation(_) => SceneType::Interrogation,
+                SceneRuntime::Analysis(_) => SceneType::Analysis,
             }
         } else {
             let mut matching_chapters = self
@@ -519,6 +523,13 @@ impl GameEngine {
                     queue.advance()
                 }
                 SceneRuntime::Interrogation(scene) => {
+                    let queue = scene
+                        .pending_queue
+                        .as_mut()
+                        .ok_or_else(GameError::no_active_dialogue)?;
+                    queue.advance()
+                }
+                SceneRuntime::Analysis(scene) => {
                     let queue = scene
                         .pending_queue
                         .as_mut()
@@ -1239,6 +1250,9 @@ impl GameEngine {
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_evidence", "linear"));
             }
+            SceneRuntime::Analysis(_) => {
+                return Err(GameError::wrong_mode("reexamine_evidence", "analysis"));
+            }
         }
         let rec = self
             .inventory
@@ -1277,6 +1291,9 @@ impl GameEngine {
             }
             SceneRuntime::Linear(_) => {
                 return Err(GameError::wrong_mode("reexamine_statement", "linear"));
+            }
+            SceneRuntime::Analysis(_) => {
+                return Err(GameError::wrong_mode("reexamine_statement", "analysis"));
             }
         }
         let rec = self
@@ -1914,6 +1931,229 @@ impl GameEngine {
         })
     }
 
+    /// Stores the current threshold-board selection without submitting it.
+    /// The set lives in the active AnalysisSceneState, so tutorial practice
+    /// material cannot escape into the Case File.
+    pub fn set_analysis_selection(
+        &mut self,
+        board_id: &str,
+        card_ids: Vec<String>,
+    ) -> Result<GameStateView, GameError> {
+        let selected_card_ids = card_ids.into_iter().collect::<BTreeSet<_>>();
+        self.require_analysis_board_ready(board_id, "set_analysis_selection")?;
+        self.require_analysis_cards_available(board_id, &selected_card_ids)?;
+        self.command_tx(move |engine, _, _| {
+            let scene = match &mut engine.scene {
+                SceneRuntime::Analysis(scene) => scene,
+                _ => {
+                    return Err(GameError::internal(
+                        "scene changed during set_analysis_selection".into(),
+                    ))
+                }
+            };
+            scene.set_threshold_selection(board_id, selected_card_ids)?;
+            Ok(CommandMutation::Changed)
+        })
+    }
+
+    /// Submits the current threshold selection. Correct results are emitted
+    /// through the existing compiled analysis dialogue origin; wrong answers
+    /// remain explicit board feedback in the public analysis view.
+    pub fn submit_analysis_selection(
+        &mut self,
+        board_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        self.require_analysis_board_ready(board_id, "submit_analysis_selection")?;
+        let selected_card_ids = self.analysis_selected_cards(board_id)?;
+        self.require_analysis_cards_available(board_id, &selected_card_ids)?;
+        self.command_tx(move |engine, command_id, next_ordinal| {
+            engine.submit_analysis_inner(
+                board_id,
+                AnalysisSubmission::Threshold { selected_card_ids },
+                command_id,
+                next_ordinal,
+            )
+        })
+    }
+
+    fn require_analysis_board_ready(&self, board_id: &str, action: &str) -> Result<(), GameError> {
+        let scene = match &self.scene {
+            SceneRuntime::Analysis(scene) => scene,
+            _ => return Err(GameError::wrong_mode(action, "not analysis")),
+        };
+        if scene.pending_queue.is_some() {
+            return Err(GameError::dialogue_active(action));
+        }
+        let board = scene
+            .board(board_id)
+            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
+        if scene.is_board_completed(board_id) {
+            return Err(GameError::analysis_board_completed(board_id));
+        }
+        if !scene.is_board_unlocked(board, &self.story_state) {
+            return Err(GameError::locked_analysis_board(board_id));
+        }
+        Ok(())
+    }
+
+    fn analysis_selected_cards(&self, board_id: &str) -> Result<BTreeSet<String>, GameError> {
+        let scene = match &self.scene {
+            SceneRuntime::Analysis(scene) => scene,
+            _ => {
+                return Err(GameError::wrong_mode(
+                    "submit_analysis_selection",
+                    "not analysis",
+                ))
+            }
+        };
+        Ok(scene
+            .selected_card_ids_by_board
+            .get(board_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn require_analysis_cards_available(
+        &self,
+        board_id: &str,
+        card_ids: &BTreeSet<String>,
+    ) -> Result<(), GameError> {
+        let scene = match &self.scene {
+            SceneRuntime::Analysis(scene) => scene,
+            _ => return Err(GameError::wrong_mode("analysis cards", "not analysis")),
+        };
+        let board = scene
+            .board(board_id)
+            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
+        for card_id in card_ids {
+            let card = board
+                .common()
+                .cards
+                .iter()
+                .find(|card| card.id == *card_id)
+                .ok_or_else(|| GameError::unknown_analysis_card(board_id, card_id))?;
+            if !scene.card_is_available(&card.source, &self.inventory) {
+                return Err(GameError::unavailable_analysis_card(board_id, card_id));
+            }
+        }
+        Ok(())
+    }
+
+    fn submit_analysis_inner(
+        &mut self,
+        board_id: &str,
+        submission: AnalysisSubmission,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<CommandMutation, GameError> {
+        let (scene_id, reveals, result_dialogue) = {
+            let scene = match &mut self.scene {
+                SceneRuntime::Analysis(scene) => scene,
+                _ => {
+                    return Err(GameError::internal(
+                        "scene changed during analysis submission".into(),
+                    ))
+                }
+            };
+            match scene.submit(board_id, submission)? {
+                AnalysisSubmissionOutcome::Feedback(_) => return Ok(CommandMutation::Changed),
+                AnalysisSubmissionOutcome::Correct => {
+                    let board = scene
+                        .board(board_id)
+                        .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
+                    (
+                        scene.def.id.clone(),
+                        board.common().reveals.clone(),
+                        board.common().result_dialogue.clone(),
+                    )
+                }
+            }
+        };
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+        self.story_state.complete_analysis_board(
+            &self.story_catalog,
+            &chapter_id,
+            &scene_id,
+            board_id,
+        )?;
+        let fact_support_by_id = BTreeMap::new();
+        let context = reveals::StoryRevealMaterializationContext {
+            origin: AssertionOrigin::AnalysisBoard {
+                chapter_id: chapter_id.clone(),
+                scene_id: scene_id.clone(),
+                board_id: board_id.into(),
+            },
+            fact_support_by_id: &fact_support_by_id,
+            represented_authority: None,
+        };
+        for reveal in &reveals {
+            reveals::apply_story_reveal(
+                &self.story_catalog,
+                &mut self.story_state,
+                reveal,
+                &context,
+            )?;
+        }
+        let segments = DialogueSegment::new(
+            DialogueSegmentOriginV1::AnalysisResult {
+                chapter_id,
+                scene_id,
+                board_id: board_id.into(),
+            },
+            result_dialogue,
+        )
+        .into_iter()
+        .collect();
+        self.install_or_exhaust(segments, command_id, next_ordinal)?;
+        Ok(CommandMutation::Changed)
+    }
+
+    fn try_advance_analysis(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<bool, GameError> {
+        let (scene_id, outro_dialogue) = {
+            let scene = match &mut self.scene {
+                SceneRuntime::Analysis(scene) => scene,
+                _ => return Ok(false),
+            };
+            scene.pending_queue = None;
+            if scene.outro_played {
+                return Ok(true);
+            }
+            if !scene.all_boards_completed() {
+                if scene.next_unlocked_board_id(&self.story_state).is_none() {
+                    return Err(GameError::scene_validation_failed(format!(
+                        "{} has no unlocked incomplete analysis board.",
+                        scene.def.id
+                    )));
+                }
+                return Ok(false);
+            }
+            scene.outro_played = true;
+            (scene.def.id.clone(), scene.def.outro.clone())
+        };
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+        self.story_state
+            .complete_analysis_scene(&self.story_catalog, &chapter_id, &scene_id)?;
+        if outro_dialogue.is_empty() {
+            return Ok(true);
+        }
+        let queue_gen = self.alloc_queue_gen();
+        let segments = DialogueSegment::new(
+            DialogueSegmentOriginV1::AnalysisOutro {
+                chapter_id,
+                scene_id,
+            },
+            outro_dialogue,
+        )
+        .into_iter()
+        .collect();
+        self.install_scene_queue(segments, queue_gen, None, command_id, next_ordinal)?;
+        Ok(false)
+    }
+
     fn inventory_target_exists(&self, item_kind: &str, item_id: &str) -> bool {
         match item_kind {
             "evidence" => self.inventory.has_evidence(item_id),
@@ -1937,6 +2177,10 @@ impl GameEngine {
                 .pending_queue
                 .as_ref()
                 .and_then(|queue| queue.current().cloned()),
+            SceneRuntime::Analysis(scene) => scene
+                .pending_queue
+                .as_ref()
+                .and_then(|queue| queue.current().cloned()),
         };
         match (current_item, token) {
             (Some(item), Some(t)) => ModeView::Dialogue {
@@ -1949,6 +2193,11 @@ impl GameEngine {
                         .map(|queue| queue.queue_remaining())
                         .unwrap_or(0),
                     SceneRuntime::Interrogation(scene) => scene
+                        .pending_queue
+                        .as_ref()
+                        .map(|queue| queue.queue_remaining())
+                        .unwrap_or(0),
+                    SceneRuntime::Analysis(scene) => scene
                         .pending_queue
                         .as_ref()
                         .map(|queue| queue.queue_remaining())
@@ -1984,6 +2233,18 @@ impl GameEngine {
                     },
                     None => ModeView::GameComplete,
                 },
+                SceneRuntime::Analysis(scene) => {
+                    match scene.next_unlocked_board_id(&self.story_state) {
+                        Some(board_id) => ModeView::Analysis {
+                            board_id,
+                            last_feedback: scene.last_feedback.clone(),
+                            background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                            bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                            bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
+                        },
+                        None => ModeView::GameComplete,
+                    }
+                }
             },
         }
     }
@@ -2197,6 +2458,96 @@ impl GameEngine {
                     total,
                     current_phase_id: scene.current_phase_id.clone(),
                     visible_phases,
+                }
+            }
+            SceneRuntime::Analysis(scene) => {
+                let visible_boards = scene
+                    .def
+                    .boards
+                    .iter()
+                    .filter(|board| scene.is_board_unlocked(board, &self.story_state))
+                    .map(|board| {
+                        let common = board.common();
+                        let cards = common
+                            .cards
+                            .iter()
+                            .map(|card| AnalysisCardView {
+                                id: card.id.clone(),
+                                label: card.label.clone(),
+                                summary: card.summary.clone(),
+                                available: scene.card_is_available(&card.source, &self.inventory),
+                            })
+                            .collect();
+                        let completed = scene.is_board_completed(&common.id);
+                        match board {
+                            AnalysisBoardJson::Classify { groups, .. } => {
+                                AnalysisBoardView::Classify {
+                                    id: common.id.clone(),
+                                    label: common.label.clone(),
+                                    prompt: common.prompt.clone(),
+                                    cards,
+                                    groups: groups
+                                        .iter()
+                                        .map(|group| AnalysisGroupView {
+                                            id: group.id.clone(),
+                                            label: group.label.clone(),
+                                            description: group.description.clone(),
+                                        })
+                                        .collect(),
+                                    selected_groups_by_card: scene
+                                        .group_by_card_by_board
+                                        .get(&common.id)
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                    completed,
+                                }
+                            }
+                            AnalysisBoardJson::Order { fixed_anchors, .. } => {
+                                AnalysisBoardView::Order {
+                                    id: common.id.clone(),
+                                    label: common.label.clone(),
+                                    prompt: common.prompt.clone(),
+                                    cards,
+                                    ordered_card_ids: scene
+                                        .ordered_card_ids_by_board
+                                        .get(&common.id)
+                                        .cloned()
+                                        .unwrap_or_default(),
+                                    fixed_anchors: fixed_anchors
+                                        .iter()
+                                        .map(|anchor| AnalysisFixedAnchorView {
+                                            card_id: anchor.card_id.clone(),
+                                            position: anchor.position,
+                                        })
+                                        .collect(),
+                                    completed,
+                                }
+                            }
+                            AnalysisBoardJson::Threshold {
+                                minimum_selected, ..
+                            } => AnalysisBoardView::Threshold {
+                                id: common.id.clone(),
+                                label: common.label.clone(),
+                                prompt: common.prompt.clone(),
+                                cards,
+                                minimum_selected: *minimum_selected,
+                                selected_card_ids: scene
+                                    .selected_card_ids_by_board
+                                    .get(&common.id)
+                                    .map(|selected| selected.iter().cloned().collect())
+                                    .unwrap_or_default(),
+                                completed,
+                            },
+                        }
+                    })
+                    .collect();
+                SceneView::Analysis {
+                    id: scene.def.id.clone(),
+                    title: scene.def.title.clone(),
+                    summary: scene.def.summary.clone(),
+                    index: self.current_scene_idx,
+                    total,
+                    visible_boards,
                 }
             }
         }

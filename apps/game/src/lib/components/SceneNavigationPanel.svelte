@@ -49,9 +49,12 @@
     }
   });
 
-  function sceneTypeLabel(type: "linear" | "investigation" | "interrogation") {
+  function sceneTypeLabel(
+    type: "linear" | "investigation" | "interrogation" | "analysis",
+  ) {
     if (type === "investigation") return "調查";
     if (type === "interrogation") return "詰問";
+    if (type === "analysis") return "分析";
     return "對話";
   }
 

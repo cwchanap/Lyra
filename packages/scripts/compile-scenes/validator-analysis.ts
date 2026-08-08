@@ -14,13 +14,13 @@ import type {
   ASTOrderBoard,
   ASTStoryCatalog,
   ASTThresholdBoard,
+  AnalysisCardSource,
   AssetRef,
   CaseRecordMetadataRequirement,
   CompiledCaseRecord,
   CompiledCaseRecordCorpus,
   CompileError,
   DialogueItem,
-  InventoryTarget,
   Located,
   ProofCapability,
   ProceduralStatus,
@@ -40,7 +40,7 @@ export const MAX_THRESHOLD_ELIGIBLE_CARDS = 6;
 export type AnalysisCardJson = {
   id: string;
   label: string;
-  source: InventoryTarget;
+  source: AnalysisCardSource;
   summary: string;
 };
 
@@ -54,6 +54,7 @@ export type AnalysisBoardJsonCommon = {
     incomplete: string;
     incorrect: string;
     hint: string | null;
+    incorrectSelections: Array<{ cards: string[]; feedback: string }>;
   };
   cards: AnalysisCardJson[];
   resultDialogue: DialogueItem[];
@@ -163,32 +164,42 @@ function normalizeBoard(
   errors: CompileError[],
 ): AnalysisBoardJson {
   const cards = validateBoardCards(board, caseRecords, errors);
-  const common = normalizeBoardCommon(board);
 
   switch (board.kind) {
     case "classify":
       return {
         kind: "classify",
-        common,
+        common: normalizeBoardCommon(board),
         ...normalizeClassifyBoard(board, cards, errors),
       };
     case "order":
       return {
         kind: "order",
-        common,
+        common: normalizeBoardCommon(board),
         ...normalizeOrderBoard(board, cards, errors),
       };
-    case "threshold":
+    case "threshold": {
+      const threshold = normalizeThresholdBoard(board, cards, errors);
       return {
         kind: "threshold",
-        common,
-        ...normalizeThresholdBoard(board, cards, errors),
+        common: normalizeBoardCommon(
+          board,
+          normalizeIncorrectSelections(
+            board,
+            cards,
+            threshold.acceptedSelections,
+            errors,
+          ),
+        ),
+        ...threshold,
       };
+    }
   }
 }
 
 function normalizeBoardCommon(
   board: ASTAnalysisBoard,
+  incorrectSelections: Array<{ cards: string[]; feedback: string }> = [],
 ): AnalysisBoardJsonCommon {
   return {
     id: board.id,
@@ -200,6 +211,7 @@ function normalizeBoardCommon(
       incomplete: board.feedback.incomplete.value,
       incorrect: board.feedback.incorrect.value,
       hint: board.feedback.hint?.value ?? null,
+      incorrectSelections,
     },
     cards: board.cards.map((card) => ({
       id: card.id,
@@ -211,9 +223,87 @@ function normalizeBoardCommon(
   };
 }
 
+function normalizeIncorrectSelections(
+  board: ASTThresholdBoard,
+  cards: ValidatedBoardCards,
+  acceptedSelections: readonly string[][],
+  errors: CompileError[],
+): Array<{ cards: string[]; feedback: string }> {
+  const normalized: Array<{ cards: string[]; feedback: string }> = [];
+  const seenSelections = new Set<string>();
+  const acceptedSelectionKeys = new Set(
+    acceptedSelections.map((selection) => selection.join("\u0000")),
+  );
+
+  for (const selection of board.feedback.incorrectSelections) {
+    const selectionCards: string[] = [];
+    const seenCards = new Set<string>();
+    for (const card of selection.cards) {
+      if (!cards.displayedById.has(card.value)) {
+        pushError(
+          errors,
+          card,
+          "analysisIncorrectSelectionCardUnknown",
+          `Threshold board "${board.id}" names unknown card "${card.value}" in Incorrect Selection.`,
+        );
+        continue;
+      }
+      if (seenCards.has(card.value)) {
+        pushError(
+          errors,
+          card,
+          "analysisIncorrectSelectionCardDuplicate",
+          `Threshold board "${board.id}" names card "${card.value}" more than once in Incorrect Selection.`,
+        );
+        continue;
+      }
+      seenCards.add(card.value);
+      selectionCards.push(card.value);
+    }
+
+    const canonicalCards = selectionCards.sort(compareText);
+    if (canonicalCards.length === 0) {
+      pushError(
+        errors,
+        selection.feedback,
+        "analysisIncorrectSelectionEmpty",
+        `Threshold board "${board.id}" Incorrect Selection must name one or more displayed cards.`,
+      );
+      continue;
+    }
+    const selectionKey = canonicalCards.join("\u0000");
+    if (seenSelections.has(selectionKey)) {
+      pushError(
+        errors,
+        selection.feedback,
+        "analysisIncorrectSelectionDuplicate",
+        `Threshold board "${board.id}" declares the same Incorrect Selection more than once.`,
+      );
+      continue;
+    }
+    seenSelections.add(selectionKey);
+    if (acceptedSelectionKeys.has(selectionKey)) {
+      pushError(
+        errors,
+        selection.feedback,
+        "analysisIncorrectSelectionAccepted",
+        `Threshold board "${board.id}" Incorrect Selection matches an accepted card set.`,
+      );
+      continue;
+    }
+    normalized.push({
+      cards: canonicalCards,
+      feedback: selection.feedback.value,
+    });
+  }
+
+  return normalized;
+}
+
 type ValidatedBoardCards = {
   displayedById: Map<string, ASTAnalysisBoard["cards"][number]>;
   recordsById: Map<string, CompiledCaseRecord>;
+  practiceCardIds: Set<string>;
 };
 
 function validateBoardCards(
@@ -223,6 +313,7 @@ function validateBoardCards(
 ): ValidatedBoardCards {
   const displayedById = new Map<string, ASTAnalysisBoard["cards"][number]>();
   const recordsById = new Map<string, CompiledCaseRecord>();
+  const practiceCardIds = new Set<string>();
   if (board.cards.length === 0) {
     pushError(
       errors,
@@ -254,6 +345,10 @@ function validateBoardCards(
       displayedById.set(card.id, card);
     }
 
+    if (card.source.value.kind === "practice") {
+      practiceCardIds.add(card.id);
+      continue;
+    }
     const record = caseRecords.recordsByKey.get(
       inventoryTargetKey(card.source.value),
     );
@@ -268,7 +363,7 @@ function validateBoardCards(
     }
     if (!recordsById.has(card.id)) recordsById.set(card.id, record);
   }
-  return { displayedById, recordsById };
+  return { displayedById, recordsById, practiceCardIds };
 }
 
 function normalizeClassifyBoard(
@@ -535,23 +630,58 @@ function normalizeThresholdBoard(
     errors,
   );
 
+  const hasPracticeEligibleCard = eligibleIds.some((cardId) =>
+    cards.practiceCardIds.has(cardId),
+  );
+  const allEligibleCardsArePractice =
+    eligibleIds.length > 0 &&
+    eligibleIds.every((cardId) => cards.practiceCardIds.has(cardId));
+  const practiceThresholdHasNeutralRequirements =
+    board.minimumDistinctSourceGroups.value === 0 &&
+    allowedStatuses.length === 0 &&
+    !board.requireSourceGroup.value &&
+    requiredCapabilities.length === 0;
+
+  if (hasPracticeEligibleCard && !allEligibleCardsArePractice) {
+    pushError(
+      errors,
+      board,
+      "analysisThresholdPracticeMixedSources",
+      `Threshold board "${board.id}" may not mix tutorial practice cards with Case File cards in Eligible Cards.`,
+    );
+  }
+  if (allEligibleCardsArePractice && !practiceThresholdHasNeutralRequirements) {
+    pushError(
+      errors,
+      board,
+      "analysisThresholdPracticeProvenanceForbidden",
+      `Threshold board "${board.id}" uses tutorial practice cards and may not require Case File provenance, source groups, or proof capabilities.`,
+    );
+  }
+
   const canMaterialize =
     eligibleIds.length > 0 &&
     eligibleIds.length <= MAX_THRESHOLD_ELIGIBLE_CARDS &&
     board.minimumSelected.value >= 0 &&
     board.minimumDistinctSourceGroups.value >= 0 &&
-    eligibleIds.every((cardId) => cards.recordsById.has(cardId));
+    (eligibleIds.every((cardId) => cards.recordsById.has(cardId)) ||
+      (allEligibleCardsArePractice && practiceThresholdHasNeutralRequirements));
   const acceptedSelections = canMaterialize
-    ? materializeThresholdSelections({
-        eligibleIds,
-        recordsByCardId: cards.recordsById,
-        minimumSelected: board.minimumSelected.value,
-        minimumDistinctSourceGroups: board.minimumDistinctSourceGroups.value,
-        allowedProceduralStatuses: allowedStatuses,
-        requireSourceGroup: board.requireSourceGroup.value,
-        requiredProofCapabilities: requiredCapabilities,
-        requirementLocation: board,
-      })
+    ? allEligibleCardsArePractice
+      ? materializePracticeThresholdSelections({
+          eligibleIds,
+          minimumSelected: board.minimumSelected.value,
+        })
+      : materializeThresholdSelections({
+          eligibleIds,
+          recordsByCardId: cards.recordsById,
+          minimumSelected: board.minimumSelected.value,
+          minimumDistinctSourceGroups: board.minimumDistinctSourceGroups.value,
+          allowedProceduralStatuses: allowedStatuses,
+          requireSourceGroup: board.requireSourceGroup.value,
+          requiredProofCapabilities: requiredCapabilities,
+          requirementLocation: board,
+        })
     : [];
 
   if (canMaterialize && acceptedSelections.length === 0) {
@@ -567,6 +697,22 @@ function normalizeThresholdBoard(
     minimumSelected: board.minimumSelected.value,
     acceptedSelections,
   };
+}
+
+function materializePracticeThresholdSelections(input: {
+  eligibleIds: readonly string[];
+  minimumSelected: number;
+}): string[][] {
+  const acceptedSelections: string[][] = [];
+  const candidateCount = 1 << input.eligibleIds.length;
+  for (let candidate = 0; candidate < candidateCount; candidate += 1) {
+    const selection = input.eligibleIds.filter(
+      (_, index) => (candidate & (1 << index)) !== 0,
+    );
+    if (selection.length < input.minimumSelected) continue;
+    acceptedSelections.push([...selection].sort(compareText));
+  }
+  return acceptedSelections.sort(compareStringArrays);
 }
 
 function materializeThresholdSelections(input: {

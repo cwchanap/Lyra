@@ -37,11 +37,11 @@
 
 [店長沒再追問，轉身走回吧台。]
 
-[場景：雨鐘咖啡館後場走道，午後。牆上一只舊掛鐘，秒針走得有點慢。]
+[場景：雨鐘咖啡館後場走道盡頭、內側倉庫入口，午後。入口內側牆上的一只舊掛鐘，秒針走得有點慢。]
 - **Background Prompt:** Narrow back corridor of a small Tokyo cafe, an old slow wall clock above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text.
 - **BGS:** bgs_cafe_backroom_corridor
 
-[店長走進後場，停在舊掛鐘前。]
+[店長走到後場走道盡頭，停在入口內側牆上的舊掛鐘前。]
 
 [她抬手，像要把鐘取下來。]
 
@@ -142,6 +142,6 @@
 
 [店門外的雨，下得更大了。招牌上「雨鐘」兩個字，在雨裡亮著。]
 
-[牆上那個舊掛鐘，還是慢著。秒針頓了半拍，才往前跳了一格。]
+[入口內側牆上的舊掛鐘，還是慢著。秒針頓了半拍，才往前跳了一格。]
 
 [畫面慢慢暗下來。]
