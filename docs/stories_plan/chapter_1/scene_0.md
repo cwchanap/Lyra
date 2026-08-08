@@ -17,7 +17,7 @@
 
 [資料一行行往下推，每一行都對齊得很整齊。]
 
-**旁白**：門鎖事件：23:07:50，以 Staff Credential 開啟，持有人 三宅蒼太。
+**旁白**：門鎖事件：23:07:50，以員工憑證開啟，持有人 三宅蒼太。
 
 **旁白**：監視器截圖：三宅蒼太靠近後場。
 
@@ -27,7 +27,7 @@
 
 **旁白**：建議：主要嫌疑人 三宅蒼太。
 
-[摘要完成。畫面右下角閃過一行極小的灰字，幾乎看不見：merge delay: 89.7s。隨即消失。]
+[摘要完成。畫面右下角閃過一行極小的灰字，幾乎看不見：維護合併延遲：89.7 秒。隨即消失。]
 
 [場景：警署會面室外的走廊，日光燈下，空氣安靜。牆上的螢幕還亮著那份摘要。]
 - **Background Prompt:** Quiet Japanese police meeting-room corridor under pale fluorescent light, wall monitor showing an unreadable case-summary layout, empty bench, tense still air.
@@ -37,19 +37,17 @@
 
 [走廊長椅上，坐著一位中年婦人——三宅蒼太的母親。]
 
-**旁白**：她手裡攥著一個飯糰袋。
+[她手裡攥著一個飯糰袋。]
 
 [塑膠袋被攥得發出輕響，皺成一團。]
 
 [她把袋口折下去，又折一次，再折一次。]
 
-**旁白**：她沒有哭。
-
-**旁白**：她也沒有說話。
+[她沒有落淚，也始終沒有開口。]
 
 [鏡頭移開——畫面切到相馬律的事務所，辦公桌。]
 
-[場景：相馬律的事務所，辦公桌。午後，安靜。]
+[場景：相馬律的事務所，辦公桌。清晨，安靜。]
 - **Background Prompt:** Soma's law-office desk under a single overhead lamp, an open case-summary document with clean unreadable text, quiet professional stillness, no people, no readable text, cinematic visual-novel background, neo-noir mood.
 - **BGM:** none
 - **BGS:** none

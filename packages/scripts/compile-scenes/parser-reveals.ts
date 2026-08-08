@@ -99,9 +99,8 @@ function parseInvestigationLocalRevealTarget(
   raw: string,
   input: ParseRevealsListInput,
 ): ParseResult<RevealTarget> {
-  const prefix = /^(evidence|statement|hotspot|sublocation|topic):(.+)$/.exec(
-    raw,
-  );
+  const prefix =
+    /^(evidence|statement|practice|hotspot|sublocation|topic):(.+)$/.exec(raw);
   if (!prefix) {
     return fail(
       input,

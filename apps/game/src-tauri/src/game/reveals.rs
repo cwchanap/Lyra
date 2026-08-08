@@ -226,6 +226,12 @@ pub(super) fn apply_reveals_and_build_queue<T: InvestigationRevealItem>(
                     }
                 }
             }
+            RevealTarget::Practice { id } => {
+                // Practice cards are scoped to this investigation's local
+                // notebook. Do not route them through AcquisitionCtx: that
+                // would publish tutorial material into the global Case File.
+                scene.record_practice_card(id);
+            }
             RevealTarget::Topic {
                 character_id,
                 topic_id,

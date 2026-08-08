@@ -135,6 +135,12 @@ pub enum RevealTarget {
     Statement {
         id: String,
     },
+    /// Tutorial-only material. Unlike evidence and statements, practice
+    /// cards belong to the active investigation/analysis handoff and never
+    /// enter the global Case File inventory.
+    Practice {
+        id: String,
+    },
     Topic {
         character_id: String,
         topic_id: String,
@@ -663,6 +669,18 @@ pub struct AnalysisFeedbackJson {
     pub incomplete: String,
     pub incorrect: String,
     pub hint: Option<String>,
+    #[serde(default)]
+    pub incorrect_selections: Vec<AnalysisSelectionFeedbackJson>,
+}
+
+/// Explicit feedback for one exact, canonicalized card selection. This keeps
+/// tutorial coaching authored on the compiled board rather than introducing a
+/// second evidence or interaction system.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AnalysisSelectionFeedbackJson {
+    pub cards: Vec<String>,
+    pub feedback: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -670,8 +688,18 @@ pub struct AnalysisFeedbackJson {
 pub struct AnalysisCardJson {
     pub id: String,
     pub label: String,
-    pub source: InventoryTarget,
+    pub source: AnalysisCardSource,
     pub summary: String,
+}
+
+/// A compiled board can draw either on Case File records or on a scoped
+/// tutorial notebook. `Practice` is intentionally not an InventoryTarget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+pub enum AnalysisCardSource {
+    Evidence { id: String },
+    Statement { id: String },
+    Practice { id: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1222,7 +1250,7 @@ mod tests {
         assert_eq!(accepted_selections.len(), 3);
         assert!(matches!(
             common.cards[2].source,
-            InventoryTarget::Statement { ref id } if id == "manager_timing"
+            AnalysisCardSource::Statement { ref id } if id == "manager_timing"
         ));
     }
 

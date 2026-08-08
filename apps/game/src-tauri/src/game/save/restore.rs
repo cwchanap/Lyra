@@ -1,8 +1,9 @@
 use super::capture::{capture_checkpoint, CapturedCheckpoint};
 use super::schema::{
-    AcquisitionEventStateV1, AudioCueSnapshotV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
-    DialogueHistorySnapshotV1, InventorySnapshotV1, LastVisualCueSnapshotV1, RecordKind,
-    SaveEnvelope, SaveSlotRef, SaveSnapshot, SaveSummary, SaveType, SceneProgressSnapshot,
+    AcquisitionEventStateV1, AnalysisBoardCardsSnapshotV1, AnalysisBoardGroupSnapshotV1,
+    AudioCueSnapshotV1, CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1,
+    InventorySnapshotV1, LastVisualCueSnapshotV1, RecordKind, SaveEnvelope, SaveSlotRef,
+    SaveSnapshot, SaveSummary, SaveType, SceneProgressSnapshot,
 };
 use crate::game::content_manifest::ContentManifest;
 use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
@@ -14,13 +15,14 @@ use crate::game::navigation::{
     load_chapter_manifests, load_chapter_scene_jsons, scene_json_identity, scene_json_summary,
 };
 use crate::game::provenance::validate_catalog_record_origin_coverage;
+use crate::game::scenes::analysis::AnalysisSceneState;
 use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::linear::LinearSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    AssetTypeJson, AudioChannelJson, AudioCueJson, InterrogationPhaseJson, InterrogationSceneJson,
-    InvestigationSceneJson, SceneJson,
+    AnalysisBoardJson, AnalysisSceneJson, AssetTypeJson, AudioChannelJson, AudioCueJson,
+    InterrogationPhaseJson, InterrogationSceneJson, InvestigationSceneJson, SceneJson,
 };
 use crate::game::state::{ChapterManifest, Inventory};
 use crate::game::story::{
@@ -264,6 +266,7 @@ pub(crate) fn build_restore_candidate(
         &snapshot.chapter_id,
         packaged_scene,
         &snapshot.scene,
+        &inventory,
         active_queue,
         snapshot.active_dialogue.as_ref(),
     )?;
@@ -364,15 +367,6 @@ fn restore_active_queue(
     saved: &ActiveDialogueStateV1,
     next_queue_gen: u64,
 ) -> Result<ActiveDialogueQueue, GameError> {
-    if saved
-        .segment_origins
-        .iter()
-        .any(DialogueSegmentOriginV1::is_analysis)
-    {
-        return Err(invalid_progress(
-            "Analysis dialogue origins cannot be restored before HPA-260 provides analysis progress.",
-        ));
-    }
     if saved.queue_gen == 0 || saved.queue_gen >= next_queue_gen {
         return Err(GameError::invalid_save_cursor());
     }
@@ -400,14 +394,52 @@ fn restore_scene(
     chapter_id: &str,
     packaged: &SceneJson,
     progress: &SceneProgressSnapshot,
+    inventory: &Inventory,
     active_queue: Option<ActiveDialogueQueue>,
     active_snapshot: Option<&ActiveDialogueStateV1>,
 ) -> Result<SceneRuntime, GameError> {
     match (packaged, progress) {
-        (SceneJson::Analysis(definition), _) => Err(invalid_progress(format!(
-            "Analysis scene '{}' cannot be restored before HPA-260 provides analysis progress.",
-            definition.id
-        ))),
+        (
+            SceneJson::Analysis(definition),
+            SceneProgressSnapshot::Analysis {
+                intro_played,
+                outro_played,
+                completed_board_ids,
+                selected_card_ids_by_board,
+                ordered_card_ids_by_board,
+                group_by_card_by_board,
+                practice_card_ids,
+                last_feedback,
+            },
+        ) => {
+            validate_analysis_refs(
+                definition,
+                completed_board_ids,
+                selected_card_ids_by_board,
+                ordered_card_ids_by_board,
+                group_by_card_by_board,
+                practice_card_ids,
+                inventory,
+            )?;
+            let intro_queue_gen = active_intro_gen(
+                active_snapshot,
+                |origin| matches!(origin, DialogueSegmentOriginV1::AnalysisIntro { scene_id, .. } if scene_id == &definition.id),
+                crate::game::scenes::analysis::RESTORED_CONSUMED_INTRO_QUEUE_GEN,
+            );
+            let mut scene = AnalysisSceneState::from_json(definition.clone(), intro_queue_gen);
+            scene.intro_played = *intro_played;
+            scene.outro_played = *outro_played;
+            scene.completed_board_ids = completed_board_ids.iter().cloned().collect();
+            scene.selected_card_ids_by_board =
+                restore_analysis_card_sets(selected_card_ids_by_board, "threshold")?;
+            scene.ordered_card_ids_by_board =
+                restore_analysis_card_vectors(ordered_card_ids_by_board, "order")?;
+            scene.group_by_card_by_board = restore_analysis_group_sets(group_by_card_by_board)?;
+            scene.practice_card_ids = practice_card_ids.iter().cloned().collect();
+            scene.last_feedback = last_feedback.clone();
+            scene.pending_queue = active_queue;
+            Ok(SceneRuntime::Analysis(Box::new(scene)))
+        }
         (SceneJson::Linear(definition), SceneProgressSnapshot::Linear) => {
             let queue = active_queue.ok_or_else(GameError::invalid_save_cursor)?;
             let mut scene = LinearSceneState::from_json(
@@ -428,6 +460,7 @@ fn restore_scene(
                 discussed_topic_ids,
                 entered_sublocation_ids,
                 unlocked_overrides,
+                practice_card_ids,
             },
         ) => {
             validate_investigation_refs(
@@ -458,6 +491,7 @@ fn restore_scene(
                 .iter()
                 .map(super::schema::InvestigationOverrideRefV1::runtime_key)
                 .collect();
+            scene.practice_card_ids = practice_card_ids.iter().cloned().collect();
             Ok(SceneRuntime::Investigation(Box::new(scene)))
         }
         (
@@ -558,6 +592,222 @@ fn active_intro_gen(
     active
         .filter(|queue| queue.segment_origins.iter().any(is_intro))
         .map_or(consumed, |queue| queue.queue_gen)
+}
+
+fn validate_analysis_refs(
+    definition: &AnalysisSceneJson,
+    completed_board_ids: &[String],
+    selected_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
+    ordered_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
+    group_by_card_by_board: &[AnalysisBoardGroupSnapshotV1],
+    practice_card_ids: &[String],
+    inventory: &Inventory,
+) -> Result<(), GameError> {
+    let board = |board_id: &str| {
+        definition
+            .boards
+            .iter()
+            .find(|board| board.common().id == board_id)
+    };
+    if completed_board_ids.iter().collect::<BTreeSet<_>>().len() != completed_board_ids.len() {
+        return Err(invalid_progress(
+            "Analysis completion contains duplicate board ids.",
+        ));
+    }
+    for board_id in completed_board_ids {
+        if board(board_id).is_none() {
+            return Err(invalid_progress(format!(
+                "Analysis completion references missing board '{board_id}'."
+            )));
+        }
+    }
+
+    let practice_ids: BTreeSet<_> = definition
+        .boards
+        .iter()
+        .flat_map(|board| &board.common().cards)
+        .filter_map(|card| match &card.source {
+            crate::game::schema::AnalysisCardSource::Practice { id } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    if practice_card_ids.iter().collect::<BTreeSet<_>>().len() != practice_card_ids.len()
+        || practice_card_ids
+            .iter()
+            .any(|id| !practice_ids.contains(id.as_str()))
+    {
+        return Err(invalid_progress(
+            "Analysis practice cards do not match the packaged board scope.",
+        ));
+    }
+    let saved_practice: BTreeSet<_> = practice_card_ids.iter().map(String::as_str).collect();
+
+    let mut seen_selection_boards = BTreeSet::new();
+    for selection in selected_card_ids_by_board {
+        if !seen_selection_boards.insert(selection.board_id.as_str()) {
+            return Err(invalid_progress(
+                "Duplicate analysis threshold selection board.",
+            ));
+        }
+        let Some(AnalysisBoardJson::Threshold { common, .. }) = board(&selection.board_id) else {
+            return Err(invalid_progress(format!(
+                "Threshold selection references unknown or non-threshold board '{}'.",
+                selection.board_id
+            )));
+        };
+        validate_analysis_saved_cards(
+            &selection.board_id,
+            &selection.card_ids,
+            &common.cards,
+            &saved_practice,
+            inventory,
+        )?;
+    }
+
+    let mut seen_order_boards = BTreeSet::new();
+    for selection in ordered_card_ids_by_board {
+        if !seen_order_boards.insert(selection.board_id.as_str()) {
+            return Err(invalid_progress(
+                "Duplicate analysis order selection board.",
+            ));
+        }
+        let Some(AnalysisBoardJson::Order { common, .. }) = board(&selection.board_id) else {
+            return Err(invalid_progress(format!(
+                "Order selection references unknown or non-order board '{}'.",
+                selection.board_id
+            )));
+        };
+        validate_analysis_saved_cards(
+            &selection.board_id,
+            &selection.card_ids,
+            &common.cards,
+            &saved_practice,
+            inventory,
+        )?;
+    }
+
+    let mut seen_group_boards = BTreeSet::new();
+    for selection in group_by_card_by_board {
+        if !seen_group_boards.insert(selection.board_id.as_str()) {
+            return Err(invalid_progress("Duplicate analysis classification board."));
+        }
+        let Some(AnalysisBoardJson::Classify { common, groups, .. }) = board(&selection.board_id)
+        else {
+            return Err(invalid_progress(format!(
+                "Classification references unknown or non-classify board '{}'.",
+                selection.board_id
+            )));
+        };
+        let card_ids = selection.group_by_card.keys().cloned().collect::<Vec<_>>();
+        validate_analysis_saved_cards(
+            &selection.board_id,
+            &card_ids,
+            &common.cards,
+            &saved_practice,
+            inventory,
+        )?;
+        if selection
+            .group_by_card
+            .values()
+            .any(|group_id| !groups.iter().any(|group| group.id == *group_id))
+        {
+            return Err(invalid_progress(
+                "Classification selection references an unknown group.",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_analysis_saved_cards(
+    board_id: &str,
+    card_ids: &[String],
+    cards: &[crate::game::schema::AnalysisCardJson],
+    saved_practice: &BTreeSet<&str>,
+    inventory: &Inventory,
+) -> Result<(), GameError> {
+    if card_ids.iter().collect::<BTreeSet<_>>().len() != card_ids.len() {
+        return Err(invalid_progress(format!(
+            "Analysis selection for '{board_id}' contains duplicate cards."
+        )));
+    }
+    for card_id in card_ids {
+        let card = cards
+            .iter()
+            .find(|card| card.id == *card_id)
+            .ok_or_else(|| {
+                invalid_progress(format!(
+                    "Analysis selection references unknown card '{card_id}' on '{board_id}'."
+                ))
+            })?;
+        let available = match &card.source {
+            crate::game::schema::AnalysisCardSource::Evidence { id } => inventory.has_evidence(id),
+            crate::game::schema::AnalysisCardSource::Statement { id } => {
+                inventory.has_statement(id)
+            }
+            crate::game::schema::AnalysisCardSource::Practice { id } => {
+                saved_practice.contains(id.as_str())
+            }
+        };
+        if !available {
+            return Err(invalid_progress(format!(
+                "Analysis selection references unavailable card '{card_id}' on '{board_id}'."
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn restore_analysis_card_sets(
+    values: &[AnalysisBoardCardsSnapshotV1],
+    _kind: &str,
+) -> Result<BTreeMap<String, BTreeSet<String>>, GameError> {
+    let mut restored = BTreeMap::new();
+    for value in values {
+        if restored
+            .insert(
+                value.board_id.clone(),
+                value.card_ids.iter().cloned().collect(),
+            )
+            .is_some()
+        {
+            return Err(invalid_progress(
+                "Duplicate saved analysis board selection.",
+            ));
+        }
+    }
+    Ok(restored)
+}
+
+fn restore_analysis_card_vectors(
+    values: &[AnalysisBoardCardsSnapshotV1],
+    _kind: &str,
+) -> Result<BTreeMap<String, Vec<String>>, GameError> {
+    let mut restored = BTreeMap::new();
+    for value in values {
+        if restored
+            .insert(value.board_id.clone(), value.card_ids.clone())
+            .is_some()
+        {
+            return Err(invalid_progress("Duplicate saved analysis board ordering."));
+        }
+    }
+    Ok(restored)
+}
+
+fn restore_analysis_group_sets(
+    values: &[AnalysisBoardGroupSnapshotV1],
+) -> Result<BTreeMap<String, BTreeMap<String, String>>, GameError> {
+    let mut restored = BTreeMap::new();
+    for value in values {
+        if restored
+            .insert(value.board_id.clone(), value.group_by_card.clone())
+            .is_some()
+        {
+            return Err(invalid_progress("Duplicate saved analysis classification."));
+        }
+    }
+    Ok(restored)
 }
 
 fn validate_investigation_refs(
@@ -1151,10 +1401,21 @@ fn validate_story_origins(
                 scene_id,
                 board_id,
             } => {
-                require_story_scene(definitions, chapter_id, scene_id)?;
-                return Err(GameError::invalid_story_state_snapshot(format!(
-                    "analysis board origin '{board_id}' in '{chapter_id}/{scene_id}' is unsupported because the current package has no board registry"
-                )));
+                let scene = require_story_scene(definitions, chapter_id, scene_id)?;
+                let SceneJson::Analysis(analysis) = scene else {
+                    return Err(GameError::invalid_story_state_snapshot(format!(
+                        "analysis board origin '{board_id}' points to non-analysis scene '{chapter_id}/{scene_id}'"
+                    )));
+                };
+                if !analysis
+                    .boards
+                    .iter()
+                    .any(|board| board.common().id == *board_id)
+                {
+                    return Err(GameError::invalid_story_state_snapshot(format!(
+                        "analysis board origin references missing board '{board_id}' in '{chapter_id}/{scene_id}'"
+                    )));
+                }
             }
             AssertionOrigin::SceneEvent {
                 chapter_id,
@@ -1317,6 +1578,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
+    const P1_CCTV_FEEDBACK: &str = "監視器是真的，但不能單獨說明十七點四十二分。";
     type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelope)>;
 
     fn envelope_from_checkpoint(
@@ -1345,6 +1607,69 @@ mod tests {
         let (_guard, resources) = save_capture_fixture_resources();
         let engine = GameEngine::new_started(resources.clone()).unwrap();
         (_guard, resources, engine)
+    }
+
+    fn p1_feedback_resources() -> (tempfile::TempDir, PathBuf) {
+        let (guard, resources) = save_capture_fixture_resources();
+        let chapters_path = resources.join("chapters.json");
+        let mut chapters: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&chapters_path).expect("save fixture chapters must be readable"),
+        )
+        .expect("save fixture chapters must be valid JSON");
+        chapters["chapters"][0]["scenes"]
+            .as_array_mut()
+            .expect("save fixture chapter must contain scenes")
+            .push(serde_json::json!({
+                "type": "analysis",
+                "file": "chapter_1/analysis_scene_p1_5.json"
+            }));
+        std::fs::write(
+            &chapters_path,
+            serde_json::to_vec(&chapters).expect("updated chapters fixture must serialize"),
+        )
+        .expect("updated chapters fixture must write");
+        std::fs::write(
+            resources.join("chapter_1/analysis_scene_p1_5.json"),
+            r#"{
+                "type": "analysis",
+                "id": "analysis_scene_p1_5",
+                "title": "P1",
+                "summary": "P1 practice",
+                "assetRefs": [],
+                "intro": [],
+                "outro": [],
+                "boards": [{
+                    "kind": "threshold",
+                    "common": {
+                        "id": "p1_reprint_time_board",
+                        "label": "重印時間整理",
+                        "prompt": "選出正確的三項資料。",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {
+                            "incomplete": "還少了一項資料。",
+                            "incorrect": "這組資料沒有把兩個時間一起說清楚。",
+                            "hint": null,
+                            "incorrectSelections": [{
+                                "cards": ["cctv_change"],
+                                "feedback": "監視器是真的，但不能單獨說明十七點四十二分。"
+                            }]
+                        },
+                        "cards": [
+                            {"id": "receipt_reprint", "label": "REPRINT", "source": {"kind": "practice", "id": "p1_receipt_reprint"}, "summary": "重印收據。"},
+                            {"id": "register_paper_jam", "label": "卡紙", "source": {"kind": "practice", "id": "p1_register_paper_jam"}, "summary": "卡紙痕跡。"},
+                            {"id": "cctv_change", "label": "找零", "source": {"kind": "practice", "id": "p1_cctv_change"}, "summary": "十七點三十八分。"},
+                            {"id": "handwritten_ledger", "label": "帳本", "source": {"kind": "practice", "id": "p1_handwritten_ledger"}, "summary": "十七點三十七分。"}
+                        ],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 3,
+                    "acceptedSelections": [["handwritten_ledger", "receipt_reprint", "register_paper_jam"]]
+                }]
+            }"#,
+        )
+        .expect("P1 analysis fixture must write");
+        (guard, resources)
     }
 
     fn round_trip(
@@ -1409,42 +1734,145 @@ mod tests {
         }
     }
 
-    // Break caught: save restore could reconstruct an immutable analysis
-    // dialogue carrier even though mutable analysis progress is unsupported.
+    // Break caught: analysis progress and its dialogue carrier must restore
+    // through the same package-backed scene state as other playable scenes.
     #[test]
-    fn restore_rejects_analysis_dialogue_origins_and_analysis_scene_progress() {
-        let (_guard, resources, _) = resources_and_engine();
-        let definitions = load_current_definitions(&resources).unwrap();
-        let active = ActiveDialogueStateV1 {
-            segment_origins: vec![DialogueSegmentOriginV1::AnalysisResult {
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_8_5".into(),
-                board_id: "evidence_packages".into(),
-            }],
-            active_segment_index: 0,
-            item_cursor: 0,
-            queue_gen: 1,
-        };
-
-        let origin_error = restore_active_queue(&definitions, &active, 2)
-            .expect_err("analysis dialogue origins must not be restored before HPA-260");
-        assert_eq!(origin_error.code, "invalidSaveProgress");
-        assert!(origin_error.message.contains("Analysis dialogue origins"));
-
+    fn restore_accepts_analysis_scene_progress() {
         let analysis = serde_json::from_str::<SceneJson>(include_str!(
             "../test_fixtures/analysis_scene_8_5.json"
         ))
         .expect("analysis compiler fixture must deserialize");
-        let progress_error = restore_scene(
+        let restored = restore_scene(
             "chapter_1",
             &analysis,
-            &SceneProgressSnapshot::Linear,
+            &SceneProgressSnapshot::Analysis {
+                intro_played: true,
+                outro_played: false,
+                completed_board_ids: vec![],
+                selected_card_ids_by_board: vec![],
+                ordered_card_ids_by_board: vec![],
+                group_by_card_by_board: vec![],
+                practice_card_ids: vec![],
+                last_feedback: None,
+            },
+            &Inventory::default(),
             None,
             None,
         )
-        .expect_err("analysis scene progress must remain unsupported");
-        assert_eq!(progress_error.code, "invalidSaveProgress");
-        assert!(progress_error.message.contains("Analysis scene"));
+        .expect("analysis scene progress should restore");
+        assert!(matches!(restored, SceneRuntime::Analysis(_)));
+    }
+
+    #[test]
+    fn restore_keeps_p1_practice_cards_in_the_analysis_notebook() {
+        let analysis = serde_json::from_value::<SceneJson>(serde_json::json!({
+            "type": "analysis",
+            "id": "analysis_scene_p1_5",
+            "title": "P1",
+            "summary": "P1 practice",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [{
+                "kind": "threshold",
+                "common": {
+                    "id": "p1_reprint_time_board",
+                    "label": "P1",
+                    "prompt": "P1",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "more", "incorrect": "wrong", "hint": null},
+                    "cards": [{
+                        "id": "receipt_reprint",
+                        "label": "REPRINT",
+                        "source": {"kind": "practice", "id": "p1_receipt_reprint"},
+                        "summary": "P1"
+                    }],
+                    "resultDialogue": []
+                },
+                "minimumSelected": 1,
+                "acceptedSelections": [["receipt_reprint"]]
+            }]
+        }))
+        .expect("P1 analysis definition must deserialize");
+        let inventory = Inventory::default();
+        let restored = restore_scene(
+            "chapter_1",
+            &analysis,
+            &SceneProgressSnapshot::Analysis {
+                intro_played: true,
+                outro_played: false,
+                completed_board_ids: vec![],
+                selected_card_ids_by_board: vec![],
+                ordered_card_ids_by_board: vec![],
+                group_by_card_by_board: vec![],
+                practice_card_ids: vec!["p1_receipt_reprint".into()],
+                last_feedback: None,
+            },
+            &inventory,
+            None,
+            None,
+        )
+        .expect("P1 practice state should restore");
+
+        assert!(inventory.evidence.is_empty());
+        assert!(inventory.statements.is_empty());
+        let SceneRuntime::Analysis(scene) = restored else {
+            panic!("expected restored Analysis runtime");
+        };
+        assert!(scene.practice_card_ids.contains("p1_receipt_reprint"));
+    }
+
+    // Break caught: an authored wrong-choice response was visible before a
+    // save, but reconstructing the active P1 analysis scene dropped it.
+    #[test]
+    fn save_restore_preserves_authored_p1_feedback_after_incorrect_threshold_submission() {
+        let (_guard, resources) = p1_feedback_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("P1 analysis scene should be reachable in the fixture");
+        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
+            panic!("expected P1 analysis runtime");
+        };
+        for practice_card_id in [
+            "p1_receipt_reprint",
+            "p1_register_paper_jam",
+            "p1_cctv_change",
+            "p1_handwritten_ledger",
+        ] {
+            scene.record_practice_card(practice_card_id);
+        }
+
+        engine
+            .set_analysis_selection("p1_reprint_time_board", vec!["cctv_change".into()])
+            .expect("P1 CCTV card should be selectable");
+        let submitted = engine
+            .submit_analysis_selection("p1_reprint_time_board")
+            .expect("P1 CCTV-only submission should return authored feedback");
+        let ModeView::Analysis { last_feedback, .. } = submitted.mode else {
+            panic!("P1 submission should remain in analysis mode");
+        };
+        assert_eq!(last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+
+        let (original, restored) = round_trip(resources, &engine);
+        let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
+            panic!("restored P1 scene should remain analysis");
+        };
+        assert_eq!(scene.last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+        let ModeView::Analysis { last_feedback, .. } = restored
+            .engine
+            .view()
+            .expect("restored P1 state should be viewable")
+            .mode
+        else {
+            panic!("restored P1 state should expose analysis mode");
+        };
+        assert_eq!(last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+        assert_eq!(
+            capture_checkpoint(&restored.engine).unwrap().snapshot,
+            original.snapshot
+        );
     }
 
     // Break caught: restore helpers could panic on an analysis scene instead
@@ -1496,6 +1924,7 @@ mod tests {
                     discussed_topic_ids: vec![],
                     entered_sublocation_ids: vec![],
                     unlocked_overrides: vec![],
+                    practice_card_ids: vec![],
                 }
             },
         ] {

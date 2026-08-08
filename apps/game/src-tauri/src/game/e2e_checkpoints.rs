@@ -25,6 +25,7 @@ pub(crate) enum CheckpointMode {
     Dialogue,
     Explore,
     Interrogation,
+    Analysis,
     GameComplete,
 }
 
@@ -206,13 +207,57 @@ fn advance_dialogue_bounded(
     operations: &mut usize,
     replay_limit: usize,
 ) -> Result<(), GameError> {
-    ensure_operation_available(*operations, replay_limit)?;
-    let ModeView::Dialogue { queue_token, .. } = view.mode else {
-        return Err(GameError::e2e_checkpoint_unreachable());
-    };
-    engine.advance_dialogue(queue_token)?;
-    *operations += 1;
-    Ok(())
+    match view.mode {
+        ModeView::Dialogue { queue_token, .. } => {
+            ensure_operation_available(*operations, replay_limit)?;
+            engine.advance_dialogue(queue_token)?;
+            *operations += 1;
+            Ok(())
+        }
+        ModeView::Explore { sublocation_id, .. } => {
+            let SceneView::Investigation {
+                visible_sublocations,
+                ..
+            } = &view.scene
+            else {
+                return Err(GameError::e2e_checkpoint_unreachable());
+            };
+            let hotspot_id = visible_sublocations
+                .iter()
+                .find(|sublocation| sublocation.id == sublocation_id)
+                .and_then(|sublocation| {
+                    sublocation
+                        .hotspots
+                        .iter()
+                        .find(|hotspot| !hotspot.inspected)
+                })
+                .map(|hotspot| hotspot.id.clone())
+                .ok_or_else(GameError::e2e_checkpoint_unreachable)?;
+            ensure_operation_available(*operations, replay_limit)?;
+            engine.inspect_hotspot(&hotspot_id)?;
+            *operations += 1;
+            Ok(())
+        }
+        ModeView::Analysis { board_id, .. } if board_id == "p1_reprint_time_board" => {
+            ensure_operation_available(*operations, replay_limit)?;
+            engine.set_analysis_selection(
+                &board_id,
+                vec![
+                    "receipt_reprint".into(),
+                    "register_paper_jam".into(),
+                    "handwritten_ledger".into(),
+                ],
+            )?;
+            *operations += 1;
+            ensure_operation_available(*operations, replay_limit)?;
+            engine.submit_analysis_selection(&board_id)?;
+            *operations += 1;
+            Ok(())
+        }
+        ModeView::Analysis { .. } | ModeView::Interrogation { .. } | ModeView::GameComplete => {
+            Err(GameError::e2e_checkpoint_unreachable())
+        }
+    }
 }
 
 fn ensure_operation_available(operations: usize, replay_limit: usize) -> Result<(), GameError> {
@@ -231,7 +276,8 @@ fn project(
     let scene_id = match &view.scene {
         SceneView::Linear { id, .. }
         | SceneView::Investigation { id, .. }
-        | SceneView::Interrogation { id, .. } => id.clone(),
+        | SceneView::Interrogation { id, .. }
+        | SceneView::Analysis { id, .. } => id.clone(),
     };
     let (mode, dialogue, sublocation_id) = match &view.mode {
         ModeView::Dialogue { current, .. } => {
@@ -275,6 +321,7 @@ fn project(
             (CheckpointMode::Explore, None, Some(sublocation_id.clone()))
         }
         ModeView::Interrogation { .. } => (CheckpointMode::Interrogation, None, None),
+        ModeView::Analysis { .. } => (CheckpointMode::Analysis, None, None),
         ModeView::GameComplete => (CheckpointMode::GameComplete, None, None),
     };
     let mut evidence_ids = view
@@ -417,7 +464,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(checkpoint.projection.chapter_id, "chapter_1");
-        assert_eq!(checkpoint.projection.scene_id, "scene_p1");
+        assert_eq!(checkpoint.projection.scene_id, "investigation_scene_p1");
         assert_eq!(checkpoint.projection.mode, CheckpointMode::Dialogue);
         assert_eq!(
             checkpoint.projection.dialogue,
@@ -532,7 +579,7 @@ mod tests {
             serde_json::to_value(checkpoint.projection).unwrap(),
             json!({
                 "chapterId": "chapter_1",
-                "sceneId": "scene_p1",
+                "sceneId": "investigation_scene_p1",
                 "mode": "dialogue",
                 "dialogue": {
                     "kind": "line",

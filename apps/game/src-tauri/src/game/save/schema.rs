@@ -4,6 +4,7 @@ use crate::game::story::StoryStateSnapshot;
 use crate::game::{GameError, QueueToken};
 use chrono::{DateTime, FixedOffset};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::time::SystemTime;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -220,6 +221,8 @@ pub(crate) enum SceneProgressSnapshot {
         discussed_topic_ids: Vec<CharacterTopicRefV1>,
         entered_sublocation_ids: Vec<String>,
         unlocked_overrides: Vec<InvestigationOverrideRefV1>,
+        #[serde(default)]
+        practice_card_ids: Vec<String>,
     },
     Interrogation {
         intro_played: bool,
@@ -232,6 +235,31 @@ pub(crate) enum SceneProgressSnapshot {
         entered_phase_ids: Vec<String>,
         line_content_segment_index: Option<usize>,
     },
+    Analysis {
+        intro_played: bool,
+        outro_played: bool,
+        completed_board_ids: Vec<String>,
+        selected_card_ids_by_board: Vec<AnalysisBoardCardsSnapshotV1>,
+        ordered_card_ids_by_board: Vec<AnalysisBoardCardsSnapshotV1>,
+        group_by_card_by_board: Vec<AnalysisBoardGroupSnapshotV1>,
+        practice_card_ids: Vec<String>,
+        #[serde(default)]
+        last_feedback: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AnalysisBoardCardsSnapshotV1 {
+    pub(crate) board_id: String,
+    pub(crate) card_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct AnalysisBoardGroupSnapshotV1 {
+    pub(crate) board_id: String,
+    pub(crate) group_by_card: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

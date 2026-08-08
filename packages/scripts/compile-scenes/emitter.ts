@@ -340,7 +340,15 @@ function emitAnalysisBoard(board: AnalysisBoardJson): JSONAnalysisBoard {
     prompt: board.common.prompt,
     unlock: copyStoryUnlockExpr(board.common.unlock),
     reveals: board.common.reveals.map(copyStoryRevealTarget),
-    feedback: { ...board.common.feedback },
+    feedback: {
+      ...board.common.feedback,
+      incorrectSelections: board.common.feedback.incorrectSelections.map(
+        (selection) => ({
+          cards: [...selection.cards],
+          feedback: selection.feedback,
+        }),
+      ),
+    },
     cards: board.common.cards.map((card) => ({
       id: card.id,
       label: card.label,

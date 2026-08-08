@@ -153,6 +153,33 @@ describe("parseRevealsList", () => {
     });
   });
 
+  it("parses a tutorial practice-card reveal only for investigation scenes", () => {
+    // Break caught: a Prologue Notebook card must be collectable from an
+    // investigation hotspot, but it must not broaden interrogation evidence.
+    expect(
+      parseRevealsList({
+        family: "investigation",
+        raw: "[practice:p1_receipt_reprint]",
+        sourceFile: "investigation.md",
+        line: 11,
+      }),
+    ).toEqual({
+      ok: true,
+      value: [{ kind: "practice", id: "p1_receipt_reprint" }],
+    });
+    expect(
+      parseRevealsList({
+        family: "interrogation",
+        raw: "[practice:p1_receipt_reprint]",
+        sourceFile: "interrogation.md",
+        line: 11,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: { code: "interrogationRevealUnknownTarget" },
+    });
+  });
+
   it("keeps local reveal duplicates in authored order", () => {
     expect(
       parseRevealsList({

@@ -135,6 +135,39 @@ describe("buildReachabilityNodes", () => {
     ]);
   });
 
+  it("models P1-local practice reveals as analysis prerequisites", () => {
+    const scene = investigationScene({
+      sublocations: [
+        sublocation("main", [
+          hotspot("receipt", {
+            reveals: [{ kind: "practice", id: "p1_receipt_reprint" }],
+          }),
+        ]),
+      ],
+    });
+
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["investigation_scene_p1.md"])],
+      [record("chapter_1", "investigation_scene_p1.md", scene)],
+    );
+
+    expect(nodes[1]!.effects).toEqual([
+      {
+        kind: "addAtom",
+        atom: "hotspot:chapter_1@investigation_scene_1@receipt",
+        targetIndex: -1,
+      },
+      {
+        kind: "addAtom",
+        atom: "practice:p1_receipt_reprint",
+        targetIndex: 0,
+      },
+    ]);
+    expect(
+      analyzeReachability({ nodes, catalog: storyCatalog() }).errors,
+    ).toEqual([]);
+  });
+
   it("does not leak may-before peers across unrelated sublocation regions", () => {
     const scene = investigationScene({
       sublocations: [

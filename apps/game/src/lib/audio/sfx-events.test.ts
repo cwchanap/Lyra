@@ -746,13 +746,15 @@ describe("inferGameplaySfxEvents", () => {
       withdraw_interrogation: true,
       resume_interrogation_testimony: true,
       complete_interrogation_phase: true,
+      set_analysis_selection: true,
+      submit_analysis_selection: true,
     };
     const names = Object.keys(exhaustive) as GameplayCommandName[];
 
     // Every union member is listed exactly once.
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("present_interrogation_evidence");
-    expect(names).toHaveLength(14);
+    expect(names).toHaveLength(16);
   });
 });
 

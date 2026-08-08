@@ -1,7 +1,8 @@
 use super::catalog::{ObjectiveKind, StoryCatalog};
 use super::state::{
-    inventory_target_id, inventory_target_kind, AssertionOrigin, AuthorizationProgress,
-    FactProgress, ObjectiveProgress, QuestionProgress, StoryState,
+    inventory_target_id, inventory_target_kind, AnalysisBoardProgressKey, AnalysisSceneProgressKey,
+    AssertionOrigin, AuthorizationProgress, FactProgress, ObjectiveProgress, QuestionProgress,
+    StoryState,
 };
 use crate::game::schema::InventoryTarget;
 use crate::game::GameError;
@@ -16,6 +17,52 @@ pub(in crate::game) enum MutationOutcome {
 
 #[allow(dead_code)]
 impl StoryState {
+    pub(in crate::game) fn complete_analysis_board(
+        &mut self,
+        catalog: &StoryCatalog,
+        chapter_id: &str,
+        scene_id: &str,
+        board_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        if !catalog.has_analysis_board(chapter_id, scene_id, board_id) {
+            return Err(GameError::unknown_analysis_board(board_id));
+        }
+        let changed = self
+            .completed_analysis_boards
+            .insert(AnalysisBoardProgressKey {
+                chapter_id: chapter_id.into(),
+                scene_id: scene_id.into(),
+                board_id: board_id.into(),
+            });
+        Ok(if changed {
+            MutationOutcome::Changed
+        } else {
+            MutationOutcome::Unchanged
+        })
+    }
+
+    pub(in crate::game) fn complete_analysis_scene(
+        &mut self,
+        catalog: &StoryCatalog,
+        chapter_id: &str,
+        scene_id: &str,
+    ) -> Result<MutationOutcome, GameError> {
+        if !catalog.has_analysis_scene(chapter_id, scene_id) {
+            return Err(GameError::unknown_analysis_scene(chapter_id, scene_id));
+        }
+        let changed = self
+            .completed_analysis_scenes
+            .insert(AnalysisSceneProgressKey {
+                chapter_id: chapter_id.into(),
+                scene_id: scene_id.into(),
+            });
+        Ok(if changed {
+            MutationOutcome::Changed
+        } else {
+            MutationOutcome::Unchanged
+        })
+    }
+
     pub(in crate::game) fn assert_fact(
         &mut self,
         catalog: &StoryCatalog,
@@ -365,6 +412,12 @@ mod tests {
                 ],
                 "statementsIndex": [
                     {"id":"statement_a","chapterId":"chapter_1","sceneId":"scene_1","provenance": crate::game::test_support::neutral_provenance_json()}
+                ],
+                "analysisScenes": [
+                    {"chapterId":"chapter_1","sceneId":"analysis_scene_1"}
+                ],
+                "analysisBoards": [
+                    {"chapterId":"chapter_1","sceneId":"analysis_scene_1","boardId":"board_1"}
                 ]
             }))
             .unwrap(),
@@ -1039,19 +1092,12 @@ mod tests {
     #[test]
     fn fact_and_authorization_reject_unresolvable_origin_kinds() {
         let catalog = catalog();
-        let unresolvable_origins = [
-            AssertionOrigin::AnalysisBoard {
-                chapter_id: "chapter_1".into(),
-                scene_id: "scene_1".into(),
-                board_id: "board_1".into(),
-            },
-            AssertionOrigin::SceneEvent {
-                chapter_id: "chapter_1".into(),
-                scene_id: "scene_1".into(),
-                block_kind: StoryEventBlockKind::StoryEvent,
-                block_id: "block_1".into(),
-            },
-        ];
+        let unresolvable_origins = [AssertionOrigin::SceneEvent {
+            chapter_id: "chapter_1".into(),
+            scene_id: "scene_1".into(),
+            block_kind: StoryEventBlockKind::StoryEvent,
+            block_id: "block_1".into(),
+        }];
 
         for origin in unresolvable_origins {
             let mut state = StoryState::default();
@@ -1075,5 +1121,29 @@ mod tests {
             );
             assert_eq!(state.snapshot(), before);
         }
+    }
+
+    #[test]
+    fn fact_and_authorization_accept_registered_analysis_board_origins() {
+        let catalog = catalog();
+        let origin = AssertionOrigin::AnalysisBoard {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        };
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state
+                .assert_fact(&catalog, "fact_alpha", origin.clone(), &[], &[])
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        assert_eq!(
+            state
+                .grant_authorization(&catalog, "authorization_a", origin)
+                .unwrap(),
+            MutationOutcome::Changed
+        );
     }
 }

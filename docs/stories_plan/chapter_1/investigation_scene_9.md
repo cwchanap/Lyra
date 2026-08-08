@@ -43,7 +43,7 @@
 
 **早坂茜**：夠了。我們要的就是這一段。
 
-[相馬律的視線越過窗口，掃過辦公室側牆。一塊白板上用磁鐵壓著幾排日期——合約更新截止、帳號回收日、臨時 badge 交接排程，紅筆圈住的日期一路排到下個月底。]
+[相馬律的視線越過窗口，掃過辦公室側牆。一塊白板上用磁鐵壓著幾排日期——合約更新截止、帳號回收日、臨時識別證交接排程，紅筆圈住的日期一路排到下個月底。]
 
 [長椅上坐著三四個人，手裡各捏一張臨時識別證，等著交回。一個人在簽到板上劃掉自己的名字，筆尖頓了一下才補上離場時間。]
 
@@ -63,13 +63,13 @@
 - **Scene Source Prompt:** Contractor reply packet folder open on the service-window counter, top sheet a temporary maintenance work order with doorlock icon and clipped approval stamp shape; no readable text.
 - **Reveals:** [evidence:temp_maintenance_workorder]
 
-[相馬律翻開最上面那張工單，順著欄位看下去。]
+[相馬律把翹起的紙角壓平，又把歪掉的訂書針撥回正。]
 
-**相馬律**：那晚臨時排了一張維護工單，就是後場那扇門。
+**早坂茜**：你一緊張，就先整理東西。
 
-**相馬律**：工單底下對應一組外包維護憑證。
+**相馬律**：手不動，腦子更亂。
 
-**早坂茜**：先記著。工單對得上憑證，但還沒對上人。
+**早坂茜**：那就先讓手忙著。腦子留給正事。
 
 ### Hotspot: 外包維護權限名單 {#access_permission_list}
 - **Description:** 回函資料包裡，那晚能動用該憑證的外包維護權限名單。
@@ -77,23 +77,11 @@
 - **Scene Source Prompt:** Contractor access-permission list page from the reply packet on the counter, rows of codes with one highlighted row and keycard symbol, names and codes unreadable.
 - **Reveals:** [evidence:kitami_external_access]
 
-[相馬律把工單上的憑證編號，逐一比對權限名單。]
+[相馬律把名單翻到背面，指腹停在打孔的紙邊。]
 
-**相馬律**：名單上 K 開頭的承包商不只一個，編碼也很像。
+**相馬律**：以前做協力的時候，這種表一厚，我就會忘記人長什麼樣。
 
-**早坂茜**：所以光看編碼會錯。要工單加憑證一起對。
-
-[相馬律的手指停在其中一行，指腹壓住紙面沒有移開。]
-
-**相馬律**：那晚的工單、那組憑證……兩邊一起，只落在一個人身上。
-
-**相馬律**：北見修一。
-
-**早坂茜**：第一次，名字對到了人。
-
-[她把桌面上的紙頁往自己那側收攏了半寸，目光沒有離開那個名字。]
-
-**早坂茜**：別急著定罪，先把材料補齊。
+**早坂茜**：那今天別忘。先把人看清楚，再說別的。
 
 ### Hotspot: 資材包清單 {#material_kit_list}
 - **Description:** 回函資料包裡，外包維護資材包的內容清單。
@@ -101,15 +89,13 @@
 - **Scene Source Prompt:** Contractor material-kit list page from the reply packet on the counter, one row showing a transparent umbrella sleeve item icon, labels unreadable.
 - **Reveals:** [evidence:contractor_umbrella_sleeve_match]
 
-[相馬律把資材包清單裡的傘套，跟手上後場那只濕傘套的尺寸對著看。]
+[透明傘套的邊角沾著一點潮氣。窗口一開，雨聲就順著玻璃縫鑽進來。]
 
-**相馬律**：資材包這只傘套，尺寸跟後場牆角那只濕傘套一樣。
+**相馬律**：雨鐘打烊以後，也是這種聲音。
 
-**相馬律**：連摺痕的位置都對得上。
+**早坂茜**：那間店的雨聲，比這裡有人情味。
 
-**早坂茜**：傘套只能說，先進來的那個人走的是承包商這條線。
-
-**早坂茜**：要對到某一個人，還是得靠那張臨時工單和外包憑證。
+**相馬律**：這裡連傘套都被收得很整齊。
 
 ### Hotspot: 玻璃隔板上的雨水 {#window_rain_glass}
 - **Description:** 承包商窗口的玻璃隔板，雨水在玻璃上拖成一道道細長的水痕。
@@ -137,7 +123,7 @@
 
 [承包商主管瞟了一眼，翻了翻手邊一本小冊子。]
 
-**承包商主管**：這個上週就到期了。badge 交回，憑證停用。
+**承包商主管**：這個上週就到期了。臨時識別證交回，憑證停用。
 
 **承包商主管**：那晚他進不來。
 
@@ -178,18 +164,20 @@
 - **Description:** 北見修一已被請到隔壁的訪談室，可以過去當面問。
 - **Reveals:** [sublocation:confront_kitami]
 
-[相馬律把三份材料疊齊，望向隔壁那扇門。]
+[相馬律把三份材料疊齊，手指在公事包的搭扣上停了一下。]
 
-**相馬律**：工單、憑證、傘套，都指著同一個人。
+**早坂茜**：手冷？
 
-**早坂茜**：那就去聽他自己怎麼說。
+**相馬律**：沒有。
+
+**早坂茜**：那就別逞強。進去之後少搶話。
 
 ## Sub-location: 質問北見 {#confront_kitami}
 - **Status:** locked
 - **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text.
 - **BGS:** bgs_interview_room_fluorescent
 
-[場景：訪談室，白日，日光燈管把一切照得毫無死角。窄小的房間，四面白牆，桌上攤開一批死者手機鑑識的列印件。北見修一坐在對面，手裡攥著一張摺痕很深的名片。四十出頭，身形中等偏軟，穿著樣板式的商務便裝——那種設計上就是為了不讓人記住的款式。一副金屬框眼鏡，鏡架滑下來一點，他每隔幾秒就用中指推回去。一張在職場上習慣被忽略的人的臉。]
+[場景：訪談室，白日。日光燈照得無處可藏；窄室四面白牆，桌上攤著死者手機鑑識列印件。北見修一坐在對面，攥著摺痕很深的名片：四十出頭，身形偏軟，穿樣板式商務便裝；金屬框眼鏡下滑，他每隔幾秒以中指推回，一張習慣在職場被忽略的臉。]
 
 [黑瀨徹把那批鑑識列印件，一頁頁鋪開在桌上，紙張滑過桌面的聲音在安靜的房間裡格外清晰。]
 
@@ -285,7 +273,7 @@
 
 [他把那張摺痕很深的名片又對摺了一次，紙角已經起了毛邊。]
 
-**早坂茜**：壓力講夠了。盜賊就是盜賊，審查再急也不改這件事。
+**早坂茜**[stern]：壓力講夠了。盜賊就是盜賊，審查再急也不改這件事。
 
 #### Topic: 早班 {#early_shift}
 - **Status:** unlocked
@@ -296,7 +284,7 @@
 
 **北見修一**：……我另一個早班四點開始。跟這件無關。
 
-[他把這句說得很輕，像是怕被人聽成在解釋什麼。]
+[北見說完後低下頭，拇指沿著名片折痕來回抹了一下。]
 
 **相馬律**：這條線跑了多久？
 
@@ -343,7 +331,7 @@
 ### evidence:contractor_umbrella_sleeve_match {#contractor_umbrella_sleeve_match}
 - **Name:** 承包商資材包傘套來源比對
 - **Description:** 資材包清單裡的透明傘套，與後場那只濕傘套的來源比對。
-- **Details:** 資材包傘套的尺寸與摺痕，跟後場牆角那只濕傘套一致。它單獨不能定罪，只能把那個更早進場的人，從一般客人推向承包商這條線；要對到某一個人，還得靠臨時工單和外包憑證。
+- **Details:** 資材包傘套的尺寸與摺痕和後場牆角的濕傘套一致，卻比地上半乾水痕新；它不能單獨定罪或辨認更早進場者，只留承包商資材在此路線上的時間與動線脈絡。要對到人，仍須臨時維護工單和外包憑證。
 - **Source Sublocation:** contractor_desk
 - **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
 
@@ -351,7 +339,9 @@
 
 **相馬律**：資材包這只傘套，尺寸和摺痕都對得上後場那只。
 
-**早坂茜**：只能把先進來的那個人，推向承包商這條路。
+**早坂茜**：但那只是較晚的雨水。它只留在動線脈絡裡。
+
+**早坂茜**：更早進來的是誰，還得看工單和憑證。
 
 ### evidence:masuda_unsent_memo {#masuda_unsent_memo}
 - **Name:** 增田未送出備忘
@@ -379,6 +369,10 @@
 
 **早坂茜**：光一份草稿，證不了資料怎麼流出去。
 
+[黑瀨徹從增田的個人物品袋裡取出一支隨身碟，另裝進證物袋，壓好封條。]
+
+**黑瀨徹**：這支另編，送鑑識。
+
 ### evidence:kitami_data_theft_record {#kitami_data_theft_record}
 - **Name:** 北見資料盜賣紀錄
 - **Description:** 檢舉草稿附件裡那張沒完成的異常存取整理表。
@@ -398,7 +392,11 @@
 
 **相馬律**：那個一直空著的第三人座位，現在能對到一個名字了。
 
-**相馬律**：北見修一。臨時工單、外包憑證、傘套、備忘裡的那個 K，全收口在他身上。
+**相馬律**：北見修一。臨時工單和外包憑證，先把名字對上。
+
+**相馬律**：備忘裡的那個 K，這樣才能收口。
+
+**相馬律**：傘套只留在動線脈絡裡。
 
 **早坂茜**：身份對上了。動機和當夜的壓力，也都站住了。
 

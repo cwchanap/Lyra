@@ -11,12 +11,18 @@ import type { AudioCue, CompileError, VisualAssetCue } from "./types";
 
 const RESERVED_ASSET_METADATA_KEYS = [
   "Background Prompt",
+  "Background Asset ID",
   "BGM",
   "BGS",
   "Image Prompt",
 ];
 
-export const VISUAL_ASSET_METADATA_KEYS = ["Background Prompt", "BGM", "BGS"];
+export const VISUAL_ASSET_METADATA_KEYS = [
+  "Background Prompt",
+  "Background Asset ID",
+  "BGM",
+  "BGS",
+];
 export const EVIDENCE_IMAGE_METADATA_KEYS = ["Image Prompt"];
 
 export function parseVisualAssetCue(
@@ -24,7 +30,7 @@ export function parseVisualAssetCue(
 ): VisualAssetCue {
   return {
     backgroundPrompt: meta["Background Prompt"] ?? null,
-    backgroundAssetId: null,
+    backgroundAssetId: meta["Background Asset ID"] ?? null,
     bgm: parseAudioCue("bgm", meta.BGM),
     bgs: parseAudioCue("bgs", meta.BGS),
   };
@@ -44,6 +50,7 @@ export function metadataWithoutAssetKeys(
 ): Record<string, string> {
   const copy = { ...meta };
   delete copy["Background Prompt"];
+  delete copy["Background Asset ID"];
   delete copy.BGM;
   delete copy.BGS;
   delete copy["Image Prompt"];

@@ -68,7 +68,7 @@
 - **Background Prompt:** Review-board entry window in a narrow institutional corridor, metal door at the end, small lit counter window, cold procedural mood.
 - **BGS:** bgs_institutional_corridor
 
-**旁白**：審查會的入口，比相馬想的要冷清。
+**相馬律**：審查會的入口，比我想的要冷清。
 
 [相馬走向窗口，書記官抬手攔了一下。]
 
@@ -86,7 +86,7 @@
 
 **書記官**：……文件齊全。但我先說在前面。
 
-**書記官**：你們不是警方。原始資料，不能你們說要就調。
+**書記官**：你們不是警方。想看的東西，要核准才能調。
 
 [相馬的手停在檯面邊緣，沒有再往前。]
 
@@ -94,15 +94,15 @@
 
 [她側過頭，對相馬壓低聲音。]
 
-**早坂茜**：你記住，你不是警察。這裡沒有人欠你一份原始資料。
+**早坂茜**：你記住，你不是警察。這裡沒有人會直接把核准片段交給你。
 
 **相馬律**：那我們能要的，是什麼？
 
 **早坂茜**：摘要是系統整合過的公開版。
 
-**早坂茜**：原始紀錄在審查會這裡，要核准才調得出來。
+**早坂茜**：審查會只會放出核准片段。要先過他們那關。
 
-**相馬律**：所以摘要不等於原始紀錄？
+**相馬律**：所以摘要，不是全部？
 
 **早坂茜**：你是偵探，不是檢方。門只開一條縫，縫是審查會開的。
 
@@ -110,7 +110,7 @@
 
 **書記官**：登記好了。你們先去看現場。
 
-**書記官**：原始資料的調閱，等核准下來再通知。
+**書記官**：核准片段的調閱，等核准下來再通知。
 
 [場景：審查會外，上午。大門外的石階，雨後的街濕漉漉的，光線發白。]
 - **Background Prompt:** Exterior stone steps outside a Japanese review-board building, wet city street after rain, pale morning light, quiet legal pressure, no people, no UI text.

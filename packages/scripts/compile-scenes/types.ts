@@ -96,6 +96,14 @@ export type InventoryTarget =
   | { kind: "evidence"; id: string }
   | { kind: "statement"; id: string };
 
+/**
+ * A card collected only by an active tutorial notebook. It is deliberately
+ * separate from InventoryTarget so it cannot enter the global Case File.
+ */
+export type PracticeCardSource = { kind: "practice"; id: string };
+
+export type AnalysisCardSource = InventoryTarget | PracticeCardSource;
+
 export type SourceKind =
   | "physical"
   | "testimony"
@@ -519,16 +527,23 @@ export type ASTAnalysisFeedback = {
   incomplete: Located<{ value: string }>;
   incorrect: Located<{ value: string }>;
   hint: Located<{ value: string }> | null;
+  incorrectSelections: ASTAnalysisSelectionFeedback[];
 };
 
 export type ASTAnalysisCard = Located<{
   id: string;
   label: string;
-  source: Located<{ value: InventoryTarget }>;
+  source: Located<{ value: AnalysisCardSource }>;
   summary: Located<{ value: string }>;
 }>;
 
 export type ASTAnalysisCardId = Located<{ value: string }>;
+
+/** A threshold-only response for one explicit, but incorrect, card set. */
+export type ASTAnalysisSelectionFeedback = {
+  cards: ASTAnalysisCardId[];
+  feedback: Located<{ value: string }>;
+};
 
 export type ASTAnalysisGroup = Located<{
   id: string;
@@ -758,7 +773,7 @@ export type JSONAnalysisScene = {
 export type JSONAnalysisCard = {
   id: string;
   label: string;
-  source: InventoryTarget;
+  source: AnalysisCardSource;
   summary: string;
 };
 
@@ -772,6 +787,7 @@ export type JSONAnalysisBoardCommon = {
     incomplete: string;
     incorrect: string;
     hint: string | null;
+    incorrectSelections: Array<{ cards: string[]; feedback: string }>;
   };
   cards: JSONAnalysisCard[];
   resultDialogue: JSONDialogueItem[];

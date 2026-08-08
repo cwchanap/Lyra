@@ -1,5 +1,5 @@
 // src-tauri/src/game/unlock.rs
-use crate::game::schema::{Combinator, InterrogationUnlockExpr, UnlockExpr};
+use crate::game::schema::{Combinator, InterrogationUnlockExpr, StoryUnlockExpr, UnlockExpr};
 
 pub trait UnlockContext {
     fn evidence_collected(&self, id: &str) -> bool;
@@ -50,6 +50,38 @@ pub fn evaluate(
             ..
         } => story.analysis_scene_completed(chapter_id, scene_id),
         UnlockExpr::AnalysisBoardCompleted {
+            chapter_id,
+            scene_id,
+            board_id,
+            ..
+        } => story.analysis_board_completed(chapter_id, scene_id, board_id),
+    }
+}
+
+/// Evaluates the deliberately story-only expression used by compiled analysis
+/// boards. Keeping this separate from investigation/interrogation evaluation
+/// makes it impossible for analysis resources to depend on local scene state.
+pub fn evaluate_story(expr: &StoryUnlockExpr, story: &dyn StoryUnlockContext) -> bool {
+    match expr {
+        StoryUnlockExpr::Combinator { op, left, right } => match op {
+            Combinator::And => evaluate_story(left, story) && evaluate_story(right, story),
+            Combinator::Or => evaluate_story(left, story) || evaluate_story(right, story),
+        },
+        StoryUnlockExpr::AtLeast {
+            count, conditions, ..
+        } => evaluate_at_least(conditions, *count, |condition| {
+            evaluate_story(condition, story)
+        }),
+        StoryUnlockExpr::FactAsserted { id, .. } => story.fact_asserted(id),
+        StoryUnlockExpr::QuestionResolved { id, .. } => story.question_resolved(id),
+        StoryUnlockExpr::ObjectiveCompleted { id, .. } => story.objective_completed(id),
+        StoryUnlockExpr::AuthorizationGranted { id, .. } => story.authorization_granted(id),
+        StoryUnlockExpr::AnalysisSceneCompleted {
+            chapter_id,
+            scene_id,
+            ..
+        } => story.analysis_scene_completed(chapter_id, scene_id),
+        StoryUnlockExpr::AnalysisBoardCompleted {
             chapter_id,
             scene_id,
             board_id,
