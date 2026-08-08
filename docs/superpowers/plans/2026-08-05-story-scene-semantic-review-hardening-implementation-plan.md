@@ -28,9 +28,9 @@
 
 ## Delivery shape
 
-Execute HPA-561 as two implementation PRs under the same Linear ticket.
+Execute HPA-561 as one implementation PR targeting `main` under the same Linear ticket.
 
-### PR A — contract and tooling
+### Tasks 1–5 — contract and tooling foundation
 
 Tasks 1–5:
 
@@ -39,11 +39,11 @@ Tasks 1–5:
 - strict existing-catalog enforcement plus the minimal `characters.yaml` migration required to keep production compilation green;
 - background-cue audit script and tests.
 
-PR A contains no broad scene prose rewrite and no background/portrait art regeneration. It may temporarily expose only the explicitly expected missing portrait-file warnings for the newly portrait-bearing `店主` and `增田圭` catalog entries; PR B resolves those asset warnings.
+This checkpoint contains no broad scene prose rewrite and no background/portrait art regeneration. It may temporarily expose only the explicitly expected missing portrait-file warnings for the newly portrait-bearing `店主` and `增田圭` catalog entries; Tasks 6–9 resolve those warnings before the single PR's final acceptance gate.
 
-### PR B — Chapter 1 content and visual acceptance
+### Tasks 6–9 — Chapter 1 content and visual acceptance
 
-Tasks 6–9 after PR A lands:
+Continue immediately on the same implementation branch and PR after the Task 5 review checkpoint; do not merge or wait for an intermediate PR:
 
 - generate accepted missing portraits;
 - run the background audit and implement Priority A changes;
@@ -54,7 +54,7 @@ Tasks 6–9 after PR A lands:
 
 ## File Structure
 
-### PR A — skills/review
+### Tasks 1–5 — skills/review
 
 - Modify `.claude/skills/writing-detective-game-dialogue/SKILL.md`.
 - Modify `.claude/skills/writing-investigation-scene/SKILL.md`.
@@ -64,20 +64,20 @@ Tasks 6–9 after PR A lands:
 - Modify `.claude/skills/generating-lyra-image-assets/SKILL.md`.
 - Create `docs/superpowers/specs/2026-08-05-story-scene-semantic-review-hardening-scenarios.md`.
 
-### PR A — compiler/catalog
+### Tasks 1–5 — compiler/catalog
 
 - Modify `packages/scripts/compile-scenes/assets/enrich.ts`.
 - Modify `packages/scripts/compile-scenes/assets/enrich.test.ts`.
 - Modify `static/assets/config/characters.yaml`.
 
-### PR A — background audit tooling
+### Tasks 1–5 — background audit tooling
 
 - Create `packages/scripts/compile-scenes/background-cues-audit.ts`.
 - Create `packages/scripts/compile-scenes/background-cues-audit.test.ts`.
 - Modify `packages/scripts/package.json`.
 - Modify root `package.json`.
 
-### PR B — content/assets/evidence
+### Tasks 6–9 — content/assets/evidence
 
 - Create `docs/stories_plan/chapter_1/background-variety-audit.md`.
 - Create `docs/stories_plan/chapter_1/semantic-content-reaudit.md`.
@@ -186,7 +186,7 @@ git commit -m "test: record focused story skill pressure scenarios"
 
 ### Task 2: Harden skills before any production migration
 
-**Files:** all six skill files listed under PR A.
+**Files:** all six skill files listed under Tasks 1–5 — skills/review.
 
 **Produces:** the authoring/review rules that later migration and audits consume.
 
@@ -471,9 +471,9 @@ git commit -m "feat: add Chapter background cue audit"
 
 ---
 
-### Task 5: Verify and publish PR A — contract and tooling
+### Task 5: Verify the contract and tooling checkpoint
 
-- [ ] **Step 1: Run PR A regression gate**
+- [ ] **Step 1: Run the checkpoint regression gate**
 
 ```bash
 bun run format:check
@@ -487,7 +487,7 @@ Expected: all commands exit 0. `scenes:compile` may report only accepted missing
 
 - [ ] **Step 2: Verify diff boundary**
 
-PR A starts from `main`:
+At this checkpoint, the single implementation branch starts from `main`:
 
 ```bash
 git diff --name-only main...HEAD
@@ -495,11 +495,11 @@ git diff --name-only main...HEAD
 
 No broad scene prose/background changes.
 
-- [ ] **Step 3: Open/review PR A under HPA-561**
+- [ ] **Step 3: Review Tasks 1–5 under HPA-561**
 
 Review one-registry/YAGNI boundary, analysis traversal coverage, explicit `店主` / `學生` / `增田圭` decisions, and audit-tool mechanical/semantic boundary.
 
-Merge PR A before final PR B acceptance. If PR B is temporarily stacked, rebase it onto `main` immediately after PR A merges.
+After this review passes, continue Tasks 6–9 on the same branch and PR. Keep the checkpoint commits separately reviewable, but do not publish or merge an intermediate implementation PR.
 
 ---
 
@@ -665,7 +665,7 @@ Keep speaker/identity, narration/expression, and visual fixes separately reviewa
 
 ---
 
-### Task 9: Final PR B verification gate
+### Task 9: Final single-PR verification gate
 
 - [ ] **Step 1: Verify background coverage**
 
@@ -705,15 +705,15 @@ No unrelated culprit/timeline/evidence-package/unlock/scene-order/reveal-ladder/
 
 No parser/AST/runtime schema or Rust/Svelte changes for speaker classification.
 
-- [ ] **Step 8: Inspect PR B diff**
+- [ ] **Step 8: Inspect the complete HPA-561 implementation diff**
 
-PR B starts from `main` after PR A merges:
+The single implementation PR targets `main` and contains Tasks 1–9:
 
 ```bash
 git diff --name-only main...HEAD
 ```
 
-Every path must be attributable to approved portraits, background audit/accepted A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
+Every path must be attributable to the approved contract/tooling foundation, approved portraits, background audit/accepted Priority A assets, recorded semantic findings, or finding-backed Chapter 1 corrections.
 
 ## Plan Self-Review
 
@@ -725,4 +725,4 @@ Every path must be attributable to approved portraits, background audit/accepted
 - Background inventory/coverage is scripted; semantic severity stays with `reviewing-story-scenes`.
 - Three genuine baseline scenarios; prospective checks post-change only.
 - Final gate includes `bun run lint` and an explicit portable PNG dimension/opacity check.
-- Contract/tooling and content/art are separate implementation PRs under one HPA-561 ticket.
+- Contract/tooling and content/art remain separately reviewable commit groups inside one HPA-561 implementation PR targeting `main`.

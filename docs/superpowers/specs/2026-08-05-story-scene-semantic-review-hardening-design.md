@@ -229,19 +229,19 @@ Do not manufacture baseline failures for prospective risks.
 
 ## Delivery shape
 
-HPA-561 remains one Linear ticket and one spec/plan, but implementation is delivered as two reviewable PRs.
+HPA-561 remains one Linear ticket and one spec/plan, and implementation is delivered as one reviewable PR targeting `main`.
 
-### PR A — contract and tooling
+### Tasks 1–5 — contract and tooling foundation
 
 Contains skill/review/orchestrator hardening, strict global speaker-catalog enforcement, the minimal `characters.yaml` migration required to keep production compilation green, and the background-cue audit script/tests.
 
-No broad scene rewrite and no background/portrait art generation. The two newly portrait-bearing entries may temporarily produce only their explicitly expected missing-file warnings; PR B resolves them.
+This checkpoint contains no broad scene rewrite and no background/portrait art generation. The two newly portrait-bearing entries may temporarily produce only their explicitly expected missing-file warnings; Tasks 6–9 resolve them before final acceptance.
 
-### PR B — Chapter 1 content and visual acceptance
+### Tasks 6–9 — Chapter 1 content and visual acceptance
 
-After PR A lands, generate approved `店主`/`增田圭` portraits, run/fill the background audit, implement Priority A prompt/background changes, invoke the seven-axis semantic re-audit, fix recorded Blocker/Important findings, rerun review to `SHIP`, and retain Priority B/Minor findings as documented follow-up.
+After the Task 5 review checkpoint, continue immediately on the same branch and PR: generate approved `店主`/`增田圭` portraits, run/fill the background audit, implement Priority A prompt/background changes, invoke the seven-axis semantic re-audit, fix recorded Blocker/Important findings, rerun review to `SHIP`, and retain Priority B/Minor findings as documented follow-up.
 
-This separates code/tooling review from art/content review without creating extra architecture or Linear tickets.
+Separate commit groups and task review checkpoints keep code/tooling review distinct from art/content review without creating another implementation PR, architecture, or Linear ticket.
 
 ## Verification
 
@@ -301,4 +301,4 @@ Rust/app tests remain unnecessary unless implementation unexpectedly changes run
 - Priority A background findings are implemented; Priority B remains documented.
 - Semantic re-audit is the consolidated `reviewing-story-scenes` output, not a parallel format.
 - Final semantic review is `SHIP` with no Blocker/Important findings.
-- Implementation is split into contract/tooling and content/asset PRs under HPA-561.
+- Contract/tooling and content/assets remain separately reviewable commit groups inside one HPA-561 implementation PR targeting `main`.
