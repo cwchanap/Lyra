@@ -88,3 +88,61 @@ Important — docs/stories_plan/chapter_1/investigation_scene_7.md:98-102; docs/
 - Both hearings have genuine pre-proceeding partner dialogue rather than launching straight into a phase: the three-step observation/strategy exchange in `interrogation_scene_4.md:13`–`interrogation_scene_4.md:21`, and the final hearing's strategy plus first-time reassurance in `interrogation_scene_10.md:13`–`interrogation_scene_10.md:15` and `interrogation_scene_10.md:29`–`interrogation_scene_10.md:31` satisfy the hearing direction in `chapter1_actual_writing_agent_addendum.md:403`.
 - The 相馬／早坂 relationship has recurring familiarity and complementary practice, rather than only task delegation: the receipt habit in `scene_p1.md:258`–`scene_p1.md:268`, the post-hearing coffee/lunch care in `scene_6.md:15`–`scene_6.md:29`, and the final cafe banter in `scene_11.md:64`–`scene_11.md:70` fit 相馬's orderly insecurity and 早坂's practical, action-led voice (`docs/stories_plan/characters.md:40`–`docs/stories_plan/characters.md:50`).
 - New recurring characters are generally dramatized as people rather than Bio entries: 三宅's ordinary latte order and the manager's teasing appear before the murder plot (`scene_p2.md:62`–`scene_p2.md:90`), while 黑瀨 is introduced through a previous-case exchange and an immediately human procedural boundary (`scene_5.md:204`–`scene_5.md:218`), consistent with the addendum's no-Bio-only rule (`chapter1_actual_writing_agent_addendum.md:425`–`chapter1_actual_writing_agent_addendum.md:432`).
+
+## Resolution log
+
+The initial review block above is preserved verbatim. The original frozen list was a 16-file checkpoint with no manifest-listed production analysis scene; that statement was true at the time and no analysis content was manufactured for that checkpoint.
+
+After explicit user approval of the P1 structural remedy, the current production manifest was amended to 17 ordered files: `scene_p1.md` was replaced by `investigation_scene_p1.md` followed by `analysis_scene_p1_5.md`. The amendment is deliberately recorded rather than retroactively changing the historical freeze.
+
+- Implemented the P1 investigate → compare tutorial: four P1-local `practice:` collectors, an isolated threshold board requiring receipt + register jam + ledger, visible CCTV wrong-choice feedback, and a non-Case-File notebook cleared on completion. The dormant analysis-scene runtime path, threshold-only UI/IPC, save/restore, and E2E checkpoint projection were enabled under focused tests; the public classify/order precautionary controls were removed under YAGNI review.
+- Added `last_feedback` to the backward-compatible Analysis save snapshot after independent review found wrong-choice feedback was lost on restore. A real P1 CCTV-only save/restore regression now covers it.
+- Reused existing P1 counter visual metadata for P1.5; no new plate, prompt design, asset, or layout was introduced. Relaxed unsupported old-clock continuous-sightline wording against the existing plates while preserving the slow-clock seed and stopped-clock payoff.
+- Added a visible Scene 9 USB custody handoff (take, separately seal, send to forensics) before the ending. It supports Scene 11's evidence-bag retrieval without opening or explaining `ZW_A16.lock`.
+- Corrected Axis 3/7 source and runtime-visible presentation findings: concrete Hayasaka P1 errand/non-takeover, narration/terminology cleanups, concise dialogue and all rendered metadata/action/tag carriers, including transition actions and backdrop scene tags. Current compiled JSON has no visible carrier over 100 Han.
+- Preserved every required evidence package, unlock, phase, contradiction, proof order, reveal boundary, asset identity, and main-case timing contract through targeted writer and compiler checks.
+
+## Final seven-axis review
+
+### Phase 4 consolidation
+
+**Current production scope:** the user-approved 17-file manifest, in order:
+
+1. `scene_p0.md`
+2. `investigation_scene_p1.md`
+3. `analysis_scene_p1_5.md`
+4. `scene_p2.md`
+5. `scene_0.md`
+6. `investigation_scene_1.md`
+7. `scene_2.md`
+8. `investigation_scene_3.md`
+9. `interrogation_scene_4.md`
+10. `scene_5.md`
+11. `scene_6.md`
+12. `investigation_scene_7.md`
+13. `investigation_scene_8.md`
+14. `scene_8_5.md`
+15. `investigation_scene_9.md`
+16. `interrogation_scene_10.md`
+17. `scene_11.md`
+
+The initial 16-file/no-analysis record above remains a historical checkpoint. This final review audits the explicit post-freeze amendment.
+
+**Final verdict: SHIP**
+
+| Axis | Verdict | Findings retained verbatim | Final report |
+| --- | --- | --- | --- |
+| 1. Canon / Bible fidelity | `SHIP` | None. | `final-cycle-axis-1-canon.md` |
+| 2. Forbidden knowledge / reveal boundaries | `SHIP` | None. | `final-cycle-axis-2-forbidden.md` |
+| 3. Voice, style, narration, labels, expressions | `SHIP` | None. | `final-cycle-axis-3-voice-style.md` |
+| 4. Cross-scene continuity | `SHIP` | None. | `final-cycle-axis-4-continuity-rerun.md` |
+| 5. Visual/background/runtime assets | `SHIP` | None. | `final-cycle-axis-5-visual-background-rerun.md` |
+| 6. Interaction balance | `SHIP` | None. | `final-cycle-axis-6-interaction-balance.md` |
+| 7. Natural conversation / character flow | `SHIP` | None. | `final-cycle-axis-7-natural-conversation-rerun.md` |
+
+### Final evidence summary
+
+- Canon, forbidden-reveal, continuity, visual, interaction, voice, and conversation axes all return `SHIP` with zero Blocker/Important findings.
+- Compiler-based final checks resolve 17 source scenes with zero warnings. The visual audit resolves 55/55 background contexts and 123/123 asset references; the final carrier audit has zero runtime-visible payload over 100 Han.
+- P1's four practice cards remain local to its board, its wrong-feedback state survives save/restore, and it never pollutes the main Case File.
+- The final USB custody, clock, P1.5 visual-cue, Scene 8 geometry, approved-clip, and merge-time chains have fresh rerun evidence after their fixes.
