@@ -1,5 +1,6 @@
 import {
   advanceDialogueUntil,
+  completeP1PracticeTutorial,
   collectKagamiSummaryEvidence,
   elementExists,
   lastVisibleDialogueText,
@@ -10,7 +11,7 @@ import {
 import { anchors, DIALOGUE_DRAIN_CAP } from "./production-anchors";
 
 describe("fresh production journey", () => {
-  it("progresses from title through authored dialogue and real acquisition into investigation", async () => {
+  it("completes the P1 tutorial before real KAGAMI acquisition in investigation", async () => {
     await resetE2eStorage();
     expect(await elementExists(`[aria-label="${anchors.mainMenu}"]`)).toBe(
       true,
@@ -20,6 +21,7 @@ describe("fresh production journey", () => {
     expect(await lastVisibleDialogueText()).not.toBe("");
 
     const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
+    await completeP1PracticeTutorial();
     await advanceDialogueUntil(
       () => elementExists(hotspot),
       DIALOGUE_DRAIN_CAP,
