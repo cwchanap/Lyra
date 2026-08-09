@@ -6,95 +6,90 @@
 
 ## 1. Summary
 
-Add one focused repo-contract skill, `.claude/skills/writing-analysis-scene/SKILL.md`, for authoring the Chapter 1 `analysis_scene_<K>.md` contract that already exists after HPA-259.
+Add one focused repo-contract skill, `.claude/skills/writing-analysis-scene/SKILL.md`, for authoring the Chapter 1 `analysis_scene_<K>.md` contract.
 
-The compiler remains the source of truth for syntax, references, provenance interpretation, accepted-solution normalization, asset metadata, and reachability. The skill exists to teach writer intent and ownership, not to become a second schema specification.
+The compiler remains the source of truth for syntax, references, provenance interpretation, accepted-solution normalization, asset metadata, and reachability. The skill teaches writer intent and ownership; it is not a second schema implementation.
 
-The implementation stays deliberately small:
+The implementation remains intentionally small:
 
 - one new Analysis authoring skill;
 - one compiler-backed invalid unsupported-board fixture;
-- narrow routing/story-state corrections in existing repo guidance; and
+- narrow routing/story-state links in existing repo guidance; and
 - no parser, runtime, frontend, save, layout-editor, or Chapter 2 work.
 
-Canonical copyable examples remain compiler fixtures. No Markdown-fence test harness or generated-schema documentation layer is introduced.
+Canonical copyable examples remain compiler fixtures. No Markdown-fence compiler, schema-doc generator, or extension framework is introduced.
 
-## 2. Why this is actionable now
+## 2. Baseline and sequencing
 
-HPA-259 is merged and already provides the authored Analysis contract:
+HPA-259 is merged and supplies the original Chapter 1 Analysis contract:
 
 - `analysis_scene_<K>.md` manifest dispatch;
 - source-located parsing;
-- the closed `classify`, `order`, and `threshold` board kinds;
+- closed `classify`, `order`, and `threshold` board kinds;
 - evidence/statement-backed cards;
 - positive story unlock expressions;
 - story reveal validation;
 - provenance-backed threshold validation;
 - deterministic normalized accepted answers;
 - qualified Analysis scene/board registration; and
-- the full Chapter 1 Beat 8.5 compiler fixture under `packages/scripts/__fixtures__/analysis-chapter-1/`.
+- the full Beat 8.5 compiler fixture under `packages/scripts/__fixtures__/analysis-chapter-1/`.
 
-HPA-265 is the intended production consumer for the real Beat 8.5 scene. HPA-552 should land before or alongside that authoring pass so writers use the real contract instead of free-forming it.
+HPA-265 is the intended production consumer for the real Beat 8.5 scene.
 
-HPA-260 is not required to document what Markdown the compiler accepts.
+HPA-561 PR #44 is also in flight and changes several overlapping writer/reviewer skills plus the Chapter 1 onboarding Analysis scene. HPA-552 implementation must start from or rebase onto post-#44 `main` before touching those overlapping files. It must preserve HPA-561's narration/catalog/background/review hardening.
 
-## 3. Current repository gaps
+This sequencing rule also means the new Analysis skill must describe the **current post-#44 Chapter 1 compiler contract**, not freeze a pre-#44 snapshot. Two existing tutorial-only additions from #44 therefore need a narrow note:
+
+- `practice:<id>` Analysis card sources for the P1 onboarding scene; and
+- optional threshold `### Incorrect Selection` feedback blocks.
+
+These are already-built Chapter 1 exceptions, not new HPA-552 features. They must not be generalized into Beat 8.5 Case File/provenance semantics.
+
+## 3. Repository gaps
 
 ### 3.1 No dedicated Analysis authoring skill
 
-`CLAUDE.md` treats `.claude/skills/*/SKILL.md` as the repo authoring contract, but Analysis is the only compiler-driven scene family without its own writing skill.
+`CLAUDE.md` treats `.claude/skills/*/SKILL.md` as the authoring contract, but Analysis has no dedicated writer skill.
 
 ### 3.2 Chapter-manifest guidance is stale
 
-`writing-chapter-manifest` still documents only `scene_*`, `investigation_scene_*`, and `interrogation_scene_*`, even though the compiler accepts `analysis_scene_<K>.md`.
+`writing-chapter-manifest` still omits `analysis_scene_<K>.md`.
 
 ### 3.3 Story-writing orchestration is stale
 
-`subagent-driven-story-writing` does not yet map reasoning/workbench beats to `analysis_scene_<K>.md` or dispatch `writing-analysis-scene`.
+`subagent-driven-story-writing` does not route Analysis files to `writing-analysis-scene` or include Analysis-specific brief inputs.
 
 ### 3.4 Investigation/interrogation qualified-Analysis notes are stale
 
-Both skills already show:
+Both skills already show qualified Analysis predicates but still describe Analysis registration as synthetic-fixture-only. HPA-259 made those references part of the production compiler contract.
 
-```text
-analysis_scene:<chapter_id>@<scene_id> completed
-analysis_board:<chapter_id>@<scene_id>@<board_id> completed
-```
+Corrected guidance must say:
 
-but still describe Analysis registration as synthetic-fixture-only. HPA-259 has already made qualified Analysis refs part of the production compiler contract.
+- qualified Analysis refs must resolve to manifest-owned Analysis content;
+- playable content should depend only on completion that its runtime/content flow can actually produce; and
+- prefer emitted Facts/Objectives when the narrative dependency is the earned conclusion rather than UI completion itself.
 
-The corrected guidance must preserve an important distinction:
+Authorization remains separate: Analysis can prepare a request but must not grant `narrow_lock_export`.
 
-- the compiler can resolve qualified Analysis references now;
-- playable content may only depend on a completion that the runtime/content sequence can actually produce; and
-- when the narrative dependency is the conclusion itself, prefer the durable Fact/Objective emitted by Analysis over coupling later prose to the workbench UI event.
+### 3.5 `reviewing-story-scenes` needs only the final new-skill link after HPA-561
 
-Authorization remains separate: solving Analysis may prepare a request, but must not grant `narrow_lock_export`.
+Current `main` still shows three-family review routing, but HPA-561 PR #44 already adds:
 
-### 3.5 `reviewing-story-scenes` needs only a post-HPA-561 link, not a second rewrite
+- `analysis_scene_*.md` to description/When-to-Use;
+- Analysis files to Phase 1 discovery;
+- Analysis Intro / Result Dialogue / Outro to the existing semantic axes; and
+- Analysis-aware visual review through the existing Axis 5 rules.
 
-Current `main` still shows the old three-family review routing, but HPA-561 PR #44 already changes `reviewing-story-scenes` to:
+HPA-552 must not duplicate that work.
 
-- discover `analysis_scene_*.md`;
-- include Analysis in `When to Use`;
-- include Analysis files in Phase 1 scene discovery; and
-- review Analysis Intro / Result Dialogue / Outro under the existing semantic axes.
+After rebasing onto post-#44 `main`, HPA-552 only adds the link #44 could not add before the skill existed: name `writing-analysis-scene` in the review skill's related/relevant format-skill guidance, while verifying #44's Analysis discovery/axes remain present.
 
-Therefore HPA-552 must **not** reimplement those HPA-561 edits.
+### 3.6 The Linear answer-key non-goal is over-broad
 
-After rebasing onto post-#44 `main`, HPA-552 only needs the small link that #44 could not add before this skill existed:
-
-- name `writing-analysis-scene` in the review skill's related/relevant format-skill guidance; and
-- verify the HPA-561 Analysis discovery/axis coverage is still present.
-
-If that baseline is unexpectedly absent after #44 lands, stop and reconcile ownership instead of copying the old review skill forward.
-
-### 3.6 The Linear answer-key non-goal is over-broad after HPA-259
-
-HPA-552 currently says “no answer-key data in any authored or shared surface.” Taken literally, that conflicts with HPA-259 because authors necessarily declare semantic solution intent:
+The ticket says “no answer-key data in any authored or shared surface,” but HPA-259 requires authors to declare semantic solution intent:
 
 - classify `Accepted Cards`;
-- order `Accepted Order` and `Fixed Anchors`; and
+- order `Accepted Order` / `Fixed Anchors`; and
 - threshold sufficiency constraints.
 
 The real invariant is:
@@ -104,40 +99,43 @@ The real invariant is:
 ## 4. Goals
 
 1. Give Chapter 1 writers one skill for `analysis_scene_<K>.md`.
-2. Cover only `classify`, `order`, and `threshold`.
-3. Teach author intent without cloning validator implementation details.
-4. Keep cards as references to already-authored case records.
-5. Explain threshold provenance/source-group/capability semantics at the level writers need.
-6. Keep canonical valid and invalid examples compiler-backed.
-7. Route authoring/orchestration/review guidance to the new skill without overwriting HPA-561.
-8. Preserve the request-readiness vs institutional-authorization boundary.
+2. Cover only `classify`, `order`, and `threshold` board families.
+3. Teach author intent without duplicating validator implementation.
+4. Keep real case-analysis cards tied to existing evidence/statements and source-owned provenance.
+5. Document HPA-561's tutorial-only `practice:` / exact wrong-selection exceptions narrowly if #44 lands as planned.
+6. Explain threshold source-group/procedural-status/proof-capability semantics at the level writers need.
+7. Keep valid/invalid examples compiler-backed.
+8. Route authoring/orchestration/review guidance to the new skill without overwriting HPA-561.
+9. Preserve request-readiness vs institutional-authorization ownership.
 
 ## 5. Non-goals
 
-- No Analysis runtime changes.
-- No frontend workbench or persistence changes.
+- No Analysis runtime/frontend/persistence work.
 - No layout-editor preview/provenance inspector.
 - No map authoring.
-- No Chapter 2 `compare` / `route`.
-- No Chapter 3+ `chain`.
-- No freeform/plugin/template registry.
+- No `compare`, `route`, `chain`, freeform, or plugin/template registry.
 - No schema-to-doc generator.
-- No compiler change merely to make the skill easier to write.
+- No compiler change for documentation convenience.
 - No Analysis-local Evidence/Statement Manifest.
 - No duplicate provenance model.
-- No rich/progressive hint system.
+- No progressive hint system.
 - No Analysis self-grant of institutional authorization.
-- No second semantic-review axis or review framework.
+- No new semantic-review axis/framework.
+- No generalized practice-card subsystem beyond documenting the already-built onboarding exception.
 
 ## 6. Selected approach: reference-first skill + compiler fixtures
 
-The skill explains concepts, structure, workflow, and common mistakes, then points writers to compiler-exercised fixtures.
-
-Canonical valid example:
+Canonical valid case-analysis example:
 
 - `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`
 - companion source records: `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/investigation_scene_1.md`
 - companion story/source-group definitions: `packages/scripts/__fixtures__/analysis-chapter-1/story_catalog.md`
+
+Post-HPA-561 tutorial-only reference, if #44 lands unchanged:
+
+- `docs/stories_plan/chapter_1/analysis_scene_p1_5.md`
+
+Use this only to document `practice:<id>`, exact `Incorrect Selection`, and scene-tag asset metadata already used by the real tutorial. It is not the canonical Beat 8.5 case-analysis example.
 
 Canonical invalid example:
 
@@ -145,87 +143,86 @@ Canonical invalid example:
 - declares `Kind: route`;
 - expected diagnostic: `analysisBoardInvalidKind`.
 
-The invalid fixture should include one tiny valid `scene_0.md` before the invalid Analysis scene. That keeps the Chapter playable-scene count non-zero, so a manual compile reports the intended unsupported-kind failure without the incidental `chapterNoPlayableScenes` diagnostic.
+The invalid fixture includes one tiny valid `scene_0.md` before the invalid Analysis scene. This keeps the chapter playable-scene count non-zero after Analysis parse failure, avoiding incidental `chapterNoPlayableScenes` noise.
 
-This end-to-end invalid fixture is still useful even though `parser-analysis.test.ts` already unit-tests unsupported `Kind`: the HPA-552 fixture is the named writer-facing invalid example and proves manifest/orchestrator compile behavior.
+This fixture remains useful despite existing parser unit coverage because it is the named writer-facing invalid example and exercises the manifest/orchestrator compile path.
 
-### Rejected alternatives
+Rejected alternatives remain:
 
-**Full valid scene duplicated into `SKILL.md`:** rejected because it creates a drifting second copy.
-
-**Extract-and-compile Markdown fences:** rejected because it adds a bespoke doc-test mechanism for one skill.
-
-**Generate docs from parser metadata:** rejected as YAGNI.
+- duplicate full valid scene inside the skill;
+- fence-extraction/doc-test harness; and
+- generated docs from parser metadata.
 
 ## 7. Ownership model
 
-### 7.1 Compiler owns syntax and semantic validity
+### 7.1 Compiler owns syntax/semantics
 
-Authoritative implementation surfaces remain:
+Authoritative implementation surfaces:
 
-- `packages/scripts/compile-scenes/parser-analysis.ts`
-- `packages/scripts/compile-scenes/validator-analysis.ts`
-- `packages/scripts/compile-scenes/parser-common.ts`
-- `packages/scripts/compile-scenes/parser-assets.ts`
-- `packages/scripts/compile-scenes/parser-unlock.ts`
-- `packages/scripts/compile-scenes/story-catalog.ts`
-- `packages/scripts/compile-scenes/case-record-provenance.ts`
-- `packages/scripts/compile-scenes/reachability.ts`
+- `parser-analysis.ts`
+- `validator-analysis.ts`
+- `parser-common.ts`
+- `parser-assets.ts`
+- `parser-unlock.ts`
+- `story-catalog.ts`
+- `case-record-provenance.ts`
+- `reachability.ts`
 
-If the skill disagrees with compiler behavior, correct the skill.
+If skill prose disagrees with code, correct the skill.
 
-### 7.2 Investigation/interrogation own evidence and statements
+### 7.2 Real case records remain investigation/interrogation-owned
 
-Analysis cards reference already-declared:
+Beat 8.5 and other real case-analysis cards reference:
 
 ```text
 evidence:<id>
 statement:<id>
 ```
 
-Source-group identity, procedural status, proof capabilities, representation layer, completeness/confidence, and supersession remain metadata on the source record.
+Source Group, Procedural Status, Proof Capabilities, Representation Layer, Completeness/Confidence, and Supersedes remain on the source record.
 
-A threshold board reads that metadata through the referenced cards. Do not copy provenance onto the Analysis card or encode fake source identity in prose.
+Threshold acceptance reads those semantics through card references. Do not copy them to Analysis cards.
 
-### 7.3 Analysis author owns semantic reasoning intent
+### 7.3 Tutorial-only practice exception
 
-The writer owns:
+On the post-HPA-561 baseline, the P1 onboarding Analysis scene may reference:
 
-- scene title and Summary;
-- Intro / Result Dialogue / Outro;
-- board labels/prompts/feedback/static hint;
+```text
+practice:<id>
+```
+
+These are tutorial-local carriers, not Case File evidence/statements. The skill must make this boundary explicit:
+
+- use `practice:` only for the onboarding tutorial contract that already exists;
+- do not use `practice:` in Beat 8.5 or normal Case File reasoning;
+- do not assign Case File provenance/source groups/capabilities to practice cards;
+- do not mix practice and Case File cards in one threshold eligible set; and
+- all-practice threshold boards keep provenance requirements neutral as required by the compiler.
+
+HPA-552 does not create or broaden practice storage/runtime behavior.
+
+### 7.4 Analysis author owns reasoning intent
+
+Writers own:
+
+- title/Summary;
+- Intro/Result Dialogue/Outro;
+- board labels/prompts/feedback/static Hint;
 - board/card/group IDs;
 - card source references;
-- classify accepted-group intent;
-- exact order intent;
+- classify accepted groups;
+- exact order + fixed anchors;
 - threshold sufficiency constraints;
 - positive board prerequisites; and
 - story outputs.
 
-### 7.4 Generated/runtime output remains generated
+### 7.5 Generated/runtime data remains generated
 
-Writers never hand-edit:
+Writers do not hand-edit generated scene/catalog JSON, normalized answer maps/selections, runtime save state, public answer-key-free views, or filesystem paths.
 
-- generated scene JSON;
-- generated `story_catalog.json`;
-- normalized `acceptedGroupByCard`;
-- normalized `acceptedSelections`;
-- runtime draft/save state;
-- public answer-key-free views; or
-- asset filesystem paths.
+## 8. New skill contract
 
-## 8. New `writing-analysis-scene` contract
-
-### 8.1 Required background
-
-The skill delegates:
-
-- player-facing Traditional Chinese dialogue, expressions, narration, and general scene prose to `writing-detective-game-dialogue`;
-- provenance/source-group semantics to the existing investigation/interrogation record guidance.
-
-It does not restate those manuals.
-
-### 8.2 Structural shape
+### 8.1 Structure
 
 ```text
 H1  # Scene N: <title>
@@ -234,22 +231,22 @@ H2  ## Intro
 H2  ## Board: <label> {#board_id}
 H3      ### Card: <label> {#card_id}
 H3      ### Group: <label> {#group_id}       # classify only
+H3      ### Incorrect Selection               # threshold only, optional post-HPA-561
 H3      ### Result Dialogue
 H2  ## Outro
 ```
 
-Writer-significant rules:
+Core rules:
 
 - exactly one Intro before all boards;
 - one or more boards;
-- exactly one Outro after all boards;
-- every board has non-empty Result Dialogue;
-- board IDs are scene-local;
-- card/group IDs are board-local;
-- cards reference existing case records; and
-- board Reveals are story outputs, not local inventory acquisition.
+- exactly one Outro after boards;
+- non-empty Result Dialogue on every board;
+- board IDs scene-local;
+- card/group IDs board-local; and
+- no Analysis-local Evidence/Statement Manifest.
 
-### 8.3 Common board fields
+### 8.2 Common board fields
 
 Required:
 
@@ -264,40 +261,46 @@ Optional:
 - `Unlock`
 - `Hint`
 
-Closed-key parsing and diagnostics remain compiler-owned.
+Closed-key validation remains compiler-owned.
+
+### 8.3 Cards
+
+Normal case analysis:
+
+```text
+Source: evidence:<id>
+Source: statement:<id>
+```
+
+Post-HPA-561 onboarding-only exception:
+
+```text
+Source: practice:<id>
+```
+
+Card Summary is player-facing reasoning copy and does not redefine provenance.
 
 ### 8.4 `classify`
 
-Use when the player must decide which conclusion/package each record supports.
+Each Group has `Description` + `Accepted Cards`; every displayed card belongs to exactly one accepted group.
 
-Each Group has:
-
-- `Description`
-- `Accepted Cards`
-
-Every displayed card belongs to exactly one accepted group.
-
-The writer edits `Accepted Cards`; the compiler derives the runtime `acceptedGroupByCard`.
+Compiler derives normalized `acceptedGroupByCard`.
 
 ### 8.5 `order`
 
-Use when the player reconstructs one exact sequence.
+The skill must state the real parser/validator contract without hedging:
 
-Rules that should be explicit in the skill:
-
-- `Accepted Order` is required and names every displayed card exactly once.
+- `Accepted Order` is required and contains every displayed card exactly once.
 - `Fixed Anchors` is **required on every order board**.
-- Use `Fixed Anchors: []` when no card is pinned.
-- Non-empty entries use `<card_id>@<one-based-position>`.
-- Anchor card IDs/positions must be unique, in range, and agree with `Accepted Order` at that position.
+- use `Fixed Anchors: []` when nothing is pinned;
+- non-empty entries use `<card_id>@<one-based-position>`;
+- card IDs/positions are unique, in range, and must agree with Accepted Order at that position.
 
-Do not invent sentinel values or omit `Fixed Anchors` when nothing is pinned.
+Do not omit the field or invent a sentinel.
 
 ### 8.6 `threshold`
 
-Use when the player selects a procedurally sufficient combination of already-obtained records.
-
-Author fields:
+Case-analysis fields:
 
 - `Eligible Cards`
 - `Minimum Selected`
@@ -306,135 +309,112 @@ Author fields:
 - `Allowed Procedural Statuses`
 - `Require Source Group`
 
-Writer-facing semantics:
+Case-record semantics:
 
-- independence counts distinct non-null source-group IDs;
-- if `Require Source Group: true`, every selected record needs a source group;
-- allowed procedural statuses apply per selected record;
-- required proof capabilities are satisfied by the union across selected records; and
-- the metadata comes from the source evidence/statement records.
+- allowed status applies per selected record;
+- required source group applies per selected record;
+- independence counts distinct non-null group IDs;
+- capabilities are satisfied by union across the selection; and
+- provenance comes from referenced source records.
 
-Do not document the subset-materialization implementation or materialization budget as game-design rules.
+Tutorial practice thresholds follow the compiler's neutral-provenance rule and do not mix practice with Case File cards.
 
-### 8.7 Story progress and authority
+Do not expose materialization implementation details as authoring design rules.
 
-Qualified Analysis predicates use the existing positive story-expression grammar and must be fully qualified.
+### 8.7 Optional threshold `Incorrect Selection`
 
-Beat 8.5 may assert facts and complete:
+If the post-HPA-561 compiler retains this already-built feature, a threshold board may add targeted exact wrong-subset feedback:
 
-```text
-prepare_narrow_lock_request
+```markdown
+### Incorrect Selection
+
+- **Cards:** [card_a, card_b]
+- **Feedback:** <short player-facing explanation>
 ```
 
-It must not grant:
+It remains optional and narrow:
 
-```text
-narrow_lock_export
-```
+- only threshold boards;
+- non-empty unique displayed cards;
+- no duplicate authored wrong set;
+- must not equal an accepted selection; and
+- does not replace the board's general `Incorrect Feedback` or create progressive hint state.
 
-`grant_authorization:<id>` remains compiler-forbidden on Analysis boards.
+### 8.8 Story progress/authority
 
-### 8.8 Feedback
+Beat 8.5 may establish facts and complete `prepare_narrow_lock_request`.
 
-First-version guidance stays limited to:
+It may not grant `narrow_lock_export`; `grant_authorization` remains compiler-forbidden on Analysis boards.
 
-- `Incomplete Feedback`;
-- `Incorrect Feedback`;
-- optional static `Hint`; and
-- accepted `Result Dialogue`.
+### 8.9 Feedback
 
-No progressive/contextual hint system is added.
+First-version skill documents:
 
-### 8.9 Analysis asset contract
+- Incomplete Feedback;
+- general Incorrect Feedback;
+- optional static Hint;
+- optional exact threshold Incorrect Selection only if present on the post-HPA-561 baseline; and
+- Result Dialogue.
 
-The review claim that Chapter 1 Analysis has “no authored asset fields” is not correct.
+No new progressive feedback engine is added.
 
-`parser-analysis.ts` routes Intro, Result Dialogue, and Outro through `consumeDialogueUntilHeading`. `parser-common.ts` allows a `[場景：…]` dialogue item to consume the current visual asset metadata, and `enrichAnalysisScene` walks all three Analysis dialogue carriers.
+### 8.10 Asset contract
 
-Therefore the skill should say exactly:
+The review claim that Analysis has no authored asset fields is incorrect.
 
-- Intro, Result Dialogue, and Outro may use `[場景：…]` followed immediately by the visual/audio metadata accepted by the current scene-tag asset contract.
-- On the post-HPA-561 baseline this includes `Background Prompt`, `Background Asset ID`, `BGM`, and `BGS` where applicable.
-- Analysis boards themselves do **not** have board-level background/audio metadata fields.
-- Analysis has no Evidence/Statement Manifest, so it does not author evidence `Image Prompt` fields locally.
-- Writers never author filesystem paths.
+Analysis Intro, Result Dialogue, and Outro all use `consumeDialogueUntilHeading`. A `[場景：…]` in those dialogue carriers can consume the shared scene-tag visual/audio metadata, and `enrichAnalysisScene` traverses all three.
 
-This matches the actual HPA-561 production Analysis scene, which already carries scene-tag background metadata in its Intro.
+On the post-HPA-561 baseline, that scene-tag metadata includes:
 
-## 9. Canonical example strategy
+- `Background Prompt`;
+- `Background Asset ID`;
+- `BGM`;
+- `BGS`.
 
-### Valid
+Rules for the skill:
 
-`packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md` remains the canonical three-board copyable example.
+- attach supported visual/audio metadata immediately after `[場景：…]` in Intro/Result Dialogue/Outro;
+- do not put background/audio fields directly on Board/Card/Group metadata;
+- no Analysis-local Evidence Manifest means no local evidence `Image Prompt`; and
+- never author filesystem paths.
 
-It exercises:
+The real HPA-561 `analysis_scene_p1_5.md` already demonstrates Intro scene-tag background metadata.
 
-- classify/order/threshold;
-- evidence and statement card sources;
-- accepted classify groups;
-- required Fixed Anchors;
-- threshold independence/capabilities/procedural status;
-- qualified board unlocks;
-- facts/objective outputs;
-- minimal feedback and hint.
+## 9. Repo-contract synchronization
 
-### Invalid
+### 9.1 `CLAUDE.md`
 
-Add `hpa_552_analysis_unsupported_board_kind` with:
+Add Analysis scene family -> `writing-analysis-scene`.
 
-1. a valid `scene_0.md` listed first;
-2. an invalid `analysis_scene_1.md` with `Kind: route`; and
-3. `expected-error.txt` = `analysisBoardInvalidKind`.
+### 9.2 `writing-chapter-manifest`
 
-The existing invalid-fixture runner discovers it automatically. No new harness is added.
+Add Analysis filename/type inference. No explicit type metadata.
 
-## 10. Repo-contract synchronization
+### 9.3 `subagent-driven-story-writing`
 
-There are six touched guidance surfaces after HPA-561, but only five are stale in the old-main sense.
+Map reasoning/evidence-organization workbenches to Analysis and dispatch the new skill. Analysis briefs provide exact IDs/source owner paths/prerequisites/story outputs/authority boundary without cloning schema.
 
-### 10.1 `CLAUDE.md`
+### 9.4 `writing-investigation-scene`
 
-Add `analysis_scene_<K>.md` and route it to `writing-analysis-scene`.
+Replace only stale synthetic-only qualified-Analysis wording.
 
-### 10.2 `writing-chapter-manifest`
+### 9.5 `writing-interrogation-scene`
 
-Add Analysis filename/type inference. No explicit type field.
+Same focused correction.
 
-### 10.3 `subagent-driven-story-writing`
+### 9.6 `reviewing-story-scenes`
 
-Map reasoning/evidence-organization workbenches to `analysis_scene_<K>.md` and dispatch `writing-analysis-scene`.
+Treat this as a sixth touched guidance file only for the new-skill link.
 
-Analysis briefs provide exact board/card/group IDs, source-record paths, prerequisites, story outputs, and authorization boundary. Do not copy the schema into the orchestration skill.
+After rebasing onto #44:
 
-### 10.4 `writing-investigation-scene`
+- verify Analysis discovery/When-to-Use/axes are already present;
+- add `writing-analysis-scene` to related/relevant format-skill guidance; and
+- leave the seven-axis design unchanged.
 
-Replace only stale synthetic-only qualified-Analysis wording. Keep authorization rules intact.
+Do not reapply #44's larger semantic-review patch.
 
-### 10.5 `writing-interrogation-scene`
-
-Apply the same focused story-state correction.
-
-### 10.6 `reviewing-story-scenes`
-
-Do **not** reapply #44's Analysis discovery/axis changes.
-
-After rebasing onto post-#44 `main`:
-
-- verify `analysis_scene_*.md` is already in description, When to Use, Phase 1 discovery, and relevant semantic axes;
-- add `writing-analysis-scene` to the related/relevant format-skill list now that the skill exists; and
-- leave the seven-axis model unchanged.
-
-This is a small final link, not a second review-skill redesign.
-
-## 11. HPA-561 sequencing
-
-HPA-561 PR #44 edits overlapping writer/reviewer skills and already adds Analysis semantic-review support. HPA-552 implementation must start from or rebase onto post-#44 `main` before editing those files.
-
-Do not copy old skill files over HPA-561 narration/catalog/background changes.
-
-This is an integration sequencing rule, not a product dependency or reason to broaden HPA-552.
-
-## 12. Validation
+## 10. Validation
 
 Run:
 
@@ -445,51 +425,51 @@ bun run check:scripts
 bun run format:check
 ```
 
-Focused compiler tests may be run first, but the full `test:scripts` suite is the final authority.
+No Rust/frontend/E2E/layout-editor checks are required unless implementation unexpectedly touches them.
 
-No Rust/frontend/E2E/layout-editor checks are required unless implementation unexpectedly touches those layers.
-
-## 13. Expected implementation diff
+## 11. Expected implementation diff
 
 Create:
 
 - `.claude/skills/writing-analysis-scene/SKILL.md`
-- `packages/scripts/__fixtures__/invalid/hpa_552_analysis_unsupported_board_kind/chapter_1/chapter.md`
-- `packages/scripts/__fixtures__/invalid/hpa_552_analysis_unsupported_board_kind/chapter_1/scene_0.md`
-- `packages/scripts/__fixtures__/invalid/hpa_552_analysis_unsupported_board_kind/chapter_1/analysis_scene_1.md`
-- `packages/scripts/__fixtures__/invalid/hpa_552_analysis_unsupported_board_kind/expected-error.txt`
+- invalid fixture `chapter.md`
+- invalid fixture `scene_0.md`
+- invalid fixture `analysis_scene_1.md`
+- invalid fixture `expected-error.txt`
 
 Modify narrowly:
 
 - `CLAUDE.md`
-- `.claude/skills/writing-chapter-manifest/SKILL.md`
-- `.claude/skills/subagent-driven-story-writing/SKILL.md`
-- `.claude/skills/writing-investigation-scene/SKILL.md`
-- `.claude/skills/writing-interrogation-scene/SKILL.md`
-- `.claude/skills/reviewing-story-scenes/SKILL.md`
+- `writing-chapter-manifest`
+- `subagent-driven-story-writing`
+- `writing-investigation-scene`
+- `writing-interrogation-scene`
+- `reviewing-story-scenes`
 
-No compiler/runtime production source file should need to change.
+No compiler/runtime production source change should be needed.
 
-## 14. Review resolution
+## 12. Review resolution
 
 Accepted:
 
-- make `Fixed Anchors` exact: required, `[]` when none, one-based entries consistent with accepted order;
-- keep the end-to-end invalid fixture but add a valid linear scene to suppress incidental `chapterNoPlayableScenes` noise;
-- retain the unsupported-kind fixture despite existing unit coverage because it is the canonical writer-facing invalid example.
+- Fixed Anchors guidance: required, `[]` when none, one-based entries consistent with Accepted Order.
+- Clean the invalid fixture with a valid linear scene so its manual output does not include incidental `chapterNoPlayableScenes`.
+- Keep the end-to-end unsupported-kind fixture despite existing parser unit coverage.
 
 Accepted with adjustment:
 
-- treat `reviewing-story-scenes` as a sixth touched guidance surface only for the final `writing-analysis-scene` link; HPA-561 #44 already owns and implements Analysis discovery/axis coverage.
+- `reviewing-story-scenes` is a sixth touched surface only for the final link to `writing-analysis-scene`; HPA-561 already owns Analysis discovery/axes.
 
 Rejected after code verification:
 
-- “Analysis has no authored asset fields.” The shared dialogue parser accepts scene-tag visual/audio metadata in Analysis Intro / Result Dialogue / Outro, and HPA-561's production Analysis scene already uses it. HPA-552 should document the supported scene-tag asset boundary, not prohibit it.
+- “Analysis has no authored asset fields.” Shared scene-tag metadata is supported in Analysis dialogue carriers and already used by the real HPA-561 tutorial scene.
 
-Everything else in the original design remains unchanged: compiler authority, Chapter 1-only board families, reference-first examples, case-record ownership, normalized-answer boundary, authority separation, and minimal verification surface.
+Additional post-#44 drift found during verification:
 
-## 15. Final decision
+- HPA-561 adds tutorial-only `practice:<id>` cards and threshold `Incorrect Selection` blocks. Because HPA-552 deliberately rebases onto that compiler baseline, the skill documents these existing exceptions narrowly instead of leaving false pre-#44 guidance.
 
-Implement HPA-552 as a small reference-first authoring contract on top of HPA-259 and the post-HPA-561 skill baseline.
+Everything else stays unchanged: compiler authority, three board families, reference-first examples, source-owned provenance, normalized-answer boundary, authorization separation, and no new architecture.
 
-The compiler already knows how Analysis works. HPA-552 only needs to make that contract reliable for writers, orchestration, and semantic review without inventing another architecture layer.
+## 13. Final decision
+
+Implement HPA-552 as a small reference-first authoring contract on the post-HPA-561 Chapter 1 compiler/skill baseline. The missing product is reliable writer guidance, not another framework.
