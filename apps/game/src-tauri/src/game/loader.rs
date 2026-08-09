@@ -2,7 +2,7 @@
 use crate::game::error::GameError;
 use crate::game::provenance::validate_scene_records_against_catalog;
 use crate::game::schema::{
-    AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
+    AnalysisBoardJson, AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
     InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
     InterrogationSceneJson, InterrogationUnlockExpr, InvestigationRevealTarget,
     InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget,
@@ -59,10 +59,26 @@ fn validate_scene_references(scene: &SceneJson, file_rel: &str) -> Result<(), Ga
         SceneJson::Linear(_) => Ok(()),
         SceneJson::Investigation(scene) => validate_investigation_scene_references(scene, file_rel),
         SceneJson::Interrogation(scene) => validate_interrogation_scene_references(scene, file_rel),
-        // Analysis authoring, solution, and provenance validation are compiler
-        // owned. Rust only consumes the closed immutable wire below.
-        SceneJson::Analysis(_) => Ok(()),
+        SceneJson::Analysis(scene) => validate_analysis_scene_runtime_surface(scene, file_rel),
     }
+}
+
+fn validate_analysis_scene_runtime_surface(
+    scene: &AnalysisSceneJson,
+    file_rel: &str,
+) -> Result<(), GameError> {
+    for board in &scene.boards {
+        let kind = match board {
+            AnalysisBoardJson::Threshold { .. } => continue,
+            AnalysisBoardJson::Classify { .. } => "classify",
+            AnalysisBoardJson::Order { .. } => "order",
+        };
+        return Err(GameError::scene_validation_failed(format!(
+            "{file_rel}: analysis board '{}' has unsupported kind '{kind}'; only threshold boards are playable.",
+            board.common().id,
+        )));
+    }
+    Ok(())
 }
 
 fn validate_investigation_scene_references(
@@ -2033,22 +2049,101 @@ mod tests {
             "assetRefs": [],
             "intro": [],
             "boards": [{
-                "kind": "classify",
+                "kind": "threshold",
                 "common": {
                     "id": "board_1",
                     "label": "Board",
-                    "prompt": "Classify.",
+                    "prompt": "Select.",
                     "unlock": unlock,
                     "reveals": reveals,
                     "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
                     "cards": [],
                     "resultDialogue": []
                 },
-                "groups": [],
-                "acceptedGroupByCard": {}
+                "minimumSelected": 0,
+                "acceptedSelections": [[]]
             }],
             "outro": []
         })
+    }
+
+    // Break caught: a valid generic compiler wire for classify or order could
+    // cross the loader boundary, become a runtime scene, and serialize a
+    // public board the threshold-only client cannot operate.
+    #[test]
+    fn rejects_non_threshold_analysis_boards_before_runtime_serialization() {
+        let cases = [
+            (
+                "classify",
+                json!({
+                    "type": "analysis",
+                    "id": "analysis_scene_1",
+                    "title": "Analysis",
+                    "summary": "Fixture analysis scene.",
+                    "assetRefs": [],
+                    "intro": [],
+                    "boards": [{
+                        "kind": "classify",
+                        "common": {
+                            "id": "board_1",
+                            "label": "Board",
+                            "prompt": "Classify.",
+                            "unlock": null,
+                            "reveals": [],
+                            "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                            "cards": [],
+                            "resultDialogue": []
+                        },
+                        "groups": [],
+                        "acceptedGroupByCard": {}
+                    }],
+                    "outro": []
+                }),
+            ),
+            (
+                "order",
+                json!({
+                    "type": "analysis",
+                    "id": "analysis_scene_1",
+                    "title": "Analysis",
+                    "summary": "Fixture analysis scene.",
+                    "assetRefs": [],
+                    "intro": [],
+                    "boards": [{
+                        "kind": "order",
+                        "common": {
+                            "id": "board_1",
+                            "label": "Board",
+                            "prompt": "Order.",
+                            "unlock": null,
+                            "reveals": [],
+                            "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                            "cards": [],
+                            "resultDialogue": []
+                        },
+                        "acceptedOrder": [],
+                        "fixedAnchors": []
+                    }],
+                    "outro": []
+                }),
+            ),
+        ];
+
+        for (kind, scene) in cases {
+            let resources = unique_temp_dir();
+            write_scene_json(&resources, "analysis_scene_1.json", scene);
+
+            let error = decode_scene_json_without_catalog_for_test(
+                &resources,
+                "chapter_1/analysis_scene_1.json",
+            )
+            .expect_err("non-threshold analysis boards must be rejected before runtime state");
+
+            assert_eq!(error.code, "sceneValidationFailed");
+            assert!(error.message.contains("board_1"), "{error:?}");
+            assert!(error.message.contains(kind), "{error:?}");
+            let _ = fs::remove_dir_all(resources);
+        }
     }
 
     // Break caught: analysis scenes loaded through the story validation path
