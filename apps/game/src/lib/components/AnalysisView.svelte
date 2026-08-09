@@ -22,32 +22,31 @@
   let board = $derived(
     analysis?.visibleBoards.find((candidate) => candidate.id === boardId),
   );
-  let threshold = $derived(board?.kind === "threshold" ? board : null);
 
   async function toggleCard(cardId: string) {
-    if (!threshold || disabled) return;
-    const selected = new SvelteSet(threshold.selectedCardIds);
+    if (!board || disabled) return;
+    const selected = new SvelteSet(board.selectedCardIds);
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
-    await onSelection(threshold.id, [...selected]);
+    await onSelection(board.id, [...selected]);
   }
 </script>
 
 <section class="analysis-view" aria-label="分析板">
-  {#if threshold}
+  {#if board}
     <header>
       <p class="eyebrow">推理練習</p>
-      <h2>{threshold.label}</h2>
-      <p>{threshold.prompt}</p>
+      <h2>{board.label}</h2>
+      <p>{board.prompt}</p>
     </header>
 
     <div class="cards" aria-label="可選線索">
-      {#each threshold.cards as card (card.id)}
-        {@const selected = threshold.selectedCardIds.includes(card.id)}
+      {#each board.cards as card (card.id)}
+        {@const selected = board.selectedCardIds.includes(card.id)}
         <button
           type="button"
           class:selected
-          disabled={disabled || !card.available || threshold.completed}
+          disabled={disabled || !card.available || board.completed}
           aria-pressed={selected}
           onclick={() => toggleCard(card.id)}
         >
@@ -63,24 +62,17 @@
 
     <footer>
       <span
-        >已選 {threshold.selectedCardIds.length} / 至少 {threshold.minimumSelected}</span
+        >已選 {board.selectedCardIds.length} / 至少 {board.minimumSelected}</span
       >
       <button
         type="button"
         class="submit"
-        disabled={disabled || threshold.completed}
-        onclick={() => onSubmit(threshold.id)}
+        disabled={disabled || board.completed}
+        onclick={() => onSubmit(board.id)}
       >
         比對推論
       </button>
     </footer>
-  {:else if board}
-    <header>
-      <p class="eyebrow">分析板</p>
-      <h2>{board.label}</h2>
-      <p>{board.prompt}</p>
-    </header>
-    <p class="feedback">此分析板需要分類或排序操作。</p>
   {:else}
     <p class="feedback">分析板載入中。</p>
   {/if}

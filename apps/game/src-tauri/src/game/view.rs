@@ -355,24 +355,6 @@ pub enum SceneView {
     rename_all_fields = "camelCase"
 )]
 pub enum AnalysisBoardView {
-    Classify {
-        id: String,
-        label: String,
-        prompt: String,
-        cards: Vec<AnalysisCardView>,
-        groups: Vec<AnalysisGroupView>,
-        selected_groups_by_card: std::collections::BTreeMap<String, String>,
-        completed: bool,
-    },
-    Order {
-        id: String,
-        label: String,
-        prompt: String,
-        cards: Vec<AnalysisCardView>,
-        ordered_card_ids: Vec<String>,
-        fixed_anchors: Vec<AnalysisFixedAnchorView>,
-        completed: bool,
-    },
     Threshold {
         id: String,
         label: String,
@@ -391,21 +373,6 @@ pub struct AnalysisCardView {
     pub label: String,
     pub summary: String,
     pub available: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisGroupView {
-    pub id: String,
-    pub label: String,
-    pub description: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AnalysisFixedAnchorView {
-    pub card_id: String,
-    pub position: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -55,10 +55,9 @@ use std::path::PathBuf;
 use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
 use story_location::StoryLocationIndex;
 use view::{
-    AnalysisBoardView, AnalysisCardView, AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView,
-    ChapterView, CharacterView, CrossExamView, HotspotView, InquiryQuestionView,
-    InterrogationPhaseView, PendingAcquisitionView, SceneView, SubjectView, SublocationView,
-    TopicView,
+    AnalysisBoardView, AnalysisCardView, AudioCueView, ChapterView, CharacterView, CrossExamView,
+    HotspotView, InquiryQuestionView, InterrogationPhaseView, PendingAcquisitionView, SceneView,
+    SubjectView, SublocationView, TopicView,
 };
 
 pub struct GameEngine {
@@ -2465,8 +2464,20 @@ impl GameEngine {
                     .def
                     .boards
                     .iter()
-                    .filter(|board| scene.is_board_unlocked(board, &self.story_state))
-                    .map(|board| {
+                    .filter_map(|board| {
+                        if !scene.is_board_unlocked(board, &self.story_state) {
+                            return None;
+                        }
+                        // The loader rejects generic classify/order compiler
+                        // variants before runtime creation. Keep the public
+                        // projection total so invalid in-memory state cannot
+                        // reintroduce either wire variant.
+                        let AnalysisBoardJson::Threshold {
+                            minimum_selected, ..
+                        } = board
+                        else {
+                            return None;
+                        };
                         let common = board.common();
                         let cards = common
                             .cards
@@ -2479,66 +2490,19 @@ impl GameEngine {
                             })
                             .collect();
                         let completed = scene.is_board_completed(&common.id);
-                        match board {
-                            AnalysisBoardJson::Classify { groups, .. } => {
-                                AnalysisBoardView::Classify {
-                                    id: common.id.clone(),
-                                    label: common.label.clone(),
-                                    prompt: common.prompt.clone(),
-                                    cards,
-                                    groups: groups
-                                        .iter()
-                                        .map(|group| AnalysisGroupView {
-                                            id: group.id.clone(),
-                                            label: group.label.clone(),
-                                            description: group.description.clone(),
-                                        })
-                                        .collect(),
-                                    selected_groups_by_card: scene
-                                        .group_by_card_by_board
-                                        .get(&common.id)
-                                        .cloned()
-                                        .unwrap_or_default(),
-                                    completed,
-                                }
-                            }
-                            AnalysisBoardJson::Order { fixed_anchors, .. } => {
-                                AnalysisBoardView::Order {
-                                    id: common.id.clone(),
-                                    label: common.label.clone(),
-                                    prompt: common.prompt.clone(),
-                                    cards,
-                                    ordered_card_ids: scene
-                                        .ordered_card_ids_by_board
-                                        .get(&common.id)
-                                        .cloned()
-                                        .unwrap_or_default(),
-                                    fixed_anchors: fixed_anchors
-                                        .iter()
-                                        .map(|anchor| AnalysisFixedAnchorView {
-                                            card_id: anchor.card_id.clone(),
-                                            position: anchor.position,
-                                        })
-                                        .collect(),
-                                    completed,
-                                }
-                            }
-                            AnalysisBoardJson::Threshold {
-                                minimum_selected, ..
-                            } => AnalysisBoardView::Threshold {
-                                id: common.id.clone(),
-                                label: common.label.clone(),
-                                prompt: common.prompt.clone(),
-                                cards,
-                                minimum_selected: *minimum_selected,
-                                selected_card_ids: scene
-                                    .selected_card_ids_by_board
-                                    .get(&common.id)
-                                    .map(|selected| selected.iter().cloned().collect())
-                                    .unwrap_or_default(),
-                                completed,
-                            },
-                        }
+                        Some(AnalysisBoardView::Threshold {
+                            id: common.id.clone(),
+                            label: common.label.clone(),
+                            prompt: common.prompt.clone(),
+                            cards,
+                            minimum_selected: *minimum_selected,
+                            selected_card_ids: scene
+                                .selected_card_ids_by_board
+                                .get(&common.id)
+                                .map(|selected| selected.iter().cloned().collect())
+                                .unwrap_or_default(),
+                            completed,
+                        })
                     })
                     .collect();
                 SceneView::Analysis {
@@ -6779,19 +6743,19 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "assetRefs": [],
                 "intro": [],
                 "boards": [{
-                    "kind": "classify",
+                    "kind": "threshold",
                     "common": {
                         "id": "board_1",
                         "label": "Board",
-                        "prompt": "Classify.",
+                        "prompt": "Select.",
                         "unlock": null,
                         "reveals": [],
                         "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
                         "cards": [],
                         "resultDialogue": []
                     },
-                    "groups": [],
-                    "acceptedGroupByCard": {}
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
                 }],
                 "outro": []
             }"#,

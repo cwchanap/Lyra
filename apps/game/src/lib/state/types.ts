@@ -159,37 +159,16 @@ export type AnalysisCardView = {
   available: boolean;
 };
 
-export type AnalysisBoardView =
-  | {
-      kind: "classify";
-      id: string;
-      label: string;
-      prompt: string;
-      cards: AnalysisCardView[];
-      groups: Array<{ id: string; label: string; description: string }>;
-      selectedGroupsByCard: Record<string, string>;
-      completed: boolean;
-    }
-  | {
-      kind: "order";
-      id: string;
-      label: string;
-      prompt: string;
-      cards: AnalysisCardView[];
-      orderedCardIds: string[];
-      fixedAnchors: Array<{ cardId: string; position: number }>;
-      completed: boolean;
-    }
-  | {
-      kind: "threshold";
-      id: string;
-      label: string;
-      prompt: string;
-      cards: AnalysisCardView[];
-      minimumSelected: number;
-      selectedCardIds: string[];
-      completed: boolean;
-    };
+export type AnalysisBoardView = {
+  kind: "threshold";
+  id: string;
+  label: string;
+  prompt: string;
+  cards: AnalysisCardView[];
+  minimumSelected: number;
+  selectedCardIds: string[];
+  completed: boolean;
+};
 
 export type SceneView =
   | {

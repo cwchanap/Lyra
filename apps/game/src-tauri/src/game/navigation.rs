@@ -696,19 +696,19 @@ mod tests {
                 "assetRefs": [],
                 "intro": [],
                 "boards": [{{
-                    "kind": "classify",
+                    "kind": "threshold",
                     "common": {{
                         "id": "board_1",
                         "label": "Board",
-                        "prompt": "Classify.",
+                        "prompt": "Select.",
                         "unlock": null,
                         "reveals": [],
                         "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
                         "cards": [],
                         "resultDialogue": []
                     }},
-                    "groups": [],
-                    "acceptedGroupByCard": {{}}
+                    "minimumSelected": 1,
+                    "acceptedSelections": [[]]
                 }}],
                 "outro": []
             }}"#
@@ -1695,6 +1695,17 @@ mod tests {
         assert!(matches!(
             view.mode,
             ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
+        ));
+        let SceneView::Analysis { visible_boards, .. } = view.scene else {
+            panic!("analysis navigation must expose its threshold board");
+        };
+        assert!(matches!(
+            visible_boards.as_slice(),
+            [AnalysisBoardView::Threshold {
+                id,
+                minimum_selected: 1,
+                ..
+            }] if id == "board_1"
         ));
         let _ = std::fs::remove_dir_all(resources);
     }

@@ -1,7 +1,15 @@
 import { fireEvent, render } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import AnalysisView from "./AnalysisView.svelte";
-import type { SceneView } from "../state/types";
+import type { AnalysisBoardView, SceneView } from "../state/types";
+
+// @ts-expect-error Public analysis boards are threshold-only.
+const classifyBoardKind: AnalysisBoardView["kind"] = "classify";
+// @ts-expect-error Public analysis boards are threshold-only.
+const orderBoardKind: AnalysisBoardView["kind"] = "order";
+
+void classifyBoardKind;
+void orderBoardKind;
 
 type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
 
@@ -69,12 +77,13 @@ function renderP1(overrides?: {
 
 describe("AnalysisView", () => {
   it("renders all four P1-local practice cards", () => {
-    const { getByText } = renderP1();
+    const { getByText, queryByText } = renderP1();
 
     expect(getByText("標示 REPRINT 的收據")).toBeTruthy();
     expect(getByText("收銀機出紙口的卡紙痕跡")).toBeTruthy();
     expect(getByText("監視器中的找零畫面")).toBeTruthy();
     expect(getByText("手寫帳本的影印費")).toBeTruthy();
+    expect(queryByText("此分析板需要分類或排序操作。")).toBeNull();
   });
 
   it("sends a threshold selection and comparison through the P1 board", async () => {
