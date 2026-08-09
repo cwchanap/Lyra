@@ -38,6 +38,7 @@
 - `apps/game/src/lib/analysis/response-fence.test.ts`
 - `apps/game/src/lib/analysis/order-draft.ts`
 - `apps/game/src/lib/analysis/order-draft.test.ts`
+- `apps/game/src/lib/case-file/labels.test.ts`
 - `apps/game/src/lib/components/analysis/AnalysisCard.svelte`
 - `apps/game/src/lib/components/analysis/ClassifyBoard.svelte`
 - `apps/game/src/lib/components/analysis/ClassifyBoard.test.ts`
@@ -326,12 +327,12 @@ async function dispatchGameCommand(
   loading = false,
   acceptResponse?: () => boolean,
 ): Promise<GameStateView | null> {
-  // existing inFlight/loading behavior unchanged
+  // preserve the existing inFlight/loading/finally behavior
   const previous = gameState.value;
   const response = await runCommand<GameplayCommandResultView>(command, args);
   if (response && (acceptResponse?.() ?? true)) {
     return applyGameplayCommandResult(response, (next) => {
-      // existing SFX inference/playback body unchanged
+      // preserve the existing SFX inference/playback body unchanged
     });
   }
   return null;
@@ -383,7 +384,7 @@ export function submitAnalysisBoard(expected: AnalysisActionToken) {
 
 - [ ] **Step 5: Add a dispatcher wiring regression test**
 
-In existing `game-client-source.test.ts`, add an Analysis-state helper and a deferred invoke test:
+In existing `game-client-source.test.ts`, add an `analysisState(activeBoardId, durableRevision)` helper using the Task 1 public type. Then add:
 
 ```ts
 it("drops a late Analysis response after the frontend session is replaced", async () => {
@@ -396,10 +397,14 @@ it("drops a late Analysis response after the frontend session is replaced", asyn
     resolveInvoke = resolve;
   }));
 
-  const command = client.updateAnalysisDraft(
-    current.mode.type === "analysis" ? current.mode.actionToken : neverToken(),
-    { kind: "classify", groupByCard: { miyake_call: "miyake_small_lies" } },
-  );
+  if (current.mode.type !== "analysis") {
+    throw new Error("analysisState must return Analysis mode");
+  }
+  const expected = current.mode.actionToken;
+  const command = client.updateAnalysisDraft(expected, {
+    kind: "classify",
+    groupByCard: { miyake_call: "miyake_small_lies" },
+  });
 
   client.resetFrontendForTitle();
   resolveInvoke(staleResponse);
@@ -409,7 +414,7 @@ it("drops a late Analysis response after the frontend session is replaced", asyn
 });
 ```
 
-Use an ordinary local assertion/helper instead of `neverToken()` if the test file style prefers explicit narrowing; the important behavior is deferred response -> session reset -> response dropped before apply.
+This verifies the actual dispatcher hook, not only the pure predicate.
 
 - [ ] **Step 6: Register all three commands in both existing command surfaces**
 
@@ -462,7 +467,7 @@ Pin:
 2. selecting an already-assigned card and assigning another group emits a moved mapping;
 3. `移除` deletes exactly that card mapping.
 
-Removal test shape:
+Removal test:
 
 ```ts
 it("removes an assigned card back to the unassigned pool", async () => {
@@ -577,7 +582,7 @@ Create `order-draft.test.ts` and pin:
 expect(board.fixedAnchors).toEqual([{ cardId: "event_1841", position: 1 }]);
 ```
 
-Table cases:
+Table/boundary cases:
 
 ```ts
 it.each([
@@ -650,11 +655,11 @@ onDraft({ kind: "order", cardIds: next }, `card:${cardId}`);
 
 - [ ] **Step 5: Add component parity tests**
 
-Component tests only need to prove:
+Component tests prove:
 
 - fixed anchor is locked/no move/remove controls;
 - pointer and keyboard `加入時間線` emit the same helper-produced draft;
-- component wires `上移` / `下移` / `移除` controls to `onDraft` for a prepared public draft.
+- a prepared public draft exposes `上移` / `下移` / `移除` controls and each emits through `onDraft`.
 
 Pure helper tests own permutation/boundary correctness.
 
@@ -679,6 +684,7 @@ git commit -m "feat(game-ui): add order analysis board"
 ### Task 5: Build threshold selection with shared Case File source text
 
 **Files:**
+- Create: `apps/game/src/lib/case-file/labels.test.ts`
 - Modify: `apps/game/src/lib/case-file/labels.ts`
 - Modify: `apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte`
 - Create: `apps/game/src/lib/components/analysis/ThresholdBoard.svelte`
@@ -689,25 +695,43 @@ git commit -m "feat(game-ui): add order analysis board"
 - Produces: sorted full replacement threshold drafts.
 - Shared helper: `caseRecordSourceText(record): string | null`.
 
-- [ ] **Step 1: Add a pure source-text precedence test**
+- [ ] **Step 1: Write a failing pure source-text precedence test**
 
-Add focused tests in the most local existing/new Case File label test file:
+Create `apps/game/src/lib/case-file/labels.test.ts`:
 
 ```ts
-expect(caseRecordSourceText(record({
-  sourceLabel: "雨鐘後場門鎖",
-  sourceGroupLabel: "門鎖本機",
-}))).toBe("雨鐘後場門鎖");
+import { describe, expect, it } from "vitest";
+import { caseRecordSourceText } from "./labels";
 
-expect(caseRecordSourceText(record({
-  sourceLabel: null,
-  sourceGroupLabel: "門鎖本機",
-}))).toBe("門鎖本機");
+function sourceOnly(sourceLabel: string | null, groupLabel: string | null) {
+  return {
+    provenance: { sourceLabel },
+    sourceGroup: groupLabel === null ? null : { label: groupLabel },
+  } as Parameters<typeof caseRecordSourceText>[0];
+}
+
+describe("caseRecordSourceText", () => {
+  it("prefers the existing Case File sourceLabel over source-group label", () => {
+    expect(caseRecordSourceText(sourceOnly("雨鐘後場門鎖", "門鎖本機")))
+      .toBe("雨鐘後場門鎖");
+  });
+
+  it("falls back to source-group label when sourceLabel is absent", () => {
+    expect(caseRecordSourceText(sourceOnly(null, "門鎖本機")))
+      .toBe("門鎖本機");
+  });
+});
 ```
 
-This pins the current Case File precedence rather than inventing an Analysis rule.
+- [ ] **Step 2: Run and confirm failure**
 
-- [ ] **Step 2: Extract the shared helper without changing Case File behavior**
+```bash
+bun run --cwd apps/game test src/lib/case-file/labels.test.ts
+```
+
+Expected: FAIL because the helper does not exist.
+
+- [ ] **Step 3: Extract the shared helper without changing Case File behavior**
 
 In `case-file/labels.ts`:
 
@@ -719,9 +743,9 @@ export function caseRecordSourceText(
 }
 ```
 
-Update `CaseFileRecordDetail.svelte` to derive `sourceText` through that function. Keep its existing separate source-kind/procedure/etc. rendering unchanged.
+Update `CaseFileRecordDetail.svelte` to derive `sourceText` through that function. Keep its existing separate source-kind/procedure/completeness/confidence rendering unchanged.
 
-- [ ] **Step 3: Write threshold tests**
+- [ ] **Step 4: Write threshold tests**
 
 Pin:
 
@@ -729,10 +753,10 @@ Pin:
 - procedure badge `重新取得` renders;
 - progress shows `已選 0 / 最少 2`;
 - pointer and keyboard produce the same selection draft;
-- emitted IDs are sorted;
-- a fixture clone with two cards sharing `sourceGroup.id` can select both (proving no frontend source-independence evaluator).
+- selected IDs are emitted sorted;
+- a fixture clone with two cards sharing `sourceGroup.id` can select both.
 
-- [ ] **Step 4: Implement public presentation only**
+- [ ] **Step 5: Implement public presentation only**
 
 Record lookup:
 
@@ -771,21 +795,21 @@ function toggle(cardId: string) {
 }
 ```
 
-- [ ] **Step 5: Verify**
+- [ ] **Step 6: Verify**
 
 ```bash
-bun run --cwd apps/game test src/lib/components/analysis/ThresholdBoard.test.ts
+bun run --cwd apps/game test src/lib/case-file/labels.test.ts src/lib/components/analysis/ThresholdBoard.test.ts
 bun run --cwd apps/game check
 ```
 
-Also run the focused Case File label/detail tests touched by the helper extraction.
+Run the existing focused Case File component tests that cover `CaseFileRecordDetail` after the helper extraction.
 
 Expected: PASS with unchanged Case File presentation behavior.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add apps/game/src/lib/case-file/labels.ts apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte apps/game/src/lib/components/analysis/ThresholdBoard.svelte apps/game/src/lib/components/analysis/ThresholdBoard.test.ts
+git add apps/game/src/lib/case-file/labels.ts apps/game/src/lib/case-file/labels.test.ts apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte apps/game/src/lib/components/analysis/ThresholdBoard.svelte apps/game/src/lib/components/analysis/ThresholdBoard.test.ts
 git commit -m "feat(game-ui): add threshold analysis board"
 ```
 
@@ -834,6 +858,8 @@ it("clears one-step Undo when Rust switches the active board", async () => {
   expect(screen.getByRole("heading", { name: "本機事件順序" })).toHaveFocus();
 });
 ```
+
+The local test harness must implement `performSuccessfulEdit()` by invoking a real rendered board control and rerendering with the authoritative fixture response, and `propsFor(boardId)` by cloning the fixture token with that `activeBoardId`; do not bypass workbench handlers.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -886,7 +912,7 @@ After failed submit, focus:
 
 - [ ] **Step 4: Wire one-step Undo and Reset through Rust**
 
-On successful accepted edit response, retain the previous authoritative public draft as the one Undo slot. Undo calls `onUpdateDraft` with that draft. Reset sends the board-kind empty draft. Neither mutates `scene` locally.
+On an accepted edit response, retain the previous authoritative public draft as the one Undo slot. Undo calls `onUpdateDraft` with that draft. Reset sends the board-kind empty draft. Neither mutates `scene` locally.
 
 - [ ] **Step 5: Route Analysis through the existing page shell**
 
@@ -983,6 +1009,7 @@ bun run --cwd apps/game test \
   src/lib/analysis/analysis-boundary.test.ts \
   src/lib/analysis/response-fence.test.ts \
   src/lib/analysis/order-draft.test.ts \
+  src/lib/case-file/labels.test.ts \
   src/lib/components/analysis/ClassifyBoard.test.ts \
   src/lib/components/analysis/OrderBoard.test.ts \
   src/lib/components/analysis/ThresholdBoard.test.ts \
