@@ -154,7 +154,10 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
 test("stable aggregate downloads every manifest and runs the pure validator", () => {
   const aggregate = loadWorkflow().jobs.e2e;
   assert.equal(aggregate.name, "Tauri E2E");
-  assert.equal(aggregate.if, "${{ always() }}");
+  assert.equal(
+    aggregate.if,
+    "${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+  );
   assert.deepEqual(aggregate.needs, ["e2e-plan", "e2e-execution"]);
 
   const planDownload = namedStep(aggregate, "Download E2E plan");
