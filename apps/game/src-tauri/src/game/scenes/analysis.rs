@@ -244,6 +244,10 @@ impl AnalysisSceneState {
         match &outcome {
             AnalysisSubmissionOutcome::Correct => {
                 self.completed_board_ids.insert(board_id.to_owned());
+                if self.all_boards_completed() {
+                    self.practice_card_ids.clear();
+                    self.selected_card_ids_by_board.remove(board_id);
+                }
                 self.last_feedback = None;
             }
             AnalysisSubmissionOutcome::Feedback(message) => {
@@ -327,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn p1_practice_cards_are_local_and_require_the_exact_reprint_triple() {
+    fn p1_practice_cards_clear_after_the_final_board_completes() {
         let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
         let inventory = Inventory::default();
         for id in [
@@ -377,6 +381,6 @@ mod tests {
             Ok(AnalysisSubmissionOutcome::Correct)
         );
         assert!(scene.is_board_completed("p1_reprint_time_board"));
-        assert!(scene.practice_card_ids.contains("p1_cctv_change"));
+        assert!(scene.practice_card_ids.is_empty());
     }
 }

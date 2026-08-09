@@ -1628,6 +1628,28 @@ mod tests {
             serde_json::to_vec(&chapters).expect("updated chapters fixture must serialize"),
         )
         .expect("updated chapters fixture must write");
+        let story_catalog_path = resources.join("story_catalog.json");
+        let mut story_catalog: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&story_catalog_path)
+                .expect("save fixture story catalog must be readable"),
+        )
+        .expect("save fixture story catalog must be valid JSON");
+        story_catalog["analysisScenes"] = serde_json::json!([
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_p1_5"}
+        ]);
+        story_catalog["analysisBoards"] = serde_json::json!([
+            {
+                "chapterId": "chapter_1",
+                "sceneId": "analysis_scene_p1_5",
+                "boardId": "p1_reprint_time_board"
+            }
+        ]);
+        std::fs::write(
+            &story_catalog_path,
+            serde_json::to_vec(&story_catalog)
+                .expect("updated story catalog fixture must serialize"),
+        )
+        .expect("updated story catalog fixture must write");
         std::fs::write(
             resources.join("chapter_1/analysis_scene_p1_5.json"),
             r#"{
@@ -1661,7 +1683,7 @@ mod tests {
                             {"id": "cctv_change", "label": "找零", "source": {"kind": "practice", "id": "p1_cctv_change"}, "summary": "十七點三十八分。"},
                             {"id": "handwritten_ledger", "label": "帳本", "source": {"kind": "practice", "id": "p1_handwritten_ledger"}, "summary": "十七點三十七分。"}
                         ],
-                        "resultDialogue": []
+                        "resultDialogue": [{"kind": "action", "text": "P1 result"}]
                     },
                     "minimumSelected": 3,
                     "acceptedSelections": [["handwritten_ledger", "receipt_reprint", "register_paper_jam"]]
@@ -1873,6 +1895,59 @@ mod tests {
             capture_checkpoint(&restored.engine).unwrap().snapshot,
             original.snapshot
         );
+    }
+
+    // Break caught: after a correct final board submission, P1's scene-local
+    // practice cards were retained in the result-dialogue checkpoint and
+    // restored even though the tutorial had already completed.
+    #[test]
+    fn save_restore_clears_p1_practice_cards_after_correct_threshold_submission() {
+        let (_guard, resources) = p1_feedback_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("P1 analysis scene should be reachable in the fixture");
+        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
+            panic!("expected P1 analysis runtime");
+        };
+        for practice_card_id in [
+            "p1_receipt_reprint",
+            "p1_register_paper_jam",
+            "p1_cctv_change",
+            "p1_handwritten_ledger",
+        ] {
+            scene.record_practice_card(practice_card_id);
+        }
+
+        engine
+            .set_analysis_selection(
+                "p1_reprint_time_board",
+                vec![
+                    "receipt_reprint".into(),
+                    "register_paper_jam".into(),
+                    "handwritten_ledger".into(),
+                ],
+            )
+            .expect("P1 correct cards should be selectable");
+        let submitted = engine
+            .submit_analysis_selection("p1_reprint_time_board")
+            .expect("P1 correct triple should complete the board");
+        assert!(matches!(submitted.mode, ModeView::Dialogue { .. }));
+
+        let checkpoint = capture_checkpoint(&engine).expect("completed P1 result should save");
+        let SceneProgressSnapshot::Analysis {
+            practice_card_ids, ..
+        } = &checkpoint.snapshot.scene
+        else {
+            panic!("P1 result should retain the analysis scene while dialogue is active");
+        };
+        assert!(practice_card_ids.is_empty());
+
+        let (_, restored) = round_trip(resources, &engine);
+        let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
+            panic!("restored P1 result should remain analysis");
+        };
+        assert!(scene.practice_card_ids.is_empty());
     }
 
     // Break caught: restore helpers could panic on an analysis scene instead
