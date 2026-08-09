@@ -2976,4 +2976,325 @@ mod tests {
 
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }
+
+    // --- validate_analysis_progress tests ---
+
+    use crate::game::scenes::analysis::AnalysisSceneState;
+    use crate::game::schema::AnalysisSceneJson;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn analysis_def_with_threshold_board() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_scene_1",
+            "title": "Analysis",
+            "summary": "Test",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [{
+                "kind": "threshold",
+                "common": {
+                    "id": "board_1",
+                    "label": "Board",
+                    "prompt": "Select.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                    "cards": [
+                        {"id": "card_a", "label": "A", "source": {"kind": "evidence", "id": "ev_a"}, "summary": "A"},
+                        {"id": "card_b", "label": "B", "source": {"kind": "practice", "id": "prac_b"}, "summary": "B"}
+                    ],
+                    "resultDialogue": []
+                },
+                "minimumSelected": 1,
+                "acceptedSelections": [["card_a"]]
+            }]
+        }))
+        .expect("analysis def must deserialize")
+    }
+
+    fn analysis_def_with_all_board_kinds() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_scene_multi",
+            "title": "Multi",
+            "summary": "Test",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "threshold_board",
+                        "label": "T", "prompt": "T", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [{"id": "t_card", "label": "TC", "source": {"kind": "evidence", "id": "ev_t"}, "summary": "T"}],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 1,
+                    "acceptedSelections": [["t_card"]]
+                },
+                {
+                    "kind": "order",
+                    "common": {
+                        "id": "order_board",
+                        "label": "O", "prompt": "O", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [{"id": "o_card", "label": "OC", "source": {"kind": "evidence", "id": "ev_o"}, "summary": "O"}],
+                        "resultDialogue": []
+                    },
+                    "acceptedOrder": ["o_card"],
+                    "fixedAnchors": []
+                },
+                {
+                    "kind": "classify",
+                    "common": {
+                        "id": "classify_board",
+                        "label": "C", "prompt": "C", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [{"id": "c_card", "label": "CC", "source": {"kind": "evidence", "id": "ev_c"}, "summary": "C"}],
+                        "resultDialogue": []
+                    },
+                    "groups": [{"id": "grp_1", "label": "G1", "description": "D1"}],
+                    "acceptedGroupByCard": {"c_card": "grp_1"}
+                }
+            ]
+        }))
+        .expect("multi-board analysis def must deserialize")
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_unknown_completed_board() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.completed_board_ids.insert("nonexistent".into());
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("unknown completed board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("nonexistent"));
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_threshold_selection_on_unknown_board() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        let mut selection = BTreeSet::new();
+        selection.insert("card_a".into());
+        scene
+            .selected_card_ids_by_board
+            .insert("nonexistent".into(), selection);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("unknown threshold board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_threshold_selection_with_unknown_card() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        let mut selection = BTreeSet::new();
+        selection.insert("nonexistent_card".into());
+        scene
+            .selected_card_ids_by_board
+            .insert("board_1".into(), selection);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("unknown card in threshold selection must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_order_selection_on_unknown_board() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene
+            .ordered_card_ids_by_board
+            .insert("nonexistent".into(), vec!["o_card".into()]);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("unknown order board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_order_selection_on_non_order_board() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene
+            .ordered_card_ids_by_board
+            .insert("threshold_board".into(), vec!["t_card".into()]);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("non-order board in order selection must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_order_selection_with_duplicate_cards() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene
+            .ordered_card_ids_by_board
+            .insert("order_board".into(), vec!["o_card".into(), "o_card".into()]);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("duplicate cards in order selection must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_order_selection_with_unknown_card() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene
+            .ordered_card_ids_by_board
+            .insert("order_board".into(), vec!["nonexistent".into()]);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("unknown card in order selection must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_classify_on_unknown_board() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        let mut groups = BTreeMap::new();
+        groups.insert("c_card".into(), "grp_1".into());
+        scene
+            .group_by_card_by_board
+            .insert("nonexistent".into(), groups);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("unknown classify board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_classify_with_unknown_card_or_group() {
+        let def = analysis_def_with_all_board_kinds();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        let mut groups = BTreeMap::new();
+        groups.insert("nonexistent_card".into(), "grp_1".into());
+        scene
+            .group_by_card_by_board
+            .insert("classify_board".into(), groups);
+        let error = validate_analysis_progress(&scene, &analysis_def_with_all_board_kinds())
+            .expect_err("unknown card in classify must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+
+        // Unknown group
+        let mut scene2 = AnalysisSceneState::from_json(analysis_def_with_all_board_kinds(), 1);
+        scene2.intro_played = true;
+        let mut groups2 = BTreeMap::new();
+        groups2.insert("c_card".into(), "nonexistent_group".into());
+        scene2
+            .group_by_card_by_board
+            .insert("classify_board".into(), groups2);
+        let error2 = validate_analysis_progress(&scene2, &analysis_def_with_all_board_kinds())
+            .expect_err("unknown group in classify must be rejected");
+        assert_eq!(error2.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_undeclared_practice_card() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.practice_card_ids.insert("undeclared_practice".into());
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("undeclared practice card must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_progress_accepts_valid_state() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def.clone(), 1);
+        scene.intro_played = true;
+        scene.completed_board_ids.insert("board_1".into());
+        let mut selection = BTreeSet::new();
+        selection.insert("card_a".into());
+        scene
+            .selected_card_ids_by_board
+            .insert("board_1".into(), selection);
+        scene.practice_card_ids.insert("prac_b".into());
+        validate_analysis_progress(&scene, &def)
+            .expect("valid analysis state should pass validation");
+    }
+
+    // --- validate_analysis_intro tests ---
+
+    #[test]
+    fn validate_analysis_intro_rejects_unplayed_intro() {
+        let def = analysis_def_with_threshold_board();
+        let scene = AnalysisSceneState::from_json(def, 1);
+        let error =
+            validate_analysis_intro(&scene, None, 2).expect_err("unplayed intro must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("priming"));
+    }
+
+    #[test]
+    fn validate_analysis_intro_rejects_inconsistent_active_intro() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.intro_queue_gen = 5;
+        let active = ActiveDialogueStateV1 {
+            segment_origins: vec![DialogueSegmentOriginV1::AnalysisIntro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            }],
+            active_segment_index: 0,
+            item_cursor: 0,
+            queue_gen: 99, // Mismatches scene.intro_queue_gen
+        };
+        let error = validate_analysis_intro(&scene, Some(&active), 10)
+            .expect_err("inconsistent active intro must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("inconsistent"));
+    }
+
+    #[test]
+    fn validate_analysis_intro_rejects_active_intro_when_not_played() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = false;
+        scene.intro_queue_gen = 5;
+        let active = ActiveDialogueStateV1 {
+            segment_origins: vec![DialogueSegmentOriginV1::AnalysisIntro {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            }],
+            active_segment_index: 0,
+            item_cursor: 0,
+            queue_gen: 5,
+        };
+        let error = validate_analysis_intro(&scene, Some(&active), 10)
+            .expect_err("active intro while not played must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+    }
+
+    #[test]
+    fn validate_analysis_intro_accepts_played_intro_without_active_queue() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.intro_queue_gen = 1;
+        validate_analysis_intro(&scene, None, 2)
+            .expect("played intro with no active queue should pass");
+    }
+
+    #[test]
+    fn validate_analysis_intro_accepts_restored_consumed_intro_gen() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 0); // RESTORED_CONSUMED_INTRO_QUEUE_GEN
+        scene.intro_played = true;
+        // intro_queue_gen == 0 (restored consumed) is always valid regardless of next_queue_gen
+        validate_analysis_intro(&scene, None, 1).expect("restored consumed intro gen should pass");
+    }
 }

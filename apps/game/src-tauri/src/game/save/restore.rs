@@ -3559,4 +3559,447 @@ mod tests {
         });
         assert_eq!(code, "invalidSaveProgress");
     }
+
+    // --- validate_analysis_refs tests ---
+
+    use crate::game::save::schema::{AnalysisBoardCardsSnapshotV1, AnalysisBoardGroupSnapshotV1};
+    use crate::game::schema::AnalysisSceneJson;
+    use crate::game::state::Inventory;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn restore_analysis_def() -> AnalysisSceneJson {
+        serde_json::from_value(serde_json::json!({
+            "id": "analysis_scene_1",
+            "title": "Analysis",
+            "summary": "Test",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "threshold_board",
+                        "label": "T", "prompt": "T", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [
+                            {"id": "ev_card", "label": "EV", "source": {"kind": "evidence", "id": "ev_1"}, "summary": "E"},
+                            {"id": "stmt_card", "label": "ST", "source": {"kind": "statement", "id": "stmt_1"}, "summary": "S"},
+                            {"id": "prac_card", "label": "PR", "source": {"kind": "practice", "id": "prac_1"}, "summary": "P"}
+                        ],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 1,
+                    "acceptedSelections": [["ev_card"]]
+                },
+                {
+                    "kind": "order",
+                    "common": {
+                        "id": "order_board",
+                        "label": "O", "prompt": "O", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [{"id": "o_card", "label": "OC", "source": {"kind": "evidence", "id": "ev_o"}, "summary": "O"}],
+                        "resultDialogue": []
+                    },
+                    "acceptedOrder": ["o_card"],
+                    "fixedAnchors": []
+                },
+                {
+                    "kind": "classify",
+                    "common": {
+                        "id": "classify_board",
+                        "label": "C", "prompt": "C", "unlock": null, "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [{"id": "c_card", "label": "CC", "source": {"kind": "evidence", "id": "ev_c"}, "summary": "C"}],
+                        "resultDialogue": []
+                    },
+                    "groups": [{"id": "grp_1", "label": "G1", "description": "D1"}],
+                    "acceptedGroupByCard": {"c_card": "grp_1"}
+                }
+            ]
+        }))
+        .expect("restore analysis def must deserialize")
+    }
+
+    fn inventory_with_evidence_and_statements() -> Inventory {
+        let mut inv = Inventory::default();
+        inv.evidence.push(EvidenceRecord {
+            id: "ev_1".into(),
+            name: "ev_1".into(),
+            description: "".into(),
+            details: "".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_1".into(),
+        });
+        inv.evidence.push(EvidenceRecord {
+            id: "ev_o".into(),
+            name: "ev_o".into(),
+            description: "".into(),
+            details: "".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_1".into(),
+        });
+        inv.evidence.push(EvidenceRecord {
+            id: "ev_c".into(),
+            name: "ev_c".into(),
+            description: "".into(),
+            details: "".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_1".into(),
+        });
+        inv.statements.push(StatementRecord {
+            id: "stmt_1".into(),
+            speaker: "stmt_1".into(),
+            content: "".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            on_reexamine: None,
+            acquired_in_chapter_id: "chapter_1".into(),
+            acquired_in_scene_id: "scene_1".into(),
+        });
+        inv
+    }
+
+    fn cards_snapshot(board_id: &str, card_ids: &[&str]) -> AnalysisBoardCardsSnapshotV1 {
+        AnalysisBoardCardsSnapshotV1 {
+            board_id: board_id.into(),
+            card_ids: card_ids.iter().map(|s| (*s).into()).collect(),
+        }
+    }
+
+    fn group_snapshot(board_id: &str, pairs: &[(&str, &str)]) -> AnalysisBoardGroupSnapshotV1 {
+        let mut group_by_card = BTreeMap::new();
+        for (card, group) in pairs {
+            group_by_card.insert((*card).into(), (*group).into());
+        }
+        AnalysisBoardGroupSnapshotV1 {
+            board_id: board_id.into(),
+            group_by_card,
+        }
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_duplicate_completed_boards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &["threshold_board".into(), "threshold_board".into()],
+            &[],
+            &[],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("duplicate completed boards must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("duplicate"));
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_missing_completed_board() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(&def, &["nonexistent".into()], &[], &[], &[], &[], &inv)
+            .expect_err("missing completed board must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("missing board"));
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_duplicate_practice_cards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[],
+            &[],
+            &["prac_1".into(), "prac_1".into()],
+            &inv,
+        )
+        .expect_err("duplicate practice cards must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_unknown_practice_card() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error =
+            validate_analysis_refs(&def, &[], &[], &[], &[], &["unknown_prac".into()], &inv)
+                .expect_err("unknown practice card must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_duplicate_threshold_selection_boards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let sel = cards_snapshot("threshold_board", &["ev_card"]);
+        let error = validate_analysis_refs(&def, &[], &[sel.clone(), sel], &[], &[], &[], &inv)
+            .expect_err("duplicate threshold selection boards must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_on_non_threshold_board() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("order_board", &["o_card"])],
+            &[],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("non-threshold board in threshold selection must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_with_unknown_card() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("threshold_board", &["nonexistent"])],
+            &[],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("unknown card in threshold selection must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_with_duplicate_cards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("threshold_board", &["ev_card", "ev_card"])],
+            &[],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("duplicate cards in threshold selection must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_with_unavailable_evidence() {
+        let def = restore_analysis_def();
+        let empty_inv = Inventory::default();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("threshold_board", &["ev_card"])],
+            &[],
+            &[],
+            &[],
+            &empty_inv,
+        )
+        .expect_err("unavailable evidence card must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("unavailable"));
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_with_unavailable_statement() {
+        let def = restore_analysis_def();
+        let empty_inv = Inventory::default();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("threshold_board", &["stmt_card"])],
+            &[],
+            &[],
+            &[],
+            &empty_inv,
+        )
+        .expect_err("unavailable statement card must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_threshold_selection_with_unavailable_practice() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        // prac_card source is practice "prac_1", but practice_card_ids is empty
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[cards_snapshot("threshold_board", &["prac_card"])],
+            &[],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("practice card not in saved practice set must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_duplicate_order_boards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let sel = cards_snapshot("order_board", &["o_card"]);
+        let error = validate_analysis_refs(&def, &[], &[], &[sel.clone(), sel], &[], &[], &inv)
+            .expect_err("duplicate order boards must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_order_selection_on_non_order_board() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[cards_snapshot("threshold_board", &["ev_card"])],
+            &[],
+            &[],
+            &inv,
+        )
+        .expect_err("non-order board in order selection must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_duplicate_classify_boards() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let sel = group_snapshot("classify_board", &[("c_card", "grp_1")]);
+        let error = validate_analysis_refs(&def, &[], &[], &[], &[sel.clone(), sel], &[], &inv)
+            .expect_err("duplicate classify boards must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_classify_on_non_classify_board() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[],
+            &[group_snapshot("threshold_board", &[("ev_card", "grp_1")])],
+            &[],
+            &inv,
+        )
+        .expect_err("non-classify board in classify must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_rejects_classify_with_unknown_group() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[],
+            &[group_snapshot(
+                "classify_board",
+                &[("c_card", "nonexistent_group")],
+            )],
+            &[],
+            &inv,
+        )
+        .expect_err("unknown group in classify must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn validate_analysis_refs_accepts_valid_state() {
+        let def = restore_analysis_def();
+        let inv = inventory_with_evidence_and_statements();
+        validate_analysis_refs(
+            &def,
+            &["threshold_board".into()],
+            &[cards_snapshot("threshold_board", &["ev_card", "stmt_card"])],
+            &[cards_snapshot("order_board", &["o_card"])],
+            &[group_snapshot("classify_board", &[("c_card", "grp_1")])],
+            &["prac_1".into()],
+            &inv,
+        )
+        .expect("valid analysis state should pass validation");
+    }
+
+    // --- restore helper tests ---
+
+    #[test]
+    fn restore_analysis_card_sets_rejects_duplicate_boards() {
+        let values = vec![
+            cards_snapshot("board_1", &["card_a"]),
+            cards_snapshot("board_1", &["card_b"]),
+        ];
+        let error = restore_analysis_card_sets(&values, "threshold")
+            .expect_err("duplicate boards in card sets must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_analysis_card_sets_accepts_unique_boards() {
+        let values = vec![
+            cards_snapshot("board_1", &["card_a"]),
+            cards_snapshot("board_2", &["card_b"]),
+        ];
+        let restored =
+            restore_analysis_card_sets(&values, "threshold").expect("unique boards should restore");
+        assert_eq!(restored.len(), 2);
+        assert!(restored.contains_key("board_1"));
+        assert!(restored.contains_key("board_2"));
+    }
+
+    #[test]
+    fn restore_analysis_card_vectors_rejects_duplicate_boards() {
+        let values = vec![
+            cards_snapshot("board_1", &["card_a"]),
+            cards_snapshot("board_1", &["card_b"]),
+        ];
+        let error = restore_analysis_card_vectors(&values, "order")
+            .expect_err("duplicate boards in card vectors must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_analysis_group_sets_rejects_duplicate_boards() {
+        let values = vec![
+            group_snapshot("board_1", &[("card_a", "grp_1")]),
+            group_snapshot("board_1", &[("card_b", "grp_2")]),
+        ];
+        let error = restore_analysis_group_sets(&values)
+            .expect_err("duplicate boards in group sets must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+    }
+
+    #[test]
+    fn restore_analysis_group_sets_accepts_unique_boards() {
+        let values = vec![
+            group_snapshot("board_1", &[("card_a", "grp_1")]),
+            group_snapshot("board_2", &[("card_b", "grp_2")]),
+        ];
+        let restored = restore_analysis_group_sets(&values).expect("unique boards should restore");
+        assert_eq!(restored.len(), 2);
+    }
 }

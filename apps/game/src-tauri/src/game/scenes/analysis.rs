@@ -383,4 +383,458 @@ mod tests {
         assert!(scene.is_board_completed("p1_reprint_time_board"));
         assert!(scene.practice_card_ids.is_empty());
     }
+
+    fn classify_scene() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_classify",
+            "title": "Classify",
+            "summary": "Classify test",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [{
+                "kind": "classify",
+                "common": {
+                    "id": "classify_board",
+                    "label": "Classify Board",
+                    "prompt": "Classify the cards.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Not all classified.", "incorrect": "Wrong groups.", "hint": null},
+                    "cards": [
+                        {"id": "card_a", "label": "A", "source": {"kind": "evidence", "id": "ev_a"}, "summary": "A"},
+                        {"id": "card_b", "label": "B", "source": {"kind": "evidence", "id": "ev_b"}, "summary": "B"}
+                    ],
+                    "resultDialogue": []
+                },
+                "groups": [
+                    {"id": "group_1", "label": "Group 1", "description": "First"},
+                    {"id": "group_2", "label": "Group 2", "description": "Second"}
+                ],
+                "acceptedGroupByCard": {"card_a": "group_1", "card_b": "group_2"}
+            }]
+        }))
+        .expect("classify analysis test definition is valid")
+    }
+
+    fn order_scene() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_order",
+            "title": "Order",
+            "summary": "Order test",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [{
+                "kind": "order",
+                "common": {
+                    "id": "order_board",
+                    "label": "Order Board",
+                    "prompt": "Order the cards.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Not all ordered.", "incorrect": "Wrong order.", "hint": null},
+                    "cards": [
+                        {"id": "card_a", "label": "A", "source": {"kind": "evidence", "id": "ev_a"}, "summary": "A"},
+                        {"id": "card_b", "label": "B", "source": {"kind": "evidence", "id": "ev_b"}, "summary": "B"}
+                    ],
+                    "resultDialogue": []
+                },
+                "acceptedOrder": ["card_a", "card_b"],
+                "fixedAnchors": []
+            }]
+        }))
+        .expect("order analysis test definition is valid")
+    }
+
+    fn inventory_with_evidence(ids: &[&str]) -> Inventory {
+        let mut inv = Inventory::default();
+        for id in ids {
+            inv.evidence.push(crate::game::state::EvidenceRecord {
+                id: (*id).into(),
+                name: (*id).into(),
+                description: "".into(),
+                details: "".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_reexamine: None,
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "scene_1".into(),
+            });
+        }
+        inv
+    }
+
+    fn inventory_with_statements(ids: &[&str]) -> Inventory {
+        let mut inv = Inventory::default();
+        for id in ids {
+            inv.statements.push(crate::game::state::StatementRecord {
+                id: (*id).into(),
+                speaker: (*id).into(),
+                content: "".into(),
+                provenance: crate::game::provenance::CaseRecordProvenance::default(),
+                on_reexamine: None,
+                acquired_in_chapter_id: "chapter_1".into(),
+                acquired_in_scene_id: "scene_1".into(),
+            });
+        }
+        inv
+    }
+
+    #[test]
+    fn classify_submit_correct_completes_the_board() {
+        let mut scene = AnalysisSceneState::from_json(classify_scene(), 1);
+        let mut group_by_card = BTreeMap::new();
+        group_by_card.insert("card_a".into(), "group_1".into());
+        group_by_card.insert("card_b".into(), "group_2".into());
+        assert_eq!(
+            scene.submit(
+                "classify_board",
+                AnalysisSubmission::Classify { group_by_card }
+            ),
+            Ok(AnalysisSubmissionOutcome::Correct)
+        );
+        assert!(scene.is_board_completed("classify_board"));
+        assert!(scene.last_feedback.is_none());
+    }
+
+    #[test]
+    fn classify_submit_incomplete_returns_feedback() {
+        let mut scene = AnalysisSceneState::from_json(classify_scene(), 1);
+        let mut group_by_card = BTreeMap::new();
+        group_by_card.insert("card_a".into(), "group_1".into());
+        assert_eq!(
+            scene.submit(
+                "classify_board",
+                AnalysisSubmission::Classify { group_by_card }
+            ),
+            Ok(AnalysisSubmissionOutcome::Feedback(
+                "Not all classified.".into()
+            ))
+        );
+        assert!(!scene.is_board_completed("classify_board"));
+        assert_eq!(scene.last_feedback.as_deref(), Some("Not all classified."));
+    }
+
+    #[test]
+    fn classify_submit_incorrect_returns_feedback() {
+        let mut scene = AnalysisSceneState::from_json(classify_scene(), 1);
+        let mut group_by_card = BTreeMap::new();
+        group_by_card.insert("card_a".into(), "group_2".into());
+        group_by_card.insert("card_b".into(), "group_1".into());
+        assert_eq!(
+            scene.submit(
+                "classify_board",
+                AnalysisSubmission::Classify { group_by_card }
+            ),
+            Ok(AnalysisSubmissionOutcome::Feedback("Wrong groups.".into()))
+        );
+        assert!(!scene.is_board_completed("classify_board"));
+        assert_eq!(scene.last_feedback.as_deref(), Some("Wrong groups."));
+    }
+
+    #[test]
+    fn order_submit_correct_completes_the_board() {
+        let mut scene = AnalysisSceneState::from_json(order_scene(), 1);
+        assert_eq!(
+            scene.submit(
+                "order_board",
+                AnalysisSubmission::Order {
+                    ordered_card_ids: vec!["card_a".into(), "card_b".into()],
+                },
+            ),
+            Ok(AnalysisSubmissionOutcome::Correct)
+        );
+        assert!(scene.is_board_completed("order_board"));
+    }
+
+    #[test]
+    fn order_submit_incomplete_returns_feedback() {
+        let mut scene = AnalysisSceneState::from_json(order_scene(), 1);
+        assert_eq!(
+            scene.submit(
+                "order_board",
+                AnalysisSubmission::Order {
+                    ordered_card_ids: vec!["card_a".into()],
+                },
+            ),
+            Ok(AnalysisSubmissionOutcome::Feedback(
+                "Not all ordered.".into()
+            ))
+        );
+        assert!(!scene.is_board_completed("order_board"));
+    }
+
+    #[test]
+    fn order_submit_incorrect_returns_feedback() {
+        let mut scene = AnalysisSceneState::from_json(order_scene(), 1);
+        assert_eq!(
+            scene.submit(
+                "order_board",
+                AnalysisSubmission::Order {
+                    ordered_card_ids: vec!["card_b".into(), "card_a".into()],
+                },
+            ),
+            Ok(AnalysisSubmissionOutcome::Feedback("Wrong order.".into()))
+        );
+        assert!(!scene.is_board_completed("order_board"));
+    }
+
+    #[test]
+    fn order_submit_with_duplicate_cards_returns_selection_invalid() {
+        let mut scene = AnalysisSceneState::from_json(order_scene(), 1);
+        let error = scene
+            .submit(
+                "order_board",
+                AnalysisSubmission::Order {
+                    ordered_card_ids: vec!["card_a".into(), "card_a".into()],
+                },
+            )
+            .expect_err("duplicate order cards must be rejected");
+        assert_eq!(error.code, "analysisSelectionInvalid");
+    }
+
+    #[test]
+    fn submit_to_unknown_board_returns_unknown_analysis_board() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let error = scene
+            .submit(
+                "nonexistent",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&[]),
+                },
+            )
+            .expect_err("unknown board must be rejected");
+        assert_eq!(error.code, "unknownAnalysisBoard");
+    }
+
+    #[test]
+    fn submit_to_completed_board_returns_analysis_board_completed() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        for id in [
+            "p1_receipt_reprint",
+            "p1_register_paper_jam",
+            "p1_cctv_change",
+            "p1_handwritten_ledger",
+        ] {
+            scene.record_practice_card(id);
+        }
+        scene
+            .submit(
+                "p1_reprint_time_board",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&[
+                        "receipt_reprint",
+                        "register_paper_jam",
+                        "handwritten_ledger",
+                    ]),
+                },
+            )
+            .expect("correct submission should complete the board");
+        let error = scene
+            .submit(
+                "p1_reprint_time_board",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&["receipt_reprint"]),
+                },
+            )
+            .expect_err("completed board must reject further submissions");
+        assert_eq!(error.code, "analysisBoardCompleted");
+    }
+
+    #[test]
+    fn submit_with_wrong_kind_returns_kind_mismatch() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let error = scene
+            .submit(
+                "p1_reprint_time_board",
+                AnalysisSubmission::Order {
+                    ordered_card_ids: vec!["receipt_reprint".into()],
+                },
+            )
+            .expect_err("order submission to threshold board must be rejected");
+        assert_eq!(error.code, "analysisBoardKindMismatch");
+    }
+
+    #[test]
+    fn submit_with_unknown_card_returns_unknown_analysis_card() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let error = scene
+            .submit(
+                "p1_reprint_time_board",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&["nonexistent_card"]),
+                },
+            )
+            .expect_err("unknown card must be rejected");
+        assert_eq!(error.code, "unknownAnalysisCard");
+    }
+
+    #[test]
+    fn set_threshold_selection_stores_selection_and_clears_feedback() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        scene.last_feedback = Some("old feedback".into());
+        scene
+            .set_threshold_selection("p1_reprint_time_board", selected(&["cctv_change"]))
+            .expect("valid selection should be stored");
+        assert_eq!(
+            scene
+                .selected_card_ids_by_board
+                .get("p1_reprint_time_board"),
+            Some(&selected(&["cctv_change"]))
+        );
+        assert!(scene.last_feedback.is_none());
+    }
+
+    #[test]
+    fn set_threshold_selection_on_unknown_board_returns_error() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let error = scene
+            .set_threshold_selection("nonexistent", selected(&["cctv_change"]))
+            .expect_err("unknown board must be rejected");
+        assert_eq!(error.code, "unknownAnalysisBoard");
+    }
+
+    #[test]
+    fn set_threshold_selection_on_non_threshold_board_returns_kind_mismatch() {
+        let mut scene = AnalysisSceneState::from_json(classify_scene(), 1);
+        let error = scene
+            .set_threshold_selection("classify_board", selected(&["card_a"]))
+            .expect_err("non-threshold board must be rejected");
+        assert_eq!(error.code, "analysisBoardKindMismatch");
+    }
+
+    #[test]
+    fn set_threshold_selection_with_unknown_card_returns_error() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let error = scene
+            .set_threshold_selection("p1_reprint_time_board", selected(&["nonexistent"]))
+            .expect_err("unknown card must be rejected");
+        assert_eq!(error.code, "unknownAnalysisCard");
+    }
+
+    #[test]
+    fn card_is_available_checks_evidence_statement_and_practice() {
+        let scene = AnalysisSceneState::from_json(classify_scene(), 1);
+        let inv_with_evidence = inventory_with_evidence(&["ev_a"]);
+        assert!(scene.card_is_available(
+            &AnalysisCardSource::Evidence { id: "ev_a".into() },
+            &inv_with_evidence
+        ));
+        assert!(!scene.card_is_available(
+            &AnalysisCardSource::Evidence {
+                id: "ev_missing".into()
+            },
+            &inv_with_evidence
+        ));
+        let inv_with_statement = inventory_with_statements(&["stmt_a"]);
+        assert!(scene.card_is_available(
+            &AnalysisCardSource::Statement {
+                id: "stmt_a".into()
+            },
+            &inv_with_statement
+        ));
+        assert!(!scene.card_is_available(
+            &AnalysisCardSource::Statement {
+                id: "stmt_missing".into()
+            },
+            &inv_with_statement
+        ));
+        let mut practice_scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        practice_scene.record_practice_card("p1_receipt_reprint");
+        let empty_inv = Inventory::default();
+        assert!(practice_scene.card_is_available(
+            &AnalysisCardSource::Practice {
+                id: "p1_receipt_reprint".into()
+            },
+            &empty_inv
+        ));
+        assert!(!practice_scene.card_is_available(
+            &AnalysisCardSource::Practice {
+                id: "p1_missing".into()
+            },
+            &empty_inv
+        ));
+    }
+
+    #[test]
+    fn all_boards_completed_returns_true_only_when_all_done() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        assert!(!scene.all_boards_completed());
+        scene
+            .completed_board_ids
+            .insert("p1_reprint_time_board".into());
+        assert!(scene.all_boards_completed());
+    }
+
+    #[test]
+    fn next_unlocked_board_id_skips_completed_and_locked() {
+        let def: AnalysisSceneJson = serde_json::from_value(json!({
+            "id": "analysis_multi",
+            "title": "Multi",
+            "summary": "Multi board",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_a",
+                        "label": "A",
+                        "prompt": "A",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_b",
+                        "label": "B",
+                        "prompt": "B",
+                        "unlock": {"predicate": "fact_asserted", "id": "gate_fact"},
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                }
+            ]
+        }))
+        .expect("multi-board analysis definition is valid");
+        let scene = AnalysisSceneState::from_json(def, 1);
+        let locked_story = crate::game::story::StoryState::default();
+        // board_a is unlocked (null unlock), board_b is locked (requires gate_fact)
+        assert_eq!(
+            scene.next_unlocked_board_id(&locked_story),
+            Some("board_a".into())
+        );
+        // When board_a is completed, no unlocked incomplete board remains
+        let mut completed = scene;
+        completed.completed_board_ids.insert("board_a".into());
+        assert_eq!(completed.next_unlocked_board_id(&locked_story), None);
+    }
+
+    #[test]
+    fn is_board_unlocked_with_null_unlock_is_always_true() {
+        let scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        let story = crate::game::story::StoryState::default();
+        let board = scene.board("p1_reprint_time_board").unwrap();
+        assert!(scene.is_board_unlocked(board, &story));
+    }
+
+    #[test]
+    fn record_practice_card_adds_to_practice_set() {
+        let mut scene = AnalysisSceneState::from_json(p1_reprint_scene(), 1);
+        scene.record_practice_card("p1_new_card");
+        assert!(scene.practice_card_ids.contains("p1_new_card"));
+    }
 }
