@@ -1,8 +1,8 @@
 # Chapter 1 background-variety audit
 
-**Audit date:** 2026-08-07  
-**Ruleset:** compiler-owned Chapter 1 cue inventory; `keep`, `prompt-adjust`, `regenerate`, and `add-variant` decisions; Priority A only for material comprehension, usability, evidence, reveal, state, or continuity impact.  
-**Production analysis:** None present at the production freeze.
+**Audit date:** 2026-08-07
+**Ruleset:** compiler-owned Chapter 1 cue inventory; `keep`, `prompt-adjust`, `regenerate`, and `add-variant` decisions; Priority A only for material comprehension, usability, evidence, reveal, state, or continuity impact.
+**Production analysis:** None present at the production freeze. The user-approved post-freeze P1 amendment split the former linear `scene_p1.md` into `investigation_scene_p1.md` and `analysis_scene_p1_5.md`; the current accepted manifest therefore has 17 scenes. P1.5 intentionally reuses the existing stationery-counter plate (`background.chapter_1.scene_p1.tag_002`) rather than adding a new background.
 
 ## Frozen production manifest
 
@@ -25,6 +25,29 @@ The ordered scene list copied from `chapter.md` at the audit freeze:
 15. `interrogation_scene_10.md`
 16. `scene_11.md`
 
+## Current accepted manifest after the P1 amendment
+
+The historical freeze above remains the 16-scene audit baseline. The current
+compiler-derived manifest adds the approved P1 investigation/analysis split:
+
+1. `scene_p0.md`
+2. `investigation_scene_p1.md`
+3. `analysis_scene_p1_5.md`
+4. `scene_p2.md`
+5. `scene_0.md`
+6. `investigation_scene_1.md`
+7. `scene_2.md`
+8. `investigation_scene_3.md`
+9. `interrogation_scene_4.md`
+10. `scene_5.md`
+11. `scene_6.md`
+12. `investigation_scene_7.md`
+13. `investigation_scene_8.md`
+14. `scene_8_5.md`
+15. `investigation_scene_9.md`
+16. `interrogation_scene_10.md`
+17. `scene_11.md`
+
 ## Methodology
 
 `bun run scenes:compile` generated the current production manifests, then `bun run background-cues:audit --chapter chapter_1` supplied the 55 exact cue keys below. The review groups cues by physical location rather than filename. Within each group it compares stable geometry, recurring props, palette, and adjacent cue continuity against the camera angle, focal emphasis, and environment/state delta. The production plates were visually reviewed as four temporary contact sheets; no generated resource JSON was edited.
@@ -39,9 +62,9 @@ The audit distinguishes intentional holds from accidental repetition. In particu
 | `chapter_1/scene_p0.json::/queue/14/assetCue/backgroundAssetId` | Kichijoji arcade | Shelter-under-awning transition | Arcade roof, wet paving, vending glow | Tighter arcade enclosure changes the transit scale without breaking rain continuity | keep | B | Retain sheltered pedestrian rhythm | Accepted |
 | `chapter_1/scene_p0.json::/queue/19/assetCue/backgroundAssetId` | Tokyo crossing | System-in-the-city escalation | Umbrella field, wet asphalt, screen glow | Open crossing and reflected signals materially differ from the arcade | keep | B | Retain public-information pressure | Accepted |
 | `chapter_1/scene_p0.json::/queue/28/assetCue/backgroundAssetId` | Legal-aid exterior | Institutional handoff | Rainy street, billboard glow, anonymous walkers | Legal frontage shifts focal emphasis from crowds to procedural promise | keep | B | Retain institution-at-night establish | Accepted |
-| `chapter_1/scene_p1.json::/queue/0/assetCue/backgroundAssetId` | Stationery shop exterior | Small-case arrival establish | Warm glass, awning, wet shopping street | Front elevation cleanly introduces the shop against the cool rain | keep | B | Retain arrival geography | Accepted |
-| `chapter_1/scene_p1.json::/queue/10/assetCue/backgroundAssetId` | Stationery/copy shop interior | Receipt-dispute workspace | Wooden counter, copier, register, paper shelves | Interior changes palette and focal evidence surface while preserving the storefront relation | keep | B | Retain counter evidence stage | Accepted |
-| `chapter_1/scene_p1.json::/queue/131/assetCue/backgroundAssetId` | Stationery shop exterior | Case-resolution exit beat | Same warm glass, awning, wet paving | Near-match to the arrival plate reads as a return, but could use a more exitward oblique view | prompt-adjust | B | Future re-render: under-awning exit angle with shop glow behind | Deferred; non-blocking variety improvement |
+| `chapter_1/investigation_scene_p1.json::/intro/0/assetCue/backgroundAssetId` | Stationery shop exterior | Small-case arrival establish | Warm glass, awning, wet shopping street | Front elevation cleanly introduces the shop against the cool rain | keep | B | Retain arrival geography | Accepted |
+| `chapter_1/investigation_scene_p1.json::/sublocations/0/backgroundAssetId` | Stationery/copy shop interior | Receipt-dispute workspace | Wooden counter, copier, register, paper shelves | Interior changes palette and focal evidence surface while preserving the storefront relation | keep | B | Retain counter evidence stage | Accepted |
+| `chapter_1/analysis_scene_p1_5.json::/intro/0/assetCue/backgroundAssetId` | Stationery/copy shop interior | P1.5 existing-counter reuse | Wooden counter, copier, register, paper shelves | The analysis returns to the already established counter, so the shared evidence surface gives the handoff continuity without a gratuitous new plate | keep | B | Retain the existing counter for the P1.5 evidence comparison | Accepted; user-approved post-freeze P1.5 existing-counter reuse |
 | `chapter_1/scene_p2.json::/queue/0/assetCue/backgroundAssetId` | Rain Bell front room | Ordinary-day cafe establish | Warm wood, rain-streaked windows, counter | Wide daylight cafe plate is distinct from later night-investigation views | keep | B | Retain ordinary working-space baseline | Accepted |
 | `chapter_1/scene_p2.json::/queue/16/assetCue/backgroundAssetId` | Rain Bell back corridor | Slow-clock operational clue | Narrow corridor, stacked boxes, old clock | Corridor compression isolates the time clue from the open cafe | keep | B | Retain clock-focused service passage | Accepted |
 | `chapter_1/scene_p2.json::/queue/22/assetCue/backgroundAssetId` | Rain Bell entrance | Masuda arrival threshold | Glass door, wet street, warm interior | Door-facing angle supplies arrival context rather than duplicating the front-room hold | keep | B | Retain threshold and weather contrast | Accepted |
@@ -49,7 +72,7 @@ The audit distinguishes intentional holds from accidental repetition. In particu
 | `chapter_1/scene_p2.json::/queue/59/assetCue/backgroundAssetId` | Rain Bell front room/street | Ordinary day turns ominous | Window table, latte remnant, rain-dark street | Interior/exterior dusk blend advances weather and emotional state from the opening daytime plate | keep | B | Retain dusk foreshadowing plate | Accepted |
 | `chapter_1/scene_0.json::/queue/0/assetCue/backgroundAssetId` | KAGAMI abstract interface | Machine-summary cold open | Black field, ordered luminous rows, blue-white logic | Non-literal interface sharply breaks from physical Tokyo spaces | keep | B | Retain abstract system perspective | Accepted |
 | `chapter_1/scene_0.json::/queue/12/assetCue/backgroundAssetId` | Police meeting corridor | Summary enters institution | Pale fluorescent hall, monitor, bench | Corridor converts the abstract system into an empty procedural environment | keep | B | Retain institutional transition | Accepted |
-| `chapter_1/scene_0.json::/queue/21/assetCue/backgroundAssetId` | Soma office | Human review counterpoint | Worn desk, lamp pool, case papers | Warm desk focus contrasts with both the interface and police corridor | keep | B | Retain analyst-at-desk frame | Accepted |
+| `chapter_1/scene_0.json::/queue/20/assetCue/backgroundAssetId` | Soma office | Human review counterpoint | Worn desk, lamp pool, case papers | Warm desk focus contrasts with both the interface and police corridor | keep | B | Retain analyst-at-desk frame | Accepted |
 | `chapter_1/investigation_scene_1.json::/intro/0/assetCue/backgroundAssetId` | Soma office exterior | Investigation arrival establish | Narrow street, rain, second-floor light | Exterior locates the office before the exploration view | keep | B | Retain exterior-to-interior handoff | Accepted |
 | `chapter_1/investigation_scene_1.json::/sublocations/0/backgroundAssetId` | Soma office interior | File-review exploration hub | Worn desk, paper stacks, coffee machine | Interior gives selectable geometry and props after the exterior establish | keep | B | Retain exploration-readable office layout | Accepted |
 | `chapter_1/scene_2.json::/queue/0/assetCue/backgroundAssetId` | Hayasaka office | Family commission intake | Case papers, thermos, rice-ball bag, rainy daylight | Personal tabletop anchors distinguish it from Soma's darker office | keep | B | Retain client-emotion workspace | Accepted |
@@ -62,12 +85,12 @@ The audit distinguishes intentional holds from accidental repetition. In particu
 | `chapter_1/interrogation_scene_4.json::/intro/0/assetCue/backgroundAssetId` | Police waiting area | Pre-interrogation tension | Vending glow, bench, rain-dark windows | Waiting area separates anticipation from the actual questioning room | keep | B | Retain quiet institutional hold | Accepted |
 | `chapter_1/interrogation_scene_4.json::/phases/0/backgroundAssetId` | Police interrogation room | Miyake questioning stage | Small table, hard lamps, rain-dark window | Room shift brings focus inward without requiring needless camera changes inside the phase | keep | B | Retain focused questioning view | Accepted |
 | `chapter_1/scene_5.json::/queue/0/assetCue/backgroundAssetId` | Review-board hearing room | First formal hearing establish | Long table, sparse gallery, cool window light | Room-wide empty/neutral composition sets institutional scale | keep | B | Retain hearing-room establish | Accepted |
-| `chapter_1/scene_5.json::/queue/30/assetCue/backgroundAssetId` | Review-board hearing room | Defense-side pressure | Same long table, officials across, pushed chair | Defense-side angle and chair state provide a meaningful in-room shift | keep | B | Retain defense perspective | Accepted |
-| `chapter_1/scene_5.json::/queue/69/assetCue/backgroundAssetId` | Review-board hallway | Hearing aftermath | Fluorescent hall, damp marks, distant officers | Hallway exits the table geometry and releases the scene | keep | B | Retain procedural aftermath | Accepted |
+| `chapter_1/scene_5.json::/queue/29/assetCue/backgroundAssetId` | Review-board hearing room | Defense-side pressure | Same long table, officials across, pushed chair | Defense-side angle and chair state provide a meaningful in-room shift | keep | B | Retain defense perspective | Accepted |
+| `chapter_1/scene_5.json::/queue/67/assetCue/backgroundAssetId` | Review-board hallway | Hearing aftermath | Fluorescent hall, damp marks, distant officers | Hallway exits the table geometry and releases the scene | keep | B | Retain procedural aftermath | Accepted |
 | `chapter_1/scene_6.json::/queue/0/assetCue/backgroundAssetId` | Kichijoji awning | Rainy regroup establish | Awning roof, wet paving, storefront warmth | Broad covered street holds the pair outside the hearing environment | keep | B | Retain regrouping shelter | Accepted |
-| `chapter_1/scene_6.json::/queue/30/assetCue/backgroundAssetId` | Kichijoji awning/recycling point | Umbrella-sleeve clue | Same awning, recycling bin, transparent umbrella cue | Prop focal shift makes the nearby repeated corner narratively useful | keep | B | Retain clue-focused corner angle | Accepted |
-| `chapter_1/scene_6.json::/queue/41/assetCue/backgroundAssetId` | Convenience-store entrance | Witness movement beat | Store threshold, rain easing, commuter traffic | Entrance framing changes the corner into a visible movement corridor | keep | B | Retain threshold witness context | Accepted |
-| `chapter_1/scene_6.json::/queue/62/assetCue/backgroundAssetId` | Kichijoji awning | Post-tension reset | Same awning, bin, cleaner reflections, brighter sky | Environmental state advances from rain pressure to clearing calm | keep | B | Retain weather-resolution beat | Accepted |
+| `chapter_1/scene_6.json::/queue/33/assetCue/backgroundAssetId` | Kichijoji awning/recycling point | Umbrella-sleeve clue | Same awning, recycling bin, transparent umbrella cue | Prop focal shift makes the nearby repeated corner narratively useful | keep | B | Retain clue-focused corner angle | Accepted |
+| `chapter_1/scene_6.json::/queue/44/assetCue/backgroundAssetId` | Convenience-store entrance | Witness movement beat | Store threshold, rain easing, commuter traffic | Entrance framing changes the corner into a visible movement corridor | keep | B | Retain threshold witness context | Accepted |
+| `chapter_1/scene_6.json::/queue/65/assetCue/backgroundAssetId` | Kichijoji awning | Post-tension reset | Same awning, bin, cleaner reflections, brighter sky | Environmental state advances from rain pressure to clearing calm | keep | B | Retain weather-resolution beat | Accepted |
 | `chapter_1/investigation_scene_7.json::/intro/0/assetCue/backgroundAssetId` | Rain Bell rear threshold | Re-entry establish | Back door, non-slip mat, wet alley | Threshold establishes the back route before hotspot inspection | keep | B | Retain rear-access overview | Accepted |
 | `chapter_1/investigation_scene_7.json::/sublocations/0/backgroundAssetId` | Rain Bell rear threshold | Water-trace inspection | Same mat, sleeve, wet alley | Stable rear-door geometry is necessary for comparing the water state | keep | B | Retain trace-focused close exploration | Accepted |
 | `chapter_1/investigation_scene_7.json::/sublocations/1/backgroundAssetId` | Rain Bell inner storage | Discovery reconstruction | Metal shelves, stopped clock, impact mark, sensor light | Cold storage palette and deeper view materially advance the re-entry path | keep | B | Retain reveal-capable storage view | Accepted |
@@ -93,4 +116,4 @@ The audit distinguishes intentional holds from accidental repetition. In particu
 
 ## Coverage result
 
-The compiler-owned inventory contains **55** cue occurrences. This report has **55** decision rows with the exact current cue keys, no duplicates, no stale keys, and allowed decision/priority values. One non-blocking B-priority prompt-adjust candidate is intentionally deferred; all other plates are retained. No background regeneration is part of this audit pass.
+The compiler-owned inventory contains **55** cue occurrences. This report has **55** decision rows with the exact current cue keys, no duplicates, no stale keys, and allowed decision/priority values. There are **0 Priority A** decisions; all retained decisions are B-priority. No background regeneration is part of this audit pass, including the approved P1.5 existing-counter reuse.
