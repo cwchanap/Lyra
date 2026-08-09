@@ -2338,4 +2338,254 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(resources);
     }
+
+    // --- Analysis command error path tests ---
+
+    fn analysis_scene_with_cards_json(id: &str) -> String {
+        format!(
+            r#"{{
+                "type": "analysis",
+                "id": "{id}",
+                "title": "Analysis",
+                "summary": "Analysis with cards.",
+                "assetRefs": [],
+                "intro": [],
+                "boards": [{{
+                    "kind": "threshold",
+                    "common": {{
+                        "id": "board_1",
+                        "label": "Board",
+                        "prompt": "Select.",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
+                        "cards": [
+                            {{"id": "card_a", "label": "A", "source": {{"kind": "evidence", "id": "evidence_a"}}, "summary": "A"}},
+                            {{"id": "card_b", "label": "B", "source": {{"kind": "practice", "id": "prac_b"}}, "summary": "B"}}
+                        ],
+                        "resultDialogue": [{{"kind": "action", "text": "Result"}}]
+                    }},
+                    "minimumSelected": 1,
+                    "acceptedSelections": [["card_a"]]
+                }}],
+                "outro": []
+            }}"#
+        )
+    }
+
+    fn analysis_resources_with_cards(label: &str) -> std::path::PathBuf {
+        let resources = acquisition_navigation_resources(
+            label,
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "scene_0.json",
+                    r#"{
+                        "type": "linear",
+                        "id": "scene_0",
+                        "title": "Opening",
+                        "summary": "Opening fixture.",
+                        "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
+                    }"#
+                    .to_string(),
+                ),
+                (
+                    "analysis_scene_1.json",
+                    analysis_scene_with_cards_json("analysis_scene_1"),
+                ),
+            ],
+        );
+        // Update story catalog with analysis scene/board entries
+        let catalog_path = resources.join("story_catalog.json");
+        let mut catalog: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&catalog_path).expect("catalog must be readable"),
+        )
+        .expect("catalog must be valid JSON");
+        catalog["analysisScenes"] = serde_json::json!([
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_1"}
+        ]);
+        catalog["analysisBoards"] = serde_json::json!([
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_1"}
+        ]);
+        std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+        resources
+    }
+
+    fn add_evidence_to_inventory(engine: &mut GameEngine, id: &str) {
+        use crate::game::provenance::CaseRecordProvenance;
+        use crate::game::state::EvidenceRecord;
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: id.into(),
+            name: id.into(),
+            description: "".into(),
+            details: "".into(),
+            provenance: CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "scene_0".into(),
+        });
+    }
+
+    #[test]
+    fn set_analysis_selection_rejects_wrong_mode() {
+        let resources = analysis_resources_with_cards("analysis-wrong-mode");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        // Engine starts on a linear scene, not analysis
+        let error = engine
+            .set_analysis_selection("board_1", vec!["card_a".into()])
+            .expect_err("set_analysis_selection must reject non-analysis mode");
+        assert_eq!(error.code, "wrongMode");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn set_analysis_selection_rejects_unknown_board() {
+        let resources = analysis_resources_with_cards("analysis-unknown-board");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let error = engine
+            .set_analysis_selection("nonexistent", vec!["card_a".into()])
+            .expect_err("unknown board must be rejected");
+        assert_eq!(error.code, "unknownAnalysisBoard");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn set_analysis_selection_rejects_unknown_card() {
+        let resources = analysis_resources_with_cards("analysis-unknown-card");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let error = engine
+            .set_analysis_selection("board_1", vec!["nonexistent_card".into()])
+            .expect_err("unknown card must be rejected");
+        assert_eq!(error.code, "unknownAnalysisCard");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn set_analysis_selection_rejects_unavailable_practice_card() {
+        let resources = analysis_resources_with_cards("analysis-unavailable-card");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        // card_b is a practice card, but no practice cards have been recorded
+        let error = engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect_err("unavailable practice card must be rejected");
+        assert_eq!(error.code, "unavailableAnalysisCard");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn set_analysis_selection_accepts_available_practice_card() {
+        let resources = analysis_resources_with_cards("analysis-available-card");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        // Record the practice card so card_b becomes available
+        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+            scene.record_practice_card("prac_b");
+        }
+        let view = engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect("available practice card should be selectable");
+        assert!(matches!(view.mode, ModeView::Analysis { .. }));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn submit_analysis_selection_rejects_wrong_mode() {
+        let resources = analysis_resources_with_cards("analysis-submit-wrong-mode");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let error = engine
+            .submit_analysis_selection("board_1")
+            .expect_err("submit must reject non-analysis mode");
+        assert_eq!(error.code, "wrongMode");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn submit_analysis_selection_rejects_unknown_board() {
+        let resources = analysis_resources_with_cards("analysis-submit-unknown-board");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let error = engine
+            .submit_analysis_selection("nonexistent")
+            .expect_err("unknown board must be rejected");
+        assert_eq!(error.code, "unknownAnalysisBoard");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn analysis_mode_view_shows_board_when_unlocked() {
+        let resources = analysis_resources_with_cards("analysis-mode-view");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let view = engine.view().expect("view should succeed");
+        assert!(matches!(
+            view.mode,
+            ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
+        ));
+        assert!(matches!(
+            view.scene,
+            SceneView::Analysis { ref id, .. } if id == "analysis_scene_1"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn reexamine_evidence_rejects_analysis_mode() {
+        let resources = analysis_resources_with_cards("analysis-reexamine-evidence");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let error = engine
+            .reexamine_evidence("evidence_a")
+            .expect_err("reexamine_evidence must reject analysis mode");
+        assert_eq!(error.code, "wrongMode");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn reexamine_statement_rejects_analysis_mode() {
+        let resources = analysis_resources_with_cards("analysis-reexamine-statement");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        add_evidence_to_inventory(&mut engine, "evidence_a");
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let error = engine
+            .reexamine_statement("stmt_a")
+            .expect_err("reexamine_statement must reject analysis mode");
+        assert_eq!(error.code, "wrongMode");
+        let _ = std::fs::remove_dir_all(resources);
+    }
 }

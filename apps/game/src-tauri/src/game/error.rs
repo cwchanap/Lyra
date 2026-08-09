@@ -650,6 +650,38 @@ mod tests {
                 "missingCaseRecordSourceGroup",
                 GameError::missing_case_record_source_group("evidence:receipt"),
             ),
+            (
+                "unknownAnalysisBoard",
+                GameError::unknown_analysis_board("board_1"),
+            ),
+            (
+                "unknownAnalysisScene",
+                GameError::unknown_analysis_scene("chapter_1", "analysis_scene_1"),
+            ),
+            (
+                "unknownAnalysisCard",
+                GameError::unknown_analysis_card("board_1", "card_1"),
+            ),
+            (
+                "analysisBoardCompleted",
+                GameError::analysis_board_completed("board_1"),
+            ),
+            (
+                "analysisBoardKindMismatch",
+                GameError::analysis_board_kind_mismatch("board_1", "threshold"),
+            ),
+            (
+                "analysisSelectionInvalid",
+                GameError::analysis_selection_invalid("board_1"),
+            ),
+            (
+                "lockedAnalysisBoard",
+                GameError::locked_analysis_board("board_1"),
+            ),
+            (
+                "unavailableAnalysisCard",
+                GameError::unavailable_analysis_card("board_1", "card_1"),
+            ),
         ];
         for (expected_code, error) in cases {
             assert_eq!(error.code, expected_code);
@@ -676,5 +708,35 @@ mod tests {
     fn with_failure_token_attaches_the_token() {
         let error = GameError::unavailable().with_failure_token("token123".into());
         assert_eq!(error.failure_token, Some("token123".into()));
+    }
+
+    #[test]
+    fn analysis_error_messages_include_their_identifiers() {
+        assert!(GameError::unknown_analysis_board("board_x")
+            .message
+            .contains("board_x"));
+        assert!(GameError::unknown_analysis_scene("chapter_1", "scene_x")
+            .message
+            .contains("scene_x"));
+        assert!(GameError::unknown_analysis_card("board_x", "card_y")
+            .message
+            .contains("card_y"));
+        assert!(GameError::analysis_board_completed("board_x")
+            .message
+            .contains("board_x"));
+        assert!(
+            GameError::analysis_board_kind_mismatch("board_x", "threshold")
+                .message
+                .contains("threshold")
+        );
+        assert!(GameError::analysis_selection_invalid("board_x")
+            .message
+            .contains("board_x"));
+        assert!(GameError::locked_analysis_board("board_x")
+            .message
+            .contains("board_x"));
+        assert!(GameError::unavailable_analysis_card("board_x", "card_y")
+            .message
+            .contains("card_y"));
     }
 }

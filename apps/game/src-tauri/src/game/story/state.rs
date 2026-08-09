@@ -706,6 +706,12 @@ mod tests {
         "supersedesRecordId":null
       }
     }
+  ],
+  "analysisScenes": [
+    {"chapterId":"chapter_1","sceneId":"analysis_scene_1"}
+  ],
+  "analysisBoards": [
+    {"chapterId":"chapter_1","sceneId":"analysis_scene_1","boardId":"board_1"}
   ]
 }"#,
         )
@@ -1154,5 +1160,73 @@ mod tests {
         for snapshot in cases {
             assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
         }
+    }
+
+    #[test]
+    fn rejects_snapshot_with_unknown_analysis_scene_progress() {
+        let mut snapshot = empty_snapshot();
+        snapshot
+            .completed_analysis_scenes
+            .insert(AnalysisSceneProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "nonexistent".into(),
+            });
+        assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+    }
+
+    #[test]
+    fn rejects_snapshot_with_unknown_analysis_board_progress() {
+        let mut snapshot = empty_snapshot();
+        snapshot
+            .completed_analysis_boards
+            .insert(AnalysisBoardProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "nonexistent".into(),
+            });
+        assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+    }
+
+    #[test]
+    fn accepts_snapshot_with_valid_analysis_progress() {
+        let mut snapshot = empty_snapshot();
+        snapshot
+            .completed_analysis_scenes
+            .insert(AnalysisSceneProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            });
+        snapshot
+            .completed_analysis_boards
+            .insert(AnalysisBoardProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            });
+        StoryState::from_snapshot(&catalog(), snapshot)
+            .expect("valid analysis progress should be accepted");
+    }
+
+    #[test]
+    fn story_state_reports_analysis_completion_through_unlock_context() {
+        let mut snapshot = empty_snapshot();
+        snapshot
+            .completed_analysis_scenes
+            .insert(AnalysisSceneProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+            });
+        snapshot
+            .completed_analysis_boards
+            .insert(AnalysisBoardProgressKey {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            });
+        let state = StoryState::from_snapshot(&catalog(), snapshot).unwrap();
+        assert!(state.analysis_scene_completed("chapter_1", "analysis_scene_1"));
+        assert!(!state.analysis_scene_completed("chapter_1", "other"));
+        assert!(state.analysis_board_completed("chapter_1", "analysis_scene_1", "board_1"));
+        assert!(!state.analysis_board_completed("chapter_1", "analysis_scene_1", "other"));
     }
 }

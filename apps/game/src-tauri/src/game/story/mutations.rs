@@ -1146,4 +1146,64 @@ mod tests {
             MutationOutcome::Changed
         );
     }
+
+    #[test]
+    fn complete_analysis_board_records_progress_and_reports_changed() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state
+                .complete_analysis_board(&catalog, "chapter_1", "analysis_scene_1", "board_1")
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        // Second call is idempotent — already completed.
+        assert_eq!(
+            state
+                .complete_analysis_board(&catalog, "chapter_1", "analysis_scene_1", "board_1")
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn complete_analysis_board_rejects_unknown_board() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        let error = state
+            .complete_analysis_board(&catalog, "chapter_1", "analysis_scene_1", "nonexistent")
+            .expect_err("unknown board must be rejected");
+        assert_eq!(error.code, "unknownAnalysisBoard");
+    }
+
+    #[test]
+    fn complete_analysis_scene_records_progress_and_reports_changed() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+
+        assert_eq!(
+            state
+                .complete_analysis_scene(&catalog, "chapter_1", "analysis_scene_1")
+                .unwrap(),
+            MutationOutcome::Changed
+        );
+        // Second call is idempotent.
+        assert_eq!(
+            state
+                .complete_analysis_scene(&catalog, "chapter_1", "analysis_scene_1")
+                .unwrap(),
+            MutationOutcome::Unchanged
+        );
+    }
+
+    #[test]
+    fn complete_analysis_scene_rejects_unknown_scene() {
+        let catalog = catalog();
+        let mut state = StoryState::default();
+        let error = state
+            .complete_analysis_scene(&catalog, "chapter_1", "nonexistent")
+            .expect_err("unknown analysis scene must be rejected");
+        assert_eq!(error.code, "unknownAnalysisScene");
+    }
 }

@@ -167,8 +167,9 @@ mod tests {
     use super::*;
     use crate::game::schema::{
         AtLeastOperator, PredicateAnalysisBoardCompleted, PredicateAnalysisSceneCompleted,
-        PredicateEvidenceCollected, PredicateHotspotInvestigated, PredicatePhaseCompleted,
-        PredicateQuestionAnswered, PredicateStatementAcquired,
+        PredicateAuthorizationGranted, PredicateEvidenceCollected, PredicateFactAsserted,
+        PredicateHotspotInvestigated, PredicateObjectiveCompleted, PredicatePhaseCompleted,
+        PredicateQuestionAnswered, PredicateQuestionResolved, PredicateStatementAcquired,
     };
     use crate::game::story::StoryState;
     use serde::Deserialize;
@@ -675,5 +676,210 @@ mod tests {
             &interrogation_ctx(&[], &[], &[], &[]),
             &story,
         ));
+    }
+
+    // --- evaluate_story tests ---
+
+    fn story_fact(id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::FactAsserted {
+            _predicate: PredicateFactAsserted::X,
+            id: id.into(),
+        }
+    }
+
+    fn story_question(id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::QuestionResolved {
+            _predicate: PredicateQuestionResolved::X,
+            id: id.into(),
+        }
+    }
+
+    fn story_objective(id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::ObjectiveCompleted {
+            _predicate: PredicateObjectiveCompleted::X,
+            id: id.into(),
+        }
+    }
+
+    fn story_authorization(id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::AuthorizationGranted {
+            _predicate: PredicateAuthorizationGranted::X,
+            id: id.into(),
+        }
+    }
+
+    fn story_analysis_scene(chapter_id: &str, scene_id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::AnalysisSceneCompleted {
+            _predicate: PredicateAnalysisSceneCompleted::X,
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+        }
+    }
+
+    fn story_analysis_board(chapter_id: &str, scene_id: &str, board_id: &str) -> StoryUnlockExpr {
+        StoryUnlockExpr::AnalysisBoardCompleted {
+            _predicate: PredicateAnalysisBoardCompleted::X,
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            board_id: board_id.into(),
+        }
+    }
+
+    fn story_truth(pairs: &[(&str, bool)]) -> FixtureContext {
+        let mut truth = BTreeMap::new();
+        for (key, val) in pairs {
+            truth.insert((*key).to_string(), *val);
+        }
+        FixtureContext { truth }
+    }
+
+    #[test]
+    fn evaluate_story_and_combinator_requires_both_branches() {
+        let expr = StoryUnlockExpr::Combinator {
+            op: Combinator::And,
+            left: Box::new(story_fact("alpha")),
+            right: Box::new(story_fact("beta")),
+        };
+        let both = story_truth(&[("fact_asserted:alpha", true), ("fact_asserted:beta", true)]);
+        let one = story_truth(&[("fact_asserted:alpha", true), ("fact_asserted:beta", false)]);
+        let neither = story_truth(&[
+            ("fact_asserted:alpha", false),
+            ("fact_asserted:beta", false),
+        ]);
+        assert!(evaluate_story(&expr, &both));
+        assert!(!evaluate_story(&expr, &one));
+        assert!(!evaluate_story(&expr, &neither));
+    }
+
+    #[test]
+    fn evaluate_story_or_combinator_requires_either_branch() {
+        let expr = StoryUnlockExpr::Combinator {
+            op: Combinator::Or,
+            left: Box::new(story_fact("alpha")),
+            right: Box::new(story_question("q1")),
+        };
+        let left_only = story_truth(&[
+            ("fact_asserted:alpha", true),
+            ("question_resolved:q1", false),
+        ]);
+        let right_only = story_truth(&[
+            ("fact_asserted:alpha", false),
+            ("question_resolved:q1", true),
+        ]);
+        let neither = story_truth(&[
+            ("fact_asserted:alpha", false),
+            ("question_resolved:q1", false),
+        ]);
+        assert!(evaluate_story(&expr, &left_only));
+        assert!(evaluate_story(&expr, &right_only));
+        assert!(!evaluate_story(&expr, &neither));
+    }
+
+    struct StoryStopAfterFirstTrueContext;
+
+    impl StoryUnlockContext for StoryStopAfterFirstTrueContext {
+        fn fact_asserted(&self, id: &str) -> bool {
+            match id {
+                "present" => true,
+                "must_not_evaluate" => panic!("story threshold did not short-circuit"),
+                _ => false,
+            }
+        }
+        fn question_resolved(&self, _id: &str) -> bool {
+            false
+        }
+        fn objective_completed(&self, _id: &str) -> bool {
+            false
+        }
+        fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+            false
+        }
+        fn analysis_board_completed(
+            &self,
+            _chapter_id: &str,
+            _scene_id: &str,
+            _board_id: &str,
+        ) -> bool {
+            false
+        }
+        fn authorization_granted(&self, _id: &str) -> bool {
+            false
+        }
+    }
+
+    #[test]
+    fn evaluate_story_at_least_short_circuits_after_reaching_count() {
+        let expr = StoryUnlockExpr::AtLeast {
+            _op: AtLeastOperator::AtLeast,
+            count: 1,
+            conditions: vec![story_fact("present"), story_fact("must_not_evaluate")],
+        };
+        let ctx = StoryStopAfterFirstTrueContext;
+        assert!(evaluate_story(&expr, &ctx));
+    }
+
+    #[test]
+    fn evaluate_story_at_least_returns_false_when_count_is_zero() {
+        let expr = StoryUnlockExpr::AtLeast {
+            _op: AtLeastOperator::AtLeast,
+            count: 0,
+            conditions: vec![story_fact("alpha")],
+        };
+        let ctx = story_truth(&[("fact_asserted:alpha", true)]);
+        assert!(!evaluate_story(&expr, &ctx));
+    }
+
+    #[test]
+    fn evaluate_story_at_least_satisfies_threshold_with_exact_count() {
+        let expr = StoryUnlockExpr::AtLeast {
+            _op: AtLeastOperator::AtLeast,
+            count: 2,
+            conditions: vec![story_fact("alpha"), story_fact("beta"), story_fact("gamma")],
+        };
+        let two = story_truth(&[
+            ("fact_asserted:alpha", true),
+            ("fact_asserted:beta", true),
+            ("fact_asserted:gamma", false),
+        ]);
+        let one = story_truth(&[
+            ("fact_asserted:alpha", true),
+            ("fact_asserted:beta", false),
+            ("fact_asserted:gamma", false),
+        ]);
+        assert!(evaluate_story(&expr, &two));
+        assert!(!evaluate_story(&expr, &one));
+    }
+
+    #[test]
+    fn evaluate_story_objective_and_authorization_predicates() {
+        let objective_expr = story_objective("obj_1");
+        let auth_expr = story_authorization("auth_1");
+        let ctx = story_truth(&[
+            ("objective_completed:obj_1", true),
+            ("authorization_granted:auth_1", true),
+        ]);
+        assert!(evaluate_story(&objective_expr, &ctx));
+        assert!(evaluate_story(&auth_expr, &ctx));
+        let empty = story_truth(&[]);
+        assert!(!evaluate_story(&objective_expr, &empty));
+        assert!(!evaluate_story(&auth_expr, &empty));
+    }
+
+    #[test]
+    fn evaluate_story_analysis_scene_and_board_predicates() {
+        let scene_expr = story_analysis_scene("chapter_1", "analysis_scene_1");
+        let board_expr = story_analysis_board("chapter_1", "analysis_scene_1", "board_1");
+        let ctx = story_truth(&[
+            ("analysis_scene_completed:chapter_1@analysis_scene_1", true),
+            (
+                "analysis_board_completed:chapter_1@analysis_scene_1@board_1",
+                true,
+            ),
+        ]);
+        assert!(evaluate_story(&scene_expr, &ctx));
+        assert!(evaluate_story(&board_expr, &ctx));
+        let empty = story_truth(&[]);
+        assert!(!evaluate_story(&scene_expr, &empty));
+        assert!(!evaluate_story(&board_expr, &empty));
     }
 }
