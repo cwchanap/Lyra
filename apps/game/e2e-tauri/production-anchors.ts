@@ -34,6 +34,24 @@ export const anchors = {
   caseFileEvidenceTab: "證物",
   caseFileReexamine: "重新檢視",
 
+  // investigation_scene_p1: every hotspot currently renders in the
+  // InvestigationSceneSurface fallback controls (no authored layout yet).
+  p1Practice: {
+    hotspotLabels: [
+      "未放置：櫃台上的收據",
+      "未放置：老舊收銀機的出紙口",
+      "未放置：櫃台後的監視器",
+      "未放置：店主的手寫帳本",
+    ],
+    analysisBoard: "分析板",
+    acceptedCards: [
+      "標示 REPRINT 的收據",
+      "收銀機出紙口的卡紙痕跡",
+      "手寫帳本的影印費",
+    ],
+    submit: "比對推論",
+  },
+
   // investigation_scene_1 (first investigation after prologue)
   investigationSceneId: "investigation_scene_1",
   sublocationLabel: "相馬事務所",

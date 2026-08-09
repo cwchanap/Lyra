@@ -2003,3 +2003,57 @@ export async function collectKagamiSummaryEvidence(): Promise<void> {
   // the next action used by callers instead of handing back a disabled button.
   await waitForButton(anchors.character.label, 90000);
 }
+
+async function p1PracticeHotspotIsInspected(
+  accessibleName: string,
+): Promise<boolean> {
+  return browser.execute((name: string) => {
+    const button = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((candidate) => candidate.getAttribute("aria-label") === name);
+    return (
+      button?.classList.contains("done") === true ||
+      button?.classList.contains("inspected") === true
+    );
+  }, accessibleName);
+}
+
+/**
+ * Completes the authored P1 tutorial through the same fallback hotspot and
+ * analysis-board controls a fresh player uses. It deliberately never uses an
+ * E2E checkpoint or a native state mutation.
+ */
+export async function completeP1PracticeTutorial(): Promise<void> {
+  const { p1Practice } = anchors;
+  const lastHotspotIndex = p1Practice.hotspotLabels.length - 1;
+
+  // The fresh journey starts in scene_p0, so reach P1's exploration surface
+  // through its authored dialogue rather than assuming the controls are
+  // already mounted.
+  await advanceDialogueUntil(
+    () => elementExists(`button[aria-label="${p1Practice.hotspotLabels[0]}"]`),
+    DIALOGUE_DRAIN_CAP,
+  );
+
+  for (const [index, hotspotLabel] of p1Practice.hotspotLabels.entries()) {
+    await waitForButton(hotspotLabel, 90000);
+    await clickButton(hotspotLabel);
+    // Wait for the inspect command to enter its authored dialogue before the
+    // drain predicate can observe the re-rendered exploration surface.
+    await waitForButton(anchors.advanceDialogue, 90000);
+    await advanceDialogueUntil(
+      index === lastHotspotIndex
+        ? () => elementExists(`[aria-label="${p1Practice.analysisBoard}"]`)
+        : () => p1PracticeHotspotIsInspected(hotspotLabel),
+      40,
+    );
+  }
+
+  for (const cardLabel of p1Practice.acceptedCards) {
+    await clickButton(cardLabel);
+  }
+  await clickButton(p1Practice.submit);
+  // A correct submission transitions into the authored result dialogue. The
+  // caller drains it and the remaining prologue to the existing KAGAMI anchor.
+  await waitForButton(anchors.advanceDialogue, 90000);
+}
