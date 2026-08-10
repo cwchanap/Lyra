@@ -817,6 +817,56 @@ async fn in_flight_no_thumbnail_failure_keeps_origin_policy_for_retry_after_supe
         .is_none());
 }
 
+#[tokio::test(start_paused = true)]
+async fn stale_no_thumbnail_retry_cannot_replace_a_newer_pending_write() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.pause_at(PausePoint::Replacement);
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_at(PausePoint::Replacement).await;
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    let (pending_identity, pending_ticket) = {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        (
+            (pending.session_generation, pending.durable_revision),
+            pending.ticket.clone(),
+        )
+    };
+    assert_eq!(pending_identity, (1, 2));
+
+    backend.fail_next_commit();
+    backend.release_at(PausePoint::Replacement);
+    backend.wait_for_failed_commits(1).await;
+    tokio::task::yield_now().await;
+
+    assert!(coordinator
+        .retry_failed_background(BackgroundRetryTrigger::Flush)
+        .is_none());
+    {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        assert_eq!(
+            (pending.session_generation, pending.durable_revision),
+            pending_identity
+        );
+        assert_eq!(pending.ticket, pending_ticket);
+        assert!(state.tickets.contains_key(&pending_ticket));
+        assert!(state.failed_write.is_none());
+    }
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_receipts(1).await;
+    assert_eq!(backend.receipt_revisions(), [2]);
+}
+
 #[tokio::test]
 async fn no_thumbnail_autosave_does_not_hide_unrelated_live_activity() {
     let coordinator = SaveCoordinator::ticket_only();
@@ -855,6 +905,80 @@ async fn no_thumbnail_autosave_does_not_hide_unrelated_live_activity() {
             ThumbnailActivityView::Capturing
         ]
     );
+}
+
+#[tokio::test]
+async fn autosave_supersession_recomputes_activity_without_hiding_unrelated_capture() {
+    let backend = Arc::new(RecordingBackend::default());
+    let coordinator = SaveCoordinator::with_backend(backend);
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    coordinator.subscribe(
+        |_| {},
+        move |activity| {
+            activity_log.lock().unwrap().push(activity);
+        },
+    );
+
+    let ordinary = coordinator.notify_durable_commit(1, 1).unwrap();
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+    assert!(!coordinator
+        .state
+        .lock()
+        .unwrap()
+        .tickets
+        .contains_key(&ordinary.ticket));
+    assert_eq!(
+        activities.lock().unwrap().as_slice(),
+        &[
+            ThumbnailActivityView::Idle,
+            ThumbnailActivityView::Capturing,
+            ThumbnailActivityView::Idle
+        ]
+    );
+
+    let manual = coordinator
+        .prepare_thumbnail(ThumbnailCapturePurpose::ManualSave {
+            session_generation: 1,
+            durable_revision: 2,
+        })
+        .unwrap();
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    let newer_ordinary = coordinator.notify_durable_commit(1, 3).unwrap();
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 4)
+        .is_none());
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    let state = coordinator.state.lock().unwrap();
+    assert!(state.tickets.contains_key(&manual.ticket));
+    assert!(!state.tickets.contains_key(&newer_ordinary.ticket));
+    drop(state);
+    assert!(activities
+        .lock()
+        .unwrap()
+        .iter()
+        .skip(3)
+        .all(|activity| *activity == ThumbnailActivityView::Capturing));
 }
 
 #[tokio::test(start_paused = true)]

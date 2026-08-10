@@ -2697,16 +2697,34 @@ impl SaveCoordinator {
         &self,
         _trigger: BackgroundRetryTrigger,
     ) -> Option<ThumbnailCaptureRequestView> {
-        let (session_generation, durable_revision, thumbnail_capture_required) =
-            self.state.lock().ok().and_then(|state| {
-                state.failed_write.as_ref().map(|failure| {
-                    (
-                        failure.identity.0,
-                        failure.identity.1,
-                        failure.thumbnail_capture_required,
-                    )
-                })
-            })?;
+        let (failure, stale_health_publication) = {
+            let mut state = self.state.lock().ok()?;
+            let failure = state.failed_write.clone()?;
+            let (session_generation, durable_revision) = failure.identity;
+            let superseded_by_pending = state.pending_autosave.as_ref().is_some_and(|pending| {
+                pending.session_generation == session_generation
+                    && pending.durable_revision > durable_revision
+            });
+            let superseded_by_success =
+                state.last_successful_write.as_ref().is_some_and(|receipt| {
+                    receipt.session_generation == session_generation
+                        && receipt.durable_revision >= durable_revision
+                });
+            if superseded_by_pending || superseded_by_success {
+                state.failed_write = None;
+                let health = health_after_completion(&state);
+                let subscribers = set_persistence_health(&mut state, health.clone());
+                (None, Some((health, subscribers)))
+            } else {
+                (Some(failure), None)
+            }
+        };
+        if let Some((health, subscribers)) = stale_health_publication {
+            publish_health(&subscribers, &health);
+        }
+        let failure = failure?;
+        let (session_generation, durable_revision) = failure.identity;
+        let thumbnail_capture_required = failure.thumbnail_capture_required;
         let purpose = ThumbnailCapturePurpose::Autosave {
             session_generation,
             durable_revision,
@@ -3737,6 +3755,12 @@ impl SaveCoordinator {
             if session_generation < state.next_session_generation {
                 return Err(GameError::stale_session_generation());
             }
+            if state.pending_autosave.as_ref().is_some_and(|pending| {
+                pending.session_generation == session_generation
+                    && pending.durable_revision > durable_revision
+            }) {
+                return Err(GameError::save_write_failed());
+            }
             if !allow_unchanged_retry
                 && state.failed_write.as_ref().is_some_and(|failure| {
                     let (failed_generation, failed_revision) = failure.identity;
@@ -4428,23 +4452,36 @@ impl SaveCoordinator {
         let issued_at = Instant::now();
         let ticket = Uuid::new_v4().hyphenated().to_string();
         let intent = purpose.intent();
-        let mut state = self.lock_state()?;
-        if purpose.session_generation() < state.next_session_generation {
-            return Err(GameError::stale_session_generation());
+        let (activity_subscribers, activity) = {
+            let mut state = self.lock_state()?;
+            if purpose.session_generation() < state.next_session_generation {
+                return Err(GameError::stale_session_generation());
+            }
+            let removed_nonterminal_autosave = state
+                .latest_by_intent
+                .insert(intent, ticket.clone())
+                .and_then(|superseded| state.tickets.remove(&superseded))
+                .is_some_and(|record| {
+                    record.purpose.intent() == CaptureIntent::Autosave && record.terminal.is_none()
+                });
+            state.tickets.insert(
+                ticket.clone(),
+                TicketRecord {
+                    purpose,
+                    issued_at,
+                    deadline_at: issued_at,
+                    terminal: Some(CaptureTerminalResult::Unavailable),
+                },
+            );
+            if removed_nonterminal_autosave {
+                clear_thumbnail_activity_if_no_live_capture(&mut state)
+            } else {
+                (Vec::new(), None)
+            }
+        };
+        if let Some(activity) = activity {
+            publish_activity(&activity_subscribers, &activity);
         }
-        if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
-            state.tickets.remove(&superseded);
-        }
-        state.tickets.insert(
-            ticket.clone(),
-            TicketRecord {
-                purpose,
-                issued_at,
-                deadline_at: issued_at,
-                terminal: Some(CaptureTerminalResult::Unavailable),
-            },
-        );
-        drop(state);
         self.ticket_updates.notify_waiters();
         Ok((ticket, issued_at))
     }
@@ -4739,6 +4776,20 @@ fn set_thumbnail_activity(
 ) -> Vec<ActivitySubscriber> {
     state.thumbnail_activity = view;
     state.activity_subscribers.clone()
+}
+
+fn clear_thumbnail_activity_if_no_live_capture(
+    state: &mut CoordinatorState,
+) -> (Vec<ActivitySubscriber>, Option<ThumbnailActivityView>) {
+    let has_live_capture = state
+        .tickets
+        .values()
+        .any(|record| record.terminal.is_none());
+    if has_live_capture || state.thumbnail_activity == ThumbnailActivityView::Idle {
+        return (Vec::new(), None);
+    }
+    let view = ThumbnailActivityView::Idle;
+    (set_thumbnail_activity(state, view.clone()), Some(view))
 }
 
 fn publish_activity(subscribers: &[ActivitySubscriber], view: &ThumbnailActivityView) {
