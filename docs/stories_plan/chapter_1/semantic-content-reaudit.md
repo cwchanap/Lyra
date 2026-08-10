@@ -174,4 +174,4 @@ The initial 16-file/no-analysis record above remains a historical checkpoint. Th
 - **Status:** Deferred from HPA-561 by explicit user decision; not a HPA-561 merge gate.
 - **Already complete (authored-text continuity):** the false continuous-sightline claim was removed; Scene 3's manager mentions the old clock and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`.
 - **Remaining work:** coordinated raster regeneration of the two plates + visual acceptance/rerun of Axis 5 for that item.
-- **Owner/tracking:** to be tracked as a separate follow-up task (GitHub issue recommended). Until it is complete, the deferred visual item stays open here.
+- **Owner/tracking:** [HPA-602 — Old-clock raster continuity for scene_p2 / scene_11 (HPA-561 follow-up)](https://linear.app/cwchanap/issue/HPA-602/old-clock-raster-continuity-for-scene_p2-scene_11-hpa-561-follow-up). Until it is complete, the deferred visual item stays open here.
