@@ -2806,9 +2806,9 @@ impl SaveCoordinator {
                 durable_revision,
             });
         };
-        let thumbnail = self
+        let (thumbnail, thumbnail_capture_required) = self
             .cancel_pending_autosave_covered_by_flush(session_generation, flush_revision)?
-            .unwrap_or(CaptureTerminalResult::Unavailable);
+            .unwrap_or((CaptureTerminalResult::Unavailable, true));
 
         #[cfg(feature = "e2e")]
         if operation == FlushOperation::Exit {
@@ -2832,12 +2832,18 @@ impl SaveCoordinator {
                         flush_revision,
                         preferred_target,
                         thumbnail,
+                        thumbnail_capture_required,
                     )
                     .await;
                 let _ = result_tx.send(result);
             }),
         ) {
-            self.record_background_failure(session_generation, flush_revision, error.clone());
+            self.record_background_failure(
+                session_generation,
+                flush_revision,
+                thumbnail_capture_required,
+                error.clone(),
+            );
             return Err(error);
         }
         let (receipt, wrote) = result_rx
@@ -2918,7 +2924,8 @@ impl SaveCoordinator {
             Arc::clone(&self.exclusive_updates),
         );
 
-        self.cancel_pending_autosave_covered_by_flush(session_generation, source_revision)?;
+        let _ =
+            self.cancel_pending_autosave_covered_by_flush(session_generation, source_revision)?;
 
         let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -3249,6 +3256,7 @@ impl SaveCoordinator {
         durable_revision: u64,
         preferred_target: Option<SaveSlotRef>,
         thumbnail: CaptureTerminalResult,
+        thumbnail_capture_required: bool,
     ) -> Result<(AutosaveWriteReceipt, bool), GameError> {
         if let Some(receipt) = self.last_successful_write().filter(|receipt| {
             receipt.session_generation == session_generation
@@ -3299,7 +3307,12 @@ impl SaveCoordinator {
         }
         .await;
         if let Err(error) = &write_result {
-            self.record_background_failure(session_generation, durable_revision, error.clone());
+            self.record_background_failure(
+                session_generation,
+                durable_revision,
+                thumbnail_capture_required,
+                error.clone(),
+            );
         }
         write_result
     }
@@ -3308,7 +3321,7 @@ impl SaveCoordinator {
         &self,
         session_generation: u64,
         durable_revision: u64,
-    ) -> Result<Option<CaptureTerminalResult>, GameError> {
+    ) -> Result<Option<(CaptureTerminalResult, bool)>, GameError> {
         let (thumbnail, subscribers) = {
             let mut state = self.lock_state()?;
             let covered = state.pending_autosave.as_ref().is_some_and(|pending| {
@@ -3331,11 +3344,12 @@ impl SaveCoordinator {
             } else {
                 CaptureTerminalResult::Unavailable
             };
+            let thumbnail_capture_required = pending.thumbnail_capture_required;
             if state.latest_by_intent.get(&CaptureIntent::Autosave) == Some(&pending.ticket) {
                 state.latest_by_intent.remove(&CaptureIntent::Autosave);
             }
             (
-                Some(thumbnail),
+                Some((thumbnail, thumbnail_capture_required)),
                 set_thumbnail_activity(&mut state, ThumbnailActivityView::Idle),
             )
         };
@@ -3775,6 +3789,7 @@ impl SaveCoordinator {
                 self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 );
                 return;
@@ -3789,6 +3804,7 @@ impl SaveCoordinator {
             durable_revision: pending.durable_revision,
         };
         let failed_identity = (pending.session_generation, pending.durable_revision);
+        let thumbnail_capture_required = pending.thumbnail_capture_required;
         if let Err(error) = self.writer_queue.enqueue(
             Arc::clone(&self.task_scheduler),
             class,
@@ -3798,7 +3814,12 @@ impl SaveCoordinator {
                     .await;
             }),
         ) {
-            self.record_background_failure(failed_identity.0, failed_identity.1, error);
+            self.record_background_failure(
+                failed_identity.0,
+                failed_identity.1,
+                thumbnail_capture_required,
+                error,
+            );
         }
     }
 
@@ -3814,6 +3835,7 @@ impl SaveCoordinator {
             self.record_background_failure(
                 pending.session_generation,
                 pending.durable_revision,
+                pending.thumbnail_capture_required,
                 GameError::save_write_failed(),
             );
             return;
@@ -3831,6 +3853,7 @@ impl SaveCoordinator {
                 self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 );
                 return;
@@ -3842,6 +3865,7 @@ impl SaveCoordinator {
                 self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 );
                 return;
@@ -3860,6 +3884,7 @@ impl SaveCoordinator {
                 self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 );
                 return;
@@ -3873,6 +3898,7 @@ impl SaveCoordinator {
             self.record_background_failure(
                 pending.session_generation,
                 pending.durable_revision,
+                pending.thumbnail_capture_required,
                 error,
             );
             return;
@@ -3883,6 +3909,7 @@ impl SaveCoordinator {
                 self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 );
                 return;
@@ -3897,6 +3924,7 @@ impl SaveCoordinator {
                     self.record_background_failure(
                         pending.session_generation,
                         pending.durable_revision,
+                        pending.thumbnail_capture_required,
                         GameError::save_write_failed(),
                     );
                 }
@@ -3906,12 +3934,14 @@ impl SaveCoordinator {
                 Err(error) => self.record_background_failure(
                     pending.session_generation,
                     pending.durable_revision,
+                    pending.thumbnail_capture_required,
                     error,
                 ),
             },
             Err(error) => self.record_background_failure(
                 pending.session_generation,
                 pending.durable_revision,
+                pending.thumbnail_capture_required,
                 error,
             ),
         }
@@ -4177,6 +4207,7 @@ impl SaveCoordinator {
         &self,
         session_generation: u64,
         durable_revision: u64,
+        thumbnail_capture_required: bool,
         error: GameError,
     ) {
         let publication = if let Ok(mut state) = self.state.lock() {
@@ -4184,11 +4215,6 @@ impl SaveCoordinator {
                 return;
             }
             let failed = (session_generation, durable_revision);
-            let thumbnail_capture_required = state
-                .pending_autosave
-                .as_ref()
-                .filter(|pending| (pending.session_generation, pending.durable_revision) == failed)
-                .is_none_or(|pending| pending.thumbnail_capture_required);
             if state.pending_autosave.as_ref().is_some_and(|pending| {
                 pending.session_generation == session_generation
                     && pending.durable_revision == durable_revision
@@ -4402,33 +4428,23 @@ impl SaveCoordinator {
         let issued_at = Instant::now();
         let ticket = Uuid::new_v4().hyphenated().to_string();
         let intent = purpose.intent();
-        let (activity_subscribers, activity) = {
-            let mut state = self.lock_state()?;
-            if purpose.session_generation() < state.next_session_generation {
-                return Err(GameError::stale_session_generation());
-            }
-            if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
-                state.tickets.remove(&superseded);
-            }
-            state.tickets.insert(
-                ticket.clone(),
-                TicketRecord {
-                    purpose,
-                    issued_at,
-                    deadline_at: issued_at,
-                    terminal: Some(CaptureTerminalResult::Unavailable),
-                },
-            );
-            if state.thumbnail_activity == ThumbnailActivityView::Idle {
-                (Vec::new(), None)
-            } else {
-                let view = ThumbnailActivityView::Idle;
-                (set_thumbnail_activity(&mut state, view.clone()), Some(view))
-            }
-        };
-        if let Some(activity) = activity {
-            publish_activity(&activity_subscribers, &activity);
+        let mut state = self.lock_state()?;
+        if purpose.session_generation() < state.next_session_generation {
+            return Err(GameError::stale_session_generation());
         }
+        if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
+            state.tickets.remove(&superseded);
+        }
+        state.tickets.insert(
+            ticket.clone(),
+            TicketRecord {
+                purpose,
+                issued_at,
+                deadline_at: issued_at,
+                terminal: Some(CaptureTerminalResult::Unavailable),
+            },
+        );
+        drop(state);
         self.ticket_updates.notify_waiters();
         Ok((ticket, issued_at))
     }

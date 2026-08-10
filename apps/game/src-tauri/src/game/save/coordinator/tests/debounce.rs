@@ -794,6 +794,70 @@ async fn no_thumbnail_background_failure_retries_without_capture_or_warning_acti
 }
 
 #[tokio::test(start_paused = true)]
+async fn in_flight_no_thumbnail_failure_keeps_origin_policy_for_retry_after_supersession() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.pause_at(PausePoint::Replacement);
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_at(PausePoint::Replacement).await;
+
+    let newer_capture = coordinator.notify_durable_commit(1, 2);
+    assert!(newer_capture.is_some());
+    backend.fail_next_commit();
+    backend.release_at(PausePoint::Replacement);
+    backend.wait_for_failed_commits(1).await;
+    tokio::task::yield_now().await;
+
+    assert!(coordinator
+        .retry_failed_background(BackgroundRetryTrigger::Flush)
+        .is_none());
+}
+
+#[tokio::test]
+async fn no_thumbnail_autosave_does_not_hide_unrelated_live_activity() {
+    let coordinator = SaveCoordinator::ticket_only();
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    coordinator.subscribe(
+        |_| {},
+        move |activity| {
+            activity_log.lock().unwrap().push(activity);
+        },
+    );
+    let manual = coordinator
+        .prepare_thumbnail(ThumbnailCapturePurpose::ManualSave {
+            session_generation: 1,
+            durable_revision: 1,
+        })
+        .unwrap();
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(coordinator
+        .state
+        .lock()
+        .unwrap()
+        .tickets
+        .contains_key(&manual.ticket));
+    assert_eq!(
+        activities.lock().unwrap().as_slice(),
+        &[
+            ThumbnailActivityView::Idle,
+            ThumbnailActivityView::Capturing
+        ]
+    );
+}
+
+#[tokio::test(start_paused = true)]
 async fn debounce_spends_the_existing_ticket_deadline() {
     let backend = Arc::new(RecordingBackend::default());
     let coordinator = SaveCoordinator::with_backend(backend.clone());

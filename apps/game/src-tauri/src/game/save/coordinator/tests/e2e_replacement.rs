@@ -260,7 +260,7 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
         None,
     );
     app.coordinator
-        .record_background_failure(0, 4, GameError::save_write_failed());
+        .record_background_failure(0, 4, true, GameError::save_write_failed());
     app.coordinator
         .record_registered_autosave_target(0, 4, SaveSlotRef::Auto { slot: 2 })
         .unwrap();
