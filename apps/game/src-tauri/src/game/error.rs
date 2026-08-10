@@ -373,6 +373,20 @@ impl GameError {
             format!("Analysis board '{id}' is not unlocked yet."),
         )
     }
+    /// The board exists and is unlocked, but it is not the active board the
+    /// player is supposed to operate next. `ModeView::Analysis` publishes
+    /// `next_unlocked_board_id`; the engine must enforce the same boundary so
+    /// a crafted or stale command cannot complete a later board out of authored
+    /// order and fire its reveals early. Mirrors the interrogation defense
+    /// where questions outside the current phase are rejected.
+    pub fn analysis_board_not_active(id: &str) -> Self {
+        Self::new(
+            "analysisBoardNotActive",
+            format!(
+                "Analysis board '{id}' is not the active board; complete the current board first."
+            ),
+        )
+    }
     pub fn unavailable_analysis_card(board_id: &str, card_id: &str) -> Self {
         Self::new(
             "unavailableAnalysisCard",
@@ -677,6 +691,10 @@ mod tests {
             (
                 "lockedAnalysisBoard",
                 GameError::locked_analysis_board("board_1"),
+            ),
+            (
+                "analysisBoardNotActive",
+                GameError::analysis_board_not_active("board_1"),
             ),
             (
                 "unavailableAnalysisCard",

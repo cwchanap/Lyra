@@ -2834,6 +2834,164 @@ mod tests {
         let _ = std::fs::remove_dir_all(resources);
     }
 
+    fn analysis_scene_with_two_unlocked_boards_json(id: &str) -> String {
+        // Both boards have null unlock, so both are unlocked. board_1 is the
+        // active board (first incomplete unlocked); board_2 is unlocked but
+        // not active. Both use practice cards so availability can be seeded
+        // directly on the analysis scene state without going through inventory
+        // catalog validation. A crafted command must not be able to operate
+        // board_2 before board_1 is complete, even though board_2's card is
+        // available.
+        format!(
+            r#"{{
+                "type": "analysis",
+                "id": "{id}",
+                "title": "Analysis",
+                "summary": "Two unlocked boards.",
+                "assetRefs": [],
+                "intro": [],
+                "boards": [
+                    {{
+                        "kind": "threshold",
+                        "common": {{
+                            "id": "board_1",
+                            "label": "Board One",
+                            "prompt": "Select.",
+                            "unlock": null,
+                            "reveals": [],
+                            "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
+                            "cards": [
+                                {{"id": "card_b", "label": "B", "source": {{"kind": "practice", "id": "prac_b"}}, "summary": "B"}}
+                            ],
+                            "resultDialogue": [{{"kind": "action", "text": "Result One"}}]
+                        }},
+                        "minimumSelected": 1,
+                        "acceptedSelections": [["card_b"]]
+                    }},
+                    {{
+                        "kind": "threshold",
+                        "common": {{
+                            "id": "board_2",
+                            "label": "Board Two",
+                            "prompt": "Select.",
+                            "unlock": null,
+                            "reveals": [],
+                            "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
+                            "cards": [
+                                {{"id": "card_b2", "label": "B2", "source": {{"kind": "practice", "id": "prac_b2"}}, "summary": "B2"}}
+                            ],
+                            "resultDialogue": [{{"kind": "action", "text": "Result Two"}}]
+                        }},
+                        "minimumSelected": 1,
+                        "acceptedSelections": [["card_b2"]]
+                    }}
+                ],
+                "outro": []
+            }}"#
+        )
+    }
+
+    fn analysis_resources_with_two_unlocked_boards(label: &str) -> std::path::PathBuf {
+        let resources = acquisition_navigation_resources(
+            label,
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "investigation", "file": "chapter_1/investigation_scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_with_practice_json("investigation_scene_0", "prac_b"),
+                ),
+                (
+                    "analysis_scene_1.json",
+                    analysis_scene_with_two_unlocked_boards_json("analysis_scene_1"),
+                ),
+            ],
+        );
+        // Register both analysis boards in the catalog so the engine accepts
+        // the scene adjacency/catalog validation.
+        let catalog_path = resources.join("story_catalog.json");
+        let mut catalog: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&catalog_path).expect("catalog must be readable"),
+        )
+        .expect("catalog must be valid JSON");
+        catalog["analysisScenes"] = serde_json::json!([
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_1"}
+        ]);
+        catalog["analysisBoards"] = serde_json::json!([
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_1"},
+            {"chapterId": "chapter_1", "sceneId": "analysis_scene_1", "boardId": "board_2"}
+        ]);
+        std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+        resources
+    }
+
+    #[test]
+    fn analysis_commands_reject_non_active_unlocked_board() {
+        let resources = analysis_resources_with_two_unlocked_boards("analysis-active-board-guard");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        // Seed both practice cards directly on the analysis scene state so both
+        // boards' cards are available; the only thing that can reject board_2
+        // is the active-board guard.
+        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+            scene.record_practice_card("prac_b");
+            scene.record_practice_card("prac_b2");
+        }
+
+        // The view publishes board_1 as the active board.
+        let view = engine.view().expect("view should succeed");
+        assert!(
+            matches!(view.mode, ModeView::Analysis { ref board_id, .. } if board_id == "board_1"),
+            "active board must be board_1"
+        );
+
+        // board_2 is unlocked and its card is available, but it is not the
+        // active board. Both set and submit must be rejected by the guard
+        // before any state mutation or reveal fires.
+        let error = engine
+            .set_analysis_selection("board_2", vec!["card_b2".into()])
+            .expect_err("set on non-active board must be rejected");
+        assert_eq!(error.code, "analysisBoardNotActive");
+        let error = engine
+            .submit_analysis_selection("board_2")
+            .expect_err("submit on non-active board must be rejected");
+        assert_eq!(error.code, "analysisBoardNotActive");
+
+        // board_2 must not have been recorded complete by the rejected
+        // submission, and its reveals must not have fired.
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert!(!scene.is_board_completed("board_2"));
+
+        // The active board_1 still operates normally.
+        engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect("active board selection should succeed");
+        let submitted = engine
+            .submit_analysis_selection("board_1")
+            .expect("active board submission should succeed");
+        let ModeView::Dialogue { current, .. } = &submitted.mode else {
+            panic!("accepted submission should open result dialogue");
+        };
+        assert!(matches!(
+            current,
+            DialogueItem::Action { text } if text == "Result One"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
     #[test]
     fn analysis_mode_view_shows_board_when_unlocked() {
         let resources = analysis_resources_with_cards("analysis-mode-view");
