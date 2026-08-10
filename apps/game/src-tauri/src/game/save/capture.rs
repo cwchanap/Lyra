@@ -3191,6 +3191,59 @@ mod tests {
             .expect("valid analysis state should pass validation");
     }
 
+    #[test]
+    fn validate_analysis_progress_rejects_scene_id_mismatch() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.def.id = "different_scene_id".into();
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("scene ID mismatch must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("does not match"));
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_duplicate_board_ids_in_packaged_def() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        // Build a packaged def with duplicate board IDs by cloning the board.
+        let mut packaged = analysis_def_with_threshold_board();
+        packaged.boards.push(packaged.boards[0].clone());
+        let error = validate_analysis_progress(&scene, &packaged)
+            .expect_err("duplicate board IDs in packaged def must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("duplicate board ids"));
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_active_board_referencing_unknown_board() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.active_board_id = Some("nonexistent_board".into());
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("unknown active board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("unknown board"));
+    }
+
+    #[test]
+    fn validate_analysis_progress_rejects_feedback_referencing_unknown_board() {
+        let def = analysis_def_with_threshold_board();
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.intro_played = true;
+        scene.feedback_by_board_id.insert(
+            "nonexistent_board".into(),
+            crate::game::analysis::AnalysisFeedbackState::Incorrect,
+        );
+        let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
+            .expect_err("unknown feedback board must be rejected");
+        assert_eq!(error.code, "invalidSaveCapture");
+        assert!(error.message.contains("unknown board"));
+    }
+
     // --- validate_analysis_intro tests ---
 
     #[test]

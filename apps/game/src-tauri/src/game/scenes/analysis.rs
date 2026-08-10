@@ -766,4 +766,165 @@ mod tests {
             ids(&["classify_board", "threshold_board"])
         );
     }
+
+    #[test]
+    fn order_board_rejects_draft_when_fixed_anchor_position_is_zero() {
+        let mut def = table_scene();
+        if let crate::game::schema::AnalysisBoardJson::Order { fixed_anchors, .. } =
+            &mut def.boards[1]
+        {
+            fixed_anchors[0].position = 0;
+        }
+        let state = AnalysisSceneState::from_json(def, 1);
+        let draft = AnalysisDraft::Order {
+            card_ids: vec!["o1".into(), "o2".into(), "o3".into()],
+        };
+        let error = state
+            .validate_draft("order_board", &draft)
+            .expect_err("anchor with position 0 must be rejected");
+        assert_eq!(error.code, "analysisSelectionInvalid");
+    }
+
+    #[test]
+    fn order_board_rejects_draft_when_anchor_position_exceeds_card_count() {
+        let mut def = table_scene();
+        if let crate::game::schema::AnalysisBoardJson::Order { fixed_anchors, .. } =
+            &mut def.boards[1]
+        {
+            fixed_anchors[0].position = 99;
+        }
+        let state = AnalysisSceneState::from_json(def, 1);
+        let draft = AnalysisDraft::Order {
+            card_ids: vec!["o1".into(), "o2".into(), "o3".into()],
+        };
+        let error = state
+            .validate_draft("order_board", &draft)
+            .expect_err("anchor position exceeding card count must be rejected");
+        assert_eq!(error.code, "analysisSelectionInvalid");
+    }
+
+    #[test]
+    fn order_board_rejects_draft_when_anchor_card_position_mismatches() {
+        let state = AnalysisSceneState::from_json(table_scene(), 1);
+        // The fixed anchor says o1 must be at position 1, but we put it at
+        // position 2 (index 1).
+        let draft = AnalysisDraft::Order {
+            card_ids: vec!["o2".into(), "o1".into(), "o3".into()],
+        };
+        let error = state
+            .validate_draft("order_board", &draft)
+            .expect_err("anchor card position mismatch must be rejected");
+        assert_eq!(error.code, "analysisSelectionInvalid");
+    }
+
+    #[test]
+    fn order_board_rejects_non_order_draft_with_kind_mismatch() {
+        let state = AnalysisSceneState::from_json(table_scene(), 1);
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: ids(&["o1"]),
+        };
+        let error = state
+            .validate_draft("order_board", &draft)
+            .expect_err("threshold draft on order board must be rejected");
+        assert_eq!(error.code, "analysisBoardKindMismatch");
+        assert!(error.message.contains("order"));
+    }
+
+    #[test]
+    fn story_unlock_fixture_evaluates_all_story_predicate_kinds() {
+        let scene = serde_json::from_value(json!({
+            "id": "unlock_predicate_coverage",
+            "title": "Unlock predicates",
+            "summary": "Exercises every StoryUnlockContext method",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "fact_board",
+                        "label": "F", "prompt": "F",
+                        "unlock": {"predicate": "fact_asserted", "id": "fact_1"},
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "question_board",
+                        "label": "Q", "prompt": "Q",
+                        "unlock": {"predicate": "question_resolved", "id": "question_1"},
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "objective_board",
+                        "label": "O", "prompt": "O",
+                        "unlock": {"predicate": "objective_completed", "id": "objective_1"},
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "scene_board",
+                        "label": "S", "prompt": "S",
+                        "unlock": {
+                            "predicate": "analysis_scene_completed",
+                            "chapterId": "chapter_1",
+                            "sceneId": "prior_scene"
+                        },
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "auth_board",
+                        "label": "A", "prompt": "A",
+                        "unlock": {"predicate": "authorization_granted", "id": "auth_1"},
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                }
+            ]
+        }))
+        .expect("unlock predicate scene must deserialize");
+        let state = AnalysisSceneState::from_json(scene, 1);
+        let story = StoryUnlockFixture::default();
+        // Every board has a story unlock predicate that StoryUnlockFixture
+        // answers with false, so none should be available.
+        let available = state.compute_available_board_ids(&story);
+        assert!(
+            available.is_empty(),
+            "all boards should be locked when no story predicates are satisfied"
+        );
+    }
 }

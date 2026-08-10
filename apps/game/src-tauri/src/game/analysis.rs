@@ -89,3 +89,68 @@ pub struct AnalysisActionToken {
     pub active_board_id: Option<String>,
     pub durable_revision: u64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn order_draft_with_duplicate_card_ids_is_rejected() {
+        let json = serde_json::json!({
+            "kind": "order",
+            "cardIds": ["card_a", "card_a"],
+        });
+        let error = serde_json::from_value::<AnalysisDraft>(json)
+            .expect_err("duplicate order card IDs must be rejected");
+        let message = error.to_string();
+        assert!(
+            message.contains("duplicate card IDs"),
+            "error must mention duplicate card IDs: {message}"
+        );
+    }
+
+    #[test]
+    fn threshold_draft_with_duplicate_card_ids_is_rejected() {
+        let json = serde_json::json!({
+            "kind": "threshold",
+            "selectedCardIds": ["card_a", "card_a"],
+        });
+        let error = serde_json::from_value::<AnalysisDraft>(json)
+            .expect_err("duplicate threshold card IDs must be rejected");
+        let message = error.to_string();
+        assert!(
+            message.contains("duplicate card IDs"),
+            "error must mention duplicate card IDs: {message}"
+        );
+    }
+
+    #[test]
+    fn classify_draft_round_trips_through_serde() {
+        let draft = AnalysisDraft::Classify {
+            group_by_card: BTreeMap::from([("card_a".into(), "group_1".into())]),
+        };
+        let json = serde_json::to_value(&draft).unwrap();
+        let restored: AnalysisDraft = serde_json::from_value(json).unwrap();
+        assert_eq!(draft, restored);
+    }
+
+    #[test]
+    fn order_draft_without_duplicates_round_trips_through_serde() {
+        let draft = AnalysisDraft::Order {
+            card_ids: vec!["card_a".into(), "card_b".into()],
+        };
+        let json = serde_json::to_value(&draft).unwrap();
+        let restored: AnalysisDraft = serde_json::from_value(json).unwrap();
+        assert_eq!(draft, restored);
+    }
+
+    #[test]
+    fn threshold_draft_without_duplicates_round_trips_through_serde() {
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: BTreeSet::from(["card_a".into(), "card_b".into()]),
+        };
+        let json = serde_json::to_value(&draft).unwrap();
+        let restored: AnalysisDraft = serde_json::from_value(json).unwrap();
+        assert_eq!(draft, restored);
+    }
+}

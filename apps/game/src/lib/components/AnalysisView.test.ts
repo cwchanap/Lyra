@@ -196,4 +196,179 @@ describe("AnalysisView", () => {
 
     expect(getByRole("status").textContent).toContain("監視器畫面是真的");
   });
+
+  it("renders the classify/order placeholder for non-threshold boards", () => {
+    const classifyScene: AnalysisSceneView = {
+      ...p1Scene(),
+      visibleBoards: [
+        {
+          kind: "classify",
+          id: "classify_board",
+          label: "分類板",
+          prompt: "分類",
+          cards: [],
+          groups: [],
+          available: true,
+          completed: false,
+          readOnly: false,
+          draft: { kind: "classify", groupByCard: {} },
+          feedback: null,
+          hint: null,
+        },
+      ],
+      activeBoardId: "classify_board",
+    };
+    const { getByText, queryByText } = render(AnalysisView, {
+      scene: classifyScene,
+      boardId: "classify_board",
+      feedback: null,
+      onSelection: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+    expect(getByText("此分析板需要分類或排序操作。")).toBeTruthy();
+    expect(queryByText("比對推論")).toBeNull();
+  });
+
+  it("renders the loading placeholder when the board is not found", () => {
+    const { getByText } = render(AnalysisView, {
+      scene: p1Scene(),
+      boardId: "nonexistent_board",
+      feedback: null,
+      onSelection: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+    expect(getByText("分析板載入中。")).toBeTruthy();
+  });
+
+  it("disables card buttons and submit when the disabled prop is set", () => {
+    const onSelection = vi.fn().mockResolvedValue(undefined);
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { getByRole } = render(AnalysisView, {
+      scene: p1Scene(),
+      boardId: "p1_reprint_time_board",
+      feedback: null,
+      onSelection,
+      onSubmit,
+      disabled: true,
+    });
+    const cardButton = getByRole("button", { name: /標示 REPRINT 的收據/ });
+    expect(cardButton).toBeDisabled();
+    const submitButton = getByRole("button", { name: "比對推論" });
+    expect(submitButton).toBeDisabled();
+    // Clicking disabled buttons should not invoke callbacks.
+    fireEvent.click(cardButton);
+    fireEvent.click(submitButton);
+    expect(onSelection).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("disables card buttons and submit when the board is completed", () => {
+    const completedScene: AnalysisSceneView = {
+      ...p1Scene(),
+      visibleBoards: [
+        {
+          ...p1Scene().visibleBoards[0],
+          completed: true,
+          readOnly: true,
+          selectedCardIds: [
+            "receipt_reprint",
+            "register_paper_jam",
+            "cctv_change",
+          ],
+        },
+      ],
+    };
+    const onSelection = vi.fn().mockResolvedValue(undefined);
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const { getByRole } = render(AnalysisView, {
+      scene: completedScene,
+      boardId: "p1_reprint_time_board",
+      feedback: null,
+      onSelection,
+      onSubmit,
+    });
+    const cardButton = getByRole("button", { name: /標示 REPRINT 的收據/ });
+    expect(cardButton).toBeDisabled();
+    const submitButton = getByRole("button", { name: "比對推論" });
+    expect(submitButton).toBeDisabled();
+  });
+
+  it("toggles a card off when clicking an already-selected card", async () => {
+    const onSelection = vi.fn().mockResolvedValue(undefined);
+    const sceneWithSelection: AnalysisSceneView = {
+      ...p1Scene(),
+      visibleBoards: [
+        {
+          ...p1Scene().visibleBoards[0],
+          selectedCardIds: ["receipt_reprint"],
+        },
+      ],
+    };
+    const { getByRole } = render(AnalysisView, {
+      scene: sceneWithSelection,
+      boardId: "p1_reprint_time_board",
+      feedback: null,
+      onSelection,
+      onSubmit: vi.fn(),
+    });
+    await fireEvent.click(getByRole("button", { name: /標示 REPRINT 的收據/ }));
+    expect(onSelection).toHaveBeenCalledExactlyOnceWith(
+      sceneWithSelection.actionToken,
+      { kind: "threshold", selectedCardIds: [] },
+    );
+  });
+
+  it("disables unavailable cards", () => {
+    const sceneWithUnavailableCard: AnalysisSceneView = {
+      ...p1Scene(),
+      visibleBoards: [
+        {
+          ...p1Scene().visibleBoards[0],
+          cards: [
+            {
+              ...p1Scene().visibleBoards[0].cards[0],
+              available: false,
+            },
+            ...p1Scene().visibleBoards[0].cards.slice(1),
+          ],
+        },
+      ],
+    };
+    const { getByRole } = render(AnalysisView, {
+      scene: sceneWithUnavailableCard,
+      boardId: "p1_reprint_time_board",
+      feedback: null,
+      onSelection: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+    const unavailableButton = getByRole("button", {
+      name: /標示 REPRINT 的收據/,
+    });
+    expect(unavailableButton).toBeDisabled();
+  });
+
+  it("renders board-level feedback from the board view when no override is supplied", () => {
+    const sceneWithBoardFeedback: AnalysisSceneView = {
+      ...p1Scene(),
+      visibleBoards: [
+        {
+          ...p1Scene().visibleBoards[0],
+          feedback: {
+            state: "incorrect",
+            message: "選擇的線索不足以推論重印時間。",
+          },
+        },
+      ],
+    };
+    const { getByRole } = render(AnalysisView, {
+      scene: sceneWithBoardFeedback,
+      boardId: "p1_reprint_time_board",
+      feedback: null,
+      onSelection: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+    expect(getByRole("status").textContent).toContain(
+      "選擇的線索不足以推論重印時間",
+    );
+  });
 });

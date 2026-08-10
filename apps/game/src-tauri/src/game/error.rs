@@ -714,6 +714,10 @@ mod tests {
                 GameError::unavailable_analysis_card("board_1", "card_1"),
             ),
             ("staleAnalysisAction", GameError::stale_analysis_action()),
+            (
+                "analysisNoActiveBoard",
+                GameError::analysis_no_active_board(),
+            ),
         ];
         for (expected_code, error) in cases {
             assert_eq!(error.code, expected_code);
@@ -777,5 +781,12 @@ mod tests {
             GameError::stale_analysis_action().code,
             "staleAnalysisAction"
         );
+        assert_eq!(
+            GameError::analysis_no_active_board().code,
+            "analysisNoActiveBoard"
+        );
+        assert!(GameError::analysis_no_active_board()
+            .message
+            .contains("No analysis board"));
     }
 }
