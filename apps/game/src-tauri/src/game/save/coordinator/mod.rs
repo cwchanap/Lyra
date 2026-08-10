@@ -85,6 +85,7 @@ mod e2e_fault_boundary_tests {
                 durable_revision: 5,
                 ticket: capture.ticket,
                 purpose,
+                thumbnail_capture_required: true,
                 debounce_deadline: Instant::now() + Duration::from_secs(30),
                 capture_deadline: Instant::now() + Duration::from_secs(30),
             });
@@ -1209,6 +1210,7 @@ struct PendingAutosave {
     durable_revision: u64,
     ticket: String,
     purpose: ThumbnailCapturePurpose,
+    thumbnail_capture_required: bool,
     debounce_deadline: Instant,
     capture_deadline: Instant,
 }
@@ -1217,6 +1219,7 @@ struct PendingAutosave {
 struct BackgroundWriteFailure {
     identity: (u64, u64),
     diagnostic: GameError,
+    thumbnail_capture_required: bool,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -2606,6 +2609,7 @@ impl SaveCoordinator {
                     request.ticket.clone(),
                     request.deadline_at,
                     false,
+                    true,
                 ) {
                     self.record_schedule_failure(
                         session_generation,
@@ -2625,6 +2629,45 @@ impl SaveCoordinator {
         }
     }
 
+    /// Schedule an autosave for a committed workbench mutation without asking
+    /// the frontend to capture a thumbnail. The coordinator still creates an
+    /// internal terminal ticket so the existing trailing-debounce/write path
+    /// can consume `Unavailable` without publishing thumbnail activity.
+    pub(crate) fn notify_durable_commit_without_thumbnail(
+        &self,
+        session_generation: u64,
+        durable_revision: u64,
+    ) -> Option<ThumbnailCaptureRequestView> {
+        let purpose = ThumbnailCapturePurpose::Autosave {
+            session_generation,
+            durable_revision,
+        };
+        let (ticket, deadline_at) = match self.issue_terminal_unavailable_thumbnail(purpose.clone())
+        {
+            Ok(ticket) => ticket,
+            Err(error) => {
+                self.record_schedule_failure_without_thumbnail(
+                    session_generation,
+                    durable_revision,
+                    None,
+                    error,
+                );
+                return None;
+            }
+        };
+        if let Err(error) =
+            self.schedule_autosave(purpose, ticket.clone(), deadline_at, false, false)
+        {
+            self.record_schedule_failure_without_thumbnail(
+                session_generation,
+                durable_revision,
+                Some(&ticket),
+                error,
+            );
+        }
+        None
+    }
+
     pub(crate) fn notify_committed<T>(
         &self,
         committed: T,
@@ -2637,19 +2680,63 @@ impl SaveCoordinator {
         }
     }
 
+    pub(crate) fn notify_committed_without_thumbnail<T>(
+        &self,
+        committed: T,
+        session_generation: u64,
+        durable_revision: u64,
+    ) -> CommittedNotification<T> {
+        CommittedNotification {
+            committed,
+            thumbnail_capture: self
+                .notify_durable_commit_without_thumbnail(session_generation, durable_revision),
+        }
+    }
+
     pub(crate) fn retry_failed_background(
         &self,
         _trigger: BackgroundRetryTrigger,
     ) -> Option<ThumbnailCaptureRequestView> {
-        let (session_generation, durable_revision) = self
-            .state
-            .lock()
-            .ok()
-            .and_then(|state| state.failed_write.as_ref().map(|failure| failure.identity))?;
+        let (session_generation, durable_revision, thumbnail_capture_required) =
+            self.state.lock().ok().and_then(|state| {
+                state.failed_write.as_ref().map(|failure| {
+                    (
+                        failure.identity.0,
+                        failure.identity.1,
+                        failure.thumbnail_capture_required,
+                    )
+                })
+            })?;
         let purpose = ThumbnailCapturePurpose::Autosave {
             session_generation,
             durable_revision,
         };
+        if !thumbnail_capture_required {
+            let (ticket, deadline_at) =
+                match self.issue_terminal_unavailable_thumbnail(purpose.clone()) {
+                    Ok(ticket) => ticket,
+                    Err(error) => {
+                        self.record_schedule_failure_without_thumbnail(
+                            session_generation,
+                            durable_revision,
+                            None,
+                            error,
+                        );
+                        return None;
+                    }
+                };
+            if let Err(error) =
+                self.schedule_autosave(purpose, ticket.clone(), deadline_at, true, false)
+            {
+                self.record_schedule_failure_without_thumbnail(
+                    session_generation,
+                    durable_revision,
+                    Some(&ticket),
+                    error,
+                );
+            }
+            return None;
+        }
         let request = match self.issue_thumbnail(purpose.clone()) {
             Ok(request) => request,
             Err(error) => {
@@ -2657,9 +2744,13 @@ impl SaveCoordinator {
                 return None;
             }
         };
-        if let Err(error) =
-            self.schedule_autosave(purpose, request.ticket.clone(), request.deadline_at, true)
-        {
+        if let Err(error) = self.schedule_autosave(
+            purpose,
+            request.ticket.clone(),
+            request.deadline_at,
+            true,
+            true,
+        ) {
             self.record_schedule_failure(
                 session_generation,
                 durable_revision,
@@ -3603,6 +3694,7 @@ impl SaveCoordinator {
         ticket: String,
         capture_deadline: Instant,
         allow_unchanged_retry: bool,
+        thumbnail_capture_required: bool,
     ) -> Result<(), GameError> {
         if self.backend.is_none() || self.fail_next_schedule.swap(false, Ordering::SeqCst) {
             return Err(GameError::save_write_failed());
@@ -3646,6 +3738,7 @@ impl SaveCoordinator {
                 durable_revision,
                 ticket,
                 purpose,
+                thumbnail_capture_required,
                 debounce_deadline,
                 capture_deadline,
             };
@@ -4091,6 +4184,11 @@ impl SaveCoordinator {
                 return;
             }
             let failed = (session_generation, durable_revision);
+            let thumbnail_capture_required = state
+                .pending_autosave
+                .as_ref()
+                .filter(|pending| (pending.session_generation, pending.durable_revision) == failed)
+                .is_none_or(|pending| pending.thumbnail_capture_required);
             if state.pending_autosave.as_ref().is_some_and(|pending| {
                 pending.session_generation == session_generation
                     && pending.durable_revision == durable_revision
@@ -4105,6 +4203,7 @@ impl SaveCoordinator {
                 state.failed_write = Some(BackgroundWriteFailure {
                     identity: failed,
                     diagnostic: error.clone(),
+                    thumbnail_capture_required,
                 });
                 let view = PersistenceHealthView::Degraded { diagnostic: error };
                 let subscribers = set_persistence_health(&mut state, view.clone());
@@ -4141,6 +4240,7 @@ impl SaveCoordinator {
                 state.failed_write = Some(BackgroundWriteFailure {
                     identity: failed,
                     diagnostic: error.clone(),
+                    thumbnail_capture_required: true,
                 });
                 let health = PersistenceHealthView::Degraded { diagnostic: error };
                 let subscribers = set_persistence_health(&mut state, health.clone());
@@ -4170,6 +4270,57 @@ impl SaveCoordinator {
             publish_health(&subscribers, &health);
         }
         publish_activity(&activity_subscribers, &activity);
+        self.ticket_updates.notify_waiters();
+    }
+
+    fn record_schedule_failure_without_thumbnail(
+        &self,
+        session_generation: u64,
+        durable_revision: u64,
+        ticket: Option<&str>,
+        error: GameError,
+    ) {
+        let failed = (session_generation, durable_revision);
+        let health_publication = if let Ok(mut state) = self.state.lock() {
+            if session_generation < state.next_session_generation {
+                return;
+            }
+            let health_publication = if state
+                .failed_write
+                .as_ref()
+                .is_none_or(|existing| failed >= existing.identity)
+            {
+                state.failed_write = Some(BackgroundWriteFailure {
+                    identity: failed,
+                    diagnostic: error.clone(),
+                    thumbnail_capture_required: false,
+                });
+                let health = PersistenceHealthView::Degraded { diagnostic: error };
+                let subscribers = set_persistence_health(&mut state, health.clone());
+                Some((health, subscribers))
+            } else {
+                None
+            };
+            if state.pending_autosave.as_ref().is_some_and(|pending| {
+                (pending.session_generation, pending.durable_revision) <= failed
+            }) {
+                state.pending_autosave = None;
+            }
+            if let Some(ticket) = ticket {
+                if let Some(record) = state.tickets.remove(ticket) {
+                    let intent = record.purpose.intent();
+                    if state.latest_by_intent.get(&intent).map(String::as_str) == Some(ticket) {
+                        state.latest_by_intent.remove(&intent);
+                    }
+                }
+            }
+            health_publication
+        } else {
+            None
+        };
+        if let Some((health, subscribers)) = health_publication {
+            publish_health(&subscribers, &health);
+        }
         self.ticket_updates.notify_waiters();
     }
 
@@ -4242,6 +4393,44 @@ impl SaveCoordinator {
             ticket,
             deadline_at,
         })
+    }
+
+    fn issue_terminal_unavailable_thumbnail(
+        &self,
+        purpose: ThumbnailCapturePurpose,
+    ) -> Result<(String, Instant), GameError> {
+        let issued_at = Instant::now();
+        let ticket = Uuid::new_v4().hyphenated().to_string();
+        let intent = purpose.intent();
+        let (activity_subscribers, activity) = {
+            let mut state = self.lock_state()?;
+            if purpose.session_generation() < state.next_session_generation {
+                return Err(GameError::stale_session_generation());
+            }
+            if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
+                state.tickets.remove(&superseded);
+            }
+            state.tickets.insert(
+                ticket.clone(),
+                TicketRecord {
+                    purpose,
+                    issued_at,
+                    deadline_at: issued_at,
+                    terminal: Some(CaptureTerminalResult::Unavailable),
+                },
+            );
+            if state.thumbnail_activity == ThumbnailActivityView::Idle {
+                (Vec::new(), None)
+            } else {
+                let view = ThumbnailActivityView::Idle;
+                (set_thumbnail_activity(&mut state, view.clone()), Some(view))
+            }
+        };
+        if let Some(activity) = activity {
+            publish_activity(&activity_subscribers, &activity);
+        }
+        self.ticket_updates.notify_waiters();
+        Ok((ticket, issued_at))
     }
 
     fn mark_persistence_degraded(&self, diagnostic: GameError) -> Result<(), GameError> {

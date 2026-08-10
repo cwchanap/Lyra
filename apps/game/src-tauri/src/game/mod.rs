@@ -1936,9 +1936,8 @@ impl GameEngine {
         })
     }
 
-    // Public view/Tauri wiring consumes this fence in later HPA-260 tasks;
-    // keep the engine helper available while that surface is intentionally
-    // unregistered in this task.
+    // The public view and Tauri Analysis commands consume this fence so every
+    // workbench mutation is checked against the exact rendered revision.
     #[allow(dead_code)]
     pub(crate) fn analysis_action_token(&self) -> Result<AnalysisActionToken, GameError> {
         let SceneRuntime::Analysis(scene) = &self.scene else {
