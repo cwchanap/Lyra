@@ -15,8 +15,6 @@ use super::scenes::SceneRuntime;
 use super::schema::{SceneJson, SceneType};
 use super::state::{ChapterManifest, Inventory, SceneRef};
 use super::story::StoryCatalog;
-#[cfg(test)]
-use super::unlock::StoryUnlockContext;
 use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
 };
@@ -177,6 +175,11 @@ impl GameEngine {
         command_id: u64,
         next_ordinal: &mut u32,
     ) -> Result<(), GameError> {
+        if let SceneRuntime::Analysis(scene) = &mut self.scene {
+            // Availability is derived from the packaged unlock expressions
+            // and the current persistent StoryState on every scene entry.
+            scene.recompute_available_board_ids(&self.story_state);
+        }
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         let mut intro_queue = None;
         let mut needs_linear_prime = false;
@@ -649,6 +652,7 @@ mod tests {
     use super::*;
     use crate::game::state::{EvidenceRecord, SceneRef};
     use crate::game::test_support::*;
+    use crate::game::unlock::StoryUnlockContext;
     use crate::game::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1896,6 +1900,16 @@ mod tests {
             view.mode,
             ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
         ));
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("analysis navigation must install AnalysisSceneState");
+        };
+        assert_eq!(scene.id(), "analysis_scene_1");
+        assert_eq!(scene.title(), "Analysis");
+        assert_eq!(
+            scene.available_board_ids,
+            ["board_1".to_owned()].into_iter().collect()
+        );
+        assert_eq!(scene.active_board_id.as_deref(), Some("board_1"));
         let SceneView::Analysis { visible_boards, .. } = view.scene else {
             panic!("analysis navigation must expose its threshold board");
         };
@@ -2701,9 +2715,6 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
             .expect("analysis jump should succeed");
-        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
-            scene.record_practice_card("prac_b");
-        }
 
         engine
             .set_analysis_selection("board_1", vec!["card_b".into()])
@@ -2780,10 +2791,6 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
             .expect("analysis jump should succeed");
-        // Record the practice card so card_b becomes available
-        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
-            scene.record_practice_card("prac_b");
-        }
         let view = engine
             .set_analysis_selection("board_1", vec!["card_b".into()])
             .expect("available practice card should be selectable");
@@ -2925,13 +2932,9 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
             .expect("analysis jump should succeed");
-        // Seed both practice cards directly on the analysis scene state so both
-        // boards' cards are available; the only thing that can reject board_2
+        // Practice card sources are scoped to the authored analysis workbench,
+        // so both boards are available; the only thing that can reject board_2
         // is the active-board guard.
-        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
-            scene.record_practice_card("prac_b");
-            scene.record_practice_card("prac_b2");
-        }
 
         // The view publishes board_1 as the active board.
         let view = engine.view().expect("view should succeed");
@@ -2954,10 +2957,14 @@ mod tests {
 
         // board_2 must not have been recorded complete by the rejected
         // submission, and its reveals must not have fired.
-        let SceneRuntime::Analysis(scene) = &engine.scene else {
+        let SceneRuntime::Analysis(_scene) = &engine.scene else {
             panic!("expected analysis scene");
         };
-        assert!(!scene.is_board_completed("board_2"));
+        assert!(!engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_2"
+        ));
 
         // The active board_1 still operates normally.
         engine
@@ -2973,6 +2980,22 @@ mod tests {
             current,
             DialogueItem::Action { text } if text == "Result One"
         ));
+
+        let result_token = match submitted.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token,
+            other => panic!("expected result dialogue, got {other:?}"),
+        };
+        let after_result = engine
+            .advance_dialogue(result_token)
+            .expect("draining result dialogue should focus the next board");
+        assert!(matches!(
+            after_result.mode,
+            ModeView::Analysis { ref board_id, .. } if board_id == "board_2"
+        ));
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene after result dialogue");
+        };
+        assert_eq!(scene.active_board_id.as_deref(), Some("board_2"));
         let _ = std::fs::remove_dir_all(resources);
     }
 

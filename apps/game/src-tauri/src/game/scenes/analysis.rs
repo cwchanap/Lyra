@@ -100,6 +100,19 @@ impl AnalysisSceneState {
         self.available_board_ids = self.compute_available_board_ids(story);
     }
 
+    /// Select the first currently available and incomplete board in authored
+    /// order.  The selection is a runtime focus only; qualified completion
+    /// remains owned by `StoryState`.
+    pub fn auto_focus_next_available_incomplete_board(
+        &mut self,
+        chapter_id: &str,
+        story: &impl StoryUnlockContext,
+    ) -> Option<String> {
+        let active_board_id = self.next_available_incomplete_board_id(chapter_id, story);
+        self.active_board_id = active_board_id.clone();
+        active_board_id
+    }
+
     /// Transitional definition-only unlock check retained for the inherited
     /// engine seam.  Completion is intentionally not read from scene state;
     /// callers that need completion must consult `StoryState` with qualified
@@ -114,17 +127,6 @@ impl AnalysisSceneState {
             .unlock
             .as_ref()
             .is_none_or(|unlock| unlock::evaluate_story(unlock, story))
-    }
-
-    /// Transitional authored-order projection.  It deliberately does not
-    /// infer completion from drafts; HPA-260 Task 3/4 callers use StoryState
-    /// completion refs when selecting the next board.
-    pub fn next_unlocked_board_id(&self, story: &impl StoryUnlockContext) -> Option<String> {
-        self.def
-            .boards
-            .iter()
-            .find(|board| self.is_board_unlocked(board, story))
-            .map(|board| board.common().id.clone())
     }
 
     pub fn is_board_completed_qualified(
@@ -158,22 +160,6 @@ impl AnalysisSceneState {
             self.is_board_completed_qualified(chapter_id, board.common().id.as_str(), story)
         })
     }
-
-    /// Transitional compatibility method.  Scene-local completion was removed
-    /// from the authority in Task 2; this method remains only so the inherited
-    /// navigation code can be migrated without adding a second mutable set.
-    pub fn is_board_completed(&self, _board_id: &str) -> bool {
-        false
-    }
-
-    pub fn all_boards_completed(&self) -> bool {
-        false
-    }
-
-    /// Practice material is no longer runtime progression state.  The old
-    /// handoff hook is a no-op until the neutral public workbench owns card
-    /// availability in the later command migration.
-    pub fn record_practice_card(&mut self, _id: &str) {}
 
     pub fn card_is_available(
         &self,
@@ -713,6 +699,124 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[derive(Default)]
+    struct StoryUnlockFixture {
+        completed_boards: BTreeSet<(String, String, String)>,
+    }
+
+    impl StoryUnlockContext for StoryUnlockFixture {
+        fn fact_asserted(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_resolved(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn objective_completed(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+            false
+        }
+
+        fn analysis_board_completed(
+            &self,
+            chapter_id: &str,
+            scene_id: &str,
+            board_id: &str,
+        ) -> bool {
+            self.completed_boards.contains(&(
+                chapter_id.to_owned(),
+                scene_id.to_owned(),
+                board_id.to_owned(),
+            ))
+        }
+
+        fn authorization_granted(&self, _id: &str) -> bool {
+            false
+        }
+    }
+
+    fn non_sequential_scene() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_scene_non_sequential",
+            "title": "Non-sequential",
+            "summary": "Task 3 lifecycle",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_first",
+                        "label": "First",
+                        "prompt": "First",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_later",
+                        "label": "Later",
+                        "prompt": "Later",
+                        "unlock": {
+                            "predicate": "analysis_board_completed",
+                            "chapterId": "chapter_9",
+                            "sceneId": "analysis_scene_non_sequential",
+                            "boardId": "board_first"
+                        },
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "cards": [],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 0,
+                    "acceptedSelections": [[]]
+                }
+            ]
+        }))
+        .expect("non-sequential analysis fixture must deserialize")
+    }
+
+    #[test]
+    fn auto_focus_uses_story_unlocks_and_authored_order_without_chapter_hardcoding() {
+        let mut state = AnalysisSceneState::from_json(non_sequential_scene(), 1);
+        let mut story = StoryUnlockFixture::default();
+
+        state.recompute_available_board_ids(&story);
+        assert_eq!(state.available_board_ids, ids(&["board_first"]));
+        assert_eq!(
+            state.auto_focus_next_available_incomplete_board("chapter_9", &story),
+            Some("board_first".into())
+        );
+
+        story.completed_boards.insert((
+            "chapter_9".into(),
+            "analysis_scene_non_sequential".into(),
+            "board_first".into(),
+        ));
+        state.recompute_available_board_ids(&story);
+        assert_eq!(
+            state.available_board_ids,
+            ids(&["board_first", "board_later"])
+        );
+        assert_eq!(
+            state.auto_focus_next_available_incomplete_board("chapter_9", &story),
+            Some("board_later".into())
+        );
+        assert_eq!(state.active_board_id.as_deref(), Some("board_later"));
     }
 
     #[test]
