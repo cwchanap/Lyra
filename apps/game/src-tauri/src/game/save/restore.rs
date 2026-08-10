@@ -5,6 +5,7 @@ use super::schema::{
     InventorySnapshotV1, LastVisualCueSnapshotV1, RecordKind, SaveEnvelope, SaveSlotRef,
     SaveSnapshot, SaveSummary, SaveType, SceneProgressSnapshot,
 };
+use crate::game::analysis::{AnalysisDraft, AnalysisFeedbackState};
 use crate::game::content_manifest::ContentManifest;
 use crate::game::dialogue::{DialogueHistory, DIALOGUE_HISTORY_LIMIT};
 use crate::game::dialogue_queue::{
@@ -30,6 +31,8 @@ use crate::game::story::{
     AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateSnapshot,
 };
 use crate::game::story_location::StoryLocationIndex;
+#[cfg(test)]
+use crate::game::unlock::StoryUnlockContext;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError, LastVisualCue};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
@@ -264,7 +267,7 @@ pub(crate) fn build_restore_candidate(
         snapshot.next_queue_gen,
         active_token.as_ref(),
     )?;
-    let scene = restore_scene(
+    let mut scene = restore_scene(
         &snapshot.chapter_id,
         packaged_scene,
         &snapshot.scene,
@@ -272,6 +275,9 @@ pub(crate) fn build_restore_candidate(
         active_queue,
         snapshot.active_dialogue.as_ref(),
     )?;
+    if let SceneRuntime::Analysis(scene) = &mut scene {
+        scene.recompute_available_board_ids(&story_state);
+    }
 
     let completed = matches!(snapshot.scene, SceneProgressSnapshot::GameComplete);
     let current_chapter_idx = if completed {
@@ -434,14 +440,56 @@ fn restore_scene(
             let mut scene = AnalysisSceneState::from_json(definition.clone(), intro_queue_gen);
             scene.intro_played = *intro_played;
             scene.outro_played = *outro_played;
-            scene.completed_board_ids = completed_board_ids.iter().cloned().collect();
-            scene.selected_card_ids_by_board =
-                restore_analysis_card_sets(selected_card_ids_by_board, "threshold")?;
-            scene.ordered_card_ids_by_board =
-                restore_analysis_card_vectors(ordered_card_ids_by_board, "order")?;
-            scene.group_by_card_by_board = restore_analysis_group_sets(group_by_card_by_board)?;
-            scene.practice_card_ids = practice_card_ids.iter().cloned().collect();
-            scene.last_feedback = last_feedback.clone();
+            // The inherited pre-HPA-260 save wire has board-kind-specific
+            // fields. Translate those values into the one neutral draft map;
+            // scene completion remains authoritative in StoryState and the
+            // old completion list is validated above but not restored locally.
+            for (board_id, card_ids) in
+                restore_analysis_card_sets(selected_card_ids_by_board, "threshold")?
+            {
+                scene.drafts.insert(
+                    board_id,
+                    AnalysisDraft::Threshold {
+                        selected_card_ids: card_ids,
+                    },
+                );
+            }
+            for (board_id, card_ids) in
+                restore_analysis_card_vectors(ordered_card_ids_by_board, "order")?
+            {
+                scene
+                    .drafts
+                    .insert(board_id, AnalysisDraft::Order { card_ids });
+            }
+            for (board_id, group_by_card) in restore_analysis_group_sets(group_by_card_by_board)? {
+                scene
+                    .drafts
+                    .insert(board_id, AnalysisDraft::Classify { group_by_card });
+            }
+            if let Some(feedback) = last_feedback.as_deref() {
+                let state = definition
+                    .boards
+                    .iter()
+                    .find_map(|board| {
+                        let copy = &board.common().feedback;
+                        if copy.incomplete == feedback {
+                            Some((board.common().id.clone(), AnalysisFeedbackState::Incomplete))
+                        } else if copy.incorrect == feedback
+                            || copy
+                                .incorrect_selections
+                                .iter()
+                                .any(|entry| entry.feedback == feedback)
+                        {
+                            Some((board.common().id.clone(), AnalysisFeedbackState::Incorrect))
+                        } else {
+                            None
+                        }
+                    })
+                    .ok_or_else(|| {
+                        invalid_progress("Analysis last feedback is not authored on a board.")
+                    })?;
+                scene.feedback_by_board_id.insert(state.0, state.1);
+            }
             scene.pending_queue = active_queue;
             Ok(SceneRuntime::Analysis(Box::new(scene)))
         }
@@ -794,27 +842,34 @@ fn validate_analysis_feedback(
                 };
                 let mut card_ids = selection.card_ids.clone();
                 card_ids.sort();
-                let emitted = feedback
-                    .incorrect_selections
-                    .iter()
-                    .find(|entry| {
-                        let mut expected = entry.cards.clone();
-                        expected.sort();
-                        expected == card_ids
-                    })
-                    .map(|entry| entry.feedback.as_str())
-                    .or_else(|| {
-                        if card_ids.len() < *minimum_selected {
-                            Some(feedback.incomplete.as_str())
-                        } else if accepted_selections
-                            .iter()
-                            .any(|accepted| accepted == &card_ids)
-                        {
-                            None
-                        } else {
-                            Some(feedback.incorrect.as_str())
-                        }
-                    });
+                let emitted = if card_ids.len() < *minimum_selected {
+                    // The neutral runtime has only the coarse Incomplete
+                    // state. Preserve that state when translating back to
+                    // the inherited authored-string wire, even if the old
+                    // definition also supplied an incorrect-selection copy
+                    // for the same short selection.
+                    Some(feedback.incomplete.as_str())
+                } else {
+                    feedback
+                        .incorrect_selections
+                        .iter()
+                        .find(|entry| {
+                            let mut expected = entry.cards.clone();
+                            expected.sort();
+                            expected == card_ids
+                        })
+                        .map(|entry| entry.feedback.as_str())
+                        .or_else(|| {
+                            if accepted_selections
+                                .iter()
+                                .any(|accepted| accepted == &card_ids)
+                            {
+                                None
+                            } else {
+                                Some(feedback.incorrect.as_str())
+                            }
+                        })
+                };
                 if emitted == Some(last_feedback) {
                     return Ok(());
                 }
@@ -1736,7 +1791,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
-    const P1_CCTV_FEEDBACK: &str = "監視器是真的，但不能單獨說明十七點四十二分。";
+    const P1_CCTV_FEEDBACK: &str = "還少了一項資料。";
     type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelope)>;
 
     fn envelope_from_checkpoint(
@@ -2003,7 +2058,11 @@ mod tests {
         let SceneRuntime::Analysis(scene) = restored else {
             panic!("expected restored Analysis runtime");
         };
-        assert!(scene.practice_card_ids.contains("p1_receipt_reprint"));
+        assert!(matches!(
+            scene.drafts.get("p1_reprint_time_board"),
+            Some(crate::game::analysis::AnalysisDraft::Threshold { selected_card_ids })
+                if selected_card_ids.is_empty()
+        ));
     }
 
     // Break caught: an authored wrong-choice response was visible before a
@@ -2015,18 +2074,6 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_p1_5")
             .expect("P1 analysis scene should be reachable in the fixture");
-        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
-            panic!("expected P1 analysis runtime");
-        };
-        for practice_card_id in [
-            "p1_receipt_reprint",
-            "p1_register_paper_jam",
-            "p1_cctv_change",
-            "p1_handwritten_ledger",
-        ] {
-            scene.record_practice_card(practice_card_id);
-        }
-
         engine
             .set_analysis_selection("p1_reprint_time_board", vec!["cctv_change".into()])
             .expect("P1 CCTV card should be selectable");
@@ -2042,7 +2089,10 @@ mod tests {
         let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
             panic!("restored P1 scene should remain analysis");
         };
-        assert_eq!(scene.last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+        assert_eq!(
+            scene.feedback_by_board_id.get("p1_reprint_time_board"),
+            Some(&crate::game::analysis::AnalysisFeedbackState::Incomplete)
+        );
         let ModeView::Analysis { last_feedback, .. } = restored
             .engine
             .view()
@@ -2059,7 +2109,7 @@ mod tests {
     }
 
     #[test]
-    fn scene_navigation_direct_p1_analysis_seeds_practice_cards_for_public_submission() {
+    fn scene_navigation_direct_p1_analysis_uses_authored_practice_cards_for_public_submission() {
         let (_guard, resources) = p1_feedback_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
@@ -2069,17 +2119,7 @@ mod tests {
         let SceneRuntime::Analysis(scene) = &engine.scene else {
             panic!("expected P1 analysis runtime");
         };
-        assert_eq!(
-            scene.practice_card_ids,
-            [
-                "p1_cctv_change".to_string(),
-                "p1_handwritten_ledger".to_string(),
-                "p1_receipt_reprint".to_string(),
-                "p1_register_paper_jam".to_string(),
-            ]
-            .into_iter()
-            .collect()
-        );
+        assert_eq!(scene.drafts.len(), 1);
 
         engine
             .set_analysis_selection(
@@ -2090,16 +2130,19 @@ mod tests {
                     "handwritten_ledger".into(),
                 ],
             )
-            .expect("seeded P1 cards should be selectable");
+            .expect("authored P1 cards should be selectable");
         let submitted = engine
             .submit_analysis_selection("p1_reprint_time_board")
-            .expect("seeded P1 cards should complete through public commands");
+            .expect("authored P1 cards should complete through public commands");
         assert!(matches!(submitted.mode, ModeView::Dialogue { .. }));
-        let SceneRuntime::Analysis(scene) = &engine.scene else {
+        let SceneRuntime::Analysis(_scene) = &engine.scene else {
             panic!("P1 completion should remain in analysis while result dialogue plays");
         };
-        assert!(scene.is_board_completed("p1_reprint_time_board"));
-        assert!(scene.practice_card_ids.is_empty());
+        assert!(engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_p1_5",
+            "p1_reprint_time_board"
+        ));
     }
 
     // Break caught: after a correct final board submission, P1's scene-local
@@ -2112,18 +2155,6 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_p1_5")
             .expect("P1 analysis scene should be reachable in the fixture");
-        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
-            panic!("expected P1 analysis runtime");
-        };
-        for practice_card_id in [
-            "p1_receipt_reprint",
-            "p1_register_paper_jam",
-            "p1_cctv_change",
-            "p1_handwritten_ledger",
-        ] {
-            scene.record_practice_card(practice_card_id);
-        }
-
         engine
             .set_analysis_selection(
                 "p1_reprint_time_board",
@@ -2152,7 +2183,7 @@ mod tests {
         let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
             panic!("restored P1 result should remain analysis");
         };
-        assert!(scene.practice_card_ids.is_empty());
+        assert!(scene.drafts.contains_key("p1_reprint_time_board"));
     }
 
     // Break caught: restore helpers could panic on an analysis scene instead
@@ -4114,11 +4145,16 @@ mod tests {
         .expect("completed analysis with cleared transient state should restore") else {
             panic!("expected analysis scene runtime");
         };
-        assert!(scene.practice_card_ids.is_empty());
-        assert!(scene.last_feedback.is_none());
-        assert!(scene.selected_card_ids_by_board.is_empty());
-        assert!(scene.ordered_card_ids_by_board.is_empty());
-        assert!(scene.group_by_card_by_board.is_empty());
+        assert!(scene.feedback_by_board_id.is_empty());
+        assert!(scene.drafts.values().all(|draft| match draft {
+            crate::game::analysis::AnalysisDraft::Classify { group_by_card } => {
+                group_by_card.is_empty()
+            }
+            crate::game::analysis::AnalysisDraft::Order { card_ids } => card_ids.is_empty(),
+            crate::game::analysis::AnalysisDraft::Threshold { selected_card_ids } => {
+                selected_card_ids.is_empty()
+            }
+        }));
     }
 
     #[test]

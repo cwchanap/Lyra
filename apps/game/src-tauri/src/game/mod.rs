@@ -3,6 +3,7 @@
 // GameEngine — the single owner of mutable game state.
 
 pub mod acquisition;
+pub mod analysis;
 pub mod command_tx;
 mod content_manifest;
 pub mod dialogue;
@@ -32,6 +33,7 @@ pub use view::{
 };
 
 use acquisition::AcquisitionCtx;
+use analysis::AnalysisDraft;
 use content_manifest::ContentManifest;
 use dialogue_queue::{ActiveDialogueQueue, DialogueSegment, DialogueSegmentOriginV1};
 use navigation::{
@@ -265,6 +267,9 @@ impl GameEngine {
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: RefCell::new(None),
         };
+        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+            scene.recompute_available_board_ids(&engine.story_state);
+        }
         engine.prime_initial_queue()?;
         engine.record_current_dialogue_history();
         Ok(engine)
@@ -1948,11 +1953,16 @@ impl GameEngine {
         )?;
         let unchanged = self
             .analysis_scene("set_analysis_selection")?
-            .selected_card_ids_by_board
+            .drafts
             .get(board_id)
-            .cloned()
-            .unwrap_or_default()
-            == selected_card_ids;
+            .is_some_and(|draft| {
+                matches!(
+                    draft,
+                    AnalysisDraft::Threshold {
+                        selected_card_ids: current
+                    } if current == &selected_card_ids
+                )
+            });
         self.command_tx(move |engine, _, _| {
             if unchanged {
                 return Ok(CommandMutation::Unchanged);
@@ -2006,7 +2016,8 @@ impl GameEngine {
         let board = scene
             .board(board_id)
             .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
-        if scene.is_board_completed(board_id) {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
+        if scene.is_board_completed_qualified(chapter_id, board_id, &self.story_state) {
             return Err(GameError::analysis_board_completed(board_id));
         }
         if !scene.is_board_unlocked(board, &self.story_state) {
@@ -2019,7 +2030,8 @@ impl GameEngine {
         // record that board complete and apply its story reveals before the
         // authored current board. Mirrors the interrogation defense where
         // questions outside the current phase are rejected.
-        let active_board_id = scene.next_unlocked_board_id(&self.story_state);
+        let active_board_id =
+            scene.next_available_incomplete_board_id(chapter_id, &self.story_state);
         if active_board_id.as_deref() != Some(board_id) {
             return Err(GameError::analysis_board_not_active(board_id));
         }
@@ -2039,11 +2051,14 @@ impl GameEngine {
         action: &str,
     ) -> Result<BTreeSet<String>, GameError> {
         let scene = self.analysis_scene(action)?;
-        Ok(scene
-            .selected_card_ids_by_board
-            .get(board_id)
-            .cloned()
-            .unwrap_or_default())
+        match scene.drafts.get(board_id) {
+            Some(AnalysisDraft::Threshold { selected_card_ids }) => Ok(selected_card_ids.clone()),
+            Some(_) => Err(GameError::analysis_board_kind_mismatch(
+                board_id,
+                "threshold",
+            )),
+            None => Err(GameError::unknown_analysis_board(board_id)),
+        }
     }
 
     fn require_analysis_cards_available(
@@ -2144,6 +2159,7 @@ impl GameEngine {
         command_id: u64,
         next_ordinal: &mut u32,
     ) -> Result<bool, GameError> {
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         let (scene_id, outro_dialogue) = {
             let scene = match &mut self.scene {
                 SceneRuntime::Analysis(scene) => scene,
@@ -2153,8 +2169,11 @@ impl GameEngine {
             if scene.outro_played {
                 return Ok(true);
             }
-            if !scene.all_boards_completed() {
-                if scene.next_unlocked_board_id(&self.story_state).is_none() {
+            if !scene.all_boards_completed_qualified(&chapter_id, &self.story_state) {
+                if scene
+                    .next_available_incomplete_board_id(&chapter_id, &self.story_state)
+                    .is_none()
+                {
                     return Err(GameError::scene_validation_failed(format!(
                         "{} has no unlocked incomplete analysis board.",
                         scene.def.id
@@ -2165,7 +2184,6 @@ impl GameEngine {
             scene.outro_played = true;
             (scene.def.id.clone(), scene.def.outro.clone())
         };
-        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
         self.story_state
             .complete_analysis_scene(&self.story_catalog, &chapter_id, &scene_id)?;
         if outro_dialogue.is_empty() {
@@ -2265,10 +2283,24 @@ impl GameEngine {
                     None => ModeView::GameComplete,
                 },
                 SceneRuntime::Analysis(scene) => {
-                    match scene.next_unlocked_board_id(&self.story_state) {
+                    let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
+                    match scene.next_available_incomplete_board_id(chapter_id, &self.story_state) {
                         Some(board_id) => ModeView::Analysis {
                             board_id,
-                            last_feedback: scene.last_feedback.clone(),
+                            last_feedback: scene
+                                .feedback_by_board_id
+                                .iter()
+                                .next()
+                                .and_then(|(feedback_board_id, feedback)| {
+                                    scene.board(feedback_board_id).map(|board| match feedback {
+                                        crate::game::analysis::AnalysisFeedbackState::Incomplete => {
+                                            board.common().feedback.incomplete.clone()
+                                        }
+                                        crate::game::analysis::AnalysisFeedbackState::Incorrect => {
+                                            board.common().feedback.incorrect.clone()
+                                        }
+                                    })
+                                }),
                             background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                             bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                             bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
@@ -2492,6 +2524,7 @@ impl GameEngine {
                 }
             }
             SceneRuntime::Analysis(scene) => {
+                let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
                 let visible_boards = scene
                     .def
                     .boards
@@ -2521,18 +2554,23 @@ impl GameEngine {
                                 available: scene.card_is_available(&card.source, &self.inventory),
                             })
                             .collect();
-                        let completed = scene.is_board_completed(&common.id);
+                        let completed = scene.is_board_completed_qualified(
+                            chapter_id,
+                            &common.id,
+                            &self.story_state,
+                        );
                         Some(AnalysisBoardView::Threshold {
                             id: common.id.clone(),
                             label: common.label.clone(),
                             prompt: common.prompt.clone(),
                             cards,
                             minimum_selected: *minimum_selected,
-                            selected_card_ids: scene
-                                .selected_card_ids_by_board
-                                .get(&common.id)
-                                .map(|selected| selected.iter().cloned().collect())
-                                .unwrap_or_default(),
+                            selected_card_ids: match scene.drafts.get(&common.id) {
+                                Some(AnalysisDraft::Threshold { selected_card_ids }) => {
+                                    selected_card_ids.iter().cloned().collect()
+                                }
+                                _ => Vec::new(),
+                            },
                             completed,
                         })
                     })
