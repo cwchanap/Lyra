@@ -1,3 +1,4 @@
+use crate::game::analysis::{AnalysisDraft, AnalysisFeedbackState};
 use crate::game::dialogue_queue::ActiveDialogueStateV1;
 use crate::game::schema::AudioChannelJson;
 use crate::game::story::StoryStateSnapshot;
@@ -238,28 +239,10 @@ pub(crate) enum SceneProgressSnapshot {
     Analysis {
         intro_played: bool,
         outro_played: bool,
-        completed_board_ids: Vec<String>,
-        selected_card_ids_by_board: Vec<AnalysisBoardCardsSnapshotV1>,
-        ordered_card_ids_by_board: Vec<AnalysisBoardCardsSnapshotV1>,
-        group_by_card_by_board: Vec<AnalysisBoardGroupSnapshotV1>,
-        practice_card_ids: Vec<String>,
-        #[serde(default)]
-        last_feedback: Option<String>,
+        active_board_id: Option<String>,
+        drafts: BTreeMap<String, AnalysisDraft>,
+        feedback_by_board_id: BTreeMap<String, AnalysisFeedbackState>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AnalysisBoardCardsSnapshotV1 {
-    pub(crate) board_id: String,
-    pub(crate) card_ids: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AnalysisBoardGroupSnapshotV1 {
-    pub(crate) board_id: String,
-    pub(crate) group_by_card: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -1066,5 +1049,47 @@ mod tests {
             validate_envelope(&envelope).unwrap_err().code,
             "unsupportedSaveSchemaVersion"
         );
+    }
+
+    #[test]
+    fn analysis_snapshot_round_trips_the_current_neutral_wire() {
+        let raw = serde_json::json!({
+            "type": "analysis",
+            "introPlayed": true,
+            "outroPlayed": false,
+            "activeBoardId": "board_threshold",
+            "drafts": {
+                "board_threshold": {
+                    "kind": "threshold",
+                    "selectedCardIds": ["card_a"]
+                }
+            },
+            "feedbackByBoardId": {
+                "board_threshold": "incorrect"
+            }
+        });
+
+        let parsed: SceneProgressSnapshot = serde_json::from_value(raw.clone())
+            .expect("current Analysis save shape should deserialize");
+        assert_eq!(serde_json::to_value(parsed).unwrap(), raw);
+    }
+
+    #[test]
+    fn analysis_snapshot_rejects_duplicate_card_ids_in_array_drafts() {
+        let raw = serde_json::json!({
+            "type": "analysis",
+            "introPlayed": true,
+            "outroPlayed": false,
+            "activeBoardId": "board_threshold",
+            "drafts": {
+                "board_threshold": {
+                    "kind": "threshold",
+                    "selectedCardIds": ["card_a", "card_a"]
+                }
+            },
+            "feedbackByBoardId": {}
+        });
+
+        assert!(serde_json::from_value::<SceneProgressSnapshot>(raw).is_err());
     }
 }

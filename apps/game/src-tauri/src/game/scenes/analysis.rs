@@ -205,10 +205,17 @@ impl AnalysisSceneState {
                 for card_id in card_ids {
                     ensure_card_exists(board_id, common, card_id)?;
                 }
+                let mut anchor_card_ids = BTreeSet::new();
+                let mut anchor_positions = BTreeSet::new();
                 for anchor in fixed_anchors {
-                    if anchor.position == 0 {
+                    if anchor.position == 0
+                        || anchor.position > common.cards.len()
+                        || !anchor_card_ids.insert(anchor.card_id.as_str())
+                        || !anchor_positions.insert(anchor.position)
+                    {
                         return Err(GameError::analysis_selection_invalid(board_id));
                     }
+                    ensure_card_exists(board_id, common, &anchor.card_id)?;
                     if let Some(index) = card_ids.iter().position(|id| id == &anchor.card_id) {
                         if index + 1 != anchor.position {
                             return Err(GameError::analysis_selection_invalid(board_id));
