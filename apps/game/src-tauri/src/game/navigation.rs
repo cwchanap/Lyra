@@ -3310,6 +3310,86 @@ mod tests {
     }
 
     #[test]
+    fn analysis_public_view_projects_all_board_kinds_without_answer_keys() {
+        let resources = analysis_resources_with_cards("analysis-public-view");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+
+        let mut definition_value: serde_json::Value =
+            serde_json::from_str(include_str!("test_fixtures/analysis_scene_8_5.json"))
+                .expect("analysis fixture should deserialize");
+        definition_value
+            .as_object_mut()
+            .expect("analysis fixture should be an object")
+            .remove("type");
+        let definition: crate::game::schema::AnalysisSceneJson =
+            serde_json::from_value(definition_value).expect("analysis fixture should deserialize");
+        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
+            panic!("expected analysis scene");
+        };
+        scene.def = definition;
+        scene.available_board_ids = scene
+            .def
+            .boards
+            .iter()
+            .map(|board| board.common().id.clone())
+            .collect();
+        scene.active_board_id = Some("evidence_packages".into());
+        scene.drafts = scene
+            .def
+            .boards
+            .iter()
+            .map(|board| {
+                (
+                    board.common().id.clone(),
+                    crate::game::scenes::analysis::AnalysisSceneState::empty_draft_for_board(board),
+                )
+            })
+            .collect();
+        scene
+            .feedback_by_board_id
+            .insert("evidence_packages".into(), AnalysisFeedbackState::Incorrect);
+
+        let view = engine.view().expect("analysis view should serialize");
+        let SceneView::Analysis {
+            action_token,
+            active_board_id,
+            visible_boards,
+            ..
+        } = &view.scene
+        else {
+            panic!("expected analysis scene view");
+        };
+        assert_eq!(active_board_id.as_deref(), Some("evidence_packages"));
+        assert_eq!(
+            action_token.active_board_id.as_deref(),
+            Some("evidence_packages")
+        );
+        assert!(matches!(
+            visible_boards.as_slice(),
+            [
+                AnalysisBoardView::Classify { groups, feedback: Some(feedback), .. },
+                AnalysisBoardView::Order { fixed_anchors, .. },
+                AnalysisBoardView::Threshold { minimum_selected: 2, .. }
+            ] if groups.len() == 2
+                && fixed_anchors.len() == 1
+                && feedback.state == AnalysisFeedbackState::Incorrect
+                && feedback.message == "至少有一張卡被放進錯誤命題。"
+        ));
+
+        let serialized = serde_json::to_string(&view).expect("view should serialize");
+        assert!(!serialized.contains("acceptedGroupByCard"));
+        assert!(!serialized.contains("acceptedOrder"));
+        assert!(!serialized.contains("acceptedSelections"));
+        assert!(serialized.contains("actionToken"));
+        assert!(serialized.contains("fixedAnchors"));
+        assert!(serialized.contains("minimumSelected"));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
     fn reexamine_evidence_rejects_analysis_mode() {
         let resources = analysis_resources_with_cards("analysis-reexamine-evidence");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();

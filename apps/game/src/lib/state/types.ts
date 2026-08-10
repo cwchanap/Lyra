@@ -66,6 +66,10 @@ export type Mode =
   | ({
       type: "analysis";
       boardId: string;
+      activeBoardId: string | null;
+      actionToken: AnalysisActionToken;
+      availableBoardIds: string[];
+      feedback: AnalysisFeedbackView | null;
       lastFeedback: string | null;
     } & VisualAssetCue)
   | { type: "gameComplete" };
@@ -152,23 +156,81 @@ export type CrossExamView = {
   presenting: boolean;
 };
 
+export type AnalysisActionToken = {
+  sceneId: string;
+  activeBoardId: string | null;
+  durableRevision: number;
+};
+
+export type AnalysisDraft =
+  | { kind: "classify"; groupByCard: Record<string, string> }
+  | { kind: "order"; cardIds: string[] }
+  | { kind: "threshold"; selectedCardIds: string[] };
+
+export type AnalysisFeedbackState = "incomplete" | "incorrect";
+
+export type AnalysisFeedbackView = {
+  state: AnalysisFeedbackState;
+  message: string;
+};
+
+export type AnalysisCardSourceView =
+  | {
+      kind: "evidence";
+      id: string;
+      label: string | null;
+      summary: string | null;
+    }
+  | {
+      kind: "statement";
+      id: string;
+      label: string | null;
+      summary: string | null;
+    }
+  | {
+      kind: "practice";
+      id: string;
+      label: string | null;
+      summary: string | null;
+    };
+
 export type AnalysisCardView = {
   id: string;
   label: string;
   summary: string;
+  source: AnalysisCardSourceView;
+  sourceLabel: string | null;
+  sourceSummary: string | null;
   available: boolean;
 };
 
-export type AnalysisBoardView = {
-  kind: "threshold";
+type AnalysisBoardViewBase = {
   id: string;
   label: string;
   prompt: string;
   cards: AnalysisCardView[];
-  minimumSelected: number;
-  selectedCardIds: string[];
+  available: boolean;
   completed: boolean;
+  readOnly: boolean;
+  draft: AnalysisDraft;
+  feedback: AnalysisFeedbackView | null;
+  hint: string | null;
 };
+
+export type AnalysisBoardView =
+  | (AnalysisBoardViewBase & {
+      kind: "classify";
+      groups: Array<{ id: string; label: string; description: string }>;
+    })
+  | (AnalysisBoardViewBase & {
+      kind: "order";
+      fixedAnchors: Array<{ cardId: string; position: number }>;
+    })
+  | (AnalysisBoardViewBase & {
+      kind: "threshold";
+      minimumSelected: number;
+      selectedCardIds: string[];
+    });
 
 export type SceneView =
   | {
@@ -206,6 +268,12 @@ export type SceneView =
       summary: string;
       index: number;
       total: number;
+      activeBoardId: string | null;
+      actionToken: AnalysisActionToken;
+      availableBoardIds: string[];
+      backgroundAssetId: string | null;
+      bgm: AudioCue | null;
+      bgs: AudioCue | null;
       visibleBoards: AnalysisBoardView[];
     };
 

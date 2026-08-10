@@ -1,4 +1,5 @@
 // src-tauri/src/game/view.rs
+use crate::game::analysis::{AnalysisActionToken, AnalysisDraft, AnalysisFeedbackState};
 use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
     AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, InventoryTarget,
@@ -273,6 +274,10 @@ pub enum ModeView {
     },
     Analysis {
         board_id: String,
+        active_board_id: Option<String>,
+        action_token: AnalysisActionToken,
+        available_board_ids: Vec<String>,
+        feedback: Option<AnalysisFeedbackView>,
         last_feedback: Option<String>,
         background_asset_id: Option<String>,
         bgm: Option<AudioCueView>,
@@ -344,8 +349,60 @@ pub enum SceneView {
         summary: String,
         index: usize,
         total: usize,
+        active_board_id: Option<String>,
+        action_token: AnalysisActionToken,
+        available_board_ids: Vec<String>,
+        background_asset_id: Option<String>,
+        bgm: Option<AudioCueView>,
+        bgs: Option<AudioCueView>,
         visible_boards: Vec<AnalysisBoardView>,
     },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisFeedbackView {
+    pub state: AnalysisFeedbackState,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+pub enum AnalysisCardSourceView {
+    Evidence {
+        id: String,
+        label: Option<String>,
+        summary: Option<String>,
+    },
+    Statement {
+        id: String,
+        label: Option<String>,
+        summary: Option<String>,
+    },
+    Practice {
+        id: String,
+        label: Option<String>,
+        summary: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisGroupView {
+    pub id: String,
+    pub label: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalysisFixedAnchorView {
+    pub card_id: String,
+    pub position: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -355,12 +412,43 @@ pub enum SceneView {
     rename_all_fields = "camelCase"
 )]
 pub enum AnalysisBoardView {
+    Classify {
+        id: String,
+        label: String,
+        prompt: String,
+        cards: Vec<AnalysisCardView>,
+        groups: Vec<AnalysisGroupView>,
+        available: bool,
+        completed: bool,
+        read_only: bool,
+        draft: AnalysisDraft,
+        feedback: Option<AnalysisFeedbackView>,
+        hint: Option<String>,
+    },
+    Order {
+        id: String,
+        label: String,
+        prompt: String,
+        cards: Vec<AnalysisCardView>,
+        fixed_anchors: Vec<AnalysisFixedAnchorView>,
+        available: bool,
+        completed: bool,
+        read_only: bool,
+        draft: AnalysisDraft,
+        feedback: Option<AnalysisFeedbackView>,
+        hint: Option<String>,
+    },
     Threshold {
         id: String,
         label: String,
         prompt: String,
         cards: Vec<AnalysisCardView>,
         minimum_selected: usize,
+        available: bool,
+        read_only: bool,
+        draft: AnalysisDraft,
+        feedback: Option<AnalysisFeedbackView>,
+        hint: Option<String>,
         selected_card_ids: Vec<String>,
         completed: bool,
     },
@@ -372,6 +460,9 @@ pub struct AnalysisCardView {
     pub id: String,
     pub label: String,
     pub summary: String,
+    pub source: AnalysisCardSourceView,
+    pub source_label: Option<String>,
+    pub source_summary: Option<String>,
     pub available: bool,
 }
 

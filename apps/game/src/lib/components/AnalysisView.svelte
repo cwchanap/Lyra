@@ -1,6 +1,10 @@
 <script lang="ts">
   import { SvelteSet } from "svelte/reactivity";
-  import type { SceneView } from "$lib/state/types";
+  import type {
+    AnalysisActionToken,
+    AnalysisDraft,
+    SceneView,
+  } from "$lib/state/types";
 
   let {
     scene,
@@ -12,9 +16,12 @@
   }: {
     scene: SceneView;
     boardId: string;
-    feedback: string | null;
-    onSelection: (boardId: string, cardIds: string[]) => Promise<void>;
-    onSubmit: (boardId: string) => Promise<void>;
+    feedback?: string | null;
+    onSelection: (
+      actionToken: AnalysisActionToken,
+      draft: AnalysisDraft,
+    ) => Promise<void>;
+    onSubmit: (actionToken: AnalysisActionToken) => Promise<void>;
     disabled?: boolean;
   } = $props();
 
@@ -22,23 +29,29 @@
   let board = $derived(
     analysis?.visibleBoards.find((candidate) => candidate.id === boardId),
   );
+  let thresholdBoard = $derived(board?.kind === "threshold" ? board : null);
 
   async function toggleCard(cardId: string) {
-    if (!board || disabled) return;
-    const selected = new SvelteSet(board.selectedCardIds);
+    if (!analysis || !thresholdBoard || disabled) return;
+    const selected = new SvelteSet(thresholdBoard.selectedCardIds);
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
     try {
-      await onSelection(board.id, [...selected]);
+      await onSelection(analysis.actionToken, {
+        kind: "threshold",
+        selectedCardIds: [...selected],
+      });
     } catch (error) {
       console.warn("[Analysis] Selection failed", error);
     }
   }
 
   async function submit(): Promise<void> {
-    if (!board || disabled || board.completed) return;
+    if (!analysis || !thresholdBoard || disabled || thresholdBoard.completed) {
+      return;
+    }
     try {
-      await onSubmit(board.id);
+      await onSubmit(analysis.actionToken);
     } catch (error) {
       console.warn("[Analysis] Submission failed", error);
     }
@@ -46,20 +59,20 @@
 </script>
 
 <section class="analysis-view" aria-label="分析板">
-  {#if board}
+  {#if thresholdBoard}
     <header>
       <p class="eyebrow">推理練習</p>
-      <h2>{board.label}</h2>
-      <p>{board.prompt}</p>
+      <h2>{thresholdBoard.label}</h2>
+      <p>{thresholdBoard.prompt}</p>
     </header>
 
     <div class="cards" aria-label="可選線索">
-      {#each board.cards as card (card.id)}
-        {@const selected = board.selectedCardIds.includes(card.id)}
+      {#each thresholdBoard.cards as card (card.id)}
+        {@const selected = thresholdBoard.selectedCardIds.includes(card.id)}
         <button
           type="button"
           class:selected
-          disabled={disabled || !card.available || board.completed}
+          disabled={disabled || !card.available || thresholdBoard.completed}
           aria-pressed={selected}
           onclick={() => toggleCard(card.id)}
         >
@@ -69,23 +82,28 @@
       {/each}
     </div>
 
-    {#if feedback}
-      <p class="feedback" role="status">{feedback}</p>
+    {#if feedback ?? thresholdBoard.feedback?.message}
+      <p class="feedback" role="status">
+        {feedback ?? thresholdBoard.feedback?.message}
+      </p>
     {/if}
 
     <footer>
       <span
-        >已選 {board.selectedCardIds.length} / 至少 {board.minimumSelected}</span
+        >已選 {thresholdBoard.selectedCardIds.length} / 至少
+        {thresholdBoard.minimumSelected}</span
       >
       <button
         type="button"
         class="submit"
-        disabled={disabled || board.completed}
+        disabled={disabled || thresholdBoard.completed}
         onclick={submit}
       >
         比對推論
       </button>
     </footer>
+  {:else if board}
+    <p class="feedback">此分析板需要分類或排序操作。</p>
   {:else}
     <p class="feedback">分析板載入中。</p>
   {/if}

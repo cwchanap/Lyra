@@ -915,6 +915,35 @@ describe("game client interrogation commands", () => {
 });
 
 describe("game client analysis commands", () => {
+  const actionToken = {
+    sceneId: "analysis_scene_1",
+    activeBoardId: "board",
+    durableRevision: 7,
+  };
+
+  it("forwards the action token and whole draft unchanged", async () => {
+    const client = await loadGameClient(state("previous"));
+    const next = state("next");
+    const draft = { kind: "threshold" as const, selectedCardIds: ["card"] };
+    mocks.invoke.mockResolvedValue(wrapped(next));
+
+    await client.selectAnalysisBoard(actionToken, "board");
+    await client.updateAnalysisDraft(actionToken, draft);
+    await client.submitAnalysisBoard(actionToken);
+
+    expect(mocks.invoke).toHaveBeenNthCalledWith(1, "select_analysis_board", {
+      expected: actionToken,
+      boardId: "board",
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(2, "update_analysis_draft", {
+      expected: actionToken,
+      draft,
+    });
+    expect(mocks.invoke).toHaveBeenNthCalledWith(3, "submit_analysis_board", {
+      expected: actionToken,
+    });
+  });
+
   it("records a selection-dispatch failure in the shared game error state", async () => {
     const next = state("selection-failure");
     const client = await loadGameClient(state("previous"));
@@ -922,7 +951,10 @@ describe("game client analysis commands", () => {
     mocks.tick.mockRejectedValueOnce(new Error("selection apply failed"));
 
     await expect(
-      client.setAnalysisSelection("board", ["card"]),
+      client.updateAnalysisDraft(actionToken, {
+        kind: "threshold",
+        selectedCardIds: ["card"],
+      }),
     ).resolves.toBeUndefined();
 
     expect(client.gameState.value).toEqual(next);
@@ -937,7 +969,7 @@ describe("game client analysis commands", () => {
     mocks.tick.mockRejectedValueOnce(new Error("submission apply failed"));
 
     await expect(
-      client.submitAnalysisSelection("board"),
+      client.submitAnalysisBoard(actionToken),
     ).resolves.toBeUndefined();
 
     expect(client.gameState.value).toEqual(next);

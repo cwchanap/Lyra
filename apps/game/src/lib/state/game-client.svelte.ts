@@ -32,6 +32,8 @@ import type {
 import type {
   GameError,
   GameStateView,
+  AnalysisActionToken,
+  AnalysisDraft,
   QueueToken,
   SceneNavigationIndex,
 } from "./types";
@@ -65,8 +67,9 @@ export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
   "withdraw_interrogation",
   "resume_interrogation_testimony",
   "complete_interrogation_phase",
-  "set_analysis_selection",
-  "submit_analysis_selection",
+  "select_analysis_board",
+  "update_analysis_draft",
+  "submit_analysis_board",
 ]);
 
 async function httpInvoke<T>(
@@ -314,7 +317,7 @@ async function dispatchGameCommand(
 async function dispatchAnalysisCommand(
   command: Extract<
     GameplayCommandName,
-    "set_analysis_selection" | "submit_analysis_selection"
+    "select_analysis_board" | "update_analysis_draft" | "submit_analysis_board"
   >,
   args: Record<string, unknown>,
 ): Promise<void> {
@@ -551,9 +554,28 @@ export async function resumeInterrogationTestimony() {
 export async function completeInterrogationPhase() {
   await dispatchGameCommand("complete_interrogation_phase", {});
 }
-export async function setAnalysisSelection(boardId: string, cardIds: string[]) {
-  await dispatchAnalysisCommand("set_analysis_selection", { boardId, cardIds });
+export async function selectAnalysisBoard(
+  actionToken: AnalysisActionToken,
+  boardId: string,
+) {
+  await dispatchAnalysisCommand("select_analysis_board", {
+    expected: actionToken,
+    boardId,
+  });
 }
-export async function submitAnalysisSelection(boardId: string) {
-  await dispatchAnalysisCommand("submit_analysis_selection", { boardId });
+
+export async function updateAnalysisDraft(
+  actionToken: AnalysisActionToken,
+  draft: AnalysisDraft,
+) {
+  await dispatchAnalysisCommand("update_analysis_draft", {
+    expected: actionToken,
+    draft,
+  });
+}
+
+export async function submitAnalysisBoard(actionToken: AnalysisActionToken) {
+  await dispatchAnalysisCommand("submit_analysis_board", {
+    expected: actionToken,
+  });
 }
