@@ -699,6 +699,20 @@ mod tests {
             serde_json::to_value(token).unwrap(),
             json!({"sceneId": "analysis_table", "activeBoardId": "threshold_board", "durableRevision": 3})
         );
+        let mut token_with_unknown =
+            serde_json::to_value(crate::game::analysis::AnalysisActionToken {
+                scene_id: "analysis_table".into(),
+                active_board_id: None,
+                durable_revision: 3,
+            })
+            .unwrap();
+        token_with_unknown["unexpected"] = json!(true);
+        assert!(
+            serde_json::from_value::<crate::game::analysis::AnalysisActionToken>(
+                token_with_unknown
+            )
+            .is_err()
+        );
     }
 
     #[test]

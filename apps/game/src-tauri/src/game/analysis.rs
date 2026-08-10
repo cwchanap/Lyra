@@ -32,7 +32,7 @@ pub enum AnalysisFeedbackState {
 
 /// Fence returned with Analysis views and echoed by workbench mutations.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AnalysisActionToken {
     pub scene_id: String,
     pub active_board_id: Option<String>,
