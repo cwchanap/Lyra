@@ -10,7 +10,9 @@ import type {
 
 type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
 
-function p1Scene(): AnalysisSceneView {
+function p1Scene(): AnalysisSceneView & {
+  visibleBoards: [Extract<AnalysisBoardView, { kind: "threshold" }>];
+} {
   return {
     kind: "analysis",
     id: "analysis_scene_p1_5",
