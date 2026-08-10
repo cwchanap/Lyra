@@ -1,8 +1,7 @@
-use super::catalog::{ObjectiveKind, StoryCatalog};
+use super::catalog::{AnalysisBoardRef, AnalysisSceneRef, ObjectiveKind, StoryCatalog};
 use super::state::{
-    inventory_target_id, inventory_target_kind, AnalysisBoardProgressKey, AnalysisSceneProgressKey,
-    AssertionOrigin, AuthorizationProgress, FactProgress, ObjectiveProgress, QuestionProgress,
-    StoryState,
+    inventory_target_id, inventory_target_kind, AssertionOrigin, AuthorizationProgress,
+    FactProgress, ObjectiveProgress, QuestionProgress, StoryState,
 };
 use crate::game::schema::InventoryTarget;
 use crate::game::GameError;
@@ -27,13 +26,11 @@ impl StoryState {
         if !catalog.has_analysis_board(chapter_id, scene_id, board_id) {
             return Err(GameError::unknown_analysis_board(board_id));
         }
-        let changed = self
-            .completed_analysis_boards
-            .insert(AnalysisBoardProgressKey {
-                chapter_id: chapter_id.into(),
-                scene_id: scene_id.into(),
-                board_id: board_id.into(),
-            });
+        let changed = self.completed_analysis_boards.insert(AnalysisBoardRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            board_id: board_id.into(),
+        });
         Ok(if changed {
             MutationOutcome::Changed
         } else {
@@ -50,12 +47,10 @@ impl StoryState {
         if !catalog.has_analysis_scene(chapter_id, scene_id) {
             return Err(GameError::unknown_analysis_scene(chapter_id, scene_id));
         }
-        let changed = self
-            .completed_analysis_scenes
-            .insert(AnalysisSceneProgressKey {
-                chapter_id: chapter_id.into(),
-                scene_id: scene_id.into(),
-            });
+        let changed = self.completed_analysis_scenes.insert(AnalysisSceneRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+        });
         Ok(if changed {
             MutationOutcome::Changed
         } else {
@@ -78,7 +73,7 @@ impl StoryState {
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
         origin
-            .ensure_origin_kind_is_persistable()
+            .ensure_origin_kind_is_persistable(catalog)
             .map_err(GameError::invalid_assertion_origin)?;
 
         let supporting_records = supporting_records.iter().cloned().collect::<BTreeSet<_>>();
@@ -353,7 +348,7 @@ impl StoryState {
             .derived_location()
             .map_err(GameError::invalid_assertion_origin)?;
         origin
-            .ensure_origin_kind_is_persistable()
+            .ensure_origin_kind_is_persistable(catalog)
             .map_err(GameError::invalid_assertion_origin)?;
 
         let mut candidate = self.authorizations.clone();
@@ -376,56 +371,54 @@ mod tests {
     use super::*;
     use crate::game::schema::InventoryTarget;
     use crate::game::story::StoryEventBlockKind;
-    use std::sync::atomic::{AtomicU64, Ordering};
-
     fn catalog() -> StoryCatalog {
-        static SEQ: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
-            "lyra-story-mutations-{}-{}",
-            std::process::id(),
-            SEQ.fetch_add(1, Ordering::Relaxed)
-        ));
-        std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(
-            path.join("story_catalog.json"),
-            serde_json::to_vec_pretty(&serde_json::json!({
-                "schemaVersion": 2,
-                "facts": [
-                    {"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"},
-                    {"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"},
-                    {"id":"fact_gamma","label":"Gamma","summary":"Gamma","details":"Gamma details","category":"identity"}
-                ],
-                "questions": [
-                    {"id":"question_main","label":"Main","summary":"Main","resolvedByFactIds":["fact_alpha","fact_beta"]}
-                ],
-                "objectives": [
-                    {"id":"primary_a","label":"Primary A","summary":"A","kind":"primary","sortOrder":1},
-                    {"id":"primary_b","label":"Primary B","summary":"B","kind":"primary","sortOrder":2},
-                    {"id":"secondary_a","label":"Secondary A","summary":"S","kind":"secondary","sortOrder":3}
-                ],
-                "authorizations": [
-                    {"id":"authorization_a","label":"Authorization A","summary":"A","grantingAuthority":"Police"}
-                ],
-                "sourceGroups": [],
-                "evidenceIndex": [
-                    {"id":"evidence_a","chapterId":"chapter_1","sceneId":"scene_1","provenance": crate::game::test_support::neutral_provenance_json()}
-                ],
-                "statementsIndex": [
-                    {"id":"statement_a","chapterId":"chapter_1","sceneId":"scene_1","provenance": crate::game::test_support::neutral_provenance_json()}
-                ],
-                "analysisScenes": [
-                    {"chapterId":"chapter_1","sceneId":"analysis_scene_1"}
-                ],
-                "analysisBoards": [
-                    {"chapterId":"chapter_1","sceneId":"analysis_scene_1","boardId":"board_1"}
-                ]
-            }))
-            .unwrap(),
+        crate::game::test_support::catalog_with_story_definitions_and_case_records_and_analysis(
+            vec![
+                serde_json::json!({"id":"fact_alpha","label":"Alpha","summary":"Alpha","details":"Alpha details","category":"timeline"}),
+                serde_json::json!({"id":"fact_beta","label":"Beta","summary":"Beta","details":"Beta details","category":"motive"}),
+                serde_json::json!({"id":"fact_gamma","label":"Gamma","summary":"Gamma","details":"Gamma details","category":"identity"}),
+            ],
+            vec![serde_json::json!({
+                "id":"question_main",
+                "label":"Main",
+                "summary":"Main",
+                "resolvedByFactIds":["fact_alpha","fact_beta"],
+            })],
+            vec![
+                serde_json::json!({"id":"primary_a","label":"Primary A","summary":"A","kind":"primary","sortOrder":1}),
+                serde_json::json!({"id":"primary_b","label":"Primary B","summary":"B","kind":"primary","sortOrder":2}),
+                serde_json::json!({"id":"secondary_a","label":"Secondary A","summary":"S","kind":"secondary","sortOrder":3}),
+            ],
+            vec![serde_json::json!({
+                "id":"authorization_a",
+                "label":"Authorization A",
+                "summary":"A",
+                "grantingAuthority":"Police",
+            })],
+            vec![(
+                "evidence_a",
+                "chapter_1",
+                "scene_1",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![(
+                "statement_a",
+                "chapter_1",
+                "scene_1",
+                crate::game::provenance::CaseRecordProvenance::default(),
+            )],
+            vec![("chapter_1", "analysis_scene_1")],
+            vec![("chapter_1", "analysis_scene_1", "board_1")],
         )
-        .unwrap();
-        let catalog = StoryCatalog::load(&path).unwrap();
-        std::fs::remove_dir_all(path).unwrap();
-        catalog
+    }
+
+    fn analysis_catalog() -> StoryCatalog {
+        crate::game::test_support::catalog_with_case_records_and_analysis(
+            vec![],
+            vec![],
+            vec![("chapter_1", "analysis_scene_1")],
+            vec![("chapter_1", "analysis_scene_1", "board_1")],
+        )
     }
 
     fn scene_origin(chapter_id: &str, scene_id: &str, block_id: &str) -> AssertionOrigin {
@@ -1148,8 +1141,32 @@ mod tests {
     }
 
     #[test]
-    fn complete_analysis_board_records_progress_and_reports_changed() {
+    fn fact_and_authorization_reject_unknown_analysis_board_origins_without_mutation() {
         let catalog = catalog();
+        let origin = AssertionOrigin::AnalysisBoard {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "nonexistent".into(),
+        };
+        let mut state = StoryState::default();
+        let before = state.snapshot();
+
+        let fact_error = state
+            .assert_fact(&catalog, "fact_alpha", origin.clone(), &[], &[])
+            .expect_err("unknown analysis board origin must be rejected");
+        assert_eq!(fact_error.code, "invalidAssertionOrigin");
+        assert_eq!(state.snapshot(), before);
+
+        let authorization_error = state
+            .grant_authorization(&catalog, "authorization_a", origin)
+            .expect_err("unknown analysis board origin must be rejected");
+        assert_eq!(authorization_error.code, "invalidAssertionOrigin");
+        assert_eq!(state.snapshot(), before);
+    }
+
+    #[test]
+    fn complete_analysis_board_records_progress_and_reports_changed() {
+        let catalog = analysis_catalog();
         let mut state = StoryState::default();
 
         assert_eq!(
@@ -1169,17 +1186,19 @@ mod tests {
 
     #[test]
     fn complete_analysis_board_rejects_unknown_board() {
-        let catalog = catalog();
+        let catalog = analysis_catalog();
         let mut state = StoryState::default();
+        let before = state.snapshot();
         let error = state
             .complete_analysis_board(&catalog, "chapter_1", "analysis_scene_1", "nonexistent")
             .expect_err("unknown board must be rejected");
         assert_eq!(error.code, "unknownAnalysisBoard");
+        assert_eq!(state.snapshot(), before);
     }
 
     #[test]
     fn complete_analysis_scene_records_progress_and_reports_changed() {
-        let catalog = catalog();
+        let catalog = analysis_catalog();
         let mut state = StoryState::default();
 
         assert_eq!(
@@ -1199,11 +1218,13 @@ mod tests {
 
     #[test]
     fn complete_analysis_scene_rejects_unknown_scene() {
-        let catalog = catalog();
+        let catalog = analysis_catalog();
         let mut state = StoryState::default();
+        let before = state.snapshot();
         let error = state
             .complete_analysis_scene(&catalog, "chapter_1", "nonexistent")
             .expect_err("unknown analysis scene must be rejected");
         assert_eq!(error.code, "unknownAnalysisScene");
+        assert_eq!(state.snapshot(), before);
     }
 }

@@ -271,6 +271,85 @@
         "analysis_scene_completed:chapter_1@analysis_scene_1": false
       },
       "expected": false
+    },
+    {
+      "name": "story leaf predicate satisfies",
+      "family": "story",
+      "expression": { "predicate": "fact_asserted", "id": "fact_a" },
+      "truth": { "fact_asserted:fact_a": true },
+      "expected": true
+    },
+    {
+      "name": "story and and or predicates compose",
+      "family": "story",
+      "expression": {
+        "op": "and",
+        "left": { "predicate": "fact_asserted", "id": "fact_a" },
+        "right": {
+          "op": "or",
+          "left": { "predicate": "question_resolved", "id": "question_a" },
+          "right": {
+            "predicate": "authorization_granted",
+            "id": "authorization_a"
+          }
+        }
+      },
+      "truth": {
+        "fact_asserted:fact_a": true,
+        "question_resolved:question_a": false,
+        "authorization_granted:authorization_a": true
+      },
+      "expected": true
+    },
+    {
+      "name": "story at least reaches its legal count",
+      "family": "story",
+      "expression": {
+        "op": "at_least",
+        "count": 2,
+        "conditions": [
+          { "predicate": "fact_asserted", "id": "fact_a" },
+          {
+            "predicate": "analysis_scene_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1"
+          },
+          {
+            "predicate": "analysis_board_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1",
+            "boardId": "board_1"
+          }
+        ]
+      },
+      "truth": {
+        "fact_asserted:fact_a": true,
+        "analysis_scene_completed:chapter_1@analysis_scene_1": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": false
+      },
+      "expected": true
+    },
+    {
+      "name": "story at least fails below its legal count",
+      "family": "story",
+      "expression": {
+        "op": "at_least",
+        "count": 2,
+        "conditions": [
+          { "predicate": "objective_completed", "id": "objective_a" },
+          {
+            "predicate": "analysis_board_completed",
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_scene_1",
+            "boardId": "board_1"
+          }
+        ]
+      },
+      "truth": {
+        "objective_completed:objective_a": true,
+        "analysis_board_completed:chapter_1@analysis_scene_1@board_1": false
+      },
+      "expected": false
     }
   ]
 }

@@ -93,6 +93,16 @@ pub(super) fn write_neutral_story_catalog(
     evidence: &[(&str, &str, &str)],
     statements: &[(&str, &str, &str)],
 ) {
+    write_neutral_story_catalog_with_analysis(dir, evidence, statements, &[], &[]);
+}
+
+pub(super) fn write_neutral_story_catalog_with_analysis(
+    dir: &Path,
+    evidence: &[(&str, &str, &str)],
+    statements: &[(&str, &str, &str)],
+    analysis_scenes: &[(&str, &str)],
+    analysis_boards: &[(&str, &str, &str)],
+) {
     let record_json = |(id, chapter_id, scene_id): &(&str, &str, &str)| {
         serde_json::json!({
             "id": id,
@@ -112,6 +122,21 @@ pub(super) fn write_neutral_story_catalog(
             "sourceGroups": [],
             "evidenceIndex": evidence.iter().map(record_json).collect::<Vec<_>>(),
             "statementsIndex": statements.iter().map(record_json).collect::<Vec<_>>(),
+            "analysisScenes": analysis_scenes
+                .iter()
+                .map(|(chapter_id, scene_id)| serde_json::json!({
+                    "chapterId": chapter_id,
+                    "sceneId": scene_id,
+                }))
+                .collect::<Vec<_>>(),
+            "analysisBoards": analysis_boards
+                .iter()
+                .map(|(chapter_id, scene_id, board_id)| serde_json::json!({
+                    "chapterId": chapter_id,
+                    "sceneId": scene_id,
+                    "boardId": board_id,
+                }))
+                .collect::<Vec<_>>(),
         }))
         .unwrap(),
     )
@@ -137,6 +162,34 @@ pub(super) fn catalog_with_case_records(
     )>,
 ) -> crate::game::story::StoryCatalog {
     catalog_with_case_records_and_source_groups(evidence, statements, vec![])
+}
+
+pub(super) fn catalog_with_case_records_and_analysis(
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    analysis_scenes: Vec<(&str, &str)>,
+    analysis_boards: Vec<(&str, &str, &str)>,
+) -> crate::game::story::StoryCatalog {
+    catalog_with_story_definitions_and_case_records_and_analysis(
+        vec![],
+        vec![],
+        vec![],
+        vec![],
+        evidence,
+        statements,
+        analysis_scenes,
+        analysis_boards,
+    )
 }
 
 pub(super) fn catalog_with_case_records_and_source_groups(
@@ -184,6 +237,41 @@ fn build_story_catalog(
         crate::game::provenance::CaseRecordProvenance,
     )>,
 ) -> crate::game::story::StoryCatalog {
+    build_story_catalog_with_analysis(
+        facts,
+        questions,
+        objectives,
+        authorizations,
+        source_groups,
+        evidence,
+        statements,
+        vec![],
+        vec![],
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn build_story_catalog_with_analysis(
+    facts: Vec<serde_json::Value>,
+    questions: Vec<serde_json::Value>,
+    objectives: Vec<serde_json::Value>,
+    authorizations: Vec<serde_json::Value>,
+    source_groups: Vec<serde_json::Value>,
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    analysis_scenes: Vec<(&str, &str)>,
+    analysis_boards: Vec<(&str, &str, &str)>,
+) -> crate::game::story::StoryCatalog {
     let dir = tempfile::tempdir().unwrap();
     let record_json = |(id, chapter_id, scene_id, provenance)| {
         serde_json::json!({
@@ -204,6 +292,21 @@ fn build_story_catalog(
             "sourceGroups": source_groups,
             "evidenceIndex": evidence.into_iter().map(record_json).collect::<Vec<_>>(),
             "statementsIndex": statements.into_iter().map(record_json).collect::<Vec<_>>(),
+            "analysisScenes": analysis_scenes
+                .into_iter()
+                .map(|(chapter_id, scene_id)| serde_json::json!({
+                    "chapterId": chapter_id,
+                    "sceneId": scene_id,
+                }))
+                .collect::<Vec<_>>(),
+            "analysisBoards": analysis_boards
+                .into_iter()
+                .map(|(chapter_id, scene_id, board_id)| serde_json::json!({
+                    "chapterId": chapter_id,
+                    "sceneId": scene_id,
+                    "boardId": board_id,
+                }))
+                .collect::<Vec<_>>(),
         }))
         .unwrap(),
     )
@@ -257,6 +360,40 @@ pub(super) fn catalog_with_story_definitions_and_case_records(
         vec![],
         evidence,
         statements,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(super) fn catalog_with_story_definitions_and_case_records_and_analysis(
+    facts: Vec<serde_json::Value>,
+    questions: Vec<serde_json::Value>,
+    objectives: Vec<serde_json::Value>,
+    authorizations: Vec<serde_json::Value>,
+    evidence: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    statements: Vec<(
+        &str,
+        &str,
+        &str,
+        crate::game::provenance::CaseRecordProvenance,
+    )>,
+    analysis_scenes: Vec<(&str, &str)>,
+    analysis_boards: Vec<(&str, &str, &str)>,
+) -> crate::game::story::StoryCatalog {
+    build_story_catalog_with_analysis(
+        facts,
+        questions,
+        objectives,
+        authorizations,
+        vec![],
+        evidence,
+        statements,
+        analysis_scenes,
+        analysis_boards,
     )
 }
 
