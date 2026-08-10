@@ -420,7 +420,7 @@ fn restore_scene(
                 last_feedback,
             },
         ) => {
-            validate_analysis_refs(
+            let feedback_candidates = validate_analysis_refs(
                 definition,
                 completed_board_ids,
                 selected_card_ids_by_board,
@@ -466,29 +466,17 @@ fn restore_scene(
                     .drafts
                     .insert(board_id, AnalysisDraft::Classify { group_by_card });
             }
-            if let Some(feedback) = last_feedback.as_deref() {
-                let state = definition
-                    .boards
+            if last_feedback.is_some() {
+                if feedback_candidates.len() != 1 {
+                    return Err(invalid_progress(
+                        "Analysis last feedback is ambiguous across saved board drafts.",
+                    ));
+                }
+                let (board_id, state) = feedback_candidates
                     .iter()
-                    .find_map(|board| {
-                        let copy = &board.common().feedback;
-                        if copy.incomplete == feedback {
-                            Some((board.common().id.clone(), AnalysisFeedbackState::Incomplete))
-                        } else if copy.incorrect == feedback
-                            || copy
-                                .incorrect_selections
-                                .iter()
-                                .any(|entry| entry.feedback == feedback)
-                        {
-                            Some((board.common().id.clone(), AnalysisFeedbackState::Incorrect))
-                        } else {
-                            None
-                        }
-                    })
-                    .ok_or_else(|| {
-                        invalid_progress("Analysis last feedback is not authored on a board.")
-                    })?;
-                scene.feedback_by_board_id.insert(state.0, state.1);
+                    .next()
+                    .expect("feedback candidate count checked above");
+                scene.feedback_by_board_id.insert(board_id.clone(), *state);
             }
             scene.pending_queue = active_queue;
             Ok(SceneRuntime::Analysis(Box::new(scene)))
@@ -660,7 +648,7 @@ fn validate_analysis_refs(
     group_by_card_by_board: &[AnalysisBoardGroupSnapshotV1],
     practice_card_ids: &[String],
     context: AnalysisRestoreValidationContext<'_>,
-) -> Result<(), GameError> {
+) -> Result<BTreeMap<String, AnalysisFeedbackState>, GameError> {
     let board = |board_id: &str| {
         definition
             .boards
@@ -806,8 +794,7 @@ fn validate_analysis_refs(
         ordered_card_ids_by_board,
         group_by_card_by_board,
         context.last_feedback,
-    )?;
-    Ok(())
+    )
 }
 
 fn validate_analysis_feedback(
@@ -817,11 +804,12 @@ fn validate_analysis_feedback(
     ordered_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
     group_by_card_by_board: &[AnalysisBoardGroupSnapshotV1],
     last_feedback: Option<&str>,
-) -> Result<(), GameError> {
+) -> Result<BTreeMap<String, AnalysisFeedbackState>, GameError> {
     let Some(last_feedback) = last_feedback else {
-        return Ok(());
+        return Ok(BTreeMap::new());
     };
 
+    let mut candidates = BTreeMap::new();
     for board in &definition.boards {
         let board_id = board.common().id.as_str();
         if completed_board_ids.contains(board_id) {
@@ -842,36 +830,44 @@ fn validate_analysis_feedback(
                 };
                 let mut card_ids = selection.card_ids.clone();
                 card_ids.sort();
-                let emitted = if card_ids.len() < *minimum_selected {
-                    // The neutral runtime has only the coarse Incomplete
-                    // state. Preserve that state when translating back to
-                    // the inherited authored-string wire, even if the old
-                    // definition also supplied an incorrect-selection copy
-                    // for the same short selection.
-                    Some(feedback.incomplete.as_str())
+                let has_incorrect_selection = feedback.incorrect_selections.iter().any(|entry| {
+                    let mut expected = entry.cards.clone();
+                    expected.sort();
+                    expected == card_ids
+                });
+                let incorrect_selection_feedback = feedback
+                    .incorrect_selections
+                    .iter()
+                    .find(|entry| {
+                        let mut expected = entry.cards.clone();
+                        expected.sort();
+                        expected == card_ids
+                    })
+                    .map(|entry| entry.feedback.as_str());
+                let is_accepted = accepted_selections
+                    .iter()
+                    .any(|accepted| accepted == &card_ids);
+                // Legacy runtime precedence was exact authored
+                // incorrectSelections first, even for a short selection.
+                // Neutral capture emits only the coarse incomplete copy, so
+                // accept that second while preserving both wire forms.
+                let state = if incorrect_selection_feedback == Some(last_feedback) {
+                    Some(AnalysisFeedbackState::Incorrect)
+                } else if card_ids.len() < *minimum_selected && feedback.incomplete == last_feedback
+                {
+                    Some(AnalysisFeedbackState::Incomplete)
+                } else if has_incorrect_selection {
+                    None
+                } else if card_ids.len() >= *minimum_selected
+                    && !is_accepted
+                    && feedback.incorrect == last_feedback
+                {
+                    Some(AnalysisFeedbackState::Incorrect)
                 } else {
-                    feedback
-                        .incorrect_selections
-                        .iter()
-                        .find(|entry| {
-                            let mut expected = entry.cards.clone();
-                            expected.sort();
-                            expected == card_ids
-                        })
-                        .map(|entry| entry.feedback.as_str())
-                        .or_else(|| {
-                            if accepted_selections
-                                .iter()
-                                .any(|accepted| accepted == &card_ids)
-                            {
-                                None
-                            } else {
-                                Some(feedback.incorrect.as_str())
-                            }
-                        })
+                    None
                 };
-                if emitted == Some(last_feedback) {
-                    return Ok(());
+                if let Some(state) = state {
+                    candidates.insert(board_id.to_owned(), state);
                 }
             }
             AnalysisBoardJson::Classify {
@@ -884,15 +880,19 @@ fn validate_analysis_feedback(
                 else {
                     continue;
                 };
-                let emitted = if selection.group_by_card.len() < accepted_group_by_card.len() {
-                    Some(feedback.incomplete.as_str())
+                let state = if selection.group_by_card.len() < accepted_group_by_card.len()
+                    && feedback.incomplete == last_feedback
+                {
+                    Some(AnalysisFeedbackState::Incomplete)
                 } else if selection.group_by_card == *accepted_group_by_card {
                     None
+                } else if feedback.incorrect == last_feedback {
+                    Some(AnalysisFeedbackState::Incorrect)
                 } else {
-                    Some(feedback.incorrect.as_str())
+                    None
                 };
-                if emitted == Some(last_feedback) {
-                    return Ok(());
+                if let Some(state) = state {
+                    candidates.insert(board_id.to_owned(), state);
                 }
             }
             AnalysisBoardJson::Order { accepted_order, .. } => {
@@ -902,18 +902,26 @@ fn validate_analysis_feedback(
                 else {
                     continue;
                 };
-                let emitted = if selection.card_ids.len() < accepted_order.len() {
-                    Some(feedback.incomplete.as_str())
+                let state = if selection.card_ids.len() < accepted_order.len()
+                    && feedback.incomplete == last_feedback
+                {
+                    Some(AnalysisFeedbackState::Incomplete)
                 } else if selection.card_ids == *accepted_order {
                     None
+                } else if feedback.incorrect == last_feedback {
+                    Some(AnalysisFeedbackState::Incorrect)
                 } else {
-                    Some(feedback.incorrect.as_str())
+                    None
                 };
-                if emitted == Some(last_feedback) {
-                    return Ok(());
+                if let Some(state) = state {
+                    candidates.insert(board_id.to_owned(), state);
                 }
             }
         }
+    }
+
+    if !candidates.is_empty() {
+        return Ok(candidates);
     }
 
     let unsupported_hint = definition
@@ -4189,6 +4197,83 @@ mod tests {
             )
             .unwrap_or_else(|error| panic!("{label} feedback should restore: {error:?}"));
         }
+    }
+
+    #[test]
+    fn restore_accepts_legacy_below_minimum_incorrect_selection_feedback() {
+        let mut definition = restore_analysis_def();
+        let crate::game::schema::AnalysisBoardJson::Threshold {
+            minimum_selected, ..
+        } = &mut definition.boards[0]
+        else {
+            panic!("restore fixture threshold board must remain threshold");
+        };
+        *minimum_selected = 2;
+        let packaged = SceneJson::Analysis(definition);
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec![],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &["ev_card"])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("Ev card alone is not enough.".into()),
+        };
+        let restored = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect("legacy authored incorrect-selection feedback must remain valid");
+        let SceneRuntime::Analysis(scene) = restored else {
+            panic!("expected analysis scene runtime");
+        };
+        assert_eq!(
+            scene.feedback_by_board_id.get("threshold_board"),
+            Some(&AnalysisFeedbackState::Incorrect)
+        );
+    }
+
+    #[test]
+    fn restore_rejects_ambiguous_duplicate_authored_feedback_strings() {
+        let mut definition = restore_analysis_def();
+        let crate::game::schema::AnalysisBoardJson::Classify { common, groups, .. } =
+            &mut definition.boards[2]
+        else {
+            panic!("restore fixture classify board must remain classify");
+        };
+        groups.push(crate::game::schema::AnalysisGroupJson {
+            id: "grp_2".into(),
+            label: "G2".into(),
+            description: "D2".into(),
+        });
+        common.feedback.incorrect = "wrong".into();
+        let packaged = SceneJson::Analysis(definition);
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec![],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &["stmt_card"])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![group_snapshot("classify_board", &[("c_card", "grp_2")])],
+            practice_card_ids: vec![],
+            last_feedback: Some("wrong".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("duplicate authored feedback must fail closed");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("ambiguous"));
     }
 
     #[test]
