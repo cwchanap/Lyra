@@ -113,9 +113,9 @@ The following rows retain the original finding text verbatim at its material ass
 | `interrogation_scene_4.md:84` | `三宅’s first material admission ... defaults to standard despite the configured strained portrait being specifically tense and trying not to panic.` | **Resolved.** The first admission selects `三宅蒼太[strained]`; the catalogued `strained.png` was added and final Axis 3/5 reports are `SHIP`. |
 | `interrogation_scene_10.md:192` | `範圍限定 ...` `reads as a six-field system lecture from 早坂.` | **Resolved.** The player-facing gate language is limited to the approved plain-language purpose and the addendum’s UI vocabulary; final Axis 3 report is `SHIP`. |
 | `scene_0.md:50-52` | `The direct hand-off ... labels that desk scene 「午後」, but the immediately following authored scene opens ... 「清晨」.` | **Resolved.** The transition now states the following-morning handoff consistently with the opening investigation context; final Axis 4 report is `SHIP`. |
-| `investigation_scene_3.md:205` | `The planted object is 「走廊牆上那個舊掛鐘」 ... but its payoff relocates it to ... 「內側倉庫」.` | **Authored continuity fixed; visual acceptance pending.** The false continuous-sightline claim was removed: the manager mentions the old clock in Scene 3, and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`. Coordinated raster regeneration and visual acceptance remain pending. |
+| `investigation_scene_3.md:205` | `The planted object is 「走廊牆上那個舊掛鐘」 ... but its payoff relocates it to ... 「內側倉庫」.` | **Authored continuity fixed; raster regeneration deferred from HPA-561.** The false continuous-sightline claim was removed: the manager mentions the old clock in Scene 3, and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`. The coordinated raster regeneration and visual acceptance are deferred to a separately tracked follow-up and are not part of the HPA-561 gate (see descope amendment under Final seven-axis review). |
 | `investigation_scene_3.md:455` | `The first investigation ends only with 「先回去整理。今天看到的，比想像中多。」, while ... 三宅 already [is] alone in a police waiting area.` | **Resolved.** A short 黑瀨-arranged inquiry handoff was added before the hearing; final Axis 4 report is `SHIP`. |
-| `investigation_scene_8.md:100` | `從後場辦公角落望出去，能隱約看見前場門邊那座傘架 has no visual target in the selected plate.` | **Resolved.** The existing `front_doorway` now names the visible doorway/direction toward the front room and its existing authored rect was moved to the doorway (`investigation_scene_8.layout.json`); no plate or asset was replaced. This finding's Axis 5 rerun is `SHIP`; the axis-level verdict remains `FIX-RECOMMENDED` pending the old-clock raster acceptance (see Final seven-axis review). |
+| `investigation_scene_8.md:100` | `從後場辦公角落望出去，能隱約看見前場門邊那座傘架 has no visual target in the selected plate.` | **Resolved.** The existing `front_doorway` now names the visible doorway/direction toward the front room and its existing authored rect was moved to the doorway (`investigation_scene_8.layout.json`); no plate or asset was replaced. This finding's Axis 5 rerun is `SHIP`; the axis-level verdict is `SHIP` within the HPA-561 scope (the old-clock raster acceptance is the only deferred item — see descope amendment under Final seven-axis review). |
 | `investigation_scene_7.md:98-102; investigation_scene_7.md:146-154; investigation_scene_8.md:197-215` | `Chapter-wide aggregate starvation: direct package support is 37/58 (64%), while life is only 9/58 (16%) and atmosphere/foreshadowing only 7/58 (12%).` | **Resolved.** Targeted carriers were rebalanced without removing required packages; final Axis 6 reports 64 current carriers, with the main case at the required `24/18/12/6` split, and is `SHIP`. |
 | `scene_p1.md:32` | `After two brief solo setup lines, the 82-spoken-line linear mini-case enters immediately into the dispute.` | **Resolved under explicit user approval of the structural remedy.** `scene_p1.md` was replaced by `investigation_scene_p1.md` plus `analysis_scene_p1_5.md`: four local practice points, early partner grounding, a threshold compare board, and explicit wrong-choice feedback. Final Axis 6/7 reports are `SHIP`. |
 | `scene_6.md:37` | `The designated breathing beat turns into a spoken evidence recap.` | **Resolved.** The rest/partner-life beat was restored and the recap was compacted while preserving the evidence route; final Axis 7 report is `SHIP`. |
@@ -147,7 +147,9 @@ The following rows retain the original finding text verbatim at its material ass
 
 The initial 16-file/no-analysis record above remains a historical checkpoint. This final review audits the explicit post-freeze amendment.
 
-**Final verdict: FIX-RECOMMENDED (clock raster regeneration pending)**
+> **Descope amendment (HPA-561 completion contract):** The coordinated old-clock raster regeneration and visual acceptance are **not** part of the HPA-561 completion gate. The authored-text clock continuity is already fixed (the false continuous-sightline claim was removed; Scene 3 seeds the clock and Scene 7 identifies the same manager-mentioned clock with hands stopped near `22:59`); only the raster regeneration + visual acceptance remain, and they are deferred to a separately tracked follow-up (see "Deferred follow-up — old-clock raster continuity" below). Within the HPA-561 scope, Axis 5 is therefore `SHIP` with that one deferred visual item recorded. The earlier `FIX-RECOMMENDED` verdict recorded the visual-pending fact accurately at the time; this amendment changes only its gate status for HPA-561, not the underlying finding.
+
+**Final verdict: `SHIP` (HPA-561 scope) — old-clock raster continuity deferred to follow-up**
 
 | Axis | Verdict | Findings retained verbatim | Final report |
 | --- | --- | --- | --- |
@@ -155,13 +157,21 @@ The initial 16-file/no-analysis record above remains a historical checkpoint. Th
 | 2. Forbidden knowledge / reveal boundaries | `SHIP` | None. | `final-cycle-axis-2-forbidden.md` |
 | 3. Voice, style, narration, labels, expressions | `SHIP` | None. | `final-cycle-axis-3-voice-style.md` |
 | 4. Cross-scene continuity | `SHIP` | None. | `final-cycle-axis-4-continuity-rerun.md` |
-| 5. Visual/background/runtime assets | `FIX-RECOMMENDED` | Coordinated old-clock raster regeneration and visual acceptance remain pending. | `final-cycle-axis-5-visual-background-rerun.md` |
+| 5. Visual/background/runtime assets | `SHIP` (HPA-561 scope; one deferred visual item — see descope amendment) | The old-clock raster regeneration and visual acceptance are deferred to a separately tracked follow-up and are not part of the HPA-561 gate. All other Axis 5 findings are resolved with fresh rerun evidence. | `final-cycle-axis-5-visual-background-rerun.md` |
 | 6. Interaction balance | `SHIP` | None. | `final-cycle-axis-6-interaction-balance.md` |
 | 7. Natural conversation / character flow | `SHIP` | None. | `final-cycle-axis-7-natural-conversation-rerun.md` |
 
 ### Final evidence summary
 
-- Canon, forbidden-reveal, continuity, interaction, voice, and conversation axes return `SHIP`; Axis 5 remains `FIX-RECOMMENDED` until the coordinated old-clock raster regeneration and visual acceptance are complete.
+- All seven axes return `SHIP` within the HPA-561 completion scope. Axis 5's single outstanding visual item — the old-clock raster continuity between the `scene_p2` back-corridor slow-clock seed and the `scene_11` front-room stopped-clock payoff — is deferred to a separately tracked follow-up and is not a HPA-561 merge gate (see "Deferred follow-up — old-clock raster continuity" below).
 - Compiler-based final checks resolve 17 source scenes with zero warnings. The visual audit resolves 55/55 background contexts and 123/123 asset references; the final carrier audit has zero runtime-visible payload over 100 Han.
 - P1's four practice cards remain local to its board, its wrong-feedback state survives save/restore, and it never pollutes the main Case File.
-- The final USB custody, authored clock continuity, P1.5 visual-cue, Scene 8 geometry, approved-clip, and merge-time chains have fresh rerun evidence after their fixes; the old-clock raster continuity remains pending.
+- The final USB custody, authored clock continuity, P1.5 visual-cue, Scene 8 geometry, approved-clip, and merge-time chains have fresh rerun evidence after their fixes; the old-clock raster continuity is the only deferred item.
+
+### Deferred follow-up — old-clock raster continuity
+
+- **Item:** Regenerate the old-clock background plates so the slow-clock seed (`scene_p2` back corridor, `queue/16`) and the stopped-clock payoff (`scene_11` front room, `queue/32`) read as the same clock with hands stopped near `22:59`, then perform visual acceptance.
+- **Status:** Deferred from HPA-561 by explicit user decision; not a HPA-561 merge gate.
+- **Already complete (authored-text continuity):** the false continuous-sightline claim was removed; Scene 3's manager mentions the old clock and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`.
+- **Remaining work:** coordinated raster regeneration of the two plates + visual acceptance/rerun of Axis 5 for that item.
+- **Owner/tracking:** to be tracked as a separate follow-up task (GitHub issue recommended). Until it is complete, the deferred visual item stays open here.
