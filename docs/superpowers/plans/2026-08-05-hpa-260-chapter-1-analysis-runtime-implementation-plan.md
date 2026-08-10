@@ -648,8 +648,7 @@ Restore must:
 - validate mutable IDs/anchors via the same helpers commands use;
 - validate completion refs through StoryCatalog;
 - recompute availability from package + restored StoryState;
-- require active board, if present, to be in the recomputed set;
-- permit completed active board read-only;
+- accept the active board, if present, when it is recomputed as available or qualifies as completed (read-only reopening for completed active boards);
 - restore known-board feedback;
 - restore Analysis intro/result/outro origins/cursor through the merged resolver;
 - exact-recapture before live session replacement.
@@ -910,6 +909,7 @@ cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
 cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
 bun run check
+bun run check:scripts
 bun run lint:all
 ```
 

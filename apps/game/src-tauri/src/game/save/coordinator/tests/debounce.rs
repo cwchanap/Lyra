@@ -812,9 +812,25 @@ async fn in_flight_no_thumbnail_failure_keeps_origin_policy_for_retry_after_supe
     backend.wait_for_failed_commits(1).await;
     tokio::task::yield_now().await;
 
+    assert!(
+        !coordinator
+            .state
+            .lock()
+            .unwrap()
+            .failed_write
+            .as_ref()
+            .unwrap()
+            .thumbnail_capture_required
+    );
+
     assert!(coordinator
         .retry_failed_background(BackgroundRetryTrigger::Flush)
         .is_none());
+
+    assert!(
+        coordinator.state.lock().unwrap().failed_write.is_none(),
+        "superseded failure should be cleared"
+    );
 }
 
 #[tokio::test(start_paused = true)]

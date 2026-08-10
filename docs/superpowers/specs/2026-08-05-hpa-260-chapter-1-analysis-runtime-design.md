@@ -170,7 +170,7 @@ apps/game/src-tauri/src/game/analysis.rs
 not `scenes/analysis.rs`.
 
 ```rust
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(
     tag = "kind",
     rename_all = "camelCase",
@@ -182,6 +182,14 @@ pub enum AnalysisDraft {
     Order { card_ids: Vec<String> },
     Threshold { selected_card_ids: BTreeSet<String> },
 }
+
+// Manual Deserialize through AnalysisDraftWire rejects duplicate
+// card_ids (Order) and duplicate selected_card_ids (Threshold):
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase", deny_unknown_fields)]
+enum AnalysisDraftWire { /* same fields but Vec<String> for Threshold */ }
+
+impl<'de> Deserialize<'de> for AnalysisDraft { /* validates uniqueness */ }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1425,7 +1425,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
-    const P1_CCTV_FEEDBACK: &str = "還少了一項資料。";
+    const P1_INCOMPLETE_FEEDBACK: &str = "還少了一項資料。";
+    const P1_INCORRECT_CCTV_FEEDBACK: &str = "監視器是真的，但不能單獨說明十七點四十二分。";
     type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelope)>;
 
     fn update_analysis_threshold(engine: &mut GameEngine, card_ids: &[&str]) {
@@ -1559,6 +1560,26 @@ mod tests {
             }"#,
         )
         .expect("P1 analysis fixture must write");
+        (guard, resources)
+    }
+
+    /// Same as `p1_feedback_resources` but with `minimumSelected` lowered to 1
+    /// so a single-card selection is complete but wrong, exercising the
+    /// `AnalysisFeedbackState::Incorrect` path and the `incorrectSelections`
+    /// message resolution.
+    fn p1_incorrect_feedback_resources() -> (tempfile::TempDir, PathBuf) {
+        let (guard, resources) = p1_feedback_resources();
+        let path = resources.join("chapter_1/analysis_scene_p1_5.json");
+        let mut scene: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&path).expect("P1 scene fixture must be readable"),
+        )
+        .expect("P1 scene fixture must be valid JSON");
+        scene["boards"][0]["minimumSelected"] = serde_json::json!(1);
+        std::fs::write(
+            &path,
+            serde_json::to_vec(&scene).expect("updated P1 scene must serialize"),
+        )
+        .expect("updated P1 scene must write");
         (guard, resources)
     }
 
@@ -1733,7 +1754,7 @@ mod tests {
     // Break caught: an authored wrong-choice response was visible before a
     // save, but reconstructing the active P1 analysis scene dropped it.
     #[test]
-    fn save_restore_preserves_authored_p1_feedback_after_incorrect_threshold_submission() {
+    fn save_restore_preserves_authored_p1_feedback_after_incomplete_threshold_submission() {
         let (_guard, resources) = p1_feedback_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         engine
@@ -1744,7 +1765,7 @@ mod tests {
         let ModeView::Analysis { last_feedback, .. } = submitted.mode else {
             panic!("P1 submission should remain in analysis mode");
         };
-        assert_eq!(last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+        assert_eq!(last_feedback.as_deref(), Some(P1_INCOMPLETE_FEEDBACK));
 
         let (original, restored) = round_trip(resources, &engine);
         let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
@@ -1762,7 +1783,44 @@ mod tests {
         else {
             panic!("restored P1 state should expose analysis mode");
         };
-        assert_eq!(last_feedback.as_deref(), Some(P1_CCTV_FEEDBACK));
+        assert_eq!(last_feedback.as_deref(), Some(P1_INCOMPLETE_FEEDBACK));
+        assert_eq!(
+            capture_checkpoint(&restored.engine).unwrap().snapshot,
+            original.snapshot
+        );
+    }
+
+    #[test]
+    fn save_restore_preserves_authored_p1_incorrect_selection_feedback() {
+        let (_guard, resources) = p1_incorrect_feedback_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("P1 analysis scene should be reachable in the fixture");
+        update_analysis_threshold(&mut engine, &["cctv_change"]);
+        let submitted = submit_analysis(&mut engine);
+        let ModeView::Analysis { last_feedback, .. } = submitted.mode else {
+            panic!("P1 submission should remain in analysis mode");
+        };
+        assert_eq!(last_feedback.as_deref(), Some(P1_INCORRECT_CCTV_FEEDBACK));
+
+        let (original, restored) = round_trip(resources, &engine);
+        let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
+            panic!("restored P1 scene should remain analysis");
+        };
+        assert_eq!(
+            scene.feedback_by_board_id.get("p1_reprint_time_board"),
+            Some(&crate::game::analysis::AnalysisFeedbackState::Incorrect)
+        );
+        let ModeView::Analysis { last_feedback, .. } = restored
+            .engine
+            .view()
+            .expect("restored P1 state should be viewable")
+            .mode
+        else {
+            panic!("restored P1 state should expose analysis mode");
+        };
+        assert_eq!(last_feedback.as_deref(), Some(P1_INCORRECT_CCTV_FEEDBACK));
         assert_eq!(
             capture_checkpoint(&restored.engine).unwrap().snapshot,
             original.snapshot
@@ -1802,11 +1860,11 @@ mod tests {
         ));
     }
 
-    // Break caught: after a correct final board submission, P1's scene-local
-    // practice cards were retained in the result-dialogue checkpoint and
-    // restored even though the tutorial had already completed.
+    // After a correct final board submission, the submitted draft is retained
+    // in the result-dialogue checkpoint and restored so the player can review
+    // their selection while the result dialogue plays.
     #[test]
-    fn save_restore_clears_p1_practice_cards_after_correct_threshold_submission() {
+    fn save_restore_retains_p1_submitted_draft_after_correct_threshold_submission() {
         let (_guard, resources) = p1_feedback_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         engine
