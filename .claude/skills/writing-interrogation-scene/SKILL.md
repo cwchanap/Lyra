@@ -218,10 +218,19 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 - **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then
   one `### Subject:` and one or more `### Question:` blocks.
 
-A new phase background is justified only when visible environmental/dramatic
-state materially changes. A new question or testimony beat alone does not
-justify a new background; inherit the base dialogue skill's prompt and
-continuity rules.
+Every phase still requires its scene tag and (when assets are enabled) its
+`Background Prompt` — a visually unchanged phase repeats the scene tag and
+prompt, and must explicitly repeat the exact `Background Asset ID` if it is to
+reuse the existing asset. Repeating the prompt alone does not inherit or reuse
+an asset: omitting the id makes the compiler generate a new one. The compiler
+enforces one scene tag per phase
+(`interrogationPhaseNoSceneTag`) and the asset pipeline requires a
+`Background Prompt` on every visual unit when assets are enabled
+(`assetMissingBackgroundPrompt`). Reserve a **new** background — a distinct
+view or a new asset id — for a material visible environmental or dramatic-state
+change. A new question or testimony beat alone does not justify a new
+background; inherit the base dialogue skill's prompt and continuity rules while
+still authoring the required tag/prompt cues.
 
 Use `Required: false` for optional branches. If a phase has `Unlock`, its
 `Status` must be `locked`. A locked phase must be reachable by either its own
@@ -390,11 +399,14 @@ analysis_scene:<chapter_id>@<scene_id> completed
 analysis_board:<chapter_id>@<scene_id>@<board_id> completed
 ```
 
-Analysis predicates require the shown fully qualified slug segments. Their
-syntax is present now, but packaged production investigation/interrogation
-content has no HPA-259 analysis registry or completion adapter and rejects
-them. They are for the synthetic fixture boundary only until future HPA-259
-work provides the production contract; do not author them in shipped content.
+Analysis predicates are supported in current compiled content when their fully
+qualified scene/board ids resolve in the compiled story catalog. The runtime
+evaluates them through the story unlock context, so they may gate authored
+investigation/interrogation progression; use the exact compiled scene id, such
+as `analysis_scene_p1_5`, rather than a shortened filename fragment. This does
+not expand the playable analysis surface: the runtime loader still accepts
+only threshold analysis boards and rejects classify/order boards. Do not use
+unresolved or placeholder analysis ids.
 
 #### Story targets in `Reveals:`
 
@@ -620,9 +632,12 @@ reference。
 4. Write the scene in canonical order: `## Intro`, `## Phase:` blocks, then
    `## Evidence Manifest`, `## Statement Manifest`, `## Outro`.
 5. Self-check that every phase has exactly one scene tag and one Subject with
-   `Role`/`Bio`.
-   Add a new phase background only for a material visible environmental or
-   dramatic-state change.
+   `Role`/`Bio`. When assets are enabled, every phase also carries a
+   `Background Prompt` — an unchanged phase repeats the tag and prompt and
+   explicitly repeats the exact `Background Asset ID` when reusing the current
+   asset (repeating the prompt alone creates a new asset). Add a **new** phase
+   background only for a material visible environmental or dramatic-state
+   change.
 6. Self-check that every `Contradiction` line also has `Challenge`,
    `On Correct`, and `On Wrong Evidence`; that every `#### Testimony` has
    `On Loop`; and that any testimony with a `Contradiction` line also has

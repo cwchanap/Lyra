@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   auditBackgroundCues,
+  backgroundCueAuditShouldFail,
   checkBackgroundAuditCoverage,
   type BackgroundCueAuditItem,
   type BackgroundCueAuditResult,
@@ -325,6 +326,13 @@ function cueDecisions(rows: string[][]): string {
 describe("checkBackgroundAuditCoverage", () => {
   const cueOne = "chapter_1/scene_1.json::/queue/0/assetCue/backgroundAssetId";
   const cueTwo = "chapter_1/scene_1.json::/queue/1/assetCue/backgroundAssetId";
+
+  it("fails the audit gate when any cue file is missing", () => {
+    const result = auditResult([cueOne]);
+    result.items[0]!.fileMissing = true;
+
+    expect(backgroundCueAuditShouldFail(result)).toBe(true);
+  });
 
   it("accepts an exactly covered report with supported decisions and priorities", () => {
     const errors = checkBackgroundAuditCoverage(

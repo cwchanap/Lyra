@@ -153,6 +153,15 @@ export function auditBackgroundCues(
   return result;
 }
 
+/** Whether the CLI should fail before optional report-coverage validation. */
+export function backgroundCueAuditShouldFail(
+  result: BackgroundCueAuditResult,
+): boolean {
+  return (
+    result.problems.length > 0 || result.items.some((item) => item.fileMissing)
+  );
+}
+
 /**
  * Checks that a human-written background report covers the exact current cue
  * inventory. It validates only row identity and allowed decision/priority
@@ -640,7 +649,7 @@ if (import.meta.main) {
       cli.chapterId ? { chapterId: cli.chapterId } : {},
     );
     printBackgroundCueAudit(result);
-    if (result.problems.length > 0) process.exitCode = 1;
+    if (backgroundCueAuditShouldFail(result)) process.exitCode = 1;
 
     if (cli.reportPath) {
       const reportPath = resolve(REPO_ROOT, cli.reportPath);

@@ -53,7 +53,7 @@ can state.
 The `旁白` line below is explicitly an intentional time/location transition;
 the visible setting and action remain bracketed.
 
-```
+```markdown
 [場景：吉祥寺雨鐘咖啡館，深夜。外頭下著細雨，店內燈光昏黃。
 吧台後傳出咖啡機的低鳴，空氣中混著金木犀拿鐵的香氣。]
 
@@ -66,7 +66,7 @@ the visible setting and action remain bracketed.
 
 ### Dialogue + action
 
-```
+```markdown
 **早坂茜**：警察說紀錄已經證明一切了。
 
 [早坂遞出一份文件。]
@@ -146,8 +146,14 @@ When the project asset workflow is enabled, every `[場景：...]` tag in a line
 ```
 
 - **Background Prompt:** English production metadata for background generation.
+- **Background Asset ID:** optional explicit background asset id. When reusing
+  an unchanged background, repeat the exact `Background Asset ID` together
+  with the scene tag and `Background Prompt`; repeating the prompt alone does
+  not reuse an asset and causes the compiler to generate a new id.
 - **BGM** and **BGS:** IDs from `static/assets/config/audio.yaml`, or `none`.
-- The first scene tag in an asset-enabled corpus must explicitly set both BGM and BGS. Later scene tags may omit a channel to keep the previous value.
+- The first visual cue in the compiler-wide manifest order must explicitly set
+  both BGM and BGS. Later visual cues may omit a channel to keep the previous
+  value; this requirement is not reset per chapter.
 - Writers never write filesystem paths.
 - Dialogue may request speaker expression with `**角色名**[expression_slug]：台詞`. Omitted expression means `standard`.
 
@@ -169,7 +175,7 @@ standard-only / calm scenes remain valid
 
 ## File organisation
 
-Each chapter is split into **one file per scene**. Three authored file kinds exist:
+Each chapter is split into **one file per scene**. Four authored file kinds exist:
 
 ```
 stories_plan/               ← either docs/stories_plan/ or static/stories_plan/
@@ -179,6 +185,7 @@ stories_plan/               ← either docs/stories_plan/ or static/stories_plan
     scene_0.md                                     ← linear dialogue scene (this skill)
     investigation_scene_1.md                       ← interactive investigation (see writing-investigation-scene)
     interrogation_scene_2.md                       ← inquiry / testimony authoring (see writing-interrogation-scene)
+    analysis_scene_3.md                             ← threshold analysis board (see writing-analysis-scene)
     scene_3.md
     ...
 ```
@@ -186,6 +193,9 @@ stories_plan/               ← either docs/stories_plan/ or static/stories_plan
 - **`scene_<N>.md`** — linear dialogue (intro cutscenes, transitions, in-car conversations). Covered fully by this skill.
 - **`investigation_scene_<N>.md`** — interactive scenes with hotspots, characters, evidence and statement manifests. Authored using the **`writing-investigation-scene`** skill, which inherits the base dialogue rules from this skill. Use that skill when the file you are writing has the `investigation_scene_` prefix.
 - **`interrogation_scene_<N>.md`** — suspect inquiry and testimony cross-examination authoring. Use the **`writing-interrogation-scene`** skill; this skill supplies only the base dialogue rules for its dialogue bodies.
+- **`analysis_scene_<N>.md`** — threshold evidence-arrangement boards. Use the
+  **`writing-analysis-scene`** skill; this skill supplies only the base dialogue
+  rules for its dialogue carriers.
 
 ### Path convention
 

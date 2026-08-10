@@ -914,6 +914,38 @@ describe("game client interrogation commands", () => {
   });
 });
 
+describe("game client analysis commands", () => {
+  it("records a selection-dispatch failure in the shared game error state", async () => {
+    const next = state("selection-failure");
+    const client = await loadGameClient(state("previous"));
+    mocks.invoke.mockResolvedValueOnce(wrapped(next));
+    mocks.tick.mockRejectedValueOnce(new Error("selection apply failed"));
+
+    await expect(
+      client.setAnalysisSelection("board", ["card"]),
+    ).resolves.toBeUndefined();
+
+    expect(client.gameState.value).toEqual(next);
+    expect(client.gameState.error).toBe("selection apply failed");
+    expect(client.gameState.inFlight).toBe(false);
+  });
+
+  it("records a submission-dispatch failure in the shared game error state", async () => {
+    const next = state("submission-failure");
+    const client = await loadGameClient(state("previous"));
+    mocks.invoke.mockResolvedValueOnce(wrapped(next));
+    mocks.tick.mockRejectedValueOnce(new Error("submission apply failed"));
+
+    await expect(
+      client.submitAnalysisSelection("board"),
+    ).resolves.toBeUndefined();
+
+    expect(client.gameState.value).toEqual(next);
+    expect(client.gameState.error).toBe("submission apply failed");
+    expect(client.gameState.inFlight).toBe(false);
+  });
+});
+
 describe("loadE2eCheckpointThroughClient packaged checkpoint bridge", () => {
   const CHECKPOINT_ID = "chapter-1-investigation-explore";
   const projection = {

@@ -21,7 +21,8 @@ until both pass.
 
 - Asked to author/extend chapter beats or scenes via subagents.
 - You have a construction plan and need playable `scene_*.md` /
-  `investigation_scene_*.md` / `interrogation_scene_*.md` files.
+  `investigation_scene_*.md` / `interrogation_scene_*.md` /
+  `analysis_scene_*.md` files.
 
 Do **not** use for: a tiny single-file edit you'll do yourself; authoring the
 format details (those live in the `writing-*` skills this skill dispatches to).
@@ -43,7 +44,8 @@ format details (those live in the `writing-*` skills this skill dispatches to).
    `writing-*` skill) and record the correction — it goes in every brief.
 2. **Map beats → scene files and pick granularity.** Linear →
    `scene_<K>.md`; interactive investigation → `investigation_scene_<K>.md`;
-   interrogation → `interrogation_scene_<K>.md`. **One writing subagent per
+   interrogation → `interrogation_scene_<K>.md`; evidence-arrangement
+   thought-organization → `analysis_scene_<K>.md`. **One writing subagent per
    scene file** — a file is the smallest independently-validatable unit (a
    linear queue or one unlock graph). Do not split sub-scenes (0A/0B) across
    agents.
@@ -74,8 +76,11 @@ format details (those live in the `writing-*` skills this skill dispatches to).
 
 Because the agent has none of your context, every brief carries all of:
 
-- **Exact file path + scene type + the writing skill to invoke FIRST.** e.g.
-  "First action: invoke Skill `writing-investigation-scene`. Do not invoke
+- **Exact file path + scene type + the writing skill to invoke FIRST.** Match
+  the skill to the scene type: linear → `writing-detective-game-dialogue`,
+  investigation → `writing-investigation-scene`, interrogation →
+  `writing-interrogation-scene`, analysis → `writing-analysis-scene`. e.g.
+  "First action: invoke Skill `writing-analysis-scene`. Do not invoke
   `using-superpowers`." Write the file and nothing else.
 - **The beat excerpt** from the construction plan (the content spec).
 - **The matching addendum voice + Do/Don't** for the characters present.
@@ -100,6 +105,31 @@ Because the agent has none of your context, every brief carries all of:
   evidence/statement IDs are declared once; hotspot/topic/sublocation IDs are
   scene-local. State which locked blocks get exactly one inbound `Reveals` and
   no `Unlock` (a block must not have both); first sub-location is `unlocked`.
+- **For analysis scenes: the threshold-board contract.** The orchestrator owns
+  board IDs and the unlock chain. Give the writer, per board, `Kind: threshold`,
+  the eligible card sources (`evidence:<id>` / `statement:<id>` from earlier
+  scenes, or `practice:<id>`) and each card's one-line `Summary`, `Minimum
+  Selected`, `Minimum Distinct Source Groups`, `Required Proof Capabilities`,
+  `Allowed Procedural Statuses`, and `Require Source Group`. Confirm whether
+  the eligible cards are Case File or practice (practice-only thresholds must
+  keep neutral requirements), and state the board's story-only `Reveals`,
+  incomplete/incorrect feedback, optional hint, Result Dialogue, and Outro
+  beats. Within a chapter, every `practice:<id>` must appear on exactly one
+  analysis card in exactly one analysis board, be revealed exactly once by the
+  immediately preceding investigation, and have that analysis scene directly
+  follow the investigation in the chapter manifest; every practice reveal must
+  target a card on that immediately following analysis scene. This uniqueness is
+  chapter-scoped, not global across chapters; reuse in another chapter requires
+  its own immediate investigation-to-analysis handoff. Do not brief a
+  writer to author `classify` or `order`: the parser/compiler retain them for
+  fixture/validation coverage only, but the runtime loader rejects them as
+  unsupported and they are not shippable. Intro, each Result Dialogue, and
+  Outro may carry `[場景：...]` plus supported asset metadata; the board UI
+  itself has no cue. Reuse a
+  background only by explicitly repeating its `Background Asset ID` along with
+  the required tag/prompt cues; repeating the prompt alone creates a new asset.
+  When assets are enabled, set both `BGM` and `BGS` on the first visual cue in
+  the compiler-wide ordered corpus, not the first unit of each chapter.
 - **For investigation scenes: the interaction-point ratio budget
   (addendum §2.1, per-chapter not per-scene).** Tell the writer the target
   mix across the chapter's investigation scenes *in aggregate*: ~40% 破案資訊
@@ -176,5 +206,6 @@ restate the axes, verdict, or finding format in the brief, the skill owns them:
 
 **Related skills:** `reviewing-story-scenes` (the REVIEW gate),
 `writing-chapter-manifest`, `writing-detective-game-dialogue`,
-`writing-investigation-scene`, `writing-interrogation-scene`;
+`writing-investigation-scene`, `writing-interrogation-scene`,
+`writing-analysis-scene`;
 superpowers:dispatching-parallel-agents, superpowers:subagent-driven-development.

@@ -1378,8 +1378,9 @@ mod tests {
     use crate::game::scenes::analysis::AnalysisSceneState;
     use crate::game::schema::{AnalysisSceneJson, SceneJson};
 
-    fn analysis_scene_with_intro_and_outro(
+    fn analysis_scene_with_dialogue(
         intro: Vec<DialogueItem>,
+        result: Vec<DialogueItem>,
         outro: Vec<DialogueItem>,
     ) -> AnalysisSceneJson {
         serde_json::from_value(serde_json::json!({
@@ -1399,13 +1400,20 @@ mod tests {
                     "reveals": [],
                     "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
                     "cards": [],
-                    "resultDialogue": []
+                    "resultDialogue": result
                 },
                 "minimumSelected": 0,
                 "acceptedSelections": [[]]
             }]
         }))
         .expect("analysis scene must deserialize")
+    }
+
+    fn analysis_scene_with_intro_and_outro(
+        intro: Vec<DialogueItem>,
+        outro: Vec<DialogueItem>,
+    ) -> AnalysisSceneJson {
+        analysis_scene_with_dialogue(intro, vec![], outro)
     }
 
     fn empty_engine_with_analysis_scene(
@@ -1482,27 +1490,127 @@ mod tests {
         }
     }
 
-    #[test]
-    fn analysis_scene_current_dialogue_item_reflects_pending_queue() {
-        let scene = analysis_scene_with_intro_and_outro(
-            vec![DialogueItem::Line {
-                speaker: "A".into(),
-                text: "intro line".into(),
-                portrait: None,
+    fn add_next_linear_scene(engine: &mut GameEngine) -> tempfile::TempDir {
+        let resources = tempfile::tempdir().unwrap();
+        let chapter_dir = resources.path().join("chapter_2");
+        std::fs::create_dir_all(&chapter_dir).unwrap();
+        std::fs::write(
+            chapter_dir.join("scene_2.json"),
+            r#"{
+                "type": "linear",
+                "id": "scene_2",
+                "title": "Next",
+                "summary": "Next scene.",
+                "queue": [{"kind": "line", "speaker": "B", "text": "next scene"}]
+            }"#,
+        )
+        .unwrap();
+        engine.resources_dir = resources.path().to_path_buf();
+        engine.chapters.push(ChapterManifest {
+            id: "chapter_2".into(),
+            title: "Chapter 2".into(),
+            summary: "Next chapter".into(),
+            scenes: vec![SceneRef {
+                scene_type: SceneType::Linear,
+                file: "chapter_2/scene_2.json".into(),
             }],
-            vec![],
+        });
+        resources
+    }
+
+    #[test]
+    fn analysis_scene_public_advance_drains_intro_result_outro_and_advances() {
+        let scene = analysis_scene_with_dialogue(
+            vec![line("intro line")],
+            vec![line("result line")],
+            vec![line("outro line")],
         );
         let mut engine = empty_engine_with_analysis_scene(scene, 1);
-        // Manually set a pending queue on the analysis scene
-        if let SceneRuntime::Analysis(analysis) = &mut engine.scene {
-            analysis.intro_played = true;
-        }
-        // The view should show the analysis scene title
-        let view = engine.view().unwrap();
+
+        // Scene entry installs the real compiled intro carrier.
+        engine.prime_initial_queue().unwrap();
+        assert_eq!(engine.current_dialogue_item(), Some(line("intro line")));
+        assert_eq!(
+            engine.current_queue_token(),
+            Some(QueueToken {
+                scene_id: "analysis_scene_1".into(),
+                queue_gen: 1,
+                cursor: 0,
+            })
+        );
+        engine.record_current_dialogue_history();
+
+        // The public token-driven advance drains the intro carrier and returns
+        // to the analysis board before submission is allowed.
+        let intro_view = engine.view().unwrap();
+        let after_intro = engine
+            .advance_dialogue(token_from(&intro_view))
+            .expect("intro token should drain through the public command");
+        assert!(matches!(after_intro.mode, ModeView::Analysis { .. }));
+        assert!(engine.current_queue_token().is_none());
+
+        // The result carrier is installed by the public submission path.
+        engine
+            .submit_analysis_selection("board_1")
+            .expect("the empty accepted threshold should install result dialogue");
+        let result_view = engine.view().unwrap();
+        assert_dialogue_frame(
+            &result_view,
+            "result line",
+            QueueToken {
+                scene_id: "analysis_scene_1".into(),
+                queue_gen: 2,
+                cursor: 0,
+            },
+            0,
+            None,
+        );
+
+        // The next public token advance drains the result carrier and exposes
+        // the real outro carrier without a direct queue or exhaustion call.
+        let outro_view = engine
+            .advance_dialogue(token_from(&result_view))
+            .expect("result token should install the outro queue");
+        assert_dialogue_frame(
+            &outro_view,
+            "outro line",
+            QueueToken {
+                scene_id: "analysis_scene_1".into(),
+                queue_gen: 3,
+                cursor: 0,
+            },
+            0,
+            None,
+        );
+
+        let _resources = add_next_linear_scene(&mut engine);
+        let next_scene_view = engine
+            .advance_dialogue(token_from(&outro_view))
+            .expect("outro token should advance to the next scene");
         assert!(matches!(
-            view.scene,
-            crate::game::view::SceneView::Analysis { .. }
+            next_scene_view.scene,
+            crate::game::view::SceneView::Linear { ref id, .. } if id == "scene_2"
         ));
+        assert_dialogue_frame(
+            &next_scene_view,
+            "next scene",
+            QueueToken {
+                scene_id: "scene_2".into(),
+                queue_gen: 4,
+                cursor: 0,
+            },
+            0,
+            None,
+        );
+        assert_eq!(
+            history_labels(&next_scene_view),
+            vec![
+                "A: intro line",
+                "A: result line",
+                "A: outro line",
+                "B: next scene"
+            ]
+        );
     }
 
     #[test]
@@ -1515,10 +1623,17 @@ mod tests {
 
     #[test]
     fn analysis_scene_current_queue_token_reflects_pending_queue() {
-        let scene = analysis_scene_with_intro_and_outro(vec![], vec![]);
-        let engine = empty_engine_with_analysis_scene(scene, 1);
-        // No pending queue → no token
-        assert!(engine.current_queue_token().is_none());
+        let scene = analysis_scene_with_intro_and_outro(vec![line("intro")], vec![]);
+        let mut engine = empty_engine_with_analysis_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+        assert_eq!(
+            engine.current_queue_token(),
+            Some(QueueToken {
+                scene_id: "analysis_scene_1".into(),
+                queue_gen: 1,
+                cursor: 0,
+            })
+        );
     }
 
     #[test]
@@ -1536,29 +1651,16 @@ mod tests {
     }
 
     #[test]
-    fn analysis_scene_on_queue_exhausted_advances_to_next_scene_when_outro_played() {
+    fn analysis_submission_without_result_or_outro_uses_public_no_queue_transition() {
         let scene = analysis_scene_with_intro_and_outro(vec![], vec![]);
         let mut engine = empty_engine_with_analysis_scene(scene, 1);
-        // Mark outro as already played and all boards completed
-        if let SceneRuntime::Analysis(analysis) = &mut engine.scene {
-            analysis.outro_played = true;
-            analysis.completed_board_ids.insert("board_1".into());
-        }
-        // Add a second scene to advance to
-        engine.chapters.push(ChapterManifest {
-            id: "chapter_2".into(),
-            title: "Chapter 2".into(),
-            summary: "second".into(),
-            scenes: vec![SceneRef {
-                scene_type: SceneType::Linear,
-                file: "chapter_2/scene_0.json".into(),
-            }],
-        });
-        // The on_queue_exhausted should advance the scene
-        // We need to trigger it via the internal method
-        let result = engine.on_queue_exhausted(1, &mut 0);
-        // Either advances or errors — but should not panic
-        // The key coverage is that the Analysis arm is exercised
-        let _ = result;
+        let _resources = add_next_linear_scene(&mut engine);
+
+        engine
+            .submit_analysis_selection("board_1")
+            .expect("an empty result/outro should use the public no-queue path");
+        assert!(matches!(engine.scene, SceneRuntime::Linear(_)));
+        assert_eq!(engine.current_chapter_idx, 1);
+        assert_eq!(engine.current_scene_idx, 0);
     }
 }

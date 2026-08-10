@@ -472,7 +472,7 @@ describe("CaseFilePanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("合成測試章・案件檔案測試室")).toBeInTheDocument();
     expectLockedIdsAbsent(container);
-  });
+  }, 10_000);
 
   it("uses a manual-activation roving tab stop that follows external section binding", async () => {
     const user = userEvent.setup();

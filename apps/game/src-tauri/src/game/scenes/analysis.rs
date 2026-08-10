@@ -245,8 +245,14 @@ impl AnalysisSceneState {
             AnalysisSubmissionOutcome::Correct => {
                 self.completed_board_ids.insert(board_id.to_owned());
                 if self.all_boards_completed() {
+                    // Completing the final board ends the tutorial handoff: drop
+                    // every board's transient selection state so no stale
+                    // per-board input outlives the scene. Practice cards are
+                    // cleared for the same scene-local reason.
                     self.practice_card_ids.clear();
-                    self.selected_card_ids_by_board.remove(board_id);
+                    self.selected_card_ids_by_board.clear();
+                    self.ordered_card_ids_by_board.clear();
+                    self.group_by_card_by_board.clear();
                 }
                 self.last_feedback = None;
             }
@@ -382,6 +388,116 @@ mod tests {
         );
         assert!(scene.is_board_completed("p1_reprint_time_board"));
         assert!(scene.practice_card_ids.is_empty());
+        // The final board's completion clears the entire threshold-selection
+        // map, not only the just-completed board.
+        assert!(scene.selected_card_ids_by_board.is_empty());
+    }
+
+    #[test]
+    fn final_threshold_board_clears_every_board_selection() {
+        // Two threshold boards: completing the second must drop both boards'
+        // selections from `selected_card_ids_by_board`, not just the final
+        // board's. Regression coverage for the all-boards-completed cleanup.
+        let def: AnalysisSceneJson = serde_json::from_value(json!({
+            "id": "analysis_two_board",
+            "title": "Two",
+            "summary": "Two board threshold scene.",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_a",
+                        "label": "A",
+                        "prompt": "Select.",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc_a", "incorrect": "wrong_a", "hint": null},
+                        "cards": [
+                            {"id": "a1", "label": "A1", "source": {"kind": "practice", "id": "prac_a1"}, "summary": "A1"}
+                        ],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 1,
+                    "acceptedSelections": [["a1"]]
+                },
+                {
+                    "kind": "threshold",
+                    "common": {
+                        "id": "board_b",
+                        "label": "B",
+                        "prompt": "Select.",
+                        "unlock": null,
+                        "reveals": [],
+                        "feedback": {"incomplete": "inc_b", "incorrect": "wrong_b", "hint": null},
+                        "cards": [
+                            {"id": "b1", "label": "B1", "source": {"kind": "practice", "id": "prac_b1"}, "summary": "B1"}
+                        ],
+                        "resultDialogue": []
+                    },
+                    "minimumSelected": 1,
+                    "acceptedSelections": [["b1"]]
+                }
+            ]
+        }))
+        .expect("two-board analysis definition is valid");
+        let mut scene = AnalysisSceneState::from_json(def, 1);
+        scene.record_practice_card("prac_a1");
+        scene.record_practice_card("prac_b1");
+
+        // Complete board_a: its selection stays (not all boards done yet).
+        assert_eq!(
+            scene.submit(
+                "board_a",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&["a1"]),
+                },
+            ),
+            Ok(AnalysisSubmissionOutcome::Correct)
+        );
+        assert!(scene.is_board_completed("board_a"));
+        assert!(!scene.all_boards_completed());
+        assert_eq!(
+            scene.selected_card_ids_by_board.get("board_a"),
+            Some(&selected(&["a1"]))
+        );
+        scene
+            .ordered_card_ids_by_board
+            .insert("board_a".into(), vec!["a1".into()]);
+        scene.group_by_card_by_board.insert(
+            "board_a".into(),
+            std::collections::BTreeMap::from([("a1".into(), "group_a".into())]),
+        );
+
+        // Complete board_b: now every board is done, so the whole selection
+        // maps (and practice set) must be cleared.
+        scene.last_feedback = Some("stale feedback".into());
+        assert_eq!(
+            scene.submit(
+                "board_b",
+                AnalysisSubmission::Threshold {
+                    selected_card_ids: selected(&["b1"]),
+                },
+            ),
+            Ok(AnalysisSubmissionOutcome::Correct)
+        );
+        assert!(scene.all_boards_completed());
+        assert!(scene.practice_card_ids.is_empty());
+        assert!(
+            scene.selected_card_ids_by_board.is_empty(),
+            "completing the final board must clear every board's selection"
+        );
+        assert!(
+            scene.ordered_card_ids_by_board.is_empty(),
+            "completing the final board must clear every board's ordering"
+        );
+        assert!(
+            scene.group_by_card_by_board.is_empty(),
+            "completing the final board must clear every board's classification"
+        );
+        assert!(scene.last_feedback.is_none());
     }
 
     fn classify_scene() -> AnalysisSceneJson {

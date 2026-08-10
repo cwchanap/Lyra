@@ -589,17 +589,12 @@ function validatePracticeCardBindings(
         }
       }
 
-      for (const [id, collectors] of collected) {
-        if (cardIds.has(id)) continue;
-        for (const collector of collectors) {
-          errors.push({
-            code: "practiceRevealUnbound",
-            message: `Practice reveal "${id}" has no card on immediately following analysis scene "${analysis.ast.id}".`,
-            sourceFile: collector.sourceFile,
-            line: collector.line,
-          });
-        }
-      }
+      // Reveal→card binding for an immediately following analysis scene is
+      // delegated to the per-scene pass below. That pass is a strict superset
+      // of what this loop could report here: it also covers analysis scenes
+      // with zero practice cards (this loop `continue`s on `cardIds.size ===
+      // 0`) and investigation scenes not followed by an analysis scene.
+      // Emitting practiceRevealUnbound here too duplicated each diagnostic.
     }
   }
 

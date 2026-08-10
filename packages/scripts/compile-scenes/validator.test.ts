@@ -3666,4 +3666,142 @@ describe("validator", () => {
       ),
     ).toBeDefined();
   });
+
+  it("emits practiceRevealUnbound once per unbound reveal even when the following analysis has other practice cards", () => {
+    // Regression: the manifest-validation loop and the per-scene
+    // forEachPracticeReveal pass previously BOTH emitted practiceRevealUnbound
+    // for the same investigation→analysis pair (loop 1 looked back from the
+    // analysis; loop 2 looked forward from the investigation). The per-scene
+    // pass is now the sole emitter — it is a strict superset, also covering
+    // analysis scenes with zero practice cards and investigation scenes not
+    // followed by analysis — so each unbound reveal must produce exactly one
+    // diagnostic rather than a duplicate.
+    const investigation = mkInvestigationScene({ id: "investigation_reveal" });
+    investigation.sublocations[0]!.hotspots[0]!.reveals = [
+      { kind: "practice", id: "dangling_reveal" },
+    ];
+
+    const analysis: AnalysisSceneRecord = {
+      chapterId: "chapter_1",
+      file: "analysis_scene_1.md",
+      ast: {
+        ...mkAnalysisScene("analysis_scene_1"),
+        sourceFile: "chapter_1/analysis_scene_1.md",
+        boards: [
+          {
+            kind: "classify",
+            id: "board_1",
+            label: "Board",
+            sourceFile: "chapter_1/analysis_scene_1.md",
+            line: 1,
+            prompt: {
+              value: "p",
+              sourceFile: "chapter_1/analysis_scene_1.md",
+              line: 2,
+            },
+            unlock: null,
+            reveals: {
+              value: [],
+              sourceFile: "chapter_1/analysis_scene_1.md",
+              line: 2,
+            },
+            feedback: {
+              incomplete: {
+                value: "inc",
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 2,
+              },
+              incorrect: {
+                value: "wrong",
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 2,
+              },
+              hint: null,
+              incorrectSelections: [],
+            },
+            cards: [
+              {
+                id: "card_other",
+                label: "Other",
+                source: {
+                  value: { kind: "practice", id: "other_reveal" },
+                  sourceFile: "chapter_1/analysis_scene_1.md",
+                  line: 3,
+                },
+                summary: {
+                  value: "s",
+                  sourceFile: "chapter_1/analysis_scene_1.md",
+                  line: 3,
+                },
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 3,
+              },
+            ],
+            resultDialogue: [],
+            groups: [],
+          },
+        ],
+      },
+    };
+
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_scene_1.md", "analysis_scene_1.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_scene_1.md",
+          ast: investigation,
+        },
+      ],
+      analysisScenes: [analysis],
+    });
+
+    const unbound = errors.filter((e) => e.code === "practiceRevealUnbound");
+    expect(unbound).toHaveLength(1);
+    expect(unbound[0]?.message).toContain("dangling_reveal");
+    // The other practice card (no matching reveal) is still reported by the
+    // manifest-validation loop's card-source check, which is unchanged.
+    expect(errors.some((e) => e.code === "practiceCardSourceUnbound")).toBe(
+      true,
+    );
+  });
+
+  it("still emits practiceRevealUnbound when a practice reveal is followed by an analysis with no practice cards", () => {
+    // The per-scene pass must retain coverage for cases the manifest-validation
+    // loop never reached: that loop skips analysis scenes with zero practice
+    // cards, so an unbound reveal before such a scene must still be caught.
+    const investigation = mkInvestigationScene({ id: "investigation_orphan" });
+    investigation.sublocations[0]!.hotspots[0]!.reveals = [
+      { kind: "practice", id: "orphan_reveal" },
+    ];
+
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["investigation_scene_1.md", "analysis_scene_1.md"]),
+      ],
+      scenes: [
+        {
+          chapterId: "chapter_1",
+          file: "investigation_scene_1.md",
+          ast: investigation,
+        },
+      ],
+      analysisScenes: [
+        {
+          chapterId: "chapter_1",
+          file: "analysis_scene_1.md",
+          ast: {
+            ...mkAnalysisScene("analysis_scene_1"),
+            sourceFile: "chapter_1/analysis_scene_1.md",
+          },
+        },
+      ],
+    });
+
+    const unbound = errors.filter((e) => e.code === "practiceRevealUnbound");
+    expect(unbound).toHaveLength(1);
+    expect(unbound[0]?.message).toContain("orphan_reveal");
+  });
 });

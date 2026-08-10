@@ -28,7 +28,20 @@
     const selected = new SvelteSet(board.selectedCardIds);
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
-    await onSelection(board.id, [...selected]);
+    try {
+      await onSelection(board.id, [...selected]);
+    } catch (error) {
+      console.warn("[Analysis] Selection failed", error);
+    }
+  }
+
+  async function submit(): Promise<void> {
+    if (!board || disabled || board.completed) return;
+    try {
+      await onSubmit(board.id);
+    } catch (error) {
+      console.warn("[Analysis] Submission failed", error);
+    }
   }
 </script>
 
@@ -68,7 +81,7 @@
         type="button"
         class="submit"
         disabled={disabled || board.completed}
-        onclick={() => onSubmit(board.id)}
+        onclick={submit}
       >
         比對推論
       </button>

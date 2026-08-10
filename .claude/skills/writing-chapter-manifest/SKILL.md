@@ -1,6 +1,6 @@
 ---
 name: writing-chapter-manifest
-description: Use when authoring or updating a chapter.md file under static/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
+description: Use when authoring or updating a chapter.md file under docs/stories_plan/chapter_<N>/ or static/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
 ---
 
 # Writing Chapter Manifests (《東京雨證：第零證人》)
@@ -12,14 +12,18 @@ A chapter manifest declares **what scenes a chapter contains, in what playable o
 ## When to use
 
 Use when:
-- Starting a new chapter — author `static/stories_plan/chapter_<N>/chapter.md` before writing any scene files.
+- Starting a new chapter — author `<stories_plan_root>/chapter_<N>/chapter.md` before writing any scene files, where the root is `docs/stories_plan/` or `static/stories_plan/`.
 - Adding a new scene to an existing chapter — append it to the `## Scenes` list.
 - Reordering scenes — edit the list.
 - Renaming the chapter title — edit the H1.
 
 ## File location
 
-`static/stories_plan/chapter_<N>/chapter.md` — one per chapter directory. Chapter ordering across chapters is derived from the directory name (`chapter_1`, `chapter_2`, …); there is no top-level index file.
+`<stories_plan_root>/chapter_<N>/chapter.md` — one per chapter directory, where
+`<stories_plan_root>` is `docs/stories_plan/` or `static/stories_plan/`. The
+compiler skips a missing root and rejects the same `chapter_<N>` in both roots.
+Chapter ordering across chapters is derived from the directory name
+(`chapter_1`, `chapter_2`, …); there is no top-level index file.
 
 ## Required schema
 
@@ -50,6 +54,7 @@ Scene type is inferred from filename prefix — do **not** add a type annotation
 | `scene_<K>.md` | Linear dialogue (uses `writing-detective-game-dialogue` linear format) |
 | `investigation_scene_<K>.md` | Interactive investigation (uses `writing-investigation-scene`) |
 | `interrogation_scene_<K>.md` | Authored and compiler-validated interrogation scene (uses `writing-interrogation-scene`) |
+| `analysis_scene_<K>.md` | Compiler-validated analysis scene; current runtime/frontend support is threshold-board only (uses `writing-analysis-scene`) |
 
 ## Asset generation scope
 
@@ -64,7 +69,7 @@ The compile-time parser checks the following — the manifest fails the build if
 - `## Scenes` list present, non-empty.
 - Every listed filename exists in this chapter's directory.
 - Every listed filename matches a known scene-type prefix.
-- `interrogation_scene_<K>.md` is an authored and compiler-validated interrogation scene format owned by `writing-interrogation-scene`; runtime handling is outside this checkpoint and lands with the later engine/frontend tasks.
+- `interrogation_scene_<K>.md` is an authored and compiler-validated interrogation scene format owned by `writing-interrogation-scene`; it is supported by the current engine/frontend runtime.
 
 ## Cross-chapter ordering
 
