@@ -1398,6 +1398,194 @@ pub(crate) fn drive_hpa_257_positive_progression(engine: &mut GameEngine) {
     .unwrap();
 }
 
+/// Synthetic Chapter 1 bundle for the fixture-backed HPA-260 Analysis
+/// acceptance flow.  The preceding investigation scene owns every case
+/// record referenced by the checked-in Analysis definition, so the public
+/// engine path can acquire those cards before entering the workbench.
+pub(crate) fn analysis_fixture_resources() -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let resources = dir.path().to_path_buf();
+    let chapter_dir = resources.join("chapter_1");
+    std::fs::create_dir_all(&chapter_dir).unwrap();
+    write_content_manifest(&resources);
+
+    let evidence_ids = [
+        "miyake_call_record",
+        "l_corridor_replay",
+        "external_credential_event",
+        "event_1841",
+        "event_1842",
+        "event_1843",
+        "event_1844",
+        "lock_sequence",
+        "phone_notification",
+    ];
+    let statement_ids = ["manager_timing"];
+    let neutral_provenance = neutral_provenance_json();
+    let evidence_manifest = evidence_ids
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "name": id,
+                "description": id,
+                "details": id,
+                "provenance": neutral_provenance,
+                "imageAssetId": null,
+                "onCollect": [],
+                "onReexamine": null,
+            })
+        })
+        .collect::<Vec<_>>();
+    let statement_manifest = statement_ids
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id,
+                "speaker": "店長",
+                "content": id,
+                "provenance": neutral_provenance,
+                "onAcquire": [],
+                "onReexamine": null,
+            })
+        })
+        .collect::<Vec<_>>();
+    let hotspot_reveals = evidence_ids
+        .iter()
+        .map(|id| serde_json::json!({"kind": "evidence", "id": id}))
+        .chain(
+            statement_ids
+                .iter()
+                .map(|id| serde_json::json!({"kind": "statement", "id": id})),
+        )
+        .collect::<Vec<_>>();
+    let source_scene = serde_json::json!({
+        "type": "investigation",
+        "id": "analysis_source_scene",
+        "title": "Analysis sources",
+        "summary": "Synthetic source collection.",
+        "intro": [],
+        "sublocations": [{
+            "id": "room",
+            "label": "Room",
+            "status": "unlocked",
+            "unlock": null,
+            "reveals": [],
+            "sceneTag": "room",
+            "transitionDialogue": [],
+            "hotspots": [{
+                "id": "collect_sources",
+                "label": "Collect sources",
+                "description": "Collect the Analysis cards.",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": hotspot_reveals,
+                "inspectDialogue": [],
+                "onReexamine": null
+            }],
+            "characters": []
+        }],
+        "evidenceManifest": evidence_manifest,
+        "statementManifest": statement_manifest,
+        "outro": {
+            "unlock": {"predicate": "hotspot_investigated", "id": "collect_sources"},
+            "dialogue": []
+        }
+    });
+    std::fs::write(
+        chapter_dir.join("analysis_source_scene.json"),
+        serde_json::to_vec_pretty(&source_scene).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        chapter_dir.join("analysis_scene_8_5.json"),
+        include_str!("test_fixtures/analysis_scene_8_5.json"),
+    )
+    .unwrap();
+    std::fs::write(
+        chapter_dir.join("analysis_after.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "type": "linear",
+            "id": "analysis_after",
+            "title": "After Analysis",
+            "summary": "The next authored beat.",
+            "queue": [{"kind": "action", "text": "analysis complete"}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    std::fs::write(
+        resources.join("chapters.json"),
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "chapters": [{
+                "id": "chapter_1",
+                "title": "Chapter One",
+                "summary": "Analysis acceptance",
+                "scenes": [
+                    {"type": "investigation", "file": "chapter_1/analysis_source_scene.json"},
+                    {"type": "analysis", "file": "chapter_1/analysis_scene_8_5.json"},
+                    {"type": "linear", "file": "chapter_1/analysis_after.json"}
+                ]
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let facts = [
+        "miyake_known_lies_are_unrelated_to_murder",
+        "earlier_external_entry_exists",
+        "merge_time_is_not_event_time",
+        "two_independent_lock_contradictions_identified",
+    ];
+    let catalog = serde_json::json!({
+        "schemaVersion": 2,
+        "facts": facts.iter().map(|id| serde_json::json!({
+            "id": id,
+            "label": id,
+            "summary": id,
+            "details": id,
+            "category": "analysis"
+        })).collect::<Vec<_>>(),
+        "questions": [],
+        "objectives": [{
+            "id": "prepare_narrow_lock_request",
+            "label": "Prepare request",
+            "summary": "Prepare the narrow lock request.",
+            "kind": "secondary",
+            "sortOrder": 1
+        }],
+        "authorizations": [],
+        "sourceGroups": [],
+        "evidenceIndex": evidence_ids.iter().map(|id| serde_json::json!({
+            "id": id,
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_source_scene",
+            "provenance": neutral_provenance_json()
+        })).collect::<Vec<_>>(),
+        "statementsIndex": statement_ids.iter().map(|id| serde_json::json!({
+            "id": id,
+            "chapterId": "chapter_1",
+            "sceneId": "analysis_source_scene",
+            "provenance": neutral_provenance_json()
+        })).collect::<Vec<_>>(),
+        "analysisScenes": [{"chapterId":"chapter_1","sceneId":"analysis_scene_8_5"}],
+        "analysisBoards": [
+            {"chapterId":"chapter_1","sceneId":"analysis_scene_8_5","boardId":"evidence_packages"},
+            {"chapterId":"chapter_1","sceneId":"analysis_scene_8_5","boardId":"local_event_sequence"},
+            {"chapterId":"chapter_1","sceneId":"analysis_scene_8_5","boardId":"narrow_request_basis"}
+        ]
+    });
+    std::fs::write(
+        resources.join("story_catalog.json"),
+        serde_json::to_vec_pretty(&catalog).unwrap(),
+    )
+    .unwrap();
+
+    (dir, resources)
+}
+
 pub(super) fn case_file_acceptance_fixture_resources() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let resources = dir.path().to_path_buf();
