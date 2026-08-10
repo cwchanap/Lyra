@@ -65,6 +65,7 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
             durable_revision: 4,
             ticket: capture.ticket,
             purpose,
+            thumbnail_capture_required: true,
             debounce_deadline: tokio::time::Instant::now() + Duration::from_secs(10),
             capture_deadline: tokio::time::Instant::now() + Duration::from_secs(10),
         });
@@ -80,6 +81,7 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
         state.failed_write = Some(BackgroundWriteFailure {
             identity: (0, 4),
             diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
         });
         state.cleanup_failure = Some(CleanupFailure {
             owner: CleanupOwner::Attempt(9),
@@ -243,6 +245,7 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
             session_generation: 0,
             durable_revision: 4,
         },
+        thumbnail_capture_required: true,
         debounce_deadline: tokio::time::Instant::now(),
         capture_deadline: tokio::time::Instant::now(),
     };

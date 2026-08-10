@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 
+use game::analysis::{AnalysisActionToken, AnalysisDraft};
 #[cfg(feature = "e2e")]
 use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
 use game::save::capture::{capture_checkpoint, CapturedCheckpoint};
@@ -173,6 +174,7 @@ pub(crate) enum SaveBrowserPreflightView {
 #[derive(Clone, Copy)]
 pub(crate) enum MutationPersistencePolicy {
     AutosaveIfAdvanced,
+    AutosaveIfAdvancedWithoutThumbnail,
     CoordinatorManaged,
     AdvanceWithoutSaving,
 }
@@ -552,13 +554,24 @@ fn run_gameplay_mutation(
         )
     };
 
-    if matches!(policy, MutationPersistencePolicy::AutosaveIfAdvanced)
-        && after_revision > before_revision
-    {
-        let notification =
-            state
+    if after_revision > before_revision {
+        let notification = match policy {
+            MutationPersistencePolicy::AutosaveIfAdvanced => {
+                state
+                    .coordinator
+                    .notify_committed(committed, session_generation, after_revision)
+            }
+            MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => state
                 .coordinator
-                .notify_committed(committed, session_generation, after_revision);
+                .notify_committed_without_thumbnail(committed, session_generation, after_revision),
+            MutationPersistencePolicy::CoordinatorManaged
+            | MutationPersistencePolicy::AdvanceWithoutSaving => {
+                return Ok(GameplayCommandResultView {
+                    state: committed,
+                    thumbnail_capture: None,
+                })
+            }
+        };
         return Ok(GameplayCommandResultView {
             state: notification.committed,
             thumbnail_capture: notification.thumbnail_capture,
@@ -581,7 +594,10 @@ fn finish_coordinator_mutation(
             state,
             thumbnail_capture: None,
         }),
-        MutationPersistencePolicy::AutosaveIfAdvanced => Err(GameError::unavailable()),
+        MutationPersistencePolicy::AutosaveIfAdvanced
+        | MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => {
+            Err(GameError::unavailable())
+        }
     }
 }
 
@@ -2200,6 +2216,47 @@ pub async fn dispatch_development_command_with_exit(
             MutationPersistencePolicy::AutosaveIfAdvanced,
             GameEngine::complete_interrogation_phase,
         )?),
+        "select_analysis_board" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                expected: AnalysisActionToken,
+                board_id: String,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+                |engine| engine.select_analysis_board(args.expected, args.board_id),
+            )?)
+        }
+        "update_analysis_draft" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                expected: AnalysisActionToken,
+                draft: AnalysisDraft,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+                |engine| engine.update_analysis_draft(args.expected, args.draft),
+            )?)
+        }
+        "submit_analysis_board" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase")]
+            struct Args {
+                expected: AnalysisActionToken,
+            }
+            let args: Args = parse_development_body(body)?;
+            development_json(run_gameplay_mutation(
+                state,
+                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+                |engine| engine.submit_analysis_board(args.expected),
+            )?)
+        }
         _ => Err(GameError::new(
             "unknownCommand",
             format!("Unknown command: {command}"),
@@ -2235,6 +2292,44 @@ fn advance_dialogue(
         &state,
         MutationPersistencePolicy::AutosaveIfAdvanced,
         |engine| engine.advance_dialogue(expected),
+    )
+}
+
+#[tauri::command]
+fn select_analysis_board(
+    state: tauri::State<'_, AppState>,
+    expected: AnalysisActionToken,
+    board_id: String,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        &state,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+        |engine| engine.select_analysis_board(expected, board_id),
+    )
+}
+
+#[tauri::command]
+fn update_analysis_draft(
+    state: tauri::State<'_, AppState>,
+    expected: AnalysisActionToken,
+    draft: AnalysisDraft,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        &state,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+        |engine| engine.update_analysis_draft(expected, draft),
+    )
+}
+
+#[tauri::command]
+fn submit_analysis_board(
+    state: tauri::State<'_, AppState>,
+    expected: AnalysisActionToken,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        &state,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+        |engine| engine.submit_analysis_board(expected),
     )
 }
 
@@ -2469,6 +2564,9 @@ pub fn run() {
             list_scenes,
             jump_to_scene,
             advance_dialogue,
+            select_analysis_board,
+            update_analysis_draft,
+            submit_analysis_board,
             inspect_hotspot,
             interview_topic,
             enter_sublocation,
@@ -5304,6 +5402,25 @@ mod tests {
             );
         }
 
+        #[test]
+        fn no_thumbnail_mutation_returns_null_capture_and_keeps_activity_idle() {
+            let app = mutation_app();
+
+            let result = run_gameplay_mutation(
+                &app,
+                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+                |engine| engine.enter_sublocation("room"),
+            )
+            .unwrap();
+
+            assert!(result.thumbnail_capture.is_none());
+            assert_eq!(
+                app.coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Idle
+            );
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(1));
+        }
+
         #[tokio::test]
         async fn unchanged_mutation_returns_wrapped_state_without_capture() {
             let app = mutation_app();
@@ -5493,6 +5610,38 @@ mod tests {
         }
 
         #[test]
+        fn analysis_workbench_commands_pin_no_thumbnail_autosave_policy() {
+            let source = include_str!("lib.rs");
+            for command in [
+                "select_analysis_board",
+                "update_analysis_draft",
+                "submit_analysis_board",
+            ] {
+                let body = function_body(source, command);
+                assert!(
+                    body.contains("run_gameplay_mutation"),
+                    "{command} bypasses the centralized command guard"
+                );
+                assert!(
+                    body.contains("MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail"),
+                    "{command} must persist without requesting a thumbnail"
+                );
+                assert!(
+                    !body.contains("MutationPersistencePolicy::AutosaveIfAdvanced,"),
+                    "{command} must not use the ordinary thumbnail autosave policy"
+                );
+                assert!(
+                    !body.contains("session.lock()"),
+                    "{command} directly locks the application session"
+                );
+            }
+
+            let advance = function_body(source, "advance_dialogue");
+            assert!(advance.contains("MutationPersistencePolicy::AutosaveIfAdvanced"));
+            assert!(!advance.contains("AutosaveIfAdvancedWithoutThumbnail"));
+        }
+
+        #[test]
         fn task_11_commands_are_registered_once_with_the_existing_application_surface() {
             let source = include_str!("lib.rs");
             let handler_start = source
@@ -5535,6 +5684,9 @@ mod tests {
                 "list_scenes",
                 "jump_to_scene",
                 "advance_dialogue",
+                "select_analysis_board",
+                "update_analysis_draft",
+                "submit_analysis_board",
                 "inspect_hotspot",
                 "interview_topic",
                 "enter_sublocation",
@@ -5599,6 +5751,9 @@ mod tests {
                 "cancel_exit",
                 "exit_without_saving",
                 "reset_game",
+                "select_analysis_board",
+                "update_analysis_draft",
+                "submit_analysis_board",
             ] {
                 assert_eq!(
                     body.matches(&format!("\"{command}\"")).count(),

@@ -1,8 +1,9 @@
 use super::super::{
     AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
     AutosaveRegisteredIntent, AutosaveWriteJob, AutosaveWriteReceipt, BackgroundRetryTrigger,
-    CaptureIntent, CleanupOwner, CoordinatorFuture, PersistenceHealthView, SaveCoordinator,
-    ThumbnailActivityView, ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
+    CaptureIntent, CleanupOwner, CoordinatorFuture, CoordinatorTask, CoordinatorTaskScheduler,
+    PersistenceHealthView, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
+    AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -29,6 +30,19 @@ pub(super) struct RecordingBackend {
     pause_writes: AtomicBool,
     started: Notify,
     release: Notify,
+}
+
+#[derive(Default)]
+struct CountingScheduler {
+    spawned: AtomicU64,
+}
+
+impl CoordinatorTaskScheduler for CountingScheduler {
+    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
+        self.spawned.fetch_add(1, Ordering::SeqCst);
+        tokio::spawn(task);
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -644,6 +658,139 @@ async fn revisions_one_two_three_within_trailing_window_write_only_three() {
             thumbnail_available: false,
         }]
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_activity() {
+    let backend = Arc::new(RecordingBackend::default());
+    let scheduler = Arc::new(CountingScheduler::default());
+    let coordinator =
+        SaveCoordinator::with_backend(backend.clone()).with_task_scheduler(scheduler.clone());
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    coordinator.subscribe(
+        |_| {},
+        move |activity| {
+            activity_log.lock().unwrap().push(activity);
+        },
+    );
+
+    for revision in 1..=50 {
+        assert!(coordinator
+            .notify_durable_commit_without_thumbnail(1, revision)
+            .is_none());
+        assert_eq!(
+            coordinator.thumbnail_activity(),
+            ThumbnailActivityView::Idle
+        );
+    }
+    assert_eq!(scheduler.spawned.load(Ordering::SeqCst), 50);
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    tokio::task::yield_now().await;
+    tokio::task::yield_now().await;
+
+    assert_eq!(
+        backend.observations(),
+        [WriteObservation {
+            generation: 1,
+            revision: 50,
+            thumbnail_available: false,
+        }]
+    );
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+    assert!(activities
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|activity| *activity == ThumbnailActivityView::Idle));
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_thumbnail_retry_and_supersession_never_issue_capture_request() {
+    let backend = Arc::new(RecordingBackend::default());
+    backend.pause_writes.store(true, Ordering::SeqCst);
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_until_started().await;
+    backend.release();
+    tokio::task::yield_now().await;
+
+    assert_eq!(backend.observations()[0].revision, 2);
+    assert!(!backend.observations()[0].thumbnail_available);
+    assert!(coordinator.state.lock().unwrap().tickets.is_empty());
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn no_thumbnail_background_failure_retries_without_capture_or_warning_activity() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.fail_next_commit();
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    coordinator.subscribe(
+        |_| {},
+        move |activity| {
+            activity_log.lock().unwrap().push(activity);
+        },
+    );
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 3)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_failed_commits(1).await;
+    tokio::task::yield_now().await;
+
+    assert!(matches!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+    assert!(
+        !coordinator
+            .state
+            .lock()
+            .unwrap()
+            .failed_write
+            .as_ref()
+            .unwrap()
+            .thumbnail_capture_required
+    );
+
+    assert!(coordinator
+        .retry_failed_background(BackgroundRetryTrigger::Flush)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_receipts(1).await;
+
+    assert_eq!(backend.receipt_revisions(), [3]);
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+    assert!(activities
+        .lock()
+        .unwrap()
+        .iter()
+        .all(|activity| *activity == ThumbnailActivityView::Idle));
 }
 
 #[tokio::test(start_paused = true)]
@@ -1377,6 +1524,7 @@ async fn stale_session_generation_fence_rejects_autosave_without_reinstalling_pe
             "stale-ticket".into(),
             tokio::time::Instant::now() + Duration::from_secs(10),
             false,
+            true,
         )
         .unwrap_err();
     assert_eq!(stale_error.code, "staleSessionGeneration");
