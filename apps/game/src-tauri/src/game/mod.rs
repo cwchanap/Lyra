@@ -2005,7 +2005,7 @@ impl GameEngine {
             let board_id = scene
                 .active_board_id
                 .clone()
-                .ok_or_else(|| GameError::analysis_board_not_active(""))?;
+                .ok_or_else(GameError::analysis_no_active_board)?;
             if scene.is_board_completed_qualified(&chapter_id, &board_id, &engine.story_state) {
                 return Err(GameError::analysis_board_completed(&board_id));
             }
@@ -2042,7 +2042,7 @@ impl GameEngine {
                 let board_id = scene
                     .active_board_id
                     .clone()
-                    .ok_or_else(|| GameError::analysis_board_not_active(""))?;
+                    .ok_or_else(GameError::analysis_no_active_board)?;
                 if scene.is_board_completed_qualified(&chapter_id, &board_id, &engine.story_state) {
                     return Err(GameError::analysis_board_completed(&board_id));
                 }

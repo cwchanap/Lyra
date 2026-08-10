@@ -387,6 +387,12 @@ impl GameError {
             ),
         )
     }
+    pub fn analysis_no_active_board() -> Self {
+        Self::new(
+            "analysisNoActiveBoard",
+            "No analysis board is currently active.".to_string(),
+        )
+    }
     pub fn unavailable_analysis_card(board_id: &str, card_id: &str) -> Self {
         Self::new(
             "unavailableAnalysisCard",

@@ -634,7 +634,7 @@ fn validate_analysis_progress(
         ));
     }
     for board_id in scene.feedback_by_board_id.keys() {
-        if scene.board(board_id).is_none() {
+        if !authored_board_ids.contains(board_id.as_str()) {
             return Err(capture_error(format!(
                 "Analysis feedback references unknown board '{board_id}'."
             )));
@@ -3166,7 +3166,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_analysis_progress_rejects_undeclared_practice_card() {
+    fn validate_analysis_progress_accepts_scene_without_practice_card_state() {
         let def = analysis_def_with_threshold_board();
         let mut scene = AnalysisSceneState::from_json(def, 1);
         scene.intro_played = true;
