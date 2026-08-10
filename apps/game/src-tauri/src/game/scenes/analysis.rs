@@ -249,6 +249,35 @@ impl AnalysisSceneState {
         }
     }
 
+    /// Validate that every card referenced by the draft is authored on the
+    /// board AND currently available to the player.  Structural shape is
+    /// checked by [`validate_draft`]; this method is the runtime submission
+    /// gate that prevents a stale client from submitting an authored-but-
+    /// unacquired Evidence or Statement card.  Practice cards are always
+    /// considered available (see [`card_is_available`]).
+    pub fn validate_draft_availability(
+        &self,
+        board_id: &str,
+        draft: &AnalysisDraft,
+        inventory: &crate::game::state::Inventory,
+    ) -> Result<(), GameError> {
+        let board = self
+            .board(board_id)
+            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
+        let common = board.common();
+        for card_id in draft.card_ids() {
+            let card = common
+                .cards
+                .iter()
+                .find(|card| card.id == card_id)
+                .ok_or_else(|| GameError::unknown_analysis_card(board_id, card_id))?;
+            if !self.card_is_available(&card.source, inventory) {
+                return Err(GameError::unavailable_analysis_card(board_id, card_id));
+            }
+        }
+        Ok(())
+    }
+
     pub fn draft_is_complete(
         &self,
         board_id: &str,
@@ -402,6 +431,103 @@ mod tests {
         };
         assert!(state.draft_is_complete("threshold_board", &draft).unwrap());
         assert!(state.draft_is_correct("threshold_board", &draft).unwrap());
+    }
+
+    fn evidence_threshold_scene() -> AnalysisSceneJson {
+        serde_json::from_value(json!({
+            "id": "analysis_evidence",
+            "title": "Evidence",
+            "summary": "Availability gate",
+            "assetRefs": [],
+            "intro": [],
+            "outro": [],
+            "boards": [{
+                "kind": "threshold",
+                "common": {
+                    "id": "threshold_board",
+                    "label": "Threshold",
+                    "prompt": "Choose",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Incomplete", "incorrect": "Incorrect", "hint": null},
+                    "cards": [
+                        {"id": "ev_card", "label": "Evidence", "source": {"kind": "evidence", "id": "ev_1"}, "summary": "Evidence card"},
+                        {"id": "st_card", "label": "Statement", "source": {"kind": "statement", "id": "st_1"}, "summary": "Statement card"},
+                        {"id": "pr_card", "label": "Practice", "source": {"kind": "practice", "id": "pr_1"}, "summary": "Practice card"}
+                    ],
+                    "resultDialogue": []
+                },
+                "minimumSelected": 1,
+                "acceptedSelections": [["ev_card"]]
+            }]
+        }))
+        .expect("evidence threshold test definition must deserialize")
+    }
+
+    #[test]
+    fn validate_draft_availability_rejects_unacquired_evidence_card() {
+        let state = AnalysisSceneState::from_json(evidence_threshold_scene(), 1);
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: ["ev_card".to_owned()].into_iter().collect(),
+        };
+        let empty_inventory = crate::game::state::Inventory::default();
+        let err = state
+            .validate_draft_availability("threshold_board", &draft, &empty_inventory)
+            .expect_err("unacquired evidence card must be rejected");
+        assert_eq!(err.code, "unavailableAnalysisCard");
+    }
+
+    #[test]
+    fn validate_draft_availability_rejects_unacquired_statement_card() {
+        let state = AnalysisSceneState::from_json(evidence_threshold_scene(), 1);
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: ["st_card".to_owned()].into_iter().collect(),
+        };
+        let empty_inventory = crate::game::state::Inventory::default();
+        let err = state
+            .validate_draft_availability("threshold_board", &draft, &empty_inventory)
+            .expect_err("unacquired statement card must be rejected");
+        assert_eq!(err.code, "unavailableAnalysisCard");
+    }
+
+    #[test]
+    fn validate_draft_availability_accepts_acquired_evidence_card() {
+        use crate::game::provenance::CaseRecordProvenance;
+        use crate::game::state::{EvidenceRecord, Inventory};
+
+        let state = AnalysisSceneState::from_json(evidence_threshold_scene(), 1);
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: ["ev_card".to_owned()].into_iter().collect(),
+        };
+        let inventory = Inventory {
+            evidence: vec![EvidenceRecord {
+                id: "ev_1".into(),
+                name: "Evidence 1".into(),
+                description: "desc".into(),
+                details: "details".into(),
+                provenance: CaseRecordProvenance::default(),
+                image_asset_id: None,
+                on_reexamine: None,
+                collected_in_chapter_id: "chapter_1".into(),
+                collected_in_scene_id: "scene_1".into(),
+            }],
+            statements: vec![],
+        };
+        state
+            .validate_draft_availability("threshold_board", &draft, &inventory)
+            .expect("acquired evidence card must pass availability check");
+    }
+
+    #[test]
+    fn validate_draft_availability_accepts_practice_cards_without_inventory() {
+        let state = AnalysisSceneState::from_json(evidence_threshold_scene(), 1);
+        let draft = AnalysisDraft::Threshold {
+            selected_card_ids: ["pr_card".to_owned()].into_iter().collect(),
+        };
+        let empty_inventory = crate::game::state::Inventory::default();
+        state
+            .validate_draft_availability("threshold_board", &draft, &empty_inventory)
+            .expect("practice cards are always available");
     }
 
     #[test]

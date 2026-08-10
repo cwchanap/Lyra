@@ -2010,6 +2010,7 @@ impl GameEngine {
                 return Err(GameError::analysis_board_completed(&board_id));
             }
             scene.validate_draft(&board_id, &draft)?;
+            scene.validate_draft_availability(&board_id, &draft, &engine.inventory)?;
             let same_draft = scene.drafts.get(&board_id) == Some(&draft);
             let had_feedback = scene.feedback_by_board_id.remove(&board_id).is_some();
             if same_draft && !had_feedback {
@@ -2052,6 +2053,7 @@ impl GameEngine {
                     .cloned()
                     .ok_or_else(|| GameError::unknown_analysis_board(&board_id))?;
                 scene.validate_draft(&board_id, &draft)?;
+                scene.validate_draft_availability(&board_id, &draft, &engine.inventory)?;
                 let complete = scene.draft_is_complete(&board_id, &draft)?;
                 if !complete {
                     scene

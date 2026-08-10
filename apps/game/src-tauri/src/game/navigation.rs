@@ -2585,7 +2585,7 @@ mod tests {
                         "reveals": [],
                         "feedback": {{"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null}},
                         "cards": [
-                            {{"id": "card_a", "label": "A", "source": {{"kind": "evidence", "id": "evidence_a"}}, "summary": "A"}},
+                            {{"id": "card_a", "label": "A", "source": {{"kind": "practice", "id": "practice_a"}}, "summary": "A"}},
                             {{"id": "card_b", "label": "B", "source": {{"kind": "practice", "id": "prac_b"}}, "summary": "B"}}
                         ],
                         "resultDialogue": [{{"kind": "action", "text": "Result"}}]

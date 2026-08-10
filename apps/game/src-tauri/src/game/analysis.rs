@@ -42,6 +42,23 @@ enum AnalysisDraftWire {
     },
 }
 
+impl AnalysisDraft {
+    /// Return every card ID referenced by this draft, regardless of board
+    /// kind.  Used by availability validation to check each referenced card
+    /// against the persistent inventory.
+    pub fn card_ids(&self) -> Vec<&str> {
+        match self {
+            AnalysisDraft::Classify { group_by_card } => {
+                group_by_card.keys().map(String::as_str).collect()
+            }
+            AnalysisDraft::Order { card_ids } => card_ids.iter().map(String::as_str).collect(),
+            AnalysisDraft::Threshold { selected_card_ids } => {
+                selected_card_ids.iter().map(String::as_str).collect()
+            }
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for AnalysisDraft {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
