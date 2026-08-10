@@ -1,402 +1,416 @@
 # HPA-261 Chapter 1 Analysis Workbench UI Design
 
-**Date:** 2026-08-08  
-**Status:** Revised after design review  
+**Date:** 2026-08-10  
+**Status:** Rebased after HPA-561 and HPA-260 merged  
 **Linear:** HPA-261  
-**Baseline:** HPA-259 merged through PR #37; HPA-260 in progress in parallel; current `main`; open PR #44 threshold-only Analysis path reviewed as a temporary migration seam
+**Baseline:** current `main` at HPA-260 merge head `b7114a1`; HPA-259 PR #37, HPA-561 PR #44, and HPA-260 PR #47 are merged
 
 ## 1. Goal
 
-Build the smallest reusable Svelte workbench needed to play the real Chapter 1 Beat 8.5 `classify`, `order`, and `threshold` boards while keeping Rust authoritative for gameplay truth.
+Build the smallest reusable Svelte workbench needed to play the real Chapter 1 Beat 8.5 `classify`, `order`, and `threshold` boards while preserving the already-playable P1 threshold tutorial.
 
 The first version must:
 
-- render HPA-260's answer-key-free public Analysis view;
-- let pointer and keyboard players produce identical semantic drafts;
-- support board selection, classify assignment, order manipulation, threshold selection, remove, one-step undo, reset, submit, optional hint, feedback, and solved-board review;
-- preserve the existing `GameShell`, Case File, dialogue, persistence overlays, audio routing, Escape ownership, and gameplay-input isolation;
-- remain usable at the current 1280×720 target;
-- satisfy the first-version accessibility floor without expanding into release hardening.
+- reuse the **implemented** Rust-owned Analysis public view and three semantic commands;
+- add playable classify and order interaction and improve the existing threshold presentation;
+- support pointer and keyboard parity for select, assign, move, reorder, remove, one-step Undo, Reset, board selection, and Submit;
+- preserve P1 `practice:` cards and authored wrong-choice feedback;
+- expose the public source/procedure information needed by the Beat 8.5 threshold board without evaluating correctness in Svelte;
+- keep completed boards read-only;
+- preserve `GameShell`, Case File, dialogue, acquisition popup, persistence overlays, audio, Escape layering, and gameplay-input isolation;
+- remain usable at the current 1280x720 target.
 
-This is a Chapter 1 workbench, not a generic graph/template renderer.
+This is now primarily a **frontend presentation/refactor task**. HPA-260 has already implemented the runtime, persistence, public wire, command names, Tauri handlers, and the minimum TypeScript bridge.
 
-## 2. Dependency and repository context
+---
 
-### HPA-259 is the immutable authored-contract baseline
+## 2. Current repository baseline
 
-The merged compiler/Rust wire already defines the three closed Analysis families and the real Beat 8.5 immutable fixture:
+### 2.1 HPA-561 PR #44 is merged
 
-- `classify` with public groups and hidden accepted mapping;
-- `order` with public fixed anchors and hidden accepted order;
-- `threshold` with public `minimumSelected` and hidden accepted selections;
-- cards referencing already-acquired evidence/statements;
-- authored incomplete/incorrect copy and optional static hint.
+Current Chapter 1 already contains a playable P1 Analysis tutorial:
 
-HPA-261 must not reproduce compiler validation or hidden answers in TypeScript.
-
-### HPA-260 owns mutable runtime truth
-
-HPA-260 is the authority for:
-
-- board availability and active-board selection;
-- typed mutable drafts;
-- direct evaluation;
-- failure feedback;
-- qualified completion and story effects;
+- one threshold board;
+- four tutorial-local `practice:` cards;
+- authored incorrect feedback;
 - exact persistence;
-- `AnalysisActionToken` stale-action fencing;
-- answer-key-free `ModeView::Analysis` / `SceneView::Analysis`;
-- `select_analysis_board`, `update_analysis_draft`, and `submit_analysis_board`.
+- a threshold-only `AnalysisView.svelte`.
 
-HPA-261 may proceed against typed fixtures matching that public contract. HPA-262 remains responsible for proving fixture parity against live runtime responses and the complete Chapter 1 vertical slice.
+HPA-261 must evolve this path, not create a parallel Analysis UI and not regress the onboarding scene.
 
-### PR #44 is a cleanup seam, not a dependency
+### 2.2 HPA-260 PR #47 is merged
 
-Open PR #44 currently carries a threshold-only `AnalysisView` and temporary `set_analysis_selection` / `submit_analysis_selection` frontend/backend-facing names for the P1 tutorial.
+The runtime work HPA-261 previously planned around hypothetically now exists on `main`.
 
-HPA-261 must not leave two Analysis UI contracts behind.
+Already implemented and **not HPA-261 work**:
 
-Implementation rule after rebasing:
+- `AnalysisActionToken`;
+- `AnalysisDraft` for classify/order/threshold;
+- answer-key-free `ModeView::Analysis` and `SceneView::Analysis`;
+- public classify groups, order fixed anchors, threshold `minimumSelected`, board/card availability, read-only/completion state, feedback, hint, and card source metadata;
+- `select_analysis_board`;
+- `update_analysis_draft`;
+- `submit_analysis_board`;
+- TypeScript mirrors for the above;
+- `MUTATING_GAMEPLAY_COMMANDS` registration;
+- `GameplayCommandName` registration and its 17-command exhaustive test;
+- Tauri command registration;
+- exact Analysis save/restore;
+- no-frontend-thumbnail Analysis autosave behavior;
+- Rust stale-action validation;
+- Scene Select `analysis` support and the `分析` label;
+- the existing `+page.svelte` Analysis route.
 
-- if PR #44 has not merged, implement this workbench directly;
-- if PR #44 has merged, replace/generalize the threshold-only component and remove the entire temporary Analysis surface: component/tests, temporary command wrappers/names, temporary flat board fields, and temporary page routing assumptions;
-- the final frontend uses only the HPA-260 public draft union and three semantic commands.
+HPA-261 must not repeat any of those tasks.
+
+### 2.3 The remaining UI gap is narrow
+
+Current `AnalysisView.svelte`:
+
+- renders threshold cards;
+- sends whole threshold drafts through `updateAnalysisDraft`;
+- submits through `submitAnalysisBoard`;
+- respects card availability and completed state;
+- renders authored feedback;
+- shows a placeholder for classify/order boards.
+
+Therefore HPA-261 should **replace/generalize this component**, preserve its P1 behavior, and add the missing Chapter 1 workbench interactions.
+
+---
 
 ## 3. Chosen architecture
 
-### Approach A — one host + three focused board components — chosen
-
-Use one `AnalysisWorkbench` for common scene chrome, navigation, feedback, hint, undo/reset, submit, and focus behavior. Branch directly on the closed `board.kind` union and render one focused component for `classify`, `order`, or `threshold`. Reuse one small `AnalysisCard` presentation component.
-
-This maps exactly to committed Chapter 1 content and keeps each interaction independently testable.
-
-### Rejected: one monolithic workbench
-
-A single component would mix classify assignment, order movement, threshold provenance display, focus return, and shared chrome. That saves file count but makes iteration and testing worse.
-
-### Rejected: generic renderer / DnD / graph framework
-
-Do not add:
-
-- a renderer registry;
-- drag-and-drop library;
-- graph/canvas abstraction;
-- compare/route/chain support;
-- generic sparse-anchor order editor.
-
-Those are explicitly outside the Chapter 1-first delivery policy.
-
-## 4. Ownership boundary
-
-### Rust/public view owns
-
-- visible/available boards;
-- active-board identity through `AnalysisActionToken.activeBoardId`;
-- completion/read-only state;
-- cards, groups, fixed anchors, `minimumSelected`;
-- current draft;
-- feedback kind and authored visible copy;
-- optional hint;
-- correctness, accepted solutions, source-independence truth, and procedural eligibility;
-- story effects and durable completion.
-
-### Svelte may own presentation mechanics only
-
-- temporary selected card inside classify interaction;
-- display ordering mechanically derived from the public order draft + public fixed prefix anchor;
-- selected count;
-- record lookup for public source/procedure badges;
-- one previous public draft for one-step Undo;
-- hint-expanded state;
-- focus-return keys.
-
-### Svelte must never own
-
-- accepted classify mapping;
-- accepted total order;
-- accepted threshold combinations;
-- threshold source-group independence;
-- threshold eligibility/capability/procedure correctness;
-- board completion truth;
-- future hidden board availability;
-- durable reveals.
-
-The frontend never imports compiler Analysis definitions.
-
-## 5. Public frontend contract
-
-HPA-261 mirrors HPA-260's answer-key-free JSON directly in `apps/game/src/lib/state/types.ts`. Field spelling follows the final Rust serialization; do not add an adapter DTO family.
-
-Required shapes:
-
-```ts
-export type AnalysisActionToken = {
-  sceneId: string;
-  activeBoardId: string | null;
-  durableRevision: number;
-};
-
-export type AnalysisDraft =
-  | { kind: "classify"; groupByCard: Record<string, string> }
-  | { kind: "order"; cardIds: string[] }
-  | { kind: "threshold"; selectedCardIds: string[] };
-
-export type AnalysisFeedbackView =
-  | { kind: "incomplete" | "incorrect"; message: string }
-  | null;
-
-export type AnalysisCardView = {
-  id: string;
-  label: string;
-  summary: string;
-  source: InventoryTarget;
-};
-
-export type AnalysisGroupView = {
-  id: string;
-  label: string;
-  description: string;
-};
-
-export type AnalysisFixedAnchorView = {
-  cardId: string;
-  position: number;
-};
-```
-
-Each board variant exposes only public presentation metadata and its current draft.
-
-### Single active-board identity
-
-`Mode` does **not** add a second `boardId` field. It carries the action token only:
-
-```ts
-| ({
-    type: "analysis";
-    actionToken: AnalysisActionToken;
-  } & VisualAssetCue)
-```
-
-The active board is always:
-
-```ts
-mode.actionToken.activeBoardId
-```
-
-If that value is `null`, the workbench renders a neutral no-active-board/loading state. The UI never chooses between two board identity fields.
-
-`SceneView::Analysis` contains only boards Rust currently exposes to the player; HPA-261 never synthesizes locked future boards.
-
-## 6. Component and pure-helper structure
+Use one workbench host plus three focused board components:
 
 ```text
-apps/game/src/lib/analysis/
-  beat-8-5-fixture.ts
-  analysis-boundary.test.ts
-  response-fence.ts
-  response-fence.test.ts
-  order-draft.ts
-  order-draft.test.ts
-
 apps/game/src/lib/components/analysis/
   AnalysisWorkbench.svelte
   AnalysisCard.svelte
   ClassifyBoard.svelte
   OrderBoard.svelte
   ThresholdBoard.svelte
+
+apps/game/src/lib/analysis/
+  test-fixtures.ts
+  analysis-boundary.test.ts
+  order-draft.ts
+  order-draft.test.ts
 ```
 
-### `AnalysisWorkbench`
+### Why this shape
 
-Owns common presentation only:
+- There are exactly three committed board families.
+- Their interactions differ enough to deserve focused components.
+- Shared chrome/focus/Undo/Reset belongs in one host.
+- Order manipulation has enough pure draft algebra to deserve one small helper.
+- Nothing in Chapter 1 justifies a renderer registry, graph model, DnD layer, or generic sparse-slot framework.
 
-- visible board navigation/progress;
-- board title/prompt;
-- board-kind dispatch;
-- one-step Undo;
-- Reset;
-- optional Hint disclosure;
-- feedback region;
-- Submit;
-- focus return;
-- read-only solved state.
+### Explicitly rejected
 
-### `AnalysisCard`
+Do not add:
 
-Displays card label/summary and optional public badges. It has no backend knowledge and no correctness logic.
+- drag-and-drop dependencies;
+- a generic board renderer registry;
+- graph/canvas/edge editing;
+- compare/route/chain support;
+- a second Analysis frontend store;
+- a frontend correctness evaluator;
+- a new Analysis command client;
+- a frontend Analysis generation counter.
 
-### Board components
+---
 
-Each board component receives one public board view, derives a replacement `AnalysisDraft` from an interaction, and emits the whole replacement draft to the host.
+## 4. Reuse the implemented public contract exactly
 
-### `order-draft.ts`
+HPA-261 should consume the current TypeScript contract in `state/types.ts`; it no longer designs or mirrors a future contract.
 
-The only non-trivial draft algebra lives in a pure Chapter-1-scoped helper rather than inside Svelte.
+### 4.1 Board display identity and action identity are intentionally different
 
-It owns:
+The implemented `Mode` currently carries:
 
-- asserting that authored fixed anchors form the supported prefix shape;
-- materializing required prefix anchors for an edited partial draft;
-- add;
-- move up/down without crossing the fixed prefix;
-- remove without removing the fixed prefix.
+```ts
+{
+  type: "analysis";
+  boardId: string;
+  activeBoardId: string | null;
+  actionToken: AnalysisActionToken;
+  availableBoardIds: string[];
+  feedback: AnalysisFeedbackView | null;
+  lastFeedback: string | null;
+  // visual/audio cue fields...
+}
+```
 
-It does **not** know the hidden accepted order.
+Do **not** collapse these fields in HPA-261.
 
-The real Beat 8.5 fixture is pinned to `event_1841` at position 1. A future non-prefix anchor fails the helper/test intentionally and requires a new product decision rather than silently expanding HPA-261 into a sparse-slot editor.
+Rust uses them for different purposes:
 
-## 7. Workbench layout
+- `mode.boardId` = the board the view should render; Rust may fall back to the next available incomplete board if the stored active board is absent/unavailable;
+- `mode.activeBoardId` / `actionToken.activeBoardId` = the exact server-state selection used for stale-action validation;
+- `actionToken` = echoed unchanged with every semantic Analysis mutation.
 
-At 1280×720 use a contained workbench below the existing chapter header:
+The workbench therefore:
 
-- width around `min(1100px, calc(100vw - 48px))`;
-- bounded height using the remaining viewport;
-- header, scrollable board body, feedback/actions footer;
-- vertical overflow stays inside the board body;
-- reuse current theme variables (`--bone`, `--char`, `--rule-strong`, `--crimson`, `--cyan`).
+1. finds the displayed board using `mode.boardId`;
+2. uses `mode.actionToken` for every `select/update/submit` command;
+3. never manufactures a board ID inside the token.
 
-No chapter skin or animation system is added.
+### 4.2 `visibleBoards` contains public board definitions plus availability
 
-### Header
+Do not assume `visibleBoards` means “currently selectable only.” The implemented view exposes board definitions with:
 
-Contains:
+- `available`;
+- `completed`;
+- `readOnly`;
+- current `draft`;
+- `feedback`;
+- `hint`.
 
-- `ANALYSIS` marker;
-- visible-board progress;
-- board label;
-- prompt;
-- compact visible-board navigation;
-- Back control selecting the previous visible board through Rust.
+The UI may use all public boards for progress, but selection controls must be driven only by Rust’s `available/completed` state.
 
-Locked future boards never appear.
+Recommended presentation:
 
-### Footer
+- progress may count all public boards;
+- navigation shows available/completed boards;
+- unavailable boards are not selectable and need not expose detailed prompt/card content in the navigation chrome.
 
-Contains:
+Do not derive unlock predicates in TypeScript.
 
-- text feedback region;
-- Hint disclosure when `hint !== null`;
-- Undo when one previous draft exists;
-- Reset when editable and non-empty;
-- Submit whenever editable.
+### 4.3 Cards have runtime availability
 
-Do **not** disable Submit because the frontend believes a draft is incomplete. Incomplete submission belongs to Rust gameplay feedback.
+Every board card exposes `available`.
 
-Completed/read-only boards hide mutation/undo/reset/submit and show explicit text such as `完成・只讀檢視`.
+All mutation controls must respect it:
 
-## 8. Interaction model
+- unavailable classify cards cannot be assigned/moved;
+- unavailable order cards cannot be added;
+- unavailable threshold cards cannot be toggled.
 
-All primary actions are native `<button>` controls. Pointer click and keyboard Enter/Space therefore execute the same semantic handler. No global Analysis keyboard router is added; Escape remains owned by `GameShell`.
+HPA-260 also validates card availability at the Rust command boundary, so the UI rule is presentation/affordance only, not authority.
 
-### 8.1 Classify
+### 4.4 Preserve `practice:` sources
+
+`AnalysisCardSourceView` is already:
+
+```ts
+{ kind: "evidence" | "statement" | "practice"; ... }
+```
+
+P1 uses `practice` sources that deliberately do not exist in the Case File inventory.
+
+HPA-261 must support both:
+
+- P1 practice cards: render normally, no Case File provenance badges required;
+- Beat 8.5 evidence/statement cards: resolve public provenance from `GameStateView.inventory` for threshold badges.
+
+### 4.5 Use `draft` as the generic mutable board state
+
+The current threshold view also exposes a compatibility `selectedCardIds` field used by the existing threshold-only component. The unified workbench should read/write the public `draft` union for all three board kinds.
+
+Do not make removal of Rust compatibility aliases part of HPA-261. They can remain unused by the new UI.
+
+---
+
+## 5. Ownership boundary
+
+### Rust owns
+
+- board/card availability;
+- active selection and action token;
+- draft validation;
+- accepted solutions;
+- classify/order/threshold correctness;
+- threshold source-independence/procedure/capability truth;
+- failure feedback state/copy;
+- board and scene completion;
+- story effects;
+- durable revision;
+- save/restore.
+
+### Svelte may own only presentation mechanics
+
+- temporary selected-card state for classify;
+- mechanical order operations over the public draft/fixed anchors;
+- selected count;
+- one previous public draft for one-step Undo;
+- Hint open/closed presentation;
+- focus-return targets;
+- lookup of public inventory provenance for display badges.
+
+### Svelte must never contain
+
+- accepted group mappings;
+- accepted order;
+- accepted threshold combinations;
+- local source-group independence evaluation;
+- local eligibility/proof-capability/procedural correctness;
+- durable board completion or reveal logic.
+
+---
+
+## 6. Workbench layout
+
+At the 1280x720 target, keep the workbench inside the existing `GameShell` rather than adding another full-screen shell.
+
+Suggested structure:
+
+```text
+AnalysisWorkbench
+  header
+    ANALYSIS marker
+    completed / total progress
+    visible board navigation
+    current board label + prompt
+  scrollable board body
+    ClassifyBoard | OrderBoard | ThresholdBoard
+  footer
+    feedback
+    optional Hint
+    Undo
+    Reset
+    Submit
+```
+
+Use existing game theme variables. Do not add a Chapter-specific skin or animation framework.
+
+### Board navigation
+
+- current display board = `mode.boardId`;
+- available/completed board buttons call `selectAnalysisBoard(mode.actionToken, targetId)`;
+- unavailable boards are not selectable;
+- Back means previous available/completed board, not local history reconstruction.
+
+Completed boards can be selected and reopened read-only because Rust already supports that behavior.
+
+---
+
+## 7. Board interactions
+
+All primary actions use native buttons. Pointer click and keyboard Enter/Space therefore execute the same semantic handlers.
+
+### 7.1 Classify
 
 Render:
 
-- unassigned pool;
-- one group panel per public group;
-- already-assigned cards inside each group;
-- temporary selected-card presentation state.
+- an unassigned pool;
+- one panel per public group;
+- assigned cards in their current group;
+- a temporary selected-card presentation state.
 
-Interaction:
+Actions:
 
-1. activate a card;
+1. select an available card;
 2. activate `放入「<group>」` to assign/move it;
 3. assigned cards expose `移除`;
-4. selecting an assigned card then another group moves it directly.
+4. selecting an assigned card and another group moves it.
 
-Emitted draft:
+Emit the whole public draft:
 
 ```ts
 { kind: "classify", groupByCard: nextMap }
 ```
 
-No correctness coloring before Rust submission.
+No green/red local correctness state.
 
-### 8.2 Order
+### 7.2 Order
 
-Render a numbered current sequence and unplaced-card pool.
+Beat 8.5 currently exposes one public fixed anchor:
 
-For Beat 8.5:
-
-- `event_1841` is a public fixed anchor at authored position 1;
-- it is rendered locked;
-- it has no move/remove control;
-- an edit materializes the required public prefix anchor before movable cards;
-- Reset may still send the Rust-valid empty order draft.
-
-Movable cards expose:
-
-- `加入時間線`;
-- `上移`;
-- `下移`;
-- `移除`.
-
-All draft algebra comes from `order-draft.ts` and emits the whole structural order draft.
-
-### 8.3 Threshold
-
-Render every displayed card as a toggle button with `aria-pressed` and public source/procedure badges.
-
-#### Shared Case File source text
-
-Do not define Analysis-only precedence. Extract one pure helper in `$lib/case-file/labels.ts` and use it from both Case File detail and Threshold:
-
-```ts
-caseRecordSourceText(record)
+```text
+event_1841 @ position 1
 ```
 
-It preserves the current Case File precedence:
+Use a pure `order-draft.ts` helper for:
 
-1. `record.provenance.sourceLabel`;
-2. `record.sourceGroup?.label`;
-3. otherwise no source text.
+- asserting the supported fixed-anchor shape is a contiguous prefix;
+- materializing the public prefix anchor when the player first places a movable card;
+- add;
+- move up/down without crossing the prefix;
+- remove without removing the fixed prefix.
 
-Threshold may fall back to the existing `sourceKindLabels` only when the shared source text is absent. Procedure text uses the existing `proceduralStatusLabels` map.
+The UI renders:
 
-This keeps the same record from presenting conflicting source names between Case File and Analysis.
+- a numbered ordered list;
+- fixed anchor with `固定位置` and no mutation controls;
+- unplaced available cards;
+- `加入時間線`, `上移`, `下移`, `移除` controls for movable cards.
+
+Reset may send the Rust-valid empty order draft.
+
+Do not implement non-prefix sparse anchors. A future authored non-prefix anchor should fail the focused helper test and trigger a later product decision.
+
+### 7.3 Threshold
+
+Migrate the existing P1 threshold behavior into `ThresholdBoard` rather than rewriting it from scratch.
+
+Use the board’s threshold `draft` as the selected set and emit IDs in deterministic lexical order:
+
+```ts
+{ kind: "threshold", selectedCardIds: [...selected].sort() }
+```
 
 Show only mechanical progress:
 
-> `已選 N / 最少 M`
-
-The frontend allows any displayed combination, including cards sharing a source group.
-
-#### Deterministic threshold draft order
-
-HPA-260 stores threshold selection as a sorted set. The frontend emits selected IDs in deterministic lexical order:
-
-```ts
-selectedCardIds: [...selected].sort()
+```text
+已選 N / 最少 M
 ```
 
-This prevents semantically identical selections from producing unstable fixture/undo/round-trip order.
+Do not prevent combinations based on source group, procedure, or proof capability; Rust owns acceptance.
 
-## 9. Undo and Reset
+#### Public provenance badges
+
+For `evidence` / `statement` cards, resolve the referenced record from `GameStateView.inventory` and show explicit semantics:
+
+- if `sourceGroup` exists: `來源群組：<label>`;
+- otherwise, if `provenance.sourceLabel` exists: `來源：<label>`;
+- optional fallback to the existing `sourceKindLabels` vocabulary;
+- if procedural status has a public label: `程序：<label>`.
+
+This mirrors the Case File distinction between a source and a source group rather than inventing an Analysis-only precedence rule.
+
+For `practice` cards, do not attempt inventory lookup and do not fabricate provenance badges.
+
+---
+
+## 8. Undo and Reset
 
 ### One-step Undo
 
-The host keeps at most one previous public draft for the current board.
+Undo is presentation convenience, not durable Analysis state.
 
-Before an edit:
+The current Analysis command wrappers return `Promise<void>`, which makes it impossible for the host to distinguish an applied command from `dispatchGameCommand` returning `null`.
+
+HPA-261 should make the smallest client change:
+
+```ts
+dispatchAnalysisCommand(...): Promise<GameStateView | null>
+selectAnalysisBoard(...): Promise<GameStateView | null>
+updateAnalysisDraft(...): Promise<GameStateView | null>
+submitAnalysisBoard(...): Promise<GameStateView | null>
+```
+
+No command payload changes are required.
+
+For an edit:
 
 1. clone the current authoritative public draft;
-2. send the replacement through `update_analysis_draft`;
-3. retain the previous draft for Undo only after the authoritative response is accepted by the frontend response fence.
+2. call `updateAnalysisDraft`;
+3. only if it returns a non-null applied state, store the previous draft as the one Undo slot.
 
-Undo sends that previous draft through the same command. It is never a local rollback.
+Undo sends that previous draft through the same Rust command and then clears the slot.
 
-Undo state clears on:
+Clear Undo on:
 
-- board change;
-- scene/session replacement;
-- successful reset;
-- solved/read-only transition.
+- displayed board change;
+- successful Reset;
+- solved/read-only transition;
+- scene/session replacement.
 
-It is not persisted.
+Do not persist Undo and do not add redo history.
 
 ### Reset
 
-Reset submits the empty draft for the active board kind:
+Reset sends the board-kind empty draft through `updateAnalysisDraft`:
 
 ```ts
 { kind: "classify", groupByCard: {} }
@@ -404,246 +418,249 @@ Reset submits the empty draft for the active board kind:
 { kind: "threshold", selectedCardIds: [] }
 ```
 
-Rust's response remains authoritative.
+---
 
-## 10. Command flow and stale-response safety
+## 9. Stale-response safety: reuse current mechanisms
 
-### No optimistic gameplay mutation
+The previous HPA-261 draft planned a new frontend response-fence helper. The merged HPA-260/current client makes that extra layer unnecessary for the first version.
 
-Components compute candidate drafts, but rendered board state remains `gameState.value`. The authoritative command response becomes the next visible state.
+Current protection is already two-layered:
 
-### Commands
+1. `gameState.inFlight` serializes frontend gameplay commands and disables/blocks competing gameplay/menu transitions while a command is pending;
+2. Rust validates `AnalysisActionToken { sceneId, activeBoardId, durableRevision }` before every workbench mutation.
 
-Frontend wrappers mirror HPA-260:
+Persistence/session replacement commands also reject while the gameplay client is in flight.
+
+Therefore HPA-261 should **not** add:
+
+- `response-fence.ts`;
+- another session generation;
+- another command dispatcher;
+- optimistic local board state.
+
+The workbench continues to render only the authoritative `gameState.value` returned by the existing dispatcher.
+
+---
+
+## 10. Feedback, Hint, and focus behavior
+
+### Feedback
+
+Use the board’s implemented `feedback` field:
 
 ```ts
-selectAnalysisBoard(expected: AnalysisActionToken, boardId: string)
-updateAnalysisDraft(expected: AnalysisActionToken, draft: AnalysisDraft)
-submitAnalysisBoard(expected: AnalysisActionToken)
+{ state: "incomplete" | "incorrect"; message: string } | null
 ```
 
-All use the existing gameplay dispatcher and existing `gameState.inFlight` isolation.
+Do not build contextual feedback precedence; that remains HPA-263.
 
-### Existing command registries
+Submit stays enabled for editable boards even when the UI can see the draft is incomplete. Rust must be able to return authored `Incomplete` feedback.
 
-Current `main` already has `MUTATING_GAMEPLAY_COMMANDS` in `game-client.svelte.ts`, used by the game-client test harness. HPA-261 extends it with the three Analysis commands.
+After incomplete/incorrect submit, focus the feedback region:
 
-Separately, `GameplayCommandName` in `sfx-events.ts` has an exhaustive compile-time record and explicit count in `sfx-events.test.ts`. HPA-261 must update both the union and that exhaustive test. No new SFX mapping is added.
+- `role="status"`;
+- `tabindex="-1"`;
+- textual message, not color alone.
 
-### Frontend response fence
+### Hint
 
-Rust's `AnalysisActionToken` rejects stale workbench actions at the authority boundary. The frontend still must stop a late successful response from an old session from overwriting a newer `gameState.value`.
-
-Use one narrow optional response guard on the existing dispatcher:
-
-1. wrapper captures `presentationState.sessionEpoch` and expected token;
-2. invoke runs normally;
-3. before `applyGameplayCommandResult`, guard checks:
-   - session epoch unchanged;
-   - current mode still `analysis`;
-   - current action token still equals expected token;
-4. stale response returns `null` and is not applied.
-
-Do not add an Analysis generation counter or a second command client.
-
-### Required wiring proof
-
-Pure fence tests are not enough. Add one existing `game-client-source.test.ts` integration test that:
-
-- starts an Analysis command with a deferred mocked invoke;
-- calls `resetFrontendForTitle()` (or otherwise replaces the session) before the response resolves;
-- resolves the old invoke;
-- asserts the wrapper returns `null` and the late response does not overwrite the new/null game state.
-
-## 11. Focus and accessibility
-
-First-version requirements:
-
-- semantic native buttons/lists/groups;
-- useful accessible names including card/group/action names;
-- visible `:focus-visible` styling;
-- text feedback, not color alone;
-- `prefers-reduced-motion: reduce` removes nonessential movement;
-- 1280×720 remains usable;
-- keyboard-only completion of all three boards.
+If `board.hint !== null`, expose a simple disclosure button. Hint open/closed state is presentation-only and not persisted.
 
 ### Focus return
 
-Interactive controls carry stable public presentation keys such as:
+Use stable public focus keys such as:
 
 ```text
-card:<cardId>
-group:<groupId>
-board:<boardId>
+card:<id>
+group:<id>
+board:<id>
 submit
 reset
 undo
 hint
 ```
 
-After an accepted edit, `tick()` and restore focus to the corresponding key if it still exists, otherwise the active board heading.
+After an applied draft mutation, return focus to the originating card/action when it still exists; otherwise focus the board heading.
 
-After incomplete/incorrect submit, focus the feedback region (`tabindex="-1"`, `role="status"`) so text feedback is immediately discoverable.
+After `mode.boardId` changes, clear Undo/Hint and focus the new board heading.
 
-After board switch, focus the new board heading and clear one-step Undo.
+---
 
-## 12. Existing-shell integration
+## 11. Existing-shell integration
 
 ### `+page.svelte`
 
-Add the Analysis branch beside interrogation:
+The Analysis route already exists.
 
-- reuse `SceneBackdrop`;
-- render `AnalysisWorkbench`;
-- pass Analysis scene/mode, inventory, three command wrappers, and `gameState.inFlight`.
+HPA-261 only needs to:
 
-### GameShell
+- import `selectAnalysisBoard` in addition to the already-used update/submit wrappers;
+- replace `AnalysisView` with `AnalysisWorkbench`;
+- pass `scene`, `mode`, `inventory`, the three wrappers, and `gameState.inFlight`.
 
-Do not modify `GameShell.svelte`.
+Keep the existing `SceneBackdrop` branch.
 
-Its existing behavior already provides:
+### `GameShell.svelte`
 
-- Escape ownership;
-- inert gameplay while menu/top layers are open;
-- chapter HUD;
-- persistence layer isolation.
+No change.
+
+### `SceneNavigationPanel.svelte`
+
+No change. Current main already handles `analysis` and labels it `分析`.
+
+### `audio/sfx-events.ts`
+
+No change. Current main already contains all three Analysis command names and the exhaustive test count is already 17.
+
+### `state/types.ts`
+
+No new public wire is required for HPA-261. Consume the HPA-260 types as implemented.
 
 ### Case File
 
-Do not change the mode policy:
+No production behavior change. Current helpers already mean:
 
-- `shouldShowCaseFile(analysis) === true`;
-- `canReexamineCaseRecords(analysis) === false`.
+- Analysis: Case File visible;
+- Analysis: re-examination disabled.
 
-Add an explicit `mode.test.ts` Analysis case so this intended behavior is pinned rather than merely inferred from current helper fallthrough.
+Add one focused `mode.test.ts` regression pin for that existing behavior.
 
-The only Case File component change allowed by HPA-261 is refactoring its existing source-text precedence to call the shared `caseRecordSourceText` helper; behavior must remain unchanged.
+---
 
-### Scene Select
+## 12. Test strategy
 
-Extend `sceneTypeLabel` with:
+### Preserve the current P1 tutorial first
 
-```text
-analysis -> 分析
-```
+Migrate the useful assertions from the current `AnalysisView.test.ts`:
 
-and pin it in the existing component test.
+- four practice cards render;
+- threshold toggle sends a whole threshold draft;
+- authored incorrect feedback renders;
+- completed/read-only board blocks mutation;
+- disabled/in-flight state blocks mutation.
 
-## 13. PR #44 cleanup acceptance
+This is a hard regression requirement because P1 is already playable on `main`.
 
-After rebasing the implementation branch, no temporary Analysis path may survive.
+### Add answer-key-free Beat 8.5 UI fixtures
 
-If PR #44 has landed, final verification must find no occurrences of:
+Create frontend-only public-view fixtures using real Beat 8.5 IDs/labels but **no accepted mapping/order/selection data**.
 
-```text
-AnalysisView
-setAnalysisSelection
-submitAnalysisSelection
-set_analysis_selection
-submit_analysis_selection
-```
+Cover:
 
-The final `AnalysisBoardView` must be the discriminated HPA-260 shape where mutable selection/order/assignment lives under `draft`; there is no legacy flat `selectedCardIds` field on the board common shape.
+- classify groups/cards with empty/partial public drafts;
+- order cards + public `event_1841@1` fixed anchor with a deliberately non-final partial draft;
+- threshold cards with minimum selection and public inventory provenance.
 
-Do not leave both tutorial and workbench command families active.
+Do not import the Rust hidden-answer fixture into frontend code.
 
-## 14. Test strategy
-
-### Pure tests
-
-- answer-key-free boundary fixture/source guard;
-- response token/session predicate;
-- Chapter 1 order-draft algebra table tests;
-- shared Case File source-text precedence.
-
-### Board component tests
+### Focused component tests
 
 Classify:
 
-- pointer/keyboard assignment parity;
-- move assigned card;
-- remove assigned card;
-- no correctness styling/logic.
+- pointer/keyboard parity;
+- move;
+- remove;
+- unavailable card disabled;
+- read-only state.
 
 Order:
 
-- fixed anchor has no mutation controls;
-- component delegates to pure order helper;
-- pointer/keyboard add parity;
-- pure helper covers up/down/remove/boundaries/non-prefix rejection.
+- pure prefix-anchor table tests;
+- add/move/remove;
+- cannot cross/remove fixed anchor;
+- unavailable unplaced card disabled;
+- pointer/keyboard parity;
+- non-prefix anchor shape fails the helper test.
 
 Threshold:
 
-- source/procedure badges use shared Case File helper/maps;
-- deterministic sorted selected IDs;
-- pointer/keyboard toggle parity;
-- two same-source-group cards can still both be selected.
+- P1 practice regression;
+- evidence/statement provenance badges;
+- unavailable card disabled;
+- same-source-group cards remain selectable together;
+- deterministic sorted draft IDs;
+- pointer/keyboard parity.
 
 Workbench:
 
-- visible board navigation;
-- submit remains enabled when editable/incomplete;
-- reset uses Rust command;
-- successful edit enables one-step Undo;
-- board switch clears Undo;
-- feedback receives focus after failed submit response;
-- completed board is read-only.
+- `mode.boardId` chooses displayed board;
+- available/completed board navigation calls `selectAnalysisBoard` with the current action token;
+- unavailable board cannot be selected;
+- Submit remains enabled on incomplete editable draft;
+- one-step Undo records only an applied update;
+- board switch clears Undo and moves focus;
+- Reset uses the Rust command;
+- feedback gets focus after failed submit;
+- completed board reopens read-only.
 
-Integration pins:
+Ownership:
 
-- game-client stale response is dropped after session replacement;
-- `GameplayCommandName` exhaustive record/count updated;
-- `MUTATING_GAMEPLAY_COMMANDS` contains all three commands;
-- `mode.test.ts` pins Case File visible + reexamine disabled;
-- Scene Select renders `分析`;
-- page route uses only `AnalysisWorkbench`.
+- frontend Analysis sources contain no `acceptedGroupByCard`, `acceptedOrder`, or `acceptedSelections` contract/data.
 
-HPA-262, not HPA-261, owns packaged Tauri/live-Rust fixture parity and save/resume vertical-slice acceptance.
+---
 
-## 15. Scope boundaries
+## 13. HPA-262 handoff after HPA-261
+
+Because HPA-260 is now merged, HPA-262’s remaining integration burden is smaller.
+
+HPA-262 should prove against the final authored Chapter 1 Beat 8.5 scene:
+
+1. the real classify/order/threshold board content flows through the already-merged Rust runtime into this workbench;
+2. one representative partial draft per board survives Save -> Title -> Continue;
+3. fixed anchor behavior matches the authored board;
+4. threshold source/procedure information is understandable with real Chapter 1 inventory provenance;
+5. correct submit commits facts/objective/result dialogue exactly once;
+6. completed boards reopen read-only;
+7. a packaged keyboard-only path completes all three real boards;
+8. the existing P1 practice threshold tutorial still works after the UI replacement.
+
+HPA-261 does not need to recreate HPA-260’s runtime acceptance or save tests.
+
+---
+
+## 14. Deferred / non-goals
 
 Deferred:
 
 - progressive/contextual hints (HPA-263);
-- animation polish;
+- animation/card-flight polish;
 - exhaustive screen-reader narration;
-- controller-specific layer;
-- Chapter 2 compare/route/chain templates;
-- interactive layout editor;
-- generic sparse-anchor order behavior;
-- packaged runtime integration (HPA-262).
+- controller-specific optimization;
+- broad responsive/mobile work;
+- Chapter-specific skins;
+- compare/route/chain templates;
+- non-prefix/sparse order anchors;
+- layout-editor integration.
 
-No new npm/Bun dependency is required.
+Non-goals:
 
-## 16. Review resolution summary
+- Rust evaluator/runtime changes;
+- save schema changes;
+- frontend accepted-solution data;
+- provenance correctness evaluation in Svelte;
+- generic graph/editor architecture;
+- Chapter 2 UI.
 
-The external review was accepted with these corrections:
+---
 
-- **Accepted:** align threshold source display with Case File through a shared helper.
-- **Partially accepted:** command-registration plan needed the `GameplayCommandName` exhaustive test update, but the claim that `MUTATING_GAMEPLAY_COMMANDS` does not exist was incorrect; it exists on current `main` and remains the correct test-harness registry to extend.
-- **Accepted:** move order draft algebra into a pure Chapter-1-scoped helper with table tests.
-- **Accepted:** add a real dispatcher stale-response wiring test in addition to pure predicate tests.
-- **Accepted:** remove duplicated `mode.boardId`; use only `actionToken.activeBoardId`.
-- **Accepted:** sort threshold selection IDs before emitting drafts.
-- **Accepted:** pin Analysis Case File/reexamine behavior in `mode.test.ts`.
-- **Accepted:** expand PR #44 cleanup to the full temporary command/type/route surface.
-- **Accepted:** add missing classify-remove, order algebra, and Undo-on-board-switch tests.
-- **Not applied:** turning the execution plan into a high-level checklist only. This repository's implementation-plan workflow intentionally keeps task-level code/test commands, but the revised plan removes duplicated component implementation detail where pure helpers/tests now carry the risky logic.
+## 15. Acceptance mapping
 
-## 17. Acceptance checklist
+| HPA-261 acceptance criterion | Design owner |
+|---|---|
+| Keyboard-only classify/order/threshold | focused native-button board components |
+| Pointer and keyboard emit identical semantic drafts | component parity tests |
+| Fixed anchors cannot move | pure prefix-anchor helper + locked UI |
+| Threshold exposes source/procedure info | public inventory provenance badges |
+| Completed boards reopen read-only | Rust state + workbench read-only rendering |
+| Feedback text + useful focus return | workbench footer/focus logic |
+| No frontend truth | Rust ownership + source/fixture guard |
+| Stale action safety | existing `gameState.inFlight` + Rust `AnalysisActionToken` |
+| 1280x720 first-version usability | contained workbench layout |
 
-HPA-261 is ready for HPA-262 handoff when:
+## 16. Final implementation principle
 
-- classify/order/threshold all emit full replacement drafts with pointer/keyboard parity;
-- no accepted-answer fields or frontend correctness rules exist;
-- active board comes only from `actionToken.activeBoardId`;
-- fixed order anchor cannot move;
-- order helper rejects unsupported non-prefix anchor shapes;
-- threshold displays consistent public source/procedure information and emits sorted selections;
-- completed boards reopen read-only;
-- feedback focus and board-switch focus are deterministic;
-- one-step Undo/Reset use the same authoritative Rust update command;
-- stale old-session Analysis responses are proven not to overwrite current state;
-- Case File remains available but reexamination remains disabled in Analysis;
-- PR #44 temporary Analysis names/shapes are absent if that PR merged first;
-- HPA-262 can replace fixtures with live runtime responses without changing the component architecture.
+Do not rebuild the Analysis platform HPA-260 just delivered.
+
+HPA-261 should now be a small UI completion layer:
+
+> **reuse the live Rust contract, preserve the existing P1 threshold tutorial, add classify/order/threshold interaction quality, and stop there.**
