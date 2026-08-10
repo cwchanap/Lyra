@@ -867,6 +867,122 @@ async fn stale_no_thumbnail_retry_cannot_replace_a_newer_pending_write() {
     assert_eq!(backend.receipt_revisions(), [2]);
 }
 
+#[tokio::test(start_paused = true)]
+async fn no_thumbnail_retry_does_not_supersede_newer_pending_write_after_eligibility() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.fail_next_commit();
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_failed_commits(1).await;
+    tokio::task::yield_now().await;
+
+    let eligible = Arc::new(Barrier::new(2));
+    let resume = Arc::new(Barrier::new(2));
+    let hook_eligible = Arc::clone(&eligible);
+    let hook_resume = Arc::clone(&resume);
+    coordinator.set_retry_after_eligibility_hook(Arc::new(move || {
+        hook_eligible.wait();
+        hook_resume.wait();
+    }));
+    let runtime = tokio::runtime::Handle::current();
+    let retry_coordinator = coordinator.clone();
+    let retry = std::thread::spawn(move || {
+        let _runtime_guard = runtime.enter();
+        retry_coordinator.retry_failed_background(BackgroundRetryTrigger::Flush)
+    });
+
+    eligible.wait();
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    let (pending_identity, pending_ticket) = {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        (
+            (pending.session_generation, pending.durable_revision),
+            pending.ticket.clone(),
+        )
+    };
+    assert_eq!(pending_identity, (1, 2));
+
+    resume.wait();
+    assert!(retry.join().unwrap().is_none());
+    {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        assert_eq!(
+            (pending.session_generation, pending.durable_revision),
+            pending_identity
+        );
+        assert_eq!(pending.ticket, pending_ticket);
+        assert!(state.tickets.contains_key(&pending_ticket));
+    }
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_receipts(1).await;
+    assert_eq!(backend.receipt_revisions(), [2]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn ordinary_retry_does_not_supersede_newer_pending_write_after_eligibility() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.fail_next_commit();
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+    let first = coordinator.notify_durable_commit(1, 1).unwrap();
+    coordinator.report_thumbnail_failure(&first.ticket).unwrap();
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_failed_commits(1).await;
+    tokio::task::yield_now().await;
+
+    let eligible = Arc::new(Barrier::new(2));
+    let resume = Arc::new(Barrier::new(2));
+    let hook_eligible = Arc::clone(&eligible);
+    let hook_resume = Arc::clone(&resume);
+    coordinator.set_retry_after_eligibility_hook(Arc::new(move || {
+        hook_eligible.wait();
+        hook_resume.wait();
+    }));
+    let runtime = tokio::runtime::Handle::current();
+    let retry_coordinator = coordinator.clone();
+    let retry = std::thread::spawn(move || {
+        let _runtime_guard = runtime.enter();
+        retry_coordinator.retry_failed_background(BackgroundRetryTrigger::Flush)
+    });
+
+    eligible.wait();
+    let newer = coordinator.notify_durable_commit(1, 2).unwrap();
+    coordinator.report_thumbnail_failure(&newer.ticket).unwrap();
+    let (pending_identity, pending_ticket) = {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        (
+            (pending.session_generation, pending.durable_revision),
+            pending.ticket.clone(),
+        )
+    };
+    assert_eq!(pending_identity, (1, 2));
+
+    resume.wait();
+    assert!(retry.join().unwrap().is_none());
+    {
+        let state = coordinator.state.lock().unwrap();
+        let pending = state.pending_autosave.as_ref().unwrap();
+        assert_eq!(
+            (pending.session_generation, pending.durable_revision),
+            pending_identity
+        );
+        assert_eq!(pending.ticket, pending_ticket);
+        assert!(state.tickets.contains_key(&pending_ticket));
+    }
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_receipts(1).await;
+    assert_eq!(backend.receipt_revisions(), [2]);
+}
+
 #[tokio::test]
 async fn no_thumbnail_autosave_does_not_hide_unrelated_live_activity() {
     let coordinator = SaveCoordinator::ticket_only();
