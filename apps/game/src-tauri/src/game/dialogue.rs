@@ -1377,6 +1377,7 @@ mod tests {
 
     use crate::game::scenes::analysis::AnalysisSceneState;
     use crate::game::schema::{AnalysisSceneJson, SceneJson};
+    use crate::game::unlock::StoryUnlockContext;
 
     fn analysis_scene_with_dialogue(
         intro: Vec<DialogueItem>,
@@ -1571,6 +1572,12 @@ mod tests {
         let outro_view = engine
             .advance_dialogue(token_from(&result_view))
             .expect("result token should install the outro queue");
+        assert!(
+            !engine
+                .story_state
+                .analysis_scene_completed("chapter_1", "analysis_scene_1"),
+            "scene completion must wait until the outro queue is exhausted"
+        );
         assert_dialogue_frame(
             &outro_view,
             "outro line",
@@ -1587,6 +1594,12 @@ mod tests {
         let next_scene_view = engine
             .advance_dialogue(token_from(&outro_view))
             .expect("outro token should advance to the next scene");
+        assert!(
+            engine
+                .story_state
+                .analysis_scene_completed("chapter_1", "analysis_scene_1"),
+            "scene completion must commit after the outro queue drains"
+        );
         assert!(matches!(
             next_scene_view.scene,
             crate::game::view::SceneView::Linear { ref id, .. } if id == "scene_2"
@@ -1655,6 +1668,19 @@ mod tests {
         let scene = analysis_scene_with_intro_and_outro(vec![], vec![]);
         let mut engine = empty_engine_with_analysis_scene(scene, 1);
         let _resources = add_next_linear_scene(&mut engine);
+
+        engine
+            .prime_initial_queue()
+            .expect("an empty intro should expose the workbench immediately");
+        let workbench = engine.view().expect("workbench view should be available");
+        assert!(matches!(
+            workbench.mode,
+            ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
+        ));
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene after empty intro");
+        };
+        assert_eq!(scene.active_board_id.as_deref(), Some("board_1"));
 
         engine
             .submit_analysis_selection("board_1")

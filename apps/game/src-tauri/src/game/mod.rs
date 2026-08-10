@@ -2024,14 +2024,17 @@ impl GameEngine {
             return Err(GameError::locked_analysis_board(board_id));
         }
         // Enforce the same active-board boundary the view publishes: the
-        // frontend operates `next_unlocked_board_id`, so a crafted or stale
-        // command that targets a later unlocked board must be rejected here,
+        // frontend operates the scene's authored-order active-board focus, so
+        // a crafted or stale command that targets a later unlocked board must
+        // be rejected here,
         // not just rely on the frontend. Otherwise a correct submission would
         // record that board complete and apply its story reveals before the
         // authored current board. Mirrors the interrogation defense where
         // questions outside the current phase are rejected.
-        let active_board_id =
-            scene.next_available_incomplete_board_id(chapter_id, &self.story_state);
+        let active_board_id = scene
+            .active_board_id
+            .clone()
+            .or_else(|| scene.next_available_incomplete_board_id(chapter_id, &self.story_state));
         if active_board_id.as_deref() != Some(board_id) {
             return Err(GameError::analysis_board_not_active(board_id));
         }
@@ -2140,6 +2143,12 @@ impl GameEngine {
                 &context,
             )?;
         }
+        if let SceneRuntime::Analysis(scene) = &mut self.scene {
+            // Story completion and its reveals are committed before the
+            // derived availability cache is refreshed.  The next board is
+            // focused only when the result dialogue later drains.
+            scene.recompute_available_board_ids(&self.story_state);
+        }
         let segments = DialogueSegment::new(
             DialogueSegmentOriginV1::AnalysisResult {
                 chapter_id,
@@ -2160,33 +2169,38 @@ impl GameEngine {
         next_ordinal: &mut u32,
     ) -> Result<bool, GameError> {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
-        let (scene_id, outro_dialogue) = {
+        let (scene_id, outro_dialogue, outro_exhausted) = {
             let scene = match &mut self.scene {
                 SceneRuntime::Analysis(scene) => scene,
                 _ => return Ok(false),
             };
             scene.pending_queue = None;
             if scene.outro_played {
-                return Ok(true);
-            }
-            if !scene.all_boards_completed_qualified(&chapter_id, &self.story_state) {
-                if scene
-                    .next_available_incomplete_board_id(&chapter_id, &self.story_state)
-                    .is_none()
-                {
+                // `outro_played` means the authored outro queue was installed
+                // previously.  Completion is deliberately deferred until
+                // this exhaustion path so a save or failure while the outro is
+                // visible cannot make the scene appear complete early.
+                (scene.def.id.clone(), Vec::new(), true)
+            } else if !scene.all_boards_completed_qualified(&chapter_id, &self.story_state) {
+                scene.auto_focus_next_available_incomplete_board(&chapter_id, &self.story_state);
+                if scene.active_board_id.is_none() {
                     return Err(GameError::scene_validation_failed(format!(
                         "{} has no unlocked incomplete analysis board.",
                         scene.def.id
                     )));
                 }
                 return Ok(false);
+            } else {
+                scene.outro_played = true;
+                (scene.def.id.clone(), scene.def.outro.clone(), false)
             }
-            scene.outro_played = true;
-            (scene.def.id.clone(), scene.def.outro.clone())
         };
-        self.story_state
-            .complete_analysis_scene(&self.story_catalog, &chapter_id, &scene_id)?;
-        if outro_dialogue.is_empty() {
+        if outro_exhausted || outro_dialogue.is_empty() {
+            self.story_state.complete_analysis_scene(
+                &self.story_catalog,
+                &chapter_id,
+                &scene_id,
+            )?;
             return Ok(true);
         }
         let queue_gen = self.alloc_queue_gen();
@@ -2284,7 +2298,17 @@ impl GameEngine {
                 },
                 SceneRuntime::Analysis(scene) => {
                     let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
-                    match scene.next_available_incomplete_board_id(chapter_id, &self.story_state) {
+                    let active_board_id = scene.active_board_id.clone().filter(|board_id| {
+                        scene.available_board_ids.contains(board_id)
+                            && !scene.is_board_completed_qualified(
+                                chapter_id,
+                                board_id,
+                                &self.story_state,
+                            )
+                    });
+                    match active_board_id.or_else(|| {
+                        scene.next_available_incomplete_board_id(chapter_id, &self.story_state)
+                    }) {
                         Some(board_id) => ModeView::Analysis {
                             board_id,
                             last_feedback: scene
