@@ -1,19 +1,43 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { parseInterrogationUnlockExpr, parseUnlockExpr } from "./parser-unlock";
-import type { InterrogationUnlockExpr, UnlockExpr } from "./types";
+import type {
+  InterrogationUnlockExpr,
+  StoryUnlockExpr,
+  UnlockExpr,
+} from "./types";
 
-type SemanticExpression = UnlockExpr | InterrogationUnlockExpr;
+type SemanticExpression =
+  | UnlockExpr
+  | InterrogationUnlockExpr
+  | StoryUnlockExpr;
+
+type SemanticFixtureCase =
+  | {
+      name: string;
+      family: "investigation";
+      expression: UnlockExpr;
+      truth: Record<string, boolean>;
+      expected: boolean;
+    }
+  | {
+      name: string;
+      family: "interrogation";
+      expression: InterrogationUnlockExpr;
+      truth: Record<string, boolean>;
+      expected: boolean;
+    }
+  | {
+      name: string;
+      family: "story";
+      expression: StoryUnlockExpr;
+      truth: Record<string, boolean>;
+      expected: boolean;
+    };
 
 type SemanticFixture = {
   schemaVersion: number;
-  cases: Array<{
-    name: string;
-    family: "investigation" | "interrogation";
-    expression: SemanticExpression;
-    truth: Record<string, boolean>;
-    expected: boolean;
-  }>;
+  cases: SemanticFixtureCase[];
 };
 
 function loadUnlockExpressionSemanticsFixture(): SemanticFixture {
@@ -453,8 +477,16 @@ describe("shared unlock expression semantics fixture", () => {
     const fixture = loadUnlockExpressionSemanticsFixture();
 
     expect(fixture.schemaVersion).toBe(1);
-    expect(fixture.cases).toHaveLength(8);
+    expect(fixture.cases).toHaveLength(12);
     for (const semanticCase of fixture.cases) {
+      if (semanticCase.family === "story") {
+        const expression: StoryUnlockExpr = semanticCase.expression;
+        expect(
+          evaluateSemanticExpression(expression, semanticCase.truth),
+          semanticCase.name,
+        ).toBe(semanticCase.expected);
+        continue;
+      }
       expect(
         evaluateSemanticExpression(semanticCase.expression, semanticCase.truth),
         semanticCase.name,

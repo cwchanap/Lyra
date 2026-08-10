@@ -1,4 +1,4 @@
-use super::catalog::{ObjectiveKind, StoryCatalog};
+use super::catalog::{AnalysisBoardRef, AnalysisSceneRef, ObjectiveKind, StoryCatalog};
 use crate::game::schema::InventoryTarget;
 use crate::game::unlock::StoryUnlockContext;
 use crate::game::GameError;
@@ -34,8 +34,8 @@ pub(in crate::game) struct StoryState {
     pub(super) objectives: BTreeMap<String, ObjectiveProgress>,
     pub(super) authorizations: BTreeMap<String, AuthorizationProgress>,
     pub(super) active_primary_objective_id: Option<String>,
-    pub(super) completed_analysis_scenes: BTreeSet<AnalysisSceneProgressKey>,
-    pub(super) completed_analysis_boards: BTreeSet<AnalysisBoardProgressKey>,
+    pub(super) completed_analysis_scenes: BTreeSet<AnalysisSceneRef>,
+    pub(super) completed_analysis_boards: BTreeSet<AnalysisBoardRef>,
 }
 
 impl StoryUnlockContext for StoryState {
@@ -56,20 +56,18 @@ impl StoryUnlockContext for StoryState {
     }
 
     fn analysis_scene_completed(&self, chapter_id: &str, scene_id: &str) -> bool {
-        self.completed_analysis_scenes
-            .contains(&AnalysisSceneProgressKey {
-                chapter_id: chapter_id.into(),
-                scene_id: scene_id.into(),
-            })
+        self.completed_analysis_scenes.contains(&AnalysisSceneRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+        })
     }
 
     fn analysis_board_completed(&self, chapter_id: &str, scene_id: &str, board_id: &str) -> bool {
-        self.completed_analysis_boards
-            .contains(&AnalysisBoardProgressKey {
-                chapter_id: chapter_id.into(),
-                scene_id: scene_id.into(),
-                board_id: board_id.into(),
-            })
+        self.completed_analysis_boards.contains(&AnalysisBoardRef {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            board_id: board_id.into(),
+        })
     }
 
     fn authorization_granted(&self, id: &str) -> bool {
@@ -114,24 +112,9 @@ pub(crate) struct StoryStateSnapshot {
     pub authorizations: BTreeMap<String, AuthorizationProgressSnapshot>,
     pub active_primary_objective_id: Option<String>,
     #[serde(default)]
-    pub completed_analysis_scenes: BTreeSet<AnalysisSceneProgressKey>,
+    pub(super) completed_analysis_scenes: BTreeSet<AnalysisSceneRef>,
     #[serde(default)]
-    pub completed_analysis_boards: BTreeSet<AnalysisBoardProgressKey>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AnalysisSceneProgressKey {
-    pub chapter_id: String,
-    pub scene_id: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct AnalysisBoardProgressKey {
-    pub chapter_id: String,
-    pub scene_id: String,
-    pub board_id: String,
+    pub(super) completed_analysis_boards: BTreeSet<AnalysisBoardRef>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -201,9 +184,24 @@ impl AssertionOrigin {
     /// registries exist, mutation and capture must reject these origins so
     /// that every saved state can be restored — the persistence contract must
     /// be symmetric.
-    pub(super) fn ensure_origin_kind_is_persistable(&self) -> Result<(), String> {
+    pub(super) fn ensure_origin_kind_is_persistable(
+        &self,
+        catalog: &StoryCatalog,
+    ) -> Result<(), String> {
         match self {
-            Self::AnalysisBoard { .. } => Ok(()),
+            Self::AnalysisBoard {
+                chapter_id,
+                scene_id,
+                board_id,
+            } => {
+                if catalog.has_analysis_board(chapter_id, scene_id, board_id) {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "analysis board origin references unknown board '{chapter_id}/{scene_id}/{board_id}'"
+                    ))
+                }
+            }
             Self::SceneEvent {
                 block_kind: StoryEventBlockKind::StoryEvent,
                 ..
@@ -430,7 +428,7 @@ fn validate_snapshot(
             .map_err(invalid_snapshot)?;
         progress
             .first_origin
-            .ensure_origin_kind_is_persistable()
+            .ensure_origin_kind_is_persistable(catalog)
             .map_err(invalid_snapshot)?;
         for target in &progress.supporting_records {
             if !catalog.contains_inventory_target(target) {
@@ -514,7 +512,7 @@ fn validate_snapshot(
             .map_err(invalid_snapshot)?;
         progress
             .first_origin
-            .ensure_origin_kind_is_persistable()
+            .ensure_origin_kind_is_persistable(catalog)
             .map_err(invalid_snapshot)?;
     }
 
@@ -637,6 +635,7 @@ pub(super) fn inventory_target_id(target: &InventoryTarget) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use super::super::catalog::{AnalysisBoardRef, AnalysisSceneRef};
     use super::*;
     use crate::game::schema::InventoryTarget;
     use std::collections::{BTreeMap, BTreeSet};
@@ -1165,44 +1164,80 @@ mod tests {
     #[test]
     fn rejects_snapshot_with_unknown_analysis_scene_progress() {
         let mut snapshot = empty_snapshot();
-        snapshot
-            .completed_analysis_scenes
-            .insert(AnalysisSceneProgressKey {
-                chapter_id: "chapter_1".into(),
-                scene_id: "nonexistent".into(),
-            });
+        snapshot.completed_analysis_scenes.insert(AnalysisSceneRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "nonexistent".into(),
+        });
         assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
     }
 
     #[test]
     fn rejects_snapshot_with_unknown_analysis_board_progress() {
         let mut snapshot = empty_snapshot();
+        snapshot.completed_analysis_boards.insert(AnalysisBoardRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "nonexistent".into(),
+        });
+        assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+    }
+
+    #[test]
+    fn rejects_snapshot_with_unknown_analysis_board_origin() {
+        let origin = AssertionOrigin::AnalysisBoard {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "nonexistent".into(),
+        };
+        let mut snapshot = empty_snapshot();
         snapshot
-            .completed_analysis_boards
-            .insert(AnalysisBoardProgressKey {
+            .facts
+            .insert("fact_alpha".into(), asserted_fact(origin.clone()));
+        snapshot.authorizations.insert(
+            "authorization_a".into(),
+            AuthorizationProgressSnapshot {
+                first_origin: origin,
+            },
+        );
+
+        assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+    }
+
+    #[test]
+    fn completion_snapshot_uses_catalog_analysis_reference_types() {
+        let snapshot = StoryStateSnapshot {
+            facts: BTreeMap::new(),
+            questions: BTreeMap::new(),
+            objectives: BTreeMap::new(),
+            authorizations: BTreeMap::new(),
+            active_primary_objective_id: None,
+            completed_analysis_scenes: BTreeSet::from([AnalysisSceneRef {
                 chapter_id: "chapter_1".into(),
                 scene_id: "analysis_scene_1".into(),
-                board_id: "nonexistent".into(),
-            });
-        assert_eq!(reject(snapshot).code, "invalidStoryStateSnapshot");
+            }]),
+            completed_analysis_boards: BTreeSet::from([AnalysisBoardRef {
+                chapter_id: "chapter_1".into(),
+                scene_id: "analysis_scene_1".into(),
+                board_id: "board_1".into(),
+            }]),
+        };
+
+        StoryState::from_snapshot(&catalog(), snapshot)
+            .expect("catalog-qualified completion refs should restore");
     }
 
     #[test]
     fn accepts_snapshot_with_valid_analysis_progress() {
         let mut snapshot = empty_snapshot();
-        snapshot
-            .completed_analysis_scenes
-            .insert(AnalysisSceneProgressKey {
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-            });
-        snapshot
-            .completed_analysis_boards
-            .insert(AnalysisBoardProgressKey {
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-                board_id: "board_1".into(),
-            });
+        snapshot.completed_analysis_scenes.insert(AnalysisSceneRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+        });
+        snapshot.completed_analysis_boards.insert(AnalysisBoardRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        });
         StoryState::from_snapshot(&catalog(), snapshot)
             .expect("valid analysis progress should be accepted");
     }
@@ -1210,19 +1245,15 @@ mod tests {
     #[test]
     fn story_state_reports_analysis_completion_through_unlock_context() {
         let mut snapshot = empty_snapshot();
-        snapshot
-            .completed_analysis_scenes
-            .insert(AnalysisSceneProgressKey {
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-            });
-        snapshot
-            .completed_analysis_boards
-            .insert(AnalysisBoardProgressKey {
-                chapter_id: "chapter_1".into(),
-                scene_id: "analysis_scene_1".into(),
-                board_id: "board_1".into(),
-            });
+        snapshot.completed_analysis_scenes.insert(AnalysisSceneRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+        });
+        snapshot.completed_analysis_boards.insert(AnalysisBoardRef {
+            chapter_id: "chapter_1".into(),
+            scene_id: "analysis_scene_1".into(),
+            board_id: "board_1".into(),
+        });
         let state = StoryState::from_snapshot(&catalog(), snapshot).unwrap();
         assert!(state.analysis_scene_completed("chapter_1", "analysis_scene_1"));
         assert!(!state.analysis_scene_completed("chapter_1", "other"));

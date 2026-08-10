@@ -200,6 +200,7 @@ mod tests {
     enum UnlockExpressionFamily {
         Investigation,
         Interrogation,
+        Story,
     }
 
     struct FixtureContext {
@@ -473,6 +474,10 @@ mod tests {
                     let expression: InterrogationUnlockExpr =
                         serde_json::from_value(expression).unwrap();
                     evaluate_interrogation(&expression, &ctx, &ctx)
+                }
+                UnlockExpressionFamily::Story => {
+                    let expression: StoryUnlockExpr = serde_json::from_value(expression).unwrap();
+                    evaluate_story(&expression, &ctx)
                 }
             };
             assert_eq!(actual, expected, "fixture case {name}");

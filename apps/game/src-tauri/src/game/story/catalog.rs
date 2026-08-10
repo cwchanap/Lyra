@@ -1,7 +1,7 @@
 use crate::game::provenance::{CaseRecordProvenance, ProceduralStatus};
 use crate::game::schema::{compare_inventory_targets, InventoryTarget};
 use crate::game::GameError;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
 
@@ -101,20 +101,20 @@ struct StoryCatalogJsonV2 {
 }
 
 /// Compiler-emitted, fully qualified immutable analysis-scene reference.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AnalysisSceneRef {
-    chapter_id: String,
-    scene_id: String,
+pub(super) struct AnalysisSceneRef {
+    pub(super) chapter_id: String,
+    pub(super) scene_id: String,
 }
 
 /// Compiler-emitted, fully qualified immutable analysis-board reference.
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct AnalysisBoardRef {
-    chapter_id: String,
-    scene_id: String,
-    board_id: String,
+pub(super) struct AnalysisBoardRef {
+    pub(super) chapter_id: String,
+    pub(super) scene_id: String,
+    pub(super) board_id: String,
 }
 
 // Minimal envelope used to gate the version before deserializing the
