@@ -1,3 +1,4 @@
+use super::analysis::AnalysisDraft;
 use super::schema::DialogueItem;
 use super::{GameEngine, GameError, ModeView, SceneView};
 use serde::{Deserialize, Serialize};
@@ -240,17 +241,21 @@ fn advance_dialogue_bounded(
         }
         ModeView::Analysis { board_id, .. } if board_id == "p1_reprint_time_board" => {
             ensure_operation_available(*operations, replay_limit)?;
-            engine.set_analysis_selection(
-                &board_id,
-                vec![
-                    "receipt_reprint".into(),
-                    "register_paper_jam".into(),
-                    "handwritten_ledger".into(),
-                ],
+            engine.update_analysis_draft(
+                engine.analysis_action_token()?,
+                AnalysisDraft::Threshold {
+                    selected_card_ids: [
+                        "receipt_reprint".to_owned(),
+                        "register_paper_jam".to_owned(),
+                        "handwritten_ledger".to_owned(),
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
             )?;
             *operations += 1;
             ensure_operation_available(*operations, replay_limit)?;
-            engine.submit_analysis_selection(&board_id)?;
+            engine.submit_analysis_board(engine.analysis_action_token()?)?;
             *operations += 1;
             Ok(())
         }

@@ -1552,7 +1552,7 @@ mod tests {
 
         // The result carrier is installed by the public submission path.
         engine
-            .submit_analysis_selection("board_1")
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
             .expect("the empty accepted threshold should install result dialogue");
         let result_view = engine.view().unwrap();
         assert_dialogue_frame(
@@ -1683,7 +1683,7 @@ mod tests {
         assert_eq!(scene.active_board_id.as_deref(), Some("board_1"));
 
         engine
-            .submit_analysis_selection("board_1")
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
             .expect("an empty result/outro should use the public no-queue path");
         assert!(matches!(engine.scene, SceneRuntime::Linear(_)));
         assert_eq!(engine.current_chapter_idx, 1);

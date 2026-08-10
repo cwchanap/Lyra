@@ -650,6 +650,7 @@ fn scene_type_label(scene_type: SceneType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::analysis::AnalysisDraft;
     use crate::game::state::{EvidenceRecord, SceneRef};
     use crate::game::test_support::*;
     use crate::game::unlock::StoryUnlockContext;
@@ -2656,10 +2657,15 @@ mod tests {
         assert!(scene.drafts.contains_key("board_1"));
 
         engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                crate::game::analysis::AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
+                },
+            )
             .expect("the transferred practice card should be selectable");
         let submitted = engine
-            .submit_analysis_selection("board_1")
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
             .expect("the transferred practice card should be accepted");
         let ModeView::Dialogue { current, .. } = &submitted.mode else {
             panic!("accepted submission should open result dialogue");
@@ -2679,6 +2685,235 @@ mod tests {
         let _ = std::fs::remove_dir_all(resources);
     }
 
+    #[test]
+    fn select_analysis_board_accepts_any_available_target() {
+        let resources = analysis_resources_with_two_unlocked_boards("analysis-select-any-board");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let token = crate::game::analysis::AnalysisActionToken {
+            scene_id: "analysis_scene_1".into(),
+            active_board_id: Some("board_1".into()),
+            durable_revision: engine.durable_revision(),
+        };
+
+        engine
+            .select_analysis_board(token, "board_2".into())
+            .expect("every available board should be selectable");
+
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(scene.active_board_id.as_deref(), Some("board_2"));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn stale_analysis_tokens_fail_without_revision_or_state_side_effects() {
+        let resources = analysis_resources_with_cards("analysis-stale-token");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let baseline_scene = format!("{:?}", engine.scene);
+        let baseline_history = engine.history.entries().to_vec();
+        let baseline_events = engine.pending_acquisition_events.clone();
+        let baseline_revision = engine.durable_revision();
+
+        let mut stale_scene = engine.analysis_action_token().unwrap();
+        stale_scene.scene_id = "other_scene".into();
+        let error = engine
+            .select_analysis_board(stale_scene, "board_1".into())
+            .expect_err("stale scene token must be rejected");
+        assert_eq!(error.code, "staleAnalysisAction");
+
+        let mut stale_active = engine.analysis_action_token().unwrap();
+        stale_active.active_board_id = Some("other_board".into());
+        let error = engine
+            .update_analysis_draft(
+                stale_active,
+                AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
+                },
+            )
+            .expect_err("stale active-board token must be rejected");
+        assert_eq!(error.code, "staleAnalysisAction");
+
+        let mut stale_revision = engine.analysis_action_token().unwrap();
+        stale_revision.durable_revision += 1;
+        let error = engine
+            .submit_analysis_board(stale_revision)
+            .expect_err("stale revision token must be rejected");
+        assert_eq!(error.code, "staleAnalysisAction");
+
+        assert_eq!(engine.durable_revision(), baseline_revision);
+        assert_eq!(format!("{:?}", engine.scene), baseline_scene);
+        assert_eq!(engine.history.entries(), baseline_history.as_slice());
+        assert_eq!(engine.pending_acquisition_events, baseline_events);
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn incomplete_and_wrong_analysis_submit_only_replace_failure_feedback() {
+        let resources = analysis_resources_with_cards("analysis-submit-feedback");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let empty_draft = match &engine.scene {
+            SceneRuntime::Analysis(scene) => scene.drafts["board_1"].clone(),
+            other => panic!("expected analysis scene, got {other:?}"),
+        };
+
+        let first_revision = engine.durable_revision();
+        engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect("incomplete submit should return feedback");
+        assert_eq!(engine.durable_revision(), first_revision + 1);
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(scene.drafts["board_1"], empty_draft);
+        assert_eq!(
+            scene.feedback_by_board_id.get("board_1"),
+            Some(&crate::game::analysis::AnalysisFeedbackState::Incomplete)
+        );
+        assert!(scene.pending_queue.is_none());
+        assert!(!engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_1"
+        ));
+
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_a".to_owned()].into_iter().collect(),
+                },
+            )
+            .expect("wrong draft should be accepted for evaluation");
+        engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect("wrong complete submit should return feedback");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(
+            scene.drafts["board_1"],
+            AnalysisDraft::Threshold {
+                selected_card_ids: ["card_a".to_owned()].into_iter().collect()
+            }
+        );
+        assert_eq!(
+            scene.feedback_by_board_id.get("board_1"),
+            Some(&crate::game::analysis::AnalysisFeedbackState::Incorrect)
+        );
+        assert!(scene.pending_queue.is_none());
+        assert!(!engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_1"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn accepted_analysis_board_can_reopen_read_only_without_replaying_effects() {
+        let resources = analysis_resources_with_two_unlocked_boards("analysis-read-only-reopen");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
+                },
+            )
+            .expect("board one draft should update");
+        let result = engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect("board one should complete");
+        let ModeView::Dialogue { queue_token, .. } = result.mode else {
+            panic!("board one should install result dialogue");
+        };
+        engine
+            .advance_dialogue(queue_token)
+            .expect("board one result should advance to board two");
+        let token = engine.analysis_action_token().unwrap();
+        engine
+            .select_analysis_board(token, "board_1".into())
+            .expect("completed board should be selectable for read-only review");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(scene.active_board_id.as_deref(), Some("board_1"));
+        let error = engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect_err("completed board must remain read-only");
+        assert_eq!(error.code, "analysisBoardCompleted");
+        assert!(engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_1"
+        ));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn invalid_analysis_reveal_rolls_back_completion_draft_feedback_and_dialogue() {
+        let resources = analysis_resources_with_cards("analysis-invalid-reveal-rollback");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
+            panic!("expected analysis scene");
+        };
+        let Some(crate::game::schema::AnalysisBoardJson::Threshold { common, .. }) =
+            scene.def.boards.first_mut()
+        else {
+            panic!("expected threshold board");
+        };
+        common
+            .reveals
+            .push(crate::game::schema::StoryRevealTarget::AssertFact {
+                fact_id: "missing_fact".into(),
+            });
+
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
+                },
+            )
+            .expect("correct draft should update before reveal failure");
+        let before_scene = format!("{:?}", engine.scene);
+        let before_story = engine.story_state.clone();
+        let before_revision = engine.durable_revision();
+        let before_history = engine.history.entries().to_vec();
+
+        let error = engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect_err("invalid reveal must fail atomically");
+        assert_eq!(error.code, "unknownStoryFact");
+        assert_eq!(format!("{:?}", engine.scene), before_scene);
+        assert_eq!(engine.story_state, before_story);
+        assert_eq!(engine.durable_revision(), before_revision);
+        assert_eq!(engine.history.entries(), before_history.as_slice());
+        assert!(!engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_1"
+        ));
+        assert!(engine.current_queue_token().is_none());
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
     fn add_evidence_to_inventory(engine: &mut GameEngine, id: &str) {
         use crate::game::provenance::CaseRecordProvenance;
         use crate::game::state::EvidenceRecord;
@@ -2693,136 +2928,6 @@ mod tests {
             collected_in_chapter_id: "chapter_1".into(),
             collected_in_scene_id: "scene_0".into(),
         });
-    }
-
-    #[test]
-    fn set_analysis_selection_rejects_wrong_mode() {
-        let resources = analysis_resources_with_cards("analysis-wrong-mode");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        // Engine starts on a linear scene, not analysis
-        let error = engine
-            .set_analysis_selection("board_1", vec!["card_a".into()])
-            .expect_err("set_analysis_selection must reject non-analysis mode");
-        assert_eq!(error.code, "wrongMode");
-        assert!(error.message.contains("set_analysis_selection"));
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn set_analysis_selection_with_same_selection_is_unchanged() {
-        let resources = analysis_resources_with_cards("analysis-idempotent-selection");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-
-        engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect("first selection should change state");
-        let durable_revision = engine.durable_revision;
-        let selected = match &engine.scene {
-            SceneRuntime::Analysis(scene) => scene.drafts.get("board_1").cloned(),
-            other => panic!("expected analysis scene, got {other:?}"),
-        };
-
-        engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect("repeating the same selection should still return a view");
-        assert_eq!(engine.durable_revision, durable_revision);
-        assert_eq!(
-            match &engine.scene {
-                SceneRuntime::Analysis(scene) => scene.drafts.get("board_1").cloned(),
-                other => panic!("expected analysis scene, got {other:?}"),
-            },
-            selected
-        );
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn set_analysis_selection_rejects_unknown_board() {
-        let resources = analysis_resources_with_cards("analysis-unknown-board");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        add_evidence_to_inventory(&mut engine, "evidence_a");
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        let error = engine
-            .set_analysis_selection("nonexistent", vec!["card_a".into()])
-            .expect_err("unknown board must be rejected");
-        assert_eq!(error.code, "unknownAnalysisBoard");
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn set_analysis_selection_rejects_unknown_card() {
-        let resources = analysis_resources_with_cards("analysis-unknown-card");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        add_evidence_to_inventory(&mut engine, "evidence_a");
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        let error = engine
-            .set_analysis_selection("board_1", vec!["nonexistent_card".into()])
-            .expect_err("unknown card must be rejected");
-        assert_eq!(error.code, "unknownAnalysisCard");
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn set_analysis_selection_rejects_practice_card_when_scene_state_lacks_it() {
-        let resources = analysis_resources_with_cards("analysis-unavailable-card");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        add_evidence_to_inventory(&mut engine, "evidence_a");
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        let view = engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect("neutral draft validation does not inspect source availability");
-        assert!(matches!(view.scene, SceneView::Analysis { .. }));
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn set_analysis_selection_accepts_available_practice_card() {
-        let resources = analysis_resources_with_cards("analysis-available-card");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        let view = engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect("available practice card should be selectable");
-        assert!(matches!(view.mode, ModeView::Analysis { .. }));
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn submit_analysis_selection_rejects_wrong_mode() {
-        let resources = analysis_resources_with_cards("analysis-submit-wrong-mode");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        let error = engine
-            .submit_analysis_selection("board_1")
-            .expect_err("submit must reject non-analysis mode");
-        assert_eq!(error.code, "wrongMode");
-        assert!(error.message.contains("submit_analysis_selection"));
-        let _ = std::fs::remove_dir_all(resources);
-    }
-
-    #[test]
-    fn submit_analysis_selection_rejects_unknown_board() {
-        let resources = analysis_resources_with_cards("analysis-submit-unknown-board");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        add_evidence_to_inventory(&mut engine, "evidence_a");
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        let error = engine
-            .submit_analysis_selection("nonexistent")
-            .expect_err("unknown board must be rejected");
-        assert_eq!(error.code, "unknownAnalysisBoard");
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     fn analysis_scene_with_two_unlocked_boards_json(id: &str) -> String {
@@ -2923,80 +3028,6 @@ mod tests {
         ]);
         std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
         resources
-    }
-
-    #[test]
-    fn analysis_commands_reject_non_active_unlocked_board() {
-        let resources = analysis_resources_with_two_unlocked_boards("analysis-active-board-guard");
-        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
-        engine
-            .jump_to_scene("chapter_1", "analysis_scene_1")
-            .expect("analysis jump should succeed");
-        // Practice card sources are scoped to the authored analysis workbench,
-        // so both boards are available; the only thing that can reject board_2
-        // is the active-board guard.
-
-        // The view publishes board_1 as the active board.
-        let view = engine.view().expect("view should succeed");
-        assert!(
-            matches!(view.mode, ModeView::Analysis { ref board_id, .. } if board_id == "board_1"),
-            "active board must be board_1"
-        );
-
-        // board_2 is unlocked and its card is available, but it is not the
-        // active board. Both set and submit must be rejected by the guard
-        // before any state mutation or reveal fires.
-        let error = engine
-            .set_analysis_selection("board_2", vec!["card_b2".into()])
-            .expect_err("set on non-active board must be rejected");
-        assert_eq!(error.code, "analysisBoardNotActive");
-        let error = engine
-            .submit_analysis_selection("board_2")
-            .expect_err("submit on non-active board must be rejected");
-        assert_eq!(error.code, "analysisBoardNotActive");
-
-        // board_2 must not have been recorded complete by the rejected
-        // submission, and its reveals must not have fired.
-        let SceneRuntime::Analysis(_scene) = &engine.scene else {
-            panic!("expected analysis scene");
-        };
-        assert!(!engine.story_state.analysis_board_completed(
-            "chapter_1",
-            "analysis_scene_1",
-            "board_2"
-        ));
-
-        // The active board_1 still operates normally.
-        engine
-            .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect("active board selection should succeed");
-        let submitted = engine
-            .submit_analysis_selection("board_1")
-            .expect("active board submission should succeed");
-        let ModeView::Dialogue { current, .. } = &submitted.mode else {
-            panic!("accepted submission should open result dialogue");
-        };
-        assert!(matches!(
-            current,
-            DialogueItem::Action { text } if text == "Result One"
-        ));
-
-        let result_token = match submitted.mode {
-            ModeView::Dialogue { queue_token, .. } => queue_token,
-            other => panic!("expected result dialogue, got {other:?}"),
-        };
-        let after_result = engine
-            .advance_dialogue(result_token)
-            .expect("draining result dialogue should focus the next board");
-        assert!(matches!(
-            after_result.mode,
-            ModeView::Analysis { ref board_id, .. } if board_id == "board_2"
-        ));
-        let SceneRuntime::Analysis(scene) = &engine.scene else {
-            panic!("expected analysis scene after result dialogue");
-        };
-        assert_eq!(scene.active_board_id.as_deref(), Some("board_2"));
-        let _ = std::fs::remove_dir_all(resources);
     }
 
     #[test]
