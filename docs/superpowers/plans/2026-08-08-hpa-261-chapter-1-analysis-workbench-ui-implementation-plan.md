@@ -162,7 +162,7 @@ Create `analysis-boundary.test.ts`:
 
 ```ts
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 import { beat85AnalysisSceneFixture } from "./test-fixtures";
 
 const FEATURE_PATHS = [
@@ -802,7 +802,7 @@ If no files changed, do not create an empty commit.
 
 Before implementation starts:
 
-- [ ] The branch starts from/rebases onto current `main` with HPA-260 merged.
+- [ ] The implementation branch starts from/rebases onto current `main` with HPA-260 merged.
 - [ ] No task recreates Analysis TypeScript wire types or Tauri command names.
 - [ ] `mode.boardId` remains the displayed board; `mode.actionToken` remains the mutation fence.
 - [ ] No task collapses `boardId` and `activeBoardId`.
