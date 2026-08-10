@@ -251,10 +251,10 @@ impl AnalysisSceneState {
 
     /// Validate that every card referenced by the draft is authored on the
     /// board AND currently available to the player.  Structural shape is
-    /// checked by [`validate_draft`]; this method is the runtime submission
-    /// gate that prevents a stale client from submitting an authored-but-
-    /// unacquired Evidence or Statement card.  Practice cards are always
-    /// considered available (see [`card_is_available`]).
+    /// checked by [`Self::validate_draft`]; this method is the runtime
+    /// submission gate that prevents a stale client from submitting an
+    /// authored-but-unacquired Evidence or Statement card.  Practice cards
+    /// are always considered available (see [`Self::card_is_available`]).
     pub fn validate_draft_availability(
         &self,
         board_id: &str,

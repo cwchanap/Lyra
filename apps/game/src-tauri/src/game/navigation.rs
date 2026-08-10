@@ -364,12 +364,15 @@ pub(super) fn load_chapter_manifests(
     Ok(chapters)
 }
 
-/// Practice cards are a tutorial handoff from the immediately preceding
-/// investigation scene. Analysis scenes without practice cards are ordinary
-/// scene nodes and may follow any scene type. Keep this graph invariant at a
-/// boundary that can see the ordered scenes within each chapter;
-/// `load_scene_runtime` only receives one scene and cannot prove the
-/// predecessor relationship.
+/// Practice cards are authored tutorial workbench cards that are always
+/// available to the player (see `analysis::AnalysisEngine::card_is_available`).
+/// For tutorial pacing, an analysis scene that uses practice cards must be
+/// immediately preceded by an investigation scene, so the player encounters a
+/// concrete investigative context before the guided arrangement. Analysis
+/// scenes without practice cards are ordinary scene nodes and may follow any
+/// scene type. Keep this graph invariant at a boundary that can see the
+/// ordered scenes within each chapter; `load_scene_runtime` only receives one
+/// scene and cannot prove the predecessor relationship.
 pub(super) fn validate_analysis_scene_adjacency(
     resources_dir: &std::path::Path,
     catalog: &StoryCatalog,
