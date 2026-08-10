@@ -15,6 +15,8 @@ use super::scenes::SceneRuntime;
 use super::schema::{SceneJson, SceneType};
 use super::state::{ChapterManifest, Inventory, SceneRef};
 use super::story::StoryCatalog;
+#[cfg(test)]
+use super::unlock::StoryUnlockContext;
 use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
 };
@@ -52,7 +54,7 @@ impl GameEngine {
         }
         let chapter_idx = chapter_idx.ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
         let queue_gen = self.next_queue_gen;
-        let (scene_idx, mut new_scene) = find_scene_runtime_by_id(
+        let (scene_idx, new_scene) = find_scene_runtime_by_id(
             &self.resources_dir,
             &self.story_catalog,
             &self.chapters[chapter_idx],
@@ -60,20 +62,14 @@ impl GameEngine {
             queue_gen,
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
-        if let SceneRuntime::Analysis(scene) = &mut new_scene {
-            for board in &scene.def.boards {
-                for card in &board.common().cards {
-                    if let super::schema::AnalysisCardSource::Practice { id } = &card.source {
-                        scene.practice_card_ids.insert(id.clone());
-                    }
-                }
-            }
-        }
 
         self.command_tx(move |engine, command_id, next_ordinal| {
             engine.current_chapter_idx = chapter_idx;
             engine.current_scene_idx = scene_idx;
             engine.scene = new_scene;
+            if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+                scene.recompute_available_board_ids(&engine.story_state);
+            }
             engine.last_visual_cue = LastVisualCue::default();
             engine.inventory = Inventory::default();
             engine.pending_acquisition_events.clear();
@@ -297,26 +293,20 @@ impl GameEngine {
             .ok_or_else(|| GameError::chapter_load_failed("scene index out of bounds".into()))?
             .clone();
         let chapter_id = self.chapters[next_chapter_idx].id.clone();
-        let mut new_scene = load_scene_runtime(
+        let new_scene = load_scene_runtime(
             &self.resources_dir,
             &self.story_catalog,
             &chapter_id,
             &scene_ref,
             queue_gen,
         )?;
-        // Tutorial practice material is a scene-local handoff, not Case File
-        // inventory. Only an investigation advancing directly into analysis
-        // can carry it; every other scene boundary naturally clears it.
-        if let (SceneRuntime::Investigation(current), SceneRuntime::Analysis(next)) =
-            (&self.scene, &mut new_scene)
-        {
-            next.practice_card_ids = current.practice_card_ids.clone();
-        }
-
         self.rollback_scope(|engine| {
             engine.current_chapter_idx = next_chapter_idx;
             engine.current_scene_idx = next_scene_idx;
             engine.scene = new_scene;
+            if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+                scene.recompute_available_board_ids(&engine.story_state);
+            }
             engine.last_visual_cue.reset_for_new_scene();
             engine.next_queue_gen += 1;
             engine.prime_initial_queue_for_command(command_id, next_ordinal)
@@ -2649,7 +2639,7 @@ mod tests {
         let SceneRuntime::Analysis(scene) = &engine.scene else {
             panic!("direct navigation should land in analysis");
         };
-        assert!(scene.practice_card_ids.contains("prac_b"));
+        assert!(scene.drafts.contains_key("board_1"));
 
         engine
             .set_analysis_selection("board_1", vec!["card_b".into()])
@@ -2664,11 +2654,14 @@ mod tests {
             current,
             DialogueItem::Action { text } if text == "Result"
         ));
-        let SceneRuntime::Analysis(scene) = &engine.scene else {
+        let SceneRuntime::Analysis(_scene) = &engine.scene else {
             panic!("submission should remain in analysis while result dialogue plays");
         };
-        assert!(scene.is_board_completed("board_1"));
-        assert!(scene.practice_card_ids.is_empty());
+        assert!(engine.story_state.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene_1",
+            "board_1"
+        ));
         let _ = std::fs::remove_dir_all(resources);
     }
 
@@ -2717,9 +2710,7 @@ mod tests {
             .expect("first selection should change state");
         let durable_revision = engine.durable_revision;
         let selected = match &engine.scene {
-            SceneRuntime::Analysis(scene) => {
-                scene.selected_card_ids_by_board.get("board_1").cloned()
-            }
+            SceneRuntime::Analysis(scene) => scene.drafts.get("board_1").cloned(),
             other => panic!("expected analysis scene, got {other:?}"),
         };
 
@@ -2729,8 +2720,7 @@ mod tests {
         assert_eq!(engine.durable_revision, durable_revision);
         assert_eq!(
             match &engine.scene {
-                SceneRuntime::Analysis(scene) =>
-                    scene.selected_card_ids_by_board.get("board_1").cloned(),
+                SceneRuntime::Analysis(scene) => scene.drafts.get("board_1").cloned(),
                 other => panic!("expected analysis scene, got {other:?}"),
             },
             selected
@@ -2776,16 +2766,10 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
             .expect("analysis jump should succeed");
-        // Scene navigation seeds scoped practice cards for replay. Clear the
-        // scene-local state here so this command guard still covers a malformed
-        // or incomplete handoff without weakening the replay behavior.
-        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
-            scene.practice_card_ids.clear();
-        }
-        let error = engine
+        let view = engine
             .set_analysis_selection("board_1", vec!["card_b".into()])
-            .expect_err("unavailable practice card must be rejected");
-        assert_eq!(error.code, "unavailableAnalysisCard");
+            .expect("neutral draft validation does not inspect source availability");
+        assert!(matches!(view.scene, SceneView::Analysis { .. }));
         let _ = std::fs::remove_dir_all(resources);
     }
 
