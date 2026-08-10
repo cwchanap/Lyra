@@ -2,7 +2,7 @@
 use crate::game::error::GameError;
 use crate::game::provenance::validate_scene_records_against_catalog;
 use crate::game::schema::{
-    AnalysisBoardJson, AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
+    AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
     InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
     InterrogationSceneJson, InterrogationUnlockExpr, InvestigationRevealTarget,
     InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget,
@@ -59,26 +59,8 @@ fn validate_scene_references(scene: &SceneJson, file_rel: &str) -> Result<(), Ga
         SceneJson::Linear(_) => Ok(()),
         SceneJson::Investigation(scene) => validate_investigation_scene_references(scene, file_rel),
         SceneJson::Interrogation(scene) => validate_interrogation_scene_references(scene, file_rel),
-        SceneJson::Analysis(scene) => validate_analysis_scene_runtime_surface(scene, file_rel),
+        SceneJson::Analysis(_) => Ok(()),
     }
-}
-
-fn validate_analysis_scene_runtime_surface(
-    scene: &AnalysisSceneJson,
-    file_rel: &str,
-) -> Result<(), GameError> {
-    for board in &scene.boards {
-        let kind = match board {
-            AnalysisBoardJson::Threshold { .. } => continue,
-            AnalysisBoardJson::Classify { .. } => "classify",
-            AnalysisBoardJson::Order { .. } => "order",
-        };
-        return Err(GameError::scene_validation_failed(format!(
-            "{file_rel}: analysis board '{}' has unsupported kind '{kind}'; only threshold boards are playable.",
-            board.common().id,
-        )));
-    }
-    Ok(())
 }
 
 fn validate_investigation_scene_references(
@@ -2067,11 +2049,11 @@ mod tests {
         })
     }
 
-    // Break caught: a valid generic compiler wire for classify or order could
-    // cross the loader boundary, become a runtime scene, and serialize a
-    // public board the threshold-only client cannot operate.
+    // Classify and order boards are part of the runtime surface. The public
+    // projection owns the answer-key-free union, so the loader must not stop
+    // valid compiler output at the old threshold-only guard.
     #[test]
-    fn rejects_non_threshold_analysis_boards_before_runtime_serialization() {
+    fn accepts_classify_and_order_analysis_boards_before_runtime_serialization() {
         let cases = [
             (
                 "classify",
@@ -2133,15 +2115,11 @@ mod tests {
             let resources = unique_temp_dir();
             write_scene_json(&resources, "analysis_scene_1.json", scene);
 
-            let error = decode_scene_json_without_catalog_for_test(
+            decode_scene_json_without_catalog_for_test(
                 &resources,
                 "chapter_1/analysis_scene_1.json",
             )
-            .expect_err("non-threshold analysis boards must be rejected before runtime state");
-
-            assert_eq!(error.code, "sceneValidationFailed");
-            assert!(error.message.contains("board_1"), "{error:?}");
-            assert!(error.message.contains(kind), "{error:?}");
+            .unwrap_or_else(|error| panic!("{kind} analysis board should load: {error:?}"));
             let _ = fs::remove_dir_all(resources);
         }
     }

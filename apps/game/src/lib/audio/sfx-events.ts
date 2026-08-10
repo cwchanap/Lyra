@@ -65,8 +65,9 @@ export type GameplayCommandName =
   | "withdraw_interrogation"
   | "resume_interrogation_testimony"
   | "complete_interrogation_phase"
-  | "set_analysis_selection"
-  | "submit_analysis_selection";
+  | "select_analysis_board"
+  | "update_analysis_draft"
+  | "submit_analysis_board";
 
 const SFX_ASSETS: Partial<Record<GameplaySfxEvent, string>> = {
   "ui:menu-confirm": "audio.sfx.sfx_dialogue_proceed_tick",

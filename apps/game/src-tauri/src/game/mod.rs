@@ -46,8 +46,8 @@ use scenes::interrogation::{
 use scenes::investigation::InvestigationSceneState;
 use scenes::SceneRuntime;
 use schema::{
-    AnalysisBoardJson, DialogueItem, InterrogationPhaseJson, InventoryTarget, LockStatus,
-    SceneJson, SceneType,
+    AnalysisBoardJson, AnalysisCardSource, DialogueItem, InterrogationPhaseJson, InventoryTarget,
+    LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
@@ -56,9 +56,10 @@ use std::path::PathBuf;
 use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
 use story_location::StoryLocationIndex;
 use view::{
-    AnalysisBoardView, AnalysisCardView, AudioCueView, ChapterView, CharacterView, CrossExamView,
-    HotspotView, InquiryQuestionView, InterrogationPhaseView, PendingAcquisitionView, SceneView,
-    SubjectView, SublocationView, TopicView,
+    AnalysisBoardView, AnalysisCardSourceView, AnalysisCardView, AnalysisFeedbackView,
+    AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView, ChapterView, CharacterView,
+    CrossExamView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
+    PendingAcquisitionView, SceneView, SubjectView, SublocationView, TopicView,
 };
 
 pub struct GameEngine {
@@ -2266,33 +2267,31 @@ impl GameEngine {
                 },
                 SceneRuntime::Analysis(scene) => {
                     let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
-                    let active_board_id = scene.active_board_id.clone().filter(|board_id| {
-                        scene.available_board_ids.contains(board_id)
-                            && !scene.is_board_completed_qualified(
-                                chapter_id,
-                                board_id,
-                                &self.story_state,
-                            )
-                    });
-                    match active_board_id.or_else(|| {
-                        scene.next_available_incomplete_board_id(chapter_id, &self.story_state)
-                    }) {
+                    let action_token = AnalysisActionToken {
+                        scene_id: scene.def.id.clone(),
+                        active_board_id: scene.active_board_id.clone(),
+                        durable_revision: self.durable_revision,
+                    };
+                    let active_board_id = scene
+                        .active_board_id
+                        .clone()
+                        .filter(|board_id| scene.available_board_ids.contains(board_id))
+                        .or_else(|| {
+                            scene.next_available_incomplete_board_id(chapter_id, &self.story_state)
+                        });
+                    match active_board_id {
                         Some(board_id) => ModeView::Analysis {
-                            board_id,
-                            last_feedback: scene
-                                .feedback_by_board_id
+                            board_id: board_id.clone(),
+                            active_board_id: scene.active_board_id.clone(),
+                            action_token,
+                            available_board_ids: scene
+                                .available_board_ids
                                 .iter()
-                                .next()
-                                .and_then(|(feedback_board_id, feedback)| {
-                                    scene.board(feedback_board_id).map(|board| match feedback {
-                                        crate::game::analysis::AnalysisFeedbackState::Incomplete => {
-                                            board.common().feedback.incomplete.clone()
-                                        }
-                                        crate::game::analysis::AnalysisFeedbackState::Incorrect => {
-                                            board.common().feedback.incorrect.clone()
-                                        }
-                                    })
-                                }),
+                                .cloned()
+                                .collect(),
+                            feedback: analysis_feedback_view(scene, &board_id),
+                            last_feedback: analysis_feedback_view(scene, &board_id)
+                                .map(|feedback| feedback.message),
                             background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                             bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                             bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
@@ -2313,6 +2312,155 @@ impl GameEngine {
             summary: c.summary.clone(),
             index: clamped,
             total: self.chapters.len(),
+        }
+    }
+
+    fn analysis_card_view(
+        &self,
+        scene: &scenes::analysis::AnalysisSceneState,
+        card: &schema::AnalysisCardJson,
+    ) -> AnalysisCardView {
+        let (source, source_label, source_summary) = match &card.source {
+            AnalysisCardSource::Evidence { id } => {
+                let record = self
+                    .inventory
+                    .evidence
+                    .iter()
+                    .find(|record| record.id == *id);
+                (
+                    AnalysisCardSourceView::Evidence {
+                        id: id.clone(),
+                        label: record.map(|record| record.name.clone()),
+                        summary: record.map(|record| record.description.clone()),
+                    },
+                    record.map(|record| record.name.clone()),
+                    record.map(|record| record.description.clone()),
+                )
+            }
+            AnalysisCardSource::Statement { id } => {
+                let record = self
+                    .inventory
+                    .statements
+                    .iter()
+                    .find(|record| record.id == *id);
+                (
+                    AnalysisCardSourceView::Statement {
+                        id: id.clone(),
+                        label: record.map(|record| record.speaker.clone()),
+                        summary: record.map(|record| record.content.clone()),
+                    },
+                    record.map(|record| record.speaker.clone()),
+                    record.map(|record| record.content.clone()),
+                )
+            }
+            AnalysisCardSource::Practice { id } => (
+                AnalysisCardSourceView::Practice {
+                    id: id.clone(),
+                    label: None,
+                    summary: None,
+                },
+                None,
+                None,
+            ),
+        };
+
+        AnalysisCardView {
+            id: card.id.clone(),
+            label: card.label.clone(),
+            summary: card.summary.clone(),
+            source,
+            source_label,
+            source_summary,
+            available: scene.card_is_available(&card.source, &self.inventory),
+        }
+    }
+
+    fn analysis_board_view(
+        &self,
+        scene: &scenes::analysis::AnalysisSceneState,
+        board: &AnalysisBoardJson,
+        chapter_id: &str,
+    ) -> AnalysisBoardView {
+        let common = board.common();
+        let completed =
+            scene.is_board_completed_qualified(chapter_id, &common.id, &self.story_state);
+        let available = scene.available_board_ids.contains(&common.id) || completed;
+        let draft =
+            scene.drafts.get(&common.id).cloned().unwrap_or_else(|| {
+                scenes::analysis::AnalysisSceneState::empty_draft_for_board(board)
+            });
+        let feedback = analysis_feedback_view(scene, &common.id);
+        let cards = common
+            .cards
+            .iter()
+            .map(|card| self.analysis_card_view(scene, card))
+            .collect();
+        let read_only = completed;
+
+        match board {
+            AnalysisBoardJson::Classify { groups, .. } => AnalysisBoardView::Classify {
+                id: common.id.clone(),
+                label: common.label.clone(),
+                prompt: common.prompt.clone(),
+                cards,
+                groups: groups
+                    .iter()
+                    .map(|group| AnalysisGroupView {
+                        id: group.id.clone(),
+                        label: group.label.clone(),
+                        description: group.description.clone(),
+                    })
+                    .collect(),
+                available,
+                completed,
+                read_only,
+                draft,
+                feedback,
+                hint: common.feedback.hint.clone(),
+            },
+            AnalysisBoardJson::Order { fixed_anchors, .. } => AnalysisBoardView::Order {
+                id: common.id.clone(),
+                label: common.label.clone(),
+                prompt: common.prompt.clone(),
+                cards,
+                fixed_anchors: fixed_anchors
+                    .iter()
+                    .map(|anchor| AnalysisFixedAnchorView {
+                        card_id: anchor.card_id.clone(),
+                        position: anchor.position,
+                    })
+                    .collect(),
+                available,
+                completed,
+                read_only,
+                draft,
+                feedback,
+                hint: common.feedback.hint.clone(),
+            },
+            AnalysisBoardJson::Threshold {
+                minimum_selected, ..
+            } => {
+                let selected_card_ids = match &draft {
+                    AnalysisDraft::Threshold { selected_card_ids } => {
+                        selected_card_ids.iter().cloned().collect()
+                    }
+                    _ => Vec::new(),
+                };
+                AnalysisBoardView::Threshold {
+                    id: common.id.clone(),
+                    label: common.label.clone(),
+                    prompt: common.prompt.clone(),
+                    cards,
+                    minimum_selected: *minimum_selected,
+                    available,
+                    read_only,
+                    draft,
+                    feedback,
+                    hint: common.feedback.hint.clone(),
+                    selected_card_ids,
+                    completed,
+                }
+            }
         }
     }
 
@@ -2521,63 +2669,69 @@ impl GameEngine {
                     .def
                     .boards
                     .iter()
-                    .filter_map(|board| {
-                        if !scene.is_board_unlocked(board, &self.story_state) {
-                            return None;
-                        }
-                        // The loader rejects generic classify/order compiler
-                        // variants before runtime creation. Keep the public
-                        // projection total so invalid in-memory state cannot
-                        // reintroduce either wire variant.
-                        let AnalysisBoardJson::Threshold {
-                            minimum_selected, ..
-                        } = board
-                        else {
-                            return None;
-                        };
-                        let common = board.common();
-                        let cards = common
-                            .cards
-                            .iter()
-                            .map(|card| AnalysisCardView {
-                                id: card.id.clone(),
-                                label: card.label.clone(),
-                                summary: card.summary.clone(),
-                                available: scene.card_is_available(&card.source, &self.inventory),
-                            })
-                            .collect();
-                        let completed = scene.is_board_completed_qualified(
-                            chapter_id,
-                            &common.id,
-                            &self.story_state,
-                        );
-                        Some(AnalysisBoardView::Threshold {
-                            id: common.id.clone(),
-                            label: common.label.clone(),
-                            prompt: common.prompt.clone(),
-                            cards,
-                            minimum_selected: *minimum_selected,
-                            selected_card_ids: match scene.drafts.get(&common.id) {
-                                Some(AnalysisDraft::Threshold { selected_card_ids }) => {
-                                    selected_card_ids.iter().cloned().collect()
-                                }
-                                _ => Vec::new(),
-                            },
-                            completed,
-                        })
-                    })
+                    .map(|board| self.analysis_board_view(scene, board, chapter_id))
                     .collect();
+                let action_token = AnalysisActionToken {
+                    scene_id: scene.def.id.clone(),
+                    active_board_id: scene.active_board_id.clone(),
+                    durable_revision: self.durable_revision,
+                };
                 SceneView::Analysis {
                     id: scene.def.id.clone(),
                     title: scene.def.title.clone(),
                     summary: scene.def.summary.clone(),
                     index: self.current_scene_idx,
                     total,
+                    active_board_id: scene.active_board_id.clone(),
+                    action_token,
+                    available_board_ids: scene.available_board_ids.iter().cloned().collect(),
+                    background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                    bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                    bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                     visible_boards,
                 }
             }
         }
     }
+}
+
+fn analysis_feedback_view(
+    scene: &scenes::analysis::AnalysisSceneState,
+    board_id: &str,
+) -> Option<AnalysisFeedbackView> {
+    let state = scene.feedback_by_board_id.get(board_id).copied()?;
+    let board = scene.board(board_id)?;
+    let common = board.common();
+    let message = match state {
+        AnalysisFeedbackState::Incomplete => common.feedback.incomplete.clone(),
+        AnalysisFeedbackState::Incorrect => scene
+            .drafts
+            .get(board_id)
+            .and_then(|draft| {
+                common
+                    .feedback
+                    .incorrect_selections
+                    .iter()
+                    .find(|selection| analysis_feedback_matches_draft(&selection.cards, draft))
+                    .map(|selection| selection.feedback.clone())
+            })
+            .unwrap_or_else(|| common.feedback.incorrect.clone()),
+    };
+    Some(AnalysisFeedbackView { state, message })
+}
+
+fn analysis_feedback_matches_draft(cards: &[String], draft: &AnalysisDraft) -> bool {
+    let expected: std::collections::BTreeSet<&str> = cards.iter().map(String::as_str).collect();
+    let selected: std::collections::BTreeSet<&str> = match draft {
+        AnalysisDraft::Classify { group_by_card } => {
+            group_by_card.keys().map(String::as_str).collect()
+        }
+        AnalysisDraft::Order { card_ids } => card_ids.iter().map(String::as_str).collect(),
+        AnalysisDraft::Threshold { selected_card_ids } => {
+            selected_card_ids.iter().map(String::as_str).collect()
+        }
+    };
+    expected == selected
 }
 
 fn inventory_target_matches(target: &InventoryTarget, item_kind: &str, item_id: &str) -> bool {

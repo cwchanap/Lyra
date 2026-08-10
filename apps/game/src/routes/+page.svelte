@@ -22,8 +22,8 @@
     withdrawInterrogation,
     resumeInterrogationTestimony,
     completeInterrogationPhase,
-    setAnalysisSelection,
-    submitAnalysisSelection,
+    updateAnalysisDraft,
+    submitAnalysisBoard,
     listScenes,
     jumpToScene,
     presentationState,
@@ -1297,9 +1297,8 @@
           <AnalysisView
             scene={gameState.value.scene}
             boardId={gameState.value.mode.boardId}
-            feedback={gameState.value.mode.lastFeedback}
-            onSelection={setAnalysisSelection}
-            onSubmit={submitAnalysisSelection}
+            onSelection={updateAnalysisDraft}
+            onSubmit={submitAnalysisBoard}
             disabled={gameState.inFlight}
           />
         {:else if gameState.value.mode.type === "gameComplete"}

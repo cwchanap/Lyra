@@ -1,7 +1,12 @@
 import { fireEvent, render } from "@testing-library/svelte";
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import AnalysisView from "./AnalysisView.svelte";
-import type { AnalysisBoardView, SceneView } from "../state/types";
+import type {
+  AnalysisActionToken,
+  AnalysisBoardView,
+  AnalysisDraft,
+  SceneView,
+} from "../state/types";
 
 type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
 
@@ -13,6 +18,16 @@ function p1Scene(): AnalysisSceneView {
     summary: "P1 practice",
     index: 2,
     total: 17,
+    activeBoardId: "p1_reprint_time_board",
+    actionToken: {
+      sceneId: "analysis_scene_p1_5",
+      activeBoardId: "p1_reprint_time_board",
+      durableRevision: 3,
+    },
+    availableBoardIds: ["p1_reprint_time_board"],
+    backgroundAssetId: null,
+    bgm: null,
+    bgs: null,
     visibleBoards: [
       {
         kind: "threshold",
@@ -21,30 +36,67 @@ function p1Scene(): AnalysisSceneView {
         prompt: "選出正確的三項資料。",
         minimumSelected: 3,
         selectedCardIds: [],
+        available: true,
         completed: false,
+        readOnly: false,
+        draft: { kind: "threshold", selectedCardIds: [] },
+        feedback: null,
+        hint: null,
         cards: [
           {
             id: "receipt_reprint",
             label: "標示 REPRINT 的收據",
             summary: "十七點四十二分的重印時間。",
+            source: {
+              kind: "practice",
+              id: "receipt_reprint",
+              label: null,
+              summary: null,
+            },
+            sourceLabel: null,
+            sourceSummary: null,
             available: true,
           },
           {
             id: "register_paper_jam",
             label: "收銀機出紙口的卡紙痕跡",
             summary: "原本的收據可能卡住。",
+            source: {
+              kind: "practice",
+              id: "register_paper_jam",
+              label: null,
+              summary: null,
+            },
+            sourceLabel: null,
+            sourceSummary: null,
             available: true,
           },
           {
             id: "cctv_change",
             label: "監視器中的找零畫面",
             summary: "學生在十七點三十八分前離開。",
+            source: {
+              kind: "practice",
+              id: "cctv_change",
+              label: null,
+              summary: null,
+            },
+            sourceLabel: null,
+            sourceSummary: null,
             available: true,
           },
           {
             id: "handwritten_ledger",
             label: "手寫帳本的影印費",
             summary: "十七點三十七分的收入。",
+            source: {
+              kind: "practice",
+              id: "handwritten_ledger",
+              label: null,
+              summary: null,
+            },
+            sourceLabel: null,
+            sourceSummary: null,
             available: true,
           },
         ],
@@ -55,8 +107,11 @@ function p1Scene(): AnalysisSceneView {
 
 function renderP1(overrides?: {
   feedback?: string | null;
-  onSelection?: (boardId: string, cardIds: string[]) => Promise<void>;
-  onSubmit?: (boardId: string) => Promise<void>;
+  onSelection?: (
+    actionToken: AnalysisActionToken,
+    draft: AnalysisDraft,
+  ) => Promise<void>;
+  onSubmit?: (actionToken: AnalysisActionToken) => Promise<void>;
 }) {
   return render(AnalysisView, {
     scene: p1Scene(),
@@ -68,8 +123,10 @@ function renderP1(overrides?: {
 }
 
 describe("AnalysisView", () => {
-  it("exposes only threshold analysis boards in the public view", () => {
-    expectTypeOf<AnalysisBoardView["kind"]>().toEqualTypeOf<"threshold">();
+  it("keeps the public board union while retaining threshold rendering", () => {
+    expectTypeOf<AnalysisBoardView["kind"]>().toEqualTypeOf<
+      "classify" | "order" | "threshold"
+    >();
   });
 
   it("renders all four P1-local practice cards", () => {
@@ -88,13 +145,13 @@ describe("AnalysisView", () => {
     const { getByRole } = renderP1({ onSelection, onSubmit });
 
     await fireEvent.click(getByRole("button", { name: /標示 REPRINT 的收據/ }));
-    expect(onSelection).toHaveBeenCalledExactlyOnceWith(
-      "p1_reprint_time_board",
-      ["receipt_reprint"],
-    );
+    expect(onSelection).toHaveBeenCalledExactlyOnceWith(p1Scene().actionToken, {
+      kind: "threshold",
+      selectedCardIds: ["receipt_reprint"],
+    });
 
     await fireEvent.click(getByRole("button", { name: "比對推論" }));
-    expect(onSubmit).toHaveBeenCalledExactlyOnceWith("p1_reprint_time_board");
+    expect(onSubmit).toHaveBeenCalledExactlyOnceWith(p1Scene().actionToken);
   });
 
   it("contains a rejected selection callback inside the card handler", async () => {
@@ -108,8 +165,8 @@ describe("AnalysisView", () => {
         getByRole("button", { name: /標示 REPRINT 的收據/ }),
       );
       expect(onSelection).toHaveBeenCalledExactlyOnceWith(
-        "p1_reprint_time_board",
-        ["receipt_reprint"],
+        p1Scene().actionToken,
+        { kind: "threshold", selectedCardIds: ["receipt_reprint"] },
       );
       expect(warn).toHaveBeenCalledWith("[Analysis] Selection failed", error);
     } finally {
@@ -125,7 +182,7 @@ describe("AnalysisView", () => {
 
     try {
       await fireEvent.click(getByRole("button", { name: "比對推論" }));
-      expect(onSubmit).toHaveBeenCalledExactlyOnceWith("p1_reprint_time_board");
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith(p1Scene().actionToken);
       expect(warn).toHaveBeenCalledWith("[Analysis] Submission failed", error);
     } finally {
       warn.mockRestore();
