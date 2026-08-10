@@ -1160,6 +1160,8 @@ impl WriterQueue {
 type HealthSubscriber = Arc<dyn Fn(PersistenceHealthView) + Send + Sync>;
 type ActivitySubscriber = Arc<dyn Fn(ThumbnailActivityView) + Send + Sync>;
 type ExitSubscriber = Arc<dyn Fn(ExitStatusView) + Send + Sync>;
+#[cfg(test)]
+type RetryEligibilityHook = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum CaptureIntent {
@@ -1220,6 +1222,15 @@ struct BackgroundWriteFailure {
     identity: (u64, u64),
     diagnostic: GameError,
     thumbnail_capture_required: bool,
+}
+
+enum RetryEligibility {
+    Proceed,
+    Ignore,
+    Retire {
+        health: PersistenceHealthView,
+        subscribers: Vec<HealthSubscriber>,
+    },
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -1378,6 +1389,8 @@ pub(crate) struct SaveCoordinator {
     fail_next_exit_challenge: Arc<AtomicBool>,
     #[cfg(test)]
     panic_next_exit_worker: Arc<AtomicBool>,
+    #[cfg(test)]
+    retry_after_eligibility_hook: Arc<Mutex<Option<RetryEligibilityHook>>>,
     exclusive_updates: Arc<Notify>,
     #[cfg(feature = "e2e")]
     e2e_persistence_faults: Arc<E2ePersistenceFaultState>,
@@ -1438,6 +1451,8 @@ impl Default for SaveCoordinator {
             fail_next_exit_challenge: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             panic_next_exit_worker: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            retry_after_eligibility_hook: Arc::new(Mutex::new(None)),
             exclusive_updates: Arc::new(Notify::new()),
             #[cfg(feature = "e2e")]
             e2e_persistence_faults: Arc::new(E2ePersistenceFaultState::new()),
@@ -2723,26 +2738,31 @@ impl SaveCoordinator {
             publish_health(&subscribers, &health);
         }
         let failure = failure?;
-        let (session_generation, durable_revision) = failure.identity;
+        let failure_identity = failure.identity;
+        let (session_generation, durable_revision) = failure_identity;
         let thumbnail_capture_required = failure.thumbnail_capture_required;
+        #[cfg(test)]
+        self.run_retry_after_eligibility_hook_for_test();
         let purpose = ThumbnailCapturePurpose::Autosave {
             session_generation,
             durable_revision,
         };
         if !thumbnail_capture_required {
-            let (ticket, deadline_at) =
-                match self.issue_terminal_unavailable_thumbnail(purpose.clone()) {
-                    Ok(ticket) => ticket,
-                    Err(error) => {
-                        self.record_schedule_failure_without_thumbnail(
-                            session_generation,
-                            durable_revision,
-                            None,
-                            error,
-                        );
-                        return None;
-                    }
-                };
+            let (ticket, deadline_at) = match self
+                .issue_terminal_unavailable_thumbnail_for_retry(purpose.clone(), failure_identity)
+            {
+                Ok(Some(ticket)) => ticket,
+                Ok(None) => return None,
+                Err(error) => {
+                    self.record_schedule_failure_without_thumbnail(
+                        session_generation,
+                        durable_revision,
+                        None,
+                        error,
+                    );
+                    return None;
+                }
+            };
             if let Err(error) =
                 self.schedule_autosave(purpose, ticket.clone(), deadline_at, true, false)
             {
@@ -2755,8 +2775,9 @@ impl SaveCoordinator {
             }
             return None;
         }
-        let request = match self.issue_thumbnail(purpose.clone()) {
-            Ok(request) => request,
+        let request = match self.issue_thumbnail_for_retry(purpose.clone(), failure_identity) {
+            Ok(Some(request)) => request,
+            Ok(None) => return None,
             Err(error) => {
                 self.record_schedule_failure(session_generation, durable_revision, None, error);
                 return None;
@@ -4378,6 +4399,23 @@ impl SaveCoordinator {
         &self,
         purpose: ThumbnailCapturePurpose,
     ) -> Result<ThumbnailCaptureRequestView, GameError> {
+        self.issue_thumbnail_inner(purpose, None)?
+            .ok_or_else(GameError::save_write_failed)
+    }
+
+    fn issue_thumbnail_for_retry(
+        &self,
+        purpose: ThumbnailCapturePurpose,
+        failure_identity: (u64, u64),
+    ) -> Result<Option<ThumbnailCaptureRequestView>, GameError> {
+        self.issue_thumbnail_inner(purpose, Some(failure_identity))
+    }
+
+    fn issue_thumbnail_inner(
+        &self,
+        purpose: ThumbnailCapturePurpose,
+        retry_identity: Option<(u64, u64)>,
+    ) -> Result<Option<ThumbnailCaptureRequestView>, GameError> {
         let issued_at = Instant::now();
         let deadline_at = issued_at + THUMBNAIL_CAPTURE_TIMEOUT;
         let ticket = Uuid::new_v4().hyphenated().to_string();
@@ -4395,6 +4433,20 @@ impl SaveCoordinator {
         // issues normally.
         if purpose.session_generation() < state.next_session_generation {
             return Err(GameError::stale_session_generation());
+        }
+        if let Some(identity) = retry_identity {
+            match retry_eligibility(&mut state, identity) {
+                RetryEligibility::Proceed => {}
+                RetryEligibility::Ignore => return Ok(None),
+                RetryEligibility::Retire {
+                    health,
+                    subscribers,
+                } => {
+                    drop(state);
+                    publish_health(&subscribers, &health);
+                    return Ok(None);
+                }
+            }
         }
         if let Some(superseded) = state.latest_by_intent.insert(intent, ticket.clone()) {
             state.tickets.remove(&superseded);
@@ -4439,16 +4491,33 @@ impl SaveCoordinator {
             publish_activity(&activity_subscribers, &terminal);
             return Err(error);
         }
-        Ok(ThumbnailCaptureRequestView {
+        Ok(Some(ThumbnailCaptureRequestView {
             ticket,
             deadline_at,
-        })
+        }))
     }
 
     fn issue_terminal_unavailable_thumbnail(
         &self,
         purpose: ThumbnailCapturePurpose,
     ) -> Result<(String, Instant), GameError> {
+        self.issue_terminal_unavailable_thumbnail_inner(purpose, None)?
+            .ok_or_else(GameError::save_write_failed)
+    }
+
+    fn issue_terminal_unavailable_thumbnail_for_retry(
+        &self,
+        purpose: ThumbnailCapturePurpose,
+        failure_identity: (u64, u64),
+    ) -> Result<Option<(String, Instant)>, GameError> {
+        self.issue_terminal_unavailable_thumbnail_inner(purpose, Some(failure_identity))
+    }
+
+    fn issue_terminal_unavailable_thumbnail_inner(
+        &self,
+        purpose: ThumbnailCapturePurpose,
+        retry_identity: Option<(u64, u64)>,
+    ) -> Result<Option<(String, Instant)>, GameError> {
         let issued_at = Instant::now();
         let ticket = Uuid::new_v4().hyphenated().to_string();
         let intent = purpose.intent();
@@ -4456,6 +4525,20 @@ impl SaveCoordinator {
             let mut state = self.lock_state()?;
             if purpose.session_generation() < state.next_session_generation {
                 return Err(GameError::stale_session_generation());
+            }
+            if let Some(identity) = retry_identity {
+                match retry_eligibility(&mut state, identity) {
+                    RetryEligibility::Proceed => {}
+                    RetryEligibility::Ignore => return Ok(None),
+                    RetryEligibility::Retire {
+                        health,
+                        subscribers,
+                    } => {
+                        drop(state);
+                        publish_health(&subscribers, &health);
+                        return Ok(None);
+                    }
+                }
             }
             let removed_nonterminal_autosave = state
                 .latest_by_intent
@@ -4483,7 +4566,7 @@ impl SaveCoordinator {
             publish_activity(&activity_subscribers, &activity);
         }
         self.ticket_updates.notify_waiters();
-        Ok((ticket, issued_at))
+        Ok(Some((ticket, issued_at)))
     }
 
     fn mark_persistence_degraded(&self, diagnostic: GameError) -> Result<(), GameError> {
@@ -4517,6 +4600,19 @@ impl SaveCoordinator {
     #[cfg(test)]
     pub(crate) fn fail_next_schedule_for_test(&self) {
         self.fail_next_schedule.store(true, Ordering::SeqCst);
+    }
+
+    #[cfg(test)]
+    fn set_retry_after_eligibility_hook(&self, hook: RetryEligibilityHook) {
+        *self.retry_after_eligibility_hook.lock().unwrap() = Some(hook);
+    }
+
+    #[cfg(test)]
+    fn run_retry_after_eligibility_hook_for_test(&self) {
+        let hook = self.retry_after_eligibility_hook.lock().unwrap().take();
+        if let Some(hook) = hook {
+            hook();
+        }
     }
 
     #[cfg(test)]
@@ -4753,6 +4849,31 @@ fn health_after_completion(state: &CoordinatorState) -> PersistenceHealthView {
         }
     } else {
         PersistenceHealthView::Healthy
+    }
+}
+
+fn retry_eligibility(state: &mut CoordinatorState, identity: (u64, u64)) -> RetryEligibility {
+    let Some(failure) = state.failed_write.as_ref() else {
+        return RetryEligibility::Ignore;
+    };
+    if failure.identity != identity {
+        return RetryEligibility::Ignore;
+    }
+    let superseded_by_pending = state.pending_autosave.as_ref().is_some_and(|pending| {
+        pending.session_generation == identity.0 && pending.durable_revision > identity.1
+    });
+    let superseded_by_success = state.last_successful_write.as_ref().is_some_and(|receipt| {
+        receipt.session_generation == identity.0 && receipt.durable_revision >= identity.1
+    });
+    if !superseded_by_pending && !superseded_by_success {
+        return RetryEligibility::Proceed;
+    }
+    state.failed_write = None;
+    let health = health_after_completion(state);
+    let subscribers = set_persistence_health(state, health.clone());
+    RetryEligibility::Retire {
+        health,
+        subscribers,
     }
 }
 
