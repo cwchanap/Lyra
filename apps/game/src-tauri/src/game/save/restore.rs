@@ -13,6 +13,7 @@ use crate::game::dialogue_queue::{
 };
 use crate::game::navigation::{
     load_chapter_manifests, load_chapter_scene_jsons, scene_json_identity, scene_json_summary,
+    validate_analysis_scene_adjacency,
 };
 use crate::game::provenance::validate_catalog_record_origin_coverage;
 use crate::game::scenes::analysis::AnalysisSceneState;
@@ -139,6 +140,7 @@ pub(crate) fn load_current_definitions(
     let content_manifest = ContentManifest::load(resources_dir)?;
     let chapters = load_chapter_manifests(resources_dir)?;
     let story_catalog = StoryCatalog::load(resources_dir)?;
+    validate_analysis_scene_adjacency(resources_dir, &story_catalog, &chapters)?;
     let mut scenes_by_key = BTreeMap::new();
     let mut scene_indices_by_key = BTreeMap::new();
     let mut semantic_asset_ids = BTreeSet::new();
@@ -419,7 +421,10 @@ fn restore_scene(
                 ordered_card_ids_by_board,
                 group_by_card_by_board,
                 practice_card_ids,
-                inventory,
+                AnalysisRestoreValidationContext {
+                    inventory,
+                    last_feedback: last_feedback.as_deref(),
+                },
             )?;
             let intro_queue_gen = active_intro_gen(
                 active_snapshot,
@@ -594,6 +599,11 @@ fn active_intro_gen(
         .map_or(consumed, |queue| queue.queue_gen)
 }
 
+struct AnalysisRestoreValidationContext<'a> {
+    inventory: &'a Inventory,
+    last_feedback: Option<&'a str>,
+}
+
 fn validate_analysis_refs(
     definition: &AnalysisSceneJson,
     completed_board_ids: &[String],
@@ -601,7 +611,7 @@ fn validate_analysis_refs(
     ordered_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
     group_by_card_by_board: &[AnalysisBoardGroupSnapshotV1],
     practice_card_ids: &[String],
-    inventory: &Inventory,
+    context: AnalysisRestoreValidationContext<'_>,
 ) -> Result<(), GameError> {
     let board = |board_id: &str| {
         definition
@@ -620,6 +630,31 @@ fn validate_analysis_refs(
                 "Analysis completion references missing board '{board_id}'."
             )));
         }
+    }
+    let completed_board_set: BTreeSet<_> = completed_board_ids.iter().map(String::as_str).collect();
+    let all_boards_completed = completed_board_set.len() == definition.boards.len()
+        && definition
+            .boards
+            .iter()
+            .all(|board| completed_board_set.contains(board.common().id.as_str()));
+    if all_boards_completed
+        && (!selected_card_ids_by_board.is_empty()
+            || !ordered_card_ids_by_board.is_empty()
+            || !group_by_card_by_board.is_empty())
+    {
+        return Err(invalid_progress(
+            "Completed analysis scene retains stale board selections.",
+        ));
+    }
+    if all_boards_completed && !practice_card_ids.is_empty() {
+        return Err(invalid_progress(
+            "Completed analysis scene retains stale practice cards.",
+        ));
+    }
+    if all_boards_completed && context.last_feedback.is_some() {
+        return Err(invalid_progress(
+            "Completed analysis scene retains stale feedback.",
+        ));
     }
 
     let practice_ids: BTreeSet<_> = definition
@@ -660,7 +695,7 @@ fn validate_analysis_refs(
             &selection.card_ids,
             &common.cards,
             &saved_practice,
-            inventory,
+            context.inventory,
         )?;
     }
 
@@ -682,7 +717,7 @@ fn validate_analysis_refs(
             &selection.card_ids,
             &common.cards,
             &saved_practice,
-            inventory,
+            context.inventory,
         )?;
     }
 
@@ -704,7 +739,7 @@ fn validate_analysis_refs(
             &card_ids,
             &common.cards,
             &saved_practice,
-            inventory,
+            context.inventory,
         )?;
         if selection
             .group_by_card
@@ -716,7 +751,128 @@ fn validate_analysis_refs(
             ));
         }
     }
+    validate_analysis_feedback(
+        definition,
+        &completed_board_set,
+        selected_card_ids_by_board,
+        ordered_card_ids_by_board,
+        group_by_card_by_board,
+        context.last_feedback,
+    )?;
     Ok(())
+}
+
+fn validate_analysis_feedback(
+    definition: &AnalysisSceneJson,
+    completed_board_ids: &BTreeSet<&str>,
+    selected_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
+    ordered_card_ids_by_board: &[AnalysisBoardCardsSnapshotV1],
+    group_by_card_by_board: &[AnalysisBoardGroupSnapshotV1],
+    last_feedback: Option<&str>,
+) -> Result<(), GameError> {
+    let Some(last_feedback) = last_feedback else {
+        return Ok(());
+    };
+
+    for board in &definition.boards {
+        let board_id = board.common().id.as_str();
+        if completed_board_ids.contains(board_id) {
+            continue;
+        }
+        let feedback = &board.common().feedback;
+        match board {
+            AnalysisBoardJson::Threshold {
+                minimum_selected,
+                accepted_selections,
+                ..
+            } => {
+                let Some(selection) = selected_card_ids_by_board
+                    .iter()
+                    .find(|selection| selection.board_id == board_id)
+                else {
+                    continue;
+                };
+                let mut card_ids = selection.card_ids.clone();
+                card_ids.sort();
+                let emitted = feedback
+                    .incorrect_selections
+                    .iter()
+                    .find(|entry| {
+                        let mut expected = entry.cards.clone();
+                        expected.sort();
+                        expected == card_ids
+                    })
+                    .map(|entry| entry.feedback.as_str())
+                    .or_else(|| {
+                        if card_ids.len() < *minimum_selected {
+                            Some(feedback.incomplete.as_str())
+                        } else if accepted_selections
+                            .iter()
+                            .any(|accepted| accepted == &card_ids)
+                        {
+                            None
+                        } else {
+                            Some(feedback.incorrect.as_str())
+                        }
+                    });
+                if emitted == Some(last_feedback) {
+                    return Ok(());
+                }
+            }
+            AnalysisBoardJson::Classify {
+                accepted_group_by_card,
+                ..
+            } => {
+                let Some(selection) = group_by_card_by_board
+                    .iter()
+                    .find(|selection| selection.board_id == board_id)
+                else {
+                    continue;
+                };
+                let emitted = if selection.group_by_card.len() < accepted_group_by_card.len() {
+                    Some(feedback.incomplete.as_str())
+                } else if selection.group_by_card == *accepted_group_by_card {
+                    None
+                } else {
+                    Some(feedback.incorrect.as_str())
+                };
+                if emitted == Some(last_feedback) {
+                    return Ok(());
+                }
+            }
+            AnalysisBoardJson::Order { accepted_order, .. } => {
+                let Some(selection) = ordered_card_ids_by_board
+                    .iter()
+                    .find(|selection| selection.board_id == board_id)
+                else {
+                    continue;
+                };
+                let emitted = if selection.card_ids.len() < accepted_order.len() {
+                    Some(feedback.incomplete.as_str())
+                } else if selection.card_ids == *accepted_order {
+                    None
+                } else {
+                    Some(feedback.incorrect.as_str())
+                };
+                if emitted == Some(last_feedback) {
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    let unsupported_hint = definition
+        .boards
+        .iter()
+        .any(|board| board.common().feedback.hint.as_deref() == Some(last_feedback));
+    if unsupported_hint {
+        return Err(invalid_progress(
+            "Analysis last feedback is an unsupported hint.",
+        ));
+    }
+    Err(invalid_progress(
+        "Analysis last feedback is not reachable from the saved selection.",
+    ))
 }
 
 fn validate_analysis_saved_cards(
@@ -760,7 +916,7 @@ fn validate_analysis_saved_cards(
 
 fn restore_analysis_card_sets(
     values: &[AnalysisBoardCardsSnapshotV1],
-    _kind: &str,
+    kind: &str,
 ) -> Result<BTreeMap<String, BTreeSet<String>>, GameError> {
     let mut restored = BTreeMap::new();
     for value in values {
@@ -771,9 +927,9 @@ fn restore_analysis_card_sets(
             )
             .is_some()
         {
-            return Err(invalid_progress(
-                "Duplicate saved analysis board selection.",
-            ));
+            return Err(invalid_progress(format!(
+                "Duplicate saved analysis {kind} board selection."
+            )));
         }
     }
     Ok(restored)
@@ -781,7 +937,7 @@ fn restore_analysis_card_sets(
 
 fn restore_analysis_card_vectors(
     values: &[AnalysisBoardCardsSnapshotV1],
-    _kind: &str,
+    kind: &str,
 ) -> Result<BTreeMap<String, Vec<String>>, GameError> {
     let mut restored = BTreeMap::new();
     for value in values {
@@ -789,7 +945,9 @@ fn restore_analysis_card_vectors(
             .insert(value.board_id.clone(), value.card_ids.clone())
             .is_some()
         {
-            return Err(invalid_progress("Duplicate saved analysis board ordering."));
+            return Err(invalid_progress(format!(
+                "Duplicate saved analysis {kind} board ordering."
+            )));
         }
     }
     Ok(restored)
@@ -1619,10 +1777,13 @@ mod tests {
         chapters["chapters"][0]["scenes"]
             .as_array_mut()
             .expect("save fixture chapter must contain scenes")
-            .push(serde_json::json!({
-                "type": "analysis",
-                "file": "chapter_1/analysis_scene_p1_5.json"
-            }));
+            .insert(
+                2,
+                serde_json::json!({
+                    "type": "analysis",
+                    "file": "chapter_1/analysis_scene_p1_5.json"
+                }),
+            );
         std::fs::write(
             &chapters_path,
             serde_json::to_vec(&chapters).expect("updated chapters fixture must serialize"),
@@ -1895,6 +2056,50 @@ mod tests {
             capture_checkpoint(&restored.engine).unwrap().snapshot,
             original.snapshot
         );
+    }
+
+    #[test]
+    fn scene_navigation_direct_p1_analysis_seeds_practice_cards_for_public_submission() {
+        let (_guard, resources) = p1_feedback_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("P1 analysis scene should be reachable in the fixture");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected P1 analysis runtime");
+        };
+        assert_eq!(
+            scene.practice_card_ids,
+            [
+                "p1_cctv_change".to_string(),
+                "p1_handwritten_ledger".to_string(),
+                "p1_receipt_reprint".to_string(),
+                "p1_register_paper_jam".to_string(),
+            ]
+            .into_iter()
+            .collect()
+        );
+
+        engine
+            .set_analysis_selection(
+                "p1_reprint_time_board",
+                vec![
+                    "receipt_reprint".into(),
+                    "register_paper_jam".into(),
+                    "handwritten_ledger".into(),
+                ],
+            )
+            .expect("seeded P1 cards should be selectable");
+        let submitted = engine
+            .submit_analysis_selection("p1_reprint_time_board")
+            .expect("seeded P1 cards should complete through public commands");
+        assert!(matches!(submitted.mode, ModeView::Dialogue { .. }));
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("P1 completion should remain in analysis while result dialogue plays");
+        };
+        assert!(scene.is_board_completed("p1_reprint_time_board"));
+        assert!(scene.practice_card_ids.is_empty());
     }
 
     // Break caught: after a correct final board submission, P1's scene-local
@@ -3581,7 +3786,15 @@ mod tests {
                     "common": {
                         "id": "threshold_board",
                         "label": "T", "prompt": "T", "unlock": null, "reveals": [],
-                        "feedback": {"incomplete": "inc", "incorrect": "wrong", "hint": null},
+                        "feedback": {
+                            "incomplete": "inc",
+                            "incorrect": "wrong",
+                            "hint": "Try the timeline.",
+                            "incorrectSelections": [{
+                                "cards": ["ev_card"],
+                                "feedback": "Ev card alone is not enough."
+                            }]
+                        },
                         "cards": [
                             {"id": "ev_card", "label": "EV", "source": {"kind": "evidence", "id": "ev_1"}, "summary": "E"},
                             {"id": "stmt_card", "label": "ST", "source": {"kind": "statement", "id": "stmt_1"}, "summary": "S"},
@@ -3686,6 +3899,364 @@ mod tests {
         }
     }
 
+    fn analysis_restore_context<'a>(
+        inventory: &'a Inventory,
+        last_feedback: Option<&'a str>,
+    ) -> AnalysisRestoreValidationContext<'a> {
+        AnalysisRestoreValidationContext {
+            inventory,
+            last_feedback,
+        }
+    }
+
+    #[test]
+    fn restore_rejects_analysis_feedback_not_packaged_on_any_board() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec![],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("feedback injected by save".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &Inventory::default(),
+            None,
+            None,
+        )
+        .expect_err("unpackaged analysis feedback must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("feedback"));
+    }
+
+    #[test]
+    fn restore_rejects_completed_analysis_with_stale_threshold_selection() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &["ev_card"])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: None,
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed analysis must not restore stale threshold selections");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("Completed"));
+        assert!(error.message.contains("selection"));
+    }
+
+    #[test]
+    fn restore_rejects_completed_analysis_with_stale_order_selection() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![cards_snapshot("order_board", &["o_card"])],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: None,
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed analysis must not restore stale order selections");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("selection"));
+    }
+
+    #[test]
+    fn restore_rejects_completed_analysis_with_stale_classification_selection() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![group_snapshot("classify_board", &[("c_card", "grp_1")])],
+            practice_card_ids: vec![],
+            last_feedback: None,
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed analysis must not restore stale classification selections");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("selection"));
+    }
+
+    #[test]
+    fn restore_rejects_completed_analysis_with_stale_practice_cards() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec!["prac_1".into()],
+            last_feedback: None,
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed analysis must not restore stale practice cards");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("practice"));
+    }
+
+    #[test]
+    fn restore_rejects_completed_analysis_with_stale_feedback() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("inc".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed analysis must not restore stale feedback");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("feedback"));
+    }
+
+    #[test]
+    fn restore_accepts_completed_analysis_with_cleared_terminal_state() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: true,
+            completed_board_ids: vec![
+                "threshold_board".into(),
+                "order_board".into(),
+                "classify_board".into(),
+            ],
+            selected_card_ids_by_board: vec![],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: None,
+        };
+        let SceneRuntime::Analysis(scene) = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect("completed analysis with cleared transient state should restore") else {
+            panic!("expected analysis scene runtime");
+        };
+        assert!(scene.practice_card_ids.is_empty());
+        assert!(scene.last_feedback.is_none());
+        assert!(scene.selected_card_ids_by_board.is_empty());
+        assert!(scene.ordered_card_ids_by_board.is_empty());
+        assert!(scene.group_by_card_by_board.is_empty());
+    }
+
+    #[test]
+    fn restore_accepts_reachable_analysis_feedback_sources() {
+        for (label, card_ids, feedback) in [
+            ("incomplete", vec![], "inc"),
+            ("incorrect", vec!["stmt_card"], "wrong"),
+            (
+                "incorrect selection",
+                vec!["ev_card"],
+                "Ev card alone is not enough.",
+            ),
+        ] {
+            let packaged = SceneJson::Analysis(restore_analysis_def());
+            let progress = SceneProgressSnapshot::Analysis {
+                intro_played: true,
+                outro_played: false,
+                completed_board_ids: vec![],
+                selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &card_ids)],
+                ordered_card_ids_by_board: vec![],
+                group_by_card_by_board: vec![],
+                practice_card_ids: vec![],
+                last_feedback: Some(feedback.into()),
+            };
+            restore_scene(
+                "chapter_1",
+                &packaged,
+                &progress,
+                &inventory_with_evidence_and_statements(),
+                None,
+                None,
+            )
+            .unwrap_or_else(|error| panic!("{label} feedback should restore: {error:?}"));
+        }
+    }
+
+    #[test]
+    fn restore_rejects_packaged_feedback_not_reachable_from_saved_selection() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec![],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &[])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("wrong".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &Inventory::default(),
+            None,
+            None,
+        )
+        .expect_err("feedback from another board must not bypass saved selection state");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("reachable"));
+    }
+
+    #[test]
+    fn restore_rejects_feedback_from_completed_board_during_partial_analysis() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec!["threshold_board".into()],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &["stmt_card"])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("wrong".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect_err("completed boards must not explain feedback in partial analysis");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("reachable"));
+    }
+
+    #[test]
+    fn restore_accepts_feedback_from_incomplete_board_during_partial_analysis() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec!["classify_board".into()],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &[])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![group_snapshot("classify_board", &[("c_card", "grp_1")])],
+            practice_card_ids: vec![],
+            last_feedback: Some("inc".into()),
+        };
+        restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &inventory_with_evidence_and_statements(),
+            None,
+            None,
+        )
+        .expect("incomplete-board feedback must remain restorable");
+    }
+
+    #[test]
+    fn restore_rejects_unsupported_analysis_hint_feedback() {
+        let packaged = SceneJson::Analysis(restore_analysis_def());
+        let progress = SceneProgressSnapshot::Analysis {
+            intro_played: true,
+            outro_played: false,
+            completed_board_ids: vec![],
+            selected_card_ids_by_board: vec![cards_snapshot("threshold_board", &[])],
+            ordered_card_ids_by_board: vec![],
+            group_by_card_by_board: vec![],
+            practice_card_ids: vec![],
+            last_feedback: Some("Try the timeline.".into()),
+        };
+        let error = restore_scene(
+            "chapter_1",
+            &packaged,
+            &progress,
+            &Inventory::default(),
+            None,
+            None,
+        )
+        .expect_err("analysis hints are not emitted by the runtime");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error.message.contains("hint"));
+    }
+
     #[test]
     fn validate_analysis_refs_rejects_duplicate_completed_boards() {
         let def = restore_analysis_def();
@@ -3697,7 +4268,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("duplicate completed boards must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3708,8 +4279,16 @@ mod tests {
     fn validate_analysis_refs_rejects_missing_completed_board() {
         let def = restore_analysis_def();
         let inv = inventory_with_evidence_and_statements();
-        let error = validate_analysis_refs(&def, &["nonexistent".into()], &[], &[], &[], &[], &inv)
-            .expect_err("missing completed board must be rejected");
+        let error = validate_analysis_refs(
+            &def,
+            &["nonexistent".into()],
+            &[],
+            &[],
+            &[],
+            &[],
+            analysis_restore_context(&inv, None),
+        )
+        .expect_err("missing completed board must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
         assert!(error.message.contains("missing board"));
     }
@@ -3725,7 +4304,7 @@ mod tests {
             &[],
             &[],
             &["prac_1".into(), "prac_1".into()],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("duplicate practice cards must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3735,9 +4314,16 @@ mod tests {
     fn validate_analysis_refs_rejects_unknown_practice_card() {
         let def = restore_analysis_def();
         let inv = inventory_with_evidence_and_statements();
-        let error =
-            validate_analysis_refs(&def, &[], &[], &[], &[], &["unknown_prac".into()], &inv)
-                .expect_err("unknown practice card must be rejected");
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[],
+            &[],
+            &["unknown_prac".into()],
+            analysis_restore_context(&inv, None),
+        )
+        .expect_err("unknown practice card must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
     }
 
@@ -3746,8 +4332,16 @@ mod tests {
         let def = restore_analysis_def();
         let inv = inventory_with_evidence_and_statements();
         let sel = cards_snapshot("threshold_board", &["ev_card"]);
-        let error = validate_analysis_refs(&def, &[], &[sel.clone(), sel], &[], &[], &[], &inv)
-            .expect_err("duplicate threshold selection boards must be rejected");
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[sel.clone(), sel],
+            &[],
+            &[],
+            &[],
+            analysis_restore_context(&inv, None),
+        )
+        .expect_err("duplicate threshold selection boards must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
     }
 
@@ -3762,7 +4356,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("non-threshold board in threshold selection must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3779,7 +4373,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("unknown card in threshold selection must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3796,7 +4390,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("duplicate cards in threshold selection must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3813,7 +4407,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &empty_inv,
+            analysis_restore_context(&empty_inv, None),
         )
         .expect_err("unavailable evidence card must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3831,7 +4425,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &empty_inv,
+            analysis_restore_context(&empty_inv, None),
         )
         .expect_err("unavailable statement card must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3849,7 +4443,7 @@ mod tests {
             &[],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("practice card not in saved practice set must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3860,8 +4454,16 @@ mod tests {
         let def = restore_analysis_def();
         let inv = inventory_with_evidence_and_statements();
         let sel = cards_snapshot("order_board", &["o_card"]);
-        let error = validate_analysis_refs(&def, &[], &[], &[sel.clone(), sel], &[], &[], &inv)
-            .expect_err("duplicate order boards must be rejected");
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[sel.clone(), sel],
+            &[],
+            &[],
+            analysis_restore_context(&inv, None),
+        )
+        .expect_err("duplicate order boards must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
     }
 
@@ -3876,7 +4478,7 @@ mod tests {
             &[cards_snapshot("threshold_board", &["ev_card"])],
             &[],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("non-order board in order selection must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3887,8 +4489,16 @@ mod tests {
         let def = restore_analysis_def();
         let inv = inventory_with_evidence_and_statements();
         let sel = group_snapshot("classify_board", &[("c_card", "grp_1")]);
-        let error = validate_analysis_refs(&def, &[], &[], &[], &[sel.clone(), sel], &[], &inv)
-            .expect_err("duplicate classify boards must be rejected");
+        let error = validate_analysis_refs(
+            &def,
+            &[],
+            &[],
+            &[],
+            &[sel.clone(), sel],
+            &[],
+            analysis_restore_context(&inv, None),
+        )
+        .expect_err("duplicate classify boards must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
     }
 
@@ -3903,7 +4513,7 @@ mod tests {
             &[],
             &[group_snapshot("threshold_board", &[("ev_card", "grp_1")])],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("non-classify board in classify must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3923,7 +4533,7 @@ mod tests {
                 &[("c_card", "nonexistent_group")],
             )],
             &[],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect_err("unknown group in classify must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
@@ -3940,7 +4550,7 @@ mod tests {
             &[cards_snapshot("order_board", &["o_card"])],
             &[group_snapshot("classify_board", &[("c_card", "grp_1")])],
             &["prac_1".into()],
-            &inv,
+            analysis_restore_context(&inv, None),
         )
         .expect("valid analysis state should pass validation");
     }
@@ -3956,6 +4566,13 @@ mod tests {
         let error = restore_analysis_card_sets(&values, "threshold")
             .expect_err("duplicate boards in card sets must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
+        // The `kind` argument parameterizes the duplicate-entry message so the
+        // selection kind is identifiable in diagnostics.
+        assert!(
+            error.message.contains("threshold"),
+            "duplicate selection error should name the kind, got: {}",
+            error.message
+        );
     }
 
     #[test]
@@ -3980,6 +4597,11 @@ mod tests {
         let error = restore_analysis_card_vectors(&values, "order")
             .expect_err("duplicate boards in card vectors must be rejected");
         assert_eq!(error.code, "invalidSaveProgress");
+        assert!(
+            error.message.contains("order"),
+            "duplicate ordering error should name the kind, got: {}",
+            error.message
+        );
     }
 
     #[test]

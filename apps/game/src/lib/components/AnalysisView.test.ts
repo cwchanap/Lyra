@@ -1,15 +1,7 @@
 import { fireEvent, render } from "@testing-library/svelte";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import AnalysisView from "./AnalysisView.svelte";
 import type { AnalysisBoardView, SceneView } from "../state/types";
-
-// @ts-expect-error Public analysis boards are threshold-only.
-const classifyBoardKind: AnalysisBoardView["kind"] = "classify";
-// @ts-expect-error Public analysis boards are threshold-only.
-const orderBoardKind: AnalysisBoardView["kind"] = "order";
-
-void classifyBoardKind;
-void orderBoardKind;
 
 type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
 
@@ -76,6 +68,10 @@ function renderP1(overrides?: {
 }
 
 describe("AnalysisView", () => {
+  it("exposes only threshold analysis boards in the public view", () => {
+    expectTypeOf<AnalysisBoardView["kind"]>().toEqualTypeOf<"threshold">();
+  });
+
   it("renders all four P1-local practice cards", () => {
     const { getByText, queryByText } = renderP1();
 
@@ -99,6 +95,41 @@ describe("AnalysisView", () => {
 
     await fireEvent.click(getByRole("button", { name: "比對推論" }));
     expect(onSubmit).toHaveBeenCalledExactlyOnceWith("p1_reprint_time_board");
+  });
+
+  it("contains a rejected selection callback inside the card handler", async () => {
+    const error = new Error("selection failed");
+    const onSelection = vi.fn().mockRejectedValue(error);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { getByRole } = renderP1({ onSelection });
+
+    try {
+      await fireEvent.click(
+        getByRole("button", { name: /標示 REPRINT 的收據/ }),
+      );
+      expect(onSelection).toHaveBeenCalledExactlyOnceWith(
+        "p1_reprint_time_board",
+        ["receipt_reprint"],
+      );
+      expect(warn).toHaveBeenCalledWith("[Analysis] Selection failed", error);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("contains a rejected submission callback inside the submit handler", async () => {
+    const error = new Error("submission failed");
+    const onSubmit = vi.fn().mockRejectedValue(error);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { getByRole } = renderP1({ onSubmit });
+
+    try {
+      await fireEvent.click(getByRole("button", { name: "比對推論" }));
+      expect(onSubmit).toHaveBeenCalledExactlyOnceWith("p1_reprint_time_board");
+      expect(warn).toHaveBeenCalledWith("[Analysis] Submission failed", error);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("renders authored wrong-choice feedback", () => {

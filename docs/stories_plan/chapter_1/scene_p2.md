@@ -38,7 +38,7 @@
 [店長沒再追問，轉身走回吧台。]
 
 [場景：雨鐘咖啡館後場走道盡頭、內側倉庫入口，午後。入口內側牆上的一只舊掛鐘，秒針走得有點慢。]
-- **Background Prompt:** Narrow back corridor of a small Tokyo cafe, an old slow wall clock above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text.
+- **Background Prompt:** Eye-level medium-wide establishing view from the corridor mouth, camera pulled back to frame the narrow back corridor of a small Tokyo cafe leading to the inner-storage entrance at its end, focal area the old slow wall clock mounted on the entrance's inner wall above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text, keep the lower composition clear and uncluttered for dialogue UI.
 - **BGS:** bgs_cafe_backroom_corridor
 
 [店長走到後場走道盡頭，停在入口內側牆上的舊掛鐘前。]

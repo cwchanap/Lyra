@@ -266,6 +266,9 @@ roots now feed the compiler:
   - `interrogation_scene_<K>.md` - authored and compiler-validated suspect
     inquiry and testimony cross-examination scenes. Authored via
     `writing-interrogation-scene`.
+  - `analysis_scene_<K>.md` - compiler-validated analysis scenes whose
+    playable runtime/frontend contract currently exposes threshold boards only.
+    Author threshold-board content via `writing-analysis-scene`.
 
 Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with

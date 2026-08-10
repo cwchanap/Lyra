@@ -36,9 +36,9 @@ use content_manifest::ContentManifest;
 use dialogue_queue::{ActiveDialogueQueue, DialogueSegment, DialogueSegmentOriginV1};
 use navigation::{
     find_scene_json_by_id, load_chapter_manifests, load_scene_runtime,
-    scene_navigation_index_from_chapters,
+    scene_navigation_index_from_chapters, validate_analysis_scene_adjacency,
 };
-use scenes::analysis::{AnalysisSubmission, AnalysisSubmissionOutcome};
+use scenes::analysis::{AnalysisSceneState, AnalysisSubmission, AnalysisSubmissionOutcome};
 use scenes::interrogation::{
     phase_id, phase_required, CrossExam, InterrogationSceneAndInventoryCtx,
 };
@@ -231,6 +231,7 @@ impl GameEngine {
     pub fn new_started(resources_dir: PathBuf) -> Result<Self, GameError> {
         let chapters = load_chapter_manifests(&resources_dir)?;
         let story_catalog = StoryCatalog::load(&resources_dir)?;
+        validate_analysis_scene_adjacency(&resources_dir, &story_catalog, &chapters)?;
         let story_locations = StoryLocationIndex::load(&resources_dir, &story_catalog, &chapters)?;
         let content_manifest = ContentManifest::load(&resources_dir)?;
 
@@ -1940,8 +1941,22 @@ impl GameEngine {
     ) -> Result<GameStateView, GameError> {
         let selected_card_ids = card_ids.into_iter().collect::<BTreeSet<_>>();
         self.require_analysis_board_ready(board_id, "set_analysis_selection")?;
-        self.require_analysis_cards_available(board_id, &selected_card_ids)?;
+        self.require_analysis_cards_available(
+            board_id,
+            &selected_card_ids,
+            "set_analysis_selection",
+        )?;
+        let unchanged = self
+            .analysis_scene("set_analysis_selection")?
+            .selected_card_ids_by_board
+            .get(board_id)
+            .cloned()
+            .unwrap_or_default()
+            == selected_card_ids;
         self.command_tx(move |engine, _, _| {
+            if unchanged {
+                return Ok(CommandMutation::Unchanged);
+            }
             let scene = match &mut engine.scene {
                 SceneRuntime::Analysis(scene) => scene,
                 _ => {
@@ -1963,8 +1978,13 @@ impl GameEngine {
         board_id: &str,
     ) -> Result<GameStateView, GameError> {
         self.require_analysis_board_ready(board_id, "submit_analysis_selection")?;
-        let selected_card_ids = self.analysis_selected_cards(board_id)?;
-        self.require_analysis_cards_available(board_id, &selected_card_ids)?;
+        let selected_card_ids =
+            self.analysis_selected_cards(board_id, "submit_analysis_selection")?;
+        self.require_analysis_cards_available(
+            board_id,
+            &selected_card_ids,
+            "submit_analysis_selection",
+        )?;
         self.command_tx(move |engine, command_id, next_ordinal| {
             engine.submit_analysis_inner(
                 board_id,
@@ -1995,16 +2015,19 @@ impl GameEngine {
         Ok(())
     }
 
-    fn analysis_selected_cards(&self, board_id: &str) -> Result<BTreeSet<String>, GameError> {
-        let scene = match &self.scene {
-            SceneRuntime::Analysis(scene) => scene,
-            _ => {
-                return Err(GameError::wrong_mode(
-                    "submit_analysis_selection",
-                    "not analysis",
-                ))
-            }
-        };
+    fn analysis_scene(&self, action: &str) -> Result<&AnalysisSceneState, GameError> {
+        match &self.scene {
+            SceneRuntime::Analysis(scene) => Ok(scene),
+            _ => Err(GameError::wrong_mode(action, "not analysis")),
+        }
+    }
+
+    fn analysis_selected_cards(
+        &self,
+        board_id: &str,
+        action: &str,
+    ) -> Result<BTreeSet<String>, GameError> {
+        let scene = self.analysis_scene(action)?;
         Ok(scene
             .selected_card_ids_by_board
             .get(board_id)
@@ -2016,11 +2039,9 @@ impl GameEngine {
         &self,
         board_id: &str,
         card_ids: &BTreeSet<String>,
+        action: &str,
     ) -> Result<(), GameError> {
-        let scene = match &self.scene {
-            SceneRuntime::Analysis(scene) => scene,
-            _ => return Err(GameError::wrong_mode("analysis cards", "not analysis")),
-        };
+        let scene = self.analysis_scene(action)?;
         let board = scene
             .board(board_id)
             .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
@@ -6716,6 +6737,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     "summary": "Fixture chapter.",
                     "scenes": [
                         {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "investigation", "file": "chapter_1/investigation_scene_1.json"},
                         {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
                     ]
                 }]
@@ -6730,6 +6752,31 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 "title": "Opening",
                 "summary": "Opening fixture.",
                 "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_dir.join("investigation_scene_1.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_scene_1",
+                "title": "Investigation",
+                "summary": "Investigation fixture.",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": {"unlock": "auto", "dialogue": []}
             }"#,
         )
         .unwrap();

@@ -52,7 +52,7 @@ impl GameEngine {
         }
         let chapter_idx = chapter_idx.ok_or_else(|| GameError::unknown_chapter(chapter_id))?;
         let queue_gen = self.next_queue_gen;
-        let (scene_idx, new_scene) = find_scene_runtime_by_id(
+        let (scene_idx, mut new_scene) = find_scene_runtime_by_id(
             &self.resources_dir,
             &self.story_catalog,
             &self.chapters[chapter_idx],
@@ -60,6 +60,15 @@ impl GameEngine {
             queue_gen,
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+        if let SceneRuntime::Analysis(scene) = &mut new_scene {
+            for board in &scene.def.boards {
+                for card in &board.common().cards {
+                    if let super::schema::AnalysisCardSource::Practice { id } = &card.source {
+                        scene.practice_card_ids.insert(id.clone());
+                    }
+                }
+            }
+        }
 
         self.command_tx(move |engine, command_id, next_ordinal| {
             engine.current_chapter_idx = chapter_idx;
@@ -362,11 +371,58 @@ pub(super) fn load_chapter_manifests(
     Ok(chapters)
 }
 
+/// Practice cards are a tutorial handoff from the immediately preceding
+/// investigation scene. Analysis scenes without practice cards are ordinary
+/// scene nodes and may follow any scene type. Keep this graph invariant at a
+/// boundary that can see the ordered scenes within each chapter;
+/// `load_scene_runtime` only receives one scene and cannot prove the
+/// predecessor relationship.
+pub(super) fn validate_analysis_scene_adjacency(
+    resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
+    chapters: &[ChapterManifest],
+) -> Result<(), GameError> {
+    for chapter in chapters {
+        let mut previous_scene: Option<SceneJson> = None;
+        for scene_ref in &chapter.scenes {
+            let current_scene =
+                load_scene_json_for_ref(resources_dir, catalog, &chapter.id, scene_ref)?;
+
+            if let SceneJson::Analysis(definition) = &current_scene {
+                let uses_practice_cards = definition.boards.iter().any(|board| {
+                    board.common().cards.iter().any(|card| {
+                        matches!(
+                            &card.source,
+                            super::schema::AnalysisCardSource::Practice { .. }
+                        )
+                    })
+                });
+                if uses_practice_cards
+                    && !matches!(previous_scene.as_ref(), Some(SceneJson::Investigation(_)))
+                {
+                    let previous = previous_scene
+                        .as_ref()
+                        .map(scene_json_type)
+                        .map(scene_type_label)
+                        .unwrap_or("the start of this chapter");
+                    return Err(GameError::scene_validation_failed(format!(
+                        "{}: analysis scene '{}' uses practice cards and must be immediately preceded by an investigation scene in chapter '{}', but the previous scene is {previous}; direct investigation-to-analysis adjacency is required.",
+                        scene_ref.file, definition.id, chapter.id
+                    )));
+                }
+            }
+            previous_scene = Some(current_scene);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn scene_navigation_index_from_chapters(
     resources_dir: &std::path::Path,
     catalog: &StoryCatalog,
     chapters: &[ChapterManifest],
 ) -> Result<SceneNavigationIndex, GameError> {
+    validate_analysis_scene_adjacency(resources_dir, catalog, chapters)?;
     let mut chapter_views = Vec::with_capacity(chapters.len());
     let mut seen_chapter_ids = std::collections::HashSet::new();
 
@@ -707,12 +763,151 @@ mod tests {
                         "cards": [],
                         "resultDialogue": []
                     }},
-                    "minimumSelected": 1,
+                    "minimumSelected": 0,
                     "acceptedSelections": [[]]
                 }}],
                 "outro": []
             }}"#
         )
+    }
+
+    fn analysis_scene_with_practice_json(id: &str, practice_id: &str) -> String {
+        let mut scene: serde_json::Value = serde_json::from_str(&analysis_scene_json(id))
+            .expect("practice analysis fixture must be valid JSON");
+        scene["boards"][0]["common"]["cards"] = serde_json::json!([
+            {
+                "id": "practice_card",
+                "label": "Practice",
+                "source": { "kind": "practice", "id": practice_id },
+                "summary": "Practice"
+            }
+        ]);
+        scene["boards"][0]["minimumSelected"] = serde_json::json!(1);
+        scene["boards"][0]["acceptedSelections"] = serde_json::json!([["practice_card"]]);
+        scene.to_string()
+    }
+
+    #[test]
+    fn chapter_loading_allows_non_practice_analysis_after_linear_scene() {
+        let resources = acquisition_navigation_resources(
+            "analysis-adjacency-validation",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_2.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                ("scene_0.json", linear_scene_json("scene_0", "opening beat")),
+                (
+                    "analysis_scene_2.json",
+                    analysis_scene_json("analysis_scene_2"),
+                ),
+            ],
+        );
+
+        GameEngine::new_started(resources.clone())
+            .expect("analysis without practice cards may follow a linear scene");
+        GameEngine::scene_navigation_index(resources.clone())
+            .expect("navigation index should allow non-practice analysis after linear scene");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn chapter_loading_rejects_practice_analysis_after_linear_scene() {
+        let resources = acquisition_navigation_resources(
+            "practice-analysis-adjacency-validation",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                ("scene_0.json", linear_scene_json("scene_0", "opening beat")),
+                (
+                    "analysis_scene_1.json",
+                    analysis_scene_with_practice_json("analysis_scene_1", "prac_1"),
+                ),
+            ],
+        );
+
+        let error = match GameEngine::new_started(resources.clone()) {
+            Ok(_) => panic!("practice analysis must be preceded by an investigation"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error.message.contains("practice"));
+        assert!(error.message.contains("investigation"));
+        assert!(error.message.contains("immediately"));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn chapter_loading_rejects_practice_analysis_at_chapter_boundary() {
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let resources = std::env::temp_dir().join(format!(
+            "lyra-practice-analysis-chapter-boundary-{}-{}",
+            std::process::id(),
+            n,
+        ));
+        std::fs::create_dir_all(resources.join("chapter_1")).unwrap();
+        std::fs::create_dir_all(resources.join("chapter_2")).unwrap();
+        write_empty_story_catalog_and_content_manifest(&resources);
+        std::fs::write(
+            resources.join("chapters.json"),
+            r#"{
+                "chapters": [
+                    {
+                        "id": "chapter_1",
+                        "title": "Chapter One",
+                        "summary": "Chapter One",
+                        "scenes": [{"type": "investigation", "file": "chapter_1/investigation_scene_0.json"}]
+                    },
+                    {
+                        "id": "chapter_2",
+                        "title": "Chapter Two",
+                        "summary": "Chapter Two",
+                        "scenes": [{"type": "analysis", "file": "chapter_2/analysis_scene_1.json"}]
+                    }
+                ]
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            resources.join("chapter_1/investigation_scene_0.json"),
+            investigation_scene_json(
+                "investigation_scene_0",
+                None,
+                None,
+                serde_json::json!("auto"),
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            resources.join("chapter_2/analysis_scene_1.json"),
+            analysis_scene_with_practice_json("analysis_scene_1", "prac_1"),
+        )
+        .unwrap();
+
+        let error = match GameEngine::new_started(resources.clone()) {
+            Ok(_) => panic!("practice analysis must not inherit an investigation across chapters"),
+            Err(error) => error,
+        };
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(error.message.contains("start of this chapter"));
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     fn linear_scene_json(id: &str, text: &str) -> String {
@@ -797,6 +992,23 @@ mod tests {
             "outro": { "unlock": outro_unlock, "dialogue": [] }
         })
         .to_string()
+    }
+
+    fn investigation_scene_with_practice_json(id: &str, practice_id: &str) -> String {
+        let mut scene: serde_json::Value = serde_json::from_str(&investigation_scene_json(
+            id,
+            None,
+            None,
+            serde_json::json!({
+                "predicate": "hotspot_investigated",
+                "id": "never"
+            }),
+        ))
+        .expect("practice investigation fixture must be valid JSON");
+        scene["sublocations"][0]["reveals"] = serde_json::json!([
+            { "kind": "practice", "id": practice_id }
+        ]);
+        scene.to_string()
     }
 
     // Break caught: startup priming treats baseline inventory as command 1
@@ -1657,22 +1869,20 @@ mod tests {
                     "title": "Chapter One",
                     "summary": "Fixture chapter.",
                     "scenes": [
-                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "investigation", "file": "chapter_1/investigation_scene_0.json"},
                         {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
                     ]
                 }]
             }"#,
             &[
                 (
-                    "scene_0.json",
-                    r#"{
-                        "type": "linear",
-                        "id": "scene_0",
-                        "title": "Opening",
-                        "summary": "Opening fixture.",
-                        "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
-                    }"#
-                    .to_string(),
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        Some("evidence_a"),
+                        None,
+                        serde_json::json!("auto"),
+                    ),
                 ),
                 (
                     "analysis_scene_1.json",
@@ -1703,7 +1913,7 @@ mod tests {
             visible_boards.as_slice(),
             [AnalysisBoardView::Threshold {
                 id,
-                minimum_selected: 1,
+                minimum_selected: 0,
                 ..
             }] if id == "board_1"
         ));
@@ -2271,6 +2481,7 @@ mod tests {
                     "summary": "Fixture chapter.",
                     "scenes": [
                         {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "investigation", "file": "chapter_1/investigation_scene_0.json"},
                         {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"},
                         {"type": "interrogation", "file": "chapter_1/interrogation_scene_1.json"}
                     ]
@@ -2287,6 +2498,15 @@ mod tests {
                         "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
                     }"#
                     .to_string(),
+                ),
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        None,
+                        None,
+                        serde_json::json!("auto"),
+                    ),
                 ),
                 (
                     "analysis_scene_1.json",
@@ -2366,7 +2586,7 @@ mod tests {
                         "resultDialogue": [{{"kind": "action", "text": "Result"}}]
                     }},
                     "minimumSelected": 1,
-                    "acceptedSelections": [["card_a"]]
+                    "acceptedSelections": [["card_b"]]
                 }}],
                 "outro": []
             }}"#
@@ -2382,22 +2602,15 @@ mod tests {
                     "title": "Chapter One",
                     "summary": "Fixture chapter.",
                     "scenes": [
-                        {"type": "linear", "file": "chapter_1/scene_0.json"},
+                        {"type": "investigation", "file": "chapter_1/investigation_scene_0.json"},
                         {"type": "analysis", "file": "chapter_1/analysis_scene_1.json"}
                     ]
                 }]
             }"#,
             &[
                 (
-                    "scene_0.json",
-                    r#"{
-                        "type": "linear",
-                        "id": "scene_0",
-                        "title": "Opening",
-                        "summary": "Opening fixture.",
-                        "queue": [{"kind": "line", "speaker": "A", "text": "Opening."}]
-                    }"#
-                    .to_string(),
+                    "investigation_scene_0.json",
+                    investigation_scene_with_practice_json("investigation_scene_0", "prac_b"),
                 ),
                 (
                     "analysis_scene_1.json",
@@ -2419,6 +2632,44 @@ mod tests {
         ]);
         std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
         resources
+    }
+
+    #[test]
+    fn direct_investigation_to_analysis_transfers_revealed_card_and_accepts_submission() {
+        let resources = analysis_resources_with_cards("analysis-direct-practice-transfer");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let view = engine
+            .inspect_hotspot("never")
+            .expect("normal hotspot progression should enter analysis");
+        assert!(matches!(view.scene, SceneView::Analysis { .. }));
+        assert!(
+            matches!(view.mode, ModeView::Analysis { ref board_id, .. } if board_id == "board_1")
+        );
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("direct navigation should land in analysis");
+        };
+        assert!(scene.practice_card_ids.contains("prac_b"));
+
+        engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect("the transferred practice card should be selectable");
+        let submitted = engine
+            .submit_analysis_selection("board_1")
+            .expect("the transferred practice card should be accepted");
+        let ModeView::Dialogue { current, .. } = &submitted.mode else {
+            panic!("accepted submission should open result dialogue");
+        };
+        assert!(matches!(
+            current,
+            DialogueItem::Action { text } if text == "Result"
+        ));
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("submission should remain in analysis while result dialogue plays");
+        };
+        assert!(scene.is_board_completed("board_1"));
+        assert!(scene.practice_card_ids.is_empty());
+        let _ = std::fs::remove_dir_all(resources);
     }
 
     fn add_evidence_to_inventory(engine: &mut GameEngine, id: &str) {
@@ -2446,6 +2697,44 @@ mod tests {
             .set_analysis_selection("board_1", vec!["card_a".into()])
             .expect_err("set_analysis_selection must reject non-analysis mode");
         assert_eq!(error.code, "wrongMode");
+        assert!(error.message.contains("set_analysis_selection"));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn set_analysis_selection_with_same_selection_is_unchanged() {
+        let resources = analysis_resources_with_cards("analysis-idempotent-selection");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+            scene.record_practice_card("prac_b");
+        }
+
+        engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect("first selection should change state");
+        let durable_revision = engine.durable_revision;
+        let selected = match &engine.scene {
+            SceneRuntime::Analysis(scene) => {
+                scene.selected_card_ids_by_board.get("board_1").cloned()
+            }
+            other => panic!("expected analysis scene, got {other:?}"),
+        };
+
+        engine
+            .set_analysis_selection("board_1", vec!["card_b".into()])
+            .expect("repeating the same selection should still return a view");
+        assert_eq!(engine.durable_revision, durable_revision);
+        assert_eq!(
+            match &engine.scene {
+                SceneRuntime::Analysis(scene) =>
+                    scene.selected_card_ids_by_board.get("board_1").cloned(),
+                other => panic!("expected analysis scene, got {other:?}"),
+            },
+            selected
+        );
         let _ = std::fs::remove_dir_all(resources);
     }
 
@@ -2480,14 +2769,19 @@ mod tests {
     }
 
     #[test]
-    fn set_analysis_selection_rejects_unavailable_practice_card() {
+    fn set_analysis_selection_rejects_practice_card_when_scene_state_lacks_it() {
         let resources = analysis_resources_with_cards("analysis-unavailable-card");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         add_evidence_to_inventory(&mut engine, "evidence_a");
         engine
             .jump_to_scene("chapter_1", "analysis_scene_1")
             .expect("analysis jump should succeed");
-        // card_b is a practice card, but no practice cards have been recorded
+        // Scene navigation seeds scoped practice cards for replay. Clear the
+        // scene-local state here so this command guard still covers a malformed
+        // or incomplete handoff without weakening the replay behavior.
+        if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+            scene.practice_card_ids.clear();
+        }
         let error = engine
             .set_analysis_selection("board_1", vec!["card_b".into()])
             .expect_err("unavailable practice card must be rejected");
@@ -2521,6 +2815,7 @@ mod tests {
             .submit_analysis_selection("board_1")
             .expect_err("submit must reject non-analysis mode");
         assert_eq!(error.code, "wrongMode");
+        assert!(error.message.contains("submit_analysis_selection"));
         let _ = std::fs::remove_dir_all(resources);
     }
 

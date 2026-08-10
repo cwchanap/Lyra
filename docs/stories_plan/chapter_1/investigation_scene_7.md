@@ -157,7 +157,7 @@
 - **Status:** locked
 - **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows, stopped old wall clock, shelf impact mark on floor, hard sensor light.
 
-[場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影；入口內側牆上的舊掛鐘正對著走廊盡頭，地上一道貨架撞痕。]
+[場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影；一跨過防火門、入口內側牆上的舊掛鐘指針卡住，地上一道貨架撞痕。]
 
 [感應燈延遲了兩秒才亮，光線偏白偏硬，把高貨架的影子拉成一道道斜長的柵欄。空氣裡混著潮濕的水泥味和陳年咖啡豆的酸氣，隱約還有一股金屬鏽味。]
 
@@ -170,12 +170,12 @@
 ### Hotspot: 舊掛鐘 {#old_clock}
 - **Description:** 剛跨過防火門就能看見、掛在內側倉庫入口內側牆上的舊掛鐘，指針卡在接近 22:59。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Stopped old wall clock mounted in the inner storage room as the visible source object, with clock face readable only as a vague late-night position.
+- **Scene Source Prompt:** Stopped old wall clock mounted on the inner wall of the inner-storage entrance as the visible source object, with clock face readable only as a vague late-night position.
 - **Reveals:** [evidence:old_clock_photo]
 
 [相馬律停在剛跨過防火門就能看見的入口內側牆下。這正是店長先前提過的那台舊掛鐘，指針仍卡在接近 22:59；高貨架後方才是被陰影吞住的倉庫深處。]
 
-**相馬律**：走廊盡頭那台。店長說它常慢。
+**相馬律**：入口這台。店長說它常慢。
 
 **黑瀨徹**：開店的人記得這種東西。客人不會走到這。
 

@@ -311,6 +311,23 @@ async function dispatchGameCommand(
   return result;
 }
 
+async function dispatchAnalysisCommand(
+  command: Extract<
+    GameplayCommandName,
+    "set_analysis_selection" | "submit_analysis_selection"
+  >,
+  args: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await dispatchGameCommand(command, args);
+  } catch (error) {
+    // runCommand owns backend failures, while this catches failures from the
+    // remaining state-application path (for example, frame synchronization).
+    // Keep both paths on the shared ErrorBanner surface.
+    gameState.error = normalizeError(error);
+  }
+}
+
 async function dispatchStateCommand(
   command: string,
   args?: Record<string, unknown>,
@@ -535,8 +552,8 @@ export async function completeInterrogationPhase() {
   await dispatchGameCommand("complete_interrogation_phase", {});
 }
 export async function setAnalysisSelection(boardId: string, cardIds: string[]) {
-  await dispatchGameCommand("set_analysis_selection", { boardId, cardIds });
+  await dispatchAnalysisCommand("set_analysis_selection", { boardId, cardIds });
 }
 export async function submitAnalysisSelection(boardId: string) {
-  await dispatchGameCommand("submit_analysis_selection", { boardId });
+  await dispatchAnalysisCommand("submit_analysis_selection", { boardId });
 }

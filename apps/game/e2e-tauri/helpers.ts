@@ -1771,10 +1771,11 @@ export async function advanceDialogueUntil(
               "advanceDialogueUntil: advance control did not return and predicate did not become true",
           },
         );
-      } catch {
+      } catch (error) {
         const lastText = await lastVisibleDialogueText();
         throw new Error(
           `advanceDialogueUntil: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
+          { cause: error },
         );
       }
       if (await predicate()) return;
@@ -2030,30 +2031,71 @@ export async function completeP1PracticeTutorial(): Promise<void> {
   // The fresh journey starts in scene_p0, so reach P1's exploration surface
   // through its authored dialogue rather than assuming the controls are
   // already mounted.
-  await advanceDialogueUntil(
-    () => elementExists(`button[aria-label="${p1Practice.hotspotLabels[0]}"]`),
-    DIALOGUE_DRAIN_CAP,
-  );
-
-  for (const [index, hotspotLabel] of p1Practice.hotspotLabels.entries()) {
-    await waitForButton(hotspotLabel, 90000);
-    await clickButton(hotspotLabel);
-    // Wait for the inspect command to enter its authored dialogue before the
-    // drain predicate can observe the re-rendered exploration surface.
-    await waitForButton(anchors.advanceDialogue, 90000);
+  try {
     await advanceDialogueUntil(
-      index === lastHotspotIndex
-        ? () => elementExists(`[aria-label="${p1Practice.analysisBoard}"]`)
-        : () => p1PracticeHotspotIsInspected(hotspotLabel),
-      40,
+      () =>
+        elementExists(`button[aria-label="${p1Practice.hotspotLabels[0]}"]`),
+      DIALOGUE_DRAIN_CAP,
+    );
+  } catch (error) {
+    throw new Error(
+      `completeP1PracticeTutorial: prologue did not reach the P1 exploration surface ("${p1Practice.hotspotLabels[0]}"): ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 
-  for (const cardLabel of p1Practice.acceptedCards) {
-    await clickButton(cardLabel);
+  for (const [index, hotspotLabel] of p1Practice.hotspotLabels.entries()) {
+    try {
+      await waitForButton(hotspotLabel, 90000);
+      await clickButton(hotspotLabel);
+      // Wait for the inspect command to enter its authored dialogue before the
+      // drain predicate can observe the re-rendered exploration surface.
+      await waitForButton(anchors.advanceDialogue, 90000);
+      await advanceDialogueUntil(
+        index === lastHotspotIndex
+          ? () => elementExists(`[aria-label="${p1Practice.analysisBoard}"]`)
+          : () => p1PracticeHotspotIsInspected(hotspotLabel),
+        40,
+      );
+    } catch (error) {
+      const hotspotStage =
+        index === lastHotspotIndex
+          ? `did not open the analysis board ("${p1Practice.analysisBoard}")`
+          : "did not complete inspection";
+      throw new Error(
+        `completeP1PracticeTutorial: hotspot "${hotspotLabel}" ${hotspotStage}: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
   }
-  await clickButton(p1Practice.submit);
+
+  for (const cardLabel of p1Practice.acceptedCards) {
+    try {
+      await clickButton(cardLabel);
+    } catch (error) {
+      throw new Error(
+        `completeP1PracticeTutorial: accepting analysis card "${cardLabel}" failed: ${error instanceof Error ? error.message : String(error)}`,
+        { cause: error },
+      );
+    }
+  }
+
+  try {
+    await clickButton(p1Practice.submit);
+  } catch (error) {
+    throw new Error(
+      `completeP1PracticeTutorial: analysis-board submission ("${p1Practice.submit}") failed: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
   // A correct submission transitions into the authored result dialogue. The
   // caller drains it and the remaining prologue to the existing KAGAMI anchor.
-  await waitForButton(anchors.advanceDialogue, 90000);
+  try {
+    await waitForButton(anchors.advanceDialogue, 90000);
+  } catch (error) {
+    throw new Error(
+      `completeP1PracticeTutorial: post-submission result dialogue did not appear: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    );
+  }
 }
