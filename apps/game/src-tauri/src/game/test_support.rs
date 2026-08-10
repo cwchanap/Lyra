@@ -2836,3 +2836,75 @@ pub(super) fn single_honest_question_scene() -> crate::game::schema::Interrogati
         },
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn write_neutral_story_catalog_with_analysis_emits_analysis_indices() {
+        let dir = tempfile::tempdir().unwrap();
+        write_neutral_story_catalog_with_analysis(
+            dir.path(),
+            &[],
+            &[],
+            &[("chapter_1", "analysis_scene_1")],
+            &[("chapter_1", "analysis_scene_1", "evidence_packages")],
+        );
+        let catalog_bytes = std::fs::read(dir.path().join("story_catalog.json")).unwrap();
+        let catalog: serde_json::Value =
+            serde_json::from_slice(&catalog_bytes).expect("catalog must be valid JSON");
+        assert_eq!(
+            catalog["analysisScenes"],
+            serde_json::json!([{"chapterId": "chapter_1", "sceneId": "analysis_scene_1"}])
+        );
+        assert_eq!(
+            catalog["analysisBoards"],
+            serde_json::json!([{
+                "chapterId": "chapter_1",
+                "sceneId": "analysis_scene_1",
+                "boardId": "evidence_packages",
+            }])
+        );
+    }
+
+    #[test]
+    fn token_from_panics_on_non_dialogue_mode() {
+        let view = GameStateView {
+            mode: ModeView::GameComplete,
+            chapter: ChapterView {
+                id: "chapter_1".into(),
+                title: "Chapter One".into(),
+                summary: "".into(),
+                index: 0,
+                total: 1,
+            },
+            scene: SceneView::Linear {
+                id: "test".into(),
+                title: "Test".into(),
+                summary: "".into(),
+                index: 0,
+                total: 1,
+            },
+            inventory: crate::game::view::InventoryView {
+                evidence: vec![],
+                statements: vec![],
+            },
+            story: crate::game::story::StoryStateView {
+                facts: vec![],
+                questions: vec![],
+                objectives: vec![],
+                authorizations: vec![],
+            },
+            dialogue_history: vec![],
+            pending_acquisition: None,
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            token_from(&view);
+        }));
+        assert!(
+            result.is_err(),
+            "token_from must panic on non-dialogue mode"
+        );
+    }
+}

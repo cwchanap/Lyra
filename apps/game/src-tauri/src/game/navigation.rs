@@ -3418,4 +3418,465 @@ mod tests {
         assert_eq!(error.code, "wrongMode");
         let _ = std::fs::remove_dir_all(resources);
     }
+
+    #[test]
+    fn load_chapter_manifests_rejects_empty_chapters() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-empty-chapters-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        fs::create_dir_all(&d).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
+        fs::write(d.join("chapters.json"), r#"{"chapters": []}"#).unwrap();
+
+        let err = load_chapter_manifests(&d).expect_err("empty chapters should be rejected");
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("no chapters"));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn scene_navigation_index_from_chapters_rejects_duplicate_chapter_id_directly() {
+        // load_chapter_manifests rejects duplicate chapter ids at load time,
+        // so GameEngine::scene_navigation_index never reaches the duplicate
+        // check inside scene_navigation_index_from_chapters. Call the inner
+        // function directly with hand-built ChapterManifests to exercise that
+        // defense-in-depth layer.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-nav-index-dup-direct-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
+        fs::write(
+            chapter_dir.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "S", "summary": "Fixture scene summary.", "queue": [] }"#,
+        )
+        .unwrap();
+
+        let catalog = StoryCatalog::load(&d).unwrap();
+        let chapters = vec![
+            ChapterManifest {
+                id: "chapter_1".into(),
+                title: "First".into(),
+                summary: "First".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            },
+            ChapterManifest {
+                id: "chapter_1".into(),
+                title: "Second".into(),
+                summary: "Second".into(),
+                scenes: vec![SceneRef {
+                    scene_type: SceneType::Linear,
+                    file: "chapter_1/scene_0.json".into(),
+                }],
+            },
+        ];
+
+        let err = scene_navigation_index_from_chapters(&d, &catalog, &chapters)
+            .expect_err("duplicate chapter id should be rejected");
+        assert_eq!(err.code, "chapterLoadFailed");
+        assert!(err.message.contains("duplicate chapter id \"chapter_1\""));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn acquisition_navigation_resources_skips_scenes_without_id() {
+        // The helper builds an evidence index from scene JSON "id" fields.
+        // Scenes without an "id" are skipped (continue) rather than panicking.
+        let resources = acquisition_navigation_resources(
+            "skip-no-id",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "Fixture chapter.",
+                    "scenes": [
+                        {"type": "linear", "file": "chapter_1/scene_0.json"}
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "scene_0.json",
+                    r#"{ "type": "linear", "id": "scene_0", "title": "S", "summary": "Fixture scene summary.", "queue": [] }"#.to_string(),
+                ),
+                (
+                    "no_id.json",
+                    r#"{ "type": "linear", "title": "No ID", "summary": "Fixture scene summary.", "queue": [] }"#.to_string(),
+                ),
+            ],
+        );
+        // Helper succeeded despite the scene without "id".
+        assert!(resources.join("chapters.json").exists());
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn grant_all_evidence_for_testing_skips_unloadable_scenes() {
+        // grant_all_evidence_for_testing iterates all chapters and scenes when
+        // jumping to an interrogation scene in debug builds. Scenes that fail
+        // to load are silently skipped (continue). find_scene_runtime_by_id
+        // only loads scenes from the target chapter, so a missing file in a
+        // *different* chapter does not block the jump but does exercise the
+        // grant's defensive continue path.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-grant-skip-unloadable-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        let chapter_2 = d.join("chapter_2");
+        fs::create_dir_all(&chapter_1).unwrap();
+        fs::create_dir_all(&chapter_2).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
+        fs::write(
+            d.join("story_catalog.json"),
+            r#"{
+  "schemaVersion": 2,
+  "facts": [],
+  "questions": [],
+  "objectives": [],
+  "authorizations": [],
+  "sourceGroups": [],
+  "evidenceIndex": [{
+    "id": "ch2_evidence",
+    "chapterId": "chapter_2",
+    "sceneId": "investigation_ch2",
+    "provenance": {
+      "sourceKind": "unspecified",
+      "representationLayer": "none",
+      "proceduralStatus": "unspecified",
+      "completeness": "unspecified",
+      "confidence": "unspecified",
+      "sourceGroupId": null,
+      "sourceLabel": null,
+      "proofCapabilities": [],
+      "supersedesRecordId": null
+    }
+  }],
+  "statementsIndex": []
+}"#,
+        )
+        .unwrap();
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+            "chapters": [
+                {
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_1.json" }
+                    ]
+                },
+                {
+                    "id": "chapter_2",
+                    "title": "Chapter Two",
+                    "summary": "Second",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_2/investigation_ch2.json" }
+                    ]
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "Opening", "summary": "Fixture scene summary.", "queue": [{ "kind": "line", "speaker": "A", "text": "start" }] }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("interrogation_1.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_1",
+                "title": "Interrogation",
+                "summary": "Fixture scene summary.",
+                "intro": [],
+                "phases": [{
+                    "kind": "inquiry",
+                    "id": "phase_1",
+                    "label": "Phase 1",
+                    "subject": { "id": "witness", "name": "Witness", "role": "Witness", "bio": "Quiet." },
+                    "required": true,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "interrogation room",
+                    "backgroundAssetId": "background.interrogation",
+                    "entryDialogue": [],
+                    "complete": "auto",
+                    "questions": [{
+                        "id": "q1",
+                        "label": "Q1",
+                        "status": "unlocked",
+                        "required": true,
+                        "unlock": null,
+                        "reveals": [],
+                        "testimony": {
+                            "onLoop": [{ "kind": "line", "speaker": "witness", "text": "loop" }],
+                            "lines": [{
+                                "id": "l1",
+                                "label": "Line 1",
+                                "content": [{ "kind": "line", "speaker": "witness", "text": "testimony" }],
+                                "contradiction": null
+                            }]
+                        }
+                    }]
+                }],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_2.join("investigation_ch2.json"),
+            r#"{
+                "type": "investigation",
+                "id": "investigation_ch2",
+                "title": "Chapter 2 Investigation",
+                "summary": "Fixture scene summary.",
+                "intro": [],
+                "sublocations": [{
+                    "id": "room",
+                    "label": "Room",
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": "room",
+                    "transitionDialogue": [],
+                    "hotspots": [],
+                    "characters": []
+                }],
+                "evidenceManifest": [{
+                    "id": "ch2_evidence",
+                    "name": "Ch2 Evidence",
+                    "description": "d",
+                    "details": "d",
+                    "imageAssetId": null,
+                    "onCollect": [],
+                    "onReexamine": null
+                }],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+
+        // Delete the chapter 2 investigation scene so grant_all_evidence_for_testing
+        // cannot load it. The engine already started successfully; the file
+        // is only needed again during the grant loop. find_scene_runtime_by_id
+        // only loads chapter 1 scenes, so the jump is unaffected.
+        std::fs::remove_file(d.join("chapter_2/investigation_ch2.json")).unwrap();
+
+        // Jump to the interrogation scene. In debug builds this triggers
+        // grant_all_evidence_for_testing, which iterates all chapters and
+        // skips the missing chapter 2 scene without panicking.
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_1")
+            .expect("jump to interrogation should succeed despite missing chapter 2 scene");
+
+        // The interrogation scene has an empty intro and one phase, so the
+        // engine stays in the interrogation scene.
+        assert!(matches!(view.scene, SceneView::Interrogation { .. }));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_interrogation_with_empty_intro_advances_when_outro_satisfied() {
+        // An interrogation scene with an empty intro, no phases, and an auto
+        // outro with empty dialogue immediately satisfies its outro on entry.
+        // prime_initial_queue_for_command sets needs_interrogation_advance =
+        // true (empty intro), try_advance_interrogation returns Ok(true)
+        // (outro satisfied, empty dialogue), and advance_scene moves to the
+        // next scene.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-interrogation-auto-advance-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_auto.json" },
+                        { "type": "linear", "file": "chapter_1/scene_2.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "Opening", "summary": "Fixture scene summary.", "queue": [{ "kind": "line", "speaker": "A", "text": "start" }] }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("interrogation_auto.json"),
+            r#"{
+                "type": "interrogation",
+                "id": "interrogation_auto",
+                "title": "Auto Advance",
+                "summary": "Fixture scene summary.",
+                "intro": [],
+                "phases": [],
+                "evidenceManifest": [],
+                "statementManifest": [],
+                "outro": { "unlock": "auto", "dialogue": [] }
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{ "type": "linear", "id": "scene_2", "title": "After", "summary": "Fixture scene summary.", "queue": [{ "kind": "line", "speaker": "B", "text": "after" }] }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine
+            .jump_to_scene("chapter_1", "interrogation_auto")
+            .expect("jump should advance past the empty interrogation to scene_2");
+
+        // The interrogation scene immediately advanced to scene_2.
+        assert!(matches!(view.scene, SceneView::Linear { id, .. } if id == "scene_2"));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn jump_to_analysis_with_empty_intro_advances_when_all_boards_completed() {
+        // An analysis scene with an empty intro, no boards, and an empty outro
+        // has all_boards_completed_qualified return true vacuously. On entry,
+        // prime_initial_queue_for_command sets needs_analysis_advance = true
+        // (empty intro), try_advance_analysis returns Ok(true) (all boards
+        // completed, empty outro), and advance_scene moves to the next scene.
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-analysis-auto-advance-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        let chapter_1 = d.join("chapter_1");
+        fs::create_dir_all(&chapter_1).unwrap();
+        // Write story catalog with the analysis scene registered so
+        // complete_analysis_scene succeeds during try_advance_analysis.
+        fs::write(
+            d.join("story_catalog.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "schemaVersion": 2,
+                "facts": [],
+                "questions": [],
+                "objectives": [],
+                "authorizations": [],
+                "sourceGroups": [],
+                "evidenceIndex": [],
+                "statementsIndex": [],
+                "analysisScenes": [
+                    {"chapterId": "chapter_1", "sceneId": "analysis_auto"}
+                ],
+                "analysisBoards": []
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        write_content_manifest(&d);
+        fs::write(
+            d.join("chapters.json"),
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_0.json" },
+                        { "type": "analysis", "file": "chapter_1/analysis_auto.json" },
+                        { "type": "linear", "file": "chapter_1/scene_2.json" }
+                    ]
+                }]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_0.json"),
+            r#"{ "type": "linear", "id": "scene_0", "title": "Opening", "summary": "Fixture scene summary.", "queue": [{ "kind": "line", "speaker": "A", "text": "start" }] }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("analysis_auto.json"),
+            r#"{
+                "type": "analysis",
+                "id": "analysis_auto",
+                "title": "Auto Advance",
+                "summary": "Fixture scene summary.",
+                "assetRefs": [],
+                "intro": [],
+                "boards": [],
+                "outro": []
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            chapter_1.join("scene_2.json"),
+            r#"{ "type": "linear", "id": "scene_2", "title": "After", "summary": "Fixture scene summary.", "queue": [{ "kind": "line", "speaker": "B", "text": "after" }] }"#,
+        )
+        .unwrap();
+
+        let mut engine = GameEngine::new_started(d.clone()).unwrap();
+        let view = engine
+            .jump_to_scene("chapter_1", "analysis_auto")
+            .expect("jump should advance past the empty analysis to scene_2");
+
+        // The analysis scene immediately advanced to scene_2.
+        assert!(matches!(view.scene, SceneView::Linear { id, .. } if id == "scene_2"));
+
+        let _ = fs::remove_dir_all(d);
+    }
 }

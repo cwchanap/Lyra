@@ -3888,4 +3888,43 @@ mod tests {
             "invalidSaveProgress"
         );
     }
+
+    #[test]
+    fn analysis_restore_rejects_packaged_definition_with_duplicate_board_ids() {
+        let mut definition = current_analysis_def();
+        let AnalysisBoardJson::Order { common, .. } = &mut definition.boards[1] else {
+            panic!("second board should be Order");
+        };
+        common.id = "classify_board".into();
+        let error = restore_current_analysis(&current_analysis_progress(), &definition)
+            .expect_err("duplicate board ids must be rejected");
+        assert_eq!(error.code, "invalidSaveProgress");
+        assert!(error
+            .message
+            .contains("Packaged analysis definition contains duplicate board ids."));
+    }
+
+    #[test]
+    fn build_restore_candidate_accepts_analysis_active_board_when_available() {
+        let (_guard, resources) = p1_feedback_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("P1 analysis scene should be reachable in the fixture");
+        update_analysis_threshold(&mut engine, &["cctv_change"]);
+        // Leave the submission incomplete so the engine stays in Analysis mode
+        // with an active board that remains available after recomputation.
+        let (original, restored) = round_trip(resources, &engine);
+        let SceneRuntime::Analysis(scene) = &restored.engine.scene else {
+            panic!("restored P1 scene should remain analysis");
+        };
+        assert!(scene
+            .active_board_id
+            .as_deref()
+            .is_some_and(|id| scene.available_board_ids.contains(id)));
+        assert_eq!(
+            capture_checkpoint(&restored.engine).unwrap().snapshot,
+            original.snapshot
+        );
+    }
 }
