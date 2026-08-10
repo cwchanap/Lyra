@@ -2049,14 +2049,24 @@ export async function completeP1PracticeTutorial(): Promise<void> {
       await waitForButton(hotspotLabel, 90000);
       await clickButton(hotspotLabel);
       // Wait for the inspect command to enter its authored dialogue before the
-      // drain predicate can observe the re-rendered exploration surface.
-      await waitForButton(anchors.advanceDialogue, 90000);
-      await advanceDialogueUntil(
+      // drain predicate can observe the re-rendered exploration surface. The
+      // final hotspot may settle straight into the analysis board once its
+      // inspection dialogue is exhausted, so accept either the advance control
+      // or the iteration's target state.
+      const reachedTarget =
         index === lastHotspotIndex
           ? () => elementExists(`[aria-label="${p1Practice.analysisBoard}"]`)
-          : () => p1PracticeHotspotIsInspected(hotspotLabel),
-        40,
+          : () => p1PracticeHotspotIsInspected(hotspotLabel);
+      await browser.waitUntil(
+        async () =>
+          (await reachedTarget()) || elementExists(advanceDialogueSelector),
+        {
+          timeout: 90000,
+          interval: 100,
+          timeoutMsg: `completeP1PracticeTutorial: hotspot "${hotspotLabel}" did not enter its inspection dialogue or reach its target state`,
+        },
       );
+      await advanceDialogueUntil(reachedTarget, 40);
     } catch (error) {
       const hotspotStage =
         index === lastHotspotIndex

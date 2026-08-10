@@ -753,6 +753,9 @@ mod tests {
         assert!(GameError::locked_analysis_board("board_x")
             .message
             .contains("board_x"));
+        assert!(GameError::analysis_board_not_active("board_x")
+            .message
+            .contains("board_x"));
         assert!(GameError::unavailable_analysis_card("board_x", "card_y")
             .message
             .contains("card_y"));

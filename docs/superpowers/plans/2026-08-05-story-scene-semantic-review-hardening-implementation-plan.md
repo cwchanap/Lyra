@@ -1,6 +1,6 @@
 # HPA-561 Durable Scene Asset Contracts and Semantic Review Hardening Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Workers are REQUIRED to use either superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the silent unknown-speaker fallback through the existing global character catalog, harden scene semantic/visual review, and apply the new rules to the production Chapter 1 manifest through mechanically assisted background and semantic acceptance passes.
 
@@ -657,7 +657,7 @@ Run at least Axis 3/5 on every changed scene.
 
 Append the complete new consolidated Phase 4 report under `## Final seven-axis review`.
 
-Completion condition: final verdict `SHIP` with no remaining Blocker/Important findings.
+Completion condition: final verdict `SHIP` with no remaining Blocker/Important findings. The coordinated old-clock raster regeneration and visual acceptance must also be complete before the verdict can advance to `SHIP`; while it is pending the accepted status remains `FIX-RECOMMENDED`.
 
 - [ ] **Step 9: Commit focused fixes and final report**
 
@@ -695,7 +695,7 @@ No missing `stationery_owner` or `masuda_kei` portrait warnings.
 
 - [ ] **Step 5: Verify semantic gate**
 
-Final saved consolidated review has verdict `SHIP` with no Blocker/Important findings; do not substitute hand-entered counters.
+Final saved consolidated review has verdict `SHIP` with no Blocker/Important findings; do not substitute hand-entered counters. The coordinated old-clock raster regeneration and visual acceptance must be complete before `SHIP` is declared; until then the accepted report status is `FIX-RECOMMENDED` and the gate is not satisfied.
 
 - [ ] **Step 6: Verify story boundary**
 

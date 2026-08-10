@@ -207,6 +207,9 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
 - **Required:** `Kind` — always `inquiry` (kept for forward compatibility;
   there is no other value the parser accepts).
 - **Required when assets are enabled:** `Background Prompt`
+- **Optional when assets are enabled:** `Background Asset ID` — repeat the exact
+  existing id to reuse an unchanged background; omitting it makes the compiler
+  generate a new one (see below).
 - **Optional:** `Required` (`true`/`false`, defaults to `true`), `Status`
   (`locked`/`unlocked`, defaults to `unlocked`), `Unlock`, `Reveals`,
   `Complete` (defaults to `auto`: the phase never ends on its own — the player
