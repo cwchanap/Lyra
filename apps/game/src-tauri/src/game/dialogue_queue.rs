@@ -64,7 +64,6 @@ pub(crate) enum DialogueSegmentOriginV1 {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[allow(dead_code)] // Task 7 exposes this wire boundary before the full save schema consumes it.
 pub(crate) struct ActiveDialogueStateV1 {
     pub(crate) segment_origins: Vec<DialogueSegmentOriginV1>,
     pub(crate) active_segment_index: usize,
@@ -406,9 +405,9 @@ mod persistence_adapter_tests {
         );
     }
 
-    // Analysis origins are now restored through the same packaged-scene
-    // boundary as other dialogue origins. A missing packaged scene therefore
-    // yields the ordinary load error rather than a legacy analysis ban.
+    // Historical guard coverage: Analysis origins now restore through the
+    // same packaged-scene boundary as other dialogue origins. A missing
+    // packaged scene therefore yields the ordinary load error.
     #[test]
     fn restore_analysis_dialogue_origins_load_their_packaged_scene() {
         let (resources, engine) = fixture();

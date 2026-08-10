@@ -1,11 +1,9 @@
 use super::schema::{
-    AnalysisBoardCardsSnapshotV1, AnalysisBoardGroupSnapshotV1, AudioCueSnapshotV1,
-    CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1, DialogueHistorySnapshotV1,
-    EvidenceInventoryEntryV1, InterrogationOverrideRefV1, InventorySnapshotV1,
-    InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshot, SaveSummary,
-    SceneProgressSnapshot, StatementInventoryEntryV1,
+    AudioCueSnapshotV1, CharacterTopicRefV1, CrossExamSnapshotV1, DialogueHistoryEntryV1,
+    DialogueHistorySnapshotV1, EvidenceInventoryEntryV1, InterrogationOverrideRefV1,
+    InventorySnapshotV1, InvestigationOverrideRefV1, LastVisualCueSnapshotV1, SaveSnapshot,
+    SaveSummary, SceneProgressSnapshot, StatementInventoryEntryV1,
 };
-use crate::game::analysis::{AnalysisDraft, AnalysisFeedbackState};
 use crate::game::dialogue::DIALOGUE_HISTORY_LIMIT;
 use crate::game::dialogue_queue::{
     ActiveDialogueQueue, ActiveDialogueStateV1, DialogueSegmentOriginV1,
@@ -17,12 +15,11 @@ use crate::game::scenes::interrogation::{CrossExam, InterrogationSceneState};
 use crate::game::scenes::investigation::InvestigationSceneState;
 use crate::game::scenes::SceneRuntime;
 use crate::game::schema::{
-    AnalysisBoardJson, AnalysisSceneJson, InterrogationPhaseJson, InterrogationSceneJson,
-    InventoryTarget, InvestigationSceneJson, SceneJson,
+    AnalysisSceneJson, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
+    InvestigationSceneJson, SceneJson,
 };
 use crate::game::state::ChapterManifest;
 use crate::game::story::StoryState;
-use crate::game::unlock::StoryUnlockContext;
 use crate::game::view::{DialogueHistoryEntry, QueueToken};
 use crate::game::{GameEngine, GameError};
 use serde::Serialize;
@@ -246,20 +243,6 @@ fn scene_summary_for_checkpoint(
     }
 }
 
-fn capture_practice_card_ids<'a>(
-    board: &AnalysisBoardJson,
-    card_ids: impl Iterator<Item = &'a String>,
-    practice_card_ids: &mut BTreeSet<String>,
-) {
-    for card_id in card_ids {
-        if let Some(card) = board.common().cards.iter().find(|card| card.id == *card_id) {
-            if let crate::game::schema::AnalysisCardSource::Practice { id } = &card.source {
-                practice_card_ids.insert(id.clone());
-            }
-        }
-    }
-}
-
 pub(crate) fn capture_scene_progress(
     engine: &GameEngine,
 ) -> Result<SceneProgressSnapshot, GameError> {
@@ -438,90 +421,12 @@ fn capture_scene_progress_with_active(
                 |origin| matches!(origin, DialogueSegmentOriginV1::AnalysisOutro { .. }),
                 "analysis",
             )?;
-            let mut selected_card_ids_by_board = Vec::new();
-            let mut ordered_card_ids_by_board = Vec::new();
-            let mut group_by_card_by_board = Vec::new();
-            let mut practice_card_ids = BTreeSet::new();
-            let chapter_id = engine.chapters[engine.current_chapter_idx].id.as_str();
-            for (board_id, draft) in &scene.drafts {
-                // Completed boards are durable StoryState facts; their
-                // transient drafts and legacy practice handoff must not be
-                // copied into the inherited save wire.
-                if engine.story_state.analysis_board_completed(
-                    chapter_id,
-                    packaged.id.as_str(),
-                    board_id,
-                ) {
-                    continue;
-                }
-                let board = scene
-                    .board(board_id)
-                    .ok_or_else(|| capture_error("Analysis draft names an unknown board."))?;
-                match draft {
-                    AnalysisDraft::Threshold { selected_card_ids }
-                        if !selected_card_ids.is_empty() =>
-                    {
-                        capture_practice_card_ids(
-                            board,
-                            selected_card_ids.iter(),
-                            &mut practice_card_ids,
-                        );
-                        selected_card_ids_by_board.push(AnalysisBoardCardsSnapshotV1 {
-                            board_id: board_id.clone(),
-                            card_ids: selected_card_ids.iter().cloned().collect(),
-                        });
-                    }
-                    AnalysisDraft::Order { card_ids } if !card_ids.is_empty() => {
-                        capture_practice_card_ids(board, card_ids.iter(), &mut practice_card_ids);
-                        ordered_card_ids_by_board.push(AnalysisBoardCardsSnapshotV1 {
-                            board_id: board_id.clone(),
-                            card_ids: card_ids.clone(),
-                        });
-                    }
-                    AnalysisDraft::Classify { group_by_card } if !group_by_card.is_empty() => {
-                        capture_practice_card_ids(
-                            board,
-                            group_by_card.keys(),
-                            &mut practice_card_ids,
-                        );
-                        group_by_card_by_board.push(AnalysisBoardGroupSnapshotV1 {
-                            board_id: board_id.clone(),
-                            group_by_card: group_by_card.clone(),
-                        });
-                    }
-                    _ => {}
-                }
-            }
-            // The inherited save wire has one feedback string.  Emit the
-            // authored copy for the first typed failure while Task 6 owns the
-            // exact per-board map migration.
-            let last_feedback =
-                scene
-                    .feedback_by_board_id
-                    .iter()
-                    .next()
-                    .and_then(|(board_id, state)| {
-                        scene.board(board_id).map(|board| match state {
-                            AnalysisFeedbackState::Incomplete => {
-                                board.common().feedback.incomplete.clone()
-                            }
-                            AnalysisFeedbackState::Incorrect => {
-                                board.common().feedback.incorrect.clone()
-                            }
-                        })
-                    });
             Ok(SceneProgressSnapshot::Analysis {
                 intro_played: scene.intro_played,
                 outro_played: scene.outro_played,
-                // Completion is authoritative in StoryState; leave the
-                // inherited scene-local list empty so it cannot become a
-                // second mutable truth during the translation window.
-                completed_board_ids: Vec::new(),
-                selected_card_ids_by_board,
-                ordered_card_ids_by_board,
-                group_by_card_by_board,
-                practice_card_ids: practice_card_ids.into_iter().collect(),
-                last_feedback,
+                active_board_id: scene.active_board_id.clone(),
+                drafts: scene.drafts.clone(),
+                feedback_by_board_id: scene.feedback_by_board_id.clone(),
             })
         }
         _ => Err(capture_error(
@@ -689,19 +594,44 @@ fn validate_analysis_progress(
     scene: &AnalysisSceneState,
     packaged: &AnalysisSceneJson,
 ) -> Result<(), GameError> {
-    // The old save wire is still emitted for pre-release compatibility, but
-    // the scene itself now owns only neutral typed drafts.  Reuse the runtime
-    // validator so capture cannot serialize unknown IDs or mismatched board
-    // kinds through the adapter.
     if scene.def.id != packaged.id {
         return Err(capture_error(
             "Analysis scene definition does not match runtime state.",
         ));
     }
+    let authored_board_ids: BTreeSet<_> = packaged
+        .boards
+        .iter()
+        .map(|board| board.common().id.as_str())
+        .collect();
+    if authored_board_ids.len() != packaged.boards.len() {
+        return Err(capture_error(
+            "Packaged analysis definition contains duplicate board ids.",
+        ));
+    }
+    let draft_board_ids: BTreeSet<_> = scene.drafts.keys().map(String::as_str).collect();
+    if draft_board_ids != authored_board_ids {
+        return Err(capture_error(
+            "Analysis drafts must contain exactly one entry for every packaged board.",
+        ));
+    }
+    let validator = AnalysisSceneState::from_json(
+        packaged.clone(),
+        crate::game::scenes::analysis::RESTORED_CONSUMED_INTRO_QUEUE_GEN,
+    );
     for (board_id, draft) in &scene.drafts {
-        scene
+        validator
             .validate_draft(board_id, draft)
             .map_err(|error| capture_error(error.message))?;
+    }
+    if scene
+        .active_board_id
+        .as_deref()
+        .is_some_and(|board_id| !authored_board_ids.contains(board_id))
+    {
+        return Err(capture_error(
+            "Analysis active board references an unknown board.",
+        ));
     }
     for board_id in scene.feedback_by_board_id.keys() {
         if scene.board(board_id).is_none() {
@@ -3069,7 +2999,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_analysis_progress_rejects_unknown_completed_board() {
+    fn validate_analysis_progress_rejects_unknown_draft_board() {
         let def = analysis_def_with_threshold_board();
         let mut scene = AnalysisSceneState::from_json(def, 1);
         scene.intro_played = true;
@@ -3080,9 +3010,8 @@ mod tests {
             },
         );
         let error = validate_analysis_progress(&scene, &analysis_def_with_threshold_board())
-            .expect_err("unknown completed board must be rejected");
+            .expect_err("unknown draft board must be rejected");
         assert_eq!(error.code, "invalidSaveCapture");
-        assert!(error.message.contains("nonexistent"));
     }
 
     #[test]
