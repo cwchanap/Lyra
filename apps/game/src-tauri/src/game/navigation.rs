@@ -650,7 +650,7 @@ fn scene_type_label(scene_type: SceneType) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::analysis::AnalysisDraft;
+    use crate::game::analysis::{AnalysisDraft, AnalysisFeedbackState};
     use crate::game::state::{EvidenceRecord, SceneRef};
     use crate::game::test_support::*;
     use crate::game::unlock::StoryUnlockContext;
@@ -2710,6 +2710,31 @@ mod tests {
     }
 
     #[test]
+    fn selecting_current_analysis_board_is_unchanged_without_revision_or_history() {
+        let resources = analysis_resources_with_two_unlocked_boards("analysis-select-current");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let before_scene = format!("{:?}", engine.scene);
+        let before_history = engine.history.entries().to_vec();
+        let before_revision = engine.durable_revision();
+
+        let view = engine
+            .select_analysis_board(engine.analysis_action_token().unwrap(), "board_1".into())
+            .expect("selecting the current board should succeed");
+
+        assert!(matches!(
+            view.mode,
+            ModeView::Analysis { ref board_id, .. } if board_id == "board_1"
+        ));
+        assert_eq!(engine.durable_revision(), before_revision);
+        assert_eq!(format!("{:?}", engine.scene), before_scene);
+        assert_eq!(engine.history.entries(), before_history.as_slice());
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
     fn stale_analysis_tokens_fail_without_revision_or_state_side_effects() {
         let resources = analysis_resources_with_cards("analysis-stale-token");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
@@ -2864,6 +2889,39 @@ mod tests {
     }
 
     #[test]
+    fn accepted_analysis_submit_recomputes_availability_from_story_reveal() {
+        let resources = analysis_resources_with_reveal_unlock("analysis-submit-unlock-refresh");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert!(scene.available_board_ids.contains("board_1"));
+        assert!(!scene.available_board_ids.contains("board_2"));
+
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
+                },
+            )
+            .expect("board one draft should update");
+        engine
+            .submit_analysis_board(engine.analysis_action_token().unwrap())
+            .expect("board one should reveal board two");
+
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert!(scene.available_board_ids.contains("board_1"));
+        assert!(scene.available_board_ids.contains("board_2"));
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
     fn invalid_analysis_reveal_rolls_back_completion_draft_feedback_and_dialogue() {
         let resources = analysis_resources_with_cards("analysis-invalid-reveal-rollback");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
@@ -2914,6 +2972,157 @@ mod tests {
         let _ = std::fs::remove_dir_all(resources);
     }
 
+    #[test]
+    fn update_analysis_classify_replaces_partial_draft_and_clears_feedback() {
+        let resources = analysis_resources_with_cards("analysis-update-classify");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        replace_active_analysis_board_for_command_test(
+            &mut engine,
+            serde_json::from_value(serde_json::json!({
+                "kind": "classify",
+                "common": {
+                    "id": "board_classify",
+                    "label": "Classify",
+                    "prompt": "Classify cards.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                    "cards": [
+                        {"id": "card_a", "label": "A", "source": {"kind": "practice", "id": "practice_a"}, "summary": "A"},
+                        {"id": "card_b", "label": "B", "source": {"kind": "practice", "id": "practice_b"}, "summary": "B"}
+                    ],
+                    "resultDialogue": []
+                },
+                "groups": [
+                    {"id": "group_a", "label": "Group A", "description": "A"},
+                    {"id": "group_b", "label": "Group B", "description": "B"}
+                ],
+                "acceptedGroupByCard": {"card_a": "group_a", "card_b": "group_b"}
+            }))
+            .unwrap(),
+        );
+
+        let first_draft: std::collections::BTreeMap<String, String> =
+            [("card_a".to_owned(), "group_a".to_owned())]
+                .into_iter()
+                .collect();
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Classify {
+                    group_by_card: first_draft.clone(),
+                },
+            )
+            .expect("partial classify draft should replace the empty draft");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(
+            scene.drafts["board_classify"],
+            AnalysisDraft::Classify {
+                group_by_card: first_draft,
+            }
+        );
+        assert!(scene.feedback_by_board_id.is_empty());
+
+        let replacement_draft: std::collections::BTreeMap<String, String> =
+            [("card_b".to_owned(), "group_b".to_owned())]
+                .into_iter()
+                .collect();
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Classify {
+                    group_by_card: replacement_draft.clone(),
+                },
+            )
+            .expect("a later classify update should replace the whole draft");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(
+            scene.drafts["board_classify"],
+            AnalysisDraft::Classify {
+                group_by_card: replacement_draft,
+            }
+        );
+        assert!(scene.feedback_by_board_id.is_empty());
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn update_analysis_order_replaces_partial_draft_and_clears_feedback() {
+        let resources = analysis_resources_with_cards("analysis-update-order");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_1")
+            .expect("analysis jump should succeed");
+        replace_active_analysis_board_for_command_test(
+            &mut engine,
+            serde_json::from_value(serde_json::json!({
+                "kind": "order",
+                "common": {
+                    "id": "board_order",
+                    "label": "Order",
+                    "prompt": "Order cards.",
+                    "unlock": null,
+                    "reveals": [],
+                    "feedback": {"incomplete": "Incomplete.", "incorrect": "Incorrect.", "hint": null},
+                    "cards": [
+                        {"id": "card_a", "label": "A", "source": {"kind": "practice", "id": "practice_a"}, "summary": "A"},
+                        {"id": "card_b", "label": "B", "source": {"kind": "practice", "id": "practice_b"}, "summary": "B"}
+                    ],
+                    "resultDialogue": []
+                },
+                "acceptedOrder": ["card_a", "card_b"],
+                "fixedAnchors": [{"cardId": "card_a", "position": 1}]
+            }))
+            .unwrap(),
+        );
+
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Order {
+                    card_ids: vec!["card_a".into()],
+                },
+            )
+            .expect("partial order draft should replace the empty draft");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(
+            scene.drafts["board_order"],
+            AnalysisDraft::Order {
+                card_ids: vec!["card_a".into()],
+            }
+        );
+        assert!(scene.feedback_by_board_id.is_empty());
+
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Order {
+                    card_ids: vec!["card_a".into(), "card_b".into()],
+                },
+            )
+            .expect("a later order update should replace the whole draft");
+        let SceneRuntime::Analysis(scene) = &engine.scene else {
+            panic!("expected analysis scene");
+        };
+        assert_eq!(
+            scene.drafts["board_order"],
+            AnalysisDraft::Order {
+                card_ids: vec!["card_a".into(), "card_b".into()],
+            }
+        );
+        assert!(scene.feedback_by_board_id.is_empty());
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
     fn add_evidence_to_inventory(engine: &mut GameEngine, id: &str) {
         use crate::game::provenance::CaseRecordProvenance;
         use crate::game::state::EvidenceRecord;
@@ -2932,12 +3141,10 @@ mod tests {
 
     fn analysis_scene_with_two_unlocked_boards_json(id: &str) -> String {
         // Both boards have null unlock, so both are unlocked. board_1 is the
-        // active board (first incomplete unlocked); board_2 is unlocked but
-        // not active. Both use practice cards so availability can be seeded
-        // directly on the analysis scene state without going through inventory
-        // catalog validation. A crafted command must not be able to operate
-        // board_2 before board_1 is complete, even though board_2's card is
-        // available.
+        // initial authored-order focus; board_2 is also available and can be
+        // selected directly. Both use practice cards so availability can be
+        // seeded directly on the analysis scene state without going through
+        // inventory catalog validation.
         format!(
             r#"{{
                 "type": "analysis",
@@ -3028,6 +3235,58 @@ mod tests {
         ]);
         std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
         resources
+    }
+
+    fn analysis_resources_with_reveal_unlock(label: &str) -> std::path::PathBuf {
+        let resources = analysis_resources_with_two_unlocked_boards(label);
+        let scene_path = resources.join("chapter_1/analysis_scene_1.json");
+        let mut scene: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&scene_path).expect("analysis scene must be readable"),
+        )
+        .expect("analysis scene must be valid JSON");
+        scene["boards"][0]["common"]["reveals"] = serde_json::json!([{
+            "kind": "assertFact",
+            "factId": "board_two_unlocked"
+        }]);
+        scene["boards"][1]["common"]["unlock"] = serde_json::json!({
+            "predicate": "fact_asserted",
+            "id": "board_two_unlocked"
+        });
+        std::fs::write(&scene_path, serde_json::to_vec_pretty(&scene).unwrap()).unwrap();
+
+        let catalog_path = resources.join("story_catalog.json");
+        let mut catalog: serde_json::Value = serde_json::from_slice(
+            &std::fs::read(&catalog_path).expect("catalog must be readable"),
+        )
+        .expect("catalog must be valid JSON");
+        catalog["facts"] = serde_json::json!([{
+            "id": "board_two_unlocked",
+            "label": "Board two unlocked",
+            "summary": "The first board unlocks the second board.",
+            "details": "Analysis command fixture.",
+            "category": "procedure"
+        }]);
+        std::fs::write(&catalog_path, serde_json::to_vec_pretty(&catalog).unwrap()).unwrap();
+        resources
+    }
+
+    fn replace_active_analysis_board_for_command_test(
+        engine: &mut GameEngine,
+        board: crate::game::schema::AnalysisBoardJson,
+    ) {
+        let board_id = board.common().id.clone();
+        let empty_draft =
+            crate::game::scenes::analysis::AnalysisSceneState::empty_draft_for_board(&board);
+        let SceneRuntime::Analysis(scene) = &mut engine.scene else {
+            panic!("expected analysis scene");
+        };
+        scene.def.boards = vec![board];
+        scene.available_board_ids = [board_id.clone()].into_iter().collect();
+        scene.active_board_id = Some(board_id.clone());
+        scene.drafts = [(board_id.clone(), empty_draft)].into_iter().collect();
+        scene
+            .feedback_by_board_id
+            .insert(board_id, AnalysisFeedbackState::Incorrect);
     }
 
     #[test]
