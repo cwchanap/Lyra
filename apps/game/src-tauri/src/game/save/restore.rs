@@ -1772,6 +1772,7 @@ fn invalid_progress(detail: impl Into<String>) -> GameError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::game::analysis::AnalysisDraft;
     use crate::game::dialogue::DialogueHistory;
     use crate::game::dialogue_queue::{
         ActiveDialogueQueue, DialogueSegment, DialogueSegmentOriginV1,
@@ -1801,6 +1802,24 @@ mod tests {
     const SAVE_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
     const P1_CCTV_FEEDBACK: &str = "還少了一項資料。";
     type SaveMutation = Box<dyn FnOnce(&mut SaveEnvelope)>;
+
+    fn update_analysis_threshold(engine: &mut GameEngine, card_ids: &[&str]) {
+        engine
+            .update_analysis_draft(
+                engine.analysis_action_token().unwrap(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: card_ids.iter().map(|id| (*id).to_owned()).collect(),
+                },
+            )
+            .expect("analysis draft update should succeed");
+    }
+
+    fn submit_analysis(engine: &mut GameEngine) -> crate::game::GameStateView {
+        let token = engine.analysis_action_token().unwrap();
+        engine
+            .submit_analysis_board(token)
+            .expect("analysis board submission should succeed")
+    }
 
     fn envelope_from_checkpoint(
         engine: &GameEngine,
@@ -2082,12 +2101,8 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_p1_5")
             .expect("P1 analysis scene should be reachable in the fixture");
-        engine
-            .set_analysis_selection("p1_reprint_time_board", vec!["cctv_change".into()])
-            .expect("P1 CCTV card should be selectable");
-        let submitted = engine
-            .submit_analysis_selection("p1_reprint_time_board")
-            .expect("P1 CCTV-only submission should return authored feedback");
+        update_analysis_threshold(&mut engine, &["cctv_change"]);
+        let submitted = submit_analysis(&mut engine);
         let ModeView::Analysis { last_feedback, .. } = submitted.mode else {
             panic!("P1 submission should remain in analysis mode");
         };
@@ -2129,19 +2144,15 @@ mod tests {
         };
         assert_eq!(scene.drafts.len(), 1);
 
-        engine
-            .set_analysis_selection(
-                "p1_reprint_time_board",
-                vec![
-                    "receipt_reprint".into(),
-                    "register_paper_jam".into(),
-                    "handwritten_ledger".into(),
-                ],
-            )
-            .expect("authored P1 cards should be selectable");
-        let submitted = engine
-            .submit_analysis_selection("p1_reprint_time_board")
-            .expect("authored P1 cards should complete through public commands");
+        update_analysis_threshold(
+            &mut engine,
+            &[
+                "receipt_reprint",
+                "register_paper_jam",
+                "handwritten_ledger",
+            ],
+        );
+        let submitted = submit_analysis(&mut engine);
         assert!(matches!(submitted.mode, ModeView::Dialogue { .. }));
         let SceneRuntime::Analysis(_scene) = &engine.scene else {
             panic!("P1 completion should remain in analysis while result dialogue plays");
@@ -2163,19 +2174,15 @@ mod tests {
         engine
             .jump_to_scene("chapter_1", "analysis_scene_p1_5")
             .expect("P1 analysis scene should be reachable in the fixture");
-        engine
-            .set_analysis_selection(
-                "p1_reprint_time_board",
-                vec![
-                    "receipt_reprint".into(),
-                    "register_paper_jam".into(),
-                    "handwritten_ledger".into(),
-                ],
-            )
-            .expect("P1 correct cards should be selectable");
-        let submitted = engine
-            .submit_analysis_selection("p1_reprint_time_board")
-            .expect("P1 correct triple should complete the board");
+        update_analysis_threshold(
+            &mut engine,
+            &[
+                "receipt_reprint",
+                "register_paper_jam",
+                "handwritten_ledger",
+            ],
+        );
+        let submitted = submit_analysis(&mut engine);
         assert!(matches!(submitted.mode, ModeView::Dialogue { .. }));
 
         let checkpoint = capture_checkpoint(&engine).expect("completed P1 result should save");

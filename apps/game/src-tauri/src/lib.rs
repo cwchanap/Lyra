@@ -2200,33 +2200,6 @@ pub async fn dispatch_development_command_with_exit(
             MutationPersistencePolicy::AutosaveIfAdvanced,
             GameEngine::complete_interrogation_phase,
         )?),
-        "set_analysis_selection" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                board_id: String,
-                card_ids: Vec<String>,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.set_analysis_selection(&args.board_id, args.card_ids),
-            )?)
-        }
-        "submit_analysis_selection" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                board_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.submit_analysis_selection(&args.board_id),
-            )?)
-        }
         _ => Err(GameError::new(
             "unknownCommand",
             format!("Unknown command: {command}"),
@@ -2397,31 +2370,6 @@ fn complete_interrogation_phase(
     )
 }
 
-#[tauri::command]
-fn set_analysis_selection(
-    state: tauri::State<'_, AppState>,
-    board_id: String,
-    card_ids: Vec<String>,
-) -> Result<GameplayCommandResultView, GameError> {
-    run_gameplay_mutation(
-        &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
-        |engine| engine.set_analysis_selection(&board_id, card_ids),
-    )
-}
-
-#[tauri::command]
-fn submit_analysis_selection(
-    state: tauri::State<'_, AppState>,
-    board_id: String,
-) -> Result<GameplayCommandResultView, GameError> {
-    run_gameplay_mutation(
-        &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
-        |engine| engine.submit_analysis_selection(&board_id),
-    )
-}
-
 #[cfg(all(feature = "e2e", not(debug_assertions)))]
 compile_error!("feature \"e2e\" is only for debug e2e builds");
 
@@ -2532,8 +2480,6 @@ pub fn run() {
             withdraw_interrogation,
             resume_interrogation_testimony,
             complete_interrogation_phase,
-            set_analysis_selection,
-            submit_analysis_selection,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
@@ -5517,8 +5463,6 @@ mod tests {
                 "withdraw_interrogation",
                 "resume_interrogation_testimony",
                 "complete_interrogation_phase",
-                "set_analysis_selection",
-                "submit_analysis_selection",
             ] {
                 let body = function_body(source, command);
                 assert!(
@@ -5602,8 +5546,6 @@ mod tests {
                 "withdraw_interrogation",
                 "resume_interrogation_testimony",
                 "complete_interrogation_phase",
-                "set_analysis_selection",
-                "submit_analysis_selection",
             ] {
                 assert_eq!(
                     registered_command_count(handler, command),
@@ -6054,8 +5996,6 @@ mod tests {
             "withdraw_interrogation",
             "resume_interrogation_testimony",
             "complete_interrogation_phase",
-            "set_analysis_selection",
-            "submit_analysis_selection",
         ];
 
         #[tokio::test]

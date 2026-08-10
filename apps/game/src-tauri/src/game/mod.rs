@@ -33,14 +33,13 @@ pub use view::{
 };
 
 use acquisition::AcquisitionCtx;
-use analysis::AnalysisDraft;
+use analysis::{AnalysisActionToken, AnalysisDraft, AnalysisFeedbackState};
 use content_manifest::ContentManifest;
 use dialogue_queue::{ActiveDialogueQueue, DialogueSegment, DialogueSegmentOriginV1};
 use navigation::{
     find_scene_json_by_id, load_chapter_manifests, load_scene_runtime,
     scene_navigation_index_from_chapters, validate_analysis_scene_adjacency,
 };
-use scenes::analysis::{AnalysisSceneState, AnalysisSubmission, AnalysisSubmissionOutcome};
 use scenes::interrogation::{
     phase_id, phase_required, CrossExam, InterrogationSceneAndInventoryCtx,
 };
@@ -52,7 +51,7 @@ use schema::{
 };
 use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
 use story_location::StoryLocationIndex;
@@ -1936,231 +1935,200 @@ impl GameEngine {
         })
     }
 
-    /// Stores the current threshold-board selection without submitting it.
-    /// The set lives in the active AnalysisSceneState, so tutorial practice
-    /// material cannot escape into the Case File.
-    pub fn set_analysis_selection(
+    // Public view/Tauri wiring consumes this fence in later HPA-260 tasks;
+    // keep the engine helper available while that surface is intentionally
+    // unregistered in this task.
+    #[allow(dead_code)]
+    pub(crate) fn analysis_action_token(&self) -> Result<AnalysisActionToken, GameError> {
+        let SceneRuntime::Analysis(scene) = &self.scene else {
+            return Err(GameError::wrong_mode(
+                "analysis_action_token",
+                "not analysis",
+            ));
+        };
+        Ok(AnalysisActionToken {
+            scene_id: scene.def.id.clone(),
+            active_board_id: scene.active_board_id.clone(),
+            durable_revision: self.durable_revision,
+        })
+    }
+
+    /// Selects any currently available board, including a completed board for
+    /// read-only review. The expected token fences the selection against the
+    /// view that produced it and is checked inside the transaction.
+    pub fn select_analysis_board(
         &mut self,
-        board_id: &str,
-        card_ids: Vec<String>,
+        expected: AnalysisActionToken,
+        board_id: String,
     ) -> Result<GameStateView, GameError> {
-        let selected_card_ids = card_ids.into_iter().collect::<BTreeSet<_>>();
-        self.require_analysis_board_ready(board_id, "set_analysis_selection")?;
-        self.require_analysis_cards_available(
-            board_id,
-            &selected_card_ids,
-            "set_analysis_selection",
-        )?;
-        let unchanged = self
-            .analysis_scene("set_analysis_selection")?
-            .drafts
-            .get(board_id)
-            .is_some_and(|draft| {
-                matches!(
-                    draft,
-                    AnalysisDraft::Threshold {
-                        selected_card_ids: current
-                    } if current == &selected_card_ids
-                )
-            });
         self.command_tx(move |engine, _, _| {
-            if unchanged {
-                return Ok(CommandMutation::Unchanged);
-            }
+            engine.validate_analysis_action(&expected)?;
             let scene = match &mut engine.scene {
                 SceneRuntime::Analysis(scene) => scene,
-                _ => {
-                    return Err(GameError::internal(
-                        "scene changed during set_analysis_selection".into(),
-                    ))
-                }
+                _ => return Err(GameError::stale_analysis_action()),
             };
-            scene.set_threshold_selection(board_id, selected_card_ids)?;
+            if scene.pending_queue.is_some() {
+                return Err(GameError::dialogue_active("select_analysis_board"));
+            }
+            if scene.board(&board_id).is_none() {
+                return Err(GameError::unknown_analysis_board(&board_id));
+            }
+            if !scene.available_board_ids.contains(&board_id) {
+                return Err(GameError::locked_analysis_board(&board_id));
+            }
+            if scene.active_board_id.as_deref() == Some(board_id.as_str()) {
+                return Ok(CommandMutation::Unchanged);
+            }
+            scene.active_board_id = Some(board_id);
             Ok(CommandMutation::Changed)
         })
     }
 
-    /// Submits the current threshold selection. Correct results are emitted
-    /// through the existing compiled analysis dialogue origin; wrong answers
-    /// remain explicit board feedback in the public analysis view.
-    pub fn submit_analysis_selection(
+    /// Replaces the whole typed draft for the currently active, incomplete
+    /// board. Draft validation is shared by every board kind and no story or
+    /// dialogue effects are produced by an update.
+    pub fn update_analysis_draft(
         &mut self,
-        board_id: &str,
+        expected: AnalysisActionToken,
+        draft: AnalysisDraft,
     ) -> Result<GameStateView, GameError> {
-        self.require_analysis_board_ready(board_id, "submit_analysis_selection")?;
-        let selected_card_ids =
-            self.analysis_selected_cards(board_id, "submit_analysis_selection")?;
-        self.require_analysis_cards_available(
-            board_id,
-            &selected_card_ids,
-            "submit_analysis_selection",
-        )?;
-        self.command_tx(move |engine, command_id, next_ordinal| {
-            engine.submit_analysis_inner(
-                board_id,
-                AnalysisSubmission::Threshold { selected_card_ids },
-                command_id,
-                next_ordinal,
-            )
+        self.command_tx(move |engine, _, _| {
+            engine.validate_analysis_action(&expected)?;
+            let chapter_id = engine.chapters[engine.current_chapter_idx].id.clone();
+            let scene = match &mut engine.scene {
+                SceneRuntime::Analysis(scene) => scene,
+                _ => return Err(GameError::stale_analysis_action()),
+            };
+            if scene.pending_queue.is_some() {
+                return Err(GameError::dialogue_active("update_analysis_draft"));
+            }
+            let board_id = scene
+                .active_board_id
+                .clone()
+                .ok_or_else(|| GameError::analysis_board_not_active(""))?;
+            if scene.is_board_completed_qualified(&chapter_id, &board_id, &engine.story_state) {
+                return Err(GameError::analysis_board_completed(&board_id));
+            }
+            scene.validate_draft(&board_id, &draft)?;
+            let same_draft = scene.drafts.get(&board_id) == Some(&draft);
+            let had_feedback = scene.feedback_by_board_id.remove(&board_id).is_some();
+            if same_draft && !had_feedback {
+                return Ok(CommandMutation::Unchanged);
+            }
+            scene.drafts.insert(board_id, draft);
+            Ok(CommandMutation::Changed)
         })
     }
 
-    fn require_analysis_board_ready(&self, board_id: &str, action: &str) -> Result<(), GameError> {
-        let scene = match &self.scene {
-            SceneRuntime::Analysis(scene) => scene,
-            _ => return Err(GameError::wrong_mode(action, "not analysis")),
-        };
-        if scene.pending_queue.is_some() {
-            return Err(GameError::dialogue_active(action));
-        }
-        let board = scene
-            .board(board_id)
-            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
-        let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
-        if scene.is_board_completed_qualified(chapter_id, board_id, &self.story_state) {
-            return Err(GameError::analysis_board_completed(board_id));
-        }
-        if !scene.is_board_unlocked(board, &self.story_state) {
-            return Err(GameError::locked_analysis_board(board_id));
-        }
-        // Enforce the same active-board boundary the view publishes: the
-        // frontend operates the scene's authored-order active-board focus, so
-        // a crafted or stale command that targets a later unlocked board must
-        // be rejected here,
-        // not just rely on the frontend. Otherwise a correct submission would
-        // record that board complete and apply its story reveals before the
-        // authored current board. Mirrors the interrogation defense where
-        // questions outside the current phase are rejected.
-        let active_board_id = scene
-            .active_board_id
-            .clone()
-            .or_else(|| scene.next_available_incomplete_board_id(chapter_id, &self.story_state));
-        if active_board_id.as_deref() != Some(board_id) {
-            return Err(GameError::analysis_board_not_active(board_id));
-        }
-        Ok(())
-    }
-
-    fn analysis_scene(&self, action: &str) -> Result<&AnalysisSceneState, GameError> {
-        match &self.scene {
-            SceneRuntime::Analysis(scene) => Ok(scene),
-            _ => Err(GameError::wrong_mode(action, "not analysis")),
-        }
-    }
-
-    fn analysis_selected_cards(
-        &self,
-        board_id: &str,
-        action: &str,
-    ) -> Result<BTreeSet<String>, GameError> {
-        let scene = self.analysis_scene(action)?;
-        match scene.drafts.get(board_id) {
-            Some(AnalysisDraft::Threshold { selected_card_ids }) => Ok(selected_card_ids.clone()),
-            Some(_) => Err(GameError::analysis_board_kind_mismatch(
-                board_id,
-                "threshold",
-            )),
-            None => Err(GameError::unknown_analysis_board(board_id)),
-        }
-    }
-
-    fn require_analysis_cards_available(
-        &self,
-        board_id: &str,
-        card_ids: &BTreeSet<String>,
-        action: &str,
-    ) -> Result<(), GameError> {
-        let scene = self.analysis_scene(action)?;
-        let board = scene
-            .board(board_id)
-            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
-        for card_id in card_ids {
-            let card = board
-                .common()
-                .cards
-                .iter()
-                .find(|card| card.id == *card_id)
-                .ok_or_else(|| GameError::unknown_analysis_card(board_id, card_id))?;
-            if !scene.card_is_available(&card.source, &self.inventory) {
-                return Err(GameError::unavailable_analysis_card(board_id, card_id));
-            }
-        }
-        Ok(())
-    }
-
-    fn submit_analysis_inner(
+    /// Submits the active board's authoritative draft. Incomplete and wrong
+    /// submissions only update failure feedback; accepted submissions commit
+    /// qualified completion, story reveals, derived availability, and the
+    /// existing AnalysisResult dialogue in one rollback-protected transaction.
+    pub fn submit_analysis_board(
         &mut self,
-        board_id: &str,
-        submission: AnalysisSubmission,
-        command_id: u64,
-        next_ordinal: &mut u32,
-    ) -> Result<CommandMutation, GameError> {
-        let (scene_id, reveals, result_dialogue) = {
-            let scene = match &mut self.scene {
-                SceneRuntime::Analysis(scene) => scene,
-                _ => {
-                    return Err(GameError::internal(
-                        "scene changed during analysis submission".into(),
-                    ))
+        expected: AnalysisActionToken,
+    ) -> Result<GameStateView, GameError> {
+        self.command_tx(move |engine, command_id, next_ordinal| {
+            engine.validate_analysis_action(&expected)?;
+            let chapter_id = engine.chapters[engine.current_chapter_idx].id.clone();
+            let (board_id, scene_id, reveals, result_dialogue) = {
+                let scene = match &mut engine.scene {
+                    SceneRuntime::Analysis(scene) => scene,
+                    _ => return Err(GameError::stale_analysis_action()),
+                };
+                if scene.pending_queue.is_some() {
+                    return Err(GameError::dialogue_active("submit_analysis_board"));
                 }
-            };
-            match scene.submit(board_id, submission)? {
-                AnalysisSubmissionOutcome::Feedback(_) => return Ok(CommandMutation::Changed),
-                AnalysisSubmissionOutcome::Correct => {
+                let board_id = scene
+                    .active_board_id
+                    .clone()
+                    .ok_or_else(|| GameError::analysis_board_not_active(""))?;
+                if scene.is_board_completed_qualified(&chapter_id, &board_id, &engine.story_state) {
+                    return Err(GameError::analysis_board_completed(&board_id));
+                }
+                let draft = scene
+                    .drafts
+                    .get(&board_id)
+                    .cloned()
+                    .ok_or_else(|| GameError::unknown_analysis_board(&board_id))?;
+                scene.validate_draft(&board_id, &draft)?;
+                let complete = scene.draft_is_complete(&board_id, &draft)?;
+                if !complete {
+                    scene
+                        .feedback_by_board_id
+                        .insert(board_id, AnalysisFeedbackState::Incomplete);
+                    return Ok(CommandMutation::Changed);
+                }
+                if !scene.draft_is_correct(&board_id, &draft)? {
+                    scene
+                        .feedback_by_board_id
+                        .insert(board_id, AnalysisFeedbackState::Incorrect);
+                    return Ok(CommandMutation::Changed);
+                }
+                let (reveals, result_dialogue) = {
                     let board = scene
-                        .board(board_id)
-                        .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
+                        .board(&board_id)
+                        .ok_or_else(|| GameError::unknown_analysis_board(&board_id))?;
                     (
-                        scene.def.id.clone(),
                         board.common().reveals.clone(),
                         board.common().result_dialogue.clone(),
                     )
-                }
-            }
-        };
-        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
-        self.story_state.complete_analysis_board(
-            &self.story_catalog,
-            &chapter_id,
-            &scene_id,
-            board_id,
-        )?;
-        let fact_support_by_id = BTreeMap::new();
-        let context = reveals::StoryRevealMaterializationContext {
-            origin: AssertionOrigin::AnalysisBoard {
-                chapter_id: chapter_id.clone(),
-                scene_id: scene_id.clone(),
-                board_id: board_id.into(),
-            },
-            fact_support_by_id: &fact_support_by_id,
-            represented_authority: None,
-        };
-        for reveal in &reveals {
-            reveals::apply_story_reveal(
-                &self.story_catalog,
-                &mut self.story_state,
-                reveal,
+                };
+                scene.feedback_by_board_id.remove(&board_id);
+                (board_id, scene.def.id.clone(), reveals, result_dialogue)
+            };
+
+            engine.story_state.complete_analysis_board(
+                &engine.story_catalog,
+                &chapter_id,
+                &scene_id,
+                &board_id,
+            )?;
+            let fact_support_by_id = BTreeMap::new();
+            let context = reveals::StoryRevealMaterializationContext {
+                origin: AssertionOrigin::AnalysisBoard {
+                    chapter_id: chapter_id.clone(),
+                    scene_id: scene_id.clone(),
+                    board_id: board_id.clone(),
+                },
+                fact_support_by_id: &fact_support_by_id,
+                represented_authority: None,
+            };
+            reveals::apply_story_reveals(
+                &engine.story_catalog,
+                &mut engine.story_state,
+                &reveals,
                 &context,
             )?;
+            if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+                scene.recompute_available_board_ids(&engine.story_state);
+            }
+            let segments = DialogueSegment::new(
+                DialogueSegmentOriginV1::AnalysisResult {
+                    chapter_id,
+                    scene_id,
+                    board_id,
+                },
+                result_dialogue,
+            )
+            .into_iter()
+            .collect();
+            engine.install_or_exhaust(segments, command_id, next_ordinal)?;
+            Ok(CommandMutation::Changed)
+        })
+    }
+
+    fn validate_analysis_action(&self, expected: &AnalysisActionToken) -> Result<(), GameError> {
+        let SceneRuntime::Analysis(scene) = &self.scene else {
+            return Err(GameError::stale_analysis_action());
+        };
+        if scene.def.id != expected.scene_id
+            || scene.active_board_id != expected.active_board_id
+            || self.durable_revision != expected.durable_revision
+        {
+            return Err(GameError::stale_analysis_action());
         }
-        if let SceneRuntime::Analysis(scene) = &mut self.scene {
-            // Story completion and its reveals are committed before the
-            // derived availability cache is refreshed.  The next board is
-            // focused only when the result dialogue later drains.
-            scene.recompute_available_board_ids(&self.story_state);
-        }
-        let segments = DialogueSegment::new(
-            DialogueSegmentOriginV1::AnalysisResult {
-                chapter_id,
-                scene_id,
-                board_id: board_id.into(),
-            },
-            result_dialogue,
-        )
-        .into_iter()
-        .collect();
-        self.install_or_exhaust(segments, command_id, next_ordinal)?;
-        Ok(CommandMutation::Changed)
+        Ok(())
     }
 
     fn try_advance_analysis(

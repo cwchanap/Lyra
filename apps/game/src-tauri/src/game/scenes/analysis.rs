@@ -7,21 +7,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
 
-/// Compatibility alias for the inherited command seam.  New callers should
-/// pass `AnalysisDraft` directly; keeping this alias avoids introducing a
-/// second board-kind-specific input wire while the public command migration
-/// remains owned by later HPA-260 tasks.
-pub type AnalysisSubmission = AnalysisDraft;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AnalysisSubmissionOutcome {
-    Correct,
-    /// Transitional command output.  Runtime state stores only the neutral
-    /// `AnalysisFeedbackState`; the authored copy is reconstructed at the
-    /// public boundary until the command/view migration lands.
-    Feedback(String),
-}
-
 /// Mutable, scene-local workbench state for a compiled Analysis scene.
 ///
 /// Board definitions and answer material remain immutable in `def`.  A
@@ -316,61 +301,6 @@ impl AnalysisSceneState {
             }),
             _ => false,
         })
-    }
-
-    /// Transitional threshold-only command adapter.  It stores the neutral
-    /// Threshold draft and returns authored feedback for the inherited command
-    /// caller; no board-kind-specific map is retained.
-    pub fn set_threshold_selection(
-        &mut self,
-        board_id: &str,
-        selected_card_ids: BTreeSet<String>,
-    ) -> Result<(), GameError> {
-        let draft = AnalysisDraft::Threshold { selected_card_ids };
-        self.validate_draft(board_id, &draft)?;
-        if !matches!(
-            self.board(board_id),
-            Some(AnalysisBoardJson::Threshold { .. })
-        ) {
-            return Err(GameError::analysis_board_kind_mismatch(
-                board_id,
-                "threshold",
-            ));
-        }
-        self.drafts.insert(board_id.to_owned(), draft);
-        self.feedback_by_board_id.remove(board_id);
-        Ok(())
-    }
-
-    /// Transitional whole-draft submit adapter used by the inherited engine
-    /// command.  Story completion remains owned by `StoryState`; this method
-    /// only evaluates the neutral input and stores typed failure feedback.
-    pub fn submit(
-        &mut self,
-        board_id: &str,
-        submission: AnalysisSubmission,
-    ) -> Result<AnalysisSubmissionOutcome, GameError> {
-        self.validate_draft(board_id, &submission)?;
-        self.drafts.insert(board_id.to_owned(), submission.clone());
-        let complete = self.draft_is_complete(board_id, &submission)?;
-        let correct = complete && self.draft_is_correct(board_id, &submission)?;
-        let board = self
-            .board(board_id)
-            .ok_or_else(|| GameError::unknown_analysis_board(board_id))?;
-        if !complete {
-            let feedback = board.common().feedback.incomplete.clone();
-            self.feedback_by_board_id
-                .insert(board_id.to_owned(), AnalysisFeedbackState::Incomplete);
-            return Ok(AnalysisSubmissionOutcome::Feedback(feedback));
-        }
-        if !correct {
-            let feedback = board.common().feedback.incorrect.clone();
-            self.feedback_by_board_id
-                .insert(board_id.to_owned(), AnalysisFeedbackState::Incorrect);
-            return Ok(AnalysisSubmissionOutcome::Feedback(feedback));
-        }
-        self.feedback_by_board_id.remove(board_id);
-        Ok(AnalysisSubmissionOutcome::Correct)
     }
 }
 

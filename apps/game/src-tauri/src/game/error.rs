@@ -393,6 +393,13 @@ impl GameError {
             format!("Analysis card '{card_id}' is not available on board '{board_id}'."),
         )
     }
+    pub fn stale_analysis_action() -> Self {
+        Self::new(
+            "staleAnalysisAction",
+            "The Analysis workbench action is stale and must be retried from the current view."
+                .to_string(),
+        )
+    }
     pub fn locked_interrogation_question(id: &str) -> Self {
         Self::new(
             "lockedInterrogationQuestion",
@@ -700,6 +707,7 @@ mod tests {
                 "unavailableAnalysisCard",
                 GameError::unavailable_analysis_card("board_1", "card_1"),
             ),
+            ("staleAnalysisAction", GameError::stale_analysis_action()),
         ];
         for (expected_code, error) in cases {
             assert_eq!(error.code, expected_code);
@@ -759,5 +767,9 @@ mod tests {
         assert!(GameError::unavailable_analysis_card("board_x", "card_y")
             .message
             .contains("card_y"));
+        assert_eq!(
+            GameError::stale_analysis_action().code,
+            "staleAnalysisAction"
+        );
     }
 }
