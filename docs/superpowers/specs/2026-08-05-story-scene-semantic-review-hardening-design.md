@@ -263,11 +263,14 @@ bun run check:scripts
 bun run test:scripts
 bun run scenes:compile
 bun run lint
+bun run rust:fmt
+bun run rust:lint
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 ```
 
 The current CI workflow does not itself run `bun run lint:all` in the frontend job, but `bun run lint` exists and is appropriate because HPA-561 touches TypeScript/tooling files.
 
-Rust/app tests remain unnecessary unless implementation unexpectedly changes runtime-facing code.
+Rust checks are required: the scope includes the Rust scene-state implementation in `scenes/analysis.rs` (with in-file tests), `error.rs`, and `save/restore.rs`. `bun run rust:fmt` is a format check, `bun run rust:lint` runs Clippy with warnings denied, and the focused or full Cargo test suite must pass as a final check.
 
 ## Non-goals
 
