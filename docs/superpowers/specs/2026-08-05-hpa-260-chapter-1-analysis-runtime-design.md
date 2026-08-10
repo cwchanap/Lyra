@@ -279,7 +279,7 @@ submit_analysis_board
 
 The current frontend dispatcher already enforces one gameplay command in flight via `gameState.inFlight`, so the action token does not introduce a new IPC serialization requirement. It remains a narrow server-side stale-state fence for the whole-draft command and board switches.
 
-The reviewer-proposed delta-command rewrite is intentionally not adopted in HPA-260: with the existing serialized dispatcher, its main lost-update premise does not apply to normal application traffic, while three board-kind-specific update commands would add more wire/tests. If later UI playtesting proves command serialization is a real interaction bottleneck, address that in the UI layer rather than pre-expanding the Rust command API.
+The reviewer-proposed delta-command rewrite is intentionally not adopted in HPA-260: with the existing serialized dispatcher, its main lost-update premise does not apply to normal application traffic, while three board-kind-specific update commands would add more wire/tests. If later HPA-261 playtesting proves the existing one-command-in-flight UI behavior is too restrictive, fix that interaction policy in the UI layer rather than pre-expanding the Rust command API.
 
 Every Analysis view projects:
 
