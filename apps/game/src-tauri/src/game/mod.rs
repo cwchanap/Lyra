@@ -2766,6 +2766,9 @@ mod case_record_integration_tests;
 mod case_file_integration_tests;
 
 #[cfg(test)]
+mod analysis_integration_tests;
+
+#[cfg(test)]
 pub(crate) mod test_support;
 
 #[cfg(test)]
