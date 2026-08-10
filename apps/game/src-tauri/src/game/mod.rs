@@ -2012,6 +2012,17 @@ impl GameEngine {
         if !scene.is_board_unlocked(board, &self.story_state) {
             return Err(GameError::locked_analysis_board(board_id));
         }
+        // Enforce the same active-board boundary the view publishes: the
+        // frontend operates `next_unlocked_board_id`, so a crafted or stale
+        // command that targets a later unlocked board must be rejected here,
+        // not just rely on the frontend. Otherwise a correct submission would
+        // record that board complete and apply its story reveals before the
+        // authored current board. Mirrors the interrogation defense where
+        // questions outside the current phase are rejected.
+        let active_board_id = scene.next_unlocked_board_id(&self.story_state);
+        if active_board_id.as_deref() != Some(board_id) {
+            return Err(GameError::analysis_board_not_active(board_id));
+        }
         Ok(())
     }
 
