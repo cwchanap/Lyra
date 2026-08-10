@@ -2,29 +2,55 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the Chapter 1 Beat 8.5 Analysis workbench in Svelte so classify, order, and threshold boards are fully playable with pointer or keyboard while Rust remains the only owner of correctness and durable state.
+**Goal:** Complete the Chapter 1 Analysis UI on top of the merged HPA-260 runtime: preserve the existing P1 threshold tutorial, add usable classify/order/threshold workbench interactions, and keep Rust as the sole owner of correctness and durable state.
 
-**Architecture:** Mirror HPA-260's answer-key-free public Analysis view directly in existing frontend state types. Render it through one `AnalysisWorkbench` and three focused board components. Every edit sends a complete `AnalysisDraft` through the existing gameplay dispatcher; there is no optimistic/persistent frontend Analysis store. Pure helpers own the two reusable presentation rules that deserve isolated tests: stale-response fencing and the real Chapter 1 prefix-anchor order algebra.
+**Architecture:** Reuse the exact Analysis public types, action token, semantic commands, persistence, page route, and Scene Select support already on `main`. Replace the current threshold-only `AnalysisView` with one `AnalysisWorkbench` plus three focused board components. Keep only two small frontend pure helpers: answer-key-free fixtures/ownership tests and Chapter-1-scoped order draft algebra. No new wire contract, response-fence framework, DnD layer, or generic board renderer is introduced.
 
-**Tech Stack:** Svelte 5, TypeScript, Tauri 2 command client, existing `GameStateView` / `GameShell`, Vitest, Testing Library Svelte, current Case File provenance labels/helpers.
+**Tech Stack:** Svelte 5, TypeScript, existing Tauri game client, existing HPA-260 Analysis commands/public view, Vitest, Testing Library Svelte, existing Case File provenance labels.
 
 ## Global Constraints
 
-- Support exactly Chapter 1 `classify`, `order`, and `threshold`.
-- Do not add drag-and-drop, graph/canvas editing, a renderer registry, compare/route/chain abstractions, or a generic sparse-anchor order editor.
-- TypeScript must not contain accepted mappings, accepted orders, accepted threshold selections, source-independence truth, eligibility truth, or durable reveal logic.
-- Render only public boards exposed by Rust; never synthesize hidden/locked boards.
-- Active-board identity comes only from `AnalysisActionToken.activeBoardId`; do not add a duplicate `mode.boardId` field.
-- HPA-260 command names are `select_analysis_board`, `update_analysis_draft`, and `submit_analysis_board`; intro/result/outro continue through `advance_dialogue`.
-- Workbench edits render only after authoritative command responses; no optimistic Analysis state model.
-- Keep existing `gameState.inFlight`, `GameShell` Escape ownership, Case File behavior, acquisition popup behavior, audio routing, and persistence overlays.
-- Case File remains visible in Analysis, while record re-examination remains disabled.
-- Submit stays available on editable incomplete drafts so Rust can return authored `Incomplete` feedback.
-- Completed boards are read-only.
-- Threshold selections are emitted in deterministic lexical ID order.
+- Start from current `main` containing merged PR #44 and PR #47.
+- Support exactly `classify`, `order`, and `threshold`.
+- Preserve the existing P1 `practice:` threshold tutorial and its authored wrong-choice feedback.
+- Reuse existing `AnalysisActionToken`, `AnalysisDraft`, `AnalysisBoardView`, Analysis Mode/SceneView, and the three Analysis command wrappers; do not create adapter DTOs.
+- Display the board selected by Rust through `mode.boardId`; echo `mode.actionToken` unchanged with every board select/update/submit command.
+- Treat `mode.boardId` and `actionToken.activeBoardId` as intentionally different runtime concepts; do not collapse them.
+- Respect public `board.available`, `board.completed`, `board.readOnly`, and `card.available`; never reconstruct unlock/availability rules in TypeScript.
+- TypeScript must not contain accepted classify mappings, accepted order, accepted threshold selections, source-independence truth, procedural eligibility truth, or durable reveal logic.
+- Use the generic `board.draft` union for new workbench interactions. Do not make removal of existing compatibility fields (`selectedCardIds`, `lastFeedback`, etc.) part of HPA-261.
+- No drag-and-drop dependency, graph/canvas editing, renderer registry, compare/route/chain abstraction, sparse-anchor framework, or Chapter 2 UI.
+- No new Analysis frontend store, command dispatcher, response-fence module, session generation, or persistence layer.
+- Preserve existing `gameState.inFlight`, `GameShell` Escape ownership, Case File behavior, acquisition popup, audio routing, and persistence overlays.
+- Case File remains visible during Analysis and record re-examination remains disabled.
+- Submit remains available on editable boards even when the draft is structurally incomplete so Rust can return authored `Incomplete` feedback.
+- Completed boards are read-only: no draft mutation, Undo, Reset, or Submit.
 - No new npm/Bun dependency is required.
-- PR #44 is not a dependency. If it lands first, remove its entire temporary Analysis component/command/type/route surface while wiring the final workbench.
-- If HPA-260's final serialized field spelling differs from this plan, mirror Rust exactly in Task 1; do not add an adapter DTO family.
+
+---
+
+## Current Main — Reuse, Do Not Rebuild
+
+Merged HPA-260 already provides:
+
+- `AnalysisActionToken`;
+- `AnalysisDraft::{classify, order, threshold}` TypeScript mirror;
+- `AnalysisCardSourceView` including `practice`;
+- card `available` plus board `available/completed/readOnly/draft/feedback/hint`;
+- classify groups, order fixed anchors, threshold minimum/selected projection;
+- Analysis `Mode` and `SceneView`;
+- `selectAnalysisBoard`, `updateAnalysisDraft`, `submitAnalysisBoard` wrappers;
+- `MUTATING_GAMEPLAY_COMMANDS` registration;
+- the 17-member `GameplayCommandName` union/exhaustive test;
+- Tauri command registration;
+- exact Analysis save/restore;
+- Rust action-token stale validation;
+- runtime draft/card availability validation;
+- no-thumbnail Analysis autosave behavior;
+- Scene Select Analysis type + `分析` label;
+- the `+page.svelte` Analysis branch.
+
+Merged HPA-561/HPA-260 also leave one threshold-only `AnalysisView.svelte` as the current playable P1 surface. HPA-261 replaces/generalizes that component rather than adding another Analysis path.
 
 ---
 
@@ -32,13 +58,15 @@
 
 ### Create
 
-- `apps/game/src/lib/analysis/beat-8-5-fixture.ts`
+- `apps/game/src/lib/analysis/test-fixtures.ts`
+  - P1 practice threshold public fixture migrated from current `AnalysisView.test.ts`;
+  - answer-key-free Beat 8.5 classify/order/threshold public fixtures;
+  - only the inventory rows required for provenance presentation tests.
 - `apps/game/src/lib/analysis/analysis-boundary.test.ts`
-- `apps/game/src/lib/analysis/response-fence.ts`
-- `apps/game/src/lib/analysis/response-fence.test.ts`
+  - guards the frontend Analysis feature against hidden answer-key fields/data.
 - `apps/game/src/lib/analysis/order-draft.ts`
+  - Chapter 1 prefix-anchor add/move/remove algebra only.
 - `apps/game/src/lib/analysis/order-draft.test.ts`
-- `apps/game/src/lib/case-file/labels.test.ts`
 - `apps/game/src/lib/components/analysis/AnalysisCard.svelte`
 - `apps/game/src/lib/components/analysis/ClassifyBoard.svelte`
 - `apps/game/src/lib/components/analysis/ClassifyBoard.test.ts`
@@ -51,404 +79,136 @@
 
 ### Modify
 
-- `apps/game/src/lib/state/types.ts`
 - `apps/game/src/lib/state/game-client.svelte.ts`
+  - make the existing Analysis dispatch/wrappers return the applied `GameStateView | null` so one-step Undo is only recorded after an authoritative applied update.
 - `apps/game/src/lib/state/game-client-source.test.ts`
-- `apps/game/src/lib/state/mode.test.ts`
-- `apps/game/src/lib/audio/sfx-events.ts`
-- `apps/game/src/lib/audio/sfx-events.test.ts`
-- `apps/game/src/lib/case-file/labels.ts`
-- `apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte`
+  - pin the existing Analysis wrapper payload and returned-state behavior.
 - `apps/game/src/routes/+page.svelte`
-- `apps/game/src/lib/components/SceneNavigationPanel.svelte`
-- `apps/game/src/lib/components/SceneNavigationPanel.test.ts`
+  - replace `AnalysisView` with `AnalysisWorkbench` and pass the already-existing select/update/submit wrappers.
+- `apps/game/src/lib/state/mode.test.ts`
+  - pin current Analysis Case File-visible / reexamine-disabled behavior.
 
-### Delete only if present after rebasing
+### Delete after migration
 
 - `apps/game/src/lib/components/AnalysisView.svelte`
 - `apps/game/src/lib/components/AnalysisView.test.ts`
 
-Also remove PR #44's temporary `setAnalysisSelection` / `submitAnalysisSelection`, `set_analysis_selection` / `submit_analysis_selection`, and flat threshold-board frontend shape wherever they appear.
+The useful P1 tests from these files must be migrated before deletion.
 
-### Intentionally do not modify
+### Intentionally Do Not Modify
 
-- `apps/game/src/lib/state/mode.ts` behavior;
-- `apps/game/src/lib/components/GameShell.svelte`;
-- Rust runtime/schema/save files;
-- compiler Analysis parser/validator/emitter.
+- `apps/game/src/lib/state/types.ts`
+- `apps/game/src/lib/audio/sfx-events.ts`
+- `apps/game/src/lib/audio/sfx-events.test.ts`
+- `apps/game/src/lib/components/SceneNavigationPanel.svelte`
+- `apps/game/src/lib/components/SceneNavigationPanel.test.ts`
+- `apps/game/src/lib/components/GameShell.svelte`
+- Case File production components/labels
+- Rust Analysis/runtime/save/view files
+- compiler Analysis parser/validator/emitter
 
 ---
 
-### Task 1: Add the answer-key-free frontend Analysis contract and Beat 8.5 fixture
+### Task 1: Pin the Current Public Contract with P1 + Beat 8.5 UI Fixtures
 
 **Files:**
-- Create: `apps/game/src/lib/analysis/beat-8-5-fixture.ts`
+- Create: `apps/game/src/lib/analysis/test-fixtures.ts`
 - Create: `apps/game/src/lib/analysis/analysis-boundary.test.ts`
-- Modify: `apps/game/src/lib/state/types.ts`
 
 **Interfaces:**
-- Consumes: existing `InventoryTarget`, `Inventory`, `VisualAssetCue`.
-- Produces: `AnalysisActionToken`, `AnalysisDraft`, `AnalysisFeedbackView`, public board/card/group/fixed-anchor views, Analysis `Mode`, Analysis `SceneView`.
+- Consumes: existing `AnalysisBoardView`, `AnalysisDraft`, `Mode`, `SceneView`, `Inventory` from `state/types.ts`.
+- Produces: public-only fixtures used by Tasks 2–5. No accepted answers.
 
-- [ ] **Step 1: Write the failing ownership-boundary test**
+- [ ] **Step 1: Move the existing P1 public fixture into the shared fixture file**
+
+Start from the current `AnalysisView.test.ts` P1 fixture and preserve its exact public semantics:
+
+- scene `analysis_scene_p1_5`;
+- one threshold board `p1_reprint_time_board`;
+- four `practice` cards;
+- `available: true` cards;
+- `draft: { kind: "threshold", selectedCardIds: [] }`;
+- threshold compatibility `selectedCardIds: []` because it remains part of the current public TypeScript shape;
+- `actionToken` and current `boardId`/`activeBoardId` values appropriate for the fixture.
+
+Do not invent Case File provenance rows for practice cards.
+
+- [ ] **Step 2: Add answer-key-free Beat 8.5 public fixtures**
+
+Create three board fixtures with the real public IDs/labels from the HPA-259 fixture:
+
+```text
+evidence_packages      -> classify
+local_event_sequence   -> order
+narrow_request_basis   -> threshold
+```
+
+Use only public data:
+
+- classify cards/groups + empty/partial classify draft;
+- order cards + `fixedAnchors: [{ cardId: "event_1841", position: 1 }]` + a deliberately non-final partial order draft;
+- threshold cards + `minimumSelected: 2` + empty/partial threshold draft;
+- `available/completed/readOnly/feedback/hint` public state;
+- `AnalysisCardSourceView` with evidence/statement IDs and existing public source label/summary fields;
+- card `available` values.
+
+Do **not** include `acceptedGroupByCard`, `acceptedOrder`, or `acceptedSelections`.
+
+Add only the evidence/statement inventory records needed for threshold badge tests. Give at least two records the same `sourceGroup.id` so the component can prove it does not enforce source independence locally.
+
+- [ ] **Step 3: Add the hidden-answer ownership guard**
 
 Create `analysis-boundary.test.ts`:
 
 ```ts
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { beat85AnalysisSceneFixture } from "./beat-8-5-fixture";
+import { beat85AnalysisSceneFixture } from "./test-fixtures";
 
-const HIDDEN_KEYS = [
-  "acceptedGroupByCard",
-  "acceptedOrder",
-  "acceptedSelections",
+const FEATURE_PATHS = [
+  "src/lib/analysis/test-fixtures.ts",
+  "src/lib/analysis/order-draft.ts",
+  "src/lib/components/analysis/AnalysisCard.svelte",
+  "src/lib/components/analysis/ClassifyBoard.svelte",
+  "src/lib/components/analysis/OrderBoard.svelte",
+  "src/lib/components/analysis/ThresholdBoard.svelte",
+  "src/lib/components/analysis/AnalysisWorkbench.svelte",
 ];
 
-describe("Analysis frontend ownership boundary", () => {
-  it("contains all three Chapter 1 board kinds without answer keys", () => {
-    expect(beat85AnalysisSceneFixture.visibleBoards.map((b) => b.kind)).toEqual([
-      "classify",
-      "order",
-      "threshold",
-    ]);
-    const json = JSON.stringify(beat85AnalysisSceneFixture);
-    for (const key of HIDDEN_KEYS) expect(json).not.toContain(key);
-  });
+it("keeps answer keys out of frontend Analysis fixtures and feature source", () => {
+  const fixture = JSON.stringify(beat85AnalysisSceneFixture);
+  expect(fixture).not.toContain("acceptedGroupByCard");
+  expect(fixture).not.toContain("acceptedOrder");
+  expect(fixture).not.toContain("acceptedSelections");
 
-  it("keeps hidden answer-key names out of Analysis feature source", () => {
-    const files = [
-      "src/lib/analysis/beat-8-5-fixture.ts",
-      "src/lib/components/analysis/ClassifyBoard.svelte",
-      "src/lib/components/analysis/OrderBoard.svelte",
-      "src/lib/components/analysis/ThresholdBoard.svelte",
-      "src/lib/components/analysis/AnalysisWorkbench.svelte",
-    ];
-    const source = files.flatMap((path) => {
-      try { return [readFileSync(path, "utf8")]; } catch { return []; }
-    }).join("\n");
-    for (const key of HIDDEN_KEYS) expect(source).not.toContain(key);
-  });
+  const source = FEATURE_PATHS.flatMap((path) => {
+    try { return [readFileSync(path, "utf8")]; } catch { return []; }
+  }).join("\n");
+  expect(source).not.toMatch(/acceptedGroupByCard|acceptedOrder|acceptedSelections/);
 });
 ```
 
-- [ ] **Step 2: Run it and confirm the initial failure**
+- [ ] **Step 4: Verify fixture/type compatibility**
 
-```bash
-bun run --cwd apps/game test src/lib/analysis/analysis-boundary.test.ts
-```
-
-Expected: FAIL because the fixture/types do not exist on current `main`.
-
-- [ ] **Step 3: Mirror HPA-260's public types**
-
-Add to `state/types.ts`:
-
-```ts
-export type AnalysisActionToken = {
-  sceneId: string;
-  activeBoardId: string | null;
-  durableRevision: number;
-};
-
-export type AnalysisDraft =
-  | { kind: "classify"; groupByCard: Record<string, string> }
-  | { kind: "order"; cardIds: string[] }
-  | { kind: "threshold"; selectedCardIds: string[] };
-
-export type AnalysisFeedbackView =
-  | { kind: "incomplete" | "incorrect"; message: string }
-  | null;
-
-export type AnalysisCardView = {
-  id: string;
-  label: string;
-  summary: string;
-  source: InventoryTarget;
-};
-
-export type AnalysisGroupView = {
-  id: string;
-  label: string;
-  description: string;
-};
-
-export type AnalysisFixedAnchorView = {
-  cardId: string;
-  position: number;
-};
-
-type AnalysisBoardCommon = {
-  id: string;
-  label: string;
-  prompt: string;
-  cards: AnalysisCardView[];
-  completed: boolean;
-  readOnly: boolean;
-  feedback: AnalysisFeedbackView;
-  hint: string | null;
-};
-
-export type AnalysisBoardView =
-  | (AnalysisBoardCommon & {
-      kind: "classify";
-      groups: AnalysisGroupView[];
-      draft: Extract<AnalysisDraft, { kind: "classify" }>;
-    })
-  | (AnalysisBoardCommon & {
-      kind: "order";
-      fixedAnchors: AnalysisFixedAnchorView[];
-      draft: Extract<AnalysisDraft, { kind: "order" }>;
-    })
-  | (AnalysisBoardCommon & {
-      kind: "threshold";
-      minimumSelected: number;
-      draft: Extract<AnalysisDraft, { kind: "threshold" }>;
-    });
-```
-
-Add exactly one Analysis mode identity:
-
-```ts
-| ({
-    type: "analysis";
-    actionToken: AnalysisActionToken;
-  } & VisualAssetCue)
-```
-
-Add the Analysis `SceneView` arm with `visibleBoards: AnalysisBoardView[]`, and extend `SceneNavigationIndex` scene type with `"analysis"`.
-
-Do **not** add `mode.boardId`.
-
-- [ ] **Step 4: Add the answer-key-free Beat 8.5 fixture**
-
-Use the real HPA-259 public IDs/labels:
-
-- scene `analysis_scene_8_5`;
-- classify board `evidence_packages` with `miyake_call`, `l_corridor_replay`, `external_credential_event` and the two public groups;
-- order board `local_event_sequence` with `event_1841` through `event_1844` and `fixedAnchors: [{ cardId: "event_1841", position: 1 }]`;
-- threshold board `narrow_request_basis` with `lock_sequence`, `phone_notification`, `manager_timing`, `minimumSelected: 2`;
-- only empty/current public drafts, never accepted solutions.
-
-The fixture's Analysis token starts with:
-
-```ts
-export const beat85ActionTokenFixture: AnalysisActionToken = {
-  sceneId: "analysis_scene_8_5",
-  activeBoardId: "evidence_packages",
-  durableRevision: 41,
-};
-```
-
-Add only the evidence/statement inventory rows needed by threshold source/procedure presentation tests.
-
-- [ ] **Step 5: Verify focused tests and types**
+Run:
 
 ```bash
 bun run --cwd apps/game test src/lib/analysis/analysis-boundary.test.ts
 bun run --cwd apps/game check
 ```
 
-Expected: PASS.
+Expected: PASS without changing `state/types.ts`.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add apps/game/src/lib/state/types.ts apps/game/src/lib/analysis/beat-8-5-fixture.ts apps/game/src/lib/analysis/analysis-boundary.test.ts
-git commit -m "feat(game-ui): add analysis public view contract"
+git add apps/game/src/lib/analysis/test-fixtures.ts apps/game/src/lib/analysis/analysis-boundary.test.ts
+git commit -m "test(game-ui): pin analysis public fixtures"
 ```
 
 ---
 
-### Task 2: Add semantic command wrappers and prove stale-response fencing
-
-**Files:**
-- Create: `apps/game/src/lib/analysis/response-fence.ts`
-- Create: `apps/game/src/lib/analysis/response-fence.test.ts`
-- Modify: `apps/game/src/lib/state/game-client.svelte.ts`
-- Modify: `apps/game/src/lib/state/game-client-source.test.ts`
-- Modify: `apps/game/src/lib/audio/sfx-events.ts`
-- Modify: `apps/game/src/lib/audio/sfx-events.test.ts`
-
-**Interfaces:**
-- Consumes: `AnalysisActionToken`, `AnalysisDraft`, existing `presentationState.sessionEpoch`, `dispatchGameCommand`, `MUTATING_GAMEPLAY_COMMANDS`.
-- Produces: `selectAnalysisBoard`, `updateAnalysisDraft`, `submitAnalysisBoard` returning `Promise<GameStateView | null>`.
-
-- [ ] **Step 1: Write pure fence tests**
-
-Create `response-fence.test.ts` with cases for:
-
-- same epoch + same token => true;
-- replaced epoch => false;
-- changed durable revision => false;
-- changed active board => false;
-- non-Analysis current mode => false.
-
-Implementation target:
-
-```ts
-export function sameAnalysisActionToken(
-  left: AnalysisActionToken,
-  right: AnalysisActionToken,
-): boolean {
-  return left.sceneId === right.sceneId &&
-    left.activeBoardId === right.activeBoardId &&
-    left.durableRevision === right.durableRevision;
-}
-
-export function isAnalysisResponseCurrent(
-  current: GameStateView | null,
-  capturedEpoch: number,
-  currentEpoch: number,
-  expected: AnalysisActionToken,
-): boolean {
-  return capturedEpoch === currentEpoch &&
-    current?.mode.type === "analysis" &&
-    sameAnalysisActionToken(current.mode.actionToken, expected);
-}
-```
-
-- [ ] **Step 2: Run the pure test and confirm failure**
-
-```bash
-bun run --cwd apps/game test src/lib/analysis/response-fence.test.ts
-```
-
-Expected: FAIL because the helper does not exist.
-
-- [ ] **Step 3: Add one optional response guard to the existing dispatcher**
-
-Change only the existing dispatcher signature/application point:
-
-```ts
-async function dispatchGameCommand(
-  command: GameplayCommandName,
-  args?: Record<string, unknown>,
-  loading = false,
-  acceptResponse?: () => boolean,
-): Promise<GameStateView | null> {
-  // preserve the existing inFlight/loading/finally behavior
-  const previous = gameState.value;
-  const response = await runCommand<GameplayCommandResultView>(command, args);
-  if (response && (acceptResponse?.() ?? true)) {
-    return applyGameplayCommandResult(response, (next) => {
-      // preserve the existing SFX inference/playback body unchanged
-    });
-  }
-  return null;
-}
-```
-
-Do not create another dispatcher or Analysis-owned generation.
-
-- [ ] **Step 4: Add the three wrappers**
-
-```ts
-function analysisResponseGuard(expected: AnalysisActionToken): () => boolean {
-  const capturedEpoch = presentationState.sessionEpoch;
-  return () => isAnalysisResponseCurrent(
-    gameState.value,
-    capturedEpoch,
-    presentationState.sessionEpoch,
-    expected,
-  );
-}
-
-export function selectAnalysisBoard(expected: AnalysisActionToken, boardId: string) {
-  return dispatchGameCommand(
-    "select_analysis_board",
-    { expected, boardId },
-    false,
-    analysisResponseGuard(expected),
-  );
-}
-
-export function updateAnalysisDraft(expected: AnalysisActionToken, draft: AnalysisDraft) {
-  return dispatchGameCommand(
-    "update_analysis_draft",
-    { expected, draft },
-    false,
-    analysisResponseGuard(expected),
-  );
-}
-
-export function submitAnalysisBoard(expected: AnalysisActionToken) {
-  return dispatchGameCommand(
-    "submit_analysis_board",
-    { expected },
-    false,
-    analysisResponseGuard(expected),
-  );
-}
-```
-
-- [ ] **Step 5: Add a dispatcher wiring regression test**
-
-In existing `game-client-source.test.ts`, add an `analysisState(activeBoardId, durableRevision)` helper using the Task 1 public type. Then add:
-
-```ts
-it("drops a late Analysis response after the frontend session is replaced", async () => {
-  const current = analysisState("evidence_packages", 41);
-  const staleResponse = analysisState("evidence_packages", 42);
-  const client = await loadGameClient(current);
-  let resolveInvoke!: (value: GameStateView) => void;
-
-  mocks.invoke.mockReturnValueOnce(new Promise<GameStateView>((resolve) => {
-    resolveInvoke = resolve;
-  }));
-
-  if (current.mode.type !== "analysis") {
-    throw new Error("analysisState must return Analysis mode");
-  }
-  const expected = current.mode.actionToken;
-  const command = client.updateAnalysisDraft(expected, {
-    kind: "classify",
-    groupByCard: { miyake_call: "miyake_small_lies" },
-  });
-
-  client.resetFrontendForTitle();
-  resolveInvoke(staleResponse);
-
-  await expect(command).resolves.toBeNull();
-  expect(client.gameState.value).toBeNull();
-});
-```
-
-This verifies the actual dispatcher hook, not only the pure predicate.
-
-- [ ] **Step 6: Register all three commands in both existing command surfaces**
-
-In `sfx-events.ts`, extend `GameplayCommandName` with:
-
-```ts
-| "select_analysis_board"
-| "update_analysis_draft"
-| "submit_analysis_board"
-```
-
-In existing `MUTATING_GAMEPLAY_COMMANDS` in `game-client.svelte.ts`, add the same three names.
-
-In `sfx-events.test.ts`, update the exhaustive `Record<GameplayCommandName, true>` and change the explicit count from 14 to 17. Add no SFX assets/events.
-
-- [ ] **Step 7: Verify**
-
-```bash
-bun run --cwd apps/game test src/lib/analysis/response-fence.test.ts src/lib/state/game-client-source.test.ts src/lib/audio/sfx-events.test.ts
-bun run --cwd apps/game check
-```
-
-Expected: PASS.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add apps/game/src/lib/analysis/response-fence.ts apps/game/src/lib/analysis/response-fence.test.ts apps/game/src/lib/state/game-client.svelte.ts apps/game/src/lib/state/game-client-source.test.ts apps/game/src/lib/audio/sfx-events.ts apps/game/src/lib/audio/sfx-events.test.ts
-git commit -m "feat(game-ui): add analysis command fencing"
-```
-
----
-
-### Task 3: Build shared card presentation and classify interaction
+### Task 2: Build Shared Card Presentation and Classify Interaction
 
 **Files:**
 - Create: `apps/game/src/lib/components/analysis/AnalysisCard.svelte`
@@ -456,38 +216,26 @@ git commit -m "feat(game-ui): add analysis command fencing"
 - Create: `apps/game/src/lib/components/analysis/ClassifyBoard.test.ts`
 
 **Interfaces:**
-- Consumes: classify `AnalysisBoardView`.
-- Produces: full replacement classify drafts through `onDraft(draft, focusKey)`.
+- Consumes: current `Extract<AnalysisBoardView, { kind: "classify" }>`.
+- Produces: whole replacement classify drafts via `onDraft(draft, focusKey)` only.
 
-- [ ] **Step 1: Write failing pointer/keyboard, move, and remove tests**
+- [ ] **Step 1: Write failing interaction tests**
 
-Pin:
+Pin all of these:
 
-1. click card + click group and keyboard Enter/Space produce the same draft;
-2. selecting an already-assigned card and assigning another group emits a moved mapping;
-3. `移除` deletes exactly that card mapping.
+1. pointer click and keyboard Enter/Space produce the same assignment draft;
+2. assigning an already-assigned available card to another group emits a moved mapping;
+3. `移除` deletes only that card mapping;
+4. `card.available === false` disables selection/assignment affordances;
+5. `readOnly` prevents mutation controls.
 
-Removal test:
+Example removal assertion:
 
 ```ts
-it("removes an assigned card back to the unassigned pool", async () => {
-  const assigned = {
-    ...board,
-    draft: {
-      kind: "classify" as const,
-      groupByCard: { miyake_call: "miyake_small_lies" },
-    },
-  };
-  const onDraft = vi.fn();
-  const user = userEvent.setup();
-  render(ClassifyBoard, { board: assigned, disabled: false, onDraft });
-
-  await user.click(screen.getByRole("button", { name: /三宅母親通話紀錄.*移除/ }));
-  expect(onDraft).toHaveBeenLastCalledWith(
-    { kind: "classify", groupByCard: {} },
-    "card:miyake_call",
-  );
-});
+expect(onDraft).toHaveBeenLastCalledWith(
+  { kind: "classify", groupByCard: {} },
+  "card:miyake_call",
+);
 ```
 
 - [ ] **Step 2: Run and confirm failure**
@@ -496,63 +244,55 @@ it("removes an assigned card back to the unassigned pool", async () => {
 bun run --cwd apps/game test src/lib/components/analysis/ClassifyBoard.test.ts
 ```
 
-Expected: FAIL because components do not exist.
+Expected: FAIL because the component does not exist.
 
-- [ ] **Step 3: Implement `AnalysisCard` and classify component**
+- [ ] **Step 3: Implement `AnalysisCard` as presentation only**
 
-Use native buttons only. Component-local state may remember `selectedCardId`, but the authoritative assignment map always comes from `board.draft.groupByCard`.
+It may render:
+
+- card label;
+- card summary;
+- optional badge strings passed by the parent;
+- unavailable/read-only visual text.
+
+It must not know any solution or call Tauri commands.
+
+- [ ] **Step 4: Implement classify interaction over the current draft**
+
+Narrow the runtime draft before use:
+
+```ts
+if (board.draft.kind !== "classify") {
+  // Valid Rust views should never hit this; render/disable safely rather than cast.
+}
+```
 
 Assignment:
 
 ```ts
-function assign(cardId: string, groupId: string) {
-  if (board.readOnly || disabled) return;
-  onDraft(
-    {
-      kind: "classify",
-      groupByCard: { ...board.draft.groupByCard, [cardId]: groupId },
-    },
-    `card:${cardId}`,
-  );
-}
+const next = {
+  ...board.draft.groupByCard,
+  [cardId]: groupId,
+};
+onDraft({ kind: "classify", groupByCard: next }, `card:${cardId}`);
 ```
 
-Removal:
+Removal copies the map and deletes the requested card.
 
-```ts
-function remove(cardId: string) {
-  if (board.readOnly || disabled) return;
-  const next = { ...board.draft.groupByCard };
-  delete next[cardId];
-  onDraft({ kind: "classify", groupByCard: next }, `card:${cardId}`);
-}
-```
+Use native buttons with useful accessible names. Do not render local correctness colors.
 
-Use labelled pool/group sections and visible focus styles. Do not render correctness colors.
+- [ ] **Step 5: Add visible focus and reduced-motion behavior**
 
-- [ ] **Step 4: Add reduced-motion fallback**
+Use `:focus-visible` and `prefers-reduced-motion: reduce`; do not add an animation system.
 
-```css
-button:focus-visible {
-  outline: 2px solid var(--cyan);
-  outline-offset: 2px;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  button { transition: none; }
-}
-```
-
-- [ ] **Step 5: Verify**
+- [ ] **Step 6: Verify**
 
 ```bash
 bun run --cwd apps/game test src/lib/components/analysis/ClassifyBoard.test.ts
 bun run --cwd apps/game check
 ```
 
-Expected: PASS.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add apps/game/src/lib/components/analysis/AnalysisCard.svelte apps/game/src/lib/components/analysis/ClassifyBoard.svelte apps/game/src/lib/components/analysis/ClassifyBoard.test.ts
@@ -561,7 +301,7 @@ git commit -m "feat(game-ui): add classify analysis board"
 
 ---
 
-### Task 4: Add tested Chapter 1 order-draft algebra and order UI
+### Task 3: Add Pure Chapter 1 Order Algebra and the Order Board
 
 **Files:**
 - Create: `apps/game/src/lib/analysis/order-draft.ts`
@@ -570,49 +310,50 @@ git commit -m "feat(game-ui): add classify analysis board"
 - Create: `apps/game/src/lib/components/analysis/OrderBoard.test.ts`
 
 **Interfaces:**
-- Consumes: order public board + public fixed anchors.
+- Consumes: current public order board + public fixed anchors.
 - Produces: structural order drafts only.
-- Chapter 1 contract: supported anchors must form a contiguous prefix; current fixture is exactly `event_1841@1`.
+- Chapter 1 constraint: supported fixed anchors must form a contiguous prefix; current fixture is exactly `event_1841@1`.
 
 - [ ] **Step 1: Write table-driven pure tests first**
 
-Create `order-draft.test.ts` and pin:
+Pin the actual fixture:
 
 ```ts
 expect(board.fixedAnchors).toEqual([{ cardId: "event_1841", position: 1 }]);
 ```
 
-Table/boundary cases:
+Required helper behaviors:
 
 ```ts
-it.each([
-  ["materializes prefix on first add", [], "event_1842", ["event_1841", "event_1842"]],
-  ["does not duplicate anchor", ["event_1841"], "event_1842", ["event_1841", "event_1842"]],
-])("%s", (_name, current, cardId, expected) => {
-  expect(addOrderCard(board, current, cardId)).toEqual(expected);
-});
+materializePrefixAnchors(board, [])
+  -> ["event_1841"]
 
-it("moves a movable card without crossing the fixed prefix", () => {
-  expect(moveOrderCard(board, ["event_1841", "event_1842", "event_1843"], "event_1843", -1))
-    .toEqual(["event_1841", "event_1843", "event_1842"]);
-  expect(moveOrderCard(board, ["event_1841", "event_1842"], "event_1842", -1))
-    .toEqual(["event_1841", "event_1842"]);
-});
+addOrderCard(board, [], "event_1842")
+  -> ["event_1841", "event_1842"]
 
-it("removes movable cards but never the fixed prefix", () => {
-  expect(removeOrderCard(board, ["event_1841", "event_1842", "event_1843"], "event_1842"))
-    .toEqual(["event_1841", "event_1843"]);
-  expect(removeOrderCard(board, ["event_1841", "event_1842"], "event_1841"))
-    .toEqual(["event_1841", "event_1842"]);
-});
+moveOrderCard(
+  board,
+  ["event_1841", "event_1842", "event_1843"],
+  "event_1843",
+  -1,
+)
+  -> ["event_1841", "event_1843", "event_1842"]
 
-it("rejects a non-prefix fixed-anchor shape", () => {
-  expect(() => assertSupportedPrefixAnchors({
-    ...board,
-    fixedAnchors: [{ cardId: "event_1842", position: 2 }],
-  })).toThrow(/prefix/i);
-});
+moveOrderCard(board, ["event_1841", "event_1842"], "event_1842", -1)
+  -> unchanged
+
+removeOrderCard(
+  board,
+  ["event_1841", "event_1842", "event_1843"],
+  "event_1842",
+)
+  -> ["event_1841", "event_1843"]
+
+removeOrderCard(board, ["event_1841", "event_1842"], "event_1841")
+  -> unchanged
 ```
+
+Also require a non-prefix anchor fixture (for example one anchor at position 2 without position 1) to throw/fail the supported-shape assertion.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -620,11 +361,9 @@ it("rejects a non-prefix fixed-anchor shape", () => {
 bun run --cwd apps/game test src/lib/analysis/order-draft.test.ts
 ```
 
-Expected: FAIL because helper does not exist.
-
 - [ ] **Step 3: Implement the pure helper**
 
-Use signatures:
+Use focused signatures:
 
 ```ts
 type OrderBoardView = Extract<AnalysisBoardView, { kind: "order" }>;
@@ -632,22 +371,31 @@ type OrderBoardView = Extract<AnalysisBoardView, { kind: "order" }>;
 export function assertSupportedPrefixAnchors(board: OrderBoardView): void;
 export function materializePrefixAnchors(board: OrderBoardView, cardIds: string[]): string[];
 export function addOrderCard(board: OrderBoardView, cardIds: string[], cardId: string): string[];
-export function moveOrderCard(board: OrderBoardView, cardIds: string[], cardId: string, direction: -1 | 1): string[];
+export function moveOrderCard(
+  board: OrderBoardView,
+  cardIds: string[],
+  cardId: string,
+  direction: -1 | 1,
+): string[];
 export function removeOrderCard(board: OrderBoardView, cardIds: string[], cardId: string): string[];
 ```
 
-`assertSupportedPrefixAnchors` sorts anchors by position and requires positions `1..N`. `materializePrefixAnchors` prepends those public anchor IDs and removes duplicate copies from the movable remainder. Movement may reorder only indices after the fixed prefix. No function compares against hidden accepted order.
+The helper may inspect only public fixed anchors/card IDs. It never compares against accepted order.
 
-- [ ] **Step 4: Build `OrderBoard.svelte` as a thin presentation layer**
+- [ ] **Step 4: Build the thin `OrderBoard.svelte`**
+
+Runtime-narrow `board.draft.kind === "order"` before reading `cardIds`.
 
 Render:
 
-- `<ol aria-label="本機事件順序">`;
-- fixed prefix card with `固定位置`, no mutation controls;
+- numbered current sequence;
+- fixed prefix card with `固定位置`, no move/remove controls;
 - unplaced card pool;
-- movable buttons `加入時間線`, `上移`, `下移`, `移除`.
+- `加入時間線`, `上移`, `下移`, `移除` for movable available cards.
 
-Every handler delegates to the pure helper and emits:
+Unavailable cards cannot be added. Read-only boards expose no mutation buttons.
+
+Every action delegates to `order-draft.ts` and emits:
 
 ```ts
 onDraft({ kind: "order", cardIds: next }, `card:${cardId}`);
@@ -655,22 +403,22 @@ onDraft({ kind: "order", cardIds: next }, `card:${cardId}`);
 
 - [ ] **Step 5: Add component parity tests**
 
-Component tests prove:
+Prove:
 
-- fixed anchor is locked/no move/remove controls;
-- pointer and keyboard `加入時間線` emit the same helper-produced draft;
-- a prepared public draft exposes `上移` / `下移` / `移除` controls and each emits through `onDraft`.
-
-Pure helper tests own permutation/boundary correctness.
+- fixed anchor is locked;
+- pointer/keyboard Add produces the same helper-derived draft;
+- Up/Down/Remove call through structural drafts;
+- unavailable unplaced cards are disabled;
+- read-only boards cannot mutate.
 
 - [ ] **Step 6: Verify**
 
 ```bash
-bun run --cwd apps/game test src/lib/analysis/order-draft.test.ts src/lib/components/analysis/OrderBoard.test.ts
+bun run --cwd apps/game test \
+  src/lib/analysis/order-draft.test.ts \
+  src/lib/components/analysis/OrderBoard.test.ts
 bun run --cwd apps/game check
 ```
-
-Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
@@ -681,195 +429,170 @@ git commit -m "feat(game-ui): add order analysis board"
 
 ---
 
-### Task 5: Build threshold selection with shared Case File source text
+### Task 4: Migrate Threshold UI Without Regressing P1
 
 **Files:**
-- Create: `apps/game/src/lib/case-file/labels.test.ts`
-- Modify: `apps/game/src/lib/case-file/labels.ts`
-- Modify: `apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte`
 - Create: `apps/game/src/lib/components/analysis/ThresholdBoard.svelte`
 - Create: `apps/game/src/lib/components/analysis/ThresholdBoard.test.ts`
+- Reuse: `apps/game/src/lib/components/analysis/AnalysisCard.svelte`
+- Reuse: `apps/game/src/lib/case-file/labels.ts`
 
 **Interfaces:**
-- Consumes: threshold board + current `Inventory`.
-- Produces: sorted full replacement threshold drafts.
-- Shared helper: `caseRecordSourceText(record): string | null`.
+- Consumes: current threshold public board + current `Inventory`.
+- Produces: sorted whole replacement threshold drafts via `onDraft(draft, focusKey)`.
 
-- [ ] **Step 1: Write a failing pure source-text precedence test**
+- [ ] **Step 1: Migrate the current P1 regression tests before changing UI behavior**
 
-Create `apps/game/src/lib/case-file/labels.test.ts`:
+Copy/reshape the useful current `AnalysisView.test.ts` coverage into `ThresholdBoard.test.ts`:
 
-```ts
-import { describe, expect, it } from "vitest";
-import { caseRecordSourceText } from "./labels";
+- all four P1 `practice` cards render;
+- threshold toggle emits a whole threshold draft;
+- selected card toggles off;
+- authored incorrect feedback is renderable by the host/board contract;
+- disabled/in-flight state blocks card mutation;
+- completed/read-only state blocks card mutation.
 
-function sourceOnly(sourceLabel: string | null, groupLabel: string | null) {
-  return {
-    provenance: { sourceLabel },
-    sourceGroup: groupLabel === null ? null : { label: groupLabel },
-  } as Parameters<typeof caseRecordSourceText>[0];
-}
+This is a hard regression gate because P1 is already playable on `main`.
 
-describe("caseRecordSourceText", () => {
-  it("prefers the existing Case File sourceLabel over source-group label", () => {
-    expect(caseRecordSourceText(sourceOnly("雨鐘後場門鎖", "門鎖本機")))
-      .toBe("雨鐘後場門鎖");
-  });
-
-  it("falls back to source-group label when sourceLabel is absent", () => {
-    expect(caseRecordSourceText(sourceOnly(null, "門鎖本機")))
-      .toBe("門鎖本機");
-  });
-});
-```
-
-- [ ] **Step 2: Run and confirm failure**
-
-```bash
-bun run --cwd apps/game test src/lib/case-file/labels.test.ts
-```
-
-Expected: FAIL because the helper does not exist.
-
-- [ ] **Step 3: Extract the shared helper without changing Case File behavior**
-
-In `case-file/labels.ts`:
-
-```ts
-export function caseRecordSourceText(
-  record: EvidenceRecord | StatementRecord,
-): string | null {
-  return record.provenance.sourceLabel ?? record.sourceGroup?.label ?? null;
-}
-```
-
-Update `CaseFileRecordDetail.svelte` to derive `sourceText` through that function. Keep its existing separate source-kind/procedure/completeness/confidence rendering unchanged.
-
-- [ ] **Step 4: Write threshold tests**
+- [ ] **Step 2: Add Beat 8.5 threshold presentation tests**
 
 Pin:
 
-- the lock record source badge is `雨鐘後場門鎖` (not `門鎖本機`) because Case File source label takes precedence;
-- procedure badge `重新取得` renders;
-- progress shows `已選 0 / 最少 2`;
-- pointer and keyboard produce the same selection draft;
-- selected IDs are emitted sorted;
-- a fixture clone with two cards sharing `sourceGroup.id` can select both.
+- progress text `已選 0 / 最少 2`;
+- pointer/keyboard toggle parity;
+- `card.available === false` disables toggling;
+- selected IDs are emitted in deterministic lexical order;
+- two cards sharing the same `sourceGroup.id` can still both be selected;
+- evidence/statement cards can show `來源群組` / `來源` plus `程序` badges;
+- practice cards do not attempt Case File inventory lookup and show no fabricated provenance badge.
 
-- [ ] **Step 5: Implement public presentation only**
+- [ ] **Step 3: Implement threshold selection from `board.draft`**
 
-Record lookup:
+Narrow the current generic draft:
 
 ```ts
-function recordFor(source: InventoryTarget) {
-  return source.kind === "evidence"
-    ? inventory.evidence.find((record) => record.id === source.id) ?? null
-    : inventory.statements.find((record) => record.id === source.id) ?? null;
+if (board.draft.kind !== "threshold") {
+  // defensive invalid-view state
 }
 ```
 
-Badges:
-
-```ts
-const source = caseRecordSourceText(record) ??
-  sourceKindLabels[record.provenance.sourceKind] ??
-  null;
-const procedure =
-  proceduralStatusLabels[record.provenance.proceduralStatus] ?? null;
-```
-
-Do not compare source-group IDs across selected cards.
+Do **not** use the compatibility flat `board.selectedCardIds` as the new workbench source of truth.
 
 Toggle:
 
 ```ts
-function toggle(cardId: string) {
-  if (board.readOnly || disabled) return;
-  const selected = new Set(board.draft.selectedCardIds);
-  if (selected.has(cardId)) selected.delete(cardId);
-  else selected.add(cardId);
-  onDraft(
-    { kind: "threshold", selectedCardIds: [...selected].sort() },
-    `card:${cardId}`,
-  );
-}
+const selected = new Set(board.draft.selectedCardIds);
+if (selected.has(cardId)) selected.delete(cardId);
+else selected.add(cardId);
+
+onDraft(
+  { kind: "threshold", selectedCardIds: [...selected].sort() },
+  `card:${cardId}`,
+);
 ```
 
-- [ ] **Step 6: Verify**
+Respect `card.available`, `board.readOnly`, and parent `disabled`.
+
+- [ ] **Step 4: Render public provenance semantics without a local evaluator**
+
+For evidence/statement cards:
+
+1. resolve the referenced public inventory record by `card.source.kind/id`;
+2. if it has a `sourceGroup`, render `來源群組：<label>`;
+3. otherwise, if `provenance.sourceLabel` exists, render `來源：<label>`;
+4. optional source-kind fallback may use existing `sourceKindLabels`;
+5. if `proceduralStatusLabels[...]` returns a value, render `程序：<label>`.
+
+Do not compare source groups between selected cards.
+
+For `practice` source cards, skip inventory/provenance resolution.
+
+- [ ] **Step 5: Verify**
 
 ```bash
-bun run --cwd apps/game test src/lib/case-file/labels.test.ts src/lib/components/analysis/ThresholdBoard.test.ts
+bun run --cwd apps/game test src/lib/components/analysis/ThresholdBoard.test.ts
 bun run --cwd apps/game check
 ```
 
-Run the existing focused Case File component tests that cover `CaseFileRecordDetail` after the helper extraction.
-
-Expected: PASS with unchanged Case File presentation behavior.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add apps/game/src/lib/case-file/labels.ts apps/game/src/lib/case-file/labels.test.ts apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte apps/game/src/lib/components/analysis/ThresholdBoard.svelte apps/game/src/lib/components/analysis/ThresholdBoard.test.ts
-git commit -m "feat(game-ui): add threshold analysis board"
+git add apps/game/src/lib/components/analysis/ThresholdBoard.svelte apps/game/src/lib/components/analysis/ThresholdBoard.test.ts
+git commit -m "feat(game-ui): generalize threshold analysis board"
 ```
 
 ---
 
-### Task 6: Compose the workbench, focus behavior, route, mode pins, and PR #44 cleanup
+### Task 5: Compose the Workbench, Enable Applied-State Undo, and Replace the Old AnalysisView
 
 **Files:**
 - Create: `apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte`
 - Create: `apps/game/src/lib/components/analysis/AnalysisWorkbench.test.ts`
+- Modify: `apps/game/src/lib/state/game-client.svelte.ts`
+- Modify: `apps/game/src/lib/state/game-client-source.test.ts`
 - Modify: `apps/game/src/routes/+page.svelte`
 - Modify: `apps/game/src/lib/state/mode.test.ts`
-- Modify: `apps/game/src/lib/components/SceneNavigationPanel.svelte`
-- Modify: `apps/game/src/lib/components/SceneNavigationPanel.test.ts`
-- Delete if present: temporary `AnalysisView.svelte` / `.test.ts`
-- Clean if present: temporary PR #44 command/type/route surface.
+- Delete: `apps/game/src/lib/components/AnalysisView.svelte`
+- Delete: `apps/game/src/lib/components/AnalysisView.test.ts`
 
 **Interfaces:**
-- Consumes: Analysis scene/mode/inventory + Tasks 2–5 components/wrappers.
-- Produces: the only production Analysis surface rendered by the game page.
+- Consumes: current Analysis mode/scene/inventory and the already-existing Analysis commands.
+- Produces: the only production Analysis surface rendered by `+page.svelte`.
 
-- [ ] **Step 1: Write host tests before implementation**
+- [ ] **Step 1: Make the existing Analysis wrappers return applied authoritative state**
+
+Current `dispatchAnalysisCommand` catches application failures but returns `void`. Keep that error behavior, but return the underlying dispatcher result:
+
+```ts
+async function dispatchAnalysisCommand(
+  command: Extract<
+    GameplayCommandName,
+    "select_analysis_board" | "update_analysis_draft" | "submit_analysis_board"
+  >,
+  args: Record<string, unknown>,
+): Promise<GameStateView | null> {
+  try {
+    return await dispatchGameCommand(command, args);
+  } catch (error) {
+    gameState.error = normalizeError(error);
+    return null;
+  }
+}
+```
+
+Then have all three existing wrappers return that promise rather than `await` + discard it.
+
+Do not change command names, payload keys, or Tauri handlers.
+
+- [ ] **Step 2: Pin wrapper payload and return behavior in the existing game-client test**
+
+Add a focused test to `game-client-source.test.ts` that:
+
+- loads an Analysis state;
+- mocks `update_analysis_draft` to return an authoritative next state;
+- calls `updateAnalysisDraft(current.mode.actionToken, draft)`;
+- asserts invoke received `{ expected: token, draft }`;
+- asserts the wrapper returns the same applied next state and `gameState.value` is updated.
+
+No new response-fence/generation test is required.
+
+- [ ] **Step 3: Write workbench host tests**
 
 Pin:
 
-1. active board is derived from `mode.actionToken.activeBoardId`;
-2. Back selects the previous visible board through `onSelectBoard`;
-3. Submit remains enabled on editable incomplete drafts;
-4. Reset sends the board-kind empty draft through `onUpdateDraft`;
-5. successful edit makes one-step Undo available and Undo sends the previous public draft;
-6. switching `activeBoardId` via reactive rerender clears Undo and focuses the new heading;
-7. failed submit response with `feedback.message` focuses the feedback region;
-8. completed board shows `完成・只讀檢視` and no mutation controls;
-9. `activeBoardId: null` renders neutral no-active-board state and no submit control.
+1. displayed board lookup uses `mode.boardId`;
+2. available/completed board navigation calls `onSelectBoard(mode.actionToken, targetId)`;
+3. unavailable board is not selectable;
+4. Submit remains enabled on an editable incomplete draft;
+5. successful draft update (`non-null` applied result) creates one-step Undo using the prior authoritative draft;
+6. `null` update result does not create Undo;
+7. Undo sends the previous draft through the same update command;
+8. Reset sends the board-kind empty draft;
+9. displayed board change clears Undo/Hint and focuses the new heading;
+10. failed submit reflected as board feedback focuses the feedback region;
+11. completed board shows `完成・只讀檢視` and no mutation/Undo/Reset/Submit controls.
 
-Board-switch Undo regression:
-
-```ts
-it("clears one-step Undo when Rust switches the active board", async () => {
-  const { rerender } = renderWorkbench({ activeBoardId: "evidence_packages" });
-  await performSuccessfulEdit();
-  expect(screen.getByRole("button", { name: "復原" })).toBeInTheDocument();
-
-  await rerender(propsFor("local_event_sequence"));
-  expect(screen.queryByRole("button", { name: "復原" })).toBeNull();
-  expect(screen.getByRole("heading", { name: "本機事件順序" })).toHaveFocus();
-});
-```
-
-The local test harness must implement `performSuccessfulEdit()` by invoking a real rendered board control and rerendering with the authoritative fixture response, and `propsFor(boardId)` by cloning the fixture token with that `activeBoardId`; do not bypass workbench handlers.
-
-- [ ] **Step 2: Run and confirm failure**
-
-```bash
-bun run --cwd apps/game test src/lib/components/analysis/AnalysisWorkbench.test.ts
-```
-
-Expected: FAIL because workbench does not exist.
-
-- [ ] **Step 3: Implement host with presentation-only state**
+- [ ] **Step 4: Implement common host state only**
 
 Props:
 
@@ -883,18 +606,15 @@ onSubmit: typeof submitAnalysisBoard;
 disabled?: boolean;
 ```
 
-Derived active board:
+Displayed board:
 
 ```ts
-let activeBoardId = $derived(mode.actionToken.activeBoardId);
 let board = $derived(
-  activeBoardId === null
-    ? null
-    : scene.visibleBoards.find((candidate) => candidate.id === activeBoardId) ?? null,
+  scene.visibleBoards.find((candidate) => candidate.id === mode.boardId) ?? null,
 );
 ```
 
-Presentation state only:
+Keep only presentation state:
 
 ```ts
 let undoDraft = $state<AnalysisDraft | null>(null);
@@ -902,122 +622,106 @@ let undoBoardId = $state<string | null>(null);
 let hintOpen = $state(false);
 ```
 
-On board ID change, clear Undo/hint and `tick()` focus to the board heading.
+No copy of the current draft is kept outside the Rust-projected board view.
 
-After failed submit, focus:
+- [ ] **Step 5: Implement board navigation, Undo, Reset, Submit, and focus**
 
-```svelte
-<p role="status" tabindex="-1" bind:this={feedbackElement}>{board.feedback.message}</p>
-```
+Board navigation:
 
-- [ ] **Step 4: Wire one-step Undo and Reset through Rust**
+- expose controls only for `candidate.available || candidate.completed`;
+- call `onSelectBoard(mode.actionToken, candidate.id)`;
+- never calculate unlocks.
 
-On an accepted edit response, retain the previous authoritative public draft as the one Undo slot. Undo calls `onUpdateDraft` with that draft. Reset sends the board-kind empty draft. Neither mutates `scene` locally.
+Draft mutation:
 
-- [ ] **Step 5: Route Analysis through the existing page shell**
+1. clone `board.draft` as previous;
+2. call `onUpdateDraft(mode.actionToken, candidateDraft)`;
+3. only if result is non-null, retain previous as the one Undo slot;
+4. return focus to requested focus key after authoritative rerender.
 
-In `+page.svelte`, import the three wrappers and `AnalysisWorkbench`, then add beside interrogation:
+Reset sends the empty draft for the current board kind. Submit always calls Rust when the board is editable.
 
-```svelte
-{:else if gameState.value.mode.type === "analysis" && gameState.value.scene.kind === "analysis"}
-  <SceneBackdrop
-    sceneTag={null}
-    backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-  />
-  <AnalysisWorkbench
-    scene={gameState.value.scene}
-    mode={gameState.value.mode}
-    inventory={gameState.value.inventory}
-    onSelectBoard={selectAnalysisBoard}
-    onUpdateDraft={updateAnalysisDraft}
-    onSubmit={submitAnalysisBoard}
-    disabled={gameState.inFlight}
-  />
-```
+Feedback uses `board.feedback?.message`, text only, `role="status"`, `tabindex="-1"`.
 
-Do not modify `GameShell.svelte`.
+- [ ] **Step 6: Replace the existing page-level component**
 
-- [ ] **Step 6: Pin Case File behavior for Analysis**
+In `+page.svelte`:
 
-In existing `mode.test.ts`, create an Analysis mode using an action token and assert:
+- import existing `selectAnalysisBoard` alongside update/submit;
+- replace `AnalysisView` import with `AnalysisWorkbench`;
+- keep the existing `SceneBackdrop` branch;
+- pass `scene`, `mode`, `inventory`, select/update/submit wrappers, and `gameState.inFlight`.
+
+Do not edit `GameShell`, Scene Select, SFX command registration, or `state/types.ts`.
+
+- [ ] **Step 7: Pin existing Case File behavior for Analysis**
+
+Add an Analysis mode fixture to `mode.test.ts` and assert:
 
 ```ts
 expect(shouldShowCaseFile(analysisMode)).toBe(true);
 expect(canReexamineCaseRecords(analysisMode)).toBe(false);
 ```
 
-`mode.ts` itself should not require a behavior change.
+No `mode.ts` production change should be needed.
 
-- [ ] **Step 7: Add Scene Select label**
+- [ ] **Step 8: Delete the superseded threshold-only surface**
 
-Extend `sceneTypeLabel`:
-
-```ts
-if (type === "analysis") return "分析";
-```
-
-Update its parameter union/type to include Analysis and add an Analysis scene fixture/test in `SceneNavigationPanel.test.ts`.
-
-- [ ] **Step 8: Remove the entire temporary PR #44 path if present**
-
-After rebasing, inspect and remove all temporary names/shapes rather than deleting only the component:
+After its P1 tests have been migrated and are passing:
 
 ```bash
-git grep -nE 'AnalysisView|setAnalysisSelection|submitAnalysisSelection|set_analysis_selection|submit_analysis_selection' -- apps/game/src || true
+rm apps/game/src/lib/components/AnalysisView.svelte
+rm apps/game/src/lib/components/AnalysisView.test.ts
+```
+
+Verify no old import remains:
+
+```bash
+git grep -n 'AnalysisView' -- apps/game/src || true
 ```
 
 Expected final output: no matches.
-
-Inspect `state/types.ts` and ensure Analysis mutable state appears only under the discriminated `draft` union. There must be no legacy flat `selectedCardIds` field on the board common/threshold view outside `AnalysisDraft`.
 
 - [ ] **Step 9: Verify focused integration**
 
 ```bash
 bun run --cwd apps/game test \
   src/lib/components/analysis/AnalysisWorkbench.test.ts \
-  src/lib/state/mode.test.ts \
-  src/lib/components/SceneNavigationPanel.test.ts
+  src/lib/state/game-client-source.test.ts \
+  src/lib/state/mode.test.ts
 bun run --cwd apps/game check
 ```
-
-Expected: PASS.
 
 - [ ] **Step 10: Commit**
 
 ```bash
-git add apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte apps/game/src/lib/components/analysis/AnalysisWorkbench.test.ts apps/game/src/routes/+page.svelte apps/game/src/lib/state/mode.test.ts apps/game/src/lib/components/SceneNavigationPanel.svelte apps/game/src/lib/components/SceneNavigationPanel.test.ts apps/game/src/lib/state/types.ts apps/game/src/lib/state/game-client.svelte.ts
+git add apps/game/src/lib/components/analysis apps/game/src/lib/state/game-client.svelte.ts apps/game/src/lib/state/game-client-source.test.ts apps/game/src/lib/state/mode.test.ts apps/game/src/routes/+page.svelte apps/game/src/lib/components/AnalysisView.svelte apps/game/src/lib/components/AnalysisView.test.ts
 git commit -m "feat(game-ui): integrate analysis workbench"
 ```
 
-Include deletions of temporary PR #44 files in the same commit when applicable.
-
 ---
 
-### Task 7: Run Chapter 1 UI acceptance and prepare HPA-262 handoff
+### Task 6: Run Frontend Acceptance and Prepare the Smaller HPA-262 Handoff
 
 **Files:**
-- Modify only tests/docs if a verification gap is found. Do not widen feature scope.
+- Modify only tests/docs if verification exposes a concrete gap. Do not widen feature scope.
 
 **Interfaces:**
-- Consumes: Tasks 1–6 completed implementation.
-- Produces: frontend acceptance evidence and an explicit live-runtime handoff list for HPA-262.
+- Consumes: Tasks 1–5 complete.
+- Produces: frontend acceptance evidence and explicit remaining live-content acceptance for HPA-262.
 
-- [ ] **Step 1: Run the full Analysis-focused test set**
+- [ ] **Step 1: Run the full Analysis-focused frontend suite**
 
 ```bash
 bun run --cwd apps/game test \
   src/lib/analysis/analysis-boundary.test.ts \
-  src/lib/analysis/response-fence.test.ts \
   src/lib/analysis/order-draft.test.ts \
-  src/lib/case-file/labels.test.ts \
   src/lib/components/analysis/ClassifyBoard.test.ts \
   src/lib/components/analysis/OrderBoard.test.ts \
   src/lib/components/analysis/ThresholdBoard.test.ts \
   src/lib/components/analysis/AnalysisWorkbench.test.ts \
   src/lib/state/game-client-source.test.ts \
-  src/lib/state/mode.test.ts \
-  src/lib/components/SceneNavigationPanel.test.ts \
-  src/lib/audio/sfx-events.test.ts
+  src/lib/state/mode.test.ts
 ```
 
 Expected: PASS.
@@ -1031,55 +735,57 @@ bun run --cwd apps/game check:e2e
 bun run lint:all
 ```
 
-Expected: all commands exit 0. `lint:all` may run Rust checks as a repository cleanliness gate, but HPA-261 does not interpret that as runtime Analysis acceptance.
+Expected: all commands exit 0. `lint:all` is repository cleanliness, not a new HPA-260 runtime acceptance gate.
 
-- [ ] **Step 3: Re-run ownership/cleanup greps**
+- [ ] **Step 3: Re-run ownership and migration checks**
 
 ```bash
-git grep -nE 'acceptedGroupByCard|acceptedOrder|acceptedSelections' -- apps/game/src/lib/analysis apps/game/src/lib/components/analysis || true
-git grep -nE 'AnalysisView|setAnalysisSelection|submitAnalysisSelection|set_analysis_selection|submit_analysis_selection' -- apps/game/src || true
+git grep -nE 'acceptedGroupByCard|acceptedOrder|acceptedSelections' \
+  -- apps/game/src/lib/analysis apps/game/src/lib/components/analysis || true
+
+git grep -n 'AnalysisView' -- apps/game/src || true
 ```
 
 Expected: no matches.
 
-Check the only allowed frontend threshold mutable field spelling is inside the `AnalysisDraft` threshold arm and its consumers:
+Confirm the new components use `board.draft` rather than the threshold compatibility alias:
 
 ```bash
-git grep -n 'selectedCardIds' -- apps/game/src/lib/state/types.ts apps/game/src/lib/analysis apps/game/src/lib/components/analysis
+git grep -n 'selectedCardIds' -- apps/game/src/lib/components/analysis
 ```
 
-Review each result: it must be the threshold draft field/fixture/toggle use, not a legacy flat board-common field.
+Review the matches: they must be threshold draft handling/tests, not a second mutable board model.
 
-- [ ] **Step 4: Keyboard-only acceptance against the typed fixture/harness**
+- [ ] **Step 4: Keyboard-only component acceptance**
 
-Verify via Testing Library/native controls that a player can:
+Through Testing Library/native controls prove a player can:
 
-- classify every card using Tab + Enter/Space;
+- classify every available card with Tab + Enter/Space;
 - move/remove classifications;
-- add/reorder/remove every movable order card without touching the fixed anchor;
+- add/reorder/remove every movable order card without moving the fixed anchor;
 - toggle threshold cards;
 - use Undo/Reset/Submit;
-- receive textual feedback/focus return;
-- navigate back to a completed board and see read-only state.
+- receive textual feedback and useful focus return;
+- reopen a completed board read-only.
 
 No drag path is required.
 
-- [ ] **Step 5: Record HPA-262 live-runtime handoff items in the implementation PR**
+- [ ] **Step 5: Record HPA-262 remaining integration items in the implementation PR**
 
-HPA-262 must prove, against HPA-260 live public responses:
+HPA-262 now needs to prove only the real cross-layer/content acceptance still outside HPA-261:
 
-1. TS field spelling exactly matches Rust serialization;
-2. `AnalysisActionToken.activeBoardId` is the only active-board identity consumed by UI;
-3. fixture board/card/group/fixed-anchor/minimum/provenance presentation matches the real Beat 8.5 public view;
-4. each wrapper sends the real HPA-260 expected-token + draft payload;
-5. stale responses are rejected both by Rust token validation and frontend session fence;
-6. one incomplete draft for each board survives save -> title -> Continue;
-7. completed boards reopen read-only;
-8. correct submit commits result dialogue/story outputs exactly once;
-9. packaged keyboard path completes all three real boards;
-10. PR #44 temporary threshold-only path is absent.
+1. real authored Beat 8.5 classify/order/threshold content renders through the merged Rust runtime into this workbench;
+2. one representative partial draft for each real board survives Save -> Title -> Continue;
+3. authored fixed anchor behavior matches the real order board;
+4. real threshold source/procedure labels are understandable from Chapter 1 provenance;
+5. correct submit commits facts/objective/result dialogue exactly once;
+6. completed boards reopen read-only;
+7. one packaged keyboard-only flow completes all three real Beat 8.5 boards;
+8. the already-playable P1 practice threshold tutorial still works after the UI replacement.
 
-- [ ] **Step 6: Commit any acceptance-only test correction**
+Do not repeat HPA-260’s runtime/save unit acceptance inside HPA-261.
+
+- [ ] **Step 6: Commit any acceptance-only correction**
 
 If verification required a test-only correction:
 
@@ -1094,25 +800,27 @@ If no files changed, do not create an empty commit.
 
 ## Self-Review Checklist
 
-Before implementation starts, verify this plan still satisfies the design:
+Before implementation starts:
 
-- [ ] No frontend accepted-answer data.
-- [ ] No frontend threshold evaluator.
-- [ ] No duplicate active-board identity.
-- [ ] No optimistic/persistent Analysis store.
-- [ ] No Analysis-owned generation counter.
-- [ ] Existing `MUTATING_GAMEPLAY_COMMANDS` is extended, not replaced.
-- [ ] `GameplayCommandName` exhaustive test/count is updated.
-- [ ] Dispatcher fence is tested through the real game-client module.
+- [ ] The branch starts from/rebases onto current `main` with HPA-260 merged.
+- [ ] No task recreates Analysis TypeScript wire types or Tauri command names.
+- [ ] `mode.boardId` remains the displayed board; `mode.actionToken` remains the mutation fence.
+- [ ] No task collapses `boardId` and `activeBoardId`.
+- [ ] P1 `practice:` threshold behavior is a hard regression gate.
+- [ ] All mutation controls respect public card/board availability/read-only state.
+- [ ] No frontend accepted-answer or threshold-evaluator data exists.
+- [ ] No extra frontend response-fence/generation/dispatcher is added.
 - [ ] Order algebra is pure/tested and remains prefix-anchor-only.
-- [ ] Case File source precedence is shared, not reimplemented.
-- [ ] Threshold selected IDs are sorted before emission.
-- [ ] Classify removal is explicitly tested.
-- [ ] Board switching clears Undo and is explicitly tested.
-- [ ] Case File visibility/reexamine behavior is pinned for Analysis.
-- [ ] PR #44 cleanup covers component + commands + types + route.
-- [ ] HPA-262 remains the live Rust/save/packaged acceptance owner.
+- [ ] Threshold uses `draft.selectedCardIds`, not the compatibility flat field as its source of truth.
+- [ ] Practice cards do not require Case File provenance.
+- [ ] Beat 8.5 source-group/procedure badges are presentation only.
+- [ ] One-step Undo is recorded only after a non-null authoritative update result.
+- [ ] Existing Scene Select/SFX/types/runtime/save code is reused unchanged.
+- [ ] Old `AnalysisView` is removed only after its useful P1 tests are migrated.
+- [ ] HPA-262 remains the real authored/save/packaged acceptance owner.
 
 ## Execution Handoff
 
-Plan complete in this document. Implementation should use **subagent-driven development** task-by-task where available; otherwise execute inline with the same test-first gates. Do not merge HPA-260 runtime work into HPA-261 merely to make fixtures live early — HPA-262 is the integration owner.
+The plan is now intentionally smaller than the original HPA-261 draft because HPA-260 has landed. Implementation should use subagent-driven development task-by-task where available, or execute inline with the same test-first gates.
+
+Do not rebuild infrastructure that already exists. Complete the UI, preserve P1, and hand the real authored vertical-slice acceptance to HPA-262.
