@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   beat85CompilerAnalysisInventoryFixture,
@@ -5,6 +7,16 @@ import {
   p1PracticeAnalysisModeFixture,
   p1PracticeAnalysisSceneFixture,
 } from "./test-fixtures";
+
+const FEATURE_FILES = [
+  "./test-fixtures.ts",
+  "./order-draft.ts",
+  "../components/analysis/AnalysisCard.svelte",
+  "../components/analysis/ClassifyBoard.svelte",
+  "../components/analysis/OrderBoard.svelte",
+  "../components/analysis/ThresholdBoard.svelte",
+  "../components/analysis/AnalysisWorkbench.svelte",
+] as const;
 
 describe("Analysis UI public fixtures", () => {
   it("keeps the P1 practice scene and mode on the public wire", () => {
@@ -96,6 +108,20 @@ describe("Analysis UI public fixtures", () => {
   it("keeps accepted answers out of Analysis UI fixtures", () => {
     const fixture = JSON.stringify(beat85CompilerAnalysisSceneFixture);
     expect(fixture).not.toMatch(
+      /acceptedGroupByCard|acceptedOrder|acceptedSelections/,
+    );
+  });
+
+  it("keeps accepted answers out of all frontend Analysis source", () => {
+    const sources = FEATURE_FILES.map((relativePath) =>
+      readFileSync(
+        fileURLToPath(new URL(relativePath, import.meta.url)),
+        "utf8",
+      ),
+    );
+
+    expect(sources).toHaveLength(FEATURE_FILES.length);
+    expect(sources.join("\n")).not.toMatch(
       /acceptedGroupByCard|acceptedOrder|acceptedSelections/,
     );
   });
