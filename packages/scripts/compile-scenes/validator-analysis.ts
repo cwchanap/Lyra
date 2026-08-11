@@ -545,6 +545,34 @@ function normalizeOrderBoard(
     }
   }
 
+  const anchorsAreStructurallyValid =
+    board.fixedAnchors.every(
+      (anchor) =>
+        Number.isSafeInteger(anchor.position) &&
+        anchor.position >= 1 &&
+        anchor.position <= board.cards.length &&
+        cards.displayedById.has(anchor.cardId),
+    ) &&
+    anchorCardIds.size === board.fixedAnchors.length &&
+    anchorPositions.size === board.fixedAnchors.length;
+
+  if (anchorsAreStructurallyValid) {
+    const sorted = [...board.fixedAnchors].sort(
+      (left, right) => left.position - right.position,
+    );
+    const firstGap = sorted.find(
+      (anchor, index) => anchor.position !== index + 1,
+    );
+    if (firstGap) {
+      pushError(
+        errors,
+        firstGap,
+        "analysisOrderAnchorNotPrefix",
+        `Order board "${board.id}" fixed anchors must occupy a contiguous prefix starting at position 1.`,
+      );
+    }
+  }
+
   return {
     acceptedOrder,
     fixedAnchors: board.fixedAnchors.map(({ cardId, position }) => ({
