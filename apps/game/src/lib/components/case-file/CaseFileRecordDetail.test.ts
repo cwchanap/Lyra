@@ -193,6 +193,7 @@ describe("CaseFileRecordDetail", () => {
     renderDetail(recordItem(record, { hasVisibleProvenance: true }));
 
     expect(screen.getByText("來源：現場目擊者")).toBeInTheDocument();
+    expect(screen.queryByText("來源群組：現場目擊者")).not.toBeInTheDocument();
     expect(screen.queryByText("來源：未指定")).not.toBeInTheDocument();
   });
 

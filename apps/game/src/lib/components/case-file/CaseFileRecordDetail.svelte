@@ -6,14 +6,7 @@
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
   import { recordKey } from "$lib/case-file/case-file-model";
-  import {
-    completenessLabels,
-    confidenceLabels,
-    proceduralStatusLabels,
-    proofCapabilityLabels,
-    representationLayerLabels,
-    sourceKindLabels,
-  } from "$lib/case-file/labels";
+  import { caseRecordProvenancePresentation } from "$lib/case-file/provenance-badges";
   import type { CaseFileKey, CaseFileRecordItem } from "$lib/case-file/types";
   import type {
     EvidenceRecord,
@@ -42,21 +35,9 @@
   const statement = $derived(
     isEvidenceRecord(item.record) ? null : item.record,
   );
-  const sourceText = $derived(
-    item.record.provenance.sourceLabel ??
-      item.record.sourceGroup?.label ??
-      null,
+  const provenancePresentation = $derived(
+    caseRecordProvenancePresentation(item.record),
   );
-  const provenance = $derived(item.record.provenance);
-  const sourceKind = $derived(sourceKindLabels[provenance.sourceKind]);
-  const representationLayer = $derived(
-    representationLayerLabels[provenance.representationLayer],
-  );
-  const proceduralStatus = $derived(
-    proceduralStatusLabels[provenance.proceduralStatus],
-  );
-  const completeness = $derived(completenessLabels[provenance.completeness]);
-  const confidence = $derived(confidenceLabels[provenance.confidence]);
   const canReexamine = $derived(reexamineEnabled && !disabled);
   const reexamineAvailable = $derived(item.record.onReexamine !== null);
 
@@ -140,26 +121,32 @@
   {#if item.hasVisibleProvenance}
     <section aria-label="來源與狀態">
       <h3>來源與狀態</h3>
-      {#if sourceKind !== null}<p>來源類型：{sourceKind}</p>{/if}
-      {#if representationLayer !== null}<p>
-          呈現層：{representationLayer}
+      {#if provenancePresentation.sourceKind !== null}<p>
+          來源類型：{provenancePresentation.sourceKind}
         </p>{/if}
-      {#if proceduralStatus !== null}<p>程序狀態：{proceduralStatus}</p>{/if}
-      {#if completeness !== null}<p>完整度：{completeness}</p>{/if}
-      {#if confidence !== null}<p>可信度：{confidence}</p>{/if}
-      {#if sourceText !== null}<p>來源：{sourceText}</p>{/if}
-      {#if item.record.sourceGroup !== null && provenance.sourceLabel !== null}
-        <p>來源群組：{item.record.sourceGroup.label}</p>
+      {#if provenancePresentation.representationLayer !== null}<p>
+          呈現層：{provenancePresentation.representationLayer}
+        </p>{/if}
+      {#if provenancePresentation.proceduralStatus !== null}<p>
+          程序狀態：{provenancePresentation.proceduralStatus}
+        </p>{/if}
+      {#if provenancePresentation.completeness !== null}<p>
+          完整度：{provenancePresentation.completeness}
+        </p>{/if}
+      {#if provenancePresentation.confidence !== null}<p>
+          可信度：{provenancePresentation.confidence}
+        </p>{/if}
+      {#if provenancePresentation.source !== null}<p>
+          來源：{provenancePresentation.source}
+        </p>{/if}
+      {#if provenancePresentation.sourceGroup !== null}<p>
+          來源群組：{provenancePresentation.sourceGroup}
+        </p>{/if}
+      {#if provenancePresentation.sourceGroupSummary !== null}
+        <p>{provenancePresentation.sourceGroupSummary}</p>
       {/if}
-      {#if item.record.sourceGroup !== null}
-        <p>{item.record.sourceGroup.summary}</p>
-      {/if}
-      {#if provenance.proofCapabilities.length > 0}
-        <p>
-          可證明：{provenance.proofCapabilities
-            .map((capability) => proofCapabilityLabels[capability])
-            .join("、")}
-        </p>
+      {#if provenancePresentation.proofCapabilities !== null}
+        <p>可證明：{provenancePresentation.proofCapabilities}</p>
       {/if}
       {#if item.successor !== null}<p>已被後續紀錄取代</p>{/if}
     </section>
