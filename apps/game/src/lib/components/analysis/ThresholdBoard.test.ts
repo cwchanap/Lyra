@@ -139,6 +139,27 @@ describe("ThresholdBoard", () => {
     );
   });
 
+  it("toggles an already-selected practice card off", async () => {
+    const onDraft = vi.fn();
+    const user = userEvent.setup();
+    renderBoard(
+      boardWith(practiceFixtureBoard, {
+        draft: { kind: "threshold", selectedCardIds: ["receipt_reprint"] },
+      }),
+      emptyInventory,
+      onDraft,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+    );
+
+    expect(onDraft).toHaveBeenLastCalledWith(
+      { kind: "threshold", selectedCardIds: [] },
+      "card:receipt_reprint",
+    );
+  });
+
   it("uses board.draft as the authoritative selection", () => {
     const contradictory = boardWith(practiceFixtureBoard, {
       selectedCardIds: ["receipt_reprint"],
