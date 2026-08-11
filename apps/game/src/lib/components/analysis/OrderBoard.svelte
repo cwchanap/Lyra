@@ -14,11 +14,13 @@
 
   let {
     board,
+    headingFocusKey = null,
     onDraft,
     disabled = false,
     readOnly = false,
   }: {
     board: OrderBoardView;
+    headingFocusKey?: string | null;
     onDraft: (draft: OrderDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
@@ -84,7 +86,9 @@
 <section class="order-board" aria-label="排序板">
   <header>
     <p class="eyebrow">事件順序</p>
-    <h2>{board.label}</h2>
+    <h2 data-analysis-focus-key={headingFocusKey ?? undefined} tabindex="-1">
+      {board.label}
+    </h2>
     <p>{board.prompt}</p>
   </header>
 

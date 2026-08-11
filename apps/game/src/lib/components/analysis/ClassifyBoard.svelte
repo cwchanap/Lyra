@@ -7,11 +7,13 @@
 
   let {
     board,
+    headingFocusKey = null,
     onDraft,
     disabled = false,
     readOnly = false,
   }: {
     board: ClassifyBoardView;
+    headingFocusKey?: string | null;
     onDraft: (draft: ClassifyDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
@@ -89,7 +91,9 @@
 <section class="classify-board" aria-label="分類板">
   <header>
     <p class="eyebrow">證據分類</p>
-    <h2>{board.label}</h2>
+    <h2 data-analysis-focus-key={headingFocusKey ?? undefined} tabindex="-1">
+      {board.label}
+    </h2>
     <p>{board.prompt}</p>
   </header>
 

@@ -14,12 +14,14 @@
   let {
     board,
     inventory,
+    headingFocusKey = null,
     onDraft,
     disabled = false,
     readOnly = false,
   }: {
     board: ThresholdBoardView;
     inventory: Inventory;
+    headingFocusKey?: string | null;
     onDraft: (draft: ThresholdDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
@@ -75,7 +77,9 @@
 <section class="threshold-board" aria-label="門檻板">
   <header>
     <p class="eyebrow">證據門檻</p>
-    <h2>{board.label}</h2>
+    <h2 data-analysis-focus-key={headingFocusKey ?? undefined} tabindex="-1">
+      {board.label}
+    </h2>
     <p>{board.prompt}</p>
   </header>
 

@@ -944,6 +944,20 @@ describe("game client analysis commands", () => {
     });
   });
 
+  it("returns the applied state from an Analysis wrapper", async () => {
+    const client = await loadGameClient(state("previous"));
+    const next = state("analysis-applied");
+    mocks.invoke.mockResolvedValueOnce(wrapped(next));
+
+    const result = await client.updateAnalysisDraft(actionToken, {
+      kind: "threshold",
+      selectedCardIds: ["card"],
+    });
+
+    expect(result).toBe(next);
+    expect(client.gameState.value).toEqual(next);
+  });
+
   it("records a selection-dispatch failure in the shared game error state", async () => {
     const next = state("selection-failure");
     const client = await loadGameClient(state("previous"));
@@ -955,7 +969,7 @@ describe("game client analysis commands", () => {
         kind: "threshold",
         selectedCardIds: ["card"],
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull();
 
     expect(client.gameState.value).toEqual(next);
     expect(client.gameState.error).toBe("selection apply failed");
@@ -968,9 +982,7 @@ describe("game client analysis commands", () => {
     mocks.invoke.mockResolvedValueOnce(wrapped(next));
     mocks.tick.mockRejectedValueOnce(new Error("submission apply failed"));
 
-    await expect(
-      client.submitAnalysisBoard(actionToken),
-    ).resolves.toBeUndefined();
+    await expect(client.submitAnalysisBoard(actionToken)).resolves.toBeNull();
 
     expect(client.gameState.value).toEqual(next);
     expect(client.gameState.error).toBe("submission apply failed");
