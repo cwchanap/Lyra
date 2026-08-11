@@ -171,4 +171,21 @@ describe("OrderBoard", () => {
     ).toBeInTheDocument();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
+
+  const staleDrafts: AnalysisDraft[] = [
+    { kind: "classify", groupByCard: {} },
+    { kind: "threshold", selectedCardIds: [] },
+  ];
+
+  it.each(staleDrafts)(
+    "does not expose order mutations for a stale %s draft",
+    (draft) => {
+      const staleBoard: OrderBoardView = { ...fixtureBoard, draft };
+      const onDraft = vi.fn();
+      renderBoard(staleBoard, onDraft);
+
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+      expect(onDraft).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -45,7 +45,8 @@
     board.cards.filter((card) => !displayedCardIds.includes(card.id)),
   );
   let editable = $derived(
-    !disabled &&
+    board.draft.kind === "order" &&
+      !disabled &&
       !readOnly &&
       board.available &&
       !board.completed &&
@@ -54,7 +55,7 @@
   );
 
   function emitDraft(cardIds: string[] | null, focusKey: string) {
-    if (!editable || !cardIds) return;
+    if (!editable || board.draft.kind !== "order" || !cardIds) return;
     onDraft({ kind: "order", cardIds }, focusKey);
   }
 
