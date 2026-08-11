@@ -344,4 +344,69 @@ describe("CaseFileRecordDetail", () => {
     image.dispatchEvent(new Event("error"));
     expect(warnSpy).not.toHaveBeenCalled();
   });
+
+  it("renders a statement record with its speaker heading and content", () => {
+    renderDetail(recordItem(statementRecord()));
+
+    expect(
+      screen.getByRole("heading", { name: "證詞：若月" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("我一直在店內。")).toBeInTheDocument();
+    expect(screen.queryByText("證物：")).not.toBeInTheDocument();
+  });
+
+  it("triggers statement re-examination when enabled", async () => {
+    const user = userEvent.setup();
+    const record = statementRecord({
+      onReexamine: [{ kind: "action", text: "再次詢問。" }],
+    });
+    const { onReexamineStatement } = renderDetail(recordItem(record));
+
+    const reexamine = screen.getByRole("button", { name: "重新檢視" });
+    expect(reexamine).toBeEnabled();
+    await user.click(reexamine);
+    expect(onReexamineStatement).toHaveBeenCalledWith("witness");
+  });
+
+  it("navigates to the predecessor record", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    const item = recordItem(evidenceRecord(), {
+      predecessor: { kind: "evidence", id: "earlier_record" },
+    });
+    renderDetail(item, { onNavigate });
+
+    const predecessor = screen.getByRole("button", {
+      name: "查看前一項紀錄",
+    });
+    expect(predecessor).toBeEnabled();
+    await user.click(predecessor);
+    expect(onNavigate).toHaveBeenCalledWith("evidence:earlier_record");
+  });
+
+  it("does not render a re-examine button when onReexamine is null", () => {
+    renderDetail(recordItem(evidenceRecord({ onReexamine: null })));
+
+    expect(
+      screen.queryByRole("button", { name: "重新檢視" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("重新檢視僅可在調查或訊問期間使用。"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders both predecessor and successor navigation buttons", () => {
+    const item = recordItem(evidenceRecord(), {
+      predecessor: { kind: "evidence", id: "prev" },
+      successor: { kind: "statement", id: "next" },
+    });
+    renderDetail(item);
+
+    expect(
+      screen.getByRole("button", { name: "查看前一項紀錄" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "查看後續紀錄" }),
+    ).toBeInTheDocument();
+  });
 });

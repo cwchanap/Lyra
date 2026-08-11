@@ -160,4 +160,101 @@ describe("ClassifyBoard", () => {
     expect(cardSource).toContain(":focus-visible");
     expect(cardSource).toContain("@media (prefers-reduced-motion: reduce)");
   });
+
+  it("deselects a selected card on a second click", async () => {
+    const user = userEvent.setup();
+    renderBoard(boardWith());
+
+    const cardButton = screen.getByRole("button", {
+      name: /選取：三宅母親通話紀錄/,
+    });
+    await user.click(cardButton);
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(cardButton);
+    expect(cardButton).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("clears the selection when removing the currently selected card", async () => {
+    const user = userEvent.setup();
+    renderBoard(boardWith({ miyake_call: "miyake_small_lies" }));
+
+    // Select the assigned card first.
+    const cardButton = screen.getByRole("button", {
+      name: /選取：三宅母親通話紀錄/,
+    });
+    await user.click(cardButton);
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
+
+    // Remove it from the group — this should also clear the selection.
+    await user.click(
+      screen.getByRole("button", { name: "移除：三宅母親通話紀錄" }),
+    );
+
+    // After removal, the card is back in the unassigned pool and not pressed.
+    const unassignedCard = screen.getByRole("button", {
+      name: /選取：三宅母親通話紀錄/,
+    });
+    expect(unassignedCard).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("shows the empty state when all cards are assigned to groups", () => {
+    renderBoard(
+      boardWith({
+        miyake_call: "miyake_small_lies",
+        l_corridor_replay: "earlier_third_party",
+        external_credential_event: "earlier_third_party",
+      }),
+    );
+
+    expect(screen.getByText("所有卡片都已放入分組。")).toBeInTheDocument();
+  });
+
+  it("shows the empty state for a group with no cards", () => {
+    renderBoard(boardWith({ miyake_call: "earlier_third_party" }));
+
+    // "三宅的小謊" group has no cards assigned.
+    expect(screen.getByText("尚未放入卡片。")).toBeInTheDocument();
+  });
+
+  it("renders a hint when the board has one", () => {
+    renderBoard(boardWith(undefined, { hint: "先問每項資料能證明什麼。" }));
+
+    expect(
+      screen.getByText("提示：先問每項資料能證明什麼。"),
+    ).toBeInTheDocument();
+  });
+
+  it("does not emit a draft when the disabled prop is true", async () => {
+    const onDraft = vi.fn();
+    render(ClassifyBoard, {
+      board: boardWith(),
+      onDraft,
+      disabled: true,
+    });
+
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not emit a draft for a stale non-classify draft kind", async () => {
+    const onDraft = vi.fn();
+    const staleBoard: ClassifyBoardView = {
+      ...fixtureBoard,
+      draft: { kind: "order", cardIds: [] } as AnalysisDraft,
+    };
+    renderBoard(staleBoard, onDraft);
+    const user = userEvent.setup();
+
+    // Buttons are rendered (editable doesn't check draft kind), but clicking
+    // them must not emit because assignCard/removeCard guard the draft kind.
+    await user.click(
+      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "放入「三宅的小謊」" }),
+    );
+
+    expect(onDraft).not.toHaveBeenCalled();
+  });
 });

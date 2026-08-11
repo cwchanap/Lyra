@@ -188,4 +188,71 @@ describe("OrderBoard", () => {
       expect(onDraft).not.toHaveBeenCalled();
     },
   );
+
+  it("renders a stale-card placeholder when the draft references an unknown card on a blocked board", () => {
+    // With unsupported anchors, materializePrefixAnchors is bypassed and the
+    // raw draft cardIds are displayed. A stale id produces the stale-card
+    // placeholder branch.
+    const staleBoard = boardWith(["stale_id"], {
+      fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+    });
+    renderBoard(staleBoard);
+
+    expect(screen.getByText("stale_id")).toBeInTheDocument();
+    expect(screen.getByText("尚未取得卡片資料")).toBeInTheDocument();
+  });
+
+  it("shows the empty timeline state when no cards are placed and there are no fixed anchors", () => {
+    const noAnchorBoard = boardWith([], {
+      fixedAnchors: [],
+    });
+    renderBoard(noAnchorBoard);
+
+    expect(screen.getByText("尚未加入事件。")).toBeInTheDocument();
+  });
+
+  it("shows the empty unplaced state when all cards are in the timeline", () => {
+    renderBoard(
+      boardWith(["event_1841", "event_1842", "event_1843", "event_1844"]),
+    );
+
+    expect(screen.getByText("所有事件都已放入時間線。")).toBeInTheDocument();
+  });
+
+  it("disables up/down buttons at the prefix and end boundaries", () => {
+    renderBoard(boardWith(["event_1841", "event_1842", "event_1843"]));
+
+    // event_1842 is the first movable card (index 1, prefix length 1).
+    // Up is disabled because index <= fixedPrefixLength (1 <= 1).
+    expect(
+      screen.getByRole("button", { name: "上移：外包憑證開門" }),
+    ).toBeDisabled();
+
+    // event_1843 is the last card in the timeline (index 2, length 3).
+    // Down is disabled because index >= length - 1 (2 >= 2).
+    expect(
+      screen.getByRole("button", { name: "下移：員工憑證開門" }),
+    ).toBeDisabled();
+  });
+
+  it("renders a hint when the board has one", () => {
+    renderBoard(boardWith(["event_1841"], { hint: "先排維護模式。" }));
+
+    expect(screen.getByText("提示：先排維護模式。")).toBeInTheDocument();
+  });
+
+  it("does not emit a draft when the disabled prop is true", async () => {
+    const onDraft = vi.fn();
+    render(OrderBoard, {
+      board: boardWith(["event_1841"]),
+      onDraft,
+      disabled: true,
+    });
+
+    // No mutation buttons when disabled.
+    expect(
+      screen.queryByRole("button", { name: "加入時間線：外包憑證開門" }),
+    ).not.toBeInTheDocument();
+    expect(onDraft).not.toHaveBeenCalled();
+  });
 });

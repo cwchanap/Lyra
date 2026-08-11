@@ -603,4 +603,195 @@ describe("AnalysisWorkbench", () => {
     expect(source).toContain(":focus-visible");
     expect(source).toContain("prefers-reduced-motion: reduce");
   });
+
+  it("navigates to the next board via the 下一板 button", async () => {
+    const state = analysisState();
+    const onSelectBoard = vi.fn().mockResolvedValue(
+      analysisState({
+        mode: analysisModeWith({ boardId: "local_event_sequence" }),
+      }),
+    );
+    renderWorkbench(state, { onSelectBoard });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "下一板" }));
+
+    expect(onSelectBoard).toHaveBeenCalledWith(
+      actionToken(state),
+      "local_event_sequence",
+    );
+  });
+
+  it("navigates to the previous board via the 上一板 button", async () => {
+    const state = analysisState({
+      mode: analysisModeWith({ boardId: "local_event_sequence" }),
+    });
+    const onSelectBoard = vi.fn().mockResolvedValue(
+      analysisState({
+        mode: analysisModeWith({ boardId: "evidence_packages" }),
+      }),
+    );
+    renderWorkbench(state, { onSelectBoard });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "上一板" }));
+
+    expect(onSelectBoard).toHaveBeenCalledWith(
+      actionToken(state),
+      "evidence_packages",
+    );
+  });
+
+  it("toggles the hint open and then closed", async () => {
+    const state = analysisState();
+    renderWorkbench(state);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "顯示提示" }));
+    expect(screen.getByText(/提示：/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "隱藏提示" }));
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
+  });
+
+  it("focuses the submit button after a submit with no returned feedback", async () => {
+    const state = analysisState({
+      mode: analysisModeWith({ feedback: null }),
+    });
+    // Return a state with no feedback after submit.
+    const submitted = analysisState({
+      mode: analysisModeWith({ feedback: null }),
+    });
+    const onSubmit = vi.fn().mockResolvedValue(submitted);
+    renderWorkbench(state, { onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "比對推論" })).toHaveFocus();
+    });
+  });
+
+  it("aborts submit when onSubmit returns null", async () => {
+    const state = analysisState();
+    const onSubmit = vi.fn().mockResolvedValue(null);
+    renderWorkbench(state, { onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts a draft update when onUpdateDraft returns null", async () => {
+    const state = analysisState();
+    const onUpdateDraft = vi.fn().mockResolvedValue(null);
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(1);
+    // Undo should not be available since the update returned null.
+    expect(
+      screen.queryByRole("button", { name: "復原" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("swallows a thrown error from onSelectBoard during board navigation", async () => {
+    const state = analysisState();
+    const onSelectBoard = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    renderWorkbench(state, { onSelectBoard });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "本機事件順序" }));
+
+    expect(onSelectBoard).toHaveBeenCalledTimes(1);
+    // The workbench stays on the original board without throwing.
+    expect(
+      screen.getByRole("heading", { name: "證據包整理" }),
+    ).toBeInTheDocument();
+  });
+
+  it("swallows a thrown error from onUpdateDraft during a draft mutation", async () => {
+    const state = analysisState();
+    const onUpdateDraft = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "復原" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("swallows a thrown error from onSubmit during submit", async () => {
+    const state = analysisState();
+    const onSubmit = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    renderWorkbench(state, { onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts board selection when the returned mode is not analysis", async () => {
+    const state = analysisState();
+    const wrongMode = {
+      ...state,
+      mode: { type: "explore", sceneId: "scene_1", sublocationId: "loc_1" },
+    } as unknown as GameStateView;
+    const onSelectBoard = vi.fn().mockResolvedValue(wrongMode);
+    renderWorkbench(state, { onSelectBoard });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "本機事件順序" }));
+
+    expect(onSelectBoard).toHaveBeenCalledTimes(1);
+    // Stays on the original board.
+    expect(
+      screen.getByRole("heading", { name: "證據包整理" }),
+    ).toBeInTheDocument();
+  });
+
+  it("aborts fallback-board reconciliation when the returned mode has the wrong boardId", async () => {
+    const initial = analysisState({
+      mode: analysisModeWith({ activeBoardId: null }),
+      scene: analysisSceneWith({ activeBoardId: null }),
+    });
+    // Returns analysis mode but with a different boardId than requested.
+    const wrongBoard = analysisState({
+      mode: analysisModeWith({
+        boardId: "narrow_request_basis",
+        activeBoardId: "narrow_request_basis",
+      }),
+    });
+    const onSelectBoard = vi.fn().mockResolvedValue(wrongBoard);
+    const onUpdateDraft = vi.fn().mockResolvedValue(initial);
+    renderWorkbench(initial, { onSelectBoard, onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onSelectBoard).toHaveBeenCalledTimes(1);
+    expect(onUpdateDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not navigate when already on the last board and 下一板 is disabled", () => {
+    const state = analysisState({
+      mode: analysisModeWith({ boardId: "narrow_request_basis" }),
+    });
+    const onSelectBoard = vi.fn();
+    renderWorkbench(state, { onSelectBoard });
+
+    expect(screen.getByRole("button", { name: "下一板" })).toBeDisabled();
+  });
 });

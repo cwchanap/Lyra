@@ -6,6 +6,10 @@ import {
   beat85CompilerAnalysisSceneFixture,
   p1PracticeAnalysisSceneFixture,
 } from "$lib/analysis/test-fixtures";
+import {
+  neutralEvidenceRecordView,
+  neutralStatementRecordView,
+} from "$lib/state/test-fixtures";
 import type {
   AnalysisBoardView,
   AnalysisCardView,
@@ -285,5 +289,126 @@ describe("ThresholdBoard", () => {
     expect(screen.getByText("來源群組：門鎖本機")).toBeInTheDocument();
     expect(screen.getByText("可證明：時間、順序")).toBeInTheDocument();
     expect(screen.queryByText("來源：卡片投影名稱")).not.toBeInTheDocument();
+  });
+
+  it("renders a statement card's provenance from the inventory", () => {
+    const statementRecord = neutralStatementRecordView({
+      id: "manager_timing",
+      speaker: "店長",
+      content: "證詞內容。",
+      onReexamine: null,
+      acquiredInChapterId: "chapter_1",
+      acquiredInSceneId: "investigation_scene_1",
+    });
+    statementRecord.provenance = {
+      sourceKind: "testimony",
+      representationLayer: "none",
+      proceduralStatus: "exhibit",
+      completeness: "unspecified",
+      confidence: "unspecified",
+      sourceGroupId: "manager-interview",
+      sourceLabel: "店長程序固定訪談",
+      proofCapabilities: ["time"],
+      supersedesRecordId: null,
+    };
+    statementRecord.sourceGroup = {
+      id: "manager-interview",
+      label: "店長訪談",
+      summary: "店長程序固定訪談的紀錄。",
+    };
+    const statementCardView: AnalysisCardView = {
+      id: "manager_timing_card",
+      label: "店長時間證詞",
+      summary: "提供另一個可被程序固定的時間來源。",
+      source: {
+        kind: "statement",
+        id: "manager_timing",
+        label: "店長",
+        summary: "證詞內容。",
+      },
+      sourceLabel: "店長",
+      sourceSummary: "證詞內容。",
+      available: true,
+    };
+    renderBoard(boardWith(realFixtureBoard, { cards: [statementCardView] }), {
+      evidence: [],
+      statements: [statementRecord],
+    });
+
+    expect(screen.getByText("來源類型：證人證詞")).toBeInTheDocument();
+    expect(screen.getByText("程序狀態：正式證物")).toBeInTheDocument();
+    expect(screen.getByText("來源：店長程序固定訪談")).toBeInTheDocument();
+    expect(screen.getByText("來源群組：店長訪談")).toBeInTheDocument();
+    expect(screen.getByText("可證明：時間")).toBeInTheDocument();
+  });
+
+  it("renders an empty provenance block for a record with all-neutral provenance", () => {
+    const neutralRecord = neutralEvidenceRecordView({
+      id: "neutral_evidence",
+      name: "中性證物",
+      description: "無來源標記的證物。",
+      details: "細節。",
+      imageAssetId: null,
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "investigation_scene_1",
+    });
+    const neutralCard: AnalysisCardView = {
+      id: "neutral_card",
+      label: "中性證物卡",
+      summary: "無來源標記。",
+      source: {
+        kind: "evidence",
+        id: "neutral_evidence",
+        label: null,
+        summary: null,
+      },
+      sourceLabel: null,
+      sourceSummary: null,
+      available: true,
+    };
+    renderBoard(boardWith(realFixtureBoard, { cards: [neutralCard] }), {
+      evidence: [neutralRecord],
+      statements: [],
+    });
+
+    // The provenance div renders (record exists) but all fields are null.
+    expect(screen.getByRole("region", { name: "門檻板" })).toBeInTheDocument();
+    expect(screen.queryByText(/來源類型：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/程序狀態：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/來源：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/來源群組：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/可證明：/)).not.toBeInTheDocument();
+  });
+
+  it("does not emit a draft when the disabled prop is true", async () => {
+    const onDraft = vi.fn();
+    render(ThresholdBoard, {
+      board: boardWith(practiceFixtureBoard),
+      inventory: emptyInventory,
+      onDraft,
+      disabled: true,
+    });
+
+    // No buttons rendered when not editable.
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not emit a draft for a stale non-threshold draft kind", () => {
+    const onDraft = vi.fn();
+    const staleBoard = boardWith(practiceFixtureBoard, {
+      draft: { kind: "classify", groupByCard: {} } as AnalysisDraft,
+    });
+    renderBoard(staleBoard, emptyInventory, onDraft);
+
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("renders a hint when the board has one", () => {
+    renderBoard(boardWith(practiceFixtureBoard, { hint: "先看時間順序。" }));
+
+    expect(screen.getByText("提示：先看時間順序。")).toBeInTheDocument();
   });
 });
