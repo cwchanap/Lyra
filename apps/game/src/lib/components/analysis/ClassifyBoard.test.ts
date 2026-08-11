@@ -57,7 +57,7 @@ describe("ClassifyBoard", () => {
     renderBoard(boardWith(), pointerOnDraft);
 
     await pointerUser.click(
-      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
     );
     await pointerUser.click(
       screen.getByRole("button", { name: "放入「三宅的小謊」" }),
@@ -71,7 +71,7 @@ describe("ClassifyBoard", () => {
     renderBoard(boardWith(), keyboardOnDraft);
 
     const card = screen.getByRole("button", {
-      name: /選取：三宅母親通話紀錄/,
+      name: /選取：\s*三宅母親通話紀錄/,
     });
     card.focus();
     await keyboardUser.keyboard("{Enter}");
@@ -94,7 +94,7 @@ describe("ClassifyBoard", () => {
     renderBoard(boardWith({ miyake_call: "miyake_small_lies" }), onDraft);
 
     await user.click(
-      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
     );
     await user.click(
       screen.getByRole("button", { name: "放入「更早的第三者」" }),
@@ -142,7 +142,7 @@ describe("ClassifyBoard", () => {
     renderBoard(unavailableBoard);
 
     expect(
-      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
     ).toBeDisabled();
   });
 
@@ -166,7 +166,7 @@ describe("ClassifyBoard", () => {
     renderBoard(boardWith());
 
     const cardButton = screen.getByRole("button", {
-      name: /選取：三宅母親通話紀錄/,
+      name: /選取：\s*三宅母親通話紀錄/,
     });
     await user.click(cardButton);
     expect(cardButton).toHaveAttribute("aria-pressed", "true");
@@ -181,7 +181,7 @@ describe("ClassifyBoard", () => {
 
     // Select the assigned card first.
     const cardButton = screen.getByRole("button", {
-      name: /選取：三宅母親通話紀錄/,
+      name: /選取：\s*三宅母親通話紀錄/,
     });
     await user.click(cardButton);
     expect(cardButton).toHaveAttribute("aria-pressed", "true");
@@ -193,7 +193,7 @@ describe("ClassifyBoard", () => {
 
     // After removal, the card is back in the unassigned pool and not pressed.
     const unassignedCard = screen.getByRole("button", {
-      name: /選取：三宅母親通話紀錄/,
+      name: /選取：\s*三宅母親通話紀錄/,
     });
     expect(unassignedCard).toHaveAttribute("aria-pressed", "false");
   });
@@ -204,7 +204,7 @@ describe("ClassifyBoard", () => {
     renderBoard(boardWith(), onDraft);
 
     const cardButton = screen.getByRole("button", {
-      name: /選取：三宅母親通話紀錄/,
+      name: /選取：\s*三宅母親通話紀錄/,
     });
     await user.click(cardButton);
     expect(cardButton).toHaveAttribute("aria-pressed", "true");
@@ -272,7 +272,7 @@ describe("ClassifyBoard", () => {
     // Buttons are rendered (editable doesn't check draft kind), but clicking
     // them must not emit because assignCard/removeCard guard the draft kind.
     await user.click(
-      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
     );
     await user.click(
       screen.getByRole("button", { name: "放入「三宅的小謊」" }),

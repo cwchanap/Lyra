@@ -172,6 +172,22 @@ describe("OrderBoard", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("renders the blocked state without throwing when the wire is malformed", () => {
+    // The helper tolerates non-array fixedAnchors/cards; the component must
+    // consume sanitized values so malformed stale views show the blocked
+    // state instead of throwing before the UI can protect the renderer.
+    const malformedBoard = boardWith(["event_1841"], {
+      fixedAnchors: "not-an-array" as unknown as OrderBoardView["fixedAnchors"],
+      cards: null as unknown as OrderBoardView["cards"],
+    });
+    renderBoard(malformedBoard);
+
+    expect(
+      screen.getByText("排序設定無法顯示，請重新載入內容。"),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   const staleDrafts: AnalysisDraft[] = [
     { kind: "classify", groupByCard: {} },
     { kind: "threshold", selectedCardIds: [] },

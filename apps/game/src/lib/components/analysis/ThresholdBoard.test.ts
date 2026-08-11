@@ -93,7 +93,7 @@ describe("ThresholdBoard", () => {
     );
 
     await pointerUser.click(
-      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.getByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     );
     const pointerDraft = pointerOnDraft.mock.lastCall;
 
@@ -107,7 +107,7 @@ describe("ThresholdBoard", () => {
       keyboardOnDraft,
     );
     const card = screen.getByRole("button", {
-      name: "選取：標示 REPRINT 的收據",
+      name: /選取：\s*標示 REPRINT 的收據/,
     });
     card.focus();
     await keyboardUser.keyboard("{Enter}");
@@ -131,7 +131,7 @@ describe("ThresholdBoard", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "選取：監視器中的找零畫面" }),
+      screen.getByRole("button", { name: /選取：\s*監視器中的找零畫面/ }),
     );
 
     expect(onDraft).toHaveBeenLastCalledWith(
@@ -155,7 +155,7 @@ describe("ThresholdBoard", () => {
     );
 
     await user.click(
-      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.getByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     );
 
     expect(onDraft).toHaveBeenLastCalledWith(
@@ -172,7 +172,7 @@ describe("ThresholdBoard", () => {
     renderBoard(contradictory);
 
     expect(
-      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.getByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     ).not.toHaveAttribute("aria-pressed", "true");
   });
 
@@ -185,7 +185,7 @@ describe("ThresholdBoard", () => {
     renderBoard(unavailable);
 
     expect(
-      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.getByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     ).toBeDisabled();
   });
 
@@ -254,7 +254,9 @@ describe("ThresholdBoard", () => {
       onDraft,
     );
 
-    await user.click(screen.getByRole("button", { name: "選取：同源紀錄 B" }));
+    await user.click(
+      screen.getByRole("button", { name: /選取：\s*同源紀錄 B/ }),
+    );
 
     expect(onDraft).toHaveBeenLastCalledWith(
       {
