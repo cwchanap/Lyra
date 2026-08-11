@@ -396,6 +396,36 @@ describe("AnalysisWorkbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps unavailable boards read-only without host mutation controls", async () => {
+    const scene = analysisSceneWith({
+      visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+        (board) =>
+          board.id === "evidence_packages"
+            ? { ...board, available: false }
+            : board,
+      ),
+    });
+    const state = analysisState({ scene });
+    const onUpdateDraft = vi.fn().mockResolvedValue(state);
+    const onSubmit = vi.fn().mockResolvedValue(state);
+    renderWorkbench(state, { onUpdateDraft, onSubmit });
+
+    expect(
+      screen.queryByRole("button", { name: "重設" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "比對推論" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "復原" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /選取：/ }),
+    ).not.toBeInTheDocument();
+    expect(onUpdateDraft).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("does not render or own the Case File", () => {
     renderWorkbench();
     expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();

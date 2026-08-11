@@ -66,7 +66,7 @@
     analysisMode?.feedback ?? board?.feedback ?? null,
   );
   let boardReadOnly = $derived(
-    board === null || board.completed || board.readOnly,
+    board === null || !board.available || board.completed || board.readOnly,
   );
   let boardForRender = $derived<AnalysisBoardView | null>(
     board === null || hintOpen || board.hint === null
