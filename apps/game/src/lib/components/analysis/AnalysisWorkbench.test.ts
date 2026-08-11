@@ -93,7 +93,7 @@ function renderWorkbench(
 async function assignFirstClassifyCard() {
   const user = userEvent.setup();
   await user.click(
-    screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+    screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
   );
   await user.click(screen.getByRole("button", { name: "放入「三宅的小謊」" }));
 }
@@ -120,7 +120,7 @@ describe("AnalysisWorkbench", () => {
     const user = userEvent.setup();
 
     await user.click(
-      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.getByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     );
     expect(onUpdateDraft).toHaveBeenCalledWith(
       p1PracticeAnalysisModeFixture.actionToken,
@@ -144,7 +144,7 @@ describe("AnalysisWorkbench", () => {
     const user = userEvent.setup();
 
     expect(
-      screen.queryByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+      screen.queryByRole("button", { name: /選取：\s*標示 REPRINT 的收據/ }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "比對推論" })).toBeDisabled();
     expect(screen.getByText("標示 REPRINT 的收據")).toBeInTheDocument();
@@ -521,6 +521,12 @@ describe("AnalysisWorkbench", () => {
 
     expect(onSelectBoard).toHaveBeenCalledTimes(1);
     expect(onUpdateDraft).not.toHaveBeenCalled();
+
+    // The player's card selection must be preserved so they can retry.
+    const cardButton = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
   });
 
   it("reconciles a fallback board before Submit and aborts when reconciliation fails", async () => {
@@ -766,7 +772,7 @@ describe("AnalysisWorkbench", () => {
     const user = userEvent.setup();
 
     await user.click(
-      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
     );
     await user.click(
       screen.getByRole("button", { name: "放入「三宅的小謊」" }),

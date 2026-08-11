@@ -203,7 +203,9 @@
     if (!displayedBoard || boardReadOnly || disabled) return;
     const previousDraft = cloneDraft(displayedBoard.draft);
     const token = await tokenForDisplayedBoard();
-    if (!token) return;
+    if (!token) {
+      throw new Error("無法取得操作權限，請再試一次。");
+    }
 
     let applied: GameStateView | null;
     try {

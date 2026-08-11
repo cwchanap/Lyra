@@ -28,7 +28,7 @@ describe("AnalysisCard", () => {
     const user = userEvent.setup();
     render(AnalysisCard, { card: card(), onSelect });
 
-    const button = screen.getByRole("button", { name: "選取：卡片 A" });
+    const button = screen.getByRole("button", { name: /選取：\s*卡片 A/ });
     await user.click(button);
 
     expect(onSelect).toHaveBeenCalledOnce();

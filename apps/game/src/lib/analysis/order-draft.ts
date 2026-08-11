@@ -15,7 +15,7 @@ type PrefixAnchor = { cardId: string; position: number };
  * helper deliberately checks the shape again so stale views cannot make the
  * renderer throw or move a fixed card.
  */
-function prefixAnchors(board: OrderBoardView): PrefixAnchor[] | null {
+export function prefixAnchors(board: OrderBoardView): PrefixAnchor[] | null {
   const value = board as unknown as { fixedAnchors?: unknown };
   if (!Array.isArray(value.fixedAnchors)) return null;
 
@@ -50,7 +50,7 @@ function prefixAnchors(board: OrderBoardView): PrefixAnchor[] | null {
   return anchors;
 }
 
-function publicCards(board: OrderBoardView): AnalysisCardView[] {
+export function publicCards(board: OrderBoardView): AnalysisCardView[] {
   const value = board as unknown as { cards?: unknown };
   if (!Array.isArray(value.cards)) return [];
   return value.cards.filter(

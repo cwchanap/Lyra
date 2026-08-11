@@ -5,6 +5,8 @@
     materializePrefixAnchors,
     moveOrderCard,
     orderBoardBlockReason,
+    prefixAnchors,
+    publicCards,
     removeOrderCard,
   } from "$lib/analysis/order-draft";
   import AnalysisCard from "./AnalysisCard.svelte";
@@ -37,15 +39,17 @@
           authoritativeCardIds)
       : [...authoritativeCardIds],
   );
-  let cardsById = $derived(new Map(board.cards.map((card) => [card.id, card])));
+  let safeCards = $derived(publicCards(board));
+  let safeAnchors = $derived(prefixAnchors(board));
+  let cardsById = $derived(new Map(safeCards.map((card) => [card.id, card])));
   let fixedAnchorIds = $derived(
-    new Set(board.fixedAnchors.map((anchor) => anchor.cardId)),
+    new Set((safeAnchors ?? []).map((anchor) => anchor.cardId)),
   );
   let fixedPrefixLength = $derived(
-    blockReason === null ? board.fixedAnchors.length : 0,
+    blockReason === null ? (safeAnchors ?? []).length : 0,
   );
   let unplacedCards = $derived(
-    board.cards.filter((card) => !displayedCardIds.includes(card.id)),
+    safeCards.filter((card) => !displayedCardIds.includes(card.id)),
   );
   let editable = $derived(
     board.draft.kind === "order" &&
