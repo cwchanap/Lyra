@@ -50,6 +50,7 @@
   let hintOpen = $state(false);
   let observedBoardId = $state<string | null>(null);
   let focusFeedbackOnRender = $state(false);
+  let mutationError = $state<string | null>(null);
 
   let analysis = $derived(
     scene.kind === "analysis" ? (scene as AnalysisSceneView) : null,
@@ -100,6 +101,7 @@
     undoBoardId = null;
     hintOpen = false;
     focusFeedbackOnRender = false;
+    mutationError = null;
     if (nextBoardId !== null) {
       void focusAfterRender(`board:${nextBoardId}`);
     }
@@ -187,6 +189,11 @@
     return selected.mode.actionToken;
   }
 
+  function mutationErrorMessage(error: unknown): string {
+    if (error instanceof Error && error.message) return error.message;
+    return "更新草稿時發生錯誤，請再試一次。";
+  }
+
   async function mutateDraft(
     nextDraft: AnalysisDraft,
     focusKey: string,
@@ -201,10 +208,12 @@
     let applied: GameStateView | null;
     try {
       applied = await onUpdateDraft(token, cloneDraft(nextDraft));
-    } catch {
-      return;
+    } catch (error) {
+      throw new Error(mutationErrorMessage(error), { cause: error });
     }
-    if (applied === null) return;
+    if (applied === null) {
+      throw new Error("草稿未被接受，請再試一次。");
+    }
 
     if (options.recordUndo !== false) {
       undoDraft = previousDraft;
@@ -220,18 +229,34 @@
     draft: AnalysisDraft,
     focusKey: string,
   ): Promise<void> {
-    await mutateDraft(draft, focusKey);
+    mutationError = null;
+    try {
+      await mutateDraft(draft, focusKey);
+    } catch (error) {
+      mutationError = mutationErrorMessage(error);
+      throw error;
+    }
   }
 
   async function resetDraft(): Promise<void> {
+    mutationError = null;
     const displayedBoard = board;
     if (!displayedBoard) return;
-    await mutateDraft(emptyDraft(displayedBoard.kind), "reset");
+    try {
+      await mutateDraft(emptyDraft(displayedBoard.kind), "reset");
+    } catch (error) {
+      mutationError = mutationErrorMessage(error);
+    }
   }
 
   async function undo(): Promise<void> {
     if (!canUndo || undoDraft === null) return;
-    await mutateDraft(undoDraft, "undo", { recordUndo: false });
+    mutationError = null;
+    try {
+      await mutateDraft(undoDraft, "undo", { recordUndo: false });
+    } catch (error) {
+      mutationError = mutationErrorMessage(error);
+    }
   }
 
   async function submit(): Promise<void> {
@@ -397,6 +422,10 @@
         >
           {boardFeedback.message}
         </p>
+      {/if}
+
+      {#if mutationError}
+        <p class="feedback" role="alert">{mutationError}</p>
       {/if}
 
       {#if !boardReadOnly}

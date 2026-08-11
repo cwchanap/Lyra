@@ -38,6 +38,7 @@
       !board.completed &&
       !board.readOnly,
   );
+  let pending = $state(false);
 
   function recordForCard(card: ThresholdBoardView["cards"][number]) {
     if (card.source.kind === "evidence") {
@@ -55,8 +56,8 @@
     return null;
   }
 
-  function toggleCard(cardId: string) {
-    if (!editable || board.draft.kind !== "threshold") return;
+  async function toggleCard(cardId: string) {
+    if (!editable || pending || board.draft.kind !== "threshold") return;
     const card = board.cards.find((candidate) => candidate.id === cardId);
     if (!card || !card.available) return;
 
@@ -64,13 +65,20 @@
     if (selected.has(cardId)) selected.delete(cardId);
     else selected.add(cardId);
 
-    onDraft(
-      {
-        kind: "threshold",
-        selectedCardIds: [...selected].sort(),
-      },
-      `card:${cardId}`,
-    );
+    pending = true;
+    try {
+      await onDraft(
+        {
+          kind: "threshold",
+          selectedCardIds: [...selected].sort(),
+        },
+        `card:${cardId}`,
+      );
+    } catch {
+      // Selection is derived from board.draft; nothing local to restore.
+    } finally {
+      pending = false;
+    }
   }
 </script>
 
@@ -97,9 +105,11 @@
         <AnalysisCard
           {card}
           selected={selectedCardIds.includes(card.id)}
-          disabled={!editable}
+          disabled={!editable || pending}
           readOnly={!editable}
-          onSelect={editable ? () => toggleCard(card.id) : undefined}
+          onSelect={editable && !pending
+            ? () => toggleCard(card.id)
+            : undefined}
         />
 
         {#if provenance !== null}
