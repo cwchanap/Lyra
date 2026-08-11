@@ -543,6 +543,58 @@ describe("AnalysisWorkbench", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("reconciles a fallback board before Submit and uses the fresh token", async () => {
+    const initial = analysisState({
+      mode: analysisModeWith({
+        activeBoardId: null,
+        actionToken: {
+          ...beat85CompilerAnalysisModeFixture.actionToken,
+          activeBoardId: null,
+          durableRevision: 51,
+        },
+      }),
+      scene: analysisSceneWith({
+        activeBoardId: null,
+        actionToken: {
+          ...beat85CompilerAnalysisSceneFixture.actionToken,
+          activeBoardId: null,
+          durableRevision: 51,
+        },
+      }),
+    });
+    const selected = analysisState({
+      mode: analysisModeWith({
+        activeBoardId: "evidence_packages",
+        actionToken: {
+          ...beat85CompilerAnalysisModeFixture.actionToken,
+          activeBoardId: "evidence_packages",
+          durableRevision: 52,
+        },
+      }),
+      scene: analysisSceneWith({
+        activeBoardId: "evidence_packages",
+        actionToken: {
+          ...beat85CompilerAnalysisSceneFixture.actionToken,
+          activeBoardId: "evidence_packages",
+          durableRevision: 52,
+        },
+      }),
+    });
+    const onSelectBoard = vi.fn().mockResolvedValue(selected);
+    const onSubmit = vi.fn().mockResolvedValue(selected);
+    renderWorkbench(initial, { onSelectBoard, onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSelectBoard).toHaveBeenCalledWith(
+      actionToken(initial),
+      "evidence_packages",
+    );
+    expect(onSubmit).toHaveBeenCalledWith(actionToken(selected));
+  });
+
   it("source-asserts keyboard focus and reduced-motion styles", () => {
     const source = readFileSync(
       import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
