@@ -6,6 +6,8 @@ import {
   beat85CompilerAnalysisInventoryFixture,
   beat85CompilerAnalysisSceneFixture,
   beat85CompilerAnalysisModeFixture,
+  p1PracticeAnalysisModeFixture,
+  p1PracticeAnalysisSceneFixture,
 } from "$lib/analysis/test-fixtures";
 import type {
   AnalysisActionToken,
@@ -74,6 +76,7 @@ function renderWorkbench(
       draft: AnalysisDraft,
     ) => Promise<GameStateView | null>;
     onSubmit?: (token: AnalysisActionToken) => Promise<GameStateView | null>;
+    disabled?: boolean;
   } = {},
 ) {
   return render(AnalysisWorkbench, {
@@ -83,6 +86,7 @@ function renderWorkbench(
     onSelectBoard: callbacks.onSelectBoard ?? vi.fn().mockResolvedValue(state),
     onUpdateDraft: callbacks.onUpdateDraft ?? vi.fn().mockResolvedValue(state),
     onSubmit: callbacks.onSubmit ?? vi.fn().mockResolvedValue(state),
+    disabled: callbacks.disabled ?? false,
   });
 }
 
@@ -105,6 +109,83 @@ afterEach(() => {
 });
 
 describe("AnalysisWorkbench", () => {
+  it("keeps the P1 practice card and comparison flow through the workbench", async () => {
+    const state = analysisState({
+      scene: p1PracticeAnalysisSceneFixture,
+      mode: p1PracticeAnalysisModeFixture,
+    });
+    const onUpdateDraft = vi.fn().mockResolvedValue(state);
+    const onSubmit = vi.fn().mockResolvedValue(state);
+    renderWorkbench(state, { onUpdateDraft, onSubmit });
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+    );
+    expect(onUpdateDraft).toHaveBeenCalledWith(
+      p1PracticeAnalysisModeFixture.actionToken,
+      { kind: "threshold", selectedCardIds: ["receipt_reprint"] },
+    );
+
+    await user.click(screen.getByRole("button", { name: "比對推論" }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      p1PracticeAnalysisModeFixture.actionToken,
+    );
+  });
+
+  it("keeps disabled P1 controls inert", async () => {
+    const state = analysisState({
+      scene: p1PracticeAnalysisSceneFixture,
+      mode: p1PracticeAnalysisModeFixture,
+    });
+    const onUpdateDraft = vi.fn().mockResolvedValue(state);
+    const onSubmit = vi.fn().mockResolvedValue(state);
+    renderWorkbench(state, { onUpdateDraft, onSubmit, disabled: true });
+    const user = userEvent.setup();
+
+    expect(
+      screen.queryByRole("button", { name: "選取：標示 REPRINT 的收據" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "比對推論" })).toBeDisabled();
+    expect(screen.getByText("標示 REPRINT 的收據")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "比對推論" }));
+    expect(onUpdateDraft).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("renders board feedback when the mode has no feedback override", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) =>
+            candidate.id === "evidence_packages"
+              ? {
+                  ...candidate,
+                  feedback: {
+                    state: "incorrect",
+                    message: "選擇的線索不足以推論。",
+                  },
+                }
+              : candidate,
+        ),
+      }),
+      mode: analysisModeWith({ feedback: null }),
+    });
+    renderWorkbench(state);
+
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "選擇的線索不足以推論。",
+    );
+  });
+
+  it("renders a loading state when the display board is missing", () => {
+    renderWorkbench(
+      analysisState({ mode: analysisModeWith({ boardId: "missing_board" }) }),
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("分析板載入中。");
+  });
+
   it("renders the display board selected by mode.boardId", () => {
     const state = analysisState({
       mode: analysisModeWith({ boardId: "local_event_sequence" }),
