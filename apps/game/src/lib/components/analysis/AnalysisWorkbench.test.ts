@@ -731,6 +731,55 @@ describe("AnalysisWorkbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("surfaces a mutation error when onUpdateDraft returns null", async () => {
+    const state = analysisState();
+    const onUpdateDraft = vi.fn().mockResolvedValue(null);
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "草稿未被接受，請再試一次。",
+    );
+  });
+
+  it("surfaces a mutation error when onUpdateDraft throws", async () => {
+    const state = analysisState();
+    const onUpdateDraft = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
+  });
+
+  it("clears the mutation error after a subsequent successful update", async () => {
+    const state = analysisState();
+    let callCount = 0;
+    const onUpdateDraft = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      return callCount === 1 ? Promise.resolve(null) : Promise.resolve(state);
+    });
+    renderWorkbench(state, { onUpdateDraft });
+    const user = userEvent.setup();
+
+    await user.click(
+      screen.getByRole("button", { name: /選取：三宅母親通話紀錄/ }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "放入「三宅的小謊」" }),
+    );
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+
+    // Selection is preserved after the rejection; retry assign directly.
+    await user.click(
+      screen.getByRole("button", { name: "放入「三宅的小謊」" }),
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("swallows a thrown error from onSubmit during submit", async () => {
     const state = analysisState();
     const onSubmit = vi.fn().mockRejectedValue(new Error("IPC failure"));

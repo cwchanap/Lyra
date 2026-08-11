@@ -20,6 +20,7 @@
   } = $props();
 
   let selectedCardId = $state<string | null>(null);
+  let pending = $state(false);
   let editable = $derived(
     !disabled &&
       !readOnly &&
@@ -44,14 +45,14 @@
   }
 
   function selectCard(cardId: string) {
-    if (!editable) return;
+    if (!editable || pending) return;
     const card = board.cards.find((candidate) => candidate.id === cardId);
     if (!card || !card.available) return;
     selectedCardId = selectedCardId === cardId ? null : cardId;
   }
 
-  function assignCard(groupId: string) {
-    if (!editable) return;
+  async function assignCard(groupId: string) {
+    if (!editable || pending) return;
     if (board.draft.kind !== "classify") {
       return;
     }
@@ -60,21 +61,28 @@
     const card = board.cards.find((candidate) => candidate.id === cardId);
     if (!card || !card.available) return;
 
-    onDraft(
-      {
-        kind: "classify",
-        groupByCard: {
-          ...board.draft.groupByCard,
-          [cardId]: groupId,
+    pending = true;
+    try {
+      await onDraft(
+        {
+          kind: "classify",
+          groupByCard: {
+            ...board.draft.groupByCard,
+            [cardId]: groupId,
+          },
         },
-      },
-      `card:${cardId}`,
-    );
-    selectedCardId = null;
+        `card:${cardId}`,
+      );
+      selectedCardId = null;
+    } catch {
+      // Preserve the current selection so the player can retry.
+    } finally {
+      pending = false;
+    }
   }
 
-  function removeCard(cardId: string) {
-    if (!editable) return;
+  async function removeCard(cardId: string) {
+    if (!editable || pending) return;
     if (board.draft.kind !== "classify") {
       return;
     }
@@ -83,8 +91,15 @@
 
     const groupByCard = { ...board.draft.groupByCard };
     delete groupByCard[cardId];
-    onDraft({ kind: "classify", groupByCard }, `card:${cardId}`);
-    if (selectedCardId === cardId) selectedCardId = null;
+    pending = true;
+    try {
+      await onDraft({ kind: "classify", groupByCard }, `card:${cardId}`);
+      if (selectedCardId === cardId) selectedCardId = null;
+    } catch {
+      // Preserve the current selection so the player can retry.
+    } finally {
+      pending = false;
+    }
   }
 </script>
 
@@ -113,9 +128,11 @@
               <AnalysisCard
                 {card}
                 selected={selectedCardId === card.id}
-                disabled={!editable}
+                disabled={!editable || pending}
                 readOnly={!editable}
-                onSelect={editable ? () => selectCard(card.id) : undefined}
+                onSelect={editable && !pending
+                  ? () => selectCard(card.id)
+                  : undefined}
               />
             </div>
           {/each}
@@ -141,15 +158,17 @@
                   <AnalysisCard
                     {card}
                     selected={selectedCardId === card.id}
-                    disabled={!editable}
+                    disabled={!editable || pending}
                     readOnly={!editable}
-                    onSelect={editable ? () => selectCard(card.id) : undefined}
+                    onSelect={editable && !pending
+                      ? () => selectCard(card.id)
+                      : undefined}
                   />
                   {#if editable}
                     <button
                       type="button"
                       class="remove"
-                      disabled={!card.available}
+                      disabled={!card.available || pending}
                       onclick={() => removeCard(card.id)}
                     >
                       移除：{card.label}
@@ -165,7 +184,7 @@
             <button
               type="button"
               class="assign"
-              disabled={!selected || !selected.available}
+              disabled={!selected || !selected.available || pending}
               onclick={() => assignCard(group.id)}
             >
               放入「{group.label}」

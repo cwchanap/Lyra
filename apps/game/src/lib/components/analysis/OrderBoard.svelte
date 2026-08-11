@@ -27,6 +27,7 @@
   } = $props();
 
   let blockReason = $derived(orderBoardBlockReason(board));
+  let pending = $state(false);
   let authoritativeCardIds = $derived(
     board.draft.kind === "order" ? board.draft.cardIds : [],
   );
@@ -56,9 +57,18 @@
       blockReason === null,
   );
 
-  function emitDraft(cardIds: string[] | null, focusKey: string) {
-    if (!editable || board.draft.kind !== "order" || !cardIds) return;
-    onDraft({ kind: "order", cardIds }, focusKey);
+  async function emitDraft(cardIds: string[] | null, focusKey: string) {
+    if (!editable || pending || board.draft.kind !== "order" || !cardIds) {
+      return;
+    }
+    pending = true;
+    try {
+      await onDraft({ kind: "order", cardIds }, focusKey);
+    } catch {
+      // Ordering state is derived from board.draft; nothing local to restore.
+    } finally {
+      pending = false;
+    }
   }
 
   function addCard(cardId: string) {
@@ -129,19 +139,20 @@
                   <button
                     type="button"
                     aria-label={`上移：${card.label}`}
-                    disabled={index <= fixedPrefixLength}
+                    disabled={pending || index <= fixedPrefixLength}
                     onclick={() => moveCard(cardId, -1)}>上移</button
                   >
                   <button
                     type="button"
                     aria-label={`下移：${card.label}`}
-                    disabled={index >= displayedCardIds.length - 1}
+                    disabled={pending || index >= displayedCardIds.length - 1}
                     onclick={() => moveCard(cardId, 1)}>下移</button
                   >
                   <button
                     type="button"
                     class="remove"
                     aria-label={`移除：${card.label}`}
+                    disabled={pending}
                     onclick={() => removeCard(cardId)}>移除</button
                   >
                 </div>
@@ -166,7 +177,7 @@
                   type="button"
                   class="add"
                   aria-label={`加入時間線：${card.label}`}
-                  disabled={!card.available}
+                  disabled={!card.available || pending}
                   onclick={() => addCard(card.id)}>加入時間線</button
                 >
               {/if}

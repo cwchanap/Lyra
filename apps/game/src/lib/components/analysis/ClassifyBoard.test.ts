@@ -198,6 +198,29 @@ describe("ClassifyBoard", () => {
     expect(unassignedCard).toHaveAttribute("aria-pressed", "false");
   });
 
+  it("preserves the selection and re-enables controls when onDraft rejects", async () => {
+    const onDraft = vi.fn().mockRejectedValue(new Error("reject"));
+    const user = userEvent.setup();
+    renderBoard(boardWith(), onDraft);
+
+    const cardButton = screen.getByRole("button", {
+      name: /選取：三宅母親通話紀錄/,
+    });
+    await user.click(cardButton);
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
+
+    const assignButton = screen.getByRole("button", {
+      name: "放入「三宅的小謊」",
+    });
+    await user.click(assignButton);
+
+    // onDraft was attempted but rejected; the selection must be preserved.
+    expect(onDraft).toHaveBeenCalledTimes(1);
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
+    // pending resets in finally, so the assign button re-enables.
+    expect(assignButton).toBeEnabled();
+  });
+
   it("shows the empty state when all cards are assigned to groups", () => {
     renderBoard(
       boardWith({
