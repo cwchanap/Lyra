@@ -157,7 +157,7 @@ Rust rejects any draft containing an unavailable evidence/statement card.
 
 The threshold board needs source/procedure/proof data, but Case File already owns the user-facing vocabulary.
 
-**Stop condition:** Case File provenance tests must remain byte-for-byte semantically unchanged after helper extraction.
+**Stop condition:** Case File provenance tests must remain semantically unchanged after helper extraction.
 
 ### R6 — compiler fixture mistaken for shipped story content
 
