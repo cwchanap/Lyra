@@ -320,14 +320,15 @@ async function dispatchAnalysisCommand(
     "select_analysis_board" | "update_analysis_draft" | "submit_analysis_board"
   >,
   args: Record<string, unknown>,
-): Promise<void> {
+): Promise<GameStateView | null> {
   try {
-    await dispatchGameCommand(command, args);
+    return await dispatchGameCommand(command, args);
   } catch (error) {
     // runCommand owns backend failures, while this catches failures from the
     // remaining state-application path (for example, frame synchronization).
     // Keep both paths on the shared ErrorBanner surface.
     gameState.error = normalizeError(error);
+    return null;
   }
 }
 
@@ -557,8 +558,8 @@ export async function completeInterrogationPhase() {
 export async function selectAnalysisBoard(
   actionToken: AnalysisActionToken,
   boardId: string,
-) {
-  await dispatchAnalysisCommand("select_analysis_board", {
+): Promise<GameStateView | null> {
+  return dispatchAnalysisCommand("select_analysis_board", {
     expected: actionToken,
     boardId,
   });
@@ -567,15 +568,17 @@ export async function selectAnalysisBoard(
 export async function updateAnalysisDraft(
   actionToken: AnalysisActionToken,
   draft: AnalysisDraft,
-) {
-  await dispatchAnalysisCommand("update_analysis_draft", {
+): Promise<GameStateView | null> {
+  return dispatchAnalysisCommand("update_analysis_draft", {
     expected: actionToken,
     draft,
   });
 }
 
-export async function submitAnalysisBoard(actionToken: AnalysisActionToken) {
-  await dispatchAnalysisCommand("submit_analysis_board", {
+export async function submitAnalysisBoard(
+  actionToken: AnalysisActionToken,
+): Promise<GameStateView | null> {
+  return dispatchAnalysisCommand("submit_analysis_board", {
     expected: actionToken,
   });
 }

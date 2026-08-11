@@ -43,6 +43,27 @@ describe("mode helpers", () => {
     expect(canReexamineCaseRecords(mode)).toBe(false);
   });
 
+  it("shows the Case File in Analysis mode but disables reexamine", () => {
+    const mode: Mode = {
+      type: "analysis",
+      boardId: "analysis_board",
+      activeBoardId: "analysis_board",
+      actionToken: {
+        sceneId: "analysis_scene",
+        activeBoardId: "analysis_board",
+        durableRevision: 1,
+      },
+      availableBoardIds: ["analysis_board"],
+      feedback: null,
+      lastFeedback: null,
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
+    expect(shouldShowCaseFile(mode)).toBe(true);
+    expect(canReexamineCaseRecords(mode)).toBe(false);
+  });
+
   it("hides the Case File after game completion and disables reexamine", () => {
     const mode: Mode = { type: "gameComplete" };
     expect(shouldShowCaseFile(mode)).toBe(false);

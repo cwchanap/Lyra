@@ -22,6 +22,7 @@
     withdrawInterrogation,
     resumeInterrogationTestimony,
     completeInterrogationPhase,
+    selectAnalysisBoard,
     updateAnalysisDraft,
     submitAnalysisBoard,
     listScenes,
@@ -37,7 +38,7 @@
   import type { SceneNavigationIndex } from "$lib/state/types";
   import type { CaseFileSection } from "$lib/case-file/types";
   import AcquisitionPopup from "$lib/components/AcquisitionPopup.svelte";
-  import AnalysisView from "$lib/components/AnalysisView.svelte";
+  import AnalysisWorkbench from "$lib/components/analysis/AnalysisWorkbench.svelte";
   import DialogueBox from "$lib/components/DialogueBox.svelte";
   import ExploreView from "$lib/components/ExploreView.svelte";
   import PrimaryObjectiveHud from "$lib/components/PrimaryObjectiveHud.svelte";
@@ -1294,10 +1295,12 @@
             sceneTag={null}
             backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
           />
-          <AnalysisView
+          <AnalysisWorkbench
             scene={gameState.value.scene}
-            boardId={gameState.value.mode.boardId}
-            onSelection={updateAnalysisDraft}
+            mode={gameState.value.mode}
+            inventory={gameState.value.inventory}
+            onSelectBoard={selectAnalysisBoard}
+            onUpdateDraft={updateAnalysisDraft}
             onSubmit={submitAnalysisBoard}
             disabled={gameState.inFlight}
           />
