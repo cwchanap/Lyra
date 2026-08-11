@@ -404,7 +404,7 @@ The current P1 production journey depends on:
 
 HPA-261 preserves those contracts unless a deliberate copy change also updates the production anchors and helper in the same task.
 
-`check:e2e` only type-checks the E2E code; it does not prove selectors still work. Before deleting the old `AnalysisView`, run the real packaged `production-journey` suite against the new routed workbench.
+`check:e2e` only type-checks the E2E code; it does not prove selectors still work. Before deleting the old `AnalysisView`, run the real packaged `production-journey` suite against the new workbench.
 
 `production-anchors.ts` and its helper are otherwise reuse-only.
 
