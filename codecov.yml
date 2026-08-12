@@ -20,9 +20,3 @@ coverage:
 # exercised without a full Tauri test harness, so exclude it from coverage.
 ignore:
   - "apps/game/src-tauri/src/lib.rs"
-
-coverage:
-  status:
-    patch:
-      default:
-        target: 95%
