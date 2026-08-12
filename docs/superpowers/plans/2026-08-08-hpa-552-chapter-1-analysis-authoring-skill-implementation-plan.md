@@ -1,28 +1,24 @@
-# HPA-552 Chapter 1 Analysis Scene Authoring Skill Implementation Plan
+# HPA-552 Chapter 1 Analysis Authoring Guidance Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade the existing threshold-only `writing-analysis-scene` guidance to the already-shipped Chapter 1 `classify` / `order` / `threshold` contract, then remove stale threshold-only claims from companion repo guidance.
+**Goal:** Upgrade the existing `writing-analysis-scene` contract to the shipped Chapter 1 Classify/Order/Threshold stack and remove stale threshold-only capability claims from companion guidance.
 
-**Architecture:** HPA-561 already created the Analysis skill/routing/tutorial surface; HPA-260 and HPA-261 already shipped the three-board runtime/workbench. HPA-552 is therefore a docs-only contract-correction pass: edit six existing guidance files, reuse the existing valid and invalid compiler fixtures, and make no compiler/runtime/frontend/content changes.
+**Architecture:** The dedicated Analysis skill is the single owner of board-kind details. Five companion docs route/delegate to that skill without copying its board-kind list. Verification dogfoods the updated skill in a temporary compiler root instead of adding a permanent docs-lint system.
 
-**Tech Stack:** Markdown repo skills/guidance, existing TypeScript compiler fixtures, Vitest, Bun 1.3.1.
+**Tech Stack:** Markdown repo guidance, existing TypeScript scene compiler, Bun 1.3.1.
 
 ## Global Constraints
 
-- Start implementation from current `main`, not the historical planning branch baseline.
-- Document exactly the current Chapter 1 board families: `classify`, `order`, `threshold`.
-- Do not add `compare`, `route`, `chain`, freeform boards, plugin registries, or future template abstractions.
-- Do not create a second Analysis skill; modify `.claude/skills/writing-analysis-scene/SKILL.md` in place.
-- Do not modify compiler, Rust runtime, Svelte workbench, save/persistence, layout-editor, or production Beat 8.5 content.
-- Do not add a new HPA-552 invalid fixture; reuse `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/`.
-- Preserve HPA-561's tutorial-only `practice:<id>` and threshold `### Incorrect Selection` guidance.
-- Preserve Analysis dialogue-carrier asset-cue rules for Intro / Result Dialogue / Outro; do not invent board-level asset metadata.
-- Case-analysis cards reference existing evidence/statements; their provenance remains source-owned.
-- Authors declare semantic solution intent; compiler-normalized answers remain out of answer-key-free public/shared runtime views.
-- Analysis boards may complete `prepare_narrow_lock_request` but must not grant `narrow_lock_export`.
-- `Fixed Anchors` is required on Order boards; `[]` means none; non-empty anchors must occupy a contiguous prefix from position 1.
-- `reviewing-story-scenes` is already current after HPA-561 and is not an HPA-552 edit unless a fresh baseline audit proves otherwise.
+- Start implementation from current `main`.
+- Modify existing guidance only; create no new skill or fixture.
+- `writing-analysis-scene` alone enumerates supported board kinds.
+- Do not add Chapter 2/later board kinds or a generic template/plugin registry.
+- Do not modify compiler, Rust, Svelte, save/persistence, layout-editor, production Chapter 1 content, or `reviewing-story-scenes`.
+- Preserve current Threshold practice-card / `Incorrect Selection` / provenance / asset-cue behavior.
+- Preserve the Analysis authorization boundary: request readiness may be completed; `narrow_lock_export` is not granted by Analysis.
+- Do not use negative prose regexes as correctness gates.
+- Do not use Prettier/`format:check` as acceptance evidence for `.claude`/`docs`; the repo ignores those paths.
 
 ---
 
@@ -30,46 +26,41 @@
 
 ### Modify
 
-- `.claude/skills/writing-analysis-scene/SKILL.md` — expand existing threshold-only authoring contract to all three Chapter 1 board kinds.
-- `CLAUDE.md` — remove threshold-only capability wording from the existing Analysis routing bullet.
-- `.claude/skills/writing-chapter-manifest/SKILL.md` — remove threshold-only capability wording from the existing Analysis row.
-- `.claude/skills/subagent-driven-story-writing/SKILL.md` — replace the threshold-only Analysis brief with compact Classify/Order/Threshold inputs.
-- `.claude/skills/writing-investigation-scene/SKILL.md` — remove the obsolete “Analysis runtime is threshold-only” qualification from cross-scene predicate guidance.
-- `.claude/skills/writing-interrogation-scene/SKILL.md` — same focused correction.
+1. `.claude/skills/writing-analysis-scene/SKILL.md`
+2. `CLAUDE.md`
+3. `.claude/skills/writing-chapter-manifest/SKILL.md`
+4. `.claude/skills/subagent-driven-story-writing/SKILL.md`
+5. `.claude/skills/writing-investigation-scene/SKILL.md`
+6. `.claude/skills/writing-interrogation-scene/SKILL.md`
 
 ### Reuse unchanged
 
-- `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md` — canonical valid three-board case-analysis example.
-- `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/investigation_scene_1.md` — canonical case-record/provenance sources.
-- `packages/scripts/__fixtures__/analysis-chapter-1/story_catalog.md` — canonical story/source-group declarations.
-- `docs/stories_plan/chapter_1/analysis_scene_p1_5.md` — production tutorial example for `practice:<id>`, `Incorrect Selection`, and Analysis scene-tag asset cues.
-- `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/` — canonical invalid writer example.
-- `packages/scripts/compile-scenes/parser-analysis.ts` — syntax authority.
-- `packages/scripts/compile-scenes/validator-analysis.ts` — semantic/normalization authority, including `analysisOrderAnchorNotPrefix`.
+- `packages/scripts/__fixtures__/analysis-chapter-1/`
+- `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/`
+- `docs/stories_plan/chapter_1/analysis_scene_p1_5.md`
+- `packages/scripts/compile-scenes/parser-analysis.ts`
+- `packages/scripts/compile-scenes/validator-analysis.ts`
 
 ### Explicitly do not modify
 
 - `.claude/skills/reviewing-story-scenes/SKILL.md`
-- `packages/scripts/__fixtures__/**`
-- `packages/scripts/compile-scenes/**/*.ts`
+- `packages/scripts/**`
 - `apps/game/**`
-- `docs/stories_plan/chapter_1/analysis_scene_8_5.md`
+- `docs/stories_plan/chapter_1/**`
 
 ---
 
-### Task 1: Upgrade the existing Analysis authoring skill to all three shipped board kinds
+### Task 1: Upgrade the dedicated Analysis authoring skill
 
 **Files:**
 - Modify: `.claude/skills/writing-analysis-scene/SKILL.md`
-- Reference: `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`
-- Reference: `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/chapter_1/analysis_scene_8_5.md`
-- Reference: `docs/stories_plan/chapter_1/analysis_scene_p1_5.md`
+- Reference: current parser/validator and existing fixtures
 
 **Interfaces:**
-- Consumes: current parser/validator contract and HPA-561 tutorial/asset guidance already present in the skill.
-- Produces: one accurate authoring contract for current playable Chapter 1 Analysis content.
+- Consumes: shipped HPA-561/HPA-260/HPA-261 behavior.
+- Produces: the single writer-facing owner of Analysis board-kind details.
 
-- [ ] **Step 1: Confirm the implementation baseline contains the shipped three-board stack**
+- [ ] **Step 1: Re-check the baseline before editing**
 
 Run:
 
@@ -78,276 +69,108 @@ git fetch origin
 git switch main
 git pull --ff-only
 
-git log -8 --oneline
-grep -n 'writing-analysis-scene' CLAUDE.md
-grep -n 'classify\|order\|threshold' packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md
-grep -n 'analysisOrderAnchorNotPrefix' packages/scripts/compile-scenes/validator-analysis.ts
+grep -n 'classify\|order\|threshold' \
+  packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md
+grep -n 'analysisOrderAnchorNotPrefix' \
+  packages/scripts/compile-scenes/validator-analysis.ts
 ```
 
-Expected:
+Expected: current `main` still has the three-board fixture and the prefix-anchor validator. If either changed, update this plan to current code before changing prose.
 
-- current main contains the merged HPA-260/HPA-261 work;
-- the canonical valid fixture contains all three board kinds; and
-- `analysisOrderAnchorNotPrefix` exists in the validator.
+- [ ] **Step 2: Replace the stale threshold-only capability statement and hierarchy**
 
-If the baseline has moved again, inspect current code/fixtures and correct this plan before editing prose. Do not restore an obsolete threshold-only contract merely because it appears in historical planning docs.
-
-- [ ] **Step 2: Replace the skill's threshold-only frontmatter/role/runtime boundary**
-
-Keep the skill name and existing file. Replace wording that says the skill is threshold-only or that Classify/Order are parser-only.
-
-The opening contract should communicate this substance:
-
-```markdown
----
-name: writing-analysis-scene
-description: Use when writing or extending an analysis_scene_<K>.md file under a playable chapter root. Covers the compiler/runtime-supported Chapter 1 classify, order, and threshold boards, including Case File cards, tutorial-only practice cards, result dialogue, story reveals, and supported scene-tag asset cues.
----
-
-# Writing Analysis Scenes (《東京雨證：第零證人》)
-
-## Role
-
-You author compiler-validated `analysis_scene_<K>.md` files. Chapter 1 supports
-three playable board kinds: `classify`, `order`, and `threshold`.
-
-The compiler is the syntax and semantic authority. Rust owns correctness and
-durable state; the frontend renders the answer-key-free public view. This skill
-owns writer intent and valid authored forms only.
-```
-
-Remove any statement equivalent to:
+Keep the existing skill and preserve its shared Analysis structure. Make the opening contract state that Chapter 1 Analysis supports the board kinds documented by this skill, then enumerate them here — and only here:
 
 ```text
-runtime loader accepts threshold only
-classify/order are parser-only
-Do not author classify/order
+classify
+order
+threshold
 ```
 
-Preserve the existing explanation that Analysis consumes case records rather than declaring an Evidence/Statement Manifest.
-
-- [ ] **Step 3: Expand the structural hierarchy and common board model**
-
-The hierarchy section must include all currently valid H3 blocks:
+The hierarchy must include:
 
 ```text
-H1  # Scene N: <title>
-    - **Summary:** <one-sentence player recap>
-H2  ## Intro
-H2  ## Board: <label> {#board_id}
-H3      ### Card: <label> {#card_id}
-H3      ### Group: <label> {#group_id}          # classify only
-H3      ### Incorrect Selection                 # threshold only, optional
-H3      ### Result Dialogue
-H2  ## Outro
+## Intro
+## Board: <label> {#board_id}
+### Card: <label> {#card_id}
+### Group: <label> {#group_id}      # classify only
+### Incorrect Selection             # threshold only, optional
+### Result Dialogue
+## Outro
 ```
 
-Keep the current common Board fields:
+Remove only the obsolete claims that Classify/Order are parser-only, runtime-rejected, or non-shippable.
 
-```text
-Kind
-Prompt
-Reveals
-Incomplete Feedback
-Incorrect Feedback
-Unlock          # optional
-Hint            # optional
-```
+- [ ] **Step 3: Add Classify and current Order authoring rules; preserve Threshold**
 
-Do not make kind-specific metadata appear universal.
+Add/refresh these contracts:
 
-- [ ] **Step 4: Add a Classify section based on the live compiler fixture**
+**Classify**
 
-Document:
+- Group metadata is `Description` + `Accepted Cards`.
+- Every displayed card belongs to exactly one accepted group.
+- Writers author `Accepted Cards`, never normalized `acceptedGroupByCard`.
 
-```markdown
-## Classify board
+**Order**
 
-Use `classify` when each displayed record must be assigned to exactly one
-reasoning package.
+- `Accepted Order` contains every displayed card exactly once.
+- `Fixed Anchors` is required.
+- `[]` means none.
+- Non-empty entries use `<card_id>@<one-based-position>`.
+- Anchors are unique/in-range, agree with `Accepted Order`, and occupy contiguous positions `1..N`.
+- Reference `analysisOrderAnchorNotPrefix` and the existing invalid fixture.
 
-Each `### Group:` has:
+**Threshold**
 
-- `Description`
-- `Accepted Cards`
+Keep the existing fields and semantics rather than rewriting them:
 
-Every displayed card must occur in exactly one accepted group. The writer
-authors `Accepted Cards`; the compiler normalizes that intent into the hidden
-runtime answer map. Do not author `acceptedGroupByCard`.
-```
+- source-owned provenance/source groups/proof capabilities;
+- materialization limit;
+- tutorial-only `practice:<id>` immediate binding/no-mixing rules;
+- optional exact `### Incorrect Selection` feedback.
 
-Point to the canonical `evidence_packages` board in:
+- [ ] **Step 4: Refresh completion, authorization, asset, workflow, and orchestrator-handoff guidance**
 
-`packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`.
+Keep fully qualified Analysis completion syntax and remove threshold-specific runtime qualification.
 
-Do not copy the whole scene into the skill.
+Keep:
 
-- [ ] **Step 5: Add the exact current Order contract, including prefix anchors**
-
-Document:
-
-```markdown
-## Order board
-
-Use `order` for one exact sequence.
-
-Required board metadata:
-
-- `Accepted Order`
-- `Fixed Anchors`
-
-`Accepted Order` names every displayed card exactly once.
-
-`Fixed Anchors` is required. Use `[]` when nothing is pinned. Non-empty entries
-use `<card_id>@<one-based-position>`, must be unique/in range, and must agree
-with `Accepted Order`.
-
-Non-empty fixed anchors must occupy a contiguous prefix beginning at position 1:
-
-- `[]` — valid
-- `[event_1841@1]` — valid
-- `[event_1841@1, event_1842@2]` — valid
-- `[event_1843@3]` — invalid (`analysisOrderAnchorNotPrefix`)
-```
-
-Point writers to:
-
-- valid: `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`;
-- invalid: `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/`.
-
-Do not invent sparse-anchor UI support; the compiler rule intentionally matches the current workbench.
-
-- [ ] **Step 6: Preserve and retitle the existing Threshold contract rather than rewriting it**
-
-Keep the current fields and semantics:
-
-```text
-Eligible Cards
-Minimum Selected
-Minimum Distinct Source Groups
-Required Proof Capabilities
-Allowed Procedural Statuses
-Require Source Group
-```
-
-Preserve:
-
-- current eligible-card materialization hard limit;
-- Case File provenance/source-group semantics;
-- all-practice neutral provenance requirements;
-- practice-vs-Case-File no-mixing rule; and
-- optional `### Incorrect Selection` exact wrong-subset feedback.
-
-Make clear that `Incorrect Selection` is threshold-only and does not replace `Incorrect Feedback`.
-
-- [ ] **Step 7: Preserve the current tutorial-only practice binding exactly**
-
-Do not broaden `practice:<id>` into normal case-analysis data.
-
-Retain the current chapter-scoped binding contract:
-
-- each practice source belongs to one Analysis card/board in the chapter;
-- it is revealed by the immediately preceding investigation;
-- the Analysis scene immediately follows that investigation in the manifest;
-- all-practice thresholds use neutral provenance requirements; and
-- practice and Case File cards are not mixed in a threshold eligible set.
-
-The P1 production tutorial remains the canonical practice example:
-
-`docs/stories_plan/chapter_1/analysis_scene_p1_5.md`.
-
-- [ ] **Step 8: Update story-completion language to the current runtime**
-
-Preserve fully qualified syntax:
-
-```text
-analysis_scene:<chapter_id>@<scene_id> completed
-analysis_board:<chapter_id>@<scene_id>@<board_id> completed
-```
-
-Remove any threshold-only qualifier. State that Classify, Order, and Threshold boards can all produce qualified completion when packaged and completed.
-
-Keep the narrative recommendation:
-
-> Prefer an emitted Fact/Objective when later content depends on the earned conclusion rather than the UI-completion event itself.
-
-Keep `grant_authorization:<id>` forbidden on Analysis boards and keep Beat 8.5 limited to request readiness.
-
-- [ ] **Step 9: Preserve Analysis asset-cue guidance and keep its boundary exact**
-
-Keep the existing HPA-561 rule:
-
-- Intro, Result Dialogue, and Outro are dialogue carriers;
-- `[場景：...]` may carry current supported visual/audio metadata when assets are enabled;
-- Board/Card/Group/Incorrect Selection metadata itself has no background cue;
+- Facts/Objectives preferred when later narrative logic depends on a conclusion rather than UI completion;
+- `grant_authorization` forbidden on Analysis boards;
+- Beat 8.5 prepares `prepare_narrow_lock_request` but does not grant `narrow_lock_export`;
+- Intro / Result Dialogue / Outro as the only Analysis dialogue-carrier asset-cue locations;
 - no filesystem paths.
 
-Do not replace this with “Analysis has no assets”; that is false on current main.
+Add one compact **orchestrator handoff** subsection so `subagent-driven-story-writing` does not need to duplicate kind-specific fields. It should tell an orchestrator to provide the writer with:
 
-- [ ] **Step 10: Refresh Workflow, Self-check, and Common Mistakes for all three kinds**
+- board/card/group IDs as applicable;
+- card source IDs and source-owner paths;
+- authored board order/unlock chain;
+- story outputs and request-vs-authorization boundary;
+- source provenance expectations when Threshold uses them;
+- tutorial practice-card binding details when applicable.
 
-The final self-check must include at least:
+The dedicated skill then owns the kind-specific metadata syntax.
 
-```text
-- Board Kind is classify/order/threshold only.
-- Every real case card references an obtainable evidence/statement record.
-- Every classify card is accepted by exactly one group.
-- Every order card appears exactly once in Accepted Order.
-- Fixed Anchors exists; [] means none; non-empty anchors are a contiguous prefix from 1 and agree with Accepted Order.
-- Threshold provenance stays source-owned and has at least one accepted selection.
-- Practice cards remain tutorial-local and obey immediate binding/no-mixing rules.
-- Qualified Analysis refs are fully qualified/resolved.
-- No grant_authorization from Analysis.
-- Supported asset metadata appears on scene-tag dialogue carriers, not board metadata.
-- Generated JSON and filesystem paths remain untouched.
-```
+- [ ] **Step 5: Read the completed skill once as prose and commit**
 
-Add/refresh Common Mistakes rows for:
+Manually verify that:
 
-- treating Classify/Order as unsupported;
-- sparse Order anchors;
-- authoring normalized answer keys;
-- putting provenance on cards;
-- using practice cards in real Beat 8.5 case analysis; and
-- putting background metadata directly on a board.
-
-- [ ] **Step 11: Source-scan the upgraded skill before commit**
-
-Run:
-
-```bash
-grep -n 'classify\|order\|threshold' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'analysisOrderAnchorNotPrefix\|contiguous prefix' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'practice:' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'Incorrect Selection' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'Background Prompt\|Background Asset ID' .claude/skills/writing-analysis-scene/SKILL.md
-
-! grep -Ei 'threshold[- ]only|parser[- ]only|runtime loader .*reject.*classify|do not author .*classify.*order' \
-  .claude/skills/writing-analysis-scene/SKILL.md
-```
-
-Expected: the positive searches find the intended contracts and the obsolete-claim search returns no match.
-
-- [ ] **Step 12: Format-check and commit Task 1**
-
-Run:
-
-```bash
-bunx prettier .claude/skills/writing-analysis-scene/SKILL.md --check
-```
-
-Expected: PASS.
+- Classify/Order are no longer described as unsupported;
+- legitimate phrases such as "Incorrect Selection is threshold only" remain intact;
+- Classify, Order, Threshold, practice cards, story outputs, and asset cues do not contradict each other;
+- normalized answers are not presented as writer-authored fields.
 
 Commit:
 
 ```bash
 git add .claude/skills/writing-analysis-scene/SKILL.md
-git commit -m "docs: expand analysis authoring to three board kinds"
+git commit -m "docs: align analysis authoring with three-board runtime"
 ```
 
 ---
 
-### Task 2: Remove stale threshold-only wording from companion guidance
+### Task 2: Make companion guidance delegate to the Analysis skill
 
 **Files:**
 - Modify: `CLAUDE.md`
@@ -357,135 +180,74 @@ git commit -m "docs: expand analysis authoring to three board kinds"
 - Modify: `.claude/skills/writing-interrogation-scene/SKILL.md`
 
 **Interfaces:**
-- Consumes: upgraded `writing-analysis-scene` from Task 1.
-- Produces: consistent routing and cross-scene guidance that no longer contradicts the shipped runtime/workbench.
+- Consumes: Task 1's dedicated skill.
+- Produces: routing/cross-scene guidance that cannot drift merely because the board-kind list changes later.
 
-- [ ] **Step 1: Update the existing `CLAUDE.md` Analysis bullet only**
+- [ ] **Step 1: Remove duplicated board-kind enumeration from routing docs**
 
-Replace the current threshold-only capability wording with:
-
-```markdown
-  - `analysis_scene_<K>.md` - compiler-validated Analysis workbench scenes using
-    the Chapter 1 `classify`, `order`, and `threshold` board kinds. Authored via
-    `writing-analysis-scene`.
-```
-
-Do not restructure Project domain or add new routing concepts.
-
-- [ ] **Step 2: Update the existing chapter-manifest Analysis row only**
-
-Use:
+In `CLAUDE.md`, keep the Analysis scene-family bullet but delegate its board contract:
 
 ```markdown
-| `analysis_scene_<K>.md` | Compiler-validated Analysis workbench (`classify`, `order`, `threshold`; uses `writing-analysis-scene`) |
+- `analysis_scene_<K>.md` - compiler-validated Analysis workbench scenes.
+  Authored via `writing-analysis-scene`, which owns the supported board kinds
+  and kind-specific authoring contract.
 ```
 
-Do not add a manifest `type` field or new prefix.
-
-- [ ] **Step 3: Replace the Analysis-specific threshold-only brief in `subagent-driven-story-writing`**
-
-Keep the existing scene mapping and dispatch. Replace only the Analysis-specific brief block with compact kind-specific inputs equivalent to:
+In `writing-chapter-manifest`, make the Analysis row equivalent to:
 
 ```markdown
-- **For Analysis scenes:** the orchestrator owns exact board/card/group IDs,
-  card source IDs and source-owner paths, board order/unlock chain, story
-  outputs, and any request-vs-authorization boundary. For each board specify:
-  - `classify`: cards, groups, each group's `Accepted Cards`;
-  - `order`: cards, `Accepted Order`, and required `Fixed Anchors` (`[]` if
-    none; non-empty anchors form a contiguous prefix from position 1);
-  - `threshold`: eligible cards and the provenance/procedure/capability
-    requirements, plus any deliberate exact `Incorrect Selection` feedback.
-  The writer invokes `writing-analysis-scene`; do not duplicate provenance on
-  cards or invent unsupported board families. Preserve the existing tutorial
-  practice-card immediate-binding/no-mixing rules and Analysis dialogue-carrier
-  asset-cue rules.
+| `analysis_scene_<K>.md` | Compiler-validated Analysis scene; board contract is owned by `writing-analysis-scene` |
 ```
 
-Do not copy all parser fields from the dedicated skill.
+Do not list the board kinds in either file.
 
-- [ ] **Step 4: Remove the threshold-only runtime qualifier from investigation guidance**
+- [ ] **Step 2: Shrink the orchestrator's Analysis brief to ownership, not schema**
 
-Keep the existing fully qualified examples and story unlock semantics.
+Keep Analysis dispatch to `writing-analysis-scene`.
 
-Replace wording equivalent to:
+Replace the old threshold-only block with a compact rule:
+
+- orchestrator owns IDs, source IDs/source-owner paths, authored board sequence/unlocks, story outputs, and request-vs-authorization boundary;
+- writer invokes `writing-analysis-scene` for the supported board-kind list and kind-specific fields;
+- practice-card binding details are provided when the scene uses practice cards;
+- provenance stays on source records;
+- Analysis dialogue-carrier asset cues follow the dedicated skill.
+
+Do not duplicate Classify/Order/Threshold field lists here.
+
+- [ ] **Step 3: Remove threshold-only capability claims from investigation/interrogation**
+
+Preserve the existing qualified predicate examples.
+
+Use wording equivalent to:
 
 ```text
-Use threshold-only runtime-valid references...
-runtime loader accepts only threshold...
+Qualified Analysis predicates may reference any packaged Analysis board
+supported by the current writing-analysis-scene/runtime contract whose full
+scene/board id resolves in the compiled story catalog.
 ```
 
-with:
+Keep the recommendation to prefer Fact/Objective state for semantic conclusions and keep the separate authority-event restriction unchanged.
 
-```markdown
-Qualified Analysis predicates may reference any packaged Chapter 1 Analysis
-board (`classify`, `order`, or `threshold`) whose full scene/board id resolves in
-the compiled story catalog. The runtime evaluates all three through the shared
-story unlock context. Use a Fact/Objective instead when the narrative dependency
-is the earned conclusion rather than completion of the workbench UI.
-```
+Do not enumerate board kinds in these two skills.
 
-Keep the separate `grant_authorization` / authority-event warning unchanged.
+- [ ] **Step 4: Read all five companion files once and commit**
 
-- [ ] **Step 5: Apply the matching focused correction to interrogation guidance**
+Read the changed paragraphs in context. Confirm semantically that:
 
-Use the same capability statement, preserving interrogation-specific surrounding prose and the separate authorization restriction.
-
-Do not rewrite the interrogation skill generally.
-
-- [ ] **Step 6: Verify no companion surface still advertises threshold-only Analysis**
+- none claims Analysis runtime/frontend is threshold-only;
+- all board-kind detail delegates to `writing-analysis-scene`;
+- the orchestrator still passes enough IDs/sources/outputs for a cold writer;
+- investigation/interrogation allow qualified completion from any currently supported packaged Analysis board;
+- `reviewing-story-scenes` has no diff.
 
 Run:
 
 ```bash
-grep -n 'analysis_scene_<K>\|writing-analysis-scene' \
-  CLAUDE.md \
-  .claude/skills/writing-chapter-manifest/SKILL.md \
-  .claude/skills/subagent-driven-story-writing/SKILL.md
-
-grep -n 'analysis_scene:\|analysis_board:' \
-  .claude/skills/writing-investigation-scene/SKILL.md \
-  .claude/skills/writing-interrogation-scene/SKILL.md
-
-! grep -Ei 'threshold[- ]only|runtime loader .*reject.*classify|do not brief .*classify.*order|parser/compiler retain .*classify.*order' \
-  CLAUDE.md \
-  .claude/skills/writing-chapter-manifest/SKILL.md \
-  .claude/skills/subagent-driven-story-writing/SKILL.md \
-  .claude/skills/writing-investigation-scene/SKILL.md \
-  .claude/skills/writing-interrogation-scene/SKILL.md
-```
-
-Expected: routing/ref searches succeed and obsolete-claim search returns no match.
-
-- [ ] **Step 7: Verify `reviewing-story-scenes` remains intentionally untouched and current**
-
-Run:
-
-```bash
-grep -n 'analysis_scene_.*md' .claude/skills/reviewing-story-scenes/SKILL.md
-grep -n 'writing-analysis-scene' .claude/skills/reviewing-story-scenes/SKILL.md
 git diff -- .claude/skills/reviewing-story-scenes/SKILL.md
 ```
 
-Expected:
-
-- existing Analysis discovery/reference lines are present;
-- diff is empty.
-
-- [ ] **Step 8: Format-check and commit Task 2**
-
-Run:
-
-```bash
-bunx prettier \
-  CLAUDE.md \
-  .claude/skills/writing-chapter-manifest/SKILL.md \
-  .claude/skills/subagent-driven-story-writing/SKILL.md \
-  .claude/skills/writing-investigation-scene/SKILL.md \
-  .claude/skills/writing-interrogation-scene/SKILL.md \
-  --check
-```
-
-Expected: PASS.
+Expected: empty.
 
 Commit:
 
@@ -497,60 +259,97 @@ git add \
   .claude/skills/writing-investigation-scene/SKILL.md \
   .claude/skills/writing-interrogation-scene/SKILL.md
 
-git commit -m "docs: sync three-board analysis authoring guidance"
+git commit -m "docs: delegate analysis board contract to dedicated skill"
 ```
 
 ---
 
-### Task 3: Validate the docs-only contract against existing compiler fixtures
+### Task 3: Dogfood the authoring contract and perform final scope review
 
 **Files:**
-- Verify all six modified guidance files.
-- Reuse existing compiler fixtures; create no new fixture.
+- Verify: the six modified guidance files.
+- Temporary only: a copied compiler fixture root under `mktemp`; commit nothing from it.
 
 **Interfaces:**
-- Consumes: Task 1–2 guidance changes and already-shipped compiler/runtime contracts.
-- Produces: HPA-552 acceptance evidence without duplicating HPA-262 integration work.
+- Consumes: Tasks 1–2.
+- Produces: evidence that a writer can follow the updated skill, plus one cheap production compile smoke.
 
-- [ ] **Step 1: Prove the existing valid three-board fixture still compiles**
+- [ ] **Step 1: Fresh-verifier dogfood compile, then deliberately break Order anchors**
 
-Run:
-
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes.test.ts -t 'compiles the complete analysis Chapter 1 corpus through qualified progression'
-```
-
-If test-name filtering differs on the installed Vitest version, run:
+Create a temporary corpus from the existing fixture, then remove its Analysis scene:
 
 ```bash
-bun run test:scripts
+DOGFOOD="$(mktemp -d)"
+mkdir -p "$DOGFOOD/source"
+cp -R packages/scripts/__fixtures__/analysis-chapter-1/. "$DOGFOOD/source/"
+rm "$DOGFOOD/source/chapter_1/analysis_scene_8_5.md"
 ```
 
-Expected: PASS; the valid fixture still contains Classify, Order, and Threshold boards.
+Use a **fresh verifier context** if the execution environment supports one. Give it only:
 
-- [ ] **Step 2: Prove the existing invalid prefix-anchor fixture is still exercised**
+- the updated `.claude/skills/writing-analysis-scene/SKILL.md` as the Analysis format guide;
+- `$DOGFOOD/source/chapter_1/chapter.md`;
+- the copied investigation source files and `story_catalog.md` for available IDs/provenance.
 
-Run:
+Do **not** give the verifier the canonical `analysis_scene_8_5.md`.
 
-```bash
-bun run test:scripts -- packages/scripts/compile-scenes.test.ts
-```
-
-Expected: PASS including automatic invalid-fixture discovery for:
+Have it author `$DOGFOOD/source/chapter_1/analysis_scene_8_5.md` with one valid board of each kind. For the Order board require exactly these scene-local card IDs:
 
 ```text
-analysis-order-anchor-not-prefix
+order_a
+order_b
+order_c
 ```
 
-whose expected diagnostic is:
+and:
 
 ```text
-analysisOrderAnchorNotPrefix
+Accepted Order: [order_a, order_b, order_c]
+Fixed Anchors: []
 ```
 
-Do not add a second HPA-552 invalid fixture merely to test unsupported `route`; the current invalid fixture is more directly useful to an Order writer and already satisfies the compiler-exercised-invalid-example acceptance criterion.
+The verifier may choose any three obtainable copied evidence/statement sources for those cards and may use neutral/satisfiable Threshold requirements based on the copied provenance.
 
-- [ ] **Step 3: Compile the production authored story tree**
+Compile the temporary corpus through the existing exported compiler seam:
+
+```bash
+DOGFOOD="$DOGFOOD" bun -e '
+import { compile } from "./packages/scripts/compile-scenes/orchestrator.ts";
+const root = process.env.DOGFOOD;
+if (!root) process.exit(2);
+const result = compile({ sourceRoot: `${root}/source`, outputRoot: `${root}/out` });
+if (!result.ok) {
+  console.error(result.errors.map((e) => `${e.code}: ${e.message}`).join("\n"));
+  process.exit(1);
+}
+'
+```
+
+Expected: exit 0.
+
+Now make only the Order anchor invalid:
+
+```bash
+perl -0pi -e 's/- \*\*Fixed Anchors:\*\* \[\]/- **Fixed Anchors:** [order_c@3]/' \
+  "$DOGFOOD/source/chapter_1/analysis_scene_8_5.md"
+
+DOGFOOD="$DOGFOOD" bun -e '
+import { compile } from "./packages/scripts/compile-scenes/orchestrator.ts";
+const root = process.env.DOGFOOD;
+if (!root) process.exit(2);
+const result = compile({ sourceRoot: `${root}/source`, outputRoot: `${root}/out-bad` });
+if (result.ok || !result.errors.some((e) => e.code === "analysisOrderAnchorNotPrefix")) {
+  console.error(result.ok ? "unexpected success" : result.errors.map((e) => e.code).join("\n"));
+  process.exit(1);
+}
+'
+```
+
+Expected: exit 0 because the compile fails specifically with `analysisOrderAnchorNotPrefix`.
+
+Delete the temporary root afterward. Commit none of it.
+
+- [ ] **Step 2: Run one cheap production story smoke**
 
 Run:
 
@@ -558,139 +357,50 @@ Run:
 bun run scenes:compile
 ```
 
-Expected: successful compile. Generated resources remain generated/untracked.
+Expected: PASS. Treat this only as confirmation that the current authored story tree still compiles; it is not evidence that the guidance prose is correct.
 
-- [ ] **Step 4: Type-check compiler/tooling contracts**
+- [ ] **Step 3: Final prose/scope review**
 
-Run:
+Read the six deliverables once together and verify:
 
-```bash
-bun run check:scripts
+```text
+[ ] writing-analysis-scene is the only file that enumerates supported board kinds.
+[ ] It documents Classify, Order, and Threshold accurately.
+[ ] Order documents required Fixed Anchors, [] and the contiguous-prefix rule.
+[ ] Threshold practice/Incorrect Selection/provenance behavior remains intact.
+[ ] Companion guidance delegates board-kind details to writing-analysis-scene.
+[ ] No companion file claims threshold-only Analysis support.
+[ ] Investigation/interrogation accept qualified completion from any currently supported packaged Analysis board.
+[ ] Analysis still cannot grant narrow_lock_export.
+[ ] reviewing-story-scenes is untouched.
 ```
 
-Expected: PASS.
-
-- [ ] **Step 5: Run repository formatting check**
-
-Run:
-
-```bash
-bun run format:check
-```
-
-Expected: PASS.
-
-If formatting fails only in touched guidance, run the repo formatter, inspect the diff, and commit only the formatter's changes to those six files.
-
-- [ ] **Step 6: Run the final stale-contract scan across the six HPA-552 surfaces**
-
-Run:
-
-```bash
-! grep -Ei 'threshold[- ]only|parser[- ]only|runtime loader .*reject.*classify|do not author .*classify.*order|do not brief .*classify.*order' \
-  .claude/skills/writing-analysis-scene/SKILL.md \
-  CLAUDE.md \
-  .claude/skills/writing-chapter-manifest/SKILL.md \
-  .claude/skills/subagent-driven-story-writing/SKILL.md \
-  .claude/skills/writing-investigation-scene/SKILL.md \
-  .claude/skills/writing-interrogation-scene/SKILL.md
-```
-
-Expected: exit 0 with no obsolete match.
-
-Then confirm all three names are present in the dedicated skill:
-
-```bash
-grep -n 'classify' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'order' .claude/skills/writing-analysis-scene/SKILL.md
-grep -n 'threshold' .claude/skills/writing-analysis-scene/SKILL.md
-```
-
-- [ ] **Step 7: Prove the implementation diff stayed docs-only and minimal**
-
-Run:
+Then verify the implementation diff is limited to the six guidance files (plus these planning docs only if implementation was intentionally done on the planning branch):
 
 ```bash
 git diff --name-only origin/main...HEAD
 ```
 
-Expected implementation file set:
-
-```text
-.claude/skills/writing-analysis-scene/SKILL.md
-.claude/skills/subagent-driven-story-writing/SKILL.md
-.claude/skills/writing-chapter-manifest/SKILL.md
-.claude/skills/writing-interrogation-scene/SKILL.md
-.claude/skills/writing-investigation-scene/SKILL.md
-CLAUDE.md
-```
-
-If implementing from a branch that also contains the approved HPA-552 design/plan docs, those two planning documents may additionally appear. No compiler fixture, TypeScript compiler source, Rust, Svelte, generated resource, or production story content should appear.
-
-- [ ] **Step 8: Self-review against HPA-552 acceptance criteria**
-
-Record this checklist in the implementation PR:
-
-```text
-[ ] Existing writing-analysis-scene skill now documents Classify/Order/Threshold as playable Chapter 1 content.
-[ ] Canonical valid three-board fixture is referenced and compiler exercised.
-[ ] Existing analysis-order-anchor-not-prefix invalid fixture is referenced and compiler exercised.
-[ ] Fixed Anchors requires [] or a contiguous one-based prefix and agrees with Accepted Order.
-[ ] Existing P1 practice-card / Incorrect Selection / asset-cue guidance is preserved.
-[ ] Real Case File provenance remains source-owned.
-[ ] Generated/normalized answers remain compiler/runtime-owned and answer-key-free public views remain untouched.
-[ ] CLAUDE/chapter-manifest/orchestrator/investigation/interrogation contain no stale threshold-only Analysis claim.
-[ ] reviewing-story-scenes required no HPA-552 modification.
-[ ] Analysis still cannot grant narrow_lock_export.
-[ ] bun run test:scripts passes.
-[ ] bun run scenes:compile passes.
-[ ] bun run check:scripts passes.
-[ ] bun run format:check passes.
-```
-
-- [ ] **Step 9: Commit any final documentation-only repair if needed**
-
-If Steps 1–8 required a final correction:
-
-```bash
-git add \
-  .claude/skills/writing-analysis-scene/SKILL.md \
-  .claude/skills/subagent-driven-story-writing/SKILL.md \
-  .claude/skills/writing-chapter-manifest/SKILL.md \
-  .claude/skills/writing-interrogation-scene/SKILL.md \
-  .claude/skills/writing-investigation-scene/SKILL.md \
-  CLAUDE.md
-
-git commit -m "docs: align analysis authoring contract with current main"
-```
-
-If no repair was needed, do not create an empty commit.
+If a final prose repair is needed, commit only that repair. Do not create an empty final commit.
 
 ---
 
-## Implementation Review Notes
+## Stop Conditions
 
-### Keep HPA-552 smaller than its historical plan
+Do not expand HPA-552 into:
 
-Reject implementation scope that adds:
-
-- a second Analysis authoring skill;
-- a new `route` invalid fixture;
-- changes to `reviewing-story-scenes` that duplicate HPA-561;
-- parser/runtime/frontend behavior to make docs convenient;
+- a docs-lint or prose-regex framework;
+- a Prettier override for ignored `.claude`/`docs` files;
+- a new compiler fixture;
 - a schema/doc generator;
-- a generic Analysis renderer/template registry;
-- production Beat 8.5 content;
-- Chapter 2/later board kinds; or
-- new answer-key/public-view structures.
+- runtime/frontend/compiler changes;
+- `reviewing-story-scenes` changes already owned by HPA-561;
+- production Beat 8.5 authoring; or
+- future board kinds.
 
-Those would be solving work already owned by HPA-259/HPA-260/HPA-261/HPA-262/HPA-265 or inventing future needs.
+## Handoff
 
-### Handoff after HPA-552
-
-- HPA-262 proves the actual packaged three-board cross-layer path.
-- HPA-265 authors and iterates the real Beat 8.5 scene against this corrected skill.
-- HPA-264 owns the hearing-granted `narrow_lock_export` authority handoff.
-- HPA-263 remains optional post-playtest feedback/hint polish.
-
-If HPA-265 discovers a genuine authoring mismatch, correct the skill to the compiler/canon. Do not add compatibility syntax or preserve an obsolete HPA-552 assumption.
+- HPA-262: integrated real three-board packaged acceptance.
+- HPA-265: real Beat 8.5 authoring/iteration.
+- HPA-264: hearing-granted `narrow_lock_export`.
+- HPA-263: optional post-playtest feedback/hint polish.
