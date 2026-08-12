@@ -105,31 +105,15 @@ Because the agent has none of your context, every brief carries all of:
   evidence/statement IDs are declared once; hotspot/topic/sublocation IDs are
   scene-local. State which locked blocks get exactly one inbound `Reveals` and
   no `Unlock` (a block must not have both); first sub-location is `unlocked`.
-- **For analysis scenes: the threshold-board contract.** The orchestrator owns
-  board IDs and the unlock chain. Give the writer, per board, `Kind: threshold`,
-  the eligible card sources (`evidence:<id>` / `statement:<id>` from earlier
-  scenes, or `practice:<id>`) and each card's one-line `Summary`, `Minimum
-  Selected`, `Minimum Distinct Source Groups`, `Required Proof Capabilities`,
-  `Allowed Procedural Statuses`, and `Require Source Group`. Confirm whether
-  the eligible cards are Case File or practice (practice-only thresholds must
-  keep neutral requirements), and state the board's story-only `Reveals`,
-  incomplete/incorrect feedback, optional hint, Result Dialogue, and Outro
-  beats. Within a chapter, every `practice:<id>` must appear on exactly one
-  analysis card in exactly one analysis board, be revealed exactly once by the
-  immediately preceding investigation, and have that analysis scene directly
-  follow the investigation in the chapter manifest; every practice reveal must
-  target a card on that immediately following analysis scene. This uniqueness is
-  chapter-scoped, not global across chapters; reuse in another chapter requires
-  its own immediate investigation-to-analysis handoff. Do not brief a
-  writer to author `classify` or `order`: the parser/compiler retain them for
-  fixture/validation coverage only, but the runtime loader rejects them as
-  unsupported and they are not shippable. Intro, each Result Dialogue, and
-  Outro may carry `[場景：...]` plus supported asset metadata; the board UI
-  itself has no cue. Reuse a
-  background only by explicitly repeating its `Background Asset ID` along with
-  the required tag/prompt cues; repeating the prompt alone creates a new asset.
-  When assets are enabled, set both `BGM` and `BGS` on the first visual cue in
-  the compiler-wide ordered corpus, not the first unit of each chapter.
+- **For analysis scenes: delegate the board contract to
+  `writing-analysis-scene`.** The orchestrator owns board/card/group IDs as
+  applicable, card source IDs and source-owner paths, the authored board
+  sequence and unlock chain, intended story outputs, and the
+  request-vs-authorization boundary. The writer invokes
+  `writing-analysis-scene` for the supported board-kind list and all
+  kind-specific fields. When the scene uses practice cards, provide the exact
+  practice-card binding details; provenance stays on source records. Analysis
+  dialogue-carrier asset cues follow the dedicated skill.
 - **For investigation scenes: the interaction-point ratio budget
   (addendum §2.1, per-chapter not per-scene).** Tell the writer the target
   mix across the chapter's investigation scenes *in aggregate*: ~40% 破案資訊

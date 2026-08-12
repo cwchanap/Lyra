@@ -54,7 +54,7 @@ Scene type is inferred from filename prefix — do **not** add a type annotation
 | `scene_<K>.md` | Linear dialogue (uses `writing-detective-game-dialogue` linear format) |
 | `investigation_scene_<K>.md` | Interactive investigation (uses `writing-investigation-scene`) |
 | `interrogation_scene_<K>.md` | Authored and compiler-validated interrogation scene (uses `writing-interrogation-scene`) |
-| `analysis_scene_<K>.md` | Compiler-validated analysis scene; current runtime/frontend support is threshold-board only (uses `writing-analysis-scene`) |
+| `analysis_scene_<K>.md` | Compiler-validated Analysis scene; board contract is owned by `writing-analysis-scene` |
 
 ## Asset generation scope
 

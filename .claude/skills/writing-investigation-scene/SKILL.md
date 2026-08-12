@@ -397,20 +397,17 @@ analysis_board:<chapter_id>@<scene_id>@<board_id> completed
 
 `question:<id> resolved` is global story state, not an interrogation-local
 `question:<id> answered` predicate. Analysis references always need all shown
-slug segments; a bare scene or board ID is invalid. Analysis predicates are
-supported in current compiled content when their fully qualified scene/board
-ids resolve in the compiled story catalog, and the runtime evaluates them
-through the story unlock context. Use threshold-only runtime-valid references,
-for example:
+slug segments; a bare scene or board ID is invalid. Qualified Analysis
+predicates may reference any packaged Analysis board supported by the current
+`writing-analysis-scene`/runtime contract whose full scene/board id resolves in
+the compiled story catalog. Use these runtime-valid references, for example:
 
 ```text
 analysis_scene:chapter_1@analysis_scene_p1_5 completed
 analysis_board:chapter_1@analysis_scene_p1_5@p1_reprint_time_board completed
 ```
 
-This does not expand the playable analysis surface: the runtime loader accepts
-only threshold analysis boards and rejects classify/order boards. Do not use
-unresolved or placeholder analysis ids.
+Do not use unresolved or placeholder analysis ids.
 
 ### Story targets in `Reveals:`
 
@@ -508,7 +505,7 @@ Do not author authorization:<id> granted as a production unlock gate in HPA-257/
 - **Evidence and statement IDs are game-global.** A single ID like `evidence:blue_umbrella` may be declared in only one scene file across the entire game (one chapter, one investigation scene). Compile-time duplicate declarations are an error.
 - **Hotspot, topic, and sub-location IDs are scene-local.** They may repeat across different scene files freely. Cross-scene references to these kinds are not supported.
 - **Scene-local `Reveals:` targets must resolve to a declaration in the *same scene file*** — this applies to the five local kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A local reveal newly adds an item or unlocks a block, so its definition must be present in this scene's JSON output. HPA-257 story targets instead resolve through `story_catalog.md` as documented above.
-- **Scene-local `Unlock:` predicates must resolve to a declaration in the same scene file** in v1. HPA-257 global story predicates resolve through the story catalog rather than crossing into another scene's local IDs; fully qualified analysis predicates are production-supported when their catalog references resolve. Only threshold analysis boards are runtime-playable; unresolved/placeholder analysis IDs fail catalog validation, and classify/order boards are not runtime-playable.
+- **Scene-local `Unlock:` predicates must resolve to a declaration in the same scene file** in v1. HPA-257 global story predicates resolve through the story catalog rather than crossing into another scene's local IDs; fully qualified analysis predicates are production-supported when their catalog references resolve. Unresolved/placeholder analysis IDs fail catalog validation.
 
 ## Parser validation guarantees
 
