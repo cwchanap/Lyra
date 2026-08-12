@@ -280,4 +280,52 @@ describe("ClassifyBoard", () => {
 
     expect(onDraft).not.toHaveBeenCalled();
   });
+
+  it("does not render remove buttons for a stale non-classify draft", () => {
+    const onDraft = vi.fn();
+    const staleBoard: ClassifyBoardView = {
+      ...fixtureBoard,
+      draft: { kind: "order", cardIds: [] } as AnalysisDraft,
+    };
+    renderBoard(staleBoard, onDraft);
+
+    // With a stale draft, assignedCardIds is empty (derived checks
+    // draft.kind === "classify"), so no cards appear in groups and no
+    // remove buttons are rendered.
+    expect(
+      screen.queryByRole("button", { name: /移除：/ }),
+    ).not.toBeInTheDocument();
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not select an unavailable card in the pool", async () => {
+    const onDraft = vi.fn();
+    const boardWithUnavailable = boardWith(
+      {},
+      {
+        cards: fixtureBoard.cards.map((card) =>
+          card.id === "miyake_call" ? { ...card, available: false } : card,
+        ),
+      },
+    );
+    renderBoard(boardWithUnavailable, onDraft);
+    const user = userEvent.setup();
+
+    // The unavailable card is in the pool but clicking it should not select it.
+    await user.click(
+      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
+    );
+
+    // The assign button should still be disabled because no card is selected.
+    expect(
+      screen.getByRole("button", { name: "放入「三宅的小謊」" }),
+    ).toBeDisabled();
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not render a hint when the board has none", () => {
+    renderBoard(boardWith(undefined, { hint: null }));
+
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
+  });
 });

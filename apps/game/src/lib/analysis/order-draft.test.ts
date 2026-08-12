@@ -215,6 +215,16 @@ describe("order draft algebra", () => {
         addOrderCard(fixtureBoard, ["event_1841"], "unknown_card"),
       ).toBeNull();
     });
+
+    it("returns null when the board has unsupported anchors", () => {
+      const blockedBoard = boardWith({
+        fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+      });
+      // event_1842 is a valid available card, but materialization is blocked.
+      expect(
+        addOrderCard(blockedBoard, ["event_1841"], "event_1842"),
+      ).toBeNull();
+    });
   });
 
   describe("moveOrderCard", () => {
@@ -267,6 +277,16 @@ describe("order draft algebra", () => {
         moveOrderCard(unavailableBoard, ["event_1841"], "event_1842", 1),
       ).toBeNull();
     });
+
+    it("returns null when the board has unsupported anchors", () => {
+      const blockedBoard = boardWith({
+        fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+      });
+      // event_1842 is a valid available card, but materialization is blocked.
+      expect(
+        moveOrderCard(blockedBoard, ["event_1841"], "event_1842", 1),
+      ).toBeNull();
+    });
   });
 
   describe("removeOrderCard", () => {
@@ -278,6 +298,15 @@ describe("order draft algebra", () => {
     it("returns the draft unchanged when the card is not present", () => {
       const draft = ["event_1841", "event_1842"];
       expect(removeOrderCard(fixtureBoard, draft, "event_1843")).toEqual(draft);
+    });
+
+    it("returns null when the board has unsupported anchors", () => {
+      const blockedBoard = boardWith({
+        fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+      });
+      expect(
+        removeOrderCard(blockedBoard, ["event_1841"], "event_1842"),
+      ).toBeNull();
     });
   });
 

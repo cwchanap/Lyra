@@ -271,4 +271,10 @@ describe("OrderBoard", () => {
     ).not.toBeInTheDocument();
     expect(onDraft).not.toHaveBeenCalled();
   });
+
+  it("does not render a hint when the board has none", () => {
+    renderBoard(boardWith(["event_1841"], { hint: null }));
+
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
+  });
 });

@@ -409,4 +409,53 @@ describe("CaseFileRecordDetail", () => {
       screen.getByRole("button", { name: "查看後續紀錄" }),
     ).toBeInTheDocument();
   });
+
+  it("renders the provenance section with all fields absent for a neutral record", () => {
+    // A record with all-neutral provenance but hasVisibleProvenance: true
+    // exercises the false branch of every provenance {#if} block.
+    const record = evidenceRecord();
+    renderDetail(recordItem(record, { hasVisibleProvenance: true }));
+
+    expect(
+      screen.getByRole("heading", { name: "來源與狀態" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/來源類型：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/呈現層：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/程序狀態：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/完整度：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/可信度：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/來源：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/來源群組：/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/可證明：/)).not.toBeInTheDocument();
+  });
+
+  it("falls back to a placeholder when resolveStoryAsset resolves to null", async () => {
+    resolveStoryAsset.mockResolvedValue(null);
+    renderDetail(
+      recordItem(evidenceRecord({ imageAssetId: "evidence.missing" })),
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole("img", { name: "咖啡收據" });
+      expect(img).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
+  });
+
+  it("falls back to a missing-asset placeholder when resolveStoryAsset rejects", async () => {
+    resolveStoryAsset.mockRejectedValue(new Error("asset failure"));
+    renderDetail(
+      recordItem(evidenceRecord({ imageAssetId: "evidence.broken" })),
+    );
+
+    await waitFor(() => {
+      const img = screen.getByRole("img", { name: "咖啡收據" });
+      expect(img).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
+  });
 });

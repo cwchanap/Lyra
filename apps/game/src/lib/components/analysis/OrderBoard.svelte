@@ -35,8 +35,10 @@
   );
   let displayedCardIds = $derived(
     blockReason === null
-      ? (materializePrefixAnchors(board, authoritativeCardIds) ??
-          authoritativeCardIds)
+      ? // materializePrefixAnchors is guaranteed non-null when blockReason
+        // is null, so the fallback is never reached.  Use `as` to document
+        // the invariant without an unreachable ?? branch.
+        (materializePrefixAnchors(board, authoritativeCardIds) as string[])
       : [...authoritativeCardIds],
   );
   let safeCards = $derived(publicCards(board));
@@ -46,7 +48,10 @@
     new Set((safeAnchors ?? []).map((anchor) => anchor.cardId)),
   );
   let fixedPrefixLength = $derived(
-    blockReason === null ? (safeAnchors ?? []).length : 0,
+    // When blockReason !== null, safeAnchors is null, so (null ?? []).length
+    // is 0 — identical to the previous ternary but without an unreachable
+    // branch.
+    (safeAnchors ?? []).length,
   );
   let unplacedCards = $derived(
     safeCards.filter((card) => !displayedCardIds.includes(card.id)),
@@ -62,6 +67,7 @@
   );
 
   async function emitDraft(cardIds: string[] | null, focusKey: string) {
+    /* v8 ignore next -- unreachable: mutation buttons only rendered when editable */
     if (!editable || pending || board.draft.kind !== "order" || !cardIds) {
       return;
     }

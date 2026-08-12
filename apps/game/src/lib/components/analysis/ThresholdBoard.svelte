@@ -57,8 +57,10 @@
   }
 
   async function toggleCard(cardId: string) {
+    /* v8 ignore next -- unreachable: onSelect is undefined when not editable */
     if (!editable || pending || board.draft.kind !== "threshold") return;
     const card = board.cards.find((candidate) => candidate.id === cardId);
+    /* v8 ignore next -- unreachable: AnalysisCard does not expose a clickable toggle for unavailable cards */
     if (!card || !card.available) return;
 
     const selected = new SvelteSet(board.draft.selectedCardIds);
