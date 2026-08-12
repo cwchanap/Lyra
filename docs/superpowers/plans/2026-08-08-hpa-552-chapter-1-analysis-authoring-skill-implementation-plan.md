@@ -308,7 +308,7 @@ Accepted Order: [order_a, order_b, order_c]
 Fixed Anchors: []
 ```
 
-The verifier may choose any three obtainable copied evidence/statement sources for those cards and may use neutral/satisfiable Threshold requirements based on the copied provenance.
+The verifier may choose any three obtainable copied evidence/statement sources for those cards and should derive any non-neutral Threshold provenance requirements from the copied source records rather than guessing.
 
 Compile the temporary corpus through the existing exported compiler seam:
 
