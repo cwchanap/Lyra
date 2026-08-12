@@ -1,6 +1,6 @@
 ---
 name: writing-analysis-scene
-description: Use when writing or extending an analysis_scene_<K>.md file under static/stories_plan/chapter_<N>/ or docs/stories_plan/chapter_<N>/ for compiler-validated threshold evidence-arrangement boards whose cards reference case records or practice items, each with Result Dialogue and story Reveals.
+description: Use when writing or extending an analysis_scene_<K>.md file under static/stories_plan/chapter_<N>/ or docs/stories_plan/chapter_<N>/ for compiler-validated Analysis boards (classify, order, or threshold) whose cards reference case records or practice items, each with Result Dialogue and story Reveals.
 ---
 
 # Writing Analysis Scenes (《東京雨證：第零證人》)
@@ -14,12 +14,10 @@ evidence/statement manifest of its own — it *consumes* case records defined in
 earlier investigation/interrogation scenes (or self-contained **practice**
 cards) and emits story progression through each board's `Reveals`.
 
-**Runtime boundary:** author only `Kind: threshold` boards for shippable scene
-content. The parser/compiler retain `classify` and `order` for fixture and
-validation coverage, but the runtime loader rejects those kinds as unsupported;
-they are parser-only from an authoring/runtime perspective and not shippable
-until runtime support exists. Do not author them, or their `Group` / `Accepted
-Order` / `Fixed Anchors` content, in playable scenes.
+**Chapter 1 contract:** Analysis supports the three board kinds documented by
+this skill: `classify`, `order`, and `threshold`. Author kind-specific metadata
+and validation rules from the sections below; the compiler and packaged runtime
+consume the resulting board definitions.
 
 ## Required Background
 
@@ -33,8 +31,10 @@ Outro).
 ## The model
 
 - One **Intro** (linear dialogue, plays on scene load).
-- One or more **threshold Boards**, played in author order. Each selects a
-  subset of cards that jointly satisfies authored provenance/proof requirements.
+- One or more **Analysis Boards**, played in author order. A `classify` board
+  assigns cards to authored groups, an `order` board arranges cards into an
+  authored sequence, and a `threshold` board selects a subset that jointly
+  satisfies authored provenance/proof requirements.
 - One **Outro** (closing dialogue).
 - Every board carries `Reveals` (story targets only) and a `### Result Dialogue`
   block that plays once the board is solved. Boards may chain via `Unlock`.
@@ -59,14 +59,8 @@ records) or `practice:<id>` (a self-contained tutorial card).
 
 ## Board: <label> {#board_id}
 
-- **Kind:** threshold
+- **Kind:** classify | order | threshold
 - **Prompt:** <what the player must do, player-facing>
-- **Eligible Cards:** [card_id, ...]
-- **Minimum Selected:** <integer>
-- **Minimum Distinct Source Groups:** <integer>
-- **Required Proof Capabilities:** [time, ...]
-- **Allowed Procedural Statuses:** [reacquired, ...]
-- **Require Source Group:** true
 - **Reveals:** [assert_fact:some_fact]
 - **Incomplete Feedback:** <why the attempt is incomplete>
 - **Incorrect Feedback:** <why the attempt is wrong>
@@ -76,6 +70,16 @@ records) or `practice:<id>` (a self-contained tutorial card).
 
 - **Source:** evidence:<id>
 - **Summary:** <player-facing one-line summary>
+
+### Group: <label> {#group_id}      <!-- classify only -->
+
+- **Description:** <what the group proves>
+- **Accepted Cards:** [card_id, ...]
+
+### Incorrect Selection                    <!-- threshold only, optional -->
+
+- **Cards:** [card_id, ...]
+- **Feedback:** <why this exact selection is wrong>
 
 ### Result Dialogue
 
@@ -100,19 +104,29 @@ player-facing recap copy, not a beat list.
 | --- | --- |
 | H1 | `# Scene N: <title>` (N may be a decimal like `8.5` or `1.5`) |
 | H2 | `## Intro`, `## Board:`, `## Outro` |
-| H3 | `### Card:`, `### Incorrect Selection`, `### Result Dialogue` |
+| H3 | `### Card:`, `### Group:` (classify only), `### Incorrect Selection` (threshold only), `### Result Dialogue` |
 
 `## Intro`, `## Outro`, `### Incorrect Selection`, and
 `### Result Dialogue` must **not** declare a `{#id}` anchor. `## Board:` and
 `### Card:` must declare one. There is no `## Evidence Manifest`,
 `## Statement Manifest`, `### Subject:`, `### Question:`, or hotspot/topic
 block in an analysis scene — those belong to other scene families and the
-parser rejects them as an unknown H2/H3.
+parser rejects them as an unknown H2/H3. The complete board hierarchy is:
+
+```text
+## Intro
+## Board: <label> {#board_id}
+### Card: <label> {#card_id}
+### Group: <label> {#group_id}      # classify only
+### Incorrect Selection             # threshold only, optional
+### Result Dialogue
+## Outro
+```
 
 ## Block Field Schemas
 
-Field labels are English. Reserved metadata values are English (`threshold`,
-`true`, `false`). Player-facing field values and dialogue
+Field labels are English. Reserved metadata values are English (`classify`,
+`order`, `threshold`, `true`, `false`). Player-facing field values and dialogue
 are Traditional Chinese. IDs are English snake_case slugs anchored with `{#id}`.
 
 ### Header
@@ -135,17 +149,18 @@ are Traditional Chinese. IDs are English snake_case slugs anchored with `{#id}`.
 ### Board (H2)
 
 - **Heading:** `## Board: <label> {#board_id}` — anchor required.
-- **Required:** `Kind: threshold`, `Prompt`,
+- **Required:** `Kind: classify | order | threshold`, `Prompt`,
   `Reveals`, `Incomplete Feedback`, `Incorrect Feedback`.
 - **Optional:** `Unlock` (a story unlock expression), `Hint`.
-- **Body:** one or more `### Card:` blocks, then optional
-  `### Incorrect Selection` blocks, then exactly one `### Result Dialogue`.
+- **Body:** one or more `### Card:` blocks, optional `### Group:` blocks for
+  `classify`, optional `### Incorrect Selection` blocks for `threshold`, then
+  exactly one `### Result Dialogue`.
 
-A threshold board may chain off an earlier board's completion via
+Any board may chain off an earlier board's completion via
 `Unlock: analysis_board:<chapter_id>@<scene_id>@<board_id> completed` (the
 fully qualified slug segments are required). `Unlock` may be omitted, but the
-runtime presents incomplete unlocked boards in authored order; every threshold
-board must be reachable.
+runtime presents incomplete unlocked boards in authored order; every board must
+be reachable.
 
 ### Card (H3)
 
@@ -183,7 +198,47 @@ board must be reachable.
 - **Body:** closing dialogue. May carry a `[場景：...]` tag (with asset metadata
   when assets are enabled) for an authored visual transition out of the scene.
 
+## Classify board fields
+
+`classify` boards make the player assign every displayed card to one authored
+group. They use the common board fields plus one or more `### Group:` blocks.
+
+- **Group heading:** `### Group: <label> {#group_id}` — anchor required.
+- **Group metadata:** `Description` and `Accepted Cards` are required, and
+  these are the only group metadata fields.
+- `Accepted Cards: [card_id, ...]` names the displayed cards accepted by that
+  group. Every displayed card must belong to exactly one accepted group; a card
+  accepted by two groups or by none fails validation.
+- Writers author the `Accepted Cards` lists. `acceptedGroupByCard` is the
+  normalized compiler output, never a writer-authored field.
+
+The canonical three-board fixture
+`packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`
+contains a complete classify board with two groups.
+
+## Order board fields
+
+`order` boards make the player arrange every displayed card in an authored
+sequence. They use the common board fields plus these required metadata keys:
+
+- `Accepted Order: [card_id, ...]` must contain every displayed card exactly
+  once. Unknown cards, duplicates, and omitted displayed cards fail validation.
+- `Fixed Anchors` is required even when there are no anchors. Use `[]` to mean
+  none. A non-empty list uses `<card_id>@<one-based-position>` for each entry.
+- Anchors must use unique displayed cards and unique in-range positions, agree
+  with `Accepted Order`, and occupy a contiguous prefix of positions `1..N`
+  (where `N` is the number of anchors). A non-prefix list fails with
+  `analysisOrderAnchorNotPrefix`; the existing invalid fixture is
+  `packages/scripts/__fixtures__/invalid/analysis-order-anchor-not-prefix/`.
+
+The canonical three-board fixture's `local_event_sequence` board demonstrates
+`Accepted Order` with a one-based fixed anchor.
+
 ## Threshold board fields
+
+Threshold requirements are source-owned: provenance, source groups, and proof
+capabilities come from the originating case records, while the board authors
+which requirements a selection must satisfy.
 
 - **Required metadata:** `Eligible Cards`, `Minimum Selected`,
   `Minimum Distinct Source Groups`, `Required Proof Capabilities`,
@@ -234,6 +289,21 @@ Tell the writer (or, when you are the writer, confirm) the exact practice-card
 IDs and their immediately preceding investigation reveal locations before
 choosing requirements.
 
+## Orchestrator handoff
+
+Before dispatching this skill, the orchestrator supplies the writer with:
+
+- board, card, and (when applicable) group IDs;
+- card source IDs and source-owner paths;
+- the authored board order and unlock chain;
+- intended story outputs and the request-vs-authorization boundary;
+- source provenance expectations when a threshold uses them; and
+- tutorial practice-card binding details when the scene uses practice cards.
+
+The writer then uses this skill as the sole owner of board-kind metadata syntax
+and validation rules. Provenance remains authored on the source records, not
+duplicated on Analysis cards.
+
 ## Reveals syntax
 
 Board `Reveals` accepts **story targets only**. Local investigation targets
@@ -258,6 +328,16 @@ grant_authorization:<authorization_id>   # forbidden here — see below
 must resolve in `story_catalog.md`. See `writing-interrogation-scene`'s
 "HPA-257 monotonic story progression" section for the shared ordered-transaction
 and resolver rules — they apply unchanged to analysis `Reveals`.
+
+When later narrative logic depends on a conclusion, prefer an authored
+`assert_fact` or objective transition over a board-completion predicate as the
+semantic state. Board-completion predicates remain available for sequencing,
+but always use the fully qualified `analysis_scene:<chapter_id>@<scene_id>` or
+`analysis_board:<chapter_id>@<scene_id>@<board_id>` form shown below.
+
+Analysis can prepare a request but cannot grant authority: Beat 8.5 may reveal
+or complete `prepare_narrow_lock_request`, but it must not grant
+`narrow_lock_export`; the hearing's represented authority owns that grant.
 
 Use the full compiled scene id in analysis predicates, including the
 `analysis_scene_` prefix. For example:
@@ -296,9 +376,10 @@ filesystem paths. When assets are enabled:
 1. Read the chapter detail plan and confirm which case records (`evidence:` /
    `statement:` IDs from earlier scenes) this beat arranges, and which story
    facts/objectives each board should assert/complete.
-2. List the threshold board ids and unlock chain before writing dialogue. Decide
-   each board's provenance requirements and confirm each eligible card is Case
-   File vs practice; verify the exact practice-card reveal binding above.
+2. List every board id and its unlock chain before writing dialogue. Decide the
+   kind-specific fields for each board; for threshold boards, confirm each
+   eligible card is Case File vs practice, define provenance requirements, and
+   verify the exact practice-card reveal binding above.
 3. Confirm every `evidence:` / `statement:` card source resolves to a guaranteed
    case record from a prior scene (the compiler rejects unresolved sources).
 4. Write the scene in canonical order: `## Intro`, `## Board:` blocks (each with
@@ -314,6 +395,12 @@ filesystem paths. When assets are enabled:
 - Every board has `Kind`, `Prompt`, `Reveals`, `Incomplete Feedback`, and
   `Incorrect Feedback`; `Reveals` contains only story targets (no
   `evidence:`/`statement:`/`grant_authorization:`).
+- classify: groups provide `Description` and `Accepted Cards`, and every
+  displayed card appears in exactly one accepted group; do not author
+  `acceptedGroupByCard`.
+- order: `Accepted Order` contains every displayed card exactly once; required
+  `Fixed Anchors` is `[]` or a unique, in-range, order-consistent contiguous
+  prefix of one-based positions.
 - threshold: ≤6 eligible cards; requirements match the Case File vs practice
   split; at least one accepted selection exists; every practice card is revealed
   exactly once by the immediately preceding investigation and the analysis scene
@@ -330,6 +417,9 @@ filesystem paths. When assets are enabled:
 | `Reveals: [evidence:foo]` | Board Reveals are story targets only — fails `analysisBoardNonStoryReveal`. Use `assert_fact:` / `complete_objective:` etc. |
 | `grant_authorization:` in a board Reveals | Forbidden on analysis boards — `analysisBoardGrantAuthorizationForbidden`. |
 | Card `Source: evidence:missing_id` | Must resolve to a case record from an earlier scene — `analysisCardSourceUnresolved`. |
+| Writing `acceptedGroupByCard` in a classify board | Author each group's `Accepted Cards`; `acceptedGroupByCard` is normalized compiler output. |
+| Omitting a displayed card from `Accepted Order` | Include every displayed card exactly once. |
+| Fixed anchors start after position 1 | Anchors must occupy the contiguous prefix `1..N`; fix the list or expect `analysisOrderAnchorNotPrefix`. |
 | Threshold with no accepted selection | Loosen provenance requirements or fix eligible cards — `analysisThresholdUnsatisfiable`. |
 | Mixing `practice:` and Case File cards in one threshold | Split them — `analysisThresholdPracticeMixedSources`. |
 | Practice threshold with non-neutral requirements | Set `Minimum Distinct Source Groups: 0`, empty status/capability lists, `Require Source Group: false` — `analysisThresholdPracticeProvenanceForbidden`. |
