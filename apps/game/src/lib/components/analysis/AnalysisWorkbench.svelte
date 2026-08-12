@@ -248,6 +248,7 @@
         undoDraft = null;
         undoBoardId = null;
       }
+      mutationInFlight = false;
       await focusAfterRender(focusKey);
     } finally {
       mutationInFlight = false;
@@ -331,6 +332,7 @@
 
       const returnedFeedback =
         applied.mode.type === "analysis" ? applied.mode.feedback : null;
+      mutationInFlight = false;
       if (returnedFeedback !== null) {
         focusFeedbackOnRender = true;
         await focusAfterRender("feedback");
