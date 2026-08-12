@@ -1,3 +1,18 @@
+coverage:
+  status:
+    project:
+      default:
+        target: 95%
+        threshold: 0%
+        informational: false
+        if_not_found: failure
+    patch:
+      default:
+        target: 95%
+        threshold: 0%
+        informational: false
+        if_not_found: failure
+
 # lib.rs is purely Tauri command registration + IPC glue (path resolution,
 # mutex/State extraction). Its business logic lives in GameEngine methods
 # (covered by mod.rs unit tests) and its dispatch/arg handling is covered by
