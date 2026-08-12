@@ -284,6 +284,9 @@
     /* v8 ignore next -- unreachable: submit button only renders when board is editable */
     if (!currentMode || !board || boardReadOnly || disabled) return;
     if (mutationInFlight) return;
+    // Clear any stale error from a previous attempt before retrying, so a
+    // successful retry does not render the old alert alongside new feedback.
+    mutationError = null;
     mutationInFlight = true;
     try {
       const token = await tokenForDisplayedBoard();

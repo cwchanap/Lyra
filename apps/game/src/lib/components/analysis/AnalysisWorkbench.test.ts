@@ -819,6 +819,49 @@ describe("AnalysisWorkbench", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
   });
 
+  it("clears a stale submit error when a retry succeeds on the same board", async () => {
+    const initial = analysisState({
+      mode: analysisModeWith({ feedback: null }),
+    });
+    // Retry returns an incorrect-answer board that stays open with feedback.
+    const retryState = analysisState({
+      mode: analysisModeWith({
+        feedback: { state: "incorrect", message: "這組資料仍有矛盾。" },
+        lastFeedback: "這組資料仍有矛盾。",
+      }),
+    });
+    const onSubmit = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("IPC failure"))
+      .mockResolvedValueOnce(retryState);
+    const view = renderWorkbench(initial, { onSubmit });
+
+    const user = userEvent.setup();
+    // First attempt fails and surfaces the transport error.
+    await user.click(screen.getByRole("button", { name: "比對推論" }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
+
+    // Retry on the same board succeeds; the host applies the returned state.
+    await user.click(screen.getByRole("button", { name: "比對推論" }));
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+    await view.rerender({
+      scene: retryState.scene,
+      mode: retryState.mode,
+      inventory: retryState.inventory,
+      onSelectBoard: vi.fn().mockResolvedValue(retryState),
+      onUpdateDraft: vi.fn().mockResolvedValue(retryState),
+      onSubmit,
+    });
+    // The stale error alert must be gone; only the new feedback remains.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "這組資料仍有矛盾。",
+      );
+    });
+  });
+
   it("aborts board selection when the returned mode is not analysis", async () => {
     const state = analysisState();
     const wrongMode = {
