@@ -171,7 +171,7 @@ be reachable.
     an earlier investigation/interrogation scene. An unresolved reference fails
     with `analysisCardSourceUnresolved`.
   - `practice:<id>` is a self-contained tutorial card that does not resolve to a
-    case record (see "Threshold provenance & practice cards").
+    case record (see "Practice-card binding and threshold provenance").
 
 ### Incorrect Selection (H3 — threshold only)
 
@@ -256,14 +256,14 @@ which requirements a selection must satisfy.
 - The compiler materializes every accepted subset; a threshold with **no**
   accepted selection fails with `analysisThresholdUnsatisfiable`.
 
-## Threshold provenance & practice cards
+## Practice-card binding and threshold provenance
 
-A threshold board's requirements are checked against each eligible card's case
-record provenance (the same provenance fields authored on the source scene's
-evidence/statement manifest — see `writing-investigation-scene` /
-`writing-interrogation-scene`).
+Practice-card manifest binding applies to `classify`, `order`, and `threshold`
+boards. Threshold boards additionally validate provenance requirements against
+each eligible Case File card's source record (the provenance fields authored on
+the source investigation/interrogation manifest).
 
-Two practice-card rules:
+Practice-card binding for every board kind:
 
 - **Exact one-to-one manifest binding within a chapter:** every `practice:<id>`
   must appear on exactly one analysis card in exactly one analysis board, be
@@ -275,6 +275,8 @@ Two practice-card rules:
   its own immediate investigation-to-analysis handoff. Duplicate
   analysis-card/board use within a chapter fails with
   `practiceCardSourceDuplicate`.
+
+Threshold-only practice constraints:
 
 - **No mixing.** A threshold may not mix `practice:` cards with `evidence:` /
   `statement:` (Case File) cards in `Eligible Cards`
@@ -380,9 +382,10 @@ filesystem paths. When assets are enabled:
    `statement:` IDs from earlier scenes) this beat arranges, and which story
    facts/objectives each board should assert/complete.
 2. List every board id and its unlock chain before writing dialogue. Decide the
-   kind-specific fields for each board; for threshold boards, confirm each
-   eligible card is Case File vs practice, define provenance requirements, and
-   verify the exact practice-card reveal binding above.
+   kind-specific fields for each board. For any `practice:` card, verify the
+   exact investigation-to-analysis binding above. For threshold boards, confirm
+   each eligible card is Case File vs practice and define provenance
+   requirements.
 3. Confirm every `evidence:` / `statement:` card source resolves to a guaranteed
    case record from a prior scene (the compiler rejects unresolved sources).
 4. Write the scene in canonical order: `## Intro`, `## Board:` blocks (each with
