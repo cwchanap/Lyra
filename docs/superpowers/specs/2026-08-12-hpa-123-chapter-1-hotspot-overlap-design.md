@@ -2,246 +2,135 @@
 
 ## Status
 
-Planning only. This design intentionally limits HPA-123 to authored Chapter 1 investigation geometry. It does not change the investigation renderer, scene schema, hit-testing rules, or story content.
+Planning only. HPA-123 is intentionally a content-geometry fix, not an investigation-platform change.
 
-## Why this is the next actionable task
+## Why this is next
 
-HPA-123 is a High-priority Chapter 1 correctness blocker in `Todo` with no blockers. The next major Chapter 1 content ticket, HPA-265, is still formally blocked by HPA-262 and HPA-264, so it is not the next fully actionable slice.
+HPA-123 is a High-priority Chapter 1 blocker in `Todo` with no blockers. HPA-265 is also High priority, but Linear still blocks it on HPA-262 and HPA-264. Fixing the click-stealing hotspots is therefore the smallest fully actionable Chapter 1 correctness slice.
 
-The fix also matches the current Chapter 1-first delivery policy: remove a player-facing soft-block before adding more first-version content, and do it without creating platform work that the real game has not asked for.
+## Current problem
 
-## Problem
+Five hotspot pairs share pointer-active interior area:
 
-Five pairs of placed investigation hotspots share pointer-active interior area:
+| Scene / sublocation | Broad target to change | Protected target |
+| --- | --- | --- |
+| `investigation_scene_1 / office` | `old_request_slips` | `kagami_summary_hotspot` |
+| `investigation_scene_1 / office` | `old_request_slips` | `canned_coffee` |
+| `investigation_scene_7 / inner` | `takase_replay` | `miyake_replay` |
+| `investigation_scene_7 / inner` | `takase_replay` | `bean_can` |
+| `investigation_scene_7 / back_door` | `fire_door_7` | `floor_water` |
 
-| Scene / sublocation | Hotspot A | Hotspot B | Why it matters |
-| --- | --- | --- | --- |
-| `investigation_scene_1 / office` | `old_request_slips` | `kagami_summary_hotspot` | A broad flavor hotspot overlaps the case-entry evidence target. |
-| `investigation_scene_1 / office` | `old_request_slips` | `canned_coffee` | The same broad flavor hotspot overlaps a separate inspectable object. |
-| `investigation_scene_7 / inner` | `takase_replay` | `miyake_replay` | Two replay/navigation targets compete in their shared region. |
-| `investigation_scene_7 / inner` | `takase_replay` | `bean_can` | A replay target can steal clicks from the murder-weapon candidate. |
-| `investigation_scene_7 / back_door` | `fire_door_7` | `floor_water` | A sublocation-unlock target can steal clicks from required water evidence. |
+`InvestigationSceneSurface.svelte` renders placed hotspots as native buttons in one coordinate plane. Shared geometry therefore creates a real pointer ambiguity; changing DOM order would only decide which action steals the shared area, not remove the bug.
 
-`InvestigationSceneSurface.svelte` renders placed hotspots as native buttons in one coordinate plane. There is no first-version runtime disambiguation mechanism for shared hotspot area, so an overlap is a content-authoring correctness problem rather than a desired layered interaction.
-
-The current sidecars also explicitly whitelist the five pairs through `intentionalOverlaps`:
+The current sidecars also list these pairs in `intentionalOverlaps`:
 
 - `docs/stories_plan/chapter_1/investigation_scene_1.layout.json`
 - `docs/stories_plan/chapter_1/investigation_scene_7.layout.json`
 
-Those opt-outs no longer describe intentional design. They document accidental geometry that the player can experience as the wrong interaction.
+Those opt-outs no longer describe intentional design and should disappear with the geometry fix.
 
-## Important validator limitation
+## Validator caveat
 
-`detectLayoutOverlaps()` is deliberately a high-signal warning, not an exact intersection validator. It warns only when the overlap covers at least 80% of the smaller rectangle, and it skips pairs listed in `intentionalOverlaps`.
+`detectLayoutOverlaps()` is deliberately high-signal: it warns only when overlap covers at least 80% of the smaller rectangle, and it skips declared `intentionalOverlaps`.
 
-Therefore:
+So `bun run scenes:compile` returning `Layout warnings (0)` is necessary but not sufficient for HPA-123. The implementation will also run one exact, non-committed rectangle-intersection check for the five named pairs.
 
-- `bun run scenes:compile` reporting `Layout warnings (0)` is still a useful regression smoke;
-- it is **not sufficient evidence** that the five HPA-123 pairs are geometrically disjoint;
-- HPA-123 must verify those exact five pairs separately without adding a new committed validation subsystem.
+No new validator rule is added. If repeated low-percentage overlap bugs later justify a stricter project-wide policy, that should be a separate ticket based on playtest evidence.
 
-The implementation plan uses a one-off Bun command that reads the two sidecars and asserts that the five named rectangle pairs have zero interior intersection. The command is verification only; it does not become a new script, package, schema rule, or reusable framework.
+## Approaches
 
-## Goals
+### A. Fix the authored rectangles — selected
 
-1. Make every affected hotspot independently pointer-reachable at the visual object it represents.
-2. Protect evidence-bearing targets from broad flavor, replay, or navigation hitboxes.
-3. Remove stale `intentionalOverlaps` declarations for the fixed pairs.
-4. Preserve all existing hotspot IDs, labels, story reveals, keyboard navigation, accessible names, and scene flow.
-5. Keep the implementation to the two authored layout sidecars.
+Use the existing layout editor against the real scene backgrounds. Change only:
+
+- `old_request_slips`;
+- `takase_replay`;
+- `fire_door_7`.
+
+Then remove the corresponding `intentionalOverlaps` entries.
+
+This is the smallest fix and exactly matches the approved HPA-123 decision.
+
+### B. Runtime hit-test arbitration — rejected
+
+A priority rule based on size, evidence importance, DOM order, or z-index would create hidden runtime semantics for a content bug and require new tests/guidance.
+
+### C. New replay/overlay hotspot kind — rejected
+
+A new schema/runtime/editor concept would be much larger than three authored rectangle corrections and would pre-design a feature Chapter 1 has not asked for.
+
+## Design
+
+### Protected geometry stays fixed
+
+Do not move these targets:
+
+- `kagami_summary_hotspot`;
+- `canned_coffee`;
+- `miyake_replay`;
+- `bean_can`;
+- `floor_water`.
+
+The broad competing targets are the problem. In particular, do not move `bean_can` or `floor_water` away from their visual evidence just to preserve a replay/navigation hitbox.
+
+### Scene 1 / office
+
+Resize or reposition `old_request_slips` so it still covers the visible paper stack and has zero interior intersection with both `kagami_summary_hotspot` and `canned_coffee`.
+
+Remove both `office.intentionalOverlaps` entries afterward. If none remain, omit the property.
+
+### Scene 7 / inner
+
+Resize or reposition `takase_replay` so it still represents Takase's replay route/position and has zero interior intersection with both `miyake_replay` and `bean_can`.
+
+Remove both `inner.intentionalOverlaps` entries afterward.
+
+### Scene 7 / back_door
+
+Shorten or reposition `fire_door_7` so it remains on the visible half-open fire door but has zero interior intersection with `floor_water`.
+
+Remove the `back_door.intentionalOverlaps` entry afterward.
+
+### Geometry acceptance
+
+For the five named pairs:
+
+> normalized rectangles must have zero shared interior area.
+
+Edge contact is safe, although a small visual gutter is preferable when it still matches the art. No global gutter constant is introduced.
+
+Replacement numeric coordinates are deliberately not invented in this design document. They are authored visual data and should be produced in the existing layout editor against the real backgrounds.
+
+## Verification
+
+1. **RED baseline:** a one-off Bun rectangle check reports all five current intersections.
+2. **GREEN geometry:** after editing, the same check reports zero intersections.
+3. **Compiler:** `bun run scenes:compile` succeeds with `Layout warnings (0)`.
+4. **Real pointer smoke:** every affected hotspot activates from its intended visual object; `bean_can` and `floor_water` cannot enter a replay beat or another sublocation.
+5. **Keyboard smoke:** existing native-button labels and activation still work; no Markdown labels, IDs, or renderer markup change.
+6. **Scope diff:** production implementation touches only the two layout sidecars.
+
+## Risks
+
+- **Target becomes too small:** use the existing editor over the real art; do not satisfy the geometry check by collapsing a rectangle.
+- **Target drifts off the object:** visual alignment is part of acceptance, not just mathematical disjointness.
+- **Editor preserves stale opt-outs:** remove `intentionalOverlaps` explicitly after saving; the editor intentionally round-trips them.
+- **Compiler gives false confidence:** the exact five-pair check is mandatory because the compiler's 80% warning threshold is not an exact collision test.
 
 ## Non-goals
 
-- No renderer hit-test arbitration.
-- No z-index policy.
-- No first-class layered/replay hotspot type.
-- No overlap-resolution popup or nearest-target picker.
-- No new compiler diagnostic or lower global overlap threshold.
-- No broad Chapter 1 layout cleanup.
-- No changes to `investigation_scene_1.md` or `investigation_scene_7.md` story logic.
-- No asset regeneration.
-
-## Approaches considered
-
-### A. Fix authored geometry only — selected
-
-Use the existing layout editor against the real background art, resize/reposition only the broad hotspot that is causing each collision, save normalized coordinates, then remove the obsolete overlap opt-outs.
-
-Benefits:
-
-- smallest possible diff;
-- directly fixes what the player touches;
-- no runtime or schema maintenance cost;
-- preserves the current renderer and accessibility model;
-- aligns exactly with HPA-123's approved first-version decision.
-
-### B. Add runtime click arbitration — rejected
-
-The renderer could inspect every hotspot under the pointer and choose by size, evidence priority, z-index, or another rule.
-
-Rejected because the game currently has no product requirement for overlapping targets. Any priority rule would create hidden semantics, require tests and authoring guidance, and still leave bad geometry visible in the layout editor.
-
-### C. Add a replay/overlay hotspot kind — rejected
-
-A new hotspot kind could model replay paths separately from evidence targets.
-
-Rejected because HPA-123 only has three authored geometry corrections. A new scene contract, compiler branch, runtime rendering rule, save behavior, and editor support would be substantially more work than the bug and would pre-design later interactions before Chapter 1 playtesting asks for them.
-
-## Selected design
-
-### 1. Preserve proof-bearing target geometry where possible
-
-The evidence or existing inspectable targets are the stable anchors:
-
-- `kagami_summary_hotspot`
-- `canned_coffee`
-- `miyake_replay`
-- `bean_can`
-- `floor_water`
-
-HPA-123 changes the broader competing hitboxes instead:
-
-- `old_request_slips`
-- `takase_replay`
-- `fire_door_7`
-
-This keeps the important evidence aligned with already-authored visual objects and avoids fixing a replay/navigation problem by moving the evidence away from its source art.
-
-### 2. Scene 1: shrink or reposition `old_request_slips`
-
-In `investigation_scene_1 / office`, the old-request-slips target should remain on the visible stack of old request papers but become disjoint from both:
-
-- `kagami_summary_hotspot`;
-- `canned_coffee`.
-
-The KAGAMI folder and canned coffee coordinates remain unchanged.
-
-After the visual edit, remove the two `office.intentionalOverlaps` entries. If no intentional overlaps remain in the sublocation, omit the property entirely instead of leaving an empty array.
-
-### 3. Scene 7 inner storage: shrink or reposition `takase_replay`
-
-In `investigation_scene_7 / inner`, edit only `takase_replay` so its pointer rectangle still represents Takase's replay route/position while becoming disjoint from:
-
-- `miyake_replay`;
-- `bean_can`.
-
-Do not move `bean_can` merely to make the replay target easier to place. The murder-weapon candidate is a proof-bearing clue and should stay visually anchored.
-
-After the visual edit, remove both `inner.intentionalOverlaps` entries.
-
-### 4. Scene 7 back door: shorten or reposition `fire_door_7`
-
-`fire_door_7` is currently a tall navigation target. Keep it on the visible half-open fire door, but ensure its bottom/side no longer intersects the `floor_water` rectangle.
-
-`floor_water` remains unchanged because it reveals the anonymous-message thumbnail and drying-map evidence required by the Chapter 1 reversal investigation.
-
-After the visual edit, remove the `back_door.intentionalOverlaps` entry.
-
-### 5. Geometry rule
-
-For the five HPA-123 pairs, the hard acceptance rule is:
-
-> Their normalized rectangles must have zero shared interior area.
-
-Edge adjacency is technically safe, but the editor should leave a small visible gutter when that still matches the background art. The gutter is an authoring preference, not a new global geometry constant.
-
-The plan intentionally does not pre-author replacement numeric coordinates. The correct values are visual-content data and should be produced by the existing layout editor against the real scene art, not guessed in a design document.
-
-## Verification design
-
-### Exact targeted geometry check
-
-Run a one-off Bun command against the two sidecars. It must assert no interior intersection for exactly the five HPA-123 pairs.
-
-This closes the gap left by the compiler's intentional 80% warning threshold without creating a new repository-level validation abstraction.
-
-### Existing compiler smoke
-
-Run:
-
-```bash
-bun run scenes:compile
-```
-
-Expected result:
-
-- Chapter 1 compiles successfully.
-- Layout warnings remain `0`.
-
-### Real UI pointer smoke
-
-Open the real game and individually activate every affected target from its intended visible object:
-
-Scene 1 office:
-
-- old request slips;
-- KAGAMI summary folder;
-- canned coffee.
-
-Scene 7 inner:
-
-- Takase replay;
-- Miyake replay;
-- bean can.
-
-Scene 7 back door:
-
-- fire door;
-- floor water.
-
-`bean_can` and `floor_water` must be selectable without entering a replay beat or another sublocation.
-
-### Keyboard/accessibility regression check
-
-No Markdown label, hotspot ID, renderer markup, or button behavior changes. The existing native-button keyboard model and accessible labels therefore remain structurally unchanged. During the UI smoke, tab to the affected controls once to confirm the same labels are still exposed and activatable.
-
-## Why no new committed automated test
-
-This ticket changes authored rectangles only. Adding a new test helper or lowering the global overlap threshold would expand the product contract beyond the bug.
-
-The exact one-off geometry assertion plus existing compiler smoke and real-screen pointer verification provide sufficient first-version confidence while keeping the repository unchanged outside the two sidecars.
-
-If later Chapter 1 playtesting finds repeated low-percentage overlap bugs across many scenes, that repeated evidence would justify a separate validator-policy ticket. HPA-123 should not speculate ahead of that evidence.
-
-## Risks and mitigations
-
-### A corrected rectangle becomes too small
-
-Mitigation: make the edit in the existing layout editor over the real background and perform the real-game pointer smoke. Do not satisfy the intersection check by collapsing a target to a tiny arbitrary box.
-
-### A target is moved away from its visual object
-
-Mitigation: treat visual alignment as part of acceptance. Geometry correctness and semantic placement must both hold.
-
-### The editor preserves stale opt-outs
-
-The layout store intentionally round-trips `intentionalOverlaps`, so resizing a rectangle does not remove the whitelist automatically.
-
-Mitigation: remove the three obsolete opt-out groups explicitly after saving geometry, then re-open/recompile the sidecars.
-
-### `Layout warnings (0)` creates false confidence
-
-Mitigation: the one-off exact five-pair assertion is a required acceptance step, not optional documentation.
-
-## Expected implementation diff
-
-Production implementation should touch only:
+- renderer arbitration or z-index changes;
+- a new hotspot kind;
+- a new compiler diagnostic or warning threshold;
+- broad Chapter 1 layout cleanup;
+- investigation Markdown/story changes;
+- asset regeneration.
+
+## Expected production diff
+
+Only:
 
 - `docs/stories_plan/chapter_1/investigation_scene_1.layout.json`
 - `docs/stories_plan/chapter_1/investigation_scene_7.layout.json`
 
-The planning PR contains this design and its implementation plan only.
-
-## Acceptance summary
-
-HPA-123 is complete when:
-
-- all five named hotspot pairs have zero interior intersection;
-- all three stale `intentionalOverlaps` groups covering those pairs are removed;
-- protected evidence/inspectable target geometry remains unchanged unless the visual editor proves a tiny adjustment is strictly necessary;
-- every affected target can be activated independently on the intended visual object;
-- `bean_can` and `floor_water` cannot be stolen by replay/navigation targets;
-- keyboard labels and behavior remain unchanged;
-- `bun run scenes:compile` succeeds with `Layout warnings (0)`;
-- no runtime, schema, compiler-policy, or broad layout abstraction is introduced.
+HPA-123 is complete when the five pairs are disjoint, the stale overlap opt-outs are gone, the protected targets are unchanged, the real pointer/keyboard smoke passes, and no runtime/schema/compiler abstraction is introduced.
