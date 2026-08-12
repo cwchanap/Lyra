@@ -106,12 +106,14 @@ Because the agent has none of your context, every brief carries all of:
   scene-local. State which locked blocks get exactly one inbound `Reveals` and
   no `Unlock` (a block must not have both); first sub-location is `unlocked`.
 - **For analysis scenes: delegate the board contract to
-  `writing-analysis-scene`.** The orchestrator owns board/card/group IDs as
-  applicable, card source IDs and source-owner paths, the authored board
-  sequence and unlock chain, intended story outputs, and the
+  `writing-analysis-scene`.** The orchestrator owns the intended **Kind**
+  (`classify`, `order`, or `threshold`) for every board — take it from the beat
+  excerpt, or pick one of the three when the excerpt omits it — plus
+  board/card/group IDs as applicable, card source IDs and source-owner paths,
+  the authored board sequence and unlock chain, intended story outputs, and the
   request-vs-authorization boundary. The writer invokes
-  `writing-analysis-scene` for the supported board-kind list and all
-  kind-specific fields. When the scene uses practice cards, provide the exact
+  `writing-analysis-scene` for all remaining kind-specific fields and
+  validation rules. When the scene uses practice cards, provide the exact
   practice-card binding details; provenance stays on source records. Analysis
   dialogue-carrier asset cues follow the dedicated skill.
 - **For investigation scenes: the interaction-point ratio budget
