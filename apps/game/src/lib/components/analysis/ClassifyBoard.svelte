@@ -22,7 +22,8 @@
   let selectedCardId = $state<string | null>(null);
   let pending = $state(false);
   let editable = $derived(
-    !disabled &&
+    board.draft.kind === "classify" &&
+      !disabled &&
       !readOnly &&
       board.available &&
       !board.completed &&

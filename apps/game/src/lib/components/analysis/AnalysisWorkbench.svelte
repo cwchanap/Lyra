@@ -51,6 +51,7 @@
   let observedBoardId = $state<string | null>(null);
   let focusFeedbackOnRender = $state(false);
   let mutationError = $state<string | null>(null);
+  let mutationInFlight = $state(false);
 
   let analysis = $derived(
     scene.kind === "analysis" ? (scene as AnalysisSceneView) : null,
@@ -207,36 +208,43 @@
     const displayedBoard = board;
     /* v8 ignore next -- unreachable: mutateDraft is only called from editable board actions */
     if (!displayedBoard || boardReadOnly || disabled) return;
-    const previousDraft = cloneDraft(displayedBoard.draft);
-    const token = await tokenForDisplayedBoard();
-    if (!token) {
-      throw new Error("無法取得操作權限，請再試一次。");
-    }
-
-    let applied: GameStateView | null;
+    if (mutationInFlight) return;
+    mutationInFlight = true;
     try {
-      applied = await onUpdateDraft(token, cloneDraft(nextDraft));
-    } catch (error) {
-      throw new Error(mutationErrorMessage(error), { cause: error });
-    }
-    if (applied === null) {
-      throw new Error("草稿未被接受，請再試一次。");
-    }
+      const previousDraft = cloneDraft(displayedBoard.draft);
+      const token = await tokenForDisplayedBoard();
+      if (!token) {
+        throw new Error("無法取得操作權限，請再試一次。");
+      }
 
-    if (options.recordUndo !== false) {
-      undoDraft = previousDraft;
-      undoBoardId = displayedBoard.id;
-    } else {
-      undoDraft = null;
-      undoBoardId = null;
+      let applied: GameStateView | null;
+      try {
+        applied = await onUpdateDraft(token, cloneDraft(nextDraft));
+      } catch (error) {
+        throw new Error(mutationErrorMessage(error), { cause: error });
+      }
+      if (applied === null) {
+        throw new Error("草稿未被接受，請再試一次。");
+      }
+
+      if (options.recordUndo !== false) {
+        undoDraft = previousDraft;
+        undoBoardId = displayedBoard.id;
+      } else {
+        undoDraft = null;
+        undoBoardId = null;
+      }
+      await focusAfterRender(focusKey);
+    } finally {
+      mutationInFlight = false;
     }
-    await focusAfterRender(focusKey);
   }
 
   async function handleDraft(
     draft: AnalysisDraft,
     focusKey: string,
   ): Promise<void> {
+    if (mutationInFlight) return;
     mutationError = null;
     try {
       await mutateDraft(draft, focusKey);
@@ -247,6 +255,7 @@
   }
 
   async function resetDraft(): Promise<void> {
+    if (mutationInFlight) return;
     mutationError = null;
     const displayedBoard = board;
     /* v8 ignore next -- unreachable: reset button only renders when board is non-null */
@@ -261,6 +270,7 @@
   async function undo(): Promise<void> {
     /* v8 ignore next -- unreachable: undo button only renders when canUndo and undoDraft are set */
     if (!canUndo || undoDraft === null) return;
+    if (mutationInFlight) return;
     mutationError = null;
     try {
       await mutateDraft(undoDraft, "undo", { recordUndo: false });
@@ -273,24 +283,37 @@
     const currentMode = analysisMode;
     /* v8 ignore next -- unreachable: submit button only renders when board is editable */
     if (!currentMode || !board || boardReadOnly || disabled) return;
-    const token = await tokenForDisplayedBoard();
-    if (!token) return;
-
-    let applied: GameStateView | null;
+    if (mutationInFlight) return;
+    mutationInFlight = true;
     try {
-      applied = await onSubmit(token);
-    } catch {
-      return;
-    }
-    if (applied === null) return;
+      const token = await tokenForDisplayedBoard();
+      if (!token) {
+        mutationError = "無法取得操作權限，請再試一次。";
+        return;
+      }
 
-    const returnedFeedback =
-      applied.mode.type === "analysis" ? applied.mode.feedback : null;
-    if (returnedFeedback !== null) {
-      focusFeedbackOnRender = true;
-      await focusAfterRender("feedback");
-    } else {
-      await focusAfterRender("submit");
+      let applied: GameStateView | null;
+      try {
+        applied = await onSubmit(token);
+      } catch (error) {
+        mutationError = mutationErrorMessage(error);
+        return;
+      }
+      if (applied === null) {
+        mutationError = "草稿未被接受，請再試一次。";
+        return;
+      }
+
+      const returnedFeedback =
+        applied.mode.type === "analysis" ? applied.mode.feedback : null;
+      if (returnedFeedback !== null) {
+        focusFeedbackOnRender = true;
+        await focusAfterRender("feedback");
+      } else {
+        await focusAfterRender("submit");
+      }
+    } finally {
+      mutationInFlight = false;
     }
   }
 
@@ -405,7 +428,7 @@
           board={boardForRender}
           headingFocusKey={`board:${boardForRender.id}`}
           onDraft={handleDraft}
-          {disabled}
+          disabled={disabled || mutationInFlight}
           readOnly={boardReadOnly}
         />
       {:else if boardForRender.kind === "order"}
@@ -413,7 +436,7 @@
           board={boardForRender}
           headingFocusKey={`board:${boardForRender.id}`}
           onDraft={handleDraft}
-          {disabled}
+          disabled={disabled || mutationInFlight}
           readOnly={boardReadOnly}
         />
       {:else}
@@ -422,7 +445,7 @@
           {inventory}
           headingFocusKey={`board:${boardForRender.id}`}
           onDraft={handleDraft}
-          {disabled}
+          disabled={disabled || mutationInFlight}
           readOnly={boardReadOnly}
         />
       {/if}
@@ -449,7 +472,7 @@
             <button
               type="button"
               data-analysis-focus-key="undo"
-              {disabled}
+              disabled={disabled || mutationInFlight}
               onclick={undo}
             >
               復原
@@ -458,7 +481,7 @@
           <button
             type="button"
             data-analysis-focus-key="reset"
-            {disabled}
+            disabled={disabled || mutationInFlight}
             onclick={resetDraft}
           >
             重設
@@ -467,7 +490,7 @@
             type="button"
             class="submit"
             data-analysis-focus-key="submit"
-            {disabled}
+            disabled={disabled || mutationInFlight}
             onclick={submit}
           >
             比對推論

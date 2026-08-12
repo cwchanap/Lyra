@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -101,6 +107,14 @@ async function assignFirstClassifyCard() {
 function actionToken(state: GameStateView): AnalysisActionToken {
   if (state.mode.type !== "analysis") throw new Error("Expected Analysis mode");
   return state.mode.actionToken;
+}
+
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
 }
 
 afterEach(() => {
@@ -547,6 +561,9 @@ describe("AnalysisWorkbench", () => {
       "evidence_packages",
     );
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "無法取得操作權限，請再試一次。",
+    );
   });
 
   it("reconciles a fallback board before Submit and uses the fresh token", async () => {
@@ -682,7 +699,7 @@ describe("AnalysisWorkbench", () => {
     });
   });
 
-  it("aborts submit when onSubmit returns null", async () => {
+  it("surfaces a mutation error when onSubmit returns null", async () => {
     const state = analysisState();
     const onSubmit = vi.fn().mockResolvedValue(null);
     renderWorkbench(state, { onSubmit });
@@ -692,6 +709,9 @@ describe("AnalysisWorkbench", () => {
       .click(screen.getByRole("button", { name: "比對推論" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "草稿未被接受，請再試一次。",
+    );
   });
 
   it("aborts a draft update when onUpdateDraft returns null", async () => {
@@ -786,7 +806,7 @@ describe("AnalysisWorkbench", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("swallows a thrown error from onSubmit during submit", async () => {
+  it("surfaces a mutation error when onSubmit throws during submit", async () => {
     const state = analysisState();
     const onSubmit = vi.fn().mockRejectedValue(new Error("IPC failure"));
     renderWorkbench(state, { onSubmit });
@@ -796,6 +816,7 @@ describe("AnalysisWorkbench", () => {
       .click(screen.getByRole("button", { name: "比對推論" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
   });
 
   it("aborts board selection when the returned mode is not analysis", async () => {
@@ -1009,6 +1030,9 @@ describe("AnalysisWorkbench", () => {
 
     expect(onSelectBoard).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "無法取得操作權限，請再試一次。",
+    );
   });
 
   it("clears presentation state without focusing when the board becomes null", async () => {
@@ -1042,5 +1066,49 @@ describe("AnalysisWorkbench", () => {
       ).not.toBeInTheDocument();
       expect(screen.getByRole("status")).toHaveTextContent("分析板載入中。");
     });
+  });
+
+  it("prevents duplicate submit while the action is in flight", async () => {
+    const state = analysisState();
+    const pending = deferred<GameStateView | null>();
+    const onSubmit = vi.fn().mockReturnValue(pending.promise);
+    renderWorkbench(state, { onSubmit });
+
+    await fireEvent.click(screen.getByRole("button", { name: "比對推論" }));
+    await fireEvent.click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    pending.resolve(state);
+  });
+
+  it("prevents duplicate reset while the action is in flight", async () => {
+    const state = analysisState();
+    const pending = deferred<GameStateView | null>();
+    const onUpdateDraft = vi.fn().mockReturnValue(pending.promise);
+    renderWorkbench(state, { onUpdateDraft });
+
+    await fireEvent.click(screen.getByRole("button", { name: "重設" }));
+    await fireEvent.click(screen.getByRole("button", { name: "重設" }));
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(1);
+    pending.resolve(state);
+  });
+
+  it("prevents duplicate undo while the action is in flight", async () => {
+    const state = analysisState();
+    const pending = deferred<GameStateView | null>();
+    let callCount = 0;
+    const onUpdateDraft = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      return callCount === 1 ? Promise.resolve(state) : pending.promise;
+    });
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+    await fireEvent.click(screen.getByRole("button", { name: "復原" }));
+    await fireEvent.click(screen.getByRole("button", { name: "復原" }));
+
+    expect(onUpdateDraft).toHaveBeenCalledTimes(2);
+    pending.resolve(state);
   });
 });

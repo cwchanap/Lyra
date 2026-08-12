@@ -277,24 +277,22 @@ describe("ClassifyBoard", () => {
     expect(onDraft).not.toHaveBeenCalled();
   });
 
-  it("does not emit a draft for a stale non-classify draft kind", async () => {
+  it("does not emit a draft for a stale non-classify draft kind", () => {
     const onDraft = vi.fn();
     const staleBoard: ClassifyBoardView = {
       ...fixtureBoard,
       draft: { kind: "order", cardIds: [] } as AnalysisDraft,
     };
     renderBoard(staleBoard, onDraft);
-    const user = userEvent.setup();
 
-    // Buttons are rendered (editable doesn't check draft kind), but clicking
-    // them must not emit because assignCard/removeCard guard the draft kind.
-    await user.click(
-      screen.getByRole("button", { name: /選取：\s*三宅母親通話紀錄/ }),
-    );
-    await user.click(
-      screen.getByRole("button", { name: "放入「三宅的小謊」" }),
-    );
-
+    // editable includes the draft-kind check, so a stale non-classify draft
+    // fails closed: no select, assign, or remove controls are rendered.
+    expect(
+      screen.queryByRole("button", { name: /選取：/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /放入「/ }),
+    ).not.toBeInTheDocument();
     expect(onDraft).not.toHaveBeenCalled();
   });
 
