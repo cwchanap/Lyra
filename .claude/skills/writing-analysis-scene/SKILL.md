@@ -293,6 +293,9 @@ choosing requirements.
 
 Before dispatching this skill, the orchestrator supplies the writer with:
 
+- the intended Kind (`classify`, `order`, or `threshold`) for every board —
+  taken from the beat excerpt, or chosen by the orchestrator when the excerpt
+  omits it;
 - board, card, and (when applicable) group IDs;
 - card source IDs and source-owner paths;
 - the authored board order and unlock chain;
@@ -300,9 +303,9 @@ Before dispatching this skill, the orchestrator supplies the writer with:
 - source provenance expectations when a threshold uses them; and
 - tutorial practice-card binding details when the scene uses practice cards.
 
-The writer then uses this skill as the sole owner of board-kind metadata syntax
-and validation rules. Provenance remains authored on the source records, not
-duplicated on Analysis cards.
+The writer then uses this skill as the sole owner of all remaining
+kind-specific fields, metadata syntax, and validation rules. Provenance
+remains authored on the source records, not duplicated on Analysis cards.
 
 ## Reveals syntax
 
