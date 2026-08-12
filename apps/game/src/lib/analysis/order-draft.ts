@@ -83,8 +83,9 @@ export function materializePrefixAnchors(
   cardIds: string[],
 ): string[] | null {
   if (orderBoardBlockReason(board) !== null) return null;
-  const anchors = prefixAnchors(board);
-  if (!anchors) return null;
+  // orderBoardBlockReason already validated anchors above, so this is
+  // guaranteed non-null.  The cast documents the invariant for callers.
+  const anchors = prefixAnchors(board) as PrefixAnchor[];
 
   const cardsById = new Map(publicCards(board).map((card) => [card.id, card]));
   const fixedIds = new Set(anchors.map(({ cardId }) => cardId));
@@ -129,8 +130,9 @@ export function moveOrderCard(
 
   const materialized = materializePrefixAnchors(board, cardIds);
   if (!materialized) return null;
-  const anchors = prefixAnchors(board);
-  if (!anchors) return null;
+  // materializePrefixAnchors already validated anchors above, so this is
+  // guaranteed non-null.  The cast documents the invariant for callers.
+  const anchors = prefixAnchors(board) as PrefixAnchor[];
   const prefixLength = anchors.length;
   const index = materialized.indexOf(cardId);
   if (index < prefixLength || index < 0) return materialized;
@@ -151,8 +153,9 @@ export function removeOrderCard(
 ): string[] | null {
   const materialized = materializePrefixAnchors(board, cardIds);
   if (!materialized) return null;
-  const anchors = prefixAnchors(board);
-  if (!anchors) return null;
+  // materializePrefixAnchors already validated anchors above, so this is
+  // guaranteed non-null.  The cast documents the invariant for callers.
+  const anchors = prefixAnchors(board) as PrefixAnchor[];
   if (anchors.some((anchor) => anchor.cardId === cardId)) return materialized;
 
   const index = materialized.indexOf(cardId);

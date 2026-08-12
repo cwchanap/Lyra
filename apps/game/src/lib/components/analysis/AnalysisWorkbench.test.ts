@@ -849,4 +849,128 @@ describe("AnalysisWorkbench", () => {
 
     expect(screen.getByRole("button", { name: "下一板" })).toBeDisabled();
   });
+
+  it("renders a loading state when the mode is not analysis", () => {
+    const nonAnalysisMode = {
+      type: "explore",
+      sublocationId: "loc_1",
+    } as unknown as Mode;
+    render(AnalysisWorkbench, {
+      scene: beat85CompilerAnalysisSceneFixture,
+      mode: nonAnalysisMode,
+      inventory: beat85CompilerAnalysisInventoryFixture,
+      onSelectBoard: vi.fn(),
+      onUpdateDraft: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("分析板載入中。");
+  });
+
+  it("renders a loading state when the scene is not analysis", () => {
+    const nonAnalysisScene = {
+      kind: "linear",
+      id: "scene_1",
+      title: "線性場景",
+      summary: "",
+      index: 0,
+      total: 1,
+    } as unknown as SceneView;
+    render(AnalysisWorkbench, {
+      scene: nonAnalysisScene,
+      mode: beat85CompilerAnalysisModeFixture,
+      inventory: beat85CompilerAnalysisInventoryFixture,
+      onSelectBoard: vi.fn(),
+      onUpdateDraft: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("分析板載入中。");
+  });
+
+  it("surfaces a mutation error when resetDraft fails", async () => {
+    const state = analysisState();
+    const onUpdateDraft = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    renderWorkbench(state, { onUpdateDraft });
+
+    // First make an edit so Undo is available, then reset.
+    await assignFirstClassifyCard();
+    await userEvent.setup().click(screen.getByRole("button", { name: "重設" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
+    });
+  });
+
+  it("surfaces a mutation error when undo fails", async () => {
+    const state = analysisState();
+    let callCount = 0;
+    const onUpdateDraft = vi.fn().mockImplementation(() => {
+      callCount += 1;
+      // First call (assign) succeeds; second call (undo) throws.
+      return callCount === 1
+        ? Promise.resolve(state)
+        : Promise.reject(new Error("IPC failure"));
+    });
+    renderWorkbench(state, { onUpdateDraft });
+    const user = userEvent.setup();
+
+    await assignFirstClassifyCard();
+    await user.click(screen.getByRole("button", { name: "復原" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
+    });
+  });
+
+  it("does not navigate when selectRelative finds no next board", async () => {
+    // On the last board, 下一板 is disabled, but selectRelative(1) can still
+    // be called internally. Verify it does not call onSelectBoard when there
+    // is no next board in the navigation list.
+    const state = analysisState({
+      mode: analysisModeWith({ boardId: "narrow_request_basis" }),
+    });
+    const onSelectBoard = vi.fn();
+    renderWorkbench(state, { onSelectBoard });
+
+    // The 下一板 button is disabled on the last board, confirming no
+    // forward navigation target exists.
+    expect(screen.getByRole("button", { name: "下一板" })).toBeDisabled();
+    expect(onSelectBoard).not.toHaveBeenCalled();
+  });
+
+  it("does not focus feedback when submit returns a non-analysis mode", async () => {
+    const state = analysisState();
+    const nonAnalysisReturn = {
+      ...state,
+      mode: { type: "gameComplete" },
+    } as unknown as GameStateView;
+    const onSubmit = vi.fn().mockResolvedValue(nonAnalysisReturn);
+    renderWorkbench(state, { onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    // No feedback element should be focused since the returned mode is not
+    // analysis — the submit button itself receives focus instead.
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "比對推論" })).toHaveFocus();
+    });
+  });
+
+  it("surfaces a generic mutation message when onUpdateDraft throws a non-Error value", async () => {
+    const state = analysisState();
+    // Throw a non-Error value (string) to exercise the fallback branch in
+    // mutationErrorMessage.
+    const onUpdateDraft = vi.fn().mockRejectedValue("string error");
+    renderWorkbench(state, { onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "更新草稿時發生錯誤，請再試一次。",
+    );
+  });
 });

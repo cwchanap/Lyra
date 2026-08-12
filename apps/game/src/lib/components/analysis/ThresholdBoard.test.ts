@@ -413,4 +413,58 @@ describe("ThresholdBoard", () => {
 
     expect(screen.getByText("提示：先看時間順序。")).toBeInTheDocument();
   });
+
+  it("does not render a hint when the board has none", () => {
+    renderBoard(boardWith(practiceFixtureBoard, { hint: null }));
+
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
+  });
+
+  it("omits provenance when an evidence card's source is not in the inventory", () => {
+    const orphanEvidenceCard: AnalysisCardView = {
+      id: "orphan_evidence",
+      label: "孤兒證物",
+      summary: "來源不在物品欄的證物卡。",
+      source: {
+        kind: "evidence",
+        id: "missing_evidence",
+        label: null,
+        summary: null,
+      },
+      sourceLabel: null,
+      sourceSummary: null,
+      available: true,
+    };
+    renderBoard(
+      boardWith(practiceFixtureBoard, { cards: [orphanEvidenceCard] }),
+      emptyInventory,
+    );
+
+    expect(screen.getByText("孤兒證物")).toBeInTheDocument();
+    expect(screen.queryByText(/來源類型：/)).not.toBeInTheDocument();
+  });
+
+  it("omits provenance when a statement card's source is not in the inventory", () => {
+    const orphanStatementCard: AnalysisCardView = {
+      id: "orphan_statement",
+      label: "孤兒證詞",
+      summary: "來源不在物品欄的證詞卡。",
+      source: {
+        kind: "statement",
+        id: "missing_statement",
+        label: null,
+        summary: null,
+      },
+      sourceLabel: null,
+      sourceSummary: null,
+      available: true,
+    };
+    renderBoard(
+      boardWith(practiceFixtureBoard, { cards: [orphanStatementCard] }),
+      emptyInventory,
+    );
+
+    expect(screen.getByText("孤兒證詞")).toBeInTheDocument();
+    expect(screen.queryByText(/來源類型：/)).not.toBeInTheDocument();
+  });
 });
