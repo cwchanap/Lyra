@@ -43,6 +43,20 @@
     disabled?: boolean;
   } = $props();
 
+  // A mutation aborted because the callback returned null (the shared game
+  // client already surfaced the failure via gameState.error / ErrorBanner).
+  // This must still throw so ClassifyBoard can preserve retry selection, but
+  // must not populate the component-local mutationError — that would duplicate
+  // the authoritative alert. See design §5 "Required reconciliation before
+  // mutation", step 6: "leave the authoritative UI/error surface unchanged".
+  class MutationAborted extends Error {
+    readonly aborted = true;
+    constructor(message: string) {
+      super(message);
+      this.name = "MutationAborted";
+    }
+  }
+
   let workbenchElement = $state<HTMLElement>();
   let feedbackElement = $state<HTMLElement>();
   let undoDraft = $state<AnalysisDraft | null>(null);
@@ -214,7 +228,7 @@
       const previousDraft = cloneDraft(displayedBoard.draft);
       const token = await tokenForDisplayedBoard();
       if (!token) {
-        throw new Error("無法取得操作權限，請再試一次。");
+        throw new MutationAborted("無法取得操作權限，請再試一次。");
       }
 
       let applied: GameStateView | null;
@@ -224,7 +238,7 @@
         throw new Error(mutationErrorMessage(error), { cause: error });
       }
       if (applied === null) {
-        throw new Error("草稿未被接受，請再試一次。");
+        throw new MutationAborted("草稿未被接受，請再試一次。");
       }
 
       if (options.recordUndo !== false) {
@@ -249,7 +263,11 @@
     try {
       await mutateDraft(draft, focusKey);
     } catch (error) {
-      mutationError = mutationErrorMessage(error);
+      // Aborted mutations (null callback results) are already surfaced by the
+      // shared game client's gameState.error / ErrorBanner — don't duplicate.
+      if (!(error instanceof MutationAborted)) {
+        mutationError = mutationErrorMessage(error);
+      }
       throw error;
     }
   }
@@ -263,7 +281,9 @@
     try {
       await mutateDraft(emptyDraft(displayedBoard.kind), "reset");
     } catch (error) {
-      mutationError = mutationErrorMessage(error);
+      if (!(error instanceof MutationAborted)) {
+        mutationError = mutationErrorMessage(error);
+      }
     }
   }
 
@@ -275,7 +295,9 @@
     try {
       await mutateDraft(undoDraft, "undo", { recordUndo: false });
     } catch (error) {
-      mutationError = mutationErrorMessage(error);
+      if (!(error instanceof MutationAborted)) {
+        mutationError = mutationErrorMessage(error);
+      }
     }
   }
 
@@ -291,7 +313,7 @@
     try {
       const token = await tokenForDisplayedBoard();
       if (!token) {
-        mutationError = "無法取得操作權限，請再試一次。";
+        // Reconciliation failed; gameState.error already owns the alert.
         return;
       }
 
@@ -303,7 +325,7 @@
         return;
       }
       if (applied === null) {
-        mutationError = "草稿未被接受，請再試一次。";
+        // Backend rejected; gameState.error already owns the alert.
         return;
       }
 

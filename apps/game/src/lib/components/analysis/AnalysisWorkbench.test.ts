@@ -561,9 +561,9 @@ describe("AnalysisWorkbench", () => {
       "evidence_packages",
     );
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "無法取得操作權限，請再試一次。",
-    );
+    // The shared ErrorBanner (gameState.error) owns the failure alert; the
+    // workbench must not render a duplicate local alert.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("reconciles a fallback board before Submit and uses the fresh token", async () => {
@@ -699,7 +699,7 @@ describe("AnalysisWorkbench", () => {
     });
   });
 
-  it("surfaces a mutation error when onSubmit returns null", async () => {
+  it("aborts submit without a local error when onSubmit returns null", async () => {
     const state = analysisState();
     const onSubmit = vi.fn().mockResolvedValue(null);
     renderWorkbench(state, { onSubmit });
@@ -709,9 +709,9 @@ describe("AnalysisWorkbench", () => {
       .click(screen.getByRole("button", { name: "比對推論" }));
 
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "草稿未被接受，請再試一次。",
-    );
+    // The shared ErrorBanner (gameState.error) owns the failure alert; the
+    // workbench must not render a duplicate local alert.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("aborts a draft update when onUpdateDraft returns null", async () => {
@@ -757,7 +757,7 @@ describe("AnalysisWorkbench", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("surfaces a mutation error when onUpdateDraft returns null", async () => {
+  it("aborts a draft update without a local error when onUpdateDraft returns null", async () => {
     const state = analysisState();
     const onUpdateDraft = vi.fn().mockResolvedValue(null);
     renderWorkbench(state, { onUpdateDraft });
@@ -765,9 +765,9 @@ describe("AnalysisWorkbench", () => {
     await assignFirstClassifyCard();
 
     expect(onUpdateDraft).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "草稿未被接受，請再試一次。",
-    );
+    // The shared ErrorBanner (gameState.error) owns the failure alert; the
+    // workbench must not render a duplicate local alert.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("surfaces a mutation error when onUpdateDraft throws", async () => {
@@ -781,7 +781,7 @@ describe("AnalysisWorkbench", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("IPC failure");
   });
 
-  it("clears the mutation error after a subsequent successful update", async () => {
+  it("retries a draft update after a null return without surfacing a local error", async () => {
     const state = analysisState();
     let callCount = 0;
     const onUpdateDraft = vi.fn().mockImplementation(() => {
@@ -797,7 +797,8 @@ describe("AnalysisWorkbench", () => {
     await user.click(
       screen.getByRole("button", { name: "放入「三宅的小謊」" }),
     );
-    expect(screen.getByRole("alert")).toBeInTheDocument();
+    // Null return is owned by gameState.error; no local alert.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
     // Selection is preserved after the rejection; retry assign directly.
     await user.click(
@@ -1073,9 +1074,9 @@ describe("AnalysisWorkbench", () => {
 
     expect(onSelectBoard).toHaveBeenCalledTimes(1);
     expect(onSubmit).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "無法取得操作權限，請再試一次。",
-    );
+    // The shared ErrorBanner (gameState.error) owns the failure alert; the
+    // workbench must not render a duplicate local alert.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("clears presentation state without focusing when the board becomes null", async () => {
