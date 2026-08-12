@@ -121,9 +121,7 @@
     <p>{board.prompt}</p>
   </header>
 
-  {#if board.hint}
-    <p class="hint">提示：{board.hint}</p>
-  {/if}
+  {#if board.hint}<p class="hint">提示：{board.hint}</p>{/if}
 
   <div class="board-layout">
     <section class="card-pool" aria-label="未分類卡片">

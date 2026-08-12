@@ -368,6 +368,16 @@ describe("CaseFileRecordDetail", () => {
     expect(onReexamineStatement).toHaveBeenCalledWith("witness");
   });
 
+  it("triggers evidence re-examination when enabled", async () => {
+    const user = userEvent.setup();
+    const { onReexamineEvidence } = renderDetail(recordItem(evidenceRecord()));
+
+    const reexamine = screen.getByRole("button", { name: "重新檢視" });
+    expect(reexamine).toBeEnabled();
+    await user.click(reexamine);
+    expect(onReexamineEvidence).toHaveBeenCalledWith("receipt");
+  });
+
   it("navigates to the predecessor record", async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();

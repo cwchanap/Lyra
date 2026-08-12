@@ -973,4 +973,74 @@ describe("AnalysisWorkbench", () => {
       "更新草稿時發生錯誤，請再試一次。",
     );
   });
+
+  it("aborts a draft mutation when fallback-board reconciliation throws", async () => {
+    const initial = analysisState({
+      mode: analysisModeWith({ activeBoardId: null }),
+      scene: analysisSceneWith({ activeBoardId: null }),
+    });
+    const onSelectBoard = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    const onUpdateDraft = vi.fn().mockResolvedValue(initial);
+    renderWorkbench(initial, { onSelectBoard, onUpdateDraft });
+
+    await assignFirstClassifyCard();
+
+    expect(onSelectBoard).toHaveBeenCalledTimes(1);
+    expect(onUpdateDraft).not.toHaveBeenCalled();
+    // The player's card selection must be preserved so they can retry.
+    const cardButton = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    expect(cardButton).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("aborts submit when fallback-board reconciliation throws", async () => {
+    const initial = analysisState({
+      mode: analysisModeWith({ activeBoardId: null }),
+      scene: analysisSceneWith({ activeBoardId: null }),
+    });
+    const onSelectBoard = vi.fn().mockRejectedValue(new Error("IPC failure"));
+    const onSubmit = vi.fn().mockResolvedValue(initial);
+    renderWorkbench(initial, { onSelectBoard, onSubmit });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "比對推論" }));
+
+    expect(onSelectBoard).toHaveBeenCalledTimes(1);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("clears presentation state without focusing when the board becomes null", async () => {
+    const state = analysisState();
+    const view = renderWorkbench(state);
+    await assignFirstClassifyCard();
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "顯示提示" }));
+    expect(screen.getByText(/提示：/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "復原" })).toBeInTheDocument();
+
+    // Rerender with a non-analysis mode so analysisMode?.boardId becomes null.
+    const nonAnalysisMode = {
+      type: "explore",
+      sublocationId: "loc_1",
+    } as unknown as Mode;
+    await view.rerender({
+      scene: state.scene,
+      mode: nonAnalysisMode,
+      inventory: state.inventory,
+      onSelectBoard: vi.fn(),
+      onUpdateDraft: vi.fn(),
+      onSubmit: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "復原" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("分析板載入中。");
+    });
+  });
 });

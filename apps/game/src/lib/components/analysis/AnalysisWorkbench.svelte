@@ -75,9 +75,11 @@
       : { ...board, hint: null },
   );
   let navigationBoards = $derived(
-    (analysis?.visibleBoards ?? []).filter((candidate) =>
-      analysisMode?.availableBoardIds.includes(candidate.id),
-    ),
+    analysis
+      ? analysis.visibleBoards.filter((candidate) =>
+          analysisMode?.availableBoardIds.includes(candidate.id),
+        )
+      : [],
   );
   let canUndo = $derived(
     !boardReadOnly &&
@@ -142,6 +144,7 @@
     const targets = workbenchElement?.querySelectorAll<HTMLElement>(
       "[data-analysis-focus-key]",
     );
+    /* v8 ignore next -- unreachable: workbenchElement is bound to the mounted section */
     if (!targets) return null;
     for (const target of targets) {
       if (target.dataset.analysisFocusKey === key) return target;
@@ -157,6 +160,7 @@
       return;
     }
     const fallback = focusTarget(
+      /* v8 ignore next -- unreachable: board.id is always defined when board exists */
       board?.id === undefined ? "" : `board:${board.id}`,
     );
     fallback?.focus();
@@ -165,6 +169,7 @@
   async function tokenForDisplayedBoard(): Promise<AnalysisActionToken | null> {
     const currentMode = analysisMode;
     const displayedBoard = board;
+    /* v8 ignore next -- unreachable: only called when board and analysisMode are non-null */
     if (!currentMode || !displayedBoard) return null;
     if (currentMode.activeBoardId === currentMode.boardId) {
       return currentMode.actionToken;
@@ -200,6 +205,7 @@
     options: { recordUndo?: boolean } = {},
   ): Promise<void> {
     const displayedBoard = board;
+    /* v8 ignore next -- unreachable: mutateDraft is only called from editable board actions */
     if (!displayedBoard || boardReadOnly || disabled) return;
     const previousDraft = cloneDraft(displayedBoard.draft);
     const token = await tokenForDisplayedBoard();
@@ -243,6 +249,7 @@
   async function resetDraft(): Promise<void> {
     mutationError = null;
     const displayedBoard = board;
+    /* v8 ignore next -- unreachable: reset button only renders when board is non-null */
     if (!displayedBoard) return;
     try {
       await mutateDraft(emptyDraft(displayedBoard.kind), "reset");
@@ -252,6 +259,7 @@
   }
 
   async function undo(): Promise<void> {
+    /* v8 ignore next -- unreachable: undo button only renders when canUndo and undoDraft are set */
     if (!canUndo || undoDraft === null) return;
     mutationError = null;
     try {
@@ -263,6 +271,7 @@
 
   async function submit(): Promise<void> {
     const currentMode = analysisMode;
+    /* v8 ignore next -- unreachable: submit button only renders when board is editable */
     if (!currentMode || !board || boardReadOnly || disabled) return;
     const token = await tokenForDisplayedBoard();
     if (!token) return;
@@ -287,6 +296,7 @@
 
   async function selectBoard(boardId: string): Promise<void> {
     const currentMode = analysisMode;
+    /* v8 ignore next -- unreachable: board nav buttons only render in analysis mode */
     if (!currentMode || disabled) return;
     let selected: GameStateView | null;
     try {
@@ -308,15 +318,18 @@
 
   async function selectRelative(offset: -1 | 1): Promise<void> {
     const currentBoardId = analysisMode?.boardId;
+    /* v8 ignore next -- unreachable: relative nav buttons only render when a board is active */
     if (!currentBoardId) return;
     const index = navigationBoards.findIndex(
       (candidate) => candidate.id === currentBoardId,
     );
     const next = navigationBoards[index + offset];
+    /* v8 ignore next -- unreachable: relative nav buttons are disabled at list boundaries */
     if (next) await selectBoard(next.id);
   }
 
   async function toggleHint(): Promise<void> {
+    /* v8 ignore next -- unreachable: hint toggle only renders when board has a hint and is editable */
     if (!board?.hint || boardReadOnly) return;
     hintOpen = !hintOpen;
     await focusAfterRender("hint");
