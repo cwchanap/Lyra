@@ -402,13 +402,12 @@ analysis_scene:<chapter_id>@<scene_id> completed
 analysis_board:<chapter_id>@<scene_id>@<board_id> completed
 ```
 
-Analysis predicates are supported in current compiled content when their fully
-qualified scene/board ids resolve in the compiled story catalog. The runtime
-evaluates them through the story unlock context, so they may gate authored
+Qualified Analysis predicates may reference any packaged Analysis board
+supported by the current `writing-analysis-scene`/runtime contract whose full
+scene/board id resolves in the compiled story catalog. The runtime evaluates
+them through the story unlock context, so they may gate authored
 investigation/interrogation progression; use the exact compiled scene id, such
-as `analysis_scene_p1_5`, rather than a shortened filename fragment. This does
-not expand the playable analysis surface: the runtime loader still accepts
-only threshold analysis boards and rejects classify/order boards. Do not use
+as `analysis_scene_p1_5`, rather than a shortened filename fragment. Do not use
 unresolved or placeholder analysis ids.
 
 #### Story targets in `Reveals:`
