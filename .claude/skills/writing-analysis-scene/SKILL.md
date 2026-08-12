@@ -405,9 +405,11 @@ filesystem paths. When assets are enabled:
   `Fixed Anchors` is `[]` or a unique, in-range, order-consistent contiguous
   prefix of one-based positions.
 - threshold: ≤6 eligible cards; requirements match the Case File vs practice
-  split; at least one accepted selection exists; every practice card is revealed
-  exactly once by the immediately preceding investigation and the analysis scene
-  directly follows it in the chapter manifest.
+  split; at least one accepted selection exists.
+- practice: regardless of board kind, every practice card is revealed exactly
+  once by the immediately preceding investigation, the analysis scene directly
+  follows that investigation in the chapter manifest, and every practice reveal
+  targets a card on that immediately following analysis scene.
 - Dialogue lines ≤100 Chinese characters, Traditional Chinese only, every
   speaker resolves to the global catalog; Intro, each Result Dialogue, and Outro
   use supported background cues when a visual transition is authored.
