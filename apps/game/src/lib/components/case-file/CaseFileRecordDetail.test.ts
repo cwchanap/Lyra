@@ -8,6 +8,7 @@ import {
   neutralEvidenceRecordView,
   neutralStatementRecordView,
 } from "$lib/state/test-fixtures";
+import { reportAsyncTestFailure } from "$lib/test-utils";
 import CaseFileRecordDetail from "./CaseFileRecordDetail.svelte";
 import CaseFileItemList from "./CaseFileItemList.svelte";
 
@@ -198,44 +199,59 @@ describe("CaseFileRecordDetail", () => {
   });
 
   it("keeps an acquired superseded record inspectable and follows only acquired history", async () => {
-    const user = userEvent.setup();
-    const onNavigate = vi.fn();
-    const item = recordItem(evidenceRecord(), {
-      successor: { kind: "statement", id: "corrected" },
-      hasVisibleProvenance: true,
-    });
-    renderDetail(item, { onNavigate });
+    const testName =
+      "keeps an acquired superseded record inspectable and follows only acquired history";
+    try {
+      const user = userEvent.setup();
+      const onNavigate = vi.fn();
+      const item = recordItem(evidenceRecord(), {
+        successor: { kind: "statement", id: "corrected" },
+        hasVisibleProvenance: true,
+      });
+      renderDetail(item, { onNavigate });
 
-    expect(screen.getByText("已被後續紀錄取代")).toBeInTheDocument();
-    const successor = screen.getByRole("button", { name: "查看後續紀錄" });
-    expect(successor).toBeEnabled();
-    await user.click(successor);
-    expect(onNavigate).toHaveBeenCalledWith("statement:corrected");
-    expect(
-      screen.queryByText(/未取得|隱藏|placeholder/i),
-    ).not.toBeInTheDocument();
+      expect(screen.getByText("已被後續紀錄取代")).toBeInTheDocument();
+      const successor = screen.getByRole("button", { name: "查看後續紀錄" });
+      expect(successor).toBeEnabled();
+      await user.click(successor);
+      expect(onNavigate).toHaveBeenCalledWith("statement:corrected");
+      expect(
+        screen.queryByText(/未取得|隱藏|placeholder/i),
+      ).not.toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("keeps the detail inspectable while gating only re-examination", async () => {
-    const user = userEvent.setup();
-    const { onReexamineEvidence } = renderDetail(recordItem(evidenceRecord()), {
-      disabled: true,
-      reexamineEnabled: true,
-    });
+    const testName =
+      "keeps the detail inspectable while gating only re-examination";
+    try {
+      const user = userEvent.setup();
+      const { onReexamineEvidence } = renderDetail(
+        recordItem(evidenceRecord()),
+        {
+          disabled: true,
+          reexamineEnabled: true,
+        },
+      );
 
-    expect(
-      screen.getByRole("heading", { name: "證物：咖啡收據" }),
-    ).toBeInTheDocument();
-    const reexamine = screen.getByRole("button", { name: "重新檢視" });
-    expect(reexamine).toBeDisabled();
-    // A transient in-flight disable (disabled=true) is NOT a mode block, so
-    // the mode explanation must stay absent.
-    expect(reexamine).not.toHaveAttribute("aria-describedby");
-    expect(
-      screen.queryByText("重新檢視僅可在調查或訊問期間使用。"),
-    ).not.toBeInTheDocument();
-    await user.click(reexamine);
-    expect(onReexamineEvidence).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("heading", { name: "證物：咖啡收據" }),
+      ).toBeInTheDocument();
+      const reexamine = screen.getByRole("button", { name: "重新檢視" });
+      expect(reexamine).toBeDisabled();
+      // A transient in-flight disable (disabled=true) is NOT a mode block, so
+      // the mode explanation must stay absent.
+      expect(reexamine).not.toHaveAttribute("aria-describedby");
+      expect(
+        screen.queryByText("重新檢視僅可在調查或訊問期間使用。"),
+      ).not.toBeInTheDocument();
+      await user.click(reexamine);
+      expect(onReexamineEvidence).not.toHaveBeenCalled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("explains why re-examination is unavailable when the mode does not support it", () => {
@@ -258,91 +274,103 @@ describe("CaseFileRecordDetail", () => {
   });
 
   it("keeps a record list row selectable while re-examination is disabled", async () => {
-    const user = userEvent.setup();
-    const onSelect = vi.fn();
-    render(CaseFileItemList, {
-      section: "evidence",
-      items: [recordItem(evidenceRecord())],
-      selectedKey: "evidence:receipt",
-      emptyText: "目前尚無證物。",
-      disabled: true,
-      onSelect,
-    });
+    const testName =
+      "keeps a record list row selectable while re-examination is disabled";
+    try {
+      const user = userEvent.setup();
+      const onSelect = vi.fn();
+      render(CaseFileItemList, {
+        section: "evidence",
+        items: [recordItem(evidenceRecord())],
+        selectedKey: "evidence:receipt",
+        emptyText: "目前尚無證物。",
+        disabled: true,
+        onSelect,
+      });
 
-    const row = screen.getByRole("button", { name: "咖啡收據" });
-    expect(row).toBeEnabled();
-    await user.click(row);
-    expect(onSelect).toHaveBeenCalledWith("evidence:receipt");
+      const row = screen.getByRole("button", { name: "咖啡收據" });
+      expect(row).toBeEnabled();
+      await user.click(row);
+      expect(onSelect).toHaveBeenCalledWith("evidence:receipt");
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("resolves a record image asynchronously, falls back once, and ignores a stale resolution", async () => {
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const initial = deferred<{
-      assetId: string;
-      type: "evidence";
-      url: string;
-      placeholder: boolean;
-    } | null>();
-    const current = deferred<{
-      assetId: string;
-      type: "evidence";
-      url: string;
-      placeholder: boolean;
-    } | null>();
-    resolveStoryAsset
-      .mockReturnValueOnce(initial.promise)
-      .mockReturnValueOnce(current.promise);
+    const testName =
+      "resolves a record image asynchronously, falls back once, and ignores a stale resolution";
+    try {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const initial = deferred<{
+        assetId: string;
+        type: "evidence";
+        url: string;
+        placeholder: boolean;
+      } | null>();
+      const current = deferred<{
+        assetId: string;
+        type: "evidence";
+        url: string;
+        placeholder: boolean;
+      } | null>();
+      resolveStoryAsset
+        .mockReturnValueOnce(initial.promise)
+        .mockReturnValueOnce(current.promise);
 
-    const rendered = renderDetail(
-      recordItem(evidenceRecord({ imageAssetId: "evidence.old" })),
-    );
-    expect(
-      screen.queryByRole("img", { name: "咖啡收據" }),
-    ).not.toBeInTheDocument();
-
-    await rendered.rerender({
-      item: recordItem(evidenceRecord({ imageAssetId: "evidence.current" })),
-      reexamineEnabled: true,
-      onReexamineEvidence: rendered.onReexamineEvidence,
-      onReexamineStatement: rendered.onReexamineStatement,
-      onNavigate: rendered.onNavigate,
-      disabled: false,
-    });
-
-    current.resolve({
-      assetId: "evidence.current",
-      type: "evidence",
-      url: "/assets/evidence/current.png",
-      placeholder: false,
-    });
-    initial.resolve({
-      assetId: "evidence.old",
-      type: "evidence",
-      url: "/assets/evidence/old.png",
-      placeholder: false,
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole("img", { name: "咖啡收據" })).toHaveAttribute(
-        "src",
-        "/assets/evidence/current.png",
+      const rendered = renderDetail(
+        recordItem(evidenceRecord({ imageAssetId: "evidence.old" })),
       );
-    });
-    const image = screen.getByRole("img", { name: "咖啡收據" });
-    image.dispatchEvent(new Event("error"));
-    await waitFor(() => {
-      expect(image).toHaveAttribute(
-        "src",
-        expect.stringContaining("data:image/svg+xml"),
+      expect(
+        screen.queryByRole("img", { name: "咖啡收據" }),
+      ).not.toBeInTheDocument();
+
+      await rendered.rerender({
+        item: recordItem(evidenceRecord({ imageAssetId: "evidence.current" })),
+        reexamineEnabled: true,
+        onReexamineEvidence: rendered.onReexamineEvidence,
+        onReexamineStatement: rendered.onReexamineStatement,
+        onNavigate: rendered.onNavigate,
+        disabled: false,
+      });
+
+      current.resolve({
+        assetId: "evidence.current",
+        type: "evidence",
+        url: "/assets/evidence/current.png",
+        placeholder: false,
+      });
+      initial.resolve({
+        assetId: "evidence.old",
+        type: "evidence",
+        url: "/assets/evidence/old.png",
+        placeholder: false,
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("img", { name: "咖啡收據" })).toHaveAttribute(
+          "src",
+          "/assets/evidence/current.png",
+        );
+      });
+      const image = screen.getByRole("img", { name: "咖啡收據" });
+      image.dispatchEvent(new Event("error"));
+      await waitFor(() => {
+        expect(image).toHaveAttribute(
+          "src",
+          expect.stringContaining("data:image/svg+xml"),
+        );
+      });
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Missing evidence asset"),
       );
-    });
-    expect(warnSpy).toHaveBeenCalledOnce();
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Missing evidence asset"),
-    );
-    warnSpy.mockClear();
-    image.dispatchEvent(new Event("error"));
-    expect(warnSpy).not.toHaveBeenCalled();
+      warnSpy.mockClear();
+      image.dispatchEvent(new Event("error"));
+      expect(warnSpy).not.toHaveBeenCalled();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("renders a statement record with its speaker heading and content", () => {
@@ -356,42 +384,59 @@ describe("CaseFileRecordDetail", () => {
   });
 
   it("triggers statement re-examination when enabled", async () => {
-    const user = userEvent.setup();
-    const record = statementRecord({
-      onReexamine: [{ kind: "action", text: "再次詢問。" }],
-    });
-    const { onReexamineStatement } = renderDetail(recordItem(record));
+    const testName = "triggers statement re-examination when enabled";
+    try {
+      const user = userEvent.setup();
+      const record = statementRecord({
+        onReexamine: [{ kind: "action", text: "再次詢問。" }],
+      });
+      const { onReexamineStatement } = renderDetail(recordItem(record));
 
-    const reexamine = screen.getByRole("button", { name: "重新檢視" });
-    expect(reexamine).toBeEnabled();
-    await user.click(reexamine);
-    expect(onReexamineStatement).toHaveBeenCalledWith("witness");
+      const reexamine = screen.getByRole("button", { name: "重新檢視" });
+      expect(reexamine).toBeEnabled();
+      await user.click(reexamine);
+      expect(onReexamineStatement).toHaveBeenCalledWith("witness");
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("triggers evidence re-examination when enabled", async () => {
-    const user = userEvent.setup();
-    const { onReexamineEvidence } = renderDetail(recordItem(evidenceRecord()));
+    const testName = "triggers evidence re-examination when enabled";
+    try {
+      const user = userEvent.setup();
+      const { onReexamineEvidence } = renderDetail(
+        recordItem(evidenceRecord()),
+      );
 
-    const reexamine = screen.getByRole("button", { name: "重新檢視" });
-    expect(reexamine).toBeEnabled();
-    await user.click(reexamine);
-    expect(onReexamineEvidence).toHaveBeenCalledWith("receipt");
+      const reexamine = screen.getByRole("button", { name: "重新檢視" });
+      expect(reexamine).toBeEnabled();
+      await user.click(reexamine);
+      expect(onReexamineEvidence).toHaveBeenCalledWith("receipt");
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("navigates to the predecessor record", async () => {
-    const user = userEvent.setup();
-    const onNavigate = vi.fn();
-    const item = recordItem(evidenceRecord(), {
-      predecessor: { kind: "evidence", id: "earlier_record" },
-    });
-    renderDetail(item, { onNavigate });
+    const testName = "navigates to the predecessor record";
+    try {
+      const user = userEvent.setup();
+      const onNavigate = vi.fn();
+      const item = recordItem(evidenceRecord(), {
+        predecessor: { kind: "evidence", id: "earlier_record" },
+      });
+      renderDetail(item, { onNavigate });
 
-    const predecessor = screen.getByRole("button", {
-      name: "查看前一項紀錄",
-    });
-    expect(predecessor).toBeEnabled();
-    await user.click(predecessor);
-    expect(onNavigate).toHaveBeenCalledWith("evidence:earlier_record");
+      const predecessor = screen.getByRole("button", {
+        name: "查看前一項紀錄",
+      });
+      expect(predecessor).toBeEnabled();
+      await user.click(predecessor);
+      expect(onNavigate).toHaveBeenCalledWith("evidence:earlier_record");
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("does not render a re-examine button when onReexamine is null", () => {
@@ -422,10 +467,14 @@ describe("CaseFileRecordDetail", () => {
 
   it("renders the provenance section with all fields absent for a neutral record", () => {
     // A record with all-neutral provenance but hasVisibleProvenance: true
-    // exercises the false branch of every provenance {#if} block.
+    // exercises the false branch of every provenance {#if} block, including
+    // the unlabeled source-group summary paragraph.
     const record = evidenceRecord();
     renderDetail(recordItem(record, { hasVisibleProvenance: true }));
 
+    const provenanceSection = screen.getByRole("region", {
+      name: "來源與狀態",
+    });
     expect(
       screen.getByRole("heading", { name: "來源與狀態" }),
     ).toBeInTheDocument();
@@ -437,35 +486,50 @@ describe("CaseFileRecordDetail", () => {
     expect(screen.queryByText(/來源：/)).not.toBeInTheDocument();
     expect(screen.queryByText(/來源群組：/)).not.toBeInTheDocument();
     expect(screen.queryByText(/可證明：/)).not.toBeInTheDocument();
+    // The section must contain only its heading — no provenance field
+    // paragraphs and no source-group summary paragraph.
+    expect(provenanceSection.querySelectorAll("p")).toHaveLength(0);
   });
 
   it("falls back to a placeholder when resolveStoryAsset resolves to null", async () => {
-    resolveStoryAsset.mockResolvedValue(null);
-    renderDetail(
-      recordItem(evidenceRecord({ imageAssetId: "evidence.missing" })),
-    );
-
-    await waitFor(() => {
-      const img = screen.getByRole("img", { name: "咖啡收據" });
-      expect(img).toHaveAttribute(
-        "src",
-        expect.stringContaining("data:image/svg+xml"),
+    const testName =
+      "falls back to a placeholder when resolveStoryAsset resolves to null";
+    try {
+      resolveStoryAsset.mockResolvedValue(null);
+      renderDetail(
+        recordItem(evidenceRecord({ imageAssetId: "evidence.missing" })),
       );
-    });
+
+      await waitFor(() => {
+        const img = screen.getByRole("img", { name: "咖啡收據" });
+        expect(img).toHaveAttribute(
+          "src",
+          expect.stringContaining("data:image/svg+xml"),
+        );
+      });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("falls back to a missing-asset placeholder when resolveStoryAsset rejects", async () => {
-    resolveStoryAsset.mockRejectedValue(new Error("asset failure"));
-    renderDetail(
-      recordItem(evidenceRecord({ imageAssetId: "evidence.broken" })),
-    );
-
-    await waitFor(() => {
-      const img = screen.getByRole("img", { name: "咖啡收據" });
-      expect(img).toHaveAttribute(
-        "src",
-        expect.stringContaining("data:image/svg+xml"),
+    const testName =
+      "falls back to a missing-asset placeholder when resolveStoryAsset rejects";
+    try {
+      resolveStoryAsset.mockRejectedValue(new Error("asset failure"));
+      renderDetail(
+        recordItem(evidenceRecord({ imageAssetId: "evidence.broken" })),
       );
-    });
+
+      await waitFor(() => {
+        const img = screen.getByRole("img", { name: "咖啡收據" });
+        expect(img).toHaveAttribute(
+          "src",
+          expect.stringContaining("data:image/svg+xml"),
+        );
+      });
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 });
