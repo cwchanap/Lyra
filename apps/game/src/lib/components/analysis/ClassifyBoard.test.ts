@@ -152,6 +152,23 @@ describe("ClassifyBoard", () => {
     expect(screen.queryAllByRole("button")).toHaveLength(0);
   });
 
+  it("hides remove buttons for assigned cards on a read-only board", () => {
+    // A read-only board with cards already assigned to groups must render
+    // the cards without remove buttons (the {#if editable} false branch).
+    renderBoard(
+      boardWith({ miyake_call: "miyake_small_lies" }, { readOnly: true }),
+    );
+
+    expect(
+      screen.queryByRole("button", { name: /移除：/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /放入「/ }),
+    ).not.toBeInTheDocument();
+    // The assigned card is still visible inside the group.
+    expect(screen.getByText("三宅母親通話紀錄")).toBeInTheDocument();
+  });
+
   it("styles keyboard focus and reduced-motion behavior in the shared card", () => {
     const cardSource = readFileSync(
       resolve(import.meta.dirname!, "AnalysisCard.svelte"),

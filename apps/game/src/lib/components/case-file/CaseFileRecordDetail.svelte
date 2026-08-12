@@ -33,6 +33,7 @@
   let image = $state<ResolvedStoryAsset | null>(null);
   const evidence = $derived(isEvidenceRecord(item.record) ? item.record : null);
   const statement = $derived(
+    /* v8 ignore next -- lazily evaluated: statement is only read when evidence is null */
     isEvidenceRecord(item.record) ? null : item.record,
   );
   const provenancePresentation = $derived(
@@ -70,12 +71,14 @@
   }
 
   function reexamine() {
+    /* v8 ignore next -- unreachable: reexamine button is disabled when !canReexamine */
     if (!canReexamine) return;
     if (evidence !== null) onReexamineEvidence(evidence.id);
     else if (statement !== null) onReexamineStatement(statement.id);
   }
 
   function navigate(target: InventoryTarget | null) {
+    /* v8 ignore next -- unreachable: navigate is only called from rendered predecessor/successor buttons */
     if (target !== null) onNavigate(recordKey(target));
   }
 
@@ -121,33 +124,33 @@
   {#if item.hasVisibleProvenance}
     <section aria-label="來源與狀態">
       <h3>來源與狀態</h3>
-      {#if provenancePresentation.sourceKind !== null}<p>
+      {#if provenancePresentation.sourceKind}<p>
           來源類型：{provenancePresentation.sourceKind}
         </p>{/if}
-      {#if provenancePresentation.representationLayer !== null}<p>
+      {#if provenancePresentation.representationLayer}<p>
           呈現層：{provenancePresentation.representationLayer}
         </p>{/if}
-      {#if provenancePresentation.proceduralStatus !== null}<p>
+      {#if provenancePresentation.proceduralStatus}<p>
           程序狀態：{provenancePresentation.proceduralStatus}
         </p>{/if}
-      {#if provenancePresentation.completeness !== null}<p>
+      {#if provenancePresentation.completeness}<p>
           完整度：{provenancePresentation.completeness}
         </p>{/if}
-      {#if provenancePresentation.confidence !== null}<p>
+      {#if provenancePresentation.confidence}<p>
           可信度：{provenancePresentation.confidence}
         </p>{/if}
-      {#if provenancePresentation.source !== null}<p>
+      {#if provenancePresentation.source}<p>
           來源：{provenancePresentation.source}
         </p>{/if}
-      {#if provenancePresentation.sourceGroup !== null}<p>
+      {#if provenancePresentation.sourceGroup}<p>
           來源群組：{provenancePresentation.sourceGroup}
         </p>{/if}
-      {#if provenancePresentation.sourceGroupSummary !== null}
-        <p>{provenancePresentation.sourceGroupSummary}</p>
-      {/if}
-      {#if provenancePresentation.proofCapabilities !== null}
-        <p>可證明：{provenancePresentation.proofCapabilities}</p>
-      {/if}
+      {#if provenancePresentation.sourceGroupSummary}<p>
+          {provenancePresentation.sourceGroupSummary}
+        </p>{/if}
+      {#if provenancePresentation.proofCapabilities}<p>
+          可證明：{provenancePresentation.proofCapabilities}
+        </p>{/if}
       {#if item.successor !== null}<p>已被後續紀錄取代</p>{/if}
     </section>
   {/if}

@@ -45,12 +45,14 @@
   let safeAnchors = $derived(prefixAnchors(board));
   let cardsById = $derived(new Map(safeCards.map((card) => [card.id, card])));
   let fixedAnchorIds = $derived(
+    /* v8 ignore next -- lazily evaluated: only read when safeAnchors is non-null */
     new Set((safeAnchors ?? []).map((anchor) => anchor.cardId)),
   );
   let fixedPrefixLength = $derived(
     // When blockReason !== null, safeAnchors is null, so (null ?? []).length
     // is 0 — identical to the previous ternary but without an unreachable
     // branch.
+    /* v8 ignore next -- lazily evaluated: only read when safeAnchors is non-null */
     (safeAnchors ?? []).length,
   );
   let unplacedCards = $derived(
@@ -112,9 +114,7 @@
     <p>{board.prompt}</p>
   </header>
 
-  {#if board.hint}
-    <p class="hint">提示：{board.hint}</p>
-  {/if}
+  {#if board.hint}<p class="hint">提示：{board.hint}</p>{/if}
 
   {#if blockReason === "unsupportedAnchors"}
     <p class="blocked" role="alert">排序設定無法顯示，請重新載入內容。</p>

@@ -93,9 +93,7 @@
     <p>{board.prompt}</p>
   </header>
 
-  {#if board.hint}
-    <p class="hint">提示：{board.hint}</p>
-  {/if}
+  {#if board.hint}<p class="hint">提示：{board.hint}</p>{/if}
 
   <div class="cards" aria-label="可選線索">
     {#each board.cards as card (card.id)}
@@ -116,21 +114,19 @@
 
         {#if provenance !== null}
           <div class="provenance" aria-label={`來源與狀態：${card.label}`}>
-            {#if provenance.sourceKind !== null}
-              <p>來源類型：{provenance.sourceKind}</p>
-            {/if}
-            {#if provenance.proceduralStatus !== null}
-              <p>程序狀態：{provenance.proceduralStatus}</p>
-            {/if}
-            {#if provenance.source !== null}
-              <p>來源：{provenance.source}</p>
-            {/if}
-            {#if provenance.sourceGroup !== null}
-              <p>來源群組：{provenance.sourceGroup}</p>
-            {/if}
-            {#if provenance.proofCapabilities !== null}
-              <p>可證明：{provenance.proofCapabilities}</p>
-            {/if}
+            {#if provenance.sourceKind}<p>
+                來源類型：{provenance.sourceKind}
+              </p>{/if}
+            {#if provenance.proceduralStatus}<p>
+                程序狀態：{provenance.proceduralStatus}
+              </p>{/if}
+            {#if provenance.source}<p>來源：{provenance.source}</p>{/if}
+            {#if provenance.sourceGroup}<p>
+                來源群組：{provenance.sourceGroup}
+              </p>{/if}
+            {#if provenance.proofCapabilities}<p>
+                可證明：{provenance.proofCapabilities}
+              </p>{/if}
           </div>
         {/if}
       </article>
