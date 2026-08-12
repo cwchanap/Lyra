@@ -317,7 +317,7 @@ DOGFOOD="$DOGFOOD" bun -e '
 import { compile } from "./packages/scripts/compile-scenes/orchestrator.ts";
 const root = process.env.DOGFOOD;
 if (!root) process.exit(2);
-const result = compile({ sourceRoot: `${root}/source`, outputRoot: `${root}/out` });
+const result = compile({ sourceRoot: `${root}/source`, outputRoot: `${root}/out-good` });
 if (!result.ok) {
   console.error(result.errors.map((e) => `${e.code}: ${e.message}`).join("\n"));
   process.exit(1);
