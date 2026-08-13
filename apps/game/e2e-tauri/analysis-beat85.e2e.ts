@@ -15,6 +15,7 @@ import type { AnalysisBoardView, GameStateView } from "$lib/state/types";
 
 const ANALYSIS_SCENE_ID = "analysis_scene_8_5";
 const HEARING_SCENE_ID = "interrogation_scene_10";
+const APPROVED_CLIP_ID = "approved_clip";
 
 function analysisBoard(state: GameStateView, id: string): AnalysisBoardView {
   if (state.scene.kind !== "analysis") {
@@ -196,6 +197,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await loadPackagedCheckpoint("chapter-1-analysis-beat-85-ready");
 
     let state = await waitForAnalysisBoard("evidence_packages");
+    expect(
+      state.inventory.evidence.some(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toBe(false);
     const classify = analysisBoard(state, "evidence_packages");
     if (classify.kind !== "classify")
       throw new Error("evidence_packages is not classify");
@@ -250,6 +256,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await drainToAnalysisBoard("narrow_request_basis");
 
     state = await waitForAnalysisBoard("narrow_request_basis");
+    expect(
+      state.inventory.evidence.some(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toBe(false);
     const threshold = analysisBoard(state, "narrow_request_basis");
     if (threshold.kind !== "threshold")
       throw new Error("narrow_request_basis is not threshold");
@@ -272,6 +283,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await returnToTitle();
     await continueFromTitle();
     state = await waitForAnalysisBoard("narrow_request_basis");
+    expect(
+      state.inventory.evidence.some(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toBe(false);
     const restoredThreshold = analysisBoard(state, "narrow_request_basis");
     if (
       restoredThreshold.kind !== "threshold" ||
@@ -310,6 +326,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
       return board.completed;
     });
     expect(
+      state.inventory.evidence.some(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toBe(false);
+    expect(
       state.story.objectives.some(
         (objective) =>
           objective.id === "prepare_narrow_lock_request" && objective.completed,
@@ -335,6 +356,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
           objective.id === "prepare_narrow_lock_request" && objective.completed,
       ),
     ).toBe(true);
+    expect(
+      state.inventory.evidence.some(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toBe(false);
 
     await advanceDialogueUntil(
       async () => (await getPackagedGameState()).mode.type === "interrogation",
@@ -342,7 +368,17 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     );
     await challengePhase("p1", "closing_routine", "p2");
     await challengePhase("p2", "victim_phone_notification", "p3");
-    await challengePhase("p3", "miyake_pov_replay", "gate");
+    const gateReady = await challengePhase("p3", "miyake_pov_replay", "gate");
+    expect(
+      gateReady.inventory.evidence.filter(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
+      ),
+    ).toHaveLength(0);
+    expect(
+      gateReady.story.authorizations.filter(
+        (authorization) => authorization.id === "narrow_lock_export",
+      ),
+    ).toHaveLength(0);
     const gate = await challengePhase(
       "gate",
       "doorlock_summary_timetable",
@@ -350,15 +386,15 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     );
     expect(gate.scene.kind).toBe("interrogation");
     expect(
-      gate.story.authorizations.some(
+      gate.story.authorizations.filter(
         (authorization) => authorization.id === "narrow_lock_export",
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
     expect(
-      gate.inventory.evidence.some(
-        (evidence) => evidence.id === "approved_clip",
+      gate.inventory.evidence.filter(
+        (evidence) => evidence.id === APPROVED_CLIP_ID,
       ),
-    ).toBe(true);
+    ).toHaveLength(1);
     const p4 =
       gate.scene.kind === "interrogation"
         ? gate.scene.visiblePhases.find((phase) => phase.id === "p4")
