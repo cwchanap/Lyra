@@ -578,12 +578,14 @@ pub fn phase_unlock(phase: &InterrogationPhaseJson) -> Option<&InterrogationUnlo
 mod tests {
     use super::*;
     use crate::game::schema::{
-        AutoMarker, DialogueItem, InquiryQuestionJson, InterrogationOutroJson,
-        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson, InventoryTarget,
-        LockStatus, SubjectJson, TestimonyJson, TestimonyLineJson,
+        AutoMarker, Combinator, DialogueItem, InquiryQuestionJson, InterrogationOutroJson,
+        InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationSceneJson,
+        InterrogationUnlockExpr, InventoryTarget, LockStatus, PredicateAuthorizationGranted,
+        PredicateObjectiveCompleted, PredicatePhaseCompleted, SubjectJson, TestimonyJson,
+        TestimonyLineJson,
     };
     use crate::game::state::Inventory;
-    use crate::game::unlock::StoryUnlockContext;
+    use crate::game::unlock::{InterrogationUnlockContext, StoryUnlockContext};
 
     struct NoStoryUnlockContext;
 
@@ -618,6 +620,82 @@ mod tests {
         }
     }
 
+    struct NoInterrogationUnlockContext;
+
+    impl InterrogationUnlockContext for NoInterrogationUnlockContext {
+        fn evidence_collected(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn statement_acquired(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_answered(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn phase_completed(&self, id: &str) -> bool {
+            id == "gate"
+        }
+    }
+
+    struct PhaseP3UnlockContext;
+
+    impl InterrogationUnlockContext for PhaseP3UnlockContext {
+        fn evidence_collected(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn statement_acquired(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_answered(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn phase_completed(&self, id: &str) -> bool {
+            id == "p3"
+        }
+    }
+
+    struct StoryAuthorizationContext {
+        granted: bool,
+        objective_completed: bool,
+    }
+
+    impl StoryUnlockContext for StoryAuthorizationContext {
+        fn fact_asserted(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn question_resolved(&self, _id: &str) -> bool {
+            false
+        }
+
+        fn objective_completed(&self, id: &str) -> bool {
+            self.objective_completed && id == "prepare_narrow_lock_request"
+        }
+
+        fn analysis_scene_completed(&self, _chapter_id: &str, _scene_id: &str) -> bool {
+            false
+        }
+
+        fn analysis_board_completed(
+            &self,
+            _chapter_id: &str,
+            _scene_id: &str,
+            _board_id: &str,
+        ) -> bool {
+            false
+        }
+
+        fn authorization_granted(&self, id: &str) -> bool {
+            self.granted && id == "narrow_lock_export"
+        }
+    }
+
     fn subject() -> SubjectJson {
         SubjectJson {
             id: "suspect".into(),
@@ -632,6 +710,136 @@ mod tests {
             unlock: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
             dialogue: vec![],
         }
+    }
+
+    #[test]
+    fn authorization_fence_keeps_p4_locked_until_gate_and_grant() {
+        let p4 = InterrogationPhaseJson::Inquiry {
+            id: "p4".into(),
+            label: "P4".into(),
+            subject: subject(),
+            required: true,
+            status: LockStatus::Locked,
+            represented_authority: None,
+            unlock: Some(InterrogationUnlockExpr::Combinator {
+                op: Combinator::And,
+                left: Box::new(InterrogationUnlockExpr::PhaseCompleted {
+                    _predicate: PredicatePhaseCompleted::X,
+                    id: "gate".into(),
+                }),
+                right: Box::new(InterrogationUnlockExpr::AuthorizationGranted {
+                    _predicate: PredicateAuthorizationGranted::X,
+                    id: "narrow_lock_export".into(),
+                }),
+            }),
+            reveals: vec![],
+            scene_tag: "hearing room".into(),
+            flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+            entry_dialogue: vec![],
+            complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+            questions: vec![],
+        };
+        let scene = InterrogationSceneState::from_json(
+            InterrogationSceneJson {
+                id: "hearing".into(),
+                title: "Hearing".into(),
+                summary: "Summary".into(),
+                asset_refs: vec![],
+                intro: vec![],
+                phases: vec![p4],
+                evidence_manifest: vec![],
+                statement_manifest: vec![],
+                outro: outro(),
+            },
+            1,
+        );
+        let local = NoInterrogationUnlockContext;
+        let story_without_grant = StoryAuthorizationContext {
+            granted: false,
+            objective_completed: false,
+        };
+        let phase = &scene.def.phases[0];
+
+        assert!(
+            !scene.is_phase_unlocked(phase, &local, &story_without_grant),
+            "p4 must remain locked before the represented authority grant"
+        );
+
+        let story_with_grant = StoryAuthorizationContext {
+            granted: true,
+            objective_completed: false,
+        };
+        assert!(
+            scene.is_phase_unlocked(phase, &local, &story_with_grant),
+            "p4 must become reachable only after the completed gate and grant"
+        );
+    }
+
+    #[test]
+    fn hearing_gate_stays_locked_until_prepare_objective_is_completed() {
+        let gate = InterrogationPhaseJson::Inquiry {
+            id: "gate".into(),
+            label: "Gate".into(),
+            subject: subject(),
+            required: true,
+            status: LockStatus::Locked,
+            represented_authority: Some("KAGAMI 證據摘要審查會主理".into()),
+            unlock: Some(InterrogationUnlockExpr::Combinator {
+                op: Combinator::And,
+                left: Box::new(InterrogationUnlockExpr::PhaseCompleted {
+                    _predicate: PredicatePhaseCompleted::X,
+                    id: "p3".into(),
+                }),
+                right: Box::new(InterrogationUnlockExpr::ObjectiveCompleted {
+                    _predicate: PredicateObjectiveCompleted::X,
+                    id: "prepare_narrow_lock_request".into(),
+                }),
+            }),
+            reveals: vec![],
+            scene_tag: "hearing room".into(),
+            flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+            entry_dialogue: vec![],
+            complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+            questions: vec![],
+        };
+        let scene = InterrogationSceneState::from_json(
+            InterrogationSceneJson {
+                id: "hearing".into(),
+                title: "Hearing".into(),
+                summary: "Summary".into(),
+                asset_refs: vec![],
+                intro: vec![],
+                phases: vec![gate],
+                evidence_manifest: vec![],
+                statement_manifest: vec![],
+                outro: outro(),
+            },
+            1,
+        );
+        let local = PhaseP3UnlockContext;
+        let phase = &scene.def.phases[0];
+        assert!(
+            !scene.is_phase_unlocked(
+                phase,
+                &local,
+                &StoryAuthorizationContext {
+                    granted: false,
+                    objective_completed: false,
+                },
+            ),
+            "gate must stay locked when its preparation objective is missing"
+        );
+        assert!(
+            scene.is_phase_unlocked(
+                phase,
+                &local,
+                &StoryAuthorizationContext {
+                    granted: false,
+                    objective_completed: true,
+                },
+            ),
+            "gate should unlock after p3 and the preparation objective"
+        );
     }
 
     fn empty_testimony() -> TestimonyJson {
