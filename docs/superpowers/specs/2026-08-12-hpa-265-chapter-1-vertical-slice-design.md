@@ -67,11 +67,15 @@ One HPA-265 ticket therefore lowers handoff cost without creating a monolithic a
 
 No AuthorityEvent scene family, grant ledger, request screen, new board kind, hint engine, or four Event evidence records are introduced.
 
-### Review item intentionally not adopted
+### Review findings resolved
 
-The review reported that `.claude/skills/writing-analysis-scene/SKILL.md` still treated Classify/Order as parser-only. That is stale against current `main`: the skill now explicitly states that Chapter 1 supports `classify`, `order`, and `threshold`, and that the compiler and packaged runtime consume all three. HPA-265 therefore does **not** modify that skill merely to repeat an already-correct contract.
-
-The interrogation skill **does** still contain the pre-HPA-264 statement that production authorization grants are unavailable. That text becomes stale once the represented-authority carrier lands and must be updated in the authority task.
+- **Analysis skill staleness:** not valid on current `main`. The skill already explicitly supports `classify`, `order`, and `threshold` in packaged Chapter 1 Analysis. No compatibility edit is needed there.
+- **Interrogation skill staleness:** valid. Its pre-HPA-264 production-grant restriction becomes stale and is updated with the represented-authority task.
+- **Packaged E2E scope:** valid. `production-journey.e2e.ts` keeps its current P1 -> first KAGAMI acquisition purpose. Beat 8.5 gets one focused checkpoint/suite and one packaged Save/Continue cycle.
+- **Catalog fields:** valid. The plan authors parser-required Fact Summary/Details/Category and Source Group Summary explicitly.
+- **Runtime authority sites:** valid. Implementation greps every interrogation `StoryRevealMaterializationContext`; both InquiryQuestion reveal paths are included.
+- **Hearing repetition:** valid. p1–p4 are deliberately rewritten as formal confirmation instead of deferring the decision to playtest.
+- **Duplicate public-wire test:** valid. It is removed; only the missing Order/Threshold restore coverage is added.
 
 ## 4. Canonical production ownership
 
