@@ -24,18 +24,7 @@ The work should feel like finishing one gameplay sequence, not integrating five 
 
 ## 2. Why the old five-ticket chain is one task
 
-The former chain was effectively:
-
-```text
-HPA-262 platform acceptance
-  -> HPA-264 request/hearing handoff
-    -> HPA-265 production authoring/iteration
-      -> HPA-266 first-version acceptance
-
-HPA-263 optional post-playtest hints
-```
-
-Those boundaries no longer buy meaningful isolation because HPA-259/260/261 already shipped the Analysis platform, the authority seam has one Chapter 1 consumer, production authoring and first-version acceptance are one flow, and HPA-263 is intentionally conditional on the same playtest.
+The former chain was effectively HPA-262 platform acceptance → HPA-264 request/hearing handoff → HPA-265 production authoring → HPA-266 first-version acceptance, with HPA-263 as optional playtest polish. Those boundaries no longer buy meaningful isolation because the Analysis platform is already shipped, the authority seam has one Chapter 1 consumer, and production authoring/acceptance are one flow.
 
 ## 3. Reuse survey
 
@@ -80,59 +69,13 @@ Run script compiler tests and the Rust cross-board acceptance. This proves the o
 
 ## 5. Canonical production source ownership
 
-Production remains under:
-
-```text
-docs/stories_plan/
-  story_catalog.md
-  chapter_1/
-    chapter.md
-    investigation_scene_7.md
-    investigation_scene_8.md
-    analysis_scene_8_5.md
-    interrogation_scene_10.md
-    semantic-content-reaudit.md
-```
-
-`scene_8_5.md` is replaced, not retained as a second playable transition. The semantic re-audit remains historical evidence; add a short supersession note when the linear file is deleted rather than rewriting the audit.
+Production remains under `docs/stories_plan/`, with one new global `story_catalog.md` and one new `chapter_1/analysis_scene_8_5.md`. `scene_8_5.md` is replaced, not retained as a second playable transition. `semantic-content-reaudit.md` remains historical evidence; add a supersession note when the old linear file is deleted rather than rewriting the audit.
 
 ## 6. Production story catalog
 
-Create only:
+Create only four Facts (`miyake_known_lies_are_unrelated_to_murder`, `earlier_external_entry_exists`, `merge_time_is_not_event_time`, `two_independent_lock_contradictions_identified`), secondary Objective `prepare_narrow_lock_request`, Authorization `narrow_lock_export` granted by `KAGAMI 證據摘要審查會主理`, and Source Groups `door_lock_fixed_record` / `victim_phone_device`.
 
-Facts:
-
-```text
-miyake_known_lies_are_unrelated_to_murder
-earlier_external_entry_exists
-merge_time_is_not_event_time
-two_independent_lock_contradictions_identified
-```
-
-Each Fact has `Summary`, `Details`, `Category: chapter_1`.
-
-Objective:
-
-```text
-prepare_narrow_lock_request
-kind = secondary
-```
-
-Authorization:
-
-```text
-narrow_lock_export
-grantingAuthority = KAGAMI 證據摘要審查會主理
-```
-
-Source groups:
-
-```text
-door_lock_fixed_record
-victim_phone_device
-```
-
-Each Source Group has Summary.
+Each Fact has `Summary`, `Details`, `Category: chapter_1`; each Source Group has Summary.
 
 This catalog/provenance slice remains independently compilable. Current whole-corpus reachability diagnoses authored nodes whose prerequisites cannot be produced; it does not require every catalog definition to have a producer merely because the definition exists. If the independent compile unexpectedly fails on that premise, investigate the regression instead of hiding it by merging authoring tasks.
 
@@ -152,41 +95,21 @@ victim_phone_notification
   proofCapabilities = [time]
 ```
 
-The two door-lock records remain the same source group. Threshold requires 2 selected, 2 distinct source groups, `[time, order]`, no procedural-status restriction, and `Require Source Group: true`.
-
-One exact same-source wrong selection is enough for v1. No progressive hint taxonomy before playtest evidence.
+The two door-lock records remain the same source group. Threshold requires 2 selected, 2 distinct source groups, `[time, order]`, no procedural-status restriction, and `Require Source Group: true`. One exact same-source wrong selection is enough for v1.
 
 ## 8. Real production Beat 8.5
 
 ### Classify — `evidence_packages`
 
-Use real Case File records to separate Miyake's unrelated small lies, earlier third-party route/access, and lock chronology conflict. Outputs:
-
-```text
-miyake_known_lies_are_unrelated_to_murder
-earlier_external_entry_exists
-```
+Use real Case File records to separate Miyake's unrelated small lies, earlier third-party route/access, and lock chronology conflict. Outputs `miyake_known_lies_are_unrelated_to_murder` and `earlier_external_entry_exists`.
 
 ### Order — `local_event_sequence`
 
-Four card identities represent rows inside one source record:
-
-```text
-event_1841 -> event_1842 -> event_1843 -> event_1844
-```
-
-Every card uses `evidence:local_sequence_record`. Output: `merge_time_is_not_event_time`.
+Four card identities represent rows inside one source record: `event_1841 -> event_1842 -> event_1843 -> event_1844`. Every card uses `evidence:local_sequence_record`. Output `merge_time_is_not_event_time`.
 
 ### Threshold — `narrow_request_basis`
 
-Uses the three provenance-bearing records above. Outputs:
-
-```text
-two_independent_lock_contradictions_identified
-complete prepare_narrow_lock_request
-```
-
-Analysis never grants `narrow_lock_export`.
+Use the three provenance-bearing records above. Output `two_independent_lock_contradictions_identified` and complete `prepare_narrow_lock_request`. Analysis never grants `narrow_lock_export`.
 
 ## 9. Represented authority
 
@@ -196,48 +119,15 @@ Add one optional immutable Phase definition field:
 - **Represented Authority:** KAGAMI 證據摘要審查會主理
 ```
 
-Flow:
-
-```text
-Markdown
--> ASTInquiryPhase.representedAuthority
--> optional emitted JSON member
--> validateStoryRevealTargets
--> ReachabilityNode.representedAuthority
--> InterrogationPhaseJson.represented_authority
--> Rust StoryRevealMaterializationContext
--> existing grant_authorization validation/mutation
-```
-
-Legacy phases omit the JSON member.
+Flow it through Markdown → AST → optional emitted JSON → `validateStoryRevealTargets` → `ReachabilityNode.representedAuthority` → Rust `InterrogationPhaseJson` → `StoryRevealMaterializationContext` → existing grant mutation.
 
 ### One Rust context constructor
 
-Do not hand-thread four raw context literals. Add one private `interrogation_story_context(...)` helper in `mod.rs` that accepts the owning immutable `InterrogationPhaseJson`, reads `represented_authority`, and constructs the context.
-
-All interrogation-origin story contexts use it:
-
-```text
-InterrogationPhase
-InquiryQuestion auto-break
-TestimonyLine On Correct
-InquiryQuestion reveals after correct contradiction
-```
-
-Investigation and Analysis remain authority-null.
+Do not hand-thread four raw context literals. Add one private `interrogation_story_context(...)` helper in `mod.rs` that accepts the owning immutable `InterrogationPhaseJson`, reads `represented_authority`, and constructs the context. Route InterrogationPhase, InquiryQuestion auto-break, TestimonyLine On Correct, and InquiryQuestion post-correct reveals through it. Investigation and Analysis remain authority-null.
 
 ## 10. Hearing role after Beat 8.5
 
-Keep proof order, but p1–p4 become formal confirmation:
-
-```text
-p1 -> confirm small-lie conclusion
-p2 -> confirm earlier-time conflict
-p3 -> confirm earlier-third-party/sightline conflict
-gate -> authority decision
-p4 -> formalize merge-time interpretation with approved clip
-p5+ -> existing culprit proof unchanged
-```
+Keep proof order, but p1–p4 become formal confirmation: p1 small-lie conclusion, p2 earlier-time conflict, p3 earlier-third-party/sightline conflict, `gate` authority decision, p4 merge-time interpretation, p5+ unchanged culprit proof.
 
 ### Gate
 
@@ -256,7 +146,7 @@ Grant + acquisition remain one atomic/idempotent reveal transaction.
 
 ### Authorization must gate something
 
-p4 uses the actual Markdown grammar:
+p4 uses actual Markdown grammar:
 
 ```markdown
 - **Unlock:** phase:gate completed and authorization:narrow_lock_export granted
@@ -266,41 +156,13 @@ p4 uses the actual Markdown grammar:
 
 ## 11. Packaged acceptance boundary
 
-Do not grow `production-journey.e2e.ts` into a chapter runner.
+Do not grow `production-journey.e2e.ts`. Add test-only checkpoint `chapter-1-analysis-beat-85-ready`: acquire required real records through existing packaged definitions/`AcquisitionCtx`, clear presentation-only pending events for the seed, jump to `analysis_scene_8_5`, expose Analysis mode.
 
-Add test-only checkpoint `chapter-1-analysis-beat-85-ready`: acquire required real records through existing packaged definitions/`AcquisitionCtx`, clear presentation-only pending events for the seed, jump to `analysis_scene_8_5`, expose Analysis mode.
-
-Focused path:
-
-```text
-ready checkpoint
--> solve Classify
--> solve Order
--> one-card Threshold draft
--> Save -> Title -> Continue once
--> restore exact Threshold draft
--> solve Threshold
--> debug jump to interrogation_scene_10 retaining state
--> p1-p3 confirmation
--> gate grant
--> narrow_lock_export + approved_clip
--> p4 reachable
-```
-
-Same-source wrong feedback stays focused compiler/Rust/Svelte coverage. Result-dialogue restore stays Rust coverage.
+Focused path: ready checkpoint → solve Classify → solve Order → one-card Threshold draft → Save → Title → Continue once → restore exact Threshold draft → solve Threshold → debug jump to `interrogation_scene_10` retaining state → p1-p3 confirmation → gate grant → `narrow_lock_export` + `approved_clip` → p4 reachable.
 
 ## 12. E2E ownership is decided up front
 
-Current registry invariants require every suite to belong to a chain. Add `analysis-beat85` immediately after `production-journey` in both `E2E_SUITE_IDS` and gameplay chain:
-
-```text
-smoke
-gameplay
-production-journey
-analysis-beat85
-```
-
-The `story-and-compiler` risk rule selects the same four suites. The new Beat 8.5 coverage must run for the Chapter 1 content/compiler changes it protects, not only under `--full`.
+Current registry invariants require every suite to belong to a chain. Add `analysis-beat85` immediately after `production-journey` in `E2E_SUITE_IDS` and the gameplay chain. The `story-and-compiler` risk rule selects `smoke`, `gameplay`, `production-journey`, and `analysis-beat85`. The suite must run for the Chapter 1 content/compiler changes it protects, not only under `--full`.
 
 ## 13. Save/restore coverage split
 
@@ -314,9 +176,7 @@ Do not repeat the matrix through WebDriver.
 
 ## 14. Human acceptance gate
 
-After automated implementation is green, stop for human playtest. Evaluate board clarity, detective feel/pacing, p1–p4 repetition, same-source feedback, Save/Continue confidence, keyboard usability, and thumbnail value.
-
-If no concrete misunderstanding appears, richer hints are not required. If one appears, prefer authored Prompt/Card/Group copy, existing Hint, or one exact Incorrect Selection before runtime semantics. No empty playtest commit.
+After automated implementation is green, stop for human playtest. Evaluate board clarity, detective feel/pacing, p1–p4 repetition, same-source feedback, Save/Continue confidence, keyboard usability, and thumbnail value. If no concrete misunderstanding appears, richer hints are not required; otherwise prefer authored copy/existing Hint/one exact Incorrect Selection before runtime semantics.
 
 ## 15. Acceptance criteria
 
@@ -349,6 +209,4 @@ If no concrete misunderstanding appears, richer hints are not required. If one a
 
 ## 17. Deferred
 
-- HPA-603 / HPA-601 remain separate unless real packaged play proves them blocking.
-- Full production hardening remains HPA-536.
-- Chapter 2 remains deferred until HPA-265 acceptance + fresh canon/design review.
+HPA-603 / HPA-601 remain separate unless real packaged play proves them blocking. Full production hardening remains HPA-536. Chapter 2 remains deferred until HPA-265 acceptance + fresh canon/design review.
