@@ -2385,6 +2385,58 @@ describe("compile (tracked production corpus compatibility)", () => {
       });
 
       const analysis = readJson("chapter_1/analysis_scene_8_5.json");
+      const investigation = readJson("chapter_1/investigation_scene_8.json");
+      const miyakeInterrogation = readJson(
+        "chapter_1/interrogation_scene_4.json",
+      );
+      const motherCallLead = miyakeInterrogation.evidenceManifest.find(
+        (record: { id: string }) => record.id === "miyake_mother_call_log",
+      );
+      const motherCallConfirmation = investigation.evidenceManifest.find(
+        (record: { id: string }) =>
+          record.id === "miyake_mother_call_confirmation",
+      );
+      const fixedRecordCarrier = investigation.sublocations
+        .find((sublocation: { id: string }) => sublocation.id === "fixed_panel")
+        .hotspots.find(
+          (hotspot: { id: string }) => hotspot.id === "fixed_record",
+        );
+
+      expect(motherCallLead).toMatchObject({
+        id: "miyake_mother_call_log",
+        details: expect.stringContaining("待確認項目"),
+        provenance: {
+          proceduralStatus: "unspecified",
+          supersedesRecordId: null,
+        },
+      });
+      expect(motherCallConfirmation).toMatchObject({
+        id: "miyake_mother_call_confirmation",
+        sourceSublocationId: "fixed_panel",
+        provenance: {
+          sourceKind: "digital",
+          representationLayer: "summary",
+          proceduralStatus: "exhibit",
+          completeness: "complete",
+          confidence: "corroborated",
+          sourceGroupId: null,
+          sourceLabel: "電信方通聯核實回覆",
+          proofCapabilities: ["time", "source", "procedure"],
+          supersedesRecordId: "evidence:miyake_mother_call_log",
+        },
+      });
+      expect(fixedRecordCarrier.reveals).toContainEqual({
+        kind: "evidence",
+        id: "miyake_mother_call_confirmation",
+      });
+      expect(analysis.intro[0]).toMatchObject({
+        kind: "sceneTag",
+        text: expect.stringContaining("雨鐘咖啡館後場的保全鏈固定區"),
+        assetCue: {
+          backgroundAssetId:
+            "background.chapter_1.investigation_scene_8.fixed_panel",
+        },
+      });
       expect(
         analysis.boards.map((board: { kind: string }) => board.kind),
       ).toEqual(["classify", "order", "threshold"]);
@@ -2424,7 +2476,10 @@ describe("compile (tracked production corpus compatibility)", () => {
       ).toEqual([
         {
           id: "miyake_call",
-          source: { kind: "evidence", id: "miyake_mother_call_log" },
+          source: {
+            kind: "evidence",
+            id: "miyake_mother_call_confirmation",
+          },
         },
         {
           id: "miyake_pov_replay",
@@ -2686,6 +2741,20 @@ describe("compile (tracked production corpus compatibility)", () => {
             ...NEUTRAL_CASE_RECORD_PROVENANCE,
             sourceGroupId: "door_lock_fixed_record",
             proofCapabilities: ["order", "access"],
+          },
+        ],
+        [
+          "evidence:miyake_mother_call_confirmation",
+          {
+            sourceKind: "digital",
+            representationLayer: "summary",
+            proceduralStatus: "exhibit",
+            completeness: "complete",
+            confidence: "corroborated",
+            sourceGroupId: null,
+            sourceLabel: "電信方通聯核實回覆",
+            proofCapabilities: ["time", "source", "procedure"],
+            supersedesRecordId: "evidence:miyake_mother_call_log",
           },
         ],
       ]);
