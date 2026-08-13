@@ -131,7 +131,7 @@
             "label": "維護模式開啟",
             "source": {
               "kind": "evidence",
-              "id": "event_1841"
+              "id": "lock_sequence"
             },
             "summary": "本機事件 1841。"
           },
@@ -140,7 +140,7 @@
             "label": "外包憑證開門",
             "source": {
               "kind": "evidence",
-              "id": "event_1842"
+              "id": "lock_sequence"
             },
             "summary": "本機事件 1842。"
           },
@@ -149,7 +149,7 @@
             "label": "員工憑證開門",
             "source": {
               "kind": "evidence",
-              "id": "event_1843"
+              "id": "lock_sequence"
             },
             "summary": "本機事件 1843。"
           },
@@ -158,7 +158,7 @@
             "label": "伺服器合併完成",
             "source": {
               "kind": "evidence",
-              "id": "event_1844"
+              "id": "lock_sequence"
             },
             "summary": "本機事件 1844。"
           }
