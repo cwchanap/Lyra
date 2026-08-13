@@ -2349,6 +2349,202 @@ describe("compile (global story catalog)", () => {
 });
 
 describe("compile (tracked production corpus compatibility)", () => {
+  it("compiles the canonical HPA-265 Analysis scene with only the requested outputs", () => {
+    // Break caught: the production manifest can keep the superseded linear
+    // scene (or drift from the canonical three-board contract) while the
+    // compiler's generic Analysis fixture remains green.
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-hpa-265-analysis-"),
+    );
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    try {
+      const repoRoot = resolve(".");
+      const result = compile({
+        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
+        outputRoot: outRoot,
+        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+        repoRoot,
+      });
+      if (!result.ok) {
+        throw new Error(
+          "Live corpus compile failed:\n" + formatErrors(result.errors),
+        );
+      }
+
+      const chapter = readJson("chapters.json").chapters.find(
+        (entry: { id: string }) => entry.id === "chapter_1",
+      );
+      expect(chapter.scenes).toContainEqual({
+        type: "analysis",
+        file: "chapter_1/analysis_scene_8_5.json",
+      });
+      expect(chapter.scenes).not.toContainEqual({
+        type: "linear",
+        file: "chapter_1/scene_8_5.json",
+      });
+
+      const analysis = readJson("chapter_1/analysis_scene_8_5.json");
+      expect(
+        analysis.boards.map((board: { kind: string }) => board.kind),
+      ).toEqual(["classify", "order", "threshold"]);
+      expect(
+        analysis.boards.map(
+          (board: { common: { id: string } }) => board.common.id,
+        ),
+      ).toEqual([
+        "evidence_packages",
+        "local_event_sequence",
+        "narrow_request_basis",
+      ]);
+
+      expect(analysis.boards[0]).toMatchObject({
+        common: {
+          reveals: [
+            {
+              kind: "assertFact",
+              factId: "miyake_known_lies_are_unrelated_to_murder",
+            },
+            { kind: "assertFact", factId: "earlier_external_entry_exists" },
+          ],
+        },
+        groups: [
+          { id: "miyake_small_lies" },
+          { id: "earlier_third_party" },
+          { id: "lock_chronology" },
+        ],
+      });
+      expect(
+        analysis.boards[0].common.cards.map(
+          (card: { id: string; source: unknown }) => ({
+            id: card.id,
+            source: card.source,
+          }),
+        ),
+      ).toEqual([
+        {
+          id: "miyake_call",
+          source: { kind: "evidence", id: "miyake_mother_call_log" },
+        },
+        {
+          id: "miyake_pov_replay",
+          source: { kind: "evidence", id: "miyake_pov_replay" },
+        },
+        {
+          id: "external_credential_event",
+          source: { kind: "evidence", id: "external_maintenance_credential" },
+        },
+        {
+          id: "event_1841",
+          source: { kind: "evidence", id: "local_sequence_record" },
+        },
+        {
+          id: "event_1842",
+          source: { kind: "evidence", id: "local_sequence_record" },
+        },
+        {
+          id: "event_1843",
+          source: { kind: "evidence", id: "local_sequence_record" },
+        },
+        {
+          id: "event_1844",
+          source: { kind: "evidence", id: "local_sequence_record" },
+        },
+      ]);
+      expect(analysis.boards[0].acceptedGroupByCard).toEqual({
+        miyake_call: "miyake_small_lies",
+        miyake_pov_replay: "earlier_third_party",
+        external_credential_event: "earlier_third_party",
+        event_1841: "lock_chronology",
+        event_1842: "lock_chronology",
+        event_1843: "lock_chronology",
+        event_1844: "lock_chronology",
+      });
+
+      expect(analysis.boards[1]).toMatchObject({
+        acceptedOrder: ["event_1841", "event_1842", "event_1843", "event_1844"],
+        fixedAnchors: [{ cardId: "event_1841", position: 1 }],
+        common: {
+          reveals: [
+            { kind: "assertFact", factId: "merge_time_is_not_event_time" },
+          ],
+        },
+      });
+      expect(
+        analysis.boards[1].common.cards.every(
+          (card: { source: unknown }) =>
+            JSON.stringify(card.source) ===
+            JSON.stringify({ kind: "evidence", id: "local_sequence_record" }),
+        ),
+      ).toBe(true);
+
+      expect(analysis.boards[2]).toMatchObject({
+        minimumSelected: 2,
+        common: {
+          reveals: [
+            {
+              kind: "assertFact",
+              factId: "two_independent_lock_contradictions_identified",
+            },
+            {
+              kind: "completeObjective",
+              objectiveId: "prepare_narrow_lock_request",
+            },
+          ],
+        },
+      });
+      expect(
+        analysis.boards[2].common.cards.map(
+          (card: { id: string; source: unknown }) => ({
+            id: card.id,
+            source: card.source,
+          }),
+        ),
+      ).toEqual([
+        {
+          id: "lock_sequence",
+          source: { kind: "evidence", id: "local_sequence_record" },
+        },
+        {
+          id: "external_credential",
+          source: { kind: "evidence", id: "external_maintenance_credential" },
+        },
+        {
+          id: "phone_notification",
+          source: { kind: "evidence", id: "victim_phone_notification" },
+        },
+      ]);
+      expect(analysis.boards[2].acceptedSelections).toEqual([
+        ["external_credential", "lock_sequence", "phone_notification"],
+        ["external_credential", "phone_notification"],
+        ["lock_sequence", "phone_notification"],
+      ]);
+      expect(analysis.boards[2]).toMatchObject({
+        common: {
+          feedback: {
+            incorrectSelections: [
+              {
+                cards: ["external_credential", "lock_sequence"],
+              },
+            ],
+          },
+        },
+      });
+      expect(readJson("story_catalog.json").authorizations).toEqual([
+        {
+          id: "narrow_lock_export",
+          label: "有限門鎖匯出",
+          summary: "允許調閱有限門鎖匯出片段。",
+          grantingAuthority: "KAGAMI 證據摘要審查會主理",
+        },
+      ]);
+      expect(JSON.stringify(analysis)).not.toContain("grantAuthorization");
+      expect(JSON.stringify(analysis)).not.toContain("narrow_lock_export");
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the Chapter 1 warning and save-content manifest baseline", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-live-baseline-"),
