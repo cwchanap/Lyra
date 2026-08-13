@@ -2627,6 +2627,15 @@ describe("compile (tracked production corpus compatibility)", () => {
       const p4 = interrogation.phases.find(
         (phase: { id: string }) => phase.id === "p4",
       );
+      const p2 = interrogation.phases.find(
+        (phase: { id: string }) => phase.id === "p2",
+      );
+      const p2CorrectLine = p2.questions[0].testimony.lines.find(
+        (line: { id: string }) => line.id === "summary_death_after_miyake",
+      );
+      expect(p2CorrectLine.onCorrect[0].text).toBe(
+        "手機通知與後場紀錄顯示衝突早於摘要；摘要的主時間線不成立。",
+      );
       expect(gate).toMatchObject({
         id: "gate",
         status: "locked",
