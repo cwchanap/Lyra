@@ -420,6 +420,8 @@ load Beat 8.5-ready checkpoint
 
 Same-source failure stays in focused compiler/Rust/Svelte tests. The result-dialogue resume matrix stays in Rust. Do not add three packaged restore cycles or a chapter-long replay harness.
 
+Register this as one focused packaged suite/spec (`analysis-beat85`) rather than changing the existing `production-journey` suite. It may run explicitly for HPA-265 acceptance and in the repository's full E2E selection; do not automatically lengthen the ordinary gameplay chain unless the suite-registry contract requires every suite to belong to a chain.
+
 ## 12. Human acceptance gate
 
 The final subjective playtest is a **human gate**, not an agent implementation step.
