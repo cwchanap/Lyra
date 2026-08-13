@@ -28,9 +28,9 @@
         "old_request_slips": {
           "kind": "rect",
           "x": 0.32,
-          "y": 0.22,
+          "y": 0.21,
           "w": 0.105,
-          "h": 0.065
+          "h": 0.075
         }
       },
       "characters": {
