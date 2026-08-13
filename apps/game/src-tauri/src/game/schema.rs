@@ -767,6 +767,8 @@ pub enum InterrogationPhaseJson {
         subject: SubjectJson,
         required: bool,
         status: LockStatus,
+        #[serde(default)]
+        represented_authority: Option<String>,
         unlock: Option<InterrogationUnlockExpr>,
         reveals: Vec<CombinedInterrogationRevealTarget>,
         scene_tag: String,
@@ -1708,6 +1710,7 @@ mod tests {
                 "subject": { "id": "suspect", "name": "嫌疑人", "role": "嫌疑人", "bio": "沉默。" },
                 "required": true,
                 "status": "unlocked",
+                "representedAuthority": "KAGAMI 證據摘要審查會主理",
                 "unlock": null,
                 "reveals": [],
                 "sceneTag": "詢問室",
@@ -1720,8 +1723,17 @@ mod tests {
             "outro": { "unlock": "auto", "dialogue": [] }
         }"#;
         let parsed: SceneJson = serde_json::from_str(json).unwrap();
-        assert!(
-            matches!(parsed, SceneJson::Interrogation(scene) if scene.summary == "The detective presses the witness.")
+        let SceneJson::Interrogation(scene) = parsed else {
+            panic!("expected interrogation scene");
+        };
+        assert_eq!(scene.summary, "The detective presses the witness.");
+        let InterrogationPhaseJson::Inquiry {
+            represented_authority,
+            ..
+        } = &scene.phases[0];
+        assert_eq!(
+            represented_authority.as_deref(),
+            Some("KAGAMI 證據摘要審查會主理")
         );
     }
 

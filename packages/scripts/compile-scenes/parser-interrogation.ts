@@ -401,6 +401,7 @@ function parseInquiryPhase(
       subject,
       required: common.value.required,
       status: common.value.status,
+      representedAuthority: common.value.representedAuthority,
       unlock: common.value.unlock,
       reveals: common.value.reveals,
       sceneTag,
@@ -921,6 +922,7 @@ function parseCommonPhaseMeta(phaseMeta: PhaseMeta):
       value: {
         required: boolean;
         status: "locked" | "unlocked";
+        representedAuthority: string | null;
         unlock: InterrogationUnlockExpr | null;
         reveals: InterrogationRevealTarget[];
         assetCue: VisualAssetCue;
@@ -980,6 +982,7 @@ function parseCommonPhaseMeta(phaseMeta: PhaseMeta):
     value: {
       required: required.value,
       status: status.value,
+      representedAuthority: phaseMeta.meta["Represented Authority"] ?? null,
       unlock,
       reveals: reveals.value,
       assetCue: parseVisualAssetCue(phaseMeta.meta),

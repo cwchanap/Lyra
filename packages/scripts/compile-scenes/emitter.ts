@@ -262,6 +262,9 @@ export function emitInterrogationScene(
       },
       required: phase.required,
       status: phase.status,
+      ...(phase.representedAuthority == null
+        ? {}
+        : { representedAuthority: phase.representedAuthority }),
       unlock: phase.unlock,
       reveals: phase.reveals,
       sceneTag: phase.sceneTag,

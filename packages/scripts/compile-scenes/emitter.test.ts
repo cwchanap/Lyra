@@ -171,6 +171,23 @@ describe("emitter", () => {
     });
   });
 
+  it("emits the optional represented authority on an interrogation phase", () => {
+    const parsed = parseInterrogationScene(
+      XEXAM_SRC.replace(
+        "- **Kind:** inquiry",
+        "- **Kind:** inquiry\n- **Represented Authority:** Inspector Kuroda",
+      ),
+      "interrogation_scene_1.md",
+      "interrogation_scene_1",
+    );
+    if (!parsed.ok) throw new Error(parsed.error.message);
+
+    expect(
+      emitInterrogationScene(parsed.value, corpusForScene(parsed.value))
+        .phases[0],
+    ).toMatchObject({ representedAuthority: "Inspector Kuroda" });
+  });
+
   it("emits deterministic analysis scene and board references", () => {
     // Break caught: catalog consumers need a stable, compiler-derived index
     // instead of depending on authored file traversal order.

@@ -149,14 +149,13 @@ export function buildStoryRevealTargetBatches(
   const addBatch = (
     reveals: InvestigationRevealTarget[] | InterrogationRevealTarget[],
     location: Located<unknown>,
+    representedAuthority: string | null,
   ) => {
     const targets = reveals.filter(isStoryRevealTarget);
     if (targets.length === 0) return;
     batches.push({
       targets,
-      // Investigation and interrogation have no represented authority in
-      // HPA-257. Future registered authority-event adapters own that context.
-      representedAuthority: null,
+      representedAuthority,
       location: { sourceFile: location.sourceFile, line: location.line },
     });
   };
@@ -164,13 +163,13 @@ export function buildStoryRevealTargetBatches(
   for (const rec of scenes) {
     if (rec.ast.kind === "investigationScene") {
       for (const sublocation of rec.ast.sublocations) {
-        addBatch(sublocation.reveals, sublocation);
+        addBatch(sublocation.reveals, sublocation, null);
         for (const hotspot of sublocation.hotspots) {
-          addBatch(hotspot.reveals, hotspot);
+          addBatch(hotspot.reveals, hotspot, null);
         }
         for (const character of sublocation.characters) {
           for (const topic of character.topics) {
-            addBatch(topic.reveals, topic);
+            addBatch(topic.reveals, topic, null);
           }
         }
       }
@@ -179,11 +178,15 @@ export function buildStoryRevealTargetBatches(
 
     if (rec.ast.kind === "interrogationScene") {
       for (const phase of rec.ast.phases) {
-        addBatch(phase.reveals, phase);
+        addBatch(phase.reveals, phase, phase.representedAuthority ?? null);
         for (const question of phase.questions) {
-          addBatch(question.reveals, question);
+          addBatch(
+            question.reveals,
+            question,
+            phase.representedAuthority ?? null,
+          );
           for (const line of question.testimony.lines) {
-            addBatch(line.reveals, line);
+            addBatch(line.reveals, line, phase.representedAuthority ?? null);
           }
         }
       }

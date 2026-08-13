@@ -1326,6 +1326,34 @@ describe("positive dependency and base reachability", () => {
     expect(result.reachableNodeKeys).toContain("consumer");
     expect(result.mayAtoms).toContain("authorization_granted:permit");
   });
+
+  it("carries interrogation phase authority to a reachable grant producer", () => {
+    const phase = inquiryPhase({
+      representedAuthority: "court",
+      reveals: [{ kind: "evidence", id: "record" }],
+      questions: [
+        inquiryQuestion({
+          testimonyLines: [
+            testimonyLine("grant", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+          ],
+        }),
+      ],
+    });
+    const scene = interrogationScene([phase]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeSynthetic(
+      nodes,
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.mayAtoms).toContain("authorization_granted:permit");
+  });
 });
 
 describe("ordered story batches", () => {

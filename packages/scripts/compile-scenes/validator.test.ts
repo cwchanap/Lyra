@@ -399,6 +399,65 @@ describe("validator", () => {
       ]);
     });
 
+    it("carries one phase authority through phase, question, and line batches", () => {
+      const interrogation = mkInterrogationScene({
+        phases: [
+          mkInquiryPhase({
+            representedAuthority: "Inspector Kuroda",
+            reveals: [
+              { kind: "grantAuthorization", authorizationId: "search_warrant" },
+            ],
+            questions: [
+              mkQuestion({
+                reveals: [
+                  {
+                    kind: "grantAuthorization",
+                    authorizationId: "search_warrant",
+                  },
+                ],
+                testimony: mkTestimony([
+                  mkContradictionLine(
+                    "line",
+                    { kind: "evidence", id: "record" },
+                    [
+                      {
+                        kind: "grantAuthorization",
+                        authorizationId: "search_warrant",
+                      },
+                    ],
+                  ),
+                ]),
+              }),
+            ],
+          }),
+        ],
+        evidenceManifest: [mkEvidence("record")],
+      });
+
+      expect(
+        buildStoryRevealTargetBatches([
+          {
+            chapterId: "chapter_1",
+            file: "interrogation_scene_1.md",
+            ast: interrogation,
+          },
+        ]),
+      ).toEqual([
+        expect.objectContaining({ representedAuthority: "Inspector Kuroda" }),
+        expect.objectContaining({ representedAuthority: "Inspector Kuroda" }),
+        expect.objectContaining({ representedAuthority: "Inspector Kuroda" }),
+      ]);
+      expect(
+        validateStoryCatalog(mkStoryTargetCatalog(), [
+          {
+            chapterId: "chapter_1",
+            file: "interrogation_scene_1.md",
+            ast: interrogation,
+          },
+        ]),
+      ).toEqual([]);
+    });
+
     it("routes investigation and interrogation grants through null-authority validation", () => {
       const investigation = mkInvestigationScene();
       investigation.sublocations[0]!.hotspots[0]!.reveals = [

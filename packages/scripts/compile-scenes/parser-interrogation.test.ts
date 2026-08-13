@@ -198,6 +198,23 @@ describe("parseInterrogationScene", () => {
     });
   });
 
+  it("parses the optional represented authority on an inquiry phase", () => {
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Kind:** inquiry\n- **Required:** true",
+        "- **Kind:** inquiry\n- **Required:** true\n- **Represented Authority:** KAGAMI 證據摘要審查會主理",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.phases[0]?.representedAuthority).toBe(
+      "KAGAMI 證據摘要審查會主理",
+    );
+  });
+
   it("keeps unannotated statement provenance absent in the AST", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE,

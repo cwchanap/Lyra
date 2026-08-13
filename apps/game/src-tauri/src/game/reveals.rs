@@ -759,6 +759,42 @@ mod tests {
             assert_eq!(error.code, "sceneValidationFailed");
             assert_eq!(state, StoryState::default());
         }
+
+        let mut state = StoryState::default();
+        let empty_support = BTreeMap::new();
+        let context = StoryRevealMaterializationContext {
+            origin: story_origin("grant_matching"),
+            fact_support_by_id: &empty_support,
+            represented_authority: Some("Police"),
+        };
+        assert_eq!(
+            apply_story_reveal(
+                &catalog,
+                &mut state,
+                &StoryRevealTarget::GrantAuthorization {
+                    authorization_id: "authorization_a".into(),
+                },
+                &context,
+            )
+            .unwrap(),
+            MutationOutcome::Changed
+        );
+        assert!(state
+            .snapshot()
+            .authorizations
+            .contains_key("authorization_a"));
+        assert_eq!(
+            apply_story_reveal(
+                &catalog,
+                &mut state,
+                &StoryRevealTarget::GrantAuthorization {
+                    authorization_id: "authorization_a".into(),
+                },
+                &context,
+            )
+            .unwrap(),
+            MutationOutcome::Unchanged
+        );
     }
 
     // Break caught: repeated valid fact events replace provenance/support
