@@ -63,10 +63,10 @@
       "hotspots": {
         "fire_door_7": {
           "kind": "rect",
-          "x": 0.12,
-          "y": 0.05,
-          "w": 0.245,
-          "h": 0.57
+          "x": 0.34,
+          "y": 0.045,
+          "w": 0.1,
+          "h": 0.145
         },
         "umbrella_sleeve": {
           "kind": "rect",
