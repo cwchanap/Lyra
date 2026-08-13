@@ -174,7 +174,12 @@ test("forced full routing emits every chain while retaining the risk selection",
       [
         {
           chainId: "gameplay",
-          suiteIds: ["smoke", "gameplay", "production-journey"],
+          suiteIds: [
+            "smoke",
+            "gameplay",
+            "production-journey",
+            "analysis-beat85",
+          ],
         },
         {
           chainId: "persistence",

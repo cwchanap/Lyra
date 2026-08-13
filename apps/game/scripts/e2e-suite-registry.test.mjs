@@ -24,6 +24,7 @@ test("registry exposes the canonical leaf suite order", () => {
     "smoke",
     "gameplay",
     "production-journey",
+    "analysis-beat85",
     "capture-proof",
     "save-core",
     "save-management",
@@ -52,7 +53,12 @@ test("chain registry owns every canonical suite exactly once", () => {
     [
       {
         id: "gameplay",
-        suiteIds: ["smoke", "gameplay", "production-journey"],
+        suiteIds: [
+          "smoke",
+          "gameplay",
+          "production-journey",
+          "analysis-beat85",
+        ],
       },
       {
         id: "persistence",
@@ -108,7 +114,12 @@ test("full chain partition retains the frozen Task 8 persistence boundaries", ()
     [
       {
         id: "gameplay",
-        guardedRoots: ["smoke", "gameplay", "productionJourney"],
+        guardedRoots: [
+          "smoke",
+          "gameplay",
+          "productionJourney",
+          "analysisBeat85",
+        ],
       },
       {
         id: "persistence",
@@ -123,7 +134,7 @@ test("full chain partition retains the frozen Task 8 persistence boundaries", ()
       buildE2ePhasePlan(suiteIds, {}).length,
     ]),
   );
-  assert.deepEqual(processCounts, { gameplay: 3, persistence: 7, exit: 5 });
+  assert.deepEqual(processCounts, { gameplay: 4, persistence: 7, exit: 5 });
   assert.equal(
     buildE2ePhasePlan(["save-core", "save-management", "exit-lifecycle"], {})
       .length,
@@ -157,6 +168,20 @@ test("production journey owns exactly the one genuine fresh-install spec", () =>
   });
 
   assert.deepEqual(phase.specs, ["./e2e-tauri/production-journey.e2e.ts"]);
+});
+
+test("analysis beat 8.5 owns one focused packaged spec after production journey", () => {
+  const [phase] = buildE2ePhasePlan(["analysis-beat85"], {
+    analysisBeat85: "/tmp/analysis-beat85",
+  });
+
+  assert.deepEqual(phase, {
+    id: "analysis-beat85",
+    group: "analysis-beat85",
+    appDataDir: "/tmp/analysis-beat85",
+    specs: ["./e2e-tauri/analysis-beat85.e2e.ts"],
+    environment: { LYRA_E2E_CAPTURE_BACKEND_LOGS: "1" },
+  });
 });
 
 test("persistence suites retain exactly eleven native restart boundaries", () => {
@@ -207,6 +232,7 @@ test("the full selector reserves independent guarded roots for every CI suite cl
     "smoke",
     "gameplay",
     "productionJourney",
+    "analysisBeat85",
     "capture",
     "persistence",
     "exit",

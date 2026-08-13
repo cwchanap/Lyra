@@ -28,6 +28,7 @@ const PHASES_BY_SUITE = {
   smoke: ["smoke"],
   gameplay: ["ordinary"],
   "production-journey": ["production-journey"],
+  "analysis-beat85": ["analysis-beat85"],
   "capture-proof": ["capture-proof"],
   "save-core": ["save-seed", "save-resume"],
   "save-management": [
@@ -49,6 +50,7 @@ const ROOT_BY_PHASE = {
   smoke: "smoke",
   ordinary: "gameplay",
   "production-journey": "productionJourney",
+  "analysis-beat85": "analysisBeat85",
   "capture-proof": "capture",
   "save-seed": "persistence",
   "save-resume": "persistence",
@@ -1275,6 +1277,7 @@ test("accepts the complete forced-full override matrix", () => {
     "smoke",
     "gameplay",
     "production-journey",
+    "analysis-beat85",
     "capture-proof",
     "save-core",
     "save-management",
@@ -1284,7 +1287,7 @@ test("accepts the complete forced-full override matrix", () => {
   const chains = [
     {
       chainId: "gameplay",
-      suiteIds: ["smoke", "gameplay", "production-journey"],
+      suiteIds: ["smoke", "gameplay", "production-journey", "analysis-beat85"],
     },
     {
       chainId: "persistence",
@@ -1429,7 +1432,12 @@ test("counts a recovered first-attempt failure as a flake, not a routing failure
 });
 
 test("classifies a forced-full failure already selected by risk as covered", () => {
-  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
+  const gameplaySuites = [
+    "smoke",
+    "gameplay",
+    "production-journey",
+    "analysis-beat85",
+  ];
   const analysis = analyzeE2eCiResults({
     plan: plan({
       suites: [
@@ -1481,7 +1489,12 @@ test("classifies a forced-full failure already selected by risk as covered", () 
 });
 
 test("classifies a forced-full failure outside risk selection as a routing gap", () => {
-  const gameplaySuites = ["smoke", "gameplay", "production-journey"];
+  const gameplaySuites = [
+    "smoke",
+    "gameplay",
+    "production-journey",
+    "analysis-beat85",
+  ];
   const analysis = analyzeE2eCiResults({
     plan: plan({
       suites: [

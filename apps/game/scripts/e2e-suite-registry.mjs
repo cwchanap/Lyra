@@ -33,6 +33,7 @@ export const E2E_SUITE_IDS = Object.freeze([
   "smoke",
   "gameplay",
   "production-journey",
+  "analysis-beat85",
   "capture-proof",
   "save-core",
   "save-management",
@@ -44,7 +45,12 @@ export const E2E_CHAIN_IDS = Object.freeze(["gameplay", "persistence", "exit"]);
 export const E2E_CHAIN_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "gameplay",
-    suiteIds: Object.freeze(["smoke", "gameplay", "production-journey"]),
+    suiteIds: Object.freeze([
+      "smoke",
+      "gameplay",
+      "production-journey",
+      "analysis-beat85",
+    ]),
   }),
   Object.freeze({
     id: "persistence",
@@ -72,6 +78,14 @@ export const E2E_SUITE_DEFINITIONS = Object.freeze([
     phases: Object.freeze([
       phase("production-journey", "production-journey", "productionJourney", [
         "./e2e-tauri/production-journey.e2e.ts",
+      ]),
+    ]),
+  }),
+  Object.freeze({
+    id: "analysis-beat85",
+    phases: Object.freeze([
+      phase("analysis-beat85", "analysis-beat85", "analysisBeat85", [
+        "./e2e-tauri/analysis-beat85.e2e.ts",
       ]),
     ]),
   }),

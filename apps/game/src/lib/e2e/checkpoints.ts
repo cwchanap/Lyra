@@ -9,6 +9,7 @@ export const E2E_CHECKPOINT_IDS = [
   "chapter-1-investigation-with-kagami-summary",
   "chapter-1-scene-navigation-locked",
   "chapter-1-scene-navigation-eligible",
+  "chapter-1-analysis-beat-85-ready",
 ] as const;
 
 export type E2eCheckpointId = (typeof E2E_CHECKPOINT_IDS)[number];
@@ -16,7 +17,7 @@ export type E2eCheckpointId = (typeof E2E_CHECKPOINT_IDS)[number];
 export type E2eCheckpointProjection = {
   chapterId: string;
   sceneId: string;
-  mode: "dialogue" | "explore" | "interrogation" | "gameComplete";
+  mode: "dialogue" | "explore" | "interrogation" | "analysis" | "gameComplete";
   dialogue: {
     kind: "sceneTag" | "action" | "line";
     speaker: string | null;
