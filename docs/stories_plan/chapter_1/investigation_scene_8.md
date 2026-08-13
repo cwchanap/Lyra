@@ -167,7 +167,7 @@
 
 ## Sub-location: 保全鏈固定 {#fixed_panel}
 - **Status:** locked
-- **Background Prompt:** Same maintenance panel being formally photographed and logged, detective paperwork on table, plain evidence-chain setup, hard practical light, no readable text.
+- **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, room empty for portrait staging, uncluttered lower-center floor for dialogue UI, no readable text.
 - **BGS:** bgs_cafe_backroom_office
 
 [場景：後場另一處，一面已打開的維護面板前，鑑識重新拍攝固定，黑瀨徹站在一旁監督，桌上攤著一份正式紀錄表。]
@@ -177,10 +177,10 @@
 **黑瀨徹**：截圖我不收。要用，就讓鑑識把它固定下來。
 
 ### Hotspot: 程序固定紀錄表 {#fixed_record}
-- **Description:** 桌上攤開的鑑識固定紀錄表，記著本機事件順序與外包憑證那一列。
+- **Description:** 桌上攤開的程序固定資料包，包含門鎖紀錄表與電信方通聯核實回覆。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Formal photographed and logged doorlock panel paperwork spread on the table as the visible source document bundle, including the local event sequence and external credential row, with no readable final text.
-- **Reveals:** [evidence:local_sequence_record, evidence:external_maintenance_credential]
+- **Scene Source Prompt:** Formal photographed and logged doorlock panel paperwork plus a telecom provider confirmation sheet spread on the table as one visible source document packet, including the local event sequence and external credential row, with no readable final text.
+- **Reveals:** [evidence:local_sequence_record, evidence:external_maintenance_credential, evidence:miyake_mother_call_confirmation]
 
 [相馬律翻開那份正式紀錄表。]
 
@@ -219,6 +219,12 @@
 **相馬律**：所以也不能說 KAGAMI 造假？
 
 **早坂茜**：對。本機順序沒被改，可能是摘要讀錯了。
+
+[黑瀨從資料夾夾層抽出一張電信方核實回覆，放到同一份資料包上。]
+
+**黑瀨徹**：電信方的回覆也到了。三宅那通電話，手機履歷和通信紀錄都對上。
+
+**早坂茜**：原本的待確認項留著。這張是正式核實後的新紀錄。
 
 ### Character: 黑瀨徹 {#kurose}
 - **Role:** 現場刑警
@@ -282,6 +288,27 @@
 
 **早坂茜**：先別填名字。我們只證明了有第三方的事件。
 
+### evidence:miyake_mother_call_confirmation {#miyake_mother_call_confirmation}
+- **Name:** 三宅母親通話核實回覆
+- **Description:** 電信方正式回覆，核實三宅在二十二點五十六分前後撥給母親的私人電話。
+- **Details:** 電信方回覆已將手機履歷與通信紀錄核對完成，確認三宅在員工休息區所述通話確實存在；原本的待確認項保留不改，本紀錄作為正式核實後的後繼證物。
+- **Source Sublocation:** fixed_panel
+- **Image Prompt:** Formal telecom provider call verification response sheet paired with a mobile call-history summary, all names and numbers unreadable, isolated evidence icon.
+- **Source Kind:** digital
+- **Representation Layer:** summary
+- **Procedural Status:** exhibit
+- **Completeness:** complete
+- **Confidence:** corroborated
+- **Source Label:** 電信方通聯核實回覆
+- **Proof Capabilities:** [time, source, procedure]
+- **Supersedes:** evidence:miyake_mother_call_log
+
+#### On Collect
+
+**相馬律**：舊的待確認項不改，正式核實另留一筆。
+
+**黑瀨徹**：對。誰確認、什麼時候確認，都在這張。
+
 ## Outro
 
 [相馬律合上記事本，望向那面已被固定下來的面板。]
@@ -294,6 +321,6 @@
 
 **早坂茜**：身份未定。下一步，才是把這個事件對到一個人。
 
-**早坂茜**：鑑識還在收這邊。我們先回警署等，順便把目前手上的東西理一理。
+**早坂茜**：鑑識收完，這張桌子就空了。我們留在這裡，把手上的東西理一理。
 
-[相馬律點頭，把記事本收進外套內袋。兩人沿著後巷走出雨鐘。]
+[相馬律點頭，把記事本與資料包一起放回固定紀錄桌上。]

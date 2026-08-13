@@ -16,7 +16,7 @@
 
 **Linear scenes carry NO compiler references** — `linearScene` ASTs are just a dialogue `queue` (verified in `scripts/compile-scenes/parser-linear.ts` + `types.ts`). They cannot declare evidence/statements and cannot hold `Reveals`/`Unlock`/contradiction targets. Only **investigation** (evidenceManifest + Reveals/Unlock) and **interrogation** (evidence + statement manifests + contradiction triggers) scenes create or consume IDs. The validator builds **one global registry** from all investigation/interrogation manifests and enforces: each evidence/statement ID declared **exactly once**; every referenced ID resolves.
 
-Consequence: linear beats (2, 5, 6, 8.5, 11) impose **zero** ID obligations — they depict evidence in dialogue only. All collectible evidence is declared in the investigation/interrogation beats (3, 4, 7, 8, 9, 10), and the cross-exams (5 is linear/no-refs; 10 is interrogation) only present IDs declared upstream.
+Consequence: linear beats (2, 5, 6, 11) impose **zero** ID obligations — they depict evidence in dialogue only. HPA-265 later replaced Beat 8.5 with an Analysis scene that consumes guaranteed earlier Case File records and asserts the request-level interpretation `merge_time_is_not_event_time`; Beat 10's authorized clip remains the formal/direct proof. All collectible evidence is declared in the investigation/interrogation beats (3, 4, 7, 8, 9, 10), and the cross-exams (5 is linear/no-refs; 10 is interrogation) only present IDs declared upstream.
 
 **Guaranteed-inventory rule (load-bearing for interrogation contradictions):** the validator (`guaranteedInventoryFromInvestigation`) only treats an investigation's evidence as *guaranteed* for later scenes if the outro is **`auto`** (player must inspect every reachable hotspot/topic to finish) — an explicit `Unlock:` outro guarantees only the evidence named in its predicate. Interrogation `Contradiction:` targets must be guaranteed before their testimony phase or the build fails (`interrogationContradictionUnresolved`). **Therefore every investigation whose evidence is later presented in an interrogation — Beats 3, 7, 8, 9 (all feed Beat 10) — uses an `auto` outro: write `## Outro` with NO `Unlock:` line.** (Beat 3 was switched from an explicit gate to auto for exactly this reason.) Interrogation scenes guarantee their own correct-path testimony `Result` reveals, so Beat 4's `cake_box`/`miyake_mother_call_log` and Beat 10's `approved_clip` are guaranteed downstream.
 
@@ -31,14 +31,14 @@ Consequence: linear beats (2, 5, 6, 8.5, 11) impose **zero** ID obligations — 
 | 6 | `scene_6.md` | linear | writing-detective-game-dialogue | 699–760 |
 | 7 | `investigation_scene_7.md` | investigation | writing-investigation-scene | 764–918 |
 | 8 | `investigation_scene_8.md` | investigation | writing-investigation-scene | 921–1009 |
-| 8.5 | `scene_8_5.md` | linear | writing-detective-game-dialogue | 1012–1070 |
+| 8.5 | `analysis_scene_8_5.md` | analysis | writing-analysis-scene | 1012–1070 + HPA-265 frozen design |
 | 9 | `investigation_scene_9.md` | investigation | writing-investigation-scene | 1073–1204 |
 | 10 | `interrogation_scene_10.md` | interrogation | writing-interrogation-scene | 1207–1338 |
 | 11 | `scene_11.md` | linear | writing-detective-game-dialogue | 1341–1446 |
 
-Manifest playable order (final): `scene_0, investigation_scene_1, scene_2, investigation_scene_3, interrogation_scene_4, scene_5, scene_6, investigation_scene_7, investigation_scene_8, scene_8_5, investigation_scene_9, interrogation_scene_10, scene_11`. The manifest is grown one entry per beat (the compiler requires every listed file to exist).
+Manifest playable order (final): `scene_0, investigation_scene_1, scene_2, investigation_scene_3, interrogation_scene_4, scene_5, scene_6, investigation_scene_7, investigation_scene_8, analysis_scene_8_5, investigation_scene_9, interrogation_scene_10, scene_11`. The manifest is grown one entry per beat (the compiler requires every listed file to exist).
 
-> `scene_8_5.md` → sceneId `scene_8_5` (prefix `scene_` is all the parser checks). If the compiler ever rejects the underscore-number, fall back to `scene_85.md`; update the manifest line to match.
+> HPA-265 superseded the older linear `scene_8_5.md` construction with compiler-validated `analysis_scene_8_5.md`; the Analysis filename and scene id are now fixed.
 
 ## Global Evidence ID ledger
 
@@ -54,6 +54,7 @@ Declared **exactly once** at the listed site (its `#### On Collect` / evidence m
 | `doorlock_summary_timetable` | 門鎖摘要 / 合併時間表 | investigation_scene_3 | B10 P4 |
 | `closing_routine` | 閉店維護 routine（SOP 白板） | investigation_scene_3 | B4, B10 P1 |
 | `miyake_mother_call_log` | 三宅母親通話紀錄 | interrogation_scene_4 | B10 P1 |
+| `miyake_mother_call_confirmation` | 三宅母親通話正式核實後繼紀錄 | investigation_scene_8 | Beat 8.5 Classify |
 | `cake_box` | 蛋糕盒（被丟棄品） | interrogation_scene_4 | B10 P1 |
 | `floor_water_drying_map` | 地板雨水乾燥圖 | investigation_scene_7 | B10 P3 |
 | `wet_umbrella_sleeve` | 濕傘套 | investigation_scene_7 | B9 (match), B10 P3 |
@@ -234,30 +235,30 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 - Create: `docs/stories_plan/chapter_1/investigation_scene_8.md`
 - Modify: `chapter.md` (append `9. investigation_scene_8.md`)
 
-**Declares evidence:** `local_sequence_record`, `maintenance_mode_note`, `external_maintenance_credential`.
+**Declares evidence:** `local_sequence_record`, `maintenance_mode_note`, `external_maintenance_credential`, `miyake_mother_call_confirmation` (immutable formal successor to the unchanged `miyake_mother_call_log`).
 
-**Structure (施工圖 921–1009):** 8A 店長手機截圖 as lead (Event-1841 Maintenance ON / 1842 External Maintenance Credential back-door / 1843 Staff Credential rear corridor / 1844 Sync Completed; NO precise seconds, NO full names). 8B 保全鏈固定 — 黑瀨/鑑識 re-photograph & fix the panel into the formal `local_sequence_record` (device ID, 機身編號, 頁面版本, 畫面時間, Event order); 店長手機截圖 is only a lead. 8C 店方知識邊界 → `maintenance_mode_note` (店長 968 line — she only checks if door stuck / mode off; not a 幾點幾分 judge). 8D 第三者成立 → `external_maintenance_credential` (Event-1842 earlier than 三宅 1843); but NOT complete raw, 23:07:50 is not the local-saved seconds; do NOT yet prove 合併時間 (Beat 10) and do NOT yet name 北見. 錯誤選擇: "KAGAMI 造假"→只有 摘要讀法 may be wrong; "立刻指北見"→憑證 not yet matched to a person.
+**Structure (施工圖 921–1009):** 8A 店長手機截圖 as lead (Event-1841 Maintenance ON / 1842 External Maintenance Credential back-door / 1843 Staff Credential rear corridor / 1844 Sync Completed; NO precise seconds, NO full names). 8B 保全鏈固定 — 黑瀨/鑑識 re-photograph & fix the panel into the formal `local_sequence_record` (device ID, 機身編號, 頁面版本, 畫面時間, Event order); 店長手機截圖 is only a lead. The same guaranteed fixed-record packet carries the telecom provider's formal `miyake_mother_call_confirmation`; it explicitly supersedes but does not mutate the earlier lead. 8C 店方知識邊界 → `maintenance_mode_note` (店長 968 line — she only checks if door stuck / mode off; not a 幾點幾分 judge). 8D 第三者成立 → `external_maintenance_credential` (Event-1842 earlier than 三宅 1843); but NOT complete raw, 23:07:50 is not the local-saved seconds; Beat 8.5 may deduce the request-level merge-time interpretation, while Beat 10 formally/directly proves it, and Beat 8 must not name 北見. 錯誤選擇: "KAGAMI 造假"→只有 摘要讀法 may be wrong; "立刻指北見"→憑證 not yet matched to a person.
 
 **Unlock graph:** entry sub-location (店長辦公角落/門鎖維護頁) unlocked; the截圖 hotspot Reveals the 保全鏈-fixed record; acyclic. Outro: 第三者事件 confirmed, identity still missing.
 
-- [ ] **Step 1: Dispatch writing subagent** (`writing-investigation-scene` first; 921–1009 excerpt; the 3 evidence IDs + On-Collect sites; unlock graph; canon — lead vs program-fixed record, no seconds, no 北見 yet, no 合併時間 proof yet, 店長 not engineer; assets-disabled; self-check).
+- [ ] **Step 1: Dispatch writing subagent** (`writing-investigation-scene` first; 921–1009 excerpt; the 4 evidence IDs + On-Collect sites; unlock graph; canon — immutable lead/successor, no seconds, no 北見 yet, Beat 10 owns formal/direct 合併時間 proof, 店長 not engineer; assets-disabled; self-check).
 - [ ] **Step 2: Append manifest** → `9. investigation_scene_8.md`.
 - [ ] **Step 3: GREEN gate** — `OK — 1 chapter(s), 9 scene(s).`
 - [ ] **Step 4: REVIEW gate** — review subagent over `investigation_scene_8.md`.
 
 ---
 
-### Task 8.5: Beat 8.5 — `scene_8_5.md` (linear)
+### Task 8.5: Beat 8.5 — `analysis_scene_8_5.md` (Analysis; HPA-265 supersession)
 
 **Files:**
-- Create: `docs/stories_plan/chapter_1/scene_8_5.md`
-- Modify: `chapter.md` (append `10. scene_8_5.md`)
+- Create: `docs/stories_plan/chapter_1/analysis_scene_8_5.md`
+- Modify: `chapter.md` (append `10. analysis_scene_8_5.md`)
 
-**Content (施工圖 1012–1070):** 整理點 (NOT a new-clue beat). 早坂 sorts evidence into three columns — 三宅小謊 / 第三者動線 / 門鎖時序. 黑瀨/早坂 note 母親通話紀錄 now program-fixed (待確認→正式) narratively. 相馬 states what's proven (1040–1043). Use the 1047–1049 exchange ("只證明三宅不該被放在那個時間 / 還沒證明誰該被放回去 / 把那個空位填上"). **No evidence/refs (linear).** 不要做 1061–1065 (no new foreshadow, no theme金句, no new 雨宮 message). Outro: decide to chase 外包工單/檢舉草稿/`K.`.
+**Content (施工圖 1012–1070 + HPA-265 frozen design):** 整理點 (NOT a new-clue beat). Classify 三宅小謊 / 第三者動線 / 門鎖時序, Order Event-1841～1844, then Threshold the independent request basis. Use Beat 8's immutable formal successor for the mother-call record rather than mutating the earlier lead. The Order board may deduce and assert `merge_time_is_not_event_time` for the narrow request; Beat 10's authorized clip supplies the later formal/direct proof. Preserve the unresolved external identity and do not grant export authority here.
 
-- [ ] **Step 1: Dispatch writing subagent** (`writing-detective-game-dialogue` first; 1012–1070 excerpt; 相馬/早坂 voices; canon + 不要做; assets-disabled; one H1 `# Scene 8.5: 短暫誤判整理點`; self-check).
-- [ ] **Step 2: Append manifest** → `10. scene_8_5.md`.
-- [ ] **Step 3: GREEN gate** — `OK — 1 chapter(s), 10 scene(s).` (If `scene_8_5` errors on the underscore-number, rename to `scene_85.md` and fix the manifest line.)
+- [ ] **Step 1: Dispatch writing subagent** (`writing-analysis-scene` after the dialogue skill; frozen HPA-265 board/source/output contract; 相馬/早坂 voices; self-check).
+- [ ] **Step 2: Append manifest** → `10. analysis_scene_8_5.md`.
+- [ ] **Step 3: GREEN gate** — compile the canonical three-board Analysis scene and focused production assertions.
 - [ ] **Step 4: REVIEW gate** — review subagent over the file.
 
 ---
@@ -296,7 +297,7 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 - P2 `summary_death_after_miyake` ← `victim_phone_notification` + `old_clock_photo` + `murder_weapon_candidate` + `forensic_prelim_range`; `coffee_last_cup_record` aux only.
 - P3 `summary_could_still_be_miyake` ← `miyake_pov_replay` + `floor_water_drying_map` + `wet_umbrella_sleeve` + `backroom_floorplan`.
 - 10E 程序攻防: 神谷 only grants 限定調出 AFTER P1–P3 establish concrete contradictions → that gate is where `approved_clip` is collected (後場門鎖 / 22:50–23:10 / 事件序號 / 憑證類型 / 同步時間 / 保全鏈標記). The clip must NOT be obtainable before the proof order reaches it.
-- P4 `summary_doorlock_authentic` ← `local_sequence_record` + `approved_clip` + `doorlock_summary_timetable` (23:07:50 is sync/merge time, not 三宅's event time). Use 神谷/相馬 1279–1282 lines.
+- P4 `summary_doorlock_authentic` ← `local_sequence_record` + `approved_clip` + `doorlock_summary_timetable` (the clip formally/directly proves the Beat 8.5 interpretation that 23:07:50 is sync/merge time, not 三宅's event time). Use 神谷/相馬 1279–1282 lines.
 - P5 `summary_cannot_prove_kitami` ← `external_maintenance_credential` + `temp_maintenance_workorder` + `kitami_external_access` + `masuda_whistleblower_draft` + `kitami_data_theft_record` + `masuda_unsent_memo` + `two_coffee_order` + `contractor_umbrella_sleeve_match`.
 - 10H 最終一句: 神谷「那錯的是什麼？」/ 相馬「我們太快替它補上了意思。」(chapter's 2nd & last theme line; no extra金句).
 
@@ -344,4 +345,4 @@ Expected: `OK — 1 chapter(s), 2 scene(s).`
 
 **Placeholder scan:** no "TBD"/"handle edge cases"; every task names exact file, exact IDs declared, contradiction map, and 施工圖 line range for prose. Prose is sourced (not duplicated) by line range — deliberate DRY, the 施工圖 is the canonical text. ✓
 
-**ID consistency:** evidence/statement IDs in the two ledgers are referenced verbatim in Tasks 3/4/7/8/9/10; declaration site is unique per ID (each appears once in a "Declares" line). `scene_8_5` filename fallback noted. Manifest numbering 3→13 matches append order and final playable order. ✓
+**ID consistency:** evidence/statement IDs in the two ledgers are referenced verbatim in Tasks 3/4/7/8/9/10; declaration site is unique per ID (each appears once in a "Declares" line). HPA-265 fixes the Analysis scene id as `analysis_scene_8_5`. Manifest numbering 3→13 matches append order and final playable order. ✓

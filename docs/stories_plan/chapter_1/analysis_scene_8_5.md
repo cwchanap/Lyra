@@ -4,28 +4,46 @@
 
 ## Intro
 
-[場景：警署走廊，自動販賣機旁，深夜。販賣機的燈光是走廊唯一的光源，空白告示板靠著長椅，窗外雨聲未停。]
-- **Background Prompt:** Late-night Japanese police station corridor beside a vending machine, vending-machine glow the only light source, blank notice board on the wall, case folder on a bench, cold institutional air, faint rain on dark windows, no readable text.
-- **Background Asset ID:** background.chapter_1.scene_8_5.tag_001
-- **BGS:** bgs_police_station_late_night
+[場景：雨鐘咖啡館後場的保全鏈固定區，深夜，窗外仍下著雨。鑑識離開後，打開的維護面板和紀錄桌留在工作燈下，右側貨架沉在暗處。]
+- **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, room empty for portrait staging, uncluttered lower-center floor for dialogue UI, no readable text.
+- **Background Asset ID:** background.chapter_1.investigation_scene_8.fixed_panel
+- **BGS:** bgs_cafe_backroom_office
 
-[早坂把資料夾與幾張便利貼放到告示板旁。]
+[鑑識人員收起器材離開。早坂把資料包推到桌子中間，又拉開一張椅子。]
 
-**早坂茜**：別用腦子記。你會把同情、線索、證物混在一起。
+**早坂茜**：坐下。
 
-**相馬律**：我剛才差點把外包憑證直接當成兇手。
+**相馬律**：我還站得住。
 
-**早坂茜**：所以先把手上的東西分清楚，再往下走。
+**早坂茜**：你剛才把外包憑證直接叫成兇手。
 
-[黑瀨從走廊那頭走來，把一份列印紙遞給早坂。]
+**相馬律**：……坐一下。
 
-**黑瀨徹**：三宅母親那通電話，電信方已經核實。
+[早坂從包裡拿出水瓶，放到相馬手邊。]
 
-**黑瀨徹**：手機履歷和通信紀錄都對上，現在是正式紀錄。
+**早坂茜**：水。
 
-**早坂茜**：好。這一張先放進小謊那欄。
+**相馬律**：妳包裡到底裝了多少東西？
 
-**相馬律**：那就從三宅的小謊、第三者動線、門鎖時序開始。
+**早坂茜**：能讓搭檔不倒下的東西。
+
+[相馬喝了幾口水，肩膀終於鬆下來。]
+
+**相馬律**：今天第三次回這張桌子。
+
+**早坂茜**：也第三次說「收工再吃」。
+
+**相馬律**：妳記仇？
+
+**早坂茜**：我留紀錄。
+
+[相馬把三宅母親通話核實回覆放到桌面一側。]
+
+**相馬律**：這張也放上來。
+
+**早坂茜**：正式證物，放小謊那欄。
+
+**相馬律**：其餘先留白。我不替空位猜人。
 
 ## Board: 證據包整理 {#evidence_packages}
 
@@ -38,8 +56,8 @@
 
 ### Card: 三宅母親通話紀錄 {#miyake_call}
 
-- **Source:** evidence:miyake_mother_call_log
-- **Summary:** 正式通話紀錄解釋三宅為何隱瞞那通電話。
+- **Source:** evidence:miyake_mother_call_confirmation
+- **Summary:** 電信方核實後的正式後繼紀錄，解釋三宅為何隱瞞那通電話。
 
 ### Card: 三宅視角重現 {#miyake_pov_replay}
 
@@ -88,13 +106,11 @@
 
 ### Result Dialogue
 
-**相馬律**：三宅的通話紀錄，只能解釋他為什麼說謊。
+**相馬律**：我急著找兇手時，也差點把三宅的小謊塞進同一欄。
 
-**早坂茜**：所以那是小謊，不是殺人的證明。
+**早坂茜**：你肯停手重排，就還來得及。
 
-**相馬律**：視角重現和外包憑證，則把較早的第三者留在現場。
-
-**早坂茜**：但第三者的名字還是空的。先把門鎖順序排好。
+**相馬律**：第三者還沒有名字。先留白。
 
 ## Board: 本機事件順序 {#local_event_sequence}
 
@@ -129,11 +145,9 @@
 
 ### Result Dialogue
 
-**相馬律**：順序是 1841、1842、1843、1844。
+**相馬律**：本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。
 
-**相馬律**：但這只告訴我們先後，沒有告訴我們每一筆的精確秒數。
-
-**早坂茜**：二十三點零七分五十秒，是合併完成的時間，不是某一個人的事件時間。
+**早坂茜**：把這句寫進申請，名字那格繼續空著。
 
 ## Board: 有限調取申請基礎 {#narrow_request_basis}
 
@@ -173,16 +187,24 @@
 
 ### Result Dialogue
 
-**相馬律**：本機順序和死者手機通知，來自兩個不同來源群組。
+**相馬律**：申請寫好了。我的字開始飄了。
 
-**早坂茜**：它們一起指出，摘要的門鎖時序還需要核對。
+**早坂茜**：先別送。你把名字那格留白了嗎？
 
-**相馬律**：足夠整理兩條獨立矛盾，準備有限調取申請。
+**相馬律**：留了。外部憑證還沒有身分。
+
+**早坂茜**：好。餅乾一人一半。
 
 ## Outro
 
-**早坂茜**：有限門鎖調取申請已經準備好，可以送進審查。
+**早坂茜**[stern]：申請準備好了；身分仍未明，核准片段也還不能取得。
 
-**相馬律**：但外部憑證還沒有對到人，身分仍然未明。
+**相馬律**：先不猜名字。
 
-**早坂茜**：核准片段目前還沒取得。下一步，先讓審查會決定能看哪一段。
+**相馬律**：餅乾真的分我一半？
+
+**早坂茜**：你先把水喝完。
+
+**相馬律**：這算合作默契？
+
+**早坂茜**：這算避免搭檔倒在證據桌上。
