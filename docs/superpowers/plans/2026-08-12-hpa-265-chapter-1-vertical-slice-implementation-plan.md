@@ -35,11 +35,7 @@
 - Modify/Test: `apps/game/src-tauri/src/game/test_fixtures/analysis_scene_8_5.json`
 - Verify: `apps/game/src-tauri/src/game/analysis_integration_tests.rs`
 
-**Interfaces:**
-- Consumes: existing fixture `evidence:lock_sequence`.
-- Produces: early compiler + runtime proof that distinct Analysis card ids may share one Case File source.
-
-- [ ] **Step 1: Baseline**
+- [ ] **Step 1: Baseline fixture tests**
 
 ```bash
 bun run test:scripts
@@ -50,7 +46,7 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
 
 Expected: PASS.
 
-- [ ] **Step 2: Change the four compiler-fixture Order cards to one source**
+- [ ] **Step 2: Make all four compiler-fixture Order cards share `evidence:lock_sequence`**
 
 Keep card ids, labels, summaries, accepted order, and fixed anchor. Change `event_1841`..`event_1844` card sources to:
 
