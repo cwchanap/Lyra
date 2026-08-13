@@ -18,6 +18,8 @@ pub(crate) enum CheckpointId {
     SceneNavigationLocked,
     #[serde(rename = "chapter-1-scene-navigation-eligible")]
     SceneNavigationEligible,
+    #[serde(rename = "chapter-1-analysis-beat-85-ready")]
+    Chapter1AnalysisBeat85Ready,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -178,6 +180,28 @@ fn build_checkpoint_with_limit(
                 advance_dialogue_bounded(&mut engine, view, &mut operations, replay_limit)?;
             }
         }
+        CheckpointId::Chapter1AnalysisBeat85Ready => {
+            let mut operations = 0;
+            engine.jump_to_scene("chapter_1", "analysis_scene_8_5")?;
+
+            // The ready state is intentionally assembled through the same
+            // packaged scene/navigation and AcquisitionCtx path used by
+            // debug scene jumps. It does not add a production seed API or
+            // mutate authored story definitions.
+            let acquisition_event_baseline = engine.pending_acquisition_events.len();
+            let mut next_ordinal = 0;
+            let command_id = engine.durable_revision();
+            engine.grant_all_evidence_for_testing(command_id, &mut next_ordinal);
+            engine
+                .pending_acquisition_events
+                .truncate(acquisition_event_baseline);
+
+            let view = replay_to_analysis_ready(&mut engine, &mut operations, replay_limit)?;
+            Ok(BuiltCheckpoint {
+                projection: project(&engine, &view, true),
+                engine,
+            })
+        }
     }
 }
 
@@ -194,6 +218,27 @@ fn replay_to_investigation_explore(
                 SceneView::Investigation { id, .. },
                 ModeView::Explore { sublocation_id, .. }
             ) if id == "investigation_scene_1" && sublocation_id == "office"
+        );
+        if at_target {
+            return Ok(view);
+        }
+        advance_dialogue_bounded(engine, view, operations, replay_limit)?;
+    }
+}
+
+fn replay_to_analysis_ready(
+    engine: &mut GameEngine,
+    operations: &mut usize,
+    replay_limit: usize,
+) -> Result<super::GameStateView, GameError> {
+    loop {
+        let view = engine.view()?;
+        let at_target = matches!(
+            (&view.scene, &view.mode),
+            (
+                SceneView::Analysis { id, .. },
+                ModeView::Analysis { board_id, .. }
+            ) if id == "analysis_scene_8_5" && board_id == "evidence_packages"
         );
         if at_target {
             return Ok(view);
@@ -446,6 +491,10 @@ mod tests {
                 CheckpointId::SceneNavigationEligible,
                 "chapter-1-scene-navigation-eligible",
             ),
+            (
+                CheckpointId::Chapter1AnalysisBeat85Ready,
+                "chapter-1-analysis-beat-85-ready",
+            ),
         ];
 
         for (id, wire) in cases {
@@ -457,6 +506,40 @@ mod tests {
         }
 
         assert!(serde_json::from_value::<CheckpointId>(json!("chapter-1-unknown")).is_err());
+    }
+
+    #[test]
+    fn analysis_beat85_ready_checkpoint_seeds_the_packaged_analysis_board() {
+        let checkpoint = build_checkpoint_with_limit(
+            production_resources(),
+            CheckpointId::Chapter1AnalysisBeat85Ready,
+            MAX_REPLAY_OPERATIONS,
+        )
+        .unwrap();
+
+        assert_eq!(checkpoint.projection.chapter_id, "chapter_1");
+        assert_eq!(checkpoint.projection.scene_id, "analysis_scene_8_5");
+        assert_eq!(checkpoint.projection.mode, CheckpointMode::Analysis);
+        assert_eq!(checkpoint.projection.pending_acquisition, None);
+        assert!(checkpoint.projection.scene_navigation_eligible);
+        assert!(checkpoint
+            .projection
+            .evidence_ids
+            .contains(&"local_sequence_record".to_owned()));
+        assert!(checkpoint
+            .projection
+            .evidence_ids
+            .contains(&"external_maintenance_credential".to_owned()));
+        assert!(checkpoint
+            .projection
+            .evidence_ids
+            .contains(&"victim_phone_notification".to_owned()));
+
+        let view = checkpoint.engine.view().unwrap();
+        let ModeView::Analysis { board_id, .. } = view.mode else {
+            panic!("analysis beat 8.5 checkpoint must open the analysis workbench");
+        };
+        assert_eq!(board_id, "evidence_packages");
     }
 
     #[test]

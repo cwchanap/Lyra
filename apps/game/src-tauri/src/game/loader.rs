@@ -501,7 +501,7 @@ fn validate_story_analysis_scene_references(
     for board in &scene.boards {
         let common = board.common();
         for target in &common.reveals {
-            validate_story_reveal_target(target, catalog, file_rel)?;
+            validate_story_reveal_target(target, catalog, None, file_rel)?;
         }
         let targets = common.reveals.iter().collect::<Vec<_>>();
         validate_story_reveal_batch(&targets, file_rel)?;
@@ -547,19 +547,35 @@ fn validate_story_interrogation_scene_references(
             unlock,
             reveals,
             complete,
+            represented_authority,
             questions,
             ..
         } = phase;
-        validate_story_interrogation_reveals(reveals, catalog, file_rel)?;
+        validate_story_interrogation_reveals(
+            reveals,
+            catalog,
+            represented_authority.as_deref(),
+            file_rel,
+        )?;
         validate_story_interrogation_unlock_expr(unlock.as_ref(), catalog, file_rel)?;
         if let InterrogationOutroUnlock::Expr(expr) = complete {
             validate_story_interrogation_unlock_expr(Some(expr), catalog, file_rel)?;
         }
         for question in questions {
-            validate_story_interrogation_reveals(&question.reveals, catalog, file_rel)?;
+            validate_story_interrogation_reveals(
+                &question.reveals,
+                catalog,
+                represented_authority.as_deref(),
+                file_rel,
+            )?;
             validate_story_interrogation_unlock_expr(question.unlock.as_ref(), catalog, file_rel)?;
             for line in &question.testimony.lines {
-                validate_story_interrogation_reveals(&line.reveals, catalog, file_rel)?;
+                validate_story_interrogation_reveals(
+                    &line.reveals,
+                    catalog,
+                    represented_authority.as_deref(),
+                    file_rel,
+                )?;
             }
         }
     }
@@ -584,7 +600,7 @@ fn validate_story_investigation_reveals(
         })
         .collect::<Vec<_>>();
     for target in &targets {
-        validate_story_reveal_target(target, catalog, file_rel)?;
+        validate_story_reveal_target(target, catalog, None, file_rel)?;
     }
     validate_story_reveal_batch(&targets, file_rel)
 }
@@ -592,6 +608,7 @@ fn validate_story_investigation_reveals(
 fn validate_story_interrogation_reveals(
     reveals: &[CombinedInterrogationRevealTarget],
     catalog: &StoryCatalog,
+    represented_authority: Option<&str>,
     file_rel: &str,
 ) -> Result<(), GameError> {
     let targets = reveals
@@ -602,7 +619,7 @@ fn validate_story_interrogation_reveals(
         })
         .collect::<Vec<_>>();
     for target in &targets {
-        validate_story_reveal_target(target, catalog, file_rel)?;
+        validate_story_reveal_target(target, catalog, represented_authority, file_rel)?;
     }
     validate_story_reveal_batch(&targets, file_rel)
 }
@@ -814,6 +831,7 @@ fn validate_story_interrogation_unlock_expr(
 fn validate_story_reveal_target(
     target: &StoryRevealTarget,
     catalog: &StoryCatalog,
+    represented_authority: Option<&str>,
     file_rel: &str,
 ) -> Result<(), GameError> {
     match target {
@@ -880,9 +898,25 @@ fn validate_story_reveal_target(
         }
         StoryRevealTarget::GrantAuthorization { authorization_id } => {
             validate_story_authorization(catalog, authorization_id, file_rel, "target")?;
-            Err(GameError::scene_validation_failed(format!(
-                "{file_rel}: grantAuthorization is unavailable before HPA-264 because this scene has no represented authority",
-            )))
+            let Some(represented_authority) = represented_authority else {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: grantAuthorization for '{authorization_id}' requires a represented authority",
+                )));
+            };
+            let expected_authority = catalog
+                .authorization(authorization_id)
+                .map(|definition| definition.granting_authority.as_str())
+                .ok_or_else(|| {
+                    GameError::scene_validation_failed(format!(
+                        "{file_rel}: unresolved story target authorization:{authorization_id}",
+                    ))
+                })?;
+            if represented_authority != expected_authority {
+                return Err(GameError::scene_validation_failed(format!(
+                    "{file_rel}: grantAuthorization for '{authorization_id}' represents '{represented_authority}', expected '{expected_authority}'",
+                )));
+            }
+            Ok(())
         }
     }
 }
@@ -2611,11 +2645,10 @@ mod tests {
         }
     }
 
-    // Break caught: neither investigation nor interrogation carries an
-    // authority event in HPA-257, so a valid authorization target must not be
-    // accepted merely because its ID exists in the catalog.
+    // Break caught: a valid authorization target still requires the scene
+    // family to identify the represented authority that grants it.
     #[test]
-    fn rejects_authorization_grants_in_both_scene_families_before_hpa_264() {
+    fn rejects_authorization_grants_without_represented_authority() {
         let cases = [
             (
                 "investigation_scene_1.json",
@@ -2648,13 +2681,111 @@ mod tests {
 
             assert_eq!(error.code, "sceneValidationFailed");
             assert!(
-                error
-                    .message
-                    .contains("grantAuthorization is unavailable before HPA-264"),
+                error.message.contains(
+                    "grantAuthorization for 'authorization_a' requires a represented authority"
+                ),
                 "{error:?}"
             );
             let _ = fs::remove_dir_all(resources);
         }
+    }
+
+    #[test]
+    fn validates_authorization_grants_against_the_owning_phase_authority() {
+        let catalog = story_catalog_for_loader();
+        let grant =
+            || json!([{ "kind": "grantAuthorization", "authorizationId": "authorization_a" }]);
+        let question = |reveals: Value, line_reveals: Value| {
+            json!({
+                "id": "question_1",
+                "label": "Question",
+                "status": "unlocked",
+                "required": true,
+                "unlock": null,
+                "reveals": reveals,
+                "testimony": {
+                    "onLoop": [],
+                    "lines": [{
+                        "id": "line_1",
+                        "label": "Line",
+                        "content": [],
+                        "contradiction": null,
+                        "reveals": line_reveals
+                    }]
+                }
+            })
+        };
+
+        for carrier in ["phase", "question", "testimony"] {
+            for represented_authority in ["analysis_authority", "wrong_authority"] {
+                let mut scene = story_interrogation_scene(json!(null), json!([]));
+                scene["phases"][0]["representedAuthority"] = json!(represented_authority);
+                match carrier {
+                    "phase" => scene["phases"][0]["reveals"] = grant(),
+                    "question" => {
+                        scene["phases"][0]["questions"] = json!([question(grant(), json!([]))]);
+                    }
+                    "testimony" => {
+                        scene["phases"][0]["questions"] = json!([question(json!([]), grant())]);
+                    }
+                    _ => unreachable!(),
+                }
+                let resources = unique_temp_dir();
+                write_scene_json(&resources, "interrogation_scene_1.json", scene);
+
+                let result = load_scene_with_catalog(
+                    &resources,
+                    &catalog,
+                    "chapter_1",
+                    "chapter_1/interrogation_scene_1.json",
+                );
+                if represented_authority == "analysis_authority" {
+                    assert!(result.is_ok(), "{carrier} matching authority: {result:?}");
+                } else {
+                    let error = result.unwrap_err();
+                    assert_eq!(error.code, "sceneValidationFailed");
+                    assert!(
+                        error.message.contains(
+                            "grantAuthorization for 'authorization_a' represents 'wrong_authority', expected 'analysis_authority'"
+                        ),
+                        "{carrier} mismatch: {error:?}"
+                    );
+                }
+                let _ = fs::remove_dir_all(resources);
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_authorization_grants_from_analysis_without_authority_context() {
+        let resources = unique_temp_dir();
+        write_scene_json(
+            &resources,
+            "analysis_scene_1.json",
+            story_analysis_scene(
+                json!(null),
+                json!([{
+                    "kind": "grantAuthorization",
+                    "authorizationId": "authorization_a"
+                }]),
+            ),
+        );
+        let error = load_scene_with_catalog(
+            &resources,
+            &story_catalog_for_loader(),
+            "chapter_1",
+            "chapter_1/analysis_scene_1.json",
+        )
+        .unwrap_err();
+
+        assert_eq!(error.code, "sceneValidationFailed");
+        assert!(
+            error.message.contains(
+                "grantAuthorization for 'authorization_a' requires a represented authority"
+            ),
+            "{error:?}"
+        );
+        let _ = fs::remove_dir_all(resources);
     }
 
     // Break caught: interrogation question and testimony-line arrays are both

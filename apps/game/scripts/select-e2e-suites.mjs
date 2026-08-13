@@ -42,7 +42,7 @@ export const E2E_RISK_RULES = Object.freeze([
       "packages/scene-types/**",
       "static/assets/config/**",
     ],
-    suiteIds: ["smoke", "gameplay", "production-journey"],
+    suiteIds: ["smoke", "gameplay", "production-journey", "analysis-beat85"],
   }),
   freezeRule({
     id: "capture",

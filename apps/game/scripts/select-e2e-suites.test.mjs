@@ -82,6 +82,7 @@ test("routes dialogue, crossfade, and page shells through every dependent suite"
       "smoke",
       "gameplay",
       "production-journey",
+      "analysis-beat85",
       "capture-proof",
       "save-core",
       "save-management",
@@ -209,7 +210,7 @@ test("treats playable story and compiler inputs as production-journey risks", ()
         "packages/scripts/compile-scenes/parser-investigation.ts",
       ],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey"],
+    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
   );
 });
 
@@ -227,7 +228,12 @@ test("preserves the risky source when a rename moves it onto a documentation pat
     ],
   });
 
-  assert.deepEqual(plan.suiteIds, ["smoke", "gameplay", "production-journey"]);
+  assert.deepEqual(plan.suiteIds, [
+    "smoke",
+    "gameplay",
+    "production-journey",
+    "analysis-beat85",
+  ]);
   assert.equal(plan.skip, false);
   assert.equal(plan.forcedFull, false);
 });
@@ -248,7 +254,7 @@ test("routes the live scene compiler entrypoint as a story risk", () => {
     selectE2eSuites({
       changedPaths: ["packages/scripts/compile-scenes.ts"],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey"],
+    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
   );
 });
 
@@ -261,6 +267,7 @@ test("forces the complete registry for E2E infrastructure", () => {
     "smoke",
     "gameplay",
     "production-journey",
+    "analysis-beat85",
     "capture-proof",
     "save-core",
     "save-management",
@@ -284,6 +291,7 @@ test("forces the complete registry for planner scripts and their contract tests"
         "smoke",
         "gameplay",
         "production-journey",
+        "analysis-beat85",
         "capture-proof",
         "save-core",
         "save-management",
@@ -302,6 +310,7 @@ test("forces the complete registry for an unknown non-documentation path", () =>
     "smoke",
     "gameplay",
     "production-journey",
+    "analysis-beat85",
     "capture-proof",
     "save-core",
     "save-management",
@@ -341,6 +350,7 @@ test("manual full coverage adds to automatic routing without suppressing it", ()
     "smoke",
     "gameplay",
     "production-journey",
+    "analysis-beat85",
     "capture-proof",
     "save-core",
     "save-management",
@@ -364,6 +374,7 @@ test("runs the complete registry for main, nightly, tags, and manual dispatch", 
       "smoke",
       "gameplay",
       "production-journey",
+      "analysis-beat85",
       "capture-proof",
       "save-core",
       "save-management",
