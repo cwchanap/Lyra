@@ -216,6 +216,11 @@ are Traditional Chinese. IDs are English slugs anchored with `{#id}`.
   presses the **完成訊問** button, which becomes available once every `Required`
   Question in the phase is broken; an explicit expression instead completes the
   phase automatically when satisfied — see "Contradiction guarantee" below)
+- **Optional:** `Represented Authority` — the exact authority name from the
+  story catalog. When present, it authorizes `grant_authorization:<id>` targets
+  on this phase, its Questions, and their testimony Lines. Investigation and
+  Analysis scenes remain authority-null; do not infer authority from a speaker,
+  subject, or dialogue.
 - **Optional after first visual unit:** `BGM`, `BGS` (IDs from
   `static/assets/config/audio.yaml`, or `none`)
 - **Body:** exactly one `[場景：...]` tag, then optional entry dialogue, then
@@ -429,13 +434,12 @@ set_primary_objective:null; complete_current
 grant_authorization:<authorization_id>
 ```
 
-`grant_authorization:<authorization_id>` is **syntax-only** for current
-investigation/interrogation content. Every such production reveal batch has
-`representedAuthority: null`, so HPA-257 rejects it with
-`authorizationGrantOutsideAuthorityEvent` at compilation/startup validation.
-Do not put it in a production scene list. The only exceptions are a synthetic
-fixture with matching represented authority or a future HPA-264 authority-event
-adapter.
+`grant_authorization:<authorization_id>` is valid on an interrogation Phase,
+Question, or correct testimony Line only when its owning Phase declares
+`Represented Authority` matching the authorization's catalog authority. The
+Phase value supplies the represented authority for all three reveal paths.
+Investigation and Analysis remain authority-null and reject this target with
+`authorizationGrantOutsideAuthorityEvent`; never infer authority from prose.
 
 Each typed ID must resolve in `story_catalog.md`. `resolve_question` has an
 explicit resolver requirement: its `fact_id` must exist, already be asserted
@@ -489,7 +493,9 @@ previously locked phase becomes dynamically unlocked. Do not rely on that
 unmodeled scheduling to make an order-sensitive primary transition safe;
 express an explicit prerequisite or make the branch order-insensitive.
 
-Do not author authorization:<id> granted as a production unlock gate in HPA-257/HPA-259 content. No production authority event can grant it until HPA-264; mandatory use fails compilation and optional use warns.
+Do not use `authorization:<id> granted` as an unlock gate unless the grant is
+authored on an interrogation reveal batch whose Phase declares the matching
+`Represented Authority`.
 
 ## Contradiction guarantee (critical — the Beat-10 trap)
 

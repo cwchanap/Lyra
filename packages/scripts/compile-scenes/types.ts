@@ -441,6 +441,7 @@ export type ASTInquiryPhase = Located<{
   subject: ASTSubject;
   required: boolean;
   status: "locked" | "unlocked";
+  representedAuthority?: string | null;
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
   sceneTag: string;
@@ -713,6 +714,7 @@ export type JSONInterrogationPhase = {
   subject: JSONSubject;
   required: boolean;
   status: "locked" | "unlocked";
+  representedAuthority?: string | null;
   unlock: InterrogationUnlockExpr | null;
   reveals: InterrogationRevealTarget[];
   sceneTag: string;

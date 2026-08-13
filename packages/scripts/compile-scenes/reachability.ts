@@ -2137,6 +2137,7 @@ function buildInterrogationNodes(input: {
         initiallyReachable: phase.status === "unlocked",
         condition: normalizeInterrogationExpression(phase.unlock, scope),
         effects: effectsFromInterrogationReveals(phase.reveals, scope),
+        representedAuthority: phase.representedAuthority ?? null,
         revealedTargetKeys: inboundTargetsFromInterrogationReveals(
           phase.reveals,
         ),
@@ -2177,6 +2178,7 @@ function buildInterrogationNodes(input: {
           scope,
           questionEntryKey,
           mandatory: phase.required && question.required,
+          representedAuthority: phase.representedAuthority ?? null,
         }),
       );
     }
@@ -2245,6 +2247,7 @@ function buildQuestionBreakthroughNodes(input: {
   scope: SceneScope;
   questionEntryKey: string;
   mandatory: boolean;
+  representedAuthority: string | null;
 }): NodeDraft[] {
   const { question, scope, questionEntryKey } = input;
   const questionAtom = interrogationQuestionAtom(scope, question.id);
@@ -2259,6 +2262,7 @@ function buildQuestionBreakthroughNodes(input: {
         requirement: input.mandatory ? "mandatory" : "optional",
         legacyCompatibilityMode: revealsAreLegacy(question.reveals),
         initiallyReachable: false,
+        representedAuthority: input.representedAuthority,
         effects: [
           ...effectsFromInterrogationReveals(question.reveals, scope),
           addAtomEffect(questionAtom, question.reveals.length),
@@ -2284,6 +2288,7 @@ function buildQuestionBreakthroughNodes(input: {
       legacyCompatibilityMode:
         revealsAreLegacy(line.reveals) && revealsAreLegacy(question.reveals),
       initiallyReachable: false,
+      representedAuthority: input.representedAuthority,
       implicitPrerequisites: [
         {
           predicate: "atom",
@@ -2324,6 +2329,7 @@ function node(
       Pick<
         NodeDraft,
         | "condition"
+        | "representedAuthority"
         | "oneShotEventId"
         | "implicitPrerequisites"
         | "effects"

@@ -162,6 +162,32 @@ fn interrogation_segment(
     )
 }
 
+fn interrogation_story_context<'a>(
+    chapter_id: &str,
+    scene_id: &str,
+    phase: &'a InterrogationPhaseJson,
+    block_kind: StoryEventBlockKind,
+    block_id: String,
+    fact_support_by_id: &'a BTreeMap<String, reveals::FactSupport>,
+) -> reveals::StoryRevealMaterializationContext<'a> {
+    let represented_authority = match phase {
+        InterrogationPhaseJson::Inquiry {
+            represented_authority,
+            ..
+        } => represented_authority.as_deref(),
+    };
+    reveals::StoryRevealMaterializationContext {
+        origin: AssertionOrigin::SceneEvent {
+            chapter_id: chapter_id.into(),
+            scene_id: scene_id.into(),
+            block_kind,
+            block_id,
+        },
+        fact_support_by_id,
+        represented_authority,
+    }
+}
+
 impl GameEngine {
     fn inventory_reexamine_segment(
         &self,
@@ -785,16 +811,14 @@ impl GameEngine {
             )
         };
         let fact_support_by_id = BTreeMap::new();
-        let story_context = reveals::StoryRevealMaterializationContext {
-            origin: AssertionOrigin::SceneEvent {
-                chapter_id: chapter_id.into(),
-                scene_id: self.scene.id().into(),
-                block_kind: StoryEventBlockKind::InterrogationPhase,
-                block_id: phase_id.clone(),
-            },
-            fact_support_by_id: &fact_support_by_id,
-            represented_authority: None,
-        };
+        let story_context = interrogation_story_context(
+            chapter_id,
+            self.scene.id(),
+            &phase,
+            StoryEventBlockKind::InterrogationPhase,
+            phase_id.clone(),
+            &fact_support_by_id,
+        );
         let queue_items = {
             let scene = match &mut self.scene {
                 SceneRuntime::Interrogation(scene) => scene,
@@ -1394,6 +1418,15 @@ impl GameEngine {
                     GameError::internal("question started without a current phase".into())
                 })?;
                 let scene_id = scene.def.id.clone();
+                let phase_definition = scene
+                    .def
+                    .phases
+                    .iter()
+                    .find(|phase| scenes::interrogation::phase_id(phase) == phase_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        GameError::internal("question started without a phase definition".into())
+                    })?;
                 let (line_id, line_content) = scene
                     .question(question_id)
                     .and_then(|question| question.testimony.lines.first())
@@ -1411,16 +1444,14 @@ impl GameEngine {
                 // reveals, so fire the question-level reveals here.
                 if let Some(reveals) = auto_break_reveals {
                     let fact_support_by_id = BTreeMap::new();
-                    let story_context = reveals::StoryRevealMaterializationContext {
-                        origin: AssertionOrigin::SceneEvent {
-                            chapter_id: chapter_id.clone(),
-                            scene_id: scene_id.clone(),
-                            block_kind: StoryEventBlockKind::InquiryQuestion,
-                            block_id: question_id.into(),
-                        },
-                        fact_support_by_id: &fact_support_by_id,
-                        represented_authority: None,
-                    };
+                    let story_context = interrogation_story_context(
+                        &chapter_id,
+                        &scene_id,
+                        &phase_definition,
+                        StoryEventBlockKind::InquiryQuestion,
+                        question_id.to_string(),
+                        &fact_support_by_id,
+                    );
                     let queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
@@ -1634,6 +1665,15 @@ impl GameEngine {
                     GameError::internal("evidence presented without a current phase".into())
                 })?;
                 let scene_id = scene.def.id.clone();
+                let phase_definition = scene
+                    .def
+                    .phases
+                    .iter()
+                    .find(|phase| scenes::interrogation::phase_id(phase) == phase_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        GameError::internal("evidence presented without a phase definition".into())
+                    })?;
                 let line = scene.line(&question_id, &active_line_id).cloned();
                 let correct = line
                     .as_ref()
@@ -1664,16 +1704,14 @@ impl GameEngine {
                         on_correct,
                     );
                     let fact_support_by_id = BTreeMap::new();
-                    let line_story_context = reveals::StoryRevealMaterializationContext {
-                        origin: AssertionOrigin::SceneEvent {
-                            chapter_id: chapter_id.clone(),
-                            scene_id: scene_id.clone(),
-                            block_kind: StoryEventBlockKind::TestimonyLine,
-                            block_id: active_line_id.clone(),
-                        },
-                        fact_support_by_id: &fact_support_by_id,
-                        represented_authority: None,
-                    };
+                    let line_story_context = interrogation_story_context(
+                        &chapter_id,
+                        &scene_id,
+                        &phase_definition,
+                        StoryEventBlockKind::TestimonyLine,
+                        active_line_id.clone(),
+                        &fact_support_by_id,
+                    );
                     let mut queue = reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
@@ -1689,16 +1727,14 @@ impl GameEngine {
                         &line_reveals,
                         &chapter_id,
                     )?;
-                    let question_story_context = reveals::StoryRevealMaterializationContext {
-                        origin: AssertionOrigin::SceneEvent {
-                            chapter_id: chapter_id.clone(),
-                            scene_id,
-                            block_kind: StoryEventBlockKind::InquiryQuestion,
-                            block_id: question_id.clone(),
-                        },
-                        fact_support_by_id: &fact_support_by_id,
-                        represented_authority: None,
-                    };
+                    let question_story_context = interrogation_story_context(
+                        &chapter_id,
+                        &scene_id,
+                        &phase_definition,
+                        StoryEventBlockKind::InquiryQuestion,
+                        question_id.clone(),
+                        &fact_support_by_id,
+                    );
                     queue.extend(reveals::apply_interrogation_reveals_and_build_queue(
                         scene,
                         &mut AcquisitionCtx {
@@ -4255,6 +4291,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals,
                 scene_tag: "interrogation_room".into(),
@@ -4366,6 +4403,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     subject: subject(),
                     required,
                     status: LockStatus::Unlocked,
+                    represented_authority: None,
                     unlock: None,
                     reveals,
                     scene_tag: "interrogation_room".into(),
@@ -5334,6 +5372,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: true,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -5517,6 +5556,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: true,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -5645,6 +5685,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: true,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -6230,6 +6271,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: false,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -6315,6 +6357,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: false,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -6424,6 +6467,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: false,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -6573,6 +6617,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: false,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),
@@ -6673,6 +6718,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 subject: subject(),
                 required: false,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![],
                 scene_tag: "room".into(),

@@ -2178,6 +2178,7 @@ pub(super) fn two_line_question_scene() -> InterrogationSceneJson {
             subject: subject(),
             required: true,
             status: LockStatus::Unlocked,
+            represented_authority: None,
             unlock: None,
             reveals: vec![],
             scene_tag: "room".into(),
@@ -2286,6 +2287,7 @@ pub(super) fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson {
             subject: subject(),
             required: true,
             status: LockStatus::Unlocked,
+            represented_authority: None,
             unlock: None,
             reveals: vec![
                 crate::game::schema::CombinedInterrogationRevealTarget::Local(
@@ -2332,6 +2334,7 @@ pub(super) fn locked_unsatisfied_interrogation_scene() -> InterrogationSceneJson
             subject: subject(),
             required: true,
             status: LockStatus::Locked,
+            represented_authority: None,
             unlock: None,
             reveals: vec![],
             scene_tag: "interrogation_room".into(),
@@ -2364,6 +2367,7 @@ pub(super) fn locked_inventory_unlocked_interrogation_scene() -> InterrogationSc
             subject: subject(),
             required: true,
             status: LockStatus::Locked,
+            represented_authority: None,
             unlock: Some(InterrogationUnlockExpr::EvidenceCollected {
                 _predicate: crate::game::schema::PredicateEvidenceCollected::X,
                 id: "key".into(),
@@ -2434,6 +2438,7 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
                 subject: subject(),
                 required: true,
                 status: LockStatus::Locked,
+                represented_authority: None,
                 unlock: Some(InterrogationUnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
                     id: "key".into(),
@@ -2469,6 +2474,7 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
                 subject: subject(),
                 required: true,
                 status: LockStatus::Unlocked,
+                represented_authority: None,
                 unlock: None,
                 reveals: vec![
                     crate::game::schema::CombinedInterrogationRevealTarget::Local(
@@ -2693,6 +2699,7 @@ pub(super) fn single_required_question_scene() -> crate::game::schema::Interroga
             subject: subject(),
             required: true,
             status: LockStatus::Unlocked,
+            represented_authority: None,
             unlock: None,
             reveals: vec![],
             scene_tag: "room".into(),
@@ -2788,6 +2795,7 @@ pub(super) fn single_honest_question_scene() -> crate::game::schema::Interrogati
             subject: subject(),
             required: true,
             status: LockStatus::Unlocked,
+            represented_authority: None,
             unlock: None,
             reveals: vec![],
             scene_tag: "room".into(),
