@@ -4,29 +4,28 @@
 
 **Goal:** Deliver and accept the real Chapter 1 Beat 8.5 Classify → Order → Threshold scene, connect its request-readiness output to the existing KAGAMI hearing authorization, prove one packaged Save/Continue/grant path, and stop for human playtest acceptance.
 
-**Architecture:** Reuse existing Analysis/compiler/runtime/UI, story state/reveal transactions, save/load, and the existing hearing. Add one optional interrogation-phase `Represented Authority` definition field plus one private authority-aware Rust context constructor. Production Event-1841..1844 remain four Analysis cards backed by one real `local_sequence_record`.
+**Architecture:** Reuse existing Analysis/compiler/runtime/UI, story state/reveal transactions, save/load, and the existing hearing. Add one optional interrogation-phase `Represented Authority` definition field plus one private authority-aware Rust context constructor. Event-1841..1844 remain four Analysis cards backed by one real `local_sequence_record`.
 
 ## Global Constraints
 
-- Start implementation from latest `main`.
+- Start from latest `main`.
 - HPA-265 is the survivor for former HPA-262/263/264/266 scope.
 - No Chapter 2 abstractions, new board kinds, second story-state owner, grant ledger, save migration, fake Event evidence records, or generic hint engine.
-- Analysis may complete `prepare_narrow_lock_request`; it never grants `narrow_lock_export`.
-- Only the existing KAGAMI hearing gate grants `narrow_lock_export`.
+- Analysis completes `prepare_narrow_lock_request`; it never grants `narrow_lock_export`.
+- Only the KAGAMI hearing gate grants `narrow_lock_export`.
 - p4 requires `authorization:narrow_lock_export granted`.
-- Old `scene_8_5.md` is deleted only after useful dialogue migration; its semantic re-audit references become explicitly historical.
+- Old `scene_8_5.md` is deleted only after dialogue migration; its semantic re-audit references become explicitly historical.
 
 ---
 
-### Task 0: Prove shared Order-card sources before production authoring
+### Task 0: Prove shared Order-card sources first
 
-**Files:**
+Change both checked-in Analysis fixtures so distinct card ids `event_1841`..`event_1844` all source the existing fixture `evidence:lock_sequence`, retaining four card ids, accepted order, and fixed anchor:
+
 - `packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md`
 - `apps/game/src-tauri/src/game/test_fixtures/analysis_scene_8_5.json`
 
-Change the four Order-card ids `event_1841`..`event_1844` in both fixtures to share the existing fixture source `evidence:lock_sequence`, retaining four distinct card ids, accepted order, and fixed anchor.
-
-Run before and after:
+Baseline and verify:
 
 ```bash
 bun run test:scripts
@@ -35,22 +34,15 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   --all-features -- --nocapture
 ```
 
-Expected: PASS. If RED, fix only the narrow shared-source bug before production authoring. Do not split production evidence to work around it.
+Expected: PASS before and after. If RED, fix only the narrow shared-source bug before production authoring. Do not split production evidence as a workaround.
 
-Commit:
-
-```bash
-git add packages/scripts/__fixtures__/analysis-chapter-1/chapter_1/analysis_scene_8_5.md apps/game/src-tauri/src/game/test_fixtures/analysis_scene_8_5.json
-git commit -m "test(analysis): prove shared card source support"
-```
+Commit fixture proof separately.
 
 ---
 
 ### Task 1: Add only missing incomplete-draft restore proofs
 
-**File:** `apps/game/src-tauri/src/game/analysis_integration_tests.rs`
-
-Add exact detached restore checks for:
+In `analysis_integration_tests.rs`, add exact `detached_restore()` checks for:
 
 ```rust
 AnalysisDraft::Order {
@@ -66,67 +58,39 @@ AnalysisDraft::Threshold {
 }
 ```
 
-Continue the existing correct flows after each restore. Do not add another public-wire assertion; current Rust/frontend tests already pin board variants and answer-key redaction.
-
-Regression:
-
-```bash
-bun run --cwd apps/game test \
-  src/lib/analysis/analysis-boundary.test.ts \
-  src/lib/components/analysis/AnalysisWorkbench.test.ts \
-  src/lib/components/analysis/ClassifyBoard.test.ts \
-  src/lib/components/analysis/OrderBoard.test.ts \
-  src/lib/components/analysis/ThresholdBoard.test.ts
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
-  analysis_fixture_acceptance_round_trips_drafts_and_effects_without_replay_or_leakage \
-  --all-features -- --nocapture
-```
+Continue existing correct flows afterward. Do not add another public-wire assertion. Re-run existing focused frontend Analysis tests + Rust cross-board acceptance.
 
 ---
 
 ### Task 2: Add represented authority through existing interrogation paths
 
-**Files:** compiler interrogation types/parser/emitter/validator/reachability, Rust `schema.rs` / `mod.rs`, focused tests, `.claude/skills/writing-interrogation-scene/SKILL.md`.
-
-Add optional Phase authoring field:
+Add optional Phase field:
 
 ```markdown
 - **Represented Authority:** KAGAMI 證據摘要審查會主理
 ```
 
-Compiler contract:
+Propagate Markdown → AST (`string | null`) → optional JSON → `validateStoryRevealTargets` → interrogation reachability nodes → Rust `InterrogationPhaseJson`.
 
-```text
-Markdown
--> AST representedAuthority: string | null
--> optional JSON representedAuthority?: string
--> validateStoryRevealTargets
--> interrogation reachability nodes inherit owning phase authority
-```
-
-Tests cover ordinary grant rejection, matching phase/question/testimony-line grant validity, authority mismatch, and a mandatory `authorization:<id> granted` gate satisfied by the matching producer.
-
-Rust schema:
+Add Rust schema:
 
 ```rust
 #[serde(default)]
 represented_authority: Option<String>,
 ```
 
-Add one private `interrogation_story_context(...)` helper in `mod.rs`. It accepts the owning immutable `InterrogationPhaseJson` and reads `represented_authority` itself; callers cannot supply an arbitrary `None`. Route every interrogation-origin context through it:
+Tests cover ordinary grant rejection, matching Phase/Question/TestimonyLine grant validity, mismatch, a mandatory `authorization:<id> granted` gate satisfied by matching authority, Rust matching/missing/mismatched grant behavior, and replay idempotence.
 
-```text
-InterrogationPhase
-InquiryQuestion auto-break
-TestimonyLine On Correct
-InquiryQuestion post-correct reveals
-```
+Add one private `interrogation_story_context(...)` helper in `mod.rs`. It accepts the owning immutable `InterrogationPhaseJson` and reads `represented_authority` itself, so callers cannot accidentally omit authority. Route all interrogation story contexts through it:
 
-Where borrowing requires it, clone the immutable phase definition before taking the mutable scene borrow. Investigation and Analysis remain authority-null.
+- InterrogationPhase
+- InquiryQuestion auto-break
+- TestimonyLine On Correct
+- InquiryQuestion post-correct reveals
 
-After editing, grep `StoryRevealMaterializationContext` and verify no interrogation-origin raw literal remains.
+Investigation and Analysis remain authority-null. Grep after editing to ensure no interrogation-origin raw context literal remains.
 
-Update interrogation authoring guidance; do not edit the already-current Analysis skill.
+Update `.claude/skills/writing-interrogation-scene/SKILL.md`; do not edit the already-current Analysis skill.
 
 Verification:
 
@@ -139,14 +103,9 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
 
 ---
 
-### Task 3: Add minimal production catalog and truthful Threshold provenance
+### Task 3: Add minimal production catalog + truthful provenance
 
-**Files:**
-- create `docs/stories_plan/story_catalog.md`
-- modify `investigation_scene_7.md`
-- modify `investigation_scene_8.md`
-
-Catalog contains only four Facts with Summary/Details/`Category: chapter_1`, secondary `prepare_narrow_lock_request`, Authorization `narrow_lock_export` with KAGAMI granting authority, and Source Groups `door_lock_fixed_record` / `victim_phone_device` with Summary.
+Create `docs/stories_plan/story_catalog.md` with only four Facts (each Summary/Details/`Category: chapter_1`), secondary `prepare_narrow_lock_request`, Authorization `narrow_lock_export` granted by `KAGAMI 證據摘要審查會主理`, and Source Groups `door_lock_fixed_record` / `victim_phone_device` with Summary.
 
 Provenance:
 
@@ -156,32 +115,32 @@ local_sequence_record -> door_lock_fixed_record, [order]
 external_maintenance_credential -> door_lock_fixed_record, [order, access]
 ```
 
-The two door-lock records remain same-source.
+Door-lock records remain same-source.
 
-This task is independently compilable. Catalog definitions do not require producers merely because they exist; reachability errors apply when authored nodes require unreachable progress.
+This task is independently compilable: catalog definitions do not need producers merely because they exist; reachability errors apply when authored nodes require unreachable progress.
 
 ```bash
 bun run scenes:compile
 bun run test:scripts
 ```
 
-Expected: PASS before `analysis_scene_8_5.md` exists. If a definition-without-producer is unexpectedly rejected, investigate the regression; do not merge Task 3 into Task 4 merely to mask it.
+Expected: PASS before `analysis_scene_8_5.md` exists. If definition-without-producer is unexpectedly rejected, investigate that regression; do not merge this task into authoring merely to hide it.
 
 ---
 
-### Task 4: Author real production `analysis_scene_8_5.md`
+### Task 4: Author production `analysis_scene_8_5.md`
 
-Replace the manifest's `scene_8_5.md` with `analysis_scene_8_5.md` and migrate only useful late-night/fatigue/partner atmosphere.
+Replace manifest `scene_8_5.md` with Analysis. Preserve useful late-night/vending-machine/fatigue atmosphere only.
 
 Boards:
 
-1. `evidence_packages` Classify: real records grouped into small lies / earlier third party / lock chronology; reveal first two facts.
-2. `local_event_sequence` Order: Event-1841 → Event-1844, fixed 1841@1, every card sources the single `evidence:local_sequence_record`; reveal `merge_time_is_not_event_time`.
-3. `narrow_request_basis` Threshold: use the three provenance records; 2 selected, 2 source groups, `[time, order]`, no procedural-status restriction, source group required; reveal final fact and complete request objective; one exact same-source Incorrect Selection only.
+1. Classify `evidence_packages`: real records grouped into small lies / earlier third party / lock chronology; output first two facts.
+2. Order `local_event_sequence`: 1841 → 1844, fixed 1841@1, every card source `evidence:local_sequence_record`; output merge-time fact.
+3. Threshold `narrow_request_basis`: three provenance records, 2 selected / 2 source groups / `[time, order]` / no procedural-status restriction / source group required; output final fact + complete request objective; one same-source Incorrect Selection.
 
-Outro: request prepared, identity unresolved, clip not yet available.
+Outro says request prepared, identity unresolved, clip unavailable.
 
-Delete `scene_8_5.md`. Add a concise supersession note near the top of `semantic-content-reaudit.md` saying its old `scene_8_5.md` references are historical pre-HPA-265 findings; preserve the historical audit itself.
+Delete `scene_8_5.md`. Add a concise supersession note near the top of `semantic-content-reaudit.md` stating its `scene_8_5.md` findings are historical pre-HPA-265 findings; preserve the historical audit itself.
 
 ```bash
 bun run scenes:compile
@@ -190,9 +149,9 @@ bun run test:scripts
 
 ---
 
-### Task 5: Hearing confirmation and load-bearing authorization
+### Task 5: Hearing confirmation + load-bearing authorization
 
-Keep p1–p4 proof order/contradictions, but shorten them to formal confirmation. Keep p5+ unchanged.
+Keep p1–p4 proof order/contradictions but make them concise formal confirmation. Keep p5+ unchanged.
 
 Gate:
 
@@ -201,7 +160,7 @@ Gate:
 - **Unlock:** phase:p3 completed and objective:prepare_narrow_lock_request completed
 ```
 
-Correct `gate_hold_record`:
+Correct gate:
 
 ```markdown
 - **Reveals:** [grant_authorization:narrow_lock_export, evidence:approved_clip]
@@ -213,54 +172,44 @@ p4 uses actual Markdown grammar:
 - **Unlock:** phase:gate completed and authorization:narrow_lock_export granted
 ```
 
-Do **not** author `authorization_granted:narrow_lock_export`; that is normalized JSON terminology.
+Do not write normalized JSON spelling `authorization_granted:narrow_lock_export`.
 
-Compiler/Rust acceptance proves objective absent → grant impossible; wrong evidence → no grant/clip; correct gate → grant+clip atomically; p4 unavailable before authorization and reachable after; replay/restore no duplicate effects.
-
-```bash
-bun run scenes:compile
-bun run test:scripts
-```
+Compiler/Rust acceptance proves objective absent → grant impossible; wrong evidence → no grant/clip; correct gate → grant+clip atomic; p4 unavailable before authorization and reachable after; replay/restore no duplicate effects.
 
 ---
 
-### Task 6: Focused packaged Beat 8.5 smoke with canonical CI ownership
+### Task 6: Focused packaged Beat 8.5 smoke + canonical CI ownership
 
 Do not expand `production-journey.e2e.ts`.
 
-Add test-only checkpoint `chapter-1-analysis-beat-85-ready`: seed required real records through existing packaged definitions/`AcquisitionCtx`, clear presentation-only pending events for this test seed, jump to `analysis_scene_8_5`, expose Analysis mode. No production seed API.
+Add `chapter-1-analysis-beat-85-ready` checkpoint using existing packaged definitions/`AcquisitionCtx`, presentation-event clearing for the test seed, and test-only scene jump.
 
 Add `analysis-beat85` immediately after `production-journey` in:
 
 - `E2E_SUITE_IDS`
-- gameplay `E2E_CHAIN_DEFINITIONS`
+- gameplay chain
+- `story-and-compiler` risk rule (`["smoke", "gameplay", "production-journey", "analysis-beat85"]`)
 
-and add it to the `story-and-compiler` risk rule:
+Update registry + selector tests.
 
-```js
-["smoke", "gameplay", "production-journey", "analysis-beat85"]
-```
-
-Update registry + selector tests. Current registry requires every suite to belong to a chain.
-
-Focused packaged path:
+Focused path:
 
 ```text
 ready checkpoint
--> solve Classify
--> solve Order
+-> Classify
+-> Order
 -> one-card Threshold draft
 -> Save -> Title -> Continue once
--> exact Threshold draft restored
--> solve Threshold
--> debug jump to hearing preserving state
--> p1-p3 confirmation
+-> exact draft restored
+-> Threshold complete
+-> debug jump to hearing retaining state
+-> p1-p3
 -> gate
 -> narrow_lock_export + approved_clip
 -> p4 reachable
 ```
 
-Stop there; no remaining-hearing E2E.
+Stop there.
 
 ```bash
 bun test apps/game/scripts/e2e-suite-registry.test.mjs apps/game/scripts/select-e2e-suites.test.mjs
@@ -274,13 +223,11 @@ cd ../..
 
 ## Human acceptance gate
 
-After Tasks 0–6 are green, stop for human Beat 8.5 → hearing playtest. Evaluate board clarity, detective feel/pacing, p1–p4 repetition, same-source feedback, Save/Continue confidence, keyboard usability, and thumbnail value.
-
-If no concrete misunderstanding appears, richer hints are not needed. If one appears, prefer authored copy/existing Hint/one exact Incorrect Selection before runtime semantics. No empty playtest commit.
+After Tasks 0–6 are green, stop for human Beat 8.5 → hearing playtest. Evaluate board clarity, detective feel/pacing, p1–p4 repetition, same-source feedback, Save/Continue confidence, keyboard usability, and thumbnail value. If no concrete misunderstanding appears, richer hints are not needed. If one appears, prefer authored copy/existing Hint/one exact Incorrect Selection before runtime semantics. No empty commit.
 
 ---
 
-### Task 7: Final verification and completion
+### Task 7: Final verification
 
 ```bash
 bun run scenes:compile
@@ -294,7 +241,7 @@ bun run check
 bun run lint:all
 ```
 
-Final assertions: shared-source proof happened first; one canonical Beat 8.5 Analysis scene; audit note present; four facts + request objective; no grant before hearing; exact-once authorization + clip; p4 authorization-gated; authority shown in Case File; proof order retained; Order/Threshold Rust restore green; one packaged Threshold Save → Title → Continue green; `analysis-beat85` is in gameplay chain + story/compiler risk selection; `production-journey` remains narrow.
+Final assertions: shared-source proof happened first; canonical Analysis scene only; historical audit note present; four facts + request objective; no grant before hearing; exact-once grant + clip; p4 authorization-gated; Case File authority shown; proof order retained; Rust Order/Threshold restores green; one packaged Threshold Save → Title → Continue; `analysis-beat85` in gameplay chain + story/compiler risk; `production-journey` stays narrow.
 
 Mark HPA-265 Done only after automated evidence + human acceptance. HPA-262/263/264/266 remain Duplicate.
 
