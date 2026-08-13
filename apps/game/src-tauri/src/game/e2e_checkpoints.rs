@@ -191,7 +191,7 @@ fn build_checkpoint_with_limit(
             let acquisition_event_baseline = engine.pending_acquisition_events.len();
             let mut next_ordinal = 0;
             let command_id = engine.durable_revision();
-            engine.grant_all_evidence_for_testing(command_id, &mut next_ordinal);
+            engine.grant_beat85_pre_hearing_evidence_for_testing(command_id, &mut next_ordinal);
             engine
                 .pending_acquisition_events
                 .truncate(acquisition_event_baseline);
@@ -522,24 +522,76 @@ mod tests {
         assert_eq!(checkpoint.projection.mode, CheckpointMode::Analysis);
         assert_eq!(checkpoint.projection.pending_acquisition, None);
         assert!(checkpoint.projection.scene_navigation_eligible);
-        assert!(checkpoint
+        let expected_pre_hearing_evidence = vec![
+            "closing_routine".to_owned(),
+            "doorlock_summary_timetable".to_owned(),
+            "external_maintenance_credential".to_owned(),
+            "local_sequence_record".to_owned(),
+            "miyake_mother_call_confirmation".to_owned(),
+            "miyake_pov_replay".to_owned(),
+            "victim_phone_notification".to_owned(),
+        ];
+        assert_eq!(
+            checkpoint.projection.evidence_ids,
+            expected_pre_hearing_evidence
+        );
+        assert!(!checkpoint
             .projection
             .evidence_ids
-            .contains(&"local_sequence_record".to_owned()));
-        assert!(checkpoint
-            .projection
-            .evidence_ids
-            .contains(&"external_maintenance_credential".to_owned()));
-        assert!(checkpoint
-            .projection
-            .evidence_ids
-            .contains(&"victim_phone_notification".to_owned()));
+            .contains(&"approved_clip".to_owned()));
+        assert!(checkpoint.projection.statement_ids.is_empty());
 
         let view = checkpoint.engine.view().unwrap();
         let ModeView::Analysis { board_id, .. } = view.mode else {
             panic!("analysis beat 8.5 checkpoint must open the analysis workbench");
         };
         assert_eq!(board_id, "evidence_packages");
+    }
+
+    #[test]
+    fn analysis_beat85_hearing_jump_does_not_seed_approved_clip() {
+        let mut checkpoint = build_checkpoint_with_limit(
+            production_resources(),
+            CheckpointId::Chapter1AnalysisBeat85Ready,
+            MAX_REPLAY_OPERATIONS,
+        )
+        .unwrap();
+
+        let view = checkpoint
+            .engine
+            .jump_to_scene("chapter_1", "interrogation_scene_10")
+            .unwrap();
+        assert!(matches!(view.scene, SceneView::Interrogation { .. }));
+        let mut evidence_ids = view
+            .inventory
+            .evidence
+            .iter()
+            .map(|record| record.id.clone())
+            .collect::<Vec<_>>();
+        evidence_ids.sort();
+        assert_eq!(
+            evidence_ids,
+            vec![
+                "closing_routine",
+                "doorlock_summary_timetable",
+                "external_maintenance_credential",
+                "local_sequence_record",
+                "miyake_mother_call_confirmation",
+                "miyake_pov_replay",
+                "victim_phone_notification",
+            ]
+        );
+        assert!(!view
+            .inventory
+            .evidence
+            .iter()
+            .any(|record| record.id == "approved_clip"));
+        assert!(view.inventory.statements.is_empty());
+        assert!(view
+            .story
+            .authorizations
+            .iter()
+            .all(|authorization| authorization.id != "narrow_lock_export"));
     }
 
     #[test]

@@ -77,11 +77,13 @@ impl GameEngine {
             engine.prime_initial_queue_for_command(command_id, next_ordinal)?;
             // Developer convenience: jumping straight into an interrogation via
             // scene-navigation skips the investigation where its contradiction
-            // evidence is normally collected. Grant everything so every
-            // testimony is presentable for testing. Gated to debug builds
-            // (`cfg!(debug_assertions)`) because Scene Select is also exposed
-            // in production replay after `storyClearedOnce`; releasing the full
-            // inventory there would spoil every scene's evidence and bypass
+            // evidence is normally collected. Generic debug jumps grant every
+            // record so every testimony is presentable for testing; the packaged
+            // Beat 8.5 hearing uses a narrow pre-hearing allowlist so its gate
+            // can acquire `approved_clip` for the first time. Gated to debug
+            // builds (`cfg!(debug_assertions)`) because Scene Select is also
+            // exposed in production replay after `storyClearedOnce`; releasing
+            // test inventory there would spoil every scene's evidence and bypass
             // the intended inventory gating.
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
                 // `grant_all_evidence_for_testing` seeds the inventory so every
@@ -94,7 +96,23 @@ impl GameEngine {
                 // inventory seeding itself is preserved because only the event
                 // queue is truncated, not `engine.inventory`.
                 let acquisition_event_baseline = engine.pending_acquisition_events.len();
-                engine.grant_all_evidence_for_testing(command_id, next_ordinal);
+                #[cfg(feature = "e2e")]
+                {
+                    let is_analysis_beat85_hearing =
+                        chapter_id == "chapter_1" && scene_id == "interrogation_scene_10";
+                    if is_analysis_beat85_hearing {
+                        engine.grant_beat85_pre_hearing_evidence_for_testing(
+                            command_id,
+                            next_ordinal,
+                        );
+                    } else {
+                        engine.grant_all_evidence_for_testing(command_id, next_ordinal);
+                    }
+                }
+                #[cfg(not(feature = "e2e"))]
+                {
+                    engine.grant_all_evidence_for_testing(command_id, next_ordinal);
+                }
                 engine
                     .pending_acquisition_events
                     .truncate(acquisition_event_baseline);
@@ -104,16 +122,55 @@ impl GameEngine {
     }
 
     /// Grants every evidence and statement defined across all scenes so that
-    /// any interrogation contradiction can be presented. Testing-only, reached
-    /// solely from [`Self::jump_to_scene`] into an interrogation scene and only
-    /// in debug builds (`cfg!(debug_assertions)`). Scenes that fail to load are
-    /// skipped — this is a best-effort convenience, not a correctness path, so
-    /// a single bad scene must not abort the grant.
+    /// any generic interrogation contradiction can be presented. Testing-only,
+    /// reached solely from [`Self::jump_to_scene`] into an interrogation scene
+    /// and only in debug builds (`cfg!(debug_assertions)`). Scenes that fail to
+    /// load are skipped — this is a best-effort convenience, not a correctness
+    /// path, so a single bad scene must not abort the grant.
     pub(super) fn grant_all_evidence_for_testing(
         &mut self,
         command_id: u64,
         next_ordinal: &mut u32,
     ) {
+        self.grant_manifest_items_for_testing(command_id, next_ordinal, |_| true, true);
+    }
+
+    #[cfg(feature = "e2e")]
+    pub(super) fn grant_beat85_pre_hearing_evidence_for_testing(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) {
+        // These records are the authored Analysis Beat 8.5 cards plus the
+        // contradiction evidence needed to reach its hearing gate. Keep the
+        // allowlist explicit so gate-only `approved_clip` remains unacquired.
+        const PRE_HEARING_EVIDENCE_IDS: &[&str] = &[
+            "miyake_mother_call_confirmation",
+            "miyake_pov_replay",
+            "external_maintenance_credential",
+            "local_sequence_record",
+            "victim_phone_notification",
+            "closing_routine",
+            "doorlock_summary_timetable",
+        ];
+
+        self.grant_manifest_items_for_testing(
+            command_id,
+            next_ordinal,
+            |id| PRE_HEARING_EVIDENCE_IDS.contains(&id),
+            false,
+        );
+    }
+
+    fn grant_manifest_items_for_testing<F>(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+        should_grant_evidence: F,
+        grant_statements: bool,
+    ) where
+        F: Fn(&str) -> bool,
+    {
         let chapters = self.chapters.clone();
         for chapter in &chapters {
             for scene_ref in &chapter.scenes {
@@ -144,10 +201,14 @@ impl GameEngine {
                     next_ordinal,
                 };
                 for def in evidence {
-                    let _ = acq.evidence(def, &chapter.id, &scene_id);
+                    if should_grant_evidence(&def.id) {
+                        let _ = acq.evidence(def, &chapter.id, &scene_id);
+                    }
                 }
-                for def in statements {
-                    let _ = acq.statement(def, &chapter.id, &scene_id);
+                if grant_statements {
+                    for def in statements {
+                        let _ = acq.statement(def, &chapter.id, &scene_id);
+                    }
                 }
             }
         }
