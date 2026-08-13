@@ -18,21 +18,21 @@ real Chapter 1 evidence
 -> one packaged Save/Continue proof + human acceptance
 ```
 
-## Final design decisions
+## Final decisions
 
-- Prove shared Order-card source behavior **before** production authoring in both compiler and Rust fixtures: `event_1841`..`event_1844` all point to existing fixture `evidence:lock_sequence`, while card ids/order remain distinct. Production then uses one real `evidence:local_sequence_record` rather than fake Event evidence rows.
-- Add only incomplete Order + Threshold Rust restore coverage; reuse existing Classify/result-dialogue/no-answer-key coverage.
-- Add optional Interrogation Phase `Represented Authority` through parser/emitter/validation/reachability/Rust. Use one private `interrogation_story_context(...)` constructor accepting the owning immutable Phase definition and reading authority itself. All interrogation story reveal contexts use it; Investigation/Analysis remain authority-null.
-- Add the minimal Chapter 1 catalog/provenance as an **independently compilable** slice. Definitions do not need producers simply because they exist; reachability errors concern authored nodes with unreachable prerequisites.
-- Replace the linear Beat 8.5 with one production Analysis scene; mark old `semantic-content-reaudit.md` references to `scene_8_5.md` as historical pre-HPA-265 findings.
-- Existing hearing gate grants `narrow_lock_export` + `approved_clip` atomically. p4 requires actual authoring syntax `authorization:narrow_lock_export granted`; `authorization_granted` is normalized JSON terminology only.
-- p1–p4 keep proof order/contradictions but become concise formal confirmation, not a second Analysis tutorial. p5+ remains unchanged.
-- Keep `production-journey.e2e.ts` narrow. Add `analysis-beat85` immediately after it in `E2E_SUITE_IDS`, gameplay chain, and the `story-and-compiler` risk rule. One packaged Threshold Save → Title → Continue proves the real persistence boundary.
-- Human playtest remains the final subjective gate; richer hints are playtest-conditional.
+- **Shared-source assumption is proved first.** Before production authoring, modify both checked-in Analysis fixtures so Order cards `event_1841`..`event_1844` all use existing fixture `evidence:lock_sequence`, then run script tests + Rust cross-board acceptance. Production subsequently uses one real `evidence:local_sequence_record` instead of fake Event evidence rows.
+- **Persistence scope stays small.** Add only incomplete Order and Threshold Rust restore coverage; reuse existing Classify/result-dialogue/no-answer-key coverage.
+- **Authority is immutable Phase definition data.** Add optional `Represented Authority` through parser/emitter/validation/reachability/Rust. Every interrogation story reveal context is built through one private `interrogation_story_context(...)` helper accepting the owning immutable Phase definition and reading authority itself. Investigation/Analysis remain authority-null.
+- **Catalog/provenance remains independently compilable.** Definitions do not require producers merely because they exist; reachability errors concern authored nodes whose prerequisites are unreachable. If an independent compile unexpectedly rejects unused definitions, investigate that regression rather than hiding it by merging tasks.
+- **Production Beat 8.5 replaces the linear scene.** One Classify → Order → Threshold Analysis scene; delete `scene_8_5.md` after migrating useful atmosphere and mark its semantic re-audit references historical pre-HPA-265 findings.
+- **Authorization is load-bearing.** Gate grants `narrow_lock_export` + `approved_clip` in one reveal transaction. p4 uses actual Markdown predicate `authorization:narrow_lock_export granted`. `authorization_granted` is normalized JSON terminology only.
+- **Hearing confirms rather than re-teaches.** p1–p4 keep proof order/contradictions but become concise formal confirmation; p5+ unchanged.
+- **Focused E2E gets normal CI ownership.** Keep `production-journey` narrow. Add `analysis-beat85` after it in `E2E_SUITE_IDS`, gameplay chain, and `story-and-compiler` risk rule. One packaged Threshold Save → Title → Continue proves the real persistence path.
+- **Human acceptance remains final gate.** Rich hints are playtest-conditional.
 
 ## Production catalog/provenance
 
-Facts:
+Four Facts:
 
 ```text
 miyake_known_lies_are_unrelated_to_murder
@@ -41,34 +41,20 @@ merge_time_is_not_event_time
 two_independent_lock_contradictions_identified
 ```
 
-Each includes Summary/Details/`Category: chapter_1`.
+Each has Summary/Details/`Category: chapter_1`. Add secondary `prepare_narrow_lock_request`, Authorization `narrow_lock_export` granted by `KAGAMI 證據摘要審查會主理`, and Source Groups `door_lock_fixed_record` / `victim_phone_device`.
 
 ```text
-prepare_narrow_lock_request     secondary
-narrow_lock_export              grantingAuthority = KAGAMI 證據摘要審查會主理
+local_sequence_record -> door_lock_fixed_record, [order]
+external_maintenance_credential -> door_lock_fixed_record, [order, access]
+victim_phone_notification -> victim_phone_device, [time]
 ```
 
-```text
-local_sequence_record
-  sourceGroup = door_lock_fixed_record
-  proofCapabilities = [order]
-
-external_maintenance_credential
-  sourceGroup = door_lock_fixed_record
-  proofCapabilities = [order, access]
-
-victim_phone_notification
-  sourceGroup = victim_phone_device
-  proofCapabilities = [time]
-```
-
-Threshold: 2 selected, 2 distinct source groups, `[time, order]`, no procedural-status restriction, one exact same-source Incorrect Selection.
+Threshold requires 2 selected, 2 distinct source groups, `[time, order]`, no procedural-status restriction, and one exact same-source Incorrect Selection.
 
 ## Hearing handoff
 
-Gate:
-
 ```markdown
+## Phase: 申請限定調出 {#gate}
 - **Represented Authority:** KAGAMI 證據摘要審查會主理
 - **Unlock:** phase:p3 completed and objective:prepare_narrow_lock_request completed
 ```
@@ -87,30 +73,24 @@ p4:
 
 ## Packaged acceptance
 
-Test-only `chapter-1-analysis-beat-85-ready` seeds required records through existing packaged definitions/`AcquisitionCtx`, clears presentation-only seed events, and jumps to production Analysis.
+Test-only `chapter-1-analysis-beat-85-ready` seeds required real records via existing packaged definitions/`AcquisitionCtx`, clears presentation-only seed events, and jumps to production Analysis.
 
 ```text
-ready checkpoint
--> Classify
--> Order
--> one-card Threshold draft
--> Save -> Title -> Continue once
--> exact draft restored
--> Threshold complete
--> debug jump to hearing retaining state
--> p1-p3
--> gate grant
--> narrow_lock_export + approved_clip
--> p4 reachable
+ready -> Classify -> Order -> one-card Threshold draft
+-> Save -> Title -> Continue once -> exact draft restored
+-> Threshold -> debug jump to hearing retaining state
+-> p1-p3 -> gate -> narrow_lock_export + approved_clip -> p4 reachable
 ```
+
+`analysis-beat85` belongs to gameplay chain and story/compiler risk selection.
 
 ## Acceptance criteria
 
 - [ ] Shared Order-card source behavior proven in compiler + Rust fixtures first.
 - [ ] Exact incomplete Order + Threshold Rust restore coverage.
 - [ ] One production `analysis_scene_8_5.md`; no playable old linear duplicate.
-- [ ] Semantic re-audit marks deleted-linear references historical.
-- [ ] Beat 8.5 establishes four facts + request objective, never grants authorization.
+- [ ] Semantic re-audit marks old linear references historical.
+- [ ] Beat 8.5 establishes four facts + request objective and never grants authorization.
 - [ ] Every interrogation story context uses one authority-aware constructor.
 - [ ] Gate grants authorization + clip atomically/once.
 - [ ] p4 requires `authorization:narrow_lock_export granted`.
