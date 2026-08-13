@@ -139,6 +139,128 @@ fn assert_no_answer_keys(value: &Value) {
     }
 }
 
+fn analysis_engine_after_classify() -> (tempfile::TempDir, std::path::PathBuf, GameEngine) {
+    let (guard, resources) = analysis_fixture_resources();
+    let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+    assert!(matches!(
+        engine.enter_sublocation("room").unwrap().mode,
+        ModeView::Explore { .. }
+    ));
+    let entered_analysis = engine.inspect_hotspot("collect_sources").unwrap();
+    assert!(matches!(
+        entered_analysis.mode,
+        ModeView::Dialogue {
+            scene_tag: Some(ref tag),
+            ..
+        } if tag == "雨鐘後場，相馬臨時整理板前。"
+    ));
+    assert_eq!(
+        drain_dialogue(&mut engine),
+        vec!["先把我們能證明的東西分開。"]
+    );
+
+    let view = engine.view().unwrap();
+    let partial_classify = AnalysisDraft::Classify {
+        group_by_card: BTreeMap::from([("miyake_call".into(), "miyake_small_lies".into())]),
+    };
+    let view = engine
+        .update_analysis_draft(analysis_token(&view), partial_classify)
+        .unwrap();
+    let complete_classify = AnalysisDraft::Classify {
+        group_by_card: BTreeMap::from([
+            ("miyake_call".into(), "miyake_small_lies".into()),
+            ("l_corridor_replay".into(), "earlier_third_party".into()),
+            (
+                "external_credential_event".into(),
+                "earlier_third_party".into(),
+            ),
+        ]),
+    };
+    let view = engine
+        .update_analysis_draft(analysis_token(&view), complete_classify)
+        .unwrap();
+    let view = engine.submit_analysis_board(analysis_token(&view)).unwrap();
+    assert!(matches!(view.mode, ModeView::Dialogue { .. }));
+    assert_eq!(
+        drain_dialogue(&mut engine),
+        vec![
+            "我們洗掉的是三宅那段錯誤故事。",
+            "但還沒證明誰該被放回時間線。"
+        ]
+    );
+
+    (guard, resources, engine)
+}
+
+#[test]
+fn detached_restore_preserves_incomplete_order_draft() {
+    let (_guard, resources, mut engine) = analysis_engine_after_classify();
+    let view = engine.view().unwrap();
+    let view = engine
+        .select_analysis_board(analysis_token(&view), "local_event_sequence".into())
+        .unwrap();
+    let partial_order = AnalysisDraft::Order {
+        card_ids: vec!["event_1841".into(), "event_1843".into()],
+    };
+    engine
+        .update_analysis_draft(analysis_token(&view), partial_order.clone())
+        .unwrap();
+
+    let restored = detached_restore(&engine, &resources);
+    let restored_view = restored.view().unwrap();
+    assert!(matches!(
+        board(&restored_view, "local_event_sequence"),
+        AnalysisBoardView::Order { draft, .. } if draft == &partial_order
+    ));
+    assert_no_answer_keys(&serde_json::to_value(&restored_view).unwrap());
+}
+
+#[test]
+fn detached_restore_preserves_incomplete_threshold_draft() {
+    let (_guard, resources, mut engine) = analysis_engine_after_classify();
+    let view = engine.view().unwrap();
+    let view = engine
+        .select_analysis_board(analysis_token(&view), "local_event_sequence".into())
+        .unwrap();
+    let complete_order = AnalysisDraft::Order {
+        card_ids: vec![
+            "event_1841".into(),
+            "event_1842".into(),
+            "event_1843".into(),
+            "event_1844".into(),
+        ],
+    };
+    let view = engine
+        .update_analysis_draft(analysis_token(&view), complete_order)
+        .unwrap();
+    let view = engine.submit_analysis_board(analysis_token(&view)).unwrap();
+    assert!(matches!(view.mode, ModeView::Dialogue { .. }));
+    assert_eq!(
+        drain_dialogue(&mut engine),
+        vec!["本機只告訴我們先後，沒有告訴我們精確秒數。"]
+    );
+
+    let view = engine.view().unwrap();
+    let view = engine
+        .select_analysis_board(analysis_token(&view), "narrow_request_basis".into())
+        .unwrap();
+    let partial_threshold = AnalysisDraft::Threshold {
+        selected_card_ids: BTreeSet::from(["lock_sequence".into()]),
+    };
+    engine
+        .update_analysis_draft(analysis_token(&view), partial_threshold.clone())
+        .unwrap();
+
+    let restored = detached_restore(&engine, &resources);
+    let restored_view = restored.view().unwrap();
+    assert!(matches!(
+        board(&restored_view, "narrow_request_basis"),
+        AnalysisBoardView::Threshold { draft, .. } if draft == &partial_threshold
+    ));
+    assert_no_answer_keys(&serde_json::to_value(&restored_view).unwrap());
+}
+
 #[test]
 fn analysis_fixture_acceptance_round_trips_drafts_and_effects_without_replay_or_leakage() {
     let (_guard, resources) = analysis_fixture_resources();
@@ -289,6 +411,7 @@ fn analysis_fixture_acceptance_round_trips_drafts_and_effects_without_replay_or_
             "local_event_sequence".into(),
         )
         .unwrap();
+
     let order_selection_revision = restored.durable_revision;
 
     let order = AnalysisDraft::Order {
