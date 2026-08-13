@@ -77,21 +77,15 @@
 
 ##### Line: 三宅說謊故摘要更可信 {#summary_miyake_most_credible}
 
-**神谷澪**：三宅在問話裡說過謊。
+**神谷澪**：三宅有兩個小謊，摘要因此把他列為主嫌。
 
-**神谷澪**：一個會說謊的人，跟一份系統摘要放在一起。
+**神谷澪**：小謊既然成立，摘要的可信度就高於他的說法。
 
-**神谷澪**：摘要當然更可信。
-
-**神谷澪**：他記不清時間，也瞞下後場拿走的東西。
-
-**神谷澪**：會說謊的人，本來就該被多看兩眼。
-
-**神谷澪**：這不是偏見，是常識。
+**神谷澪**：這一條，先按程序確認。
 
 - **Contradiction:** evidence:closing_routine
 - **Challenge:** **相馬律**：他說的那兩個謊，我都能對上該有的東西。先看那段閉店流程。
-- **On Correct:** **相馬律**：他瞞的是要丟的蛋糕盒，記不清的那段是躲著打給母親——兩件事都落在閉店流程裡。是小謊，不是殺人。
+- **On Correct:** **相馬律**：蛋糕盒與母親通話都對得上閉店流程；是小謊，不是殺人。
 - **On Wrong Evidence:** **神谷澪**：人格不是證據。他孝不孝順，跟那一晚有沒有殺人，是兩回事。拿能對上那句謊話的東西來。
 
 ## Phase: 死亡更早 {#p2}
@@ -129,17 +123,13 @@
 
 ##### Line: 死亡在三宅進後場後 {#summary_death_after_miyake}
 
-**神谷澪**：按摘要排，死亡落在三宅進後場之後。時間順下來，他就在那扇門裡。
+**神谷澪**：摘要把死亡排在三宅進後場之後，並以他的動線作主錨。
 
-**神谷澪**：摘要把三宅那段動線當成主錨。
-
-**神谷澪**：死亡時間是順著它排的。
-
-**神谷澪**：你要往前移，得拿出比一杯咖啡更硬的東西。
+**神谷澪**：要往前移，必須有更硬的時間紀錄。
 
 - **Contradiction:** evidence:victim_phone_notification
 - **Challenge:** **相馬律**：那條死亡時間，得往前移。看死者手機那則通知停在幾分。
-- **On Correct:** **相馬律**：通知停在二十二點五十八分前後，後場掛鐘停在五十九分，豆罐上的擦痕、鑑識初判都對著同一段——死亡比摘要寫的更早。
+- **On Correct:** **相馬律**：手機通知與後場紀錄把死亡推到摘要之前；摘要的主時間線不成立。
 - **On Wrong Evidence:** **神谷澪**：那杯咖啡只證明第二個人被等著、提早到了，證不到死亡的那一分鐘。別拿它當死亡時刻。
 
 ## Phase: 第三者更早進入 {#p3}
@@ -179,35 +169,34 @@
 
 ##### Line: 更早也可能是三宅 {#summary_could_still_be_miyake}
 
-**神谷澪**：時間往前移，不代表換了人。更早那一刻，站在後場的也可能就是三宅。
+**神谷澪**：時間往前移，不等於換了人；三宅仍可能在後場。
 
-**神谷澪**：他那段時間本來就在店裡，動線貼著後場。
-
-**神谷澪**：把時間往前挪，他還是嫌疑最大的那一個。
+**神谷澪**：要排除他，必須證明更早的進場者另有其人。
 
 - **Contradiction:** evidence:miyake_pov_replay
 - **Challenge:** **相馬律**：要把他從那個位置拉開，就看他那時的視線回放。
-- **On Correct:** **相馬律**：他的視線被 L 型轉角擋住，看不到內側倉庫；半乾水跡證明有人在三宅前走過後巷，較新的濕傘套只說明這條承包商動線有不只一次帶雨水的進出。
+- **On Correct:** **相馬律**：L 型轉角擋住三宅視線；半乾水跡證明有人在他之前走過承包商動線。
 - **On Wrong Evidence:** **神谷澪**：傘套只留下後來的雨水，不能替更早水痕認人。要把那個空位對到人，得靠工單和外包憑證。
 
 ## Phase: 申請限定調出 {#gate}
 - **Kind:** inquiry
 - **Required:** true
 - **Status:** locked
-- **Unlock:** phase:p3 completed
+- **Represented Authority:** KAGAMI 證據摘要審查會主理
+- **Unlock:** phase:p3 completed and objective:prepare_narrow_lock_request completed
 - **Background Prompt:** KAGAMI review hearing room with a limited-record authorization form centered before the presiding official, formal stamp pad, no readable text.
 - **BGM:** bgm_review_board_victory
 - **BGS:** bgs_review_board_room
 
 [場景：KAGAMI 證據摘要審查會，白日，神谷澪面前擺著後場門鎖核准片段的調閱授權單。]
 
-**神谷澪**：書記官，補一筆。三宅站位無法目視屍體，列為已成立矛盾。
+**神谷澪**：書記官，補一筆。三宅站位無法目視屍體，第三條矛盾成立。
 
 [相馬律與早坂茜並肩站起，把三條已成立的矛盾，疊在神谷面前。]
 
-**早坂茜**：三條矛盾都成立了。小謊不是殺人、死亡更早、第三個人更早進來。
+**早坂茜**：三條矛盾已成立：小謊、死亡時間、第三者先行進場。
 
-**早坂茜**[stern]：請核准那段片段；我們只比對摘要和本機順序。
+**早坂茜**[stern]：請核准限定片段，只比對摘要與本機順序。
 
 ### Subject: 神谷澪 {#kamiya}
 - **Role:** KAGAMI 證據摘要審查會主理
@@ -225,25 +214,21 @@
 
 ##### Line: 核准片段暫緩調出 {#gate_hold_record}
 
-**神谷澪**：我不會因為你們說有矛盾，就核准那段片段。
+**神谷澪**：本機順序已固定，但摘要那行秒數仍未對上。
 
-**神谷澪**：本機順序已經固定在案。
-
-**神谷澪**：它讓摘要那條時間線站不穩，卻還對不上那行秒數。
-
-**神谷澪**：要我核准片段，先說清楚你們還要核哪一筆。
+**神谷澪**：先說清楚，你們要核准哪一筆、限定到哪裡。
 
 - **Contradiction:** evidence:doorlock_summary_timetable
-- **Challenge:** **相馬律**：本機順序早已固定。這份摘要把二十三點零七分五十秒排成主時間線；請核准片段，只核這一筆在摘要裡怎麼排，和它從哪裡來。
-- **On Correct:** **神谷澪**：……三條矛盾，加上已固定的本機順序，夠我懷疑摘要那行時間了。後場門鎖的核准片段，准調那段時間、本機順序、憑證，還有這一筆在摘要裡怎麼排、從哪裡來。範圍外不給。
-  - **Reveals:** [evidence:approved_clip]
+- **Challenge:** **相馬律**：本機順序固定；請只核對摘要主時間線與它的來源。
+- **On Correct:** **神谷澪**：三條矛盾加上本機順序，足以核准限定片段；範圍外不給。
+  - **Reveals:** [grant_authorization:narrow_lock_export, evidence:approved_clip]
 - **On Wrong Evidence:** **神谷澪**：這動搖不了那行時間。拿那份把門鎖排成主時間線的摘要來，我才知道你們要翻哪一筆。
 
 ## Phase: 門鎖時間不是事件時間 {#p4}
 - **Kind:** inquiry
 - **Required:** true
 - **Status:** locked
-- **Unlock:** phase:gate completed
+- **Unlock:** phase:gate completed and authorization:narrow_lock_export granted
 - **Background Prompt:** Hearing table with approved doorlock excerpt beside a printed summary timetable, two parallel record stacks, precise procedural mood, no readable rows.
 - **BGM:** bgm_review_board_victory
 - **BGS:** bgs_review_board_room
@@ -252,11 +237,11 @@
 
 [黑瀨徹把核准調出的限定片段推到桌面中央。]
 
-**黑瀨徹**：核准片段到手。證物鏈標記我已經固定過，沒有斷點。
+**黑瀨徹**：核准片段到手，證物鏈沒有斷點。
 
 [神谷澪把限定片段與摘要時刻表並排，指著摘要上那行二十三點零七分五十秒。]
 
-**神谷澪**：第四條。門鎖紀錄沒被偽造，所以三宅那個時間是可信的。
+**神谷澪**：第四條。門鎖紀錄未被偽造，三宅那個時間可信。
 
 ### Subject: 神谷澪 {#kamiya}
 - **Role:** KAGAMI 證據摘要審查會主理
@@ -276,19 +261,13 @@
 
 ##### Line: 門鎖未偽造故三宅時間可信 {#summary_doorlock_authentic}
 
-**神谷澪**：門鎖紀錄沒被改過。
+**神谷澪**：門鎖紀錄未被改過，二十三點零七分五十秒也清楚。
 
-**神谷澪**：沒被改過的時間，就該照著信。
-
-**神谷澪**：二十三點零七分五十秒，寫得清清楚楚。
-
-**神谷澪**：門、鏡頭、員工憑證，全都對得上三宅。
-
-**神谷澪**：摘要抓到的，就是最好對得上的那一筆。
+**神谷澪**：門、鏡頭、憑證都對得上三宅；摘要抓到的是最好對上的一筆。
 
 - **Contradiction:** evidence:local_sequence_record
-- **Challenge:** **相馬律**：紀錄沒造假，錯的是讀法。對著核准片段，看本機順序。
-- **On Correct:** **相馬律**：核准片段顯示，本機順序早已記下外包憑證在三宅憑證前；89.7 秒後，摘要才完成合併，把二十三點零七分五十秒排到三宅那筆上。那是摘要完成合併的時間，不是三宅進門的時間。
+- **Challenge:** **相馬律**：紀錄沒造假，錯的是讀法；請對照核准片段的本機順序。
+- **On Correct:** **相馬律**：外包憑證早於三宅憑證；摘要在其後合併，二十三點零七分五十秒是合併時間，不是進門時間。
 - **On Wrong Evidence:** **神谷澪**：本機順序沒有被動過手腳。錯的不是門鎖，是摘要對它的讀法。別把這頂帽子扣到造假上。
 
 ## Phase: 北見是真兇 {#p5}

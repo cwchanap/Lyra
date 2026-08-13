@@ -2600,6 +2600,79 @@ describe("compile (tracked production corpus compatibility)", () => {
     }
   });
 
+  it("keeps the HPA-265 hearing gate objective, authority, atomic grant, and p4 authorization fence", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-hpa-265-hearing-gate-"),
+    );
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+    try {
+      const repoRoot = resolve(".");
+      const result = compile({
+        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
+        outputRoot: outRoot,
+        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+        repoRoot,
+      });
+      if (!result.ok) {
+        throw new Error(
+          "Live corpus compile failed:\n" + formatErrors(result.errors),
+        );
+      }
+
+      const interrogation = readJson("chapter_1/interrogation_scene_10.json");
+      const gate = interrogation.phases.find(
+        (phase: { id: string }) => phase.id === "gate",
+      );
+      const p4 = interrogation.phases.find(
+        (phase: { id: string }) => phase.id === "p4",
+      );
+      expect(gate).toMatchObject({
+        id: "gate",
+        status: "locked",
+        representedAuthority: "KAGAMI 證據摘要審查會主理",
+        unlock: {
+          op: "and",
+          left: { predicate: "phase_completed", id: "p3" },
+          right: {
+            predicate: "objective_completed",
+            id: "prepare_narrow_lock_request",
+          },
+        },
+      });
+      expect(gate.questions[0].testimony.lines[0].reveals).toEqual([
+        {
+          kind: "grantAuthorization",
+          authorizationId: "narrow_lock_export",
+        },
+        { kind: "evidence", id: "approved_clip" },
+      ]);
+      expect(p4).toMatchObject({
+        id: "p4",
+        status: "locked",
+        unlock: {
+          op: "and",
+          left: { predicate: "phase_completed", id: "gate" },
+          right: {
+            predicate: "authorization_granted",
+            id: "narrow_lock_export",
+          },
+        },
+      });
+
+      const source = readFileSync(
+        resolve(
+          repoRoot,
+          "docs/stories_plan/chapter_1/interrogation_scene_10.md",
+        ),
+        "utf-8",
+      );
+      expect(source).not.toContain("authorization_granted");
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the Chapter 1 warning and save-content manifest baseline", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-live-baseline-"),

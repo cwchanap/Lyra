@@ -2815,17 +2815,159 @@ mod tests {
     use crate::game::dialogue_queue::DialogueSegmentOriginV1;
     use crate::game::scenes::interrogation::InterrogationSceneState;
     use crate::game::schema::{
-        AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson,
+        AudioChannelJson, AudioCueJson, AutoMarker, CharacterJson, Combinator,
         CombinedInterrogationRevealTarget, EvidenceJson, HotspotJson, InquiryQuestionJson,
         InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
-        InterrogationRevealTarget, InterrogationSceneJson, InventoryTarget,
-        InvestigationRevealTarget, InvestigationSceneJson, LockStatus, OutroJson, OutroUnlock,
-        RevealTarget, SceneJson, SceneType, StatementJson, StoryRevealTarget, SublocationJson,
-        TestimonyJson, TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
+        InterrogationRevealTarget, InterrogationSceneJson, InterrogationUnlockExpr,
+        InventoryTarget, InvestigationRevealTarget, InvestigationSceneJson, LockStatus, OutroJson,
+        OutroUnlock, PredicateAuthorizationGranted, PredicatePhaseCompleted, RevealTarget,
+        SceneJson, SceneType, StatementJson, StoryRevealTarget, SublocationJson, TestimonyJson,
+        TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
+    use crate::game::unlock::StoryUnlockContext;
 
     use crate::game::test_support::*;
+
+    fn hpa265_gate_scene() -> InterrogationSceneJson {
+        let mut scene = two_line_question_scene();
+        let subject = match &mut scene.phases[0] {
+            InterrogationPhaseJson::Inquiry {
+                id,
+                represented_authority,
+                questions,
+                subject,
+                ..
+            } => {
+                *id = "gate".into();
+                *represented_authority = Some("Police".into());
+                let question = questions.first_mut().expect("gate question");
+                let line = question
+                    .testimony
+                    .lines
+                    .iter_mut()
+                    .find(|line| line.id == "l_deny")
+                    .expect("gate contradiction line");
+                line.reveals = vec![
+                    CombinedInterrogationRevealTarget::Story(
+                        StoryRevealTarget::GrantAuthorization {
+                            authorization_id: "narrow_lock_export".into(),
+                        },
+                    ),
+                    CombinedInterrogationRevealTarget::Local(InterrogationRevealTarget::Evidence {
+                        id: "approved_clip".into(),
+                    }),
+                ];
+                subject.clone()
+            }
+        };
+        scene.evidence_manifest.push(EvidenceJson {
+            id: "approved_clip".into(),
+            name: "Approved clip".into(),
+            description: "Approved clip".into(),
+            details: "Approved clip".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_collect: vec![],
+            on_reexamine: None,
+        });
+        scene.phases.push(InterrogationPhaseJson::Inquiry {
+            id: "p4".into(),
+            label: "P4".into(),
+            subject,
+            required: true,
+            status: LockStatus::Locked,
+            represented_authority: None,
+            unlock: Some(InterrogationUnlockExpr::Combinator {
+                op: Combinator::And,
+                left: Box::new(InterrogationUnlockExpr::PhaseCompleted {
+                    _predicate: PredicatePhaseCompleted::X,
+                    id: "gate".into(),
+                }),
+                right: Box::new(InterrogationUnlockExpr::AuthorizationGranted {
+                    _predicate: PredicateAuthorizationGranted::X,
+                    id: "narrow_lock_export".into(),
+                }),
+            }),
+            reveals: vec![],
+            scene_tag: "hearing room".into(),
+            flattened_asset_cue: VisualAssetCueJson::default(),
+            entry_dialogue: vec![],
+            complete: InterrogationOutroUnlock::Auto(AutoMarker::Auto),
+            questions: vec![],
+        });
+        scene
+    }
+
+    fn hpa265_gate_engine(mismatched_clip: bool) -> GameEngine {
+        let scene = hpa265_gate_scene();
+        let mut engine = empty_engine_with_interrogation_scene(scene, 1);
+        let mut clip_provenance = crate::game::provenance::CaseRecordProvenance::default();
+        if mismatched_clip {
+            clip_provenance.source_label = Some("mismatch".into());
+        }
+        engine.story_catalog = catalog_with_story_definitions_and_case_records(
+            vec![],
+            vec![],
+            vec![],
+            vec![serde_json::json!({
+                "id": "narrow_lock_export",
+                "label": "Narrow lock export",
+                "summary": "Synthetic authorization",
+                "grantingAuthority": "Police"
+            })],
+            vec![
+                (
+                    "cleaning_log",
+                    "chapter_1",
+                    "interrogation_scene_1",
+                    crate::game::provenance::CaseRecordProvenance::default(),
+                ),
+                (
+                    "approved_clip",
+                    "chapter_1",
+                    "interrogation_scene_1",
+                    clip_provenance,
+                ),
+                (
+                    "unrelated",
+                    "chapter_1",
+                    "interrogation_scene_1",
+                    crate::game::provenance::CaseRecordProvenance::default(),
+                ),
+            ],
+            vec![],
+        );
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "cleaning_log".into(),
+            name: "Cleaning log".into(),
+            description: "d".into(),
+            details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
+        });
+        engine
+    }
+
+    fn start_hpa265_gate_question(engine: &mut GameEngine) {
+        engine.prime_initial_queue().unwrap();
+        let view = engine.ask_interrogation_question("alibi").unwrap();
+        let _view = engine.advance_dialogue(token_from(&view)).unwrap();
+        let view = engine.challenge_interrogation_line("l_deny").unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+    }
+
+    fn drain_test_dialogue(engine: &mut GameEngine, mut view: GameStateView) -> GameStateView {
+        loop {
+            let ModeView::Dialogue { queue_token, .. } = &view.mode else {
+                return view;
+            };
+            view = engine.advance_dialogue(queue_token.clone()).unwrap();
+        }
+    }
 
     #[test]
     fn linear_runtime_queue_retains_stable_origin_after_leading_scene_tag() {
@@ -4981,6 +5123,98 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         engine.ask_interrogation_question("alibi").unwrap();
         assert_eq!(engine.story_state.snapshot(), after_first);
+    }
+
+    #[test]
+    fn hpa265_wrong_evidence_does_not_grant_or_collect_gate_reveals() {
+        let mut engine = hpa265_gate_engine(false);
+        engine.inventory.evidence.push(EvidenceRecord {
+            id: "unrelated".into(),
+            name: "Unrelated".into(),
+            description: "d".into(),
+            details: "d".into(),
+            provenance: crate::game::provenance::CaseRecordProvenance::default(),
+            image_asset_id: None,
+            on_reexamine: None,
+            collected_in_chapter_id: "chapter_1".into(),
+            collected_in_scene_id: "interrogation_scene_1".into(),
+        });
+        start_hpa265_gate_question(&mut engine);
+        let story_before = engine.story_state.clone();
+        let inventory_before = engine.inventory.clone();
+        let events_before = engine.pending_acquisition_events.clone();
+
+        engine
+            .present_interrogation_evidence("l_deny", "evidence", "unrelated")
+            .unwrap();
+
+        assert_eq!(engine.story_state, story_before);
+        assert_eq!(engine.inventory, inventory_before);
+        assert_eq!(engine.pending_acquisition_events, events_before);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(!scene.is_question_broken("alibi"));
+        assert!(!engine
+            .story_state
+            .authorization_granted("narrow_lock_export"));
+        assert!(!engine.inventory.has_evidence("approved_clip"));
+    }
+
+    #[test]
+    fn hpa265_grant_and_clip_batch_rolls_back_atomically_on_clip_failure() {
+        let mut engine = hpa265_gate_engine(true);
+        start_hpa265_gate_question(&mut engine);
+        let story_before = engine.story_state.clone();
+        let inventory_before = engine.inventory.clone();
+        let events_before = engine.pending_acquisition_events.clone();
+        let revision_before = engine.durable_revision;
+
+        let error = engine
+            .present_interrogation_evidence("l_deny", "evidence", "cleaning_log")
+            .unwrap_err();
+
+        assert_eq!(error.code, "caseRecordDefinitionMismatch");
+        assert_eq!(engine.story_state, story_before);
+        assert_eq!(engine.inventory, inventory_before);
+        assert_eq!(engine.pending_acquisition_events, events_before);
+        assert_eq!(engine.durable_revision, revision_before);
+        let SceneRuntime::Interrogation(scene) = &engine.scene else {
+            panic!("expected interrogation scene");
+        };
+        assert!(!scene.is_question_broken("alibi"));
+        assert!(!engine
+            .story_state
+            .authorization_granted("narrow_lock_export"));
+        assert!(!engine.inventory.has_evidence("approved_clip"));
+    }
+
+    #[test]
+    fn hpa265_gate_replay_and_story_restore_are_idempotent() {
+        let mut engine = hpa265_gate_engine(false);
+        start_hpa265_gate_question(&mut engine);
+        let first = engine
+            .present_interrogation_evidence("l_deny", "evidence", "cleaning_log")
+            .unwrap();
+        let _ = drain_test_dialogue(&mut engine, first);
+        let story_after_first = engine.story_state.clone();
+        let inventory_after_first = engine.inventory.clone();
+        let events_after_first = engine.pending_acquisition_events.clone();
+        assert!(engine
+            .story_state
+            .authorization_granted("narrow_lock_export"));
+        assert!(engine.inventory.has_evidence("approved_clip"));
+
+        let replay = engine.ask_interrogation_question("alibi").unwrap();
+        let _ = drain_test_dialogue(&mut engine, replay);
+        assert_eq!(engine.story_state, story_after_first);
+        assert_eq!(engine.inventory, inventory_after_first);
+        assert_eq!(engine.pending_acquisition_events, events_after_first);
+
+        let snapshot = engine.story_state.snapshot();
+        let restored = StoryState::from_snapshot(&engine.story_catalog, snapshot.clone()).unwrap();
+        assert_eq!(restored.snapshot(), snapshot);
+        assert!(restored.authorization_granted("narrow_lock_export"));
     }
 
     #[test]
