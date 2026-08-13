@@ -823,9 +823,9 @@ engine.jump_to_scene("chapter_1", "analysis_scene_8_5")?;
 
 Return only when the projected scene/mode is the production Analysis scene.
 
-- [ ] **Step 4: Add a focused E2E suite id rather than expanding `production-journey`**
+- [ ] **Step 4: Register one standalone focused E2E suite rather than expanding `production-journey`**
 
-Add one suite such as:
+Add one suite id:
 
 ```text
 analysis-beat85
@@ -837,7 +837,9 @@ whose only spec is:
 ./e2e-tauri/analysis-beat85.e2e.ts
 ```
 
-Update the suite-registry tests that pin allowed ids/spec ownership. Do not change the existing production-journey spec.
+Update suite-registry tests that pin allowed ids/spec ownership.
+
+Keep `production-journey` unchanged. Do not add `analysis-beat85` to `E2E_CHAIN_DEFINITIONS.gameplay` unless the existing registry validation requires every suite to belong to a chain; it is an HPA-265 acceptance suite and may run explicitly plus as part of `--full` selection.
 
 - [ ] **Step 5: Drive Classify and Order once using existing accessible controls**
 
