@@ -43,18 +43,9 @@ This proves the only untested content-model assumption before real dialogue/prov
 
 ## Production catalog and provenance
 
-Create only four Facts:
+Create only four Facts (`miyake_known_lies_are_unrelated_to_murder`, `earlier_external_entry_exists`, `merge_time_is_not_event_time`, `two_independent_lock_contradictions_identified`), secondary Objective `prepare_narrow_lock_request`, Authorization `narrow_lock_export` granted by `KAGAMI 證據摘要審查會主理`, and Source Groups `door_lock_fixed_record` / `victim_phone_device`.
 
-```text
-miyake_known_lies_are_unrelated_to_murder
-earlier_external_entry_exists
-merge_time_is_not_event_time
-two_independent_lock_contradictions_identified
-```
-
-Each has Summary/Details/`Category: chapter_1`.
-
-Add secondary Objective `prepare_narrow_lock_request`, Authorization `narrow_lock_export` granted by `KAGAMI 證據摘要審查會主理`, and Source Groups `door_lock_fixed_record` / `victim_phone_device`, each with Summary.
+Each Fact has `Summary`, `Details`, `Category: chapter_1`; each Source Group has Summary.
 
 Truthful provenance:
 
@@ -121,7 +112,7 @@ p4 must consume the authorization using actual authoring grammar:
 - **Unlock:** phase:gate completed and authorization:narrow_lock_export granted
 ```
 
-`authorization_granted` is the normalized JSON predicate, not Markdown syntax. This makes the authority producer load-bearing in production reachability.
+`authorization_granted` is normalized JSON, not Markdown syntax. This makes the authority producer load-bearing in production reachability.
 
 ## Packaged acceptance and CI ownership
 
