@@ -383,6 +383,8 @@
 - **Details:** 最後一則通知約落在 22:58，與舊掛鐘的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
 - **Source Sublocation:** inner
 - **Image Prompt:** Smartphone near a storage-room shelf impact mark with a blurred notification row, unreadable timestamp blocks, isolated evidence icon.
+- **Source Group:** victim_phone_device
+- **Proof Capabilities:** [time]
 
 #### On Collect
 

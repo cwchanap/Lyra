@@ -3,10 +3,17 @@
 exports[`compile (tracked production corpus compatibility) > keeps the Chapter 1 warning and save-content manifest baseline 1`] = `
 {
   "manifest": {
-    "contentRevision": "sha256:eabaf6147088f4f981a063b95936f3c64a0ee88342a3da225e46e62b80dbd5d1",
+    "contentRevision": "sha256:1e2dce52fe445ad067e6f0cb246040e1ed86c20089e0c1b1c92b0f573eba4bf5",
     "manifestVersion": 1,
   },
-  "warnings": [],
+  "warnings": [
+    {
+      "code": "singletonSourceGroup",
+      "line": 50,
+      "message": "Source group "victim_phone_device" has one member: evidence:victim_phone_notification.",
+      "sourceFile": "/Users/chanwaichan/workspace/Lyra/.worktrees/hpa-265-beat-85/docs/stories_plan/story_catalog.md",
+    },
+  ],
 }
 `;
 
