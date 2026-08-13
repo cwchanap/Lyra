@@ -6,10 +6,10 @@
       "hotspots": {
         "takase_replay": {
           "kind": "rect",
-          "x": 0.274,
-          "y": 0.472,
-          "w": 0.124,
-          "h": 0.28
+          "x": 0.26,
+          "y": 0.58,
+          "w": 0.1,
+          "h": 0.12
         },
         "miyake_replay": {
           "kind": "rect",
@@ -57,20 +57,16 @@
           "h": 0.76,
           "anchor": "bottomCenter"
         }
-      },
-      "intentionalOverlaps": [
-        { "hotspots": ["takase_replay", "miyake_replay"] },
-        { "hotspots": ["takase_replay", "bean_can"] }
-      ]
+      }
     },
     "back_door": {
       "hotspots": {
         "fire_door_7": {
           "kind": "rect",
-          "x": 0.6304,
-          "y": 0.068032,
-          "w": 0.066465,
-          "h": 0.72038
+          "x": 0.12,
+          "y": 0.05,
+          "w": 0.245,
+          "h": 0.57
         },
         "umbrella_sleeve": {
           "kind": "rect",
@@ -111,10 +107,7 @@
           "h": 0.76,
           "anchor": "bottomCenter"
         }
-      },
-      "intentionalOverlaps": [
-        { "hotspots": ["fire_door_7", "floor_water"] }
-      ]
+      }
     }
   }
 }

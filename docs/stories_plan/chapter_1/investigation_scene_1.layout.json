@@ -27,10 +27,10 @@
         },
         "old_request_slips": {
           "kind": "rect",
-          "x": 0.336339,
-          "y": 0.273903,
-          "w": 0.286957,
-          "h": 0.182609
+          "x": 0.15,
+          "y": 0.32,
+          "w": 0.095,
+          "h": 0.08
         }
       },
       "characters": {
@@ -43,11 +43,7 @@
           "h": 0.94,
           "anchor": "bottomCenter"
         }
-      },
-      "intentionalOverlaps": [
-        { "hotspots": ["kagami_summary_hotspot", "old_request_slips"] },
-        { "hotspots": ["canned_coffee", "old_request_slips"] }
-      ]
+      }
     }
   }
 }
