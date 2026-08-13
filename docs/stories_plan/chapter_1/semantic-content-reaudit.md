@@ -1,5 +1,7 @@
 # Chapter 1 semantic content re-audit
 
+> **Historical supersession note (HPA-265, 2026-08-13):** Findings below that cite `scene_8_5.md` and the frozen no-analysis manifest describe the pre-HPA-265 production state. HPA-265 supersedes that linear file with the manifest-listed `analysis_scene_8_5.md`; retain those findings as historical and do not treat them as current production state.
+
 ## Frozen production manifest
 
 The Chapter 1 production manifest is frozen for this re-audit. Its exact ordered scene list is:
