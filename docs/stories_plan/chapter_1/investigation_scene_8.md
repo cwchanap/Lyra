@@ -245,6 +245,8 @@
 - **Details:** 含門鎖設備識別碼、機身編號、頁面版本號與當前畫面時間，底下是事件 1841 至 1844 的本機順序，只有先後，沒有秒數。這是本機自己存的順序，不是 KAGAMI 的核准片段。
 - **Source Sublocation:** fixed_panel
 - **Image Prompt:** Formal doorlock panel sequence record with four ordered event blocks, device-photo strip, unreadable fields, isolated evidence icon.
+- **Source Group:** door_lock_fixed_record
+- **Proof Capabilities:** [order]
 
 #### On Collect
 
@@ -271,6 +273,8 @@
 - **Details:** 事件 1842，外部維護憑證、後門開啟，排在三宅的員工憑證事件 1843 之前。目前只知道有這麼一個外部憑證的事件，還沒對應到任何一個人。
 - **Source Sublocation:** fixed_panel
 - **Image Prompt:** External maintenance credential event card with keycard silhouette and ordered event row, all codes unreadable, isolated evidence icon.
+- **Source Group:** door_lock_fixed_record
+- **Proof Capabilities:** [order, access]
 
 #### On Collect
 

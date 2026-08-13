@@ -2380,7 +2380,7 @@ describe("compile (tracked production corpus compatibility)", () => {
     }
   });
 
-  it("emits neutral provenance and no source groups without story migration", () => {
+  it("preserves neutral provenance outside the approved production migration", () => {
     const outRoot = mkdtempSync(
       resolve(tmpdir(), "scene-compile-live-provenance-"),
     );
@@ -2467,10 +2467,55 @@ describe("compile (tracked production corpus compatibility)", () => {
       expect(
         sceneRecords.map(({ kind, id }) => `${kind}:${id}`).sort(),
       ).toEqual(catalogRecords.map(({ kind, id }) => `${kind}:${id}`).sort());
+      const migratedProvenance = new Map([
+        [
+          "evidence:victim_phone_notification",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceGroupId: "victim_phone_device",
+            proofCapabilities: ["time"],
+          },
+        ],
+        [
+          "evidence:local_sequence_record",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceGroupId: "door_lock_fixed_record",
+            proofCapabilities: ["order"],
+          },
+        ],
+        [
+          "evidence:external_maintenance_credential",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceGroupId: "door_lock_fixed_record",
+            proofCapabilities: ["order", "access"],
+          },
+        ],
+      ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
-        expect(record.provenance).toEqual(NEUTRAL_CASE_RECORD_PROVENANCE);
+        const key = `${record.kind}:${record.id}`;
+        expect(record.provenance).toEqual(
+          migratedProvenance.get(key) ?? NEUTRAL_CASE_RECORD_PROVENANCE,
+        );
       }
-      expect(catalog.sourceGroups).toEqual([]);
+      expect(catalog.sourceGroups).toEqual([
+        {
+          id: "door_lock_fixed_record",
+          label: "門鎖固定紀錄",
+          summary: "依程序固定的同一門鎖本機事件紀錄。",
+          members: [
+            { kind: "evidence", id: "external_maintenance_credential" },
+            { kind: "evidence", id: "local_sequence_record" },
+          ],
+        },
+        {
+          id: "victim_phone_device",
+          label: "死者手機裝置",
+          summary: "從死者手機裝置重新取得的通知紀錄。",
+          members: [{ kind: "evidence", id: "victim_phone_notification" }],
+        },
+      ]);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
