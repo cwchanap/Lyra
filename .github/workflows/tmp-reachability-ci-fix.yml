@@ -1,4 +1,4 @@
-name: Temporary reachability CI trace
+name: Temporary reachability CI fix
 
 on:
   push:
@@ -7,10 +7,10 @@ on:
       - .github/workflows/tmp-reachability-ci-fix.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  trace:
+  patch-and-verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Instrument authorization reachability
+      - name: Patch authorization guarantee analysis
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -32,75 +32,92 @@ jobs:
           path = Path("packages/scripts/compile-scenes/reachability.ts")
           text = path.read_text()
 
-          replacements = [
-              (
-                  "    const authorizationFailure = mandatoryAuthorizationFailure({\n"
-                  "      nodes,\n"
-                  "      node,\n"
-                  "      reachableNodeKeys,\n"
-                  "      mustAtoms,\n"
-                  "      authorizationDefinitions,\n"
-                  "    });",
-                  "    const authorizationFailure = mandatoryAuthorizationFailure({\n"
-                  "      nodes,\n"
-                  "      node,\n"
-                  "      reachableNodeKeys,\n"
-                  "      mustReachableNodeKeys,\n"
-                  "      mustAtoms,\n"
-                  "      authorizationDefinitions,\n"
-                  "    });",
-              ),
-              (
-                  "function mandatoryAuthorizationFailure(input: {\n"
-                  "  node: ReachabilityNode;\n"
-                  "  nodes: readonly ReachabilityNode[];\n"
-                  "  reachableNodeKeys: ReadonlySet<string>;\n"
-                  "  mustAtoms: ReadonlySet<ReachabilityAtom>;",
-                  "function mandatoryAuthorizationFailure(input: {\n"
-                  "  node: ReachabilityNode;\n"
-                  "  nodes: readonly ReachabilityNode[];\n"
-                  "  reachableNodeKeys: ReadonlySet<string>;\n"
-                  "  mustReachableNodeKeys: ReadonlySet<string>;\n"
-                  "  mustAtoms: ReadonlySet<ReachabilityAtom>;",
-              ),
-              (
-                  "    if (nonLegacyMatching.length === 0) continue;\n",
-                  "    if (nonLegacyMatching.length === 0) continue;\n"
-                  "    if (authorizationId === \"narrow_lock_export\") {\n"
-                  "      const byKey = new Map(input.nodes.map((candidate) => [candidate.key, candidate]));\n"
-                  "      const details = nonLegacyMatching.map((producer) => ({\n"
-                  "        key: producer.key,\n"
-                  "        requirement: producer.requirement,\n"
-                  "        reachable: input.reachableNodeKeys.has(producer.key),\n"
-                  "        mustReachable: input.mustReachableNodeKeys.has(producer.key),\n"
-                  "        condition: producer.condition,\n"
-                  "        implicitPrerequisites: producer.implicitPrerequisites,\n"
-                  "        predecessors: producer.strictPredecessorKeys.map((key) => {\n"
-                  "          const predecessor = byKey.get(key);\n"
-                  "          return predecessor === undefined\n"
-                  "            ? { key, missing: true }\n"
-                  "            : {\n"
-                  "                key,\n"
-                  "                requirement: predecessor.requirement,\n"
-                  "                reachable: input.reachableNodeKeys.has(key),\n"
-                  "                mustReachable: input.mustReachableNodeKeys.has(key),\n"
-                  "                condition: predecessor.condition,\n"
-                  "                implicitPrerequisites: predecessor.implicitPrerequisites,\n"
-                  "              };\n"
-                  "        }),\n"
-                  "      }));\n"
-                  "      console.error(\"[reachability-debug]\", JSON.stringify(details, null, 2));\n"
-                  "    }\n",
-              ),
-          ]
+          before = (
+              "      if (groupMembers.length === 1) {\n"
+              "        // Standalone producer: the grant is absent from mustAtoms, so this\n"
+              "        // reachable producer is only may-reachable. An optional producer can\n"
+              "        // be skipped directly; a mandatory producer can be missed when its\n"
+              "        // own predecessor is optional. Either way the grant is unguaranteed.\n"
+              "        unguaranteed = true;\n"
+              "        break;\n"
+              "      } else {"
+          )
+          after = (
+              "      if (groupMembers.length === 1) {\n"
+              "        const nodesByKey = new Map(\n"
+              "          input.nodes.map((candidate) => [candidate.key, candidate]),\n"
+              "        );\n"
+              "        const producerKeysByAtom = buildPositiveProducerIndex(input.nodes);\n"
+              "        const prerequisiteAtoms = unique(\n"
+              "          [\n"
+              "            ...requiredExpressionPredicates(producer.condition),\n"
+              "            ...producer.implicitPrerequisites,\n"
+              "          ].map((predicate) => predicate.atom),\n"
+              "        );\n"
+              "        const hasOptionalStrictPredecessor = producer.strictPredecessorKeys.some(\n"
+              "          (key) => nodesByKey.get(key)?.requirement === \"optional\",\n"
+              "        );\n"
+              "        const hasOnlyOptionalPrerequisiteProducers = prerequisiteAtoms.some(\n"
+              "          (atom) => {\n"
+              "            const keys = producerKeysByAtom.get(atom) ?? [];\n"
+              "            return (\n"
+              "              keys.length > 0 &&\n"
+              "              keys.every(\n"
+              "                (key) => nodesByKey.get(key)?.requirement === \"optional\",\n"
+              "              )\n"
+              "            );\n"
+              "          },\n"
+              "        );\n"
+              "        if (\n"
+              "          producer.requirement === \"optional\" ||\n"
+              "          hasOptionalStrictPredecessor ||\n"
+              "          hasOnlyOptionalPrerequisiteProducers\n"
+              "        ) {\n"
+              "          unguaranteed = true;\n"
+              "          break;\n"
+              "        }\n"
+              "      } else {"
+          )
+          if before not in text:
+              raise SystemExit("standalone producer block not found")
+          text = text.replace(before, after, 1)
 
-          for before, after in replacements:
-              if before not in text:
-                  raise SystemExit(f"trace patch target missing: {before[:100]!r}")
-              text = text.replace(before, after, 1)
-
-          path.write_text(text)
+          old_comment = (
+              "    // A grant is unguaranteed when the player can reach the predecessor\n"
+              "    // without producing the grant — i.e., the grant sits on an optional path\n"
+              "    // or only some mutually-exclusive alternatives produce it. If the grant\n"
+              "    // were guaranteed on every path it would be in mustAtoms (checked above);\n"
+              "    // reaching here means at least one reachable matching producer is only\n"
+              "    // may-reachable. For a standalone producer this holds whether the producer\n"
+              "    // itself is optional (the player skips it) or mandatory (the player skips\n"
+              "    // its own optional predecessor) — in both cases the player can complete\n"
+              "    // the predecessor without granting the authorization."
+          )
+          new_comment = (
+              "    // A grant is unguaranteed when its authored trigger is actually skippable:\n"
+              "    // the producer itself is optional, a required prerequisite is supplied only\n"
+              "    // by optional nodes, or only some mutually-exclusive alternatives grant it.\n"
+              "    // Do not infer skippability from global mustAtoms alone: later mandatory\n"
+              "    // content can be absent from the must fixed point after an earlier modeled\n"
+              "    // branch even when this producer's own path is structurally mandatory."
+          )
+          if old_comment not in text:
+              raise SystemExit("authorization guarantee comment not found")
+          path.write_text(text.replace(old_comment, new_comment, 1))
           PY
 
-      - name: Compile with trace
-        run: bun run scenes:compile
+      - name: Verify focused compiler behavior
+        run: |
+          bun run test:scripts -- packages/scripts/compile-scenes/reachability.test.ts
+          bun run scenes:compile
+          bun run check:scripts
+          git diff --check
+
+      - name: Commit verified fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/scripts/compile-scenes/reachability.ts
+          git rm .github/workflows/tmp-reachability-ci-fix.yml
+          git commit -m "fix: scope authorization guarantee to skippable prerequisites"
+          git push origin HEAD:codex/hpa-265-beat-85
