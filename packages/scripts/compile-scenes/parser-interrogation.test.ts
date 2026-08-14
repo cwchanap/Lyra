@@ -342,6 +342,27 @@ describe("parseInterrogationScene", () => {
     expect(parsed.error.message).toContain("Represented Authortiy");
   });
 
+  it("accepts an explicit Complete expression on a phase", () => {
+    // Regression: Complete is a supported optional Phase field (documented in
+    // the interrogation authoring contract and read by parseInquiryPhase) but
+    // was accidentally omitted from PHASE_METADATA_KEYS, so the unknown-key
+    // validation rejected it before the Complete parser could run.
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Kind:** inquiry\n- **Required:** true",
+        "- **Kind:** inquiry\n- **Required:** true\n- **Complete:** question:entered_storage answered",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.value.phases[0]!.complete).toEqual({
+      predicate: "question_answered",
+      id: "entered_storage",
+    });
+  });
+
   it("rejects reserved asset metadata on a question", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE.replace(

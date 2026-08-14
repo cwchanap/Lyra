@@ -1354,6 +1354,113 @@ describe("positive dependency and base reachability", () => {
     expect(result.errors).toEqual([]);
     expect(result.mayAtoms).toContain("authorization_granted:permit");
   });
+
+  it("rejects a mandatory authorization grant on only one of two breakthrough alternatives", () => {
+    // Regression: when a required question has two correct lines and only one
+    // grants the authorization, the grant is may-reachable (via the granting
+    // alternative) but not guaranteed — the player can choose the other
+    // alternative, complete the question, and soft-lock the required successor.
+    const phase = inquiryPhase({
+      representedAuthority: "court",
+      reveals: [{ kind: "evidence", id: "record" }],
+      questions: [
+        inquiryQuestion({
+          testimonyLines: [
+            testimonyLine("grant", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+            testimonyLine("no_grant", "record", []),
+          ],
+        }),
+      ],
+    });
+    const scene = interrogationScene([phase]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeSynthetic(
+      [...nodes, mandatoryAuthorizationConsumer()],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
+  it("rejects a mandatory authorization grant on an optional question", () => {
+    // Regression: when an optional question grants the authorization, the
+    // player can skip it entirely, so the grant is not guaranteed for a
+    // required successor.
+    const phase = inquiryPhase({
+      representedAuthority: "court",
+      reveals: [{ kind: "evidence", id: "record" }],
+      questions: [
+        inquiryQuestion({
+          required: false,
+          testimonyLines: [
+            testimonyLine("grant", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+          ],
+        }),
+      ],
+    });
+    const scene = interrogationScene([phase]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeSynthetic(
+      [...nodes, mandatoryAuthorizationConsumer()],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
+  it("accepts a mandatory authorization grant when every alternative grants it", () => {
+    // Valid case: when every mutually-exclusive breakthrough alternative grants
+    // the same authorization, the grant is guaranteed regardless of which
+    // alternative the player chooses.
+    const phase = inquiryPhase({
+      representedAuthority: "court",
+      reveals: [{ kind: "evidence", id: "record" }],
+      questions: [
+        inquiryQuestion({
+          testimonyLines: [
+            testimonyLine("grant_a", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+            testimonyLine("grant_b", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+          ],
+        }),
+      ],
+    });
+    const scene = interrogationScene([phase]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeSynthetic(
+      [...nodes, mandatoryAuthorizationConsumer()],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+  });
 });
 
 describe("ordered story batches", () => {

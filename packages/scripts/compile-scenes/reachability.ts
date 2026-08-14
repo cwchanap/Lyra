@@ -237,41 +237,49 @@ export function analyzeReachability(input: {
   }
 
   for (const node of nodes) {
-    if (
-      reachableNodeKeys.has(node.key) ||
-      cycleNodeKeys.has(node.key) ||
-      node.legacyCompatibilityMode
-    ) {
+    if (cycleNodeKeys.has(node.key) || node.legacyCompatibilityMode) {
       continue;
     }
     if (node.requirement === "optional") {
-      warnings.push(
-        diagnostic(
-          node,
-          "optionalContentUnreachable",
-          `Optional content "${node.key}" is unreachable.`,
-        ),
-      );
+      if (!reachableNodeKeys.has(node.key)) {
+        warnings.push(
+          diagnostic(
+            node,
+            "optionalContentUnreachable",
+            `Optional content "${node.key}" is unreachable.`,
+          ),
+        );
+      }
       continue;
     }
-
+    // Required node: must-reachable means guaranteed on every path.
+    if (mustReachableNodeKeys.has(node.key)) continue;
+    // Required node is not must-reachable — either unreachable at all, or
+    // only may-reachable (some path reaches it, another does not). Check
+    // whether the cause is an unguaranteed authorization grant before
+    // falling back to the generic unreachable diagnostic.
     const authorizationFailure = mandatoryAuthorizationFailure({
       nodes,
       node,
       reachableNodeKeys,
+      mustAtoms,
       authorizationDefinitions,
     });
     if (authorizationFailure !== null) {
       errors.push(authorizationFailure);
       continue;
     }
-    errors.push(
-      diagnostic(
-        node,
-        "requiredContentUnreachable",
-        `Required content "${node.key}" is unreachable.`,
-      ),
-    );
+    if (!reachableNodeKeys.has(node.key)) {
+      errors.push(
+        diagnostic(
+          node,
+          "requiredContentUnreachable",
+          `Required content "${node.key}" is unreachable.`,
+        ),
+      );
+    }
+    // else: may-reachable but not must-reachable for a non-authorization
+    // reason — not flagged here (broader reachability redesign needed).
   }
 
   return {
@@ -1558,6 +1566,7 @@ function mandatoryAuthorizationFailure(input: {
   node: ReachabilityNode;
   nodes: readonly ReachabilityNode[];
   reachableNodeKeys: ReadonlySet<string>;
+  mustAtoms: ReadonlySet<ReachabilityAtom>;
   authorizationDefinitions: ReadonlyMap<
     string,
     ASTStoryCatalog["authorizations"][number]
@@ -1616,6 +1625,69 @@ function mandatoryAuthorizationFailure(input: {
         input.node,
         "mandatoryAuthorizationUnreachable",
         `Mandatory authorization "${authorizationId}" has no reachable matching grant producer.`,
+      );
+    }
+    // The grant must be guaranteed on every path, not merely may-reachable.
+    // A may-reachable grant on an optional question or only one of several
+    // mutually-exclusive breakthrough alternatives lets the player complete
+    // the predecessor without granting the authorization, soft-locking the
+    // required successor.
+    const grantAtom: ReachabilityAtom = `authorization_granted:${authorizationId}`;
+    if (input.mustAtoms.has(grantAtom)) continue; // guaranteed by mandatory nodes
+    // Legacy grant producers predate the guarantee analysis; skip the check
+    // when every matching producer is legacy to preserve backward compat.
+    const nonLegacyMatching = matching.filter(
+      (producer) => !producer.legacyCompatibilityMode,
+    );
+    if (nonLegacyMatching.length === 0) continue;
+    // A grant is unguaranteed only when the player can reach the predecessor
+    // without producing the grant — i.e., the grant sits on an optional path
+    // or only some mutually-exclusive alternatives produce it. A mandatory
+    // standalone producer guarantees the grant within its own scope; if the
+    // grant is absent from mustAtoms, the cause is the producer's own
+    // reachability, not the grant's guarantee, so it is not flagged here.
+    const matchingKeys = new Set(matching.map((producer) => producer.key));
+    const groupsByEventId = new Map<string, string[]>();
+    for (const candidate of input.nodes) {
+      const members = groupsByEventId.get(candidate.oneShotEventId) ?? [];
+      members.push(candidate.key);
+      groupsByEventId.set(candidate.oneShotEventId, members);
+    }
+    let unguaranteed = false;
+    for (const producer of nonLegacyMatching) {
+      if (!input.reachableNodeKeys.has(producer.key)) continue;
+      const groupMembers = groupsByEventId.get(producer.oneShotEventId) ?? [
+        producer.key,
+      ];
+      if (groupMembers.length === 1) {
+        // Standalone producer: optional means the player can skip it;
+        // mandatory means the grant is guaranteed within this producer's
+        // scope (absence from mustAtoms is a predecessor reachability issue).
+        if (producer.requirement === "optional") {
+          unguaranteed = true;
+          break;
+        }
+      } else {
+        // Mutually-exclusive group: unguaranteed when any may-reachable
+        // alternative does not produce the grant.
+        const mayReachableMembers = groupMembers.filter((key) =>
+          input.reachableNodeKeys.has(key),
+        );
+        if (!mayReachableMembers.every((key) => matchingKeys.has(key))) {
+          unguaranteed = true;
+          break;
+        }
+      }
+    }
+    if (unguaranteed) {
+      return diagnostic(
+        input.node,
+        "mandatoryAuthorizationGrantNotGuaranteed",
+        `Mandatory authorization "${authorizationId}" grant is not guaranteed on every path. ` +
+          `A matching grant producer is may-reachable but not must-reachable — the player can complete ` +
+          `the predecessor without granting the authorization, soft-locking required content. ` +
+          `Ensure every mutually-exclusive breakthrough alternative grants the authorization, ` +
+          `or move the grant to a required (mandatory) path.`,
       );
     }
   }
