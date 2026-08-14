@@ -1640,12 +1640,15 @@ function mandatoryAuthorizationFailure(input: {
       (producer) => !producer.legacyCompatibilityMode,
     );
     if (nonLegacyMatching.length === 0) continue;
-    // A grant is unguaranteed only when the player can reach the predecessor
+    // A grant is unguaranteed when the player can reach the predecessor
     // without producing the grant — i.e., the grant sits on an optional path
-    // or only some mutually-exclusive alternatives produce it. A mandatory
-    // standalone producer guarantees the grant within its own scope; if the
-    // grant is absent from mustAtoms, the cause is the producer's own
-    // reachability, not the grant's guarantee, so it is not flagged here.
+    // or only some mutually-exclusive alternatives produce it. If the grant
+    // were guaranteed on every path it would be in mustAtoms (checked above);
+    // reaching here means at least one reachable matching producer is only
+    // may-reachable. For a standalone producer this holds whether the producer
+    // itself is optional (the player skips it) or mandatory (the player skips
+    // its own optional predecessor) — in both cases the player can complete
+    // the predecessor without granting the authorization.
     const matchingKeys = new Set(matching.map((producer) => producer.key));
     const groupsByEventId = new Map<string, string[]>();
     for (const candidate of input.nodes) {
@@ -1660,13 +1663,12 @@ function mandatoryAuthorizationFailure(input: {
         producer.key,
       ];
       if (groupMembers.length === 1) {
-        // Standalone producer: optional means the player can skip it;
-        // mandatory means the grant is guaranteed within this producer's
-        // scope (absence from mustAtoms is a predecessor reachability issue).
-        if (producer.requirement === "optional") {
-          unguaranteed = true;
-          break;
-        }
+        // Standalone producer: the grant is absent from mustAtoms, so this
+        // reachable producer is only may-reachable. An optional producer can
+        // be skipped directly; a mandatory producer can be missed when its
+        // own predecessor is optional. Either way the grant is unguaranteed.
+        unguaranteed = true;
+        break;
       } else {
         // Mutually-exclusive group: unguaranteed when any may-reachable
         // alternative does not produce the grant.
