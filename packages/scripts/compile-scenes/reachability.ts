@@ -1640,15 +1640,12 @@ function mandatoryAuthorizationFailure(input: {
       (producer) => !producer.legacyCompatibilityMode,
     );
     if (nonLegacyMatching.length === 0) continue;
-    // A grant is unguaranteed when the player can reach the predecessor
-    // without producing the grant — i.e., the grant sits on an optional path
-    // or only some mutually-exclusive alternatives produce it. If the grant
-    // were guaranteed on every path it would be in mustAtoms (checked above);
-    // reaching here means at least one reachable matching producer is only
-    // may-reachable. For a standalone producer this holds whether the producer
-    // itself is optional (the player skips it) or mandatory (the player skips
-    // its own optional predecessor) — in both cases the player can complete
-    // the predecessor without granting the authorization.
+    // A grant is unguaranteed when its authored trigger is actually skippable:
+    // the producer itself is optional, a required prerequisite is supplied only
+    // by optional nodes, or only some mutually-exclusive alternatives grant it.
+    // Do not infer skippability from global mustAtoms alone: later mandatory
+    // content can be absent from the must fixed point after an earlier modeled
+    // branch even when this producer's own path is structurally mandatory.
     const matchingKeys = new Set(matching.map((producer) => producer.key));
     const groupsByEventId = new Map<string, string[]>();
     for (const candidate of input.nodes) {
@@ -1663,12 +1660,39 @@ function mandatoryAuthorizationFailure(input: {
         producer.key,
       ];
       if (groupMembers.length === 1) {
-        // Standalone producer: the grant is absent from mustAtoms, so this
-        // reachable producer is only may-reachable. An optional producer can
-        // be skipped directly; a mandatory producer can be missed when its
-        // own predecessor is optional. Either way the grant is unguaranteed.
-        unguaranteed = true;
-        break;
+        const nodesByKey = new Map(
+          input.nodes.map((candidate) => [candidate.key, candidate]),
+        );
+        const producerKeysByAtom = buildPositiveProducerIndex(input.nodes);
+        const prerequisiteAtoms = unique(
+          [
+            ...requiredExpressionPredicates(producer.condition),
+            ...producer.implicitPrerequisites,
+          ].map((predicate) => predicate.atom),
+        );
+        const hasOptionalStrictPredecessor =
+          producer.strictPredecessorKeys.some(
+            (key) => nodesByKey.get(key)?.requirement === "optional",
+          );
+        const hasOnlyOptionalPrerequisiteProducers = prerequisiteAtoms.some(
+          (atom) => {
+            const keys = producerKeysByAtom.get(atom) ?? [];
+            return (
+              keys.length > 0 &&
+              keys.every(
+                (key) => nodesByKey.get(key)?.requirement === "optional",
+              )
+            );
+          },
+        );
+        if (
+          producer.requirement === "optional" ||
+          hasOptionalStrictPredecessor ||
+          hasOnlyOptionalPrerequisiteProducers
+        ) {
+          unguaranteed = true;
+          break;
+        }
       } else {
         // Mutually-exclusive group: unguaranteed when any may-reachable
         // alternative does not produce the grant.
