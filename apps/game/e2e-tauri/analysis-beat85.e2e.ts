@@ -150,6 +150,21 @@ async function challengePhase(
     80,
   );
   await clickButton("反駁");
+  await advanceDialogueUntil(async () => {
+    try {
+      const state = await getPackagedGameState();
+      return (
+        state.mode.type === "interrogation" &&
+        state.scene.kind === "interrogation" &&
+        state.scene.visiblePhases.some(
+          (candidate) =>
+            candidate.id === phaseId && candidate.crossExam?.presenting,
+        )
+      );
+    } catch {
+      return false;
+    }
+  }, 80);
   const presenting = await waitForPackagedGameState(
     (state) =>
       state.mode.type === "interrogation" &&
@@ -167,6 +182,22 @@ async function challengePhase(
   if (!evidence)
     throw new Error(`${phaseId} evidence ${evidenceId} was not seeded`);
   await clickButton(evidence.name);
+
+  await advanceDialogueUntil(async () => {
+    try {
+      const state = await getPackagedGameState();
+      return (
+        state.mode.type === "interrogation" &&
+        state.scene.kind === "interrogation" &&
+        state.scene.visiblePhases.some(
+          (candidate) => candidate.id === phaseId && candidate.canComplete,
+        )
+      );
+    } catch {
+      return false;
+    }
+  }, 160);
+  await clickButton("完成訊問");
 
   await advanceDialogueUntil(async () => {
     try {
