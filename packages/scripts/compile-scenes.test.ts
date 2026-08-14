@@ -2701,9 +2701,17 @@ describe("compile (tracked production corpus compatibility)", () => {
       }
 
       expect(hpa257DiagnosticCodes(result.warnings)).toEqual([]);
+      expect(result.warnings).toHaveLength(1);
+      expect(result.warnings[0]?.sourceFile).toBe(
+        resolve(repoRoot, "docs/stories_plan/story_catalog.md"),
+      );
 
       expect({
-        warnings: result.warnings,
+        warnings: result.warnings.map(({ code, line, message }) => ({
+          code,
+          line,
+          message,
+        })),
         manifest: JSON.parse(
           readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
         ),
