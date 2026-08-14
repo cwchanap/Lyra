@@ -1,0 +1,86 @@
+name: Temporary patch coverage fix
+
+on:
+  push:
+    branches: [codex/hpa-265-beat-85]
+    paths:
+      - .github/workflows/tmp-patch-coverage-fix.yml
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/hpa-265-beat-85
+
+      - name: Exercise interrogation unlock-context isolation
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("apps/game/src-tauri/src/game/scenes/interrogation.rs")
+          text = path.read_text()
+
+          before = '''        let local = NoInterrogationUnlockContext;
+        let story_without_grant = StoryAuthorizationContext {
+            granted: false,
+            objective_completed: false,
+        };
+        let phase = &scene.def.phases[0];
+'''
+          after = '''        let local = NoInterrogationUnlockContext;
+        assert!(!local.evidence_collected("unused"));
+        assert!(!local.statement_acquired("unused"));
+        assert!(!local.question_answered("unused"));
+        let story_without_grant = StoryAuthorizationContext {
+            granted: false,
+            objective_completed: false,
+        };
+        assert!(!story_without_grant.fact_asserted("unused"));
+        assert!(!story_without_grant.question_resolved("unused"));
+        assert!(!story_without_grant.analysis_scene_completed("chapter_1", "analysis_scene"));
+        assert!(!story_without_grant.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene",
+            "board",
+        ));
+        let phase = &scene.def.phases[0];
+'''
+          if before not in text:
+              raise SystemExit("authorization-fence insertion point not found")
+          text = text.replace(before, after, 1)
+
+          before = '''        let local = PhaseP3UnlockContext;
+        let phase = &scene.def.phases[0];
+'''
+          after = '''        let local = PhaseP3UnlockContext;
+        assert!(!local.evidence_collected("unused"));
+        assert!(!local.statement_acquired("unused"));
+        assert!(!local.question_answered("unused"));
+        let phase = &scene.def.phases[0];
+'''
+          if before not in text:
+              raise SystemExit("hearing-gate insertion point not found")
+          path.write_text(text.replace(before, after, 1))
+
+      - name: Verify patch
+        run: |
+          git diff --check
+          git diff -- apps/game/src-tauri/src/game/scenes/interrogation.rs
+
+      - name: Commit patch and dispatch CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/game/src-tauri/src/game/scenes/interrogation.rs
+          git rm .github/workflows/tmp-patch-coverage-fix.yml
+          git commit -m "test: cover interrogation unlock context isolation"
+          git push origin HEAD:codex/hpa-265-beat-85
+          gh workflow run ci.yml --ref codex/hpa-265-beat-85
