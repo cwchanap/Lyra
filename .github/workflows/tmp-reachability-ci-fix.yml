@@ -1,4 +1,4 @@
-name: Temporary reachability CI fix
+name: Temporary reachability CI trace
 
 on:
   push:
@@ -7,10 +7,10 @@ on:
       - .github/workflows/tmp-reachability-ci-fix.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  patch-and-verify:
+  trace:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Patch authorization guarantee analysis
+      - name: Instrument authorization reachability
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -64,61 +64,42 @@ jobs:
                   "  mustAtoms: ReadonlySet<ReachabilityAtom>;",
               ),
               (
-                  "    // A grant is unguaranteed when the player can reach the predecessor\n"
-                  "    // without producing the grant — i.e., the grant sits on an optional path\n"
-                  "    // or only some mutually-exclusive alternatives produce it. If the grant\n"
-                  "    // were guaranteed on every path it would be in mustAtoms (checked above);\n"
-                  "    // reaching here means at least one reachable matching producer is only\n"
-                  "    // may-reachable. For a standalone producer this holds whether the producer\n"
-                  "    // itself is optional (the player skips it) or mandatory (the player skips\n"
-                  "    // its own optional predecessor) — in both cases the player can complete\n"
-                  "    // the predecessor without granting the authorization.",
-                  "    // A missing global must atom can come from a genuinely skippable\n"
-                  "    // producer or from must-state precision loss. For standalone producers,\n"
-                  "    // use must-reachability to distinguish those cases. Keep explicit\n"
-                  "    // one-shot alternative coverage below for mutually-exclusive breakthroughs.",
-              ),
-              (
-                  "      if (groupMembers.length === 1) {\n"
-                  "        // Standalone producer: the grant is absent from mustAtoms, so this\n"
-                  "        // reachable producer is only may-reachable. An optional producer can\n"
-                  "        // be skipped directly; a mandatory producer can be missed when its\n"
-                  "        // own predecessor is optional. Either way the grant is unguaranteed.\n"
-                  "        unguaranteed = true;\n"
-                  "        break;\n"
-                  "      } else {",
-                  "      if (groupMembers.length === 1) {\n"
-                  "        // A standalone matching producer is unsafe only when its trigger is\n"
-                  "        // not guaranteed to execute. This covers optional producers and\n"
-                  "        // mandatory producers whose own predecessor is optional without\n"
-                  "        // treating every must-state precision loss as a skippable grant.\n"
-                  "        if (!input.mustReachableNodeKeys.has(producer.key)) {\n"
-                  "          unguaranteed = true;\n"
-                  "          break;\n"
-                  "        }\n"
-                  "      } else {",
+                  "    if (nonLegacyMatching.length === 0) continue;\n",
+                  "    if (nonLegacyMatching.length === 0) continue;\n"
+                  "    if (authorizationId === \"narrow_lock_export\") {\n"
+                  "      const byKey = new Map(input.nodes.map((candidate) => [candidate.key, candidate]));\n"
+                  "      const dump = (key: string, seen = new Set<string>()): unknown => {\n"
+                  "        if (seen.has(key)) return { key, cycle: true };\n"
+                  "        const candidate = byKey.get(key);\n"
+                  "        if (candidate === undefined) return { key, missing: true };\n"
+                  "        const nextSeen = new Set(seen);\n"
+                  "        nextSeen.add(key);\n"
+                  "        return {\n"
+                  "          key,\n"
+                  "          requirement: candidate.requirement,\n"
+                  "          reachable: input.reachableNodeKeys.has(key),\n"
+                  "          mustReachable: input.mustReachableNodeKeys.has(key),\n"
+                  "          initiallyReachable: candidate.initiallyReachable,\n"
+                  "          condition: candidate.condition,\n"
+                  "          implicitPrerequisites: candidate.implicitPrerequisites,\n"
+                  "          predecessors: candidate.strictPredecessorKeys.map((predecessor) => dump(predecessor, nextSeen)),\n"
+                  "        };\n"
+                  "      };\n"
+                  "      console.error(\n"
+                  "        \"[reachability-debug]\",\n"
+                  "        JSON.stringify(nonLegacyMatching.map((producer) => dump(producer.key)), null, 2),\n"
+                  "      );\n"
+                  "    }\n",
               ),
           ]
 
           for before, after in replacements:
               if before not in text:
-                  raise SystemExit(f"patch target missing: {before[:100]!r}")
+                  raise SystemExit(f"trace patch target missing: {before[:100]!r}")
               text = text.replace(before, after, 1)
 
           path.write_text(text)
           PY
 
-      - name: Verify focused compiler behavior
-        run: |
-          bun run test:scripts -- packages/scripts/compile-scenes/reachability.test.ts
-          bun run scenes:compile
-          git diff --check
-
-      - name: Commit verified fix
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add packages/scripts/compile-scenes/reachability.ts
-          git rm .github/workflows/tmp-reachability-ci-fix.yml
-          git commit -m "fix: distinguish skippable authorization grant producers"
-          git push origin HEAD:codex/hpa-265-beat-85
+      - name: Compile with trace
+        run: bun run scenes:compile
