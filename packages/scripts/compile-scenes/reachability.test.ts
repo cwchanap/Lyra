@@ -1428,6 +1428,45 @@ describe("positive dependency and base reachability", () => {
     );
   });
 
+  it("rejects a mandatory grant producer behind an optional predecessor", () => {
+    // Regression: a mandatory (required) grant producer whose own predecessor
+    // is optional is only may-reachable — the player can skip the optional
+    // predecessor, never reach the mandatory grant producer, and soft-lock the
+    // required successor. The grant atom is absent from mustAtoms, so the
+    // mandatory producer must be flagged as unguaranteed just like an optional
+    // producer.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("gate", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("gate_open")],
+        }),
+        syntheticNode("grant", {
+          requirement: "mandatory",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          condition: atomExpression("gate_open"),
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
   it("accepts a mandatory authorization grant when every alternative grants it", () => {
     // Valid case: when every mutually-exclusive breakthrough alternative grants
     // the same authorization, the grant is guaranteed regardless of which
