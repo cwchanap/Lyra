@@ -265,7 +265,7 @@
 
 **神谷澪**：門、鏡頭、憑證都對得上三宅；摘要抓到的是最好對上的一筆。
 
-- **Contradiction:** evidence:local_sequence_record
+- **Contradiction:** evidence:approved_clip
 - **Challenge:** **相馬律**：紀錄沒造假，錯的是讀法；請對照核准片段的本機順序。
 - **On Correct:** **相馬律**：外包憑證早於三宅憑證；摘要在其後合併，二十三點零七分五十秒是合併時間，不是進門時間。
 - **On Wrong Evidence:** **神谷澪**：本機順序沒有被動過手腳。錯的不是門鎖，是摘要對它的讀法。別把這頂帽子扣到造假上。

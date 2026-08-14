@@ -324,6 +324,24 @@ describe("parseInterrogationScene", () => {
     expect(parsed.error.code).toBe("assetMetadataUnknownKey");
   });
 
+  it("rejects a misspelled phase metadata key instead of silently dropping it", () => {
+    // Regression: parseCommonPhaseMeta validates phase metadata keys against an
+    // allowlist so a misspelling of "Represented Authority" surfaces instead
+    // of silently leaving representedAuthority null.
+    const parsed = parseInterrogationScene(
+      VALID_SOURCE.replace(
+        "- **Kind:** inquiry\n- **Required:** true",
+        "- **Kind:** inquiry\n- **Required:** true\n- **Represented Authortiy:** KAGAMI 主理",
+      ),
+      "chapter_1/interrogation_scene_2.md",
+      "interrogation_scene_2",
+    );
+    expect(parsed.ok).toBe(false);
+    if (parsed.ok) return;
+    expect(parsed.error.code).toBe("interrogationPhaseUnknownMetaKey");
+    expect(parsed.error.message).toContain("Represented Authortiy");
+  });
+
   it("rejects reserved asset metadata on a question", () => {
     const parsed = parseInterrogationScene(
       VALID_SOURCE.replace(

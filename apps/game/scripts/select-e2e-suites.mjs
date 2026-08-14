@@ -93,7 +93,7 @@ export const E2E_RISK_RULES = Object.freeze([
       "apps/game/src-tauri/src/game/story/**",
       "apps/game/src-tauri/src/game/unlock.rs",
     ],
-    suiteIds: ["smoke", "gameplay", "production-journey"],
+    suiteIds: ["smoke", "gameplay", "production-journey", "analysis-beat85"],
   }),
   // These acknowledgement surfaces bridge gameplay progress and persistence
   // without being exercised by the capture-proof or manual-save suites.
