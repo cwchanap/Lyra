@@ -160,6 +160,18 @@ impl GameEngine {
             |id| PRE_HEARING_EVIDENCE_IDS.contains(&id),
             false,
         );
+
+        // Fail fast on allowlist drift: every id above must resolve to an
+        // evidence record that actually exists in some scene manifest and was
+        // therefore granted, or the gate-only `approved_clip` contract silently
+        // widens or narrows. `debug_assert!` is sufficient because this path is
+        // only reached from e2e/debug builds.
+        debug_assert!(
+            PRE_HEARING_EVIDENCE_IDS
+                .iter()
+                .all(|id| self.inventory.has_evidence(id)),
+            "PRE_HEARING_EVIDENCE_IDS drifted: a listed evidence id was not granted",
+        );
     }
 
     fn grant_manifest_items_for_testing<F>(

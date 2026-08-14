@@ -458,6 +458,42 @@ describe("validator", () => {
       ).toEqual([]);
     });
 
+    it("rejects an interrogation phase authority that mismatches the catalog grant", () => {
+      // The phase representedAuthority must propagate through to the
+      // authorization-grant validation rather than being silently coerced to
+      // the catalog's grantingAuthority. A mismatch surfaces a non-empty
+      // result proving the authority value is enforced end to end.
+      const interrogation = mkInterrogationScene({
+        phases: [
+          mkInquiryPhase({
+            representedAuthority: "Someone Else",
+            reveals: [
+              { kind: "grantAuthorization", authorizationId: "search_warrant" },
+            ],
+          }),
+        ],
+        evidenceManifest: [mkEvidence("record")],
+      });
+
+      const errors = validateStoryCatalog(mkStoryTargetCatalog(), [
+        {
+          chapterId: "chapter_1",
+          file: "interrogation_scene_1.md",
+          ast: interrogation,
+        },
+      ]);
+
+      expect(errors.length).toBeGreaterThan(0);
+      expect(errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "authorizationGrantAuthorityMismatch",
+            sourceFile: "interrogation_scene_1.md",
+          }),
+        ]),
+      );
+    });
+
     it("routes investigation and interrogation grants through null-authority validation", () => {
       const investigation = mkInvestigationScene();
       investigation.sublocations[0]!.hotspots[0]!.reveals = [

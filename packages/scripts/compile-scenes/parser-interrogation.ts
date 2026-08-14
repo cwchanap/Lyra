@@ -80,6 +80,21 @@ class Cursor {
 
 type Meta = Record<string, string>;
 
+// Phase-level metadata is the only interrogation block that historically did
+// not validate its keys, so a misspelling (e.g. "Represented Authortiy") was
+// silently dropped -- leaving `representedAuthority` null without any signal.
+// Keep this list in sync with the keys read below in parseCommonPhaseMeta and
+// with the asset cues parsed by parseVisualAssetCue.
+const PHASE_METADATA_KEYS = new Set<string>([
+  "Kind",
+  "Required",
+  "Status",
+  "Unlock",
+  "Reveals",
+  "Represented Authority",
+  ...VISUAL_ASSET_METADATA_KEYS,
+]);
+
 export function parseInterrogationScene(
   source: string,
   sourceFile: string,
@@ -936,6 +951,15 @@ function parseCommonPhaseMeta(phaseMeta: PhaseMeta):
     phaseMeta.head.line,
   );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
+  for (const key of Object.keys(phaseMeta.meta)) {
+    if (!PHASE_METADATA_KEYS.has(key))
+      return fail(
+        phaseMeta.head.sourceFile,
+        phaseMeta.head.line,
+        "interrogationPhaseUnknownMetaKey",
+        `Unknown phase metadata key "${key}" on phase ${phaseMeta.id}. Supported keys: Kind, Required, Status, Unlock, Reveals, Represented Authority, and visual-asset cues (Background Prompt, Background Asset ID, BGM, BGS).`,
+      );
+  }
   const required = parseBoolean(
     phaseMeta.meta.Required,
     true,

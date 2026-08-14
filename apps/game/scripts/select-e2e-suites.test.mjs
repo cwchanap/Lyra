@@ -93,11 +93,14 @@ test("routes dialogue, crossfade, and page shells through every dependent suite"
 });
 
 test("routes gameplay changes through the focused and fresh-journey suites", () => {
+  // The gameplay chain (E2E_CHAIN_DEFINITIONS) owns analysis-beat85, and
+  // navigation.rs carries the Beat 8.5 pre-hearing grant helper, so gameplay
+  // surfaces route to the deep Beat 8.5 runtime suite as well.
   assert.deepEqual(
     selectE2eSuites({
       changedPaths: ["apps/game/src-tauri/src/game/dialogue.rs"],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey"],
+    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
   );
 });
 

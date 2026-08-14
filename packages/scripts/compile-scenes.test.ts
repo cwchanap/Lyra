@@ -2396,11 +2396,20 @@ describe("compile (tracked production corpus compatibility)", () => {
         (record: { id: string }) =>
           record.id === "miyake_mother_call_confirmation",
       );
-      const fixedRecordCarrier = investigation.sublocations
-        .find((sublocation: { id: string }) => sublocation.id === "fixed_panel")
-        .hotspots.find(
-          (hotspot: { id: string }) => hotspot.id === "fixed_record",
-        );
+      const fixedPanel = investigation.sublocations.find(
+        (sublocation: { id: string }) => sublocation.id === "fixed_panel",
+      );
+      assert.ok(
+        fixedPanel,
+        "fixed_panel sublocation should exist in investigation_scene_8",
+      );
+      const fixedRecordCarrier = fixedPanel.hotspots.find(
+        (hotspot: { id: string }) => hotspot.id === "fixed_record",
+      );
+      assert.ok(
+        fixedRecordCarrier,
+        "fixed_record hotspot should exist under fixed_panel",
+      );
 
       expect(motherCallLead).toMatchObject({
         id: "miyake_mother_call_log",
@@ -2667,6 +2676,23 @@ describe("compile (tracked production corpus compatibility)", () => {
             id: "narrow_lock_export",
           },
         },
+      });
+
+      // Regression: p4's contradiction is the gate-granted approved_clip, not
+      // local_sequence_record. The Challenge text ("對照核准片段") and the On
+      // Wrong Evidence reply ("本機順序沒有被動過手腳") both require this proof
+      // order; presenting local_sequence_record must be the wrong path that
+      // does not complete p4.
+      const p4Line = p4.questions[0].testimony.lines.find(
+        (line: { id: string }) => line.id === "summary_doorlock_authentic",
+      );
+      expect(p4Line.contradiction).toEqual({
+        kind: "evidence",
+        id: "approved_clip",
+      });
+      expect(p4Line.contradiction).not.toEqual({
+        kind: "evidence",
+        id: "local_sequence_record",
       });
 
       const source = readFileSync(

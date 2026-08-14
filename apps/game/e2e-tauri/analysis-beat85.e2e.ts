@@ -89,12 +89,27 @@ async function waitForAnalysisBoard(boardId: string): Promise<GameStateView> {
   );
 }
 
-async function submitCurrentAnalysisBoard(): Promise<void> {
+async function submitCurrentAnalysisBoard(boardId: string): Promise<void> {
   await clickButton("比對推論");
+  // Wait for a genuinely post-submit state. Accepting the pre-submit analysis
+  // mode (board still open, not completed) would resolve immediately while
+  // the submit IPC is still in flight. Resolve only once the submitted board
+  // is marked completed or the engine has moved on to dialogue.
   await waitForPackagedGameState(
-    (state) => state.mode.type === "dialogue" || state.mode.type === "analysis",
+    (state) => {
+      if (state.mode.type === "dialogue") return true;
+      if (
+        state.mode.type === "analysis" &&
+        state.scene.kind === "analysis" &&
+        state.scene.id === ANALYSIS_SCENE_ID &&
+        state.mode.boardId === boardId
+      ) {
+        return analysisBoard(state, boardId).completed;
+      }
+      return false;
+    },
     30000,
-    "analysis submission did not settle",
+    `analysis board ${boardId} submission did not settle`,
   );
 }
 
@@ -265,7 +280,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
         );
       });
     }
-    await submitCurrentAnalysisBoard();
+    await submitCurrentAnalysisBoard("evidence_packages");
     await drainToAnalysisBoard("local_event_sequence");
 
     state = await waitForAnalysisBoard("local_event_sequence");
@@ -283,7 +298,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
         );
       });
     }
-    await submitCurrentAnalysisBoard();
+    await submitCurrentAnalysisBoard("local_event_sequence");
     await drainToAnalysisBoard("narrow_request_basis");
 
     state = await waitForAnalysisBoard("narrow_request_basis");
@@ -351,7 +366,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
           JSON.stringify(["lock_sequence", "phone_notification"])
       );
     });
-    await submitCurrentAnalysisBoard();
+    await submitCurrentAnalysisBoard("narrow_request_basis");
     state = await waitForPackagedGameState((next) => {
       const board = analysisBoard(next, "narrow_request_basis");
       return board.completed;
