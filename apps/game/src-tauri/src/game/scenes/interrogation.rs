@@ -754,10 +754,21 @@ mod tests {
             1,
         );
         let local = NoInterrogationUnlockContext;
+        assert!(!local.evidence_collected("unused"));
+        assert!(!local.statement_acquired("unused"));
+        assert!(!local.question_answered("unused"));
         let story_without_grant = StoryAuthorizationContext {
             granted: false,
             objective_completed: false,
         };
+        assert!(!story_without_grant.fact_asserted("unused"));
+        assert!(!story_without_grant.question_resolved("unused"));
+        assert!(!story_without_grant.analysis_scene_completed("chapter_1", "analysis_scene"));
+        assert!(!story_without_grant.analysis_board_completed(
+            "chapter_1",
+            "analysis_scene",
+            "board",
+        ));
         let phase = &scene.def.phases[0];
 
         assert!(
@@ -817,6 +828,9 @@ mod tests {
             1,
         );
         let local = PhaseP3UnlockContext;
+        assert!(!local.evidence_collected("unused"));
+        assert!(!local.statement_acquired("unused"));
+        assert!(!local.question_answered("unused"));
         let phase = &scene.def.phases[0];
         assert!(
             !scene.is_phase_unlocked(
