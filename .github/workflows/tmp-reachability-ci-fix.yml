@@ -34,75 +34,75 @@ jobs:
 
           replacements = [
               (
-                  '''    const authorizationFailure = mandatoryAuthorizationFailure({
-      nodes,
-      node,
-      reachableNodeKeys,
-      mustAtoms,
-      authorizationDefinitions,
-    });''',
-                  '''    const authorizationFailure = mandatoryAuthorizationFailure({
-      nodes,
-      node,
-      reachableNodeKeys,
-      mustReachableNodeKeys,
-      mustAtoms,
-      authorizationDefinitions,
-    });''',
+                  "    const authorizationFailure = mandatoryAuthorizationFailure({\n"
+                  "      nodes,\n"
+                  "      node,\n"
+                  "      reachableNodeKeys,\n"
+                  "      mustAtoms,\n"
+                  "      authorizationDefinitions,\n"
+                  "    });",
+                  "    const authorizationFailure = mandatoryAuthorizationFailure({\n"
+                  "      nodes,\n"
+                  "      node,\n"
+                  "      reachableNodeKeys,\n"
+                  "      mustReachableNodeKeys,\n"
+                  "      mustAtoms,\n"
+                  "      authorizationDefinitions,\n"
+                  "    });",
               ),
               (
-                  '''function mandatoryAuthorizationFailure(input: {
-  node: ReachabilityNode;
-  nodes: readonly ReachabilityNode[];
-  reachableNodeKeys: ReadonlySet<string>;
-  mustAtoms: ReadonlySet<ReachabilityAtom>;''',
-                  '''function mandatoryAuthorizationFailure(input: {
-  node: ReachabilityNode;
-  nodes: readonly ReachabilityNode[];
-  reachableNodeKeys: ReadonlySet<string>;
-  mustReachableNodeKeys: ReadonlySet<string>;
-  mustAtoms: ReadonlySet<ReachabilityAtom>;''',
+                  "function mandatoryAuthorizationFailure(input: {\n"
+                  "  node: ReachabilityNode;\n"
+                  "  nodes: readonly ReachabilityNode[];\n"
+                  "  reachableNodeKeys: ReadonlySet<string>;\n"
+                  "  mustAtoms: ReadonlySet<ReachabilityAtom>;",
+                  "function mandatoryAuthorizationFailure(input: {\n"
+                  "  node: ReachabilityNode;\n"
+                  "  nodes: readonly ReachabilityNode[];\n"
+                  "  reachableNodeKeys: ReadonlySet<string>;\n"
+                  "  mustReachableNodeKeys: ReadonlySet<string>;\n"
+                  "  mustAtoms: ReadonlySet<ReachabilityAtom>;",
               ),
               (
-                  '''    // A grant is unguaranteed when the player can reach the predecessor
-    // without producing the grant — i.e., the grant sits on an optional path
-    // or only some mutually-exclusive alternatives produce it. If the grant
-    // were guaranteed on every path it would be in mustAtoms (checked above);
-    // reaching here means at least one reachable matching producer is only
-    // may-reachable. For a standalone producer this holds whether the producer
-    // itself is optional (the player skips it) or mandatory (the player skips
-    // its own optional predecessor) — in both cases the player can complete
-    // the predecessor without granting the authorization.''',
-                  '''    // A missing global must atom can come from a genuinely skippable
-    // producer or from must-state precision loss. For standalone producers,
-    // use must-reachability to distinguish those cases. Keep explicit
-    // one-shot alternative coverage below for mutually-exclusive breakthroughs.''',
+                  "    // A grant is unguaranteed when the player can reach the predecessor\n"
+                  "    // without producing the grant — i.e., the grant sits on an optional path\n"
+                  "    // or only some mutually-exclusive alternatives produce it. If the grant\n"
+                  "    // were guaranteed on every path it would be in mustAtoms (checked above);\n"
+                  "    // reaching here means at least one reachable matching producer is only\n"
+                  "    // may-reachable. For a standalone producer this holds whether the producer\n"
+                  "    // itself is optional (the player skips it) or mandatory (the player skips\n"
+                  "    // its own optional predecessor) — in both cases the player can complete\n"
+                  "    // the predecessor without granting the authorization.",
+                  "    // A missing global must atom can come from a genuinely skippable\n"
+                  "    // producer or from must-state precision loss. For standalone producers,\n"
+                  "    // use must-reachability to distinguish those cases. Keep explicit\n"
+                  "    // one-shot alternative coverage below for mutually-exclusive breakthroughs.",
               ),
               (
-                  '''      if (groupMembers.length === 1) {
-        // Standalone producer: the grant is absent from mustAtoms, so this
-        // reachable producer is only may-reachable. An optional producer can
-        // be skipped directly; a mandatory producer can be missed when its
-        // own predecessor is optional. Either way the grant is unguaranteed.
-        unguaranteed = true;
-        break;
-      } else {''',
-                  '''      if (groupMembers.length === 1) {
-        // A standalone matching producer is unsafe only when its trigger is
-        // not guaranteed to execute. This covers optional producers and
-        // mandatory producers whose own predecessor is optional without
-        // treating every must-state precision loss as a skippable grant.
-        if (!input.mustReachableNodeKeys.has(producer.key)) {
-          unguaranteed = true;
-          break;
-        }
-      } else {''',
+                  "      if (groupMembers.length === 1) {\n"
+                  "        // Standalone producer: the grant is absent from mustAtoms, so this\n"
+                  "        // reachable producer is only may-reachable. An optional producer can\n"
+                  "        // be skipped directly; a mandatory producer can be missed when its\n"
+                  "        // own predecessor is optional. Either way the grant is unguaranteed.\n"
+                  "        unguaranteed = true;\n"
+                  "        break;\n"
+                  "      } else {",
+                  "      if (groupMembers.length === 1) {\n"
+                  "        // A standalone matching producer is unsafe only when its trigger is\n"
+                  "        // not guaranteed to execute. This covers optional producers and\n"
+                  "        // mandatory producers whose own predecessor is optional without\n"
+                  "        // treating every must-state precision loss as a skippable grant.\n"
+                  "        if (!input.mustReachableNodeKeys.has(producer.key)) {\n"
+                  "          unguaranteed = true;\n"
+                  "          break;\n"
+                  "        }\n"
+                  "      } else {",
               ),
           ]
 
           for before, after in replacements:
               if before not in text:
-                  raise SystemExit(f"patch target missing:\n{before}")
+                  raise SystemExit(f"patch target missing: {before[:100]!r}")
               text = text.replace(before, after, 1)
 
           path.write_text(text)
