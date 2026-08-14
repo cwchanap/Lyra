@@ -10,7 +10,7 @@ exports[`compile (tracked production corpus compatibility) > keeps the Chapter 1
     {
       "code": "singletonSourceGroup",
       "line": 50,
-      "message": "Source group \"victim_phone_device\" has one member: evidence:victim_phone_notification.",
+      "message": "Source group "victim_phone_device" has one member: evidence:victim_phone_notification.",
     },
   ],
 }
