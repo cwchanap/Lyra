@@ -176,4 +176,27 @@ describe("InterrogationStage", () => {
       activeElementSpy.mockRestore();
     }
   });
+
+  it("does not recapture focus when presenting stays true across a scene rerender", async () => {
+    // The $effect that captures trayReturnFocus guards on
+    // `presenting && !wasPresenting`. When presenting is already true and
+    // the scene rerenders with presenting still true, the effect does not
+    // re-run (presenting hasn't changed). This test verifies the tray
+    // remains mounted and functional across such a rerender.
+    const { rerender } = render(
+      InterrogationStageHarness,
+      props({ scene: scene(true) }),
+    );
+
+    expect(
+      await screen.findByRole("dialog", { name: "提出證據" }),
+    ).toBeInTheDocument();
+
+    // Rerender with the same presenting state (different scene object but
+    // same presenting=true). The tray must stay mounted.
+    rerender(props({ scene: scene(true) }));
+    expect(
+      screen.getByRole("dialog", { name: "提出證據" }),
+    ).toBeInTheDocument();
+  });
 });

@@ -310,4 +310,210 @@ describe("InterrogationEvidenceTray", () => {
       resolveSpy.mockRestore();
     }
   });
+
+  it("does not swap a placeholder image again when onerror fires a second time", async () => {
+    const inventoryWithImage: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: "coffee-order",
+          name: "咖啡訂單",
+          description: "訂單時間與證詞不符。",
+          details: "最終列印時間為 21:17。",
+          imageAssetId: "evidence.coffee_order.receipt",
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [],
+    };
+
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ inventory: inventoryWithImage }),
+    );
+
+    const img = await waitFor(() => {
+      const el =
+        container.querySelector<HTMLImageElement>(".evidence-card img");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+
+    // First error swaps to a placeholder data URI.
+    img.dispatchEvent(new Event("error"));
+    await waitFor(() => {
+      expect(img).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
+
+    // A second error on the already-placeholder image must be a no-op:
+    // handleEvidenceImageError returns early when image.placeholder is true.
+    const srcAfterFirstSwap = img.getAttribute("src");
+    img.dispatchEvent(new Event("error"));
+    await Promise.resolve();
+    expect(img.getAttribute("src")).toBe(srcAfterFirstSwap);
+  });
+
+  it("renders the seal fallback when resolveStoryAsset resolves with null", async () => {
+    const inventoryWithImage: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: "coffee-order",
+          name: "咖啡訂單",
+          description: "訂單時間與證詞不符。",
+          details: "最終列印時間為 21:17。",
+          imageAssetId: "evidence.coffee_order.receipt",
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [],
+    };
+
+    const resolveSpy = vi
+      .spyOn(storyAssets, "resolveStoryAsset")
+      .mockResolvedValue(null);
+
+    try {
+      const { container } = render(
+        InterrogationEvidenceTray,
+        props({ inventory: inventoryWithImage }),
+      );
+
+      // When resolveStoryAsset resolves with null, the $effect's
+      // `if (!cancelled && asset)` guard skips setting evidenceImages, so
+      // the seal fallback renders instead of an <img>.
+      await waitFor(() => {
+        expect(container.querySelector(".evidence-card img")).toBeNull();
+        expect(
+          container.querySelector(".evidence-card .record-seal"),
+        ).not.toBeNull();
+      });
+    } finally {
+      resolveSpy.mockRestore();
+    }
+  });
+
+  it("wraps shift+Tab from the first control to the last", async () => {
+    const user = userEvent.setup();
+    render(InterrogationEvidenceTray, props());
+
+    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const withdraw = screen.getByRole("button", { name: "收回" });
+
+    await waitFor(() => expect(evidence).toHaveFocus());
+    await user.tab({ shift: true });
+    expect(withdraw).toHaveFocus();
+  });
+
+  it("focuses the first or last control when Tab arrives from outside the tray", async () => {
+    render(InterrogationEvidenceTray, props());
+
+    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const withdraw = screen.getByRole("button", { name: "收回" });
+
+    // Focus is on <body>, outside the tray's controls (activeIndex < 0).
+    expect(document.activeElement).toBe(document.body);
+
+    // Forward Tab from outside lands on the first control.
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
+    await waitFor(() => expect(evidence).toHaveFocus());
+
+    // Shift+Tab from outside wraps to the last control.
+    document.body.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Tab",
+        shiftKey: true,
+        bubbles: true,
+      }),
+    );
+    await waitFor(() => expect(withdraw).toHaveFocus());
+  });
+
+  it("focuses the tray itself when Tab arrives and all controls are disabled", async () => {
+    render(InterrogationEvidenceTray, props({ disabled: true }));
+
+    // All buttons are disabled, so controls.length === 0. The Tab handler
+    // must focus the tray container rather than crashing or doing nothing.
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+    );
+    await waitFor(() => {
+      const tray = screen.getByRole("dialog", { name: "提出證據" });
+      expect(tray).toHaveFocus();
+    });
+  });
+
+  it("ignores non-Tab keys in the focus trap handler", async () => {
+    render(InterrogationEvidenceTray, props());
+
+    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    await waitFor(() => expect(evidence).toHaveFocus());
+
+    // A non-Tab key must not be intercepted by the Tab trap handler.
+    const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
+    const dispatched = window.dispatchEvent(event);
+    expect(dispatched).toBe(true);
+    expect(evidence).toHaveFocus();
+  });
+
+  it("falls back to the stage fallback when the return-focus target was disconnected before unmount", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "evidence hud";
+    document.body.append(trigger);
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+
+    const result = render(
+      InterrogationEvidenceTray,
+      props({ returnFocusTo: trigger, fallbackFocusTarget: fallback }),
+    );
+
+    try {
+      // Detach the trigger while the tray is still mounted. On unmount, the
+      // `target.isConnected` guard is false, so focus must fall through to
+      // the connected fallback.
+      trigger.remove();
+      result.unmount();
+      await waitFor(() => expect(fallback).toHaveFocus());
+    } finally {
+      fallback.remove();
+    }
+  });
+
+  it("does not focus anything when both return-focus target and fallback are disconnected on unmount", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "evidence hud";
+    document.body.append(trigger);
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(fallback);
+
+    const focusSpy = vi.spyOn(fallback, "focus");
+
+    const result = render(
+      InterrogationEvidenceTray,
+      props({ returnFocusTo: trigger, fallbackFocusTarget: fallback }),
+    );
+
+    try {
+      trigger.remove();
+      fallback.remove();
+      result.unmount();
+      // Give the tick().then() callback a chance to run.
+      await waitFor(() => {
+        expect(focusSpy).not.toHaveBeenCalled();
+      });
+    } finally {
+      focusSpy.mockRestore();
+    }
+  });
 });
