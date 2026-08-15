@@ -125,6 +125,17 @@ export function analyzeReachability(input: {
       definition,
     ]),
   );
+  // Build shared indexes once and reuse them across every required-node
+  // authorization check rather than reconstructing per candidate node.
+  const groupsByEventId = new Map<string, string[]>();
+  for (const candidate of nodes) {
+    const members = groupsByEventId.get(candidate.oneShotEventId) ?? [];
+    members.push(candidate.key);
+    groupsByEventId.set(candidate.oneShotEventId, members);
+  }
+  const nodesByKey = new Map(
+    nodes.map((candidate) => [candidate.key, candidate]),
+  );
 
   const exclusiveOutcome = exclusiveOutcomeSelections(nodes);
   // When the Cartesian product of one-shot alternatives exceeds SCENARIO_LIMIT,
@@ -265,6 +276,9 @@ export function analyzeReachability(input: {
       mustReachableNodeKeys,
       mustAtoms,
       authorizationDefinitions,
+      groupsByEventId,
+      nodesByKey,
+      producerKeysByAtom,
     });
     if (authorizationFailure !== null) {
       errors.push(authorizationFailure);
@@ -1588,6 +1602,9 @@ function prerequisiteAtomGuaranteedByExhaustiveAlternatives(input: {
   nodesByKey: ReadonlyMap<string, ReachabilityNode>;
   reachableNodeKeys: ReadonlySet<string>;
   mustReachableNodeKeys: ReadonlySet<string>;
+  mustAtoms: ReadonlySet<ReachabilityAtom>;
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+  visitedAtoms: ReadonlySet<ReachabilityAtom>;
 }): boolean {
   const producerKeySet = new Set(input.producerKeys);
   const producerEventIds = new Set<string>();
@@ -1621,12 +1638,27 @@ function prerequisiteAtomGuaranteedByExhaustiveAlternatives(input: {
  * every shared predecessor is itself must-reachable. When members have no
  * common predecessor (or a shared predecessor that is only may-reachable), the
  * event may be skippable, so the group does not guarantee execution.
+ *
+ * In addition to the structural predecessor check, each member's own implicit
+ * prerequisites (condition predicates + implicitPrerequisites) must be
+ * guaranteed available on every path. This catches alternatives whose shared
+ * structural trigger is must-reachable but whose individual gating atoms are
+ * only may-reachable — the player can reach the trigger yet find no alternative
+ * satisfiable, so the event never fires. Each alternative's prerequisites are
+ * checked independently so that mutually exclusive alternative-specific
+ * prerequisites (e.g. alt_a requires atom X, alt_b requires atom Y) are
+ * supported as long as each one's own atoms are guaranteed.
  */
 function groupTriggerIsMustReachable(
   memberKeys: readonly string[],
   input: {
     nodesByKey: ReadonlyMap<string, ReachabilityNode>;
     mustReachableNodeKeys: ReadonlySet<string>;
+    mustAtoms: ReadonlySet<ReachabilityAtom>;
+    producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+    groupsByEventId: ReadonlyMap<string, readonly string[]>;
+    reachableNodeKeys: ReadonlySet<string>;
+    visitedAtoms: ReadonlySet<ReachabilityAtom>;
   },
 ): boolean {
   const predecessorSets = memberKeys.map((key) => {
@@ -1640,9 +1672,14 @@ function groupTriggerIsMustReachable(
     // Members reachable without predecessors must be initially reachable
     // (otherwise they would not be may-reachable). The trigger is the scene
     // entry, which is must-reachable on every path.
-    return memberKeys.every(
-      (key) => input.nodesByKey.get(key)?.initiallyReachable ?? false,
-    );
+    if (
+      !memberKeys.every(
+        (key) => input.nodesByKey.get(key)?.initiallyReachable ?? false,
+      )
+    ) {
+      return false;
+    }
+    return memberPrerequisitesGuaranteed(memberKeys, input);
   }
   // Compute the intersection of strict predecessors across all members. Only
   // a shared predecessor can serve as the group's common trigger.
@@ -1654,9 +1691,82 @@ function groupTriggerIsMustReachable(
   // The event is guaranteed to fire only when every shared predecessor is
   // must-reachable — otherwise the player can skip the trigger and the event
   // never executes.
-  return sharedPredecessors.every((key) =>
-    input.mustReachableNodeKeys.has(key),
-  );
+  if (
+    !sharedPredecessors.every((key) => input.mustReachableNodeKeys.has(key))
+  ) {
+    return false;
+  }
+  return memberPrerequisitesGuaranteed(memberKeys, input);
+}
+
+/**
+ * Checks that every member's own required atoms (condition predicates plus
+ * implicitPrerequisites) are guaranteed available on every path. Each
+ * alternative is evaluated independently so that alternative-specific
+ * prerequisites are supported.
+ */
+function memberPrerequisitesGuaranteed(
+  memberKeys: readonly string[],
+  input: {
+    nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+    mustAtoms: ReadonlySet<ReachabilityAtom>;
+    producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+    groupsByEventId: ReadonlyMap<string, readonly string[]>;
+    reachableNodeKeys: ReadonlySet<string>;
+    mustReachableNodeKeys: ReadonlySet<string>;
+    visitedAtoms: ReadonlySet<ReachabilityAtom>;
+  },
+): boolean {
+  return memberKeys.every((key) => {
+    const node = input.nodesByKey.get(key);
+    if (!node) return true;
+    const requiredAtoms = unique(
+      [
+        ...requiredExpressionPredicates(node.condition),
+        ...node.implicitPrerequisites,
+      ].map((predicate) => predicate.atom),
+    );
+    return requiredAtoms.every((atom) => atomIsGuaranteed(atom, input));
+  });
+}
+
+/**
+ * Determines whether an atom is guaranteed to hold on every path. An atom is
+ * guaranteed when it is in the must fixed point, or when it is produced by
+ * exhaustive mutually-exclusive alternatives whose shared trigger is itself
+ * must-reachable. The visitedAtoms set breaks cyclic dependencies through
+ * exhaustive-alternative groups: an atom whose guarantee transitively depends
+ * on itself cannot be guaranteed.
+ */
+function atomIsGuaranteed(
+  atom: ReachabilityAtom,
+  input: {
+    mustAtoms: ReadonlySet<ReachabilityAtom>;
+    producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+    groupsByEventId: ReadonlyMap<string, readonly string[]>;
+    nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+    reachableNodeKeys: ReadonlySet<string>;
+    mustReachableNodeKeys: ReadonlySet<string>;
+    visitedAtoms: ReadonlySet<ReachabilityAtom>;
+  },
+): boolean {
+  if (input.mustAtoms.has(atom)) return true;
+  if (input.visitedAtoms.has(atom)) return false;
+  const producerKeys = input.producerKeysByAtom.get(atom) ?? [];
+  if (producerKeys.length === 0) return false;
+  const nextVisited = new Set(input.visitedAtoms);
+  nextVisited.add(atom);
+  return prerequisiteAtomGuaranteedByExhaustiveAlternatives({
+    atom,
+    producerKeys,
+    groupsByEventId: input.groupsByEventId,
+    nodesByKey: input.nodesByKey,
+    reachableNodeKeys: input.reachableNodeKeys,
+    mustReachableNodeKeys: input.mustReachableNodeKeys,
+    mustAtoms: input.mustAtoms,
+    producerKeysByAtom: input.producerKeysByAtom,
+    visitedAtoms: nextVisited,
+  });
 }
 
 function mandatoryAuthorizationFailure(input: {
@@ -1669,6 +1779,9 @@ function mandatoryAuthorizationFailure(input: {
     string,
     ASTStoryCatalog["authorizations"][number]
   >;
+  groupsByEventId: ReadonlyMap<string, readonly string[]>;
+  nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+  producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
 }): ReachabilityDiagnostic | null {
   const requiredAuthorizationIds = unique(
     [
@@ -1745,22 +1858,12 @@ function mandatoryAuthorizationFailure(input: {
     // content can be absent from the must fixed point after an earlier modeled
     // branch even when this producer's own path is structurally mandatory.
     const matchingKeys = new Set(matching.map((producer) => producer.key));
-    const groupsByEventId = new Map<string, string[]>();
-    for (const candidate of input.nodes) {
-      const members = groupsByEventId.get(candidate.oneShotEventId) ?? [];
-      members.push(candidate.key);
-      groupsByEventId.set(candidate.oneShotEventId, members);
-    }
-    const nodesByKey = new Map(
-      input.nodes.map((candidate) => [candidate.key, candidate]),
-    );
-    const producerKeysByAtom = buildPositiveProducerIndex(input.nodes);
     let unguaranteed = false;
     for (const producer of nonLegacyMatching) {
       if (!input.reachableNodeKeys.has(producer.key)) continue;
-      const groupMembers = groupsByEventId.get(producer.oneShotEventId) ?? [
-        producer.key,
-      ];
+      const groupMembers = input.groupsByEventId.get(
+        producer.oneShotEventId,
+      ) ?? [producer.key];
       if (groupMembers.length === 1) {
         const prerequisiteAtoms = unique(
           [
@@ -1770,7 +1873,7 @@ function mandatoryAuthorizationFailure(input: {
         );
         const hasOptionalStrictPredecessor =
           producer.strictPredecessorKeys.some(
-            (key) => nodesByKey.get(key)?.requirement === "optional",
+            (key) => input.nodesByKey.get(key)?.requirement === "optional",
           );
         // A prerequisite supplied only by optional nodes is not necessarily
         // skippable: when those nodes are exhaustive mutually-exclusive
@@ -1784,19 +1887,22 @@ function mandatoryAuthorizationFailure(input: {
         // deciding guarantee solely from each producer's requirement.
         const hasUnguaranteedPrerequisiteProducer = prerequisiteAtoms.some(
           (atom) => {
-            const keys = producerKeysByAtom.get(atom) ?? [];
+            const keys = input.producerKeysByAtom.get(atom) ?? [];
             if (keys.length === 0) return false;
             const allOptional = keys.every(
-              (key) => nodesByKey.get(key)?.requirement === "optional",
+              (key) => input.nodesByKey.get(key)?.requirement === "optional",
             );
             if (!allOptional) return false;
             return !prerequisiteAtomGuaranteedByExhaustiveAlternatives({
               atom,
               producerKeys: keys,
-              groupsByEventId,
-              nodesByKey,
+              groupsByEventId: input.groupsByEventId,
+              nodesByKey: input.nodesByKey,
               reachableNodeKeys: input.reachableNodeKeys,
               mustReachableNodeKeys: input.mustReachableNodeKeys,
+              mustAtoms: input.mustAtoms,
+              producerKeysByAtom: input.producerKeysByAtom,
+              visitedAtoms: new Set(),
             });
           },
         );
@@ -1822,8 +1928,13 @@ function mandatoryAuthorizationFailure(input: {
         if (
           !mayReachableMembers.every((key) => matchingKeys.has(key)) ||
           !groupTriggerIsMustReachable(mayReachableMembers, {
-            nodesByKey,
+            nodesByKey: input.nodesByKey,
             mustReachableNodeKeys: input.mustReachableNodeKeys,
+            mustAtoms: input.mustAtoms,
+            producerKeysByAtom: input.producerKeysByAtom,
+            groupsByEventId: input.groupsByEventId,
+            reachableNodeKeys: input.reachableNodeKeys,
+            visitedAtoms: new Set(),
           })
         ) {
           unguaranteed = true;

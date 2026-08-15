@@ -1803,6 +1803,205 @@ describe("positive dependency and base reachability", () => {
       }),
     );
   });
+
+  it("accepts a mandatory grant when alternatives have guaranteed alternative-specific prerequisites", () => {
+    // Each mutually-exclusive alternative grants the authorization but has a
+    // DIFFERENT implicit prerequisite atom. When each alternative's own
+    // prerequisite is independently guaranteed (here via mandatory producers
+    // that land in mustAtoms), the shared trigger is must-reachable and the
+    // grant is guaranteed regardless of which alternative the player chooses.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("producer_a", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:A")],
+        }),
+        syntheticNode("producer_b", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:B")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:A")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:B")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+  });
+
+  it("rejects a mandatory grant when one alternative's prerequisite is only may-reachable", () => {
+    // alt_a requires atom A (produced only by an optional node → may-reachable
+    // but not guaranteed) while alt_b requires atom B (in mustAtoms). The
+    // shared structural trigger (entry) is must-reachable, and every
+    // may-reachable alternative grants the authorization, but alt_a's own
+    // prerequisite is not guaranteed on every path — the player can reach the
+    // trigger on a path where A is absent, find alt_a unsatisfiable, and if
+    // alt_b is also unsatisfiable on that path the event never fires. The
+    // grant is not guaranteed and a required successor soft-locks.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("optional_progress", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:A")],
+        }),
+        syntheticNode("producer_b", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:B")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:A")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:B")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
+  it("accepts a mandatory grant when alternative-specific prerequisites are guaranteed by exhaustive alternatives", () => {
+    // alt_a requires atom A, which is guaranteed not by a mandatory producer
+    // but by exhaustive mutually-exclusive alternatives (pre_alt_a and
+    // pre_alt_b both produce A, share a one-shot event, and are initially
+    // reachable with no predecessors — the trigger is the scene entry).
+    // alt_b requires atom B, which is in mustAtoms. The recursive guarantee
+    // check must follow the exhaustive-alternative chain for A while checking
+    // each alternative's own prerequisites independently.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("pre_alt_a", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:A")],
+        }),
+        syntheticNode("pre_alt_b", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:A")],
+        }),
+        syntheticNode("producer_b", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:B")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:A")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:B")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+  });
 });
 
 describe("ordered story batches", () => {
