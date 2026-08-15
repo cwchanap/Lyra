@@ -2717,7 +2717,7 @@ mod tests {
 
     #[test]
     fn direct_investigation_to_analysis_accepts_authored_static_practice_card() {
-        let resources = analysis_resources_with_cards("analysis-direct-practice-transfer");
+        let resources = analysis_resources_with_cards("analysis-direct-practice-static");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
         let view = engine

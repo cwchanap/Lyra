@@ -258,8 +258,6 @@ which requirements a selection must satisfy.
 
 ## Practice-card binding and threshold provenance
 
-## Practice-card binding and threshold provenance
-
 Practice cards are **authored-static tutorial cards**: they are not case
 records, are not collected into inventory, and their availability is decided at
 compile time, not by runtime state. Manifest binding applies to `classify`,

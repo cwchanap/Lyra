@@ -1009,9 +1009,10 @@ describe("buildReachabilityNodes", () => {
     const nodesByKey = new Map(nodes.map((node) => [node.key, node]));
     const practiceBoard = nodesByKey.get(
       "chapter_1/analysis_scene_p1/board:practice_classify",
-    )!;
+    );
+    expect(practiceBoard).toBeDefined();
 
-    expect(practiceBoard.implicitPrerequisites).toEqual([]);
+    expect(practiceBoard!.implicitPrerequisites).toEqual([]);
   });
 });
 
