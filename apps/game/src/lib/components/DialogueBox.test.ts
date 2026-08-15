@@ -1436,9 +1436,16 @@ describe("DialogueBox inline cross-examination controls", () => {
   });
 
   it("renders no 反駁 / 退下 controls without a crossExam prop", () => {
-    renderDialogueBox({ kind: "line", speaker: "嫌疑人", text: "我沒去過。" });
+    const { container } = renderDialogueBox({
+      kind: "line",
+      speaker: "嫌疑人",
+      text: "我沒去過。",
+    });
     expect(screen.queryByRole("button", { name: /反駁/ })).toBeNull();
     expect(screen.queryByRole("button", { name: /退下/ })).toBeNull();
+    expect(container.querySelector(".box")).not.toHaveClass(
+      "xexam-presentation",
+    );
   });
 
   it("renders the inline 反駁 / 退下 controls while a testimony plays", () => {
@@ -1457,7 +1464,7 @@ describe("DialogueBox inline cross-examination controls", () => {
   });
 
   it("renders live testimony progress when presentation data is supplied", () => {
-    renderDialogueBox(
+    const { container } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
       {
         crossExam: {
@@ -1470,6 +1477,7 @@ describe("DialogueBox inline cross-examination controls", () => {
     );
 
     expect(screen.getByText("證詞 2 / 3")).toBeInTheDocument();
+    expect(container.querySelector(".box")).toHaveClass("xexam-presentation");
   });
 
   it("challenges the current line without advancing the dialogue", async () => {
@@ -1507,6 +1515,38 @@ describe("DialogueBox inline cross-examination controls", () => {
       await fireEvent.click(challenge, { detail: 1 });
       expect(onChallenge).toHaveBeenCalledTimes(1);
       expect(onAdvance).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps suppression armed until release after a long completed pointer hold", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChallenge = vi.fn();
+      renderDialogueBox(
+        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+      );
+      const challenge = screen.getByRole("button", { name: /反駁/ });
+
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 11,
+        pointerType: "mouse",
+      });
+      // Let the hold finish and an additional turn elapse while the pointer
+      // remains down. The physical click only arrives at pointer release, so
+      // clearing suppression at the hold threshold would double-submit here.
+      await vi.advanceTimersByTimeAsync(601);
+      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
+
+      await fireEvent.pointerUp(challenge, {
+        pointerId: 11,
+        pointerType: "mouse",
+      });
+      await fireEvent.click(challenge, { detail: 1 });
+
+      expect(onChallenge).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }
