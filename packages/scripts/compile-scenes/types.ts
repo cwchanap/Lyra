@@ -97,8 +97,8 @@ export type InventoryTarget =
   | { kind: "statement"; id: string };
 
 /**
- * A card collected only by an active tutorial notebook. It is deliberately
- * separate from InventoryTarget so it cannot enter the global Case File.
+ * An authored-static tutorial card source. It is deliberately separate from
+ * InventoryTarget so it cannot enter the global Case File.
  */
 export type PracticeCardSource = { kind: "practice"; id: string };
 
