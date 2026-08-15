@@ -800,7 +800,19 @@
       closeGameBrowser();
       gameMenuOpen = false;
       await tick();
-      gameplayRoot?.focus();
+      // The Present tray stays mounted across a manual save (the engine's
+      // presenting state is preserved), so focusing gameplayRoot would land
+      // outside the still-active aria-modal dialog. When Present is active,
+      // restore focus to the tray's 遊戲選單 button — the trigger that opened
+      // the menu — so focus returns inside the modal. Otherwise gameplayRoot
+      // is correct (no modal remains).
+      if (interrogationPresentationActive) {
+        document
+          .querySelector<HTMLElement>("[data-interrogation-game-menu]")
+          ?.focus();
+      } else {
+        gameplayRoot?.focus();
+      }
     } catch (error) {
       manualSaveFailure = asGameError(error);
     } finally {
@@ -1316,6 +1328,7 @@
           onOpenGameMenu={openInterrogationGameMenu}
           onOpenCaseFile={openInterrogationCaseFile}
           disabled={gameState.inFlight}
+          topLayerOpen={gameMenuOpen || gameplayInteractionBlocked}
         >
           {#if gameState.value.mode.type === "dialogue"}
             <SceneBackdrop

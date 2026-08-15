@@ -17,6 +17,7 @@
     onOpenGameMenu,
     onOpenCaseFile,
     disabled = false,
+    topLayerOpen = false,
     children,
   }: {
     active: boolean;
@@ -32,6 +33,9 @@
     onOpenGameMenu: (trigger: HTMLElement) => void;
     onOpenCaseFile: (trigger: HTMLElement) => void;
     disabled?: boolean;
+    // Forwarded to InterrogationEvidenceTray so its Tab trap suspends while
+    // an upper layer (Game Menu / Save Browser / acquisition popup) is open.
+    topLayerOpen?: boolean;
     children: Snippet;
   } = $props();
 
@@ -105,6 +109,7 @@
       {onResume}
       {onOpenGameMenu}
       {disabled}
+      {topLayerOpen}
       returnFocusTo={trayReturnFocus}
       fallbackFocusTarget={stageRoot}
     />

@@ -16,6 +16,7 @@
     onResume,
     onOpenGameMenu,
     disabled = false,
+    topLayerOpen = false,
     returnFocusTo = null,
     fallbackFocusTarget = null,
   }: {
@@ -29,6 +30,13 @@
     onResume: () => void | Promise<void>;
     onOpenGameMenu: (trigger: HTMLElement) => void;
     disabled?: boolean;
+    // True while an upper layer (Game Menu, Save Browser, acquisition popup)
+    // is open above this tray. The tray stays mounted (the engine's
+    // presenting state is preserved), but its window-level Tab trap must
+    // suspend so the upper dialog owns Tab navigation. Without this, the
+    // capture-phase window listener intercepts Tab before the upper dialog
+    // can process it (stopImmediatePropagation kills the event).
+    topLayerOpen?: boolean;
     returnFocusTo?: HTMLElement | null;
     fallbackFocusTarget?: HTMLElement | null;
   } = $props();
@@ -88,6 +96,12 @@
 
   function handleKeydown(event: KeyboardEvent) {
     if (event.key !== "Tab" || !tray) return;
+    // Suspend the trap while an upper layer (Game Menu / Save Browser /
+    // acquisition popup) is open above this tray. The tray remains mounted
+    // but must not intercept Tab — the upper dialog owns keyboard navigation
+    // while it is the topmost modal. stopImmediatePropagation below would
+    // otherwise kill the event before the upper dialog's handler runs.
+    if (topLayerOpen) return;
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
