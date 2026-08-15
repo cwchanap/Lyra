@@ -135,9 +135,13 @@ pub enum RevealTarget {
     Statement {
         id: String,
     },
-    /// Tutorial-only material. Unlike evidence and statements, practice
-    /// cards belong to the active investigation/analysis handoff and never
-    /// enter the global Case File inventory.
+    /// Tutorial-only context marker: a `practice:` reveal binds an
+    /// authored-static Analysis practice card to the immediately following
+    /// Analysis scene and never enters the global Case File inventory.
+    /// Availability is guaranteed by the predecessor authoring rule (auto
+    /// outro over initially-unlocked hotspots/topics under an
+    /// initially-unlocked sublocation), so runtime reveal handling is a no-op:
+    /// Analysis availability is authored-static.
     Practice {
         id: String,
     },

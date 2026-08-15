@@ -136,10 +136,11 @@ describe("production Chapter 1 authoring", () => {
 });
 
 describe("compile (end-to-end against valid fixture)", () => {
-  it("rejects a practice card that is not collected by its owning tutorial", () => {
+  it("rejects a practice card without an immediate predecessor binding", () => {
     // Break caught: a practice source must not become a free-floating analysis
-    // card; without a preceding tutorial collection it could bypass the
-    // Prologue Notebook boundary and appear in unrelated analysis scenes.
+    // card; without a matching `practice:` marker on the immediately preceding
+    // investigation scene it could bypass the tutorial boundary and appear in
+    // unrelated analysis scenes.
     const sourceRoot = mkdtempSync(resolve(tmpdir(), "scene-practice-source-"));
     const outRoot = mkdtempSync(resolve(tmpdir(), "scene-practice-output-"));
     try {
@@ -150,7 +151,7 @@ describe("compile (end-to-end against valid fixture)", () => {
         [
           "# Chapter 1: 練習欄驗收",
           "",
-          "**Summary:** 練習欄只可由其教學場景取得。",
+          "**Summary:** 練習欄必須有緊鄰的前置教學場景標記。",
           "",
           "## Scenes",
           "",
@@ -162,7 +163,7 @@ describe("compile (end-to-end against valid fixture)", () => {
         [
           "# Scene 1.5: 練習欄",
           "",
-          "- **Summary:** 這張卡必須有同一段教學取得來源。",
+          "- **Summary:** 這張卡必須由緊鄰的前置教學場景標記綁定。",
           "",
           "## Intro",
           "",

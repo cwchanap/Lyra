@@ -480,10 +480,10 @@ export function validate(input: ValidatorInput): CompileError[] {
 }
 
 /**
- * Practice cards are a deliberately narrow bridge from one investigation
- * scene into the immediately following analysis board. They are neither
- * evidence nor statements: keeping their binding here prevents them from
- * joining the global case-record corpus or surviving past their tutorial.
+ * Practice cards are authored-static tutorial cards whose availability is
+ * bound at compile time to the immediately following analysis board. They are
+ * neither evidence nor statements: keeping their binding here prevents them
+ * from joining the global case-record corpus.
  */
 function validatePracticeCardBindings(
   input: ValidatorInput,
@@ -563,29 +563,26 @@ function validatePracticeCardBindings(
       const predecessor = predecessorFile
         ? sceneByManifestKey.get(`${chapter.dirName}/${predecessorFile}`)
         : undefined;
-      const collected = new Map<
-        string,
-        Array<{ sourceFile: string; line: number }>
-      >();
+      const markers = new Map<string, PracticeRevealLocation[]>();
 
       if (predecessor?.ast.kind === "investigationScene") {
         forEachPracticeReveal(predecessor.ast, (id, location) => {
-          const entries = collected.get(id) ?? [];
+          const entries = markers.get(id) ?? [];
           entries.push(location);
-          collected.set(id, entries);
+          markers.set(id, entries);
         });
       }
 
       for (const [id, cards] of cardIds) {
-        const collectors = collected.get(id) ?? [];
-        if (collectors.length === 1) continue;
+        const bindings = markers.get(id) ?? [];
+        if (bindings.length === 1) continue;
         for (const card of cards) {
           errors.push({
             code: "practiceCardSourceUnbound",
             message:
-              collectors.length === 0
-                ? `Practice card "${id}" must be revealed exactly once by the immediately preceding investigation scene before analysis scene "${analysis.ast.id}".`
-                : `Practice card "${id}" is revealed ${collectors.length} times by the immediately preceding investigation scene; practice cards require one collection source.`,
+              bindings.length === 0
+                ? `Practice card "${id}" must be bound by exactly one matching \`practice:\` marker on the immediately preceding investigation scene before analysis scene "${analysis.ast.id}".`
+                : `Practice card "${id}" is bound by ${bindings.length} \`practice:\` markers on the immediately preceding investigation scene; practice cards require exactly one marker.`,
             sourceFile: card.sourceFile,
             line: card.line,
           });
@@ -603,6 +600,7 @@ function validatePracticeCardBindings(
 
   for (const rec of input.scenes) {
     if (rec.ast.kind !== "investigationScene") continue;
+    const scene = rec.ast;
     const chapter = input.chapters.find(
       (candidate) => candidate.dirName === rec.chapterId,
     );
@@ -616,39 +614,96 @@ function validatePracticeCardBindings(
       ? practiceCardIdsForAnalysis(nextAnalysis)
       : new Map<string, Array<{ sourceFile: string; line: number }>>();
 
-    forEachPracticeReveal(rec.ast, (id, location) => {
-      if (nextPracticeIds.has(id)) return;
-      errors.push({
-        code: "practiceRevealUnbound",
-        message: `Practice reveal "${id}" must target a card on the immediately following analysis scene.`,
-        sourceFile: location.sourceFile,
-        line: location.line,
-      });
+    forEachPracticeReveal(scene, (id, location) => {
+      if (!nextPracticeIds.has(id)) {
+        errors.push({
+          code: "practiceRevealUnbound",
+          message: `Practice marker "${id}" must be bound by a card with \`Source: practice:${id}\` on the immediately following analysis scene.`,
+          sourceFile: location.sourceFile,
+          line: location.line,
+        });
+        return;
+      }
+      // A bound marker is guaranteed by the predecessor authoring rule only
+      // when auto outro completion touches it: the outro plays after every
+      // currently-unlocked hotspot/topic is engaged, skips locked
+      // sublocations entirely, and does not independently require sublocation
+      // entry. Expression-gated outros may exit before unrelated unlocked
+      // interactions are completed, and a sublocation entry trigger is never
+      // itself required by auto completion.
+      const contextGuaranteed =
+        scene.outro.unlock === "auto" &&
+        location.carrierKind !== "sublocation" &&
+        location.carrierInitiallyUnlocked &&
+        location.parentSublocationInitiallyUnlocked;
+      if (!contextGuaranteed) {
+        errors.push({
+          code: "practiceRevealContextNotGuaranteed",
+          message: `Practice marker "${id}" is bound, but its tutorial interaction is not guaranteed by auto outro completion: the marker must sit on an initially-unlocked hotspot or topic under an initially-unlocked sublocation, and the predecessor outro must be \`auto\`.`,
+          sourceFile: location.sourceFile,
+          line: location.line,
+        });
+      }
     });
   }
 }
 
+/**
+ * A `practice:` marker's carrier context: where it sits in the investigation
+ * scene and whether auto outro completion is guaranteed to engage it.
+ */
+type PracticeRevealLocation = {
+  sourceFile: string;
+  line: number;
+  carrierKind: "sublocation" | "hotspot" | "topic";
+  carrierInitiallyUnlocked: boolean;
+  parentSublocationInitiallyUnlocked: boolean;
+};
+
 function forEachPracticeReveal(
   scene: ASTInvestigationScene,
-  visit: (id: string, location: { sourceFile: string; line: number }) => void,
+  visit: (id: string, location: PracticeRevealLocation) => void,
 ): void {
-  const inspect = (
-    reveals: InvestigationRevealTarget[],
-    sourceFile: string,
-    line: number,
-  ) => {
-    for (const reveal of reveals) {
-      if (reveal.kind === "practice") visit(reveal.id, { sourceFile, line });
-    }
-  };
   for (const sublocation of scene.sublocations) {
-    inspect(sublocation.reveals, sublocation.sourceFile, sublocation.line);
+    for (const reveal of sublocation.reveals) {
+      if (reveal.kind === "practice") {
+        visit(reveal.id, {
+          sourceFile: sublocation.sourceFile,
+          line: sublocation.line,
+          carrierKind: "sublocation",
+          carrierInitiallyUnlocked: sublocation.status === "unlocked",
+          parentSublocationInitiallyUnlocked: sublocation.status === "unlocked",
+        });
+      }
+    }
     for (const hotspot of sublocation.hotspots) {
-      inspect(hotspot.reveals, hotspot.sourceFile, hotspot.line);
+      for (const reveal of hotspot.reveals) {
+        if (reveal.kind === "practice") {
+          visit(reveal.id, {
+            sourceFile: hotspot.sourceFile,
+            line: hotspot.line,
+            carrierKind: "hotspot",
+            carrierInitiallyUnlocked: hotspot.status === "unlocked",
+            parentSublocationInitiallyUnlocked:
+              sublocation.status === "unlocked",
+          });
+        }
+      }
     }
     for (const character of sublocation.characters) {
       for (const topic of character.topics) {
-        inspect(topic.reveals, topic.sourceFile, topic.line);
+        for (const reveal of topic.reveals) {
+          if (reveal.kind === "practice") {
+            visit(reveal.id, {
+              sourceFile: topic.sourceFile,
+              line: topic.line,
+              carrierKind: "topic",
+              carrierInitiallyUnlocked: topic.status === "unlocked",
+              parentSublocationInitiallyUnlocked:
+                sublocation.status === "unlocked",
+            });
+          }
+        }
       }
     }
   }
