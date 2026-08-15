@@ -25,6 +25,9 @@
     sceneMenuEnabled = false,
     caseFileMenuEnabled = true,
     activePrimaryObjective = null,
+    interrogationPresentation = false,
+    caseFileRequest = null,
+    onCaseFileRequestHandled,
     children,
     menu,
     sceneMenu,
@@ -52,6 +55,9 @@
     // availability is decoupled from snippet presence.
     caseFileMenuEnabled?: boolean;
     activePrimaryObjective?: ObjectiveView | null;
+    interrogationPresentation?: boolean;
+    caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    onCaseFileRequestHandled?: (id: number) => void;
     children: Snippet;
     menu?: Snippet;
     sceneMenu?: Snippet;
@@ -59,7 +65,9 @@
 
   type MenuPanel = "scene" | "caseFile" | "sound" | null;
 
-  let showChapterHud = $derived(gameState.mode.type !== "explore");
+  let showChapterHud = $derived(
+    gameState.mode.type !== "explore" && !interrogationPresentation,
+  );
   let showPrimaryObjectiveHud = $derived(
     gameState.mode.type !== "gameComplete",
   );
@@ -74,6 +82,7 @@
   // go stale. Mirrors the WAI-ARIA expectation that dismissing a sub-layer
   // returns focus to its trigger.
   let lastOpenedSubmenu: Exclude<MenuPanel, null> | null = null;
+  let handledCaseFileRequestId = $state<number | null>(null);
   let menuTitle = $derived(menuPanelTitle(activeMenuPanel));
   let menuContext = $derived(
     activeMenuPanel === null
@@ -124,9 +133,11 @@
     }
   }
 
-  async function openGameMenu() {
+  async function openGameMenu(focusOrigin: HTMLElement | null = null) {
+    const suppliedFocusOrigin = focusOrigin?.isConnected ? focusOrigin : null;
+
     if (!open) {
-      const activeElement = document.activeElement;
+      const activeElement = suppliedFocusOrigin ?? document.activeElement;
       previouslyFocusedElement =
         activeElement instanceof HTMLElement ? activeElement : null;
       activeMenuPanel = null;
@@ -134,6 +145,8 @@
       open = true;
       await tick();
       resumeButton?.focus();
+    } else if (suppliedFocusOrigin) {
+      previouslyFocusedElement = suppliedFocusOrigin;
     }
   }
 
@@ -175,6 +188,20 @@
       );
       (target ?? submenuBackButton)?.focus();
     });
+  }
+
+  async function openRequestedCaseFile(request: {
+    id: number;
+    returnFocusTo: HTMLElement | null;
+  }) {
+    if (!caseFileMenuEnabled || !menu) {
+      onCaseFileRequestHandled?.(request.id);
+      return;
+    }
+
+    await openGameMenu(request.returnFocusTo);
+    openMenuPanel("caseFile");
+    onCaseFileRequestHandled?.(request.id);
   }
 
   function closeMenuPanel() {
@@ -326,6 +353,16 @@
       activeMenuPanel = null;
     }
   });
+
+  $effect(() => {
+    const request = caseFileRequest;
+    if (!request || request.id === handledCaseFileRequestId) {
+      return;
+    }
+
+    handledCaseFileRequestId = request.id;
+    void openRequestedCaseFile(request);
+  });
 </script>
 
 <div class="shell">
@@ -355,6 +392,12 @@
     </header>
 
     <div class="rule"></div>
+  {/if}
+
+  {#if interrogationPresentation && showPrimaryObjectiveHud}
+    <div class="interrogation-objective" inert={open || gameplayInert}>
+      <PrimaryObjectiveHud objective={activePrimaryObjective} />
+    </div>
   {/if}
 
   <main data-save-thumbnail-layout="main" inert={open || gameplayInert}>
@@ -608,6 +651,14 @@
   main {
     position: relative;
     z-index: 2;
+  }
+
+  .interrogation-objective {
+    position: fixed;
+    z-index: 3;
+    top: 18px;
+    right: clamp(18px, 3vw, 40px);
+    width: min(360px, calc(100vw - 36px));
   }
 
   .game-menu-scrim {
