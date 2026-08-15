@@ -188,9 +188,13 @@
     suppressNextPhysicalChallengeClick = false;
   }
 
-  function suppressFollowingPhysicalChallengeClick() {
+  function armChallengeClickSuppression() {
     clearChallengeClickSuppression();
     suppressNextPhysicalChallengeClick = true;
+  }
+
+  function suppressFollowingPhysicalChallengeClick() {
+    armChallengeClickSuppression();
     // A pointer sequence normally dispatches click before the event loop
     // advances. If it does not (for example, pointercancel/leave), clear the
     // one-shot guard on the next turn so it cannot swallow a later click.
@@ -211,9 +215,11 @@
       if (heldChallengePointerId !== event.pointerId) return;
 
       challengeHoldTimer = null;
-      heldChallengePointerId = null;
       challengeCharging = false;
-      suppressFollowingPhysicalChallengeClick();
+      // Keep the pointer id until its release. A completed hold may last well
+      // beyond this timer, while the physical click arrives only after
+      // pointerup; release schedules the one-shot suppression cleanup.
+      armChallengeClickSuppression();
       invokeChallenge();
     }, challengeHoldDurationMs);
   }
@@ -627,7 +633,7 @@
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
-    class:xexam-presentation={crossExam?.presentation !== null}
+    class:xexam-presentation={Boolean(crossExam?.presentation)}
     class:disabled
     onclick={handleClick}
     inert={historyOpen}
