@@ -222,8 +222,6 @@ pub(crate) enum SceneProgressSnapshot {
         discussed_topic_ids: Vec<CharacterTopicRefV1>,
         entered_sublocation_ids: Vec<String>,
         unlocked_overrides: Vec<InvestigationOverrideRefV1>,
-        #[serde(default)]
-        practice_card_ids: Vec<String>,
     },
     Interrogation {
         intro_played: bool,
@@ -583,6 +581,21 @@ mod tests {
     }
 
     #[test]
+    fn investigation_snapshot_does_not_serialize_practice_card_state() {
+        let value = serde_json::to_value(SceneProgressSnapshot::Investigation {
+            intro_played: false,
+            outro_played: false,
+            current_sublocation_id: None,
+            inspected_hotspot_ids: vec![],
+            discussed_topic_ids: vec![],
+            entered_sublocation_ids: vec![],
+            unlocked_overrides: vec![],
+        })
+        .unwrap();
+
+        assert!(value.get("practiceCardIds").is_none());
+    }
+
     fn representative_current_save_round_trips_typed_semantics_through_the_current_encoder() {
         let save = parse_current_envelope(&current_representative()).unwrap();
 

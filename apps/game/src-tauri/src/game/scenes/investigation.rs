@@ -2,7 +2,7 @@
 use crate::game::dialogue_queue::ActiveDialogueQueue;
 use crate::game::schema::{InvestigationSceneJson, LockStatus, OutroUnlock, UnlockExpr};
 use crate::game::unlock::{self, StoryUnlockContext, UnlockContext};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
 
@@ -18,10 +18,6 @@ pub struct InvestigationSceneState {
     pub discussed_topics: HashSet<(String, String)>,
     pub entered_sublocations: HashSet<String>,
     pub unlocked_overrides: HashSet<String>,
-    /// Tutorial-only cards collected in this investigation. They are copied to
-    /// the immediately following analysis scene and are never Case File
-    /// records.
-    pub practice_card_ids: BTreeSet<String>,
 }
 
 impl InvestigationSceneState {
@@ -37,7 +33,6 @@ impl InvestigationSceneState {
             discussed_topics: HashSet::new(),
             entered_sublocations: HashSet::new(),
             unlocked_overrides: HashSet::new(),
-            practice_card_ids: BTreeSet::new(),
         }
     }
 
@@ -165,9 +160,6 @@ impl InvestigationSceneState {
     pub fn unlock_override(&mut self, key: &str) {
         self.unlocked_overrides.insert(key.into());
     }
-    pub fn record_practice_card(&mut self, id: &str) {
-        self.practice_card_ids.insert(id.into());
-    }
 }
 
 impl UnlockContext for InvestigationSceneState {
@@ -216,7 +208,6 @@ mod tests {
             discussed_topics: HashSet::new(),
             entered_sublocations: HashSet::new(),
             unlocked_overrides: HashSet::new(),
-            practice_card_ids: BTreeSet::new(),
         };
         s.record_inspect("foo");
         assert!(s.inspected_hotspots.contains("foo"));

@@ -468,7 +468,6 @@ fn restore_scene(
                 discussed_topic_ids,
                 entered_sublocation_ids,
                 unlocked_overrides,
-                practice_card_ids,
             },
         ) => {
             validate_investigation_refs(
@@ -499,7 +498,6 @@ fn restore_scene(
                 .iter()
                 .map(super::schema::InvestigationOverrideRefV1::runtime_key)
                 .collect();
-            scene.practice_card_ids = practice_card_ids.iter().cloned().collect();
             Ok(SceneRuntime::Investigation(Box::new(scene)))
         }
         (
@@ -2054,7 +2052,6 @@ mod tests {
                     discussed_topic_ids: vec![],
                     entered_sublocation_ids: vec![],
                     unlocked_overrides: vec![],
-                    practice_card_ids: vec![],
                 }
             },
         ] {

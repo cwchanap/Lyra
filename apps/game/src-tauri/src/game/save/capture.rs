@@ -331,7 +331,6 @@ fn capture_scene_progress_with_active(
                 discussed_topic_ids,
                 entered_sublocation_ids,
                 unlocked_overrides,
-                practice_card_ids: scene.practice_card_ids.iter().cloned().collect(),
             })
         }
         (SceneRuntime::Interrogation(scene), SceneJson::Interrogation(packaged)) => {
@@ -1669,7 +1668,6 @@ mod tests {
                         topic_id: "alibi".into(),
                     },
                 ],
-                practice_card_ids: vec![],
             }
         );
         assert_eq!(
