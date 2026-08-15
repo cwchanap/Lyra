@@ -81,6 +81,21 @@ describe("interrogation presentation helpers", () => {
     expect(currentInterrogationPhase(interrogationScene("missing"))).toBeNull();
   });
 
+  it("returns null for a non-interrogation scene", () => {
+    const linearScene = {
+      kind: "linear" as const,
+      id: "scene_1",
+      title: "",
+      summary: "",
+      index: 0,
+      total: 1,
+    };
+    expect(currentInterrogationPhase(linearScene)).toBeNull();
+    expect(
+      isInterrogationPresentationActive(linearScene, dialogueMode(null)),
+    ).toBe(false);
+  });
+
   it("counts broken questions from the current phase", () => {
     expect(
       brokenQuestionProgress(currentInterrogationPhase(interrogationScene())),

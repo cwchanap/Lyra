@@ -259,6 +259,75 @@ describe("GameShell", () => {
     }
   });
 
+  it("acknowledges a Case File request without opening the submenu when caseFileMenuEnabled is false", async () => {
+    const onCaseFileRequestHandled = vi.fn();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      menuContent: "menu inventory slot",
+      caseFileMenuEnabled: false,
+      caseFileRequest: { id: 1, returnFocusTo: null },
+      onCaseFileRequestHandled,
+    });
+
+    await vi.waitFor(() => {
+      expect(onCaseFileRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
+    });
+    // The Case File submenu must NOT open when the feature is disabled.
+    expect(
+      screen.queryByRole("dialog", { name: "案件檔案" }),
+    ).not.toBeInTheDocument();
+    // The root game menu must NOT open either.
+    expect(
+      screen.queryByRole("dialog", { name: "遊戲選單" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("updates the focus origin when a game menu request arrives while the menu is already open", async () => {
+    // When the menu is already open and a new request supplies a focus
+    // origin, openGameMenu's `else if (suppliedFocusOrigin)` branch must
+    // update previouslyFocusedElement so closing the menu restores focus
+    // to the supplied trigger, not the element that opened the menu.
+    const firstTrigger = document.createElement("button");
+    firstTrigger.textContent = "first trigger";
+    document.body.append(firstTrigger);
+    firstTrigger.focus();
+
+    const secondTrigger = document.createElement("button");
+    secondTrigger.textContent = "second trigger";
+    document.body.append(secondTrigger);
+
+    try {
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        open: true,
+      });
+
+      // Menu is already open. Now send a game menu request with a different
+      // focus origin.
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+      rerender({
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        open: true,
+        gameMenuRequest: { id: 1, returnFocusTo: secondTrigger },
+        onGameMenuRequestHandled: vi.fn(),
+      });
+
+      // Close the menu — focus must go to the second trigger, not the first.
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /繼續調查/ }));
+
+      await vi.waitFor(() => {
+        expect(secondTrigger).toHaveFocus();
+      });
+    } finally {
+      firstTrigger.remove();
+      secondTrigger.remove();
+    }
+  });
+
   it("keeps duplicated utility controls out of the chapter HUD", () => {
     render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 

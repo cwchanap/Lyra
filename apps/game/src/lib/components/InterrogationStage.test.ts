@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import InterrogationStageHarness from "$lib/test-harnesses/InterrogationStageHarness.svelte";
@@ -134,5 +134,46 @@ describe("InterrogationStage", () => {
     expect(
       await screen.findByRole("dialog", { name: "提出證據" }),
     ).toBeInTheDocument();
+  });
+
+  it("does not open the case file when the stage is disabled", async () => {
+    const onOpenCaseFile = vi.fn();
+    render(
+      InterrogationStageHarness,
+      props({ disabled: true, onOpenCaseFile }),
+    );
+
+    // fireEvent.click bypasses the native disabled button guard in jsdom,
+    // reaching the openCaseFile handler so its internal `if (disabled) return`
+    // guard is exercised. userEvent.click would respect the disabled state
+    // and never dispatch the click, leaving the guard's return branch
+    // uncovered.
+    await fireEvent.click(screen.getByRole("button", { name: /案件檔案/ }));
+    expect(onOpenCaseFile).not.toHaveBeenCalled();
+  });
+
+  it("stores a null tray return focus when no HTMLElement has focus when presenting begins", async () => {
+    // When the presenting state transitions from false to true while
+    // document.activeElement is not an HTMLElement (e.g. null), the tray
+    // return focus must be null rather than throwing or storing a bad ref.
+    const activeElementSpy = vi
+      .spyOn(Document.prototype, "activeElement", "get")
+      .mockReturnValue(null);
+
+    try {
+      const { rerender } = render(
+        InterrogationStageHarness,
+        props({ scene: scene(false) }),
+      );
+
+      // Transition to presenting while activeElement is null.
+      rerender(props({ scene: scene(true) }));
+
+      expect(
+        await screen.findByRole("dialog", { name: "提出證據" }),
+      ).toBeInTheDocument();
+    } finally {
+      activeElementSpy.mockRestore();
+    }
   });
 });

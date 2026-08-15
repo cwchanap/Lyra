@@ -10,6 +10,7 @@ import {
   neutralEvidenceRecordView,
   neutralStatementRecordView,
 } from "../state/test-fixtures";
+import * as storyAssets from "$lib/assets/story-assets";
 import InterrogationEvidenceTray from "./InterrogationEvidenceTray.svelte";
 
 const crossExam: CrossExamView = {
@@ -219,5 +220,94 @@ describe("InterrogationEvidenceTray", () => {
     expect(onPresent).not.toHaveBeenCalled();
     expect(onOpenGameMenu).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();
+  });
+
+  it("renders a resolved evidence image and swaps to a placeholder when the image fails to load", async () => {
+    const inventoryWithImage: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: "coffee-order",
+          name: "咖啡訂單",
+          description: "訂單時間與證詞不符。",
+          details: "最終列印時間為 21:17。",
+          imageAssetId: "evidence.coffee_order.receipt",
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [],
+    };
+
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ inventory: inventoryWithImage }),
+    );
+
+    const img = await waitFor(() => {
+      const el =
+        container.querySelector<HTMLImageElement>(".evidence-card img");
+      expect(el).not.toBeNull();
+      return el!;
+    });
+    expect(img).toHaveAttribute(
+      "src",
+      expect.stringContaining("/assets/evidence/coffee_order.receipt.png"),
+    );
+
+    // Simulate a browser load failure (the URL is path-construction-only;
+    // the actual file does not exist in jsdom). The onerror handler must
+    // swap the src to a placeholder data URI.
+    img.dispatchEvent(new Event("error"));
+
+    await waitFor(() => {
+      expect(img).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    });
+  });
+
+  it("falls back to a placeholder when evidence image resolution rejects", async () => {
+    const assetId = "evidence.broken_asset.reject_test";
+    const inventoryWithFailingImage: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: "broken-evidence",
+          name: "破損證物",
+          description: "無法載入。",
+          details: "",
+          imageAssetId: assetId,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [],
+    };
+
+    const resolveSpy = vi
+      .spyOn(storyAssets, "resolveStoryAsset")
+      .mockRejectedValueOnce(new Error("network"));
+
+    try {
+      const { container } = render(
+        InterrogationEvidenceTray,
+        props({ inventory: inventoryWithFailingImage }),
+      );
+
+      const img = await waitFor(() => {
+        const el =
+          container.querySelector<HTMLImageElement>(".evidence-card img");
+        expect(el).not.toBeNull();
+        return el!;
+      });
+      expect(img).toHaveAttribute(
+        "src",
+        expect.stringContaining("data:image/svg+xml"),
+      );
+    } finally {
+      resolveSpy.mockRestore();
+    }
   });
 });

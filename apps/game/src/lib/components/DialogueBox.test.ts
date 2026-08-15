@@ -1051,6 +1051,75 @@ describe("DialogueBox", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it("prevents default on Space while history is open and focus is on body", async () => {
+    // When history is open but focus has slipped to <body> (e.g. a race
+    // before the panel's auto-focus lands), isAdvanceBlockedByFocusedControl
+    // returns false. The window-level handler must still call
+    // preventDefault so the browser's default Space action (scrolling /
+    // button activation) does not leak behind the open popup.
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "hello" },
+      { history },
+    );
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    // Blur the auto-focused close button so focus falls to <body>,
+    // simulating the race before auto-focus lands.
+    screen.getByRole("button", { name: "關閉對話紀錄" }).blur();
+    expect(document.activeElement).toBe(document.body);
+
+    const event = dispatchWindowKeydown({ key: " " });
+    await Promise.resolve();
+
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("connects a ResizeObserver while history is open and disconnects on close", async () => {
+    const observe = vi.fn();
+    const disconnect = vi.fn();
+    const observeTarget = { target: null as Element | null };
+    class FakeResizeObserver {
+      constructor(cb: ResizeObserverCallback) {
+        this.cb = cb;
+      }
+      cb: ResizeObserverCallback;
+      observe(target: Element) {
+        observeTarget.target = target;
+        observe(target);
+      }
+      disconnect() {
+        disconnect();
+      }
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
+    try {
+      const user = userEvent.setup();
+      const { container } = renderDialogueBox(
+        { kind: "action", text: "hello" },
+        { history },
+      );
+
+      await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+      await waitFor(() => {
+        expect(observe).toHaveBeenCalledTimes(1);
+      });
+      // The observer must observe the wrapper element, not some other node.
+      const wrapper = container.querySelector(".wrapper");
+      expect(observeTarget.target).toBe(wrapper);
+
+      // Close history — the cleanup function must disconnect the observer.
+      await user.click(screen.getByRole("button", { name: "關閉對話紀錄" }));
+      await waitFor(() => {
+        expect(disconnect).toHaveBeenCalledTimes(1);
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("renders a dimming backdrop over the gameplay while history is open", async () => {
     const user = userEvent.setup();
     const { container } = renderDialogueBox(
@@ -1573,6 +1642,41 @@ describe("DialogueBox inline cross-examination controls", () => {
       await fireEvent.click(challenge, { detail: 1 });
 
       expect(onChallenge).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears the one-shot suppression guard on the next turn after a cancelled pointer sequence", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChallenge = vi.fn();
+      renderDialogueBox(
+        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+      );
+      const challenge = screen.getByRole("button", { name: /反駁/ });
+
+      // Cancel an early pointer sequence — this arms the one-shot suppression
+      // guard and schedules a setTimeout(0) to clear it on the next turn.
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 3,
+        pointerType: "mouse",
+      });
+      await fireEvent.pointerUp(challenge, {
+        pointerId: 3,
+        pointerType: "mouse",
+      });
+      // The physical click from this sequence is suppressed.
+      await fireEvent.click(challenge, { detail: 1 });
+      expect(onChallenge).not.toHaveBeenCalled();
+
+      // Synchronously flush the setTimeout(0) so the guard clears. A
+      // subsequent physical click (detail > 0) must now fire the challenge —
+      // if the guard never cleared, this click would be swallowed.
+      vi.runAllTimers();
+      await fireEvent.click(challenge, { detail: 1 });
+      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
     } finally {
       vi.useRealTimers();
     }
