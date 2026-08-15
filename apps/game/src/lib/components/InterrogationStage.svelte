@@ -14,6 +14,7 @@
     inventory,
     onPresent,
     onResume,
+    onOpenGameMenu,
     onOpenCaseFile,
     disabled = false,
     children,
@@ -28,6 +29,7 @@
       itemId: string,
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
+    onOpenGameMenu: (trigger: HTMLElement) => void;
     onOpenCaseFile: (trigger: HTMLElement) => void;
     disabled?: boolean;
     children: Snippet;
@@ -101,6 +103,7 @@
       {inventory}
       {onPresent}
       {onResume}
+      {onOpenGameMenu}
       {disabled}
       returnFocusTo={trayReturnFocus}
       fallbackFocusTarget={stageRoot}

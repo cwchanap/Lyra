@@ -83,6 +83,7 @@ function props(
       itemId: string,
     ) => void;
     onResume: () => void;
+    onOpenGameMenu: (trigger: HTMLElement) => void;
     onOpenCaseFile: (trigger: HTMLElement) => void;
   }> = {},
 ) {
@@ -94,6 +95,7 @@ function props(
     disabled: overrides.disabled ?? false,
     onPresent: overrides.onPresent ?? vi.fn(),
     onResume: overrides.onResume ?? vi.fn(),
+    onOpenGameMenu: overrides.onOpenGameMenu ?? vi.fn(),
     onOpenCaseFile: overrides.onOpenCaseFile ?? vi.fn(),
   };
 }
