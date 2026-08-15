@@ -135,7 +135,7 @@ describe("buildReachabilityNodes", () => {
     ]);
   });
 
-  it("models P1-local practice reveals as analysis prerequisites", () => {
+  it("treats P1-local practice reveals as contextual markers without reachability effects", () => {
     const scene = investigationScene({
       sublocations: [
         sublocation("main", [
@@ -156,11 +156,6 @@ describe("buildReachabilityNodes", () => {
         kind: "addAtom",
         atom: "hotspot:chapter_1@investigation_scene_1@receipt",
         targetIndex: -1,
-      },
-      {
-        kind: "addAtom",
-        atom: "practice:p1_receipt_reprint",
-        targetIndex: 0,
       },
     ]);
     expect(
@@ -1001,6 +996,22 @@ describe("buildReachabilityNodes", () => {
     expect(result.reachableNodeKeys).toContain(
       "chapter_1/investigation_scene_2/hotspot:advance_after_analysis",
     );
+  });
+
+  it("treats Practice-only classify cards as authored-static with no implicit prerequisites", () => {
+    // Practice cards are authored-static Analysis material: they produce no
+    // reachability atoms and require none. The matching Investigation reveal
+    // marker is present for realism; validatePracticeCardBindings (which
+    // cross-checks practice ids between Investigation reveals and Analysis
+    // cards) is NOT part of this reachability-unit path. The assertion is
+    // specifically about Analysis node prerequisites.
+    const { nodes } = practiceAnalysisFixture();
+    const nodesByKey = new Map(nodes.map((node) => [node.key, node]));
+    const practiceBoard = nodesByKey.get(
+      "chapter_1/analysis_scene_p1/board:practice_classify",
+    )!;
+
+    expect(practiceBoard.implicitPrerequisites).toEqual([]);
   });
 });
 
@@ -3460,6 +3471,115 @@ function record(
   ast: ASTInvestigationScene | ASTInterrogationScene | ASTLinearScene,
 ): SceneRecord {
   return { chapterId, file, ast };
+}
+
+function practiceAnalysisFixture() {
+  // Inline Practice-only classify fixture. No threshold board, so
+  // provenance-neutrality rules are irrelevant to this reachability test.
+  // The Investigation `Reveals: [practice:p1_context]` marker is present for
+  // realism, but validatePracticeCardBindings (which binds practice ids
+  // between Investigation reveals and Analysis cards) is NOT part of this
+  // reachability-unit path: the assertion is specifically about Analysis
+  // node prerequisites.
+  const parsedCatalog = parseStoryCatalog(
+    [
+      "# Story Catalog",
+      "## Facts",
+      "### Fact: 練習完成 {#p1_practice_complete}",
+      "- **Summary:** 練習分類完成。",
+      "- **Details:** 練習用的情境卡已分類。",
+      "- **Category:** fixture",
+    ].join("\n"),
+    "story_catalog.md",
+  );
+  if (!parsedCatalog.ok) throw new Error(parsedCatalog.errors[0]!.message);
+  const parsedSource = parseInvestigationScene(
+    [
+      "# Scene 1: 練習情境",
+      "- **Summary:** 取得練習情境卡。",
+      "## Intro",
+      "**相馬律**：先取得練習情境。",
+      "## Sub-location: 練習桌 {#practice_desk}",
+      "- **Status:** unlocked",
+      "[場景：練習桌前。]",
+      "### Hotspot: 練習情境 {#acquire_practice_context}",
+      "- **Description:** 取得練習情境卡。",
+      "- **Status:** unlocked",
+      "- **Reveals:** [practice:p1_context]",
+      "**相馬律**：這是練習情境。",
+      "## Outro",
+      "**相馬律**：練習情境已取得。",
+    ].join("\n"),
+    "chapter_1/investigation_scene_1.md",
+    "investigation_scene_1",
+  );
+  if (!parsedSource.ok) throw new Error(parsedSource.error.message);
+  const parsedAnalysis = parseAnalysisScene(
+    [
+      "# Scene 1: 練習分類",
+      "- **Summary:** 把練習卡分類。",
+      "## Intro",
+      "**相馬律**：開始練習分類。",
+      "## Board: 練習分類 {#practice_classify}",
+      "- **Kind:** classify",
+      "- **Prompt:** 把卡片放進正確的群組。",
+      "- **Reveals:** [assert_fact:p1_practice_complete]",
+      "- **Incomplete Feedback:** 還有卡片未分類。",
+      "- **Incorrect Feedback:** 卡片放錯群組。",
+      "### Card: 練習情境卡 {#p1_context_card}",
+      "- **Source:** practice:p1_context",
+      "- **Summary:** 練習情境。",
+      "### Group: 練習群組 {#practice_group}",
+      "- **Description:** 練習卡的目的群組。",
+      "- **Accepted Cards:** [p1_context_card]",
+      "### Result Dialogue",
+      "**相馬律**：分類完成。",
+      "## Outro",
+      "**相馬律**：練習結束。",
+    ].join("\n"),
+    "chapter_1/analysis_scene_p1.md",
+    "analysis_scene_p1",
+  );
+  if (!parsedAnalysis.ok) throw new Error(parsedAnalysis.error.message);
+
+  const scenes = [
+    record("chapter_1", "investigation_scene_1.md", parsedSource.value),
+  ];
+  const analysisScenes = [
+    {
+      chapterId: "chapter_1",
+      file: "analysis_scene_p1.md",
+      ast: parsedAnalysis.value,
+    },
+  ];
+  const analysisRegistry =
+    createAnalysisDefinitionRegistryFromScenes(analysisScenes);
+  const caseRecords = compileCaseRecordCorpus(parsedCatalog.value, scenes);
+  if (!caseRecords.ok) throw new Error(caseRecords.errors[0]!.message);
+  const normalized = validateAnalysisScenes({
+    scenes: analysisScenes,
+    catalog: parsedCatalog.value,
+    caseRecords: caseRecords.value,
+    analysisRegistry,
+  });
+  if (!normalized.ok) throw new Error(normalized.errors[0]!.message);
+
+  return {
+    catalog: parsedCatalog.value,
+    nodes: buildReachabilityNodes({
+      chapters: [
+        chapter("chapter_1", [
+          "investigation_scene_1.md",
+          "analysis_scene_p1.md",
+        ]),
+      ],
+      scenes,
+      catalog: parsedCatalog.value,
+      analysisRegistry,
+      analysisScenes,
+      normalizedAnalysisScenes: normalized.value,
+    }),
+  };
 }
 
 function analysisChapterFixture() {

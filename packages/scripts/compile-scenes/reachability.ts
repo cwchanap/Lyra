@@ -2428,10 +2428,16 @@ function buildAnalysisNodes(input: {
         initiallyReachable: false,
         condition: normalizeAnalysisExpression(board.common.unlock),
         implicitPrerequisites: uniquePredicates(
-          board.common.cards.map((card) => ({
-            predicate: "atom" as const,
-            atom: `${card.source.kind}:${card.source.id}`,
-          })),
+          board.common.cards.flatMap((card) =>
+            card.source.kind === "practice"
+              ? []
+              : [
+                  {
+                    predicate: "atom" as const,
+                    atom: `${card.source.kind}:${card.source.id}`,
+                  },
+                ],
+          ),
         ),
         effects: [
           // targetIndex -1 is a reserved slot for the board-completion atom,
@@ -3151,8 +3157,11 @@ function effectsFromInvestigationReveals(
     switch (target.kind) {
       case "evidence":
       case "statement":
-      case "practice":
         return [addAtomEffect(`${target.kind}:${target.id}`, targetIndex)];
+      // Practice reveals are contextual markers for authored-static Practice
+      // cards; they do not produce reachability atoms.
+      case "practice":
+        return [];
       // Local hotspot/topic reveals only unlock those blocks at runtime; they
       // do not investigate or discuss them. Their own normalized execution
       // nodes remain the sole producers of the corresponding completion atoms
