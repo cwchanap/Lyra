@@ -3899,4 +3899,191 @@ describe("validator", () => {
     expect(unbound).toHaveLength(1);
     expect(unbound[0]?.message).toContain("orphan_reveal");
   });
+
+  it("rejects practice markers whose context is not guaranteed by auto outro completion", () => {
+    const analysis: AnalysisSceneRecord = {
+      chapterId: "chapter_1",
+      file: "analysis_scene_1.md",
+      ast: {
+        ...mkAnalysisScene("analysis_scene_1"),
+        sourceFile: "chapter_1/analysis_scene_1.md",
+        boards: [
+          {
+            kind: "classify",
+            id: "board_1",
+            label: "Board",
+            sourceFile: "chapter_1/analysis_scene_1.md",
+            line: 1,
+            prompt: {
+              value: "p",
+              sourceFile: "chapter_1/analysis_scene_1.md",
+              line: 2,
+            },
+            unlock: null,
+            reveals: {
+              value: [],
+              sourceFile: "chapter_1/analysis_scene_1.md",
+              line: 2,
+            },
+            feedback: {
+              incomplete: {
+                value: "inc",
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 2,
+              },
+              incorrect: {
+                value: "wrong",
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 2,
+              },
+              hint: null,
+              incorrectSelections: [],
+            },
+            cards: [
+              {
+                id: "card_ctx",
+                label: "Card",
+                source: {
+                  value: { kind: "practice", id: "p_ctx" },
+                  sourceFile: "chapter_1/analysis_scene_1.md",
+                  line: 3,
+                },
+                summary: {
+                  value: "s",
+                  sourceFile: "chapter_1/analysis_scene_1.md",
+                  line: 3,
+                },
+                sourceFile: "chapter_1/analysis_scene_1.md",
+                line: 3,
+              },
+            ],
+            resultDialogue: [],
+            groups: [],
+          },
+        ],
+      },
+    };
+
+    const validateWith = (investigation: ASTInvestigationScene) =>
+      validate({
+        chapters: [
+          mkChapter(1, ["investigation_scene_1.md", "analysis_scene_1.md"]),
+        ],
+        scenes: [
+          {
+            chapterId: "chapter_1",
+            file: "investigation_scene_1.md",
+            ast: investigation,
+          },
+        ],
+        analysisScenes: [analysis],
+      });
+    const contextErrors = (errors: ReturnType<typeof validate>) =>
+      errors.filter((e) => e.code === "practiceRevealContextNotGuaranteed");
+    const hotspotReveal = (scene: ASTInvestigationScene) => {
+      scene.sublocations[0]!.hotspots[0]!.reveals = [
+        { kind: "practice", id: "p_ctx" },
+      ];
+    };
+
+    // Valid control: initially-unlocked hotspot under an initially-unlocked
+    // sublocation with an auto outro is guaranteed.
+    const control = mkInvestigationScene({ id: "i" });
+    hotspotReveal(control);
+    expect(contextErrors(validateWith(control))).toEqual([]);
+
+    // Topic carrier on the same shared status path is also guaranteed.
+    const topicControl = mkInvestigationScene({ id: "i" });
+    topicControl.sublocations[0]!.characters = [
+      {
+        id: "witness",
+        name: "Witness",
+        role: "witness",
+        bio: "bio",
+        topics: [
+          {
+            id: "topic_a",
+            label: "Topic",
+            status: "unlocked",
+            unlock: null,
+            reveals: [{ kind: "practice", id: "p_ctx" }],
+            topicDialogue: [],
+            onReexamine: null,
+            sourceFile: "i.md",
+            line: 8,
+          },
+        ],
+        sourceFile: "i.md",
+        line: 7,
+      },
+    ];
+    expect(contextErrors(validateWith(topicControl))).toEqual([]);
+
+    const cases: Array<{
+      name: string;
+      mutate: (scene: ASTInvestigationScene) => void;
+    }> = [
+      {
+        name: "locked hotspot",
+        mutate: (scene) => {
+          scene.sublocations[0]!.hotspots[0]!.status = "locked";
+          hotspotReveal(scene);
+        },
+      },
+      {
+        name: "unlocked hotspot under a locked parent sublocation",
+        mutate: (scene) => {
+          scene.sublocations[0]!.status = "locked";
+          hotspotReveal(scene);
+        },
+      },
+      {
+        name: "sublocation entry reveal",
+        mutate: (scene) => {
+          scene.sublocations[0]!.reveals = [{ kind: "practice", id: "p_ctx" }];
+        },
+      },
+      {
+        name: "expression-gated outro",
+        mutate: (scene) => {
+          scene.outro.unlock = { predicate: "evidence_collected", id: "x" };
+          hotspotReveal(scene);
+        },
+      },
+      {
+        name: "locked topic",
+        mutate: (scene) => {
+          scene.sublocations[0]!.characters = [
+            {
+              id: "witness",
+              name: "Witness",
+              role: "witness",
+              bio: "bio",
+              topics: [
+                {
+                  id: "topic_a",
+                  label: "Topic",
+                  status: "locked",
+                  unlock: null,
+                  reveals: [{ kind: "practice", id: "p_ctx" }],
+                  topicDialogue: [],
+                  onReexamine: null,
+                  sourceFile: "i.md",
+                  line: 8,
+                },
+              ],
+              sourceFile: "i.md",
+              line: 7,
+            },
+          ];
+        },
+      },
+    ];
+
+    for (const { name, mutate } of cases) {
+      const scene = mkInvestigationScene({ id: "i" });
+      mutate(scene);
+      expect(contextErrors(validateWith(scene)), name).toHaveLength(1);
+    }
+  });
 });

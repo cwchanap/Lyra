@@ -13,7 +13,7 @@ You are authoring **interactive investigation scenes** for the detective game. E
 
 **Player-facing content** (everything the player sees in-game) is **Traditional Chinese**: dialogue lines, bracketed stage directions, `[場景：...]` scene tags, intro/outro narration, evidence/statement *values* (name, description, details, content). The base `writing-detective-game-dialogue` skill governs all of this.
 
-**Author/parser-facing content** (markdown structure and metadata only) is **English**: block headings (`## Intro`, `#### On Collect`, etc.), field labels (`Status`, `Unlock`, `Reveals`, `Description`, etc.), state values (`locked`/`unlocked`), reveal target prefixes (`evidence:` / `statement:` / `topic:` / `hotspot:` / `sublocation:`), and the unlock-condition predicates/combinators (`collected`, `discussed`, `and`, `or`, ...). The parser reads these; the player never does.
+**Author/parser-facing content** (markdown structure and metadata only) is **English**: block headings (`## Intro`, `#### On Collect`, etc.), field labels (`Status`, `Unlock`, `Reveals`, `Description`, etc.), state values (`locked`/`unlocked`), reveal target prefixes (`evidence:` / `statement:` / `topic:` / `hotspot:` / `sublocation:` / `practice:`), and the unlock-condition predicates/combinators (`collected`, `discussed`, `and`, `or`, ...). The parser reads these; the player never does.
 
 ## REQUIRED BACKGROUND
 
@@ -297,7 +297,7 @@ All reveals are automatic chains — there is no manual "present evidence" actio
 
 ### Reveal (`Reveals:`) — declared on the source
 
-A list of things this trigger collects/unlocks when the block completes (hotspot inspected, topic discussed, sub-location entered).
+A list of things this trigger collects/unlocks when the block completes (hotspot inspected, topic discussed, sub-location entered). A reveal list may also carry the **special** `practice:<id>` context marker, which binds an authored-static tutorial card to the immediately following Analysis scene instead of collecting or unlocking anything (see "Practice context markers" below).
 
 ```
 Reveals: [evidence:cooling_coffee, statement:hayasaka_says_alive, topic:hayasaka@victim_background, hotspot:back_alley, sublocation:storeroom]
@@ -310,8 +310,35 @@ Reveals: [evidence:cooling_coffee, statement:hayasaka_says_alive, topic:hayasaka
 | `topic:<character-id>@<topic-id>` | Unlocks a previously locked topic on that character. Silent unlock. |
 | `hotspot:<id>` | Unlocks a previously locked hotspot in the same scene. Silent. |
 | `sublocation:<id>` | Unlocks a previously locked sub-location. Silent. |
+| `practice:<id>` | **Special:** binds an authored-static tutorial card to the immediately following Analysis scene. No inventory/StoryState effect, no `#### On Collect` / `#### On Acquire` dialogue. |
 
 **ID matching rule (strict):** the `<id>` in every target form must be the **exact anchor ID** declared on the target's heading via `{#id}`. If a Character heading is `### Character: 目擊者 田中誠 {#witness_tanaka}`, the reveal target form is `topic:witness_tanaka@<topic-id>` — never an abbreviation like `topic:witness@...`. The parser does string-match, not fuzzy-match.
+
+### Practice context markers (special)
+
+`practice:<id>` is a **special** reveal target, distinct from the five ordinary
+same-file targets above. It does not collect or unlock anything: the card is
+authored-static on the immediately following Analysis scene, so the marker only
+declares compile-time context binding. It has no inventory or StoryState
+effect, and no `#### On Collect` / `#### On Acquire` block fires.
+
+The compiler guarantees the tutorial interaction is mandatory before the
+predecessor Investigation's auto outro. A Practice marker is guaranteed only
+when all of these hold:
+
+- the predecessor Investigation's `## Outro` is **auto** (no `**Unlock:**`
+  expression) — expression-gated outros may exit before unrelated unlocked
+  interactions are completed;
+- the marker sits on an **initially-unlocked** Hotspot or Topic (`Status:
+  unlocked`);
+- that carrier's parent Sub-location is **initially unlocked**.
+
+A `practice:` marker on Sub-location entry (`Reveals:` on the
+`## Sub-location:` block) is **not supported** by this contract: auto outro
+never independently requires sublocation entry. Markers on locked carriers are
+likewise rejected with `practiceRevealContextNotGuaranteed`. The five ordinary
+targets' semantics (Evidence/Statement/topic/hotspot/sublocation) are
+unchanged by this special marker.
 
 ### Unlock Condition (`Unlock:`) — declared on the locked target
 
@@ -352,6 +379,7 @@ When the player completes a trigger that has a `Reveals:` list, dialogue plays i
 2. Each `Reveals` target's reveal dialogue in list order:
    - `evidence:<id>` → its `#### On Collect` block
    - `statement:<id>` → its `#### On Acquire` block
+   - `practice:<id>` → silent (compile-time context binding only; the card is authored-static on the following Analysis scene)
    - `topic:` / `hotspot:` / `sublocation:` → silent (the unlocked block's body plays only when the player engages it directly)
 
 For a Hotspot with multiple evidence reveals, the editor and runtime both treat
@@ -504,7 +532,7 @@ Do not author authorization:<id> granted as a production unlock gate in HPA-257/
 
 - **Evidence and statement IDs are game-global.** A single ID like `evidence:blue_umbrella` may be declared in only one scene file across the entire game (one chapter, one investigation scene). Compile-time duplicate declarations are an error.
 - **Hotspot, topic, and sub-location IDs are scene-local.** They may repeat across different scene files freely. Cross-scene references to these kinds are not supported.
-- **Scene-local `Reveals:` targets must resolve to a declaration in the *same scene file*** — this applies to the five local kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A local reveal newly adds an item or unlocks a block, so its definition must be present in this scene's JSON output. HPA-257 story targets instead resolve through `story_catalog.md` as documented above.
+- **Scene-local `Reveals:` targets must resolve to a declaration in the *same scene file*** — this applies to the five local kinds (`evidence:`, `statement:`, `topic:`, `hotspot:`, `sublocation:`). A local reveal newly adds an item or unlocks a block, so its definition must be present in this scene's JSON output. The special `practice:` marker is the exception: it binds to a card on the immediately following Analysis scene, not to a declaration in this file. HPA-257 story targets instead resolve through `story_catalog.md` as documented above.
 - **Scene-local `Unlock:` predicates must resolve to a declaration in the same scene file** in v1. HPA-257 global story predicates resolve through the story catalog rather than crossing into another scene's local IDs; fully qualified analysis predicates are production-supported when their catalog references resolve. Unresolved/placeholder analysis IDs fail catalog validation.
 
 ## Parser validation guarantees

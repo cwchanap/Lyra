@@ -258,23 +258,35 @@ which requirements a selection must satisfy.
 
 ## Practice-card binding and threshold provenance
 
-Practice-card manifest binding applies to `classify`, `order`, and `threshold`
-boards. Threshold boards additionally validate provenance requirements against
-each eligible Case File card's source record (the provenance fields authored on
-the source investigation/interrogation manifest).
+## Practice-card binding and threshold provenance
+
+Practice cards are **authored-static tutorial cards**: they are not case
+records, are not collected into inventory, and their availability is decided at
+compile time, not by runtime state. Manifest binding applies to `classify`,
+`order`, and `threshold` boards. Threshold boards additionally validate
+provenance requirements against each eligible Case File card's source record
+(the provenance fields authored on the source investigation/interrogation
+manifest).
 
 Practice-card binding for every board kind:
 
-- **Exact one-to-one manifest binding within a chapter:** every `practice:<id>`
-  must appear on exactly one analysis card in exactly one analysis board, be
-  revealed exactly once by the immediately preceding `investigation_scene_*.md`,
-  and have this analysis scene directly follow that investigation in the
-  chapter manifest. Conversely, every practice reveal in an investigation must
-  target a card on the immediately following analysis scene. This uniqueness is
-  chapter-scoped, not global across chapters; reuse in another chapter requires
-  its own immediate investigation-to-analysis handoff. Duplicate
-  analysis-card/board use within a chapter fails with
-  `practiceCardSourceDuplicate`.
+- **Exact one-to-one context binding within a chapter:** every `practice:<id>`
+  must appear on exactly one analysis card in exactly one analysis board and be
+  context-bound exactly once by a matching `practice:` marker on the
+  immediately preceding `investigation_scene_*.md`, with this analysis scene
+  directly following that investigation in the chapter manifest. Conversely,
+  every practice marker in an investigation must bind a card on the
+  immediately following analysis scene. This uniqueness is chapter-scoped, not
+  global across chapters; reuse in another chapter requires its own immediate
+  investigation-to-analysis handoff. Duplicate analysis-card/board use within a
+  chapter fails with `practiceCardSourceDuplicate`.
+- **The marker is not a runtime availability gate.** It only guarantees the
+  tutorial interaction is mandatory before the predecessor's auto outro: the
+  predecessor outro must be `auto`, the marker must sit on an
+  initially-unlocked hotspot/topic, and the parent sublocation must be
+  initially unlocked (see `writing-investigation-scene`'s "Practice context
+  markers"). Because the card is authored-static, it is available whenever its
+  board is available; nothing at runtime tracks acquisition.
 
 Threshold-only practice constraints:
 
@@ -288,7 +300,7 @@ Threshold-only practice constraints:
   The practice fixture `analysis_scene_p1_5.md` is the canonical example.
 
 Tell the writer (or, when you are the writer, confirm) the exact practice-card
-IDs and their immediately preceding investigation reveal locations before
+IDs and their immediately preceding investigation marker locations before
 choosing requirements.
 
 ## Orchestrator handoff
@@ -409,10 +421,12 @@ filesystem paths. When assets are enabled:
   prefix of one-based positions.
 - threshold: ≤6 eligible cards; requirements match the Case File vs practice
   split; at least one accepted selection exists.
-- practice: regardless of board kind, every practice card is revealed exactly
-  once by the immediately preceding investigation, the analysis scene directly
-  follows that investigation in the chapter manifest, and every practice reveal
-  targets a card on that immediately following analysis scene.
+- practice: regardless of board kind, every practice card is context-bound
+  exactly once by a `practice:` marker on the immediately preceding
+  investigation, that marker satisfies the auto/unlocked guaranteed-context
+  rule, the analysis scene directly follows that investigation in the chapter
+  manifest, and every practice marker targets a card on that immediately
+  following analysis scene.
 - Dialogue lines ≤100 Chinese characters, Traditional Chinese only, every
   speaker resolves to the global catalog; Intro, each Result Dialogue, and Outro
   use supported background cues when a visual transition is authored.
