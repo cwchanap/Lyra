@@ -20,6 +20,9 @@
     sceneMenuContent = null,
     menuInitialFocusLabel = null,
     activePrimaryObjective = null,
+    interrogationPresentation = false,
+    caseFileRequest = null,
+    onCaseFileRequestHandled,
   }: {
     gameState: GameStateView;
     onCloseCase: () => void;
@@ -45,6 +48,9 @@
     sceneMenuContent?: string | null;
     menuInitialFocusLabel?: string | null;
     activePrimaryObjective?: ObjectiveView | null;
+    interrogationPresentation?: boolean;
+    caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    onCaseFileRequestHandled?: (id: number) => void;
   } = $props();
 </script>
 
@@ -61,6 +67,9 @@
   {sceneMenuEnabled}
   {caseFileMenuEnabled}
   {activePrimaryObjective}
+  {interrogationPresentation}
+  {caseFileRequest}
+  {onCaseFileRequestHandled}
   bind:open
 >
   {#snippet sceneMenu()}

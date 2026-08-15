@@ -170,6 +170,62 @@ describe("GameShell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("replaces chapter chrome with one compact objective during interrogation presentation", () => {
+    render(GameShellHarness, {
+      gameState: state({
+        type: "interrogation",
+        phaseId: "cross_examination",
+        backgroundAssetId: null,
+        bgm: null,
+        bgs: null,
+      }),
+      onCloseCase: vi.fn(),
+      activePrimaryObjective,
+      interrogationPresentation: true,
+    });
+
+    expect(
+      screen.queryByText("FILE", { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
+  });
+
+  it("opens the existing Case File submenu for a direct request and restores its supplied focus origin", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "開啟案件檔案";
+    document.body.append(trigger);
+    trigger.focus();
+
+    try {
+      const user = userEvent.setup();
+      const onCaseFileRequestHandled = vi.fn();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        menuContent: "menu inventory slot",
+        caseFileRequest: { id: 1, returnFocusTo: trigger },
+        onCaseFileRequestHandled,
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: "案件檔案" });
+      expect(
+        within(dialog).getByText("menu inventory slot"),
+      ).toBeInTheDocument();
+      expect(onCaseFileRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /返回選單/ }),
+      );
+      await user.click(screen.getByRole("button", { name: /繼續調查/ }));
+
+      await vi.waitFor(() => {
+        expect(trigger).toHaveFocus();
+      });
+    } finally {
+      trigger.remove();
+    }
+  });
+
   it("keeps duplicated utility controls out of the chapter HUD", () => {
     render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 
