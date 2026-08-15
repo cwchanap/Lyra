@@ -2716,7 +2716,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_investigation_to_analysis_transfers_revealed_card_and_accepts_submission() {
+    fn direct_investigation_to_analysis_accepts_authored_static_practice_card() {
         let resources = analysis_resources_with_cards("analysis-direct-practice-transfer");
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
 
@@ -2739,10 +2739,10 @@ mod tests {
                     selected_card_ids: ["card_b".to_owned()].into_iter().collect(),
                 },
             )
-            .expect("the transferred practice card should be selectable");
+            .expect("the authored practice card should be selectable");
         let submitted = engine
             .submit_analysis_board(engine.analysis_action_token().unwrap())
-            .expect("the transferred practice card should be accepted");
+            .expect("the authored practice card should be accepted");
         let ModeView::Dialogue { current, .. } = &submitted.mode else {
             panic!("accepted submission should open result dialogue");
         };

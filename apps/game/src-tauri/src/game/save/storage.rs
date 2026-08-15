@@ -3381,7 +3381,6 @@ mod tests {
                             discussed_topic_ids: Vec::new(),
                             entered_sublocation_ids: Vec::new(),
                             unlocked_overrides: Vec::new(),
-                            practice_card_ids: Vec::new(),
                         };
                 }),
             ),
