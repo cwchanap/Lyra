@@ -1500,6 +1500,94 @@ describe("positive dependency and base reachability", () => {
     expect(result.errors).toEqual([]);
     expect(result.reachableNodeKeys).toContain("consumer");
   });
+
+  it("accepts a mandatory grant whose prerequisite is guaranteed by exhaustive optional alternatives", () => {
+    // Regression: a required question with two correct testimony lines models
+    // both breakthrough nodes as optional (mutually-exclusive alternatives of
+    // one one-shot event). When both alternatives assert the same prerequisite
+    // fact, one alternative must execute, so the fact is guaranteed even though
+    // each producer node is individually optional and therefore absent from the
+    // must fixed point. A mandatory grant producer gated on that fact, followed
+    // by a mandatory successor, must compile.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:request_ready")],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:request_ready")],
+        }),
+        syntheticNode("grant", {
+          requirement: "mandatory",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          condition: atomExpression("fact_asserted:request_ready"),
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+    expect(result.mayAtoms).toContain("authorization_granted:permit");
+  });
+
+  it("rejects a mandatory grant when only one exhaustive alternative produces its prerequisite", () => {
+    // Negative counterpart: when two mutually-exclusive alternatives share a
+    // one-shot event but only one asserts the prerequisite fact, the fact is
+    // not guaranteed — the player can choose the other alternative, skip the
+    // fact, and soft-lock the required grant successor.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:request_ready")],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          initiallyReachable: true,
+          effects: [],
+        }),
+        syntheticNode("grant", {
+          requirement: "mandatory",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          condition: atomExpression("fact_asserted:request_ready"),
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
 });
 
 describe("ordered story batches", () => {
