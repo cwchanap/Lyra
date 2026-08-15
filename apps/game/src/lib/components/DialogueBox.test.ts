@@ -11,6 +11,7 @@ import {
 } from "$lib/state/escape-coordinator";
 import DialogueBox from "./DialogueBox.svelte";
 import type {
+  CrossExamView,
   DialogueHistoryEntry,
   DialogueItem,
   QueueToken,
@@ -35,6 +36,16 @@ const history: DialogueHistoryEntry[] = [
   },
 ];
 
+const crossExamPresentation: CrossExamView = {
+  questionId: "q_alibi",
+  lineId: "l_deny",
+  lineLabel: "否認",
+  lineContent: [{ kind: "line", speaker: "嫌疑人", text: "我沒去過。" }],
+  lineIndex: 1,
+  lineTotal: 3,
+  presenting: false,
+};
+
 function renderDialogueBox(
   current: DialogueItem,
   overrides?: {
@@ -45,6 +56,7 @@ function renderDialogueBox(
       lineId: string;
       onChallenge: (lineId: string) => void;
       onWithdraw: () => void;
+      presentation?: CrossExamView | null;
     } | null;
     textRevealDurationMs?: number;
   },
@@ -1444,6 +1456,22 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
   });
 
+  it("renders live testimony progress when presentation data is supplied", () => {
+    renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        crossExam: {
+          lineId: "l_deny",
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+          presentation: crossExamPresentation,
+        },
+      },
+    );
+
+    expect(screen.getByText("證詞 2 / 3")).toBeInTheDocument();
+  });
+
   it("challenges the current line without advancing the dialogue", async () => {
     const onChallenge = vi.fn();
     const { onAdvance } = renderDialogueBox(
@@ -1457,6 +1485,71 @@ describe("DialogueBox inline cross-examination controls", () => {
     // The button lives inside the click-to-advance box; its click must not
     // also advance the testimony.
     expect(onAdvance).not.toHaveBeenCalled();
+  });
+
+  it("fires one challenge after a completed pointer hold and ignores its physical click", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChallenge = vi.fn();
+      const { onAdvance } = renderDialogueBox(
+        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+      );
+      const challenge = screen.getByRole("button", { name: /反駁/ });
+
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 1,
+        pointerType: "mouse",
+      });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
+
+      await fireEvent.click(challenge, { detail: 1 });
+      expect(onChallenge).toHaveBeenCalledTimes(1);
+      expect(onAdvance).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("cancels an early pointer sequence and ignores its physical click", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChallenge = vi.fn();
+      renderDialogueBox(
+        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+      );
+      const challenge = screen.getByRole("button", { name: /反駁/ });
+
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 2,
+        pointerType: "mouse",
+      });
+      await fireEvent.pointerUp(challenge, {
+        pointerId: 2,
+        pointerType: "mouse",
+      });
+      await fireEvent.click(challenge, { detail: 1 });
+
+      expect(onChallenge).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps direct keyboard, assistive, and packaged synthetic clicks as immediate challenges", async () => {
+    const onChallenge = vi.fn();
+    renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: /反駁/ }), {
+      detail: 0,
+    });
+
+    expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
   });
 
   it("withdraws without advancing the dialogue", async () => {

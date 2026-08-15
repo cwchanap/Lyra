@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { onDestroy, tick } from "svelte";
   import {
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
@@ -12,10 +12,12 @@
     DialogueHistoryEntry,
     DialogueItem,
     QueueToken,
+    CrossExamView,
   } from "../state/types";
 
   const dialogueTransitionDurationMs = 1500;
   const textRevealTickMs = 25;
+  const challengeHoldDurationMs = 600;
   // Per-character floor so short lines finish faster than the full transition
   // duration. The effective reveal duration is `min(text.length * this, cap)`,
   // where the cap is `textRevealDurationMs` (default 1500ms). Long lines still
@@ -45,6 +47,7 @@
       lineId: string;
       onChallenge: (lineId: string) => void;
       onWithdraw: () => void;
+      presentation?: CrossExamView | null;
     } | null;
     textRevealDurationMs?: number;
   } = $props();
@@ -70,6 +73,11 @@
   let historyPanelBottom = $state(180);
   let visibleTextLength = $state(0);
   let textRevealTimer: ReturnType<typeof setInterval> | null = null;
+  let challengeHoldTimer: ReturnType<typeof setTimeout> | null = null;
+  let challengeSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
+  let heldChallengePointerId: number | null = null;
+  let suppressNextPhysicalChallengeClick = false;
+  let challengeCharging = $state(false);
   const portraitAssetId = $derived(
     current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
   );
@@ -158,12 +166,80 @@
     dispatchAdvance();
   }
 
-  // The inline cross-exam buttons live inside the click-to-advance box, so
-  // each must stop propagation or the click would also advance the testimony.
-  function handleChallengeClick(e: MouseEvent) {
-    e.stopPropagation();
+  function invokeChallenge() {
     if (disabled || !crossExam) return;
     crossExam.onChallenge(crossExam.lineId);
+  }
+
+  function clearChallengeHold() {
+    if (challengeHoldTimer) {
+      clearTimeout(challengeHoldTimer);
+      challengeHoldTimer = null;
+    }
+    heldChallengePointerId = null;
+    challengeCharging = false;
+  }
+
+  function clearChallengeClickSuppression() {
+    if (challengeSuppressionTimer) {
+      clearTimeout(challengeSuppressionTimer);
+      challengeSuppressionTimer = null;
+    }
+    suppressNextPhysicalChallengeClick = false;
+  }
+
+  function suppressFollowingPhysicalChallengeClick() {
+    clearChallengeClickSuppression();
+    suppressNextPhysicalChallengeClick = true;
+    // A pointer sequence normally dispatches click before the event loop
+    // advances. If it does not (for example, pointercancel/leave), clear the
+    // one-shot guard on the next turn so it cannot swallow a later click.
+    challengeSuppressionTimer = setTimeout(() => {
+      suppressNextPhysicalChallengeClick = false;
+      challengeSuppressionTimer = null;
+    }, 0);
+  }
+
+  function handleChallengePointerDown(event: PointerEvent) {
+    if (disabled || !crossExam) return;
+
+    clearChallengeHold();
+    clearChallengeClickSuppression();
+    heldChallengePointerId = event.pointerId;
+    challengeCharging = true;
+    challengeHoldTimer = setTimeout(() => {
+      if (heldChallengePointerId !== event.pointerId) return;
+
+      challengeHoldTimer = null;
+      heldChallengePointerId = null;
+      challengeCharging = false;
+      suppressFollowingPhysicalChallengeClick();
+      invokeChallenge();
+    }, challengeHoldDurationMs);
+  }
+
+  function cancelChallengePointerSequence(event: PointerEvent) {
+    if (heldChallengePointerId !== event.pointerId) return;
+
+    clearChallengeHold();
+    suppressFollowingPhysicalChallengeClick();
+  }
+
+  // The inline cross-exam buttons live inside the click-to-advance box, so
+  // each must stop propagation or the click would also advance the testimony.
+  function handleChallengeClick(event: MouseEvent) {
+    event.stopPropagation();
+    if (disabled || !crossExam) return;
+
+    // detail > 0 identifies a physical pointer click. Direct keyboard,
+    // assistive technology, and packaged-E2E button.click() activation use
+    // detail === 0 and keep their native immediate behavior.
+    if (event.detail > 0 && suppressNextPhysicalChallengeClick) {
+      clearChallengeClickSuppression();
+      return;
+    }
+
+    invokeChallenge();
   }
 
   function handleWithdrawClick(e: MouseEvent) {
@@ -171,6 +247,11 @@
     if (disabled || !crossExam) return;
     crossExam.onWithdraw();
   }
+
+  onDestroy(() => {
+    clearChallengeHold();
+    clearChallengeClickSuppression();
+  });
 
   // The LOG button is a native <button>, so Space/Enter activation is delivered
   // as a synthesized click (with detail 0). AT click activation (e.g. VoiceOver
@@ -546,6 +627,7 @@
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
+    class:xexam-presentation={crossExam?.presentation !== null}
     class:disabled
     onclick={handleClick}
     inert={historyOpen}
@@ -567,11 +649,25 @@
     {/if}
 
     {#if crossExam}
+      {#if crossExam.presentation}
+        <div class="xexam-record" aria-label="交叉詰問進度">
+          <span>{crossExam.presentation.lineLabel}</span>
+          <strong
+            >證詞 {crossExam.presentation.lineIndex + 1} / {crossExam
+              .presentation.lineTotal}</strong
+          >
+        </div>
+      {/if}
       <div class="xexam-actions">
         <button
           class="xexam-challenge"
+          class:charging={challengeCharging}
           type="button"
           {disabled}
+          onpointerdown={handleChallengePointerDown}
+          onpointerup={cancelChallengePointerSequence}
+          onpointercancel={cancelChallengePointerSequence}
+          onpointerleave={cancelChallengePointerSequence}
           onclick={handleChallengeClick}
         >
           <span class="act-mark">▸</span>
@@ -863,8 +959,44 @@
   }
 
   /* inline cross-examination controls */
+  .box.xexam-presentation {
+    border-color: rgba(174, 28, 49, 0.8);
+    background:
+      linear-gradient(135deg, rgba(174, 28, 49, 0.17), transparent 48%),
+      rgba(20, 20, 31, 0.97);
+  }
+
+  .xexam-record {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(236, 228, 207, 0.14);
+  }
+
+  .xexam-record span,
+  .xexam-record strong {
+    margin: 0;
+    font-family: var(--impact);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .xexam-record span {
+    color: var(--bone-faint);
+  }
+
+  .xexam-record strong {
+    color: var(--cyan);
+  }
+
   .xexam-actions {
     display: flex;
+    align-items: center;
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 14px;
@@ -897,9 +1029,35 @@
   }
 
   .xexam-challenge {
+    position: relative;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    padding: 0;
+    border-radius: 50%;
     color: var(--crimson);
-    border-color: var(--crimson);
-    background: var(--crimson-soft);
+    border: 2px solid var(--crimson);
+    background: rgba(174, 28, 49, 0.12);
+    box-shadow: inset 0 0 0 4px rgba(174, 28, 49, 0.1);
+  }
+
+  .xexam-challenge.charging {
+    animation: xexam-charge 0.6s linear forwards;
+  }
+
+  @keyframes xexam-charge {
+    from {
+      box-shadow:
+        inset 0 0 0 4px rgba(174, 28, 49, 0.1),
+        0 0 0 0 rgba(174, 28, 49, 0.38);
+      transform: scale(1);
+    }
+    to {
+      box-shadow:
+        inset 0 0 0 26px rgba(174, 28, 49, 0.22),
+        0 0 0 10px rgba(174, 28, 49, 0);
+      transform: scale(1.05);
+    }
   }
 
   .xexam-withdraw {
@@ -913,5 +1071,14 @@
 
   .act-mark {
     color: var(--crimson);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .xexam-challenge.charging {
+      animation: none;
+      box-shadow:
+        inset 0 0 0 26px rgba(174, 28, 49, 0.22),
+        0 0 0 10px rgba(174, 28, 49, 0);
+    }
   }
 </style>
