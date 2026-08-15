@@ -1417,4 +1417,80 @@ describe("GameShell", () => {
       reportAsyncTestFailure(testName, error);
     }
   });
+
+  it("opens the game menu despite a disconnected focus origin in a game menu request", async () => {
+    // openGameMenu checks `focusOrigin?.isConnected` — when the supplied
+    // focus origin is disconnected, suppliedFocusOrigin becomes null and
+    // the function falls back to document.activeElement. The menu must
+    // still open and the request must be acknowledged.
+    const trigger = document.createElement("button");
+    trigger.textContent = "disconnected trigger";
+    document.body.append(trigger);
+    trigger.focus();
+
+    try {
+      // Detach before rendering so the focus origin is disconnected when
+      // the request effect runs.
+      trigger.remove();
+
+      const onGameMenuRequestHandled = vi.fn();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: { id: 1, returnFocusTo: trigger },
+        onGameMenuRequestHandled,
+      });
+
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+      await vi.waitFor(() => {
+        expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
+      });
+    } finally {
+      // trigger already removed
+    }
+  });
+
+  it("does not update the focus origin when a game menu request arrives while the menu is already open with a null focus origin", async () => {
+    // When the menu is already open and a new request supplies a null
+    // focus origin, openGameMenu's `else if (suppliedFocusOrigin)` guard
+    // is false, so previouslyFocusedElement is not updated. Closing the
+    // menu must restore focus to the original trigger, not null.
+    const firstTrigger = document.createElement("button");
+    firstTrigger.textContent = "first trigger";
+    document.body.append(firstTrigger);
+    firstTrigger.focus();
+
+    try {
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+      });
+
+      // Open the menu via Escape — openGameMenu() captures firstTrigger
+      // as previouslyFocusedElement (document.activeElement at the time).
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+
+      // Send a game menu request with null returnFocusTo while menu is
+      // open. The `else if (suppliedFocusOrigin)` guard is false
+      // (suppliedFocusOrigin is null), so previouslyFocusedElement stays
+      // firstTrigger.
+      rerender({
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: { id: 1, returnFocusTo: null },
+        onGameMenuRequestHandled: vi.fn(),
+      });
+
+      // Close the menu — focus must go to the original trigger.
+      const user = userEvent.setup();
+      await user.click(screen.getByRole("button", { name: /繼續調查/ }));
+
+      await vi.waitFor(() => {
+        expect(firstTrigger).toHaveFocus();
+      });
+    } finally {
+      firstTrigger.remove();
+    }
+  });
 });
