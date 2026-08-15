@@ -347,3 +347,35 @@ describe("+page Case File menu gating", () => {
     );
   });
 });
+
+describe("+page interrogation presentation wiring", () => {
+  it("keeps one stage around the existing mode chain and delegates Case File access to GameShell", () => {
+    const source = pageSource();
+
+    expect(source).toContain(
+      'import InterrogationStage from "$lib/components/InterrogationStage.svelte";',
+    );
+    expect(source).toContain("isInterrogationPresentationActive");
+    expect(source).toContain("currentInterrogationPhase");
+    expect(source).toContain("let caseFileRequestId = $state(0)");
+    expect(source).toContain("function openInterrogationCaseFile");
+    expect(source).toContain('caseFileSection = "evidence"');
+    expect(source).toContain("caseFileRequest = {");
+    expect(source).toContain(
+      "interrogationPresentation={interrogationPresentationActive}",
+    );
+    expect(source).toContain(
+      "onCaseFileRequestHandled={handleCaseFileRequestHandled}",
+    );
+    expect(source).toContain("<InterrogationStage");
+    expect(source).toContain("onOpenCaseFile={openInterrogationCaseFile}");
+    expect(source).toContain("presentation:");
+    expect(source).toContain(
+      "interrogationPresentationPhase?.crossExam ?? null",
+    );
+    expect(source).toContain("</InterrogationStage>");
+    expect(source.indexOf("<InterrogationStage")).toBeLessThan(
+      source.indexOf('{#if gameState.value.mode.type === "dialogue"}'),
+    );
+  });
+});
