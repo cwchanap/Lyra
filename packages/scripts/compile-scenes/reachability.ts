@@ -1810,11 +1810,22 @@ function mandatoryAuthorizationFailure(input: {
         }
       } else {
         // Mutually-exclusive group: unguaranteed when any may-reachable
-        // alternative does not produce the grant.
+        // alternative does not produce the grant, OR when the group's shared
+        // trigger is only may-reachable. An optional Question whose every
+        // breakthrough alternative grants the authorization still does not
+        // guarantee the grant: the player can skip the Question entirely, so
+        // the one-shot event never fires. Reuse the same trigger-reachability
+        // reasoning as the prerequisite-atom exhaustive-alternatives case.
         const mayReachableMembers = groupMembers.filter((key) =>
           input.reachableNodeKeys.has(key),
         );
-        if (!mayReachableMembers.every((key) => matchingKeys.has(key))) {
+        if (
+          !mayReachableMembers.every((key) => matchingKeys.has(key)) ||
+          !groupTriggerIsMustReachable(mayReachableMembers, {
+            nodesByKey,
+            mustReachableNodeKeys: input.mustReachableNodeKeys,
+          })
+        ) {
           unguaranteed = true;
           break;
         }
