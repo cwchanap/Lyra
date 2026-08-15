@@ -1,191 +1,100 @@
 <script lang="ts">
-  import type { Inventory, SceneView, DialogueItem } from "../state/types";
+  import { currentInterrogationPhase } from "$lib/interrogation/presentation";
+  import type { SceneView } from "../state/types";
 
   let {
     scene,
-    inventory,
     onAsk,
-    onPresent,
-    onResume,
     onComplete,
     disabled = false,
   }: {
     scene: SceneView;
-    inventory: Inventory;
     onAsk: (questionId: string) => void | Promise<void>;
-    onPresent: (
-      lineId: string,
-      itemKind: "evidence" | "statement",
-      itemId: string,
-    ) => void | Promise<void>;
-    /** Backs out of the evidence tray to keep listening to the testimony. */
-    onResume: () => void | Promise<void>;
     onComplete: () => void | Promise<void>;
     disabled?: boolean;
   } = $props();
 
-  let interrogation = $derived(scene.kind === "interrogation" ? scene : null);
-  let phase = $derived(
-    interrogation?.visiblePhases.find(
-      (p) => p.id === interrogation.currentPhaseId,
-    ) ?? null,
-  );
-  let xexam = $derived(phase?.crossExam ?? null);
-  // This view only mounts while mode.type === "interrogation"; during
-  // cross-exam Playing the engine switches to mode "dialogue" and DialogueBox
-  // renders the inline 反駁 controls instead, so the `presenting` branch below
-  // is the only cross-exam state reachable here.
-
-  // Only the "line" and "action" arms carry rendered dialogue text (a
-  // sceneTag item is stage-setting metadata, not spoken/narrated content
-  // that belongs inside a cross-exam line card).
-  function lineText(items: DialogueItem[]): string {
-    return items
-      .filter((item) => item.kind === "line" || item.kind === "action")
-      .map((item) => item.text)
-      .join("");
-  }
+  let phase = $derived(currentInterrogationPhase(scene));
 </script>
 
 {#if phase}
-  <section class="interrogation" aria-label="interrogation">
-    <header class="subject">
-      <div class="subject-id">
-        <strong>{phase.subject.name}</strong>
-        <small>{phase.subject.role}</small>
-      </div>
-      {#if phase.subject.bio}
-        <p class="bio">{phase.subject.bio}</p>
-      {/if}
-    </header>
+  <section class="interrogation" aria-label="訊問記錄">
+    <div class="record-heading">
+      <p>訊問記錄</p>
+      <span>INQUIRY RECORD</span>
+    </div>
 
-    {#if xexam?.presenting}
-      <article class="line-card presenting">
-        <div class="prog">
-          <span class="prog-count"
-            >{xexam.lineIndex + 1} / {xexam.lineTotal}</span
-          >
-          <span class="prog-mark">↻</span>
-        </div>
-        <blockquote class="line">{lineText(xexam.lineContent)}</blockquote>
-
-        <p class="tray-label">針對此句提出證據 · PRESENT</p>
-        <div class="tray">
-          {#each inventory.evidence as item (item.id)}
-            <button
-              class="secondary"
-              type="button"
-              {disabled}
-              onclick={() => onPresent(xexam.lineId, "evidence", item.id)}
-            >
-              <span class="item-kind">證</span>
-              <span>{item.name}</span>
-            </button>
-          {/each}
-          {#each inventory.statements as item (item.id)}
-            <button
-              class="secondary"
-              type="button"
-              {disabled}
-              onclick={() => onPresent(xexam.lineId, "statement", item.id)}
-            >
-              <span class="item-kind alt">言</span>
-              <span>{item.speaker}</span>
-            </button>
-          {/each}
+    <ul class="menu">
+      {#each phase.questions as question (question.id)}
+        <li>
           <button
-            class="ghost"
+            class="qbtn"
+            class:broken={question.broken}
             type="button"
             {disabled}
-            onclick={() => onResume()}
+            onclick={() => onAsk(question.id)}
           >
-            收回
+            <span class="ql">{question.label}</span>
+            <span class="qs">{question.broken ? "已破" : "提問"}</span>
           </button>
-        </div>
-      </article>
-    {:else}
-      <ul class="menu">
-        {#each phase.questions as question (question.id)}
-          <li>
-            <button
-              class="qbtn"
-              class:broken={question.broken}
-              type="button"
-              {disabled}
-              onclick={() => onAsk(question.id)}
-            >
-              <span class="ql">{question.label}</span>
-              <span class="qs">{question.broken ? "已破" : "提問"}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-      <div class="phase-actions">
-        <button
-          class="complete"
-          type="button"
-          disabled={disabled || !phase.canComplete}
-          onclick={() => onComplete()}
-        >
-          完成訊問
-        </button>
-      </div>
-    {/if}
+        </li>
+      {/each}
+    </ul>
+
+    <div class="phase-actions">
+      <button
+        class="complete"
+        type="button"
+        disabled={disabled || !phase.canComplete}
+        onclick={() => onComplete()}
+      >
+        完成訊問
+      </button>
+    </div>
   </section>
-{:else if interrogation}
+{:else if scene.kind === "interrogation"}
   <p class="muted">尚未進入任何訊問階段。</p>
 {/if}
 
 <style>
   .interrogation {
     display: grid;
-    gap: 18px;
-    padding: 16px clamp(20px, 3vw, 40px) 140px;
+    gap: 14px;
+    width: min(960px, 100%);
+    margin: 0 auto;
+    padding: 24px clamp(20px, 3vw, 40px) 140px;
     color: var(--bone);
   }
 
-  /* subject header */
-  .subject {
+  .record-heading {
     display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 18px 20px 20px;
-    background: var(--char);
-    border: 1px solid var(--rule-strong);
-    border-left: 3px solid var(--crimson);
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 16px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--rule-strong);
   }
 
-  .subject-id strong {
-    font-family: var(--display-jp);
-    font-weight: 400;
-    font-size: 18px;
-    letter-spacing: 0.1em;
-    color: var(--bone);
-    display: block;
-  }
-
-  .subject-id small {
-    display: inline-block;
-    margin-top: 4px;
-    font-family: var(--serif-jp);
-    font-size: 12px;
-    color: var(--bone-dim);
-    letter-spacing: 0.06em;
-  }
-
-  .bio {
+  .record-heading p,
+  .record-heading span {
     margin: 0;
-    color: var(--bone-dim);
-    font-family: var(--serif-jp);
-    font-size: 13px;
-    line-height: 1.6;
-    max-width: 56ch;
+    font-family: var(--impact);
+    font-size: 11px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
   }
 
-  /* question menu */
+  .record-heading p {
+    color: var(--bone);
+  }
+
+  .record-heading span {
+    color: var(--bone-faint);
+  }
+
   .menu {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     margin: 0;
     padding: 0;
@@ -199,267 +108,129 @@
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-    padding: 14px 16px;
-    background: var(--char);
-    color: var(--bone);
+    min-height: 82px;
+    padding: 16px 18px;
     border: 1px solid var(--rule-strong);
+    border-left: 2px solid rgba(236, 228, 207, 0.2);
+    background: rgba(9, 9, 15, 0.72);
+    color: var(--bone);
     cursor: pointer;
     font: inherit;
     text-align: left;
-    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
     transition:
-      transform 0.18s,
-      background 0.18s,
-      border-color 0.18s;
+      transform 0.18s ease,
+      background 0.18s ease,
+      border-color 0.18s ease;
   }
 
   .qbtn::before {
     content: "";
     position: absolute;
-    left: 0;
     top: 0;
-    bottom: 0;
-    width: 2px;
+    left: 0;
+    width: 4px;
+    height: 100%;
     background: var(--crimson);
-    transform: scaleY(0);
-    transform-origin: top center;
-    transition: transform 0.22s cubic-bezier(0.6, 0, 0.3, 1);
-  }
-
-  .qbtn:hover:not(:disabled)::before,
-  .qbtn:focus-visible:not(:disabled)::before {
-    transform: scaleY(1);
+    opacity: 0;
+    transition: opacity 0.18s ease;
   }
 
   .qbtn:hover:not(:disabled),
-  .qbtn:focus-visible:not(:disabled) {
-    transform: translateX(-2px);
-    background: var(--char-2);
-    border-color: rgba(212, 20, 58, 0.4);
+  .qbtn:focus-visible {
+    transform: translateY(-2px);
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    outline: none;
   }
 
-  .qbtn:disabled {
-    opacity: 0.55;
-    cursor: wait;
+  .qbtn:hover:not(:disabled)::before,
+  .qbtn:focus-visible::before {
+    opacity: 1;
   }
 
   .qbtn.broken {
-    opacity: 0.7;
+    border-color: rgba(71, 184, 203, 0.35);
+    border-left-color: var(--cyan);
+    background: rgba(71, 184, 203, 0.07);
+  }
+
+  .qbtn.broken::before {
+    background: var(--cyan);
+  }
+
+  .qbtn:disabled {
+    cursor: wait;
+    opacity: 0.55;
   }
 
   .ql {
-    font-family: var(--display-jp);
-    font-weight: 400;
-    font-size: 14px;
-    letter-spacing: 0.08em;
-    line-height: 1.4;
-    color: var(--bone);
+    font-family: var(--serif-jp);
+    font-size: 16px;
+    line-height: 1.45;
   }
 
   .qs {
-    flex: none;
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    color: var(--crimson);
-    text-transform: uppercase;
-  }
-
-  .qbtn.broken .qs {
+    flex: 0 0 auto;
     color: var(--bone-faint);
-  }
-
-  /* complete-phase action */
-  .phase-actions {
-    display: flex;
-    justify-content: flex-end;
-    margin-top: 4px;
-  }
-
-  .complete {
-    padding: 11px 22px 10px;
-    background: var(--crimson-soft);
-    color: var(--crimson);
-    border: 1px solid var(--crimson);
-    cursor: pointer;
-    font: inherit;
-    font-family: var(--display-jp);
-    font-size: 13px;
-    letter-spacing: 0.16em;
-    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-    transition:
-      transform 0.18s,
-      background 0.18s,
-      border-color 0.18s,
-      color 0.18s;
-  }
-
-  .complete:hover:not(:disabled),
-  .complete:focus-visible:not(:disabled) {
-    transform: translateY(-1px);
-    background: var(--crimson);
-    color: var(--bone);
-  }
-
-  .complete:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-    color: var(--bone-faint);
-    background: transparent;
-    border-color: var(--rule-strong);
-  }
-
-  /* cross-exam line card */
-  .line-card {
-    position: relative;
-    background: var(--char);
-    border: 1px solid var(--rule-strong);
-    border-left: 2px solid var(--cyan);
-    padding: 16px 18px 18px;
-    color: var(--bone);
-  }
-
-  .line-card.presenting {
-    border-left-color: var(--crimson);
-  }
-
-  .prog {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 10px;
-    border-bottom: 1px solid var(--rule);
-    margin-bottom: 12px;
-  }
-
-  .prog-count {
     font-family: var(--impact);
-    font-weight: 500;
-    font-size: 12px;
-    letter-spacing: 0.18em;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+  }
+
+  .broken .qs {
     color: var(--cyan);
   }
 
-  .line-card.presenting .prog-count {
-    color: var(--crimson);
-  }
-
-  .prog-mark {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.24em;
-    color: var(--bone-faint);
-  }
-
-  .line {
-    margin: 0 0 14px;
-    padding: 0 0 0 14px;
-    border-left: 1px solid var(--rule);
-    color: var(--bone);
-    font-family: var(--serif-jp);
-    font-size: 15px;
-    line-height: 1.7;
-    font-style: italic;
-    quotes: "「" "」";
-  }
-
-  .line::before {
-    content: open-quote;
-    color: var(--crimson);
-    font-family: var(--display-jp);
-    font-style: normal;
-    margin-right: 2px;
-  }
-
-  .line::after {
-    content: close-quote;
-    color: var(--crimson);
-    font-family: var(--display-jp);
-    font-style: normal;
-    margin-left: 2px;
-  }
-
-  .tray {
+  .phase-actions {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    align-items: center;
+    justify-content: end;
+    padding-top: 2px;
   }
 
-  .tray-label {
-    flex: 1 0 100%;
-    font-family: var(--impact);
-    font-weight: 500;
-    font-size: 9px;
-    letter-spacing: 0.32em;
-    color: var(--bone-faint);
-    text-transform: uppercase;
-    margin: 0 0 6px;
-  }
-
-  .tray button {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px 7px;
-    background: transparent;
+  .complete {
+    min-width: 156px;
+    min-height: 42px;
+    border: 1px solid var(--crimson);
+    background: var(--crimson-soft);
     color: var(--bone);
-    border: 1px solid var(--rule-strong);
     cursor: pointer;
     font: inherit;
     font-family: var(--serif-jp);
-    font-size: 13px;
-    letter-spacing: 0.04em;
-    transition:
-      border-color 0.18s,
-      background 0.18s,
-      color 0.18s;
+    letter-spacing: 0.1em;
   }
 
-  .tray button:hover:not(:disabled) {
-    border-color: var(--crimson);
-    background: var(--crimson-soft);
-  }
-
-  .tray button.ghost {
+  .complete:disabled {
+    border-color: var(--rule-strong);
+    background: rgba(236, 228, 207, 0.04);
     color: var(--bone-faint);
-  }
-
-  .tray button:disabled {
-    opacity: 0.55;
-    cursor: wait;
-  }
-
-  .item-kind {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    font-family: var(--display-jp);
-    font-size: 10px;
-    color: var(--bone);
-    background: var(--crimson-deep);
-    border: 1px solid var(--crimson);
-  }
-
-  .item-kind.alt {
-    background: var(--cyan-deep);
-    border-color: var(--cyan);
+    cursor: not-allowed;
   }
 
   .muted {
+    margin: 0;
     padding: 24px clamp(20px, 3vw, 40px);
     color: var(--bone-faint);
     font-family: var(--serif-jp);
-    font-style: italic;
   }
 
   @media (max-width: 720px) {
-    /* lyra-mobile-breakpoint — see tokens.css. */
+    .interrogation {
+      padding-bottom: 110px;
+    }
+
     .menu {
       grid-template-columns: 1fr;
+    }
+
+    .record-heading span {
+      display: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .qbtn,
+    .qbtn::before {
+      transition: none;
     }
   }
 </style>
