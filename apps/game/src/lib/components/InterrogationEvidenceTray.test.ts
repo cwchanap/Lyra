@@ -63,6 +63,7 @@ function props(
       itemId: string,
     ) => void;
     onResume: () => void;
+    onOpenGameMenu: (trigger: HTMLElement) => void;
   }> = {},
 ) {
   return {
@@ -73,6 +74,7 @@ function props(
     fallbackFocusTarget: overrides.fallbackFocusTarget ?? null,
     onPresent: overrides.onPresent ?? vi.fn(),
     onResume: overrides.onResume ?? vi.fn(),
+    onOpenGameMenu: overrides.onOpenGameMenu ?? vi.fn(),
   };
 }
 
@@ -122,17 +124,36 @@ describe("InterrogationEvidenceTray", () => {
     expect(onResume).toHaveBeenCalledTimes(2);
   });
 
+  it("opens the game menu without resuming the active Present state", async () => {
+    const user = userEvent.setup();
+    const onOpenGameMenu = vi.fn();
+    const onResume = vi.fn();
+    render(InterrogationEvidenceTray, props({ onOpenGameMenu, onResume }));
+
+    await user.click(screen.getByRole("button", { name: "遊戲選單" }));
+
+    expect(onOpenGameMenu).toHaveBeenCalledOnce();
+    expect(onOpenGameMenu).toHaveBeenCalledWith(expect.any(HTMLButtonElement));
+    expect(onResume).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("dialog", { name: "提出證據" }),
+    ).toBeInTheDocument();
+  });
+
   it("traps tab focus among its active controls", async () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
 
     const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
     const statement = screen.getByRole("button", { name: /店員的證言/ });
+    const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
     const withdraw = screen.getByRole("button", { name: "收回" });
 
     await waitFor(() => expect(evidence).toHaveFocus());
     await user.tab();
     expect(statement).toHaveFocus();
+    await user.tab();
+    expect(gameMenu).toHaveFocus();
     await user.tab();
     expect(withdraw).toHaveFocus();
     await user.tab();
@@ -177,21 +198,26 @@ describe("InterrogationEvidenceTray", () => {
     const user = userEvent.setup();
     const onPresent = vi.fn();
     const onResume = vi.fn();
+    const onOpenGameMenu = vi.fn();
     render(
       InterrogationEvidenceTray,
-      props({ disabled: true, onPresent, onResume }),
+      props({ disabled: true, onPresent, onResume, onOpenGameMenu }),
     );
 
     const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
     const withdraw = screen.getByRole("button", { name: "收回" });
     expect(evidence).toBeDisabled();
+    expect(gameMenu).toBeDisabled();
     expect(withdraw).toBeDisabled();
 
     await user.click(evidence);
+    await user.click(gameMenu);
     await user.click(withdraw);
     expect(closeTopmostEscapeClaim()).toBe(true);
 
     expect(onPresent).not.toHaveBeenCalled();
+    expect(onOpenGameMenu).not.toHaveBeenCalled();
     expect(onResume).not.toHaveBeenCalled();
   });
 });

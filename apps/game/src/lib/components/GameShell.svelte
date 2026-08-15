@@ -26,6 +26,8 @@
     caseFileMenuEnabled = true,
     activePrimaryObjective = null,
     interrogationPresentation = false,
+    gameMenuRequest = null,
+    onGameMenuRequestHandled,
     caseFileRequest = null,
     onCaseFileRequestHandled,
     children,
@@ -56,6 +58,8 @@
     caseFileMenuEnabled?: boolean;
     activePrimaryObjective?: ObjectiveView | null;
     interrogationPresentation?: boolean;
+    gameMenuRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    onGameMenuRequestHandled?: (id: number) => void;
     caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
     onCaseFileRequestHandled?: (id: number) => void;
     children: Snippet;
@@ -82,6 +86,7 @@
   // go stale. Mirrors the WAI-ARIA expectation that dismissing a sub-layer
   // returns focus to its trigger.
   let lastOpenedSubmenu: Exclude<MenuPanel, null> | null = null;
+  let handledGameMenuRequestId = $state<number | null>(null);
   let handledCaseFileRequestId = $state<number | null>(null);
   let menuTitle = $derived(menuPanelTitle(activeMenuPanel));
   let menuContext = $derived(
@@ -202,6 +207,14 @@
     await openGameMenu(request.returnFocusTo);
     openMenuPanel("caseFile");
     onCaseFileRequestHandled?.(request.id);
+  }
+
+  async function openRequestedGameMenu(request: {
+    id: number;
+    returnFocusTo: HTMLElement | null;
+  }) {
+    await openGameMenu(request.returnFocusTo);
+    onGameMenuRequestHandled?.(request.id);
   }
 
   function closeMenuPanel() {
@@ -352,6 +365,16 @@
     if (!open && activeMenuPanel !== null) {
       activeMenuPanel = null;
     }
+  });
+
+  $effect(() => {
+    const request = gameMenuRequest;
+    if (!request || request.id === handledGameMenuRequestId) {
+      return;
+    }
+
+    handledGameMenuRequestId = request.id;
+    void openRequestedGameMenu(request);
   });
 
   $effect(() => {

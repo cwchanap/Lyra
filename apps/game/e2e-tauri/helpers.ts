@@ -1839,6 +1839,34 @@ export async function drainToInvestigationExplore(): Promise<void> {
 }
 
 export async function openGameMenu(): Promise<void> {
+  const openedFromInterrogationTray = await browser.execute(() => {
+    const button = document.querySelector<HTMLButtonElement>(
+      "[data-interrogation-game-menu]",
+    );
+    if (!button || button.disabled) return false;
+    button.click();
+    return true;
+  });
+  if (openedFromInterrogationTray) {
+    await browser.waitUntil(
+      async () =>
+        browser.execute((heading: string) => {
+          return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+            (dialog) =>
+              Array.from(dialog.querySelectorAll("h2")).some((headingNode) =>
+                (headingNode.textContent ?? "").includes(heading),
+              ),
+          );
+        }, anchors.gameMenu),
+      {
+        timeout: 15000,
+        interval: 100,
+        timeoutMsg: "game menu dialog did not open from interrogation Present",
+      },
+    );
+    return;
+  }
+
   try {
     await browser.waitUntil(
       async () => {

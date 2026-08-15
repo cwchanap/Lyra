@@ -10,6 +10,7 @@
     disabled = false,
     onPresent,
     onResume,
+    onOpenGameMenu,
     onOpenCaseFile,
   }: {
     active: boolean;
@@ -23,6 +24,7 @@
       itemId: string,
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
+    onOpenGameMenu: (trigger: HTMLElement) => void;
     onOpenCaseFile: (trigger: HTMLElement) => void;
   } = $props();
 </script>
@@ -35,6 +37,7 @@
   {disabled}
   {onPresent}
   {onResume}
+  {onOpenGameMenu}
   {onOpenCaseFile}
 >
   <p>stage child</p>

@@ -117,6 +117,11 @@
     id: number;
     returnFocusTo: HTMLElement | null;
   } | null>(null);
+  let gameMenuRequestId = $state(0);
+  let gameMenuRequest = $state<{
+    id: number;
+    returnFocusTo: HTMLElement | null;
+  } | null>(null);
   let observedCaseFileEpoch = presentationState.sessionEpoch;
 
   $effect(() => {
@@ -126,6 +131,7 @@
       caseFileSection = "objective";
       caseFileReturnFocus = null;
       caseFileRequest = null;
+      gameMenuRequest = null;
     }
   });
   // Bound to GameShell so dossier reexamine can close the Escape menu
@@ -1221,6 +1227,19 @@
     };
   }
 
+  function openInterrogationGameMenu(trigger: HTMLElement) {
+    gameMenuRequestId += 1;
+    gameMenuRequest = {
+      id: gameMenuRequestId,
+      returnFocusTo: trigger,
+    };
+  }
+
+  function handleGameMenuRequestHandled(id: number) {
+    if (gameMenuRequest?.id !== id) return;
+    gameMenuRequest = null;
+  }
+
   function handleCaseFileRequestHandled(id: number) {
     if (caseFileRequest?.id !== id) return;
     caseFileRequest = null;
@@ -1251,6 +1270,8 @@
         caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}
         {activePrimaryObjective}
         interrogationPresentation={interrogationPresentationActive}
+        {gameMenuRequest}
+        onGameMenuRequestHandled={handleGameMenuRequestHandled}
         {caseFileRequest}
         onCaseFileRequestHandled={handleCaseFileRequestHandled}
         bind:open={gameMenuOpen}
@@ -1292,6 +1313,7 @@
           inventory={gameState.value.inventory}
           onPresent={presentInterrogationEvidence}
           onResume={resumeInterrogationTestimony}
+          onOpenGameMenu={openInterrogationGameMenu}
           onOpenCaseFile={openInterrogationCaseFile}
           disabled={gameState.inFlight}
         >

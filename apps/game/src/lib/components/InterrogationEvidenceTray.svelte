@@ -14,6 +14,7 @@
     inventory,
     onPresent,
     onResume,
+    onOpenGameMenu,
     disabled = false,
     returnFocusTo = null,
     fallbackFocusTarget = null,
@@ -26,6 +27,7 @@
       itemId: string,
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
+    onOpenGameMenu: (trigger: HTMLElement) => void;
     disabled?: boolean;
     returnFocusTo?: HTMLElement | null;
     fallbackFocusTarget?: HTMLElement | null;
@@ -74,6 +76,14 @@
   function resume() {
     if (disabled) return;
     void onResume();
+  }
+
+  function openGameMenu(event: MouseEvent) {
+    if (disabled) return;
+    const trigger = event.currentTarget;
+    if (trigger instanceof HTMLElement) {
+      onOpenGameMenu(trigger);
+    }
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -210,9 +220,20 @@
 
     <footer>
       <p>選擇一項紀錄以反駁目前證詞。</p>
-      <button class="withdraw" type="button" {disabled} onclick={resume}>
-        收回
-      </button>
+      <div class="footer-actions">
+        <button
+          class="game-menu"
+          data-interrogation-game-menu=""
+          type="button"
+          {disabled}
+          onclick={openGameMenu}
+        >
+          遊戲選單
+        </button>
+        <button class="withdraw" type="button" {disabled} onclick={resume}>
+          收回
+        </button>
+      </div>
     </footer>
   </div>
 </div>
@@ -345,6 +366,7 @@
   }
 
   .record-card:disabled,
+  .game-menu:disabled,
   .withdraw:disabled {
     cursor: wait;
     opacity: 0.55;
@@ -415,6 +437,13 @@
     font-size: 12px;
   }
 
+  .footer-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .game-menu,
   .withdraw {
     flex: 0 0 auto;
     min-width: 92px;
@@ -427,6 +456,12 @@
     cursor: pointer;
   }
 
+  .game-menu {
+    color: var(--bone-dim);
+  }
+
+  .game-menu:hover:not(:disabled),
+  .game-menu:focus-visible,
   .withdraw:hover:not(:disabled),
   .withdraw:focus-visible {
     border-color: var(--cyan);
@@ -448,6 +483,20 @@
 
     .record-list {
       grid-template-columns: 1fr;
+    }
+
+    footer {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .footer-actions {
+      width: 100%;
+    }
+
+    .game-menu,
+    .withdraw {
+      flex: 1 1 0;
     }
   }
 

@@ -226,6 +226,39 @@ describe("GameShell", () => {
     }
   });
 
+  it("opens the root menu for a direct request and restores its supplied focus origin", async () => {
+    const trigger = document.createElement("button");
+    trigger.textContent = "開啟遊戲選單";
+    document.body.append(trigger);
+    trigger.focus();
+
+    try {
+      const user = userEvent.setup();
+      const onGameMenuRequestHandled = vi.fn();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: { id: 1, returnFocusTo: trigger },
+        onGameMenuRequestHandled,
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await vi.waitFor(() => {
+        expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
+      });
+
+      await user.click(
+        within(dialog).getByRole("button", { name: /繼續調查/ }),
+      );
+
+      await vi.waitFor(() => {
+        expect(trigger).toHaveFocus();
+      });
+    } finally {
+      trigger.remove();
+    }
+  });
+
   it("keeps duplicated utility controls out of the chapter HUD", () => {
     render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
 

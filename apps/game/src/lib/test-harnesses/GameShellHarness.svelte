@@ -21,6 +21,8 @@
     menuInitialFocusLabel = null,
     activePrimaryObjective = null,
     interrogationPresentation = false,
+    gameMenuRequest = null,
+    onGameMenuRequestHandled,
     caseFileRequest = null,
     onCaseFileRequestHandled,
   }: {
@@ -49,6 +51,8 @@
     menuInitialFocusLabel?: string | null;
     activePrimaryObjective?: ObjectiveView | null;
     interrogationPresentation?: boolean;
+    gameMenuRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    onGameMenuRequestHandled?: (id: number) => void;
     caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
     onCaseFileRequestHandled?: (id: number) => void;
   } = $props();
@@ -68,6 +72,8 @@
   {caseFileMenuEnabled}
   {activePrimaryObjective}
   {interrogationPresentation}
+  {gameMenuRequest}
+  {onGameMenuRequestHandled}
   {caseFileRequest}
   {onCaseFileRequestHandled}
   bind:open
