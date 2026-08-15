@@ -1661,6 +1661,25 @@ function groupTriggerIsMustReachable(
     visitedAtoms: ReadonlySet<ReachabilityAtom>;
   },
 ): boolean {
+  if (!groupTriggerStructurallyMustReachable(memberKeys, input)) return false;
+  return memberPrerequisitesGuaranteed(memberKeys, input);
+}
+
+/**
+ * The structural half of {@link groupTriggerIsMustReachable}: whether the
+ * group's shared trigger/predecessor is must-reachable, independent of the
+ * members' own gating atoms. Extracted so the authorization guarantee check
+ * can verify the trigger structurally and then apply a per-path satisfiability
+ * analysis ({@link grantGroupGuaranteedPerPath}) instead of requiring every
+ * member's prerequisite atoms to hold on every path.
+ */
+function groupTriggerStructurallyMustReachable(
+  memberKeys: readonly string[],
+  input: {
+    nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+    mustReachableNodeKeys: ReadonlySet<string>;
+  },
+): boolean {
   const predecessorSets = memberKeys.map((key) => {
     const node = input.nodesByKey.get(key);
     return node ? node.strictPredecessorKeys : [];
@@ -1672,14 +1691,9 @@ function groupTriggerIsMustReachable(
     // Members reachable without predecessors must be initially reachable
     // (otherwise they would not be may-reachable). The trigger is the scene
     // entry, which is must-reachable on every path.
-    if (
-      !memberKeys.every(
-        (key) => input.nodesByKey.get(key)?.initiallyReachable ?? false,
-      )
-    ) {
-      return false;
-    }
-    return memberPrerequisitesGuaranteed(memberKeys, input);
+    return memberKeys.every(
+      (key) => input.nodesByKey.get(key)?.initiallyReachable ?? false,
+    );
   }
   // Compute the intersection of strict predecessors across all members. Only
   // a shared predecessor can serve as the group's common trigger.
@@ -1691,12 +1705,9 @@ function groupTriggerIsMustReachable(
   // The event is guaranteed to fire only when every shared predecessor is
   // must-reachable — otherwise the player can skip the trigger and the event
   // never executes.
-  if (
-    !sharedPredecessors.every((key) => input.mustReachableNodeKeys.has(key))
-  ) {
-    return false;
-  }
-  return memberPrerequisitesGuaranteed(memberKeys, input);
+  return sharedPredecessors.every((key) =>
+    input.mustReachableNodeKeys.has(key),
+  );
 }
 
 /**
@@ -1728,6 +1739,172 @@ function memberPrerequisitesGuaranteed(
     );
     return requiredAtoms.every((atom) => atomIsGuaranteed(atom, input));
   });
+}
+
+/**
+ * Per-path authorization guarantee for a mutually-exclusive grant group.
+ *
+ * {@link memberPrerequisitesGuaranteed} requires every member's prerequisite
+ * atoms to hold on EVERY path, which rejects valid paired-exhaustive content:
+ * an upstream required one-shot can guarantee exactly one of `fact:X` /
+ * `fact:Y`, with breakthrough A requiring X and breakthrough B requiring Y,
+ * both granting the same authorization. Every real path has one usable
+ * granting alternative, but neither X nor Y is globally guaranteed, so the
+ * global per-atom check rejects valid content.
+ *
+ * Instead of requiring every alternative's prerequisites globally, this
+ * enumerates the bounded cross-product of scenario dimensions for the members'
+ * non-guaranteed prerequisite atoms: one selection per upstream mutually-
+ * exclusive one-shot event (plus a "none" outcome when that event's trigger is
+ * not structurally must-reachable), and an independent present/absent outcome
+ * for atoms produced only by lone optional producers. The grant is guaranteed
+ * when every enumerated scenario has at least one member whose prerequisite
+ * atoms all hold.
+ *
+ * The cross-product is a superset of reachable scenarios, and atom-truth is
+ * exact for reachable scenarios (a selected alternative that fires produces its
+ * atoms), so a reachable bad path is never missed — the check is sound. Extra
+ * unreachable scenarios can only add conservative rejections. The enumeration
+ * is bounded to the grant group members' prerequisite atoms; the cross-product
+ * is capped, falling back to the conservative {@link memberPrerequisitesGuaranteed}
+ * when exceeded so the analysis never blows up.
+ */
+function grantGroupGuaranteedPerPath(
+  memberKeys: readonly string[],
+  input: {
+    nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+    mustAtoms: ReadonlySet<ReachabilityAtom>;
+    producerKeysByAtom: ReadonlyMap<ReachabilityAtom, readonly string[]>;
+    groupsByEventId: ReadonlyMap<string, readonly string[]>;
+    reachableNodeKeys: ReadonlySet<string>;
+    mustReachableNodeKeys: ReadonlySet<string>;
+    visitedAtoms: ReadonlySet<ReachabilityAtom>;
+  },
+): boolean {
+  // Each member's required (necessary) prerequisite atoms.
+  const memberRequiredAtoms: readonly (readonly ReachabilityAtom[])[] =
+    memberKeys.map((key) => {
+      const node = input.nodesByKey.get(key);
+      if (!node) return [] as readonly ReachabilityAtom[];
+      return unique(
+        [
+          ...requiredExpressionPredicates(node.condition),
+          ...node.implicitPrerequisites,
+        ].map((predicate) => predicate.atom),
+      );
+    });
+  const allRequiredAtoms = unique(memberRequiredAtoms.flat());
+  // No prerequisites, or all prerequisites globally guaranteed: every member
+  // is satisfiable on every path, so the grant is guaranteed (the structural
+  // trigger check and the every-member-grants check already passed).
+  if (allRequiredAtoms.length === 0) return true;
+  const variableAtoms = allRequiredAtoms.filter(
+    (atom) => !atomIsGuaranteed(atom, input),
+  );
+  if (variableAtoms.length === 0) return true;
+
+  // Variable atoms produced by each reachable producer key (inverted index,
+  // restricted to variable atoms).
+  const atomsProducedByKey = new Map<string, Set<ReachabilityAtom>>();
+  for (const atom of variableAtoms) {
+    for (const producerKey of input.producerKeysByAtom.get(atom) ?? []) {
+      if (!input.reachableNodeKeys.has(producerKey)) continue;
+      let set = atomsProducedByKey.get(producerKey);
+      if (!set) {
+        set = new Set();
+        atomsProducedByKey.set(producerKey, set);
+      }
+      set.add(atom);
+    }
+  }
+
+  // Build one scenario dimension per one-shot event that produces any variable
+  // atom. Each dimension's outcomes are its may-reachable members (each
+  // contributing the variable atoms that member produces); a "none" outcome
+  // (no atoms) is added when the event might not fire.
+  type Outcome = { heldAtoms: ReadonlySet<ReachabilityAtom> };
+  type Dimension = { outcomes: Outcome[] };
+  const eventMemberKeys = new Map<string, string[]>();
+  const eventMultiMember = new Map<string, boolean>();
+  for (const atom of variableAtoms) {
+    for (const producerKey of input.producerKeysByAtom.get(atom) ?? []) {
+      if (!input.reachableNodeKeys.has(producerKey)) continue;
+      const node = input.nodesByKey.get(producerKey);
+      const eventId = node ? node.oneShotEventId : producerKey;
+      const groupMembers = input.groupsByEventId.get(eventId) ?? [producerKey];
+      const existing = eventMemberKeys.get(eventId);
+      if (existing) {
+        for (const k of groupMembers) {
+          if (!existing.includes(k)) existing.push(k);
+        }
+      } else {
+        eventMemberKeys.set(eventId, [...groupMembers]);
+        eventMultiMember.set(eventId, groupMembers.length > 1);
+      }
+    }
+  }
+  const dimensions: Dimension[] = [];
+  for (const [eventId, memberKeysForEvent] of eventMemberKeys) {
+    const mayReachableMembers = memberKeysForEvent.filter((key) =>
+      input.reachableNodeKeys.has(key),
+    );
+    const outcomes: Outcome[] = mayReachableMembers.map((key) => ({
+      heldAtoms: atomsProducedByKey.get(key) ?? new Set(),
+    }));
+    if (eventMultiMember.get(eventId)) {
+      // A multi-member one-shot event whose shared trigger is not structurally
+      // must-reachable can be skipped, so none of its atoms are produced.
+      if (!groupTriggerStructurallyMustReachable(mayReachableMembers, input)) {
+        outcomes.push({ heldAtoms: new Set() });
+      }
+    } else {
+      // A lone producer of a non-guaranteed atom is optional / may-reachable
+      // (otherwise its atom would be guaranteed), so it may not fire.
+      outcomes.push({ heldAtoms: new Set() });
+    }
+    dimensions.push({ outcomes });
+  }
+
+  // Cap the cross-product; fall back to the conservative global check when the
+  // scenario space is too large to enumerate.
+  const SCENARIO_CAP = 4096;
+  let scenarioCount = 1;
+  for (const dim of dimensions) {
+    scenarioCount *= dim.outcomes.length;
+    if (scenarioCount > SCENARIO_CAP) {
+      return memberPrerequisitesGuaranteed(memberKeys, input);
+    }
+  }
+
+  // Guaranteed required atoms always hold; only variable atoms depend on the
+  // selected outcomes.
+  const guaranteedHeld = new Set<ReachabilityAtom>(
+    allRequiredAtoms.filter((atom) => !variableAtoms.includes(atom)),
+  );
+  const memberSatisfiableIn = (
+    held: ReadonlySet<ReachabilityAtom>,
+    required: readonly ReachabilityAtom[],
+  ): boolean => required.every((atom) => held.has(atom));
+
+  const enumerate = (depth: number, held: Set<ReachabilityAtom>): boolean => {
+    const dimension = dimensions[depth];
+    if (dimension === undefined) {
+      return memberRequiredAtoms.some((required) =>
+        memberSatisfiableIn(held, required),
+      );
+    }
+    for (const outcome of dimension.outcomes) {
+      if (outcome.heldAtoms.size === 0) {
+        if (!enumerate(depth + 1, held)) return false;
+      } else {
+        const nextHeld = new Set(held);
+        for (const a of outcome.heldAtoms) nextHeld.add(a);
+        if (!enumerate(depth + 1, nextHeld)) return false;
+      }
+    }
+    return true;
+  };
+  return enumerate(0, guaranteedHeld);
 }
 
 /**
@@ -1917,25 +2094,36 @@ function mandatoryAuthorizationFailure(input: {
       } else {
         // Mutually-exclusive group: unguaranteed when any may-reachable
         // alternative does not produce the grant, OR when the group's shared
-        // trigger is only may-reachable. An optional Question whose every
-        // breakthrough alternative grants the authorization still does not
-        // guarantee the grant: the player can skip the Question entirely, so
-        // the one-shot event never fires. Reuse the same trigger-reachability
-        // reasoning as the prerequisite-atom exhaustive-alternatives case.
+        // trigger is only may-reachable, OR when some reachable scenario has
+        // no satisfiable granting alternative. An optional Question whose
+        // every breakthrough alternative grants the authorization still does
+        // not guarantee the grant: the player can skip the Question entirely,
+        // so the one-shot event never fires. The trigger check is structural
+        // only; satisfiability is then checked per modeled scenario via
+        // grantGroupGuaranteedPerPath so that paired-exhaustive content (an
+        // upstream required one-shot guarantees exactly one of X/Y, with
+        // breakthrough A requiring X and B requiring Y, both granting the same
+        // authorization) is accepted rather than requiring every alternative's
+        // prerequisite atoms to hold on every path.
         const mayReachableMembers = groupMembers.filter((key) =>
           input.reachableNodeKeys.has(key),
         );
+        const triggerInput = {
+          nodesByKey: input.nodesByKey,
+          mustReachableNodeKeys: input.mustReachableNodeKeys,
+          mustAtoms: input.mustAtoms,
+          producerKeysByAtom: input.producerKeysByAtom,
+          groupsByEventId: input.groupsByEventId,
+          reachableNodeKeys: input.reachableNodeKeys,
+          visitedAtoms: new Set<ReachabilityAtom>(),
+        };
         if (
           !mayReachableMembers.every((key) => matchingKeys.has(key)) ||
-          !groupTriggerIsMustReachable(mayReachableMembers, {
-            nodesByKey: input.nodesByKey,
-            mustReachableNodeKeys: input.mustReachableNodeKeys,
-            mustAtoms: input.mustAtoms,
-            producerKeysByAtom: input.producerKeysByAtom,
-            groupsByEventId: input.groupsByEventId,
-            reachableNodeKeys: input.reachableNodeKeys,
-            visitedAtoms: new Set(),
-          })
+          !groupTriggerStructurallyMustReachable(
+            mayReachableMembers,
+            triggerInput,
+          ) ||
+          !grantGroupGuaranteedPerPath(mayReachableMembers, triggerInput)
         ) {
           unguaranteed = true;
           break;

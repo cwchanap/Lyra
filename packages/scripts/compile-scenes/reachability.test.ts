@@ -1865,15 +1865,17 @@ describe("positive dependency and base reachability", () => {
     expect(result.reachableNodeKeys).toContain("consumer");
   });
 
-  it("rejects a mandatory grant when one alternative's prerequisite is only may-reachable", () => {
+  it("accepts a mandatory grant when one alternative's prerequisite is only may-reachable but another is always satisfiable", () => {
     // alt_a requires atom A (produced only by an optional node → may-reachable
     // but not guaranteed) while alt_b requires atom B (in mustAtoms). The
     // shared structural trigger (entry) is must-reachable, and every
-    // may-reachable alternative grants the authorization, but alt_a's own
-    // prerequisite is not guaranteed on every path — the player can reach the
-    // trigger on a path where A is absent, find alt_a unsatisfiable, and if
-    // alt_b is also unsatisfiable on that path the event never fires. The
-    // grant is not guaranteed and a required successor soft-locks.
+    // may-reachable alternative grants the authorization. Under the per-path
+    // guarantee check, every reachable scenario has a usable granting
+    // alternative: on a path where A is absent alt_b is still satisfiable (B
+    // is guaranteed) and grants; on a path where A is present alt_a grants.
+    // The grant is therefore guaranteed even though alt_a's own prerequisite
+    // is not globally guaranteed — the case the earlier per-atom check
+    // falsely rejected.
     const result = analyzeSynthetic(
       [
         syntheticNode("optional_progress", {
@@ -1925,12 +1927,141 @@ describe("positive dependency and base reachability", () => {
       catalogWithAuthorization("permit", "court"),
     );
 
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
+  });
+
+  it("rejects a mandatory grant when every alternative's prerequisite is only may-reachable via independent optional nodes", () => {
+    // Negative counterpart to the per-path accept case: alt_a requires A and
+    // alt_b requires B, but BOTH A and B are produced only by independent
+    // optional nodes (neither is guaranteed). There is a reachable scenario
+    // where the player skips both optional nodes — neither A nor B holds, no
+    // granting alternative is satisfiable, and the one-shot event cannot fire,
+    // soft-locking the required successor. The per-path enumeration must find
+    // that empty scenario and reject.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("optional_a", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:A")],
+        }),
+        syntheticNode("optional_b", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:B")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:A")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:B")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
     expect(result.errors).toContainEqual(
       expect.objectContaining({
         code: "mandatoryAuthorizationGrantNotGuaranteed",
         nodeKey: "consumer",
       }),
     );
+  });
+
+  it("accepts a mandatory grant when paired exhaustive alternatives cover every path", () => {
+    // The paired-exhaustive case the per-path check exists to accept: an
+    // upstream required one-shot guarantees exactly one of fact:X / fact:Y
+    // (pre_x produces X, pre_y produces Y, both initially reachable with no
+    // predecessors so the trigger is the scene entry). Breakthrough A requires
+    // X and breakthrough B requires Y, and both grant the same authorization.
+    // Neither X nor Y is globally guaranteed, so the old per-atom check
+    // rejected this; but every reachable scenario has exactly one usable
+    // granting alternative, so the grant is guaranteed.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("pre_x", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:X")],
+        }),
+        syntheticNode("pre_y", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:Y")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:X")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:Y")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toEqual([]);
+    expect(result.reachableNodeKeys).toContain("consumer");
   });
 
   it("accepts a mandatory grant when alternative-specific prerequisites are guaranteed by exhaustive alternatives", () => {
