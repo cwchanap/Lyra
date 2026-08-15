@@ -1562,6 +1562,46 @@ function potentialEffectAtoms(node: ReachabilityNode): ReachabilityAtom[] {
   );
 }
 
+/**
+ * Determines whether a prerequisite atom is guaranteed despite being produced
+ * only by optional nodes, by virtue of exhaustive mutually-exclusive one-shot
+ * alternatives.
+ *
+ * The scenario enumerator selects exactly one alternative per one-shot event,
+ * so when every may-reachable alternative of a multi-member one-shot group
+ * produces the atom, the atom is asserted on every path regardless of which
+ * alternative runs. This mirrors the "every alternative grants it" reasoning
+ * applied to grant producers, lifted one level earlier to prerequisite atoms.
+ */
+function prerequisiteAtomGuaranteedByExhaustiveAlternatives(input: {
+  atom: ReachabilityAtom;
+  producerKeys: readonly string[];
+  groupsByEventId: ReadonlyMap<string, readonly string[]>;
+  nodesByKey: ReadonlyMap<string, ReachabilityNode>;
+  reachableNodeKeys: ReadonlySet<string>;
+}): boolean {
+  const producerKeySet = new Set(input.producerKeys);
+  const producerEventIds = new Set<string>();
+  for (const key of input.producerKeys) {
+    const node = input.nodesByKey.get(key);
+    if (node) producerEventIds.add(node.oneShotEventId);
+  }
+  for (const eventId of producerEventIds) {
+    const groupMembers = input.groupsByEventId.get(eventId) ?? [];
+    if (groupMembers.length <= 1) continue;
+    const mayReachableMembers = groupMembers.filter((key) =>
+      input.reachableNodeKeys.has(key),
+    );
+    if (
+      mayReachableMembers.length > 0 &&
+      mayReachableMembers.every((key) => producerKeySet.has(key))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function mandatoryAuthorizationFailure(input: {
   node: ReachabilityNode;
   nodes: readonly ReachabilityNode[];
@@ -1653,6 +1693,10 @@ function mandatoryAuthorizationFailure(input: {
       members.push(candidate.key);
       groupsByEventId.set(candidate.oneShotEventId, members);
     }
+    const nodesByKey = new Map(
+      input.nodes.map((candidate) => [candidate.key, candidate]),
+    );
+    const producerKeysByAtom = buildPositiveProducerIndex(input.nodes);
     let unguaranteed = false;
     for (const producer of nonLegacyMatching) {
       if (!input.reachableNodeKeys.has(producer.key)) continue;
@@ -1660,10 +1704,6 @@ function mandatoryAuthorizationFailure(input: {
         producer.key,
       ];
       if (groupMembers.length === 1) {
-        const nodesByKey = new Map(
-          input.nodes.map((candidate) => [candidate.key, candidate]),
-        );
-        const producerKeysByAtom = buildPositiveProducerIndex(input.nodes);
         const prerequisiteAtoms = unique(
           [
             ...requiredExpressionPredicates(producer.condition),
@@ -1674,21 +1714,35 @@ function mandatoryAuthorizationFailure(input: {
           producer.strictPredecessorKeys.some(
             (key) => nodesByKey.get(key)?.requirement === "optional",
           );
-        const hasOnlyOptionalPrerequisiteProducers = prerequisiteAtoms.some(
+        // A prerequisite supplied only by optional nodes is not necessarily
+        // skippable: when those nodes are exhaustive mutually-exclusive
+        // alternatives of one one-shot event (e.g. a required question with
+        // multiple correct testimony lines), one alternative must execute, so
+        // an atom produced by every alternative is guaranteed. Reuse the same
+        // exhaustiveness reasoning as the "every alternative grants it" case
+        // below rather than deciding guarantee solely from each producer's
+        // requirement.
+        const hasUnguaranteedPrerequisiteProducer = prerequisiteAtoms.some(
           (atom) => {
             const keys = producerKeysByAtom.get(atom) ?? [];
-            return (
-              keys.length > 0 &&
-              keys.every(
-                (key) => nodesByKey.get(key)?.requirement === "optional",
-              )
+            if (keys.length === 0) return false;
+            const allOptional = keys.every(
+              (key) => nodesByKey.get(key)?.requirement === "optional",
             );
+            if (!allOptional) return false;
+            return !prerequisiteAtomGuaranteedByExhaustiveAlternatives({
+              atom,
+              producerKeys: keys,
+              groupsByEventId,
+              nodesByKey,
+              reachableNodeKeys: input.reachableNodeKeys,
+            });
           },
         );
         if (
           producer.requirement === "optional" ||
           hasOptionalStrictPredecessor ||
-          hasOnlyOptionalPrerequisiteProducers
+          hasUnguaranteedPrerequisiteProducer
         ) {
           unguaranteed = true;
           break;
