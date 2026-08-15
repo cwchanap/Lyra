@@ -56,6 +56,7 @@ function props(
   overrides: Partial<{
     inventory: Inventory;
     disabled: boolean;
+    topLayerOpen: boolean;
     returnFocusTo: HTMLElement | null;
     fallbackFocusTarget: HTMLElement | null;
     onPresent: (
@@ -71,6 +72,7 @@ function props(
     crossExam,
     inventory: overrides.inventory ?? inventory,
     disabled: overrides.disabled ?? false,
+    topLayerOpen: overrides.topLayerOpen ?? false,
     returnFocusTo: overrides.returnFocusTo ?? null,
     fallbackFocusTarget: overrides.fallbackFocusTarget ?? null,
     onPresent: overrides.onPresent ?? vi.fn(),
@@ -462,6 +464,41 @@ describe("InterrogationEvidenceTray", () => {
     const dispatched = window.dispatchEvent(event);
     expect(dispatched).toBe(true);
     expect(evidence).toHaveFocus();
+  });
+
+  it("suspends the Tab trap while an upper layer is open", async () => {
+    // When the Game Menu / Save Browser opens above the tray, the tray stays
+    // mounted but must not intercept Tab — the upper dialog owns keyboard
+    // navigation. A window-dispatched Tab must pass through (not cancelled)
+    // rather than being swallowed by preventDefault + stopImmediatePropagation.
+    const { rerender } = render(InterrogationEvidenceTray, props());
+
+    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    await waitFor(() => expect(evidence).toHaveFocus());
+
+    // While suspended, Tab is not cancelled and focus is not moved by the
+    // trap.
+    rerender(props({ topLayerOpen: true }));
+    const suspendedEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(window.dispatchEvent(suspendedEvent)).toBe(true);
+    expect(suspendedEvent.defaultPrevented).toBe(false);
+    expect(evidence).toHaveFocus();
+
+    // Once the upper layer closes, the trap resumes: Tab is cancelled
+    // (preventDefault) so the browser's native Tab navigation is overridden
+    // by the trap's focus cycling.
+    rerender(props({ topLayerOpen: false }));
+    const resumedEvent = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(resumedEvent);
+    expect(resumedEvent.defaultPrevented).toBe(true);
   });
 
   it("falls back to the stage fallback when the return-focus target was disconnected before unmount", async () => {

@@ -207,6 +207,12 @@
   function handleChallengePointerDown(event: PointerEvent) {
     if (disabled || !crossExam) return;
 
+    // Only the primary button (left) should arm the hold timer. Secondary
+    // (right) and middle buttons never activate a native button, so arming
+    // the 600 ms hold on them would submit a challenge through a path the
+    // browser's own activation semantics reject.
+    if (event.button !== 0) return;
+
     clearChallengeHold();
     clearChallengeClickSuppression();
     heldChallengePointerId = event.pointerId;

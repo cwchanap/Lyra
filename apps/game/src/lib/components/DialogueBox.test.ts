@@ -1564,6 +1564,38 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("does not arm the hold timer for non-primary mouse buttons", async () => {
+    vi.useFakeTimers();
+    try {
+      const onChallenge = vi.fn();
+      renderDialogueBox(
+        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+      );
+      const challenge = screen.getByRole("button", { name: /反駁/ });
+
+      // Right-button (button: 2) pointerdown must not start the hold timer.
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 1,
+        pointerType: "mouse",
+        button: 2,
+      });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(onChallenge).not.toHaveBeenCalled();
+
+      // Middle-button (button: 1) pointerdown must not start it either.
+      await fireEvent.pointerDown(challenge, {
+        pointerId: 2,
+        pointerType: "mouse",
+        button: 1,
+      });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(onChallenge).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fires one challenge after a completed pointer hold and ignores its physical click", async () => {
     vi.useFakeTimers();
     try {
