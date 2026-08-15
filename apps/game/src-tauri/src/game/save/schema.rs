@@ -596,6 +596,7 @@ mod tests {
         assert!(value.get("practiceCardIds").is_none());
     }
 
+    #[test]
     fn representative_current_save_round_trips_typed_semantics_through_the_current_encoder() {
         let save = parse_current_envelope(&current_representative()).unwrap();
 
