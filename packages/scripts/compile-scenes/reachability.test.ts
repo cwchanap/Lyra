@@ -2064,6 +2064,93 @@ describe("positive dependency and base reachability", () => {
     expect(result.reachableNodeKeys).toContain("consumer");
   });
 
+  it("rejects a mandatory grant when an upstream exhaustive one-shot's members have their own non-guaranteed prerequisites", () => {
+    // Negative counterpart to the paired-exhaustive accept case: the upstream
+    // one-shot (pre_event) is structurally must-reachable — pre_x and pre_y
+    // are initially reachable with no strict predecessors, so the trigger is
+    // the scene entry. But pre_x requires atom P (produced only by an
+    // independent optional node) and pre_y requires atom Q (produced only by
+    // another independent optional node). When the player skips both optional
+    // P and Q, the one-shot event still selects a member, yet that member's
+    // nodeMayExecute() fails, so neither X nor Y is produced. The downstream
+    // breakthrough A (requires X) / B (requires Y) then has no satisfiable
+    // granting alternative, soft-locking the required successor. The per-path
+    // enumerator must add a "none" outcome for the upstream dimension when a
+    // member's own prerequisites are not guaranteed, otherwise it falsely
+    // proves the grant guaranteed.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("optional_p", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:P")],
+        }),
+        syntheticNode("optional_q", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:Q")],
+        }),
+        syntheticNode("pre_x", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          implicitPrerequisites: [atomExpression("fact_asserted:P")],
+          effects: [addAtom("fact_asserted:X")],
+        }),
+        syntheticNode("pre_y", {
+          requirement: "optional",
+          oneShotEventId: "pre_event",
+          initiallyReachable: true,
+          implicitPrerequisites: [atomExpression("fact_asserted:Q")],
+          effects: [addAtom("fact_asserted:Y")],
+        }),
+        syntheticNode("entry", {
+          requirement: "mandatory",
+          initiallyReachable: true,
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:X")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["entry"],
+          implicitPrerequisites: [atomExpression("fact_asserted:Y")],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
   it("accepts a mandatory grant when alternative-specific prerequisites are guaranteed by exhaustive alternatives", () => {
     // alt_a requires atom A, which is guaranteed not by a mandatory producer
     // but by exhaustive mutually-exclusive alternatives (pre_alt_a and

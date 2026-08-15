@@ -1761,13 +1761,23 @@ function memberPrerequisitesGuaranteed(
  * when every enumerated scenario has at least one member whose prerequisite
  * atoms all hold.
  *
- * The cross-product is a superset of reachable scenarios, and atom-truth is
- * exact for reachable scenarios (a selected alternative that fires produces its
- * atoms), so a reachable bad path is never missed — the check is sound. Extra
- * unreachable scenarios can only add conservative rejections. The enumeration
- * is bounded to the grant group members' prerequisite atoms; the cross-product
- * is capped, falling back to the conservative {@link memberPrerequisitesGuaranteed}
- * when exceeded so the analysis never blows up.
+ * The cross-product is a superset of reachable scenarios. Atom-truth is exact
+ * for reachable scenarios in two senses: a selected alternative that fires
+ * produces its atoms, and a selected alternative whose own prerequisites are
+ * absent produces nothing (modeled as a "none" outcome, see below). A reachable
+ * bad path is therefore never missed — the check is sound. Extra unreachable
+ * scenarios can only add conservative rejections. The enumeration is bounded to
+ * the grant group members' prerequisite atoms; the cross-product is capped,
+ * falling back to the conservative {@link memberPrerequisitesGuaranteed} when
+ * exceeded so the analysis never blows up.
+ *
+ * Soundness caveat for upstream one-shot dimensions: a member outcome is only
+ * reachable when that member's own prerequisite atoms hold. When a member's
+ * prerequisites are not globally guaranteed, the dimension includes a "none"
+ * outcome (the selected member may fail to execute) rather than modeling the
+ * conditional dependency inline. This is conservative — it can reject content
+ * where the member's prerequisites are actually supplied on every path that
+ * selects it — but it is sound and avoids a second reachability engine.
  */
 function grantGroupGuaranteedPerPath(
   memberKeys: readonly string[],
@@ -1856,6 +1866,34 @@ function grantGroupGuaranteedPerPath(
       // must-reachable can be skipped, so none of its atoms are produced.
       if (!groupTriggerStructurallyMustReachable(mayReachableMembers, input)) {
         outcomes.push({ heldAtoms: new Set() });
+      } else {
+        // The trigger is structurally must-reachable, but a selected member
+        // still only fires when its own prerequisite atoms hold — the real
+        // solver applies the one-shot selection and then calls nodeMayExecute,
+        // so a member whose prerequisite is absent produces nothing. When any
+        // may-reachable member's own prerequisites (condition predicates plus
+        // implicitPrerequisites) are not globally guaranteed, there is a
+        // reachable path where the selected member cannot execute and the
+        // event produces no atoms. Model that with a "none" outcome so the
+        // downstream grant is not falsely proven guaranteed. This is
+        // deliberately conservative: it does not try to correlate a member's
+        // prerequisites with the cross-product dimensions (that would require
+        // a second reachability engine); it only adds the empty outcome when
+        // execution is not certain.
+        const anyMemberUnguaranteed = mayReachableMembers.some((key) => {
+          const node = input.nodesByKey.get(key);
+          if (!node) return false;
+          const requiredAtoms = unique(
+            [
+              ...requiredExpressionPredicates(node.condition),
+              ...node.implicitPrerequisites,
+            ].map((predicate) => predicate.atom),
+          );
+          return requiredAtoms.some((atom) => !atomIsGuaranteed(atom, input));
+        });
+        if (anyMemberUnguaranteed) {
+          outcomes.push({ heldAtoms: new Set() });
+        }
       }
     } else {
       // A lone producer of a non-guaranteed atom is optional / may-reachable
