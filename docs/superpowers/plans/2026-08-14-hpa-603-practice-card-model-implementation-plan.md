@@ -1,30 +1,32 @@
 # HPA-603 Practice-Card Model Consolidation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Implement task-by-task and keep the scope narrow.
 
-**Goal:** Make Practice cards consistently authored-static at runtime while preserving the existing Investigation → Analysis contextual binding as a compiler-only authoring contract.
+**Goal:** Make Practice cards authored-static at runtime, preserve one-to-one Investigation → Analysis context binding, and guarantee that the bound tutorial interaction is actually completed before the predecessor exits.
 
-**Architecture:** Remove the dead Investigation Practice set and its save field, keep `RevealTarget::Practice` as an explicit runtime no-op, and stop compiler reachability from treating Practice as a progress atom. Preserve the dedicated one-to-one Practice binding validator and immediate Investigation → Analysis adjacency rule. Evidence/Statement Analysis availability remains unchanged.
+**Architecture:** Delete dead Practice acquisition/save state; keep `RevealTarget::Practice` as a runtime no-op; remove Practice atoms from reachability; extend the existing `validatePracticeCardBindings` pass with one small guaranteed-context rule. Do not restore acquisition, add `mustAtoms`, or create a new validator/reachability subsystem.
 
-**Tech Stack:** Rust/Tauri game runtime and persistence, TypeScript scene compiler/validator/reachability, Vitest, Bun.
-
-## Global Constraints
-
-- Practice is authored-static Analysis material; do not restore Analysis-side acquisition state.
-- `practice:<id>` Investigation markers remain legal authored syntax and compile-time context bindings.
-- Practice markers never enter Case File, `StoryState`, or save progression.
-- Evidence/Statement Analysis cards remain inventory/reachability gated.
-- Keep the existing one-to-one Practice binding validator and Investigation → Analysis adjacency rule.
-- No save migration/V2 DTO/backward-compatibility shim.
-- No Practice-specific `mustAtoms` rule or broader may-vs-must redesign.
-- No new E2E suite, renderer registry, parser family, or Chapter 2 abstraction.
-- Keep production Chapter 1 P1 content unchanged.
+**Tech Stack:** Rust/Tauri runtime + save model, TypeScript scene compiler/validator/reachability, Vitest, Bun.
 
 **Design:** `docs/superpowers/specs/2026-08-14-hpa-603-practice-card-model-design.md`
 
+## Global constraints
+
+- Practice is authored-static Analysis material.
+- `practice:<id>` is a compile-time context marker, not inventory or StoryState.
+- Keep the existing Practice wire variant and one-to-one binding validator.
+- Keep direct Investigation → Analysis adjacency.
+- A valid Practice marker must be on an initially-unlocked hotspot/topic under an initially-unlocked sublocation, and its Investigation predecessor must use an auto outro.
+- Reject Practice markers on sublocation entry, locked carriers/parents, or expression-gated predecessors in HPA-603.
+- Evidence/Statement Analysis gating remains unchanged.
+- No save migration/V2 DTO/compatibility shim.
+- No Practice-specific `mustAtoms`, new reachability pass, or second validator pass.
+- No new E2E suite, parser family, registry, or Chapter 2 abstraction.
+- Keep production Chapter 1 P1 content unchanged.
+
 ---
 
-### Task 1: Remove dead runtime and save Practice acquisition state
+## Task 1: Remove dead runtime and save Practice acquisition state
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/scenes/investigation.rs`
@@ -34,15 +36,10 @@
 - Modify: `apps/game/src-tauri/src/game/save/restore.rs`
 - Modify: `apps/game/src-tauri/src/game/save/storage.rs`
 - Modify: `apps/game/src-tauri/src/game/navigation.rs`
-- Test: existing Rust tests in those modules
 
-**Interfaces:**
-- Consumes: current `RevealTarget::Practice` wire variant and current authored-static `AnalysisCardSource::Practice` behavior.
-- Produces: Investigation runtime/save state with no Practice acquisition field; Practice reveal execution as an explicit no-op; navigation test language matching authored-static availability.
+### Step 1: Add a semantic red save-wire test
 
-- [ ] **Step 1: Write a semantic red test for the save wire**
-
-In the existing save-schema test module, serialize the **current pre-change** Investigation snapshot including the field that exists on `main`:
+In the existing save-schema test module, construct the **current pre-change** Investigation snapshot including `practice_card_ids` and assert that serialized JSON does not contain `practiceCardIds`:
 
 ```rust
 let value = serde_json::to_value(SceneProgressSnapshot::Investigation {
@@ -60,32 +57,30 @@ let value = serde_json::to_value(SceneProgressSnapshot::Investigation {
 assert!(value.get("practiceCardIds").is_none());
 ```
 
-This is deliberately different from constructing the post-change enum shape. The test must compile on current `main` and fail on the assertion because `practiceCardIds: []` is currently serialized.
-
 Run:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::schema
 ```
 
-Expected: FAIL because `practiceCardIds` is present in the serialized object.
+Expected: **FAIL semantically**, because the current DTO emits `practiceCardIds: []`. The test must compile before implementation.
 
-- [ ] **Step 2: Remove `InvestigationSceneState` Practice acquisition state**
+### Step 2: Delete Investigation Practice state
 
-In `apps/game/src-tauri/src/game/scenes/investigation.rs`:
+In `scenes/investigation.rs`:
 
-- remove `BTreeSet` from the import if no longer needed;
-- remove `InvestigationSceneState.practice_card_ids`;
-- remove its `from_json` initialization;
+- remove `practice_card_ids` from `InvestigationSceneState`;
+- remove its initialization;
 - remove `record_practice_card()`;
-- remove the stale comment claiming Practice cards are copied to the next Analysis scene;
-- update the module's test struct literals to the smaller state shape.
+- remove now-unused `BTreeSet` import if applicable;
+- update all local test struct literals;
+- remove stale comments about copying Practice cards to Analysis.
 
-Do **not** add a replacement field in Analysis, `StoryState`, inventory, or navigation.
+Do not add replacement state anywhere else.
 
-- [ ] **Step 3: Make Practice reveal execution an explicit no-op**
+### Step 3: Make Practice reveal handling an explicit no-op
 
-In `apps/game/src-tauri/src/game/reveals.rs`, replace:
+In `reveals.rs`, replace the current writer:
 
 ```rust
 RevealTarget::Practice { id } => {
@@ -93,46 +88,51 @@ RevealTarget::Practice { id } => {
 }
 ```
 
-with:
+with an explicit no-op:
 
 ```rust
 RevealTarget::Practice { .. } => {
-    // Compiler-only contextual binding for the immediately following
-    // Analysis Practice card. Practice availability is authored-static.
+    // Compiler-only context marker for the immediately following
+    // authored-static Analysis Practice card.
 }
 ```
 
-Do not route it through `AcquisitionCtx` or `StoryState`.
+Do not route Practice through `AcquisitionCtx`, inventory, Case File, `StoryState`, or save state.
 
-- [ ] **Step 4: Remove Practice IDs from every current save snapshot construction**
+### Step 4: Remove every current-format `practice_card_ids` construction/pattern
 
-In `apps/game/src-tauri/src/game/save/schema.rs`, remove:
+Update all known baseline occurrences, including test literals rather than relying on the final grep to discover compile failures:
 
-```rust
-#[serde(default)]
-practice_card_ids: Vec<String>,
-```
+- `scenes/investigation.rs`
+  - state field;
+  - initialization;
+  - `record_practice_card()`;
+  - local test literal(s).
+- `reveals.rs`
+  - Practice writer call.
+- `save/schema.rs`
+  - `SceneProgressSnapshot::Investigation.practice_card_ids`.
+- `save/capture.rs`
+  - production snapshot capture;
+  - expected `SceneProgressSnapshot::Investigation` test literal around the existing capture round-trip/assertion.
+- `save/restore.rs`
+  - Investigation pattern binding;
+  - assignment back into scene state;
+  - test snapshot literal used by rejection/restore tests.
+- `save/storage.rs`
+  - discovery/load test snapshot literal.
 
-from `SceneProgressSnapshot::Investigation`.
-
-Then update every known current-format construction/pattern:
-
-- `save/capture.rs`: remove `practice_card_ids: scene.practice_card_ids.iter().cloned().collect()`;
-- `save/restore.rs`: remove `practice_card_ids` from the Investigation pattern and remove the state assignment;
-- `save/storage.rs`: remove `practice_card_ids: Vec::new()` from the discovery/load test fixture;
-- `scenes/investigation.rs`: remove the field from local test literals.
-
-After deleting the enum field, update the Step 1 test constructor to the smaller post-change shape while keeping:
+After deleting the field, update Step 1's test constructor to the smaller post-change variant but keep:
 
 ```rust
 assert!(value.get("practiceCardIds").is_none());
 ```
 
-Do not add a migration, compatibility alias, `skip_serializing`, V2 snapshot, or repair path.
+Do not add `serde(alias)`, `skip_serializing`, a V2 sibling DTO, migration, or repair path. Old local dev saves may fail loudly because the current DTO uses `deny_unknown_fields`.
 
-- [ ] **Step 5: Rename the stale navigation transfer test**
+### Step 5: Rename stale navigation transfer semantics
 
-In `apps/game/src-tauri/src/game/navigation.rs`, rename:
+Rename:
 
 ```text
 direct_investigation_to_analysis_transfers_revealed_card_and_accepts_submission
@@ -144,25 +144,11 @@ to:
 direct_investigation_to_analysis_accepts_authored_static_practice_card
 ```
 
-Keep its behavior: inspect the tutorial hotspot, advance into Analysis, select the authored Practice card, and submit successfully.
+Keep its behavioral path unchanged: inspect the tutorial hotspot, enter Analysis, select the Practice card, submit successfully.
 
-Reword expectation strings such as:
+Reword assertion text such as “transferred practice card” to “authored practice card”. Do not inspect or recreate a transferred ID set.
 
-```text
-"the transferred practice card should be selectable"
-```
-
-to authored-static language such as:
-
-```text
-"the authored practice card should be selectable"
-```
-
-This test must not inspect a transferred ID set because no such state exists after this task.
-
-- [ ] **Step 6: Run focused Rust tests**
-
-Run:
+### Step 6: Run focused Rust tests
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml save::schema
@@ -173,11 +159,9 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml direct_investigation_t
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml scenes::analysis
 ```
 
-Expected: PASS, including `validate_draft_availability_accepts_practice_cards_without_inventory`.
+Expected: PASS, including the existing Practice-without-inventory Analysis availability test.
 
-- [ ] **Step 7: Verify no Rust-side dead state literal remains**
-
-Run:
+### Step 7: Exhaustive dead-state guard
 
 ```bash
 rg "practice_card_ids|record_practice_card" apps/game/src-tauri/src/game
@@ -185,7 +169,7 @@ rg "practice_card_ids|record_practice_card" apps/game/src-tauri/src/game
 
 Expected: no matches.
 
-- [ ] **Step 8: Commit**
+### Step 8: Commit
 
 ```bash
 git add \
@@ -201,19 +185,15 @@ git commit -m "fix: remove dead practice-card runtime state"
 
 ---
 
-### Task 2: Align compiler reachability with authored-static Practice cards
+## Task 2: Align compiler reachability with authored-static Practice cards
 
 **Files:**
 - Modify: `packages/scripts/compile-scenes/reachability.ts`
 - Modify: `packages/scripts/compile-scenes/reachability.test.ts`
 
-**Interfaces:**
-- Consumes: normalized Analysis scenes and existing Practice binding validation.
-- Produces: no Practice reachability effects/prerequisites; unchanged Evidence/Statement reachability gating.
+### Step 1: Replace the stale Investigation Practice reachability expectation
 
-- [ ] **Step 1: Replace the Investigation-side stale Practice reachability expectation**
-
-In `packages/scripts/compile-scenes/reachability.test.ts`, replace the current test named:
+Replace the existing test:
 
 ```text
 models P1-local practice reveals as analysis prerequisites
@@ -225,17 +205,7 @@ with:
 treats P1-local practice reveals as contextual markers without reachability effects
 ```
 
-Keep the same Investigation fixture and change the expected hotspot effects to only the hotspot-completion atom:
-
-```ts
-expect(nodes[1]!.effects).toEqual([
-  {
-    kind: "addAtom",
-    atom: "hotspot:chapter_1@investigation_scene_1@receipt",
-    targetIndex: -1,
-  },
-]);
-```
+Keep the same Investigation fixture and change the hotspot effect expectation so it contains only the hotspot-completion atom, not `practice:p1_receipt_reprint`.
 
 Run:
 
@@ -243,17 +213,25 @@ Run:
 bunx vitest run packages/scripts/compile-scenes/reachability.test.ts
 ```
 
-Expected: FAIL because `effectsFromInvestigationReveals` still emits `practice:p1_receipt_reprint`.
+Expected: FAIL because `effectsFromInvestigationReveals` still emits the Practice atom.
 
-- [ ] **Step 2: Add a Practice-only Analysis test through the real normalized Analysis path**
+### Step 2: Add an inline-source Practice-only classify fixture through the real Analysis path
 
-Do **not** use the local `buildNodes(chapters, scenes)` helper for this assertion; it supplies an empty Analysis registry and cannot create Analysis board nodes.
+Do **not** use `buildNodes(chapters, scenes)`; it supplies an empty Analysis registry and cannot produce Analysis board nodes.
 
-Add a small `practiceAnalysisFixture()` beside `analysisChapterFixture()` that follows the same pipeline:
+Do **not** add fixture files for this test. Keep the source inline in `reachability.test.ts` so the test cost stays local.
+
+Add a helper such as `practiceAnalysisFixture()` beside `analysisChapterFixture()` using inline Markdown strings:
+
+- minimal Investigation source with one initially-unlocked hotspot and `Reveals: [practice:p1_context]`;
+- minimal Practice-only **classify** Analysis source with one `practice:p1_context` card and one accepted group;
+- no threshold board, so provenance-neutrality rules are irrelevant to this reachability test.
+
+Run the same normalized pipeline used by production Analysis tests:
 
 ```text
-parse Investigation source with one practice:p1_context marker
-parse Practice-only Analysis source
+parseInvestigationScene(inline source)
+parseAnalysisScene(inline source)
 -> createAnalysisDefinitionRegistryFromScenes(analysisScenes)
 -> compileCaseRecordCorpus(catalog, scenes)
 -> validateAnalysisScenes(...)
@@ -267,31 +245,21 @@ parse Practice-only Analysis source
    })
 ```
 
-Use a valid **Practice-only classify board** (or Practice-only threshold with neutral provenance requirements). Do not mix Practice and Case File cards.
+The matching Investigation marker is present for realism, but note in the test/helper comment that `validatePracticeCardBindings` is **not** part of this reachability-unit path; the assertion is specifically about Analysis node prerequisites.
 
-The preceding Investigation must contain exactly one matching:
-
-```markdown
-- **Reveals:** [practice:p1_context]
-```
-
-The Analysis scene must contain one card:
-
-```markdown
-- **Source:** practice:p1_context
-```
-
-Find the resulting Analysis board node and assert:
+Find the Practice board node and assert:
 
 ```ts
 expect(practiceBoard.implicitPrerequisites).toEqual([]);
 ```
 
-Expected before implementation: FAIL because `buildAnalysisNodes` currently creates `practice:p1_context` as an implicit prerequisite.
+Expected before implementation: FAIL because `buildAnalysisNodes` currently adds `practice:p1_context`.
 
-- [ ] **Step 3: Pin Evidence/Statement gating through the existing Analysis fixture**
+### Step 3: Pin Evidence/Statement gating with the existing real fixture
 
-Use the existing `analysisChapterFixture()` rather than inventing a mixed threshold. It already runs the full normalized Analysis path and its `narrow_request_basis` threshold contains:
+Reuse `analysisChapterFixture()` and its existing Case File board `narrow_request_basis`.
+
+Assert that its prerequisites still contain:
 
 ```text
 evidence:lock_sequence
@@ -299,23 +267,11 @@ evidence:phone_notification
 statement:manager_timing
 ```
 
-Find the `board:narrow_request_basis` node and assert its implicit prerequisite atoms contain exactly those Case File sources (order-normalized in the test as appropriate):
+This assertion must be green before and after the change. It is a regression guard for the filtering edit, not a new red test.
 
-```ts
-expect(
-  narrowRequest.implicitPrerequisites.map((predicate) => predicate.atom).sort(),
-).toEqual([
-  "evidence:lock_sequence",
-  "evidence:phone_notification",
-  "statement:manager_timing",
-]);
-```
+### Step 4: Stop Practice reveals from producing reachability atoms
 
-This assertion must stay green before and after the implementation. It guards against accidentally removing Evidence/Statement gating while filtering Practice.
-
-- [ ] **Step 4: Stop Practice reveals from producing reachability atoms**
-
-In `effectsFromInvestigationReveals`, split Practice from Evidence/Statement:
+In `effectsFromInvestigationReveals`:
 
 ```ts
 case "evidence":
@@ -325,13 +281,11 @@ case "practice":
   return [];
 ```
 
-Add a short comment that Practice is validated by `validatePracticeCardBindings` and is not runtime progress.
+Leave `inboundTargetsFromInvestigationReveals` unchanged; it already ignores Practice.
 
-Leave `inboundTargetsFromInvestigationReveals` unchanged; it already returns `[]` for Practice.
+### Step 5: Stop Practice cards from requiring reachability atoms
 
-- [ ] **Step 5: Stop Practice cards from requiring reachability atoms**
-
-In `buildAnalysisNodes`, filter the implicit card prerequisites:
+In `buildAnalysisNodes`, filter Practice sources from implicit prerequisites while preserving Evidence/Statement exactly:
 
 ```ts
 implicitPrerequisites: uniquePredicates(
@@ -348,11 +302,7 @@ implicitPrerequisites: uniquePredicates(
 ),
 ```
 
-Do not change the emitted prerequisite shape for Evidence or Statement.
-
-- [ ] **Step 6: Run focused compiler tests**
-
-Run:
+### Step 6: Run focused compiler tests
 
 ```bash
 bunx vitest run packages/scripts/compile-scenes/reachability.test.ts
@@ -361,7 +311,7 @@ bun run test:scripts
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+### Step 7: Commit
 
 ```bash
 git add \
@@ -372,7 +322,7 @@ git commit -m "fix: align practice cards with static reachability"
 
 ---
 
-### Task 3: Clarify the binding contract where both sides are authored
+## Task 3: Enforce guaranteed tutorial context and clarify binding language
 
 **Files:**
 - Modify: `packages/scripts/compile-scenes/validator.ts`
@@ -382,33 +332,30 @@ git commit -m "fix: align practice cards with static reachability"
 - Modify: `.claude/skills/writing-investigation-scene/SKILL.md`
 - Modify: `.claude/skills/writing-analysis-scene/SKILL.md`
 
-**Interfaces:**
-- Consumes: unchanged `practice:<id>` parser/wire syntax and immediate predecessor relationship.
-- Produces: one consistent authoring contract: Investigation marker ↔ immediately following Analysis Practice source, with no acquisition language.
+### Step 1: Add a real behavioral red test for non-guaranteed Practice context
 
-- [ ] **Step 1: Pin binding semantics in validator tests**
+Do **not** add tests that pin exact diagnostic prose. Existing Practice tests correctly assert diagnostic codes/IDs; keep that style.
 
-Keep the existing diagnostic codes so downstream tooling does not churn:
+Add a table-driven validator test around the existing `mkInvestigationScene()` helper. Use a bound Practice card in the immediately following Analysis scene, then vary only the predecessor context.
 
-- `practiceCardSourceDuplicate`
-- `practiceCardSourceUnbound`
-- `practiceRevealUnbound`
-
-Update focused message assertions so diagnostics describe contextual binding rather than runtime collection.
-
-The tests must continue to reject:
-
-1. a Practice card with no predecessor marker;
-2. the same marker ID authored more than once for the next Analysis board;
-3. a predecessor marker with no Practice card in the immediately following Analysis scene.
-
-For the missing-marker diagnostic, assert wording equivalent to:
+Reject these cases with a focused code such as:
 
 ```text
-Practice card "p1_context" must be bound exactly once by a practice:p1_context marker in the immediately preceding investigation scene.
+practiceRevealContextNotGuaranteed
 ```
 
-For duplicate markers, assert that the message says the card is bound more than once, not “revealed/collected” more than once.
+Cases:
+
+1. Practice marker on a hotspot with `Status: locked`;
+2. Practice marker on an unlocked hotspot whose parent sublocation is `Status: locked`;
+3. Practice marker on sublocation `Reveals:` itself;
+4. Practice marker on an otherwise valid unlocked hotspot, but predecessor `outro.unlock` is an expression rather than `auto`.
+
+Also keep/add one valid control:
+
+- Practice marker on an initially-unlocked hotspot under an initially-unlocked sublocation with auto outro → no `practiceRevealContextNotGuaranteed`.
+
+A topic case does not need a separate exhaustive suite if implementation shares the same carrier-status path, but add one if the helper makes it cheap.
 
 Run:
 
@@ -416,23 +363,75 @@ Run:
 bunx vitest run packages/scripts/compile-scenes/validator.test.ts
 ```
 
-Expected: FAIL only on the new wording assertions; structural behavior is already present.
+Expected: invalid cases FAIL before implementation because current binding validation checks ID/adjacency only.
 
-- [ ] **Step 2: Rewrite `validatePracticeCardBindings` language without adding another pass**
+### Step 2: Extend `forEachPracticeReveal` instead of adding another pass
 
-In `packages/scripts/compile-scenes/validator.ts`:
+Keep `validatePracticeCardBindings` as the sole Practice validator.
 
-- change the function comment from “bridge/collection” semantics to “compile-time context binding” semantics;
-- rename local `collected` / `collectors` variables to `bindings` / `markers` (or equivalent) so implementation names do not preserve the rejected model;
-- change messages such as “must be revealed exactly once” to “must be bound exactly once by a matching `practice:<id>` marker in the immediately preceding investigation”;
-- replace “collection source” with “context marker/binding”;
-- keep the same maps, manifest adjacency lookup, and one-to-one validation flow.
+Extend the visitor metadata from only `{ sourceFile, line }` to enough carrier context, for example:
 
-Do not add `mustAtoms`, another validator pass, or runtime-path checks.
+```ts
+type PracticeRevealLocation = {
+  sourceFile: string;
+  line: number;
+  carrierKind: "sublocation" | "hotspot" | "topic";
+  carrierInitiallyUnlocked: boolean;
+  parentSublocationInitiallyUnlocked: boolean;
+};
+```
 
-- [ ] **Step 3: Reword the end-to-end compiler binding test**
+Populate it while walking the existing AST:
 
-In `packages/scripts/compile-scenes.test.ts`, rename:
+- sublocation marker: `carrierKind = "sublocation"`;
+- hotspot marker: carrier status from hotspot, parent status from sublocation;
+- topic marker: carrier status from topic, parent status from sublocation.
+
+Do not invoke reachability or construct a second traversal.
+
+### Step 3: Reject Practice bindings that cannot be guaranteed by auto completion
+
+Inside the existing Practice binding validation flow, a marker is guaranteed only when:
+
+```text
+scene.outro.unlock === "auto"
+AND carrierKind is hotspot or topic
+AND carrierInitiallyUnlocked
+AND parentSublocationInitiallyUnlocked
+```
+
+If the marker is otherwise correctly bound but fails this rule, emit `practiceRevealContextNotGuaranteed` at the marker location.
+
+Why the rule is this narrow:
+
+- auto outro only requires currently-unlocked hotspots/topics;
+- it skips locked sublocations entirely;
+- it does not independently require sublocation entry;
+- expression-gated outros may exit before unrelated unlocked interactions are completed.
+
+Do not generalize this into conditional-carrier proof. A future story need can expand the contract later.
+
+### Step 4: Reword implementation names/comments without prose-pinning tests
+
+In `validatePracticeCardBindings`:
+
+- rename `collected` / `collectors` to `bindings` / `markers` (or equivalent);
+- rewrite comments from collection/bridge language to compile-time context binding;
+- reword diagnostic messages away from “collected/revealed before Analysis” toward “bound by a matching `practice:` marker”.
+
+Keep existing codes:
+
+- `practiceCardSourceDuplicate`
+- `practiceCardSourceUnbound`
+- `practiceRevealUnbound`
+
+Add only the new behavioral context-guarantee code above.
+
+Do **not** assert exact wording in `validator.test.ts`. Message wording remains free to improve without breaking behavioral tests.
+
+### Step 5: Reword the end-to-end compiler test, preserving its code assertion
+
+Rename:
 
 ```text
 rejects a practice card that is not collected by its owning tutorial
@@ -444,7 +443,9 @@ to:
 rejects a practice card without an immediate predecessor binding
 ```
 
-Reword its comment and fixture summary away from “tutorial collection”, “owning tutorial”, and “Prologue Notebook” acquisition semantics. Preserve the actual assertion:
+Rewrite fixture comments/player summary away from “collection source”, “owning tutorial”, and “Prologue Notebook” acquisition semantics.
+
+Keep the actual behavioral assertion:
 
 ```ts
 expect(result.errors.map((error) => error.code)).toContain(
@@ -452,62 +453,54 @@ expect(result.errors.map((error) => error.code)).toContain(
 );
 ```
 
-The test remains a compile-time authoring-contract test; do not turn it into a runtime availability test.
+### Step 6: Correct the Rust wire comment
 
-- [ ] **Step 4: Correct the Rust schema comment**
+In `apps/game/src-tauri/src/game/schema.rs`, document `RevealTarget::Practice` as:
 
-Update the `RevealTarget::Practice` comment in `apps/game/src-tauri/src/game/schema.rs` to state:
-
-- tutorial-only;
+- tutorial-only context marker;
 - never Case File inventory;
-- compiler validates its exact immediate predecessor binding;
-- runtime reveal handling is a no-op because the following Analysis card is authored-static.
+- compiler-bound to the immediately following Analysis Practice source;
+- guaranteed by the predecessor authoring rule;
+- runtime reveal handling is a no-op because Analysis availability is authored-static.
 
-Do not remove the wire variant in HPA-603.
+Do not remove the wire variant.
 
-- [ ] **Step 5: Update the Investigation authoring skill**
+### Step 7: Update the Investigation authoring skill
 
-In `.claude/skills/writing-investigation-scene/SKILL.md`, update all relevant author/parser guidance, not only one example:
+In `.claude/skills/writing-investigation-scene/SKILL.md`, update all relevant guidance:
 
-1. In the top author/parser-facing prefix list, add `practice:` as a legal special marker while keeping the five ordinary local target kinds distinct.
-2. In `Reveal / unlock syntax`, change “A list of things this trigger collects/unlocks” to language that also permits context markers.
-3. Add a reveal-table row:
+- add `practice:` as a legal **special** marker distinct from the five ordinary same-file reveal targets;
+- change generic “collects/unlocks” wording so a reveal list may also contain a Practice context marker;
+- add a `practice:<id>` reveal-table row explaining no inventory/StoryState/On Collect/On Acquire effect;
+- exclude Practice from the “all local reveals resolve in this same scene file” rule;
+- state the exact guaranteed-context contract:
+  - predecessor outro must be auto;
+  - marker must be on an initially-unlocked hotspot/topic;
+  - parent sublocation must be initially unlocked;
+  - Practice marker on sublocation entry is not supported by the current contract;
+- keep Evidence/Statement/topic/hotspot/sublocation semantics unchanged.
 
-```text
-practice:<id> | Compile-time context marker for a Practice card in the immediately following Analysis scene. No inventory/StoryState acquisition and no On Collect/On Acquire dialogue.
-```
+### Step 8: Update the Analysis authoring skill
 
-4. In `ID namespace rules`, keep the five ordinary local kinds on the same-file rule and add an explicit Practice exception:
-
-```text
-practice:<id> does not resolve in the Investigation file. The compiler binds it to a Practice card source in the immediately following Analysis scene.
-```
-
-5. In parser-validation guarantees, describe the immediate predecessor/next Analysis binding instead of implying every reveal resolves inside the same Investigation JSON.
-
-Do not change Evidence/Statement/topic/hotspot/sublocation behavior.
-
-- [ ] **Step 6: Update every stale Practice sentence in the Analysis authoring skill**
-
-In `.claude/skills/writing-analysis-scene/SKILL.md`, search the whole file for:
+Search the full file for stale Practice acquisition language:
 
 ```bash
-rg -n "practice|revealed|collected|collection|owning tutorial|transfer" .claude/skills/writing-analysis-scene/SKILL.md
+rg -n "practice|revealed|collected|collection|owning tutorial|transfer" \
+  .claude/skills/writing-analysis-scene/SKILL.md
 ```
 
-Rewrite every Practice-specific sentence that carries acquisition semantics. In particular:
+Rewrite every Practice-specific stale sentence. The skill must say:
 
-- the `Practice-card binding and threshold provenance` section must say each `practice:<id>` **source is context-bound exactly once** by the immediately preceding Investigation marker;
-- “Tell the writer ... reveal locations” becomes “binding marker locations”;
-- the self-check must say every Practice card is **bound exactly once**, not “revealed exactly once”;
-- keep threshold no-mixing/provenance-neutral rules unchanged;
-- state explicitly that Practice cards are available when their board is available and the marker is not a runtime gate.
+- Practice cards are authored-static tutorial cards;
+- each source is context-bound exactly once by the immediately preceding Investigation marker;
+- the marker must satisfy the auto/unlocked guaranteed-context rule;
+- the marker is not a runtime availability gate;
+- Practice cards are available whenever their board is available;
+- threshold no-mixing/provenance-neutral rules remain unchanged.
 
 `.agents/skills` is a symlink to `.claude/skills`; edit only `.claude/skills`.
 
-- [ ] **Step 7: Run focused compiler/skill and production content checks**
-
-Run:
+### Step 9: Run focused validator/compiler/content checks
 
 ```bash
 bunx vitest run packages/scripts/compile-scenes/validator.test.ts
@@ -516,9 +509,13 @@ bun run scenes:compile
 bun run test:scripts
 ```
 
-Expected: PASS with `docs/stories_plan/chapter_1/investigation_scene_p1.md` and `analysis_scene_p1_5.md` unchanged.
+Expected:
 
-- [ ] **Step 8: Commit**
+- new invalid context cases are rejected;
+- existing binding tests still pass by code/structure, without prose-pinning;
+- production `investigation_scene_p1.md` + `analysis_scene_p1_5.md` compile unchanged because all current Practice markers are unlocked hotspots under an unlocked sublocation and the predecessor outro is auto.
+
+### Step 10: Commit
 
 ```bash
 git add \
@@ -528,24 +525,14 @@ git add \
   apps/game/src-tauri/src/game/schema.rs \
   .claude/skills/writing-investigation-scene/SKILL.md \
   .claude/skills/writing-analysis-scene/SKILL.md
-git commit -m "docs: clarify practice-card binding semantics"
+git commit -m "fix: guarantee practice-card tutorial context"
 ```
 
 ---
 
-### Task 4: Verify the consolidated model
+## Task 4: Verify the consolidated model
 
-**Files:**
-- No additional product files expected.
-- Linear: HPA-603 and already-canceled HPA-601.
-
-**Interfaces:**
-- Consumes: Tasks 1–3.
-- Produces: verified HPA-603 implementation with HPA-601 remaining obsolete.
-
-- [ ] **Step 1: Verify no dead Practice acquisition state remains**
-
-Run:
+### Step 1: Verify dead runtime acquisition state is gone
 
 ```bash
 rg "practice_card_ids|record_practice_card" apps/game/src-tauri/src/game
@@ -553,7 +540,7 @@ rg "practice_card_ids|record_practice_card" apps/game/src-tauri/src/game
 
 Expected: no matches.
 
-Check the remaining Practice semantics:
+### Step 2: Verify remaining Practice language and semantics
 
 ```bash
 rg -n 'Practice|practice' \
@@ -568,14 +555,12 @@ rg -n 'Practice|practice' \
 
 Expected:
 
-- Analysis availability still says Practice is always available;
-- reveal handler has one explicit no-op;
-- schema/compiler/skills describe contextual binding;
-- reachability does not produce or require `practice:<id>` progress atoms.
+- Analysis Practice availability is still authored-static;
+- runtime reveal handler is a no-op;
+- validator/skills describe binding + guaranteed context;
+- reachability has no Practice progress atom/prerequisite path.
 
-- [ ] **Step 2: Run repository verification floor**
-
-Run:
+### Step 3: Run repository verification floor
 
 ```bash
 bun run scenes:compile
@@ -586,37 +571,37 @@ bun run lint:all
 bun run test
 ```
 
-Do not add a new HPA-603 packaged E2E suite. If an existing Chapter 1 E2E runs as part of normal repository policy, let it run through the existing command; HPA-265 already owns the packaged Analysis journey.
+Do not add a new HPA-603 packaged E2E suite. If an existing Chapter 1 E2E is part of normal repository commands, let it run through that existing policy.
 
-Expected: all commands pass.
+### Step 4: Confirm HPA-601 remains canceled
 
-- [ ] **Step 3: Confirm HPA-601 remains superseded**
+HPA-601 remains obsolete because Practice is not a runtime acquisition gate. Do not reopen it and do not implement its Practice-specific `mustAtoms` proposal.
 
-HPA-601 has already been canceled during planning because its premise depends on Practice acquisition gating. Verify it remains Canceled and related to HPA-603.
+Document in Linear that HPA-603 now carries a narrower authoring-coherence guard: bound Practice context must be guaranteed by auto + initially-unlocked hotspot/topic semantics.
 
-Do not reopen it and do not implement its proposed Practice-specific `mustAtoms` validation.
+### Step 5: Final implementation commit only if verification exposes a real regression
 
-- [ ] **Step 4: Final implementation commit only if verification required fixes**
-
-If verification exposes a real HPA-603 regression, fix only that regression and commit the touched files explicitly. Do not create a no-op/empty verification commit.
+Fix only HPA-603 regressions discovered by verification. Do not create an empty verification commit.
 
 ---
 
 ## Final acceptance checklist
 
-- [ ] One Practice model exists: authored-static runtime + compiler contextual binding.
-- [ ] `InvestigationSceneState` has no Practice acquisition state.
-- [ ] Investigation save snapshots/storage fixtures have no Practice IDs.
-- [ ] `RevealTarget::Practice` is an explicit no-op at runtime.
-- [ ] Analysis Practice availability remains always true.
-- [ ] the direct Investigation → Analysis test describes authored-static availability, not transfer.
-- [ ] compiler reachability neither produces nor requires Practice atoms.
-- [ ] Practice-only Analysis has no Practice prerequisite through the real normalized Analysis path.
-- [ ] Evidence/Statement Analysis prerequisites remain reachability-gated through the same real path.
-- [ ] `validatePracticeCardBindings` still enforces exact immediate-predecessor context binding.
-- [ ] validator and compile-integration wording no longer encode collection/acquisition semantics.
-- [ ] Investigation and Analysis authoring skills describe one consistent binding contract.
-- [ ] Chapter 1 P1 source files require no rewrite.
-- [ ] no save migration or compatibility layer is introduced.
-- [ ] no new E2E suite, validator pass, Practice must-path rule, or Analysis subsystem is introduced.
-- [ ] HPA-601 remains retired as obsolete.
+- [ ] Practice availability is authored-static; no runtime acquisition gate exists.
+- [ ] `InvestigationSceneState` has no Practice acquisition set/method.
+- [ ] current save DTO/capture/restore/storage/test literals contain no Practice IDs.
+- [ ] `RevealTarget::Practice` remains on the wire and is an explicit runtime no-op.
+- [ ] navigation test language describes authored-static availability, not transfer.
+- [ ] `validatePracticeCardBindings` remains the single Practice validator.
+- [ ] one-to-one immediate predecessor binding remains strict.
+- [ ] Practice marker context is guaranteed: auto outro + unlocked hotspot/topic + unlocked parent sublocation.
+- [ ] expression-outro, locked carrier/parent, and sublocation-entry Practice markers are rejected.
+- [ ] validator tests assert behavior/codes, not exact diagnostic prose.
+- [ ] Practice reveals emit no reachability atom.
+- [ ] Practice Analysis cards require no reachability atom.
+- [ ] inline-source Practice-only classify test exercises the normalized Analysis path.
+- [ ] existing Case File fixture proves Evidence/Statement prerequisites remain.
+- [ ] both authoring skills describe one consistent binding + guaranteed-context contract.
+- [ ] Chapter 1 P1 compiles unchanged.
+- [ ] HPA-601 remains canceled; no `mustAtoms` rule is added.
+- [ ] no migration, second validator pass, new E2E suite, parser/registry, or Chapter 2 abstraction is introduced.
