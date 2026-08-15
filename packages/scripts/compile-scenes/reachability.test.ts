@@ -1501,6 +1501,109 @@ describe("positive dependency and base reachability", () => {
     expect(result.reachableNodeKeys).toContain("consumer");
   });
 
+  it("rejects a mandatory authorization grant when every alternative grants it but the Question is optional", () => {
+    // Negative regression: an optional interrogation Question with two correct
+    // lines where BOTH lines grant the same authorization. Every mutually-
+    // exclusive alternative grants the authorization, so the old "every
+    // alternative grants it" check passed — but the Question is optional, so
+    // the player can skip it entirely and the one-shot event never fires. The
+    // grant is not guaranteed and a required successor soft-locks.
+    const phase = inquiryPhase({
+      representedAuthority: "court",
+      reveals: [{ kind: "evidence", id: "record" }],
+      questions: [
+        inquiryQuestion({
+          required: false,
+          testimonyLines: [
+            testimonyLine("grant_a", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+            testimonyLine("grant_b", "record", [
+              { kind: "grantAuthorization", authorizationId: "permit" },
+            ]),
+          ],
+        }),
+      ],
+    });
+    const scene = interrogationScene([phase]);
+    const nodes = buildNodes(
+      [chapter("chapter_1", ["interrogation_scene_1.md"])],
+      [record("chapter_1", "interrogation_scene_1.md", scene)],
+    );
+    const result = analyzeSynthetic(
+      [...nodes, mandatoryAuthorizationConsumer()],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
+  it("rejects a mandatory authorization grant when every alternative grants it but the Question entry is only may-reachable", () => {
+    // Second regression: a required Question whose entry node is mandatory but
+    // gated behind an optional prerequisite. The entry is may-reachable (when
+    // the optional progress fires) but not must-reachable (the player can skip
+    // the optional progress). Even though the Question itself is required and
+    // every breakthrough alternative directly grants the authorization, the
+    // shared trigger (the entry) is not must-reachable, so the one-shot event
+    // is not guaranteed to fire and the mandatory grant can soft-lock.
+    const result = analyzeSynthetic(
+      [
+        syntheticNode("optional_progress", {
+          requirement: "optional",
+          initiallyReachable: true,
+          effects: [addAtom("fact_asserted:progress")],
+        }),
+        syntheticNode("question_entry", {
+          requirement: "mandatory",
+          initiallyReachable: false,
+          condition: atomExpression("fact_asserted:progress"),
+        }),
+        syntheticNode("alt_a", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["question_entry"],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        syntheticNode("alt_b", {
+          requirement: "optional",
+          oneShotEventId: "breakthrough",
+          legacyCompatibilityMode: false,
+          representedAuthority: "court",
+          initiallyReachable: false,
+          strictPredecessorKeys: ["question_entry"],
+          effects: [
+            storyEffect(
+              { kind: "grantAuthorization", authorizationId: "permit" },
+              0,
+            ),
+          ],
+        }),
+        mandatoryAuthorizationConsumer(),
+      ],
+      catalogWithAuthorization("permit", "court"),
+    );
+
+    expect(result.errors).toContainEqual(
+      expect.objectContaining({
+        code: "mandatoryAuthorizationGrantNotGuaranteed",
+        nodeKey: "consumer",
+      }),
+    );
+  });
+
   it("accepts a mandatory grant whose prerequisite is guaranteed by exhaustive optional alternatives", () => {
     // Regression: a required question with two correct testimony lines models
     // both breakthrough nodes as optional (mutually-exclusive alternatives of
