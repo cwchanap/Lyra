@@ -32,6 +32,10 @@
   } from "$lib/state/game-client.svelte";
   import { canReexamineCaseRecords, shouldShowCaseFile } from "$lib/state/mode";
   import {
+    currentInterrogationPhase,
+    isInterrogationPresentationActive,
+  } from "$lib/interrogation/presentation";
+  import {
     loadStoryClearedOnce,
     saveStoryClearedOnce,
   } from "$lib/state/story-clearance";
@@ -49,6 +53,7 @@
   import ErrorBanner from "$lib/components/ErrorBanner.svelte";
   import GameComplete from "$lib/components/GameComplete.svelte";
   import GameplayAudio from "$lib/components/GameplayAudio.svelte";
+  import InterrogationStage from "$lib/components/InterrogationStage.svelte";
   import InterrogationView from "$lib/components/InterrogationView.svelte";
   import MainMenu from "$lib/components/MainMenu.svelte";
   import SaveBrowser from "$lib/components/SaveBrowser.svelte";
@@ -106,6 +111,12 @@
   // session starts from the objective section instead of inheriting the prior
   // session's context.
   let caseFileSection = $state<CaseFileSection>("objective");
+  let caseFileRequestId = $state(0);
+  let caseFileReturnFocus = $state<HTMLElement | null>(null);
+  let caseFileRequest = $state<{
+    id: number;
+    returnFocusTo: HTMLElement | null;
+  } | null>(null);
   let observedCaseFileEpoch = presentationState.sessionEpoch;
 
   $effect(() => {
@@ -113,6 +124,8 @@
     if (epoch !== observedCaseFileEpoch) {
       observedCaseFileEpoch = epoch;
       caseFileSection = "objective";
+      caseFileReturnFocus = null;
+      caseFileRequest = null;
     }
   });
   // Bound to GameShell so dossier reexamine can close the Escape menu
@@ -160,6 +173,16 @@
     gameState.value?.story.objectives.find(
       (objective) => objective.activePrimary && !objective.completed,
     ) ?? null,
+  );
+  let interrogationPresentationActive = $derived(
+    gameState.value !== null &&
+      isInterrogationPresentationActive(
+        gameState.value.scene,
+        gameState.value.mode,
+      ),
+  );
+  let interrogationPresentationPhase = $derived(
+    gameState.value ? currentInterrogationPhase(gameState.value.scene) : null,
   );
   let acquisitionReturnFocus = $state<HTMLElement | null>(null);
   let acquisitionWasBlocking = false;
@@ -1187,6 +1210,22 @@
     await jumpToScene(chapterId, sceneId);
     gameMenuOpen = false;
   }
+
+  function openInterrogationCaseFile(trigger: HTMLElement) {
+    caseFileSection = "evidence";
+    caseFileRequestId += 1;
+    caseFileReturnFocus = trigger;
+    caseFileRequest = {
+      id: caseFileRequestId,
+      returnFocusTo: caseFileReturnFocus,
+    };
+  }
+
+  function handleCaseFileRequestHandled(id: number) {
+    if (caseFileRequest?.id !== id) return;
+    caseFileRequest = null;
+    caseFileReturnFocus = null;
+  }
 </script>
 
 {#if gameState.value}
@@ -1211,6 +1250,9 @@
         sceneMenuEnabled={sceneNavigationEnabled}
         caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}
         {activePrimaryObjective}
+        interrogationPresentation={interrogationPresentationActive}
+        {caseFileRequest}
+        onCaseFileRequestHandled={handleCaseFileRequestHandled}
         bind:open={gameMenuOpen}
       >
         {#snippet sceneMenu()}
@@ -1243,70 +1285,80 @@
             <ErrorBanner message={gameState.error} />
           </div>
         {/if}
-        {#if gameState.value.mode.type === "dialogue"}
-          <SceneBackdrop
-            sceneTag={gameState.value.mode.sceneTag}
-            backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-          />
-          <DialogueBox
-            current={gameState.value.mode.current}
-            queueToken={gameState.value.mode.queueToken}
-            onAdvance={advanceDialogue}
-            onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
-            history={gameState.value.dialogueHistory}
-            disabled={gameState.inFlight}
-            crossExam={gameState.value.mode.crossExamLineId
-              ? {
-                  lineId: gameState.value.mode.crossExamLineId,
-                  onChallenge: challengeInterrogationLine,
-                  onWithdraw: withdrawInterrogation,
-                }
-              : null}
-          />
-        {:else if gameState.value.mode.type === "explore"}
-          <ExploreView
-            scene={gameState.value.scene}
-            backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-            onInspect={inspectHotspot}
-            onInterview={interviewTopic}
-            onEnterSublocation={enterSublocation}
-            disabled={gameState.inFlight}
-          >
-            {#snippet hud()}
-              <PrimaryObjectiveHud objective={activePrimaryObjective} />
-            {/snippet}
-          </ExploreView>
-        {:else if gameState.value.mode.type === "interrogation"}
-          <SceneBackdrop
-            sceneTag={null}
-            backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-          />
-          <InterrogationView
-            scene={gameState.value.scene}
-            inventory={gameState.value.inventory}
-            onAsk={askInterrogationQuestion}
-            onPresent={presentInterrogationEvidence}
-            onResume={resumeInterrogationTestimony}
-            onComplete={completeInterrogationPhase}
-            disabled={gameState.inFlight}
-          />
-        {:else if gameState.value.mode.type === "analysis"}
-          <SceneBackdrop
-            sceneTag={null}
-            backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-          />
-          <AnalysisWorkbench
-            scene={gameState.value.scene}
-            mode={gameState.value.mode}
-            inventory={gameState.value.inventory}
-            onSelectBoard={selectAnalysisBoard}
-            onUpdateDraft={updateAnalysisDraft}
-            onSubmit={submitAnalysisBoard}
-            disabled={gameState.inFlight}
-          />
-        {:else if gameState.value.mode.type === "gameComplete"}
-          <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
-        {/if}
+        <InterrogationStage
+          active={interrogationPresentationActive}
+          scene={gameState.value.scene}
+          mode={gameState.value.mode}
+          inventory={gameState.value.inventory}
+          onPresent={presentInterrogationEvidence}
+          onResume={resumeInterrogationTestimony}
+          onOpenCaseFile={openInterrogationCaseFile}
+          disabled={gameState.inFlight}
+        >
+          {#if gameState.value.mode.type === "dialogue"}
+            <SceneBackdrop
+              sceneTag={gameState.value.mode.sceneTag}
+              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+            />
+            <DialogueBox
+              current={gameState.value.mode.current}
+              queueToken={gameState.value.mode.queueToken}
+              onAdvance={advanceDialogue}
+              onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
+              history={gameState.value.dialogueHistory}
+              disabled={gameState.inFlight}
+              crossExam={gameState.value.mode.crossExamLineId
+                ? {
+                    lineId: gameState.value.mode.crossExamLineId,
+                    onChallenge: challengeInterrogationLine,
+                    onWithdraw: withdrawInterrogation,
+                    presentation:
+                      interrogationPresentationPhase?.crossExam ?? null,
+                  }
+                : null}
+            />
+          {:else if gameState.value.mode.type === "explore"}
+            <ExploreView
+              scene={gameState.value.scene}
+              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+              onInspect={inspectHotspot}
+              onInterview={interviewTopic}
+              onEnterSublocation={enterSublocation}
+              disabled={gameState.inFlight}
+            >
+              {#snippet hud()}
+                <PrimaryObjectiveHud objective={activePrimaryObjective} />
+              {/snippet}
+            </ExploreView>
+          {:else if gameState.value.mode.type === "interrogation"}
+            <SceneBackdrop
+              sceneTag={null}
+              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+            />
+            <InterrogationView
+              scene={gameState.value.scene}
+              onAsk={askInterrogationQuestion}
+              onComplete={completeInterrogationPhase}
+              disabled={gameState.inFlight}
+            />
+          {:else if gameState.value.mode.type === "analysis"}
+            <SceneBackdrop
+              sceneTag={null}
+              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
+            />
+            <AnalysisWorkbench
+              scene={gameState.value.scene}
+              mode={gameState.value.mode}
+              inventory={gameState.value.inventory}
+              onSelectBoard={selectAnalysisBoard}
+              onUpdateDraft={updateAnalysisDraft}
+              onSubmit={submitAnalysisBoard}
+              disabled={gameState.inFlight}
+            />
+          {:else if gameState.value.mode.type === "gameComplete"}
+            <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
+          {/if}
+        </InterrogationStage>
       </GameShell>
     {/key}
   </div>
