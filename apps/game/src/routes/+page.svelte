@@ -780,18 +780,24 @@
     if (!slot || slot.reference.type !== "manual") return;
     gameState.inFlight = true;
     manualSaveFailure = null;
-    // The Present tray stays mounted across a manual save (the engine's
-    // presenting state is preserved), so focusing gameplayRoot would land
-    // outside the still-active aria-modal dialog. When Present is active,
-    // restore focus to the tray's 遊戲選單 button — the trigger that opened
-    // the menu — so focus returns inside the modal. Otherwise gameplayRoot
-    // is correct (no modal remains).
+    // After a manual save, focus must return to the right place depending on
+    // what is still mounted. The Present tray (an aria-modal dialog) stays
+    // mounted across a save when crossExam.presenting is true, so focusing
+    // gameplayRoot would land outside that modal — focus the tray's
+    // 遊戲選單 button (the trigger that opened the menu) instead. In every
+    // other interrogation state (question screen, live testimony dialogue)
+    // no modal remains, so gameplayRoot is correct.
+    //
+    // interrogationPresentationActive is broader than Present: it is also
+    // true for the interrogation question screen and live cross-exam
+    // dialogue, while [data-interrogation-game-menu] only exists when
+    // crossExam.presenting === true. Query the element itself rather than
+    // branching on the flag so all three cases are handled by one check.
     //
     // The Present-tray button receives disabled={gameState.inFlight} via
     // InterrogationStage → InterrogationEvidenceTray, so it cannot receive
-    // focus until inFlight clears. Record the intent here, clear inFlight in
-    // finally, then restore focus afterward so the target is enabled.
-    let restorePresentFocus = false;
+    // focus until inFlight clears. Clear inFlight in finally, then restore
+    // focus afterward so the target is enabled.
     try {
       const request =
         await invokePersistenceCommand<ThumbnailCaptureRequestView>(
@@ -811,21 +817,19 @@
       persistenceStore.replaceThumbnailActivity(result.thumbnailActivity);
       closeGameBrowser();
       gameMenuOpen = false;
-      restorePresentFocus = interrogationPresentationActive;
-      if (!restorePresentFocus) {
-        await tick();
-        gameplayRoot?.focus();
-      }
     } catch (error) {
       manualSaveFailure = asGameError(error);
     } finally {
       gameState.inFlight = false;
     }
-    if (restorePresentFocus) {
-      await tick();
-      document
-        .querySelector<HTMLElement>("[data-interrogation-game-menu]")
-        ?.focus();
+    await tick();
+    const presentTrigger = document.querySelector<HTMLElement>(
+      "[data-interrogation-game-menu]",
+    );
+    if (presentTrigger) {
+      presentTrigger.focus();
+    } else {
+      gameplayRoot?.focus();
     }
   }
 
