@@ -216,17 +216,24 @@ describe("save resume", () => {
     const acknowledgedAutosaveSaveId = await (async (): Promise<string> => {
       const deadline = Date.now() + 90000;
       while (Date.now() < deadline) {
-        const newest = newestAutosaveSlot();
-        if (newest?.envelope) {
-          const snapshot = newest.envelope.snapshot as {
-            pendingAcquisitionEvents?: unknown[];
-          };
-          if (
-            newest.envelope.saveId !== preAcknowledgementSaveId &&
-            (snapshot.pendingAcquisitionEvents ?? []).length === 0
-          ) {
-            return newest.envelope.saveId;
+        // Atomic envelope replacement can expose a transiently unparseable or
+        // unreadable slot for a short interval; absorb those errors and keep
+        // polling until the deadline, matching waitForSaveE2eEnvelope.
+        try {
+          const newest = newestAutosaveSlot();
+          if (newest?.envelope) {
+            const snapshot = newest.envelope.snapshot as {
+              pendingAcquisitionEvents?: unknown[];
+            };
+            if (
+              newest.envelope.saveId !== preAcknowledgementSaveId &&
+              (snapshot.pendingAcquisitionEvents ?? []).length === 0
+            ) {
+              return newest.envelope.saveId;
+            }
           }
+        } catch {
+          // Transient filesystem/parse error during atomic replacement; retry.
         }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }

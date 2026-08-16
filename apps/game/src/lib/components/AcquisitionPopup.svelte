@@ -87,7 +87,12 @@
 
   function dismissCurrent() {
     if (busy) return;
-    void onContinue(notification.id);
+    // The controller absorbs acknowledgement rejections, but keep a defensive
+    // catch here so a future caller or an unexpected throw never leaves the
+    // popup with an unhandled rejected promise.
+    void onContinue(notification.id).catch(() => {
+      /* no-op: errors surface through gameState.error; busy resets upstream */
+    });
   }
 
   function handleKeydown(event: KeyboardEvent) {
