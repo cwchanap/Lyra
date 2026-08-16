@@ -391,17 +391,6 @@ impl AutosaveBackend for DefaultCleanupBackend {
             ))
         })
     }
-
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move {
-            Ok(AutosaveCommitOutcome::Committed(
-                prepared.commit_simulated(),
-            ))
-        })
-    }
 }
 
 #[tokio::test]

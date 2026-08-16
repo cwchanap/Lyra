@@ -345,13 +345,6 @@ impl AutosaveBackend for ApplicationPersistence {
         })
     }
 
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move { self.commit_current(prepared) })
-    }
-
     fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
         Box::pin(async move { clean_orphaned_save_files(self.fs.as_ref(), &self.root) })
     }
@@ -3152,13 +3145,6 @@ mod tests {
             }
 
             fn commit_if_current(
-                &self,
-                _prepared: AutosavePreparedWrite,
-            ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-                Box::pin(async { Err(GameError::save_write_failed()) })
-            }
-
-            fn commit_with_gate_held(
                 &self,
                 _prepared: AutosavePreparedWrite,
             ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {

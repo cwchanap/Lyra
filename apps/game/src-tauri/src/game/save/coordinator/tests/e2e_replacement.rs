@@ -68,9 +68,6 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
             debounce_deadline: tokio::time::Instant::now() + Duration::from_secs(10),
             capture_deadline: tokio::time::Instant::now() + Duration::from_secs(10),
         });
-        state
-            .registered_autosave_targets
-            .insert((0, 4), SaveSlotRef::Auto { slot: 1 });
         state.last_successful_write = Some(AutosaveWriteReceipt {
             session_generation: 0,
             durable_revision: 3,
@@ -130,7 +127,6 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
     assert!(state.tickets.is_empty());
     assert!(state.latest_by_intent.is_empty());
     assert!(state.pending_autosave.is_none());
-    assert!(state.registered_autosave_targets.is_empty());
     assert!(state.last_successful_write.is_none());
     assert!(state.failed_write.is_none());
     assert!(state.cleanup_failure.is_none());
@@ -253,9 +249,6 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
     app.coordinator
         .record_background_failure(0, 4, true, GameError::save_write_failed());
     app.coordinator
-        .record_registered_autosave_target(0, 4, SaveSlotRef::Auto { slot: 2 })
-        .unwrap();
-    app.coordinator
         .record_schedule_failure(0, 4, None, GameError::save_write_failed());
     app.coordinator.record_cleanup_failure(
         CleanupOwner::Receipt(AutosaveWriteReceipt {
@@ -280,13 +273,6 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
         app.coordinator.persistence_health(),
         PersistenceHealthView::Healthy
     );
-    assert!(app
-        .coordinator
-        .state
-        .lock()
-        .unwrap()
-        .registered_autosave_targets
-        .is_empty());
 
     probe.release_all();
     probe.wait_for_completions(1).await;

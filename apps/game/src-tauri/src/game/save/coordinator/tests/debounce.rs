@@ -155,27 +155,6 @@ impl AutosaveBackend for RecordingBackend {
             ))
         })
     }
-
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move {
-            self.writes.lock().unwrap().push(WriteObservation {
-                generation: prepared.session_generation(),
-                revision: prepared.durable_revision(),
-                thumbnail_available: prepared.thumbnail_available(),
-            });
-            self.write_committed.notify_all();
-            self.started.notify_waiters();
-            while self.pause_writes.load(Ordering::SeqCst) {
-                self.release.notified().await;
-            }
-            Ok(AutosaveCommitOutcome::Committed(
-                prepared.commit_simulated(),
-            ))
-        })
-    }
 }
 
 pub(super) struct PhasedBackend {
@@ -469,54 +448,6 @@ impl AutosaveBackend for PhasedBackend {
             if self.take_fault(FaultPoint::BeforeGate) {
                 return Err(GameError::save_sync_failed());
             }
-            self.phases.lock().unwrap().push("G");
-            let _session = self.gameplay_lock.lock().unwrap();
-            self.phases.lock().unwrap().push("G:S:revalidate");
-            if prepared.session_generation() != self.current_generation.load(Ordering::SeqCst) {
-                return Ok(AutosaveCommitOutcome::Stale(prepared));
-            }
-            drop(_session);
-            self.pause_if_requested(PausePoint::Replacement).await;
-            if self.take_fault(FaultPoint::BeforeReplacement) {
-                return Err(GameError::save_replace_failed());
-            }
-            if self.fail_commit.swap(false, Ordering::SeqCst) {
-                self.failed_commits.fetch_add(1, Ordering::SeqCst);
-                self.commit_failed.notify_waiters();
-                return Err(GameError::save_replace_failed());
-            }
-            self.phases.lock().unwrap().push("W+G:commit");
-            self.installed.store(true, Ordering::SeqCst);
-            let receipt = prepared.identity.clone();
-            let target = receipt.slot;
-            let revision = receipt.durable_revision;
-            if let Some(slot) = self
-                .slots
-                .lock()
-                .unwrap()
-                .iter_mut()
-                .find(|slot| slot.reference == target)
-            {
-                slot.status = SaveSlotStatusView::Invalid {
-                    metadata: None,
-                    diagnostic: GameError::malformed_save_json(),
-                };
-                slot.observed_modified_at =
-                    Some(SystemTime::UNIX_EPOCH + Duration::from_secs(revision));
-            }
-            self.receipts.lock().unwrap().push(receipt.clone());
-            self.committed.notify_waiters();
-            Ok(AutosaveCommitOutcome::Committed(
-                prepared.commit_simulated(),
-            ))
-        })
-    }
-
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move {
             self.phases.lock().unwrap().push("G");
             let _session = self.gameplay_lock.lock().unwrap();
             self.phases.lock().unwrap().push("G:S:revalidate");
