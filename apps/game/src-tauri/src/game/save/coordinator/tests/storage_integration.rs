@@ -158,8 +158,6 @@ pub(super) struct StorageBackend {
     prepare_held_writer: AtomicBool,
     revalidate_held_gate_and_session: AtomicBool,
     commit_held_writer_and_gate: AtomicBool,
-    normal_commit_calls: AtomicUsize,
-    held_gate_commit_calls: AtomicUsize,
 }
 
 impl StorageBackend {
@@ -198,8 +196,6 @@ impl StorageBackend {
             prepare_held_writer: AtomicBool::new(false),
             revalidate_held_gate_and_session: AtomicBool::new(false),
             commit_held_writer_and_gate: AtomicBool::new(false),
-            normal_commit_calls: AtomicUsize::new(0),
-            held_gate_commit_calls: AtomicUsize::new(0),
         }
     }
 
@@ -256,11 +252,10 @@ impl StorageBackend {
         self.completion_update.notify_waiters();
     }
 
-    /// Shared revalidation, commit, receipt-corruption, and finish flow used by
-    /// both `commit_if_current` and `commit_with_gate_held`. Each caller keeps
-    /// its distinct commit counter and gate acquisition/assertion, then
-    /// delegates here once the writer lock and (where applicable) the gate are
-    /// held and the `"G"` phase has been recorded.
+    /// Shared revalidation, commit, receipt-corruption, and finish flow used
+    /// by `commit_if_current`. The caller keeps its distinct commit counter
+    /// and gate acquisition/assertion, then delegates here once the writer
+    /// lock and the gate are held and the `"G"` phase has been recorded.
     async fn commit_locked(
         &self,
         prepared: AutosavePreparedWrite,
@@ -329,14 +324,6 @@ impl StorageBackend {
 
     pub(super) fn replacement_gate(&self) -> Arc<AsyncMutex<()>> {
         Arc::clone(&self.gate)
-    }
-
-    pub(super) fn normal_commit_calls(&self) -> usize {
-        self.normal_commit_calls.load(Ordering::SeqCst)
-    }
-
-    pub(super) fn held_gate_commit_calls(&self) -> usize {
-        self.held_gate_commit_calls.load(Ordering::SeqCst)
     }
 
     fn slot_path(&self, slot: u8) -> PathBuf {
@@ -522,24 +509,8 @@ impl AutosaveBackend for StorageBackend {
         prepared: AutosavePreparedWrite,
     ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
         Box::pin(async move {
-            self.normal_commit_calls.fetch_add(1, Ordering::SeqCst);
             let _writer = self.writer.lock().await;
             let _gate = self.gate.lock().await;
-            self.phases.lock().unwrap().push("G");
-            self.commit_locked(prepared).await
-        })
-    }
-
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move {
-            self.held_gate_commit_calls.fetch_add(1, Ordering::SeqCst);
-            let _writer = self.writer.lock().await;
-            if self.gate.try_lock().is_ok() {
-                return Err(GameError::save_sync_failed());
-            }
             self.phases.lock().unwrap().push("G");
             self.commit_locked(prepared).await
         })

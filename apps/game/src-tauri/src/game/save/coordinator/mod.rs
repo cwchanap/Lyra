@@ -510,11 +510,6 @@ pub(crate) trait AutosaveBackend: Send + Sync {
         prepared: AutosavePreparedWrite,
     ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>>;
 
-    fn commit_with_gate_held(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>>;
-
     fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
         Box::pin(async { Ok(()) })
     }
@@ -1095,7 +1090,6 @@ struct CoordinatorState {
     discovery_generation: u64,
     next_autosave_serial: u64,
     pending_autosave: Option<PendingAutosave>,
-    registered_autosave_targets: HashMap<(u64, u64), SaveSlotRef>,
     last_successful_write: Option<AutosaveWriteReceipt>,
     failed_write: Option<BackgroundWriteFailure>,
     cleanup_failure: Option<CleanupFailure>,
@@ -1121,7 +1115,6 @@ impl Default for CoordinatorState {
             discovery_generation: 0,
             next_autosave_serial: 0,
             pending_autosave: None,
-            registered_autosave_targets: HashMap::new(),
             last_successful_write: None,
             failed_write: None,
             cleanup_failure: None,
@@ -1913,7 +1906,6 @@ impl SaveCoordinator {
         state.tickets.clear();
         state.latest_by_intent.clear();
         state.pending_autosave = None;
-        state.registered_autosave_targets.clear();
         state.last_successful_write = None;
         state.failed_write = None;
         state.cleanup_failure = None;
@@ -2821,44 +2813,6 @@ impl SaveCoordinator {
             .map(|receipt| receipt.slot)
     }
 
-    fn record_registered_autosave_target(
-        &self,
-        session_generation: u64,
-        durable_revision: u64,
-        target: SaveSlotRef,
-    ) -> Result<(), GameError> {
-        let mut state = self.lock_state()?;
-        if session_generation < state.next_session_generation {
-            return Ok(());
-        }
-        let identity = (session_generation, durable_revision);
-        if state
-            .registered_autosave_targets
-            .keys()
-            .any(|registered| *registered > identity)
-        {
-            return Ok(());
-        }
-        state
-            .registered_autosave_targets
-            .retain(|registered, _| *registered >= identity);
-        state.registered_autosave_targets.insert(identity, target);
-        Ok(())
-    }
-
-    fn registered_autosave_target(
-        &self,
-        session_generation: u64,
-        durable_revision: u64,
-    ) -> Option<SaveSlotRef> {
-        self.state.lock().ok().and_then(|state| {
-            state
-                .registered_autosave_targets
-                .get(&(session_generation, durable_revision))
-                .copied()
-        })
-    }
-
     pub(crate) fn reserve_manual_writer(
         &self,
         run: CoordinatorFuture<'static, ()>,
@@ -3105,11 +3059,10 @@ impl SaveCoordinator {
         // session whose generation is strictly older was replaced. Equality
         // is the normal case (production installs advance the mark to match
         // the session); a newer generation never occurs in production, so `<`
-        // identifies exactly the stale case. This mirrors the `<` guards in
-        // `record_registered_autosave_target` and `record_schedule_failure`
-        // and lets the autosave scheduling path route its Pending publication
-        // here without rejecting sessions whose generation the test fixtures
-        // install ahead of the mark.
+        // identifies exactly the stale case. This mirrors the `<` guard in
+        // `record_schedule_failure` and lets the autosave scheduling path
+        // route its Pending publication here without rejecting sessions whose
+        // generation the test fixtures install ahead of the mark.
         if session_generation < state.next_session_generation {
             return Err(GameError::stale_session_generation());
         }
@@ -3146,9 +3099,8 @@ impl SaveCoordinator {
             // autosave scheduled for a prior generation must not reinstall a
             // stale pending entry or overwrite the Healthy state replacement
             // published. `<` (not `!=`) matches the high-water-mark semantic
-            // used by `record_registered_autosave_target` and
-            // `record_schedule_failure`, so a session whose generation is
-            // current or ahead of the mark still schedules. The subsequent
+            // used by `record_schedule_failure`, so a session whose generation
+            // is current or ahead of the mark still schedules. The subsequent
             // `publish_persistence_health_for_session` re-checks under the
             // lock so a replacement racing the health publication is ignored.
             if session_generation < state.next_session_generation {
@@ -3313,19 +3265,6 @@ impl SaveCoordinator {
                 return;
             }
         };
-        if let Err(error) = self.record_registered_autosave_target(
-            pending.session_generation,
-            pending.durable_revision,
-            target,
-        ) {
-            self.record_background_failure(
-                pending.session_generation,
-                pending.durable_revision,
-                pending.thumbnail_capture_required,
-                error,
-            );
-            return;
-        }
         let prepared = match backend.prepare(registered).await {
             Ok(prepared) => prepared,
             Err(error) => {
@@ -3437,9 +3376,6 @@ impl SaveCoordinator {
                 .as_ref()
                 .is_some_and(|pending| pending.serial == completed.serial);
             let receipt_identity = (receipt.session_generation, receipt.durable_revision);
-            state
-                .registered_autosave_targets
-                .retain(|identity, _| *identity > receipt_identity);
             if state
                 .last_successful_write
                 .as_ref()
@@ -3499,9 +3435,6 @@ impl SaveCoordinator {
                 return;
             }
             let receipt_identity = (receipt.session_generation, receipt.durable_revision);
-            state
-                .registered_autosave_targets
-                .retain(|identity, _| *identity > receipt_identity);
             if state
                 .last_successful_write
                 .as_ref()
