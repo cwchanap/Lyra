@@ -10,7 +10,6 @@ use super::storage::{
     select_autosave_target, PreparedSlotWrite, SaveFilesystem, SlotWriteRequest, ThumbnailWrite,
 };
 use super::thumbnail::ValidatedThumbnailCandidate;
-use crate::game::command_tx::EngineRollbackSnapshot;
 use crate::game::{GameEngine, GameError};
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, VecDeque};
@@ -36,12 +35,6 @@ pub(crate) enum ThumbnailCapturePurpose {
     ManualSave {
         session_generation: u64,
         durable_revision: u64,
-    },
-    AcquisitionAcknowledgement {
-        session_generation: u64,
-        source_revision: u64,
-        next_revision: u64,
-        event_id: String,
     },
 }
 
@@ -116,7 +109,6 @@ mod e2e_fault_boundary_tests {
 )]
 pub(crate) enum PreparedThumbnailPurpose {
     ManualSave,
-    AcquisitionAcknowledgement { event_id: String },
 }
 
 #[derive(Debug, Clone)]
@@ -545,7 +537,6 @@ pub(crate) enum FlushOperation {
     ManualSave,
     InGameLoad,
     ReturnToTitle,
-    AcquisitionAcknowledgement,
     Exit,
 }
 
@@ -560,11 +551,6 @@ pub(crate) enum FlushOutcome {
         durable_revision: u64,
         slot: SaveSlotRef,
     },
-}
-
-pub(crate) struct AcknowledgementOutcome {
-    pub(crate) state: crate::game::GameStateView,
-    pub(crate) cleanup_diagnostic: Option<SaveDiagnosticView>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -587,7 +573,6 @@ pub(crate) enum PersistenceBypassOperation {
     StartWithoutSaving,
     LoadDiscardingCurrent,
     ReturnWithoutSaving,
-    ContinueWithoutSaving,
     ExitWithoutSaving,
 }
 
@@ -599,7 +584,6 @@ pub(crate) struct PersistenceFailureChallenge {
     discovery_generation: Option<u64>,
     durable_revision: u64,
     selected_save_id: Option<String>,
-    acquisition_event_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -608,7 +592,6 @@ pub(crate) struct FailureChallengeIdentity<'a> {
     discovery_generation: Option<u64>,
     durable_revision: u64,
     selected_save_id: Option<&'a str>,
-    acquisition_event_id: Option<&'a str>,
 }
 
 impl PersistenceFailureChallenge {
@@ -628,7 +611,6 @@ impl PersistenceFailureChallenge {
                 .is_none_or(|generation| generation == current_discovery_generation)
             && self.durable_revision == current.durable_revision
             && self.selected_save_id.as_deref() == current.selected_save_id
-            && self.acquisition_event_id.as_deref() == current.acquisition_event_id
     }
 }
 
@@ -638,12 +620,6 @@ fn selected_save_challenge_key(reference: SaveSlotRef, observed_save_id: &str) -
         SaveSlotRef::Manual { slot } => ("manual", slot),
     };
     format!("{save_type}:{slot}:{observed_save_id}")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Part B activates acknowledgement intent ownership.
-pub(crate) enum ExclusivePersistenceIntent {
-    AcquisitionAcknowledgement,
 }
 
 pub(crate) struct AppSession {
@@ -690,15 +666,7 @@ impl AppSession {
     }
 
     pub(crate) fn ensure_persistence_available(&self) -> Result<(), GameError> {
-        if self.persistence.exclusive_intent.is_some() || self.persistence.exit_flush_requested {
-            Err(GameError::persistence_operation_in_progress())
-        } else {
-            Ok(())
-        }
-    }
-
-    pub(crate) fn ensure_rendered_state_available(&self) -> Result<(), GameError> {
-        if self.persistence.exclusive_intent.is_some() {
+        if self.persistence.exit_flush_requested {
             Err(GameError::persistence_operation_in_progress())
         } else {
             Ok(())
@@ -706,142 +674,11 @@ impl AppSession {
     }
 
     fn ensure_exit_flush_available(&self) -> Result<(), GameError> {
-        if self.persistence.exclusive_intent.is_none() && self.persistence.exit_flush_requested {
+        if self.persistence.exit_flush_requested {
             Ok(())
         } else {
             Err(GameError::persistence_operation_in_progress())
         }
-    }
-
-    fn begin_acknowledgement(&mut self) -> Result<(), GameError> {
-        self.ensure_persistence_available()?;
-        self.persistence.exclusive_intent =
-            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
-        Ok(())
-    }
-
-    fn end_acknowledgement(&mut self) {
-        self.persistence.exclusive_intent = None;
-    }
-}
-
-struct AcknowledgementIntentGuard<'a> {
-    app: &'a crate::AppState,
-    session_generation: u64,
-    intent_updates: Arc<Notify>,
-}
-
-impl<'a> AcknowledgementIntentGuard<'a> {
-    fn new(app: &'a crate::AppState, session_generation: u64, intent_updates: Arc<Notify>) -> Self {
-        Self {
-            app,
-            session_generation,
-            intent_updates,
-        }
-    }
-}
-
-impl Drop for AcknowledgementIntentGuard<'_> {
-    fn drop(&mut self) {
-        if let Ok(mut session) = self.app.session.lock() {
-            let mut cleared = false;
-            if session.persistence.generation == self.session_generation
-                && session.persistence.exclusive_intent
-                    == Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
-            {
-                session.end_acknowledgement();
-                cleared = true;
-            }
-            drop(session);
-            if cleared {
-                self.intent_updates.notify_one();
-            }
-        }
-    }
-}
-
-struct AcknowledgementRollbackGuard<'a> {
-    app: &'a crate::AppState,
-    rollback: Option<EngineRollbackSnapshot>,
-    session_generation: u64,
-    source_revision: u64,
-    next_revision: u64,
-}
-
-impl<'a> AcknowledgementRollbackGuard<'a> {
-    fn new(
-        app: &'a crate::AppState,
-        rollback: EngineRollbackSnapshot,
-        session_generation: u64,
-        source_revision: u64,
-        next_revision: u64,
-    ) -> Self {
-        Self {
-            app,
-            rollback: Some(rollback),
-            session_generation,
-            source_revision,
-            next_revision,
-        }
-    }
-
-    fn restore_now(&mut self) -> Result<(), GameError> {
-        let mut session = self
-            .app
-            .session
-            .lock()
-            .map_err(|_| GameError::unavailable())?;
-        if session.persistence.generation != self.session_generation
-            || session.persistence.exclusive_intent
-                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
-        {
-            return Err(GameError::save_write_failed());
-        }
-        let engine = session
-            .engine
-            .as_mut()
-            .ok_or_else(GameError::game_not_started)?;
-        if engine.durable_revision() != self.next_revision {
-            return Err(GameError::save_write_failed());
-        }
-        let rollback = self
-            .rollback
-            .take()
-            .ok_or_else(GameError::save_write_failed)?;
-        EngineRollbackSnapshot::restore(engine, rollback);
-        if engine.durable_revision() != self.source_revision {
-            return Err(GameError::save_write_failed());
-        }
-        Ok(())
-    }
-
-    fn disarm(&mut self) {
-        self.rollback = None;
-    }
-}
-
-impl Drop for AcknowledgementRollbackGuard<'_> {
-    fn drop(&mut self) {
-        let Some(rollback) = self.rollback.take() else {
-            return;
-        };
-        let Ok(mut session) = self.app.session.lock() else {
-            return;
-        };
-        if session.persistence.generation != self.session_generation
-            || session.persistence.exclusive_intent
-                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
-        {
-            return;
-        }
-        let Some(engine) = session.engine.as_mut() else {
-            return;
-        };
-        if engine.durable_revision() != self.next_revision {
-            return;
-        }
-        EngineRollbackSnapshot::restore(engine, rollback);
-        debug_assert_eq!(engine.durable_revision(), self.source_revision);
     }
 }
 
@@ -850,7 +687,6 @@ pub(crate) struct SessionPersistence {
     pub(crate) flush_baseline_revision: u64,
     pub(crate) written_revision: Option<u64>,
     pub(crate) autosave_target: Option<SaveSlotRef>,
-    pub(crate) exclusive_intent: Option<ExclusivePersistenceIntent>,
     pub(crate) exit_flush_requested: bool,
 }
 
@@ -865,7 +701,6 @@ impl SessionPersistence {
             flush_baseline_revision: installed_revision,
             written_revision: None,
             autosave_target,
-            exclusive_intent: None,
             exit_flush_requested: false,
         }
     }
@@ -905,7 +740,6 @@ pub(crate) enum WriterJobClass {
         session_generation: u64,
         durable_revision: u64,
     },
-    AcquisitionAcknowledgement,
     ManualSave,
     DeleteSave,
     OrphanCleanup,
@@ -920,7 +754,6 @@ struct QueuedWriterJob {
 struct WriterQueueState {
     running: bool,
     next_cleanup_attempt: u64,
-    acknowledgements: VecDeque<QueuedWriterJob>,
     ordinary: VecDeque<QueuedWriterJob>,
 }
 
@@ -962,7 +795,6 @@ impl WriterQueue {
             .next_cleanup_attempt
             .checked_add(1)
             .ok_or_else(GameError::save_write_failed)?;
-        state.acknowledgements.clear();
         state.ordinary.clear();
         state.next_cleanup_attempt = minimum_cleanup_attempt;
         Ok(minimum_cleanup_attempt)
@@ -1103,11 +935,7 @@ impl WriterQueue {
             class: class.clone(),
             run,
         };
-        if matches!(class, WriterJobClass::AcquisitionAcknowledgement) {
-            state.acknowledgements.push_back(job);
-        } else {
-            state.ordinary.push_back(job);
-        }
+        state.ordinary.push_back(job);
         let start_worker = !state.running;
         if start_worker {
             state.running = true;
@@ -1140,10 +968,7 @@ impl WriterQueue {
                 let Ok(mut state) = self.state.lock() else {
                     return;
                 };
-                let next = state
-                    .acknowledgements
-                    .pop_front()
-                    .or_else(|| state.ordinary.pop_front());
+                let next = state.ordinary.pop_front();
                 if next.is_none() {
                     state.running = false;
                 }
@@ -1167,7 +992,6 @@ type RetryEligibilityHook = Arc<dyn Fn() + Send + Sync>;
 enum CaptureIntent {
     Autosave,
     ManualSave,
-    AcquisitionAcknowledgement,
 }
 
 impl ThumbnailCapturePurpose {
@@ -1175,7 +999,6 @@ impl ThumbnailCapturePurpose {
         match self {
             Self::Autosave { .. } => CaptureIntent::Autosave,
             Self::ManualSave { .. } => CaptureIntent::ManualSave,
-            Self::AcquisitionAcknowledgement { .. } => CaptureIntent::AcquisitionAcknowledgement,
         }
     }
 
@@ -1189,9 +1012,6 @@ impl ThumbnailCapturePurpose {
                 session_generation, ..
             }
             | Self::ManualSave {
-                session_generation, ..
-            }
-            | Self::AcquisitionAcknowledgement {
                 session_generation, ..
             } => *session_generation,
         }
@@ -1332,7 +1152,6 @@ impl CoordinatorState {
                         discovery_generation: identity.discovery_generation,
                         durable_revision: identity.durable_revision,
                         selected_save_id: identity.selected_save_id.map(str::to_owned),
-                        acquisition_event_id: identity.acquisition_event_id.map(str::to_owned),
                     });
                     return token;
                 }
@@ -1391,7 +1210,6 @@ pub(crate) struct SaveCoordinator {
     panic_next_exit_worker: Arc<AtomicBool>,
     #[cfg(test)]
     retry_after_eligibility_hook: Arc<Mutex<Option<RetryEligibilityHook>>>,
-    exclusive_updates: Arc<Notify>,
     #[cfg(feature = "e2e")]
     e2e_persistence_faults: Arc<E2ePersistenceFaultState>,
 }
@@ -1453,7 +1271,6 @@ impl Default for SaveCoordinator {
             panic_next_exit_worker: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             retry_after_eligibility_hook: Arc::new(Mutex::new(None)),
-            exclusive_updates: Arc::new(Notify::new()),
             #[cfg(feature = "e2e")]
             e2e_persistence_faults: Arc::new(E2ePersistenceFaultState::new()),
         }
@@ -1604,7 +1421,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             }
         };
         let start = self.schedule_exit_flush(exit)?;
@@ -1662,7 +1478,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             };
             let parsed = Uuid::parse_str(&token.0)
                 .ok()
@@ -1723,7 +1538,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             };
             let mut state = self.lock_state()?;
             match &state.exit_status {
@@ -1760,7 +1574,6 @@ impl SaveCoordinator {
             discovery_generation: None,
             durable_revision: session.durable_revision().unwrap_or(0),
             selected_save_id: None,
-            acquisition_event_id: None,
         };
         let mut state = self.lock_state()?;
         if action.is_err() {
@@ -1973,20 +1786,6 @@ impl SaveCoordinator {
             .exit_application
             .as_ref()
             .ok_or_else(GameError::save_write_failed)?;
-        loop {
-            let update = self.exclusive_updates.notified();
-            let acknowledgement_active = application
-                .session
-                .lock()
-                .map_err(|_| GameError::unavailable())?
-                .persistence
-                .exclusive_intent
-                .is_some();
-            if !acknowledgement_active {
-                break;
-            }
-            update.await;
-        }
         if application
             .session
             .lock()
@@ -2030,7 +1829,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: session.durable_revision().unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             };
             let health = PersistenceHealthView::Degraded {
                 diagnostic: diagnostic.clone(),
@@ -2144,7 +1942,6 @@ impl SaveCoordinator {
         publish_activity(&activity_subscribers, &ThumbnailActivityView::Idle);
         publish_exit(&exit_subscribers, &ExitStatusView::Idle);
         self.ticket_updates.notify_waiters();
-        self.exclusive_updates.notify_waiters();
 
         Ok(E2eSessionReplacement {
             generation,
@@ -2366,24 +2163,16 @@ impl SaveCoordinator {
             PersistenceBypassOperation::StartWithoutSaving
             | PersistenceBypassOperation::LoadDiscardingCurrent
             | PersistenceBypassOperation::ReturnWithoutSaving => {}
-            PersistenceBypassOperation::ContinueWithoutSaving
-            | PersistenceBypassOperation::ExitWithoutSaving => {
+            PersistenceBypassOperation::ExitWithoutSaving => {
                 return Err(GameError::stale_persistence_failure_token());
             }
         }
-        let (session_generation, durable_revision) =
-            if let Some(event_id) = challenge.acquisition_event_id.as_deref() {
-                current_acquisition_failure_identity(app, event_id)?
-            } else {
-                let identity = self.transition_identity(app)?;
-                (identity.generation, identity.durable_revision.unwrap_or(0))
-            };
+        let identity = self.transition_identity(app)?;
         let current = FailureChallengeIdentity {
-            session_generation,
+            session_generation: identity.generation,
             discovery_generation: challenge.discovery_generation,
-            durable_revision,
+            durable_revision: identity.durable_revision.unwrap_or(0),
             selected_save_id: challenge.selected_save_id.as_deref(),
-            acquisition_event_id: challenge.acquisition_event_id.as_deref(),
         };
         self.cancel_failure_token(&token, challenge.operation, current)
     }
@@ -2410,7 +2199,6 @@ impl SaveCoordinator {
                 discovery_generation,
                 durable_revision,
                 selected_save_id: None,
-                acquisition_event_id: None,
             },
             diagnostic,
         )?;
@@ -2436,7 +2224,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: identity.durable_revision.unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             },
             diagnostic,
         )
@@ -2461,7 +2248,6 @@ impl SaveCoordinator {
                 discovery_generation: Some(discovery_generation),
                 durable_revision: identity.durable_revision.unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             },
             diagnostic,
         )
@@ -2489,7 +2275,6 @@ impl SaveCoordinator {
                 discovery_generation: Some(discovery_generation),
                 durable_revision: identity.durable_revision.unwrap_or(0),
                 selected_save_id: Some(&selected_save_id),
-                acquisition_event_id: None,
             },
             diagnostic,
         )
@@ -2515,7 +2300,6 @@ impl SaveCoordinator {
                 discovery_generation: Some(discovery_generation),
                 durable_revision: identity.durable_revision.unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             },
         )?;
         Ok(identity)
@@ -2537,7 +2321,6 @@ impl SaveCoordinator {
             discovery_generation: None,
             durable_revision: identity.durable_revision.unwrap_or(0),
             selected_save_id: None,
-            acquisition_event_id: None,
         };
         let discovery_identity = FailureChallengeIdentity {
             discovery_generation: Some(discovery_generation),
@@ -2572,7 +2355,6 @@ impl SaveCoordinator {
             discovery_generation: Some(discovery_generation),
             durable_revision: identity.durable_revision.unwrap_or(0),
             selected_save_id: Some(&selected_save_id),
-            acquisition_event_id: None,
         };
         let generic_browser_identity = FailureChallengeIdentity {
             selected_save_id: None,
@@ -2602,7 +2384,6 @@ impl SaveCoordinator {
                 discovery_generation: None,
                 durable_revision: identity.durable_revision.unwrap_or(0),
                 selected_save_id: None,
-                acquisition_event_id: None,
             },
         )?;
         Ok(identity)
@@ -2916,379 +2697,6 @@ impl SaveCoordinator {
         }
     }
 
-    pub(crate) async fn acknowledge_acquisition(
-        &self,
-        app: &crate::AppState,
-        event_id: String,
-        ticket: String,
-    ) -> Result<AcknowledgementOutcome, GameError> {
-        let (session_generation, source_revision, next_revision, thumbnail) = {
-            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
-            let engine = session
-                .engine
-                .as_ref()
-                .ok_or_else(GameError::game_not_started)?;
-            let source_revision = engine.durable_revision();
-            let next_revision = source_revision
-                .checked_add(1)
-                .ok_or_else(GameError::save_write_failed)?;
-            let matching_events = engine
-                .pending_acquisition_events
-                .iter()
-                .filter(|event| event.id == event_id)
-                .count();
-            if matching_events != 1 {
-                return Err(GameError::unknown_acquisition_event());
-            }
-            let session_generation = session.persistence.generation;
-            let purpose = ThumbnailCapturePurpose::AcquisitionAcknowledgement {
-                session_generation,
-                source_revision,
-                next_revision,
-                event_id: event_id.clone(),
-            };
-            let thumbnail = self.claim_thumbnail(&ticket, &purpose)?;
-            session.begin_acknowledgement()?;
-            (
-                session_generation,
-                source_revision,
-                next_revision,
-                thumbnail,
-            )
-        };
-        let _intent_guard = AcknowledgementIntentGuard::new(
-            app,
-            session_generation,
-            Arc::clone(&self.exclusive_updates),
-        );
-
-        let _ =
-            self.cancel_pending_autosave_covered_by_flush(session_generation, source_revision)?;
-
-        let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-        self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            WriterJobClass::AcquisitionAcknowledgement,
-            Box::pin(async move {
-                let _ = turn_tx.send(());
-                let _ = release_rx.await;
-            }),
-        )?;
-        if turn_rx.await.is_err() {
-            return Err(GameError::save_write_failed());
-        }
-
-        let gate = app.replacement_gate.lock().await;
-        let result = self
-            .acknowledge_acquisition_with_writer_and_gate(
-                app,
-                session_generation,
-                source_revision,
-                next_revision,
-                &event_id,
-                thumbnail,
-            )
-            .await;
-        drop(gate);
-        let _ = release_tx.send(());
-        result
-    }
-
-    async fn acknowledge_acquisition_with_writer_and_gate(
-        &self,
-        app: &crate::AppState,
-        session_generation: u64,
-        source_revision: u64,
-        next_revision: u64,
-        event_id: &str,
-        thumbnail: CaptureTerminalResult,
-    ) -> Result<AcknowledgementOutcome, GameError> {
-        let retained_target = self.registered_autosave_target(session_generation, source_revision);
-        let prepared_mutation = {
-            let prepare = || -> Result<_, GameError> {
-                let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-                if session.persistence.generation != session_generation
-                    || session.persistence.exclusive_intent
-                        != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
-                {
-                    return Err(GameError::persistence_operation_in_progress());
-                }
-                if let Some(receipt) = self.last_successful_write() {
-                    session.persistence.record_written(&receipt);
-                }
-                let preferred_target = retained_target.or(session.persistence.autosave_target);
-                let engine = session
-                    .engine
-                    .as_mut()
-                    .ok_or_else(GameError::game_not_started)?;
-                if engine.durable_revision() != source_revision {
-                    return Err(GameError::save_write_failed());
-                }
-                let rollback = EngineRollbackSnapshot::capture(engine);
-                let matching_events: Vec<usize> = engine
-                    .pending_acquisition_events
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(index, event)| (event.id == event_id).then_some(index))
-                    .collect();
-                if matching_events.len() != 1 {
-                    return Err(GameError::unknown_acquisition_event());
-                }
-                engine.pending_acquisition_events.remove(matching_events[0]);
-                engine.durable_revision = next_revision;
-                match engine.view() {
-                    Ok(state) => Ok((rollback, preferred_target, state)),
-                    Err(error) => {
-                        EngineRollbackSnapshot::restore(engine, rollback);
-                        Err(error)
-                    }
-                }
-            };
-            prepare()
-        };
-
-        match prepared_mutation {
-            Ok((rollback, preferred_target, state)) => {
-                let mut rollback_guard = AcknowledgementRollbackGuard::new(
-                    app,
-                    rollback,
-                    session_generation,
-                    source_revision,
-                    next_revision,
-                );
-                let write_result = self
-                    .execute_acknowledgement_write(
-                        session_generation,
-                        next_revision,
-                        preferred_target,
-                        thumbnail,
-                    )
-                    .await;
-                match write_result {
-                    Ok((receipt, cleanup_diagnostic)) => {
-                        let mut session =
-                            app.session.lock().map_err(|_| GameError::unavailable())?;
-                        if session.persistence.generation != session_generation
-                            || session.persistence.exclusive_intent
-                                != Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement)
-                            || session.durable_revision() != Some(next_revision)
-                        {
-                            return Err(GameError::save_write_failed());
-                        }
-                        session.persistence.record_written(&receipt);
-                        self.record_blocking_success(receipt, cleanup_diagnostic.clone());
-                        rollback_guard.disarm();
-                        Ok(AcknowledgementOutcome {
-                            state,
-                            cleanup_diagnostic,
-                        })
-                    }
-                    Err(error) => {
-                        rollback_guard.restore_now()?;
-                        let challenged = self.challenge_persistence_failure(
-                            PersistenceBypassOperation::ContinueWithoutSaving,
-                            FailureChallengeIdentity {
-                                session_generation,
-                                discovery_generation: None,
-                                durable_revision: source_revision,
-                                selected_save_id: None,
-                                acquisition_event_id: Some(event_id),
-                            },
-                            error.clone(),
-                        );
-                        Err(challenged.unwrap_or(error))
-                    }
-                }
-            }
-            Err(error) => Err(error),
-        }
-    }
-
-    pub(crate) fn retry_acquisition_acknowledgement(
-        &self,
-        app: &crate::AppState,
-        event_id: String,
-        token: PersistenceFailureTokenView,
-    ) -> Result<ThumbnailCaptureRequestView, GameError> {
-        let (session_generation, source_revision) =
-            current_acquisition_failure_identity(app, &event_id)?;
-        let current = FailureChallengeIdentity {
-            session_generation,
-            discovery_generation: None,
-            durable_revision: source_revision,
-            selected_save_id: None,
-            acquisition_event_id: Some(&event_id),
-        };
-        self.consume_failure_token(
-            &token,
-            PersistenceBypassOperation::ContinueWithoutSaving,
-            current,
-        )?;
-        let next_revision = source_revision
-            .checked_add(1)
-            .ok_or_else(GameError::save_write_failed)?;
-        let purpose = ThumbnailCapturePurpose::AcquisitionAcknowledgement {
-            session_generation,
-            source_revision,
-            next_revision,
-            event_id: event_id.clone(),
-        };
-        match self.prepare_thumbnail(purpose) {
-            Ok(request) => Ok(request),
-            Err(error) => {
-                let challenged = self.challenge_persistence_failure(
-                    PersistenceBypassOperation::ContinueWithoutSaving,
-                    current,
-                    error.clone(),
-                );
-                Err(challenged.unwrap_or(error))
-            }
-        }
-    }
-
-    pub(crate) fn cancel_acquisition_failure(
-        &self,
-        app: &crate::AppState,
-        event_id: String,
-        token: PersistenceFailureTokenView,
-    ) -> Result<crate::game::GameStateView, GameError> {
-        let (session_generation, source_revision) =
-            current_acquisition_failure_identity(app, &event_id)?;
-        self.cancel_failure_token(
-            &token,
-            PersistenceBypassOperation::ContinueWithoutSaving,
-            FailureChallengeIdentity {
-                session_generation,
-                discovery_generation: None,
-                durable_revision: source_revision,
-                selected_save_id: None,
-                acquisition_event_id: Some(&event_id),
-            },
-        )?;
-        let session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        if session.persistence.generation != session_generation
-            || session.durable_revision() != Some(source_revision)
-        {
-            return Err(GameError::stale_persistence_failure_token());
-        }
-        session
-            .engine
-            .as_ref()
-            .ok_or_else(GameError::game_not_started)?
-            .view()
-    }
-
-    pub(crate) async fn confirm_acquisition_without_saving(
-        &self,
-        app: &crate::AppState,
-        event_id: String,
-        token: PersistenceFailureTokenView,
-    ) -> Result<crate::game::GameStateView, GameError> {
-        let (session_generation, source_revision) =
-            current_acquisition_failure_identity(app, &event_id)?;
-        self.consume_failure_token(
-            &token,
-            PersistenceBypassOperation::ContinueWithoutSaving,
-            FailureChallengeIdentity {
-                session_generation,
-                discovery_generation: None,
-                durable_revision: source_revision,
-                selected_save_id: None,
-                acquisition_event_id: Some(&event_id),
-            },
-        )?;
-
-        let _gate = app.replacement_gate.lock().await;
-        let state = {
-            let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
-            if session.persistence.generation != session_generation {
-                return Err(GameError::stale_persistence_failure_token());
-            }
-            let engine = session
-                .engine
-                .as_mut()
-                .ok_or_else(GameError::game_not_started)?;
-            if engine.durable_revision() != source_revision {
-                return Err(GameError::stale_persistence_failure_token());
-            }
-            let matching_events: Vec<usize> = engine
-                .pending_acquisition_events
-                .iter()
-                .enumerate()
-                .filter_map(|(index, event)| (event.id == event_id).then_some(index))
-                .collect();
-            if matching_events.len() != 1 {
-                return Err(GameError::unknown_acquisition_event());
-            }
-            let next_revision = source_revision
-                .checked_add(1)
-                .ok_or_else(GameError::save_write_failed)?;
-            let rollback = EngineRollbackSnapshot::capture(engine);
-            engine.pending_acquisition_events.remove(matching_events[0]);
-            engine.durable_revision = next_revision;
-            match engine.view() {
-                Ok(state) => state,
-                Err(error) => {
-                    EngineRollbackSnapshot::restore(engine, rollback);
-                    return Err(error);
-                }
-            }
-        };
-        self.mark_persistence_degraded(GameError::save_write_failed())?;
-        Ok(state)
-    }
-
-    async fn execute_acknowledgement_write(
-        &self,
-        session_generation: u64,
-        durable_revision: u64,
-        preferred_target: Option<SaveSlotRef>,
-        thumbnail: CaptureTerminalResult,
-    ) -> Result<(AutosaveWriteReceipt, Option<GameError>), GameError> {
-        let backend = self
-            .backend
-            .as_ref()
-            .cloned()
-            .ok_or_else(GameError::save_write_failed)?;
-        let capture = backend
-            .capture(AutosaveWriteJob {
-                session_generation,
-                durable_revision,
-                thumbnail,
-            })
-            .await?;
-        let target = match preferred_target {
-            Some(target @ SaveSlotRef::Auto { .. }) => target,
-            Some(SaveSlotRef::Manual { .. }) => return Err(GameError::save_write_failed()),
-            None => select_autosave_target(&capture.slots)?,
-        };
-        let save_id = Uuid::new_v4().hyphenated().to_string();
-        let expected_receipt = AutosaveWriteReceipt {
-            session_generation,
-            durable_revision,
-            slot: target,
-            save_id: save_id.clone(),
-        };
-        let registered = backend.register(capture, target, save_id).await?;
-        let prepared = backend.prepare(registered).await?;
-        let committed = match backend.commit_with_gate_held(prepared).await? {
-            AutosaveCommitOutcome::Committed(committed) => committed,
-            AutosaveCommitOutcome::Stale(prepared) => {
-                prepared.discard()?;
-                return Err(GameError::save_write_failed());
-            }
-        };
-        let (receipt, cleanup_diagnostic) = committed.into_parts();
-        if receipt != expected_receipt {
-            return Err(GameError::save_write_failed());
-        }
-        Ok((receipt, cleanup_diagnostic))
-    }
-
     async fn execute_blocking_flush(
         &self,
         session_generation: u64,
@@ -3451,17 +2859,6 @@ impl SaveCoordinator {
         })
     }
 
-    pub(crate) fn reserve_acknowledgement_writer(
-        &self,
-        run: CoordinatorFuture<'static, ()>,
-    ) -> Result<(), GameError> {
-        self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            WriterJobClass::AcquisitionAcknowledgement,
-            run,
-        )
-    }
-
     pub(crate) fn reserve_manual_writer(
         &self,
         run: CoordinatorFuture<'static, ()>,
@@ -3548,25 +2945,6 @@ impl SaveCoordinator {
                     session_generation,
                     durable_revision,
                 },
-                PreparedThumbnailPurpose::AcquisitionAcknowledgement { event_id } => {
-                    if engine
-                        .pending_acquisition_events
-                        .iter()
-                        .filter(|event| event.id == event_id)
-                        .count()
-                        != 1
-                    {
-                        return Err(GameError::unknown_acquisition_event());
-                    }
-                    ThumbnailCapturePurpose::AcquisitionAcknowledgement {
-                        session_generation,
-                        source_revision: durable_revision,
-                        next_revision: durable_revision
-                            .checked_add(1)
-                            .ok_or_else(GameError::save_write_failed)?,
-                        event_id,
-                    }
-                }
             }
         };
         self.prepare_thumbnail(purpose)
@@ -4674,28 +4052,6 @@ impl SaveCoordinator {
     }
 }
 
-fn current_acquisition_failure_identity(
-    app: &crate::AppState,
-    event_id: &str,
-) -> Result<(u64, u64), GameError> {
-    let session = app.session.lock().map_err(|_| GameError::unavailable())?;
-    session.ensure_persistence_available()?;
-    let engine = session
-        .engine
-        .as_ref()
-        .ok_or_else(GameError::game_not_started)?;
-    if engine
-        .pending_acquisition_events
-        .iter()
-        .filter(|event| event.id == event_id)
-        .count()
-        != 1
-    {
-        return Err(GameError::stale_persistence_failure_token());
-    }
-    Ok((session.persistence.generation, engine.durable_revision()))
-}
-
 #[cfg(test)]
 #[derive(Default)]
 struct WriterProbeState {
@@ -4958,7 +4314,6 @@ fn thumbnail_ticket_expiry_task(
 
 #[cfg(test)]
 mod tests {
-    mod acknowledgement;
     mod debounce;
     #[cfg(feature = "e2e")]
     mod e2e_replacement;

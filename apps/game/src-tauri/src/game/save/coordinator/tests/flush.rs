@@ -135,7 +135,7 @@ fn same_generation_baseline_or_written_revision_covers_every_flush_boundary() {
         FlushOperation::ManualSave,
         FlushOperation::InGameLoad,
         FlushOperation::ReturnToTitle,
-        FlushOperation::AcquisitionAcknowledgement,
+        FlushOperation::Exit,
     ] {
         assert_eq!(persistence.flush_revision(operation, 12), None);
         assert_eq!(persistence.flush_revision(operation, 18), None);
@@ -184,7 +184,6 @@ fn installed_session_baseline_and_target_come_from_the_installed_engine() {
     assert_eq!(session.persistence.generation, 8);
     assert_eq!(session.persistence.flush_baseline_revision, 44);
     assert_eq!(session.persistence.autosave_target, Some(source));
-    assert_eq!(session.persistence.exclusive_intent, None);
 }
 
 #[test]

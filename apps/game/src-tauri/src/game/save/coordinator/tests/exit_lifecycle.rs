@@ -3,7 +3,6 @@ use super::super::{
     ExitStatusView, FailureChallengeIdentity, FailureTokenSource, PersistenceBypassOperation,
     PersistenceFailureChallenge, PersistenceFailureTokenView, SaveCoordinator, AUTOSAVE_DEBOUNCE,
 };
-use super::acknowledgement::{app_with_event, terminal_acknowledgement_ticket};
 use super::debounce::{PhasedBackend, RecordingBackend};
 use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
 use crate::AppState;
@@ -148,7 +147,6 @@ fn assert_same_challenge(
     assert_eq!(actual.discovery_generation, expected.discovery_generation);
     assert_eq!(actual.durable_revision, expected.durable_revision);
     assert_eq!(actual.selected_save_id, expected.selected_save_id);
-    assert_eq!(actual.acquisition_event_id, expected.acquisition_event_id);
 }
 
 fn status_receiver(coordinator: &SaveCoordinator) -> mpsc::UnboundedReceiver<ExitStatusView> {
@@ -466,7 +464,6 @@ async fn exit_lifecycle_retry_recovery_collision_restores_prior_authority_only()
         discovery_generation: None,
         durable_revision: 2,
         selected_save_id: Some("unrelated-save".into()),
-        acquisition_event_id: Some("unrelated-event".into()),
     };
     {
         let mut state = retrying.state.lock().unwrap();
@@ -474,12 +471,11 @@ async fn exit_lifecycle_retry_recovery_collision_restores_prior_authority_only()
             issued,
             PersistenceFailureChallenge {
                 token: issued,
-                operation: PersistenceBypassOperation::ContinueWithoutSaving,
+                operation: PersistenceBypassOperation::StartWithoutSaving,
                 session_generation: 900,
                 discovery_generation: Some(901),
                 durable_revision: 902,
                 selected_save_id: Some("conflicting-save".into()),
-                acquisition_event_id: Some("conflicting-event".into()),
             },
         );
         state
@@ -513,7 +509,6 @@ async fn exit_lifecycle_retry_recovery_collision_restores_prior_authority_only()
         assert_eq!(restored_issued.discovery_generation, None);
         assert_eq!(restored_issued.durable_revision, 2);
         assert_eq!(restored_issued.selected_save_id, None);
-        assert_eq!(restored_issued.acquisition_event_id, None);
         assert_same_challenge(
             state.failure_challenges.get(&unrelated).unwrap(),
             &unrelated_challenge,
@@ -541,7 +536,6 @@ async fn exit_lifecycle_retry_recovery_collision_restores_prior_authority_only()
                 discovery_generation: None,
                 durable_revision: 2,
                 selected_save_id: Some("unrelated-save"),
-                acquisition_event_id: Some("unrelated-event"),
             },
         )
         .unwrap();
@@ -771,7 +765,6 @@ async fn exit_lifecycle_failure_token_collision_reserves_a_new_matching_challeng
         discovery_generation: None,
         durable_revision: 2,
         selected_save_id: None,
-        acquisition_event_id: None,
     };
     let original_token = PersistenceFailureTokenView(occupied.hyphenated().to_string());
     coordinator.state.lock().unwrap().failure_challenges.insert(
@@ -783,7 +776,6 @@ async fn exit_lifecycle_failure_token_collision_reserves_a_new_matching_challeng
             discovery_generation: identity.discovery_generation,
             durable_revision: identity.durable_revision,
             selected_save_id: None,
-            acquisition_event_id: None,
         },
     );
 
@@ -1090,51 +1082,4 @@ async fn exit_lifecycle_retry_and_without_saving_each_consume_one_exact_challeng
             .code,
         "stalePersistenceFailureToken"
     );
-}
-
-#[tokio::test]
-async fn exit_lifecycle_waits_for_active_acknowledgement_to_commit_before_flushing() {
-    let backend = Arc::new(PhasedBackend::new(4));
-    backend.pause_prepare();
-    let base = SaveCoordinator::with_backend(backend.clone());
-    let event_id = "acq:1:0";
-    let app = Arc::new(app_with_event(base.clone(), 4, 1, event_id, None));
-    let coordinator =
-        base.with_exit_application(Arc::clone(&app.session), Arc::clone(&app.replacement_gate));
-    let ticket = terminal_acknowledgement_ticket(&coordinator, 4, 1, event_id);
-    let acknowledgement = {
-        let coordinator = coordinator.clone();
-        let app = Arc::clone(&app);
-        tokio::spawn(async move {
-            coordinator
-                .acknowledge_acquisition(&app, event_id.into(), ticket)
-                .await
-        })
-    };
-    backend.wait_for_prepare().await;
-
-    let exit = Arc::new(RecordingExit::default());
-    coordinator
-        .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
-        .unwrap();
-
-    assert_eq!(coordinator.exit_status(), ExitStatusView::Saving);
-    assert!(app.session.try_lock().is_ok());
-    assert!(exit.calls.lock().unwrap().is_empty());
-
-    backend.release_prepare();
-    acknowledgement.await.unwrap().unwrap();
-    exit.wait_for_call().await;
-
-    assert!(app
-        .session
-        .lock()
-        .unwrap()
-        .engine
-        .as_ref()
-        .unwrap()
-        .pending_acquisition_events
-        .is_empty());
-    assert_eq!(backend.registered_targets().len(), 1);
-    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
 }

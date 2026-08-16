@@ -4,10 +4,10 @@ use super::super::{
     selected_save_challenge_key, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
     AutosaveCommittedWrite, AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob,
     AutosaveWriteReceipt, BackgroundWriteFailure, CaptureTerminalResult, CleanupOwner,
-    CoordinatorFuture, CoordinatorState, ExclusivePersistenceIntent, FailureChallengeIdentity,
-    FailureTokenSource, FlushOperation, PersistenceBypassOperation, PersistenceFailureTokenView,
-    PersistenceHealthView, RetryEligibility, SaveCoordinator, SessionTransitionIdentity,
-    ThumbnailActivityView, ThumbnailCapturePurpose,
+    CoordinatorFuture, CoordinatorState, FailureChallengeIdentity, FailureTokenSource,
+    FlushOperation, PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
+    RetryEligibility, SaveCoordinator, SessionTransitionIdentity, ThumbnailActivityView,
+    ThumbnailCapturePurpose,
 };
 use crate::game::save::schema::{
     SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -119,14 +119,12 @@ fn identity<'a>(
     discovery_generation: Option<u64>,
     durable_revision: u64,
     selected_save_id: Option<&'a str>,
-    acquisition_event_id: Option<&'a str>,
 ) -> FailureChallengeIdentity<'a> {
     FailureChallengeIdentity {
         session_generation,
         discovery_generation,
         durable_revision,
         selected_save_id,
-        acquisition_event_id,
     }
 }
 
@@ -443,48 +441,22 @@ fn app_session_empty_has_no_engine_and_zero_generation() {
 }
 
 // ---------------------------------------------------------------------------
-// AppSession::ensure_rendered_state_available (lines 700-706)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn ensure_rendered_state_available_rejects_exclusive_intent() {
-    let mut session = crate::game::save::coordinator::AppSession::installed(engine(1), 1, None);
-    // Without exclusive intent: OK.
-    assert!(session.ensure_rendered_state_available().is_ok());
-    // With exclusive intent: rejected.
-    session.persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
-    assert_eq!(
-        session.ensure_rendered_state_available().unwrap_err().code,
-        "persistenceOperationInProgress"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // AppSession::ensure_exit_flush_available (lines 708-714)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn ensure_exit_flush_available_requires_exit_flush_without_intent() {
+fn ensure_exit_flush_available_requires_exit_flush_requested() {
     let mut session = crate::game::save::coordinator::AppSession::installed(engine(1), 1, None);
 
-    // No exit flush, no intent: rejected.
+    // No exit flush: rejected.
     assert_eq!(
         session.ensure_exit_flush_available().unwrap_err().code,
         "persistenceOperationInProgress"
     );
 
-    // Exit flush requested, no intent: OK.
+    // Exit flush requested: OK.
     session.persistence.exit_flush_requested = true;
     assert!(session.ensure_exit_flush_available().is_ok());
-
-    // Exit flush requested AND intent: rejected.
-    session.persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
-    assert_eq!(
-        session.ensure_exit_flush_available().unwrap_err().code,
-        "persistenceOperationInProgress"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -644,7 +616,7 @@ fn retry_eligibility_retires_when_superseded_by_pending() {
 fn complete_discovery_attempt_increments_generation_and_clears_session_challenges() {
     let coordinator = coordinator();
     // Issue a challenge with no discovery_generation (session-scoped).
-    let id = identity(1, None, 10, None, None);
+    let id = identity(1, None, 10, None);
     let (_, _token) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
@@ -652,7 +624,7 @@ fn complete_discovery_attempt_increments_generation_and_clears_session_challenge
     );
 
     // Issue a challenge with discovery_generation = 0 (discovery-scoped).
-    let id2 = identity(1, Some(0), 10, None, None);
+    let id2 = identity(1, Some(0), 10, None);
     let _ = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -796,7 +768,7 @@ async fn clear_session_if_current_rejects_stale_identity() {
 fn challenge_persistence_failure_rejects_stale_discovery_generation() {
     let coordinator = coordinator();
     coordinator.state.lock().unwrap().discovery_generation = 5;
-    let id = identity(1, Some(3), 10, None, None);
+    let id = identity(1, Some(3), 10, None);
     assert_eq!(
         coordinator
             .challenge_persistence_failure(
@@ -837,11 +809,10 @@ fn challenge_current_session_failure_returns_token() {
 }
 
 #[test]
-fn challenge_current_session_failure_rejects_exclusive_intent() {
+fn challenge_current_session_failure_rejects_exit_flush_request() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 3, 7);
-    app.session.lock().unwrap().persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+    app.session.lock().unwrap().persistence.exit_flush_requested = true;
 
     assert_eq!(
         coordinator
@@ -868,7 +839,7 @@ fn consume_failure_token_matching_accepts_alternate_identity() {
     set_failure_tokens(&coordinator, vec![token]);
 
     // Issue a challenge with session-scoped identity (no discovery_generation).
-    let primary = identity(5, None, 10, None, None);
+    let primary = identity(5, None, 10, None);
     let (_, token_view) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
@@ -876,8 +847,8 @@ fn consume_failure_token_matching_accepts_alternate_identity() {
     );
 
     // Consume with a mismatched primary but matching alternate.
-    let mismatched = identity(5, Some(99), 10, None, None);
-    let alternate = identity(5, None, 10, None, None);
+    let mismatched = identity(5, Some(99), 10, None);
+    let alternate = identity(5, None, 10, None);
     let challenge = coordinator
         .consume_failure_token_matching(
             &token_view,
@@ -895,15 +866,15 @@ fn consume_failure_token_matching_rejects_when_neither_identity_matches() {
     let token = Uuid::new_v4();
     set_failure_tokens(&coordinator, vec![token]);
 
-    let primary = identity(5, None, 10, None, None);
+    let primary = identity(5, None, 10, None);
     let (_, token_view) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
         primary,
     );
 
-    let mismatched = identity(5, None, 99, None, None);
-    let also_mismatched = identity(5, Some(1), 99, None, None);
+    let mismatched = identity(5, None, 99, None);
+    let also_mismatched = identity(5, Some(1), 99, None);
     assert_eq!(
         coordinator
             .consume_failure_token_matching(
@@ -923,31 +894,11 @@ fn consume_failure_token_matching_rejects_when_neither_identity_matches() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn cancel_persistence_failure_uses_acquisition_event_identity() {
-    let coordinator = coordinator();
-    let app = super::acknowledgement::app_with_event(coordinator.clone(), 4, 41, "acq:41:0", None);
-
-    // Issue a challenge with an acquisition_event_id and an accepted operation.
-    let id = identity(4, None, 41, None, Some("acq:41:0"));
-    let (_, token) = issue_challenge(
-        &coordinator,
-        PersistenceBypassOperation::StartWithoutSaving,
-        id,
-    );
-
-    // cancel_persistence_failure should use the acquisition event identity path.
-    coordinator
-        .cancel_persistence_failure(&app, token)
-        .await
-        .unwrap();
-}
-
-#[tokio::test]
 async fn cancel_persistence_failure_rejects_exit_operation() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 4, 41);
 
-    let id = identity(4, None, 41, None, None);
+    let id = identity(4, None, 41, None);
     let (_, token) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::ExitWithoutSaving,
@@ -1219,25 +1170,8 @@ fn enqueue_orphan_cleanup_fails_without_backend() {
 }
 
 // ---------------------------------------------------------------------------
-// reserve_acknowledgement_writer / reserve_manual_writer / reserve_delete_writer
-// (lines 3454-3484)
+// reserve_manual_writer / reserve_delete_writer
 // ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn reserve_acknowledgement_writer_succeeds_with_default_scheduler() {
-    let coordinator = coordinator();
-    let ran = Arc::new(Mutex::new(false));
-    let ran_clone = Arc::clone(&ran);
-    coordinator
-        .reserve_acknowledgement_writer(Box::pin(async move {
-            *ran_clone.lock().unwrap() = true;
-        }))
-        .unwrap();
-    // The default scheduler spawns the worker; give it a chance to run.
-    tokio::task::yield_now().await;
-    tokio::task::yield_now().await;
-    // The writer queue may or may not have run yet, but enqueue must succeed.
-}
 
 #[tokio::test]
 async fn reserve_manual_writer_succeeds_with_default_scheduler() {
@@ -1269,11 +1203,10 @@ fn transition_identity_returns_generation_and_revision() {
 }
 
 #[test]
-fn transition_identity_rejects_exclusive_intent() {
+fn transition_identity_rejects_exit_flush_request() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 5, 12);
-    app.session.lock().unwrap().persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+    app.session.lock().unwrap().persistence.exit_flush_requested = true;
     assert_eq!(
         coordinator.transition_identity(&app).unwrap_err().code,
         "persistenceOperationInProgress"
@@ -1449,12 +1382,11 @@ fn consume_current_session_failure_succeeds_with_matching_token() {
 // ---------------------------------------------------------------------------
 
 #[tokio::test]
-async fn cancel_persistence_failure_uses_transition_identity_without_acquisition_event() {
+async fn cancel_persistence_failure_uses_transition_identity() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 4, 41);
 
-    // Issue a challenge without acquisition_event_id.
-    let id = identity(4, None, 41, None, None);
+    let id = identity(4, None, 41, None);
     let (_, token) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
@@ -1475,7 +1407,7 @@ async fn cancel_persistence_failure_uses_transition_identity_without_acquisition
 #[test]
 fn cancel_failure_token_consumes_and_returns_ok() {
     let coordinator = coordinator();
-    let id = identity(1, None, 10, None, None);
+    let id = identity(1, None, 10, None);
     let (_, token) = issue_challenge(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
@@ -1588,11 +1520,10 @@ async fn install_session_with_manual_target_drops_target() {
 }
 
 #[tokio::test]
-async fn install_session_rejects_exclusive_intent() {
+async fn install_session_rejects_exit_flush_request() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 5, 12);
-    app.session.lock().unwrap().persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+    app.session.lock().unwrap().persistence.exit_flush_requested = true;
     assert_eq!(
         coordinator
             .install_session(&app, engine(10), None)
@@ -1644,11 +1575,10 @@ async fn clear_session_succeeds_and_advances_generation() {
 }
 
 #[tokio::test]
-async fn clear_session_rejects_exclusive_intent() {
+async fn clear_session_rejects_exit_flush_request() {
     let coordinator = coordinator();
     let app = app(coordinator.clone(), 5, 10);
-    app.session.lock().unwrap().persistence.exclusive_intent =
-        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+    app.session.lock().unwrap().persistence.exit_flush_requested = true;
     assert_eq!(
         coordinator.clear_session(&app).await.unwrap_err().code,
         "persistenceOperationInProgress"
