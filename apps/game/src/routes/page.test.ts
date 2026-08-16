@@ -1533,9 +1533,16 @@ describe("+page in-game persistence browser", () => {
     );
     const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
     await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
-    expect(
-      await screen.findByRole("dialog", { name: "儲存失敗" }),
-    ).toBeInTheDocument();
+    const failure = await screen.findByRole("dialog", { name: "儲存失敗" });
+    expect(failure).toBeInTheDocument();
+    // The recovery-focus $effect owns focus while the failure modal is open:
+    // the Retry (重試) action must hold focus, not gameplayRoot or the Present
+    // surface. The post-save focus restore must not run after save_manual fails.
+    await waitFor(() => {
+      expect(
+        within(failure).getByRole("button", { name: "重試" }),
+      ).toHaveFocus();
+    });
 
     await user.keyboard("{Escape}");
 
