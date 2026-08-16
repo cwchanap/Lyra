@@ -14,14 +14,12 @@
   let {
     board,
     inventory,
-    headingFocusKey = null,
     onDraft,
     disabled = false,
     readOnly = false,
   }: {
     board: ThresholdBoardView;
     inventory: Inventory;
-    headingFocusKey?: string | null;
     onDraft: (draft: ThresholdDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
@@ -85,16 +83,6 @@
 </script>
 
 <section class="threshold-board" aria-label="門檻板">
-  <header>
-    <p class="eyebrow">證據門檻</p>
-    <h2 data-analysis-focus-key={headingFocusKey ?? undefined} tabindex="-1">
-      {board.label}
-    </h2>
-    <p>{board.prompt}</p>
-  </header>
-
-  {#if board.hint}<p class="hint">提示：{board.hint}</p>{/if}
-
   <div class="cards" aria-label="可選線索">
     {#each board.cards as card (card.id)}
       {@const record = recordForCard(card)}
@@ -142,42 +130,8 @@
   .threshold-board {
     display: grid;
     gap: 1.25rem;
-    width: min(720px, calc(100vw - 2rem));
-    margin: 3rem auto;
-    padding: clamp(1.25rem, 3vw, 2rem);
     color: #efedf0;
-    background: rgba(16, 20, 29, 0.95);
-    border: 1px solid rgba(179, 191, 214, 0.38);
-    box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.4);
-  }
-
-  header p {
-    margin: 0.4rem 0 0;
-    line-height: 1.65;
-  }
-
-  h2 {
-    margin: 0;
-    font-size: clamp(1.25rem, 3vw, 1.8rem);
-  }
-
-  .eyebrow {
-    margin: 0;
-    color: #9cb6df;
-    font-size: 0.82rem;
-    letter-spacing: 0.13em;
-  }
-
-  .hint {
-    margin: 0;
-    padding: 0.7rem 0.85rem;
-    color: #c9cbd1;
-    font-size: 0.9rem;
-  }
-
-  .hint {
-    background: rgba(91, 135, 210, 0.14);
-    border-left: 3px solid #a8c8ff;
+    min-width: 0;
   }
 
   .cards {
