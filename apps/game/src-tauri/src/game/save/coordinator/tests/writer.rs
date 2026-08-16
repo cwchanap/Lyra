@@ -26,12 +26,11 @@ fn scheduler_rejection_does_not_retain_an_unstarted_writer_job() {
 
     let state = coordinator.writer_queue.state.lock().unwrap();
     assert!(!state.running);
-    assert!(state.acknowledgements.is_empty());
     assert!(state.ordinary.is_empty());
 }
 
 #[tokio::test]
-async fn one_writer_runs_at_a_time_and_acknowledgement_is_reserved_next() {
+async fn one_writer_runs_at_a_time_in_queue_order() {
     let coordinator = SaveCoordinator::new();
     let probe = Arc::new(WriterQueueProbe::paused());
 
@@ -52,10 +51,10 @@ async fn one_writer_runs_at_a_time_and_acknowledgement_is_reserved_next() {
         "later-debounce",
         probe.clone(),
     );
-    let acknowledgement_probe = probe.clone();
+    let manual_probe = probe.clone();
     coordinator
-        .reserve_acknowledgement_writer(Box::pin(async move {
-            acknowledgement_probe.run("acknowledgement").await;
+        .reserve_manual_writer(Box::pin(async move {
+            manual_probe.run("manual").await;
         }))
         .unwrap();
 
@@ -64,7 +63,7 @@ async fn one_writer_runs_at_a_time_and_acknowledgement_is_reserved_next() {
 
     assert_eq!(
         probe.started_labels(),
-        ["current", "acknowledgement", "later-debounce"]
+        ["current", "later-debounce", "manual"]
     );
     assert_eq!(probe.max_concurrent(), 1);
 }
@@ -76,7 +75,7 @@ async fn superseded_debounce_is_removed_before_it_can_enter_writer_turn() {
 
     let current_probe = probe.clone();
     coordinator
-        .reserve_acknowledgement_writer(Box::pin(async move {
+        .reserve_manual_writer(Box::pin(async move {
             current_probe.run("current").await;
         }))
         .unwrap();
@@ -111,7 +110,7 @@ async fn queued_writer_runs_only_after_the_current_writer_completes() {
 
     let current_probe = probe.clone();
     coordinator
-        .reserve_acknowledgement_writer(Box::pin(async move {
+        .reserve_manual_writer(Box::pin(async move {
             current_probe.run("current").await;
         }))
         .unwrap();

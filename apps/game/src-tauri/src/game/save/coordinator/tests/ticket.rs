@@ -29,20 +29,6 @@ fn manual(generation: u64, revision: u64) -> ThumbnailCapturePurpose {
     }
 }
 
-fn acknowledgement(
-    generation: u64,
-    source_revision: u64,
-    next_revision: u64,
-    event_id: &str,
-) -> ThumbnailCapturePurpose {
-    ThumbnailCapturePurpose::AcquisitionAcknowledgement {
-        session_generation: generation,
-        source_revision,
-        next_revision,
-        event_id: event_id.into(),
-    }
-}
-
 #[tokio::test(start_paused = true)]
 async fn ticket_is_a_canonical_uuid_v4_with_one_exact_deadline() {
     let coordinator = coordinator();
@@ -198,20 +184,22 @@ async fn a_newer_intent_supersedes_the_older_ticket_terminally() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn claim_rejects_changed_generation_revision_purpose_and_event() {
+async fn claim_rejects_changed_generation_revision_and_purpose() {
     let coordinator = coordinator();
-    let original = acknowledgement(8, 40, 41, "acq:40:0");
+    let original = manual(8, 40);
     let request = coordinator.prepare_thumbnail(original.clone()).unwrap();
     coordinator
         .submit_thumbnail(&request.ticket, &png_fixture(1, 1))
         .unwrap();
 
     for changed in [
-        acknowledgement(9, 40, 41, "acq:40:0"),
-        acknowledgement(8, 39, 41, "acq:40:0"),
-        acknowledgement(8, 40, 42, "acq:40:0"),
-        acknowledgement(8, 40, 41, "acq:40:1"),
-        manual(8, 40),
+        manual(9, 40),
+        manual(8, 39),
+        manual(8, 41),
+        ThumbnailCapturePurpose::Autosave {
+            session_generation: 8,
+            durable_revision: 40,
+        },
     ] {
         assert_eq!(
             coordinator

@@ -16,14 +16,12 @@ fn identity<'a>(
     discovery_generation: Option<u64>,
     durable_revision: u64,
     selected_save_id: Option<&'a str>,
-    acquisition_event_id: Option<&'a str>,
 ) -> FailureChallengeIdentity<'a> {
     FailureChallengeIdentity {
         session_generation,
         discovery_generation,
         durable_revision,
         selected_save_id,
-        acquisition_event_id,
     }
 }
 
@@ -66,7 +64,7 @@ fn challenge_error_exposes_only_a_canonical_uuid_v4_token_on_the_wire() {
     let (error, token) = issue(
         &coordinator,
         PersistenceBypassOperation::ReturnWithoutSaving,
-        identity(7, None, 11, None, None),
+        identity(7, None, 11, None),
     );
     let value = serde_json::to_value(&error).unwrap();
     let token_wire = value["failureToken"].as_str().unwrap();
@@ -96,7 +94,7 @@ fn challenge_error_exposes_only_a_canonical_uuid_v4_token_on_the_wire() {
 #[test]
 fn matching_retry_claim_is_one_shot_and_a_failed_retry_gets_a_new_token() {
     let coordinator = SaveCoordinator::new();
-    let current = identity(9, None, 14, Some("save-a"), None);
+    let current = identity(9, None, 14, Some("save-a"));
     let (_, token) = issue(
         &coordinator,
         PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -145,19 +143,18 @@ fn matching_retry_claim_is_one_shot_and_a_failed_retry_gets_a_new_token() {
 }
 
 #[test]
-fn exact_identity_rejects_stale_session_revision_discovery_save_and_event() {
+fn exact_identity_rejects_stale_session_revision_discovery_and_save() {
     let coordinator = SaveCoordinator::new();
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 3);
-    let operation = PersistenceBypassOperation::ContinueWithoutSaving;
-    let exact = identity(5, Some(3), 8, Some("save-a"), Some("acq:8:0"));
+    let operation = PersistenceBypassOperation::LoadDiscardingCurrent;
+    let exact = identity(5, Some(3), 8, Some("save-a"));
     let stale_identities = [
-        identity(6, Some(3), 8, Some("save-a"), Some("acq:8:0")),
-        identity(5, Some(3), 9, Some("save-a"), Some("acq:8:0")),
-        identity(5, Some(4), 8, Some("save-a"), Some("acq:8:0")),
-        identity(5, Some(3), 8, Some("save-b"), Some("acq:8:0")),
-        identity(5, Some(3), 8, Some("save-a"), Some("acq:8:1")),
+        identity(6, Some(3), 8, Some("save-a")),
+        identity(5, Some(3), 9, Some("save-a")),
+        identity(5, Some(4), 8, Some("save-a")),
+        identity(5, Some(3), 8, Some("save-b")),
     ];
 
     for stale in stale_identities {
@@ -178,7 +175,7 @@ fn exact_identity_rejects_stale_session_revision_discovery_save_and_event() {
 #[test]
 fn wrong_uuid_is_rejected_without_exposing_challenge_fields() {
     let coordinator = SaveCoordinator::new();
-    let current = identity(2, None, 4, None, None);
+    let current = identity(2, None, 4, None);
     let (_, issued) = issue(
         &coordinator,
         PersistenceBypassOperation::ExitWithoutSaving,
@@ -211,7 +208,7 @@ fn completed_discovery_is_monotonic_and_invalidates_older_global_challenges() {
     let (_, token) = issue(
         &coordinator,
         PersistenceBypassOperation::StartWithoutSaving,
-        identity(0, Some(first), 0, None, None),
+        identity(0, Some(first), 0, None),
     );
     let second = coordinator.complete_discovery_attempt().unwrap();
 
@@ -221,7 +218,7 @@ fn completed_discovery_is_monotonic_and_invalidates_older_global_challenges() {
             .consume_failure_token(
                 &token,
                 PersistenceBypassOperation::StartWithoutSaving,
-                identity(0, Some(second), 0, None, None),
+                identity(0, Some(second), 0, None),
             )
             .unwrap_err()
             .code,
@@ -234,12 +231,11 @@ fn typed_without_saving_operations_cannot_consume_each_others_challenges() {
     let coordinator = SaveCoordinator::new();
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
-    let current = identity(3, Some(2), 7, Some("save-a"), Some("acq:7:0"));
+    let current = identity(3, Some(2), 7, Some("save-a"));
     let operations = [
         PersistenceBypassOperation::StartWithoutSaving,
         PersistenceBypassOperation::LoadDiscardingCurrent,
         PersistenceBypassOperation::ReturnWithoutSaving,
-        PersistenceBypassOperation::ContinueWithoutSaving,
         PersistenceBypassOperation::ExitWithoutSaving,
     ];
 
@@ -260,7 +256,7 @@ fn typed_without_saving_operations_cannot_consume_each_others_challenges() {
 fn cancel_consumes_the_exact_challenge_and_retains_degraded_health() {
     let coordinator = SaveCoordinator::new();
     let operation = PersistenceBypassOperation::ReturnWithoutSaving;
-    let current = identity(12, None, 22, None, None);
+    let current = identity(12, None, 22, None);
     let (_, token) = issue(&coordinator, operation, current);
 
     coordinator
@@ -351,44 +347,6 @@ async fn token_only_cancel_rejects_stale_session_and_a_different_token() {
         .as_mut()
         .unwrap()
         .durable_revision += 1;
-    assert_eq!(
-        coordinator
-            .cancel_persistence_failure(&app, token)
-            .await
-            .unwrap_err()
-            .code,
-        "stalePersistenceFailureToken"
-    );
-}
-
-#[tokio::test]
-async fn token_only_cancel_validates_the_stored_acquisition_binding() {
-    let coordinator = SaveCoordinator::new();
-    let app = super::acknowledgement::app_with_event(
-        coordinator.clone(),
-        8,
-        13,
-        "acquisition-event",
-        None,
-    );
-    let error = coordinator
-        .challenge_persistence_failure(
-            PersistenceBypassOperation::ContinueWithoutSaving,
-            identity(8, None, 13, None, Some("acquisition-event")),
-            GameError::save_write_failed(),
-        )
-        .unwrap();
-    let token = PersistenceFailureTokenView::from_error(&error).unwrap();
-
-    app.session
-        .lock()
-        .unwrap()
-        .engine
-        .as_mut()
-        .unwrap()
-        .pending_acquisition_events
-        .clear();
-
     assert_eq!(
         coordinator
             .cancel_persistence_failure(&app, token)

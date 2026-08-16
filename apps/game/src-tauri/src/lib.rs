@@ -14,8 +14,6 @@ use game::analysis::{AnalysisActionToken, AnalysisDraft};
 #[cfg(feature = "e2e")]
 use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
 use game::save::capture::{capture_checkpoint, CapturedCheckpoint};
-#[cfg(feature = "e2e")]
-use game::save::coordinator::ExclusivePersistenceIntent;
 use game::save::coordinator::{
     AppSession, ApplicationExit, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
     AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture,
@@ -177,7 +175,7 @@ pub(crate) enum MutationPersistencePolicy {
     AutosaveIfAdvancedWithoutThumbnail,
     CoordinatorManaged,
     #[allow(dead_code)]
-    // Persistence-failure recovery still exercises this policy; production constructors were removed with the acknowledgement recovery commands.
+    // Only test constructors remain; production constructors were removed with the acknowledgement recovery commands.
     AdvanceWithoutSaving,
 }
 
@@ -499,7 +497,6 @@ fn publish_write_outcome_health(
 
 fn read_game_state(state: &AppState) -> Result<GameStateView, GameError> {
     let session = state.session.lock().map_err(|_| unavailable_error())?;
-    session.ensure_rendered_state_available()?;
     session
         .engine
         .as_ref()
@@ -807,38 +804,14 @@ fn e2e_set_persistence_fault(
 #[cfg(feature = "e2e")]
 #[tauri::command]
 async fn e2e_request_application_quit(
-    state: tauri::State<'_, AppState>,
+    _state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
-    wait_for_active_acknowledgement: bool,
 ) -> Result<(), GameError> {
     // WebDriver key events terminate at the webview and cannot exercise the
     // macOS application-level Command-Q route. AppHandle::exit emits the same
     // RunEvent::ExitRequested event that the native quit action produces; the
     // lifecycle handler below prevents that first request, flushes, then uses
     // its one-shot programmatic bypass to complete the exit.
-    //
-    // The optional E2E gate makes the active-acknowledgement race deterministic:
-    // arm the native quit first, then emit ExitRequested only after the real
-    // coordinator has installed its exclusive acknowledgement intent.
-    if wait_for_active_acknowledgement {
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
-        loop {
-            let active = state
-                .session
-                .lock()
-                .map_err(|_| GameError::unavailable())?
-                .persistence
-                .exclusive_intent
-                == Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
-            if active {
-                break;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Err(GameError::persistence_operation_in_progress());
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        }
-    }
     app.exit(0);
     Ok(())
 }
@@ -2524,7 +2497,6 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::game::save::coordinator::ExclusivePersistenceIntent;
     use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
     use std::time::Duration;
 
@@ -3323,17 +3295,16 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn busy_active_list_saves_returns_error_without_a_bypass_token() {
+        async fn busy_exit_flush_list_saves_returns_error_without_a_bypass_token() {
             let app = mutation_app();
             let before = session_observation(&app);
-            app.session.lock().unwrap().persistence.exclusive_intent =
-                Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+            app.session.lock().unwrap().persistence.exit_flush_requested = true;
 
             let error = list_saves_core(&app, discovered_browser).await.unwrap_err();
 
             assert_eq!(error.code, "persistenceOperationInProgress");
             assert!(error.failure_token.is_none());
-            app.session.lock().unwrap().persistence.exclusive_intent = None;
+            app.session.lock().unwrap().persistence.exit_flush_requested = false;
             let fabricated: PersistenceFailureTokenView = serde_json::from_value(
                 serde_json::Value::String(uuid::Uuid::new_v4().hyphenated().to_string()),
             )
@@ -3351,7 +3322,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn busy_flush_cannot_mint_token_after_exclusive_intent_rolls_back() {
+        async fn busy_flush_cannot_mint_token_after_exit_flush_rolls_back() {
             let app = mutation_app();
             app.session
                 .lock()
@@ -3363,13 +3334,12 @@ mod tests {
                 &app,
                 discovered_browser,
                 |app| {
-                    app.session.lock().unwrap().persistence.exclusive_intent =
-                        Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+                    app.session.lock().unwrap().persistence.exit_flush_requested = true;
                     Ok(())
                 },
                 |app, error| {
                     assert_eq!(error, &GameError::persistence_operation_in_progress());
-                    app.session.lock().unwrap().persistence.exclusive_intent = None;
+                    app.session.lock().unwrap().persistence.exit_flush_requested = false;
                     Ok(())
                 },
             )
@@ -4185,13 +4155,13 @@ mod tests {
             assert!(slot_path.exists());
 
             // Hold the writer queue active with a placeholder
-            // acknowledgement writer that does not hold the replacement
-            // gate, so replacement can proceed while the queued delete
-            // sits behind it in the ordinary queue.
+            // manual writer that does not hold the replacement gate, so
+            // replacement can proceed while the queued delete sits behind
+            // it in the ordinary queue.
             let (release_tx, release_rx) = tokio::sync::oneshot::channel();
             let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
             app.coordinator
-                .reserve_acknowledgement_writer(Box::pin(async move {
+                .reserve_manual_writer(Box::pin(async move {
                     let _ = turn_tx.send(());
                     let _ = release_rx.await;
                 }))
@@ -4298,8 +4268,6 @@ mod tests {
                 serde_json::to_value(app.persistence.as_ref().unwrap().discover()).unwrap();
             let health_before = app.coordinator.persistence_health();
             let removes_before = fs.removes.load(Ordering::SeqCst);
-            app.session.lock().unwrap().persistence.exclusive_intent =
-                Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
             app.coordinator
                 .request_exit_flush(
                     Arc::new(NoopApplicationExit),
@@ -5434,7 +5402,7 @@ mod tests {
         }
 
         #[test]
-        fn centralized_guard_rejects_missing_game_and_exclusive_persistence() {
+        fn centralized_guard_rejects_missing_game_and_busy_persistence() {
             let empty = AppState {
                 session: Arc::new(Mutex::new(AppSession::empty())),
                 replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
@@ -5452,8 +5420,7 @@ mod tests {
             assert_eq!(missing.code, "gameNotStarted");
 
             let app = mutation_app();
-            app.session.lock().unwrap().persistence.exclusive_intent =
-                Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+            app.session.lock().unwrap().persistence.exit_flush_requested = true;
             let exclusive = run_gameplay_mutation(
                 &app,
                 MutationPersistencePolicy::AutosaveIfAdvanced,
@@ -5996,33 +5963,31 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn start_core_rejects_queued_ack_before_allocating_or_installing() {
+    async fn start_core_rejects_exit_flush_before_allocating_or_installing() {
         let app = app();
-        app.session.lock().unwrap().persistence.exclusive_intent =
-            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+        app.session.lock().unwrap().persistence.exit_flush_requested = true;
 
         let error = tokio::time::timeout(
             Duration::from_millis(50),
             start_game_core(&app, engine("new")),
         )
         .await
-        .expect("queued acknowledgement must fail fast")
+        .expect("busy session must fail fast")
         .unwrap_err();
 
         assert_eq!(error.code, "persistenceOperationInProgress");
         assert_eq!(installed_scene_id(&app), "old");
 
-        app.session.lock().unwrap().persistence.exclusive_intent = None;
+        app.session.lock().unwrap().persistence.exit_flush_requested = false;
         start_game_core(&app, engine("new")).await.unwrap();
         assert_eq!(app.session.lock().unwrap().persistence.generation, 1);
         assert_eq!(installed_scene_id(&app), "new");
     }
 
     #[tokio::test]
-    async fn reset_core_rejects_active_ack_without_waiting_for_its_gate() {
+    async fn reset_core_rejects_exit_flush_without_waiting_for_its_gate() {
         let app = app();
-        app.session.lock().unwrap().persistence.exclusive_intent =
-            Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
+        app.session.lock().unwrap().persistence.exit_flush_requested = true;
         let gate = app.replacement_gate.clone().lock_owned().await;
 
         let error = tokio::time::timeout(
@@ -6030,7 +5995,7 @@ mod tests {
             start_game_core(&app, engine("new")),
         )
         .await
-        .expect("active acknowledgement must fail before waiting for G")
+        .expect("busy session must fail before waiting for G")
         .unwrap_err();
 
         assert_eq!(error.code, "persistenceOperationInProgress");

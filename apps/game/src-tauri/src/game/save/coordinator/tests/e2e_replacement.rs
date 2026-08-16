@@ -1,9 +1,8 @@
 use super::super::{
     AppSession, AutosaveWriteReceipt, BackgroundWriteFailure, CleanupFailure, CleanupOwner,
-    ExclusivePersistenceIntent, ExitStatusView, FailureChallengeIdentity, PendingAutosave,
-    PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
-    SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose, WriterJobClass,
-    WriterQueueProbe,
+    ExitStatusView, FailureChallengeIdentity, PendingAutosave, PersistenceBypassOperation,
+    PersistenceFailureTokenView, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
+    ThumbnailCapturePurpose, WriterJobClass, WriterQueueProbe,
 };
 use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
 use crate::game::save::schema::SaveSlotRef;
@@ -95,7 +94,6 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
             discovery_generation: None,
             durable_revision: 4,
             selected_save_id: None,
-            acquisition_event_id: None,
         };
         state.reserve_failure_challenge(PersistenceBypassOperation::StartWithoutSaving, identity);
         state.exit_status = ExitStatusView::Failed {
@@ -160,34 +158,27 @@ async fn replacement_atomically_installs_a_fresh_session_and_resets_contaminated
 }
 
 #[tokio::test]
-async fn replacement_rejects_acknowledgement_and_exit_saving_before_waiting_for_the_gate() {
-    for exit_saving in [false, true] {
-        let app = app();
-        if exit_saving {
-            app.session.lock().unwrap().persistence.exit_flush_requested = true;
-            app.coordinator.state.lock().unwrap().exit_status = ExitStatusView::Saving;
-        } else {
-            app.session.lock().unwrap().persistence.exclusive_intent =
-                Some(ExclusivePersistenceIntent::AcquisitionAcknowledgement);
-        }
-        let gate = app.replacement_gate.clone().lock_owned().await;
+async fn replacement_rejects_exit_saving_before_waiting_for_the_gate() {
+    let app = app();
+    app.session.lock().unwrap().persistence.exit_flush_requested = true;
+    app.coordinator.state.lock().unwrap().exit_status = ExitStatusView::Saving;
+    let gate = app.replacement_gate.clone().lock_owned().await;
 
-        let result = tokio::time::timeout(
-            Duration::from_millis(50),
-            app.coordinator
-                .replace_session_for_e2e(&app, engine("checkpoint", 1)),
-        )
-        .await
-        .expect("rejected transition must not wait for the replacement gate");
-        let error = match result {
-            Ok(_) => panic!("contaminated session replacement unexpectedly succeeded"),
-            Err(error) => error,
-        };
+    let result = tokio::time::timeout(
+        Duration::from_millis(50),
+        app.coordinator
+            .replace_session_for_e2e(&app, engine("checkpoint", 1)),
+    )
+    .await
+    .expect("rejected transition must not wait for the replacement gate");
+    let error = match result {
+        Ok(_) => panic!("contaminated session replacement unexpectedly succeeded"),
+        Err(error) => error,
+    };
 
-        assert_eq!(error.code, "persistenceOperationInProgress");
-        assert_eq!(app.session.lock().unwrap().persistence.generation, 0);
-        drop(gate);
-    }
+    assert_eq!(error.code, "persistenceOperationInProgress");
+    assert_eq!(app.session.lock().unwrap().persistence.generation, 0);
+    drop(gate);
 }
 
 #[tokio::test]
