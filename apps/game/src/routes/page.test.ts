@@ -425,7 +425,7 @@ describe("+page title persistence flows", () => {
       continueCandidate: null,
       preflight: { type: "ready" },
     };
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(unavailable);
       if (command === "get_persistence_status") {
@@ -495,7 +495,7 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
     let cancelAttempts = 0;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(titleDiscovery());
       if (command === "get_persistence_status") {
@@ -688,7 +688,7 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(discovery);
       if (command === "load_save") {
@@ -823,7 +823,7 @@ describe("+page title persistence flows", () => {
       status: validSlotStatus("selected-save-id"),
     };
     const loadArgs: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(discovery);
       if (command === "load_save") {
@@ -1181,7 +1181,7 @@ describe("+page in-game persistence browser", () => {
       args: Record<string, unknown>;
     }> = [];
     let listCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_saves") {
         listCalls += 1;
@@ -1291,7 +1291,7 @@ describe("+page in-game persistence browser", () => {
     });
     let prepareCalls = 0;
     let manualCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(titleDiscovery());
       if (command === "list_scenes") {
@@ -1555,7 +1555,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("load-save-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1621,7 +1621,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1712,7 +1712,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1779,7 +1779,7 @@ describe("+page in-game persistence browser", () => {
       command: string;
       args: Record<string, unknown>;
     }> = [];
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_scenes") {
         return jsonResponse(sceneNavigationIndex);
@@ -1877,7 +1877,7 @@ describe("+page in-game persistence browser", () => {
   it("swallows Escape while exit is saving and uses exact cancel_exit from the failed layer", async () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_scenes") {
         return jsonResponse(sceneNavigationIndex);
@@ -2209,7 +2209,7 @@ describe("+page close case flow", () => {
   it("keeps gameplay on Return failure and retains the exact token through the second confirmation", async () => {
     const user = userEvent.setup();
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "return_to_title") {
         return jsonError({
@@ -2279,7 +2279,7 @@ describe("+page close case flow", () => {
   it("cancels a Return challenge with its exact token before Escape restores the game menu", async () => {
     const user = userEvent.setup();
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "return_to_title") {
         return jsonError({
