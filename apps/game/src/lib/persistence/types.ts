@@ -126,8 +126,6 @@ export type ThumbnailCaptureRequestView = {
   timeoutMs: number;
 };
 
-export type ThumbnailCapturePurposeView = { type: "manualSave" };
-
 export type GameplayCommandResultView = {
   state: GameStateView;
   thumbnailCapture: ThumbnailCaptureRequestView | null;
