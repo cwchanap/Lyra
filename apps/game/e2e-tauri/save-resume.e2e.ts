@@ -15,6 +15,7 @@ import {
   waitForAcquisitionOrdinal,
   waitForButton,
   waitForPackagedGameState,
+  waitForPersistenceIdle,
   waitForShell,
 } from "./helpers";
 import {
@@ -166,8 +167,25 @@ describe("save resume", () => {
       control.composite.pendingEventIds[0],
     );
     await waitForButton("CONTINUE");
-    // Capture the expected acquired records before any acknowledgement so the
-    // persisted-state replay check below can prove each exists exactly once.
+    await waitForPersistenceIdle();
+    const preAcknowledgementAutosave = newestAutosaveSlot();
+    if (!preAcknowledgementAutosave?.envelope) {
+      throw new Error("pre-acknowledgement autosave is missing");
+    }
+    const preAcknowledgementEnvelope = await waitForSaveE2eEnvelope(
+      preAcknowledgementAutosave.fixedSlotName,
+      (envelope) =>
+        envelope.saveId === preAcknowledgementAutosave.envelope!.saveId &&
+        (
+          (envelope.snapshot as { pendingAcquisitionEvents?: unknown[] })
+            .pendingAcquisitionEvents ?? []
+        ).length > 0,
+      90000,
+    );
+    const preAcknowledgementSaveId = preAcknowledgementEnvelope.saveId;
+
+    // Capture each expected acquired record before acknowledging that record so
+    // the persisted-state replay check below can prove each exists exactly once.
     const expectedRecords: Array<{
       kind: "evidence" | "statement";
       id: string;
@@ -203,7 +221,10 @@ describe("save resume", () => {
           const snapshot = newest.envelope.snapshot as {
             pendingAcquisitionEvents?: unknown[];
           };
-          if ((snapshot.pendingAcquisitionEvents ?? []).length === 0) {
+          if (
+            newest.envelope.saveId !== preAcknowledgementSaveId &&
+            (snapshot.pendingAcquisitionEvents ?? []).length === 0
+          ) {
             return newest.envelope.saveId;
           }
         }
