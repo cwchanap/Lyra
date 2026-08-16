@@ -408,15 +408,11 @@ describe("ThresholdBoard", () => {
     expect(onDraft).not.toHaveBeenCalled();
   });
 
-  it("renders a hint when the board has one", () => {
+  it("leaves title, prompt, and hint presentation to the workbench host", () => {
     renderBoard(boardWith(practiceFixtureBoard, { hint: "先看時間順序。" }));
 
-    expect(screen.getByText("提示：先看時間順序。")).toBeInTheDocument();
-  });
-
-  it("does not render a hint when the board has none", () => {
-    renderBoard(boardWith(practiceFixtureBoard, { hint: null }));
-
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(screen.queryByText("選出正確的三項資料。")).not.toBeInTheDocument();
     expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
   });
 

@@ -16,13 +16,11 @@
 
   let {
     board,
-    headingFocusKey = null,
     onDraft,
     disabled = false,
     readOnly = false,
   }: {
     board: OrderBoardView;
-    headingFocusKey?: string | null;
     onDraft: (draft: OrderDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
@@ -106,16 +104,6 @@
 </script>
 
 <section class="order-board" aria-label="排序板">
-  <header>
-    <p class="eyebrow">事件順序</p>
-    <h2 data-analysis-focus-key={headingFocusKey ?? undefined} tabindex="-1">
-      {board.label}
-    </h2>
-    <p>{board.prompt}</p>
-  </header>
-
-  {#if board.hint}<p class="hint">提示：{board.hint}</p>{/if}
-
   {#if blockReason === "unsupportedAnchors"}
     <p class="blocked" role="alert">排序設定無法顯示，請重新載入內容。</p>
   {:else if blockReason === "fixedAnchorUnavailable"}
@@ -203,52 +191,15 @@
   .order-board {
     display: grid;
     gap: 1.25rem;
-    width: min(980px, calc(100vw - 2rem));
-    margin: 3rem auto;
-    padding: clamp(1.25rem, 3vw, 2rem);
     color: #efedf0;
-    background: rgba(16, 20, 29, 0.95);
-    border: 1px solid rgba(179, 191, 214, 0.38);
-    box-shadow: 0 1.5rem 4rem rgba(0, 0, 0, 0.4);
+    min-width: 0;
   }
 
-  header p {
-    margin: 0.4rem 0 0;
-    line-height: 1.65;
-  }
-
-  h2,
-  h3 {
-    margin: 0;
-  }
-
-  h2 {
-    font-size: clamp(1.25rem, 3vw, 1.8rem);
-  }
-
-  h3 {
-    font-size: 1rem;
-  }
-
-  .eyebrow {
-    margin: 0;
-    color: #9cb6df;
-    font-size: 0.82rem;
-    letter-spacing: 0.13em;
-  }
-
-  .hint,
   .empty,
   .blocked {
     margin: 0;
     color: #c9cbd1;
     font-size: 0.9rem;
-  }
-
-  .hint {
-    padding: 0.7rem 0.85rem;
-    background: rgba(91, 135, 210, 0.14);
-    border-left: 3px solid #a8c8ff;
   }
 
   .blocked {

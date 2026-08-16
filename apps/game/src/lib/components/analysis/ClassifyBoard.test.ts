@@ -257,12 +257,14 @@ describe("ClassifyBoard", () => {
     expect(screen.getByText("尚未放入卡片。")).toBeInTheDocument();
   });
 
-  it("renders a hint when the board has one", () => {
+  it("leaves title, prompt, and hint presentation to the workbench host", () => {
     renderBoard(boardWith(undefined, { hint: "先問每項資料能證明什麼。" }));
 
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
     expect(
-      screen.getByText("提示：先問每項資料能證明什麼。"),
-    ).toBeInTheDocument();
+      screen.queryByText("把每張卡放進它真正支持的命題。"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
   });
 
   it("does not emit a draft when the disabled prop is true", async () => {
@@ -336,11 +338,5 @@ describe("ClassifyBoard", () => {
       screen.getByRole("button", { name: "放入「三宅的小謊」" }),
     ).toBeDisabled();
     expect(onDraft).not.toHaveBeenCalled();
-  });
-
-  it("does not render a hint when the board has none", () => {
-    renderBoard(boardWith(undefined, { hint: null }));
-
-    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
+  import {
+    analysisBoardProgress,
+    analysisOverallProgress,
+  } from "$lib/analysis/presentation";
   import type {
     AnalysisActionToken,
     AnalysisBoardView,
@@ -16,6 +20,7 @@
 
   type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
   type AnalysisModeView = Extract<Mode, { type: "analysis" }>;
+  type AnalysisBoardState = "active" | "available" | "completed" | "locked";
 
   let {
     scene,
@@ -84,17 +89,25 @@
   let boardReadOnly = $derived(
     board === null || !board.available || board.completed || board.readOnly,
   );
-  let boardForRender = $derived<AnalysisBoardView | null>(
-    board === null || hintOpen || board.hint === null
-      ? board
-      : { ...board, hint: null },
+  let railBoards = $derived(
+    analysis
+      ? [...analysis.visibleBoards].sort(
+          (left, right) =>
+            boardStateOrder(left) - boardStateOrder(right) ||
+            analysis.visibleBoards.indexOf(left) -
+              analysis.visibleBoards.indexOf(right),
+        )
+      : [],
   );
   let navigationBoards = $derived(
     analysis
-      ? analysis.visibleBoards.filter((candidate) =>
-          analysisMode?.availableBoardIds.includes(candidate.id),
+      ? analysis.visibleBoards.filter(
+          (candidate) => candidate.available || candidate.completed,
         )
       : [],
+  );
+  let overallProgress = $derived(
+    analysisOverallProgress(analysis?.visibleBoards ?? []),
   );
   let canUndo = $derived(
     !boardReadOnly &&
@@ -102,6 +115,39 @@
       undoBoardId === board?.id &&
       !disabled,
   );
+
+  function boardState(candidate: AnalysisBoardView): AnalysisBoardState {
+    if (candidate.completed) return "completed";
+    if (candidate.id === analysisMode?.boardId && candidate.available) {
+      return "active";
+    }
+    if (candidate.available) return "available";
+    return "locked";
+  }
+
+  function boardStateOrder(candidate: AnalysisBoardView): number {
+    switch (boardState(candidate)) {
+      case "completed":
+        return 0;
+      case "active":
+        return 1;
+      case "available":
+        return 2;
+      case "locked":
+        return 3;
+    }
+  }
+
+  function boardKindLabel(kind: AnalysisBoardView["kind"]): string {
+    switch (kind) {
+      case "classify":
+        return "證據分類";
+      case "order":
+        return "事件順序";
+      case "threshold":
+        return "證據門檻";
+    }
+  }
 
   // The display board can change when the runtime falls back to a different
   // incomplete board. Clear presentation-only state only after an explicit
@@ -348,6 +394,16 @@
     const currentMode = analysisMode;
     /* v8 ignore next -- unreachable: board nav buttons only render in analysis mode */
     if (!currentMode || disabled) return;
+    const targetBoard = analysis?.visibleBoards.find(
+      (candidate) => candidate.id === boardId,
+    );
+    if (
+      !targetBoard ||
+      (!targetBoard.available && !targetBoard.completed) ||
+      targetBoard.id === currentMode.boardId
+    ) {
+      return;
+    }
     let selected: GameStateView | null;
     try {
       selected = await onSelectBoard(currentMode.actionToken, boardId);
@@ -389,144 +445,227 @@
 <section
   bind:this={workbenchElement}
   class="analysis-workbench"
-  aria-label="分析板"
+  aria-label="分析工作台"
 >
   {#if analysis && analysisMode}
-    <header class="workbench-header">
-      <p class="eyebrow">分析工作台</p>
-      <h1>{analysis.title}</h1>
-      <p>{analysis.summary}</p>
-    </header>
+    <aside class="analysis-rail" aria-label="本案分析">
+      <div class="rail-heading">
+        <p class="eyebrow">分析工作台</p>
+        <h1>本案分析</h1>
+        <p class="rail-scene-title">{analysis.title}</p>
+        <p class="rail-summary">{analysis.summary}</p>
+      </div>
 
-    {#if navigationBoards.length > 1}
       <nav class="board-navigation" aria-label="分析板導覽">
-        <button
-          type="button"
-          disabled={disabled ||
-            navigationBoards[0]?.id === analysisMode.boardId}
-          onclick={() => selectRelative(-1)}
-        >
-          上一板
-        </button>
-        {#each navigationBoards as candidate (candidate.id)}
+        {#each railBoards as candidate (candidate.id)}
+          {@const state = boardState(candidate)}
+          {@const progress = analysisBoardProgress(candidate)}
           <button
             type="button"
+            aria-label={candidate.label}
             aria-current={candidate.id === analysisMode.boardId
               ? "page"
               : undefined}
-            disabled={disabled || candidate.id === analysisMode.boardId}
+            disabled={disabled ||
+              state === "locked" ||
+              candidate.id === analysisMode.boardId}
             data-analysis-board-id={candidate.id}
+            data-analysis-board-state={state}
             onclick={() => selectBoard(candidate.id)}
           >
-            {candidate.label}
+            <span class="board-entry-heading">
+              <span>{candidate.label}</span>
+              <span class="board-entry-state">
+                {#if state === "completed"}
+                  已完成
+                {:else if state === "locked"}
+                  尚未解鎖
+                {:else if candidate.readOnly}
+                  只讀
+                {:else if state === "active"}
+                  目前
+                {:else}
+                  可進入
+                {/if}
+              </span>
+            </span>
+            <span class="board-entry-kind"
+              >{boardKindLabel(candidate.kind)}</span
+            >
+            <span class="board-entry-progress">
+              <span>進度</span>
+              <strong>{progress.current} / {progress.target}</strong>
+            </span>
+            <progress
+              max={Math.max(progress.target, 1)}
+              value={progress.current}
+              aria-label={`${candidate.label}進度`}
+              >{progress.current} / {progress.target}</progress
+            >
           </button>
         {/each}
-        <button
-          type="button"
-          disabled={disabled ||
-            navigationBoards.at(-1)?.id === analysisMode.boardId}
-          onclick={() => selectRelative(1)}
-        >
-          下一板
-        </button>
       </nav>
-    {/if}
 
-    {#if boardForRender}
-      {#if boardForRender.hint !== null || board?.hint !== null}
-        <button
-          type="button"
-          class="hint-toggle"
-          data-analysis-focus-key="hint"
-          disabled={boardReadOnly || disabled}
-          aria-expanded={hintOpen}
-          onclick={toggleHint}
+      <div class="overall-progress" aria-label="整體分析進度">
+        <div class="overall-progress-heading">
+          <span>整體分析</span>
+          <strong
+            >已完成 {overallProgress.current} / {overallProgress.target}</strong
+          >
+        </div>
+        <progress
+          max={Math.max(overallProgress.target, 1)}
+          value={overallProgress.current}
+          aria-label="整體分析進度"
+          >{overallProgress.current} / {overallProgress.target}</progress
         >
-          {hintOpen ? "隱藏提示" : "顯示提示"}
-        </button>
-      {/if}
+      </div>
+    </aside>
 
-      {#if boardForRender.completed || boardForRender.readOnly}
-        <p class="read-only" role="status">完成・只讀檢視</p>
-      {/if}
+    <section class="board-region" aria-label="目前分析板">
+      {#if board}
+        <header class="board-header">
+          <div class="board-heading-copy">
+            <p class="eyebrow">{boardKindLabel(board.kind)}</p>
+            <h2 tabindex="-1" data-analysis-focus-key={`board:${board.id}`}>
+              {board.label}
+            </h2>
+            <p class="board-prompt">{board.prompt}</p>
+          </div>
 
-      {#if boardForRender.kind === "classify"}
-        <ClassifyBoard
-          board={boardForRender}
-          headingFocusKey={`board:${boardForRender.id}`}
-          onDraft={handleDraft}
-          disabled={disabled || mutationInFlight}
-          readOnly={boardReadOnly}
-        />
-      {:else if boardForRender.kind === "order"}
-        <OrderBoard
-          board={boardForRender}
-          headingFocusKey={`board:${boardForRender.id}`}
-          onDraft={handleDraft}
-          disabled={disabled || mutationInFlight}
-          readOnly={boardReadOnly}
-        />
-      {:else}
-        <ThresholdBoard
-          board={boardForRender}
-          {inventory}
-          headingFocusKey={`board:${boardForRender.id}`}
-          onDraft={handleDraft}
-          disabled={disabled || mutationInFlight}
-          readOnly={boardReadOnly}
-        />
-      {/if}
+          <div class="board-header-actions">
+            {#if board.hint !== null}
+              <button
+                type="button"
+                class="hint-toggle"
+                data-analysis-focus-key="hint"
+                disabled={boardReadOnly || disabled}
+                aria-expanded={hintOpen}
+                onclick={toggleHint}
+              >
+                {hintOpen ? "隱藏提示" : "顯示提示"}
+              </button>
+            {/if}
+            {#if board.completed}
+              <p class="board-status completed" role="status">完成・只讀檢視</p>
+            {:else if board.readOnly}
+              <p class="board-status read-only" role="status">目前只讀</p>
+            {:else if !board.available}
+              <p class="board-status locked" role="status">尚未解鎖</p>
+            {/if}
+          </div>
 
-      {#if boardFeedback}
-        <p
-          bind:this={feedbackElement}
-          class="feedback"
-          role="status"
-          tabindex="-1"
-          data-analysis-focus-key="feedback"
-        >
-          {boardFeedback.message}
-        </p>
-      {/if}
-
-      {#if mutationError}
-        <p class="feedback" role="alert">{mutationError}</p>
-      {/if}
-
-      {#if !boardReadOnly}
-        <footer class="workbench-actions" aria-label="分析操作">
-          {#if canUndo}
-            <button
-              type="button"
-              data-analysis-focus-key="undo"
-              disabled={disabled || mutationInFlight}
-              onclick={undo}
-            >
-              復原
-            </button>
+          {#if hintOpen && board.hint !== null}
+            <p class="board-hint">提示：{board.hint}</p>
           {/if}
-          <button
-            type="button"
-            data-analysis-focus-key="reset"
-            disabled={disabled || mutationInFlight}
-            onclick={resetDraft}
-          >
-            重設
-          </button>
-          <button
-            type="button"
-            class="submit"
-            data-analysis-focus-key="submit"
-            disabled={disabled || mutationInFlight}
-            onclick={submit}
-          >
-            比對推論
-          </button>
+        </header>
+
+        <div
+          class="board-workspace"
+          data-analysis-workspace=""
+          role="region"
+          aria-label="分析板"
+        >
+          {#if board.kind === "classify"}
+            <ClassifyBoard
+              {board}
+              onDraft={handleDraft}
+              disabled={disabled || mutationInFlight}
+              readOnly={boardReadOnly}
+            />
+          {:else if board.kind === "order"}
+            <OrderBoard
+              {board}
+              onDraft={handleDraft}
+              disabled={disabled || mutationInFlight}
+              readOnly={boardReadOnly}
+            />
+          {:else}
+            <ThresholdBoard
+              {board}
+              {inventory}
+              onDraft={handleDraft}
+              disabled={disabled || mutationInFlight}
+              readOnly={boardReadOnly}
+            />
+          {/if}
+        </div>
+
+        <footer class="workbench-footer" aria-label="分析操作">
+          {#if boardFeedback}
+            <p
+              bind:this={feedbackElement}
+              class="feedback rejected"
+              role="status"
+              tabindex="-1"
+              data-analysis-focus-key="feedback"
+            >
+              <span class="feedback-label">REJECTED</span>
+              <span>{boardFeedback.message}</span>
+            </p>
+          {/if}
+
+          {#if mutationError}
+            <p class="feedback" role="alert">{mutationError}</p>
+          {/if}
+
+          <div class="footer-controls">
+            {#if navigationBoards.length > 1}
+              <div class="relative-navigation" aria-label="相鄰分析板">
+                <button
+                  type="button"
+                  disabled={disabled ||
+                    navigationBoards[0]?.id === analysisMode.boardId}
+                  onclick={() => selectRelative(-1)}
+                >
+                  上一板
+                </button>
+                <button
+                  type="button"
+                  disabled={disabled ||
+                    navigationBoards.at(-1)?.id === analysisMode.boardId}
+                  onclick={() => selectRelative(1)}
+                >
+                  下一板
+                </button>
+              </div>
+            {/if}
+
+            {#if !boardReadOnly}
+              {#if canUndo}
+                <button
+                  type="button"
+                  data-analysis-focus-key="undo"
+                  disabled={disabled || mutationInFlight}
+                  onclick={undo}
+                >
+                  復原
+                </button>
+              {/if}
+              <button
+                type="button"
+                data-analysis-focus-key="reset"
+                disabled={disabled || mutationInFlight}
+                onclick={resetDraft}
+              >
+                重設
+              </button>
+              <button
+                type="button"
+                class="submit"
+                data-analysis-focus-key="submit"
+                disabled={disabled || mutationInFlight}
+                onclick={submit}
+              >
+                比對推論
+              </button>
+            {/if}
+          </div>
         </footer>
+      {:else}
+        <p class="feedback" role="status">分析板載入中。</p>
       {/if}
-    {:else}
-      <p class="feedback" role="status">分析板載入中。</p>
-    {/if}
+    </section>
   {:else}
     <p class="feedback" role="status">分析板載入中。</p>
   {/if}
@@ -534,53 +673,209 @@
 
 <style>
   .analysis-workbench {
+    box-sizing: border-box;
     display: grid;
-    gap: 1rem;
-    width: min(1040px, calc(100vw - 2rem));
-    margin: 2rem auto 4rem;
+    grid-template-columns: minmax(220px, 272px) minmax(0, 1fr);
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
     color: #efedf0;
+    background: rgba(8, 10, 16, 0.54);
   }
 
-  .workbench-header {
+  .analysis-rail {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 1.15rem 0.9rem;
+    background: rgba(12, 16, 24, 0.92);
+    border-right: 1px solid rgba(179, 191, 214, 0.28);
+  }
+
+  .rail-heading,
+  .board-heading-copy,
+  .overall-progress-heading {
     display: grid;
     gap: 0.35rem;
-    padding: 0.25rem 0.25rem 0;
   }
 
-  .workbench-header h1,
-  .workbench-header p {
+  .rail-heading h1,
+  .rail-heading p,
+  .board-heading-copy h2,
+  .board-heading-copy p,
+  .overall-progress-heading,
+  .board-entry-heading,
+  .board-entry-kind,
+  .board-entry-progress,
+  .board-status,
+  .board-hint,
+  .feedback {
     margin: 0;
   }
 
-  .workbench-header p:last-child {
+  .rail-heading h1 {
+    font-size: clamp(1.25rem, 2vw, 1.7rem);
+    letter-spacing: 0.08em;
+  }
+
+  .rail-scene-title {
+    margin-top: 0.4rem !important;
+    color: #efedf0;
+    font-size: 0.94rem;
+    font-weight: 700;
+  }
+
+  .rail-summary {
     color: #c9cbd1;
+    font-size: 0.82rem;
     line-height: 1.6;
   }
 
   .eyebrow {
+    margin: 0;
     color: #9cb6df;
     font-size: 0.82rem;
     letter-spacing: 0.13em;
   }
 
-  .board-navigation,
-  .workbench-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.55rem;
-  }
-
   .board-navigation {
-    padding: 0.75rem;
-    background: rgba(16, 20, 29, 0.82);
-    border: 1px solid rgba(179, 191, 214, 0.28);
+    display: grid;
+    align-content: start;
+    gap: 0.55rem;
+    margin: 1.2rem 0;
   }
 
-  .board-navigation button,
-  .workbench-actions button,
-  .hint-toggle {
-    padding: 0.58rem 0.85rem;
+  .board-navigation button {
+    display: grid;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.72rem 0.75rem;
+    color: #d6e5ff;
+    font: inherit;
+    text-align: left;
+    background: rgba(91, 135, 210, 0.1);
+    border: 1px solid rgba(168, 200, 255, 0.28);
+    cursor: pointer;
+  }
+
+  .board-navigation button[aria-current="page"] {
+    color: #11151c;
+    background: #b9cef1;
+    border-color: #b9cef1;
+  }
+
+  .board-navigation button[data-analysis-board-state="completed"] {
+    border-left: 3px solid #79bd9d;
+  }
+
+  .board-navigation button[data-analysis-board-state="locked"] {
+    color: #969ba7;
+    background: rgba(255, 255, 255, 0.025);
+    border-style: dashed;
+  }
+
+  .board-entry-heading,
+  .board-entry-progress {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .board-entry-heading > span:first-child {
+    font-weight: 700;
+  }
+
+  .board-entry-state,
+  .board-entry-kind,
+  .board-entry-progress {
+    color: #aeb4c1;
+    font-size: 0.75rem;
+  }
+
+  .board-entry-state {
+    white-space: nowrap;
+  }
+
+  .board-navigation button[aria-current="page"] .board-entry-state,
+  .board-navigation button[aria-current="page"] .board-entry-kind,
+  .board-navigation button[aria-current="page"] .board-entry-progress {
+    color: #3b4658;
+  }
+
+  progress {
+    display: block;
+    width: 100%;
+    height: 0.38rem;
+    accent-color: #9cb6df;
+  }
+
+  .overall-progress {
+    display: grid;
+    gap: 0.45rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(179, 191, 214, 0.2);
+  }
+
+  .overall-progress-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    color: #c9cbd1;
+    font-size: 0.78rem;
+  }
+
+  .overall-progress-heading strong {
+    color: #efedf0;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .board-region {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .board-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem 1rem;
+    padding: 1.2rem clamp(1rem, 2.5vw, 2rem) 0.9rem;
+    border-bottom: 1px solid rgba(179, 191, 214, 0.2);
+  }
+
+  .board-heading-copy h2 {
+    font-size: clamp(1.3rem, 2.4vw, 2rem);
+    letter-spacing: 0.04em;
+  }
+
+  .board-heading-copy h2:focus-visible {
+    outline: 3px solid #e2ad69;
+    outline-offset: 4px;
+  }
+
+  .board-prompt {
+    color: #c9cbd1;
+    line-height: 1.6;
+  }
+
+  .board-header-actions {
+    display: grid;
+    align-content: start;
+    justify-items: end;
+    gap: 0.5rem;
+  }
+
+  .hint-toggle,
+  .footer-controls button {
+    padding: 0.52rem 0.8rem;
     color: #d6e5ff;
     font: inherit;
     background: rgba(91, 135, 210, 0.14);
@@ -588,33 +883,96 @@
     cursor: pointer;
   }
 
-  .board-navigation button[aria-current="page"] {
-    color: #11151c;
-    background: #b9cef1;
-  }
-
   .hint-toggle {
-    justify-self: start;
     color: #f2d1b2;
     background: rgba(154, 104, 61, 0.16);
     border-color: rgba(226, 173, 105, 0.42);
   }
 
-  .workbench-actions {
-    justify-content: flex-end;
-    padding: 0.85rem;
-    background: rgba(16, 20, 29, 0.95);
-    border: 1px solid rgba(179, 191, 214, 0.3);
+  .board-status {
+    padding: 0.4rem 0.62rem;
+    color: #c9cbd1;
+    border-left: 3px solid #e2ad69;
+    font-size: 0.78rem;
+    white-space: nowrap;
   }
 
-  .workbench-actions .submit {
+  .board-status.completed {
+    color: #bde6ce;
+    border-left-color: #79bd9d;
+  }
+
+  .board-status.locked {
+    color: #aeb4c1;
+    border-left-color: #777e8c;
+  }
+
+  .board-hint {
+    grid-column: 1 / -1;
+    padding: 0.58rem 0.75rem;
+    color: #c9dfff;
+    background: rgba(91, 135, 210, 0.14);
+    border-left: 3px solid #a8c8ff;
+    font-size: 0.86rem;
+  }
+
+  .board-workspace {
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    padding: 1rem clamp(1rem, 2.5vw, 2rem);
+  }
+
+  .workbench-footer {
+    display: grid;
+    gap: 0.65rem;
+    padding: 0.8rem clamp(1rem, 2.5vw, 2rem);
+    background: rgba(12, 16, 24, 0.96);
+    border-top: 1px solid rgba(179, 191, 214, 0.28);
+  }
+
+  .footer-controls,
+  .relative-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .footer-controls {
+    justify-content: space-between;
+  }
+
+  .relative-navigation {
+    margin-right: auto;
+  }
+
+  .footer-controls .submit {
     color: #11151c;
     font-weight: 700;
     background: #b9cef1;
   }
 
+  .feedback {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.7rem;
+    padding: 0.62rem 0.8rem;
+    color: #f2d1b2;
+    background: rgba(154, 104, 61, 0.25);
+    border-left: 3px solid #e2ad69;
+    line-height: 1.45;
+  }
+
+  .feedback-label {
+    color: #ffd29a;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+
   .board-navigation button:focus-visible,
-  .workbench-actions button:focus-visible,
+  .footer-controls button:focus-visible,
   .hint-toggle:focus-visible,
   [data-analysis-focus-key="feedback"]:focus-visible {
     outline: 3px solid #e2ad69;
@@ -622,22 +980,38 @@
   }
 
   .board-navigation button:disabled,
-  .workbench-actions button:disabled,
+  .footer-controls button:disabled,
   .hint-toggle:disabled {
     cursor: default;
     opacity: 0.52;
   }
 
-  .read-only,
-  .feedback {
-    margin: 0;
-    padding: 0.85rem 1rem;
-    background: rgba(154, 104, 61, 0.25);
-    border-left: 3px solid #e2ad69;
-  }
+  @media (max-height: 760px) and (min-width: 761px) {
+    .analysis-rail {
+      padding-block: 0.75rem;
+    }
 
-  .feedback {
-    color: #f2d1b2;
+    .board-navigation {
+      margin-block: 0.75rem;
+      gap: 0.35rem;
+    }
+
+    .board-navigation button {
+      gap: 0.25rem;
+      padding-block: 0.5rem;
+    }
+
+    .board-header {
+      padding-block: 0.75rem;
+    }
+
+    .board-workspace {
+      padding-block: 0.7rem;
+    }
+
+    .workbench-footer {
+      padding-block: 0.6rem;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -123,6 +123,160 @@ afterEach(() => {
 });
 
 describe("AnalysisWorkbench", () => {
+  it("renders the v3 rail with every visible board and native progress", async () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) => {
+            if (candidate.id === "local_event_sequence") {
+              return {
+                ...candidate,
+                available: false,
+                completed: true,
+                readOnly: true,
+              };
+            }
+            if (candidate.id === "narrow_request_basis") {
+              return { ...candidate, available: false };
+            }
+            return candidate;
+          },
+        ),
+      }),
+    });
+    const onSelectBoard = vi.fn().mockResolvedValue(state);
+    renderWorkbench(state, { onSelectBoard });
+
+    expect(screen.getByText("分析工作台")).toBeInTheDocument();
+    expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
+
+    const rail = screen.getByRole("navigation", { name: "分析板導覽" });
+    const entries = rail.querySelectorAll("[data-analysis-board-id]");
+    expect(entries).toHaveLength(3);
+
+    const activeEntry = screen.getByRole("button", { name: "證據包整理" });
+    expect(activeEntry).toHaveAttribute("aria-current", "page");
+    expect(activeEntry).toHaveAttribute("data-analysis-board-state", "active");
+
+    const completedEntry = screen.getByRole("button", {
+      name: "本機事件順序",
+    });
+    expect(completedEntry).toHaveAttribute(
+      "data-analysis-board-state",
+      "completed",
+    );
+    expect(completedEntry).toBeEnabled();
+
+    const lockedEntry = screen.getByRole("button", {
+      name: "有限調取申請基礎",
+    });
+    expect(lockedEntry).toHaveAttribute("data-analysis-board-state", "locked");
+    expect(lockedEntry).toBeDisabled();
+
+    expect(screen.getAllByRole("progressbar")).toHaveLength(4);
+    expect(screen.getByText(/完成\s*1\s*\/\s*3/)).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "分析板" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("contentinfo", { name: "分析操作" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "比對推論" }),
+    ).toBeInTheDocument();
+
+    await userEvent.setup().click(completedEntry);
+    expect(onSelectBoard).toHaveBeenCalledWith(
+      actionToken(state),
+      "local_event_sequence",
+    );
+    expect(onSelectBoard).not.toHaveBeenCalledWith(
+      actionToken(state),
+      "narrow_request_basis",
+    );
+  });
+
+  it("keeps non-completed read-only boards visibly distinct from completed boards", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) =>
+            candidate.id === "evidence_packages"
+              ? { ...candidate, readOnly: true }
+              : candidate,
+        ),
+      }),
+    });
+    renderWorkbench(state);
+
+    expect(screen.getByText("目前只讀")).toBeInTheDocument();
+    expect(screen.queryByText("已完成・只讀檢視")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "比對推論" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps P1 as one analysis rail entry with inline rejection feedback", () => {
+    const state = analysisState({
+      scene: p1PracticeAnalysisSceneFixture,
+      mode: {
+        ...p1PracticeAnalysisModeFixture,
+        feedback: { state: "incorrect", message: "這組資料仍有矛盾。" },
+      },
+    });
+    renderWorkbench(state);
+
+    expect(
+      screen
+        .getByRole("navigation", { name: "分析板導覽" })
+        .querySelectorAll("[data-analysis-board-id]"),
+    ).toHaveLength(1);
+    expect(screen.getByText("標示 REPRINT 的收據")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("這組資料仍有矛盾。");
+    expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
+  });
+
+  it("focuses the host heading after board changes and fallback mutations", async () => {
+    const state = analysisState();
+    const view = renderWorkbench(state);
+    const initialHeading = screen.getByRole("heading", { name: "證據包整理" });
+    expect(initialHeading).toHaveAttribute(
+      "data-analysis-focus-key",
+      "board:evidence_packages",
+    );
+    expect(screen.getByRole("region", { name: "分析板" })).not.toContainElement(
+      initialHeading,
+    );
+
+    await assignFirstClassifyCard();
+    await waitFor(() => {
+      expect(document.activeElement).toBe(initialHeading);
+      expect(document.activeElement).not.toBe(document.body);
+    });
+
+    const next = analysisState({
+      mode: analysisModeWith({ boardId: "local_event_sequence" }),
+    });
+    await view.rerender({
+      scene: next.scene,
+      mode: next.mode,
+      inventory: next.inventory,
+      onSelectBoard: vi.fn().mockResolvedValue(next),
+      onUpdateDraft: vi.fn().mockResolvedValue(next),
+      onSubmit: vi.fn().mockResolvedValue(next),
+    });
+
+    await waitFor(() => {
+      const hostHeading = screen.getByRole("heading", {
+        name: "本機事件順序",
+      });
+      expect(hostHeading).toHaveAttribute(
+        "data-analysis-focus-key",
+        "board:local_event_sequence",
+      );
+      expect(document.activeElement).toBe(hostHeading);
+      expect(document.activeElement).not.toBe(document.body);
+    });
+  });
+
   it("keeps the P1 practice card and comparison flow through the workbench", async () => {
     const state = analysisState({
       scene: p1PracticeAnalysisSceneFixture,
@@ -361,9 +515,17 @@ describe("AnalysisWorkbench", () => {
         screen.queryByRole("button", { name: "復原" }),
       ).not.toBeInTheDocument();
       expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
-      expect(document.activeElement).toBe(
-        screen.getByRole("heading", { name: "本機事件順序" }),
+      const hostHeading = screen.getByRole("heading", {
+        name: "本機事件順序",
+      });
+      expect(hostHeading).toHaveAttribute(
+        "data-analysis-focus-key",
+        "board:local_event_sequence",
       );
+      expect(
+        screen.getByRole("region", { name: "分析板" }),
+      ).not.toContainElement(hostHeading);
+      expect(document.activeElement).toBe(hostHeading);
     });
   });
 

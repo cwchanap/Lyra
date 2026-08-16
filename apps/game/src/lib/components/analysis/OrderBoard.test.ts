@@ -251,10 +251,14 @@ describe("OrderBoard", () => {
     ).toBeDisabled();
   });
 
-  it("renders a hint when the board has one", () => {
+  it("leaves title, prompt, and hint presentation to the workbench host", () => {
     renderBoard(boardWith(["event_1841"], { hint: "先排維護模式。" }));
 
-    expect(screen.getByText("提示：先排維護模式。")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("把本機事件排回原始先後。"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
   });
 
   it("does not emit a draft when the disabled prop is true", async () => {
@@ -270,11 +274,5 @@ describe("OrderBoard", () => {
       screen.queryByRole("button", { name: "加入時間線：外包憑證開門" }),
     ).not.toBeInTheDocument();
     expect(onDraft).not.toHaveBeenCalled();
-  });
-
-  it("does not render a hint when the board has none", () => {
-    renderBoard(boardWith(["event_1841"], { hint: null }));
-
-    expect(screen.queryByText(/提示：/)).not.toBeInTheDocument();
   });
 });
