@@ -202,8 +202,7 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
     30000,
     "acknowledged event did not clear in memory before quit",
   );
-  await requestApplicationQuit();
-  await waitForPackagedDisconnect();
+  await requestAndFinish("quit");
 }
 
 async function proveFailureCancelAndBypass(): Promise<void> {
