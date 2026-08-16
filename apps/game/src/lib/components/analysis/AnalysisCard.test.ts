@@ -224,6 +224,46 @@ describe("AnalysisCard", () => {
     expect(onDrop).not.toHaveBeenCalled();
   });
 
+  it.each(["", "unknown", "mouse-like"])(
+    "does not start custom drag for a non-mouse/pen pointer type: %s",
+    async (pointerType) => {
+      const onDragStart = vi.fn();
+      const onDrop = vi.fn();
+      render(AnalysisCard, {
+        card: card(),
+        dragEnabled: true,
+        onDragStart,
+        onDrop,
+        onSelect: vi.fn(),
+      });
+      const button = screen.getByRole("button");
+
+      await fireEvent.pointerDown(button, {
+        pointerId: 8,
+        pointerType,
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+      });
+      await fireEvent.pointerMove(button, {
+        pointerId: 8,
+        pointerType,
+        clientX: 30,
+        clientY: 30,
+      });
+      await fireEvent.pointerUp(button, {
+        pointerId: 8,
+        pointerType,
+        button: 0,
+        clientX: 30,
+        clientY: 30,
+      });
+
+      expect(onDragStart).not.toHaveBeenCalled();
+      expect(onDrop).not.toHaveBeenCalled();
+    },
+  );
+
   it("emits opaque resolver target IDs as the pointer crosses targets", async () => {
     const onDragStart = vi.fn();
     const onDragTargetChange = vi.fn();
@@ -409,7 +449,7 @@ describe("AnalysisCard", () => {
   });
 
   it("keeps the non-button branch as an article without a button role", () => {
-    render(AnalysisCard, { card: card(), focusKey: "card:card_a" });
+    render(AnalysisCard, { card: card() });
 
     const article = screen.getByText("卡片 A").closest("article");
     expect(article).toBeInTheDocument();
@@ -418,7 +458,7 @@ describe("AnalysisCard", () => {
   });
 
   it("exposes the requested card focus hook", () => {
-    render(AnalysisCard, { card: card(), focusKey: "card:card_a" });
+    render(AnalysisCard, { card: card() });
 
     expect(screen.getByText("卡片 A").closest("article")).toHaveAttribute(
       "data-analysis-focus-key",
