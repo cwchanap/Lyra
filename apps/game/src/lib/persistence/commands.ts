@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   ExitStatusView,
   GameError,
-  GameplayCommandResultView,
   PersistenceHealthView,
   SaveSlotRef,
   ThumbnailActivityView,
@@ -200,44 +199,4 @@ async function readDevelopmentThumbnail(
     throwHttpError("read_save_thumbnail", response, text);
   }
   return response.arrayBuffer();
-}
-
-export function acknowledgeAcquisitionEvent(
-  eventId: string,
-  preparedThumbnailTicket: string,
-): Promise<GameplayCommandResultView> {
-  return invokePersistenceCommand("acknowledge_acquisition_event", {
-    eventId,
-    preparedThumbnailTicket,
-  });
-}
-
-export function confirmAcquisitionWithoutSaving(
-  eventId: string,
-  failureToken: string,
-): Promise<GameplayCommandResultView> {
-  return invokePersistenceCommand("confirm_acquisition_without_saving", {
-    eventId,
-    failureToken,
-  });
-}
-
-export function retryAcquisitionAcknowledgement(
-  eventId: string,
-  failureToken: string,
-): Promise<ThumbnailCaptureRequestView> {
-  return invokePersistenceCommand("retry_acquisition_acknowledgement", {
-    eventId,
-    failureToken,
-  });
-}
-
-export function cancelAcquisitionFailure(
-  eventId: string,
-  failureToken: string,
-): Promise<GameplayCommandResultView> {
-  return invokePersistenceCommand("cancel_acquisition_failure", {
-    eventId,
-    failureToken,
-  });
 }

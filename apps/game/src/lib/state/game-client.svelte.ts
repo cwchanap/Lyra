@@ -6,7 +6,6 @@ import {
   type GameplayCommandName,
 } from "$lib/audio/sfx-events";
 import {
-  asGameError,
   invokePersistenceCommand,
   reportSaveThumbnailFailure,
   submitSaveThumbnail,
@@ -22,8 +21,6 @@ import {
   type E2eLoadCheckpointResult,
 } from "$lib/e2e/checkpoints";
 import type {
-  AcquisitionAcknowledgementPhase,
-  ExitStatusView,
   GameplayCommandResultView,
   PersistenceFailureTokenView,
   SaveBrowserOpenResultView,
@@ -50,7 +47,7 @@ const DEV_HTTP_BASE = "http://127.0.0.1:1421";
  */
 // eslint-disable-next-line svelte/prefer-svelte-reactivity -- constant lookup table, not reactive state
 export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
-  GameplayCommandName | "jump_to_scene"
+  GameplayCommandName | "jump_to_scene" | "acknowledge_acquisition_event"
 >([
   "start_game",
   "reset_game",
@@ -70,6 +67,7 @@ export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
   "select_analysis_board",
   "update_analysis_draft",
   "submit_analysis_board",
+  "acknowledge_acquisition_event",
 ]);
 
 async function httpInvoke<T>(
@@ -137,30 +135,6 @@ async function runCommand<T>(
       : await httpInvoke<T>(command, args);
   } catch (e) {
     gameState.error = normalizeError(e);
-    return null;
-  }
-}
-
-export async function refreshGameState(context: {
-  acquisitionPhase: AcquisitionAcknowledgementPhase;
-  exitStatus: ExitStatusView;
-}): Promise<GameStateView | null> {
-  try {
-    const next = await invokePersistenceCommand<GameStateView>("get_state");
-    gameState.value = next;
-    gameState.error = null;
-    return next;
-  } catch (error) {
-    const diagnostic = asGameError(error);
-    const acquisitionIsSaving = context.acquisitionPhase.type === "saving";
-    const exitIsSaving = context.exitStatus.type === "saving";
-    if (
-      diagnostic.code === "persistenceOperationInProgress" &&
-      (acquisitionIsSaving || exitIsSaving)
-    ) {
-      return gameState.value;
-    }
-    gameState.error = normalizeError(diagnostic);
     return null;
   }
 }
@@ -581,4 +555,10 @@ export async function submitAnalysisBoard(
   return dispatchAnalysisCommand("submit_analysis_board", {
     expected: actionToken,
   });
+}
+
+export function acknowledgeAcquisitionEvent(
+  eventId: string,
+): Promise<GameStateView | null> {
+  return dispatchStateCommand("acknowledge_acquisition_event", { eventId });
 }

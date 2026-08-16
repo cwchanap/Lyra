@@ -53,7 +53,6 @@ vi.mock("$lib/audio/sfx-events", () => ({
 }));
 
 vi.mock("$lib/persistence/commands", () => ({
-  asGameError: (error: unknown) => error,
   invokePersistenceCommand: mocks.invokePersistenceCommand,
   reportSaveThumbnailFailure: mocks.reportSaveThumbnailFailure,
   submitSaveThumbnail: mocks.submitSaveThumbnail,
@@ -351,105 +350,6 @@ describe("game client audio events", () => {
     });
 
     expect(mocks.inferGameplaySfxEvents).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("get_state persistence exclusivity", () => {
-  it("swallows only the known busy code during acquisition saving", async () => {
-    const client = await loadGameClient(state("previous"));
-    const previous = client.gameState.value;
-    client.gameState.error = "existing banner";
-    mocks.invokePersistenceCommand.mockRejectedValueOnce({
-      code: "persistenceOperationInProgress",
-      message: "Persistence is busy.",
-    });
-
-    await expect(
-      client.refreshGameState({
-        acquisitionPhase: { type: "saving", slow: false },
-        exitStatus: { type: "idle" },
-      }),
-    ).resolves.toBe(previous);
-
-    expect(client.gameState.value).toBe(previous);
-    expect(client.gameState.error).toBe("existing banner");
-    expect(mocks.invokePersistenceCommand).toHaveBeenCalledExactlyOnceWith(
-      "get_state",
-    );
-  });
-
-  it("swallows only the known busy code while exit status is saving", async () => {
-    const client = await loadGameClient(state("previous"));
-    const previous = client.gameState.value;
-    mocks.invokePersistenceCommand.mockRejectedValueOnce({
-      code: "persistenceOperationInProgress",
-      message: "Persistence is busy.",
-    });
-
-    await expect(
-      client.refreshGameState({
-        acquisitionPhase: { type: "idle" },
-        exitStatus: { type: "saving" },
-      }),
-    ).resolves.toBe(previous);
-
-    expect(client.gameState.value).toBe(previous);
-    expect(client.gameState.error).toBeNull();
-    expect(mocks.invokePersistenceCommand).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows the busy error outside the exact local saving intervals", async () => {
-    const client = await loadGameClient(state("previous"));
-    const previous = client.gameState.value;
-    mocks.invokePersistenceCommand.mockRejectedValueOnce({
-      code: "persistenceOperationInProgress",
-      message: "Persistence is busy.",
-    });
-
-    await expect(
-      client.refreshGameState({
-        acquisitionPhase: { type: "capturing" },
-        exitStatus: { type: "idle" },
-      }),
-    ).resolves.toBeNull();
-
-    expect(client.gameState.value).toBe(previous);
-    expect(client.gameState.error).toBe("Persistence is busy.");
-  });
-
-  it("shows every other typed error even during a local saving interval", async () => {
-    const client = await loadGameClient();
-    mocks.invokePersistenceCommand.mockRejectedValueOnce({
-      code: "saveReadFailed",
-      message: "Save could not be read.",
-      failureToken: "opaque-token",
-    });
-
-    await expect(
-      client.refreshGameState({
-        acquisitionPhase: { type: "saving", slow: true },
-        exitStatus: { type: "saving" },
-      }),
-    ).resolves.toBeNull();
-
-    expect(client.gameState.error).toBe("Save could not be read.");
-    expect(mocks.invokePersistenceCommand).toHaveBeenCalledTimes(1);
-  });
-
-  it("accepts a successful read-only bare state", async () => {
-    const next = state("next");
-    const client = await loadGameClient();
-    mocks.invokePersistenceCommand.mockResolvedValueOnce(next);
-
-    await expect(
-      client.refreshGameState({
-        acquisitionPhase: { type: "idle" },
-        exitStatus: { type: "idle" },
-      }),
-    ).resolves.toEqual(next);
-
-    expect(client.gameState.value).toEqual(next);
-    expect(client.gameState.value).not.toHaveProperty("state");
   });
 });
 
@@ -987,6 +887,43 @@ describe("game client analysis commands", () => {
     expect(client.gameState.value).toEqual(next);
     expect(client.gameState.error).toBe("submission apply failed");
     expect(client.gameState.inFlight).toBe(false);
+  });
+});
+
+describe("game client acquisition acknowledgement command", () => {
+  it("forwards the event id through the wrapped state-command boundary", async () => {
+    const client = await loadGameClient(state("previous"));
+    const next = state("next");
+    mocks.invoke.mockResolvedValueOnce(next);
+
+    const result = await client.acknowledgeAcquisitionEvent("acq:2:0");
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith(
+      "acknowledge_acquisition_event",
+      { eventId: "acq:2:0" },
+    );
+    expect(result).toBe(next);
+    expect(client.gameState.value).toEqual(next);
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a typed mismatch through the shared game error state", async () => {
+    const client = await loadGameClient(state("previous"));
+    const capturedPrevious = client.gameState.value;
+    mocks.invoke.mockRejectedValueOnce({
+      code: "unknownAcquisitionEvent",
+      message: "No presented acquisition event matches acq:2:1.",
+    });
+
+    await expect(
+      client.acknowledgeAcquisitionEvent("acq:2:1"),
+    ).resolves.toBeNull();
+
+    expect(client.gameState.value).toBe(capturedPrevious);
+    expect(client.gameState.error).toBe(
+      "No presented acquisition event matches acq:2:1.",
+    );
+    expect(mocks.inferGameplaySfxEvents).not.toHaveBeenCalled();
   });
 });
 

@@ -6,44 +6,31 @@
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
-  import type {
-    AcquisitionAcknowledgementPhase,
-    PersistenceFailureTokenView,
-  } from "$lib/persistence/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
   import type { PendingAcquisitionView } from "$lib/state/types";
 
   let {
     notification,
-    phase,
+    busy,
+    error = null,
     returnFocusTo = null,
     fallbackFocusTarget = null,
     onContinue,
-    onRetry,
-    onCancel,
-    onContinueWithoutSaving,
   }: {
     notification: PendingAcquisitionView;
-    phase: AcquisitionAcknowledgementPhase;
+    busy: boolean;
+    error?: string | null;
     returnFocusTo?: HTMLElement | null;
     fallbackFocusTarget?: HTMLElement | null;
     onContinue: (eventId: string) => Promise<void>;
-    onRetry: (eventId: string) => Promise<void>;
-    onCancel: (eventId: string) => Promise<void>;
-    onContinueWithoutSaving: (
-      eventId: string,
-      failureToken: PersistenceFailureTokenView,
-    ) => Promise<void>;
   } = $props();
 
   let acquisitionCard: HTMLDivElement | undefined = $state();
   let continueButton: HTMLButtonElement | undefined = $state();
-  let retryButton: HTMLButtonElement | undefined = $state();
   let evidenceImage: ResolvedStoryAsset | null = $state(null);
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
-  let confirmWithoutSaving = $state(false);
 
   const heading = $derived(
     notification.recordKind === "evidence" ? "物證取得" : "證言取得",
@@ -52,19 +39,6 @@
     notification.recordKind === "evidence"
       ? "EVIDENCE ACQUIRED"
       : "STATEMENT ACQUIRED",
-  );
-  const savingLabel = $derived(
-    phase.type === "cancelling"
-      ? "取消中…"
-      : phase.type === "saving" && phase.slow
-        ? "仍在儲存，請稍候…"
-        : "儲存中…",
-  );
-  const saving = $derived(
-    phase.type === "preparing" ||
-      phase.type === "capturing" ||
-      phase.type === "saving" ||
-      phase.type === "cancelling",
   );
 
   // Guard against stale async results: if the notification changes (via
@@ -105,42 +79,15 @@
 
   $effect(() => {
     const eventId = notification.id;
-    const phaseType = phase.type;
-    confirmWithoutSaving = false;
     void tick().then(() => {
-      if (notification.id !== eventId || phase.type !== phaseType) return;
-      if (phase.type === "failed") {
-        retryButton?.focus();
-      } else if (phase.type === "idle") {
-        continueButton?.focus();
-      }
+      if (notification.id !== eventId) return;
+      if (!busy) continueButton?.focus();
     });
   });
 
   function dismissCurrent() {
-    if (phase.type !== "idle") return;
+    if (busy) return;
     void onContinue(notification.id);
-  }
-
-  function retry() {
-    if (phase.type !== "failed") return;
-    confirmWithoutSaving = false;
-    void onRetry(notification.id);
-  }
-
-  function cancel() {
-    if (phase.type !== "failed") return;
-    confirmWithoutSaving = false;
-    void onCancel(notification.id);
-  }
-
-  function continueWithoutSaving() {
-    if (phase.type !== "failed" || !phase.failureToken) return;
-    if (!confirmWithoutSaving) {
-      confirmWithoutSaving = true;
-      return;
-    }
-    void onContinueWithoutSaving(notification.id, phase.failureToken);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -250,35 +197,20 @@
         </div>
       </div>
 
-      {#if phase.type === "failed"}
-        <div class="failure-actions">
-          <p class="failure-message" role="alert">
-            {phase.diagnostic.message}
-            {#if confirmWithoutSaving}
-              此取得通知可能會在重新啟動後再次出現。
-            {/if}
-          </p>
-          <button bind:this={retryButton} type="button" onclick={retry}>
-            重試
-          </button>
-          <button type="button" onclick={cancel}>取消</button>
-          {#if phase.failureToken}
-            <button type="button" onclick={continueWithoutSaving}>
-              {confirmWithoutSaving ? "確認不儲存並繼續" : "不儲存並繼續"}
-            </button>
-          {/if}
-        </div>
-      {:else}
+      <div class="failure-actions">
+        {#if error}
+          <p class="failure-message" role="alert">{error}</p>
+        {/if}
         <button
           bind:this={continueButton}
           class="continue-button"
           type="button"
-          disabled={saving}
+          disabled={busy}
           onclick={dismissCurrent}
         >
-          {saving ? savingLabel : "CONTINUE / 繼續"}
+          {busy ? "儲存中…" : "CONTINUE / 繼續"}
         </button>
-      {/if}
+      </div>
     </div>
   {/key}
 </div>
@@ -401,6 +333,19 @@
     overflow-y: auto;
   }
 
+  .failure-actions {
+    display: grid;
+    gap: 10px;
+    justify-items: end;
+  }
+
+  .failure-message {
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
   .continue-button {
     justify-self: end;
     min-width: 190px;
@@ -418,6 +363,11 @@
     background: rgba(174, 28, 49, 0.3);
     outline: 2px solid var(--cyan);
     outline-offset: 3px;
+  }
+
+  .continue-button:disabled {
+    cursor: default;
+    opacity: 0.65;
   }
 
   @keyframes acquisition-enter {
