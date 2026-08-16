@@ -253,9 +253,8 @@ impl StorageBackend {
     }
 
     /// Shared revalidation, commit, receipt-corruption, and finish flow used
-    /// by `commit_if_current`. The caller keeps its distinct commit counter
-    /// and gate acquisition/assertion, then delegates here once the writer
-    /// lock and the gate are held and the `"G"` phase has been recorded.
+    /// by `commit_if_current`, which holds the writer lock and the gate and
+    /// records the `"G"` phase before delegating here.
     async fn commit_locked(
         &self,
         prepared: AutosavePreparedWrite,
@@ -751,4 +750,117 @@ async fn mismatched_committed_slot_or_save_id_receipt_cannot_be_adopted() {
         );
         assert!(coordinator.autosave_target(10).is_none(), "{corruption:?}");
     }
+}
+
+// Required behavior A (HPA-549): a pre-acknowledgement save must cross a real
+// staged save-file write and a real restore before the popup replay contract
+// is proven. An in-memory clone would not cross serialization, so this test
+// writes through the production `prepare_slot_write`/`commit_prepared_slot_write`
+// seam, reads the file back through `read_save_envelope`, and restores it with
+// `build_restore_candidate` against the same definitions.
+//
+// durable acquisition -> unsaved acknowledgement -> process loss -> real file
+// restore -> popup replay -> no duplicate acquisition.
+#[test]
+fn real_file_pre_acknowledgement_save_replays_pending_popup_without_duplicate_acquisition() {
+    use crate::game::save::capture::capture_checkpoint;
+    use crate::game::save::restore::{build_restore_candidate, load_current_definitions};
+    use crate::game::save::schema::{
+        SaveEnvelope, SaveType, ThumbnailDescriptorV1, SAVE_SCHEMA_VERSION,
+    };
+    use crate::game::save::storage::{
+        commit_prepared_slot_write, prepare_slot_write, read_save_envelope, SlotWriteRequest,
+        ThumbnailWrite,
+    };
+    use crate::game::test_support::{
+        drive_hpa_257_positive_progression, hpa_257_fixture_resources,
+    };
+    use crate::game::GameEngine;
+
+    const SAVE_ID: &str = "11111111-1111-4111-8111-111111111111";
+
+    // 1. Build valid fixture resources and an engine state containing exactly
+    //    one acquired record, a simple story output (the asserted fact), and
+    //    the pending acquisition event.
+    let (_guard, resources) = hpa_257_fixture_resources();
+    let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+    drive_hpa_257_positive_progression(&mut engine);
+    assert_eq!(engine.inventory.evidence.len(), 1);
+    assert_eq!(engine.pending_acquisition_events.len(), 1);
+    let event_id = engine.pending_acquisition_events[0].id.clone();
+    let story_before = engine.story_state.snapshot();
+    assert!(story_before.facts.contains_key("fact_a"));
+
+    // 2-3. Capture the pre-acknowledgement checkpoint and write it to a temp
+    //      save through the real production save storage writer.
+    let backend = Arc::new(StorageBackend::new(1, engine.durable_revision));
+    let checkpoint = capture_checkpoint(&engine).unwrap();
+    let envelope = SaveEnvelope {
+        schema_version: SAVE_SCHEMA_VERSION,
+        content_revision: engine.content_revision().into(),
+        save_id: SAVE_ID.into(),
+        save_type: SaveType::Auto,
+        slot: 1,
+        saved_at: "2026-07-26T12:34:56Z".into(),
+        display_name: "Replay fixture".into(),
+        thumbnail: ThumbnailDescriptorV1::Unavailable,
+        summary: checkpoint.summary,
+        snapshot: checkpoint.snapshot,
+    };
+    let prepared = prepare_slot_write(
+        backend.fs.as_ref(),
+        &backend.root,
+        SlotWriteRequest {
+            reference: SaveSlotRef::Auto { slot: 1 },
+            envelope,
+            thumbnail: ThumbnailWrite::Unavailable,
+            expected_manual: None,
+        },
+    )
+    .unwrap();
+    let outcome = commit_prepared_slot_write(backend.fs.as_ref(), &backend.root, prepared).unwrap();
+    assert_eq!(outcome.committed_envelope.save_id, SAVE_ID);
+    assert_eq!(outcome.cleanup_diagnostic, None);
+
+    // 4. Acknowledge the live in-memory event; the record and story outputs
+    //    must survive untouched.
+    let live_revision = engine.durable_revision;
+    engine.acknowledge_acquisition_event(&event_id).unwrap();
+    assert!(engine.pending_acquisition_events.is_empty());
+    assert_eq!(engine.durable_revision, live_revision + 1);
+    assert_eq!(engine.inventory.evidence.len(), 1);
+    assert_eq!(engine.story_state.snapshot(), story_before);
+
+    // 5-6. Read the file back through the real save reader and restore it
+    //      with matching current definitions/resources.
+    let saved = read_save_envelope(
+        backend.fs.as_ref(),
+        &backend.root,
+        SaveSlotRef::Auto { slot: 1 },
+        SAVE_ID,
+    )
+    .unwrap();
+    let definitions = load_current_definitions(&resources).unwrap();
+    let restored = build_restore_candidate(resources, &definitions, saved).unwrap();
+    assert_eq!(restored.save_id, SAVE_ID);
+    assert_eq!(restored.source, SaveSlotRef::Auto { slot: 1 });
+
+    // 7. The restored engine holds the record exactly once, the story output
+    //    exactly once, and the pending acquisition event again.
+    let mut restored_engine = restored.engine;
+    assert_eq!(restored_engine.inventory.evidence.len(), 1);
+    assert_eq!(restored_engine.story_state.snapshot(), story_before);
+    assert_eq!(restored_engine.pending_acquisition_events.len(), 1);
+    assert_eq!(restored_engine.pending_acquisition_events[0].id, event_id);
+
+    // 8. Acknowledge the replayed popup again: the pending event clears and
+    //    the record/story counts remain single (no double grant).
+    let restored_revision = restored_engine.durable_revision;
+    restored_engine
+        .acknowledge_acquisition_event(&event_id)
+        .unwrap();
+    assert!(restored_engine.pending_acquisition_events.is_empty());
+    assert_eq!(restored_engine.durable_revision, restored_revision + 1);
+    assert_eq!(restored_engine.inventory.evidence.len(), 1);
+    assert_eq!(restored_engine.story_state.snapshot(), story_before);
 }

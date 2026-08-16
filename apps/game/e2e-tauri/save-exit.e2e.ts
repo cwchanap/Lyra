@@ -1,4 +1,5 @@
 import {
+  acknowledgeAcquisitionDomFirst,
   advanceDialogueUntil,
   advanceDialogueOnce,
   assertSaveE2ePhase,
@@ -14,15 +15,12 @@ import {
   jsClick,
   jumpToProductionScene,
   requestApplicationQuit,
-  requestApplicationQuitWhenAcknowledging,
   requestWindowClose,
   resetE2eStorageWithStoryClearance,
   settlePackagedCommand,
-  startAcquisitionAcknowledgement,
   startFromMenu,
   waitForAcquisitionOrdinal,
   waitForDialog,
-  waitForExitSavingDomWhileAlive,
   waitForNoDialog,
   waitForPackagedDisconnect,
   waitForPackagedGameState,
@@ -58,10 +56,8 @@ type ExitCheckpoint = {
 type ExitControl = {
   close?: ExitCheckpoint;
   quit?: ExitCheckpoint;
-  activeAcknowledgementExit?: {
-    documentIdentity: string;
+  acknowledgedExit?: {
     sceneId: string;
-    acquisitionId: string;
     recordKind: "evidence" | "statement";
     recordId: string;
   };
@@ -165,16 +161,15 @@ async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
   expect(dialogueFingerprint(state)).toBe(expected.currentDialogueFingerprint);
 }
 
-async function exitDuringActiveAcknowledgement(): Promise<void> {
+async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
-  const documentIdentity = await currentPackagedDocumentIdentity();
   await jumpToProductionScene(anchors.investigationSceneId);
   await drainCurrentDialogue("explore");
   await waitForPersistenceIdle();
   const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
   await browser.waitUntil(async () => elementExists(hotspot), {
     timeout: 30000,
-    timeoutMsg: "active-acknowledgement exit hotspot did not appear",
+    timeoutMsg: "acknowledged-exit hotspot did not appear",
   });
   await jsClick(hotspot);
   await advanceDialogueUntil(async () => {
@@ -187,22 +182,27 @@ async function exitDuringActiveAcknowledgement(): Promise<void> {
   const acquisition = await waitForAcquisitionOrdinal(0);
   const current = acquisition.pendingAcquisition;
   if (!current) {
-    throw new Error("active-acknowledgement exit event is missing");
+    throw new Error("acknowledged-exit event is missing");
   }
   writeSaveE2eExpectation("exit-state", {
     ...inherited,
-    activeAcknowledgementExit: {
-      documentIdentity,
+    acknowledgedExit: {
       sceneId: acquisition.scene.id,
-      acquisitionId: current.id,
       recordKind: current.recordKind,
       recordId: current.recordId,
     },
   } satisfies ExitControl);
 
-  await requestApplicationQuitWhenAcknowledging();
-  await startAcquisitionAcknowledgement(current);
-  await waitForExitSavingDomWhileAlive();
+  // Ordinary acknowledgement, then an ordinary quit: the exit flush must
+  // persist the acknowledged revision, and the next process must resume
+  // without the popup and with the record granted exactly once.
+  await acknowledgeAcquisitionDomFirst(current);
+  await waitForPackagedGameState(
+    (state) => state.pendingAcquisition === null,
+    30000,
+    "acknowledged event did not clear in memory before quit",
+  );
+  await requestApplicationQuit();
   await waitForPackagedDisconnect();
 }
 
@@ -210,22 +210,22 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
   await waitForShell();
   await continueFromTitle();
-  const activeAcknowledgement = inherited.activeAcknowledgementExit;
-  if (!activeAcknowledgement) {
-    throw new Error("active-acknowledgement exit expectation is missing");
+  const acknowledgedExit = inherited.acknowledgedExit;
+  if (!acknowledgedExit) {
+    throw new Error("acknowledged-exit expectation is missing");
   }
   const acknowledged = await getPackagedGameState();
-  expect(acknowledged.scene.id).toBe(activeAcknowledgement.sceneId);
+  expect(acknowledged.scene.id).toBe(acknowledgedExit.sceneId);
   expect(acknowledged.pendingAcquisition).toBeNull();
   const acknowledgedInventory =
-    activeAcknowledgement.recordKind === "evidence"
+    acknowledgedExit.recordKind === "evidence"
       ? acknowledged.inventory.evidence
       : acknowledged.inventory.statements;
   expect(
-    acknowledgedInventory.some(
-      (record) => record.id === activeAcknowledgement.recordId,
+    acknowledgedInventory.filter(
+      (record) => record.id === acknowledgedExit.recordId,
     ),
-  ).toBe(true);
+  ).toHaveLength(1);
 
   await jumpToProductionScene("scene_2");
   await waitForPersistenceIdle();
@@ -317,7 +317,7 @@ describe("save exit lifecycle", () => {
       await seedQuitFromResumedGameplay();
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitQuitResume) {
       await resumeSuccessfulExit("quit");
-      await exitDuringActiveAcknowledgement();
+      await exitAfterOrdinaryAcknowledgement();
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitFailureBypass) {
       await proveFailureCancelAndBypass();
     } else if (phase === SAVE_E2E_PHASE_NAMES.exitFinalVerification) {

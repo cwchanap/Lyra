@@ -4,6 +4,8 @@
 
 **Goal:** Deliver exact-revision local persistence for every current Lyra runtime state, with five rotating autosaves, three Unicode-named manual saves, aspect-ratio-preserving gameplay thumbnails, disk-backed Continue, durable acquisition acknowledgement, native exit flushing, and the complete Traditional Chinese save/load UI.
 
+> **HPA-549 supersession note:** The exclusive-acknowledgement persistence described in Tasks 9–11 (reserved writers, acknowledgement exit priority, and its failure challenges) was removed by HPA-549. Acknowledgement now commits through the ordinary autosave path, and exit flushes the current revision normally. This historical plan is retained unchanged.
+
 **Architecture:** The scene compiler first materializes every semantic default and validates every referenced semantic asset/audio ID before producing the package content revision. A focused Rust `game/save/` subsystem owns the closed version-1 wire schema, exhaustive capture/restore, storage, discovery, thumbnail validation, migrations, and one serialized persistence coordinator. `AppState` becomes a session facade with a replacement gate, and Tauri plus the development HTTP bridge expose the same typed command/result contract. Svelte owns only presentation, bounded gameplay-root capture behind `GameplayThumbnailCapture`, and save/load workflow state; Rust remains authoritative for slots, names, revisions, pending acquisition events, failure tokens, and session transitions.
 
 **Tech Stack:** Bun 1.3.1, TypeScript, Vitest, SvelteKit SPA, Svelte 5 runes, `html-to-image`, Rust 2021, Serde, Tauri 2.11, `atomic-write-file`, `chrono`, `sha2`, `unicode-segmentation`, `uuid`, Cargo tests, WebdriverIO Tauri E2E, GitHub Actions on Linux and macOS.
