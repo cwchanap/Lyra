@@ -79,9 +79,13 @@
 
   $effect(() => {
     const eventId = notification.id;
+    // Capture `busy` synchronously: Svelte only tracks synchronous $effect
+    // reads, so reading it inside tick().then(...) would miss a busy -> idle
+    // transition on the same mounted event and never refocus Continue.
+    const isBusy = busy;
     void tick().then(() => {
       if (notification.id !== eventId) return;
-      if (!busy) continueButton?.focus();
+      if (!isBusy) continueButton?.focus();
     });
   });
 
@@ -213,7 +217,7 @@
           disabled={busy}
           onclick={dismissCurrent}
         >
-          {busy ? "儲存中…" : "CONTINUE / 繼續"}
+          {busy ? "確認中…" : "CONTINUE / 繼續"}
         </button>
       </div>
     </div>
