@@ -176,6 +176,8 @@ pub(crate) enum MutationPersistencePolicy {
     AutosaveIfAdvanced,
     AutosaveIfAdvancedWithoutThumbnail,
     CoordinatorManaged,
+    #[allow(dead_code)]
+    // Persistence-failure recovery still exercises this policy; production constructors were removed with the acknowledgement recovery commands.
     AdvanceWithoutSaving,
 }
 
@@ -1669,70 +1671,23 @@ async fn return_to_title_without_saving(
     return_to_title_without_saving_core(&state, failure_token).await
 }
 
-#[tauri::command]
-async fn acknowledge_acquisition_event(
-    state: tauri::State<'_, AppState>,
-    event_id: String,
-    prepared_thumbnail_ticket: String,
-) -> Result<GameplayCommandResultView, GameError> {
-    let outcome = state
-        .coordinator
-        .acknowledge_acquisition(&state, event_id, prepared_thumbnail_ticket)
-        .await?;
-    finish_coordinator_mutation(outcome.state, MutationPersistencePolicy::CoordinatorManaged)
-}
-
-#[tauri::command]
-async fn confirm_acquisition_without_saving(
-    state: tauri::State<'_, AppState>,
-    event_id: String,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<GameplayCommandResultView, GameError> {
-    let state_view = state
-        .coordinator
-        .confirm_acquisition_without_saving(&state, event_id, failure_token)
-        .await?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::AdvanceWithoutSaving)
-}
-
-fn retry_acquisition_acknowledgement_core(
+fn acknowledge_acquisition_event_core(
     state: &AppState,
     event_id: String,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<ThumbnailCaptureRequestView, GameError> {
-    state
-        .coordinator
-        .retry_acquisition_acknowledgement(state, event_id, failure_token)
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        state,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+        |engine| engine.acknowledge_acquisition_event(&event_id),
+    )
 }
 
 #[tauri::command]
-fn retry_acquisition_acknowledgement(
+fn acknowledge_acquisition_event(
     state: tauri::State<'_, AppState>,
     event_id: String,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<ThumbnailCaptureRequestView, GameError> {
-    retry_acquisition_acknowledgement_core(&state, event_id, failure_token)
-}
-
-fn cancel_acquisition_failure_core(
-    state: &AppState,
-    event_id: String,
-    failure_token: PersistenceFailureTokenView,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let state_view =
-        state
-            .coordinator
-            .cancel_acquisition_failure(state, event_id, failure_token)?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
-}
-
-#[tauri::command]
-fn cancel_acquisition_failure(
-    state: tauri::State<'_, AppState>,
-    event_id: String,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<GameplayCommandResultView, GameError> {
-    cancel_acquisition_failure_core(&state, event_id, failure_token)
+    acknowledge_acquisition_event_core(&state, event_id)
 }
 
 #[doc(hidden)]
@@ -2002,62 +1957,9 @@ pub async fn dispatch_development_command_with_exit(
             #[serde(rename_all = "camelCase")]
             struct Args {
                 event_id: String,
-                prepared_thumbnail_ticket: String,
             }
             let args: Args = parse_development_body(body)?;
-            let outcome = state
-                .coordinator
-                .acknowledge_acquisition(state, args.event_id, args.prepared_thumbnail_ticket)
-                .await?;
-            development_json(finish_coordinator_mutation(
-                outcome.state,
-                MutationPersistencePolicy::CoordinatorManaged,
-            )?)
-        }
-        "confirm_acquisition_without_saving" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                event_id: String,
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            let state_view = state
-                .coordinator
-                .confirm_acquisition_without_saving(state, args.event_id, args.failure_token)
-                .await?;
-            development_json(finish_coordinator_mutation(
-                state_view,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-            )?)
-        }
-        "retry_acquisition_acknowledgement" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                event_id: String,
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(retry_acquisition_acknowledgement_core(
-                state,
-                args.event_id,
-                args.failure_token,
-            )?)
-        }
-        "cancel_acquisition_failure" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                event_id: String,
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(cancel_acquisition_failure_core(
-                state,
-                args.event_id,
-                args.failure_token,
-            )?)
+            development_json(acknowledge_acquisition_event_core(state, args.event_id)?)
         }
         "list_scenes" => development_json(GameEngine::scene_navigation_index(
             state.resources_dir.clone(),
@@ -2552,9 +2454,6 @@ pub fn run() {
             return_to_title,
             return_to_title_without_saving,
             acknowledge_acquisition_event,
-            confirm_acquisition_without_saving,
-            retry_acquisition_acknowledgement,
-            cancel_acquisition_failure,
             cancel_persistence_failure,
             retry_exit,
             cancel_exit,
@@ -3097,6 +2996,7 @@ mod tests {
             ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem, StagedAtomicWrite,
         };
         use crate::game::schema::{OutroUnlock, PredicateHotspotInvestigated, UnlockExpr};
+        use crate::game::test_support::analysis_fixture_resources;
         use crate::game::test_support::save_capture_fixture_resources;
         use crate::game::view::ModeView;
         use std::cell::Cell;
@@ -5421,6 +5321,74 @@ mod tests {
             assert_eq!(app.session.lock().unwrap().durable_revision(), Some(1));
         }
 
+        /// Fixture: a started engine that has recorded acquisition events
+        /// through the public gameplay path. The analysis source scene
+        /// collects nine evidence records and one statement in a single
+        /// `inspect_hotspot` command, so the pending vector holds `acq:2:0`
+        /// through `acq:2:9` (fresh engine: `enter_sublocation` is command 1,
+        /// the inspect is command 2, ordinals start at 0).
+        fn acquisition_app() -> (tempfile::TempDir, AppState) {
+            let (guard, resources) = analysis_fixture_resources();
+            let mut engine = GameEngine::new_started(resources).unwrap();
+            engine.enter_sublocation("room").unwrap();
+            engine.inspect_hotspot("collect_sources").unwrap();
+            let app = AppState {
+                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            };
+            (guard, app)
+        }
+
+        #[test]
+        fn acknowledge_acquisition_event_clears_presented_event_without_thumbnail() {
+            let (_guard, app) = acquisition_app();
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(2));
+
+            let result = acknowledge_acquisition_event_core(&app, "acq:2:0".into()).unwrap();
+
+            assert!(result.thumbnail_capture.is_none());
+            assert_eq!(
+                app.coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Idle
+            );
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(3));
+            // The cleared event's successor is now presented: acknowledging it
+            // succeeds instead of failing as a still-pending ID.
+            acknowledge_acquisition_event_core(&app, "acq:2:1".into()).unwrap();
+            assert_eq!(app.session.lock().unwrap().durable_revision(), Some(4));
+        }
+
+        #[test]
+        fn duplicate_acknowledgement_does_not_advance_revision() {
+            let (_guard, app) = acquisition_app();
+            acknowledge_acquisition_event_core(&app, "acq:2:0".into()).unwrap();
+            let before = app.session.lock().unwrap().durable_revision();
+
+            let result = acknowledge_acquisition_event_core(&app, "acq:2:0".into()).unwrap();
+
+            assert!(result.thumbnail_capture.is_none());
+            assert_eq!(app.session.lock().unwrap().durable_revision(), before);
+        }
+
+        #[test]
+        fn later_still_pending_id_returns_unknown_acquisition_event_without_change() {
+            let (_guard, app) = acquisition_app();
+            let before = app.session.lock().unwrap().durable_revision();
+
+            let error = acknowledge_acquisition_event_core(&app, "acq:2:1".into()).unwrap_err();
+
+            assert_eq!(error.code, "unknownAcquisitionEvent");
+            assert_eq!(app.session.lock().unwrap().durable_revision(), before);
+            assert_eq!(
+                app.coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Idle
+            );
+        }
+
         #[tokio::test]
         async fn unchanged_mutation_returns_wrapped_state_without_capture() {
             let app = mutation_app();
@@ -5597,22 +5565,16 @@ mod tests {
             }
 
             let acknowledgement = function_body(source, "acknowledge_acquisition_event");
-            assert!(acknowledgement.contains("MutationPersistencePolicy::CoordinatorManaged"));
-            assert!(!acknowledgement.contains("notify_"));
-            let bypass = function_body(source, "confirm_acquisition_without_saving");
-            assert!(bypass.contains("MutationPersistencePolicy::AdvanceWithoutSaving"));
-            assert!(!bypass.contains("notify_"));
-            let retry = function_body(source, "retry_acquisition_acknowledgement");
-            assert!(!retry.contains("notify_"));
-            let cancel = function_body(source, "cancel_acquisition_failure");
-            assert!(cancel.contains("MutationPersistencePolicy::CoordinatorManaged"));
-            assert!(!cancel.contains("notify_"));
+            assert!(acknowledgement
+                .contains("MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail"));
+            assert!(!acknowledgement.contains("session.lock()"));
         }
 
         #[test]
         fn analysis_workbench_commands_pin_no_thumbnail_autosave_policy() {
             let source = include_str!("lib.rs");
             for command in [
+                "acknowledge_acquisition_event",
                 "select_analysis_board",
                 "update_analysis_draft",
                 "submit_analysis_board",
@@ -5673,9 +5635,6 @@ mod tests {
                 "return_to_title",
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
-                "confirm_acquisition_without_saving",
-                "retry_acquisition_acknowledgement",
-                "cancel_acquisition_failure",
                 "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
@@ -5743,9 +5702,6 @@ mod tests {
                 "return_to_title",
                 "return_to_title_without_saving",
                 "acknowledge_acquisition_event",
-                "confirm_acquisition_without_saving",
-                "retry_acquisition_acknowledgement",
-                "cancel_acquisition_failure",
                 "cancel_persistence_failure",
                 "retry_exit",
                 "cancel_exit",
@@ -6128,9 +6084,6 @@ mod tests {
             "return_to_title",
             "return_to_title_without_saving",
             "acknowledge_acquisition_event",
-            "confirm_acquisition_without_saving",
-            "retry_acquisition_acknowledgement",
-            "cancel_acquisition_failure",
             "cancel_persistence_failure",
             "retry_exit",
             "cancel_exit",
