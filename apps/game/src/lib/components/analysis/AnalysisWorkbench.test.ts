@@ -194,6 +194,44 @@ describe("AnalysisWorkbench", () => {
     );
   });
 
+  it("exposes each rail entry state and progress through an accessible description", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) => {
+            if (candidate.id === "local_event_sequence") {
+              return { ...candidate, available: false, completed: true };
+            }
+            if (candidate.id === "narrow_request_basis") {
+              return { ...candidate, available: false };
+            }
+            return candidate;
+          },
+        ),
+      }),
+    });
+    renderWorkbench(state);
+
+    const expectedDescriptions = [
+      { name: "證據包整理", state: "目前", progress: "0 / 3" },
+      { name: "本機事件順序", state: "已完成", progress: "1 / 4" },
+      { name: "有限調取申請基礎", state: "尚未解鎖", progress: "1 / 2" },
+    ];
+
+    for (const expected of expectedDescriptions) {
+      const entry = screen.getByRole("button", { name: expected.name });
+      const descriptionId = entry.getAttribute("aria-describedby");
+      expect(descriptionId).toBeTruthy();
+
+      const description = descriptionId
+        ? document.getElementById(descriptionId)
+        : null;
+      expect(description).toBeInTheDocument();
+      expect(description).toHaveTextContent(expected.state);
+      expect(description).toHaveTextContent(expected.progress);
+    }
+  });
+
   it("keeps non-completed read-only boards visibly distinct from completed boards", () => {
     const state = analysisState({
       scene: analysisSceneWith({

@@ -149,6 +149,22 @@
     }
   }
 
+  function boardStateLabel(
+    state: AnalysisBoardState,
+    readOnly: boolean,
+  ): string {
+    switch (state) {
+      case "completed":
+        return "已完成";
+      case "locked":
+        return "尚未解鎖";
+      case "active":
+        return readOnly ? "只讀" : "目前";
+      case "available":
+        return "可進入";
+    }
+  }
+
   // The display board can change when the runtime falls back to a different
   // incomplete board. Clear presentation-only state only after an explicit
   // board change; mounting the workbench must never issue a selection command.
@@ -460,9 +476,15 @@
         {#each railBoards as candidate (candidate.id)}
           {@const state = boardState(candidate)}
           {@const progress = analysisBoardProgress(candidate)}
+          {@const descriptionId = `analysis-board-description-${candidate.id}`}
+          <span id={descriptionId} class="sr-only">
+            {boardStateLabel(state, candidate.readOnly)}，進度 {progress.current}
+            / {progress.target}
+          </span>
           <button
             type="button"
             aria-label={candidate.label}
+            aria-describedby={descriptionId}
             aria-current={candidate.id === analysisMode.boardId
               ? "page"
               : undefined}
@@ -475,19 +497,9 @@
           >
             <span class="board-entry-heading">
               <span>{candidate.label}</span>
-              <span class="board-entry-state">
-                {#if state === "completed"}
-                  已完成
-                {:else if state === "locked"}
-                  尚未解鎖
-                {:else if candidate.readOnly}
-                  只讀
-                {:else if state === "active"}
-                  目前
-                {:else}
-                  可進入
-                {/if}
-              </span>
+              <span class="board-entry-state"
+                >{boardStateLabel(state, candidate.readOnly)}</span
+              >
             </span>
             <span class="board-entry-kind"
               >{boardKindLabel(candidate.kind)}</span
@@ -775,6 +787,18 @@
     color: #969ba7;
     background: rgba(255, 255, 255, 0.025);
     border-style: dashed;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .board-entry-heading,
