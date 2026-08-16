@@ -31,6 +31,7 @@
     settlePreparedThumbnailCapture,
   } from "$lib/state/game-client.svelte";
   import { canReexamineCaseRecords, shouldShowCaseFile } from "$lib/state/mode";
+  import { isAnalysisPresentationActive } from "$lib/analysis/presentation";
   import {
     currentInterrogationPhase,
     isInterrogationPresentationActive,
@@ -184,6 +185,10 @@
         gameState.value.scene,
         gameState.value.mode,
       ),
+  );
+  let analysisPresentationActive = $derived(
+    gameState.value !== null &&
+      isAnalysisPresentationActive(gameState.value.scene, gameState.value.mode),
   );
   let interrogationPresentationPhase = $derived(
     gameState.value ? currentInterrogationPhase(gameState.value.scene) : null,
@@ -1295,6 +1300,7 @@
         caseFileMenuEnabled={shouldShowCaseFile(gameState.value.mode)}
         {activePrimaryObjective}
         interrogationPresentation={interrogationPresentationActive}
+        analysisPresentation={analysisPresentationActive}
         {gameMenuRequest}
         onGameMenuRequestHandled={handleGameMenuRequestHandled}
         {caseFileRequest}
