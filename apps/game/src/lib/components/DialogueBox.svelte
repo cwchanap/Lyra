@@ -1088,9 +1088,9 @@
   @media (prefers-reduced-motion: reduce) {
     .xexam-challenge.charging {
       animation: none;
-      box-shadow:
-        inset 0 0 0 26px rgba(174, 28, 49, 0.22),
-        0 0 0 10px rgba(174, 28, 49, 0);
+      border-width: 3px;
+      outline: 2px solid rgba(174, 28, 49, 0.5);
+      outline-offset: 3px;
     }
   }
 </style>

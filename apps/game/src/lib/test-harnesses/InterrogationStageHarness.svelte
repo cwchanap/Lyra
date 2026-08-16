@@ -8,6 +8,7 @@
     mode,
     inventory,
     disabled = false,
+    topLayerOpen = false,
     onPresent,
     onResume,
     onOpenGameMenu,
@@ -18,6 +19,9 @@
     mode: Mode;
     inventory: Inventory;
     disabled?: boolean;
+    // Forwarded to InterrogationEvidenceTray so its Tab trap suspends while
+    // an upper layer (Game Menu / Save Browser / acquisition popup) is open.
+    topLayerOpen?: boolean;
     onPresent: (
       lineId: string,
       kind: "evidence" | "statement",
@@ -35,6 +39,7 @@
   {mode}
   {inventory}
   {disabled}
+  {topLayerOpen}
   {onPresent}
   {onResume}
   {onOpenGameMenu}

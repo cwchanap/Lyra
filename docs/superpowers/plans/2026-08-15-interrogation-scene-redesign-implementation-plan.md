@@ -358,9 +358,19 @@ git commit -m "feat: restyle cross examination controls"
 - Test: existing focused component suites from Tasks 1 through 5
 
 **Interfaces:**
-- +page owns caseFileRequestId, caseFileReturnFocus, and the callback from InterrogationStage.
-- +page passes one caseFileRequest object to GameShell and resets it only after GameShell acknowledges the same id.
-- +page passes active Stage props and CrossExamView presentation data through the existing sole DialogueBox call.
+- +page owns caseFileRequestId and the callback from InterrogationStage. The
+  case-file request carries `returnFocusTo: trigger` directly (no separate
+  return-focus state).
+- +page passes one caseFileRequest object to GameShell and resets it only after
+  GameShell acknowledges the same id via onCaseFileRequestHandled.
+- +page owns gameMenuRequestId and a gameMenuRequest object of the same shape,
+  reset via onGameMenuRequestHandled after GameShell acknowledges the id. The
+  Present tray's 遊戲選單 action calls InterrogationStage.onOpenGameMenu(trigger),
+  which +page wires to openInterrogationGameMenu; opening the menu does not
+  retract the tray (topLayerOpen suspends the tray's Tab trap while the menu is
+  open).
+- +page passes active Stage props and CrossExamView presentation data through
+  the existing sole DialogueBox call.
 
 - [ ] **Step 1: Run the compile gate after the component interface changes**
 

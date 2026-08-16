@@ -478,7 +478,7 @@ describe("InterrogationEvidenceTray", () => {
 
     // While suspended, Tab is not cancelled and focus is not moved by the
     // trap.
-    rerender(props({ topLayerOpen: true }));
+    await rerender(props({ topLayerOpen: true }));
     const suspendedEvent = new KeyboardEvent("keydown", {
       key: "Tab",
       bubbles: true,
@@ -491,7 +491,7 @@ describe("InterrogationEvidenceTray", () => {
     // Once the upper layer closes, the trap resumes: Tab is cancelled
     // (preventDefault) so the browser's native Tab navigation is overridden
     // by the trap's focus cycling.
-    rerender(props({ topLayerOpen: false }));
+    await rerender(props({ topLayerOpen: false }));
     const resumedEvent = new KeyboardEvent("keydown", {
       key: "Tab",
       bubbles: true,

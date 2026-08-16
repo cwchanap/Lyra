@@ -112,7 +112,6 @@
   // session's context.
   let caseFileSection = $state<CaseFileSection>("objective");
   let caseFileRequestId = $state(0);
-  let caseFileReturnFocus = $state<HTMLElement | null>(null);
   let caseFileRequest = $state<{
     id: number;
     returnFocusTo: HTMLElement | null;
@@ -129,7 +128,6 @@
     if (epoch !== observedCaseFileEpoch) {
       observedCaseFileEpoch = epoch;
       caseFileSection = "objective";
-      caseFileReturnFocus = null;
       caseFileRequest = null;
       gameMenuRequest = null;
     }
@@ -1253,10 +1251,9 @@
   function openInterrogationCaseFile(trigger: HTMLElement) {
     caseFileSection = "evidence";
     caseFileRequestId += 1;
-    caseFileReturnFocus = trigger;
     caseFileRequest = {
       id: caseFileRequestId,
-      returnFocusTo: caseFileReturnFocus,
+      returnFocusTo: trigger,
     };
   }
 
@@ -1276,7 +1273,6 @@
   function handleCaseFileRequestHandled(id: number) {
     if (caseFileRequest?.id !== id) return;
     caseFileRequest = null;
-    caseFileReturnFocus = null;
   }
 </script>
 
