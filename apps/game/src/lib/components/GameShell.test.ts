@@ -1428,26 +1428,22 @@ describe("GameShell", () => {
     document.body.append(trigger);
     trigger.focus();
 
-    try {
-      // Detach before rendering so the focus origin is disconnected when
-      // the request effect runs.
-      trigger.remove();
+    // Detach before rendering so the focus origin is disconnected when
+    // the request effect runs.
+    trigger.remove();
 
-      const onGameMenuRequestHandled = vi.fn();
-      render(GameShellHarness, {
-        gameState: state(),
-        onCloseCase: vi.fn(),
-        gameMenuRequest: { id: 1, returnFocusTo: trigger },
-        onGameMenuRequestHandled,
-      });
+    const onGameMenuRequestHandled = vi.fn();
+    render(GameShellHarness, {
+      gameState: state(),
+      onCloseCase: vi.fn(),
+      gameMenuRequest: { id: 1, returnFocusTo: trigger },
+      onGameMenuRequestHandled,
+    });
 
-      await screen.findByRole("dialog", { name: "遊戲選單" });
-      await vi.waitFor(() => {
-        expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
-      });
-    } finally {
-      // trigger already removed
-    }
+    await screen.findByRole("dialog", { name: "遊戲選單" });
+    await vi.waitFor(() => {
+      expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
+    });
   });
 
   it("does not update the focus origin when a game menu request arrives while the menu is already open with a null focus origin", async () => {

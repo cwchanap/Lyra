@@ -1,7 +1,7 @@
 # Interrogation Scene Redesign
 
 **Date:** 2026-08-14  
-**Status:** Revised design awaiting confirmation; implementation pending
+**Status:** Implemented
 
 ## Goal
 
@@ -178,11 +178,19 @@ The component's existing actions retain distinct meanings:
 | DialogueBox live testimony | 反駁 | onChallenge(lineId) |
 | DialogueBox live testimony | 退下 | onWithdraw() |
 | InterrogationEvidenceTray Present | 收回 | onResume() |
+| InterrogationEvidenceTray Present | 遊戲選單 | onOpenGameMenu(trigger) |
 
 The xexam-challenge class and visible 反駁 label remain packaged-E2E
 compatibility anchors. The present tray auto-mounts solely from engine
 presenting state, including a restored save, and its 收回 control remains the
 unambiguous resume action used by the packaged save-resume path.
+
+The Present tray's 遊戲選單 action calls `onOpenGameMenu(trigger)` with the
+button element as the focus-return trigger. Opening the game menu this way
+does **not** retract the tray: the engine's presenting state is preserved, the
+tray stays mounted, and its Tab trap suspends via `topLayerOpen` while the
+Game Menu (or Save Browser) owns keyboard navigation above it. The player
+returns from the menu to the still-open Present tray.
 
 ## Interaction design
 
@@ -217,6 +225,10 @@ unambiguous resume action used by the packaged save-resume path.
   line and current evidence/statement callbacks.
 - 收回 in that tray calls onResume, returning control to the engine's testimony
   flow.
+- 遊戲選單 in that tray calls onOpenGameMenu(trigger), opening the existing
+  GameShell game menu above the tray. The tray is not retracted: it stays
+  mounted and its Tab trap suspends via topLayerOpen while the menu owns
+  navigation, so the player returns to the still-open Present tray on close.
 - Correct and incorrect feedback remains engine-authored dialogue; no
   client-side reaction is inferred from a submitted item.
 

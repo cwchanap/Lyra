@@ -1838,6 +1838,17 @@ export async function drainToInvestigationExplore(): Promise<void> {
   await waitForButton(anchors.hotspotEvidence.label, 90000);
 }
 
+async function isGameMenuDialogOpen(): Promise<boolean> {
+  return browser.execute((heading: string) => {
+    return Array.from(document.querySelectorAll('[role="dialog"]')).some(
+      (dialog) =>
+        Array.from(dialog.querySelectorAll("h2")).some((headingNode) =>
+          (headingNode.textContent ?? "").includes(heading),
+        ),
+    );
+  }, anchors.gameMenu);
+}
+
 export async function openGameMenu(): Promise<void> {
   const openedFromInterrogationTray = await browser.execute(() => {
     const button = document.querySelector<HTMLButtonElement>(
@@ -1848,39 +1859,27 @@ export async function openGameMenu(): Promise<void> {
     return true;
   });
   if (openedFromInterrogationTray) {
-    await browser.waitUntil(
-      async () =>
-        browser.execute((heading: string) => {
-          return Array.from(document.querySelectorAll('[role="dialog"]')).some(
-            (dialog) =>
-              Array.from(dialog.querySelectorAll("h2")).some((headingNode) =>
-                (headingNode.textContent ?? "").includes(heading),
-              ),
-          );
-        }, anchors.gameMenu),
-      {
+    // The tray's 遊戲選單 action opens the menu without retracting the tray.
+    // If the wait fails (e.g. the engine is mid-command and the click was
+    // swallowed), fall through to the Escape retry/fallback loop below rather
+    // than surfacing a bare timeout — that loop owns the rendered DOM and
+    // native game-state diagnostics.
+    try {
+      await browser.waitUntil(isGameMenuDialogOpen, {
         timeout: 15000,
         interval: 100,
         timeoutMsg: "game menu dialog did not open from interrogation Present",
-      },
-    );
-    return;
+      });
+      return;
+    } catch {
+      // Fall through to the Escape retry/fallback loop.
+    }
   }
 
   try {
     await browser.waitUntil(
       async () => {
-        const open = await browser.execute((heading: string) => {
-          const dialogs = Array.from(
-            document.querySelectorAll('[role="dialog"]'),
-          );
-          return dialogs.some((d) =>
-            Array.from(d.querySelectorAll("h2")).some((h) =>
-              (h.textContent ?? "").includes(heading),
-            ),
-          );
-        }, anchors.gameMenu);
-        if (open) return true;
+        if (await isGameMenuDialogOpen()) return true;
         // GameShell deliberately swallows Escape while a gameplay command and
         // its owned thumbnail submission are still in flight. Retry with a new
         // physical key event until that bounded frontend phase has settled.

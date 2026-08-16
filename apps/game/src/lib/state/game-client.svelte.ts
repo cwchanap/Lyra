@@ -530,30 +530,54 @@ export async function reexamineStatement(statementId: string) {
   await dispatchGameCommand("reexamine_statement", { statementId });
 }
 export async function askInterrogationQuestion(questionId: string) {
-  await dispatchGameCommand("ask_interrogation_question", { questionId });
+  try {
+    await dispatchGameCommand("ask_interrogation_question", { questionId });
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function challengeInterrogationLine(lineId: string) {
-  await dispatchGameCommand("challenge_interrogation_line", { lineId });
+  try {
+    await dispatchGameCommand("challenge_interrogation_line", { lineId });
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function presentInterrogationEvidence(
   lineId: string,
   itemKind: "evidence" | "statement",
   itemId: string,
 ) {
-  await dispatchGameCommand("present_interrogation_evidence", {
-    lineId,
-    itemKind,
-    itemId,
-  });
+  try {
+    await dispatchGameCommand("present_interrogation_evidence", {
+      lineId,
+      itemKind,
+      itemId,
+    });
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function withdrawInterrogation() {
-  await dispatchGameCommand("withdraw_interrogation", {});
+  try {
+    await dispatchGameCommand("withdraw_interrogation", {});
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function resumeInterrogationTestimony() {
-  await dispatchGameCommand("resume_interrogation_testimony", {});
+  try {
+    await dispatchGameCommand("resume_interrogation_testimony", {});
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function completeInterrogationPhase() {
-  await dispatchGameCommand("complete_interrogation_phase", {});
+  try {
+    await dispatchGameCommand("complete_interrogation_phase", {});
+  } catch (error) {
+    gameState.error = normalizeError(error);
+  }
 }
 export async function selectAnalysisBoard(
   actionToken: AnalysisActionToken,
