@@ -165,13 +165,16 @@ describe("acquisition controller", () => {
     expect(acknowledge).toHaveBeenCalledTimes(2);
   });
 
-  it("clears busy when the acknowledgement rejects", async () => {
+  it("absorbs an acknowledgement rejection, clears busy, and leaves the event visible", async () => {
     const { acknowledge, controller } = setup();
     acknowledge.mockRejectedValueOnce(new Error("backend unavailable"));
 
-    await expect(controller.dismissCurrent("event-1")).rejects.toThrow(
-      "backend unavailable",
-    );
+    // The controller must not propagate the rejection: the shared dispatch
+    // path surfaces typed failures through gameState.error, and an unexpected
+    // rejection (e.g. frame synchronization) is absorbed so the popup never
+    // observes an unhandled rejected promise. Busy still resets via finally
+    // and the event stays visible so the user can press Continue again.
+    await expect(controller.dismissCurrent("event-1")).resolves.toBeUndefined();
 
     expect(controller.busy).toBe(false);
     expect(controller.current?.id).toBe("event-1");

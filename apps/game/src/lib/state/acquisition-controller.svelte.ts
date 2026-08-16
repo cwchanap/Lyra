@@ -30,6 +30,13 @@ export function createAcquisitionController(
     busy = true;
     try {
       await dependencies.acknowledge(expectedEventId);
+    } catch {
+      // The shared dispatch path surfaces typed backend failures through
+      // gameState.error and resolves null; a rejection here is an unexpected
+      // state-application failure (e.g. frame synchronization). Absorb it so
+      // the popup never observes an unhandled rejection: the authoritative
+      // game state is unchanged, the event stays visible, and the user can
+      // press Continue again. The finally clause still resets busy.
     } finally {
       if (attempt === generation) busy = false;
     }
