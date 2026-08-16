@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   cleanup,
   fireEvent,
@@ -215,6 +216,19 @@ describe("GameShell", () => {
     expect(
       document.querySelector(".shell.analysis-presentation"),
     ).toBeInTheDocument();
+  });
+
+  it("source-asserts Analysis presentation bounds its nested stage", () => {
+    const source = readFileSync(
+      import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      '.interrogation-stage[data-interrogation-mode="analysis"]',
+    );
+    expect(source).toContain(".analysis-workbench");
+    expect(source).toContain("flex: 1 1 0;");
   });
 
   it("keeps the existing menu snippet available in Analysis presentation", async () => {
