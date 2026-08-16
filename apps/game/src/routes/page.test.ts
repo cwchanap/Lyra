@@ -2134,6 +2134,154 @@ describe("+page in-game persistence browser", () => {
       expect(active).not.toHaveAttribute("disabled");
     });
   });
+
+  it("restores focus to gameplayRoot after a manual save from the interrogation question screen (no Present tray)", async () => {
+    const user = userEvent.setup();
+    const state = currentState();
+    // Interrogation question screen: mode.type === "interrogation" makes
+    // interrogationPresentationActive true, but crossExam.presenting is
+    // false so the Present tray ([data-interrogation-game-menu]) is NOT
+    // mounted. Saving from here must fall back to gameplayRoot, not target
+    // a nonexistent tray button and leave focus on <body>.
+    state.scene = {
+      kind: "interrogation",
+      id: "interrogation_1",
+      title: "訊問",
+      summary: "",
+      index: 0,
+      total: 1,
+      currentPhaseId: "phase_1",
+      visiblePhases: [
+        {
+          id: "phase_1",
+          label: "第一階段",
+          subject: { id: "subject_1", name: "證人", role: "證人", bio: "" },
+          questions: [{ id: "q_1", label: "問題一", broken: false }],
+          crossExam: {
+            questionId: "q_1",
+            lineId: "line_1",
+            lineLabel: "證言一",
+            lineContent: [{ kind: "line", speaker: "證人", text: "我沒去。" }],
+            lineIndex: 0,
+            lineTotal: 1,
+            presenting: false,
+          },
+          canComplete: false,
+        },
+      ],
+    };
+    state.mode = {
+      type: "interrogation",
+      phaseId: "phase_1",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
+    gameState.value = state;
+
+    let resolvePreparation!: (response: Response) => void;
+    const delayedPreparation = new Promise<Response>((resolve) => {
+      resolvePreparation = resolve;
+    });
+    let manualCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "prepare_save_thumbnail") {
+        return delayedPreparation;
+      }
+      if (command === "report_save_thumbnail_failure") {
+        return jsonResponse({
+          type: "unavailable",
+          diagnostic: {
+            reason: "captureUnavailable",
+            message: "無法顯示預覽",
+            retryable: false,
+          },
+        });
+      }
+      if (command === "save_manual") {
+        manualCalls += 1;
+        const browser = titleDiscovery().browser;
+        return jsonResponse({
+          savedSlot: browser.slots[5],
+          browser,
+          thumbnailActivity: {
+            type: "unavailable",
+            diagnostic: {
+              reason: "captureUnavailable",
+              message: "無法顯示預覽",
+              retryable: false,
+            },
+          },
+        });
+      }
+      return jsonResponse({});
+    });
+
+    const { container } = render(Page);
+
+    // No Present tray is mounted because crossExam.presenting is false.
+    expect(
+      container.querySelector("[data-interrogation-game-menu]"),
+    ).toBeNull();
+
+    // Open the game menu via Escape (the question-screen path, not the
+    // tray's 遊戲選單 button which does not exist here).
+    await user.keyboard("{Escape}");
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "儲存遊戲" }),
+    );
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+    );
+
+    const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
+    const input = within(nameDialog).getByRole("textbox", {
+      name: "存檔名稱",
+    });
+    await user.clear(input);
+    await user.type(input, "訊問問題畫面存檔");
+    await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
+
+    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
+
+    await waitFor(() => expect(manualCalls).toBe(1));
+
+    // The game menu and save browser must be closed.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "遊戲選單" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("region", { name: "存檔瀏覽器" }),
+    ).not.toBeInTheDocument();
+
+    // Focus must return to gameplayRoot — not dangle on <body> after
+    // targeting a nonexistent [data-interrogation-game-menu] element.
+    await waitFor(() => {
+      const active = document.activeElement;
+      expect(active).toBeInstanceOf(HTMLElement);
+      expect(active).toHaveAttribute("data-gameplay-root");
+    });
+  });
 });
 
 describe("+page close case flow", () => {
