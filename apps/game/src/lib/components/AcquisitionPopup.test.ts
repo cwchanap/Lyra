@@ -9,6 +9,7 @@ import {
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
 import type { PendingAcquisitionView } from "$lib/state/types";
+import AcquisitionPopupBusyHarness from "$lib/test-harnesses/AcquisitionPopupBusyHarness.svelte";
 import AcquisitionPopup from "./AcquisitionPopup.svelte";
 
 const testDir = dirname(fileURLToPath(import.meta.url));
@@ -145,7 +146,7 @@ describe("AcquisitionPopup", () => {
     const input = props(evidence, { busy: true });
     render(AcquisitionPopup, input);
 
-    expect(screen.getByRole("button", { name: "儲存中…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "確認中…" })).toBeDisabled();
     expect(
       screen.queryByRole("button", { name: "CONTINUE / 繼續" }),
     ).toBeNull();
@@ -155,7 +156,7 @@ describe("AcquisitionPopup", () => {
     const user = userEvent.setup();
     const input = props(evidence, { busy: true });
     render(AcquisitionPopup, input);
-    const button = screen.getByRole("button", { name: "儲存中…" });
+    const button = screen.getByRole("button", { name: "確認中…" });
 
     expect(button).toBeDisabled();
     await user.keyboard("{Enter} ");
@@ -183,6 +184,41 @@ describe("AcquisitionPopup", () => {
     await user.click(button);
 
     expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
+  });
+
+  it("refocuses Continue when busy flips to idle on the same mounted event", async () => {
+    // Regression: $effect must synchronously track `busy` so a fine-grained
+    // busy -> idle transition on the same event reruns the focus effect.
+    // Reading busy only inside tick().then(...) would not be tracked, so an
+    // acknowledgement failure that flips busy true -> false (leaving the same
+    // event mounted) would leave Continue usable but never refocused.
+    //
+    // The harness holds busy as its own $state field (mirroring
+    // acquisition-controller.svelte.ts) so flipping it does NOT reassign the
+    // popup's other props. @testing-library/svelte's rerender reassigns the
+    // whole props object and cannot reproduce this fine-grained case.
+    const onContinue = vi.fn<(eventId: string) => Promise<void>>(
+      async () => undefined,
+    );
+    const user = userEvent.setup();
+    render(AcquisitionPopupBusyHarness, {
+      notification: evidence,
+      onContinue,
+    });
+
+    // While busy, Continue is disabled and not focused.
+    const busyButton = screen.getByRole("button", { name: "確認中…" });
+    expect(busyButton).toBeDisabled();
+    expect(busyButton).not.toHaveFocus();
+
+    // Flip only busy -> idle, same event still mounted.
+    await user.click(screen.getByRole("button", { name: "go idle" }));
+
+    const idleButton = await screen.findByRole("button", {
+      name: "CONTINUE / 繼續",
+    });
+    expect(idleButton).toBeEnabled();
+    await waitFor(() => expect(idleButton).toHaveFocus());
   });
 
   it("uses a generic evidence placeholder for a null image ID", async () => {
