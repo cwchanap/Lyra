@@ -541,6 +541,169 @@ mod tests {
         assert_eq!(unknown_error.code, "unknownAcquisitionEvent");
     }
 
+    // Break caught: acknowledgement removes more than the canonical presented
+    // event or consumes more than one durable revision.
+    #[test]
+    fn acknowledging_presented_event_removes_only_it_and_advances_revision() {
+        use crate::game::save::schema::RecordKind;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.inventory.statements = vec![mutable_statement_record("alibi")];
+        engine.pending_acquisition_events = vec![
+            acquisition_event(RecordKind::Evidence, "receipt", 8, 0),
+            acquisition_event(RecordKind::Statement, "alibi", 8, 1),
+        ];
+        assert_eq!(
+            engine.pending_acquisition_view().unwrap().unwrap().id,
+            "acq:8:0"
+        );
+
+        let revision_before = engine.durable_revision;
+        let view = engine.acknowledge_acquisition_event("acq:8:0").unwrap();
+
+        assert_eq!(engine.durable_revision, revision_before + 1);
+        assert_eq!(
+            engine.pending_acquisition_events,
+            vec![acquisition_event(RecordKind::Statement, "alibi", 8, 1)]
+        );
+        assert_eq!(
+            view.pending_acquisition
+                .as_ref()
+                .map(|pending| pending.id.as_str()),
+            Some("acq:8:1")
+        );
+    }
+
+    // Break caught: re-acknowledging an already-removed event errors or
+    // consumes another durable revision.
+    #[test]
+    fn duplicate_acknowledgement_is_idempotent() {
+        use crate::game::save::schema::RecordKind;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.inventory.statements = vec![mutable_statement_record("alibi")];
+        engine.pending_acquisition_events = vec![
+            acquisition_event(RecordKind::Evidence, "receipt", 8, 0),
+            acquisition_event(RecordKind::Statement, "alibi", 8, 1),
+        ];
+
+        engine.acknowledge_acquisition_event("acq:8:0").unwrap();
+        let revision_after_first = engine.durable_revision;
+
+        engine.acknowledge_acquisition_event("acq:8:0").unwrap();
+
+        assert!(engine
+            .pending_acquisition_events
+            .iter()
+            .all(|event| event.id != "acq:8:0"));
+        assert_eq!(engine.durable_revision, revision_after_first);
+    }
+
+    // Break caught: a later pending event is silently removed instead of
+    // being rejected as an identity mismatch.
+    #[test]
+    fn later_pending_event_is_identity_error() {
+        use crate::game::save::schema::RecordKind;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.inventory.statements = vec![mutable_statement_record("alibi")];
+        engine.pending_acquisition_events = vec![
+            acquisition_event(RecordKind::Evidence, "receipt", 8, 0),
+            acquisition_event(RecordKind::Statement, "alibi", 8, 1),
+        ];
+
+        let events_before = engine.pending_acquisition_events.clone();
+        let revision_before = engine.durable_revision;
+
+        let error = engine.acknowledge_acquisition_event("acq:8:1").unwrap_err();
+
+        assert_eq!(error.code, "unknownAcquisitionEvent");
+        assert_eq!(engine.pending_acquisition_events, events_before);
+        assert_eq!(engine.durable_revision, revision_before);
+    }
+
+    // Break caught: acknowledging into an empty queue errors or consumes a
+    // durable revision instead of being a no-op.
+    #[test]
+    fn empty_queue_acknowledgement_is_noop() {
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+
+        let revision_before = engine.durable_revision;
+
+        engine.acknowledge_acquisition_event("acq:8:0").unwrap();
+
+        assert!(engine.pending_acquisition_events.is_empty());
+        assert_eq!(engine.durable_revision, revision_before);
+    }
+
+    // Mandatory inverted-vector regression: the queue may physically store
+    // events out of canonical order; presentation and acknowledgement must
+    // follow canonical (command_id, ordinal) ordering, not `Vec::first()`.
+    #[test]
+    fn inverted_vector_acknowledgement_removes_only_presented_event() {
+        use crate::game::save::schema::RecordKind;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.pending_acquisition_events = vec![
+            acquisition_event(RecordKind::Evidence, "receipt", 7, 1),
+            acquisition_event(RecordKind::Evidence, "receipt", 7, 0),
+        ];
+
+        let pending = engine.pending_acquisition_view().unwrap().unwrap();
+        assert_eq!(pending.id, "acq:7:0");
+
+        let revision_before = engine.durable_revision;
+        let view = engine.acknowledge_acquisition_event("acq:7:0").unwrap();
+
+        assert_eq!(engine.durable_revision, revision_before + 1);
+        assert_eq!(
+            engine.pending_acquisition_events,
+            vec![acquisition_event(RecordKind::Evidence, "receipt", 7, 1)]
+        );
+        assert_eq!(
+            view.pending_acquisition
+                .as_ref()
+                .map(|pending| pending.id.as_str()),
+            Some("acq:7:1")
+        );
+    }
+
+    // Break caught: a stale ID absent everywhere in a non-empty queue errors
+    // instead of remaining a no-op.
+    #[test]
+    fn stale_acknowledgement_in_nonempty_queue_is_noop() {
+        use crate::game::save::schema::RecordKind;
+
+        let (_guard, resources) = packaged_acquisition_fixture_resources();
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        clear_active_fixture_dialogue(&mut engine);
+        engine.inventory.evidence = vec![mutable_evidence_record("receipt")];
+        engine.pending_acquisition_events =
+            vec![acquisition_event(RecordKind::Evidence, "receipt", 8, 0)];
+
+        let events_before = engine.pending_acquisition_events.clone();
+        let revision_before = engine.durable_revision;
+
+        engine.acknowledge_acquisition_event("acq:9:0").unwrap();
+
+        assert_eq!(engine.pending_acquisition_events, events_before);
+        assert_eq!(engine.durable_revision, revision_before);
+    }
+
     #[test]
     fn reexamine_evidence_rolls_back_tag_only_queue_when_scene_advance_fails() {
         use std::fs;

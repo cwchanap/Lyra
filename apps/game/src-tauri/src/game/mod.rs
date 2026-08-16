@@ -408,13 +408,12 @@ impl GameEngine {
     pub(in crate::game) fn pending_acquisition_view(
         &self,
     ) -> Result<Option<PendingAcquisitionView>, GameError> {
-        let Some(event) = self
-            .pending_acquisition_events
-            .iter()
-            .min_by_key(|event| (event.created_by_command_id, event.ordinal))
+        let Some(event_index) =
+            acquisition::presented_event_index(&self.pending_acquisition_events)
         else {
             return Ok(None);
         };
+        let event = &self.pending_acquisition_events[event_index];
         acquisition::validate_event_id(event)?;
         let view = match event.record_kind {
             save::schema::RecordKind::Evidence => {
@@ -528,6 +527,37 @@ impl GameEngine {
         } else {
             Ok(Some(view))
         }
+    }
+
+    /// Acknowledges the presented acquisition event by durable ID.
+    ///
+    /// Only the canonical presented event can be acknowledged: a request for
+    /// any other queued ID is an identity error, and an ID absent from the
+    /// queue (including an already-acknowledged event or an empty queue) is
+    /// an explicit no-op that consumes no durable revision.
+    pub fn acknowledge_acquisition_event(
+        &mut self,
+        event_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        self.command_tx(|engine, _command_id, _next_ordinal| {
+            let Some(presented_index) =
+                acquisition::presented_event_index(&engine.pending_acquisition_events)
+            else {
+                return Ok(CommandMutation::Unchanged);
+            };
+            if engine.pending_acquisition_events[presented_index].id == event_id {
+                engine.pending_acquisition_events.remove(presented_index);
+                return Ok(CommandMutation::Changed);
+            }
+            if engine
+                .pending_acquisition_events
+                .iter()
+                .any(|event| event.id == event_id)
+            {
+                return Err(GameError::unknown_acquisition_event());
+            }
+            Ok(CommandMutation::Unchanged)
+        })
     }
 
     pub fn advance_dialogue(&mut self, expected: QueueToken) -> Result<GameStateView, GameError> {

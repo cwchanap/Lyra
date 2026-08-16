@@ -94,6 +94,18 @@ pub(in crate::game) fn acquisition_event_id(command_id: u64, ordinal: u32) -> St
     format!("acq:{command_id}:{ordinal}")
 }
 
+/// Canonical presentation index: the earliest pending event by
+/// (created_by_command_id, ordinal), regardless of physical vector order.
+/// This is the single shared ordering for both the pending-acquisition view
+/// and acknowledgement; the vector is never normalized on load.
+pub(in crate::game) fn presented_event_index(events: &[AcquisitionEventStateV1]) -> Option<usize> {
+    events
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, event)| (event.created_by_command_id, event.ordinal))
+        .map(|(index, _)| index)
+}
+
 pub(in crate::game) fn validate_event_id(event: &AcquisitionEventStateV1) -> Result<(), GameError> {
     (event.id == acquisition_event_id(event.created_by_command_id, event.ordinal))
         .then_some(())
