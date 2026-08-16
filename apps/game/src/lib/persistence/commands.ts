@@ -5,8 +5,6 @@ import type {
   PersistenceHealthView,
   SaveSlotRef,
   ThumbnailActivityView,
-  ThumbnailCapturePurposeView,
-  ThumbnailCaptureRequestView,
 } from "./types";
 
 const isTauri =
@@ -117,12 +115,6 @@ export function cancelPersistenceFailure(failureToken: string): Promise<void> {
   return invokePersistenceCommand("cancel_persistence_failure", {
     failureToken,
   });
-}
-
-export function prepareSaveThumbnail(
-  purpose: ThumbnailCapturePurposeView,
-): Promise<ThumbnailCaptureRequestView> {
-  return invokePersistenceCommand("prepare_save_thumbnail", { purpose });
 }
 
 export function reportSaveThumbnailFailure(

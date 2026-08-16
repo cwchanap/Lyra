@@ -174,9 +174,6 @@ pub(crate) enum MutationPersistencePolicy {
     AutosaveIfAdvanced,
     AutosaveIfAdvancedWithoutThumbnail,
     CoordinatorManaged,
-    #[allow(dead_code)]
-    // Only test constructors remain; production constructors were removed with the acknowledgement recovery commands.
-    AdvanceWithoutSaving,
 }
 
 #[doc(hidden)]
@@ -556,8 +553,7 @@ fn run_gameplay_mutation(
             MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => state
                 .coordinator
                 .notify_committed_without_thumbnail(committed, session_generation, after_revision),
-            MutationPersistencePolicy::CoordinatorManaged
-            | MutationPersistencePolicy::AdvanceWithoutSaving => {
+            MutationPersistencePolicy::CoordinatorManaged => {
                 return Ok(GameplayCommandResultView {
                     state: committed,
                     thumbnail_capture: None,
@@ -581,8 +577,7 @@ fn finish_coordinator_mutation(
     policy: MutationPersistencePolicy,
 ) -> Result<GameplayCommandResultView, GameError> {
     match policy {
-        MutationPersistencePolicy::CoordinatorManaged
-        | MutationPersistencePolicy::AdvanceWithoutSaving => Ok(GameplayCommandResultView {
+        MutationPersistencePolicy::CoordinatorManaged => Ok(GameplayCommandResultView {
             state,
             thumbnail_capture: None,
         }),
@@ -2904,48 +2899,6 @@ mod tests {
             assert_eq!(http_error, tauri_error);
             assert!(dev_exit.recorded_codes().is_empty());
         }
-
-        #[tokio::test]
-        async fn exit_lifecycle_production_backend_flushes_while_exit_exclusivity_is_active() {
-            let (_guard, resources) = crate::game::test_support::save_capture_fixture_resources();
-            let app = build_app_state_with_storage(
-                resources.clone(),
-                resources.join("exit-saves"),
-                Arc::new(ProductionSaveFilesystem),
-            )
-            .unwrap();
-            start_game_core(&app, GameEngine::new_started(resources).unwrap())
-                .await
-                .unwrap();
-            run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-                |engine| engine.jump_to_scene("chapter_1", "investigation_scene_1"),
-            )
-            .unwrap();
-            let (failed_tx, mut failed_rx) = tokio::sync::mpsc::unbounded_channel();
-            app.coordinator.subscribe_exit_status(move |status| {
-                if matches!(status, ExitStatusView::Failed { .. }) {
-                    let _ = failed_tx.send(status);
-                }
-            });
-            let exit = Arc::new(RecordingExit::default());
-
-            app.coordinator
-                .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
-                .unwrap();
-            tokio::select! {
-                _ = exit.wait_for_call() => {}
-                failed = failed_rx.recv() => panic!("production exit flush failed: {failed:?}"),
-            }
-
-            let browser = app.persistence.as_ref().unwrap().discover();
-            assert!(browser
-                .slots
-                .iter()
-                .any(|slot| matches!(slot.status, SaveSlotStatusView::Valid { .. })));
-            assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
-        }
     }
 
     mod application_command_contract {
@@ -3250,34 +3203,6 @@ mod tests {
                 result.continue_candidate,
                 Some(SaveSlotRef::Manual { slot: 2 })
             );
-        }
-
-        #[tokio::test]
-        async fn failed_active_list_flush_returns_separate_browser_and_opaque_preflight_challenge()
-        {
-            let app = mutation_app();
-            run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-                |engine| engine.enter_sublocation("room"),
-            )
-            .unwrap();
-
-            let result = list_saves_core(&app, discovered_browser).await.unwrap();
-
-            assert_eq!(
-                result.continue_candidate,
-                Some(SaveSlotRef::Manual { slot: 2 })
-            );
-            let serialized = serde_json::to_value(result).unwrap();
-            assert_eq!(serialized["preflight"]["type"], "flushFailed");
-            assert_eq!(
-                serialized["preflight"]["diagnostic"]["code"],
-                "saveWriteFailed"
-            );
-            assert!(serialized["preflight"]["failureToken"]
-                .as_str()
-                .is_some_and(|token| uuid::Uuid::parse_str(token).is_ok()));
         }
 
         #[tokio::test]
@@ -3935,33 +3860,6 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn transition_contract_return_flushes_or_requires_exact_bypass_token() {
-            let app = mutation_app();
-            run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-                |engine| engine.enter_sublocation("room"),
-            )
-            .unwrap();
-
-            let error = return_to_title_core(&app).await.unwrap_err();
-            assert_eq!(error.code, "saveWriteFailed");
-            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
-            let browser = return_to_title_without_saving_core(&app, token.clone())
-                .await
-                .unwrap();
-            assert!(matches!(browser.preflight, SaveBrowserPreflightView::Ready));
-            assert!(app.session.lock().unwrap().engine.is_none());
-            assert_eq!(
-                return_to_title_without_saving_core(&app, token)
-                    .await
-                    .unwrap_err()
-                    .code,
-                "stalePersistenceFailureToken"
-            );
-        }
-
-        #[tokio::test]
         async fn transition_contract_start_without_saving_can_persist_after_storage_recovers() {
             let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
@@ -4581,45 +4479,6 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn transition_fault_matrix_normal_load_flush_failure_issues_exact_discard_challenge()
-        {
-            let app = mutation_app();
-            run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-                |engine| engine.enter_sublocation("room"),
-            )
-            .unwrap();
-            let reference = SaveSlotRef::Manual { slot: 1 };
-            let observed_save_id = uuid::Uuid::new_v4().hyphenated().to_string();
-
-            let error = load_save_core(&app, reference, observed_save_id.clone())
-                .await
-                .unwrap_err();
-            assert_eq!(error.code, "saveWriteFailed");
-            let token = PersistenceFailureTokenView::from_error(&error).unwrap();
-            assert_eq!(
-                load_save_discarding_current_core(
-                    &app,
-                    reference,
-                    observed_save_id.clone(),
-                    token.clone(),
-                )
-                .await
-                .unwrap_err()
-                .code,
-                "saveDiscoveryUnavailable"
-            );
-            assert_eq!(
-                load_save_discarding_current_core(&app, reference, observed_save_id, token)
-                    .await
-                    .unwrap_err()
-                    .code,
-                "stalePersistenceFailureToken"
-            );
-        }
-
-        #[tokio::test]
         async fn transition_contract_continue_and_return_success_use_fresh_disk_state() {
             let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
@@ -4962,36 +4821,6 @@ mod tests {
                     expected
                 );
             }
-        }
-
-        #[tokio::test]
-        async fn manual_save_never_bypasses_a_required_flush_failure() {
-            let app = mutation_app();
-            run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-                |engine| engine.enter_sublocation("room"),
-            )
-            .unwrap();
-            let ticket = app
-                .coordinator
-                .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
-                .unwrap();
-            app.coordinator
-                .report_thumbnail_failure(&ticket.ticket)
-                .unwrap();
-
-            let error = save_manual_core(
-                &app,
-                SaveSlotRef::Manual { slot: 1 },
-                "Must flush".into(),
-                ManualSlotExpectation::Empty,
-                ticket.ticket,
-            )
-            .await
-            .unwrap_err();
-
-            assert_eq!(error.code, "saveWriteFailed");
         }
 
         #[tokio::test]
@@ -5356,26 +5185,6 @@ mod tests {
 
             assert_eq!(result.state.chapter.id, "chapter_1");
             assert!(result.thumbnail_capture.is_none());
-        }
-
-        #[tokio::test]
-        async fn coordinator_managed_and_advance_without_saving_never_notify() {
-            for policy in [
-                MutationPersistencePolicy::CoordinatorManaged,
-                MutationPersistencePolicy::AdvanceWithoutSaving,
-            ] {
-                let app = mutation_app();
-
-                let result =
-                    run_gameplay_mutation(&app, policy, |engine| engine.enter_sublocation("room"))
-                        .unwrap();
-
-                assert!(result.thumbnail_capture.is_none());
-                assert!(matches!(
-                    app.coordinator.thumbnail_activity(),
-                    crate::game::save::coordinator::ThumbnailActivityView::Idle
-                ));
-            }
         }
 
         #[test]
