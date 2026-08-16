@@ -66,6 +66,24 @@ describe("+page acquisition popup ownership", () => {
     expect(source).toContain("<AcquisitionPopup");
     expect(source).toContain("notification={acquisitionController.current}");
   });
+
+  it("rewires the popup to busy, the shared error, and the single Continue action", () => {
+    const source = pageSource();
+    const popupStart = source.indexOf("<AcquisitionPopup");
+    const popupEnd = source.indexOf("/>", popupStart);
+    const popupSource = source.slice(popupStart, popupEnd);
+
+    expect(popupSource).toContain("busy={acquisitionController.busy}");
+    expect(popupSource).toContain("error={gameState.error}");
+    expect(popupSource).toContain(
+      "onContinue={acquisitionController.dismissCurrent}",
+    );
+    expect(popupSource).not.toContain("onRetry");
+    expect(popupSource).not.toContain("onCancel");
+    expect(popupSource).not.toContain("onContinueWithoutSaving");
+    expect(source).not.toContain("acquisitionController.phase");
+    expect(source).not.toContain("acquisitionController.size");
+  });
 });
 
 describe("save/load canonical player copy", () => {
@@ -84,6 +102,7 @@ describe("save/load canonical player copy", () => {
       componentSource("SaveBrowser"),
       componentSource("SaveCard"),
       componentSource("AcquisitionPopup"),
+      componentSource("SaveConfirmationDialog"),
     ].join("\n");
 
     for (const requiredCopy of [
@@ -95,11 +114,9 @@ describe("save/load canonical player copy", () => {
       "自動存檔",
       "手動存檔",
       "儲存中…",
-      "仍在儲存，請稍候…",
       "無法顯示預覽",
       "不儲存並開始遊戲",
       "捨棄未儲存進度並載入",
-      "不儲存並繼續",
       "不儲存並結束遊戲",
       "重試",
       "取消",

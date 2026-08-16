@@ -4,10 +4,6 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type {
-  AcquisitionAcknowledgementPhase,
-  PersistenceFailureTokenView,
-} from "$lib/persistence/types";
 import {
   closeTopmostEscapeClaim,
   resetEscapeCoordinator,
@@ -63,42 +59,20 @@ const statement: PendingAcquisitionView = {
   ordinal: 0,
 };
 
-const idle = { type: "idle" } satisfies AcquisitionAcknowledgementPhase;
-
-function failedPhase(
-  failureToken = "failure-token-1",
-): AcquisitionAcknowledgementPhase {
-  return {
-    type: "failed",
-    diagnostic: {
-      code: "saveWriteFailed",
-      message: "無法寫入存檔。",
-      failureToken,
-    },
-    failureToken,
-  };
-}
-
 function props(
   notification: PendingAcquisitionView = evidence,
-  phase: AcquisitionAcknowledgementPhase = idle,
+  overrides: { busy?: boolean; error?: string | null } = {},
 ) {
   return {
     notification,
-    phase,
+    busy: false,
+    error: null,
     returnFocusTo: null,
     fallbackFocusTarget: null,
     onContinue: vi.fn<(eventId: string) => Promise<void>>(
       async () => undefined,
     ),
-    onRetry: vi.fn<(eventId: string) => Promise<void>>(async () => undefined),
-    onCancel: vi.fn<(eventId: string) => Promise<void>>(async () => undefined),
-    onContinueWithoutSaving: vi.fn<
-      (
-        eventId: string,
-        failureToken: PersistenceFailureTokenView,
-      ) => Promise<void>
-    >(async () => undefined),
+    ...overrides,
   };
 }
 
@@ -141,7 +115,7 @@ describe("AcquisitionPopup", () => {
     expect(container.querySelector(".statement-seal")).toBeInTheDocument();
   });
 
-  it("focuses Continue and forwards only the exact Rust event ID", async () => {
+  it("focuses the single Continue button and forwards only the exact Rust event ID", async () => {
     const user = userEvent.setup();
     const input = props();
     render(AcquisitionPopup, input);
@@ -153,25 +127,33 @@ describe("AcquisitionPopup", () => {
     expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
-  it("shows saving immediately and the slow-saving message after the controller threshold", () => {
-    const input = props(evidence, { type: "saving", slow: false });
-    const result = render(AcquisitionPopup, input);
-
-    expect(screen.getByRole("button", { name: "儲存中…" })).toBeDisabled();
-
-    result.rerender({
-      ...input,
-      phase: { type: "saving", slow: true },
-    });
+  it("offers exactly one Continue button and no retry/cancel/bypass controls", () => {
+    render(AcquisitionPopup, props(evidence, { error: "存檔失敗。" }));
 
     expect(
-      screen.getByRole("button", { name: "仍在儲存，請稍候…" }),
-    ).toBeDisabled();
+      screen.getAllByRole("button", { name: "CONTINUE / 繼續" }),
+    ).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "重試" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "取消" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "不儲存並繼續" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "確認不儲存並繼續" }),
+    ).toBeNull();
   });
 
-  it("disables button, keyboard, and Escape dismissal while saving", async () => {
+  it("disables Continue and shows one concise processing label while busy", () => {
+    const input = props(evidence, { busy: true });
+    render(AcquisitionPopup, input);
+
+    expect(screen.getByRole("button", { name: "儲存中…" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "CONTINUE / 繼續" }),
+    ).toBeNull();
+  });
+
+  it("disables button, keyboard, and Escape dismissal while busy", async () => {
     const user = userEvent.setup();
-    const input = props(evidence, { type: "capturing" });
+    const input = props(evidence, { busy: true });
     render(AcquisitionPopup, input);
     const button = screen.getByRole("button", { name: "儲存中…" });
 
@@ -181,179 +163,26 @@ describe("AcquisitionPopup", () => {
     expect(input.onContinue).not.toHaveBeenCalled();
   });
 
-  it("renders typed failure actions and keeps Cancel on the same event", async () => {
-    const user = userEvent.setup();
-    const failureToken = "failure-token-1";
-    const input = props(evidence, {
-      type: "failed",
-      diagnostic: {
-        code: "saveWriteFailed",
-        message: "無法寫入存檔。",
-        failureToken,
-      },
-      failureToken,
-    });
+  it("renders the shared error inside the dialog with role=alert", () => {
+    const input = props(evidence, { error: "尚未呈現的取得事件無法確認。" });
     render(AcquisitionPopup, input);
 
-    expect(screen.getByRole("alert")).toHaveTextContent("無法寫入存檔。");
-    await user.click(screen.getByRole("button", { name: "重試" }));
-    expect(input.onRetry).toHaveBeenCalledExactlyOnceWith("event-evidence");
-    await user.click(screen.getByRole("button", { name: "取消" }));
-    expect(input.onCancel).toHaveBeenCalledExactlyOnceWith("event-evidence");
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("尚未呈現的取得事件無法確認。");
+    expect(alert.closest("[role=dialog]")).not.toBeNull();
   });
 
-  it("requires a second confirmation before continuing with the exact token", async () => {
+  it("keeps Continue enabled after an error so pressing it retries the same onContinue", async () => {
     const user = userEvent.setup();
-    const failureToken = "failure-token-1";
-    const input = props(evidence, {
-      type: "failed",
-      diagnostic: {
-        code: "saveWriteFailed",
-        message: "無法寫入存檔。",
-        failureToken,
-      },
-      failureToken,
-    });
+    const input = props(evidence, { error: "存檔失敗。" });
     render(AcquisitionPopup, input);
+    const button = screen.getByRole("button", { name: "CONTINUE / 繼續" });
 
-    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
-    expect(input.onContinueWithoutSaving).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "此取得通知可能會在重新啟動後再次出現。",
-    );
-    await user.click(screen.getByRole("button", { name: "確認不儲存並繼續" }));
+    expect(button).toBeEnabled();
+    await waitFor(() => expect(button).toHaveFocus());
+    await user.click(button);
 
-    expect(input.onContinueWithoutSaving).toHaveBeenCalledExactlyOnceWith(
-      "event-evidence",
-      failureToken,
-    );
-  });
-
-  it("focuses Retry on failure and lets native Enter activate it once", async () => {
-    const user = userEvent.setup();
-    const input = props(evidence, failedPhase());
-    render(AcquisitionPopup, input);
-    const retry = screen.getByRole("button", { name: "重試" });
-
-    await waitFor(() => expect(retry).toHaveFocus());
-    await user.keyboard("{Enter}");
-
-    expect(input.onRetry).toHaveBeenCalledExactlyOnceWith("event-evidence");
-  });
-
-  it("lets native Space activate Cancel once", async () => {
-    const user = userEvent.setup();
-    const input = props(evidence, failedPhase());
-    render(AcquisitionPopup, input);
-    const retry = screen.getByRole("button", { name: "重試" });
-    const cancel = screen.getByRole("button", { name: "取消" });
-    await waitFor(() => expect(retry).toHaveFocus());
-    cancel.focus();
-
-    await user.keyboard(" ");
-
-    expect(input.onCancel).toHaveBeenCalledExactlyOnceWith("event-evidence");
-  });
-
-  it("lets native Space and Enter drive the two-step continue action", async () => {
-    const user = userEvent.setup();
-    const input = props(evidence, failedPhase());
-    render(AcquisitionPopup, input);
-    const firstStep = screen.getByRole("button", {
-      name: "不儲存並繼續",
-    });
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "重試" })).toHaveFocus(),
-    );
-    firstStep.focus();
-
-    await user.keyboard(" ");
-    expect(input.onContinueWithoutSaving).not.toHaveBeenCalled();
-    const confirmation = screen.getByRole("button", {
-      name: "確認不儲存並繼續",
-    });
-    expect(confirmation).toHaveFocus();
-    await user.keyboard("{Enter}");
-
-    expect(input.onContinueWithoutSaving).toHaveBeenCalledExactlyOnceWith(
-      "event-evidence",
-      "failure-token-1",
-    );
-  });
-
-  it("cycles Tab and Shift+Tab over the currently mounted failure controls", async () => {
-    const user = userEvent.setup();
-    render(AcquisitionPopup, props(evidence, failedPhase()));
-    const retry = screen.getByRole("button", { name: "重試" });
-    const cancel = screen.getByRole("button", { name: "取消" });
-    const continueWithoutSaving = screen.getByRole("button", {
-      name: "不儲存並繼續",
-    });
-
-    await waitFor(() => expect(retry).toHaveFocus());
-    await user.tab();
-    expect(cancel).toHaveFocus();
-    await user.tab();
-    expect(continueWithoutSaving).toHaveFocus();
-    await user.tab();
-    expect(retry).toHaveFocus();
-    await user.tab({ shift: true });
-    expect(continueWithoutSaving).toHaveFocus();
-  });
-
-  it("resets the two-step confirmation when the token changes or failure ends", async () => {
-    const user = userEvent.setup();
-    const input = props(evidence, failedPhase("failure-token-1"));
-    const result = render(AcquisitionPopup, input);
-
-    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
-    expect(
-      screen.getByRole("button", { name: "確認不儲存並繼續" }),
-    ).toBeInTheDocument();
-
-    await result.rerender({
-      ...input,
-      phase: failedPhase("failure-token-2"),
-    });
-    expect(
-      screen.getByRole("button", { name: "不儲存並繼續" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("alert")).not.toHaveTextContent(
-      "此取得通知可能會在重新啟動後再次出現。",
-    );
-
-    await user.click(screen.getByRole("button", { name: "不儲存並繼續" }));
-    await result.rerender({ ...input, phase: idle });
-    await result.rerender({
-      ...input,
-      phase: failedPhase("failure-token-2"),
-    });
-    expect(
-      screen.getByRole("button", { name: "不儲存並繼續" }),
-    ).toBeInTheDocument();
-  });
-
-  it("restores focus to the stable gameplay fallback after authoritative closure", async () => {
-    const primary = document.createElement("button");
-    const fallback = document.createElement("div");
-    fallback.tabIndex = -1;
-    document.body.append(primary, fallback);
-    const result = render(AcquisitionPopup, {
-      ...props(),
-      returnFocusTo: primary,
-      fallbackFocusTarget: fallback,
-    });
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
-      ).toHaveFocus(),
-    );
-    primary.remove();
-
-    result.unmount();
-
-    await waitFor(() => expect(fallback).toHaveFocus());
-    fallback.remove();
+    expect(input.onContinue).toHaveBeenCalledExactlyOnceWith("event-evidence");
   });
 
   it("uses a generic evidence placeholder for a null image ID", async () => {
@@ -492,6 +321,29 @@ describe("AcquisitionPopup", () => {
     result.unmount();
     await waitFor(() => expect(fallback).toHaveFocus());
     expect(document.body).not.toHaveFocus();
+    fallback.remove();
+  });
+
+  it("restores focus to the stable gameplay fallback after authoritative closure", async () => {
+    const primary = document.createElement("button");
+    const fallback = document.createElement("div");
+    fallback.tabIndex = -1;
+    document.body.append(primary, fallback);
+    const result = render(AcquisitionPopup, {
+      ...props(),
+      returnFocusTo: primary,
+      fallbackFocusTarget: fallback,
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "CONTINUE / 繼續" }),
+      ).toHaveFocus(),
+    );
+    primary.remove();
+
+    result.unmount();
+
+    await waitFor(() => expect(fallback).toHaveFocus());
     fallback.remove();
   });
 

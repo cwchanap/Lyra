@@ -337,12 +337,6 @@ function stubFetchForSceneNavigation() {
 function stubAcquisitionAcknowledgement() {
   mocks.fetch.mockImplementation(async (url: string) => {
     const path = String(url).replace("http://127.0.0.1:1421/", "");
-    if (path === "prepare_save_thumbnail") {
-      return jsonResponse({ ticket: "ticket-1", timeoutMs: 1_000 });
-    }
-    if (path === "report_save_thumbnail_failure") {
-      return jsonResponse({ type: "idle" });
-    }
     if (path === "acknowledge_acquisition_event") {
       return jsonResponse({
         state: currentState(),
@@ -929,6 +923,58 @@ describe("+page acquisition popup integration", () => {
         String(url).endsWith("/advance_dialogue"),
       ),
     ).toBe(false);
+  });
+
+  it("surfaces an acknowledgement failure inside the dialog and retries Continue", async () => {
+    const user = userEvent.setup();
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const path = String(url).replace("http://127.0.0.1:1421/", "");
+      if (path === "acknowledge_acquisition_event") {
+        return jsonError({
+          code: "unknownAcquisitionEvent",
+          message: "尚未呈現的取得事件無法確認。",
+        });
+      }
+      return jsonResponse({});
+    });
+    render(Page);
+
+    gameState.value = {
+      ...currentState(),
+      pendingAcquisition: acquiredEvidence,
+    };
+
+    const popup = await screen.findByRole("dialog", { name: "物證取得" });
+    const continueButton = within(popup).getByRole("button", {
+      name: "CONTINUE / 繼續",
+    });
+    expect(continueButton).toBeEnabled();
+
+    // The first Continue fails; the typed error surfaces through the shared
+    // dispatch path inside the dialog.
+    await user.click(continueButton);
+    const alert = await within(popup).findByRole("alert");
+    expect(alert).toHaveTextContent("尚未呈現的取得事件無法確認。");
+    expect(gameState.error).toBe("尚未呈現的取得事件無法確認。");
+    expect(continueButton).toBeEnabled();
+
+    // The second Continue retries the same acknowledgement and succeeds.
+    mocks.fetch.mockImplementation(async (url: string) => {
+      const path = String(url).replace("http://127.0.0.1:1421/", "");
+      if (path === "acknowledge_acquisition_event") {
+        return jsonResponse({
+          state: currentState(),
+          thumbnailCapture: null,
+        });
+      }
+      return jsonResponse({});
+    });
+    await user.click(continueButton);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "物證取得" })).toBeNull();
+    });
+    expect(gameState.error).toBeNull();
   });
 
   it("does not open the game menu while a command is in flight", async () => {

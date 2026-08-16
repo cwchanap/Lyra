@@ -1091,10 +1091,6 @@
     acquisitionController.clear();
   });
 
-  async function handleAcquisitionContinue(eventId: string) {
-    await acquisitionController.dismissCurrent(eventId);
-  }
-
   $effect(() => {
     if (gameState.value?.mode.type === "gameComplete" && !storyClearedOnce) {
       storyClearedOnce = true;
@@ -1739,13 +1735,11 @@
   {#if acquisitionController.current}
     <AcquisitionPopup
       notification={acquisitionController.current}
-      phase={acquisitionController.phase}
+      busy={acquisitionController.busy}
+      error={gameState.error}
       returnFocusTo={acquisitionReturnFocus}
       fallbackFocusTarget={gameplayRoot}
-      onContinue={handleAcquisitionContinue}
-      onRetry={acquisitionController.retry}
-      onCancel={acquisitionController.cancel}
-      onContinueWithoutSaving={acquisitionController.continueWithoutSaving}
+      onContinue={acquisitionController.dismissCurrent}
     />
   {/if}
 {:else if gameState.loading}

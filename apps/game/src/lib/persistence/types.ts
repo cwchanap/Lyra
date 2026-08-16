@@ -126,9 +126,7 @@ export type ThumbnailCaptureRequestView = {
   timeoutMs: number;
 };
 
-export type ThumbnailCapturePurposeView =
-  | { type: "manualSave" }
-  | { type: "acquisitionAcknowledgement"; eventId: string };
+export type ThumbnailCapturePurposeView = { type: "manualSave" };
 
 export type GameplayCommandResultView = {
   state: GameStateView;
@@ -162,15 +160,3 @@ export type ManualSaveResultView = {
   browser: SaveBrowserView;
   thumbnailActivity: ThumbnailActivityView;
 };
-
-export type AcquisitionAcknowledgementPhase =
-  | { type: "idle" }
-  | { type: "preparing" }
-  | { type: "capturing" }
-  | { type: "saving"; slow: boolean }
-  | { type: "cancelling" }
-  | {
-      type: "failed";
-      diagnostic: GameError;
-      failureToken: PersistenceFailureTokenView | null;
-    };
