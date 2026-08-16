@@ -26,6 +26,7 @@
     caseFileMenuEnabled = true,
     activePrimaryObjective = null,
     interrogationPresentation = false,
+    analysisPresentation = false,
     gameMenuRequest = null,
     onGameMenuRequestHandled,
     caseFileRequest = null,
@@ -58,6 +59,7 @@
     caseFileMenuEnabled?: boolean;
     activePrimaryObjective?: ObjectiveView | null;
     interrogationPresentation?: boolean;
+    analysisPresentation?: boolean;
     gameMenuRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
     onGameMenuRequestHandled?: (id: number) => void;
     caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
@@ -70,7 +72,9 @@
   type MenuPanel = "scene" | "caseFile" | "sound" | null;
 
   let showChapterHud = $derived(
-    gameState.mode.type !== "explore" && !interrogationPresentation,
+    gameState.mode.type !== "explore" &&
+      !interrogationPresentation &&
+      !analysisPresentation,
   );
   let showPrimaryObjectiveHud = $derived(
     gameState.mode.type !== "gameComplete",
@@ -388,7 +392,7 @@
   });
 </script>
 
-<div class="shell">
+<div class="shell" class:analysis-presentation={analysisPresentation}>
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
@@ -577,6 +581,14 @@
     isolation: isolate;
   }
 
+  .shell.analysis-presentation {
+    display: flex;
+    flex-direction: column;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   header {
     position: relative;
     z-index: 2;
@@ -674,6 +686,11 @@
   main {
     position: relative;
     z-index: 2;
+  }
+
+  .shell.analysis-presentation > main {
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .interrogation-objective {

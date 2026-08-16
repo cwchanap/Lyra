@@ -6,6 +6,7 @@ import {
   within,
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { createRawSnippet } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView, ObjectiveView } from "$lib/state/types";
 import { reportAsyncTestFailure } from "$lib/test-utils";
@@ -38,6 +39,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import GameShellHarness from "$lib/test-harnesses/GameShellHarness.svelte";
+import GameShell from "./GameShell.svelte";
 
 function state(
   mode: GameStateView["mode"] = {
@@ -76,6 +78,64 @@ function state(
   };
 }
 
+function analysisState(): GameStateView {
+  const baseState = state({
+    type: "analysis",
+    boardId: "board_1",
+    activeBoardId: "board_1",
+    actionToken: {
+      sceneId: "analysis_scene_1",
+      activeBoardId: "board_1",
+      durableRevision: 0,
+    },
+    availableBoardIds: ["board_1"],
+    feedback: null,
+    lastFeedback: null,
+    backgroundAssetId: null,
+    bgm: null,
+    bgs: null,
+  });
+
+  return {
+    ...baseState,
+    chapter: {
+      ...baseState.chapter,
+      title: "分析工作台",
+      summary: "整理現有線索。",
+    },
+    scene: {
+      kind: "analysis",
+      id: "analysis_scene_1",
+      title: "分析工作台",
+      summary: "整理現有線索。",
+      index: 0,
+      total: 1,
+      activeBoardId: "board_1",
+      actionToken: {
+        sceneId: "analysis_scene_1",
+        activeBoardId: "board_1",
+        durableRevision: 0,
+      },
+      availableBoardIds: ["board_1"],
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      visibleBoards: [],
+    },
+  };
+}
+
+function gameShellSnippets() {
+  return {
+    children: createRawSnippet(() => ({
+      render: () => '<p data-testid="shell-child">scoped child</p>',
+    })),
+    menu: createRawSnippet(() => ({
+      render: () => '<p data-testid="menu-child">menu content</p>',
+    })),
+  };
+}
+
 function escapeKeydown(): KeyboardEvent {
   return new KeyboardEvent("keydown", {
     key: "Escape",
@@ -109,6 +169,72 @@ describe("GameShell", () => {
   // override this with their own `mockResolvedValue(true)`.
   beforeEach(() => {
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+  });
+
+  it("preserves Analysis chapter chrome when analysis presentation is inactive", () => {
+    render(GameShell, {
+      gameState: analysisState(),
+      onCloseCase: vi.fn(),
+      activePrimaryObjective,
+      ...gameShellSnippets(),
+    });
+
+    expect(screen.getByText("分析工作台")).toBeInTheDocument();
+    expect(screen.getByText("整理現有線索。")).toBeInTheDocument();
+    expect(screen.getByText("FILE", { exact: false })).toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "主要目標" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("shell-child")).toBeInTheDocument();
+    expect(
+      document.querySelector(".shell.analysis-presentation"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("fits Analysis presentation around children while hiding chapter chrome", () => {
+    render(GameShell, {
+      gameState: analysisState(),
+      onCloseCase: vi.fn(),
+      activePrimaryObjective,
+      analysisPresentation: true,
+      ...gameShellSnippets(),
+    });
+
+    expect(screen.queryByText("分析工作台")).not.toBeInTheDocument();
+    expect(screen.queryByText("整理現有線索。")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("FILE", { exact: false }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("status", { name: "主要目標" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("banner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("main")).toContainElement(
+      screen.getByTestId("shell-child"),
+    );
+    expect(
+      document.querySelector(".shell.analysis-presentation"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the existing menu snippet available in Analysis presentation", async () => {
+    const user = userEvent.setup();
+
+    render(GameShell, {
+      gameState: analysisState(),
+      onCloseCase: vi.fn(),
+      analysisPresentation: true,
+      open: true,
+      ...gameShellSnippets(),
+    });
+
+    expect(
+      screen.getByRole("dialog", { name: "遊戲選單" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("shell-child")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /案件檔案/ }));
+    expect(screen.getByTestId("menu-child")).toBeInTheDocument();
   });
 
   it("renders the chapter header and scoped children", () => {

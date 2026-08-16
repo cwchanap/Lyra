@@ -396,3 +396,18 @@ describe("+page interrogation presentation wiring", () => {
     );
   });
 });
+
+describe("+page Analysis presentation wiring", () => {
+  it("derives GameShell presentation through the shared Analysis helper", () => {
+    const source = pageSource();
+
+    expect(source).toContain(
+      'import { isAnalysisPresentationActive } from "$lib/analysis/presentation";',
+    );
+    expect(source).toContain("let analysisPresentationActive = $derived(");
+    expect(source).toContain("isAnalysisPresentationActive(");
+    expect(source).toContain(
+      "analysisPresentation={analysisPresentationActive}",
+    );
+  });
+});
