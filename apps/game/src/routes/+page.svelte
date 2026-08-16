@@ -798,6 +798,7 @@
     // InterrogationStage → InterrogationEvidenceTray, so it cannot receive
     // focus until inFlight clears. Clear inFlight in finally, then restore
     // focus afterward so the target is enabled.
+    let succeeded = false;
     try {
       const request =
         await invokePersistenceCommand<ThumbnailCaptureRequestView>(
@@ -817,11 +818,18 @@
       persistenceStore.replaceThumbnailActivity(result.thumbnailActivity);
       closeGameBrowser();
       gameMenuOpen = false;
+      succeeded = true;
     } catch (error) {
       manualSaveFailure = asGameError(error);
     } finally {
       gameState.inFlight = false;
     }
+    // On failure, manualSaveFailure mounts the aria-modal recovery dialog and
+    // the recovery-focus $effect owns moving focus to its [data-recovery-focus]
+    // action. Running the normal post-save focus restore here would race with
+    // that effect and can leave focus behind the failure modal, so only restore
+    // focus after a successful save.
+    if (!succeeded) return;
     await tick();
     const presentTrigger = document.querySelector<HTMLElement>(
       "[data-interrogation-game-menu]",
