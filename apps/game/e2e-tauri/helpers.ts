@@ -1850,29 +1850,117 @@ async function isGameMenuDialogOpen(): Promise<boolean> {
 }
 
 export async function openGameMenu(): Promise<void> {
-  const openedFromInterrogationTray = await browser.execute(() => {
-    const button = document.querySelector<HTMLButtonElement>(
-      "[data-interrogation-game-menu]",
-    );
-    if (!button || button.disabled) return false;
-    button.click();
-    return true;
-  });
-  if (openedFromInterrogationTray) {
-    // The tray's 遊戲選單 action opens the menu without retracting the tray.
-    // If the wait fails (e.g. the engine is mid-command and the click was
-    // swallowed), fall through to the Escape retry/fallback loop below rather
-    // than surfacing a bare timeout — that loop owns the rendered DOM and
-    // native game-state diagnostics.
+  // The InterrogationEvidenceTray claims Escape via claimEscape(resume) while
+  // mounted, and resume() is the 收回 (withdraw) operation. GameShell's Escape
+  // handler dispatches to closeTopmostEscapeClaim() before opening the menu,
+  // so any Escape sent while the tray exists retracts Present rather than
+  // opening the menu. The generic Escape fallback below is therefore only safe
+  // when no Present tray is mounted.
+  //
+  // Split the two paths: when the tray exists, stay on the direct
+  // [data-interrogation-game-menu] button (waiting for it to become enabled
+  // if a command is mid-flight) and never send Escape. Only use the Escape
+  // retry/fallback loop when there is no Present tray.
+  const presentTrayExists = await browser.execute(
+    () => document.querySelector("[data-interrogation-game-menu]") !== null,
+  );
+
+  if (presentTrayExists) {
+    // The tray's 遊戲選單 button receives disabled={gameState.inFlight}, so it
+    // is temporarily disabled while a command (e.g. autosave thumbnail
+    // submission) is in flight. Wait for it to clear, then click. Do NOT fall
+    // back to Escape here — that would retract Present and silently change the
+    // state the caller expects to preserve.
     try {
+      await browser.waitUntil(
+        async () => {
+          const clicked = await browser.execute(() => {
+            const button = document.querySelector<HTMLButtonElement>(
+              "[data-interrogation-game-menu]",
+            );
+            if (!button || button.disabled) return false;
+            button.click();
+            return true;
+          });
+          return clicked;
+        },
+        {
+          timeout: 15000,
+          interval: 100,
+          timeoutMsg:
+            "interrogation Present game-menu button did not become clickable",
+        },
+      );
       await browser.waitUntil(isGameMenuDialogOpen, {
         timeout: 15000,
         interval: 100,
         timeoutMsg: "game menu dialog did not open from interrogation Present",
       });
       return;
-    } catch {
-      // Fall through to the Escape retry/fallback loop.
+    } catch (error) {
+      // Surface diagnostics rather than falling through to Escape, which would
+      // retract Present and mask the real failure.
+      const rendered = await browser.execute(() => ({
+        activeElement:
+          document.activeElement instanceof HTMLElement
+            ? {
+                tag: document.activeElement.tagName,
+                ariaLabel: document.activeElement.getAttribute("aria-label"),
+                text: (document.activeElement.textContent ?? "")
+                  .trim()
+                  .slice(0, 200),
+              }
+            : null,
+        presentButton: (() => {
+          const button = document.querySelector<HTMLButtonElement>(
+            "[data-interrogation-game-menu]",
+          );
+          if (!button) return null;
+          return {
+            disabled: button.disabled,
+            text: (button.textContent ?? "").trim(),
+          };
+        })(),
+        dialogs: Array.from(
+          document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+        ).map((dialog) => ({
+          ariaLabel: dialog.getAttribute("aria-label"),
+          headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
+            (heading.textContent ?? "").trim(),
+          ),
+          text: (dialog.textContent ?? "").trim().slice(0, 500),
+        })),
+      }));
+      let native:
+        | {
+            mode: GameStateView["mode"];
+            scene: GameStateView["scene"];
+            pendingAcquisition: GameStateView["pendingAcquisition"];
+          }
+        | { diagnosticError: string };
+      try {
+        const state = await getPackagedGameState();
+        native = {
+          mode: state.mode,
+          scene: state.scene,
+          pendingAcquisition: state.pendingAcquisition,
+        };
+      } catch (diagnosticError) {
+        native = {
+          diagnosticError:
+            diagnosticError instanceof Error
+              ? diagnosticError.message
+              : String(diagnosticError),
+        };
+      }
+      throw new Error(
+        [
+          error instanceof Error ? error.message : String(error),
+          `native=${JSON.stringify(native)}`,
+          `rendered=${JSON.stringify(rendered)}`,
+        ].join("\n"),
+        { cause: error },
+      );
     }
   }
 
