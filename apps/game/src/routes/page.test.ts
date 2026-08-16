@@ -425,7 +425,7 @@ describe("+page title persistence flows", () => {
       continueCandidate: null,
       preflight: { type: "ready" },
     };
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(unavailable);
       if (command === "get_persistence_status") {
@@ -495,7 +495,7 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
     let cancelAttempts = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(titleDiscovery());
       if (command === "get_persistence_status") {
@@ -688,7 +688,7 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(discovery);
       if (command === "load_save") {
@@ -823,7 +823,7 @@ describe("+page title persistence flows", () => {
       status: validSlotStatus("selected-save-id"),
     };
     const loadArgs: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(discovery);
       if (command === "load_save") {
@@ -1181,7 +1181,7 @@ describe("+page in-game persistence browser", () => {
       args: Record<string, unknown>;
     }> = [];
     let listCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_saves") {
         listCalls += 1;
@@ -1291,7 +1291,7 @@ describe("+page in-game persistence browser", () => {
     });
     let prepareCalls = 0;
     let manualCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(titleDiscovery());
       if (command === "list_scenes") {
@@ -1555,7 +1555,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("load-save-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1621,7 +1621,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1712,7 +1712,7 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "list_saves") return jsonResponse(saves);
       if (command === "list_scenes") {
@@ -1779,7 +1779,7 @@ describe("+page in-game persistence browser", () => {
       command: string;
       args: Record<string, unknown>;
     }> = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_scenes") {
         return jsonResponse(sceneNavigationIndex);
@@ -1877,7 +1877,7 @@ describe("+page in-game persistence browser", () => {
   it("swallows Escape while exit is saving and uses exact cancel_exit from the failed layer", async () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1)!;
       if (command === "list_scenes") {
         return jsonResponse(sceneNavigationIndex);
@@ -1987,6 +1987,153 @@ describe("+page in-game persistence browser", () => {
       screen.queryByRole("status", { name: "預覽狀態" }),
     ).not.toBeInTheDocument();
   });
+
+  it("restores focus to the Present tray's 遊戲選單 button after a successful manual save from Present", async () => {
+    const user = userEvent.setup();
+    const state = currentState();
+    state.scene = {
+      kind: "interrogation",
+      id: "interrogation_1",
+      title: "訊問",
+      summary: "",
+      index: 0,
+      total: 1,
+      currentPhaseId: "phase_1",
+      visiblePhases: [
+        {
+          id: "phase_1",
+          label: "第一階段",
+          subject: { id: "subject_1", name: "證人", role: "證人", bio: "" },
+          questions: [{ id: "q_1", label: "問題一", broken: false }],
+          crossExam: {
+            questionId: "q_1",
+            lineId: "line_1",
+            lineLabel: "證言一",
+            lineContent: [{ kind: "line", speaker: "證人", text: "我沒去。" }],
+            lineIndex: 0,
+            lineTotal: 1,
+            presenting: true,
+          },
+          canComplete: false,
+        },
+      ],
+    };
+    state.mode = {
+      type: "interrogation",
+      phaseId: "phase_1",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+    };
+    gameState.value = state;
+
+    let resolvePreparation!: (response: Response) => void;
+    const delayedPreparation = new Promise<Response>((resolve) => {
+      resolvePreparation = resolve;
+    });
+    let manualCalls = 0;
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
+      const command = String(url).split("/").at(-1);
+      if (command === "list_saves") return jsonResponse(titleDiscovery());
+      if (command === "list_scenes") {
+        return jsonResponse(sceneNavigationIndex);
+      }
+      if (command === "get_persistence_status") {
+        return jsonResponse({ type: "healthy" });
+      }
+      if (command === "get_thumbnail_activity") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "get_exit_status") {
+        return jsonResponse({ type: "idle" });
+      }
+      if (command === "prepare_save_thumbnail") {
+        return delayedPreparation;
+      }
+      if (command === "report_save_thumbnail_failure") {
+        return jsonResponse({
+          type: "unavailable",
+          diagnostic: {
+            reason: "captureUnavailable",
+            message: "無法顯示預覽",
+            retryable: false,
+          },
+        });
+      }
+      if (command === "save_manual") {
+        manualCalls += 1;
+        const browser = titleDiscovery().browser;
+        return jsonResponse({
+          savedSlot: browser.slots[5],
+          browser,
+          thumbnailActivity: {
+            type: "unavailable",
+            diagnostic: {
+              reason: "captureUnavailable",
+              message: "無法顯示預覽",
+              retryable: false,
+            },
+          },
+        });
+      }
+      return jsonResponse({});
+    });
+
+    render(Page);
+
+    // The Present tray is mounted because crossExam.presenting is true.
+    // Click its 遊戲選單 button to open the game menu from inside the modal.
+    const trayMenuButton = await screen.findByRole("button", {
+      name: "遊戲選單",
+    });
+    expect(trayMenuButton).toHaveAttribute("data-interrogation-game-menu");
+    await user.click(trayMenuButton);
+
+    const rootMenu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(
+      within(rootMenu).getByRole("button", { name: "儲存遊戲" }),
+    );
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+    );
+
+    const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
+    const input = within(nameDialog).getByRole("textbox", {
+      name: "存檔名稱",
+    });
+    await user.clear(input);
+    await user.type(input, "訊問中存檔");
+    await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
+
+    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
+
+    await waitFor(() => expect(manualCalls).toBe(1));
+
+    // The game menu and save browser must be closed.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "遊戲選單" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("region", { name: "存檔瀏覽器" }),
+    ).not.toBeInTheDocument();
+
+    // Focus must return inside the still-active Present modal — to the
+    // tray's 遊戲選單 button — not to <body> or gameplayRoot outside the
+    // dialog. This is the regression: previously .focus() ran while
+    // gameState.inFlight was still true, so the disabled button could not
+    // receive focus.
+    await waitFor(() => {
+      const active = document.activeElement;
+      expect(active).toBeInstanceOf(HTMLElement);
+      expect(active).toHaveAttribute("data-interrogation-game-menu");
+      expect(active).not.toHaveAttribute("disabled");
+    });
+  });
 });
 
 describe("+page close case flow", () => {
@@ -2062,7 +2209,7 @@ describe("+page close case flow", () => {
   it("keeps gameplay on Return failure and retains the exact token through the second confirmation", async () => {
     const user = userEvent.setup();
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "return_to_title") {
         return jsonError({
@@ -2132,7 +2279,7 @@ describe("+page close case flow", () => {
   it("cancels a Return challenge with its exact token before Escape restores the game menu", async () => {
     const user = userEvent.setup();
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
+    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
       const command = String(url).split("/").at(-1);
       if (command === "return_to_title") {
         return jsonError({

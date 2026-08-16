@@ -780,6 +780,18 @@
     if (!slot || slot.reference.type !== "manual") return;
     gameState.inFlight = true;
     manualSaveFailure = null;
+    // The Present tray stays mounted across a manual save (the engine's
+    // presenting state is preserved), so focusing gameplayRoot would land
+    // outside the still-active aria-modal dialog. When Present is active,
+    // restore focus to the tray's 遊戲選單 button — the trigger that opened
+    // the menu — so focus returns inside the modal. Otherwise gameplayRoot
+    // is correct (no modal remains).
+    //
+    // The Present-tray button receives disabled={gameState.inFlight} via
+    // InterrogationStage → InterrogationEvidenceTray, so it cannot receive
+    // focus until inFlight clears. Record the intent here, clear inFlight in
+    // finally, then restore focus afterward so the target is enabled.
+    let restorePresentFocus = false;
     try {
       const request =
         await invokePersistenceCommand<ThumbnailCaptureRequestView>(
@@ -799,24 +811,21 @@
       persistenceStore.replaceThumbnailActivity(result.thumbnailActivity);
       closeGameBrowser();
       gameMenuOpen = false;
-      await tick();
-      // The Present tray stays mounted across a manual save (the engine's
-      // presenting state is preserved), so focusing gameplayRoot would land
-      // outside the still-active aria-modal dialog. When Present is active,
-      // restore focus to the tray's 遊戲選單 button — the trigger that opened
-      // the menu — so focus returns inside the modal. Otherwise gameplayRoot
-      // is correct (no modal remains).
-      if (interrogationPresentationActive) {
-        document
-          .querySelector<HTMLElement>("[data-interrogation-game-menu]")
-          ?.focus();
-      } else {
+      restorePresentFocus = interrogationPresentationActive;
+      if (!restorePresentFocus) {
+        await tick();
         gameplayRoot?.focus();
       }
     } catch (error) {
       manualSaveFailure = asGameError(error);
     } finally {
       gameState.inFlight = false;
+    }
+    if (restorePresentFocus) {
+      await tick();
+      document
+        .querySelector<HTMLElement>("[data-interrogation-game-menu]")
+        ?.focus();
     }
   }
 
