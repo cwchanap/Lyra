@@ -1,6 +1,32 @@
 <script lang="ts">
   import type { AnalysisCardView } from "$lib/state/types";
 
+  type PointerDragState = {
+    pointerId: number;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    targetId: string | null;
+    captureElement: HTMLElement | null;
+  };
+
+  const pointerDragThresholdPx = 4;
+
+  function resolveDropTargetAt(x: number, y: number): string | null {
+    if (typeof document === "undefined") return null;
+
+    const elements = document.elementsFromPoint?.(x, y) ?? [];
+    for (const element of elements) {
+      const target = element.closest<HTMLElement>(
+        "[data-analysis-drop-target]",
+      );
+      if (target?.dataset.analysisDropTarget) {
+        return target.dataset.analysisDropTarget;
+      }
+    }
+    return null;
+  }
+
   let {
     card,
     badges = [],
@@ -10,6 +36,14 @@
     readOnly = false,
     unavailableLabel = "尚未取得",
     onSelect,
+    focusKey = null,
+    dragEnabled = false,
+    settled = false,
+    resolveDropTarget,
+    onDragStart,
+    onDragTargetChange,
+    onDrop,
+    onDragCancel,
   }: {
     card: AnalysisCardView;
     badges?: readonly string[];
@@ -19,22 +53,172 @@
     readOnly?: boolean;
     unavailableLabel?: string;
     onSelect?: () => void;
+    focusKey?: string | null;
+    dragEnabled?: boolean;
+    settled?: boolean;
+    resolveDropTarget?: (x: number, y: number) => string | null;
+    onDragStart?: () => void;
+    onDragTargetChange?: (targetId: string | null) => void;
+    onDrop?: (targetId: string | null) => void;
+    onDragCancel?: () => void;
   } = $props();
 
   let allBadges = $derived(badge ? [badge, ...badges] : [...badges]);
   let interactive = $derived(onSelect !== undefined && !readOnly);
   let unavailable = $derived(!card.available);
+
+  let dragState: PointerDragState | null = null;
+  let suppressNextPhysicalClick = false;
+  let clickSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function clearClickSuppression() {
+    if (clickSuppressionTimer !== null) {
+      clearTimeout(clickSuppressionTimer);
+      clickSuppressionTimer = null;
+    }
+    suppressNextPhysicalClick = false;
+  }
+
+  function armClickSuppression() {
+    clearClickSuppression();
+    suppressNextPhysicalClick = true;
+    clickSuppressionTimer = setTimeout(() => {
+      suppressNextPhysicalClick = false;
+      clickSuppressionTimer = null;
+    }, 0);
+  }
+
+  function setPointerCaptureBestEffort(
+    element: HTMLElement | null,
+    pointerId: number,
+  ) {
+    try {
+      element?.setPointerCapture?.(pointerId);
+    } catch {
+      // Pointer capture is not available in every test/runtime surface.
+    }
+  }
+
+  function releasePointerCaptureBestEffort(
+    element: HTMLElement | null,
+    pointerId: number,
+  ) {
+    try {
+      element?.releasePointerCapture?.(pointerId);
+    } catch {
+      // Pointer capture is best effort and must not block a completed gesture.
+    }
+  }
+
+  function handlePointerDown(event: PointerEvent) {
+    if (
+      !dragEnabled ||
+      settled ||
+      disabled ||
+      readOnly ||
+      unavailable ||
+      event.pointerType === "touch" ||
+      event.button !== 0
+    ) {
+      return;
+    }
+
+    clearClickSuppression();
+    const captureElement =
+      event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
+    dragState = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
+      targetId: null,
+      captureElement,
+    };
+    setPointerCaptureBestEffort(captureElement, event.pointerId);
+  }
+
+  function handlePointerMove(event: PointerEvent) {
+    const currentDrag = dragState;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+
+    const deltaX = event.clientX - currentDrag.startX;
+    const deltaY = event.clientY - currentDrag.startY;
+    const moved =
+      currentDrag.moved ||
+      Math.abs(deltaX) > pointerDragThresholdPx ||
+      Math.abs(deltaY) > pointerDragThresholdPx;
+    if (!moved) return;
+
+    let activeDrag = currentDrag;
+    if (!currentDrag.moved) {
+      event.preventDefault();
+      activeDrag = { ...currentDrag, moved: true };
+      dragState = activeDrag;
+      onDragStart?.();
+    }
+
+    const nextTargetId = (resolveDropTarget ?? resolveDropTargetAt)(
+      event.clientX,
+      event.clientY,
+    );
+    if (nextTargetId === activeDrag.targetId) return;
+
+    dragState = { ...activeDrag, targetId: nextTargetId };
+    onDragTargetChange?.(nextTargetId);
+  }
+
+  function handlePointerUp(event: PointerEvent) {
+    const currentDrag = dragState;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+
+    dragState = null;
+    releasePointerCaptureBestEffort(
+      currentDrag.captureElement,
+      currentDrag.pointerId,
+    );
+    if (!currentDrag.moved) return;
+
+    armClickSuppression();
+    onDrop?.(currentDrag.targetId);
+  }
+
+  function handlePointerCancel(event: PointerEvent) {
+    const currentDrag = dragState;
+    if (!currentDrag || currentDrag.pointerId !== event.pointerId) return;
+
+    dragState = null;
+    releasePointerCaptureBestEffort(
+      currentDrag.captureElement,
+      currentDrag.pointerId,
+    );
+    if (currentDrag.moved) onDragCancel?.();
+  }
+
+  function handleSelectClick(event: MouseEvent) {
+    if (event.detail > 0 && suppressNextPhysicalClick) {
+      clearClickSuppression();
+      event.preventDefault();
+      return;
+    }
+    onSelect?.();
+  }
 </script>
 
 {#if interactive}
   <button
     type="button"
     class="analysis-card"
+    data-analysis-card-id={card.id}
+    data-analysis-focus-key={focusKey}
     class:selected
     class:unavailable
     disabled={disabled || unavailable || readOnly}
     aria-pressed={selected}
-    onclick={() => onSelect?.()}
+    onpointerdown={handlePointerDown}
+    onpointermove={handlePointerMove}
+    onpointerup={handlePointerUp}
+    onpointercancel={handlePointerCancel}
+    onclick={handleSelectClick}
   >
     <span class="sr-only">選取：</span>
     <span class="card-copy">
@@ -53,7 +237,19 @@
     {/if}
   </button>
 {:else}
-  <article class="analysis-card" class:selected class:unavailable>
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+  <article
+    class="analysis-card"
+    data-analysis-card-id={card.id}
+    data-analysis-focus-key={focusKey}
+    tabindex={focusKey === null || focusKey === undefined ? undefined : -1}
+    class:selected
+    class:unavailable
+    onpointerdown={handlePointerDown}
+    onpointermove={handlePointerMove}
+    onpointerup={handlePointerUp}
+    onpointercancel={handlePointerCancel}
+  >
     <span class="card-copy">
       <strong>{card.label}</strong>
       <span>{card.summary}</span>
