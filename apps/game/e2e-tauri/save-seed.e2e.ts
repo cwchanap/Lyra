@@ -206,12 +206,20 @@ describe("save seed", () => {
     if (!secondAcknowledgementAutosave?.envelope) {
       throw new Error("no autosave envelope exists");
     }
-    expect(secondAcknowledgementAutosave.fixedSlotName).toBe(
-      firstAcknowledgementAutosave.fixedSlotName,
-    );
+    // HPA-549: acknowledgements persist through the ordinary autosave path,
+    // which selects the oldest slot per write rather than pinning one target
+    // per acknowledgement. Assert the contract that matters: a fresh revision
+    // landed and its snapshot carries no pending acquisition event.
     expect(secondAcknowledgementAutosave.envelope.saveId).not.toBe(
       firstAcknowledgementAutosave.envelope.saveId,
     );
+    const secondAcknowledgementSnapshot = secondAcknowledgementAutosave.envelope
+      .snapshot as {
+      pendingAcquisitionEvents?: unknown[];
+    };
+    expect(
+      secondAcknowledgementSnapshot.pendingAcquisitionEvents ?? [],
+    ).toHaveLength(0);
     const acknowledgementEnvelope = await waitForSaveE2eEnvelope(
       secondAcknowledgementAutosave.fixedSlotName,
       (envelope) =>
@@ -225,7 +233,7 @@ describe("save seed", () => {
 
     await jumpToProductionScene(anchors.unicodeSave.interrogationSceneId);
     await drainCurrentDialogue("interrogation");
-    await dismissAllPendingAcquisitions({ forceCaptureUnavailable: true });
+    await dismissAllPendingAcquisitions();
     await clickButton(anchors.unicodeSave.interrogationQuestion);
     const playing = await waitForPackagedGameState(
       (state) =>

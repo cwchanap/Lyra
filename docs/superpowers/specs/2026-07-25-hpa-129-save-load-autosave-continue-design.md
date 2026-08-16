@@ -2767,3 +2767,9 @@ board/result-dialogue resume accepted by HPA-266.
 The original corrupt-primary automatic fallback criterion is intentionally
 superseded by five visible autosaves plus explicit manual recovery through Load
 Game.
+
+### HPA-549 active-development supersession
+
+The original acknowledgement design required popup dismissal to be durably saved before the popup disappeared. HPA-549 removes that second durable transaction and uses ordinary autosave for acknowledgement.
+
+HPA-549 does not strengthen ordinary acquisition durability: a crash may lose an acquisition that has not yet been autosaved, unchanged from current behavior. If a durable save already contains the acquired record and its pending popup, a later crash before acknowledgement autosave commits may replay that popup; acknowledging it again must never re-grant the record or story outputs.

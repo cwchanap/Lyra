@@ -10,10 +10,7 @@ import {
   validDevicePixelRatio,
   type CssViewportSize,
 } from "../src/lib/e2e/case-file-viewport";
-import type {
-  ExitStatusView,
-  SaveBrowserOpenResultView,
-} from "$lib/persistence/types";
+import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import { drainPendingAcquisitionsWithinCap } from "$lib/e2e/pending-acquisition-drain";
@@ -952,9 +949,9 @@ export async function acknowledgeAcquisitionDomFirst(
 }
 
 export async function dismissAllPendingAcquisitions(
-  options: { cap?: number; forceCaptureUnavailable?: boolean } = {},
+  options: { cap?: number } = {},
 ): Promise<void> {
-  const { cap = 50, forceCaptureUnavailable = false } = options;
+  const { cap = 50 } = options;
   await drainPendingAcquisitionsWithinCap({
     cap,
     readCurrent: async () => {
@@ -966,9 +963,6 @@ export async function dismissAllPendingAcquisitions(
       return (await getPackagedGameState()).pendingAcquisition;
     },
     acknowledge: async (current) => {
-      if (forceCaptureUnavailable) {
-        await jsClick(anchors.captureProof.forceUnavailable);
-      }
       await acknowledgeAcquisitionDomFirst(current);
       await waitForPackagedGameState(
         (next) => next.pendingAcquisition?.id !== current.id,
@@ -1110,62 +1104,8 @@ export async function requestApplicationQuit(): Promise<void> {
       window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
     ).__TAURI_INTERNALS__;
     if (!internals) throw new Error("Tauri internals are unavailable.");
-    void internals.invoke("e2e_request_application_quit", {
-      waitForActiveAcknowledgement: false,
-    });
+    void internals.invoke("e2e_request_application_quit");
   });
-}
-
-export async function requestApplicationQuitWhenAcknowledging(): Promise<void> {
-  await browser.execute(() => {
-    const internals = (
-      window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
-    ).__TAURI_INTERNALS__;
-    if (!internals) throw new Error("Tauri internals are unavailable.");
-    void internals.invoke("e2e_request_application_quit", {
-      waitForActiveAcknowledgement: true,
-    });
-  });
-}
-
-export async function waitForExitSavingWhileAlive(
-  timeout = 30000,
-): Promise<void> {
-  await waitForExitSavingDomWhileAlive(timeout);
-  const status = await invokePackagedCommand<ExitStatusView>("get_exit_status");
-  if (status.type !== "saving") {
-    throw new Error(
-      `native ExitStatus was ${status.type} after the saving UI appeared`,
-    );
-  }
-}
-
-export async function waitForExitSavingDomWhileAlive(
-  timeout = 30000,
-): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document.querySelector('[role="status"][aria-label="儲存中…"]') !==
-          null,
-      ),
-    {
-      timeout,
-      interval: 20,
-      timeoutMsg: "process did not render the saving exit state while alive",
-    },
-  );
-  const handles = await browser.getWindowHandles();
-  if (handles.length === 0) {
-    throw new Error("ExitStatus reached saving after the last window closed");
-  }
-  const documentAlive = await browser.execute(
-    () => document.documentElement.isConnected,
-  );
-  if (!documentAlive) {
-    throw new Error("packaged document was unavailable during exit saving");
-  }
 }
 
 export function isPackagedDisconnectError(error: unknown): boolean {
