@@ -232,6 +232,33 @@ describe("AnalysisWorkbench", () => {
     }
   });
 
+  it("preserves the read-only state for an available rail entry", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) =>
+            candidate.id === "local_event_sequence"
+              ? { ...candidate, readOnly: true }
+              : candidate,
+        ),
+      }),
+    });
+    renderWorkbench(state);
+
+    const entry = screen.getByRole("button", { name: "本機事件順序" });
+    expect(entry).toHaveAttribute("data-analysis-board-state", "available");
+    expect(entry).toHaveTextContent("只讀");
+    expect(entry).not.toHaveTextContent("可進入");
+
+    const descriptionId = entry.getAttribute("aria-describedby");
+    expect(descriptionId).toBeTruthy();
+    const description = descriptionId
+      ? document.getElementById(descriptionId)
+      : null;
+    expect(description).toHaveTextContent("只讀");
+    expect(description).not.toHaveTextContent("可進入");
+  });
+
   it("keeps non-completed read-only boards visibly distinct from completed boards", () => {
     const state = analysisState({
       scene: analysisSceneWith({

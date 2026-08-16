@@ -161,7 +161,7 @@
       case "active":
         return readOnly ? "只讀" : "目前";
       case "available":
-        return "可進入";
+        return readOnly ? "只讀" : "可進入";
     }
   }
 
