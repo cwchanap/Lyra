@@ -66,6 +66,7 @@
   let allBadges = $derived(badge ? [badge, ...badges] : [...badges]);
   let interactive = $derived(onSelect !== undefined && !readOnly);
   let unavailable = $derived(!card.available);
+  let effectiveFocusKey = $derived(focusKey ?? `card:${card.id}`);
 
   let dragState: PointerDragState | null = null;
   let suppressNextPhysicalClick = false;
@@ -117,7 +118,7 @@
       disabled ||
       readOnly ||
       unavailable ||
-      event.pointerType === "touch" ||
+      (event.pointerType !== "mouse" && event.pointerType !== "pen") ||
       event.button !== 0
     ) {
       return;
@@ -209,7 +210,7 @@
     type="button"
     class="analysis-card"
     data-analysis-card-id={card.id}
-    data-analysis-focus-key={focusKey}
+    data-analysis-focus-key={effectiveFocusKey}
     class:selected
     class:unavailable
     disabled={disabled || unavailable || readOnly}
@@ -237,12 +238,11 @@
     {/if}
   </button>
 {:else}
-  <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
   <article
     class="analysis-card"
     data-analysis-card-id={card.id}
-    data-analysis-focus-key={focusKey}
-    tabindex={focusKey === null || focusKey === undefined ? undefined : -1}
+    data-analysis-focus-key={effectiveFocusKey}
+    tabindex="-1"
     class:selected
     class:unavailable
     onpointerdown={handlePointerDown}
