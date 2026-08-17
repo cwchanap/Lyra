@@ -5,6 +5,7 @@ import {
   materializePrefixAnchors,
   moveOrderCard,
   orderBoardBlockReason,
+  placeOrderCardBefore,
   removeOrderCard,
 } from "./order-draft";
 import type { AnalysisBoardView } from "$lib/state/types";
@@ -342,5 +343,90 @@ describe("order draft algebra", () => {
         materializePrefixAnchors(fixtureBoard, ["event_1841", "event_1841"]),
       ).toEqual(["event_1841"]);
     });
+  });
+
+  describe("placeOrderCardBefore", () => {
+    it("inserts a pending card before a movable card", () => {
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1843"],
+          "event_1842",
+          "event_1843",
+        ),
+      ).toEqual(["event_1841", "event_1842", "event_1843"]);
+    });
+
+    it("reorders an existing movable card before another movable card", () => {
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1842", "event_1843"],
+          "event_1843",
+          "event_1842",
+        ),
+      ).toEqual(["event_1841", "event_1843", "event_1842"]);
+    });
+
+    it("appends a pending card when the target is the end", () => {
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1842"],
+          "event_1843",
+          null,
+        ),
+      ).toEqual(["event_1841", "event_1842", "event_1843"]);
+    });
+
+    it("returns an unchanged draft for a valid no-op", () => {
+      const draft = ["event_1841", "event_1842", "event_1843"];
+      expect(
+        placeOrderCardBefore(fixtureBoard, draft, "event_1842", "event_1843"),
+      ).toEqual(draft);
+    });
+
+    it.each([
+      ["unknown source", "unknown_card"],
+      ["unavailable source", "event_1842"],
+    ])("rejects an %s", (_label, sourceId) => {
+      const board =
+        sourceId === "event_1842"
+          ? boardWith({
+              cards: fixtureBoard.cards.map((card) =>
+                card.id === sourceId ? { ...card, available: false } : card,
+              ),
+            })
+          : fixtureBoard;
+
+      expect(
+        placeOrderCardBefore(board, ["event_1841"], sourceId, "event_1843"),
+      ).toBeNull();
+    });
+
+    it("rejects a fixed-anchor source", () => {
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1842"],
+          "event_1841",
+          "event_1842",
+        ),
+      ).toBeNull();
+    });
+
+    it.each(["unknown_card", "event_1841"])(
+      "rejects an unknown or fixed-prefix target: %s",
+      (targetId) => {
+        expect(
+          placeOrderCardBefore(
+            fixtureBoard,
+            ["event_1841", "event_1842"],
+            "event_1843",
+            targetId,
+          ),
+        ).toBeNull();
+      },
+    );
   });
 });
