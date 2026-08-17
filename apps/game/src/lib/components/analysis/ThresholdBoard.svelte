@@ -92,6 +92,7 @@
       <article class="card-entry">
         <AnalysisCard
           {card}
+          badge={selectedCardIds.includes(card.id) ? "已選" : null}
           selected={selectedCardIds.includes(card.id)}
           disabled={!editable || pending}
           readOnly={!editable}
@@ -121,8 +122,14 @@
     {/each}
   </div>
 
-  <footer>
+  <footer aria-label="門檻選取進度">
     <span>已選 {selectedCardIds.length} / 至少 {board.minimumSelected}</span>
+    <progress
+      max={board.minimumSelected}
+      value={selectedCardIds.length}
+      aria-label="門檻選取進度"
+      >{selectedCardIds.length} / {board.minimumSelected}</progress
+    >
   </footer>
 </section>
 
@@ -160,8 +167,14 @@
   }
 
   footer {
-    display: flex;
-    justify-content: flex-end;
+    display: grid;
+    gap: 0.45rem;
     color: #c9cbd1;
+  }
+
+  footer progress {
+    width: 100%;
+    height: 0.38rem;
+    accent-color: #9cb6df;
   }
 </style>
