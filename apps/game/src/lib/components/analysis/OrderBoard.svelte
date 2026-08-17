@@ -205,19 +205,19 @@
           {@const card = cardsById.get(cardId)}
           {@const fixed = fixedAnchorIds.has(cardId)}
           {@const beforeTarget = `order:before:${cardId}`}
-          {#if editable && !fixed && card}
-            <li
-              class="insertion-gutter"
-              class:drop-target={dragTargetId === beforeTarget}
-              data-analysis-drop-target={beforeTarget}
-              aria-label={`放在${card.label}之前`}
-            >
-              {#if dragTargetId === beforeTarget}
-                <span class="gutter-preview">放置在此</span>
-              {/if}
-            </li>
-          {/if}
           <li class:fixed>
+            {#if editable && !fixed && card}
+              <div
+                class="insertion-gutter"
+                class:drop-target={dragTargetId === beforeTarget}
+                data-analysis-drop-target={beforeTarget}
+                aria-label={`放在${card.label}之前`}
+              >
+                {#if dragTargetId === beforeTarget}
+                  <span class="gutter-preview">放置在此</span>
+                {/if}
+              </div>
+            {/if}
             <div class="timeline-card">
               <span class="timeline-index" aria-hidden="true">{index + 1}</span>
               {#if card}
@@ -265,21 +265,33 @@
                 >
               </div>
             {/if}
-          </li>
-        {/each}
-        {#if editable}
-          <li
-            class="insertion-gutter end-gutter"
-            class:drop-target={dragTargetId === "order:end"}
-            data-analysis-drop-target="order:end"
-            aria-label="放在時間線末端"
-          >
-            {#if dragTargetId === "order:end"}
-              <span class="gutter-preview">放置在此</span>
+            {#if editable && index === displayedCardIds.length - 1}
+              <div
+                class="insertion-gutter end-gutter"
+                class:drop-target={dragTargetId === "order:end"}
+                data-analysis-drop-target="order:end"
+                aria-label="放在時間線末端"
+              >
+                {#if dragTargetId === "order:end"}
+                  <span class="gutter-preview">放置在此</span>
+                {/if}
+              </div>
             {/if}
           </li>
-        {/if}
+        {/each}
       </ol>
+      {#if editable && displayedCardIds.length === 0}
+        <div
+          class="insertion-gutter end-gutter"
+          class:drop-target={dragTargetId === "order:end"}
+          data-analysis-drop-target="order:end"
+          aria-label="放在時間線末端"
+        >
+          {#if dragTargetId === "order:end"}
+            <span class="gutter-preview">放置在此</span>
+          {/if}
+        </div>
+      {/if}
     </section>
 
     <section
