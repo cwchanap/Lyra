@@ -106,6 +106,19 @@ describe("OrderBoard", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("keeps insertion gutters out of the ordered event list", () => {
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842", "event_1843"]),
+    );
+    const timeline = container.querySelector("ol.timeline");
+
+    expect(timeline).not.toBeNull();
+    expect(timeline?.querySelectorAll(":scope > li")).toHaveLength(3);
+    expect(
+      timeline?.querySelectorAll(":scope > .insertion-gutter"),
+    ).toHaveLength(0);
+  });
+
   it("inserts a pending card before a movable timeline card", async () => {
     const onDraft = vi.fn();
     const resolveDropTarget = vi.fn(() => "order:before:event_1843");
