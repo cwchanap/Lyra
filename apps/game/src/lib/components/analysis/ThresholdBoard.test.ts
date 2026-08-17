@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import { cleanup, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -291,6 +291,80 @@ describe("ThresholdBoard", () => {
     expect(screen.getByText("來源群組：門鎖本機")).toBeInTheDocument();
     expect(screen.getByText("可證明：時間、順序")).toBeInTheDocument();
     expect(screen.queryByText("來源：卡片投影名稱")).not.toBeInTheDocument();
+  });
+
+  it("updates the selected count, native meter, and marker from the threshold draft", async () => {
+    const onDraft = vi.fn();
+    const view = renderBoard(
+      boardWith(realFixtureBoard, {
+        draft: { kind: "threshold", selectedCardIds: [] },
+      }),
+      beat85CompilerAnalysisInventoryFixture,
+      onDraft,
+    );
+
+    const progress = screen.getByRole("progressbar", {
+      name: "門檻選取進度",
+    });
+    expect(progress).toHaveAttribute("max", "2");
+    expect(progress).toHaveAttribute("value", "0");
+    expect(screen.getByText("已選 0 / 至少 2")).toBeInTheDocument();
+    expect(screen.queryByText("已選", { exact: true })).not.toBeInTheDocument();
+
+    const user = userEvent.setup();
+    await user.click(
+      screen.getByRole("button", { name: /選取：\s*門鎖本機順序/ }),
+    );
+
+    const selectedBoard = boardWith(realFixtureBoard, {
+      draft: { kind: "threshold", selectedCardIds: ["lock_sequence"] },
+    });
+    await view.rerender({
+      board: selectedBoard,
+      inventory: beat85CompilerAnalysisInventoryFixture,
+      onDraft,
+    });
+
+    expect(screen.getByText("已選 1 / 至少 2")).toBeInTheDocument();
+    expect(progress).toHaveAttribute("value", "1");
+    expect(screen.getByText("已選", { exact: true })).toBeInTheDocument();
+    expect(onDraft).toHaveBeenLastCalledWith(
+      { kind: "threshold", selectedCardIds: ["lock_sequence"] },
+      "card:lock_sequence",
+    );
+  });
+
+  it("retains the selected marker, meter, and provenance on a read-only board", () => {
+    renderBoard(
+      boardWith(realFixtureBoard, {
+        readOnly: true,
+        draft: { kind: "threshold", selectedCardIds: ["lock_sequence"] },
+      }),
+      beat85CompilerAnalysisInventoryFixture,
+    );
+
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+    expect(screen.getByText("已選", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("已選 1 / 至少 2")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "門檻選取進度" }),
+    ).toHaveAttribute("value", "1");
+    const provenance = screen.getByLabelText("來源與狀態：門鎖本機順序");
+    expect(
+      within(provenance).getByText("來源類型：數位紀錄"),
+    ).toBeInTheDocument();
+    expect(
+      within(provenance).getByText("程序狀態：重新取得"),
+    ).toBeInTheDocument();
+    expect(
+      within(provenance).getByText("來源：雨鐘後場門鎖"),
+    ).toBeInTheDocument();
+    expect(
+      within(provenance).getByText("來源群組：門鎖本機"),
+    ).toBeInTheDocument();
+    expect(
+      within(provenance).getByText("可證明：時間、順序"),
+    ).toBeInTheDocument();
   });
 
   it("renders a statement card's provenance from the inventory", () => {
