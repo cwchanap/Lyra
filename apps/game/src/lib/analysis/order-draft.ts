@@ -162,3 +162,60 @@ export function removeOrderCard(
   if (index < 0) return materialized;
   return materialized.filter((candidate) => candidate !== cardId);
 }
+
+/**
+ * Place an available movable card immediately before another movable card, or
+ * append it when beforeCardId is null. A card already in that position returns
+ * the normalized draft unchanged.
+ */
+export function placeOrderCardBefore(
+  board: OrderBoardView,
+  cardIds: string[],
+  cardId: string,
+  beforeCardId: string | null,
+): string[] | null {
+  if (orderBoardBlockReason(board) !== null) return null;
+
+  const anchors = prefixAnchors(board) as PrefixAnchor[];
+  const fixedIds = new Set(anchors.map(({ cardId: anchorId }) => anchorId));
+  const cardsById = new Map(publicCards(board).map((card) => [card.id, card]));
+  const source = cardsById.get(cardId);
+  if (!source || source.available !== true || fixedIds.has(cardId)) {
+    return null;
+  }
+
+  const materialized = materializePrefixAnchors(board, cardIds);
+  if (!materialized) return null;
+
+  const sourceIndex = materialized.indexOf(cardId);
+  if (beforeCardId !== null) {
+    const target = cardsById.get(beforeCardId);
+    const targetIndex = materialized.indexOf(beforeCardId);
+    if (
+      !target ||
+      target.available !== true ||
+      fixedIds.has(beforeCardId) ||
+      targetIndex < anchors.length
+    ) {
+      return null;
+    }
+    if (targetIndex < 0) return null;
+    if (sourceIndex >= 0 && beforeCardId === cardId) return materialized;
+  }
+
+  if (sourceIndex < 0) {
+    const next = [...materialized];
+    const insertionIndex =
+      beforeCardId === null ? next.length : next.indexOf(beforeCardId);
+    if (insertionIndex < 0) return null;
+    next.splice(insertionIndex, 0, cardId);
+    return next;
+  }
+
+  const next = materialized.filter((candidate) => candidate !== cardId);
+  const insertionIndex =
+    beforeCardId === null ? next.length : next.indexOf(beforeCardId);
+  if (insertionIndex < 0) return null;
+  next.splice(insertionIndex, 0, cardId);
+  return next;
+}

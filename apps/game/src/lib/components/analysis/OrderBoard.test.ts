@@ -1,4 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beat85CompilerAnalysisSceneFixture } from "$lib/analysis/test-fixtures";
@@ -36,8 +42,35 @@ function boardWith(
 function renderBoard(
   board: OrderBoardView = boardWith(),
   onDraft: (draft: OrderDraft, focusKey: string) => void = vi.fn(),
+  options: {
+    resolveDropTarget?: (x: number, y: number) => string | null;
+  } = {},
 ) {
-  return render(OrderBoard, { board, onDraft });
+  return render(OrderBoard, { board, onDraft, ...options });
+}
+
+async function dragCard(card: HTMLElement, pointerId: number) {
+  await fireEvent.pointerDown(card, {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+  });
+  await fireEvent.pointerMove(card, {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX: 20,
+    clientY: 10,
+  });
+  await fireEvent.pointerUp(card, {
+    pointerId,
+    pointerType: "mouse",
+    button: 0,
+    clientX: 20,
+    clientY: 10,
+  });
 }
 
 afterEach(() => {
@@ -46,6 +79,177 @@ afterEach(() => {
 });
 
 describe("OrderBoard", () => {
+  it("renders a numbered vertical timeline with stable movable gutters", () => {
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842", "event_1843"]),
+    );
+
+    expect(
+      [...container.querySelectorAll(".timeline-index")].map(
+        (element) => element.textContent,
+      ),
+    ).toEqual(["1", "2", "3"]);
+    expect(
+      [...container.querySelectorAll("[data-analysis-drop-target]")].map(
+        (element) => element.getAttribute("data-analysis-drop-target"),
+      ),
+    ).toEqual([
+      "order:before:event_1842",
+      "order:before:event_1843",
+      "order:end",
+      "order:pending",
+    ]);
+    expect(
+      container.querySelector(
+        '[data-analysis-card-id="event_1841"] [data-analysis-drop-target]',
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("inserts a pending card before a movable timeline card", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:before:event_1843");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1843"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 31);
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      { kind: "order", cardIds: ["event_1841", "event_1842", "event_1843"] },
+      "card:event_1842",
+    );
+    expect(resolveDropTarget).toHaveBeenCalledWith(20, 10);
+  });
+
+  it("reorders a timeline card through a before gutter", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:before:event_1842");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842", "event_1843"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1843"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 32);
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      { kind: "order", cardIds: ["event_1841", "event_1843", "event_1842"] },
+      "card:event_1843",
+    );
+  });
+
+  it("removes a timeline card when dropped on the pending pool", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:pending");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 33);
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      { kind: "order", cardIds: ["event_1841"] },
+      "card:event_1842",
+    );
+  });
+
+  it("marks the active gutter as the insertion preview while dragging", async () => {
+    const resolveDropTarget = vi.fn(() => "order:before:event_1842");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      vi.fn(),
+      { resolveDropTarget },
+    );
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+
+    await fireEvent.pointerDown(card as HTMLElement, {
+      pointerId: 34,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card as HTMLElement, {
+      pointerId: 34,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    const gutter = container.querySelector(
+      '[data-analysis-drop-target="order:before:event_1842"]',
+    );
+    expect(gutter).toHaveClass("drop-target");
+    expect(gutter).toHaveTextContent("放置在此");
+  });
+
+  it("does not treat the fixed anchor as a drag source", async () => {
+    const resolveDropTarget = vi.fn(() => "order:end");
+    const onDraft = vi.fn();
+    const { container } = renderBoard(boardWith(), onDraft, {
+      resolveDropTarget,
+    });
+    const anchor = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1841"]',
+    );
+    expect(anchor).not.toBeNull();
+
+    await fireEvent.pointerDown(anchor as HTMLElement, {
+      pointerId: 35,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(anchor as HTMLElement, {
+      pointerId: 35,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(anchor as HTMLElement, {
+      pointerId: 35,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    expect(resolveDropTarget).not.toHaveBeenCalled();
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
   it("locks the fixed prefix card and labels it as fixed", () => {
     renderBoard();
 
