@@ -77,8 +77,9 @@ async function clickAnalysisCard(
   if (!clicked) throw new Error(`analysis card ${label} was not clickable`);
 }
 
-// Packaged coverage proves the production Pointer Events listener and target-resolution path;
-// driver-level pointer transport is not asserted on this WebKit driver.
+// B4 selected this one synthetic PointerEvent transport for packaged WebKit.
+// Keep Classify and Order on this path; there is intentionally no W3C attempt
+// or runtime/test fallback.
 async function dragAnalysisCardSynthetic(
   cardId: string,
   targetId: string,
@@ -92,6 +93,10 @@ async function dragAnalysisCardSynthetic(
         `[data-analysis-drop-target="${selectedTargetId}"]`,
       );
       if (!card || !target) return false;
+
+      // Keep the synthetic destination inside the viewport so the production
+      // elementsFromPoint() resolver sees the same target on every board.
+      target.scrollIntoView({ block: "center", inline: "center" });
 
       const center = (element: HTMLElement) => {
         const rect = element.getBoundingClientRect();
@@ -164,13 +169,46 @@ async function waitForAnalysisBoard(boardId: string): Promise<GameStateView> {
   );
 }
 
-async function submitCurrentAnalysisBoard(boardId: string): Promise<void> {
+async function waitForClassifyDraft(
+  expectedGroupByCard: Record<string, string>,
+): Promise<GameStateView> {
+  return waitForPackagedGameState((state) => {
+    const board = analysisBoard(state, "evidence_packages");
+    if (board.kind !== "classify" || board.draft.kind !== "classify") {
+      return false;
+    }
+    const actual = board.draft.groupByCard;
+    return (
+      Object.keys(actual).length === Object.keys(expectedGroupByCard).length &&
+      Object.entries(expectedGroupByCard).every(
+        ([cardId, groupId]) => actual[cardId] === groupId,
+      )
+    );
+  });
+}
+
+async function waitForOrderDraft(
+  expectedCardIds: string[],
+): Promise<GameStateView> {
+  return waitForPackagedGameState((state) => {
+    const board = analysisBoard(state, "local_event_sequence");
+    return (
+      board.kind === "order" &&
+      board.draft.kind === "order" &&
+      JSON.stringify(board.draft.cardIds) === JSON.stringify(expectedCardIds)
+    );
+  });
+}
+
+async function submitCurrentAnalysisBoard(
+  boardId: string,
+): Promise<GameStateView> {
   await clickButton("比對推論");
   // Wait for a genuinely post-submit state. Accepting the pre-submit analysis
   // mode (board still open, not completed) would resolve immediately while
   // the submit IPC is still in flight. Resolve only once the submitted board
   // is marked completed or the engine has moved on to dialogue.
-  await waitForPackagedGameState(
+  return waitForPackagedGameState(
     (state) => {
       if (state.mode.type === "dialogue") return true;
       if (
@@ -186,6 +224,20 @@ async function submitCurrentAnalysisBoard(boardId: string): Promise<void> {
     30000,
     `analysis board ${boardId} submission did not settle`,
   );
+}
+
+function expectDialogueLine(
+  state: GameStateView,
+  speaker: string,
+  text: string,
+): void {
+  if (state.mode.type !== "dialogue") {
+    throw new Error(`expected dialogue line from ${speaker}`);
+  }
+  expect(state.mode.current.kind).toBe("line");
+  if (state.mode.current.kind !== "line") return;
+  expect(state.mode.current.speaker).toBe(speaker);
+  expect(state.mode.current.text).toBe(text);
 }
 
 async function drainToAnalysisBoard(boardId: string): Promise<GameStateView> {
@@ -312,7 +364,7 @@ async function challengePhase(
 }
 
 describe("packaged Analysis Beat 8.5 journey", () => {
-  it("persists one-card Threshold draft, completes the gate, and reaches p4", async function () {
+  it("persists partial Analysis drafts, proves pointer ordering, and reaches p4", async function () {
     this.timeout(1_800_000);
     await resetE2eStorage();
     await loadPackagedCheckpoint("chapter-1-analysis-beat-85-ready");
@@ -338,46 +390,151 @@ describe("packaged Analysis Beat 8.5 journey", () => {
       event_1843: "lock_chronology",
       event_1844: "lock_chronology",
     };
-    let assignedCount = 0;
-    for (const [index, card] of classify.cards.entries()) {
+    const expectedClassify: Record<string, string> = {};
+    const placeClassifyCard = async (cardId: string, groupId: string) => {
+      if (!groups.has(groupId))
+        throw new Error(`missing classify group ${groupId}`);
+      await dragAnalysisCardSynthetic(cardId, `classify:group:${groupId}`);
+      expectedClassify[cardId] = groupId;
+      await waitForClassifyDraft(expectedClassify);
+    };
+
+    const classifyCard = (cardId: string) => {
+      const card = classify.cards.find((candidate) => candidate.id === cardId);
+      if (!card) throw new Error(`missing classify card ${cardId}`);
+      return card;
+    };
+
+    // Exercise assign, group-to-group, drag-back to unassigned, and reassign
+    // before saving only this partial authoritative draft.
+    classifyCard("miyake_call");
+    await placeClassifyCard("miyake_call", "miyake_small_lies");
+    classifyCard("miyake_pov_replay");
+    await placeClassifyCard("miyake_pov_replay", "earlier_third_party");
+    await dragAnalysisCardSynthetic(
+      "miyake_pov_replay",
+      "classify:group:lock_chronology",
+    );
+    expectedClassify.miyake_pov_replay = "lock_chronology";
+    await waitForClassifyDraft(expectedClassify);
+    await dragAnalysisCardSynthetic("miyake_pov_replay", "classify:unassigned");
+    delete expectedClassify.miyake_pov_replay;
+    await waitForClassifyDraft(expectedClassify);
+    await placeClassifyCard("miyake_pov_replay", "earlier_third_party");
+
+    await saveManualSlot(1, "Beat 8.5 分類部分草稿");
+    await closePersistenceBrowserToGameplay();
+    await returnToTitle();
+    await continueFromTitle();
+    state = await waitForAnalysisBoard("evidence_packages");
+    const restoredClassify = analysisBoard(state, "evidence_packages");
+    if (
+      restoredClassify.kind !== "classify" ||
+      restoredClassify.draft.kind !== "classify"
+    ) {
+      throw new Error("Continue did not restore the Classify draft");
+    }
+    expect(restoredClassify.draft.groupByCard).toEqual(expectedClassify);
+
+    const restoredClassifyCards = restoredClassify.cards;
+    for (const card of restoredClassifyCards) {
       const groupId = cardGroupIds[card.id];
       if (!groupId) throw new Error(`missing classify mapping for ${card.id}`);
-      const groupLabel = groups.get(groupId);
-      if (!groupLabel) throw new Error(`missing classify group ${groupId}`);
-      if (index === 0) {
-        await dragAnalysisCardSynthetic(card.id, `classify:group:${groupId}`);
-      } else {
-        await clickAnalysisCard(card.label, ".classify-board");
-        await clickButton(`放入「${groupLabel}」`);
-      }
-      assignedCount += 1;
-      await waitForPackagedGameState((next) => {
-        const board = analysisBoard(next, "evidence_packages");
-        return (
-          board.draft.kind === "classify" &&
-          Object.keys(board.draft.groupByCard).length >= assignedCount
-        );
-      });
+      if (expectedClassify[card.id] === groupId) continue;
+      await placeClassifyCard(card.id, groupId);
     }
-    await submitCurrentAnalysisBoard("evidence_packages");
+    expect(expectedClassify).toEqual(cardGroupIds);
+    await waitForClassifyDraft(cardGroupIds);
+    const classifyResult =
+      await submitCurrentAnalysisBoard("evidence_packages");
+    expectDialogueLine(
+      classifyResult,
+      "相馬律",
+      "我急著找兇手時，也差點把三宅的小謊塞進同一欄。",
+    );
+    const completedClassify = analysisBoard(
+      classifyResult,
+      "evidence_packages",
+    );
+    expect(completedClassify.completed).toBe(true);
+    if (completedClassify.draft.kind !== "classify") {
+      throw new Error("completed Classify draft is not classify");
+    }
+    expect(completedClassify.draft.groupByCard).toEqual(cardGroupIds);
     await drainToAnalysisBoard("local_event_sequence");
 
     state = await waitForAnalysisBoard("local_event_sequence");
     const order = analysisBoard(state, "local_event_sequence");
     if (order.kind !== "order")
       throw new Error("local_event_sequence is not order");
-    for (const card of order.cards.filter(
-      (candidate) => candidate.id !== "event_1841",
-    )) {
-      await clickButton(`加入時間線：${card.label}`);
-      await waitForPackagedGameState((next) => {
-        const board = analysisBoard(next, "local_event_sequence");
-        return (
-          board.draft.kind === "order" && board.draft.cardIds.includes(card.id)
-        );
-      });
+    expect(order.fixedAnchors).toEqual([{ cardId: "event_1841", position: 1 }]);
+    if (order.draft.kind !== "order")
+      throw new Error("local_event_sequence draft is not order");
+    expect(order.draft.cardIds).toEqual([]);
+
+    // The fixed event_1841 prefix is materialized by the board and normalized
+    // into the persisted draft exactly once when the first movable card is
+    // placed, so the raw draft proves the pointer insertion and prefix rules.
+    let expectedOrder: string[];
+    await dragAnalysisCardSynthetic("event_1843", "order:end");
+    expectedOrder = ["event_1841", "event_1843"];
+    await waitForOrderDraft(expectedOrder);
+    await dragAnalysisCardSynthetic("event_1842", "order:before:event_1843");
+    expectedOrder = ["event_1841", "event_1842", "event_1843"];
+    await waitForOrderDraft(expectedOrder);
+
+    await saveManualSlot(2, "Beat 8.5 順序部分草稿");
+    await closePersistenceBrowserToGameplay();
+    await returnToTitle();
+    await continueFromTitle();
+    state = await waitForAnalysisBoard("local_event_sequence");
+    const restoredOrder = analysisBoard(state, "local_event_sequence");
+    if (
+      restoredOrder.kind !== "order" ||
+      restoredOrder.draft.kind !== "order"
+    ) {
+      throw new Error("Continue did not restore the Order draft");
     }
-    await submitCurrentAnalysisBoard("local_event_sequence");
+    expect(restoredOrder.fixedAnchors).toEqual([
+      { cardId: "event_1841", position: 1 },
+    ]);
+    expect(restoredOrder.draft.cardIds).toEqual(expectedOrder);
+
+    await dragAnalysisCardSynthetic("event_1844", "order:end");
+    expectedOrder = ["event_1841", "event_1842", "event_1843", "event_1844"];
+    await waitForOrderDraft(expectedOrder);
+    await dragAnalysisCardSynthetic("event_1844", "order:before:event_1843");
+    expectedOrder = ["event_1841", "event_1842", "event_1844", "event_1843"];
+    await waitForOrderDraft(expectedOrder);
+    await dragAnalysisCardSynthetic("event_1844", "order:pending");
+    expectedOrder = ["event_1841", "event_1842", "event_1843"];
+    await waitForOrderDraft(expectedOrder);
+    await dragAnalysisCardSynthetic("event_1844", "order:end");
+    expectedOrder = ["event_1841", "event_1842", "event_1843", "event_1844"];
+    state = await waitForOrderDraft(expectedOrder);
+    const finalOrder = analysisBoard(state, "local_event_sequence");
+    if (finalOrder.kind !== "order" || finalOrder.draft.kind !== "order") {
+      throw new Error("final Order draft is not order");
+    }
+    expect(finalOrder.fixedAnchors).toEqual([
+      { cardId: "event_1841", position: 1 },
+    ]);
+    expect(finalOrder.draft.cardIds).toEqual(expectedOrder);
+
+    const orderResult = await submitCurrentAnalysisBoard(
+      "local_event_sequence",
+    );
+    expectDialogueLine(
+      orderResult,
+      "相馬律",
+      "本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。",
+    );
+    const completedOrder = analysisBoard(orderResult, "local_event_sequence");
+    expect(completedOrder.completed).toBe(true);
+    if (completedOrder.draft.kind !== "order") {
+      throw new Error("completed Order draft is not order");
+    }
+    expect(completedOrder.draft.cardIds).toEqual(expectedOrder);
     await drainToAnalysisBoard("narrow_request_basis");
 
     state = await waitForAnalysisBoard("narrow_request_basis");
@@ -402,8 +559,18 @@ describe("packaged Analysis Beat 8.5 journey", () => {
           JSON.stringify(["lock_sequence"])
       );
     });
+    const thresholdButton = await browser.execute((cardId: string) => {
+      const card = document.querySelector<HTMLElement>(
+        `[data-analysis-card-id="${cardId}"]`,
+      );
+      return {
+        tagName: card?.tagName ?? null,
+        ariaPressed: card?.getAttribute("aria-pressed") ?? null,
+      };
+    }, firstCard.id);
+    expect(thresholdButton).toEqual({ tagName: "BUTTON", ariaPressed: "true" });
 
-    await saveManualSlot(1, "Beat 8.5 門鎖申請草稿");
+    await saveManualSlot(3, "Beat 8.5 門鎖申請草稿");
     await closePersistenceBrowserToGameplay();
     await returnToTitle();
     await continueFromTitle();
@@ -445,7 +612,26 @@ describe("packaged Analysis Beat 8.5 journey", () => {
           JSON.stringify(["lock_sequence", "phone_notification"])
       );
     });
-    await submitCurrentAnalysisBoard("narrow_request_basis");
+    const thresholdResult = await submitCurrentAnalysisBoard(
+      "narrow_request_basis",
+    );
+    expectDialogueLine(
+      thresholdResult,
+      "相馬律",
+      "申請寫好了。我的字開始飄了。",
+    );
+    const completedThreshold = analysisBoard(
+      thresholdResult,
+      "narrow_request_basis",
+    );
+    expect(completedThreshold.completed).toBe(true);
+    if (completedThreshold.draft.kind !== "threshold") {
+      throw new Error("completed Threshold draft is not threshold");
+    }
+    expect(completedThreshold.draft.selectedCardIds).toEqual([
+      "lock_sequence",
+      "phone_notification",
+    ]);
     state = await waitForPackagedGameState((next) => {
       const board = analysisBoard(next, "narrow_request_basis");
       return board.completed;
@@ -461,6 +647,27 @@ describe("packaged Analysis Beat 8.5 journey", () => {
           objective.id === "prepare_narrow_lock_request" && objective.completed,
       ),
     ).toBe(true);
+
+    await advanceDialogueUntil(async () => {
+      const next = await getPackagedGameState();
+      return (
+        next.scene.kind === "analysis" &&
+        next.mode.type === "dialogue" &&
+        next.mode.current.kind === "line" &&
+        next.mode.current.text ===
+          "申請準備好了；身分仍未明，核准片段也還不能取得。"
+      );
+    }, 160);
+    state = await getPackagedGameState();
+    expectDialogueLine(
+      state,
+      "早坂茜",
+      "申請準備好了；身分仍未明，核准片段也還不能取得。",
+    );
+    await advanceDialogueUntil(
+      async () => (await getPackagedGameState()).scene.id !== ANALYSIS_SCENE_ID,
+      160,
+    );
 
     await jumpToProductionScene(HEARING_SCENE_ID);
     state = await waitForPackagedGameState(
