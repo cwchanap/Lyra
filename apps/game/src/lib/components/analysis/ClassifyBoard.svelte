@@ -1,4 +1,8 @@
 <script lang="ts">
+  import {
+    applyClassifyPlacement,
+    type ClassifyPlacementTarget,
+  } from "$lib/analysis/classify-draft";
   import type { AnalysisBoardView, AnalysisDraft } from "$lib/state/types";
   import AnalysisCard from "./AnalysisCard.svelte";
 
@@ -10,15 +14,22 @@
     onDraft,
     disabled = false,
     readOnly = false,
+    resolveDropTarget,
   }: {
     board: ClassifyBoardView;
     onDraft: (draft: ClassifyDraft, focusKey: string) => void | Promise<void>;
     disabled?: boolean;
     readOnly?: boolean;
+    resolveDropTarget?: (x: number, y: number) => string | null;
   } = $props();
 
   let selectedCardId = $state<string | null>(null);
   let pending = $state(false);
+  // Keep card anchors focusable while Workbench waits for the draft callback;
+  // selection and drag handlers still guard against pending mutations.
+  let draggingCardId = $state<string | null>(null);
+  let dragTargetId = $state<string | null>(null);
+  let liveMessage = $state("");
   let editable = $derived(
     board.draft.kind === "classify" &&
       !disabled &&
@@ -53,6 +64,75 @@
     selectedCardId = selectedCardId === cardId ? null : cardId;
   }
 
+  function decodeClassifyTarget(
+    id: string | null,
+  ): ClassifyPlacementTarget | null {
+    if (id === "classify:unassigned") return { kind: "unassigned" };
+    const prefix = "classify:group:";
+    return id?.startsWith(prefix)
+      ? { kind: "group", groupId: id.slice(prefix.length) }
+      : null;
+  }
+
+  function handleDragStart(cardId: string) {
+    if (!editable || pending) return;
+    draggingCardId = cardId;
+    dragTargetId = null;
+    liveMessage = "";
+  }
+
+  function handleDragTargetChange(targetId: string | null) {
+    if (!draggingCardId) return;
+    dragTargetId = targetId;
+  }
+
+  function handleDragCancel() {
+    draggingCardId = null;
+    dragTargetId = null;
+  }
+
+  async function placeCard(
+    cardId: string,
+    target: ClassifyPlacementTarget | null,
+    onSuccess?: () => void,
+  ) {
+    if (!editable || pending || board.draft.kind !== "classify") return;
+
+    if (target === null) {
+      liveMessage = "無效的放置位置。";
+      return;
+    }
+
+    const nextGroupByCard = applyClassifyPlacement(
+      board,
+      board.draft.groupByCard,
+      cardId,
+      target,
+    );
+    if (nextGroupByCard === null) {
+      liveMessage = "無效的放置位置。";
+      return;
+    }
+    if (nextGroupByCard === board.draft.groupByCard) {
+      liveMessage = "未變更：卡片已在這個位置。";
+      return;
+    }
+
+    liveMessage = "";
+    pending = true;
+    try {
+      await onDraft(
+        { kind: "classify", groupByCard: nextGroupByCard },
+        `card:${cardId}`,
+      );
+      onSuccess?.();
+    } catch {
+      // Preserve the current selection so the player can retry.
+    } finally {
+      pending = false;
+    }
+  }
+
   async function assignCard(groupId: string) {
     /* v8 ignore next -- unreachable: assign button only rendered when editable */
     if (!editable || pending) return;
@@ -66,24 +146,9 @@
     /* v8 ignore next -- unreachable: assign button disabled for unavailable selection */
     if (!card || !card.available) return;
 
-    pending = true;
-    try {
-      await onDraft(
-        {
-          kind: "classify",
-          groupByCard: {
-            ...board.draft.groupByCard,
-            [cardId]: groupId,
-          },
-        },
-        `card:${cardId}`,
-      );
+    await placeCard(cardId, { kind: "group", groupId }, () => {
       selectedCardId = null;
-    } catch {
-      // Preserve the current selection so the player can retry.
-    } finally {
-      pending = false;
-    }
+    });
   }
 
   async function removeCard(cardId: string) {
@@ -97,23 +162,36 @@
     /* v8 ignore next -- unreachable: remove button disabled for unavailable cards */
     if (!card || !card.available) return;
 
-    const groupByCard = { ...board.draft.groupByCard };
-    delete groupByCard[cardId];
-    pending = true;
-    try {
-      await onDraft({ kind: "classify", groupByCard }, `card:${cardId}`);
+    await placeCard(cardId, { kind: "unassigned" }, () => {
       if (selectedCardId === cardId) selectedCardId = null;
-    } catch {
-      // Preserve the current selection so the player can retry.
-    } finally {
-      pending = false;
-    }
+    });
+  }
+
+  async function dropCard(cardId: string, targetId: string | null) {
+    draggingCardId = null;
+    dragTargetId = null;
+    await placeCard(cardId, decodeClassifyTarget(targetId));
   }
 </script>
 
 <section class="classify-board" aria-label="分類板">
+  {#if liveMessage}
+    <p
+      class="sr-only"
+      role="status"
+      aria-label="分類操作提示"
+      aria-live="polite"
+    >
+      {liveMessage}
+    </p>
+  {/if}
   <div class="board-layout">
-    <section class="card-pool" aria-label="未分類卡片">
+    <section
+      class="card-pool"
+      class:drop-target={dragTargetId === "classify:unassigned"}
+      aria-label="未分類卡片"
+      data-analysis-drop-target="classify:unassigned"
+    >
       <h3>待分類</h3>
       {#if unassignedCards.length === 0}
         <p class="empty">所有卡片都已放入分組。</p>
@@ -124,11 +202,15 @@
               <AnalysisCard
                 {card}
                 selected={selectedCardId === card.id}
-                disabled={!editable || pending}
+                disabled={!editable}
                 readOnly={!editable}
-                onSelect={editable && !pending
-                  ? () => selectCard(card.id)
-                  : undefined}
+                dragEnabled={editable && !pending}
+                {resolveDropTarget}
+                onSelect={editable ? () => selectCard(card.id) : undefined}
+                onDragStart={() => handleDragStart(card.id)}
+                onDragTargetChange={handleDragTargetChange}
+                onDrop={(targetId) => void dropCard(card.id, targetId)}
+                onDragCancel={handleDragCancel}
               />
             </div>
           {/each}
@@ -139,7 +221,13 @@
     <div class="groups" aria-label="分類分組">
       {#each board.groups as group (group.id)}
         {@const groupCards = cardsForGroup(group.id)}
-        <section class="group" aria-labelledby={`group-${group.id}`}>
+        {@const dropTarget = `classify:group:${group.id}`}
+        <section
+          class="group"
+          class:drop-target={dragTargetId === dropTarget}
+          aria-labelledby={`group-${group.id}`}
+          data-analysis-drop-target={dropTarget}
+        >
           <header>
             <h3 id={`group-${group.id}`}>{group.label}</h3>
             <p>{group.description}</p>
@@ -154,11 +242,15 @@
                   <AnalysisCard
                     {card}
                     selected={selectedCardId === card.id}
-                    disabled={!editable || pending}
+                    disabled={!editable}
                     readOnly={!editable}
-                    onSelect={editable && !pending
-                      ? () => selectCard(card.id)
-                      : undefined}
+                    dragEnabled={editable && !pending}
+                    {resolveDropTarget}
+                    onSelect={editable ? () => selectCard(card.id) : undefined}
+                    onDragStart={() => handleDragStart(card.id)}
+                    onDragTargetChange={handleDragTargetChange}
+                    onDrop={(targetId) => void dropCard(card.id, targetId)}
+                    onDragCancel={handleDragCancel}
                   />
                   {#if editable}
                     <button
@@ -193,6 +285,18 @@
 </section>
 
 <style>
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+
   .classify-board {
     display: grid;
     gap: 1.25rem;
@@ -220,6 +324,11 @@
     padding: 1rem;
     background: rgba(255, 255, 255, 0.025);
     border: 1px solid rgba(179, 191, 214, 0.22);
+  }
+
+  .drop-target {
+    border-color: rgba(168, 200, 255, 0.82);
+    box-shadow: 0 0 0 2px rgba(91, 135, 210, 0.3);
   }
 
   .groups {

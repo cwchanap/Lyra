@@ -299,9 +299,42 @@ describe("AnalysisWorkbench", () => {
     expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
   });
 
-  it("focuses the host heading after board changes and fallback mutations", async () => {
+  it("focuses the card after fallback mutations and the host heading after board changes", async () => {
     const state = analysisState();
-    const view = renderWorkbench(state);
+    const analysisScene = state.scene;
+    if (analysisScene.kind !== "analysis") {
+      throw new Error("Expected an analysis scene");
+    }
+    const updated = analysisState({
+      scene: {
+        ...analysisScene,
+        visibleBoards: analysisScene.visibleBoards.map((candidate) =>
+          candidate.kind === "classify"
+            ? {
+                ...candidate,
+                draft: {
+                  kind: "classify",
+                  groupByCard: { miyake_call: "miyake_small_lies" },
+                },
+              }
+            : candidate,
+        ),
+      },
+    });
+    let view: ReturnType<typeof renderWorkbench> | null = null;
+    const onUpdateDraft = vi.fn(async () => {
+      if (!view) throw new Error("Workbench view has not rendered yet");
+      await view.rerender({
+        scene: updated.scene,
+        mode: updated.mode,
+        inventory: updated.inventory,
+        onSelectBoard: vi.fn().mockResolvedValue(updated),
+        onUpdateDraft,
+        onSubmit: vi.fn().mockResolvedValue(updated),
+      });
+      return updated;
+    });
+    view = renderWorkbench(state, { onUpdateDraft });
     const initialHeading = screen.getByRole("heading", { name: "證據包整理" });
     expect(initialHeading).toHaveAttribute(
       "data-analysis-focus-key",
@@ -313,7 +346,10 @@ describe("AnalysisWorkbench", () => {
 
     await assignFirstClassifyCard();
     await waitFor(() => {
-      expect(document.activeElement).toBe(initialHeading);
+      expect(document.activeElement).toHaveAttribute(
+        "data-analysis-focus-key",
+        "card:miyake_call",
+      );
       expect(document.activeElement).not.toBe(document.body);
     });
 

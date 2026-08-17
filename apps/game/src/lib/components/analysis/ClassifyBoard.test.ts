@@ -1,4 +1,10 @@
-import { cleanup, render, screen } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -41,8 +47,11 @@ function boardWith(
 function renderBoard(
   board: ClassifyBoardView = boardWith(),
   onDraft: (draft: ClassifyDraft, focusKey: string) => void = vi.fn(),
+  options: {
+    resolveDropTarget?: (x: number, y: number) => string | null;
+  } = {},
 ) {
-  return render(ClassifyBoard, { board, onDraft });
+  return render(ClassifyBoard, { board, onDraft, ...options });
 }
 
 afterEach(() => {
@@ -107,6 +116,168 @@ describe("ClassifyBoard", () => {
       },
       "card:miyake_call",
     );
+  });
+
+  it("dispatches one changed draft when a card is dragged onto another group", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "classify:group:earlier_third_party");
+    renderBoard(boardWith(), onDraft, { resolveDropTarget });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 21,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 21,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(card, {
+      pointerId: 21,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      {
+        kind: "classify",
+        groupByCard: { miyake_call: "earlier_third_party" },
+      },
+      "card:miyake_call",
+    );
+    expect(resolveDropTarget).toHaveBeenCalledWith(20, 10);
+  });
+
+  it("dispatches one changed draft when a grouped card is dragged back to unassigned", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "classify:unassigned");
+    renderBoard(boardWith({ miyake_call: "miyake_small_lies" }), onDraft, {
+      resolveDropTarget,
+    });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 22,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 22,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(card, {
+      pointerId: 22,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      { kind: "classify", groupByCard: {} },
+      "card:miyake_call",
+    );
+  });
+
+  it("does not dispatch when a card is dropped in its current group", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "classify:group:miyake_small_lies");
+    renderBoard(boardWith({ miyake_call: "miyake_small_lies" }), onDraft, {
+      resolveDropTarget,
+    });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 23,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 23,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(card, {
+      pointerId: 23,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "分類操作提示" }),
+      ).toHaveTextContent("未變更");
+    });
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not dispatch and announces an invalid drag target", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "analysis:invalid");
+    renderBoard(boardWith(), onDraft, { resolveDropTarget });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 24,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 24,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(card, {
+      pointerId: 24,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "分類操作提示" }),
+      ).toHaveTextContent("無效");
+    });
+    expect(onDraft).not.toHaveBeenCalled();
   });
 
   it("removes only the selected card mapping", async () => {
