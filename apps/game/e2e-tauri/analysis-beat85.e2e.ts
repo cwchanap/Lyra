@@ -77,6 +77,81 @@ async function clickAnalysisCard(
   if (!clicked) throw new Error(`analysis card ${label} was not clickable`);
 }
 
+// Packaged coverage proves the production Pointer Events listener and target-resolution path;
+// driver-level pointer transport is not asserted on this WebKit driver.
+async function dragAnalysisCardSynthetic(
+  cardId: string,
+  targetId: string,
+): Promise<void> {
+  const dispatched = await browser.execute(
+    (selectedCardId: string, selectedTargetId: string) => {
+      const card = document.querySelector<HTMLElement>(
+        `[data-analysis-card-id="${selectedCardId}"]`,
+      );
+      const target = document.querySelector<HTMLElement>(
+        `[data-analysis-drop-target="${selectedTargetId}"]`,
+      );
+      if (!card || !target) return false;
+
+      const center = (element: HTMLElement) => {
+        const rect = element.getBoundingClientRect();
+        return {
+          x: Math.round(rect.left + rect.width / 2),
+          y: Math.round(rect.top + rect.height / 2),
+        };
+      };
+      const source = center(card);
+      const destination = center(target);
+      const pointerId = 621;
+      const dispatch = (type: string, init: PointerEventInit) =>
+        card.dispatchEvent(new PointerEvent(type, init));
+
+      dispatch("pointerdown", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: source.x,
+        clientY: source.y,
+      });
+      dispatch("pointermove", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: -1,
+        buttons: 1,
+        clientX: destination.x,
+        clientY: destination.y,
+      });
+      dispatch("pointerup", {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: destination.x,
+        clientY: destination.y,
+      });
+      return true;
+    },
+    cardId,
+    targetId,
+  );
+  if (!dispatched) {
+    throw new Error(`analysis drag hooks missing for ${cardId} -> ${targetId}`);
+  }
+}
+
 async function waitForAnalysisBoard(boardId: string): Promise<GameStateView> {
   return waitForPackagedGameState(
     (state) =>
@@ -264,13 +339,17 @@ describe("packaged Analysis Beat 8.5 journey", () => {
       event_1844: "lock_chronology",
     };
     let assignedCount = 0;
-    for (const card of classify.cards) {
+    for (const [index, card] of classify.cards.entries()) {
       const groupId = cardGroupIds[card.id];
       if (!groupId) throw new Error(`missing classify mapping for ${card.id}`);
       const groupLabel = groups.get(groupId);
       if (!groupLabel) throw new Error(`missing classify group ${groupId}`);
-      await clickAnalysisCard(card.label, ".classify-board");
-      await clickButton(`放入「${groupLabel}」`);
+      if (index === 0) {
+        await dragAnalysisCardSynthetic(card.id, `classify:group:${groupId}`);
+      } else {
+        await clickAnalysisCard(card.label, ".classify-board");
+        await clickButton(`放入「${groupLabel}」`);
+      }
       assignedCount += 1;
       await waitForPackagedGameState((next) => {
         const board = analysisBoard(next, "evidence_packages");
