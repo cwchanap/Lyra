@@ -35,10 +35,6 @@ import type {
   SceneNavigationIndex,
 } from "./types";
 
-const isTauri =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-const DEV_HTTP_BASE = "http://127.0.0.1:1421";
-
 /**
  * Gameplay commands whose backend response is wrapped in
  * {@link GameplayCommandResultView} (state + thumbnail capture request).
@@ -70,37 +66,6 @@ export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
   "acknowledge_acquisition_event",
 ]);
 
-async function httpInvoke<T>(
-  command: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
-  if (!import.meta.env.DEV) {
-    throw new Error(
-      "Tauri runtime unavailable; HTTP fallback is disabled in production builds.",
-    );
-  }
-  const r = await fetch(`${DEV_HTTP_BASE}/${command}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(args ?? {}),
-  });
-  const text = await r.text();
-  if (!r.ok) {
-    try {
-      throw JSON.parse(text);
-    } catch (e) {
-      // If JSON.parse threw SyntaxError, fall back to raw text.
-      // Otherwise re-throw the parsed error object (preserves .message for normalizeError).
-      if (e instanceof SyntaxError)
-        throw new Error(text || `${command} failed (${r.status})`, {
-          cause: e,
-        });
-      throw e;
-    }
-  }
-  return JSON.parse(text) as T;
-}
-
 export const gameState = $state<{
   value: GameStateView | null;
   error: string | null;
@@ -130,9 +95,7 @@ async function runCommand<T>(
 ): Promise<T | null> {
   gameState.error = null;
   try {
-    return isTauri
-      ? await invoke<T>(command, args)
-      : await httpInvoke<T>(command, args);
+    return await invoke<T>(command, args);
   } catch (e) {
     gameState.error = normalizeError(e);
     return null;
@@ -471,9 +434,7 @@ export async function listScenes(): Promise<SceneNavigationIndex | null> {
   // gameState.error would (a) double-report the same failure via ErrorBanner
   // + panel, and (b) wipe a pre-existing game-command error on every call.
   try {
-    return isTauri
-      ? await invoke<SceneNavigationIndex>("list_scenes")
-      : await httpInvoke<SceneNavigationIndex>("list_scenes");
+    return await invoke<SceneNavigationIndex>("list_scenes");
   } catch {
     return null;
   }
