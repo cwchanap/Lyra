@@ -233,6 +233,46 @@ describe("AnalysisWorkbench", () => {
     }
   });
 
+  it("renders the rail progress bar at the normalized percentage for a completed board with a partial draft", () => {
+    // analysisBoardProgress() forces percent: 100 when a board is completed,
+    // even if the persisted participation count is below target. The rail
+    // <progress> must use that normalized percentage, otherwise a completed
+    // board labeled 已完成 can visually show e.g. 25% (1 / 4).
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) => {
+            if (candidate.id === "local_event_sequence") {
+              return { ...candidate, available: false, completed: true };
+            }
+            if (candidate.id === "narrow_request_basis") {
+              return { ...candidate, available: false };
+            }
+            return candidate;
+          },
+        ),
+      }),
+    });
+    renderWorkbench(state);
+
+    const completedEntry = screen.getByRole("button", {
+      name: "本機事件順序",
+    });
+    const completedBar = within(completedEntry).getByRole("progressbar");
+    // The completed Order board has a stale 1 / 4 participation draft, but
+    // analysisBoardProgress reports percent: 100. The bar must reflect 100.
+    expect(completedBar).toHaveAttribute("max", "100");
+    expect(completedBar).toHaveAttribute("value", "100");
+
+    // The active (non-completed) board's bar must still reflect its raw
+    // percentage, not be forced to 100.
+    const activeEntry = screen.getByRole("button", { name: "證據包整理" });
+    const activeBar = within(activeEntry).getByRole("progressbar");
+    expect(activeBar).toHaveAttribute("max", "100");
+    // 0 / 3 → 0 percent.
+    expect(activeBar).toHaveAttribute("value", "0");
+  });
+
   it("preserves the read-only state for an available rail entry", () => {
     const state = analysisState({
       scene: analysisSceneWith({

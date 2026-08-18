@@ -359,6 +359,88 @@ describe("AnalysisCard", () => {
     expect(onDrop).toHaveBeenCalledWith("order:end");
   });
 
+  it("re-hit-tests the drop target on pointer up instead of the cached move target", async () => {
+    // The workspace is scrollable, so its contents can move under a captured
+    // pointer without another pointermove event. The drop must reflect the
+    // target under the pointer at pointer-up time, not the last pointermove.
+    const onDrop = vi.fn();
+    const resolveDropTarget = vi.fn((x: number) =>
+      x < 30 ? "classify:group:first" : "classify:group:second",
+    );
+    render(AnalysisCard, {
+      card: card(),
+      dragEnabled: true,
+      resolveDropTarget,
+      onDrop,
+      onSelect: vi.fn(),
+    });
+    const button = screen.getByRole("button");
+
+    await fireEvent.pointerDown(button, {
+      pointerId: 11,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    // Move into the first target's region.
+    await fireEvent.pointerMove(button, {
+      pointerId: 11,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+    // Release over the second target's region without an intervening move.
+    await fireEvent.pointerUp(button, {
+      pointerId: 11,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 40,
+      clientY: 10,
+    });
+
+    expect(resolveDropTarget).toHaveBeenLastCalledWith(40, 10);
+    expect(onDrop).toHaveBeenCalledWith("classify:group:second");
+  });
+
+  it("drops into null when the pointer-up resolver finds no target", async () => {
+    const onDrop = vi.fn();
+    const resolveDropTarget = vi.fn((x: number) =>
+      x < 30 ? "classify:group:first" : null,
+    );
+    render(AnalysisCard, {
+      card: card(),
+      dragEnabled: true,
+      resolveDropTarget,
+      onDrop,
+      onSelect: vi.fn(),
+    });
+    const button = screen.getByRole("button");
+
+    await fireEvent.pointerDown(button, {
+      pointerId: 12,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(button, {
+      pointerId: 12,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(button, {
+      pointerId: 12,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 40,
+      clientY: 10,
+    });
+
+    expect(onDrop).toHaveBeenCalledWith(null);
+  });
+
   it("cancels a custom drag without emitting a drop", async () => {
     const onDragCancel = vi.fn();
     const onDrop = vi.fn();

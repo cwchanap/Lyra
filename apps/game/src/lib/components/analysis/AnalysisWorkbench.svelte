@@ -513,8 +513,8 @@
               <strong>{progress.current} / {progress.target}</strong>
             </span>
             <progress
-              max={Math.max(progress.target, 1)}
-              value={progress.current}
+              max={100}
+              value={progress.percent}
               aria-label={`${candidate.label}進度`}
               >{progress.current} / {progress.target}</progress
             >
