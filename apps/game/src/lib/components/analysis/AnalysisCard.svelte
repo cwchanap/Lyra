@@ -171,8 +171,17 @@
     );
     if (!currentDrag.moved) return;
 
+    // Re-hit-test on pointer-up: the workspace is scrollable, so its contents
+    // can move under a captured pointer without another pointermove event
+    // (e.g. wheel/trackpad scroll while holding the button). Committing the
+    // cached targetId from the last pointermove could drop into a group/gutter
+    // that is no longer under the pointer.
+    const dropTargetId = (resolveDropTarget ?? resolveDropTargetAt)(
+      event.clientX,
+      event.clientY,
+    );
     armClickSuppression();
-    onDrop?.(currentDrag.targetId);
+    onDrop?.(dropTargetId);
   }
 
   function handlePointerCancel(event: PointerEvent) {
