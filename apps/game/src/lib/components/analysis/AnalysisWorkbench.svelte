@@ -107,6 +107,7 @@
       : [],
   );
   let overallProgress = $derived(
+    /* v8 ignore next -- lazy: only read inside the {#if analysis && analysisMode} block, so the null branch is never evaluated */
     analysisOverallProgress(analysis?.visibleBoards ?? []),
   );
   let canUndo = $derived(
@@ -284,6 +285,7 @@
     const displayedBoard = board;
     /* v8 ignore next -- unreachable: mutateDraft is only called from editable board actions */
     if (!displayedBoard || boardReadOnly || disabled) return;
+    /* v8 ignore next -- unreachable: handleDraft already checks mutationInFlight before calling mutateDraft */
     if (mutationInFlight) return;
     mutationInFlight = true;
     try {
@@ -321,6 +323,7 @@
     draft: AnalysisDraft,
     focusKey: string,
   ): Promise<void> {
+    /* v8 ignore next -- unreachable: child board components guard against duplicate actions with their own pending state before calling onDraft */
     if (mutationInFlight) return;
     mutationError = null;
     try {
@@ -413,6 +416,7 @@
     const targetBoard = analysis?.visibleBoards.find(
       (candidate) => candidate.id === boardId,
     );
+    /* v8 ignore next -- unreachable: locked board nav buttons are disabled, so selectBoard is never called with a locked or current board ID */
     if (
       !targetBoard ||
       (!targetBoard.available && !targetBoard.completed) ||

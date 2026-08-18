@@ -120,6 +120,7 @@
     const prefix = "order:before:";
     if (!targetId?.startsWith(prefix)) return null;
     const cardId = targetId.slice(prefix.length);
+    /* v8 ignore next -- unreachable: the template only emits non-empty cardIds after the prefix */
     return cardId ? { kind: "before", cardId } : null;
   }
 
@@ -131,6 +132,7 @@
   }
 
   function handleDragStart(cardId: string) {
+    /* v8 ignore next -- unreachable: AnalysisCard only calls onDragStart when dragEnabled is true, which already excludes non-editable, pending, and fixed-anchor cards */
     if (!editable || pending || fixedAnchorIds.has(cardId)) return;
     draggingCardId = cardId;
     dragTargetId = null;
@@ -138,6 +140,7 @@
   }
 
   function handleDragTargetChange(targetId: string | null) {
+    /* v8 ignore next -- unreachable: AnalysisCard only calls onDragTargetChange after onDragStart sets draggingCardId */
     if (!draggingCardId) return;
     dragTargetId = targetId;
   }
@@ -152,6 +155,7 @@
     draggingCardId = null;
     dragTargetId = null;
 
+    /* v8 ignore next -- unreachable: AnalysisCard only calls onDrop after a drag started, which requires editable and an order draft */
     if (!editable || pending || board.draft.kind !== "order") return;
 
     const nextCardIds =

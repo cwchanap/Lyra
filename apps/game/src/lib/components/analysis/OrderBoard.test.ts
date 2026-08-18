@@ -492,4 +492,184 @@ describe("OrderBoard", () => {
     ).not.toBeInTheDocument();
     expect(onDraft).not.toHaveBeenCalled();
   });
+
+  it("appends a pending card when dropped on the end gutter", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:end");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1843"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 41);
+
+    await waitFor(() => {
+      expect(onDraft).toHaveBeenCalledTimes(1);
+    });
+    expect(onDraft).toHaveBeenCalledWith(
+      { kind: "order", cardIds: ["event_1841", "event_1842", "event_1843"] },
+      "card:event_1843",
+    );
+  });
+
+  it("marks the end gutter as the insertion preview while dragging", async () => {
+    const resolveDropTarget = vi.fn(() => "order:end");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      vi.fn(),
+      { resolveDropTarget },
+    );
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+
+    await fireEvent.pointerDown(card as HTMLElement, {
+      pointerId: 42,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card as HTMLElement, {
+      pointerId: 42,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+
+    const endGutter = container.querySelector(
+      '[data-analysis-drop-target="order:end"]',
+    );
+    expect(endGutter).toHaveClass("drop-target");
+    expect(endGutter).toHaveTextContent("放置在此");
+  });
+
+  it("announces an invalid drop target without emitting a draft", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:unknown");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 43);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "排序操作提示" }),
+      ).toHaveTextContent("無效");
+    });
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("announces a no-op drop without emitting a draft", async () => {
+    const onDraft = vi.fn();
+    // Drop event_1842 before event_1843 when it's already before event_1843.
+    const resolveDropTarget = vi.fn(() => "order:before:event_1843");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842", "event_1843"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+    await dragCard(card as HTMLElement, 44);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "排序操作提示" }),
+      ).toHaveTextContent("未變更");
+    });
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("cancels a drag without emitting a draft on pointercancel", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "order:end");
+    const { container } = renderBoard(
+      boardWith(["event_1841", "event_1842"]),
+      onDraft,
+      { resolveDropTarget },
+    );
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1842"]',
+    );
+    expect(card).not.toBeNull();
+
+    await fireEvent.pointerDown(card as HTMLElement, {
+      pointerId: 45,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card as HTMLElement, {
+      pointerId: 45,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerCancel(card as HTMLElement, {
+      pointerId: 45,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+
+    // The drag was cancelled; no draft emitted and no drop target highlighted.
+    expect(onDraft).not.toHaveBeenCalled();
+    expect(
+      container.querySelector(".insertion-gutter.drop-target"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the end gutter drop preview on an empty timeline during a drag", async () => {
+    const resolveDropTarget = vi.fn(() => "order:end");
+    const { container } = renderBoard(
+      boardWith([], { fixedAnchors: [] }),
+      vi.fn(),
+      { resolveDropTarget },
+    );
+
+    // The empty timeline renders an end gutter. Start dragging a pending card
+    // and verify the end gutter shows the drop preview.
+    const card = container.querySelector<HTMLElement>(
+      '[data-analysis-card-id="event_1841"]',
+    );
+    expect(card).not.toBeNull();
+
+    await fireEvent.pointerDown(card as HTMLElement, {
+      pointerId: 46,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card as HTMLElement, {
+      pointerId: 46,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+
+    const endGutter = container.querySelector(
+      '[data-analysis-drop-target="order:end"]',
+    );
+    expect(endGutter).toHaveClass("drop-target");
+    expect(endGutter).toHaveTextContent("放置在此");
+  });
 });
