@@ -1,25 +1,25 @@
 # Interrogation Thumbnail Capture Performance Design
 
 **Date:** 2026-08-17  
-**Status:** Proposed planning specification — revised after implementation-plan review
+**Status:** Proposed planning specification — revised against current `main`
 
 ## Goal
 
-Remove the visible hitch while advancing testimony and opening the Present evidence tray during interrogation, without weakening autosave durability and without starting the broader save-thumbnail product decision tracked by HPA-550.
+Remove the visible hitch while advancing testimony and opening the Present evidence tray during interrogation, without weakening autosave durability and without broadening this into the save-thumbnail product decision tracked by HPA-550.
 
 The fix stays intentionally narrow:
 
 - interrogation progress still autosaves through the existing coordinator;
 - transient interrogation commands stop requesting dynamic thumbnail capture;
-- dialogue capture is suppressed only while an `advance_dialogue` starts and finishes in the same interrogation scene;
-- entering or leaving an interrogation remains an ordinary thumbnail milestone;
+- `advance_dialogue` skips capture only when it starts and finishes in the same interrogation scene;
+- entering or leaving interrogation remains an ordinary thumbnail milestone;
 - ordinary non-interrogation dialogue keeps its current thumbnail behavior;
 - explicit manual saves still request a thumbnail;
 - the Present tray is excluded from any capture that overlaps it.
 
 ## Root cause
 
-The current command path couples every durable dialogue/interrogation mutation to a gameplay thumbnail request:
+The current command path couples durable dialogue/interrogation mutations to a gameplay thumbnail request:
 
 ```text
 interrogation command
@@ -33,11 +33,11 @@ interrogation command
   -> thumbnail is submitted to Tauri
 ```
 
-The capture promise is detached from `gameState.inFlight`, but the expensive DOM, SVG, image decode, font embedding, and Canvas work still executes in the WebView. Backend autosave debounce does not prevent that frontend work because the thumbnail request is issued before the debounced writer decides which revision wins.
+The capture promise is detached from `gameState.inFlight`, but DOM, SVG, image decode, font embedding, and Canvas work still execute in the WebView. Backend autosave debounce does not prevent that frontend work because the thumbnail request is issued before the debounced writer decides which revision wins.
 
-Opening Present is the worst case. `challenge_interrogation_line` commits a state where `InterrogationEvidenceTray` is mounted before capture starts. The tray contributes a full-viewport scrim, `backdrop-filter`, large shadows, all evidence/statement cards, and evidence images. A capture already in progress can also observe the live tray after it opens.
+Opening Present is the worst case. `challenge_interrogation_line` commits a state where `InterrogationEvidenceTray` is mounted before capture starts. The tray contributes a full-viewport scrim, `backdrop-filter`, large shadows, all evidence/statement cards, and evidence images. An older capture can also observe the live tray after it opens because the frontend identity guard discards a stale result after capture work; it does not cancel serialization already in progress.
 
-The performance bug is therefore not evidence-path resolution or interrogation engine complexity. It is eager dynamic thumbnail capture on high-frequency interrogation mutations, amplified by capturing a heavy transient overlay.
+The performance bug is therefore eager dynamic thumbnail capture on high-frequency interrogation mutations, amplified by capturing a heavy transient overlay.
 
 ## Reuse survey
 
@@ -46,13 +46,13 @@ The performance bug is therefore not evidence-path resolution or interrogation e
 | No-thumbnail autosave | Reuse `MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail`. |
 | Save scheduling | Reuse `notify_committed_without_thumbnail`; do not add a fourth persistence policy. |
 | Mutation/revision ownership | Keep `run_gameplay_mutation` as the single lock/revision/coordinator owner. |
-| Conditional dialogue policy | Add one selector-capable wrapper around the same centralized mutation path. |
-| Source-scene identity | Reuse `QueueToken.scene_id`; do not take a second engine snapshot merely to classify the pre-mutation scene. |
+| Conditional dialogue policy | Add one selector-capable wrapper around that same mutation path. |
+| Source-scene identity | Reuse `QueueToken.scene_id`; successful `advance_dialogue` already validates the full token against the live queue. |
 | Interrogation classification | Match `SceneView::Interrogation`, not `ModeView`; testimony itself runs in `ModeView::Dialogue`. |
-| Current HTTP adapter | Route through the same small `*_core` functions while HPA-559 has not removed it. |
-| Capture exclusion | Reuse `data-save-thumbnail-exclude`, already understood by the capture pipeline. |
-| Regression proof | Reuse existing command-boundary thumbnail assertions and packaged capture-call counters. |
-| Interrogation E2E journey | Reuse `unicodeSave` anchors and the ask/challenge/Present flow already exercised in `save-seed.e2e.ts`. |
+| Transient action proof | Add a core only where a behavioral command-boundary test needs it. |
+| Capture exclusion | Reuse `data-save-thumbnail-exclude`, already consumed by the capture pipeline. |
+| Regression proof | Reuse existing command-boundary ticket/activity assertions and packaged capture-call counters. |
+| Packaged journey | Reuse the Scene 4 ask/challenge/Present flow and existing manual-save helper. |
 
 ## Chosen architecture
 
@@ -77,7 +77,7 @@ fn run_gameplay_mutation_selecting_policy(
 ) -> Result<GameplayCommandResultView, GameError>
 ```
 
-The existing fixed-policy function delegates to this seam:
+The existing fixed-policy function delegates to that seam:
 
 ```rust
 fn run_gameplay_mutation(
@@ -89,15 +89,13 @@ fn run_gameplay_mutation(
 }
 ```
 
-This keeps one lock/revision/coordinator implementation and gives `advance_dialogue` the one capability it needs: choose persistence behavior from the committed state.
-
-Do not add another session lock, a new persistence owner, or a general command-policy framework.
+Do not add another session lock, persistence owner, or general command-policy framework.
 
 ### 2. `advance_dialogue` uses source scene identity plus committed scene identity
 
-Choosing only from the committed scene is insufficient. Draining the final line of one scene can load the next scene inside the same `advance_dialogue` call. A selector that merely checks whether the committed scene is interrogation would suppress the thumbnail on the transition *into* interrogation, contradicting the desired boundary.
+Choosing only from the committed scene is insufficient because draining the final line of one scene can load the next scene inside the same `advance_dialogue` call.
 
-The incoming `QueueToken` already carries the source `scene_id`, so reuse it.
+The incoming `QueueToken` already carries the source `scene_id`. Reuse it:
 
 ```rust
 fn dialogue_persistence_policy(
@@ -113,7 +111,7 @@ fn dialogue_persistence_policy(
 }
 ```
 
-`advance_dialogue_core` captures only the token scene ID before moving the token into the engine command:
+`advance_dialogue_core` captures only that ID before moving the token into the engine command:
 
 ```rust
 fn advance_dialogue_core(
@@ -129,7 +127,7 @@ fn advance_dialogue_core(
 }
 ```
 
-This preserves the intended matrix:
+Policy matrix:
 
 | Start | Committed result | Policy |
 | --- | --- | --- |
@@ -138,11 +136,9 @@ This preserves the intended matrix:
 | interrogation scene | same interrogation scene | autosave without thumbnail |
 | interrogation scene | non-interrogation scene | ordinary autosave + thumbnail — exit milestone |
 
-This is deliberately scene-based. `ModeView::Dialogue` cannot distinguish ordinary dialogue from interrogation testimony.
-
 ### 3. Five transient interrogation commands use the existing no-thumbnail policy
 
-The following commands represent high-frequency interrogation progress rather than useful preview milestones:
+These high-frequency commands use `AutosaveIfAdvancedWithoutThumbnail`:
 
 - `ask_interrogation_question`;
 - `challenge_interrogation_line`;
@@ -150,27 +146,24 @@ The following commands represent high-frequency interrogation progress rather th
 - `withdraw_interrogation`;
 - `resume_interrogation_testimony`.
 
-Each receives a small private `*_core` function using:
+Keep a private `challenge_interrogation_line_core` because its command-boundary behavior is directly tested. For ask/present/withdraw/resume, change the policy literal in the existing Tauri command body and pin those bodies with the existing source-contract test. Do not create four wrappers merely for symmetry.
 
-```rust
-MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
-```
+This leaves exactly two new command cores in the change:
 
-Both current command surfaces call the same core while the development HTTP adapter still exists. This avoids duplicating policy literals and avoids inventing a source parser for an adapter HPA-559 is already scheduled to delete.
-
-If HPA-559 lands first, implementation should simply omit the deleted adapter wiring. It must not restore the adapter for this fix.
+- `advance_dialogue_core`;
+- `challenge_interrogation_line_core`.
 
 ### 4. `complete_interrogation_phase` remains a thumbnail milestone
 
-Do not suppress capture for `complete_interrogation_phase`.
-
-Phase completion is a stable, low-frequency transition and is a reasonable moment for a new preview. It remains:
+Do not suppress capture for `complete_interrogation_phase`. It remains directly wired to:
 
 ```rust
 MutationPersistencePolicy::AutosaveIfAdvanced
 ```
 
-Scene entry and scene exit through `advance_dialogue` are also preserved as ordinary thumbnail milestones by the source+committed scene matrix.
+The existing source-contract classification is the guard for this exact command wiring. Do not add a behavioral test that supplies `AutosaveIfAdvanced` itself; that would only retest `run_gameplay_mutation`, not the command.
+
+Scene entry and scene exit through `advance_dialogue` remain ordinary thumbnail milestones via the source+committed scene matrix.
 
 ### 5. Exclude the Present tray from capture
 
@@ -183,29 +176,27 @@ Add the established marker to the outer scrim:
 >
 ```
 
-Do not unmount the tray during capture and do not remove the blur as part of this fix. The capture pipeline already knows how to omit marked subtrees.
+Do not unmount the tray during capture and do not remove the blur as part of this fix.
 
-This matters even after transient commands stop issuing new capture tickets:
+This still matters after transient commands stop issuing new tickets:
 
-- an older capture may still overlap the tray opening;
-- the player can open the Game Menu and manually save while Present remains mounted;
+- an older capture may overlap the tray opening;
+- the player can manually save while Present remains mounted;
 - manual saves should capture the underlying scene, not the temporary evidence picker.
 
 ### 6. Keep preview availability semantics unchanged
 
 No-thumbnail autosave intentionally writes a valid autosave whose preview can be unavailable. Do not copy a prior sidecar, synthesize a placeholder image, or add a new fallback protocol.
 
-This fix changes *when dynamic capture is requested*, not the save schema or save validity rules.
-
-HPA-550 remains the later product decision about whether dynamic thumbnails are worth retaining at all.
+This fix changes when dynamic capture is requested, not save validity or schema semantics. HPA-550 remains the later product decision about dynamic previews.
 
 ## Verification strategy
 
-### Command-boundary proof is primary
+### Rust command-boundary proof
 
-Source scanning is useful only as a wiring pin. The actual policy must be proved through the existing Rust command/mutation boundary where `thumbnail_capture` and coordinator activity are observable.
+Behavioral tests are primary where they can actually bind the command behavior.
 
-Widen the existing interrogation fixtures from `pub(super)` to `pub(crate)` so the `lib.rs` tests can reuse them:
+Widen only the existing fixtures required by `lib.rs` tests:
 
 - `two_line_question_scene`;
 - `empty_engine_with_interrogation_scene`.
@@ -213,19 +204,38 @@ Widen the existing interrogation fixtures from `pub(super)` to `pub(crate)` so t
 Required behavioral assertions:
 
 1. `advance_dialogue_core` inside an interrogation scene advances revision, returns `thumbnail_capture: None`, and leaves `ThumbnailActivityView::Idle`.
-2. `advance_dialogue_core` on the existing ordinary investigation fixture still returns a thumbnail capture request.
-3. The dialogue selector preserves entry and exit milestones: a source-scene mismatch with committed interrogation uses ordinary capture, and a committed non-interrogation scene uses ordinary capture.
+2. `advance_dialogue_core` on the existing ordinary fixture still returns a thumbnail request.
+3. `dialogue_persistence_policy` preserves entry and exit milestones.
 4. `challenge_interrogation_line_core` returns no thumbnail while advancing state.
-5. `complete_interrogation_phase` still returns a thumbnail request when it advances.
 
-Keep source-contract checks only for structural wiring:
+The existing generic mutation tests already prove that ordinary/no-thumbnail persistence policies issue or omit tickets. Do not duplicate them with a phase-completion test that injects the policy under test.
 
-- fixed no-thumbnail cores use the comma-terminated `MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,` literal;
-- `complete_interrogation_phase` remains in the ordinary fixed-policy list;
-- the five transient commands are removed from that ordinary list;
-- `advance_dialogue` is not classified as a fixed ordinary-policy command because it uses the selector seam.
+### Source-contract proof
 
-Avoid substring checks where `AutosaveIfAdvancedWithoutThumbnail` could accidentally satisfy `AutosaveIfAdvanced`.
+The current source scanner must first be made unambiguous:
+
+```rust
+let marker = format!("fn {name}(");
+```
+
+Using `fn {name}` is prefix-sensitive once names such as `advance_dialogue_core` exist.
+
+Then update both policy classifications together:
+
+- remove `advance_dialogue` from the fixed ordinary-policy list;
+- remove ask/challenge/present/withdraw/resume from the ordinary list;
+- keep `complete_interrogation_phase` in the ordinary list;
+- add ask/present/withdraw/resume and `challenge_interrogation_line_core` to the exact no-thumbnail pins;
+- pin `advance_dialogue` to `advance_dialogue_core`;
+- pin `advance_dialogue_core` to the selector seam.
+
+Ordinary-policy assertions must use an exact enough literal such as:
+
+```rust
+MutationPersistencePolicy::AutosaveIfAdvanced,
+```
+
+so `AutosaveIfAdvancedWithoutThumbnail` cannot satisfy them by substring.
 
 ### Component proof
 
@@ -233,19 +243,29 @@ Avoid substring checks where `AutosaveIfAdvancedWithoutThumbnail` could accident
 
 ### Packaged proof
 
-Use the existing capture-proof instrumentation; do not introduce a wall-clock performance threshold.
+Use the existing capture-proof instrumentation; do not introduce a wall-clock threshold.
 
-The packaged regression starts directly in the production interrogation scene rather than calling `jumpToProductionScene` from inside the capture-proof suite. The suite already documents that the latter can starve the embedded WebDriver bridge during scene-navigation settlement.
-
-Add one production anchor:
+Start directly in production `interrogation_scene_4` through `startCaptureProofAtScene`, using:
 
 ```ts
 interrogationEntryDialogue: "他從進來就一直捏著那罐東西",
 ```
 
-This is the first spoken line in `docs/stories_plan/chapter_1/interrogation_scene_4.md` and gives `startCaptureProofAtScene` a stable visible fragment.
+Before reading capture counters, wait for the existing capture-proof probe to mount:
 
-Then reuse the established journey:
+```ts
+await browser.waitUntil(
+  async () => elementExists(anchors.captureProof.probe),
+  {
+    timeout: 10000,
+    timeoutMsg: "packaged capture proof probe did not mount",
+  },
+);
+```
+
+This is required because `captureWrapperStatus()` intentionally defaults missing probe attributes to zero.
+
+Then reuse the Scene 4 flow:
 
 ```text
 startCaptureProofAtScene(interrogation_scene_4, interrogationEntryDialogue)
@@ -256,29 +276,36 @@ startCaptureProofAtScene(interrogation_scene_4, interrogationEntryDialogue)
   -> advance until Present mounts
 ```
 
-Take a capture-call baseline after the fresh scene is ready. Across the interrogation progress loop:
+Use the existing `autosaveSaveIds()` helper for the persistence baseline.
 
-- capture call count must not increase;
+Across that interrogation loop:
+
+- capture call count must stay flat;
+- capture available count must stay flat;
 - a fresh native autosave must still be written;
 - its thumbnail type must be `unavailable`;
-- its summary must still identify `interrogation_scene_4`;
+- its summary must identify `interrogation_scene_4`;
 - its snapshot scene must be `interrogation`;
 - its cross-exam snapshot must be `presenting`.
 
-The existing ordinary-dialogue capture proof remains unchanged and continues proving that dynamic capture still works outside the interrogation loop.
+A flat counter alone is not falsifiable when the baseline can legitimately be zero. Therefore add a same-document positive control immediately afterward:
 
-Manual acceptance also verifies that Save from Present succeeds and the saved image shows the underlying scene rather than the Present tray.
+1. wait for persistence to settle;
+2. call the existing `saveManualSlot(3, ...)` helper while Present remains mounted;
+3. assert the capture wrapper's `calls` increased by exactly one.
 
-## Source-contract cleanup
+Manual Save is a useful positive control because it deliberately requests a prepared thumbnail through the same `gameplayThumbnailCapture.capture` wrapper, and the existing save flow already preserves/focuses the Present tray while saving.
 
-The current source-contract tests contain two classifications that must change together:
+The regression therefore proves:
 
-1. The Analysis/no-thumbnail policy test currently separately pins `advance_dialogue` to ordinary capture. Replace that assertion with selector/core wiring plus behavioral tests.
-2. `every_ordinary_mutation_routes_through_the_central_autosave_policy` currently includes the five transient interrogation commands. Remove those five and keep `complete_interrogation_phase` in the ordinary list.
+```text
+probe mounted
+flat capture count through transient interrogation progress
+fresh exact no-thumbnail autosave
++1 capture call for explicit manual Save
+```
 
-Because `AutosaveIfAdvancedWithoutThumbnail` contains `AutosaveIfAdvanced` as a substring, ordinary-policy checks must match the comma-terminated policy literal or otherwise use an exact enough assertion to avoid false positives.
-
-No new `development_command_arm` brace-depth parser is added.
+It cannot pass solely because the probe was absent or because all capture instrumentation stayed at zero.
 
 ## Expected implementation surface
 
@@ -313,35 +340,32 @@ Do not add:
 - save schema migration;
 - a wall-clock CI performance threshold.
 
-Those are either unnecessary for the reported hitch or belong to HPA-550/later performance work.
-
 ## Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
-| Testimony is `ModeView::Dialogue` and accidentally keeps thumbnails | Classify from `SceneView`, and prove it at the command boundary. |
-| Last ordinary dialogue line entering interrogation loses its preview | Use `QueueToken.scene_id` plus committed interrogation scene ID; mismatch keeps ordinary capture. |
+| Testimony is `ModeView::Dialogue` and accidentally keeps thumbnails | Classify from `SceneView` and prove it at the command boundary. |
+| Last ordinary dialogue line entering interrogation loses its preview | Compare source `QueueToken.scene_id` with committed interrogation ID; mismatch keeps ordinary capture. |
 | Last interrogation line leaving the scene loses its milestone preview | Committed non-interrogation scene selects ordinary capture. |
-| Source tests falsely pass because one policy name contains the other | Use exact/comma-terminated literals and behavioral ticket assertions. |
-| HTTP/Tauri policy drifts before HPA-559 lands | Route both through the same small `*_core` functions. |
-| HPA-559 lands first | Skip deleted HTTP wiring; never restore the adapter. |
+| Prefix-sensitive source helper inspects the wrong function | Change `function_body` marker to `fn {name}(` before adding `_core` names. |
+| Source tests falsely pass because one policy name contains the other | Use comma-terminated policy literals and behavioral ticket assertions. |
 | An older/manual capture sees the Present tray | Mark the scrim with the existing capture-exclusion attribute. |
-| E2E becomes flaky from scene jumping or timing thresholds | Start directly at the production interrogation scene and assert capture-call counts/state, not milliseconds. |
+| Capture-count regression passes at `0 === 0` | Wait for probe mount, prove flat transient count, then prove exactly `+1` on manual Save in the same document. |
 | No-thumbnail autosave displays unavailable preview | Accept existing valid-save behavior; HPA-550 owns the product decision. |
 
 ## Acceptance criteria
 
-- Advancing dialogue while the source token and committed state belong to the same interrogation scene returns `thumbnailCapture: null` and still schedules ordinary autosave persistence.
+- Advancing dialogue while the source token and committed state belong to the same interrogation scene returns `thumbnailCapture: null` and still schedules autosave persistence.
 - Entering an interrogation via `advance_dialogue` retains ordinary thumbnail capture.
 - Leaving an interrogation via `advance_dialogue` retains ordinary thumbnail capture.
 - Ordinary dialogue outside interrogation retains dynamic thumbnail capture.
 - Starting a question, challenging, presenting, withdrawing, and resuming interrogation do not request thumbnails.
-- Completing an interrogation phase retains ordinary thumbnail autosave.
-- The Present tray is excluded from overlapping and manual save capture.
-- Rust command-boundary tests directly assert capture/no-capture behavior and coordinator activity.
-- Existing source-contract tests classify the transient and stable commands correctly without substring false positives.
-- No new HTTP-arm parser is introduced.
-- Packaged capture proof starts directly at `interrogation_scene_4`, reaches Present without increasing capture-call count, and observes a fresh unavailable-preview autosave whose snapshot is still in Present state.
-- Existing ordinary-dialogue capture proof continues to prove that dynamic capture works outside interrogation.
-- Manual Save from Present succeeds and captures the underlying scene.
+- Completing an interrogation phase remains directly wired to ordinary thumbnail autosave.
+- The Present tray is excluded from overlapping and manual-save capture.
+- Rust command-boundary tests directly assert the selector and challenge ticket behavior.
+- The source helper matches exact function declarations before `_core` names are added.
+- Existing source-contract tests classify transient and stable commands correctly without policy substring false positives.
+- Packaged capture proof waits for its probe, starts directly at `interrogation_scene_4`, reaches Present with a flat capture-call count, and observes a fresh unavailable-preview Present-state autosave.
+- The same packaged document then performs one manual Save and observes capture calls increase by exactly one.
+- Existing ordinary-dialogue capture proof remains unchanged and continues to pass.
 - No new persistence/capture abstraction, schema change, dependency, or HPA-550 product decision is introduced.
