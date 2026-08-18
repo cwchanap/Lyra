@@ -284,7 +284,12 @@ jobs:
     needs: e2e-plan
     if: ${{ needs.e2e-plan.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ matrix.timeoutMinutes }}
+    # Job-level safety net: setup (system deps, Rust toolchain, cache, build)
+    # alone can take 5-8+ minutes on a cold/slow runner, so the per-chain
+    # timeoutMinutes budget is applied to the test step only (see "Run selected
+    # Tauri E2E chain"). This fixed ceiling prevents a runaway job from
+    # hanging CI without eating into the test execution budget.
+    timeout-minutes: 30
     permissions:
       contents: read
     strategy:
@@ -362,6 +367,7 @@ jobs:
             -- node apps/game/scripts/build-e2e.mjs
 
       - name: Run selected Tauri E2E chain
+        timeout-minutes: ${{ matrix.timeoutMinutes }}
         env:
           CHAIN_ID: ${{ matrix.chainId }}
           SUITE_FILE: ${{ matrix.suiteFile }}

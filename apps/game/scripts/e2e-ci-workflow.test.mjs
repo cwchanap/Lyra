@@ -103,7 +103,7 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
     execution.strategy.matrix,
     "${{ fromJSON(needs.e2e-plan.outputs.matrix) }}",
   );
-  assert.equal(execution["timeout-minutes"], "${{ matrix.timeoutMinutes }}");
+  assert.equal(execution["timeout-minutes"], 30);
   assert.equal(execution.name, "Tauri E2E execution (${{ matrix.chainId }})");
 
   const initialize = namedStep(execution, "Initialize chain metrics");
@@ -127,13 +127,17 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
   assert.equal(build.env.CHAIN_ID, "${{ matrix.chainId }}");
   assert.match(build.run, /--stage build/);
   assert.match(build.run, /-- node apps\/game\/scripts\/build-e2e\.mjs/);
-  const run = namedStep(execution, "Run selected Tauri E2E chain").run;
-  assert.match(run, /e2e-ci-metrics\.mjs run/);
-  assert.match(run, /--stage test/);
-  assert.match(run, /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$SUITE_FILE"/);
-  assert.match(run, /--chain-id "\$CHAIN_ID"/);
-  assert.match(run, /--plan-file "\$RUNNER_TEMP\/e2e-plan\/e2e-plan\.json"/);
-  assert.match(run, /--attempts 2/);
+  const run = namedStep(execution, "Run selected Tauri E2E chain");
+  assert.equal(run["timeout-minutes"], "${{ matrix.timeoutMinutes }}");
+  assert.match(run.run, /e2e-ci-metrics\.mjs run/);
+  assert.match(run.run, /--stage test/);
+  assert.match(run.run, /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$SUITE_FILE"/);
+  assert.match(run.run, /--chain-id "\$CHAIN_ID"/);
+  assert.match(
+    run.run,
+    /--plan-file "\$RUNNER_TEMP\/e2e-plan\/e2e-plan\.json"/,
+  );
+  assert.match(run.run, /--attempts 2/);
 
   assert.equal(
     namedStep(execution, "Run guarded post-cleanup").if,
