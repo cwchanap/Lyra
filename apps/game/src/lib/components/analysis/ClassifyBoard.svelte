@@ -179,22 +179,18 @@
 </script>
 
 <section class="classify-board" aria-label="分類板">
-  {#if liveMessage}
-    <p
-      class="sr-only"
-      role="status"
-      aria-label="分類操作提示"
-      aria-live="polite"
-    >
-      {liveMessage}
-    </p>
-  {/if}
+  <!-- Permanently mounted so screen readers observe the live region before
+       the first message is set; conditional regions miss the first
+       announcement. -->
+  <p class="sr-only" role="status" aria-label="分類操作提示" aria-live="polite">
+    {liveMessage}
+  </p>
   <div class="board-layout">
     <section
       class="card-pool"
       class:drop-target={dragTargetId === "classify:unassigned"}
       aria-label="未分類卡片"
-      data-analysis-drop-target="classify:unassigned"
+      data-analysis-drop-target={editable ? "classify:unassigned" : undefined}
     >
       <h3>待分類</h3>
       {#if unassignedCards.length === 0}

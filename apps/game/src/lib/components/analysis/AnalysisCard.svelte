@@ -39,7 +39,6 @@
     onSelect,
     focusKey = null,
     dragEnabled = false,
-    settled = false,
     resolveDropTarget,
     onDragStart,
     onDragTargetChange,
@@ -56,7 +55,6 @@
     onSelect?: () => void;
     focusKey?: string | null;
     dragEnabled?: boolean;
-    settled?: boolean;
     resolveDropTarget?: (x: number, y: number) => string | null;
     onDragStart?: () => void;
     onDragTargetChange?: (targetId: string | null) => void;
@@ -71,23 +69,16 @@
 
   let dragState: PointerDragState | null = null;
   let suppressNextPhysicalClick = false;
-  let clickSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // No timer: suppression stays armed until the next gesture starts
+  // (handlePointerDown) or the suppressed click is consumed
+  // (handleSelectClick).
   function clearClickSuppression() {
-    if (clickSuppressionTimer !== null) {
-      clearTimeout(clickSuppressionTimer);
-      clickSuppressionTimer = null;
-    }
     suppressNextPhysicalClick = false;
   }
 
   function armClickSuppression() {
-    clearClickSuppression();
     suppressNextPhysicalClick = true;
-    clickSuppressionTimer = setTimeout(() => {
-      suppressNextPhysicalClick = false;
-      clickSuppressionTimer = null;
-    }, 0);
   }
 
   function setPointerCaptureBestEffort(
@@ -115,7 +106,6 @@
   function handlePointerDown(event: PointerEvent) {
     if (
       !dragEnabled ||
-      settled ||
       disabled ||
       readOnly ||
       unavailable ||

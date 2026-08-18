@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
@@ -442,9 +443,13 @@ describe("AnalysisWorkbench", () => {
     });
     renderWorkbench(state);
 
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "選擇的線索不足以推論。",
-    );
+    // The board live region is always mounted now, so scope to the footer
+    // that owns the submit feedback status.
+    expect(
+      within(screen.getByRole("contentinfo", { name: "分析操作" })).getByRole(
+        "status",
+      ),
+    ).toHaveTextContent("選擇的線索不足以推論。");
   });
 
   it("renders a loading state when the display board is missing", () => {
@@ -645,7 +650,11 @@ describe("AnalysisWorkbench", () => {
       .click(screen.getByRole("button", { name: "比對推論" }));
 
     await waitFor(() => {
-      expect(screen.getByRole("status")).toHaveFocus();
+      expect(
+        within(screen.getByRole("contentinfo", { name: "分析操作" })).getByRole(
+          "status",
+        ),
+      ).toHaveFocus();
     });
   });
 
@@ -1120,9 +1129,11 @@ describe("AnalysisWorkbench", () => {
     // The stale error alert must be gone; only the new feedback remains.
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "這組資料仍有矛盾。",
-      );
+      expect(
+        within(screen.getByRole("contentinfo", { name: "分析操作" })).getByRole(
+          "status",
+        ),
+      ).toHaveTextContent("這組資料仍有矛盾。");
     });
   });
 
