@@ -113,11 +113,6 @@ function wrapped(
 async function loadGameClient(
   initialState: GameStateView | null = state("initial"),
 ): Promise<GameClientModule> {
-  Object.defineProperty(window, "__TAURI_INTERNALS__", {
-    configurable: true,
-    value: {},
-  });
-
   const client = await import("./game-client.svelte");
   client.gameState.value = initialState;
   client.gameState.error = null;
@@ -147,11 +142,26 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   vi.unstubAllEnvs();
 });
 
 describe("game client audio events", () => {
+  it("dispatches gameplay commands through Tauri invoke without a runtime global", async () => {
+    const previous = state("previous");
+    const next = state("next");
+    const client = await loadGameClient(previous);
+
+    expect("__TAURI_INTERNALS__" in window).toBe(false);
+    mocks.invoke.mockResolvedValueOnce(next);
+
+    await client.inspectHotspot("receipt");
+
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("inspect_hotspot", {
+      hotspotId: "receipt",
+    });
+    expect(client.gameState.value?.scene.id).toBe(next.scene.id);
+  });
+
   it("accepts an applied question resolver without candidate resolver ids", async () => {
     const resolvedQuestion: QuestionView = {
       id: "who_sent_the_message",
@@ -547,6 +557,7 @@ describe("game client persistence response boundary", () => {
     mocks.invoke.mockResolvedValueOnce(index);
 
     await expect(client.listScenes()).resolves.toEqual(index);
+    expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("list_scenes");
   });
 
   it("renders an actionable error message without destroying its typed token", async () => {
