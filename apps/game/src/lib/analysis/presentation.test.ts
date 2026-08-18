@@ -157,6 +157,80 @@ describe("Analysis presentation helpers", () => {
         }).percent,
       ).toBe(100);
     });
+
+    it("reports zero progress when no cards are available", () => {
+      const board = analysisScene.visibleBoards.find(
+        (candidate) => candidate.kind === "classify",
+      );
+      if (!board || board.kind !== "classify") throw new Error("missing board");
+
+      expect(
+        analysisBoardProgress({
+          ...board,
+          cards: board.cards.map((card) => ({ ...card, available: false })),
+          draft: { kind: "classify", groupByCard: {} },
+        }),
+      ).toEqual({ current: 0, target: 0, percent: 0 });
+    });
+
+    it("falls back to an empty groupByCard for a stale non-classify draft", () => {
+      const board = analysisScene.visibleBoards.find(
+        (candidate) => candidate.kind === "classify",
+      );
+      if (!board || board.kind !== "classify") throw new Error("missing board");
+
+      expect(
+        analysisBoardProgress({
+          ...board,
+          draft: { kind: "order", cardIds: [] },
+        }),
+      ).toEqual({ current: 0, target: 3, percent: 0 });
+    });
+
+    it("falls back to an empty cardIds list for a stale non-order draft", () => {
+      const board = analysisScene.visibleBoards.find(
+        (candidate) => candidate.kind === "order",
+      );
+      if (!board || board.kind !== "order") throw new Error("missing board");
+
+      expect(
+        analysisBoardProgress({
+          ...board,
+          draft: { kind: "classify", groupByCard: {} },
+        }),
+      ).toEqual({ current: 1, target: 4, percent: 25 });
+    });
+
+    it("falls back to an empty materialized list when the order board is blocked", () => {
+      const board = analysisScene.visibleBoards.find(
+        (candidate) => candidate.kind === "order",
+      );
+      if (!board || board.kind !== "order") throw new Error("missing board");
+
+      expect(
+        analysisBoardProgress({
+          ...board,
+          fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+          draft: { kind: "order", cardIds: ["event_1841", "event_1842"] },
+        }),
+      ).toEqual({ current: 0, target: 4, percent: 0 });
+    });
+
+    it("falls back to an empty selectedCardIds list for a stale non-threshold draft", () => {
+      const board = analysisScene.visibleBoards.find(
+        (candidate) => candidate.kind === "threshold",
+      );
+      if (!board || board.kind !== "threshold") {
+        throw new Error("missing board");
+      }
+
+      expect(
+        analysisBoardProgress({
+          ...board,
+          draft: { kind: "classify", groupByCard: {} },
+        }),
+      ).toEqual({ current: 0, target: 2, percent: 0 });
+    });
   });
 
   describe("analysisOverallProgress", () => {

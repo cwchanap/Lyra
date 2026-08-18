@@ -184,22 +184,26 @@ export function placeOrderCardBefore(
     return null;
   }
 
-  const materialized = materializePrefixAnchors(board, cardIds);
-  if (!materialized) return null;
+  // orderBoardBlockReason(board) already returned null above, so
+  // materializePrefixAnchors is guaranteed to return a non-null list.
+  const materialized = materializePrefixAnchors(board, cardIds) as string[];
 
   const sourceIndex = materialized.indexOf(cardId);
   if (beforeCardId !== null) {
     const target = cardsById.get(beforeCardId);
     const targetIndex = materialized.indexOf(beforeCardId);
+    // targetIndex < 0 implies targetIndex < anchors.length (≥ 0), so the
+    // length check below also rejects unknown targets — no separate
+    // targetIndex < 0 guard is needed.
     if (
       !target ||
       target.available !== true ||
       fixedIds.has(beforeCardId) ||
+      targetIndex < 0 ||
       targetIndex < anchors.length
     ) {
       return null;
     }
-    if (targetIndex < 0) return null;
     if (sourceIndex >= 0 && beforeCardId === cardId) return materialized;
   }
 
@@ -207,7 +211,6 @@ export function placeOrderCardBefore(
     const next = [...materialized];
     const insertionIndex =
       beforeCardId === null ? next.length : next.indexOf(beforeCardId);
-    if (insertionIndex < 0) return null;
     next.splice(insertionIndex, 0, cardId);
     return next;
   }
@@ -215,7 +218,6 @@ export function placeOrderCardBefore(
   const next = materialized.filter((candidate) => candidate !== cardId);
   const insertionIndex =
     beforeCardId === null ? next.length : next.indexOf(beforeCardId);
-  if (insertionIndex < 0) return null;
   next.splice(insertionIndex, 0, cardId);
   return next;
 }

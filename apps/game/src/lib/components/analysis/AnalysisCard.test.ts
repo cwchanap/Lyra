@@ -465,4 +465,80 @@ describe("AnalysisCard", () => {
       "card:card_a",
     );
   });
+
+  it("uses the default DOM resolver to find a drop target when no resolver prop is passed", async () => {
+    const onDragTargetChange = vi.fn();
+    const onDrop = vi.fn();
+    render(AnalysisCard, {
+      card: card(),
+      dragEnabled: true,
+      onDragTargetChange,
+      onDrop,
+      onSelect: vi.fn(),
+    });
+    const button = screen.getByRole("button");
+
+    // jsdom does not implement elementsFromPoint; install a stub that
+    // returns a synthetic drop target so the default resolver exercises its
+    // full lookup loop (closest + dataset read).
+    const dropTarget = document.createElement("div");
+    dropTarget.setAttribute("data-analysis-drop-target", "order:end");
+    const original = document.elementsFromPoint;
+    document.elementsFromPoint = () => [dropTarget];
+
+    try {
+      await fireEvent.pointerDown(button, {
+        pointerId: 9,
+        pointerType: "mouse",
+        button: 0,
+        clientX: 10,
+        clientY: 10,
+      });
+      await fireEvent.pointerMove(button, {
+        pointerId: 9,
+        pointerType: "mouse",
+        clientX: 20,
+        clientY: 10,
+      });
+      await fireEvent.pointerUp(button, {
+        pointerId: 9,
+        pointerType: "mouse",
+        button: 0,
+        clientX: 20,
+        clientY: 10,
+      });
+
+      expect(onDragTargetChange).toHaveBeenCalledWith("order:end");
+      expect(onDrop).toHaveBeenCalledWith("order:end");
+    } finally {
+      if (original) {
+        document.elementsFromPoint = original;
+      } else {
+        delete (document as Partial<Document>).elementsFromPoint;
+      }
+    }
+  });
+
+  it("ignores pointerCancel when no drag is active", async () => {
+    const onDragCancel = vi.fn();
+    render(AnalysisCard, {
+      card: card(),
+      dragEnabled: true,
+      onDragCancel,
+      onSelect: vi.fn(),
+    });
+    const button = screen.getByRole("button");
+
+    // Fire pointerCancel without a prior pointerDown — no drag is active,
+    // so onDragCancel must not be called.
+    await fireEvent.pointerCancel(button, {
+      pointerId: 10,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+
+    expect(onDragCancel).not.toHaveBeenCalled();
+  });
 });

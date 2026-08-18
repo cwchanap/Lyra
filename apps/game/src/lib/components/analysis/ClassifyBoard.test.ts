@@ -510,4 +510,74 @@ describe("ClassifyBoard", () => {
     ).toBeDisabled();
     expect(onDraft).not.toHaveBeenCalled();
   });
+
+  it("announces an invalid placement when a card is dropped on an unknown group", async () => {
+    const onDraft = vi.fn();
+    // The target decodes to a group target, but the groupId does not match
+    // any authored group, so applyClassifyPlacement returns null.
+    const resolveDropTarget = vi.fn(() => "classify:group:nonexistent_group");
+    renderBoard(boardWith(), onDraft, { resolveDropTarget });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 25,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 25,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerUp(card, {
+      pointerId: 25,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 20,
+      clientY: 10,
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("status", { name: "分類操作提示" }),
+      ).toHaveTextContent("無效");
+    });
+    expect(onDraft).not.toHaveBeenCalled();
+  });
+
+  it("cancels a drag without emitting a draft on pointercancel", async () => {
+    const onDraft = vi.fn();
+    const resolveDropTarget = vi.fn(() => "classify:group:miyake_small_lies");
+    renderBoard(boardWith(), onDraft, { resolveDropTarget });
+
+    const card = screen.getByRole("button", {
+      name: /選取：\s*三宅母親通話紀錄/,
+    });
+    await fireEvent.pointerDown(card, {
+      pointerId: 26,
+      pointerType: "mouse",
+      button: 0,
+      clientX: 10,
+      clientY: 10,
+    });
+    await fireEvent.pointerMove(card, {
+      pointerId: 26,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+    await fireEvent.pointerCancel(card, {
+      pointerId: 26,
+      pointerType: "mouse",
+      clientX: 20,
+      clientY: 10,
+    });
+
+    expect(onDraft).not.toHaveBeenCalled();
+  });
 });

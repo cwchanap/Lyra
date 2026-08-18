@@ -75,6 +75,7 @@
   }
 
   function handleDragStart(cardId: string) {
+    /* v8 ignore next -- unreachable: AnalysisCard only calls onDragStart when dragEnabled is true, which already excludes non-editable and pending states */
     if (!editable || pending) return;
     draggingCardId = cardId;
     dragTargetId = null;
@@ -82,6 +83,7 @@
   }
 
   function handleDragTargetChange(targetId: string | null) {
+    /* v8 ignore next -- unreachable: AnalysisCard only calls onDragTargetChange after onDragStart sets draggingCardId */
     if (!draggingCardId) return;
     dragTargetId = targetId;
   }
@@ -96,6 +98,7 @@
     target: ClassifyPlacementTarget | null,
     onSuccess?: () => void,
   ) {
+    /* v8 ignore next -- unreachable: dropCard is only called from AnalysisCard onDrop which requires editable; assign/remove buttons are only rendered when editable */
     if (!editable || pending || board.draft.kind !== "classify") return;
 
     if (target === null) {
@@ -136,6 +139,7 @@
   async function assignCard(groupId: string) {
     /* v8 ignore next -- unreachable: assign button only rendered when editable */
     if (!editable || pending) return;
+    /* v8 ignore next -- unreachable: editable already requires draft.kind === "classify" */
     if (board.draft.kind !== "classify") {
       return;
     }

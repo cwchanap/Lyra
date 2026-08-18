@@ -428,5 +428,50 @@ describe("order draft algebra", () => {
         ).toBeNull();
       },
     );
+
+    it("returns null when the board has unsupported anchors", () => {
+      const blockedBoard = boardWith({
+        fixedAnchors: [{ cardId: "event_1843", position: 3 }],
+      });
+      expect(
+        placeOrderCardBefore(
+          blockedBoard,
+          ["event_1841"],
+          "event_1842",
+          "event_1843",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when beforeCardId is a valid movable card not in the materialized draft", () => {
+      // event_1843 is a valid available movable card but is not in the
+      // materialized draft, so targetIndex < 0 rejects the placement.
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1842"],
+          "event_1842",
+          "event_1843",
+        ),
+      ).toBeNull();
+    });
+
+    it("returns the unchanged materialized draft when placing a card before itself", () => {
+      const draft = ["event_1841", "event_1842", "event_1843"];
+      expect(
+        placeOrderCardBefore(fixtureBoard, draft, "event_1842", "event_1842"),
+      ).toEqual(draft);
+    });
+
+    it("appends an existing timeline card to the end when beforeCardId is null", () => {
+      expect(
+        placeOrderCardBefore(
+          fixtureBoard,
+          ["event_1841", "event_1842", "event_1843"],
+          "event_1842",
+          null,
+        ),
+      ).toEqual(["event_1841", "event_1843", "event_1842"]);
+    });
   });
 });

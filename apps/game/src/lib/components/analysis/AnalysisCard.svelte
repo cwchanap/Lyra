@@ -13,6 +13,7 @@
   const pointerDragThresholdPx = 4;
 
   function resolveDropTargetAt(x: number, y: number): string | null {
+    /* v8 ignore next -- unreachable: SPA mode guarantees document is defined in Tauri and jsdom */
     if (typeof document === "undefined") return null;
 
     const elements = document.elementsFromPoint?.(x, y) ?? [];
@@ -126,6 +127,7 @@
 
     clearClickSuppression();
     const captureElement =
+      /* v8 ignore next -- unreachable: the pointer handler is attached to an HTMLElement, so currentTarget is always an HTMLElement */
       event.currentTarget instanceof HTMLElement ? event.currentTarget : null;
     dragState = {
       pointerId: event.pointerId,
