@@ -2,29 +2,30 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** remove Lyra's developer-only browser HTTP game-engine transport so gameplay and persistence commands have one production path through Tauri IPC.
+**Goal:** remove Lyra's browser HTTP game-engine transport so gameplay and persistence commands have one production path through Tauri IPC, while deleting the now-unneeded Rust server/string-router API and retaining core behavior coverage.
 
-**Architecture:** keep the existing gameplay and persistence client ownership, delete their environment-based transport branches, and call `@tauri-apps/api/core.invoke` directly. Delete the standalone Rust HTTP server and only the development-dispatch surface that exists for it; preserve shared Tauri command cores and split mixed parity tests so their command-core assertions survive.
+**Architecture:** keep the existing gameplay and persistence client ownership and call `@tauri-apps/api/core.invoke` directly. Delete the standalone HTTP example plus the unconditionally compiled library surface that exists for it; preserve existing Tauri command cores, binary thumbnail behavior, save semantics, and packaged E2E paths.
 
-**Tech Stack:** Svelte 5 / TypeScript, Vitest + jsdom, Tauri 2 IPC, Rust, Cargo, existing WebdriverIO packaged E2E.
+**Tech Stack:** Svelte 5 / TypeScript, Vitest + jsdom, Tauri 2 IPC, Rust/Cargo, existing WebdriverIO packaged E2E.
 
 **Spec:** `docs/superpowers/specs/2026-08-17-hpa-559-remove-dev-http-transport-design.md`
 
 ## Global Constraints
 
-- Production command flow after this work is exactly `Svelte client → Tauri invoke → Rust application facade`.
+- Final command flow is exactly `Svelte client → Tauri invoke → Rust application facade`.
 - Do not introduce `GameTransport`, `invokeGameCommand`, an adapter registry, local RPC, a mock HTTP server, or another one-implementation abstraction.
 - Keep gameplay, save/load, acquisition, thumbnail, Analysis, interrogation, Case File, audio, and exit semantics unchanged.
-- Keep `invokePersistenceCommand()` / `asGameError()` and the current three-argument binary thumbnail Tauri invocation.
+- Keep `invokePersistenceCommand()` / `asGameError()` and the existing three-argument binary thumbnail Tauri invocation.
 - Do not make the HPA-550 thumbnail product decision.
 - Do not perform HPA-521 save-coordinator simplification or HPA-560 E2E-policy restructuring.
-- Do not preserve the browser transport for backward compatibility; Lyra has no released browser consumer.
-- Do not rewrite historical `docs/superpowers/**` files just because they mention the old fallback.
-- Keep `apps/game/vite.config.ts` HMR port `1421`; it is not the command server.
-- Delete HTTP parser/CORS/server/string-router tests only when they have no surviving core assertion.
-- Split mixed Rust HTTP-parity tests before deletion so command-core coverage is retained.
-- Reuse the existing packaged smoke and save-core suites; do not add an HPA-559 E2E suite.
-- Do not run or claim the full page/frontend suite between Tasks 1 and 2/3 while page fixtures still target the old HTTP path; use each task's focused tests until Task 3 completes.
+- Keep `apps/game/vite.config.ts` HMR port `1421`; it is unrelated to the retired command server.
+- Do not rewrite historical `docs/superpowers/**` records.
+- Split mixed HTTP-parity tests before deletion so direct command-core coverage survives.
+- Keep the existing Tauri registration guard `task_11_commands_are_registered_once_with_the_existing_application_surface`; do not replace it with another name list.
+- Delete public Rust visibility that existed only for `dev_engine_server` when the usage audit proves it is no longer needed.
+- Run both default-feature and `--all-features` Rust tests after deleting the unconditionally compiled development dispatch family.
+- Accept that manually opening the Vite URL in a plain browser may lose the friendly `Tauri runtime unavailable` message; do not add a transport shim to preserve it.
+- Reuse the existing packaged smoke and save-core suites; do not add an HPA-559-specific E2E suite.
 
 ---
 
@@ -34,21 +35,21 @@
 
 | File | HPA-559 action |
 |---|---|
-| `apps/game/src/lib/state/game-client.svelte.ts` | Remove both gameplay HTTP branches: `runCommand()` and `listScenes()`. |
-| `apps/game/src/lib/persistence/commands.ts` | Remove JSON and binary HTTP paths; keep typed Tauri wrappers. |
+| `apps/game/src/lib/state/game-client.svelte.ts` | Remove both `runCommand()` and `listScenes()` HTTP branches. |
+| `apps/game/src/lib/persistence/commands.ts` | Remove JSON/binary HTTP paths; keep typed Tauri wrappers. |
 | `apps/game/src-tauri/examples/dev_engine_server.rs` | Delete. |
 | `apps/game/src-tauri/Cargo.toml` | Delete `dev-engine-server` feature. |
-| `apps/game/src-tauri/src/lib.rs` | Delete development-server dispatch surface; retain Tauri cores and split mixed tests. |
-| `apps/game/src-tauri/src/game/error.rs` | Delete `request_origin_forbidden` and its constructor-code test row after server deletion. |
-| `codecov.yml` | Keep `lib.rs` ignore; rewrite stale comment mentioning `dev_engine_server`. |
+| `apps/game/src-tauri/src/lib.rs` | Delete development response/router API; preserve Tauri cores; narrow example-only public API. |
+| `apps/game/src-tauri/src/game/error.rs` | Delete `request_origin_forbidden` and its constructor-code row. |
+| `codecov.yml` | Keep `lib.rs` ignore; rewrite stale server-coverage comment only. |
 
 ### Frontend tests
 
 | File | HPA-559 action |
 |---|---|
 | `apps/game/src/lib/state/game-client-source.test.ts` | Mock Tauri invoke directly without fake `__TAURI_INTERNALS__`; cover `listScenes()`. |
-| `apps/game/src/lib/persistence/commands.test.ts` | Import normally and assert direct Tauri error/binary shapes. |
-| `apps/game/src/routes/page.test.ts` | Replace fetch/URL command fixtures with existing `mocks.invoke`. |
+| `apps/game/src/lib/persistence/commands.test.ts` | Import normally; retain structured error and binary IPC assertions. |
+| `apps/game/src/routes/page.test.ts` | Convert existing fetch/URL fixtures to `mocks.invoke`; delete fetch scaffolding last. |
 
 ### Explicit non-change
 
@@ -58,17 +59,15 @@
 
 ## Execution Order
 
-The sequence is intentional:
-
 ```text
-Task 1 — gameplay client + focused tests
-Task 2 — persistence client + focused tests
-Task 3 — page tests migrate from fetch to invoke
-Task 4 — Rust server/dispatch deletion + core-test preservation
+Task 1 — gameplay + scene-index client
+Task 2 — persistence + thumbnail client
+Task 3 — page-test fixture migration, convert sites first / delete fetch last
+Task 4 — Rust server/string-router/public-API deletion with test preservation
 Task 5 — live config cleanup + full verification
 ```
 
-`page.test.ts` currently drives both gameplay and persistence through the browser fallback. If Task 3 is attempted before Task 2, persistence calls still use `fetch()` after the page fetch fixtures are removed. Do not bridge that mistake by restoring `__TAURI_INTERNALS__`, a fetch shim, or another transport helper.
+Do not run or claim the full frontend suite until Task 3 is complete. Tasks 1 and 2 use focused tests only.
 
 ---
 
@@ -80,11 +79,11 @@ Task 5 — live config cleanup + full verification
 
 **Interfaces:**
 - Consumes: `invoke<T>(command, args)` from `@tauri-apps/api/core`.
-- Produces: unchanged public gameplay client API and scene-navigation error behavior.
+- Produces: unchanged public gameplay client API and unchanged panel-local `listScenes()` error behavior.
 
-- [ ] **Step 1: Remove fake Tauri-global setup from the focused client test loader**
+- [ ] **Step 1: Remove fake Tauri-global setup from the focused test loader**
 
-Change `loadGameClient()` in `game-client-source.test.ts` to import the module without defining `window.__TAURI_INTERNALS__`:
+Change `loadGameClient()` to:
 
 ```ts
 async function loadGameClient(
@@ -99,9 +98,9 @@ async function loadGameClient(
 }
 ```
 
-Remove the `afterEach` `Reflect.deleteProperty(window, "__TAURI_INTERNALS__")` once no test creates the property.
+Delete the `afterEach` cleanup of `window.__TAURI_INTERNALS__` when nothing else creates it.
 
-- [ ] **Step 2: Add a failing no-global gameplay regression**
+- [ ] **Step 2: Add a no-global gameplay regression**
 
 Add:
 
@@ -123,9 +122,9 @@ it("dispatches gameplay commands through Tauri invoke without a runtime global",
 });
 ```
 
-- [ ] **Step 3: Strengthen the existing `listScenes()` test to assert the Tauri command**
+- [ ] **Step 3: Strengthen the existing `listScenes()` test**
 
-The file already has a `listScenes()` fixture. Keep that fixture and add the exact transport assertion:
+Keep its existing index fixture and add:
 
 ```ts
 await expect(client.listScenes()).resolves.toEqual(index);
@@ -134,17 +133,17 @@ expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("list_scenes");
 
 The test must run without `__TAURI_INTERNALS__`.
 
-- [ ] **Step 4: Run RED**
+- [ ] **Step 4: Run RED and interpret the failure correctly**
 
 ```bash
 bun run --cwd apps/game test src/lib/state/game-client-source.test.ts
 ```
 
-Expected on the pre-change source: the no-global tests select `httpInvoke()` instead of `mocks.invoke` and fail.
+Expected on the pre-change source: removing the runtime global makes the client select `httpInvoke()`. Because this file does not install a fetch command stub, the run may surface a connection/fetch failure that `runCommand()` normalizes into `gameState.error`, rather than a clean `mocks.invoke` assertion diff. That is the expected RED signal; do not add a temporary HTTP harness.
 
-- [ ] **Step 5: Delete gameplay HTTP transport declarations and helper**
+- [ ] **Step 5: Delete gameplay HTTP declarations and helper**
 
-Delete from `game-client.svelte.ts`:
+Delete:
 
 ```ts
 const isTauri =
@@ -154,47 +153,50 @@ const DEV_HTTP_BASE = "http://127.0.0.1:1421";
 
 Delete the complete `httpInvoke<T>()` function.
 
-- [ ] **Step 6: Convert `runCommand()` to direct Tauri invoke**
+- [ ] **Step 6: Convert `runCommand()` to direct invoke**
 
-Replace:
-
-```ts
-return isTauri
-  ? await invoke<T>(command, args)
-  : await httpInvoke<T>(command, args);
-```
-
-with:
+Use:
 
 ```ts
-return await invoke<T>(command, args);
-```
-
-Keep its existing local error normalization unchanged.
-
-- [ ] **Step 7: Convert `listScenes()` too**
-
-Replace its second transport branch with:
-
-```ts
-try {
-  return await invoke<SceneNavigationIndex>("list_scenes");
-} catch {
-  return null;
+async function runCommand<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T | null> {
+  gameState.error = null;
+  try {
+    return await invoke<T>(command, args);
+  } catch (e) {
+    gameState.error = normalizeError(e);
+    return null;
+  }
 }
 ```
 
-Keep the existing reason for the local try/catch: scene-navigation errors stay on the panel-local surface rather than `gameState.error`.
+Do not change loading, in-flight, SFX, thumbnail, or state-application behavior.
 
-- [ ] **Step 8: Run GREEN for the focused gameplay client**
+- [ ] **Step 7: Convert `listScenes()` to direct invoke**
+
+Use:
+
+```ts
+export async function listScenes(): Promise<SceneNavigationIndex | null> {
+  try {
+    return await invoke<SceneNavigationIndex>("list_scenes");
+  } catch {
+    return null;
+  }
+}
+```
+
+Keep its existing local-error ownership rationale.
+
+- [ ] **Step 8: Run GREEN**
 
 ```bash
 bun run --cwd apps/game test src/lib/state/game-client-source.test.ts
 ```
 
 Expected: PASS.
-
-Do not run `page.test.ts` yet; it still contains HTTP fixtures and is intentionally migrated in Task 3.
 
 - [ ] **Step 9: Prove the gameplay HTTP branch is gone**
 
@@ -225,9 +227,9 @@ git commit -m "refactor(game): use Tauri-only gameplay commands"
 
 **Interfaces:**
 - Consumes: Tauri `invoke<T>()`.
-- Produces: unchanged persistence helper signatures, `asGameError()` behavior, and binary thumbnail IPC shape.
+- Produces: unchanged persistence helper signatures, `asGameError()` semantics, and binary thumbnail IPC shape.
 
-- [ ] **Step 1: Make persistence tests import without a fake Tauri runtime global**
+- [ ] **Step 1: Remove fake Tauri-global setup from persistence tests**
 
 Change:
 
@@ -249,9 +251,9 @@ async function loadCommands() {
 }
 ```
 
-Remove the matching `afterEach` property deletion when nothing else creates it.
+Delete the matching `afterEach` property cleanup when nothing else creates it.
 
-- [ ] **Step 2: Add a failing direct-invoke regression**
+- [ ] **Step 2: Add a direct-invoke regression**
 
 Add:
 
@@ -262,12 +264,11 @@ it("invokes Tauri directly without a runtime global", async () => {
 
   expect("__TAURI_INTERNALS__" in window).toBe(false);
   await expect(commands.getThumbnailActivity()).resolves.toEqual({ type: "idle" });
-
   expect(mocks.invoke).toHaveBeenCalledWith("get_thumbnail_activity", undefined);
 });
 ```
 
-If the existing Tauri mock records a one-argument call when `args` is `undefined`, assert that exact current call shape instead; do not add an adapter to normalize the mock.
+If the existing mock records one argument when `args` is `undefined`, assert that exact current shape instead of introducing an adapter.
 
 - [ ] **Step 3: Run RED**
 
@@ -275,11 +276,11 @@ If the existing Tauri mock records a one-argument call when `args` is `undefined
 bun run --cwd apps/game test src/lib/persistence/commands.test.ts
 ```
 
-Expected on the pre-change source: the no-global import selects the HTTP fallback and the new Tauri assertion fails.
+Expected on pre-change source: the no-global import selects the HTTP fallback and the Tauri assertion fails.
 
-- [ ] **Step 4: Delete JSON HTTP transport support**
+- [ ] **Step 4: Delete JSON HTTP support**
 
-Delete from `commands.ts`:
+Delete:
 
 ```ts
 const isTauri =
@@ -293,7 +294,7 @@ Delete the complete functions:
 - `throwHttpError()`;
 - `developmentJson<T>()`.
 
-- [ ] **Step 5: Keep `invokePersistenceCommand()` as the typed error wrapper**
+- [ ] **Step 5: Keep `invokePersistenceCommand()` as the typed error boundary**
 
 Use:
 
@@ -310,11 +311,9 @@ export async function invokePersistenceCommand<T>(
 }
 ```
 
-Do not inline `asGameError()` into every public helper.
+- [ ] **Step 6: Keep binary thumbnail submit on the existing Tauri path**
 
-- [ ] **Step 6: Keep the production binary thumbnail submit call exactly on Tauri**
-
-`submitSaveThumbnail()` retains:
+Retain:
 
 ```ts
 return await invoke<ThumbnailActivityView>(
@@ -324,7 +323,7 @@ return await invoke<ThumbnailActivityView>(
 );
 ```
 
-Delete only the HTTP `fetch()` branch.
+Delete only its HTTP branch.
 
 - [ ] **Step 7: Make thumbnail reads Tauri-only**
 
@@ -337,15 +336,15 @@ const response = await invoke<ArrayBuffer | Uint8Array>(
 );
 ```
 
-Keep the current `Uint8Array` / `ArrayBuffer` normalization and `thumbnailCorrupt` error. Delete `readDevelopmentThumbnail()`.
+Keep `Uint8Array` / `ArrayBuffer` normalization and `thumbnailCorrupt`. Delete `readDevelopmentThumbnail()`.
 
-- [ ] **Step 8: Run GREEN for focused persistence tests**
+- [ ] **Step 8: Run GREEN**
 
 ```bash
 bun run --cwd apps/game test src/lib/persistence/commands.test.ts
 ```
 
-Expected: PASS, including the current three-argument thumbnail invocation assertion and structured error tests.
+Expected: PASS, including structured error tests and the existing three-argument thumbnail invoke assertion.
 
 - [ ] **Step 9: Prove persistence HTTP support is gone**
 
@@ -368,41 +367,30 @@ git commit -m "refactor(save): use Tauri-only persistence commands"
 
 ---
 
-### Task 3: Migrate page tests from HTTP fixtures to the existing Tauri mock
+### Task 3: Migrate page tests without breaking the file mid-edit
 
 **Files:**
 - Modify: `apps/game/src/routes/page.test.ts`
 
 **Interfaces:**
-- Consumes: the Tauri-only gameplay and persistence clients from Tasks 1-2.
-- Produces: page tests that describe commands with `mocks.invoke(command, args)` and no network emulation.
+- Consumes: Tauri-only gameplay/persistence clients from Tasks 1-2 and the file's existing `mocks.invoke`.
+- Produces: page tests with no command-server fetch/URL/body fixtures.
 
-- [ ] **Step 1: Remove the page-test fetch mock and HTTP response helpers**
+**Ordering rule:** keep `mocks.fetch`, `jsonResponse`, `jsonError`, `mocks.fetch.mockReset()`, and `vi.stubGlobal("fetch", mocks.fetch)` in place until every command call site has been converted. Delete scaffolding last.
 
-From the hoisted `mocks`, delete:
+- [ ] **Step 1: Record the migration baseline before editing**
 
-```ts
-fetch: vi.fn(),
+Run:
+
+```bash
+rg -c 'mocks\.fetch' apps/game/src/routes/page.test.ts
+rg -c 'jsonResponse|jsonError' apps/game/src/routes/page.test.ts
+rg -n 'init\?: RequestInit|RequestInit' apps/game/src/routes/page.test.ts
 ```
 
-Delete the complete `jsonResponse()` and `jsonError()` helpers.
+Keep these counts in the implementation notes. The first two counts must monotonically decrease as call sites are migrated.
 
-Delete setup calls that exist only for the command fallback:
-
-```ts
-mocks.fetch.mockReset();
-vi.stubGlobal("fetch", mocks.fetch);
-```
-
-Keep the existing Tauri mock:
-
-```ts
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: mocks.invoke,
-}));
-```
-
-- [ ] **Step 2: Convert scene-navigation helper to command-based dispatch**
+- [ ] **Step 2: Convert the scene-navigation helper first, without deleting fetch scaffolding**
 
 Replace `stubFetchForSceneNavigation()` with:
 
@@ -421,11 +409,20 @@ function stubInvokeForSceneNavigation() {
 }
 ```
 
-Rename all callers accordingly.
+Rename all callers.
 
-- [ ] **Step 3: Convert acquisition acknowledgement helper**
+Run:
 
-Use:
+```bash
+rg -c 'mocks\.fetch' apps/game/src/routes/page.test.ts
+bun run --cwd apps/game test src/routes/page.test.ts
+```
+
+Expected: the test file still executes; cases whose fixtures are still fetch-backed may remain red, but there must be no TypeError caused by deleting `mocks.fetch` prematurely.
+
+- [ ] **Step 3: Convert the acquisition acknowledgement helper next**
+
+Replace its fetch-backed implementation with:
 
 ```ts
 function stubAcquisitionAcknowledgement() {
@@ -441,26 +438,54 @@ function stubAcquisitionAcknowledgement() {
 }
 ```
 
-Tests that need arguments should inspect the existing `command` and `args` callback parameters rather than a URL.
-
-- [ ] **Step 4: Convert every remaining command fetch fixture**
-
-Find them:
+Run:
 
 ```bash
-rg -n 'mocks\.fetch|stubGlobal\("fetch"|127\.0\.0\.1:1421|jsonResponse|jsonError' \
-  apps/game/src/routes/page.test.ts
+rg -c 'mocks\.fetch' apps/game/src/routes/page.test.ts
+bun run --cwd apps/game test src/routes/page.test.ts
 ```
 
-For success paths use `mocks.invoke.mockResolvedValueOnce(...)` or command-based `mockImplementation(...)` with the same response object the HTTP fixture returned.
+Again, remaining unconverted fetch-backed cases may fail, but the file must execute.
 
-For an HTTP error body such as:
+- [ ] **Step 4: Convert direct `mocks.fetch.mockImplementation` sites to command/args dispatch**
+
+For every remaining command fixture, replace URL parsing with the existing Tauri mock shape:
 
 ```ts
-{ code: "saveWriteFailed", message: "Save could not be written." }
+mocks.invoke.mockImplementation(
+  async (command: string, args?: Record<string, unknown>) => {
+    if (command === "save_manual") {
+      return saveManualResult;
+    }
+    if (command === "list_saves") {
+      return titleDiscovery();
+    }
+    return {};
+  },
+);
 ```
 
-use the equivalent Tauri rejection:
+For sites currently declared as `(url, init?: RequestInit)` and parsing `init.body`, move that logic to `args`. For example, replace:
+
+```ts
+const body = JSON.parse(String(init?.body ?? "{}"));
+if (path === "load_save" && body.observedSaveId === "save-id") {
+  return jsonResponse(loadResult);
+}
+```
+
+with:
+
+```ts
+if (
+  command === "load_save" &&
+  args?.observedSaveId === "save-id"
+) {
+  return loadResult;
+}
+```
+
+Use Tauri rejection directly for error paths:
 
 ```ts
 mocks.invoke.mockRejectedValueOnce({
@@ -471,7 +496,59 @@ mocks.invoke.mockRejectedValueOnce({
 
 Do not add a generic fake transport helper.
 
-- [ ] **Step 5: Run the page tests now that both production clients are Tauri-only**
+After each logical group of edits, run:
+
+```bash
+rg -c 'mocks\.fetch' apps/game/src/routes/page.test.ts
+bun run --cwd apps/game test src/routes/page.test.ts
+```
+
+The fetch count must continue down. The file may stay partially red until all command fixtures are converted, but it remains executable throughout.
+
+- [ ] **Step 5: Prove no command call site still depends on fetch before deleting the mock**
+
+Run:
+
+```bash
+rg -n 'mocks\.fetch\.mockImplementation|mocks\.fetch\.mockResolvedValue|mocks\.fetch\.mockRejectedValue|127\.0\.0\.1:1421|init\?: RequestInit' \
+  apps/game/src/routes/page.test.ts
+```
+
+Expected: no command-fixture matches remain.
+
+At this point any remaining `mocks.fetch` references must be only the hoisted declaration/reset/stub setup awaiting deletion.
+
+- [ ] **Step 6: Delete fetch scaffolding last**
+
+Now delete from the hoisted `mocks` object:
+
+```ts
+fetch: vi.fn(),
+```
+
+Delete the complete helpers:
+
+```text
+jsonResponse
+jsonError
+```
+
+Delete setup lines:
+
+```ts
+mocks.fetch.mockReset();
+vi.stubGlobal("fetch", mocks.fetch);
+```
+
+Keep:
+
+```ts
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: mocks.invoke,
+}));
+```
+
+- [ ] **Step 7: Run GREEN for the page suite**
 
 ```bash
 bun run --cwd apps/game test src/routes/page.test.ts
@@ -479,7 +556,7 @@ bun run --cwd apps/game test src/routes/page.test.ts
 
 Expected: PASS.
 
-- [ ] **Step 6: Run the three affected frontend test files together**
+- [ ] **Step 8: Run the three affected frontend test files together**
 
 ```bash
 bun run --cwd apps/game test \
@@ -490,16 +567,16 @@ bun run --cwd apps/game test \
 
 Expected: PASS.
 
-- [ ] **Step 7: Verify page tests no longer emulate the command server**
+- [ ] **Step 9: Prove page tests no longer emulate the command server**
 
 ```bash
-rg -n 'mocks\.fetch|stubGlobal\("fetch"|127\.0\.0\.1:1421|httpInvoke|jsonResponse|jsonError' \
+rg -n 'mocks\.fetch|stubGlobal\("fetch"|127\.0\.0\.1:1421|httpInvoke|jsonResponse|jsonError|init\?: RequestInit' \
   apps/game/src/routes/page.test.ts
 ```
 
-Expected: no matches.
+Expected: no command-server fixture matches.
 
-- [ ] **Step 8: Commit Task 3**
+- [ ] **Step 10: Commit Task 3**
 
 ```bash
 git add apps/game/src/routes/page.test.ts
@@ -508,7 +585,7 @@ git commit -m "test(game): mock Tauri commands directly"
 
 ---
 
-### Task 4: Delete the Rust HTTP server without deleting command-core coverage
+### Task 4: Delete the Rust HTTP server and its shipped library surface
 
 **Files:**
 - Delete: `apps/game/src-tauri/examples/dev_engine_server.rs`
@@ -517,30 +594,30 @@ git commit -m "test(game): mock Tauri commands directly"
 - Modify: `apps/game/src-tauri/src/game/error.rs`
 
 **Interfaces:**
-- Consumes: current Tauri/core functions in `lib.rs`, existing `build_app_state_with_storage`, and existing `RecordingExit` test helper.
-- Produces: no replacement interface; the alternate development string router disappears.
+- Consumes: existing Tauri/core functions, `build_app_state_with_storage`, `RecordingExit`, and the surviving Tauri registration guard.
+- Produces: no replacement interface; removes alternate dispatch and example-only public API.
 
 #### Keep/delete map
 
 | Current test | Retain | Delete |
 |---|---|---|
-| `tauri_core_and_http_adapter_return_identical_raw_request_errors` | direct `submit_save_thumbnail_core` missing/duplicate header rejection | HTTP comparison |
-| `exit_lifecycle_getter_event_and_http_share_complete_status_and_error_views` | exit getter/event parity + `cancel_exit_core` wrong-token rejection | HTTP body/error comparison + `DevelopmentExitDriver` |
-| `thumbnail_read_returns_exact_bytes_and_rejects_stale_observed_identity` | direct exact-byte read + stale identity rejection | HTTP `image/png` response half |
-| `development_http_adapter_serializes_the_shared_wrapper_and_save_views` | nothing | entire test |
-| `development_http_dispatch_registers_the_complete_task_11_surface` | nothing | entire test |
-| `command_surface_contract` | nothing | entire module |
+| `tauri_core_and_http_adapter_return_identical_raw_request_errors` | direct missing/duplicate ticket-header assertions against `submit_save_thumbnail_core` | HTTP comparison |
+| `exit_lifecycle_getter_event_and_http_share_complete_status_and_error_views` | getter/event payload parity + `cancel_exit_core` wrong-token error | HTTP response/error half + `DevelopmentExitDriver` |
+| `thumbnail_read_returns_exact_bytes_and_rejects_stale_observed_identity` | exact bytes + stale observed identity from `read_save_thumbnail_core` | HTTP `image/png` response half |
+| `development_http_adapter_serializes_the_shared_wrapper_and_save_views` | nothing | whole test |
+| `development_http_dispatch_registers_the_complete_task_11_surface` | nothing | whole test |
+| `command_surface_contract` | nothing | whole module; Tauri registration remains covered by `task_11_commands_are_registered_once_with_the_existing_application_surface` |
 
-- [ ] **Step 1: Turn the mixed raw-thumbnail parity test into a direct core test before deleting the adapter**
+- [ ] **Step 1: Strengthen the raw-thumbnail core test before deleting parity**
 
-Rename the test to:
+Rename it to:
 
 ```rust
 #[tokio::test]
 async fn submit_save_thumbnail_core_rejects_missing_and_duplicate_ticket_headers()
 ```
 
-Keep the current UUID and duplicate-header setup. Remove `AppState` and `dispatch_development_command` from this test. Assert both direct calls reject with the validation error already owned by the core:
+Keep UUID/duplicate setup and assert concrete behavior:
 
 ```rust
 assert_eq!(
@@ -555,18 +632,18 @@ assert_eq!(
 );
 ```
 
-This preserves the cases not covered by malformed-PNG/oversized-PNG tests.
+Delete `AppState` and HTTP dispatch from this test.
 
-- [ ] **Step 2: Turn the mixed exit-lifecycle parity test into direct core coverage**
+- [ ] **Step 2: Preserve exit core coverage and remove the HTTP half**
 
-Rename it to:
+Rename to:
 
 ```rust
 #[tokio::test]
 async fn exit_lifecycle_getter_event_and_cancel_core_preserve_status_and_errors()
 ```
 
-Keep:
+Keep getter/event equality and direct wrong-token behavior:
 
 ```rust
 let getter = serde_json::to_value(get_exit_status_core(&app)).unwrap();
@@ -580,20 +657,16 @@ let latest_exit_event = events
     .1
     .clone();
 assert_eq!(latest_exit_event, getter);
-```
 
-Keep creation of the wrong `PersistenceFailureTokenView` and the direct call:
-
-```rust
 let error = cancel_exit_core(&app, wrong_token).unwrap_err();
 assert_eq!(error, GameError::stale_persistence_failure_token());
 ```
 
-Delete `DevelopmentExitDriver`, `dispatch_development_command_with_exit`, HTTP-body decoding, and HTTP-vs-core comparison from the test.
+Delete `DevelopmentExitDriver` and HTTP response/error comparison from this test.
 
-- [ ] **Step 3: Remove only the HTTP half from thumbnail-read coverage**
+- [ ] **Step 3: Preserve thumbnail-read core coverage and remove HTTP response assertions**
 
-Keep the existing setup and these direct assertions:
+Keep:
 
 ```rust
 assert_eq!(
@@ -612,13 +685,9 @@ assert_eq!(
 );
 ```
 
-Delete the following `dispatch_development_command("read_save_thumbnail", ...)` response assertions for `content_type == "image/png"` and `response.body == expected`.
+Delete the `dispatch_development_command("read_save_thumbnail", ...)` `image/png` assertions.
 
-The test name can stay because it accurately describes the retained core behavior.
-
-- [ ] **Step 4: Run the retained Rust core tests before deleting the server**
-
-Use focused name filters:
+- [ ] **Step 4: Run the retained core tests before server deletion**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
@@ -629,21 +698,42 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
   thumbnail_read_returns_exact_bytes_and_rejects_stale_observed_identity
 ```
 
-Expected: all PASS on the still-present server baseline because they no longer rely on it.
+Expected: PASS.
 
-- [ ] **Step 5: Confirm the server-only symbol set before deletion**
+- [ ] **Step 5: Confirm the surviving Tauri registration guard before deleting the HTTP guard**
+
+Run:
 
 ```bash
-rg -n \
-  'DevelopmentCommandResponse|DevelopmentExitDriver|build_development_app_state|dispatch_development_command(_with_exit)?' \
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  task_11_commands_are_registered_once_with_the_existing_application_surface
+```
+
+Expected: PASS. This is why `command_surface_contract` needs no replacement.
+
+- [ ] **Step 6: Audit the server import block as the public-API deletion checklist**
+
+Run:
+
+```bash
+sed -n '16,22p' apps/game/src-tauri/examples/dev_engine_server.rs
+```
+
+Then verify ownership:
+
+```bash
+rg -n 'MAX_THUMBNAIL_SUBMISSION_BYTES|RawThumbnailHeader|validate_thumbnail_submission|DevelopmentCommandResponse|DevelopmentExitDriver|build_development_app_state|dispatch_development_command' \
   apps/game/src-tauri
 ```
 
-Expected owners: `src/lib.rs`, `examples/dev_engine_server.rs`, and HTTP-only tests still awaiting deletion.
+Known outcome after the example is removed:
 
-`build_development_app_state` is deleted rather than replaced; surviving tests use `build_app_state_with_storage`.
+- delete `MAX_THUMBNAIL_SUBMISSION_BYTES`;
+- delete the development response/driver/builder/dispatch family;
+- keep `RawThumbnailHeader` and `validate_thumbnail_submission` for the Tauri thumbnail core but narrow them to `pub(crate)`;
+- keep any other item only if the usage search shows a surviving non-example owner.
 
-- [ ] **Step 6: Delete the standalone server and Cargo feature**
+- [ ] **Step 7: Delete the standalone server and Cargo feature**
 
 Delete:
 
@@ -657,29 +747,77 @@ Remove from `Cargo.toml`:
 dev-engine-server = []
 ```
 
-Keep the existing `e2e` feature unchanged.
+Keep the `e2e` feature unchanged.
 
-- [ ] **Step 7: Delete the development dispatch surface in `lib.rs`**
+- [ ] **Step 8: Delete the unconditionally compiled development dispatch family**
 
-Delete the server-only family:
+Delete from `lib.rs`:
 
 ```text
 DevelopmentCommandResponse
-DevelopmentExitDriver
 build_development_app_state
+development_json
+parse_development_body
+DevelopmentExitDriver
+DevelopmentExitDriver::recorded_codes
 dispatch_development_command
 dispatch_development_command_with_exit
 ```
 
-Delete the command-name match/string-router and JSON/binary response glue owned by those functions.
+Delete the development command match/string-router and response-body glue they own.
 
-Do not delete or move the shared Tauri command cores, `build_app_state_with_storage`, save storage, thumbnail core, application exit core, or E2E checkpoint functions.
+Do not move shared Tauri command cores or save/persistence code to new files in this ticket.
 
-Do not introduce a replacement dispatcher.
+- [ ] **Step 9: Remove/narrow the example-only public thumbnail API**
 
-- [ ] **Step 8: Delete wholly HTTP/string-router tests**
+Delete:
 
-Delete these complete tests/modules from `lib.rs`:
+```rust
+#[doc(hidden)]
+pub const MAX_THUMBNAIL_SUBMISSION_BYTES: usize = MAX_THUMBNAIL_BYTES;
+```
+
+Change:
+
+```rust
+pub struct RawThumbnailHeader<'a>
+```
+
+to:
+
+```rust
+pub(crate) struct RawThumbnailHeader<'a>
+```
+
+Change:
+
+```rust
+pub fn new(name: &'a [u8], value: &'a [u8]) -> Self
+```
+
+to:
+
+```rust
+pub(crate) fn new(name: &'a [u8], value: &'a [u8]) -> Self
+```
+
+Change:
+
+```rust
+pub fn validate_thumbnail_submission<'a>(
+```
+
+to:
+
+```rust
+pub(crate) fn validate_thumbnail_submission<'a>(
+```
+
+Re-run the Step 6 ownership search. If another item from the deleted example import block is now externally public with no surviving external owner, narrow/delete it only after proving that with `rg`.
+
+- [ ] **Step 10: Delete wholly HTTP/string-router tests**
+
+Delete:
 
 ```text
 development_http_adapter_serializes_the_shared_wrapper_and_save_views
@@ -687,11 +825,11 @@ development_http_dispatch_registers_the_complete_task_11_surface
 command_surface_contract
 ```
 
-Do not delete the retained direct-core tests from Steps 1-3.
+Keep `task_11_commands_are_registered_once_with_the_existing_application_surface` unchanged.
 
-- [ ] **Step 9: Delete the CORS-only error constructor and its constructor-table row together**
+- [ ] **Step 11: Delete the CORS-only error constructor and table row together**
 
-In `game/error.rs`, delete:
+Delete from `game/error.rs`:
 
 ```rust
 pub fn request_origin_forbidden(origin: &str) -> Self {
@@ -702,7 +840,7 @@ pub fn request_origin_forbidden(origin: &str) -> Self {
 }
 ```
 
-In `uncovered_error_constructors_return_their_exact_codes`, delete exactly:
+Delete from `uncovered_error_constructors_return_their_exact_codes`:
 
 ```rust
 (
@@ -711,7 +849,7 @@ In `uncovered_error_constructors_return_their_exact_codes`, delete exactly:
 ),
 ```
 
-Then run:
+Verify:
 
 ```bash
 rg -n 'request_origin_forbidden|requestOriginForbidden' apps/game/src-tauri
@@ -719,7 +857,15 @@ rg -n 'request_origin_forbidden|requestOriginForbidden' apps/game/src-tauri
 
 Expected: no matches.
 
-- [ ] **Step 10: Run all remaining Rust features**
+- [ ] **Step 12: Run the default-feature Rust suite**
+
+```bash
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+```
+
+Expected: PASS. This explicitly verifies the library configuration that ships without the `e2e` feature.
+
+- [ ] **Step 13: Run the all-feature Rust suite plus format/lint**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
@@ -729,17 +875,35 @@ bun run --cwd apps/game rust:lint
 
 Expected: all PASS.
 
-- [ ] **Step 11: Prove the server and string router are gone**
+- [ ] **Step 14: Prove the server/public transport surface is gone**
 
 ```bash
 rg -n \
-  'dev_engine_server|dev-engine-server|DevelopmentCommandResponse|DevelopmentExitDriver|build_development_app_state|dispatch_development_command' \
+  'dev_engine_server|dev-engine-server|DevelopmentCommandResponse|DevelopmentExitDriver|build_development_app_state|dispatch_development_command|MAX_THUMBNAIL_SUBMISSION_BYTES' \
   apps/game/src-tauri
 ```
 
 Expected: no matches.
 
-- [ ] **Step 12: Commit Task 4**
+Verify the surviving thumbnail helpers are crate-private:
+
+```bash
+rg -n 'pub\(crate\) struct RawThumbnailHeader|pub\(crate\) fn validate_thumbnail_submission' \
+  apps/game/src-tauri/src/lib.rs
+```
+
+Expected: both matches exist.
+
+- [ ] **Step 15: Re-run the surviving Tauri registration guard after deletion**
+
+```bash
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  task_11_commands_are_registered_once_with_the_existing_application_surface
+```
+
+Expected: PASS.
+
+- [ ] **Step 16: Commit Task 4**
 
 ```bash
 git add \
@@ -752,7 +916,7 @@ git commit -m "refactor(tauri): remove dev HTTP engine server"
 
 ---
 
-### Task 5: Fix live coverage commentary and verify the single transport end to end
+### Task 5: Fix live coverage commentary and verify one transport end to end
 
 **Files:**
 - Modify: `codecov.yml`
@@ -760,11 +924,11 @@ git commit -m "refactor(tauri): remove dev HTTP engine server"
 
 **Interfaces:**
 - Consumes: Tasks 1-4.
-- Produces: live config that no longer references deleted infrastructure plus complete deterministic/packaged proof.
+- Produces: live config with no stale server claim plus complete deterministic/packaged proof.
 
-- [ ] **Step 1: Rewrite the stale Codecov comment without changing coverage policy**
+- [ ] **Step 1: Rewrite the stale Codecov comment only**
 
-Replace the comment above the `lib.rs` ignore with:
+Replace the comment above `ignore:` with:
 
 ```yaml
 # lib.rs is Tauri command registration and runtime/IPC glue. Deterministic
@@ -775,32 +939,30 @@ ignore:
   - "apps/game/src-tauri/src/lib.rs"
 ```
 
-Do not change the 90% project/patch targets, threshold, blocking status, or ignore path.
+Do not change coverage targets, threshold, blocking status, or ignore path.
 
-- [ ] **Step 2: Search active code/config for the retired command server**
+- [ ] **Step 2: Search active code/config for retired transport/server references**
 
 ```bash
 rg -n \
-  'dev_engine_server|dev-engine-server|DEV_HTTP_BASE|developmentHttpBase|httpInvoke|127\.0\.0\.1:1421' \
+  'dev_engine_server|dev-engine-server|DEV_HTTP_BASE|developmentHttpBase|httpInvoke|127\.0\.0\.1:1421|MAX_THUMBNAIL_SUBMISSION_BYTES' \
   . \
   --glob '!docs/superpowers/**' \
   --glob '!target/**' \
   --glob '!node_modules/**'
 ```
 
-Expected: no active command-server/transport references.
+Expected: no active retired-command-surface matches.
 
-Do not edit historical `docs/superpowers/**` results.
-
-- [ ] **Step 3: Verify the unrelated HMR owner remains**
+- [ ] **Step 3: Verify the HMR port remains**
 
 ```bash
 rg -n '1421' apps/game/vite.config.ts
 ```
 
-Expected: the `TAURI_DEV_HOST` HMR configuration still uses port `1421`.
+Expected: `TAURI_DEV_HOST` HMR configuration still uses `1421`.
 
-- [ ] **Step 4: Run the full deterministic workspace verification**
+- [ ] **Step 4: Run full deterministic workspace verification**
 
 ```bash
 bun run test
@@ -810,34 +972,30 @@ bun run lint:all
 
 Expected: all PASS.
 
-- [ ] **Step 5: Run packaged Tauri smoke through the remaining real IPC path**
+- [ ] **Step 5: Run packaged Tauri smoke**
 
 ```bash
 bun run --cwd apps/game test:e2e:smoke
 ```
 
-Expected: PASS.
+Expected: PASS through real Tauri IPC.
 
-- [ ] **Step 6: Reuse the packaged build for the persistence boundary proof**
-
-Run:
+- [ ] **Step 6: Reuse the built packaged app for save-core**
 
 ```bash
 node apps/game/scripts/run-save-e2e.mjs --suite save-core
 ```
 
-Expected: PASS through real Tauri IPC/filesystem boundaries.
+Expected: PASS through Tauri IPC/filesystem boundaries. The current runner already supports this suite; do not add a fallback branch or new HPA-559 runner.
 
-Do not add another suite. If the standard smoke command cleans its build artifact, use the repository's existing build command once and then run the two existing suites against that build; do not add HPA-559 runner code.
-
-- [ ] **Step 7: Confirm the implementation is a material net deletion**
+- [ ] **Step 7: Confirm material net deletion**
 
 ```bash
 git diff --stat main...HEAD
 git diff --numstat main...HEAD | awk '{ add += $1; del += $2 } END { print "added", add, "deleted", del, "net", add-del }'
 ```
 
-The implementation portion must materially reduce production/test code. Planning-document additions do not justify retaining runtime complexity.
+The implementation portion must materially reduce production/test code. Planning-doc additions do not justify retaining runtime complexity.
 
 - [ ] **Step 8: Commit the live config cleanup**
 
@@ -850,18 +1008,23 @@ git commit -m "docs(ci): remove stale dev server coverage claim"
 
 ## Final Review Checklist
 
-- [ ] `runCommand()` has one Tauri invoke path.
-- [ ] `listScenes()` also has one Tauri invoke path and retains local error handling.
+- [ ] `runCommand()` and `listScenes()` each use Tauri `invoke()` only.
 - [ ] `invokePersistenceCommand()` / `asGameError()` remain and contain no HTTP branch.
-- [ ] Binary thumbnail submit/read keep their existing Tauri semantics.
-- [ ] Page tests mock `mocks.invoke` directly and contain no fetch/URL command fixtures.
+- [ ] Binary thumbnail submit/read retain existing Tauri semantics.
+- [ ] Page-test command call sites were converted before fetch scaffolding was deleted.
+- [ ] `page.test.ts` contains no fetch/URL/body command-server fixtures.
 - [ ] `dev_engine_server.rs` and `dev-engine-server` are gone.
-- [ ] `build_development_app_state`, `DevelopmentExitDriver`, development response types, and string router are gone rather than wrapped or renamed.
-- [ ] Mixed Rust parity tests retain the three direct core assertions identified by the keep/delete map.
-- [ ] `request_origin_forbidden` and its constructor-code test row are both gone.
-- [ ] `development_http_adapter_serializes_the_shared_wrapper_and_save_views`, `development_http_dispatch_registers_the_complete_task_11_surface`, and `command_surface_contract` are gone.
-- [ ] `codecov.yml` keeps the `lib.rs` ignore but no longer cites `dev_engine_server` coverage.
+- [ ] The previously unconditionally compiled development response/builder/driver/string-router API is gone.
+- [ ] `MAX_THUMBNAIL_SUBMISSION_BYTES` is gone.
+- [ ] `RawThumbnailHeader`, its constructor, and `validate_thumbnail_submission` are crate-private.
+- [ ] Mixed parity tests retain the three direct core behaviors from the keep/delete map.
+- [ ] HTTP-only tests/modules are deleted.
+- [ ] `task_11_commands_are_registered_once_with_the_existing_application_surface` survives and passes; no replacement registration list is added.
+- [ ] `request_origin_forbidden` and its constructor-code row are both gone.
+- [ ] `codecov.yml` keeps the `lib.rs` ignore but no longer cites the server.
 - [ ] Vite HMR port `1421` remains.
-- [ ] Full deterministic tests/check/lint pass after Task 3+4.
-- [ ] Existing packaged smoke and save-core suites pass.
-- [ ] No `GameTransport`, HTTP test harness, mock server, local RPC, HPA-550 decision, HPA-521 refactor, HPA-560 policy work, HPA-602 asset work, or Chapter 2 work is introduced.
+- [ ] Default-feature and all-feature Rust suites pass.
+- [ ] Full test/check/lint pass after migration.
+- [ ] Existing packaged smoke and save-core pass.
+- [ ] Plain-browser loss of the friendly runtime-unavailable diagnostic is accepted without transport machinery.
+- [ ] No `GameTransport`, HTTP test harness, mock server, local RPC, HPA-550 decision, HPA-521 refactor, HPA-560 policy work, HPA-602 work, or Chapter 2 work is introduced.
