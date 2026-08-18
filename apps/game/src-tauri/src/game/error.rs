@@ -591,12 +591,6 @@ impl GameError {
     pub fn internal(detail: String) -> Self {
         Self::new("internalError", detail)
     }
-    pub fn request_origin_forbidden(origin: &str) -> Self {
-        Self::new(
-            "requestOriginForbidden",
-            format!("Request origin '{origin}' is not allowed by CORS policy."),
-        )
-    }
 }
 
 #[cfg(test)]
@@ -661,10 +655,6 @@ mod tests {
             ("parseFailure", GameError::parse_failure("detail".into())),
             ("gameComplete", GameError::game_complete()),
             ("internalError", GameError::internal("detail".into())),
-            (
-                "requestOriginForbidden",
-                GameError::request_origin_forbidden("http://evil"),
-            ),
             (
                 "caseRecordDefinitionMismatch",
                 GameError::case_record_definition_mismatch(),
