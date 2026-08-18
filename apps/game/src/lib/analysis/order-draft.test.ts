@@ -400,7 +400,12 @@ describe("order draft algebra", () => {
           : fixtureBoard;
 
       expect(
-        placeOrderCardBefore(board, ["event_1841"], sourceId, "event_1843"),
+        placeOrderCardBefore(
+          board,
+          ["event_1841", "event_1843"],
+          sourceId,
+          "event_1843",
+        ),
       ).toBeNull();
     });
 

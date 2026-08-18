@@ -84,74 +84,82 @@ async function dragAnalysisCardSynthetic(
   cardId: string,
   targetId: string,
 ): Promise<void> {
-  const dispatched = await browser.execute(
-    (selectedCardId: string, selectedTargetId: string) => {
-      const card = document.querySelector<HTMLElement>(
-        `[data-analysis-card-id="${selectedCardId}"]`,
-      );
-      const target = document.querySelector<HTMLElement>(
-        `[data-analysis-drop-target="${selectedTargetId}"]`,
-      );
-      if (!card || !target) return false;
+  let dispatched: boolean;
+  try {
+    dispatched = await browser.execute(
+      (selectedCardId: string, selectedTargetId: string) => {
+        const card = document.querySelector<HTMLElement>(
+          `[data-analysis-card-id="${selectedCardId}"]`,
+        );
+        const target = document.querySelector<HTMLElement>(
+          `[data-analysis-drop-target="${selectedTargetId}"]`,
+        );
+        if (!card || !target) return false;
 
-      // Keep the synthetic destination inside the viewport so the production
-      // elementsFromPoint() resolver sees the same target on every board.
-      target.scrollIntoView({ block: "center", inline: "center" });
+        // Keep the synthetic destination inside the viewport so the production
+        // elementsFromPoint() resolver sees the same target on every board.
+        target.scrollIntoView({ block: "center", inline: "center" });
 
-      const center = (element: HTMLElement) => {
-        const rect = element.getBoundingClientRect();
-        return {
-          x: Math.round(rect.left + rect.width / 2),
-          y: Math.round(rect.top + rect.height / 2),
+        const center = (element: HTMLElement) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+          };
         };
-      };
-      const source = center(card);
-      const destination = center(target);
-      const pointerId = 621;
-      const dispatch = (type: string, init: PointerEventInit) =>
-        card.dispatchEvent(new PointerEvent(type, init));
+        const source = center(card);
+        const destination = center(target);
+        const pointerId = 621;
+        const dispatch = (type: string, init: PointerEventInit) =>
+          card.dispatchEvent(new PointerEvent(type, init));
 
-      dispatch("pointerdown", {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        pointerId,
-        pointerType: "mouse",
-        isPrimary: true,
-        button: 0,
-        buttons: 1,
-        clientX: source.x,
-        clientY: source.y,
-      });
-      dispatch("pointermove", {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        pointerId,
-        pointerType: "mouse",
-        isPrimary: true,
-        button: -1,
-        buttons: 1,
-        clientX: destination.x,
-        clientY: destination.y,
-      });
-      dispatch("pointerup", {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        pointerId,
-        pointerType: "mouse",
-        isPrimary: true,
-        button: 0,
-        buttons: 0,
-        clientX: destination.x,
-        clientY: destination.y,
-      });
-      return true;
-    },
-    cardId,
-    targetId,
-  );
+        dispatch("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+          clientX: source.x,
+          clientY: source.y,
+        });
+        dispatch("pointermove", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: -1,
+          buttons: 1,
+          clientX: destination.x,
+          clientY: destination.y,
+        });
+        dispatch("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: 0,
+          buttons: 0,
+          clientX: destination.x,
+          clientY: destination.y,
+        });
+        return true;
+      },
+      cardId,
+      targetId,
+    );
+  } catch (error) {
+    throw new Error(
+      `analysis drag dispatch failed for ${cardId} -> ${targetId}`,
+      { cause: error },
+    );
+  }
   if (!dispatched) {
     throw new Error(`analysis drag hooks missing for ${cardId} -> ${targetId}`);
   }
@@ -172,38 +180,59 @@ async function waitForAnalysisBoard(boardId: string): Promise<GameStateView> {
 async function waitForClassifyDraft(
   expectedGroupByCard: Record<string, string>,
 ): Promise<GameStateView> {
-  return waitForPackagedGameState((state) => {
-    const board = analysisBoard(state, "evidence_packages");
-    if (board.kind !== "classify" || board.draft.kind !== "classify") {
-      return false;
-    }
-    const actual = board.draft.groupByCard;
-    return (
-      Object.keys(actual).length === Object.keys(expectedGroupByCard).length &&
-      Object.entries(expectedGroupByCard).every(
-        ([cardId, groupId]) => actual[cardId] === groupId,
-      )
+  try {
+    return await waitForPackagedGameState((state) => {
+      const board = analysisBoard(state, "evidence_packages");
+      if (board.kind !== "classify" || board.draft.kind !== "classify") {
+        return false;
+      }
+      const actual = board.draft.groupByCard;
+      return (
+        Object.keys(actual).length ===
+          Object.keys(expectedGroupByCard).length &&
+        Object.entries(expectedGroupByCard).every(
+          ([cardId, groupId]) => actual[cardId] === groupId,
+        )
+      );
+    });
+  } catch (error) {
+    throw new Error(
+      `classify draft never matched ${JSON.stringify(expectedGroupByCard)}`,
+      { cause: error },
     );
-  });
+  }
 }
 
 async function waitForOrderDraft(
   expectedCardIds: string[],
 ): Promise<GameStateView> {
-  return waitForPackagedGameState((state) => {
-    const board = analysisBoard(state, "local_event_sequence");
-    return (
-      board.kind === "order" &&
-      board.draft.kind === "order" &&
-      JSON.stringify(board.draft.cardIds) === JSON.stringify(expectedCardIds)
+  try {
+    return await waitForPackagedGameState((state) => {
+      const board = analysisBoard(state, "local_event_sequence");
+      return (
+        board.kind === "order" &&
+        board.draft.kind === "order" &&
+        JSON.stringify(board.draft.cardIds) === JSON.stringify(expectedCardIds)
+      );
+    });
+  } catch (error) {
+    throw new Error(
+      `order draft never matched [${expectedCardIds.join(", ")}]`,
+      { cause: error },
     );
-  });
+  }
 }
 
 async function submitCurrentAnalysisBoard(
   boardId: string,
 ): Promise<GameStateView> {
-  await clickButton("比對推論");
+  try {
+    await clickButton("比對推論");
+  } catch (error) {
+    throw new Error(`analysis board ${boardId} submit click failed`, {
+      cause: error,
+    });
+  }
   // Wait for a genuinely post-submit state. Accepting the pre-submit analysis
   // mode (board still open, not completed) would resolve immediately while
   // the submit IPC is still in flight. Resolve only once the submitted board

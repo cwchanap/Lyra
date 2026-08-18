@@ -192,9 +192,9 @@ export function placeOrderCardBefore(
   if (beforeCardId !== null) {
     const target = cardsById.get(beforeCardId);
     const targetIndex = materialized.indexOf(beforeCardId);
-    // targetIndex < 0 implies targetIndex < anchors.length (≥ 0), so the
-    // length check below also rejects unknown targets — no separate
-    // targetIndex < 0 guard is needed.
+    // The explicit targetIndex < 0 rejection is load-bearing for the shared
+    // insertion flow below: it guarantees beforeCardId stays in the filtered
+    // list, so next.indexOf(beforeCardId) never reaches the splice(-1) path.
     if (
       !target ||
       target.available !== true ||
@@ -205,14 +205,6 @@ export function placeOrderCardBefore(
       return null;
     }
     if (sourceIndex >= 0 && beforeCardId === cardId) return materialized;
-  }
-
-  if (sourceIndex < 0) {
-    const next = [...materialized];
-    const insertionIndex =
-      beforeCardId === null ? next.length : next.indexOf(beforeCardId);
-    next.splice(insertionIndex, 0, cardId);
-    return next;
   }
 
   const next = materialized.filter((candidate) => candidate !== cardId);

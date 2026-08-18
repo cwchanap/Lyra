@@ -182,16 +182,27 @@
 </script>
 
 <section class="order-board" aria-label="排序板">
-  {#if liveMessage}
-    <p
-      class="sr-only"
-      role="status"
-      aria-label="排序操作提示"
-      aria-live="polite"
+  <!-- The gutter is a mouse-drag-only drop surface; keyboard users have the
+       add/move/remove buttons, so it carries no aria-label (labeling a
+       role-less generic div is ignored/prohibited by AT anyway). -->
+  {#snippet insertionGutter(targetId: string, end = false)}
+    <div
+      class="insertion-gutter"
+      class:end-gutter={end}
+      class:drop-target={dragTargetId === targetId}
+      data-analysis-drop-target={targetId}
     >
-      {liveMessage}
-    </p>
-  {/if}
+      {#if dragTargetId === targetId}
+        <span class="gutter-preview">放置在此</span>
+      {/if}
+    </div>
+  {/snippet}
+  <!-- Permanently mounted so screen readers observe the live region before
+       the first message is set; conditional regions miss the first
+       announcement. -->
+  <p class="sr-only" role="status" aria-label="排序操作提示" aria-live="polite">
+    {liveMessage}
+  </p>
   {#if blockReason === "unsupportedAnchors"}
     <p class="blocked" role="alert">排序設定無法顯示，請重新載入內容。</p>
   {:else if blockReason === "fixedAnchorUnavailable"}
@@ -211,16 +222,7 @@
           {@const beforeTarget = `order:before:${cardId}`}
           <li class:fixed>
             {#if editable && !fixed && card}
-              <div
-                class="insertion-gutter"
-                class:drop-target={dragTargetId === beforeTarget}
-                data-analysis-drop-target={beforeTarget}
-                aria-label={`放在${card.label}之前`}
-              >
-                {#if dragTargetId === beforeTarget}
-                  <span class="gutter-preview">放置在此</span>
-                {/if}
-              </div>
+              {@render insertionGutter(beforeTarget)}
             {/if}
             <div class="timeline-card">
               <span class="timeline-index" aria-hidden="true">{index + 1}</span>
@@ -270,31 +272,13 @@
               </div>
             {/if}
             {#if editable && index === displayedCardIds.length - 1}
-              <div
-                class="insertion-gutter end-gutter"
-                class:drop-target={dragTargetId === "order:end"}
-                data-analysis-drop-target="order:end"
-                aria-label="放在時間線末端"
-              >
-                {#if dragTargetId === "order:end"}
-                  <span class="gutter-preview">放置在此</span>
-                {/if}
-              </div>
+              {@render insertionGutter("order:end", true)}
             {/if}
           </li>
         {/each}
       </ol>
       {#if editable && displayedCardIds.length === 0}
-        <div
-          class="insertion-gutter end-gutter"
-          class:drop-target={dragTargetId === "order:end"}
-          data-analysis-drop-target="order:end"
-          aria-label="放在時間線末端"
-        >
-          {#if dragTargetId === "order:end"}
-            <span class="gutter-preview">放置在此</span>
-          {/if}
-        </div>
+        {@render insertionGutter("order:end", true)}
       {/if}
     </section>
 
