@@ -13,10 +13,9 @@ coverage:
         informational: false
         if_not_found: failure
 
-# lib.rs is purely Tauri command registration + IPC glue (path resolution,
-# mutex/State extraction). Its business logic lives in GameEngine methods
-# (covered by mod.rs unit tests) and its dispatch/arg handling is covered by
-# the dev_engine_server example. The Tauri-runtime glue itself cannot be
-# exercised without a full Tauri test harness, so exclude it from coverage.
+# lib.rs is Tauri command registration and runtime/IPC glue. Deterministic
+# business behavior is tested through GameEngine and command-core unit tests;
+# real IPC/filesystem integration is covered by packaged Tauri E2E. The Tauri
+# runtime glue itself is excluded from line coverage.
 ignore:
   - "apps/game/src-tauri/src/lib.rs"
