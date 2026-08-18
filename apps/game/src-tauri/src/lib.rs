@@ -82,8 +82,6 @@ const PERSISTENCE_STATUS_CHANGED_EVENT: &str = "persistence-status-changed";
 const THUMBNAIL_ACTIVITY_CHANGED_EVENT: &str = "thumbnail-activity-changed";
 const EXIT_STATUS_CHANGED_EVENT: &str = "exit-status-changed";
 const MAIN_WINDOW_LABEL: &str = "main";
-#[doc(hidden)]
-pub const MAX_THUMBNAIL_SUBMISSION_BYTES: usize = MAX_THUMBNAIL_BYTES;
 
 #[cfg(all(test, feature = "e2e"))]
 mod e2e_persistence_fault_command_tests {
@@ -1035,18 +1033,18 @@ fn prepare_save_thumbnail(
         .prepare_application_thumbnail(&state, purpose)
 }
 
-pub struct RawThumbnailHeader<'a> {
+pub(crate) struct RawThumbnailHeader<'a> {
     name: &'a [u8],
     value: &'a [u8],
 }
 
 impl<'a> RawThumbnailHeader<'a> {
-    pub fn new(name: &'a [u8], value: &'a [u8]) -> Self {
+    pub(crate) fn new(name: &'a [u8], value: &'a [u8]) -> Self {
         Self { name, value }
     }
 }
 
-pub fn validate_thumbnail_submission<'a>(
+pub(crate) fn validate_thumbnail_submission<'a>(
     headers: &'a [RawThumbnailHeader<'a>],
     body: &[u8],
 ) -> Result<&'a str, GameError> {
@@ -1651,482 +1649,6 @@ fn acknowledge_acquisition_event(
     acknowledge_acquisition_event_core(&state, event_id)
 }
 
-#[doc(hidden)]
-#[derive(Debug)]
-pub struct DevelopmentCommandResponse {
-    pub content_type: &'static str,
-    pub body: Vec<u8>,
-}
-
-#[doc(hidden)]
-pub fn build_development_app_state(
-    resources_dir: PathBuf,
-    save_root: PathBuf,
-) -> Result<AppState, GameError> {
-    build_app_state_with_storage(resources_dir, save_root, Arc::new(ProductionSaveFilesystem))
-}
-
-fn development_json<T: Serialize>(value: T) -> Result<DevelopmentCommandResponse, GameError> {
-    serde_json::to_vec(&value)
-        .map(|body| DevelopmentCommandResponse {
-            content_type: "application/json",
-            body,
-        })
-        .map_err(|error| GameError::parse_failure(format!("serialize response: {error}")))
-}
-
-fn parse_development_body<T: for<'de> serde::Deserialize<'de>>(
-    body: &[u8],
-) -> Result<T, GameError> {
-    serde_json::from_slice(body)
-        .map_err(|error| GameError::parse_failure(format!("body json: {error}")))
-}
-
-#[doc(hidden)]
-#[derive(Default)]
-pub struct DevelopmentExitDriver {
-    codes: Mutex<Vec<i32>>,
-}
-
-impl ApplicationExit for DevelopmentExitDriver {
-    fn exit(&self, code: i32) -> Result<(), GameError> {
-        if let Ok(mut codes) = self.codes.lock() {
-            codes.push(code);
-        }
-        Ok(())
-    }
-}
-
-impl DevelopmentExitDriver {
-    #[doc(hidden)]
-    pub fn recorded_codes(&self) -> Vec<i32> {
-        self.codes
-            .lock()
-            .map(|codes| codes.clone())
-            .unwrap_or_default()
-    }
-}
-
-#[doc(hidden)]
-pub async fn dispatch_development_command(
-    state: &AppState,
-    command: &str,
-    headers: &[RawThumbnailHeader<'_>],
-    body: &[u8],
-) -> Result<DevelopmentCommandResponse, GameError> {
-    dispatch_development_command_with_exit(
-        state,
-        command,
-        headers,
-        body,
-        Arc::new(DevelopmentExitDriver::default()),
-    )
-    .await
-}
-
-#[doc(hidden)]
-pub async fn dispatch_development_command_with_exit(
-    state: &AppState,
-    command: &str,
-    headers: &[RawThumbnailHeader<'_>],
-    body: &[u8],
-    development_exit: Arc<DevelopmentExitDriver>,
-) -> Result<DevelopmentCommandResponse, GameError> {
-    match command {
-        "list_saves" => {
-            let persistence = state.persistence.clone();
-            development_json(
-                list_saves_core(state, move || {
-                    persistence
-                        .as_ref()
-                        .map(|persistence| persistence.discover())
-                        .unwrap_or_else(unavailable_save_browser)
-                })
-                .await?,
-            )
-        }
-        "get_state" => development_json(read_game_state(state)?),
-        "get_persistence_status" => {
-            development_json(persistence_status_snapshot(&state.coordinator))
-        }
-        "get_thumbnail_activity" => {
-            development_json(thumbnail_activity_snapshot(&state.coordinator))
-        }
-        "get_exit_status" => development_json(get_exit_status_core(state)),
-        "cancel_persistence_failure" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            cancel_persistence_failure_core(state, args.failure_token).await?;
-            development_json(())
-        }
-        "retry_exit" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            let exit: Arc<dyn ApplicationExit> = development_exit;
-            development_json(retry_exit_core(state, exit, args.failure_token)?)
-        }
-        "cancel_exit" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(cancel_exit_core(state, args.failure_token)?)
-        }
-        "exit_without_saving" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            let exit: Arc<dyn ApplicationExit> = development_exit;
-            exit_without_saving_core(state, exit, args.failure_token)?;
-            development_json(())
-        }
-        "start_game" | "reset_game" => {
-            development_json(start_game_with_persistence_core(state).await?)
-        }
-        "start_game_without_saving" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(start_game_without_saving_core(state, args.failure_token).await?)
-        }
-        "prepare_save_thumbnail" => {
-            #[derive(serde::Deserialize)]
-            struct Args {
-                purpose: PreparedThumbnailPurpose,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(
-                state
-                    .coordinator
-                    .prepare_application_thumbnail(state, args.purpose)?,
-            )
-        }
-        "submit_save_thumbnail" => development_json(submit_save_thumbnail_core(
-            &state.coordinator,
-            headers,
-            body,
-        )?),
-        "report_save_thumbnail_failure" => {
-            #[derive(serde::Deserialize)]
-            struct Args {
-                ticket: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(state.coordinator.report_thumbnail_failure(&args.ticket)?)
-        }
-        "read_save_thumbnail" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                reference: SaveSlotRef,
-                observed_save_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            Ok(DevelopmentCommandResponse {
-                content_type: "image/png",
-                body: read_save_thumbnail_core(state, args.reference, &args.observed_save_id)?,
-            })
-        }
-        "save_manual" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                reference: SaveSlotRef,
-                display_name: String,
-                expectation: ManualSlotExpectation,
-                prepared_thumbnail_ticket: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(
-                save_manual_core(
-                    state,
-                    args.reference,
-                    args.display_name,
-                    args.expectation,
-                    args.prepared_thumbnail_ticket,
-                )
-                .await?,
-            )
-        }
-        "load_save" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                reference: SaveSlotRef,
-                observed_save_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(load_save_core(state, args.reference, args.observed_save_id).await?)
-        }
-        "load_save_discarding_current" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                reference: SaveSlotRef,
-                observed_save_id: String,
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(
-                load_save_discarding_current_core(
-                    state,
-                    args.reference,
-                    args.observed_save_id,
-                    args.failure_token,
-                )
-                .await?,
-            )
-        }
-        "continue_game" => development_json(continue_game_core(state).await?),
-        "delete_save" => {
-            #[derive(serde::Deserialize)]
-            struct Args {
-                reference: SaveSlotRef,
-                expectation: OccupiedSlotExpectation,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(delete_save_core(state, args.reference, args.expectation).await?)
-        }
-        "return_to_title" => development_json(return_to_title_core(state).await?),
-        "return_to_title_without_saving" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                failure_token: PersistenceFailureTokenView,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(return_to_title_without_saving_core(state, args.failure_token).await?)
-        }
-        "acknowledge_acquisition_event" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                event_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(acknowledge_acquisition_event_core(state, args.event_id)?)
-        }
-        "list_scenes" => development_json(GameEngine::scene_navigation_index(
-            state.resources_dir.clone(),
-        )?),
-        "jump_to_scene" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                chapter_id: String,
-                scene_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.jump_to_scene(&args.chapter_id, &args.scene_id),
-            )?)
-        }
-        "advance_dialogue" => {
-            #[derive(serde::Deserialize)]
-            struct Args {
-                expected: QueueToken,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.advance_dialogue(args.expected),
-            )?)
-        }
-        "inspect_hotspot" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                hotspot_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.inspect_hotspot(&args.hotspot_id),
-            )?)
-        }
-        "interview_topic" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                character_id: String,
-                topic_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.interview_topic(&args.character_id, &args.topic_id),
-            )?)
-        }
-        "enter_sublocation" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                sublocation_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.enter_sublocation(&args.sublocation_id),
-            )?)
-        }
-        "reexamine_evidence" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                evidence_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.reexamine_evidence(&args.evidence_id),
-            )?)
-        }
-        "reexamine_statement" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                statement_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.reexamine_statement(&args.statement_id),
-            )?)
-        }
-        "ask_interrogation_question" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                question_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.ask_interrogation_question(&args.question_id),
-            )?)
-        }
-        "challenge_interrogation_line" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                line_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.challenge_interrogation_line(&args.line_id),
-            )?)
-        }
-        "present_interrogation_evidence" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                line_id: String,
-                item_kind: String,
-                item_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| {
-                    engine.present_interrogation_evidence(
-                        &args.line_id,
-                        &args.item_kind,
-                        &args.item_id,
-                    )
-                },
-            )?)
-        }
-        "withdraw_interrogation" => development_json(run_gameplay_mutation(
-            state,
-            MutationPersistencePolicy::AutosaveIfAdvanced,
-            GameEngine::withdraw_interrogation,
-        )?),
-        "resume_interrogation_testimony" => development_json(run_gameplay_mutation(
-            state,
-            MutationPersistencePolicy::AutosaveIfAdvanced,
-            GameEngine::resume_interrogation_testimony,
-        )?),
-        "complete_interrogation_phase" => development_json(run_gameplay_mutation(
-            state,
-            MutationPersistencePolicy::AutosaveIfAdvanced,
-            GameEngine::complete_interrogation_phase,
-        )?),
-        "select_analysis_board" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                expected: AnalysisActionToken,
-                board_id: String,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
-                |engine| engine.select_analysis_board(args.expected, args.board_id),
-            )?)
-        }
-        "update_analysis_draft" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                expected: AnalysisActionToken,
-                draft: AnalysisDraft,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
-                |engine| engine.update_analysis_draft(args.expected, args.draft),
-            )?)
-        }
-        "submit_analysis_board" => {
-            #[derive(serde::Deserialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                expected: AnalysisActionToken,
-            }
-            let args: Args = parse_development_body(body)?;
-            development_json(run_gameplay_mutation(
-                state,
-                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
-                |engine| engine.submit_analysis_board(args.expected),
-            )?)
-        }
-        _ => Err(GameError::new(
-            "unknownCommand",
-            format!("Unknown command: {command}"),
-        )),
-    }
-}
-
 #[tauri::command]
 fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError> {
     let resources_dir = resolve_scenes_dir(&app)?;
@@ -2608,31 +2130,22 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn tauri_core_and_http_adapter_return_identical_raw_request_errors() {
+        async fn submit_save_thumbnail_core_rejects_missing_and_duplicate_ticket_headers() {
             let coordinator = SaveCoordinator::new();
-            let app = AppState {
-                session: Arc::new(Mutex::new(AppSession::empty())),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: coordinator.clone(),
-                resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
-            };
             let ticket = uuid::Uuid::new_v4().hyphenated().to_string();
             let duplicate = [
                 RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", ticket.as_bytes()),
                 RawThumbnailHeader::new(b"X-Lyra-Thumbnail-Ticket", ticket.as_bytes()),
             ];
 
-            for headers in [&[][..], &duplicate[..]] {
-                let tauri_error =
-                    submit_save_thumbnail_core(&coordinator, headers, b"png").unwrap_err();
-                let http_error =
-                    dispatch_development_command(&app, "submit_save_thumbnail", headers, b"png")
-                        .await
-                        .unwrap_err();
-                assert_eq!(http_error, tauri_error);
-            }
+            assert_eq!(
+                submit_save_thumbnail_core(&coordinator, &[], b"png").unwrap_err(),
+                GameError::stale_thumbnail_ticket()
+            );
+            assert_eq!(
+                submit_save_thumbnail_core(&coordinator, &duplicate, b"png").unwrap_err(),
+                GameError::stale_thumbnail_ticket()
+            );
         }
     }
 
@@ -2826,7 +2339,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn exit_lifecycle_getter_event_and_http_share_complete_status_and_error_views() {
+        async fn exit_lifecycle_getter_event_and_cancel_core_preserve_status_and_errors() {
             let session = Arc::new(Mutex::new(AppSession::empty()));
             let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
             let coordinator = SaveCoordinator::for_application(
@@ -2861,43 +2374,17 @@ mod tests {
                 .unwrap()
                 .1
                 .clone();
-            let dev_exit = Arc::new(DevelopmentExitDriver::default());
-            let http = dispatch_development_command_with_exit(
-                &app,
-                "get_exit_status",
-                &[],
-                b"",
-                Arc::clone(&dev_exit),
-            )
-            .await
-            .unwrap();
-
             assert_eq!(latest_exit_event, getter);
-            assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&http.body).unwrap(),
-                getter
-            );
 
             let wrong_token = PersistenceFailureTokenView::from_error(
                 &GameError::save_write_failed()
                     .with_failure_token("00000000-0000-4000-8000-000000000000".into()),
             )
             .unwrap();
-            let tauri_error = cancel_exit_core(&app, wrong_token.clone()).unwrap_err();
-            let http_error = dispatch_development_command_with_exit(
-                &app,
-                "cancel_exit",
-                &[],
-                &serde_json::to_vec(&serde_json::json!({
-                    "failureToken": wrong_token,
-                }))
-                .unwrap(),
-                Arc::clone(&dev_exit),
-            )
-            .await
-            .unwrap_err();
-            assert_eq!(http_error, tauri_error);
-            assert!(dev_exit.recorded_codes().is_empty());
+            assert_eq!(
+                cancel_exit_core(&app, wrong_token).unwrap_err(),
+                GameError::stale_persistence_failure_token()
+            );
         }
     }
 
@@ -4745,82 +4232,6 @@ mod tests {
                 .code,
                 "staleSaveSelection"
             );
-
-            let response = dispatch_development_command(
-                &app,
-                "read_save_thumbnail",
-                &[],
-                &serde_json::to_vec(&serde_json::json!({
-                    "reference": { "type": "manual", "slot": 1 },
-                    "observedSaveId": save_id,
-                }))
-                .unwrap(),
-            )
-            .await
-            .unwrap();
-            assert_eq!(response.content_type, "image/png");
-            assert_eq!(response.body, expected);
-        }
-
-        #[tokio::test]
-        async fn development_http_adapter_serializes_the_shared_wrapper_and_save_views() {
-            let (_guard, resources) = save_capture_fixture_resources();
-            let direct_temp = tempfile::tempdir().unwrap();
-            let http_temp = tempfile::tempdir().unwrap();
-            let direct = build_app_state_with_storage(
-                resources.clone(),
-                direct_temp.path().join("saves"),
-                Arc::new(ProductionSaveFilesystem),
-            )
-            .unwrap();
-            let http =
-                build_development_app_state(resources.clone(), http_temp.path().join("saves"))
-                    .unwrap();
-
-            let expected_start =
-                serde_json::to_value(start_game_with_persistence_core(&direct).await.unwrap())
-                    .unwrap();
-            let actual_start = dispatch_development_command(&http, "start_game", &[], b"{}")
-                .await
-                .unwrap();
-            assert_eq!(actual_start.content_type, "application/json");
-            assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&actual_start.body).unwrap(),
-                expected_start
-            );
-
-            let expected_browser = serde_json::to_value(
-                list_saves_core(&direct, || direct.persistence.as_ref().unwrap().discover())
-                    .await
-                    .unwrap(),
-            )
-            .unwrap();
-            let actual_browser = dispatch_development_command(&http, "list_saves", &[], b"{}")
-                .await
-                .unwrap();
-            assert_eq!(
-                serde_json::from_slice::<serde_json::Value>(&actual_browser.body).unwrap(),
-                expected_browser
-            );
-
-            for (command, expected) in [
-                (
-                    "get_persistence_status",
-                    serde_json::to_value(persistence_status_snapshot(&http.coordinator)).unwrap(),
-                ),
-                (
-                    "get_thumbnail_activity",
-                    serde_json::to_value(thumbnail_activity_snapshot(&http.coordinator)).unwrap(),
-                ),
-            ] {
-                let response = dispatch_development_command(&http, command, &[], b"{}")
-                    .await
-                    .unwrap();
-                assert_eq!(
-                    serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
-                    expected
-                );
-            }
         }
 
         #[tokio::test]
@@ -5437,50 +4848,6 @@ mod tests {
             );
         }
 
-        #[test]
-        fn development_http_dispatch_registers_the_complete_task_11_surface() {
-            let body = function_body(
-                include_str!("lib.rs"),
-                "dispatch_development_command_with_exit",
-            );
-
-            for command in [
-                "list_saves",
-                "get_state",
-                "get_persistence_status",
-                "get_thumbnail_activity",
-                "get_exit_status",
-                "start_game",
-                "start_game_without_saving",
-                "prepare_save_thumbnail",
-                "submit_save_thumbnail",
-                "report_save_thumbnail_failure",
-                "read_save_thumbnail",
-                "save_manual",
-                "load_save",
-                "load_save_discarding_current",
-                "continue_game",
-                "delete_save",
-                "return_to_title",
-                "return_to_title_without_saving",
-                "acknowledge_acquisition_event",
-                "cancel_persistence_failure",
-                "retry_exit",
-                "cancel_exit",
-                "exit_without_saving",
-                "reset_game",
-                "select_analysis_board",
-                "update_analysis_draft",
-                "submit_analysis_board",
-            ] {
-                assert_eq!(
-                    body.matches(&format!("\"{command}\"")).count(),
-                    1,
-                    "{command} must have exactly one HTTP dispatch arm"
-                );
-            }
-        }
-
         fn registered_command_count(handler: &str, command: &str) -> usize {
             handler
                 .split(|character: char| character == ',' || character.is_whitespace())
@@ -5796,123 +5163,5 @@ mod tests {
         assert_eq!(error.code, "persistenceOperationInProgress");
         assert_eq!(installed_scene_id(&app), "old");
         drop(gate);
-    }
-
-    /// Contract test: every command registered in `generate_handler!` must also
-    /// be handled by the HTTP development dispatch
-    /// (`dispatch_development_command_with_exit`). The two surfaces share the
-    /// same `GameEngine` methods and `*_core` helpers, so arg-type drift
-    /// surfaces as compile errors. This test catches the remaining drift risk:
-    /// a command added to one surface but not the other.
-    ///
-    /// When you add a new command to `generate_handler!`, add its name here AND
-    /// to the HTTP dispatch match in `dispatch_development_command_with_exit`.
-    mod command_surface_contract {
-        use super::*;
-        use std::sync::Arc;
-
-        fn title_state() -> AppState {
-            AppState {
-                session: Arc::new(Mutex::new(AppSession::empty())),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::new(),
-                resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
-            }
-        }
-
-        /// Every command name that appears in `generate_handler!` (excluding
-        /// `cfg(feature = "e2e")` commands, which are Tauri-only by design).
-        /// The HTTP dispatch must handle each of these.
-        const TAURI_COMMAND_NAMES: &[&str] = &[
-            "list_saves",
-            "get_persistence_status",
-            "get_thumbnail_activity",
-            "get_exit_status",
-            "start_game",
-            "start_game_without_saving",
-            "prepare_save_thumbnail",
-            "submit_save_thumbnail",
-            "report_save_thumbnail_failure",
-            "read_save_thumbnail",
-            "save_manual",
-            "load_save",
-            "load_save_discarding_current",
-            "continue_game",
-            "delete_save",
-            "return_to_title",
-            "return_to_title_without_saving",
-            "acknowledge_acquisition_event",
-            "cancel_persistence_failure",
-            "retry_exit",
-            "cancel_exit",
-            "exit_without_saving",
-            "reset_game",
-            "get_state",
-            "list_scenes",
-            "jump_to_scene",
-            "advance_dialogue",
-            "select_analysis_board",
-            "update_analysis_draft",
-            "submit_analysis_board",
-            "inspect_hotspot",
-            "interview_topic",
-            "enter_sublocation",
-            "reexamine_evidence",
-            "reexamine_statement",
-            "ask_interrogation_question",
-            "challenge_interrogation_line",
-            "present_interrogation_evidence",
-            "withdraw_interrogation",
-            "resume_interrogation_testimony",
-            "complete_interrogation_phase",
-        ];
-
-        #[tokio::test]
-        async fn http_dispatch_recognizes_every_tauri_command() {
-            let state = title_state();
-            let exit = Arc::new(DevelopmentExitDriver::default());
-            for &command in TAURI_COMMAND_NAMES {
-                let result = dispatch_development_command_with_exit(
-                    &state,
-                    command,
-                    &[],
-                    &[],
-                    Arc::clone(&exit),
-                )
-                .await;
-                match result {
-                    Ok(_) => { /* command succeeded — recognized */ }
-                    Err(error) => {
-                        assert_ne!(
-                            error.code, "unknownCommand",
-                            "HTTP dispatch does not recognize `{command}`, \
-                             but it is registered in generate_handler!. \
-                             Add it to dispatch_development_command_with_exit."
-                        );
-                    }
-                }
-            }
-        }
-
-        #[tokio::test]
-        async fn http_dispatch_rejects_unknown_commands() {
-            let state = title_state();
-            let exit = Arc::new(DevelopmentExitDriver::default());
-            let result = dispatch_development_command_with_exit(
-                &state,
-                "this_command_does_not_exist",
-                &[],
-                &[],
-                exit,
-            )
-            .await;
-            assert_eq!(
-                result.unwrap_err().code,
-                "unknownCommand",
-                "negative control: a nonexistent command must return unknownCommand"
-            );
-        }
     }
 }
