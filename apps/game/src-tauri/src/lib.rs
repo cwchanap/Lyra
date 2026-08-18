@@ -2021,8 +2021,8 @@ mod tests {
             }
         }
 
-        #[tokio::test]
-        async fn missing_duplicate_non_utf8_and_malformed_tickets_stop_before_the_coordinator() {
+        #[test]
+        fn missing_duplicate_non_utf8_and_malformed_tickets_stop_before_the_coordinator() {
             let malformed_headers = [
                 vec![],
                 vec![
@@ -2043,7 +2043,7 @@ mod tests {
                 let error =
                     submit_save_thumbnail_core(&coordinator, &headers, b"not-a-png").unwrap_err();
 
-                assert_eq!(error.code, "staleThumbnailTicket");
+                assert_eq!(error, GameError::stale_thumbnail_ticket());
                 assert_eq!(
                     coordinator.thumbnail_activity(),
                     ThumbnailActivityView::Capturing,
@@ -2126,25 +2126,6 @@ mod tests {
                     THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
                     serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
                 )
-            );
-        }
-
-        #[tokio::test]
-        async fn submit_save_thumbnail_core_rejects_missing_and_duplicate_ticket_headers() {
-            let coordinator = SaveCoordinator::new();
-            let ticket = uuid::Uuid::new_v4().hyphenated().to_string();
-            let duplicate = [
-                RawThumbnailHeader::new(b"x-lyra-thumbnail-ticket", ticket.as_bytes()),
-                RawThumbnailHeader::new(b"X-Lyra-Thumbnail-Ticket", ticket.as_bytes()),
-            ];
-
-            assert_eq!(
-                submit_save_thumbnail_core(&coordinator, &[], b"png").unwrap_err(),
-                GameError::stale_thumbnail_ticket()
-            );
-            assert_eq!(
-                submit_save_thumbnail_core(&coordinator, &duplicate, b"png").unwrap_err(),
-                GameError::stale_thumbnail_ticket()
             );
         }
     }
