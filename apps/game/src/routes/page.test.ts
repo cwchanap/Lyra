@@ -40,7 +40,6 @@ import Page from "./+page.svelte";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
-  fetch: vi.fn(),
   saveNameSummary: vi.fn(),
   saveConfirmationSummary: vi.fn(),
   audioPreferences: {
@@ -254,25 +253,6 @@ const acquiredEvidence: PendingAcquisitionView = {
   ordinal: 0,
 };
 
-// `httpInvoke` (the non-Tauri dev fallback used in tests, since
-// `__TAURI_INTERNALS__` is absent) POSTs to `${DEV_HTTP_BASE}/${command}` and
-// reads `r.text()`. Shape a minimal Response so the fallback resolves.
-function jsonResponse(body: unknown): Response {
-  return {
-    ok: true,
-    status: 200,
-    text: () => Promise.resolve(JSON.stringify(body)),
-  } as unknown as Response;
-}
-
-function jsonError(body: unknown): Response {
-  return {
-    ok: false,
-    status: 500,
-    text: () => Promise.resolve(JSON.stringify(body)),
-  } as unknown as Response;
-}
-
 function titleDiscovery(
   firstStatus: SaveSlotStatusView = { type: "empty" },
 ): SaveBrowserOpenResultView {
@@ -320,30 +300,28 @@ function validSlotStatus(saveId: string): SaveSlotStatusView {
   };
 }
 
-function stubFetchForSceneNavigation() {
-  mocks.fetch.mockImplementation(async (url: string) => {
-    const path = String(url).replace("http://127.0.0.1:1421/", "");
-    if (path === "list_scenes") return jsonResponse(sceneNavigationIndex);
-    if (path === "jump_to_scene") {
-      return jsonResponse({
+function stubInvokeForSceneNavigation() {
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "list_scenes") return sceneNavigationIndex;
+    if (command === "jump_to_scene") {
+      return {
         state: jumpedState(),
         thumbnailCapture: null,
-      });
+      };
     }
-    return jsonResponse({});
+    return {};
   });
 }
 
 function stubAcquisitionAcknowledgement() {
-  mocks.fetch.mockImplementation(async (url: string) => {
-    const path = String(url).replace("http://127.0.0.1:1421/", "");
-    if (path === "acknowledge_acquisition_event") {
-      return jsonResponse({
+  mocks.invoke.mockImplementation(async (command: string) => {
+    if (command === "acknowledge_acquisition_event") {
+      return {
         state: currentState(),
         thumbnailCapture: null,
-      });
+      };
     }
-    return jsonResponse({});
+    return {};
   });
 }
 
@@ -356,8 +334,7 @@ describe("+page title persistence flows", () => {
     canvasGetContextSpy = vi
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue(null);
-    mocks.fetch.mockReset();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
     gameState.value = null;
     gameState.error = null;
     gameState.loading = false;
@@ -365,7 +342,6 @@ describe("+page title persistence flows", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     canvasGetContextSpy.mockRestore();
     gameState.value = null;
@@ -375,17 +351,16 @@ describe("+page title persistence flows", () => {
   });
 
   it("discovers saves on title and disables Continue and Load for eight empty slots", async () => {
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return titleDiscovery();
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     render(Page);
@@ -397,9 +372,7 @@ describe("+page title persistence flows", () => {
       expect(screen.getByRole("button", { name: "開始新遊戲" })).toBeEnabled();
     });
     expect(
-      mocks.fetch.mock.calls.some(([url]) =>
-        String(url).endsWith("/list_saves"),
-      ),
+      mocks.invoke.mock.calls.some(([command]) => command === "list_saves"),
     ).toBe(true);
   });
 
@@ -419,40 +392,41 @@ describe("+page title persistence flows", () => {
       continueCandidate: null,
       preflight: { type: "ready" },
     };
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(unavailable);
-      if (command === "get_persistence_status") {
-        return jsonResponse({
-          type: "degraded",
-          diagnostic:
-            unavailable.browser.discovery.type === "unavailable"
-              ? unavailable.browser.discovery.diagnostic
-              : null,
-        });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      if (command === "start_game") {
-        return jsonError({
-          code: "persistenceUnavailable",
-          message: "無法儲存新遊戲",
-          failureToken: "new-game-token",
-        });
-      }
-      if (command === "start_game_without_saving") {
-        expect(JSON.parse(String(init?.body))).toEqual({
-          failureToken: "new-game-token",
-        });
-        return jsonResponse({
-          state: currentState(),
-          thumbnailCapture: null,
-        });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return unavailable;
+        if (command === "get_persistence_status") {
+          return {
+            type: "degraded",
+            diagnostic:
+              unavailable.browser.discovery.type === "unavailable"
+                ? unavailable.browser.discovery.diagnostic
+                : null,
+          };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        if (command === "start_game") {
+          throw {
+            code: "persistenceUnavailable",
+            message: "無法儲存新遊戲",
+            failureToken: "new-game-token",
+          };
+        }
+        if (command === "start_game_without_saving") {
+          expect(args as Record<string, unknown>).toEqual({
+            failureToken: "new-game-token",
+          });
+          return {
+            state: currentState(),
+            thumbnailCapture: null,
+          };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     const newGame = await screen.findByRole("button", {
@@ -489,35 +463,37 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
     let cancelAttempts = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      if (command === "start_game") {
-        return jsonError({
-          code: "saveWriteFailed",
-          message: "無法儲存新遊戲",
-          failureToken: "new-game-cancel-token",
-        });
-      }
-      if (command === "cancel_persistence_failure") {
-        cancelBodies.push(JSON.parse(String(init?.body)));
-        cancelAttempts += 1;
-        return cancelAttempts === 1
-          ? jsonError({
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return titleDiscovery();
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        if (command === "start_game") {
+          throw {
+            code: "saveWriteFailed",
+            message: "無法儲存新遊戲",
+            failureToken: "new-game-cancel-token",
+          };
+        }
+        if (command === "cancel_persistence_failure") {
+          cancelBodies.push(args as Record<string, unknown>);
+          cancelAttempts += 1;
+          if (cancelAttempts === 1) {
+            throw {
               code: "persistenceUnavailable",
               message: "暫時無法取消",
-            })
-          : jsonResponse(null);
-      }
-      return jsonResponse({});
-    });
+            };
+          }
+          return null;
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.click(await screen.findByRole("button", { name: "開始新遊戲" }));
@@ -548,46 +524,46 @@ describe("+page title persistence flows", () => {
   it("does not carry a failed New Game cancellation alert into a later Return recovery", async () => {
     const user = userEvent.setup();
     let startAttempts = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return titleDiscovery();
       if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
+        return sceneNavigationIndex;
       }
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "get_exit_status") return { type: "idle" };
       if (command === "start_game") {
         startAttempts += 1;
-        return startAttempts === 1
-          ? jsonError({
-              code: "saveWriteFailed",
-              message: "無法儲存新遊戲",
-              failureToken: "new-alert-token",
-            })
-          : jsonResponse({
-              state: currentState(),
-              thumbnailCapture: null,
-            });
+        if (startAttempts === 1) {
+          throw {
+            code: "saveWriteFailed",
+            message: "無法儲存新遊戲",
+            failureToken: "new-alert-token",
+          };
+        }
+        return {
+          state: currentState(),
+          thumbnailCapture: null,
+        };
       }
       if (command === "cancel_persistence_failure") {
-        return jsonError({
+        throw {
           code: "persistenceUnavailable",
           message: "這是上一個取消錯誤",
-        });
+        };
       }
       if (command === "return_to_title") {
-        return jsonError({
+        throw {
           code: "saveWriteFailed",
           message: "返回標題前無法儲存",
           failureToken: "return-alert-token",
-        });
+        };
       }
-      return jsonResponse({});
+      return {};
     });
 
     render(Page);
@@ -630,26 +606,25 @@ describe("+page title persistence flows", () => {
     };
     refreshed.continueCandidate = { type: "manual", slot: 2 };
     let listCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
+    mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "list_saves") {
         listCalls += 1;
-        return jsonResponse(listCalls === 1 ? invalid : refreshed);
+        return listCalls === 1 ? invalid : refreshed;
       }
       if (command === "continue_game") {
-        return jsonError({
+        throw {
           code: "saveCorrupt",
           message: "最新存檔已損毀",
-        });
+        };
       }
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     render(Page);
@@ -682,27 +657,28 @@ describe("+page title persistence flows", () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(discovery);
-      if (command === "load_save") {
-        loadArgs = JSON.parse(String(init?.body));
-        return jsonResponse({
-          state: jumpedState(),
-          thumbnailCapture: null,
-        });
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return discovery;
+        if (command === "load_save") {
+          loadArgs = args as Record<string, unknown>;
+          return {
+            state: jumpedState(),
+            thumbnailCapture: null,
+          };
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
@@ -730,28 +706,27 @@ describe("+page title persistence flows", () => {
   it("single-flights a double title Load before the first IPC settles", async () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
-    let resolveLoad!: (response: Response) => void;
-    const delayedLoad = new Promise<Response>((resolve) => {
+    let resolveLoad!: (response: unknown) => void;
+    const delayedLoad = new Promise<unknown>((resolve) => {
       resolveLoad = resolve;
     });
     let loadCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(discovery);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
       if (command === "load_save") {
         loadCalls += 1;
         return delayedLoad;
       }
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
       if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      return jsonResponse({});
+      return {};
     });
 
     render(Page);
@@ -770,7 +745,7 @@ describe("+page title persistence flows", () => {
 
     expect(loadCalls).toBe(1);
     expect(screen.queryByRole("dialog", { name: "載入失敗" })).toBeNull();
-    resolveLoad(jsonResponse({ state: jumpedState(), thumbnailCapture: null }));
+    resolveLoad({ state: jumpedState(), thumbnailCapture: null });
     await waitFor(() => expect(gameState.value?.scene.id).toBe("scene_2"));
     expect(screen.queryByRole("dialog", { name: "載入失敗" })).toBeNull();
   });
@@ -778,17 +753,16 @@ describe("+page title persistence flows", () => {
   it("closes the title browser from the real window Escape handler and restores Load focus", async () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("title-load-id"));
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(discovery);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     render(Page);
@@ -817,27 +791,28 @@ describe("+page title persistence flows", () => {
       status: validSlotStatus("selected-save-id"),
     };
     const loadArgs: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(discovery);
-      if (command === "load_save") {
-        loadArgs.push(JSON.parse(String(init?.body)));
-        return jsonError({
-          code: "saveReadFailed",
-          message: "選取的存檔暫時無法載入",
-        });
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return discovery;
+        if (command === "load_save") {
+          loadArgs.push(args as Record<string, unknown>);
+          throw {
+            code: "saveReadFailed",
+            message: "選取的存檔暫時無法載入",
+          };
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
@@ -873,14 +848,12 @@ describe("+page acquisition popup integration", () => {
     canvasGetContextSpy = vi
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue(null);
-    mocks.fetch.mockReset();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     seedGameState();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     canvasGetContextSpy.mockRestore();
     acquisitionController.clear();
@@ -919,23 +892,22 @@ describe("+page acquisition popup integration", () => {
       expect(advanceButton).toHaveFocus();
     });
     expect(
-      mocks.fetch.mock.calls.some(([url]) =>
-        String(url).endsWith("/advance_dialogue"),
+      mocks.invoke.mock.calls.some(
+        ([command]) => command === "advance_dialogue",
       ),
     ).toBe(false);
   });
 
   it("surfaces an acknowledgement failure inside the dialog and retries Continue", async () => {
     const user = userEvent.setup();
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const path = String(url).replace("http://127.0.0.1:1421/", "");
-      if (path === "acknowledge_acquisition_event") {
-        return jsonError({
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "acknowledge_acquisition_event") {
+        throw {
           code: "unknownAcquisitionEvent",
           message: "尚未呈現的取得事件無法確認。",
-        });
+        };
       }
-      return jsonResponse({});
+      return {};
     });
     render(Page);
 
@@ -959,15 +931,14 @@ describe("+page acquisition popup integration", () => {
     expect(continueButton).toBeEnabled();
 
     // The second Continue retries the same acknowledgement and succeeds.
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const path = String(url).replace("http://127.0.0.1:1421/", "");
-      if (path === "acknowledge_acquisition_event") {
-        return jsonResponse({
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "acknowledge_acquisition_event") {
+        return {
           state: currentState(),
           thumbnailCapture: null,
-        });
+        };
       }
-      return jsonResponse({});
+      return {};
     });
     await user.click(continueButton);
 
@@ -979,16 +950,16 @@ describe("+page acquisition popup integration", () => {
 
   it("does not open the game menu while a command is in flight", async () => {
     const user = userEvent.setup();
-    let resolveAdvance!: (response: Response) => void;
-    const delayedAdvance = new Promise<Response>((resolve) => {
+    let resolveAdvance!: (response: unknown) => void;
+    const delayedAdvance = new Promise<unknown>((resolve) => {
       resolveAdvance = resolve;
     });
-    mocks.fetch.mockImplementation(async (url: string) => {
-      if (String(url).endsWith("/advance_dialogue")) return delayedAdvance;
-      if (String(url).endsWith("/list_scenes")) {
-        return jsonResponse(sceneNavigationIndex);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "advance_dialogue") return delayedAdvance;
+      if (command === "list_scenes") {
+        return sceneNavigationIndex;
       }
-      return jsonResponse({});
+      return {};
     });
     render(Page);
 
@@ -1001,22 +972,16 @@ describe("+page acquisition popup integration", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
-    resolveAdvance(
-      jsonResponse({ state: currentState(), thumbnailCapture: null }),
-    );
+    resolveAdvance({ state: currentState(), thumbnailCapture: null });
     await command;
   });
 
   it("clears inFlight after a command error so the UI does not lock up", async () => {
-    mocks.fetch.mockImplementation(async (url: string) => {
-      if (String(url).endsWith("/advance_dialogue")) {
-        return {
-          ok: false,
-          status: 500,
-          text: () => Promise.resolve(JSON.stringify({ message: "bad token" })),
-        } as unknown as Response;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "advance_dialogue") {
+        throw { code: "gameCommandFailed", message: "bad token" };
       }
-      return jsonResponse({});
+      return {};
     });
     render(Page);
 
@@ -1036,8 +1001,7 @@ describe("+page acquisition popup integration", () => {
 
 describe("+page in-game persistence browser", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     persistenceStore.replacePersistenceStatus({ type: "healthy" });
     persistenceStore.replaceThumbnailActivity({ type: "idle" });
@@ -1046,7 +1010,6 @@ describe("+page in-game persistence browser", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -1058,24 +1021,23 @@ describe("+page in-game persistence browser", () => {
   });
 
   it("keeps gameplay isolated behind visible loading until Manual Save preflight succeeds", async () => {
-    let resolveList!: (response: Response) => void;
-    const delayedList = new Promise<Response>((resolve) => {
+    let resolveList!: (response: unknown) => void;
+    const delayedList = new Promise<unknown>((resolve) => {
       resolveList = resolve;
     });
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
+    mocks.invoke.mockImplementation(async (command: string) => {
       if (command === "list_saves") return delayedList;
       if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
+        return sceneNavigationIndex;
       }
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     const user = userEvent.setup();
@@ -1094,7 +1056,7 @@ describe("+page in-game persistence browser", () => {
     expect(rootMenu.inert).toBe(true);
     expect(screen.getByRole("status").closest("[inert]")).toBeNull();
 
-    resolveList(jsonResponse(titleDiscovery()));
+    resolveList(titleDiscovery());
     const browser = await screen.findByRole("region", {
       name: "存檔瀏覽器",
     });
@@ -1117,18 +1079,17 @@ describe("+page in-game persistence browser", () => {
       },
       failureToken: "manual-flush-token",
     };
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(failed);
-      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return failed;
+      if (command === "list_scenes") return sceneNavigationIndex;
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     const user = userEvent.setup();
@@ -1166,18 +1127,17 @@ describe("+page in-game persistence browser", () => {
       },
       failureToken: "load-flush-token",
     };
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(failed);
-      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return failed;
+      if (command === "list_scenes") return sceneNavigationIndex;
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
 
     render(Page);
@@ -1227,40 +1187,41 @@ describe("+page in-game persistence browser", () => {
       args: Record<string, unknown>;
     }> = [];
     let listCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1)!;
-      if (command === "list_saves") {
-        listCalls += 1;
-        return jsonResponse(listCalls === 1 ? failed : ready);
-      }
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      if (
-        command === "cancel_persistence_failure" ||
-        command === "load_save" ||
-        command === "load_save_discarding_current"
-      ) {
-        commands.push({
-          command,
-          args: JSON.parse(String(init?.body)),
-        });
-        return command === "cancel_persistence_failure"
-          ? jsonResponse(null)
-          : jsonResponse({
-              state: jumpedState(),
-              thumbnailCapture: null,
-            });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") {
+          listCalls += 1;
+          return listCalls === 1 ? failed : ready;
+        }
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        if (
+          command === "cancel_persistence_failure" ||
+          command === "load_save" ||
+          command === "load_save_discarding_current"
+        ) {
+          commands.push({
+            command,
+            args: args as Record<string, unknown>,
+          });
+          return command === "cancel_persistence_failure"
+            ? null
+            : {
+                state: jumpedState(),
+                thumbnailCapture: null,
+              };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -1331,60 +1292,61 @@ describe("+page in-game persistence browser", () => {
   it("single-flights an empty manual save before thumbnail preparation settles", async () => {
     const user = userEvent.setup();
     let manualArgs: Record<string, unknown> | null = null;
-    let resolvePreparation!: (response: Response) => void;
-    const delayedPreparation = new Promise<Response>((resolve) => {
+    let resolvePreparation!: (response: unknown) => void;
+    const delayedPreparation = new Promise<unknown>((resolve) => {
       resolvePreparation = resolve;
     });
     let prepareCalls = 0;
     let manualCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "prepare_save_thumbnail") {
-        prepareCalls += 1;
-        return delayedPreparation;
-      }
-      if (command === "report_save_thumbnail_failure") {
-        return jsonResponse({
-          type: "unavailable",
-          diagnostic: {
-            reason: "captureUnavailable",
-            message: "無法顯示預覽",
-            retryable: false,
-          },
-        });
-      }
-      if (command === "save_manual") {
-        manualCalls += 1;
-        manualArgs = JSON.parse(String(init?.body));
-        const browser = titleDiscovery().browser;
-        return jsonResponse({
-          savedSlot: browser.slots[5],
-          browser,
-          thumbnailActivity: {
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return titleDiscovery();
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (command === "prepare_save_thumbnail") {
+          prepareCalls += 1;
+          return delayedPreparation;
+        }
+        if (command === "report_save_thumbnail_failure") {
+          return {
             type: "unavailable",
             diagnostic: {
               reason: "captureUnavailable",
               message: "無法顯示預覽",
               retryable: false,
             },
-          },
-        });
-      }
-      return jsonResponse({});
-    });
+          };
+        }
+        if (command === "save_manual") {
+          manualCalls += 1;
+          manualArgs = args as Record<string, unknown>;
+          const browser = titleDiscovery().browser;
+          return {
+            savedSlot: browser.slots[5],
+            browser,
+            thumbnailActivity: {
+              type: "unavailable",
+              diagnostic: {
+                reason: "captureUnavailable",
+                message: "無法顯示預覽",
+                retryable: false,
+              },
+            },
+          };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -1414,7 +1376,7 @@ describe("+page in-game persistence browser", () => {
     expect(
       screen.getByRole("dialog", { name: "命名存檔" }),
     ).toBeInTheDocument();
-    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
+    resolvePreparation({ ticket: "manual-ticket", timeoutMs: 0 });
     await waitFor(() => expect(manualArgs).not.toBeNull());
     expect(manualCalls).toBe(1);
     expect(manualArgs).toEqual({
@@ -1477,22 +1439,21 @@ describe("+page in-game persistence browser", () => {
         modifiedAt: "2026-07-27T12:00:01Z",
         status: validSlotStatus("occupied-manual-id"),
       };
-      mocks.fetch.mockImplementation(async (url: string) => {
-        const command = String(url).split("/").at(-1);
-        if (command === "list_saves") return jsonResponse(saves);
+      mocks.invoke.mockImplementation(async (command: string) => {
+        if (command === "list_saves") return saves;
         if (command === "list_scenes") {
-          return jsonResponse(sceneNavigationIndex);
+          return sceneNavigationIndex;
         }
         if (command === "get_persistence_status") {
-          return jsonResponse({ type: "healthy" });
+          return { type: "healthy" };
         }
         if (command === "get_thumbnail_activity") {
-          return jsonResponse({ type: "idle" });
+          return { type: "idle" };
         }
         if (command === "get_exit_status") {
-          return jsonResponse({ type: "idle" });
+          return { type: "idle" };
         }
-        return jsonResponse({});
+        return {};
       });
 
       render(Page);
@@ -1539,32 +1500,31 @@ describe("+page in-game persistence browser", () => {
 
   it("dismisses only the top manual-save failure on Escape and leaves its name layer intact", async () => {
     const user = userEvent.setup();
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return titleDiscovery();
       if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
+        return sceneNavigationIndex;
       }
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
+      if (command === "get_exit_status") return { type: "idle" };
       if (command === "prepare_save_thumbnail") {
-        return jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 });
+        return { ticket: "manual-ticket", timeoutMs: 0 };
       }
       if (command === "report_save_thumbnail_failure") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
       if (command === "save_manual") {
-        return jsonError({
+        throw {
           code: "saveWriteFailed",
           message: "手動存檔失敗",
-        });
+        };
       }
-      return jsonResponse({});
+      return {};
     });
 
     const { container } = render(Page);
@@ -1608,30 +1568,31 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("load-save-id"));
     let loadArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(saves);
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "load_save") {
-        loadArgs = JSON.parse(String(init?.body));
-        return jsonResponse({
-          state: jumpedState(),
-          thumbnailCapture: null,
-        });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return saves;
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (command === "load_save") {
+          loadArgs = args as Record<string, unknown>;
+          return {
+            state: jumpedState(),
+            thumbnailCapture: null,
+          };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -1674,37 +1635,38 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(saves);
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "load_save") {
-        return jsonError({
-          code: "saveWriteFailed",
-          message: "無法先儲存目前進度",
-          failureToken: "opaque-load-token",
-        });
-      }
-      if (command === "load_save_discarding_current") {
-        discardArgs = JSON.parse(String(init?.body));
-        return jsonResponse({
-          state: jumpedState(),
-          thumbnailCapture: null,
-        });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return saves;
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (command === "load_save") {
+          throw {
+            code: "saveWriteFailed",
+            message: "無法先儲存目前進度",
+            failureToken: "opaque-load-token",
+          };
+        }
+        if (command === "load_save_discarding_current") {
+          discardArgs = args as Record<string, unknown>;
+          return {
+            state: jumpedState(),
+            thumbnailCapture: null,
+          };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -1765,32 +1727,33 @@ describe("+page in-game persistence browser", () => {
     const user = userEvent.setup();
     const saves = titleDiscovery(validSlotStatus("observed-load-id"));
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(saves);
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      if (command === "load_save") {
-        return jsonError({
-          code: "saveWriteFailed",
-          message: "無法先儲存目前進度",
-          failureToken: "load-cancel-token",
-        });
-      }
-      if (command === "cancel_persistence_failure") {
-        cancelArgs = JSON.parse(String(init?.body));
-        return jsonResponse(null);
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return saves;
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        if (command === "load_save") {
+          throw {
+            code: "saveWriteFailed",
+            message: "無法先儲存目前進度",
+            failureToken: "load-cancel-token",
+          };
+        }
+        if (command === "cancel_persistence_failure") {
+          cancelArgs = args as Record<string, unknown>;
+          return null;
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -1832,41 +1795,42 @@ describe("+page in-game persistence browser", () => {
       command: string;
       args: Record<string, unknown>;
     }> = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1)!;
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (
-        command === "cancel_exit" ||
-        command === "retry_exit" ||
-        command === "exit_without_saving"
-      ) {
-        commandArgs.push({
-          command,
-          args: JSON.parse(String(init?.body)),
-        });
-        return jsonResponse(
-          command === "retry_exit" ? { type: "saving" } : { type: "idle" },
-        );
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (
+          command === "cancel_exit" ||
+          command === "retry_exit" ||
+          command === "exit_without_saving"
+        ) {
+          commandArgs.push({
+            command,
+            args: args as Record<string, unknown>,
+          });
+          return command === "retry_exit"
+            ? { type: "saving" }
+            : { type: "idle" };
+        }
+        return {};
+      },
+    );
 
     const { container } = render(Page);
     await waitFor(() =>
       expect(
-        mocks.fetch.mock.calls.some(([url]) =>
-          String(url).endsWith("/get_exit_status"),
+        mocks.invoke.mock.calls.some(
+          ([command]) => command === "get_exit_status",
         ),
       ).toBe(true),
     );
@@ -1930,30 +1894,31 @@ describe("+page in-game persistence browser", () => {
   it("swallows Escape while exit is saving and uses exact cancel_exit from the failed layer", async () => {
     const user = userEvent.setup();
     const cancelBodies: Record<string, unknown>[] = [];
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1)!;
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      if (command === "cancel_exit") {
-        cancelBodies.push(JSON.parse(String(init?.body)));
-        return jsonResponse({ type: "idle" });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        if (command === "cancel_exit") {
+          cancelBodies.push(args as Record<string, unknown>);
+          return { type: "idle" };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await waitFor(() =>
       expect(
-        mocks.fetch.mock.calls.some(([url]) =>
-          String(url).endsWith("/get_exit_status"),
+        mocks.invoke.mock.calls.some(
+          ([command]) => command === "get_exit_status",
         ),
       ).toBe(true),
     );
@@ -1988,23 +1953,22 @@ describe("+page in-game persistence browser", () => {
   });
 
   it("keeps degraded persistence health visible separately from preview failure", async () => {
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scenes") return sceneNavigationIndex;
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
     render(Page);
     await waitFor(() =>
       expect(
-        mocks.fetch.mock.calls.some(([url]) =>
-          String(url).endsWith("/get_exit_status"),
+        mocks.invoke.mock.calls.some(
+          ([command]) => command === "get_exit_status",
         ),
       ).toBe(true),
     );
@@ -2080,57 +2044,58 @@ describe("+page in-game persistence browser", () => {
     };
     gameState.value = state;
 
-    let resolvePreparation!: (response: Response) => void;
-    const delayedPreparation = new Promise<Response>((resolve) => {
+    let resolvePreparation!: (response: unknown) => void;
+    const delayedPreparation = new Promise<unknown>((resolve) => {
       resolvePreparation = resolve;
     });
     let manualCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "prepare_save_thumbnail") {
-        return delayedPreparation;
-      }
-      if (command === "report_save_thumbnail_failure") {
-        return jsonResponse({
-          type: "unavailable",
-          diagnostic: {
-            reason: "captureUnavailable",
-            message: "無法顯示預覽",
-            retryable: false,
-          },
-        });
-      }
-      if (command === "save_manual") {
-        manualCalls += 1;
-        const browser = titleDiscovery().browser;
-        return jsonResponse({
-          savedSlot: browser.slots[5],
-          browser,
-          thumbnailActivity: {
+    mocks.invoke.mockImplementation(
+      async (command: string, _args?: Record<string, unknown>) => {
+        if (command === "list_saves") return titleDiscovery();
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (command === "prepare_save_thumbnail") {
+          return delayedPreparation;
+        }
+        if (command === "report_save_thumbnail_failure") {
+          return {
             type: "unavailable",
             diagnostic: {
               reason: "captureUnavailable",
               message: "無法顯示預覽",
               retryable: false,
             },
-          },
-        });
-      }
-      return jsonResponse({});
-    });
+          };
+        }
+        if (command === "save_manual") {
+          manualCalls += 1;
+          const browser = titleDiscovery().browser;
+          return {
+            savedSlot: browser.slots[5],
+            browser,
+            thumbnailActivity: {
+              type: "unavailable",
+              diagnostic: {
+                reason: "captureUnavailable",
+                message: "無法顯示預覽",
+                retryable: false,
+              },
+            },
+          };
+        }
+        return {};
+      },
+    );
 
     render(Page);
 
@@ -2161,7 +2126,7 @@ describe("+page in-game persistence browser", () => {
     await user.type(input, "訊問中存檔");
     await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
 
-    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
+    resolvePreparation({ ticket: "manual-ticket", timeoutMs: 0 });
 
     await waitFor(() => expect(manualCalls).toBe(1));
 
@@ -2232,57 +2197,58 @@ describe("+page in-game persistence browser", () => {
     };
     gameState.value = state;
 
-    let resolvePreparation!: (response: Response) => void;
-    const delayedPreparation = new Promise<Response>((resolve) => {
+    let resolvePreparation!: (response: unknown) => void;
+    const delayedPreparation = new Promise<unknown>((resolve) => {
       resolvePreparation = resolve;
     });
     let manualCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string, _init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "list_saves") return jsonResponse(titleDiscovery());
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "prepare_save_thumbnail") {
-        return delayedPreparation;
-      }
-      if (command === "report_save_thumbnail_failure") {
-        return jsonResponse({
-          type: "unavailable",
-          diagnostic: {
-            reason: "captureUnavailable",
-            message: "無法顯示預覽",
-            retryable: false,
-          },
-        });
-      }
-      if (command === "save_manual") {
-        manualCalls += 1;
-        const browser = titleDiscovery().browser;
-        return jsonResponse({
-          savedSlot: browser.slots[5],
-          browser,
-          thumbnailActivity: {
+    mocks.invoke.mockImplementation(
+      async (command: string, _args?: Record<string, unknown>) => {
+        if (command === "list_saves") return titleDiscovery();
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        if (command === "prepare_save_thumbnail") {
+          return delayedPreparation;
+        }
+        if (command === "report_save_thumbnail_failure") {
+          return {
             type: "unavailable",
             diagnostic: {
               reason: "captureUnavailable",
               message: "無法顯示預覽",
               retryable: false,
             },
-          },
-        });
-      }
-      return jsonResponse({});
-    });
+          };
+        }
+        if (command === "save_manual") {
+          manualCalls += 1;
+          const browser = titleDiscovery().browser;
+          return {
+            savedSlot: browser.slots[5],
+            browser,
+            thumbnailActivity: {
+              type: "unavailable",
+              diagnostic: {
+                reason: "captureUnavailable",
+                message: "無法顯示預覽",
+                retryable: false,
+              },
+            },
+          };
+        }
+        return {};
+      },
+    );
 
     const { container } = render(Page);
 
@@ -2313,7 +2279,7 @@ describe("+page in-game persistence browser", () => {
     await user.type(input, "訊問問題畫面存檔");
     await user.click(within(nameDialog).getByRole("button", { name: "繼續" }));
 
-    resolvePreparation(jsonResponse({ ticket: "manual-ticket", timeoutMs: 0 }));
+    resolvePreparation({ ticket: "manual-ticket", timeoutMs: 0 });
 
     await waitFor(() => expect(manualCalls).toBe(1));
 
@@ -2339,8 +2305,6 @@ describe("+page in-game persistence browser", () => {
 
 describe("+page close case flow", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    vi.stubGlobal("fetch", mocks.fetch);
     mocks.invoke.mockReset();
     mocks.updateAudioPreferences.mockReset();
     mocks.playGameplaySfxEvent.mockReset();
@@ -2356,7 +2320,6 @@ describe("+page close case flow", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2368,22 +2331,21 @@ describe("+page close case flow", () => {
     const user = userEvent.setup();
     const returned = titleDiscovery(validSlotStatus("return-save"));
     let listCalls = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "return_to_title") return jsonResponse(returned);
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "return_to_title") return returned;
       if (command === "list_saves") {
         listCalls += 1;
-        return jsonResponse(titleDiscovery());
+        return titleDiscovery();
       }
-      if (command === "list_scenes") return jsonResponse(sceneNavigationIndex);
+      if (command === "list_scenes") return sceneNavigationIndex;
       if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
+        return { type: "healthy" };
       }
       if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
+        return { type: "idle" };
       }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
     });
     render(Page);
 
@@ -2410,33 +2372,34 @@ describe("+page close case flow", () => {
   it("keeps gameplay on Return failure and retains the exact token through the second confirmation", async () => {
     const user = userEvent.setup();
     let discardArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "return_to_title") {
-        return jsonError({
-          code: "saveWriteFailed",
-          message: "返回標題前無法儲存",
-          failureToken: "opaque-return-token",
-        });
-      }
-      if (command === "return_to_title_without_saving") {
-        discardArgs = JSON.parse(String(init?.body));
-        return jsonResponse(titleDiscovery());
-      }
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") {
-        return jsonResponse({ type: "idle" });
-      }
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "return_to_title") {
+          throw {
+            code: "saveWriteFailed",
+            message: "返回標題前無法儲存",
+            failureToken: "opaque-return-token",
+          };
+        }
+        if (command === "return_to_title_without_saving") {
+          discardArgs = args as Record<string, unknown>;
+          return titleDiscovery();
+        }
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") {
+          return { type: "idle" };
+        }
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -2480,31 +2443,32 @@ describe("+page close case flow", () => {
   it("cancels a Return challenge with its exact token before Escape restores the game menu", async () => {
     const user = userEvent.setup();
     let cancelArgs: Record<string, unknown> | null = null;
-    mocks.fetch.mockImplementation(async (url: string, init?: RequestInit) => {
-      const command = String(url).split("/").at(-1);
-      if (command === "return_to_title") {
-        return jsonError({
-          code: "saveWriteFailed",
-          message: "返回標題前無法儲存",
-          failureToken: "return-cancel-token",
-        });
-      }
-      if (command === "cancel_persistence_failure") {
-        cancelArgs = JSON.parse(String(init?.body));
-        return jsonResponse(null);
-      }
-      if (command === "list_scenes") {
-        return jsonResponse(sceneNavigationIndex);
-      }
-      if (command === "get_persistence_status") {
-        return jsonResponse({ type: "healthy" });
-      }
-      if (command === "get_thumbnail_activity") {
-        return jsonResponse({ type: "idle" });
-      }
-      if (command === "get_exit_status") return jsonResponse({ type: "idle" });
-      return jsonResponse({});
-    });
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "return_to_title") {
+          throw {
+            code: "saveWriteFailed",
+            message: "返回標題前無法儲存",
+            failureToken: "return-cancel-token",
+          };
+        }
+        if (command === "cancel_persistence_failure") {
+          cancelArgs = args as Record<string, unknown>;
+          return null;
+        }
+        if (command === "list_scenes") {
+          return sceneNavigationIndex;
+        }
+        if (command === "get_persistence_status") {
+          return { type: "healthy" };
+        }
+        if (command === "get_thumbnail_activity") {
+          return { type: "idle" };
+        }
+        if (command === "get_exit_status") return { type: "idle" };
+        return {};
+      },
+    );
 
     render(Page);
     await user.keyboard("{Escape}");
@@ -2530,9 +2494,8 @@ describe("+page close case flow", () => {
 
 describe("+page story clearance on game complete", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    stubFetchForSceneNavigation();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
     __resetStoryClearanceWarningLatches();
     window.localStorage.clear();
     gameState.value = gameCompleteState();
@@ -2542,7 +2505,6 @@ describe("+page story clearance on game complete", () => {
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2571,15 +2533,13 @@ describe("+page story clearance on game complete", () => {
 
 describe("+page scene jump closes the escape menu", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    stubFetchForSceneNavigation();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     seedGameState();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2591,7 +2551,7 @@ describe("+page scene jump closes the escape menu", () => {
     // Behavioral test (not a source-string pin): opens the real Escape menu,
     // enters the Scene Select submenu, clicks a scene, and asserts the menu
     // dialog disappears once jumpToScene resolves. The scene index is served
-    // through the dev HTTP fetch fallback (isTauri is false in this test file).
+    // through the direct Tauri command mock.
     const user = userEvent.setup();
     render(Page);
 
@@ -2622,14 +2582,12 @@ describe("+page scene jump closes the escape menu", () => {
 
 describe("+page scene navigation retries after return to title", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     seedGameState();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2643,25 +2601,20 @@ describe("+page scene navigation retries after return to title", () => {
     // auto-load $effect. Closing the case (the real return-to-title path)
     // must clear those latches so a subsequent game session re-attempts the
     // load instead of inheriting the stale failure. Asserted by counting
-    // list_scenes fetch calls across the session boundary.
+    // list_scenes command calls across the session boundary.
     let listScenesCallCount = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const path = String(url).replace("http://127.0.0.1:1421/", "");
-      if (path === "list_scenes") {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scenes") {
         listScenesCallCount += 1;
         if (listScenesCallCount === 1) {
-          return {
-            ok: false,
-            status: 500,
-            text: () => Promise.resolve("index unavailable"),
-          } as unknown as Response;
+          throw { code: "sceneNavigationFailed", message: "index unavailable" };
         }
-        return jsonResponse(sceneNavigationIndex);
+        return sceneNavigationIndex;
       }
-      if (path === "return_to_title") {
-        return jsonResponse(titleDiscovery());
+      if (command === "return_to_title") {
+        return titleDiscovery();
       }
-      return jsonResponse({});
+      return {};
     });
 
     const user = userEvent.setup();
@@ -2700,22 +2653,21 @@ describe("+page scene navigation retries after return to title", () => {
     // reruns on gameState.value changes, so the stale error outlives the
     // reset and suppresses the next session's auto-load. The load must
     // detect it was superseded and drop the stale result.
-    let resolveFirstLoad!: (resp: Response) => void;
-    const firstLoad = new Promise<Response>((resolve) => {
-      resolveFirstLoad = resolve;
+    let rejectFirstLoad!: (error: unknown) => void;
+    const firstLoad = new Promise<never>((_, reject) => {
+      rejectFirstLoad = reject;
     });
     let listScenesCallCount = 0;
-    mocks.fetch.mockImplementation(async (url: string) => {
-      const path = String(url).replace("http://127.0.0.1:1421/", "");
-      if (path === "list_scenes") {
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scenes") {
         listScenesCallCount += 1;
         if (listScenesCallCount === 1) return firstLoad;
-        return jsonResponse(sceneNavigationIndex);
+        return sceneNavigationIndex;
       }
-      if (path === "return_to_title") {
-        return jsonResponse(titleDiscovery());
+      if (command === "return_to_title") {
+        return titleDiscovery();
       }
-      return jsonResponse({});
+      return {};
     });
 
     const user = userEvent.setup();
@@ -2740,25 +2692,17 @@ describe("+page scene navigation retries after return to title", () => {
     // path cleared the latches. Without the generation guard, this would
     // re-set sceneNavigationError = true and suppress the next session's
     // auto-load.
-    let firstLoadTextConsumed = false;
-    resolveFirstLoad({
-      ok: false,
-      status: 500,
-      text: () => {
-        firstLoadTextConsumed = true;
-        return Promise.resolve("index unavailable");
-      },
-    } as unknown as Response);
-    // Wait for the stale failure to fully settle before starting the next
-    // session. The stale path is `await fetch` → `await r.text()` → throw →
-    // listScenes catch → gen guard; a single `await Promise.resolve()` only
-    // advances the fetch promise, so the gen check could still be pending
-    // when seedGameState() runs and the test would pass without exercising
-    // the guard. Poll until r.text() has been consumed, then flush the
-    // remaining microtasks (text() resolve, throw/catch, gen check) via a
-    // macrotask so the stale load has fully returned.
+    let firstLoadRejected = false;
+    rejectFirstLoad({
+      code: "sceneNavigationFailed",
+      message: "index unavailable",
+    });
+    firstLoadRejected = true;
+    // Wait for the stale rejection to fully settle before starting the next
+    // session. Flush the remaining microtasks (rejection/catch/gen check) via
+    // a macrotask so the stale load has fully returned.
     await waitFor(() => {
-      expect(firstLoadTextConsumed).toBe(true);
+      expect(firstLoadRejected).toBe(true);
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -2779,9 +2723,8 @@ describe("+page scene navigation eligibility gate (production)", () => {
   // suite. These tests flip DEV=false so a regression that dropped or
   // inverted the cleared-once gate fails here instead of slipping through.
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    stubFetchForSceneNavigation();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     __resetStoryClearanceWarningLatches();
     window.localStorage.clear();
@@ -2790,7 +2733,6 @@ describe("+page scene navigation eligibility gate (production)", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2831,15 +2773,13 @@ describe("+page scene navigation eligibility gate (production)", () => {
 
 describe("+page active primary objective HUD", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    stubFetchForSceneNavigation();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     seedGameState();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     gameState.value = null;
     gameState.error = null;
@@ -2912,16 +2852,14 @@ describe("+page active primary objective HUD", () => {
 
 describe("+page Case File menu integration", () => {
   beforeEach(() => {
-    mocks.fetch.mockReset();
-    stubFetchForSceneNavigation();
-    vi.stubGlobal("fetch", mocks.fetch);
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
     mocks.currentWindow.isFullscreen.mockResolvedValue(false);
     presentationState.sessionEpoch = 0;
     seedGameState();
   });
 
   afterEach(() => {
-    vi.unstubAllGlobals();
     cleanup();
     presentationState.sessionEpoch = 0;
     gameState.value = null;
