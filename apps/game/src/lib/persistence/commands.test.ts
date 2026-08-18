@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -14,10 +14,6 @@ vi.mock("@tauri-apps/api/core", () => ({
 const testDir = dirname(fileURLToPath(import.meta.url));
 
 async function loadCommands() {
-  Object.defineProperty(window, "__TAURI_INTERNALS__", {
-    configurable: true,
-    value: {},
-  });
   return import("./commands");
 }
 
@@ -26,11 +22,22 @@ beforeEach(() => {
   mocks.invoke.mockReset();
 });
 
-afterEach(() => {
-  Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
-});
-
 describe("persistence command transport", () => {
+  it("invokes Tauri directly without a runtime global", async () => {
+    const commands = await loadCommands();
+    mocks.invoke.mockResolvedValueOnce({ type: "idle" });
+
+    expect("__TAURI_INTERNALS__" in window).toBe(false);
+    await expect(commands.getThumbnailActivity()).resolves.toEqual({
+      type: "idle",
+    });
+
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "get_thumbnail_activity",
+      undefined,
+    );
+  });
+
   it("submits raw PNG bytes with only the exact ticket header", async () => {
     const commands = await loadCommands();
     const bytes = new Uint8Array([137, 80, 78, 71]);
