@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove interrogation dialogue/Present hitches by keeping exact autosave state while suppressing dynamic thumbnail capture only for transient interrogation progress and excluding the Present tray from overlapping/manual captures.
+**Goal:** Remove interrogation dialogue/Present hitches while preserving exact autosave state, ordinary dialogue thumbnails, and stable interrogation milestone thumbnails.
 
-**Architecture:** Reuse `AutosaveIfAdvancedWithoutThumbnail` and keep one centralized mutation/revision/coordinator path. `advance_dialogue` selects persistence after the mutation using the incoming `QueueToken.scene_id` plus the committed `SceneView`: only same-interrogation → same-interrogation progress skips capture, while ordinary dialogue and interrogation entry/exit keep thumbnails. Five transient interrogation commands use small shared `*_core` helpers; the Present scrim reuses the existing capture-exclusion marker.
+**Architecture:** Reuse `MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail` and keep one centralized mutation/revision/coordinator path. `advance_dialogue` chooses its persistence policy after the mutation using the incoming `QueueToken.scene_id` plus the committed `SceneView`: only same-interrogation → same-interrogation progress skips capture; entry, exit, and ordinary dialogue keep capture. Five transient interrogation commands use small shared `*_core` helpers, and the Present scrim reuses the existing capture-exclusion marker.
 
 **Tech Stack:** Rust/Tauri 2, Svelte 5 runes, TypeScript, Vitest + Testing Library, WebdriverIO packaged E2E, existing SaveCoordinator and html-to-image capture proof.
 
@@ -12,37 +12,37 @@
 
 ## Global Constraints
 
-- Preserve all engine mutations, durable revisions, queue tokens, save snapshots, callbacks, and save/resume behavior.
-- Reuse `MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail`; do not add another persistence policy.
+- Preserve all engine mutations, durable revisions, queue tokens, snapshots, callbacks, and save/resume behavior.
+- Reuse `AutosaveIfAdvancedWithoutThumbnail`; do not add another persistence policy.
 - Keep `run_gameplay_mutation` as the single session-lock, revision, and coordinator owner.
-- Classify interrogation from `SceneView`, never from `ModeView`; testimony runs as `ModeView::Dialogue`.
-- Suppress `advance_dialogue` capture only when its source `QueueToken.scene_id` matches the committed interrogation scene ID.
+- Classify interrogation from `SceneView`, never `ModeView`; testimony itself runs as `ModeView::Dialogue`.
+- Suppress `advance_dialogue` capture only when the source `QueueToken.scene_id` equals the committed `SceneView::Interrogation.id`.
 - Entering and leaving interrogation remain ordinary thumbnail milestones.
 - Keep `complete_interrogation_phase` on `MutationPersistencePolicy::AutosaveIfAdvanced`.
 - Keep ordinary non-interrogation dialogue thumbnail capture unchanged.
-- No save schema/storage/coordinator change, prior-thumbnail copying, capture scheduler, worker, cancellation protocol, native capture, virtualization, or global thumbnail decision.
-- Keep the development HTTP adapter in parity only while it exists. If HPA-559 removes it first, omit adapter-specific edits rather than restoring the adapter.
-- Prove performance policy with capture-call/state assertions, not wall-clock thresholds.
-- Run the Svelte autofixer for `InterrogationEvidenceTray.svelte` if it changes.
+- No save schema/storage/coordinator change, prior-thumbnail copy, capture scheduler, worker, cancellation protocol, native capture, virtualization, or global thumbnail decision.
+- Keep the development HTTP adapter in parity only while it exists. If HPA-559 removes it first, omit adapter-specific edits rather than restoring it.
+- Prove policy with capture tickets/activity/state, not wall-clock thresholds.
+- Run the Svelte autofixer for the changed tray component.
 
 ---
 
 ## File Structure
 
-| File | Responsibility in this change |
+| File | Responsibility |
 | --- | --- |
-| `apps/game/src-tauri/src/lib.rs` | Central selector-capable mutation seam, shared command cores, behavioral policy tests, source-contract cleanup. |
+| `apps/game/src-tauri/src/lib.rs` | Selector-capable centralized mutation seam, shared command cores, behavioral policy tests, source-contract cleanup. |
 | `apps/game/src-tauri/src/game/test_support.rs` | Expose existing interrogation fixtures to crate-level `lib.rs` tests. |
-| `apps/game/src/lib/components/InterrogationEvidenceTray.svelte` | Mark transient Present overlay as excluded from thumbnail capture. |
-| `apps/game/src/lib/components/InterrogationEvidenceTray.test.ts` | Pin the capture-exclusion marker without changing tray interaction behavior. |
+| `apps/game/src/lib/components/InterrogationEvidenceTray.svelte` | Exclude the transient Present overlay from thumbnail serialization. |
+| `apps/game/src/lib/components/InterrogationEvidenceTray.test.ts` | Pin capture exclusion without changing interaction behavior. |
 | `apps/game/e2e-tauri/production-anchors.ts` | Add one stable production interrogation entry-dialogue fragment. |
 | `apps/game/e2e-tauri/capture-proof.e2e.ts` | Direct-start packaged regression proving no capture calls during interrogation progress while autosave still advances. |
 
-No generated scene/resource file should be edited. The production entry text remains authored in `docs/stories_plan/chapter_1/interrogation_scene_4.md`; the E2E anchor only references it.
+No generated scene/resource file should be edited.
 
 ---
 
-### Task 1: Make `advance_dialogue` choose thumbnail policy from source + committed scene
+### Task 1: Make `advance_dialogue` skip capture only inside the same interrogation scene
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/lib.rs`
@@ -51,17 +51,19 @@ No generated scene/resource file should be edited. The production entry text rem
 **Interfaces:**
 - Consumes: existing `QueueToken.scene_id`, committed `GameStateView.scene`, existing `MutationPersistencePolicy`.
 - Produces:
-  - `run_gameplay_mutation_selecting_policy(state, select_policy, mutation)` — centralized mutation path with post-mutation policy selection.
-  - existing `run_gameplay_mutation` remains the fixed-policy wrapper.
-  - `dialogue_persistence_policy(source_scene_id, committed)` — same-interrogation progress only.
-  - `advance_dialogue_core(state, expected)` — shared command core.
+  - `run_gameplay_mutation_selecting_policy(state, select_policy, mutation)`.
+  - existing `run_gameplay_mutation` as a fixed-policy wrapper.
+  - `dialogue_persistence_policy(source_scene_id, committed)`.
+  - `advance_dialogue_core(state, expected)`.
 
-- [ ] **Step 1: Widen only the existing interrogation fixtures needed by crate-level tests**
+- [ ] **Step 1: Widen the existing test fixtures needed by crate-level command tests**
 
-In `test_support.rs`, change these two existing helpers from `pub(super)` to `pub(crate)`:
+In `test_support.rs`, change only visibility:
 
 ```rust
 pub(crate) fn two_line_question_scene() -> InterrogationSceneJson
+
+pub(crate) fn empty_inquiry_interrogation_scene() -> InterrogationSceneJson
 
 pub(crate) fn empty_engine_with_interrogation_scene(
     scene: InterrogationSceneJson,
@@ -69,29 +71,58 @@ pub(crate) fn empty_engine_with_interrogation_scene(
 ) -> GameEngine
 ```
 
-Do not create a second interrogation fixture or duplicate scene JSON.
+`two_line_question_scene` supplies testimony. `empty_inquiry_interrogation_scene` supplies a required phase with no questions, useful for the stable completion assertion in Task 2. Do not duplicate these scene definitions.
 
-- [ ] **Step 2: Add failing behavioral tests next to the existing mutation thumbnail tests**
+- [ ] **Step 2: Extract two tiny local test helpers from existing test setup**
 
-Import the two widened helpers into the existing `lib.rs` test module. Add a focused module such as `interrogation_thumbnail_policy` and reuse the same `AppState`/`SaveCoordinator` construction pattern already used by `mutation_app()`.
+Inside the existing `lib.rs` test module that already defines `PassiveBackend` and `mutation_app()`, add:
 
-The first test must drive the real command core while testimony is inside `SceneView::Interrogation`:
+```rust
+fn mutation_app_with_engine(engine: GameEngine) -> AppState {
+    AppState {
+        session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
+        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
+        resources_dir: PathBuf::new(),
+        save_root: PathBuf::new(),
+        persistence: None,
+    }
+}
+
+fn live_queue_token(app: &AppState) -> QueueToken {
+    let session = app.session.lock().unwrap();
+    let view = session.engine.as_ref().unwrap().view().unwrap();
+    let ModeView::Dialogue { queue_token, .. } = view.mode else {
+        panic!("fixture must expose dialogue");
+    };
+    queue_token
+}
+```
+
+Refactor the existing `mutation_app()` to call `mutation_app_with_engine(...)` if that removes duplicate `AppState` construction; do not otherwise restructure the test module.
+
+- [ ] **Step 3: Add failing behavioral tests for same-scene interrogation and ordinary dialogue**
+
+Add a focused `interrogation_thumbnail_policy` test module or clearly named tests beside the existing mutation ticket tests.
+
+For interrogation, use the real engine command to enter testimony *before* installing the engine into `AppState`, so this test does not depend on Task 2's future command core:
 
 ```rust
 #[test]
 fn interrogation_dialogue_advance_autosaves_without_thumbnail() {
-    let engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+    let mut engine = empty_engine_with_interrogation_scene(
+        two_line_question_scene(),
+        1,
+    );
+    engine.ask_interrogation_question("alibi").unwrap();
     let app = mutation_app_with_engine(engine);
-
-    // Enter the existing question/testimony through the engine/core setup used
-    // by interrogation tests, then read the live QueueToken from ModeView::Dialogue.
     let expected = live_queue_token(&app);
-    let before = app.session.lock().unwrap().durable_revision();
+    let before = app.session.lock().unwrap().durable_revision().unwrap();
 
     let result = advance_dialogue_core(&app, expected).unwrap();
 
     assert!(result.thumbnail_capture.is_none());
-    assert!(app.session.lock().unwrap().durable_revision() > before);
+    assert!(app.session.lock().unwrap().durable_revision().unwrap() > before);
     assert_eq!(
         app.coordinator.thumbnail_activity(),
         ThumbnailActivityView::Idle
@@ -99,9 +130,7 @@ fn interrogation_dialogue_advance_autosaves_without_thumbnail() {
 }
 ```
 
-Use existing fixture/setup helpers where available rather than literally adding `mutation_app_with_engine` / `live_queue_token` if an equivalent local helper already exists. The test requirement is the observable behavior: real `advance_dialogue_core`, real revision change, null ticket, idle thumbnail activity.
-
-Add the ordinary-dialogue counterpart using the existing `mutation_app()` investigation intro:
+For the positive control, use the existing `mutation_app()` investigation intro:
 
 ```rust
 #[test]
@@ -115,7 +144,9 @@ fn ordinary_dialogue_advance_still_requests_thumbnail() {
 }
 ```
 
-Add a small selector matrix test so entry/exit behavior cannot drift:
+- [ ] **Step 4: Add a failing selector matrix test for entry and exit boundaries**
+
+Use real engine views rather than adding another scene fixture:
 
 ```rust
 #[test]
@@ -132,15 +163,24 @@ fn dialogue_policy_skips_only_same_interrogation_scene_progress() {
         MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
     ));
 
-    // A different source id represents a transition *into* the committed
-    // interrogation scene and must retain the milestone thumbnail.
+    // Different source id + committed interrogation = entering interrogation.
     assert!(matches!(
         dialogue_persistence_policy("previous_scene", &interrogation),
         MutationPersistencePolicy::AutosaveIfAdvanced
     ));
 
-    let ordinary = mutation_app().session.lock().unwrap().engine
-        .as_ref().unwrap().view().unwrap();
+    let ordinary_app = mutation_app();
+    let ordinary = ordinary_app
+        .session
+        .lock()
+        .unwrap()
+        .engine
+        .as_ref()
+        .unwrap()
+        .view()
+        .unwrap();
+
+    // Committed non-interrogation = ordinary dialogue or leaving interrogation.
     assert!(matches!(
         dialogue_persistence_policy("interrogation_scene_1", &ordinary),
         MutationPersistencePolicy::AutosaveIfAdvanced
@@ -148,21 +188,19 @@ fn dialogue_policy_skips_only_same_interrogation_scene_progress() {
 }
 ```
 
-The third assertion represents leaving interrogation / committing any non-interrogation scene.
-
-- [ ] **Step 3: Run the focused Rust tests and confirm RED**
-
-Run:
+- [ ] **Step 5: Run the focused tests and confirm RED**
 
 ```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml interrogation_thumbnail_policy -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml interrogation_dialogue_advance_autosaves_without_thumbnail -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml ordinary_dialogue_advance_still_requests_thumbnail -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml dialogue_policy_skips_only_same_interrogation_scene_progress -- --nocapture
 ```
 
-Expected: FAIL because `advance_dialogue_core`, `dialogue_persistence_policy`, and the selector-capable mutation seam do not yet exist.
+Expected: FAIL because the selector/core do not exist yet.
 
-- [ ] **Step 4: Add the selector-capable form without forking mutation ownership**
+- [ ] **Step 6: Refactor the current mutation function into one selector-capable body**
 
-Refactor the current function so the lock/revision/coordinator body exists once:
+Move the existing lock, revision comparison, coordinator notification match, and wrapper construction into:
 
 ```rust
 fn run_gameplay_mutation_selecting_policy(
@@ -190,11 +228,28 @@ fn run_gameplay_mutation_selecting_policy(
     };
 
     if after_revision > before_revision {
-        let policy = select_policy(&committed);
-        // Preserve the existing notification match exactly once here.
-        // AutosaveIfAdvanced -> notify_committed
-        // AutosaveIfAdvancedWithoutThumbnail -> notify_committed_without_thumbnail
-        // CoordinatorManaged -> existing early-return behavior
+        let notification = match select_policy(&committed) {
+            MutationPersistencePolicy::AutosaveIfAdvanced => state
+                .coordinator
+                .notify_committed(committed, session_generation, after_revision),
+            MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => state
+                .coordinator
+                .notify_committed_without_thumbnail(
+                    committed,
+                    session_generation,
+                    after_revision,
+                ),
+            MutationPersistencePolicy::CoordinatorManaged => {
+                return Ok(GameplayCommandResultView {
+                    state: committed,
+                    thumbnail_capture: None,
+                });
+            }
+        };
+        return Ok(GameplayCommandResultView {
+            state: notification.committed,
+            thumbnail_capture: notification.thumbnail_capture,
+        });
     }
 
     Ok(GameplayCommandResultView {
@@ -212,9 +267,9 @@ fn run_gameplay_mutation(
 }
 ```
 
-Move the current notification code rather than reimplementing it twice.
+The final implementation should preserve the current code's exact error behavior. This step is a refactor of ownership, not a new coordinator path.
 
-- [ ] **Step 5: Implement the exact dialogue selector**
+- [ ] **Step 7: Implement the exact dialogue policy**
 
 ```rust
 fn dialogue_persistence_policy(
@@ -230,9 +285,9 @@ fn dialogue_persistence_policy(
 }
 ```
 
-This intentionally uses the token's source scene identity. Do **not** inspect `ModeView` and do **not** base the decision only on the committed scene kind.
+Do not inspect `ModeView` and do not use committed scene kind alone.
 
-- [ ] **Step 6: Add and wire one shared `advance_dialogue_core`**
+- [ ] **Step 8: Add and wire one shared `advance_dialogue_core`**
 
 ```rust
 fn advance_dialogue_core(
@@ -248,7 +303,7 @@ fn advance_dialogue_core(
 }
 ```
 
-The Tauri command becomes:
+The Tauri command calls the core:
 
 ```rust
 #[tauri::command]
@@ -260,21 +315,21 @@ fn advance_dialogue(
 }
 ```
 
-While the development adapter exists, its `"advance_dialogue"` arm parses the same `QueueToken` and calls `advance_dialogue_core(state, args.expected)` instead of carrying a second policy literal.
+While the development adapter exists, its `"advance_dialogue"` arm parses `QueueToken` and calls `advance_dialogue_core(state, args.expected)`. If HPA-559 has already deleted that arm, do not recreate it.
 
-If HPA-559 has already removed that adapter when implementation starts, do not recreate it.
-
-- [ ] **Step 7: Run focused tests and confirm GREEN**
+- [ ] **Step 9: Run focused and existing mutation tests**
 
 ```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml interrogation_thumbnail_policy -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml interrogation_dialogue_advance_autosaves_without_thumbnail -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml ordinary_dialogue_advance_still_requests_thumbnail -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml dialogue_policy_skips_only_same_interrogation_scene_progress -- --nocapture
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml advancing_mutation_returns_wrapped_state_and_schedules_capture -- --nocapture
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml no_thumbnail_mutation_returns_null_capture_and_keeps_activity_idle -- --nocapture
 ```
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit Task 1**
+- [ ] **Step 10: Commit Task 1**
 
 ```bash
 git add apps/game/src-tauri/src/lib.rs apps/game/src-tauri/src/game/test_support.rs
@@ -283,7 +338,7 @@ git commit -m "fix: skip thumbnails inside interrogation dialogue"
 
 ---
 
-### Task 2: Route the five transient interrogation commands through shared no-thumbnail cores
+### Task 2: Route five transient interrogation actions through no-thumbnail cores
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/lib.rs`
@@ -295,18 +350,47 @@ git commit -m "fix: skip thumbnails inside interrogation dialogue"
   - `present_interrogation_evidence_core`
   - `withdraw_interrogation_core`
   - `resume_interrogation_testimony_core`
-- Each calls `run_gameplay_mutation(... AutosaveIfAdvancedWithoutThumbnail ...)`.
-- `complete_interrogation_phase` remains ordinary.
+- Each uses `AutosaveIfAdvancedWithoutThumbnail`.
+- `complete_interrogation_phase` remains fixed to ordinary `AutosaveIfAdvanced`.
 
-- [ ] **Step 1: Add failing command-boundary assertions for a transient command and the stable milestone**
+- [ ] **Step 1: Add a bounded test helper that advances the existing testimony fixture to `l_deny`**
 
-Use the existing interrogation fixture and `AppState` pattern. Drive the engine into a challengeable testimony line, then prove challenge does not request capture:
+This helper operates on a `GameEngine` before it is installed into `AppState`; it reuses the real queue and stops as soon as the current challenge target is `l_deny`:
+
+```rust
+fn advance_engine_to_line(engine: &mut GameEngine, expected_line_id: &str) {
+    for _ in 0..8 {
+        let view = engine.view().unwrap();
+        if matches!(
+            &view.mode,
+            ModeView::Dialogue {
+                cross_exam_line_id: Some(line_id),
+                ..
+            } if line_id == expected_line_id
+        ) {
+            return;
+        }
+        let ModeView::Dialogue { queue_token, .. } = view.mode else {
+            panic!("testimony left dialogue before reaching {expected_line_id}");
+        };
+        engine.advance_dialogue(queue_token).unwrap();
+    }
+    panic!("testimony never reached {expected_line_id}");
+}
+```
+
+- [ ] **Step 2: Add failing behavioral proof for challenge**
 
 ```rust
 #[test]
 fn challenge_interrogation_line_autosaves_without_thumbnail() {
-    let app = interrogation_mutation_app();
-    advance_fixture_to_challengeable_line(&app);
+    let mut engine = empty_engine_with_interrogation_scene(
+        two_line_question_scene(),
+        1,
+    );
+    engine.ask_interrogation_question("alibi").unwrap();
+    advance_engine_to_line(&mut engine, "l_deny");
+    let app = mutation_app_with_engine(engine);
 
     let result = challenge_interrogation_line_core(&app, "l_deny".into()).unwrap();
 
@@ -318,33 +402,56 @@ fn challenge_interrogation_line_autosaves_without_thumbnail() {
 }
 ```
 
-Add the stable milestone counterpart:
+- [ ] **Step 3: Add behavioral proof that phase completion is still an ordinary capture**
+
+Use the existing empty inquiry scene, which has a required auto-completable phase with no questions. Drain its entry dialogue before installing the engine into `AppState`:
 
 ```rust
+fn drain_engine_dialogue(engine: &mut GameEngine) {
+    for _ in 0..8 {
+        let view = engine.view().unwrap();
+        let ModeView::Dialogue { queue_token, .. } = view.mode else {
+            return;
+        };
+        engine.advance_dialogue(queue_token).unwrap();
+    }
+    panic!("fixture dialogue did not drain");
+}
+
 #[test]
 fn complete_interrogation_phase_keeps_thumbnail_capture() {
-    let app = completed_interrogation_phase_app();
+    let mut engine = empty_engine_with_interrogation_scene(
+        empty_inquiry_interrogation_scene(),
+        1,
+    );
+    drain_engine_dialogue(&mut engine);
+    let app = mutation_app_with_engine(engine);
 
-    let result = complete_interrogation_phase_core_or_existing_boundary(&app).unwrap();
+    let result = run_gameplay_mutation(
+        &app,
+        MutationPersistencePolicy::AutosaveIfAdvanced,
+        GameEngine::complete_interrogation_phase,
+    )
+    .unwrap();
 
     assert!(result.thumbnail_capture.is_some());
 }
 ```
 
-Do not create a new public API solely for the test. If `complete_interrogation_phase` has no private core, call the nearest existing internal boundary or keep the source pin plus a `run_gameplay_mutation(... AutosaveIfAdvanced ...)` behavioral test on the completed fixture.
+The exact command wiring is pinned separately by the source-contract test in Step 6; this behavioral assertion proves the stable phase-completion mutation still produces an ordinary ticket.
 
-- [ ] **Step 2: Run the focused tests and confirm RED**
+- [ ] **Step 4: Run both tests and confirm RED for challenge**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml challenge_interrogation_line_autosaves_without_thumbnail -- --nocapture
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml complete_interrogation_phase_keeps_thumbnail_capture -- --nocapture
 ```
 
-Expected: first test FAIL because the core/policy is not wired; stable milestone remains the expected ordinary behavior.
+Expected: challenge FAIL because its core/policy is not wired; phase completion demonstrates the preserved ordinary-policy baseline.
 
-- [ ] **Step 3: Add the five small no-thumbnail cores**
+- [ ] **Step 5: Add the five small no-thumbnail cores**
 
-Use the same shape as the existing acknowledgement core. Example:
+Follow the existing acknowledgement-core pattern. Example:
 
 ```rust
 fn challenge_interrogation_line_core(
@@ -359,17 +466,17 @@ fn challenge_interrogation_line_core(
 }
 ```
 
-Apply the identical ownership pattern to ask/present/withdraw/resume. Keep argument types matching the current Tauri command exactly; do not introduce a generic interrogation-command abstraction.
+Implement the same direct shape for ask/present/withdraw/resume, preserving their current argument types. Do not introduce a generic interrogation-command abstraction.
 
-Both Tauri and the current development adapter call the corresponding core while that adapter exists.
+Both Tauri and the current development adapter call each shared core while that adapter exists. If HPA-559 has removed the adapter, only wire the surviving Tauri commands.
 
-Leave `complete_interrogation_phase` on:
+Leave `complete_interrogation_phase` exactly on:
 
 ```rust
 MutationPersistencePolicy::AutosaveIfAdvanced
 ```
 
-- [ ] **Step 4: Correct both existing source-contract classifications**
+- [ ] **Step 6: Correct both existing source-contract classifications**
 
 In `every_ordinary_mutation_routes_through_the_central_autosave_policy`:
 
@@ -378,10 +485,10 @@ In `every_ordinary_mutation_routes_through_the_central_autosave_policy`:
 - remove `present_interrogation_evidence`;
 - remove `withdraw_interrogation`;
 - remove `resume_interrogation_testimony`;
-- keep `complete_interrogation_phase`;
-- do not list `advance_dialogue` as a fixed-policy command because it now uses a selector.
+- remove `advance_dialogue` from the fixed-policy list because it now selects dynamically;
+- keep `complete_interrogation_phase`.
 
-Make the ordinary assertion exact enough that no-thumbnail does not pass by substring:
+Use an exact enough ordinary-policy assertion:
 
 ```rust
 assert!(body.contains("MutationPersistencePolicy::AutosaveIfAdvanced,"));
@@ -394,23 +501,27 @@ Update the no-thumbnail source pin to inspect the five new `*_core` bodies and r
 MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
 ```
 
-Remove the old assertion that `advance_dialogue` must contain a fixed ordinary policy. Replace it with a structural pin that the Tauri command calls `advance_dialogue_core`; behavioral tests from Task 1 are the authority.
+Replace the old fixed-policy `advance_dialogue` assertion with:
 
-Do **not** add a `development_command_arm` brace parser. If the HTTP adapter still exists, a simple source assertion that its arm calls the shared core is sufficient; otherwise omit it.
-
-- [ ] **Step 5: Run focused and source-contract tests**
-
-```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml interrogation_thumbnail_policy -- --nocapture
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml ordinary_mutation -- --nocapture
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml no_thumbnail_autosave_policy -- --nocapture
+```rust
+let advance = function_body(source, "advance_dialogue");
+assert!(advance.contains("advance_dialogue_core"));
 ```
 
-If the exact existing test filters differ, run the containing `lib.rs` test module instead of renaming production tests merely to fit these commands.
+If the development adapter remains, use a simple `contains("advance_dialogue_core")` / core-name assertion on `dispatch_development_command_with_exit`; do **not** add a brace-depth `development_command_arm` parser.
+
+- [ ] **Step 7: Run focused and source-contract tests**
+
+```bash
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml challenge_interrogation_line_autosaves_without_thumbnail -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml complete_interrogation_phase_keeps_thumbnail_capture -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml every_ordinary_mutation_routes_through_the_central_autosave_policy -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml analysis_workbench_commands_pin_no_thumbnail_autosave_policy -- --nocapture
+```
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit Task 2**
+- [ ] **Step 8: Commit Task 2**
 
 ```bash
 git add apps/game/src-tauri/src/lib.rs
@@ -426,12 +537,10 @@ git commit -m "fix: skip thumbnails for transient interrogation actions"
 - Modify: `apps/game/src/lib/components/InterrogationEvidenceTray.test.ts`
 
 **Interfaces:**
-- Reuse capture contract: any subtree carrying `data-save-thumbnail-exclude` is omitted by `thumbnail-capture.ts`.
-- Preserve tray mount lifetime, blur, focus trap, Escape claim, image loading, Game Menu behavior, and callbacks.
+- Reuse `data-save-thumbnail-exclude`, already consumed by the capture pipeline.
+- Preserve mount lifetime, blur, focus trap, Escape claim, images, Game Menu behavior, and callbacks.
 
 - [ ] **Step 1: Add a failing component assertion**
-
-In the existing tray test suite:
 
 ```ts
 it("excludes the transient Present scrim from save thumbnails", () => {
@@ -443,15 +552,15 @@ it("excludes the transient Present scrim from save thumbnails", () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and confirm RED**
+- [ ] **Step 2: Run RED**
 
 ```bash
 bun run --cwd apps/game test src/lib/components/InterrogationEvidenceTray.test.ts
 ```
 
-Expected: FAIL because the scrim does not yet carry the marker.
+Expected: FAIL because the marker is absent.
 
-- [ ] **Step 3: Add the established exclusion marker to the outer scrim**
+- [ ] **Step 3: Mark the outer scrim**
 
 ```svelte
 <div
@@ -460,16 +569,16 @@ Expected: FAIL because the scrim does not yet carry the marker.
 >
 ```
 
-Do not hide/unmount the tray and do not remove `backdrop-filter` as part of this task.
+Do not hide/unmount the tray and do not remove `backdrop-filter` in this change.
 
-- [ ] **Step 4: Autofix and rerun the component test**
+- [ ] **Step 4: Autofix and run GREEN**
 
 ```bash
 npx @sveltejs/mcp svelte-autofixer apps/game/src/lib/components/InterrogationEvidenceTray.svelte
 bun run --cwd apps/game test src/lib/components/InterrogationEvidenceTray.test.ts
 ```
 
-Expected: autofixer has no unresolved issue; test PASS.
+Expected: PASS with no unresolved autofixer issue.
 
 - [ ] **Step 5: Commit Task 3**
 
@@ -488,32 +597,36 @@ git commit -m "fix: exclude interrogation tray from save capture"
 
 **Interfaces:**
 - Reuse `startCaptureProofAtScene(sceneId, expectedDialogueText)`.
-- Reuse `captureWrapperStatus()` and `waitForFreshNativeAutosave()` already local to `capture-proof.e2e.ts`.
+- Reuse `captureWrapperStatus()` and `waitForFreshNativeAutosave()` already in `capture-proof.e2e.ts`.
 - Reuse the ask/challenge/Present journey from `save-seed.e2e.ts`.
-- Do not use `jumpToProductionScene` in the capture-proof regression.
+- Do not use `jumpToProductionScene` in this regression.
 
-- [ ] **Step 1: Add the stable interrogation entry dialogue anchor**
+- [ ] **Step 1: Add the production entry-dialogue anchor**
 
-Under `anchors.unicodeSave`, add the existing first spoken line from `docs/stories_plan/chapter_1/interrogation_scene_4.md`:
+`docs/stories_plan/chapter_1/interrogation_scene_4.md` starts with the spoken line below. Add it under `anchors.unicodeSave`:
 
 ```ts
 interrogationEntryDialogue: "他從進來就一直捏著那罐東西",
 ```
 
-Keep the existing:
+Keep the existing `interrogationSceneId`, `interrogationQuestion`, `challenge`, and `withdraw` anchors.
+
+- [ ] **Step 2: Add imports already used by the proven save-seed journey**
+
+From `./helpers`, add only the helpers this new block uses and that are not already imported:
 
 ```ts
-interrogationSceneId: "interrogation_scene_4",
-interrogationQuestion: "二十二點五十六分左右在哪裡",
-challenge: "反駁",
-withdraw: "收回",
+advanceDialogueUntil,
+clickButton,
+dismissAllPendingAcquisitions,
+drainCurrentDialogue,
+getPackagedGameState,
+waitForPackagedGameState,
 ```
 
-No new selector is needed.
+Reuse existing `autosaveSlots` / `newestAutosaveSlot` imports from `./save-fixtures`; do not add a second filesystem reader.
 
-- [ ] **Step 2: Add the packaged regression after the existing ordinary capture proof**
-
-Start from a fresh document directly at the interrogation scene:
+- [ ] **Step 3: Start directly at the production interrogation scene**
 
 ```ts
 await waitForPersistenceIdle();
@@ -522,28 +635,25 @@ await startCaptureProofAtScene(
   anchors.unicodeSave.interrogationSceneId,
   anchors.unicodeSave.interrogationEntryDialogue,
 );
-```
-
-Do not call `jumpToProductionScene`; the existing suite already documents that it can starve the embedded WebDriver bridge while scene navigation settles.
-
-- [ ] **Step 3: Establish the capture baseline and enter interrogation gameplay**
-
-After the direct scene is stable:
-
-```ts
 await drainCurrentDialogue("interrogation");
 await dismissAllPendingAcquisitions();
 await waitForPersistenceIdle();
-
-const captureBefore = await captureWrapperStatus();
-const autosaveIdsBefore = autosaveSaveIds();
 ```
 
-If `autosaveSaveIds` is not currently imported by this file, reuse the existing import/source already used by its ordinary capture proof rather than adding another filesystem helper.
+Do not call `jumpToProductionScene`; the existing suite explicitly avoids that path because embedded-WebDriver scene navigation can starve the same bridge needed to settle the command.
 
-- [ ] **Step 4: Reuse the established ask/challenge/Present flow**
+- [ ] **Step 4: Record capture and autosave baselines**
 
-Mirror the proven sequence from `save-seed.e2e.ts`:
+```ts
+const captureBefore = await captureWrapperStatus();
+const autosaveIdsBefore = autosaveSlots().flatMap((slot) =>
+  slot.envelope === null ? [] : [slot.envelope.saveId],
+);
+```
+
+Use this local expression rather than creating another exported helper.
+
+- [ ] **Step 5: Reuse the established ask/challenge/Present sequence**
 
 ```ts
 await clickButton(anchors.unicodeSave.interrogationQuestion);
@@ -576,9 +686,7 @@ await advanceDialogueUntil(async () => {
 }, 80);
 ```
 
-Reuse existing helpers/imports from `save-seed.e2e.ts`; do not create a second E2E interrogation driver abstraction.
-
-- [ ] **Step 5: Assert no dynamic capture occurred during the interrogation loop**
+- [ ] **Step 6: Prove the interrogation loop issued no dynamic capture**
 
 ```ts
 const captureAfter = await captureWrapperStatus();
@@ -586,23 +694,23 @@ expect(captureAfter.calls).toBe(captureBefore.calls);
 expect(captureAfter.available).toBe(captureBefore.available);
 ```
 
-This is the deterministic regression. Do not add an elapsed-milliseconds assertion.
+Do not add an elapsed-time assertion.
 
-- [ ] **Step 6: Assert autosave still advanced with exact Present state**
-
-Wait for a fresh native autosave relative to `autosaveIdsBefore`:
+- [ ] **Step 7: Prove a fresh autosave still persisted exact Present state**
 
 ```ts
-const autosave = await waitForFreshNativeAutosave(
+const fresh = await waitForFreshNativeAutosave(
   autosaveIdsBefore,
   "interrogation no-thumbnail progress",
 );
-expect(autosave.thumbnailType).toBe("unavailable");
-```
+expect(fresh.thumbnailType).toBe("unavailable");
 
-Then read the corresponding envelope and assert the same durable state shape already proved by `save-seed.e2e.ts`:
+const newest = newestAutosaveSlot();
+if (!newest?.envelope || newest.envelope.saveId !== fresh.saveId) {
+  throw new Error("fresh interrogation autosave is not the newest autosave");
+}
+const envelope = newest.envelope;
 
-```ts
 expect(envelope.summary.sceneId).toBe(
   anchors.unicodeSave.interrogationSceneId,
 );
@@ -614,19 +722,15 @@ expect(envelope.snapshot.scene.crossExam.type).toBe("presenting");
 expect(envelope.snapshot.scene.enteredPhaseIds.length).toBeGreaterThan(0);
 ```
 
-The fresh autosave is the proof that removing thumbnail capture did not remove durability.
+This is the durability proof: capture count stays flat, but a new exact recovery point lands.
 
-- [ ] **Step 7: Keep the ordinary-dialogue capture proof unchanged**
-
-Do not weaken or rewrite the existing `scene_2` capture proof. It remains the positive control that ordinary gameplay still performs dynamic thumbnail capture, font embedding, and image rasterization.
-
-- [ ] **Step 8: Run the capture-proof suite**
+- [ ] **Step 8: Leave the ordinary-dialogue capture proof untouched and run the suite**
 
 ```bash
 bun run --cwd apps/game test:e2e:capture-proof
 ```
 
-Expected: PASS; ordinary dialogue capture still increases the counter, while the direct-start interrogation loop does not.
+Expected: PASS. The existing ordinary `scene_2` section remains the positive control for dynamic capture.
 
 - [ ] **Step 9: Commit Task 4**
 
@@ -640,13 +744,12 @@ git commit -m "test: prove interrogation progress skips thumbnail capture"
 ### Task 5: Full verification and manual packaged acceptance
 
 **Files:**
-- No new production files expected.
-- Modify only prior task files if verification exposes a defect directly related to this fix.
+- No new files expected.
 
 **Interfaces:**
-- Verifies the complete contract: save durability preserved, transient interrogation capture suppressed, entry/exit/stable milestones preserved, Present overlay excluded, ordinary capture unaffected.
+- Verifies durability, transient suppression, entry/exit/stable milestones, tray exclusion, and ordinary capture.
 
-- [ ] **Step 1: Run focused frontend tests**
+- [ ] **Step 1: Run frontend verification**
 
 ```bash
 bun run --cwd apps/game test src/lib/components/InterrogationEvidenceTray.test.ts
@@ -655,7 +758,7 @@ bun run --cwd apps/game check
 
 Expected: PASS.
 
-- [ ] **Step 2: Run Rust formatting, tests, and lint**
+- [ ] **Step 2: Run Rust verification**
 
 ```bash
 cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
@@ -666,7 +769,7 @@ cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-
 
 Expected: PASS.
 
-- [ ] **Step 3: Run repository-level static verification**
+- [ ] **Step 3: Run repository static checks**
 
 ```bash
 bun run check
@@ -676,36 +779,34 @@ bun run format:check
 
 Expected: PASS.
 
-- [ ] **Step 4: Run packaged suites covering both sides of the boundary**
+- [ ] **Step 4: Run packaged suites covering both sides of the policy boundary**
 
 ```bash
 bun run --cwd apps/game test:e2e:capture-proof
 bun run --cwd apps/game test:e2e:gameplay
-bun run --cwd apps/game test:e2e:save-core:run
+bun run --cwd apps/game test:e2e:save
 ```
 
-If `save-core:run` requires the E2E build artifact produced by the preceding suite in the local workflow, use the repository's normal build+suite command instead; do not invent a new suite.
-
-Expected: PASS.
+Expected: PASS. Use the repository's existing suite/build orchestration; do not add an HPA-specific E2E suite.
 
 - [ ] **Step 5: Perform one manual packaged acceptance pass**
 
-Use the production Chapter 1 interrogation flow and verify:
+Verify the production Chapter 1 interrogation flow:
 
-1. advancing testimony feels responsive and does not exhibit the prior repeated capture hitch;
-2. pressing/challenging into Present opens the tray without the large capture stall;
-3. evidence and statements still render normally;
-4. withdrawing/resuming still works;
-5. Game Menu can open above Present and return to the still-mounted tray;
+1. testimony advances without the prior repeated capture hitch;
+2. challenging into Present opens without the large capture stall;
+3. evidence/statement cards still render normally;
+4. withdraw/resume still works;
+5. Game Menu opens above Present and returns to the still-mounted tray;
 6. manual Save from Present succeeds;
-7. the resulting save preview shows the underlying interrogation scene, not the Present tray;
-8. leaving interrogation / completing the phase still allows a fresh milestone preview.
+7. the saved preview shows the underlying interrogation scene, not the Present tray;
+8. completing/leaving interrogation can still create a fresh milestone preview.
 
-This manual pass is qualitative acceptance only. Do not encode a millisecond budget into CI.
+This is qualitative acceptance only. Do not encode a millisecond budget in CI.
 
-- [ ] **Step 6: Review the final diff against scope**
+- [ ] **Step 6: Review the final diff against the intended surface**
 
-Expected intended files only:
+Expected files:
 
 ```text
 apps/game/src-tauri/src/lib.rs
@@ -718,35 +819,33 @@ apps/game/e2e-tauri/capture-proof.e2e.ts
 
 No save schema/storage/coordinator, game-client, story content, dependency, generated resource, or unrelated UI file should change.
 
-- [ ] **Step 7: Commit any verification-only correction if needed**
-
-Normally no extra commit is required. If the Svelte autofixer or verification uncovered an in-scope correction:
+- [ ] **Step 7: Commit only an in-scope verification correction if one was required**
 
 ```bash
 git add <only-the-intended-files>
 git commit -m "chore: finalize interrogation performance fix"
 ```
 
-Do not commit E2E artifacts, generated scenes, local saves, or unrelated formatting.
+Skip this commit when verification made no source change. Never commit E2E artifacts, generated scenes, or local saves.
 
 ---
 
 ## Acceptance Criteria
 
-- [ ] `advance_dialogue` returns no thumbnail only when the incoming `QueueToken.scene_id` and committed `SceneView::Interrogation.id` are the same scene.
-- [ ] Entering interrogation via the last dialogue advance of a prior scene retains ordinary thumbnail capture.
-- [ ] Leaving interrogation via dialogue completion retains ordinary thumbnail capture.
+- [ ] `advance_dialogue` returns no thumbnail only when incoming `QueueToken.scene_id` equals committed `SceneView::Interrogation.id`.
+- [ ] Entering interrogation retains ordinary thumbnail capture.
+- [ ] Leaving interrogation retains ordinary thumbnail capture.
 - [ ] Ordinary non-interrogation dialogue retains dynamic thumbnail capture.
-- [ ] `ask_interrogation_question`, `challenge_interrogation_line`, `present_interrogation_evidence`, `withdraw_interrogation`, and `resume_interrogation_testimony` autosave without thumbnails.
+- [ ] Ask, challenge, present, withdraw, and resume interrogation autosave without thumbnails.
 - [ ] `complete_interrogation_phase` retains ordinary thumbnail autosave.
-- [ ] Rust command-boundary tests assert tickets, revision movement, and thumbnail activity directly.
-- [ ] Existing source-contract lists are updated together and cannot confuse `AutosaveIfAdvancedWithoutThumbnail` with `AutosaveIfAdvanced` by substring.
-- [ ] No new development-command brace parser is introduced.
-- [ ] Both current command surfaces share the same small cores while the development adapter exists; HPA-559 deletion is not reversed.
+- [ ] Rust behavioral tests assert ticket/no-ticket behavior, revision movement, and thumbnail activity directly.
+- [ ] Source-contract lists are updated together and cannot confuse the two policy names by substring.
+- [ ] No new development-command parser is introduced.
+- [ ] Current Tauri/development surfaces share cores while the adapter exists; HPA-559 deletion is never reversed.
 - [ ] `.interrogation-tray-scrim` carries `data-save-thumbnail-exclude` and remains mounted/interactive.
-- [ ] Packaged capture proof starts directly at `interrogation_scene_4`; it does not use `jumpToProductionScene` for this regression.
-- [ ] The packaged interrogation loop reaches Present without increasing the capture-call counter.
-- [ ] A fresh autosave still lands with `thumbnail.type === "unavailable"`, `scene.type === "interrogation"`, and `crossExam.type === "presenting"`.
-- [ ] Existing ordinary-dialogue capture proof remains a positive control and still passes.
+- [ ] Packaged capture proof starts directly at `interrogation_scene_4`, not through `jumpToProductionScene`.
+- [ ] The packaged interrogation loop reaches Present without increasing capture-call count.
+- [ ] A fresh autosave lands with `thumbnail.type === "unavailable"`, `scene.type === "interrogation"`, and `crossExam.type === "presenting"`.
+- [ ] Existing ordinary-dialogue capture proof remains the positive control and still passes.
 - [ ] Manual Save from Present succeeds and captures the underlying scene.
 - [ ] No schema, storage, coordinator, dependency, global thumbnail, virtualization, or native-capture work is introduced.
