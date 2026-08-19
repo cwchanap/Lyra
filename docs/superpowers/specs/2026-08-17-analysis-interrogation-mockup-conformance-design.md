@@ -57,7 +57,7 @@ There are four non-CSS gaps:
 
 1. `isInterrogationPresentationActive()` currently stays active for dialogue only when `crossExamLineId` is present, so intro/bridge/result/outro dialogue can flash normal chapter chrome;
 2. `SubjectView` has no compiler-owned subject portrait reference;
-3. the current plan's “subject standard for the whole phase” would suppress the shipped per-line speaker portrait behavior for roughly half of Chapter 1 Interrogation dialogue;
+3. a subject-standard-only stage would suppress the shipped per-line speaker portrait behavior for roughly half of Chapter 1 Interrogation dialogue;
 4. a new `CrossfadeImage` inside the save-thumbnail root must participate in the existing direct asset-composition contract, or save thumbnails can rasterize/settle it incorrectly.
 
 ## Goals
@@ -68,7 +68,7 @@ There are four non-CSS gaps:
 4. Preserve current per-line dialogue speaker/expression behavior by moving that behavior into the stage art while Interrogation presentation is active.
 5. Preserve save-thumbnail composition for the new stage portrait.
 6. Pin small packaged geometry invariants so behavior-only tests cannot hide another layout drift.
-7. Keep the implementation split into two reviewable PRs with no infrastructure-only PR.
+7. Deliver the complete Analysis + Interrogation conformance slice in **one implementation PR**, using an internal Interrogation checkpoint before Analysis visual work rather than separate PR boundaries.
 
 ## Non-goals
 
@@ -84,6 +84,7 @@ There are four non-CSS gaps:
 - No Present browse/preview/confirmation state.
 - No client-derived correctness, composure, health, or verdict mechanics.
 - No Chapter 1 story/content rewrite.
+- No infrastructure-only or Analysis-follow-up PR for this planned slice.
 
 ## Visual conformance contract
 
@@ -373,7 +374,7 @@ No draft transform, drop-target ID, focus key, visible label, or callback signat
 
 The current Analysis shell rule targets the shared wrapper with `data-interrogation-mode="analysis"`. Do not copy that data-mode idiom into new code.
 
-Because `active` is specifically the Interrogation presentation flag, **do not literally use `.active` for Analysis**. In PR B, normalize the existing Analysis rule to the shell-owned structural context:
+Because `active` is specifically the Interrogation presentation flag, **do not literally use `.active` for Analysis**. During the Analysis tasks, normalize the existing rule to the shell-owned structural context:
 
 ```css
 .shell.analysis-presentation
@@ -428,7 +429,7 @@ Interrogation assertions:
 - rebut ring ≥124×124px;
 - Present tray ≤904px and remains inside viewport.
 
-Analysis assertions, retained in PR B:
+Analysis assertions in the same PR after the Interrogation checkpoint:
 
 - rail 248px ±2px;
 - content ≤962px;
@@ -450,22 +451,26 @@ Add `apps/game/src/lib/components/Interrogation*.svelte` to the existing `gamepl
 
 ### Manual visual evidence
 
-Before **PR A** is marked ready, capture at 1280×720:
+All visual evidence belongs to the **same implementation PR**.
+
+At the internal Interrogation checkpoint after the Interrogation tasks, capture at 1280×720:
 
 1. Interrogation question menu;
 2. Interrogation testimony + rebut ring;
 3. Interrogation Present tray;
 4. optional 1280×800 testimony comparison.
 
-Before **PR B** is marked ready, capture Analysis Classify at 1280×720 and perform the final cross-scene comparison.
+After the Analysis tasks, capture Analysis Classify at 1280×720 and perform the final cross-scene comparison against the earlier Interrogation captures.
 
 No raster baselines are committed.
 
-## Delivery split
+## Delivery model: one implementation PR
 
-### PR A — Interrogation canvas conformance
+The implementation is intentionally consolidated into one PR because the two surfaces share `GameShell`, `+page.svelte`, `analysis-beat85.e2e.ts`, and final visual acceptance. Splitting them would create an artificial merge boundary around files and acceptance evidence that are already coupled by the handoff-conformance goal.
 
-Includes:
+The one PR contains:
+
+### Interrogation checkpoint
 
 - compiler-derived subject fallback portrait;
 - Rust/TS public projection;
@@ -481,9 +486,9 @@ Includes:
 - CI risk routing;
 - packaged Interrogation geometry and manual Interrogation captures.
 
-### PR B — Analysis visual conformance and final regression
+The branch does **not** merge here. Those checks are simply the internal gate before continuing.
 
-Includes:
+### Final Analysis checkpoint
 
 - 248px rail / 960px content frame;
 - Classify/Order ratios;
@@ -492,9 +497,10 @@ Includes:
 - compact semantic fallback controls;
 - Analysis shared-wrapper selector normalization;
 - Analysis geometry assertions;
-- final regression and manual Analysis capture.
+- full regression and manual Analysis capture;
+- final cross-scene comparison using the Interrogation evidence already attached to the same PR.
 
-No third infrastructure PR.
+No second implementation PR and no infrastructure-only PR are planned for this slice.
 
 ## Risks and mitigations
 
@@ -509,6 +515,7 @@ No third infrastructure PR.
 | future Interrogation-only PR runs smoke only | extend existing gameplay E2E risk rule |
 | stale generated JSON silently loads | no serde default on compiler-owned portrait field |
 | new visual testing becomes expensive | one existing journey + one existing capture-proof suite; no screenshot framework |
+| single PR becomes hard to review | retain task-level commits and require the Interrogation checkpoint before starting Analysis; reviewer can inspect the two logical halves without a merge boundary |
 
 ## Expected implementation surface
 
