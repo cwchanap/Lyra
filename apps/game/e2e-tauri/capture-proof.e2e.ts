@@ -1023,6 +1023,7 @@ describe("packaged gameplay thumbnail proof", () => {
       );
     }, 80);
 
+    await waitForPersistenceIdle();
     const captureAfterInterrogation = await captureWrapperStatus();
     expect(captureAfterInterrogation.calls).toBe(captureBefore.calls);
     expect(captureAfterInterrogation.available).toBe(captureBefore.available);
