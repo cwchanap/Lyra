@@ -128,25 +128,24 @@
             <p class="eyebrow">INTERROGATION / 訊問中</p>
             <h2>{phase.subject.name}</h2>
             <p class="role">{phase.subject.role}</p>
+            <div class="phase-record" aria-label="訊問進度">
+              <p>{phase.label}</p>
+              <strong>{progress.broken} / {progress.total}</strong>
+              <span>突破題目</span>
+            </div>
           </div>
         {/if}
       </div>
 
       {#if phase}
-        <div class="phase-record" aria-label="訊問進度">
-          <p>{phase.label}</p>
-          <strong>{progress.broken} / {progress.total}</strong>
-          <span>突破題目</span>
-        </div>
-
         <button
           class="case-file-hud"
           type="button"
           {disabled}
           onclick={openCaseFile}
         >
-          <span>案件檔案</span>
-          <span>CASE FILE</span>
+          <span class="case-file-ghost">案件檔案</span>
+          <span class="case-file-accent">CASE FILE</span>
         </button>
       {/if}
     </section>
@@ -182,17 +181,14 @@
   }
 
   .stage-chrome {
-    position: relative;
+    position: absolute;
     z-index: 4;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    align-items: center;
-    gap: clamp(14px, 2vw, 28px);
-    width: min(1180px, calc(100% - clamp(40px, 6vw, 80px)));
-    margin: 0 auto;
-    padding: 24px 0 10px;
-    border-bottom: 1px solid var(--rule-strong);
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
     color: var(--bone);
+    pointer-events: none;
   }
 
   .stage-left-stack,
@@ -202,8 +198,56 @@
   }
 
   .stage-left-stack {
+    position: absolute;
+    top: 24px;
+    left: 26px;
     display: grid;
-    gap: 10px;
+    width: min(560px, calc(100% - 52px));
+    gap: 14px;
+    pointer-events: none;
+  }
+
+  .stage-left-stack :global(.primary-objective-hud) {
+    position: relative;
+    max-width: none;
+    padding: 0 0 0 17px;
+    border-left: 0;
+    background: transparent;
+  }
+
+  .stage-left-stack :global(.primary-objective-hud)::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: linear-gradient(var(--crimson), rgba(212, 20, 58, 0));
+    content: "";
+  }
+
+  .stage-left-stack :global(.primary-objective-hud .eyebrow) {
+    color: var(--bone-faint);
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.34em;
+  }
+
+  .stage-left-stack :global(.primary-objective-hud .label) {
+    color: var(--bone);
+    font-family: var(--serif-jp);
+    font-size: 15px;
+    letter-spacing: 0.04em;
+  }
+
+  .stage-left-stack .subject-record {
+    padding: 12px 18px 14px;
+    background: rgba(20, 20, 31, 0.82);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(236, 228, 207, 0.32);
+    border-left: 3px solid var(--crimson);
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+  }
+
+  .stage-left-stack .subject-record > .eyebrow {
+    display: none;
   }
 
   .eyebrow,
@@ -217,7 +261,7 @@
 
   .eyebrow,
   .phase-record span,
-  .case-file-hud span:last-child {
+  .case-file-accent {
     font-family: var(--impact);
     font-size: 10px;
     letter-spacing: 0.22em;
@@ -229,29 +273,32 @@
   }
 
   .subject-record h2 {
-    margin-top: 4px;
+    margin-top: 0;
+    color: var(--bone);
     font-family: var(--display-jp);
-    font-size: clamp(24px, 3vw, 38px);
+    font-size: 22px;
     font-weight: 400;
-    line-height: 1.05;
-    letter-spacing: 0.08em;
+    line-height: 1.1;
+    letter-spacing: 0.12em;
   }
 
   .subject-record .role {
     margin-top: 5px;
     color: var(--bone-dim);
     font-family: var(--serif-jp);
-    font-size: 13px;
+    font-size: 12px;
+    letter-spacing: 0.1em;
   }
 
   .phase-record {
     display: grid;
-    grid-template-columns: auto auto;
+    grid-template-columns: 1fr auto;
     column-gap: 8px;
     align-items: baseline;
-    padding-left: clamp(14px, 2vw, 28px);
-    border-left: 1px solid var(--rule-strong);
-    text-align: right;
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(236, 228, 207, 0.14);
+    text-align: left;
   }
 
   .phase-record p {
@@ -264,7 +311,7 @@
   .phase-record strong {
     color: var(--cyan);
     font-family: var(--impact);
-    font-size: 24px;
+    font-size: 20px;
     font-weight: 500;
     letter-spacing: 0.08em;
   }
@@ -274,34 +321,60 @@
   }
 
   .case-file-hud {
-    display: grid;
-    gap: 2px;
-    min-width: 112px;
-    padding: 10px 12px;
-    border: 1px solid var(--rule-strong);
-    background: rgba(9, 9, 15, 0.72);
+    position: absolute;
+    top: 24px;
+    right: 26px;
+    z-index: 1;
+    display: inline-flex;
+    align-items: stretch;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
     color: var(--bone);
     cursor: pointer;
     font: inherit;
     text-align: left;
+    pointer-events: auto;
     transition:
       border-color 0.18s ease,
       background 0.18s ease;
   }
 
-  .case-file-hud span:first-child {
+  .case-file-ghost,
+  .case-file-accent {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 8px 12px;
+    box-sizing: border-box;
+  }
+
+  .case-file-ghost {
+    border: 1px solid var(--rule-strong);
+    background: transparent;
+    color: var(--bone-dim);
     font-family: var(--serif-jp);
     font-size: 13px;
   }
 
-  .case-file-hud span:last-child {
-    color: var(--bone-faint);
+  .case-file-accent {
+    border: 1px solid var(--crimson);
+    background: var(--crimson-soft);
+    color: var(--bone);
+    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
   }
 
-  .case-file-hud:hover:not(:disabled),
-  .case-file-hud:focus-visible {
-    border-color: var(--cyan);
-    background: rgba(71, 184, 203, 0.1);
+  .case-file-hud:hover:not(:disabled) .case-file-ghost,
+  .case-file-hud:focus-visible .case-file-ghost {
+    border-color: var(--crimson);
+    color: var(--bone);
+  }
+
+  .case-file-hud:hover:not(:disabled) .case-file-accent,
+  .case-file-hud:focus-visible .case-file-accent {
+    background: rgba(174, 28, 49, 0.34);
     outline: none;
   }
 
@@ -311,25 +384,22 @@
   }
 
   @media (max-width: 720px) {
-    .stage-chrome {
-      grid-template-columns: minmax(0, 1fr) auto;
-      width: calc(100% - 40px);
-      gap: 12px;
-      padding-top: 18px;
+    .stage-left-stack {
+      top: 18px;
+      left: 20px;
+      width: min(420px, calc(100% - 40px));
+      gap: 10px;
     }
 
-    .phase-record {
-      grid-column: 1 / -1;
-      grid-template-columns: auto auto;
-      justify-content: start;
-      padding: 9px 0 0;
-      border-top: 1px solid var(--rule-strong);
-      border-left: 0;
-      text-align: left;
+    .stage-left-stack .subject-record {
+      padding: 10px 14px 12px;
     }
 
-    .phase-record p {
-      grid-column: 1 / -1;
+    .case-file-hud {
+      top: 18px;
+      right: 20px;
+      min-width: 0;
+      padding: 8px 10px;
     }
   }
 
