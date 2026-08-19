@@ -239,6 +239,7 @@ describe("materializeSemanticDefaults", () => {
               name: "證人",
               role: "證人",
               bio: "",
+              portrait: null,
               sourceFile: "chapter_1/interrogation_scene_2.md",
               line: 3,
             },

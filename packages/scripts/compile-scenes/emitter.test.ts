@@ -1102,6 +1102,11 @@ describe("emitter", () => {
             name: "嫌疑人",
             role: "嫌疑人",
             bio: "沉默。",
+            portrait: {
+              characterId: "miyake_sota",
+              expression: "standard",
+              assetId: "portrait.miyake_sota.standard",
+            },
             sourceFile: "x",
             line: 4,
           },
@@ -1156,7 +1161,14 @@ describe("emitter", () => {
         {
           kind: "inquiry",
           id: "p",
-          subject: { id: "suspect" },
+          subject: {
+            id: "suspect",
+            portrait: {
+              characterId: "miyake_sota",
+              expression: "standard",
+              assetId: "portrait.miyake_sota.standard",
+            },
+          },
           backgroundAssetId: "bg_interrogation_room",
           bgm: null,
           bgs: { channel: "bgs", assetId: "rain_loop" },

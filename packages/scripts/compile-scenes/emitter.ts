@@ -259,6 +259,7 @@ export function emitInterrogationScene(
         name: phase.subject.name,
         role: phase.subject.role,
         bio: phase.subject.bio,
+        portrait: phase.subject.portrait,
       },
       required: phase.required,
       status: phase.status,

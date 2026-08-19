@@ -439,6 +439,7 @@ export type ASTSubject = Located<{
   name: string;
   role: string;
   bio: string;
+  portrait: PortraitRef | null;
 }>;
 
 export type ASTInterrogationPhase = ASTInquiryPhase; // testimony kind removed
@@ -714,6 +715,7 @@ export type JSONSubject = {
   name: string;
   role: string;
   bio: string;
+  portrait: PortraitRef | null;
 };
 
 export type JSONInterrogationPhase = {

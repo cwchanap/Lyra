@@ -210,6 +210,7 @@ const mkInquiryPhase = (
     name: "Subject",
     role: "Witness",
     bio: "Bio",
+    portrait: null,
     sourceFile: "interrogation_scene_1.md",
     line: 1,
   },

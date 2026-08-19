@@ -134,6 +134,7 @@ describe("parseInterrogationScene", () => {
     expect(parsed.value.phases[0]!.id).toBe("wakatsuki_inquiry");
 
     const phase = parsed.value.phases[0]!;
+    expect(phase.subject.portrait).toBeNull();
     expect(phase.questions.map((q) => q.id)).toEqual([
       "entered_storage",
       "beans_follow_up",

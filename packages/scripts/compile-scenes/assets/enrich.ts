@@ -24,11 +24,13 @@ import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
+  ASTSubject,
   ASTTestimony,
   AssetRef,
   CompileError,
   DialogueItem,
   EvidenceImageCue,
+  PortraitRef,
   VisualAssetCue,
 } from "../types";
 import type { AnalysisSceneRecord } from "../types";
@@ -346,6 +348,7 @@ function enrichInterrogationPhase(
   // enumeration on the emit side).
   return {
     ...phase,
+    subject: enrichInterrogationSubject(phase.subject, context),
     assetCue: enrichVisualCue(
       phase.assetCue,
       phase.id,
@@ -415,6 +418,51 @@ function enrichNullableDialogue(
   return items ? enrichDialogue(items, context) : null;
 }
 
+function enrichInterrogationSubject(
+  subject: ASTSubject,
+  context: EnrichContext,
+): ASTSubject {
+  const character = context.config.characters.byDisplayName.get(subject.name);
+  if (!character) {
+    context.errors.push(
+      compileError(
+        subject.sourceFile,
+        subject.line,
+        "assetUnknownInterrogationSubject",
+        `Unknown interrogation subject "${subject.name}" in asset-enabled scene.`,
+      ),
+    );
+    return { ...subject, portrait: null };
+  }
+  if (character.portraitMode === "none") {
+    return { ...subject, portrait: null };
+  }
+
+  const expressionConfig = character.expressions.get("standard");
+  if (!expressionConfig) {
+    context.errors.push(
+      compileError(
+        subject.sourceFile,
+        subject.line,
+        "assetUnknownInterrogationSubject",
+        `Interrogation subject "${subject.name}" requires a standard portrait expression.`,
+      ),
+    );
+    return { ...subject, portrait: null };
+  }
+
+  return {
+    ...subject,
+    portrait: registerPortraitRef({
+      characterId: character.id,
+      expression: "standard",
+      prompt: expressionConfig.prompt,
+      subjectPrompt: character.visualPrompt ?? "",
+      context,
+    }),
+  };
+}
+
 function enrichLine(
   item: Extract<DialogueItem, { kind: "line" }>,
   context: EnrichContext,
@@ -459,7 +507,28 @@ function enrichLine(
     return { ...item, portrait: null };
   }
 
-  const assetId = `portrait.${character.id}.${expression}`;
+  return {
+    ...item,
+    expression,
+    portrait: registerPortraitRef({
+      characterId: character.id,
+      expression,
+      prompt: expressionConfig.prompt,
+      subjectPrompt: character.visualPrompt ?? "",
+      context,
+    }),
+  };
+}
+
+function registerPortraitRef(input: {
+  characterId: string;
+  expression: string;
+  prompt: string;
+  subjectPrompt: string;
+  context: EnrichContext;
+}): PortraitRef {
+  const { characterId, expression, prompt, subjectPrompt, context } = input;
+  const assetId = `portrait.${characterId}.${expression}`;
   addRef(context.refs, { type: "portrait", assetId });
   putRequest(context.requests, {
     assetId,
@@ -467,18 +536,13 @@ function enrichLine(
     source: {
       chapterId: context.scene.chapterId,
       sceneId: context.scene.ast.id,
-      characterId: character.id,
+      characterId,
       expression,
     },
-    prompt: expressionConfig.prompt,
-    subjectPrompt: character.visualPrompt ?? "",
+    prompt,
+    subjectPrompt,
   });
-
-  return {
-    ...item,
-    expression,
-    portrait: { characterId: character.id, expression, assetId },
-  };
+  return { characterId, expression, assetId };
 }
 
 // -----------------------------------------------------------------------------
@@ -590,6 +654,7 @@ function stripPhase(phase: ASTInterrogationPhase): ASTInterrogationPhase {
   // null out asset cues and portraits without crashing on the new shape.)
   return {
     ...phase,
+    subject: { ...phase.subject, portrait: null },
     assetCue: stripVisualCue(phase.assetCue),
     entryDialogue: stripDialogue(phase.entryDialogue),
     questions: phase.questions.map((q) => ({
