@@ -1318,6 +1318,33 @@ describe("DialogueBox", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
+  it("marks the cross-exam actions container inert while dialogue history is open", async () => {
+    // The 反駁/退下 controls live in .xexam-actions, which is a sibling of the
+    // inert advance/scene-tag buttons. Without `inert={historyOpen}` on the
+    // container, those controls remain keyboard/pointer reachable while the
+    // DialogueHistoryPanel popup is open — an inconsistency with the rest of
+    // the dialogue surface. This test pins the inert attribute on the
+    // container; real inert enforcement (blocking click dispatch) is covered
+    // by the e2e (browser) path, since jsdom does not enforce inert.
+    const user = userEvent.setup();
+    const onChallenge = vi.fn();
+    const onWithdraw = vi.fn();
+    const { container } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        history,
+        crossExam: { lineId: "l_deny", onChallenge, onWithdraw },
+      },
+    );
+
+    const xexamActions = container.querySelector(".xexam-actions");
+    expect(xexamActions).not.toBeNull();
+    expect(isInert(xexamActions as HTMLElement)).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    expect(isInert(xexamActions as HTMLElement)).toBe(true);
+  });
+
   it("opens dialogue history with L when a noninteractive gameplay container is focused", async () => {
     renderDialogueBox({ kind: "action", text: "hello" }, { history });
     const gameplayRoot = document.createElement("div");

@@ -670,7 +670,7 @@
           >
         </div>
       {/if}
-      <div class="xexam-actions">
+      <div class="xexam-actions" inert={historyOpen}>
         <button
           class="xexam-challenge"
           class:charging={challengeCharging}
