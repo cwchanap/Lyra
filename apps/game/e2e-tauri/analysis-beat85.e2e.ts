@@ -27,6 +27,25 @@ type Rect = {
   height: number;
 };
 
+type AnalysisShellGeometry = {
+  workbench: Rect;
+  rail: Rect;
+  workspace: Rect;
+  workspaceContentCenter: number;
+  frame: Rect;
+  footer: Rect;
+};
+
+type AnalysisClassifyGeometry = AnalysisShellGeometry & {
+  pool: Rect;
+  groups: Rect;
+};
+
+type AnalysisOrderGeometry = AnalysisShellGeometry & {
+  timeline: Rect;
+  pending: Rect;
+};
+
 const geometry: {
   menu?: { stage: Rect; main: Rect; art: Rect; record: Rect };
   testimony?: {
@@ -38,6 +57,8 @@ const geometry: {
     challenge: Rect;
   };
   present?: { stage: Rect; tray: Rect };
+  analysisClassify?: AnalysisClassifyGeometry;
+  analysisOrder?: AnalysisOrderGeometry;
 } = {};
 
 async function elementRect(selector: string): Promise<Rect | null> {
@@ -87,6 +108,101 @@ async function snapshotPresentGeometry(): Promise<void> {
     elementRect("[data-interrogation-present-tray]"),
   ]);
   if (stage && tray) geometry.present = { stage, tray };
+}
+
+async function elementContentCenter(selector: string): Promise<number | null> {
+  return browser.execute((targetSelector: string) => {
+    const element = document.querySelector<HTMLElement>(targetSelector);
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return rect.left + element.clientLeft + element.clientWidth / 2;
+  }, selector);
+}
+
+async function snapshotAnalysisClassifyGeometry(): Promise<void> {
+  const [
+    workbench,
+    rail,
+    workspace,
+    workspaceContentCenter,
+    frame,
+    pool,
+    groups,
+    footer,
+  ] = await Promise.all([
+    elementRect(".analysis-workbench"),
+    elementRect("[data-analysis-rail]"),
+    elementRect("[data-analysis-workspace]"),
+    elementContentCenter("[data-analysis-workspace]"),
+    elementRect("[data-analysis-content-frame]"),
+    elementRect(".classify-board .card-pool"),
+    elementRect(".classify-board .groups"),
+    elementRect(".workbench-footer"),
+  ]);
+  if (
+    workbench &&
+    rail &&
+    workspace &&
+    workspaceContentCenter !== null &&
+    frame &&
+    pool &&
+    groups &&
+    footer
+  ) {
+    geometry.analysisClassify = {
+      workbench,
+      rail,
+      workspace,
+      workspaceContentCenter,
+      frame,
+      pool,
+      groups,
+      footer,
+    };
+  }
+}
+
+async function snapshotAnalysisOrderGeometry(): Promise<void> {
+  const [
+    workbench,
+    rail,
+    workspace,
+    workspaceContentCenter,
+    frame,
+    timeline,
+    pending,
+    footer,
+  ] = await Promise.all([
+    elementRect(".analysis-workbench"),
+    elementRect("[data-analysis-rail]"),
+    elementRect("[data-analysis-workspace]"),
+    elementContentCenter("[data-analysis-workspace]"),
+    elementRect("[data-analysis-content-frame]"),
+    elementRect(".order-board .timeline-panel"),
+    elementRect(".order-board .card-pool"),
+    elementRect(".workbench-footer"),
+  ]);
+  if (
+    workbench &&
+    rail &&
+    workspace &&
+    workspaceContentCenter !== null &&
+    frame &&
+    timeline &&
+    pending &&
+    footer
+  ) {
+    geometry.analysisOrder = {
+      workbench,
+      rail,
+      workspace,
+      workspaceContentCenter,
+      frame,
+      timeline,
+      pending,
+      footer,
+    };
+  }
 }
 
 function edgeCenter(rect: Rect): number {
@@ -507,6 +623,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await loadPackagedCheckpoint("chapter-1-analysis-beat-85-ready");
 
     let state = await waitForAnalysisBoard("evidence_packages");
+    await snapshotAnalysisClassifyGeometry();
     expect(
       state.inventory.evidence.some(
         (evidence) => evidence.id === APPROVED_CLIP_ID,
@@ -601,6 +718,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await drainToAnalysisBoard("local_event_sequence");
 
     state = await waitForAnalysisBoard("local_event_sequence");
+    await snapshotAnalysisOrderGeometry();
     const order = analysisBoard(state, "local_event_sequence");
     if (order.kind !== "order")
       throw new Error("local_event_sequence is not order");
@@ -876,13 +994,31 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(geometry.menu).toBeDefined();
     expect(geometry.testimony).toBeDefined();
     expect(geometry.present).toBeDefined();
-    if (!geometry.menu || !geometry.testimony || !geometry.present) return;
+    expect(geometry.analysisClassify).toBeDefined();
+    expect(geometry.analysisOrder).toBeDefined();
+    if (
+      !geometry.menu ||
+      !geometry.testimony ||
+      !geometry.present ||
+      !geometry.analysisClassify ||
+      !geometry.analysisOrder
+    )
+      return;
 
     const viewport = await browser.execute(() => ({
       width: window.innerWidth,
       height: window.innerHeight,
     }));
-    const { menu, testimony, present } = geometry;
+    const viewportBounds: Rect = {
+      left: 0,
+      top: 0,
+      right: viewport.width,
+      bottom: viewport.height,
+      width: viewport.width,
+      height: viewport.height,
+    };
+    const { menu, testimony, present, analysisClassify, analysisOrder } =
+      geometry;
 
     expectEdgesAligned(menu.stage, menu.main);
     expectInside(menu.art, menu.stage);
@@ -923,5 +1059,31 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(present.tray.top).toBeGreaterThanOrEqual(0);
     expect(present.tray.right).toBeLessThanOrEqual(viewport.width);
     expect(present.tray.bottom).toBeLessThanOrEqual(viewport.height);
+
+    for (const analysis of [analysisClassify, analysisOrder]) {
+      expect(Math.abs(analysis.rail.width - 248)).toBeLessThanOrEqual(2);
+      expect(analysis.frame.width).toBeLessThanOrEqual(962);
+      expect(analysis.frame.left).toBeGreaterThanOrEqual(
+        analysis.workspace.left - 1,
+      );
+      expect(analysis.frame.right).toBeLessThanOrEqual(
+        analysis.workspace.right + 1,
+      );
+      expect(
+        Math.abs(edgeCenter(analysis.frame) - analysis.workspaceContentCenter),
+      ).toBeLessThanOrEqual(2);
+      expectInside(analysis.workbench, viewportBounds);
+      expectInside(analysis.footer, viewportBounds);
+    }
+
+    const classifyRatio =
+      analysisClassify.groups.width / analysisClassify.pool.width;
+    expect(classifyRatio).toBeGreaterThanOrEqual(1.35);
+    expect(classifyRatio).toBeLessThanOrEqual(1.45);
+
+    const orderRatio =
+      analysisOrder.timeline.width / analysisOrder.pending.width;
+    expect(orderRatio).toBeGreaterThanOrEqual(1.25);
+    expect(orderRatio).toBeLessThanOrEqual(1.35);
   });
 });
