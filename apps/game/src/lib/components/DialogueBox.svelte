@@ -661,6 +661,9 @@
     {:else if current.kind === "line"}
       <div class="line-grid">
         <div class="speaker-block">
+          {#if interrogationStageActive}
+            <span class="interrogation-kicker">證言 · TESTIMONY</span>
+          {/if}
           <span class="kind">發言 · LINE</span>
           <span class="speaker">{current.speaker}</span>
         </div>
@@ -683,20 +686,41 @@
 
   {#if crossExam}
     <div class="xexam-actions" inert={historyOpen}>
-      <button
-        class="xexam-challenge"
-        class:charging={challengeCharging}
-        type="button"
-        {disabled}
-        onpointerdown={handleChallengePointerDown}
-        onpointerup={cancelChallengePointerSequence}
-        onpointercancel={cancelChallengePointerSequence}
-        onpointerleave={cancelChallengePointerSequence}
-        onclick={handleChallengeClick}
-      >
-        <span class="act-mark">▸</span>
-        反駁
-      </button>
+      {#if interrogationStageActive}
+        <div class="xexam-challenge-wrap">
+          <button
+            class="xexam-challenge"
+            class:charging={challengeCharging}
+            type="button"
+            {disabled}
+            onpointerdown={handleChallengePointerDown}
+            onpointerup={cancelChallengePointerSequence}
+            onpointercancel={cancelChallengePointerSequence}
+            onpointerleave={cancelChallengePointerSequence}
+            onclick={handleChallengeClick}
+          >
+            <span class="act-mark">▸</span>
+            <span class="challenge-label">反駁</span>
+            <span class="challenge-object">OBJECT</span>
+          </button>
+          <span class="hold-cue">長按</span>
+        </div>
+      {:else}
+        <button
+          class="xexam-challenge"
+          class:charging={challengeCharging}
+          type="button"
+          {disabled}
+          onpointerdown={handleChallengePointerDown}
+          onpointerup={cancelChallengePointerSequence}
+          onpointercancel={cancelChallengePointerSequence}
+          onpointerleave={cancelChallengePointerSequence}
+          onclick={handleChallengeClick}
+        >
+          <span class="act-mark">▸</span>
+          反駁
+        </button>
+      {/if}
       <button
         class="xexam-withdraw"
         type="button"
@@ -830,6 +854,37 @@
 
   .wrapper.interrogation-stage-dialogue .box {
     min-height: 196px;
+    background: rgba(20, 20, 31, 0.94);
+    border: 1px solid rgba(236, 228, 207, 0.32);
+    border-left: 3px solid var(--crimson);
+    clip-path: polygon(
+      0 0,
+      calc(100% - 22px) 0,
+      100% 22px,
+      100% 100%,
+      22px 100%,
+      0 calc(100% - 22px)
+    );
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  }
+
+  .wrapper.interrogation-stage-dialogue .interrogation-kicker {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--crimson);
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.32em;
+  }
+
+  .wrapper.interrogation-stage-dialogue .speaker-block > .kind {
+    display: none;
+  }
+
+  .wrapper.interrogation-stage-dialogue .text-line {
+    font-size: 16.5px;
+    line-height: 1.85;
+    letter-spacing: 0.03em;
   }
 
   .box:hover:not(.disabled) {
@@ -1039,11 +1094,145 @@
 
   .wrapper.interrogation-stage-dialogue .xexam-actions {
     position: absolute;
-    left: calc(100% + 16px);
-    bottom: 0;
+    right: -56px;
+    bottom: 82px;
     z-index: 3;
+    width: 128px;
+    height: 128px;
     flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 9px;
     margin-top: 0;
+  }
+
+  .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    width: 128px;
+    height: 128px;
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: center;
+    gap: 9px;
+    border-radius: 50%;
+    background: conic-gradient(
+      var(--crimson) 0deg,
+      rgba(236, 228, 207, 0.14) 0deg
+    );
+    animation: interrogation-halo 2.1s ease-in-out infinite;
+  }
+
+  .wrapper.interrogation-stage-dialogue
+    .xexam-challenge-wrap:has(.xexam-challenge.charging) {
+    animation: none;
+  }
+
+  .wrapper.interrogation-stage-dialogue .xexam-challenge {
+    position: absolute;
+    inset: 0;
+    width: 128px;
+    height: 128px;
+    box-sizing: border-box;
+    padding: 0;
+    border: 7px solid transparent;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: var(--bone);
+    background: radial-gradient(
+      circle at 50% 34%,
+      #ae1c31,
+      var(--crimson-deep) 74%
+    );
+    background-clip: padding-box;
+    transform: none;
+  }
+
+  .wrapper.interrogation-stage-dialogue .act-mark {
+    display: none;
+  }
+
+  .wrapper.interrogation-stage-dialogue .challenge-label {
+    font-family: var(--display-jp);
+    font-size: 25px;
+    letter-spacing: 0.1em;
+    line-height: 1;
+  }
+
+  .wrapper.interrogation-stage-dialogue .challenge-object {
+    color: var(--bone);
+    font-family: var(--impact);
+    font-size: 9px;
+    letter-spacing: 0.26em;
+    opacity: 0.75;
+  }
+
+  .wrapper.interrogation-stage-dialogue .hold-cue {
+    position: absolute;
+    top: calc(100% + 9px);
+    color: var(--bone-dim);
+    font-family: var(--mono);
+    font-size: 9px;
+    letter-spacing: 0.28em;
+    animation: lyra-pulse 1.8s ease-in-out infinite;
+  }
+
+  .wrapper.interrogation-stage-dialogue .xexam-withdraw {
+    position: absolute;
+    top: calc(100% + 32px);
+    right: 0;
+    min-height: 38px;
+    padding: 9px 16px 8px;
+    border: 1px solid rgba(236, 228, 207, 0.18);
+    background: transparent;
+    color: var(--bone-faint);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+  }
+
+  .wrapper.interrogation-stage-dialogue .xexam-withdraw:hover:not(:disabled),
+  .wrapper.interrogation-stage-dialogue .xexam-withdraw:focus-visible {
+    border-color: var(--crimson);
+    background: transparent;
+    color: var(--bone);
+    outline: none;
+  }
+
+  .wrapper.interrogation-stage-dialogue .advance-button {
+    min-height: 38px;
+    padding: 9px 16px 8px;
+    border: 1px solid var(--crimson);
+    background: rgba(212, 20, 58, 0.12);
+    color: var(--bone);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  }
+
+  .wrapper.interrogation-stage-dialogue
+    .advance-button:hover:not([aria-disabled="true"]) {
+    background: rgba(174, 28, 49, 0.34);
+  }
+
+  @keyframes interrogation-halo {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 0 rgba(212, 20, 58, 0.5),
+        0 0 26px rgba(212, 20, 58, 0.35);
+    }
+    50% {
+      box-shadow:
+        0 0 0 16px rgba(212, 20, 58, 0),
+        0 0 46px rgba(212, 20, 58, 0.6);
+    }
   }
 
   .xexam-actions button {
@@ -1083,11 +1272,6 @@
     border: 2px solid var(--crimson);
     background: rgba(174, 28, 49, 0.12);
     box-shadow: inset 0 0 0 4px rgba(174, 28, 49, 0.1);
-  }
-
-  .wrapper.interrogation-stage-dialogue .xexam-challenge {
-    width: 128px;
-    height: 128px;
   }
 
   .xexam-challenge.charging {
@@ -1134,9 +1318,27 @@
       min-height: 64px;
     }
 
-    .wrapper.interrogation-stage-dialogue .xexam-challenge {
+    .wrapper.interrogation-stage-dialogue .xexam-actions {
       width: 64px;
       height: 64px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap {
+      position: relative;
+      inset: auto;
+      width: 64px;
+      height: 64px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-challenge {
+      position: absolute;
+      width: 64px;
+      height: 64px;
+      border-width: 4px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-withdraw {
+      position: static;
     }
   }
 
@@ -1146,6 +1348,11 @@
       border-width: 3px;
       outline: 2px solid rgba(174, 28, 49, 0.5);
       outline-offset: 3px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap,
+    .wrapper.interrogation-stage-dialogue .hold-cue {
+      animation: none;
     }
   }
 </style>

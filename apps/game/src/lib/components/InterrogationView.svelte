@@ -38,7 +38,10 @@
             {disabled}
             onclick={() => onAsk(question.id)}
           >
-            <span class="ql">{question.label}</span>
+            <span class="q-copy">
+              <span class="q-dot" aria-hidden="true"></span>
+              <span class="ql">{question.label}</span>
+            </span>
             <span class="qs">{question.broken ? "已破" : "提問"}</span>
           </button>
         </li>
@@ -70,44 +73,64 @@
     max-height: calc(100% - 250px);
     overflow: auto;
     box-sizing: border-box;
-    display: grid;
-    gap: 14px;
-    padding: 24px clamp(20px, 3vw, 40px) 0;
+    z-index: 25;
+    display: flex;
+    flex-direction: column;
     color: var(--bone);
+    background: linear-gradient(
+      180deg,
+      rgba(14, 14, 22, 0.95),
+      rgba(20, 13, 24, 0.97)
+    );
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(236, 228, 207, 0.28);
+    border-top: 3px solid var(--crimson);
+    box-shadow: 0 26px 64px rgba(0, 0, 0, 0.68);
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      100% calc(100% - 22px),
+      calc(100% - 22px) 100%,
+      0 100%
+    );
   }
 
   .record-heading {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 16px;
-    padding-bottom: 9px;
-    border-bottom: 1px solid var(--rule-strong);
+    gap: 12px;
+    padding: 18px 30px 14px;
+    border-bottom: 1px solid rgba(236, 228, 207, 0.14);
   }
 
   .record-heading p,
   .record-heading span {
     margin: 0;
-    font-family: var(--impact);
-    font-size: 11px;
-    letter-spacing: 0.24em;
     text-transform: uppercase;
   }
 
   .record-heading p {
     color: var(--bone);
+    font-family: var(--display-jp);
+    font-size: 17px;
+    font-weight: 400;
+    letter-spacing: 0.16em;
   }
 
   .record-heading span {
     color: var(--bone-faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.2em;
   }
 
   .menu {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
     margin: 0;
-    padding: 0;
+    padding: 16px 30px 22px;
     list-style: none;
   }
 
@@ -118,95 +141,111 @@
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-    min-height: 82px;
-    padding: 16px 18px;
-    border: 1px solid var(--rule-strong);
-    border-left: 2px solid rgba(236, 228, 207, 0.2);
-    background: rgba(9, 9, 15, 0.72);
+    min-height: 0;
+    padding: 15px 16px;
+    box-sizing: border-box;
+    border: 1px solid rgba(236, 228, 207, 0.32);
+    background: rgba(29, 29, 43, 0.82);
     color: var(--bone);
     cursor: pointer;
     font: inherit;
     text-align: left;
+    clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);
     transition:
       transform 0.18s ease,
       background 0.18s ease,
       border-color 0.18s ease;
   }
 
-  .qbtn::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 4px;
-    height: 100%;
-    background: var(--crimson);
-    opacity: 0;
-    transition: opacity 0.18s ease;
-  }
-
   .qbtn:hover:not(:disabled),
   .qbtn:focus-visible {
     transform: translateY(-2px);
     border-color: var(--crimson);
-    background: var(--crimson-soft);
+    background: rgba(212, 20, 58, 0.12);
     outline: none;
   }
 
-  .qbtn:hover:not(:disabled)::before,
-  .qbtn:focus-visible::before {
-    opacity: 1;
+  .q-copy {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .q-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    transform: rotate(45deg);
+    background: var(--crimson);
   }
 
   .qbtn.broken {
-    border-color: rgba(71, 184, 203, 0.35);
-    border-left-color: var(--cyan);
-    background: rgba(71, 184, 203, 0.07);
+    background: rgba(20, 20, 31, 0.55);
+    border-color: rgba(236, 228, 207, 0.18);
+    opacity: 0.62;
   }
 
-  .qbtn.broken::before {
-    background: var(--cyan);
+  .qbtn.broken .q-dot {
+    background: var(--bone-faint);
   }
 
   .qbtn:disabled {
-    cursor: wait;
-    opacity: 0.55;
+    border-style: dashed;
+    border-color: rgba(236, 228, 207, 0.2);
+    background: rgba(20, 20, 31, 0.5);
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .qbtn:disabled .q-dot {
+    background: transparent;
+    border: 1px solid var(--bone-faint);
   }
 
   .ql {
-    font-family: var(--serif-jp);
-    font-size: 16px;
-    line-height: 1.45;
+    min-width: 0;
+    font-family: var(--display-jp);
+    font-size: 13.5px;
+    font-weight: 400;
+    line-height: 1.5;
+    letter-spacing: 0.08em;
   }
 
   .qs {
     flex: 0 0 auto;
-    color: var(--bone-faint);
-    font-family: var(--impact);
-    font-size: 10px;
-    letter-spacing: 0.2em;
+    color: var(--crimson);
+    font-family: var(--mono);
+    font-size: 9.5px;
+    letter-spacing: 0.24em;
   }
 
-  .broken .qs {
-    color: var(--cyan);
+  .broken .qs,
+  .qbtn:disabled .qs {
+    color: var(--bone-faint);
   }
 
   .phase-actions {
     display: flex;
+    align-items: center;
     justify-content: end;
-    padding-top: 2px;
+    padding: 0 30px 22px;
   }
 
   .complete {
     min-width: 156px;
     min-height: 42px;
+    padding: 11px 22px 10px;
     border: 1px solid var(--crimson);
     background: var(--crimson-soft);
-    color: var(--bone);
+    color: var(--crimson);
     cursor: pointer;
     font: inherit;
-    font-family: var(--serif-jp);
-    letter-spacing: 0.1em;
+    font-family: var(--display-jp);
+    font-size: 13px;
+    letter-spacing: 0.16em;
+    clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
   }
 
   .complete:disabled {
@@ -224,12 +263,17 @@
   }
 
   @media (max-width: 720px) {
-    .interrogation {
-      padding: 18px 20px 0;
-    }
-
     .menu {
       grid-template-columns: 1fr;
+      padding: 14px 20px 18px;
+    }
+
+    .record-heading {
+      padding: 16px 20px 12px;
+    }
+
+    .phase-actions {
+      padding: 0 20px 18px;
     }
 
     .record-heading span {
@@ -238,8 +282,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .qbtn,
-    .qbtn::before {
+    .qbtn {
       transition: none;
     }
   }

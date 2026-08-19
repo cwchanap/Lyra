@@ -176,15 +176,20 @@
     tabindex="-1"
   >
     <header>
-      <p class="eyebrow">PRESENT / 提出證據</p>
-      <h2 id="interrogation-evidence-heading">提出證據</h2>
+      <div class="header-copy">
+        <p class="eyebrow">PRESENT / 提出證據</p>
+        <h2 id="interrogation-evidence-heading">提出證據</h2>
+      </div>
       <p class="progress">
         證詞 {crossExam.lineIndex + 1} / {crossExam.lineTotal}
       </p>
     </header>
 
     <blockquote id="interrogation-evidence-line" class="line-record">
-      {interrogationLineText(crossExam.lineContent)}
+      <span class="target-kicker">鎖定證詞 · TARGET LINE</span>
+      <span class="target-text"
+        >{interrogationLineText(crossExam.lineContent)}</span
+      >
     </blockquote>
 
     <section aria-label="可提出的紀錄" class="record-list">
@@ -281,22 +286,39 @@
     max-height: min(760px, calc(100dvh - 48px));
     padding: clamp(20px, 3vw, 32px);
     overflow: hidden;
-    border: 1px solid var(--rule-strong);
+    border: 1px solid rgba(236, 228, 207, 0.32);
     border-top: 3px solid var(--crimson);
-    background:
-      linear-gradient(135deg, rgba(74, 11, 22, 0.22), transparent 36%),
-      rgba(9, 9, 15, 0.98);
-    box-shadow:
-      0 28px 100px rgba(0, 0, 0, 0.58),
-      inset 0 0 0 1px rgba(236, 228, 207, 0.05);
+    background: linear-gradient(
+      180deg,
+      rgba(16, 16, 25, 0.98),
+      rgba(20, 14, 24, 0.98)
+    );
+    box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7);
+    clip-path: polygon(
+      0 0,
+      100% 0,
+      100% calc(100% - 26px),
+      calc(100% - 26px) 100%,
+      0 100%
+    );
   }
 
   header,
   footer {
     display: flex;
-    align-items: start;
     justify-content: space-between;
     gap: 16px;
+  }
+
+  header {
+    align-items: baseline;
+  }
+
+  .header-copy {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    min-width: 0;
   }
 
   .eyebrow,
@@ -317,17 +339,17 @@
   }
 
   .eyebrow {
-    color: var(--crimson);
+    color: var(--bone-faint);
+    letter-spacing: 0.32em;
   }
 
   h2 {
-    position: absolute;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    white-space: nowrap;
+    color: var(--bone);
+    font-family: var(--display-jp);
+    font-size: 19px;
+    font-weight: 400;
+    letter-spacing: 0.16em;
+    line-height: 1.1;
   }
 
   .progress {
@@ -336,13 +358,29 @@
   }
 
   .line-record {
-    padding: 14px 16px;
-    border-left: 2px solid var(--crimson);
-    background: rgba(236, 228, 207, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0;
+    padding: 15px 18px;
+    border: 1px solid rgba(212, 20, 58, 0.4);
+    border-left: 3px solid var(--crimson);
+    background: rgba(212, 20, 58, 0.08);
     color: var(--bone);
+  }
+
+  .target-kicker {
+    color: var(--crimson);
+    font-family: var(--impact);
+    font-size: 9px;
+    letter-spacing: 0.32em;
+  }
+
+  .target-text {
     font-family: var(--serif-jp);
     font-size: clamp(16px, 2vw, 20px);
-    line-height: 1.7;
+    font-style: italic;
+    line-height: 1.8;
   }
 
   .record-list {
@@ -476,11 +514,22 @@
   }
 
   .game-menu:hover:not(:disabled),
-  .game-menu:focus-visible,
-  .withdraw:hover:not(:disabled),
-  .withdraw:focus-visible {
+  .game-menu:focus-visible {
     border-color: var(--cyan);
     background: rgba(71, 184, 203, 0.1);
+    outline: none;
+  }
+
+  .withdraw {
+    border-color: rgba(236, 228, 207, 0.24);
+    color: var(--bone-dim);
+  }
+
+  .withdraw:hover:not(:disabled),
+  .withdraw:focus-visible {
+    border-color: var(--crimson);
+    background: transparent;
+    color: var(--bone);
     outline: none;
   }
 
