@@ -18,7 +18,13 @@ function sceneWithMenu(): InterrogationSceneView {
       {
         id: "phase_1",
         label: "第一階段",
-        subject: { id: "suspect_1", name: "嫌疑人", role: "店員", bio: "" },
+        subject: {
+          id: "suspect_1",
+          name: "嫌疑人",
+          role: "店員",
+          bio: "",
+          portrait: null,
+        },
         questions: [{ id: "q_alibi", label: "當晚行蹤", broken: false }],
         crossExam: null,
         canComplete: false,

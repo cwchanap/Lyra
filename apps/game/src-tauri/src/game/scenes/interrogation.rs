@@ -702,6 +702,7 @@ mod tests {
             name: "Suspect".into(),
             role: "Witness".into(),
             bio: "Quiet.".into(),
+            portrait: None,
         }
     }
 

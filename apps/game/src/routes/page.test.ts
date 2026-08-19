@@ -2020,7 +2020,13 @@ describe("+page in-game persistence browser", () => {
         {
           id: "phase_1",
           label: "第一階段",
-          subject: { id: "subject_1", name: "證人", role: "證人", bio: "" },
+          subject: {
+            id: "subject_1",
+            name: "證人",
+            role: "證人",
+            bio: "",
+            portrait: null,
+          },
           questions: [{ id: "q_1", label: "問題一", broken: false }],
           crossExam: {
             questionId: "q_1",
@@ -2173,7 +2179,13 @@ describe("+page in-game persistence browser", () => {
         {
           id: "phase_1",
           label: "第一階段",
-          subject: { id: "subject_1", name: "證人", role: "證人", bio: "" },
+          subject: {
+            id: "subject_1",
+            name: "證人",
+            role: "證人",
+            bio: "",
+            portrait: null,
+          },
           questions: [{ id: "q_1", label: "問題一", broken: false }],
           crossExam: {
             questionId: "q_1",
