@@ -3310,6 +3310,7 @@ function inquiryPhase(
       name: "Suspect",
       role: "Witness",
       bio: "bio",
+      portrait: null,
       sourceFile: "chapter_1/interrogation_scene_1.md",
       line: 2,
     },

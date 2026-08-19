@@ -28,6 +28,16 @@ function config(): AssetConfig {
       ["concerned", { id: "concerned", prompt: "worried" }],
     ]),
   };
+  const subjectCharacter = {
+    id: "miyake_sota",
+    displayNames: ["三宅蒼太"],
+    portraitMode: "portrait" as const,
+    visualPrompt: "nervous cafe worker",
+    referenceAssetId: null,
+    expressions: new Map([
+      ["standard", { id: "standard", prompt: "restrained" }],
+    ]),
+  };
   return {
     enabled: true,
     globalStylePrompt: "noir style",
@@ -59,8 +69,14 @@ function config(): AssetConfig {
       audio: { format: "ogg", loop: true, prompt: "" },
     },
     characters: {
-      byId: new Map([[character.id, character]]),
-      byDisplayName: new Map([["早坂茜", character]]),
+      byId: new Map([
+        [character.id, character],
+        [subjectCharacter.id, subjectCharacter],
+      ]),
+      byDisplayName: new Map([
+        ["早坂茜", character],
+        ["三宅蒼太", subjectCharacter],
+      ]),
     },
     audio: {
       bgm: new Map([
@@ -2270,6 +2286,101 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     expect(manifestIds).toContain("portrait.hayasaka_akane.standard");
   });
 
+  it("registers the interrogation subject's standard portrait", () => {
+    const result = enrichScenesWithAssets({
+      scenes: [interrogationScene()],
+      config: config(),
+    });
+    expect(result.errors).toEqual([]);
+
+    const ast = result.scenes[0]?.ast;
+    if (ast?.kind !== "interrogationScene") return;
+    const subject = ast.phases[0]?.subject;
+    expect(subject?.portrait).toEqual({
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    });
+    expect(ast.assetRefs).toContainEqual({
+      type: "portrait",
+      assetId: "portrait.miyake_sota.standard",
+    });
+
+    expect(
+      result.manifest.entries.find(
+        (entry) => entry.assetId === "portrait.miyake_sota.standard",
+      ),
+    ).toMatchObject({
+      type: "portrait",
+      source: {
+        chapterId: "chapter_1",
+        sceneId: "interrogation_scene_2",
+        characterId: "miyake_sota",
+        expression: "standard",
+      },
+      promptParts: {
+        subjectPrompt: "nervous cafe worker",
+        entryPrompt: "restrained",
+      },
+    });
+  });
+
+  it("clears an interrogation subject portrait when assets are disabled", () => {
+    const scene = interrogationScene();
+    if (scene.ast.kind !== "interrogationScene") return;
+    scene.ast.phases[0]!.subject.portrait = {
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    };
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: { ...config(), enabled: false },
+    });
+    const ast = result.scenes[0]?.ast;
+    if (ast?.kind !== "interrogationScene") return;
+    expect(ast.phases[0]?.subject.portrait).toBeNull();
+  });
+
+  it("uses assetUnknownInterrogationSubject for an unknown subject", () => {
+    const scene = interrogationScene();
+    if (scene.ast.kind !== "interrogationScene") return;
+    scene.ast.phases[0]!.subject.name = "未登錄的詢問對象";
+
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: config(),
+    });
+
+    expect(result.errors.map((error) => error.code)).toContain(
+      "assetUnknownInterrogationSubject",
+    );
+    const ast = result.scenes[0]?.ast;
+    if (ast?.kind !== "interrogationScene") return;
+    expect(ast.phases[0]?.subject.portrait).toBeNull();
+  });
+
+  it("uses assetUnknownInterrogationSubject when standard is missing", () => {
+    const assetConfig = config();
+    const character = assetConfig.characters.byDisplayName.get("三宅蒼太");
+    if (!character) throw new Error("Expected 三宅蒼太 fixture character.");
+    character.expressions.delete("standard");
+
+    const scene = interrogationScene();
+    const result = enrichScenesWithAssets({
+      scenes: [scene],
+      config: assetConfig,
+    });
+
+    expect(result.errors.map((error) => error.code)).toContain(
+      "assetUnknownInterrogationSubject",
+    );
+    const ast = result.scenes[0]?.ast;
+    if (ast?.kind !== "interrogationScene") return;
+    expect(ast.phases[0]?.subject.portrait).toBeNull();
+  });
+
   it("enriches interrogation evidence and intro/outro dialogue", () => {
     const scenes: SceneRecord[] = [interrogationScene()];
     const result = enrichScenesWithAssets({ scenes, config: config() });
@@ -2309,9 +2420,10 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
 function interrogationScene(): SceneRecord {
   const subject = {
     id: "suspect",
-    name: "嫌疑人",
+    name: "三宅蒼太",
     role: "嫌疑人",
     bio: "沉默。",
+    portrait: null,
     sourceFile: "chapter_1/interrogation_scene_2.md",
     line: 10,
   };

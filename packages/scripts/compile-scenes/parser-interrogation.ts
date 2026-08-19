@@ -319,6 +319,7 @@ function parseSubject(
       name: (nameMatch[1] ?? "").trim(),
       role,
       bio,
+      portrait: null,
       sourceFile: cur.sourceFile,
       line: head.line,
     },
