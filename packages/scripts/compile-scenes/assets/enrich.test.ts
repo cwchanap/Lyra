@@ -2133,11 +2133,19 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     const ast = result.scenes[0]?.ast;
     expect(ast?.kind).toBe("interrogationScene");
 
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
     const phase = ast.phases[0];
     expect(phase?.kind).toBe("inquiry");
 
-    if (phase?.kind !== "inquiry") return;
+    if (phase?.kind !== "inquiry") {
+      throw new Error(
+        `expected inquiry phase, got ${phase?.kind ?? "undefined"}`,
+      );
+    }
 
     // Phase assetCue enriched with background ref
     expect(phase.assetCue?.backgroundAssetId).toBe(
@@ -2244,7 +2252,11 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     expect(result.errors).toEqual([]);
 
     const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
 
     // Evidence enriched
     const evidence = ast.evidenceManifest[0];
