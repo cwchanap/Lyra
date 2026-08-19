@@ -349,6 +349,21 @@ describe("ClassifyBoard", () => {
     expect(cardSource).toContain("@media (prefers-reduced-motion: reduce)");
   });
 
+  it("uses the clipped two-column board composition and compact fallbacks", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "ClassifyBoard.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);",
+    );
+    expect(source).toContain("clip-path: polygon(");
+    expect(source).toContain(".group::before");
+    expect(source).toContain("font-family: var(--serif-jp)");
+    expect(source).toContain("@media (max-width: 720px)");
+  });
+
   it("deselects a selected card on a second click", async () => {
     const user = userEvent.setup();
     renderBoard(boardWith());
