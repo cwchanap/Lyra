@@ -98,8 +98,14 @@ describe("InterrogationEvidenceTray", () => {
   it("submits the selected evidence and statement against the live testimony line", async () => {
     const user = userEvent.setup();
     const onPresent = vi.fn();
-    render(InterrogationEvidenceTray, props({ onPresent }));
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ onPresent }),
+    );
 
+    expect(
+      container.querySelector("[data-interrogation-present-tray]"),
+    ).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "提出證據" })).toHaveTextContent(
       "她移開視線。我沒去。",
     );

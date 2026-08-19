@@ -168,6 +168,7 @@
   <div
     bind:this={tray}
     class="interrogation-evidence-tray"
+    data-interrogation-present-tray=""
     role="dialog"
     aria-modal="true"
     aria-labelledby="interrogation-evidence-heading"
@@ -276,7 +277,7 @@
     display: grid;
     grid-template-rows: auto auto minmax(0, 1fr) auto;
     gap: 18px;
-    width: min(760px, calc(100vw - 48px));
+    width: min(900px, calc(100vw - 48px));
     max-height: min(760px, calc(100dvh - 48px));
     padding: clamp(20px, 3vw, 32px);
     overflow: hidden;
@@ -346,7 +347,7 @@
 
   .record-list {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
     min-height: 0;
     overflow-y: auto;
@@ -490,7 +491,7 @@
     }
 
     .interrogation-evidence-tray {
-      width: min(760px, calc(100vw - 36px));
+      width: min(900px, calc(100vw - 36px));
       max-height: min(760px, calc(100dvh - 36px));
       padding: 20px;
     }
