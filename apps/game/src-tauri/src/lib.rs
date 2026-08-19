@@ -42,6 +42,7 @@ use game::save::storage::{
     ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem, SlotWriteRequest,
     ThumbnailWrite, PRODUCTION_APP_IDENTIFIER,
 };
+use game::view::SceneView;
 use game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
 use serde::Serialize;
 
@@ -517,9 +518,9 @@ fn handle_exit_requested(
     schedule(ExitRequestSource::ApplicationQuit)
 }
 
-fn run_gameplay_mutation(
+fn run_gameplay_mutation_selecting_policy(
     state: &AppState,
-    policy: MutationPersistencePolicy,
+    select_policy: impl FnOnce(&GameStateView) -> MutationPersistencePolicy,
     mutation: impl FnOnce(&mut GameEngine) -> Result<GameStateView, GameError>,
 ) -> Result<GameplayCommandResultView, GameError> {
     let (committed, session_generation, before_revision, after_revision) = {
@@ -542,7 +543,7 @@ fn run_gameplay_mutation(
     };
 
     if after_revision > before_revision {
-        let notification = match policy {
+        let notification = match select_policy(&committed) {
             MutationPersistencePolicy::AutosaveIfAdvanced => {
                 state
                     .coordinator
@@ -555,7 +556,7 @@ fn run_gameplay_mutation(
                 return Ok(GameplayCommandResultView {
                     state: committed,
                     thumbnail_capture: None,
-                })
+                });
             }
         };
         return Ok(GameplayCommandResultView {
@@ -568,6 +569,14 @@ fn run_gameplay_mutation(
         state: committed,
         thumbnail_capture: None,
     })
+}
+
+fn run_gameplay_mutation(
+    state: &AppState,
+    policy: MutationPersistencePolicy,
+    mutation: impl FnOnce(&mut GameEngine) -> Result<GameStateView, GameError>,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation_selecting_policy(state, |_| policy, mutation)
 }
 
 fn finish_coordinator_mutation(
@@ -1655,6 +1664,30 @@ fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError>
     GameEngine::scene_navigation_index(resources_dir)
 }
 
+fn dialogue_persistence_policy(
+    source_scene_id: &str,
+    committed: &GameStateView,
+) -> MutationPersistencePolicy {
+    match &committed.scene {
+        SceneView::Interrogation { id, .. } if id == source_scene_id => {
+            MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
+        }
+        _ => MutationPersistencePolicy::AutosaveIfAdvanced,
+    }
+}
+
+fn advance_dialogue_core(
+    state: &AppState,
+    expected: QueueToken,
+) -> Result<GameplayCommandResultView, GameError> {
+    let source_scene_id = expected.scene_id.clone();
+    run_gameplay_mutation_selecting_policy(
+        state,
+        move |committed| dialogue_persistence_policy(&source_scene_id, committed),
+        |engine| engine.advance_dialogue(expected),
+    )
+}
+
 #[tauri::command]
 fn jump_to_scene(
     state: tauri::State<'_, AppState>,
@@ -1673,11 +1706,7 @@ fn advance_dialogue(
     state: tauri::State<'_, AppState>,
     expected: QueueToken,
 ) -> Result<GameplayCommandResultView, GameError> {
-    run_gameplay_mutation(
-        &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
-        |engine| engine.advance_dialogue(expected),
-    )
+    advance_dialogue_core(&state, expected)
 }
 
 #[tauri::command]
@@ -2381,9 +2410,14 @@ mod tests {
         use crate::game::save::storage::{
             ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem, StagedAtomicWrite,
         };
-        use crate::game::schema::{OutroUnlock, PredicateHotspotInvestigated, UnlockExpr};
-        use crate::game::test_support::analysis_fixture_resources;
+        use crate::game::schema::{
+            DialogueItem, OutroUnlock, PredicateHotspotInvestigated, UnlockExpr,
+        };
         use crate::game::test_support::save_capture_fixture_resources;
+        use crate::game::test_support::{
+            analysis_fixture_resources, empty_engine_with_interrogation_scene,
+            empty_engine_with_scene, investigation_scene_with_intro, two_line_question_scene,
+        };
         use crate::game::view::ModeView;
         use std::cell::Cell;
         use std::io;
@@ -2588,6 +2622,26 @@ mod tests {
                 save_root: PathBuf::new(),
                 persistence: None,
             }
+        }
+
+        fn mutation_app_with_engine(engine: GameEngine) -> AppState {
+            AppState {
+                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
+                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
+                resources_dir: PathBuf::new(),
+                save_root: PathBuf::new(),
+                persistence: None,
+            }
+        }
+
+        fn live_queue_token(app: &AppState) -> QueueToken {
+            let session = app.session.lock().unwrap();
+            let view = session.engine.as_ref().unwrap().view().unwrap();
+            let ModeView::Dialogue { queue_token, .. } = view.mode else {
+                panic!("fixture must expose dialogue");
+            };
+            queue_token
         }
 
         fn title_app() -> AppState {
@@ -4496,6 +4550,77 @@ mod tests {
             assert_eq!(app.session.lock().unwrap().durable_revision(), Some(1));
         }
 
+        #[test]
+        fn interrogation_dialogue_advance_autosaves_without_thumbnail() {
+            let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+            engine.ask_interrogation_question("alibi").unwrap();
+            let app = mutation_app_with_engine(engine);
+            let expected = live_queue_token(&app);
+            let before = app.session.lock().unwrap().durable_revision().unwrap();
+
+            let result = advance_dialogue_core(&app, expected).unwrap();
+
+            assert!(result.thumbnail_capture.is_none());
+            assert!(app.session.lock().unwrap().durable_revision().unwrap() > before);
+            assert_eq!(
+                app.coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Idle
+            );
+        }
+
+        #[test]
+        fn ordinary_dialogue_advance_still_requests_thumbnail() {
+            let mut scene = investigation_scene_with_intro("scene", vec![]);
+            scene.sublocations[0].transition_dialogue = vec![DialogueItem::Line {
+                speaker: "narrator".into(),
+                text: "ordinary dialogue".into(),
+                portrait: None,
+            }];
+            let mut engine = empty_engine_with_scene(scene, 1);
+            engine.enter_sublocation("room").unwrap();
+            let app = mutation_app_with_engine(engine);
+            let expected = live_queue_token(&app);
+
+            let result = advance_dialogue_core(&app, expected).unwrap();
+
+            assert!(result.thumbnail_capture.is_some());
+        }
+
+        #[test]
+        fn dialogue_policy_skips_only_same_interrogation_scene_progress() {
+            let scene = two_line_question_scene();
+            let interrogation_id = scene.id.clone();
+            let interrogation = empty_engine_with_interrogation_scene(scene, 1)
+                .view()
+                .unwrap();
+
+            assert!(matches!(
+                dialogue_persistence_policy(&interrogation_id, &interrogation),
+                MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
+            ));
+
+            assert!(matches!(
+                dialogue_persistence_policy("previous_scene", &interrogation),
+                MutationPersistencePolicy::AutosaveIfAdvanced
+            ));
+
+            let ordinary_app = mutation_app();
+            let ordinary = ordinary_app
+                .session
+                .lock()
+                .unwrap()
+                .engine
+                .as_ref()
+                .unwrap()
+                .view()
+                .unwrap();
+
+            assert!(matches!(
+                dialogue_persistence_policy(&interrogation_id, &ordinary),
+                MutationPersistencePolicy::AutosaveIfAdvanced
+            ));
+        }
+
         /// Fixture: a started engine that has recorded acquisition events
         /// through the public gameplay path. The analysis source scene
         /// collects nine evidence records and one statement in a single
@@ -4690,7 +4815,6 @@ mod tests {
             let source = include_str!("lib.rs");
             for command in [
                 "jump_to_scene",
-                "advance_dialogue",
                 "inspect_hotspot",
                 "interview_topic",
                 "enter_sublocation",
@@ -4718,7 +4842,7 @@ mod tests {
                 );
             }
 
-            let acknowledgement = function_body(source, "acknowledge_acquisition_event");
+            let acknowledgement = function_body(source, "acknowledge_acquisition_event_core");
             assert!(acknowledgement
                 .contains("MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail"));
             assert!(!acknowledgement.contains("session.lock()"));
@@ -4728,7 +4852,7 @@ mod tests {
         fn analysis_workbench_commands_pin_no_thumbnail_autosave_policy() {
             let source = include_str!("lib.rs");
             for command in [
-                "acknowledge_acquisition_event",
+                "acknowledge_acquisition_event_core",
                 "select_analysis_board",
                 "update_analysis_draft",
                 "submit_analysis_board",
@@ -4753,8 +4877,10 @@ mod tests {
             }
 
             let advance = function_body(source, "advance_dialogue");
-            assert!(advance.contains("MutationPersistencePolicy::AutosaveIfAdvanced"));
-            assert!(!advance.contains("AutosaveIfAdvancedWithoutThumbnail"));
+            assert!(advance.contains("advance_dialogue_core"));
+            let advance_core = function_body(source, "advance_dialogue_core");
+            assert!(advance_core.contains("run_gameplay_mutation_selecting_policy"));
+            assert!(advance_core.contains("dialogue_persistence_policy"));
         }
 
         #[test]
@@ -4837,7 +4963,7 @@ mod tests {
         }
 
         fn function_body<'a>(source: &'a str, name: &str) -> &'a str {
-            let marker = format!("fn {name}");
+            let marker = format!("fn {name}(");
             let start = source
                 .find(&marker)
                 .unwrap_or_else(|| panic!("missing function {name}"));

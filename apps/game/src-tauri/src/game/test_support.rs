@@ -2165,7 +2165,7 @@ pub(super) fn empty_testimony() -> TestimonyJson {
 /// `scenes::interrogation::tests::two_line_question_scene` so the
 /// view-builder test below exercises the same cross-exam shape Task 7's
 /// state-machine tests cover.
-pub(super) fn two_line_question_scene() -> InterrogationSceneJson {
+pub(crate) fn two_line_question_scene() -> InterrogationSceneJson {
     InterrogationSceneJson {
         id: "interrogation_scene_1".into(),
         title: "Interrogation".into(),
@@ -2541,7 +2541,7 @@ pub(super) fn source_order_inventory_unlocked_interrogation_scene() -> Interroga
         },
     }
 }
-pub(super) fn empty_engine_with_interrogation_scene(
+pub(crate) fn empty_engine_with_interrogation_scene(
     scene: InterrogationSceneJson,
     intro_queue_gen: u64,
 ) -> GameEngine {
