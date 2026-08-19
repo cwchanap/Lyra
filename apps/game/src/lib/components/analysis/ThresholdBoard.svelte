@@ -137,44 +137,63 @@
   .threshold-board {
     display: grid;
     gap: 1.25rem;
-    color: #efedf0;
     min-width: 0;
+    color: var(--bone);
+    font-family: var(--body-jp);
   }
 
   .cards {
     display: grid;
-    gap: 0.7rem;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.75rem;
+    min-width: 0;
   }
 
   .card-entry {
     display: grid;
-    gap: 0.45rem;
+    gap: 0.35rem;
+    min-width: 0;
+    align-content: start;
   }
 
   .provenance {
     display: grid;
-    gap: 0.2rem;
-    padding: 0.65rem 0.8rem;
-    color: #c9cbd1;
-    background: rgba(255, 255, 255, 0.025);
-    border-left: 2px solid rgba(168, 200, 255, 0.45);
-    font-size: 0.84rem;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.45rem 0.6rem;
+    overflow-wrap: anywhere;
+    color: var(--bone-dim);
+    background: var(--cyan-soft);
+    border-left: 2px solid var(--cyan);
+    clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 0 100%);
+    font-family: var(--serif-jp);
+    font-size: 0.7rem;
+    line-height: 1.35;
   }
 
   .provenance p {
     margin: 0;
-    line-height: 1.45;
+    line-height: inherit;
   }
 
   footer {
     display: grid;
-    gap: 0.45rem;
-    color: #c9cbd1;
+    gap: 0.35rem;
+    color: var(--bone-dim);
+    font-family: var(--impact);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
   }
 
   footer progress {
     width: 100%;
-    height: 0.38rem;
-    accent-color: #9cb6df;
+    height: 0.36rem;
+    accent-color: var(--cyan);
+  }
+
+  @media (max-width: 720px) {
+    .cards {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

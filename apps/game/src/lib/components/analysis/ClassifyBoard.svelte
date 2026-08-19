@@ -300,85 +300,162 @@
   .classify-board {
     display: grid;
     gap: 1.25rem;
-    color: #efedf0;
     min-width: 0;
+    color: var(--bone);
+    font-family: var(--body-jp);
   }
 
   .empty {
     margin: 0;
-    color: #c9cbd1;
-    font-size: 0.9rem;
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 0.78rem;
   }
 
   .board-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
     gap: 1rem;
   }
 
   .card-pool,
   .group {
+    position: relative;
     display: grid;
     align-content: start;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.025);
-    border: 1px solid rgba(179, 191, 214, 0.22);
+    gap: 0.7rem;
+    min-width: 0;
+    padding: 0.9rem;
+    overflow: hidden;
+    background:
+      linear-gradient(135deg, rgba(52, 216, 255, 0.05), transparent 34%),
+      rgba(9, 9, 15, 0.72);
+    border: 1px solid var(--rule);
+    border-top: 2px solid var(--analysis-blue, var(--cyan));
+    clip-path: polygon(0 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%);
+  }
+
+  .card-pool::before,
+  .group::before {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 10px;
+    height: 10px;
+    background: var(--cyan);
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+    content: "";
+    pointer-events: none;
+  }
+
+  .group {
+    background:
+      linear-gradient(135deg, var(--crimson-soft), transparent 34%),
+      rgba(9, 9, 15, 0.72);
+    border-top-color: var(--crimson);
+  }
+
+  .group::before {
+    background: var(--crimson);
   }
 
   .drop-target {
-    border-color: rgba(168, 200, 255, 0.82);
-    box-shadow: 0 0 0 2px rgba(91, 135, 210, 0.3);
+    border-color: var(--cyan);
+    box-shadow: 0 0 0 2px var(--cyan-soft);
+  }
+
+  .card-pool h3,
+  .group h3 {
+    margin: 0;
+    font-family: var(--display-jp);
+    font-size: 0.92rem;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  .card-pool h3 {
+    color: var(--cyan);
+  }
+
+  .group h3 {
+    color: var(--bone);
   }
 
   .groups {
     display: grid;
-    gap: 1rem;
+    gap: 0.85rem;
   }
 
   .group header {
     display: grid;
-    gap: 0.2rem;
+    gap: 0.15rem;
   }
 
   .group header p {
     margin: 0;
-    color: #c9cbd1;
-    font-size: 0.86rem;
-    line-height: 1.45;
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 0.72rem;
+    line-height: 1.4;
   }
 
   .cards {
     display: grid;
-    gap: 0.7rem;
+    gap: 0.6rem;
+    min-width: 0;
   }
 
   .card-entry {
     display: grid;
-    gap: 0.45rem;
+    gap: 0.35rem;
+    min-width: 0;
   }
 
   .assign,
   .remove {
-    width: 100%;
-    padding: 0.5rem 0.7rem;
-    color: #d6e5ff;
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    width: auto;
+    max-width: 100%;
+    min-height: 2rem;
+    padding: 0.28rem 0.55rem;
+    overflow-wrap: anywhere;
+    color: var(--bone-dim);
     font: inherit;
+    font-family: var(--serif-jp);
+    font-size: 0.72rem;
+    line-height: 1.3;
     text-align: left;
-    background: rgba(91, 135, 210, 0.14);
-    border: 1px solid rgba(168, 200, 255, 0.4);
+    background: transparent;
+    border: 1px solid var(--rule);
+    border-left: 2px solid var(--cyan);
+    clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 0 100%);
     cursor: pointer;
   }
 
   .remove {
-    color: #f2d1b2;
-    background: rgba(154, 104, 61, 0.16);
-    border-color: rgba(226, 173, 105, 0.42);
+    border-left-color: var(--crimson);
+  }
+
+  .assign:hover:not(:disabled),
+  .assign:focus-visible,
+  .remove:hover:not(:disabled),
+  .remove:focus-visible {
+    color: var(--bone);
+    border-color: var(--cyan);
+    background: var(--cyan-soft);
+  }
+
+  .remove:hover:not(:disabled),
+  .remove:focus-visible {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
   }
 
   .assign:focus-visible,
   .remove:focus-visible {
-    outline: 3px solid #e2ad69;
+    outline: 2px solid var(--crimson);
     outline-offset: 3px;
   }
 
@@ -388,7 +465,7 @@
     opacity: 0.52;
   }
 
-  @media (max-width: 760px) {
+  @media (max-width: 720px) {
     .board-layout {
       grid-template-columns: 1fr;
     }

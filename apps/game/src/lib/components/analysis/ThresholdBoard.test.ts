@@ -1,5 +1,7 @@
 import { cleanup, render, screen, within } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   beat85CompilerAnalysisInventoryFixture,
@@ -73,6 +75,21 @@ afterEach(() => {
 });
 
 describe("ThresholdBoard", () => {
+  it("uses the responsive provenance grid and native progress treatment", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "ThresholdBoard.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));",
+    );
+    expect(source).toContain(".provenance");
+    expect(source).toContain("font-family: var(--serif-jp)");
+    expect(source).toContain("accent-color: var(--cyan)");
+    expect(source).toContain("@media (max-width: 720px)");
+  });
+
   it("renders all four practice cards without an inventory lookup", () => {
     renderBoard();
 

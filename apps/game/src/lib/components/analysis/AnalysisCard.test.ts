@@ -1,5 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnalysisCardView } from "$lib/state/types";
 import AnalysisCard from "./AnalysisCard.svelte";
@@ -546,6 +548,21 @@ describe("AnalysisCard", () => {
       "data-analysis-focus-key",
       "card:card_a",
     );
+  });
+
+  it("uses the clipped Lyra record treatment and compact state hierarchy", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "AnalysisCard.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain("clip-path: polygon(");
+    expect(source).toContain("var(--crimson)");
+    expect(source).toContain("var(--cyan)");
+    expect(source).toContain("font-family: var(--display-jp)");
+    expect(source).toContain("font-family: var(--serif-jp)");
+    expect(source).toContain("font-family: var(--impact)");
+    expect(source).toContain("@media (max-width: 720px)");
   });
 
   it("uses the default DOM resolver to find a drop target when no resolver prop is passed", async () => {

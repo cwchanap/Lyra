@@ -6,6 +6,8 @@ import {
   waitFor,
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { beat85CompilerAnalysisSceneFixture } from "$lib/analysis/test-fixtures";
 import type { AnalysisBoardView, AnalysisDraft } from "$lib/state/types";
@@ -79,6 +81,22 @@ afterEach(() => {
 });
 
 describe("OrderBoard", () => {
+  it("uses the stronger timeline composition and compact keyboard fallbacks", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "OrderBoard.svelte"),
+      "utf8",
+    );
+
+    expect(source).toContain(
+      "grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);",
+    );
+    expect(source).toContain(".timeline::before");
+    expect(source).toContain(".timeline li.fixed");
+    expect(source).toContain("font-family: var(--impact)");
+    expect(source).toContain("font-family: var(--serif-jp)");
+    expect(source).toContain("@media (max-width: 720px)");
+  });
+
   it("renders a numbered vertical timeline with stable movable gutters", () => {
     const { container } = renderBoard(
       boardWith(["event_1841", "event_1842", "event_1843"]),
