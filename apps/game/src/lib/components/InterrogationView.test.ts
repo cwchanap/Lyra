@@ -113,6 +113,14 @@ describe("InterrogationView", () => {
     expect(getByText("當晚行蹤")).toBeTruthy();
   });
 
+  it("exposes a stable question record anchor", () => {
+    const { container } = renderView(sceneWithMenu());
+
+    expect(
+      container.querySelector("[data-interrogation-question-record]"),
+    ).toBeInTheDocument();
+  });
+
   it("keeps question records behind the stage-owned presenting tray", () => {
     const { getByText, queryByText } = renderView(sceneInPresenting());
 

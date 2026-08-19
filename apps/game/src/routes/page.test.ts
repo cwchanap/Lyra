@@ -207,6 +207,59 @@ function interrogationPresentationState(): GameStateView {
   return state;
 }
 
+function interrogationDialogueState(): GameStateView {
+  const state = interrogationPresentationState();
+  if (state.scene.kind !== "interrogation") {
+    throw new Error("interrogation scene fixture expected");
+  }
+
+  const speakerPortrait = {
+    characterId: "soma_ritsu",
+    expression: "focused",
+    assetId: "portrait.soma_ritsu.focused",
+  };
+  state.scene = {
+    ...state.scene,
+    visiblePhases: state.scene.visiblePhases.map((phase) => ({
+      ...phase,
+      subject: {
+        ...phase.subject,
+        portrait: {
+          characterId: "miyake_sota",
+          expression: "standard",
+          assetId: "portrait.miyake_sota.standard",
+        },
+      },
+      crossExam: {
+        questionId: "q_1",
+        lineId: "line_1",
+        lineLabel: "證言一",
+        lineContent: [{ kind: "line", speaker: "相馬律", text: "請回答。" }],
+        lineIndex: 0,
+        lineTotal: 2,
+        presenting: false,
+      },
+    })),
+  };
+  state.mode = {
+    type: "dialogue",
+    current: {
+      kind: "line",
+      speaker: "相馬律",
+      text: "請回答。",
+      portrait: speakerPortrait,
+    },
+    queueRemaining: 0,
+    sceneTag: "訊問室",
+    queueToken: { sceneId: "interrogation_1", queueGen: 1, cursor: 0 },
+    crossExamLineId: "line_1",
+    backgroundAssetId: "background.interrogation_room",
+    bgm: null,
+    bgs: null,
+  };
+  return state;
+}
+
 function gameCompleteState(): GameStateView {
   return {
     chapter: {
@@ -1120,6 +1173,38 @@ describe("+page in-game persistence browser", () => {
     expect(
       container.querySelectorAll('[data-save-thumbnail-layout="backdrop"]'),
     ).toHaveLength(1);
+  });
+
+  it("stage-anchors same-scene testimony and leaves the current portrait to stage art", async () => {
+    gameState.value = interrogationDialogueState();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    const { container } = render(Page);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          'img.interrogation-subject-portrait[src*="soma_ritsu/focused"]',
+        ),
+      ).toBeInTheDocument();
+    });
+    const wrapper = container.querySelector(
+      ".wrapper.interrogation-stage-dialogue",
+    );
+    expect(wrapper).toBeInTheDocument();
+    expect(
+      wrapper?.querySelector("[data-interrogation-dialogue-frame]"),
+    ).toBeInTheDocument();
+    expect(container.querySelector(".portrait-shell")).toBeNull();
+    expect(screen.getByText("證詞 1 / 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /反駁/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
   });
 
   it("keeps gameplay isolated behind visible loading until Manual Save preflight succeeds", async () => {

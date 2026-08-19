@@ -1365,6 +1365,7 @@
               onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
               history={gameState.value.dialogueHistory}
               disabled={gameState.inFlight}
+              interrogationStageActive={interrogationPresentationActive}
               crossExam={gameState.value.mode.crossExamLineId
                 ? {
                     lineId: gameState.value.mode.crossExamLineId,

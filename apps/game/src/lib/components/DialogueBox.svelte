@@ -33,6 +33,7 @@
     history = [],
     disabled = false,
     crossExam = null,
+    interrogationStageActive = false,
     textRevealDurationMs = dialogueTransitionDurationMs,
   }: {
     current: DialogueItem;
@@ -49,6 +50,7 @@
       onWithdraw: () => void;
       presentation?: CrossExamView | null;
     } | null;
+    interrogationStageActive?: boolean;
     textRevealDurationMs?: number;
   } = $props();
 
@@ -237,8 +239,8 @@
     suppressFollowingPhysicalChallengeClick();
   }
 
-  // The inline cross-exam buttons live inside the click-to-advance box, so
-  // each must stop propagation or the click would also advance the testimony.
+  // Cross-exam buttons share the dialogue surface, so each stops propagation
+  // to keep its activation from advancing the testimony.
   function handleChallengeClick(event: MouseEvent) {
     event.stopPropagation();
     if (disabled || !crossExam) return;
@@ -366,7 +368,7 @@
     if (
       active === logButton ||
       active === advanceButton ||
-      active.closest(".box")
+      active.closest(".box, .xexam-actions")
     )
       return false;
     return Boolean(active.closest(interactiveFocusSelector));
@@ -546,26 +548,28 @@
 -->
 <svelte:window onkeydown={handleKey} />
 
-<div class="portrait-shell">
-  <CrossfadeImage
-    src={portraitSource}
-    transitionKey={portraitTransitionKey}
-    alt=""
-    ariaHidden={true}
-    durationMs={dialogueTransitionDurationMs}
-    imageClass={`portrait ${portraitPlacement}`}
-    dataAttributes={{
-      placement: portraitPlacement,
-      "save-thumbnail-asset-role": "portrait",
-      // Stable hook for tests/e2e to locate the dialogue portrait layer
-      // (asserted in DialogueBox.test.ts and app.spec.ts). Not consumed by
-      // production CSS, which keys off the .portrait/.left/.right classes.
-      layer: "behind-dialogue",
-    }}
-    imageStyle="--portrait-height: min(1536px, 80vh);"
-    onImageError={handlePortraitError}
-  />
-</div>
+{#if !interrogationStageActive}
+  <div class="portrait-shell">
+    <CrossfadeImage
+      src={portraitSource}
+      transitionKey={portraitTransitionKey}
+      alt=""
+      ariaHidden={true}
+      durationMs={dialogueTransitionDurationMs}
+      imageClass={`portrait ${portraitPlacement}`}
+      dataAttributes={{
+        placement: portraitPlacement,
+        "save-thumbnail-asset-role": "portrait",
+        // Stable hook for tests/e2e to locate the dialogue portrait layer
+        // (asserted in DialogueBox.test.ts and app.spec.ts). Not consumed by
+        // production CSS, which keys off the .portrait/.left/.right classes.
+        layer: "behind-dialogue",
+      }}
+      imageStyle="--portrait-height: min(1536px, 80vh);"
+      onImageError={handlePortraitError}
+    />
+  </div>
+{/if}
 
 {#if historyOpen}
   <!-- Dim the gameplay behind the history popup. pointer-events: none keeps
@@ -582,6 +586,7 @@
 <div
   class="wrapper"
   class:line={current.kind === "line"}
+  class:interrogation-stage-dialogue={interrogationStageActive}
   data-save-thumbnail-layer="over-portrait"
   bind:this={wrapper}
 >
@@ -641,6 +646,9 @@
     class:line={current.kind === "line"}
     class:xexam-presentation={Boolean(crossExam?.presentation)}
     class:disabled
+    data-interrogation-dialogue-frame={interrogationStageActive
+      ? ""
+      : undefined}
     onclick={handleClick}
     inert={historyOpen}
   >
@@ -670,39 +678,42 @@
           >
         </div>
       {/if}
-      <div class="xexam-actions" inert={historyOpen}>
-        <button
-          class="xexam-challenge"
-          class:charging={challengeCharging}
-          type="button"
-          {disabled}
-          onpointerdown={handleChallengePointerDown}
-          onpointerup={cancelChallengePointerSequence}
-          onpointercancel={cancelChallengePointerSequence}
-          onpointerleave={cancelChallengePointerSequence}
-          onclick={handleChallengeClick}
-        >
-          <span class="act-mark">▸</span>
-          反駁
-        </button>
-        <button
-          class="xexam-withdraw"
-          type="button"
-          {disabled}
-          onclick={handleWithdrawClick}
-        >
-          退下
-        </button>
-      </div>
     {/if}
   </div>
+
+  {#if crossExam}
+    <div class="xexam-actions" inert={historyOpen}>
+      <button
+        class="xexam-challenge"
+        class:charging={challengeCharging}
+        type="button"
+        {disabled}
+        onpointerdown={handleChallengePointerDown}
+        onpointerup={cancelChallengePointerSequence}
+        onpointercancel={cancelChallengePointerSequence}
+        onpointerleave={cancelChallengePointerSequence}
+        onclick={handleChallengeClick}
+      >
+        <span class="act-mark">▸</span>
+        反駁
+      </button>
+      <button
+        class="xexam-withdraw"
+        type="button"
+        {disabled}
+        onclick={handleWithdrawClick}
+      >
+        退下
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
   /* The visible advance target, anchored to the bottom-right of the wrapper
      so it clears the top-left kind label (敘述/發言) and the top-right LOG
-     button; cross-exam buttons (反駁/退下) sit bottom-left inside .box.
-     Click-to-advance still works on .box, but this pill is the named,
+     button; active Interrogation cross-exam actions sit outside the clipped
+     .box. Click-to-advance still works on .box, but this pill is the named,
      Tab-reachable, AT-announced affordance and the e2e anchor. */
   .advance-button {
     position: absolute;
@@ -759,6 +770,14 @@
     z-index: 30;
   }
 
+  .wrapper.interrogation-stage-dialogue {
+    --dialogue-width: min(1000px, calc(100% - 56px));
+    position: absolute;
+    left: 50%;
+    bottom: 28px;
+    transform: translateX(-50%);
+  }
+
   /* Sits above the dialogue box (z-index 30) and portrait (z-index 20) but
      below the history panel (z-index 35) so the popup stays fully visible
      while the gameplay behind it is dimmed. pointer-events: none so clicks
@@ -807,6 +826,10 @@
     transition:
       border-color 0.2s,
       background 0.2s;
+  }
+
+  .wrapper.interrogation-stage-dialogue .box {
+    min-height: 196px;
   }
 
   .box:hover:not(.disabled) {
@@ -1014,6 +1037,15 @@
     margin-top: 14px;
   }
 
+  .wrapper.interrogation-stage-dialogue .xexam-actions {
+    position: absolute;
+    left: calc(100% + 16px);
+    bottom: 0;
+    z-index: 3;
+    flex-direction: column;
+    margin-top: 0;
+  }
+
   .xexam-actions button {
     display: inline-flex;
     align-items: center;
@@ -1053,6 +1085,11 @@
     box-shadow: inset 0 0 0 4px rgba(174, 28, 49, 0.1);
   }
 
+  .wrapper.interrogation-stage-dialogue .xexam-challenge {
+    width: 128px;
+    height: 128px;
+  }
+
   .xexam-challenge.charging {
     animation: xexam-charge 0.6s linear forwards;
   }
@@ -1083,6 +1120,24 @@
 
   .act-mark {
     color: var(--crimson);
+  }
+
+  @media (max-width: 720px) {
+    .wrapper.interrogation-stage-dialogue .xexam-actions {
+      position: static;
+      flex-direction: row;
+      margin-top: 14px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-actions button {
+      min-width: 64px;
+      min-height: 64px;
+    }
+
+    .wrapper.interrogation-stage-dialogue .xexam-challenge {
+      width: 64px;
+      height: 64px;
+    }
   }
 
   @media (prefers-reduced-motion: reduce) {

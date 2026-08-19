@@ -58,6 +58,7 @@ function renderDialogueBox(
       onWithdraw: () => void;
       presentation?: CrossExamView | null;
     } | null;
+    interrogationStageActive?: boolean;
     textRevealDurationMs?: number;
   },
 ) {
@@ -70,6 +71,7 @@ function renderDialogueBox(
     disabled: overrides?.disabled,
     onAdvanceFeedback: overrides?.onAdvanceFeedback,
     crossExam: overrides?.crossExam ?? null,
+    interrogationStageActive: overrides?.interrogationStageActive,
     textRevealDurationMs: overrides?.textRevealDurationMs ?? 0,
   });
   return { onAdvance, ...result };
@@ -120,6 +122,30 @@ describe("DialogueBox", () => {
     expect(screen.getByText("若月")).toBeInTheDocument();
     expect(screen.getByText("你好。")).toBeInTheDocument();
     expect(screen.getByText(/LINE/)).toBeInTheDocument();
+  });
+
+  it("suppresses its own portrait on the active Interrogation path", () => {
+    const { container } = renderDialogueBox(
+      {
+        kind: "line",
+        speaker: "相馬律",
+        text: "請回答。",
+        portrait: {
+          characterId: "soma_ritsu",
+          expression: "focused",
+          assetId: "portrait.soma_ritsu.focused",
+        },
+      },
+      { interrogationStageActive: true },
+    );
+
+    expect(container.querySelector(".portrait-shell")).toBeNull();
+    expect(container.querySelector(".wrapper")).toHaveClass(
+      "interrogation-stage-dialogue",
+    );
+    expect(
+      container.querySelector("[data-interrogation-dialogue-frame]"),
+    ).toBeInTheDocument();
   });
 
   it("falls back to a portrait placeholder when the portrait image fails to load", async () => {
@@ -1581,6 +1607,7 @@ describe("DialogueBox inline cross-examination controls", () => {
     const { container } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
       {
+        interrogationStageActive: true,
         crossExam: {
           lineId: "l_deny",
           onChallenge: vi.fn(),
@@ -1591,7 +1618,15 @@ describe("DialogueBox inline cross-examination controls", () => {
     );
 
     expect(screen.getByText("證詞 2 / 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /反駁/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /反駁/ }).closest(".box"),
+    ).toBeNull();
     expect(container.querySelector(".box")).toHaveClass("xexam-presentation");
+    expect(container.querySelector(".box")).toHaveAttribute(
+      "data-interrogation-dialogue-frame",
+    );
   });
 
   it("challenges the current line without advancing the dialogue", async () => {
