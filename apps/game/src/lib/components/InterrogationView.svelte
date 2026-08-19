@@ -18,7 +18,11 @@
 </script>
 
 {#if phase}
-  <section class="interrogation" aria-label="訊問記錄">
+  <section
+    class="interrogation"
+    aria-label="訊問記錄"
+    data-interrogation-question-record=""
+  >
     <div class="record-heading">
       <p>訊問記錄</p>
       <span>INQUIRY RECORD</span>
@@ -58,11 +62,17 @@
 
 <style>
   .interrogation {
+    position: absolute;
+    left: 50%;
+    bottom: 28px;
+    width: min(1000px, calc(100% - 56px));
+    transform: translateX(-50%);
+    max-height: calc(100% - 250px);
+    overflow: auto;
+    box-sizing: border-box;
     display: grid;
     gap: 14px;
-    width: min(960px, 100%);
-    margin: 0 auto;
-    padding: 24px clamp(20px, 3vw, 40px) 140px;
+    padding: 24px clamp(20px, 3vw, 40px) 0;
     color: var(--bone);
   }
 
@@ -215,7 +225,7 @@
 
   @media (max-width: 720px) {
     .interrogation {
-      padding-bottom: 110px;
+      padding: 18px 20px 0;
     }
 
     .menu {
