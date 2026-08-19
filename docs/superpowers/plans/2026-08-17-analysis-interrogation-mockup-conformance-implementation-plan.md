@@ -37,31 +37,20 @@
 
 ---
 
-## Delivery split
+## Delivery model: one implementation PR
 
-### PR A — Interrogation canvas conformance
+Implement **Tasks 1–8 in one PR**. Keep the task-level commits and focused verification gates below, but do not split Interrogation and Analysis into separate pull requests.
 
-Tasks 1–5:
+The single PR has two internal checkpoints:
 
-1. compiler-derived subject fallback portrait;
-2. Rust/TypeScript public projection;
-3. continuous stage, persistent backdrop, speaker-aware/cropped thumbnail-safe art, CI risk routing;
-4. stage-anchored question/testimony/rebut composition;
-5. Present restyle, packaged geometry/capture proof, manual Interrogation comparison.
+1. **Interrogation checkpoint after Task 5** — compiler/public wire, continuous stage, save-thumbnail-safe speaker art, Present geometry, CI routing, packaged capture proof, and manual Interrogation captures must be green before starting the Analysis visual work.
+2. **Final checkpoint after Task 8** — Analysis visual conformance, packaged geometry, full regression, and the final cross-scene manual review complete the same PR.
 
-### PR B — Analysis visual conformance
-
-Tasks 6–8:
-
-6. Analysis host geometry/tokens + shared-wrapper selector normalization;
-7. Analysis card/board conformance;
-8. Analysis packaged geometry, full regression, manual Analysis comparison.
-
-No third infrastructure PR.
+Do not create an infrastructure-only PR or a follow-up Analysis PR for this slice.
 
 ---
 
-# PR A — Interrogation canvas conformance
+# Interrogation canvas conformance
 
 ## Task 1: Derive a compiler-owned Interrogation subject portrait
 
@@ -302,7 +291,7 @@ Add the existing component family to the current `gameplay` E2E risk rule:
 bun run --cwd apps/game test:e2e:ci-contracts
 ```
 
-Note: editing `select-e2e-suites.mjs` itself is an E2E-infrastructure change, so PR A CI is expected to select the full registry. This is acceptable; no new suite is introduced.
+Note: editing `select-e2e-suites.mjs` itself is an E2E-infrastructure change, so the single implementation PR is expected to select the full registry. This is acceptable; no new suite is introduced.
 
 ### 3.8 Focused verification
 
@@ -500,31 +489,31 @@ node apps/game/scripts/run-save-e2e.mjs --suite analysis-beat85
 node apps/game/scripts/run-save-e2e.mjs --suite capture-proof
 ```
 
-- [ ] Because Task 3 changes `select-e2e-suites.mjs`, run the CI-contract tests and the full local E2E registry before PR A completion:
+- [ ] Because Task 3 changes `select-e2e-suites.mjs`, run the CI-contract tests and the full local E2E registry at the Interrogation checkpoint:
 
 ```bash
 bun run --cwd apps/game test:e2e:ci-contracts
 bun run test:e2e
 ```
 
-### 5.7 Manual PR A visual acceptance
+### 5.7 Interrogation visual checkpoint inside the same PR
 
-Before PR A is marked ready, capture and attach:
+Before starting Task 6, capture and attach to the **same implementation PR**:
 
 1. Interrogation question menu at 1280×720 target;
 2. Interrogation testimony + 128px rebut ring at 1280×720 target;
 3. Interrogation Present tray at 1280×720 target;
 4. optional 1280×800 testimony comparison against the handoff.
 
-Do not defer Interrogation visual acceptance to PR B.
+Do not defer these captures to the final Analysis review; they are the internal gate before continuing in the same PR.
 
 - [ ] Commit Present/E2E acceptance: `test: pin interrogation mockup geometry`.
 
-At this point PR A is complete.
+This completes the Interrogation checkpoint. Continue with Task 6 on the same branch and pull request.
 
 ---
 
-# PR B — Analysis visual conformance
+# Analysis visual conformance
 
 ## Task 6: Conform Analysis host geometry and scoped tokens
 
@@ -622,13 +611,18 @@ bun run check
 bun run test
 ```
 
-Run full packaged E2E if PR B touches any path whose selector risk requires it or before making a full-suite completion claim.
+Because Task 3 changes the E2E selector itself, run the full packaged E2E registry before the single implementation PR is marked ready:
 
-### Manual PR B acceptance
+```bash
+bun run test:e2e
+```
+
+### Final manual acceptance in the same PR
 
 - [ ] capture Analysis Classify at the 1280×720 target;
 - [ ] compare against `Analysis Workbench v3` handoff;
-- [ ] re-open the PR A Interrogation captures for the final cross-scene consistency check;
+- [ ] re-open the Task 5 Interrogation captures for the final cross-scene consistency check;
+- [ ] confirm both Analysis and Interrogation acceptance evidence is attached to the same PR;
 - [ ] do not commit raster baselines.
 
 - [ ] Commit `test: pin analysis mockup geometry`.
@@ -652,7 +646,7 @@ Run full packaged E2E if PR B touches any path whose selector risk requires it o
 - [ ] dialogue panel ≥196px target; rebut ring ~128px; Present tray ~900px;
 - [ ] Present focus/Escape/Game Menu/direct engine callback behavior is unchanged;
 - [ ] future `Interrogation*.svelte` changes select the existing gameplay/production/analysis-beat85 E2E suites;
-- [ ] Interrogation manual captures are reviewed in PR A.
+- [ ] Interrogation manual captures were reviewed at the Task 5 checkpoint in this PR.
 
 ### Analysis
 
@@ -664,7 +658,14 @@ Run full packaged E2E if PR B touches any path whose selector risk requires it o
 - [ ] semantic fallbacks remain accessible and behaviorally unchanged;
 - [ ] shared wrapper CSS no longer relies on `data-interrogation-mode="analysis"`;
 - [ ] existing interaction/focus/persistence tests pass;
-- [ ] Analysis manual capture is reviewed in PR B.
+- [ ] Analysis manual capture is reviewed before this same PR is marked ready.
+
+### Single-PR delivery
+
+- [ ] Tasks 1–8 are on one implementation branch and one pull request;
+- [ ] the Task 5 Interrogation checkpoint passed before Analysis visual work continued;
+- [ ] the final PR contains both Interrogation and Analysis acceptance evidence;
+- [ ] no follow-up PR is required merely to finish the planned Analysis half.
 
 ### Scope
 
