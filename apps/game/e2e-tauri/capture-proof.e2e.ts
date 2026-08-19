@@ -1,12 +1,20 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
+  advanceDialogueOnce,
+  advanceDialogueUntil,
   advanceDialogueSelector,
+  clickButton,
+  closePersistenceBrowserToGameplay,
+  dismissAllPendingAcquisitions,
+  drainCurrentDialogue,
   elementExists,
   getPackagedGameState,
   resetCaptureProofStorage,
+  saveManualSlot,
   startCaptureProofAtScene,
   waitForPersistenceIdle,
+  waitForPackagedGameState,
   waitTypewriterIdle,
 } from "./helpers";
 import { autosaveSlots, newestAutosaveSlot } from "./save-fixtures";
@@ -924,5 +932,135 @@ describe("packaged gameplay thumbnail proof", () => {
         anchors.captureProof.probe,
       ),
     ).toBe("ready");
+  });
+
+  it("skips transient interrogation capture and keeps explicit saves captured", async () => {
+    await waitForPersistenceIdle();
+    await resetCaptureProofStorage();
+    const startAtInterrogation = startCaptureProofAtScene(
+      anchors.unicodeSave.interrogationSceneId,
+      anchors.unicodeSave.interrogationEntryDialogue,
+    );
+    // Scene 4's production entry anchor is the second authored dialogue line,
+    // so advance its intro while startCaptureProofAtScene waits for that exact
+    // anchor to become visible. The scene itself is still selected directly by
+    // the existing helper; no scene-jump command is involved.
+    await waitForPackagedGameState(
+      (state) => state.scene.id === anchors.unicodeSave.interrogationSceneId,
+      30000,
+      "interrogation scene did not become current after direct start",
+    );
+    for (let step = 0; step < 80; step += 1) {
+      const current = await getPackagedGameState();
+      if (
+        current.mode.type === "dialogue" &&
+        current.mode.current.text.includes(
+          anchors.unicodeSave.interrogationEntryDialogue,
+        )
+      ) {
+        break;
+      }
+      if (current.mode.type !== "dialogue") {
+        throw new Error(
+          "interrogation intro left dialogue before its entry anchor appeared",
+        );
+      }
+      const cursorBefore = current.mode.queueToken.cursor;
+      if (!(await advanceDialogueOnce())) {
+        throw new Error("interrogation intro advance control disappeared");
+      }
+      await waitForPackagedGameState(
+        (next) =>
+          next.mode.type === "dialogue" &&
+          (next.mode.current.text.includes(
+            anchors.unicodeSave.interrogationEntryDialogue,
+          ) ||
+            next.mode.queueToken.cursor !== cursorBefore),
+        30000,
+        "interrogation intro did not settle after advancing",
+      );
+    }
+    await startAtInterrogation;
+    await browser.waitUntil(
+      async () => elementExists(anchors.captureProof.probe),
+      {
+        timeout: 10000,
+        timeoutMsg: "packaged capture proof probe did not mount",
+      },
+    );
+    await drainCurrentDialogue("interrogation");
+    await dismissAllPendingAcquisitions();
+    await waitForPersistenceIdle();
+
+    const captureBefore = await captureWrapperStatus();
+    const autosaveIdsBefore = autosaveSaveIds();
+
+    await clickButton(anchors.unicodeSave.interrogationQuestion);
+    await waitForPackagedGameState(
+      (state) =>
+        state.mode.type === "dialogue" && state.scene.kind === "interrogation",
+      30000,
+      "interrogation testimony did not enter Playing",
+    );
+
+    await advanceDialogueUntil(async () => {
+      return browser.execute((label: string) => {
+        return Array.from(document.querySelectorAll("button")).some((button) =>
+          (button.textContent ?? "").includes(label),
+        );
+      }, anchors.unicodeSave.challenge);
+    }, 80);
+
+    await clickButton(anchors.unicodeSave.challenge);
+    await advanceDialogueUntil(async () => {
+      const state = await getPackagedGameState();
+      return (
+        state.mode.type === "interrogation" &&
+        state.scene.kind === "interrogation" &&
+        state.scene.visiblePhases.some(
+          (phase) => phase.crossExam?.presenting === true,
+        )
+      );
+    }, 80);
+
+    const captureAfterInterrogation = await captureWrapperStatus();
+    expect(captureAfterInterrogation.calls).toBe(captureBefore.calls);
+    expect(captureAfterInterrogation.available).toBe(captureBefore.available);
+
+    const fresh = await waitForFreshNativeAutosave(
+      autosaveIdsBefore,
+      "interrogation no-thumbnail progress",
+    );
+    expect(fresh.thumbnailType).toBe("unavailable");
+
+    const newest = newestAutosaveSlot();
+    if (!newest?.envelope || newest.envelope.saveId !== fresh.saveId) {
+      throw new Error(
+        "fresh interrogation autosave is not the newest autosave",
+      );
+    }
+    const envelope = newest.envelope;
+
+    expect(envelope.summary.sceneId).toBe(
+      anchors.unicodeSave.interrogationSceneId,
+    );
+    expect(envelope.snapshot.scene.type).toBe("interrogation");
+    if (envelope.snapshot.scene.type !== "interrogation") {
+      throw new Error(
+        "interrogation autosave did not persist interrogation state",
+      );
+    }
+    expect(envelope.snapshot.scene.crossExam.type).toBe("presenting");
+    expect(envelope.snapshot.scene.enteredPhaseIds.length).toBeGreaterThan(0);
+
+    await waitForPersistenceIdle();
+    await saveManualSlot(3, "訊問捕捉正向控制");
+
+    const captureAfterManualSave = await captureWrapperStatus();
+    expect(captureAfterManualSave.calls).toBe(
+      captureAfterInterrogation.calls + 1,
+    );
+
+    await closePersistenceBrowserToGameplay();
   });
 });
