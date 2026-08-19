@@ -164,7 +164,7 @@
   });
 </script>
 
-<div class="interrogation-tray-scrim">
+<div class="interrogation-tray-scrim" data-save-thumbnail-exclude="">
   <div
     bind:this={tray}
     class="interrogation-evidence-tray"

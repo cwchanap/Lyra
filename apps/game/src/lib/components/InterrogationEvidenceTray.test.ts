@@ -87,6 +87,14 @@ afterEach(() => {
 });
 
 describe("InterrogationEvidenceTray", () => {
+  it("excludes the transient Present scrim from save thumbnails", () => {
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    const scrim = container.querySelector(".interrogation-tray-scrim");
+    expect(scrim).not.toBeNull();
+    expect(scrim).toHaveAttribute("data-save-thumbnail-exclude", "");
+  });
+
   it("submits the selected evidence and statement against the live testimony line", async () => {
     const user = userEvent.setup();
     const onPresent = vi.fn();
