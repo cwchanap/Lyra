@@ -73,6 +73,7 @@ export const anchors = {
     compositeHotspot: "調查：止滑墊與半乾水痕",
     acquisitionTitles: ["雨宮匿名訊息縮圖", "地板雨水乾燥圖"],
     interrogationSceneId: "interrogation_scene_4",
+    interrogationEntryDialogue: "他從進來就一直捏著那罐東西",
     interrogationQuestion: "二十二點五十六分左右在哪裡",
     challenge: "反駁",
     withdraw: "收回",
