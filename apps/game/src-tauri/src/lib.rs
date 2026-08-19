@@ -1815,8 +1815,19 @@ fn ask_interrogation_question(
 ) -> Result<GameplayCommandResultView, GameError> {
     run_gameplay_mutation(
         &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
         |engine| engine.ask_interrogation_question(&question_id),
+    )
+}
+
+fn challenge_interrogation_line_core(
+    state: &AppState,
+    line_id: String,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        state,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
+        |engine| engine.challenge_interrogation_line(&line_id),
     )
 }
 
@@ -1825,11 +1836,7 @@ fn challenge_interrogation_line(
     state: tauri::State<'_, AppState>,
     line_id: String,
 ) -> Result<GameplayCommandResultView, GameError> {
-    run_gameplay_mutation(
-        &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
-        |engine| engine.challenge_interrogation_line(&line_id),
-    )
+    challenge_interrogation_line_core(&state, line_id)
 }
 
 #[tauri::command]
@@ -1841,7 +1848,7 @@ fn present_interrogation_evidence(
 ) -> Result<GameplayCommandResultView, GameError> {
     run_gameplay_mutation(
         &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
         |engine| engine.present_interrogation_evidence(&line_id, &item_kind, &item_id),
     )
 }
@@ -1852,7 +1859,7 @@ fn withdraw_interrogation(
 ) -> Result<GameplayCommandResultView, GameError> {
     run_gameplay_mutation(
         &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
         GameEngine::withdraw_interrogation,
     )
 }
@@ -1863,7 +1870,7 @@ fn resume_interrogation_testimony(
 ) -> Result<GameplayCommandResultView, GameError> {
     run_gameplay_mutation(
         &state,
-        MutationPersistencePolicy::AutosaveIfAdvanced,
+        MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail,
         GameEngine::resume_interrogation_testimony,
     )
 }
@@ -2642,6 +2649,26 @@ mod tests {
                 panic!("fixture must expose dialogue");
             };
             queue_token
+        }
+
+        fn advance_engine_to_line(engine: &mut GameEngine, expected_line_id: &str) {
+            for _ in 0..8 {
+                let view = engine.view().unwrap();
+                if matches!(
+                    &view.mode,
+                    ModeView::Dialogue {
+                        cross_exam_line_id: Some(line_id),
+                        ..
+                    } if line_id == expected_line_id
+                ) {
+                    return;
+                }
+                let ModeView::Dialogue { queue_token, .. } = view.mode else {
+                    panic!("testimony left dialogue before reaching {expected_line_id}");
+                };
+                engine.advance_dialogue(queue_token).unwrap();
+            }
+            panic!("testimony never reached {expected_line_id}");
         }
 
         fn title_app() -> AppState {
@@ -4569,6 +4596,24 @@ mod tests {
         }
 
         #[test]
+        fn challenge_interrogation_line_autosaves_without_thumbnail() {
+            let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+            engine.ask_interrogation_question("alibi").unwrap();
+            advance_engine_to_line(&mut engine, "l_deny");
+            let app = mutation_app_with_engine(engine);
+            let before = app.session.lock().unwrap().durable_revision().unwrap();
+
+            let result = challenge_interrogation_line_core(&app, "l_deny".into()).unwrap();
+
+            assert!(result.thumbnail_capture.is_none());
+            assert!(app.session.lock().unwrap().durable_revision().unwrap() > before);
+            assert_eq!(
+                app.coordinator.thumbnail_activity(),
+                ThumbnailActivityView::Idle
+            );
+        }
+
+        #[test]
         fn ordinary_dialogue_advance_still_requests_thumbnail() {
             let mut scene = investigation_scene_with_intro("scene", vec![]);
             scene.sublocations[0].transition_dialogue = vec![DialogueItem::Line {
@@ -4820,11 +4865,6 @@ mod tests {
                 "enter_sublocation",
                 "reexamine_evidence",
                 "reexamine_statement",
-                "ask_interrogation_question",
-                "challenge_interrogation_line",
-                "present_interrogation_evidence",
-                "withdraw_interrogation",
-                "resume_interrogation_testimony",
                 "complete_interrogation_phase",
             ] {
                 let body = function_body(source, command);
@@ -4833,8 +4873,12 @@ mod tests {
                     "{command} bypasses the centralized command guard"
                 );
                 assert!(
-                    body.contains("MutationPersistencePolicy::AutosaveIfAdvanced"),
+                    body.contains("MutationPersistencePolicy::AutosaveIfAdvanced,"),
                     "{command} does not select AutosaveIfAdvanced"
+                );
+                assert!(
+                    !body.contains("MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail"),
+                    "{command} must not select the no-thumbnail autosave policy"
                 );
                 assert!(
                     !body.contains("session.lock()"),
@@ -4849,13 +4893,18 @@ mod tests {
         }
 
         #[test]
-        fn analysis_workbench_commands_pin_no_thumbnail_autosave_policy() {
+        fn direct_no_thumbnail_commands_pin_no_thumbnail_autosave_policy() {
             let source = include_str!("lib.rs");
             for command in [
                 "acknowledge_acquisition_event_core",
                 "select_analysis_board",
                 "update_analysis_draft",
                 "submit_analysis_board",
+                "ask_interrogation_question",
+                "present_interrogation_evidence",
+                "withdraw_interrogation",
+                "resume_interrogation_testimony",
+                "challenge_interrogation_line_core",
             ] {
                 let body = function_body(source, command);
                 assert!(
@@ -4881,6 +4930,9 @@ mod tests {
             let advance_core = function_body(source, "advance_dialogue_core");
             assert!(advance_core.contains("run_gameplay_mutation_selecting_policy"));
             assert!(advance_core.contains("dialogue_persistence_policy"));
+
+            let challenge = function_body(source, "challenge_interrogation_line");
+            assert!(challenge.contains("challenge_interrogation_line_core"));
         }
 
         #[test]
