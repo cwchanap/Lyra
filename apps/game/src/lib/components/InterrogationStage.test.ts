@@ -26,6 +26,7 @@ function scene(presenting = false): InterrogationSceneView {
           name: "三宅聰太",
           role: "證人",
           bio: "沉默地避開視線。",
+          portrait: null,
         },
         questions: [
           { id: "q_1", label: "第一問", broken: true },

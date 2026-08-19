@@ -797,6 +797,7 @@ pub struct SubjectJson {
     pub name: String,
     pub role: String,
     pub bio: String,
+    pub portrait: Option<PortraitRefJson>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -2144,6 +2144,7 @@ pub(super) fn subject() -> SubjectJson {
         name: "Suspect".into(),
         role: "Witness".into(),
         bio: "Quiet.".into(),
+        portrait: None,
     }
 }
 /// A testimony with no lines — used for questions whose testimony content

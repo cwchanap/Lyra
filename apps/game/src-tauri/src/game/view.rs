@@ -3,7 +3,7 @@ use crate::game::analysis::{AnalysisActionToken, AnalysisDraft, AnalysisFeedback
 use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
     AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, InventoryTarget,
-    SceneType,
+    PortraitRefJson, SceneType,
 };
 use crate::game::state::{EvidenceRecord, Inventory, StatementRecord};
 use crate::game::story::{StoryCatalog, StoryStateView};
@@ -554,6 +554,7 @@ pub struct SubjectView {
     pub name: String,
     pub role: String,
     pub bio: String,
+    pub portrait: Option<PortraitRefJson>,
 }
 
 #[derive(Debug, Clone, Serialize)]

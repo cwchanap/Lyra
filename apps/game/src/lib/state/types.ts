@@ -148,6 +148,7 @@ export type SubjectView = {
   name: string;
   role: string;
   bio: string;
+  portrait: PortraitRef | null;
 };
 export type InquiryQuestionView = {
   id: string;

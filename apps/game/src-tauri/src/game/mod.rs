@@ -2779,6 +2779,7 @@ impl GameEngine {
                                 name: subject.name.clone(),
                                 role: subject.role.clone(),
                                 bio: subject.bio.clone(),
+                                portrait: subject.portrait.clone(),
                             },
                             questions: questions
                                 .iter()
@@ -2928,9 +2929,9 @@ mod tests {
         InterrogationOutroJson, InterrogationOutroUnlock, InterrogationPhaseJson,
         InterrogationRevealTarget, InterrogationSceneJson, InterrogationUnlockExpr,
         InventoryTarget, InvestigationRevealTarget, InvestigationSceneJson, LockStatus, OutroJson,
-        OutroUnlock, PredicateAuthorizationGranted, PredicatePhaseCompleted, RevealTarget,
-        SceneJson, SceneType, StatementJson, StoryRevealTarget, SublocationJson, TestimonyJson,
-        TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
+        OutroUnlock, PortraitRefJson, PredicateAuthorizationGranted, PredicatePhaseCompleted,
+        RevealTarget, SceneJson, SceneType, StatementJson, StoryRevealTarget, SublocationJson,
+        TestimonyJson, TestimonyLineJson, TopicJson, UnlockExpr, VisualAssetCueJson,
     };
     use crate::game::state::{EvidenceRecord, SceneRef, StatementRecord};
     use crate::game::unlock::StoryUnlockContext;
@@ -4380,6 +4381,44 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         assert_eq!(cue.background_asset_id.as_deref(), Some("background.new"));
         assert_eq!(cue.bgm.unwrap().asset_id.as_deref(), Some("audio.bgm.old"));
         assert_eq!(cue.bgs.unwrap().asset_id, None);
+    }
+
+    #[test]
+    fn public_interrogation_subject_preserves_compiled_portrait() {
+        let portrait = PortraitRefJson {
+            character_id: "miyake_sota".into(),
+            expression: "concerned".into(),
+            asset_id: "portrait.miyake_sota.concerned".into(),
+        };
+        let mut scene = two_line_question_scene();
+        let InterrogationPhaseJson::Inquiry { subject, .. } = &mut scene.phases[0];
+        subject.portrait = Some(portrait.clone());
+
+        let mut null_phase = scene.phases[0].clone();
+        let InterrogationPhaseJson::Inquiry {
+            id, label, subject, ..
+        } = &mut null_phase;
+        *id = "null_portrait".into();
+        *label = "Null portrait".into();
+        subject.portrait = None;
+        scene.phases.push(null_phase);
+
+        let engine = empty_engine_with_interrogation_scene(scene, 1);
+        let SceneView::Interrogation { visible_phases, .. } = engine.view().unwrap().scene else {
+            panic!("expected interrogation scene view");
+        };
+
+        let portrait_phase = visible_phases
+            .iter()
+            .find(|phase| phase.id == "press")
+            .expect("portrait phase should be visible");
+        assert_eq!(portrait_phase.subject.portrait, Some(portrait));
+
+        let null_phase = visible_phases
+            .iter()
+            .find(|phase| phase.id == "null_portrait")
+            .expect("null portrait phase should be visible");
+        assert_eq!(null_phase.subject.portrait, None);
     }
 
     #[test]
