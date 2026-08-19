@@ -10,11 +10,12 @@ import {
   drainCurrentDialogue,
   elementExists,
   getPackagedGameState,
+  jumpToProductionScene,
   resetCaptureProofStorage,
   saveManualSlot,
   startCaptureProofAtScene,
-  waitForPersistenceIdle,
   waitForPackagedGameState,
+  waitForPersistenceIdle,
   waitTypewriterIdle,
 } from "./helpers";
 import { autosaveSlots, newestAutosaveSlot } from "./save-fixtures";
@@ -303,7 +304,10 @@ async function refreshProof(): Promise<void> {
   );
 }
 
-async function proofPixels(): Promise<CapturePixels> {
+async function proofPixels(
+  newestPortraitFragment: string = anchors.captureProof.newestPortrait,
+  leavingPortraitFragment: string = anchors.captureProof.leavingPortrait,
+): Promise<CapturePixels> {
   const payload = await browser.executeAsync<
     CapturePixels | string,
     [string, string, string, string]
@@ -321,7 +325,7 @@ async function proofPixels(): Promise<CapturePixels> {
       if (!root) throw new Error("capture proof gameplay root missing");
       const newestPortrait = Array.from(
         root.querySelectorAll<HTMLImageElement>(
-          'img.portrait[data-save-crossfade-state="visible"]',
+          'img.portrait[data-save-thumbnail-asset-role="portrait"][data-save-crossfade-state="visible"]',
         ),
       ).find((candidate) => candidate.src.includes(newestPortraitFragment));
       if (!newestPortrait) {
@@ -488,12 +492,13 @@ async function proofPixels(): Promise<CapturePixels> {
                 canvas.height,
                 Math.floor(canvas.height * 0.64),
               );
+              const portraitLeft = Math.max(0, Math.floor(portraitRect.x));
+              const portraitRight = Math.min(
+                canvas.width,
+                Math.ceil(portraitRect.x + portraitRect.width),
+              );
               for (let y = 0; y < maxY; y += 1) {
-                for (
-                  let x = Math.floor(canvas.width * 0.45);
-                  x < canvas.width;
-                  x += 1
-                ) {
+                for (let x = portraitLeft; x < portraitRight; x += 1) {
                   const offset = (y * canvas.width + x) * 4;
                   if ((reference[offset + 3] ?? 0) < 230) continue;
                   const referenceLuminance =
@@ -624,8 +629,8 @@ async function proofPixels(): Promise<CapturePixels> {
     },
     anchors.captureProof.thumbnail,
     anchors.captureProof.root,
-    anchors.captureProof.newestPortrait,
-    anchors.captureProof.leavingPortrait,
+    newestPortraitFragment,
+    leavingPortraitFragment,
   );
   if (typeof payload === "string") {
     if (payload.startsWith("ERROR:")) {
@@ -636,6 +641,33 @@ async function proofPixels(): Promise<CapturePixels> {
     );
   }
   return payload;
+}
+
+async function currentInterrogationPortrait(expectedFragment: string): Promise<{
+  portraitCount: number;
+  winner: boolean;
+  winnerMatches: boolean;
+  winnerSrc: string;
+}> {
+  return browser.execute((fragment: string) => {
+    const portraits = Array.from(
+      document.querySelectorAll<HTMLImageElement>(
+        '[data-interrogation-subject-art] img.portrait[data-save-thumbnail-asset-role="portrait"]',
+      ),
+    );
+    const winner = portraits.find(
+      (candidate) =>
+        candidate.getAttribute("data-save-crossfade-state") === "visible" &&
+        candidate.getAttribute("data-save-crossfade-order") ===
+          candidate.getAttribute("data-save-crossfade-request"),
+    );
+    return {
+      portraitCount: portraits.length,
+      winner: winner !== undefined,
+      winnerMatches: winner?.src.includes(fragment) ?? false,
+      winnerSrc: winner?.src ?? "",
+    };
+  }, expectedFragment);
 }
 
 async function exportProofThumbnailArtifact(): Promise<string> {
@@ -933,7 +965,6 @@ describe("packaged gameplay thumbnail proof", () => {
       ),
     ).toBe("ready");
   });
-
   it("skips transient interrogation capture and keeps explicit saves captured", async () => {
     async function withStepContext<T>(
       step: string,
@@ -1104,5 +1135,188 @@ describe("packaged gameplay thumbnail proof", () => {
     );
 
     await closePersistenceBrowserToGameplay();
+  });
+  it("captures the current Interrogation portrait after an expression transition", async function () {
+    this.timeout(1_800_000);
+    const interrogationSceneId = "interrogation_scene_4";
+    const standardPortrait = "portraits/miyake_sota/standard.png";
+    const standardPortraitAssetId = "portrait.miyake_sota.standard";
+    const strainedPortrait = "portraits/miyake_sota/strained.png";
+
+    await resetCaptureProofStorage();
+    await startCaptureProofAtScene(
+      anchors.captureProof.sceneId,
+      anchors.captureProof.sceneEntryDialogue,
+    );
+    await jumpToProductionScene(interrogationSceneId);
+    await advanceDialogueUntil(async () => {
+      const state = await getPackagedGameState();
+      return (
+        state.scene.id === interrogationSceneId &&
+        state.mode.type === "interrogation"
+      );
+    }, 160);
+    await waitForPackagedGameState(
+      (state) =>
+        state.scene.kind === "interrogation" &&
+        state.scene.currentPhaseId === "ask_miyake" &&
+        state.mode.type === "interrogation",
+      30000,
+      "Interrogation capture proof did not reach the question menu",
+    );
+
+    await clickButton("二十二點五十六分左右在哪裡");
+    await waitForPackagedGameState(
+      (state) =>
+        state.mode.type === "dialogue" &&
+        state.mode.crossExamLineId !== null &&
+        state.mode.current.kind === "line" &&
+        state.mode.current.portrait?.assetId === standardPortraitAssetId,
+      30000,
+      "Interrogation capture proof did not reach the standard testimony portrait",
+    );
+    await advanceDialogueUntil(
+      async () =>
+        browser.execute(
+          () =>
+            document.querySelector("button.xexam-challenge:not(:disabled)") !==
+            null,
+        ),
+      80,
+    );
+    const initialPortrait =
+      await currentInterrogationPortrait(standardPortrait);
+    expect(initialPortrait.portraitCount).toBeGreaterThan(0);
+    expect(initialPortrait.winner).toBe(true);
+    expect(initialPortrait.winnerMatches).toBe(true);
+
+    await clickButton("反駁");
+    await advanceDialogueUntil(async () => {
+      try {
+        const state = await getPackagedGameState();
+        return (
+          state.scene.kind === "interrogation" &&
+          state.mode.type === "interrogation" &&
+          state.scene.visiblePhases.some(
+            (phase) => phase.id === "ask_miyake" && phase.crossExam?.presenting,
+          )
+        );
+      } catch {
+        return false;
+      }
+    }, 80);
+    const presenting = await waitForPackagedGameState(
+      (state) =>
+        state.scene.kind === "interrogation" &&
+        state.mode.type === "interrogation" &&
+        state.scene.visiblePhases.some(
+          (phase) => phase.id === "ask_miyake" && phase.crossExam?.presenting,
+        ),
+      30000,
+      "Interrogation capture proof did not open Present",
+    );
+    if (presenting.scene.kind !== "interrogation") {
+      throw new Error(
+        "Interrogation capture proof Present state was not interrogation",
+      );
+    }
+    const evidence = presenting.inventory.evidence.find(
+      (candidate) => candidate.id === "closing_routine",
+    );
+    if (!evidence) {
+      throw new Error(
+        "Interrogation capture proof closing routine evidence is missing",
+      );
+    }
+
+    await waitForPersistenceIdle();
+    const captureBeforeTransition = await captureWrapperStatus();
+    const autosaveIdsBeforeTransition = autosaveSaveIds();
+    await clickButton(evidence.name);
+    const transitioned = await waitForPackagedGameState(
+      (state) =>
+        state.mode.type === "dialogue" &&
+        state.mode.current.kind === "line" &&
+        state.mode.current.portrait?.characterId === "miyake_sota" &&
+        state.mode.current.portrait.expression === "strained",
+      30000,
+      "Interrogation capture proof did not reach the strained response",
+    );
+    if (transitioned.mode.type !== "dialogue") {
+      throw new Error(
+        "Interrogation capture proof transition was not dialogue",
+      );
+    }
+    expect(transitioned.mode.current.kind).toBe("line");
+
+    await browser.waitUntil(
+      async () => {
+        const portrait = await currentInterrogationPortrait(strainedPortrait);
+        return portrait.winner && portrait.winnerMatches;
+      },
+      {
+        timeout: 30000,
+        interval: 50,
+        timeoutMsg:
+          "Interrogation capture proof did not expose the strained portrait as the current winner",
+      },
+    );
+    const currentPortrait =
+      await currentInterrogationPortrait(strainedPortrait);
+    expect(currentPortrait.portraitCount).toBeGreaterThan(0);
+    expect(currentPortrait.winner).toBe(true);
+    expect(currentPortrait.winnerMatches).toBe(true);
+    expect(currentPortrait.winnerSrc).not.toContain(standardPortrait);
+
+    await browser.waitUntil(
+      async () => {
+        const status = await captureWrapperStatus();
+        return (
+          status.calls > captureBeforeTransition.calls &&
+          status.available > captureBeforeTransition.available &&
+          status.lastClosedReason === ""
+        );
+      },
+      {
+        timeout: 90000,
+        interval: 100,
+        timeoutMsg:
+          "Interrogation portrait capture did not complete as available",
+      },
+    );
+    const captureAfterTransition = await captureWrapperStatus();
+    expect(captureAfterTransition.available).toBeGreaterThan(
+      captureBeforeTransition.available,
+    );
+    expect(captureAfterTransition.lastClosedReason).toBe("");
+
+    const nativeAutosave = await waitForFreshNativeAutosave(
+      autosaveIdsBeforeTransition,
+      "Interrogation portrait capture proof",
+    );
+    expect(
+      captureProofNativeAutosaveIsReady({
+        priorSaveIds: autosaveIdsBeforeTransition,
+        currentSaveId: nativeAutosave.saveId,
+        currentThumbnailType: nativeAutosave.thumbnailType,
+      }),
+    ).toBe(true);
+
+    await refreshProof();
+    expect(
+      await browser.execute(
+        (probe: string) =>
+          document
+            .querySelector(probe)
+            ?.getAttribute("data-capture-proof-status"),
+        anchors.captureProof.probe,
+      ),
+    ).toBe("ready");
+    const pixels = await proofPixels(strainedPortrait, standardPortrait);
+    expect(pixels.newestPortraitSamples).toBeGreaterThan(1000);
+    expect(pixels.newestPortraitMatchRatio).toBeGreaterThan(0.25);
+    expect(
+      pixels.newestPortraitMatchRatio - pixels.leavingPortraitMatchRatio,
+    ).toBeGreaterThan(0.05);
   });
 });

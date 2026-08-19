@@ -3,6 +3,7 @@ import {
   clickButton,
   closePersistenceBrowserToGameplay,
   continueFromTitle,
+  ensureCaseFileViewport,
   getPackagedGameState,
   jumpToProductionScene,
   loadPackagedCheckpoint,
@@ -16,6 +17,94 @@ import type { AnalysisBoardView, GameStateView } from "$lib/state/types";
 const ANALYSIS_SCENE_ID = "analysis_scene_8_5";
 const HEARING_SCENE_ID = "interrogation_scene_10";
 const APPROVED_CLIP_ID = "approved_clip";
+
+type Rect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+const geometry: {
+  menu?: { stage: Rect; main: Rect; art: Rect; record: Rect };
+  testimony?: {
+    stage: Rect;
+    main: Rect;
+    art: Rect;
+    frame: Rect;
+    box: Rect;
+    challenge: Rect;
+  };
+  present?: { stage: Rect; tray: Rect };
+} = {};
+
+async function elementRect(selector: string): Promise<Rect | null> {
+  return browser.execute((targetSelector: string) => {
+    const element = document.querySelector<HTMLElement>(targetSelector);
+    if (!element) return null;
+    const { left, top, right, bottom, width, height } =
+      element.getBoundingClientRect();
+    return { left, top, right, bottom, width, height };
+  }, selector);
+}
+
+async function snapshotMenuGeometry(): Promise<void> {
+  const [stage, main, art, record] = await Promise.all([
+    elementRect(".interrogation-stage.active"),
+    elementRect('main[data-save-thumbnail-layout="main"]'),
+    elementRect("[data-interrogation-subject-art]"),
+    elementRect("[data-interrogation-question-record]"),
+  ]);
+  if (stage && main && art && record) {
+    geometry.menu = { stage, main, art, record };
+  }
+}
+
+async function snapshotTestimonyGeometry(): Promise<void> {
+  const [stage, main, art, frame, box, challenge] = await Promise.all([
+    elementRect(".interrogation-stage.active"),
+    elementRect('main[data-save-thumbnail-layout="main"]'),
+    elementRect("[data-interrogation-subject-art]"),
+    elementRect(".wrapper.interrogation-stage-dialogue"),
+    elementRect("[data-interrogation-dialogue-frame]"),
+    elementRect("button.xexam-challenge"),
+  ]);
+  if (stage && main && art && frame && box && challenge) {
+    geometry.testimony = { stage, main, art, frame, box, challenge };
+  }
+}
+
+async function refreshTestimonyArtGeometry(): Promise<void> {
+  const art = await elementRect("[data-interrogation-subject-art]");
+  if (art && geometry.testimony) geometry.testimony.art = art;
+}
+
+async function snapshotPresentGeometry(): Promise<void> {
+  const [stage, tray] = await Promise.all([
+    elementRect(".interrogation-stage.active"),
+    elementRect("[data-interrogation-present-tray]"),
+  ]);
+  if (stage && tray) geometry.present = { stage, tray };
+}
+
+function edgeCenter(rect: Rect): number {
+  return (rect.left + rect.right) / 2;
+}
+
+function expectEdgesAligned(left: Rect, right: Rect): void {
+  for (const edge of ["left", "top", "right", "bottom"] as const) {
+    expect(Math.abs(left[edge] - right[edge])).toBeLessThanOrEqual(2);
+  }
+}
+
+function expectInside(inner: Rect, outer: Rect): void {
+  expect(inner.left).toBeGreaterThanOrEqual(outer.left - 1);
+  expect(inner.top).toBeGreaterThanOrEqual(outer.top - 1);
+  expect(inner.right).toBeLessThanOrEqual(outer.right + 1);
+  expect(inner.bottom).toBeLessThanOrEqual(outer.bottom + 1);
+}
 
 function analysisBoard(state: GameStateView, id: string): AnalysisBoardView {
   if (state.scene.kind !== "analysis") {
@@ -320,6 +409,9 @@ async function challengePhase(
       ),
     80,
   );
+  if (phaseId === "p1") {
+    await snapshotTestimonyGeometry();
+  }
   await clickButton("反駁");
   await advanceDialogueUntil(async () => {
     try {
@@ -347,12 +439,22 @@ async function challengePhase(
     30000,
     `${phaseId} did not open the evidence tray`,
   );
+  if (phaseId === "p1") {
+    await snapshotPresentGeometry();
+  }
   const evidence = presenting.inventory.evidence.find(
     (candidate) => candidate.id === evidenceId,
   );
   if (!evidence)
     throw new Error(`${phaseId} evidence ${evidenceId} was not seeded`);
   await clickButton(evidence.name);
+  if (phaseId === "p1") {
+    // The correct response changes the current speaker/expression. This is a
+    // nullable observation only; the functional journey must continue even if
+    // the art hook is temporarily absent during the crossfade.
+    await browser.pause(100);
+    await refreshTestimonyArtGeometry();
+  }
 
   await advanceDialogueUntil(async () => {
     try {
@@ -393,6 +495,12 @@ async function challengePhase(
 }
 
 describe("packaged Analysis Beat 8.5 journey", () => {
+  before(async () => {
+    // This helper guarantees a CSS viewport of at least 1280×720, not exact
+    // innerWidth/innerHeight values; geometry assertions stay relative.
+    await ensureCaseFileViewport();
+  });
+
   it("persists partial Analysis drafts, proves pointer ordering, and reaches p4", async function () {
     this.timeout(1_800_000);
     await resetE2eStorage();
@@ -727,6 +835,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
       async () => (await getPackagedGameState()).mode.type === "interrogation",
       160,
     );
+    await snapshotMenuGeometry();
     await challengePhase("p1", "closing_routine", "p2");
     await challengePhase("p2", "victim_phone_notification", "p3");
     const gateReady = await challengePhase("p3", "miyake_pov_replay", "gate");
@@ -761,5 +870,58 @@ describe("packaged Analysis Beat 8.5 journey", () => {
         ? gate.scene.visiblePhases.find((phase) => phase.id === "p4")
         : null;
     expect(p4).toBeDefined();
+  });
+
+  it("matches the Interrogation mockup geometry contract", async () => {
+    expect(geometry.menu).toBeDefined();
+    expect(geometry.testimony).toBeDefined();
+    expect(geometry.present).toBeDefined();
+    if (!geometry.menu || !geometry.testimony || !geometry.present) return;
+
+    const viewport = await browser.execute(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }));
+    const { menu, testimony, present } = geometry;
+
+    expectEdgesAligned(menu.stage, menu.main);
+    expectInside(menu.art, menu.stage);
+    const intendedLeftInset = Math.min(
+      120,
+      Math.max(24, viewport.width * 0.08),
+    );
+    const observedLeftInset = menu.art.left - menu.stage.left;
+    expect(observedLeftInset).toBeGreaterThanOrEqual(intendedLeftInset - 2);
+    expect(observedLeftInset).toBeLessThanOrEqual(intendedLeftInset + 2);
+    expect(menu.art.height / menu.stage.height).toBeGreaterThanOrEqual(0.88);
+    expect(menu.art.height / menu.stage.height).toBeLessThanOrEqual(1.01);
+    expect(menu.record.width).toBeLessThanOrEqual(1004);
+    expect(
+      Math.abs(edgeCenter(menu.record) - edgeCenter(menu.stage)),
+    ).toBeLessThanOrEqual(2);
+    expect(menu.stage.bottom - menu.record.bottom).toBeCloseTo(28, 0);
+
+    expectEdgesAligned(testimony.stage, testimony.main);
+    expectInside(testimony.art, testimony.stage);
+    expect(testimony.frame.width).toBeLessThanOrEqual(1004);
+    expect(
+      Math.abs(edgeCenter(testimony.frame) - edgeCenter(testimony.stage)),
+    ).toBeLessThanOrEqual(2);
+    expect(testimony.box.height).toBeGreaterThanOrEqual(194);
+    expect(testimony.challenge.width).toBeGreaterThanOrEqual(124);
+    expect(testimony.challenge.height).toBeGreaterThanOrEqual(124);
+    expect(
+      Math.abs(
+        testimony.stage.bottom -
+          testimony.frame.bottom -
+          (menu.stage.bottom - menu.record.bottom),
+      ),
+    ).toBeLessThanOrEqual(4);
+
+    expect(present.tray.width).toBeLessThanOrEqual(904);
+    expect(present.tray.left).toBeGreaterThanOrEqual(0);
+    expect(present.tray.top).toBeGreaterThanOrEqual(0);
+    expect(present.tray.right).toBeLessThanOrEqual(viewport.width);
+    expect(present.tray.bottom).toBeLessThanOrEqual(viewport.height);
   });
 });
