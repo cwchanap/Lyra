@@ -4,8 +4,17 @@
     brokenQuestionProgress,
     currentInterrogationPhase,
   } from "$lib/interrogation/presentation";
-  import type { Inventory, Mode, SceneView } from "../state/types";
+  import type {
+    Inventory,
+    Mode,
+    ObjectiveView,
+    PortraitRef,
+    SceneView,
+  } from "../state/types";
   import InterrogationEvidenceTray from "./InterrogationEvidenceTray.svelte";
+  import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
+  import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
+  import SceneBackdrop from "./SceneBackdrop.svelte";
 
   let {
     active,
@@ -16,6 +25,7 @@
     onResume,
     onOpenGameMenu,
     onOpenCaseFile,
+    activePrimaryObjective = null,
     disabled = false,
     topLayerOpen = false,
     children,
@@ -32,6 +42,7 @@
     onResume: () => void | Promise<void>;
     onOpenGameMenu: (trigger: HTMLElement) => void;
     onOpenCaseFile: (trigger: HTMLElement) => void;
+    activePrimaryObjective?: ObjectiveView | null;
     disabled?: boolean;
     // Forwarded to InterrogationEvidenceTray so its Tab trap suspends while
     // an upper layer (Game Menu / Save Browser / acquisition popup) is open.
@@ -47,6 +58,32 @@
   let progress = $derived(brokenQuestionProgress(phase));
   let crossExam = $derived(phase?.crossExam ?? null);
   let presenting = $derived(active && crossExam?.presenting === true);
+  let activePortrait = $derived<PortraitRef | null>(
+    mode.type === "dialogue" &&
+      mode.current.kind === "line" &&
+      mode.current.portrait !== null
+      ? (mode.current.portrait ?? phase?.subject.portrait ?? null)
+      : (phase?.subject.portrait ?? null),
+  );
+  let stageBackdrop = $derived.by<{
+    sceneTag: string | null;
+    backgroundAssetId: string | null;
+  } | null>(() => {
+    if (!active) return null;
+    if (mode.type === "dialogue") {
+      return {
+        sceneTag: mode.sceneTag,
+        backgroundAssetId: mode.backgroundAssetId ?? null,
+      };
+    }
+    if (mode.type === "interrogation") {
+      return {
+        sceneTag: null,
+        backgroundAssetId: mode.backgroundAssetId ?? null,
+      };
+    }
+    return null;
+  });
 
   $effect(() => {
     if (presenting && !wasPresenting) {
@@ -73,29 +110,45 @@
   data-interrogation-mode={mode.type}
   tabindex="-1"
 >
-  {#if active && phase}
+  {#if active}
+    {#if stageBackdrop}
+      <SceneBackdrop
+        sceneTag={stageBackdrop.sceneTag}
+        backgroundAssetId={stageBackdrop.backgroundAssetId}
+      />
+    {/if}
+
+    <InterrogationSubjectArt portrait={activePortrait} />
+
     <section class="stage-chrome" aria-label="訊問舞台">
-      <div class="subject-record">
-        <p class="eyebrow">INTERROGATION / 訊問中</p>
-        <h2>{phase.subject.name}</h2>
-        <p class="role">{phase.subject.role}</p>
+      <div class="stage-left-stack">
+        <PrimaryObjectiveHud objective={activePrimaryObjective} />
+        {#if phase}
+          <div class="subject-record">
+            <p class="eyebrow">INTERROGATION / 訊問中</p>
+            <h2>{phase.subject.name}</h2>
+            <p class="role">{phase.subject.role}</p>
+          </div>
+        {/if}
       </div>
 
-      <div class="phase-record" aria-label="訊問進度">
-        <p>{phase.label}</p>
-        <strong>{progress.broken} / {progress.total}</strong>
-        <span>突破題目</span>
-      </div>
+      {#if phase}
+        <div class="phase-record" aria-label="訊問進度">
+          <p>{phase.label}</p>
+          <strong>{progress.broken} / {progress.total}</strong>
+          <span>突破題目</span>
+        </div>
 
-      <button
-        class="case-file-hud"
-        type="button"
-        {disabled}
-        onclick={openCaseFile}
-      >
-        <span>案件檔案</span>
-        <span>CASE FILE</span>
-      </button>
+        <button
+          class="case-file-hud"
+          type="button"
+          {disabled}
+          onclick={openCaseFile}
+        >
+          <span>案件檔案</span>
+          <span>CASE FILE</span>
+        </button>
+      {/if}
     </section>
   {/if}
 
@@ -119,6 +172,12 @@
 <style>
   .interrogation-stage {
     position: relative;
+  }
+
+  .interrogation-stage.active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     min-height: 100%;
   }
 
@@ -136,9 +195,15 @@
     color: var(--bone);
   }
 
+  .stage-left-stack,
   .subject-record,
   .phase-record {
     min-width: 0;
+  }
+
+  .stage-left-stack {
+    display: grid;
+    gap: 10px;
   }
 
   .eyebrow,

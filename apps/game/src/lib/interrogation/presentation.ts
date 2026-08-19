@@ -12,7 +12,7 @@ export function isInterrogationPresentationActive(
   return (
     scene.kind === "interrogation" &&
     (mode.type === "interrogation" ||
-      (mode.type === "dialogue" && mode.crossExamLineId !== null))
+      (mode.type === "dialogue" && mode.queueToken.sceneId === scene.id))
   );
 }
 

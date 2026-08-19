@@ -170,6 +170,43 @@ function seedGameState() {
   gameState.inFlight = false;
 }
 
+function interrogationPresentationState(): GameStateView {
+  const state = currentState();
+  state.scene = {
+    kind: "interrogation",
+    id: "interrogation_1",
+    title: "訊問",
+    summary: "",
+    index: 0,
+    total: 1,
+    currentPhaseId: "phase_1",
+    visiblePhases: [
+      {
+        id: "phase_1",
+        label: "第一階段",
+        subject: {
+          id: "subject_1",
+          name: "證人",
+          role: "證人",
+          bio: "",
+          portrait: null,
+        },
+        questions: [{ id: "q_1", label: "問題一", broken: false }],
+        crossExam: null,
+        canComplete: false,
+      },
+    ],
+  };
+  state.mode = {
+    type: "interrogation",
+    phaseId: "phase_1",
+    backgroundAssetId: "background.interrogation_room",
+    bgm: null,
+    bgs: null,
+  };
+  return state;
+}
+
 function gameCompleteState(): GameStateView {
   return {
     chapter: {
@@ -1018,6 +1055,71 @@ describe("+page in-game persistence browser", () => {
     persistenceStore.replacePersistenceStatus({ type: "healthy" });
     persistenceStore.replaceThumbnailActivity({ type: "idle" });
     persistenceStore.replaceExitStatus({ type: "idle" });
+  });
+
+  it("keeps active Interrogation backdrop and objective inside one continuous stage", async () => {
+    const state = interrogationPresentationState();
+    state.story.objectives = [
+      {
+        id: "objective_follow_witness",
+        label: "追查雨夜目擊者",
+        summary: "找出目擊者隱瞞的證詞。",
+        kind: "primary",
+        sortOrder: 10,
+        completed: false,
+        activePrimary: true,
+      },
+    ];
+    gameState.value = state;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    const { container } = render(Page);
+    const stage = await waitFor(() => {
+      const element = container.querySelector(".interrogation-stage.active");
+      if (!element) throw new Error("active interrogation stage not mounted");
+      return element;
+    });
+    const backdrop = container.querySelector(
+      '[data-save-thumbnail-layout="backdrop"]',
+    );
+
+    expect(stage).toBeInTheDocument();
+    expect(
+      container.querySelector(".shell.interrogation-presentation"),
+    ).toBeInTheDocument();
+    expect(backdrop).toBeInTheDocument();
+    expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
+    expect(container.querySelector("header")).not.toBeInTheDocument();
+
+    gameState.value = {
+      ...state,
+      mode: {
+        type: "dialogue",
+        current: { kind: "action", text: "訊問開始。" },
+        queueRemaining: 0,
+        sceneTag: "訊問室",
+        queueToken: { sceneId: "interrogation_1", queueGen: 1, cursor: 0 },
+        crossExamLineId: null,
+        backgroundAssetId: "background.interrogation_room_evening",
+        bgm: null,
+        bgs: null,
+      },
+    };
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-save-thumbnail-layout="backdrop"]'),
+      ).toBe(backdrop);
+    });
+    expect(
+      container.querySelectorAll('[data-save-thumbnail-layout="backdrop"]'),
+    ).toHaveLength(1);
   });
 
   it("keeps gameplay isolated behind visible loading until Manual Save preflight succeeds", async () => {

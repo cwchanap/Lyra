@@ -45,13 +45,14 @@ function interrogationScene(
 
 function dialogueMode(
   crossExamLineId: string | null,
+  sceneId = "interrogation_1",
 ): Extract<Mode, { type: "dialogue" }> {
   return {
     type: "dialogue",
     current: { kind: "line", speaker: "嫌疑人", text: "我沒去。" },
     queueRemaining: 0,
     sceneTag: null,
-    queueToken: { sceneId: "interrogation_1", queueGen: 1, cursor: 0 },
+    queueToken: { sceneId, queueGen: 1, cursor: 0 },
     crossExamLineId,
     backgroundAssetId: null,
     bgm: null,
@@ -60,7 +61,7 @@ function dialogueMode(
 }
 
 describe("interrogation presentation helpers", () => {
-  it("only activates the stage for an interrogation mode or a tagged cross-exam dialogue", () => {
+  it("keeps same-scene dialogue active even without a cross-exam line and rejects another scene", () => {
     const scene = interrogationScene();
 
     expect(
@@ -72,12 +73,12 @@ describe("interrogation presentation helpers", () => {
         bgs: null,
       }),
     ).toBe(true);
-    expect(
-      isInterrogationPresentationActive(scene, dialogueMode("line_1")),
-    ).toBe(true);
     expect(isInterrogationPresentationActive(scene, dialogueMode(null))).toBe(
-      false,
+      true,
     );
+    expect(
+      isInterrogationPresentationActive(scene, dialogueMode(null, "scene_2")),
+    ).toBe(false);
   });
 
   it("returns the visible phase selected by the scene", () => {

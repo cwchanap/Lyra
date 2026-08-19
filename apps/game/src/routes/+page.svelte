@@ -1346,14 +1346,18 @@
           onResume={resumeInterrogationTestimony}
           onOpenGameMenu={openInterrogationGameMenu}
           onOpenCaseFile={openInterrogationCaseFile}
+          {activePrimaryObjective}
           disabled={gameState.inFlight}
           topLayerOpen={gameMenuOpen || gameplayInteractionBlocked}
         >
           {#if gameState.value.mode.type === "dialogue"}
-            <SceneBackdrop
-              sceneTag={gameState.value.mode.sceneTag}
-              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-            />
+            {#if !interrogationPresentationActive}
+              <SceneBackdrop
+                sceneTag={gameState.value.mode.sceneTag}
+                backgroundAssetId={gameState.value.mode.backgroundAssetId ??
+                  null}
+              />
+            {/if}
             <DialogueBox
               current={gameState.value.mode.current}
               queueToken={gameState.value.mode.queueToken}
@@ -1385,10 +1389,6 @@
               {/snippet}
             </ExploreView>
           {:else if gameState.value.mode.type === "interrogation"}
-            <SceneBackdrop
-              sceneTag={null}
-              backgroundAssetId={gameState.value.mode.backgroundAssetId ?? null}
-            />
             <InterrogationView
               scene={gameState.value.scene}
               onAsk={askInterrogationQuestion}

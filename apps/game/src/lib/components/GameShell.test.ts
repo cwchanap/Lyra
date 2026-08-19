@@ -296,7 +296,7 @@ describe("GameShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("replaces chapter chrome with one compact objective during interrogation presentation", () => {
+  it("suppresses chapter chrome and objective while interrogation presentation is active", () => {
     render(GameShellHarness, {
       gameState: state({
         type: "interrogation",
@@ -313,7 +313,12 @@ describe("GameShell", () => {
     expect(
       screen.queryByText("FILE", { exact: false }),
     ).not.toBeInTheDocument();
-    expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
+    expect(
+      screen.queryByRole("status", { name: "主要目標" }),
+    ).not.toBeInTheDocument();
+    expect(
+      document.querySelector(".shell.interrogation-presentation"),
+    ).toBeInTheDocument();
   });
 
   it("opens the existing Case File submenu for a direct request and restores its supplied focus origin", async () => {

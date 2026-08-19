@@ -104,6 +104,21 @@ test("routes gameplay changes through the focused and fresh-journey suites", () 
   );
 });
 
+test("routes every Interrogation component surface through gameplay coverage", () => {
+  for (const changedPath of [
+    "apps/game/src/lib/components/InterrogationStage.svelte",
+    "apps/game/src/lib/components/InterrogationView.svelte",
+    "apps/game/src/lib/components/InterrogationEvidenceTray.svelte",
+    "apps/game/src/lib/components/InterrogationSubjectArt.svelte",
+  ]) {
+    assert.deepEqual(
+      selectE2eSuites({ changedPaths: [changedPath] }).suiteIds,
+      ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+      changedPath,
+    );
+  }
+});
+
 test("routes persistence changes through every save lifecycle suite", () => {
   assert.deepEqual(
     selectE2eSuites({
