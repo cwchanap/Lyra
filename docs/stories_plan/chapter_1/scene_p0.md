@@ -49,7 +49,7 @@
 - **Background Prompt:** Wide Tokyo pedestrian crossing in the rain at dusk, a stream of transparent umbrellas crossing under traffic lights, giant overhead screen captions reflected on wet umbrella surfaces, blue storefront signboard glow briefly tinting a few umbrellas pale blue, wet asphalt reflections, cinematic neo-noir visual novel background, no individual faces, no readable screen text.
 - **BGS:** bgs_shopping_street_rain_dusk
 
-**旁白**：透明傘，一片片，穿過路口。
+**旁白**：腳步比雨聲還急，沒有人為誰停下來。
 
 [巨型螢幕的字幕倒映在傘面上，隨腳步晃動。]
 

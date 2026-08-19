@@ -171,6 +171,21 @@
 
 **店長高瀨**：我開店十年，從沒碰過那台機器的設定。
 
+#### Topic: 店名的由來 {#shop_name_origin}
+- **Status:** unlocked
+
+**相馬律**：店長，這間店為什麼叫「雨鐘」？
+
+**店長高瀨**：前任老闆取的。他說吉祥寺常下雨，鐘聲又響得遠。
+
+**店長高瀨**：我接手的時候想過改名字，最後沒改。
+
+**相馬律**：為什麼沒改？
+
+**店長高瀨**：常客都叫習慣了。改了，他們反而找不到門。
+
+**店長高瀨**：開店的人，有些東西不是自己的，也得替別人留著。
+
 ## Sub-location: 保全鏈固定 {#fixed_panel}
 - **Status:** locked
 - **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, room empty for portrait staging, uncluttered lower-center floor for dialogue UI, no readable text.
