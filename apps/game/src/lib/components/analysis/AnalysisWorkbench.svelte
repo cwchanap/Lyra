@@ -468,7 +468,7 @@
   aria-label="分析工作台"
 >
   {#if analysis && analysisMode}
-    <aside class="analysis-rail" aria-label="本案分析">
+    <aside class="analysis-rail" aria-label="本案分析" data-analysis-rail="">
       <div class="rail-heading">
         <p class="eyebrow">分析工作台</p>
         <h1>本案分析</h1>
@@ -582,29 +582,31 @@
           role="region"
           aria-label="分析板"
         >
-          {#if board.kind === "classify"}
-            <ClassifyBoard
-              {board}
-              onDraft={handleDraft}
-              disabled={disabled || mutationInFlight}
-              readOnly={boardReadOnly}
-            />
-          {:else if board.kind === "order"}
-            <OrderBoard
-              {board}
-              onDraft={handleDraft}
-              disabled={disabled || mutationInFlight}
-              readOnly={boardReadOnly}
-            />
-          {:else}
-            <ThresholdBoard
-              {board}
-              {inventory}
-              onDraft={handleDraft}
-              disabled={disabled || mutationInFlight}
-              readOnly={boardReadOnly}
-            />
-          {/if}
+          <div class="analysis-content-frame" data-analysis-content-frame="">
+            {#if board.kind === "classify"}
+              <ClassifyBoard
+                {board}
+                onDraft={handleDraft}
+                disabled={disabled || mutationInFlight}
+                readOnly={boardReadOnly}
+              />
+            {:else if board.kind === "order"}
+              <OrderBoard
+                {board}
+                onDraft={handleDraft}
+                disabled={disabled || mutationInFlight}
+                readOnly={boardReadOnly}
+              />
+            {:else}
+              <ThresholdBoard
+                {board}
+                {inventory}
+                onDraft={handleDraft}
+                disabled={disabled || mutationInFlight}
+                readOnly={boardReadOnly}
+              />
+            {/if}
+          </div>
         </div>
 
         <footer class="workbench-footer" aria-label="分析操作">
@@ -689,14 +691,18 @@
 
 <style>
   .analysis-workbench {
+    --analysis-blue: #5b87d2;
+    --analysis-panel: rgba(12, 16, 24, 0.92);
+    --analysis-rule: rgba(179, 191, 214, 0.28);
     box-sizing: border-box;
     display: grid;
-    grid-template-columns: minmax(220px, 272px) minmax(0, 1fr);
+    grid-template-columns: 248px minmax(0, 1fr);
     width: 100%;
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    color: #efedf0;
+    color: var(--bone);
+    font-family: var(--body-jp);
     background: rgba(8, 10, 16, 0.54);
   }
 
@@ -707,8 +713,8 @@
     min-height: 0;
     overflow: auto;
     padding: 1.15rem 0.9rem;
-    background: rgba(12, 16, 24, 0.92);
-    border-right: 1px solid rgba(179, 191, 214, 0.28);
+    background: var(--analysis-panel);
+    border-right: 1px solid var(--analysis-rule);
   }
 
   .rail-heading,
@@ -733,6 +739,7 @@
   }
 
   .rail-heading h1 {
+    font-family: var(--display-jp);
     font-size: clamp(1.25rem, 2vw, 1.7rem);
     letter-spacing: 0.08em;
   }
@@ -746,13 +753,15 @@
 
   .rail-summary {
     color: #c9cbd1;
+    font-family: var(--serif-jp);
     font-size: 0.82rem;
     line-height: 1.6;
   }
 
   .eyebrow {
     margin: 0;
-    color: #9cb6df;
+    color: var(--analysis-blue);
+    font-family: var(--impact);
     font-size: 0.82rem;
     letter-spacing: 0.13em;
   }
@@ -780,7 +789,7 @@
   .board-navigation button[aria-current="page"] {
     color: #11151c;
     background: #b9cef1;
-    border-color: #b9cef1;
+    border-color: var(--cyan);
   }
 
   .board-navigation button[data-analysis-board-state="completed"] {
@@ -838,7 +847,7 @@
     display: block;
     width: 100%;
     height: 0.38rem;
-    accent-color: #9cb6df;
+    accent-color: var(--cyan);
   }
 
   .overall-progress {
@@ -871,6 +880,13 @@
     overflow: hidden;
   }
 
+  .analysis-content-frame {
+    box-sizing: border-box;
+    width: min(960px, 100%);
+    margin-inline: auto;
+    min-width: 0;
+  }
+
   .board-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -880,6 +896,7 @@
   }
 
   .board-heading-copy h2 {
+    font-family: var(--display-jp);
     font-size: clamp(1.3rem, 2.4vw, 2rem);
     letter-spacing: 0.04em;
   }
@@ -906,6 +923,7 @@
     padding: 0.52rem 0.8rem;
     color: #d6e5ff;
     font: inherit;
+    font-family: var(--serif-jp);
     background: rgba(91, 135, 210, 0.14);
     border: 1px solid rgba(168, 200, 255, 0.4);
     cursor: pointer;
@@ -926,8 +944,8 @@
   }
 
   .board-status.completed {
-    color: #bde6ce;
-    border-left-color: #79bd9d;
+    color: var(--cyan);
+    border-left-color: var(--cyan);
   }
 
   .board-status.locked {
@@ -955,8 +973,9 @@
     display: grid;
     gap: 0.65rem;
     padding: 0.8rem clamp(1rem, 2.5vw, 2rem);
-    background: rgba(12, 16, 24, 0.96);
-    border-top: 1px solid rgba(179, 191, 214, 0.28);
+    background: var(--analysis-panel);
+    border-top: 1px solid var(--analysis-rule);
+    min-height: min-content;
   }
 
   .footer-controls,
@@ -1003,7 +1022,7 @@
   .footer-controls button:focus-visible,
   .hint-toggle:focus-visible,
   [data-analysis-focus-key="feedback"]:focus-visible {
-    outline: 3px solid #e2ad69;
+    outline: 3px solid var(--crimson);
     outline-offset: 3px;
   }
 
@@ -1012,6 +1031,20 @@
   .hint-toggle:disabled {
     cursor: default;
     opacity: 0.52;
+  }
+
+  @media (max-width: 720px) {
+    .analysis-workbench {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+      overflow: auto;
+    }
+
+    .analysis-rail {
+      max-height: 16rem;
+      border-right: 0;
+      border-bottom: 1px solid var(--analysis-rule);
+    }
   }
 
   @media (max-height: 760px) and (min-width: 761px) {

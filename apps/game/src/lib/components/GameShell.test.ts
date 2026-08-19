@@ -7,6 +7,7 @@ import {
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GameStateView, ObjectiveView } from "$lib/state/types";
 import { reportAsyncTestFailure } from "$lib/test-utils";
@@ -215,6 +216,26 @@ describe("GameShell", () => {
     expect(
       document.querySelector(".shell.analysis-presentation"),
     ).toBeInTheDocument();
+  });
+
+  it("normalizes Analysis wrapper selectors to the shell presentation context", () => {
+    const source = readFileSync(
+      import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
+      "utf8",
+    ).replace(/\s+/g, " ");
+
+    expect(source).toContain(
+      ".shell.analysis-presentation > main > :global(.interrogation-stage) {",
+    );
+    expect(source).toContain(
+      ".shell.analysis-presentation > main > :global(.interrogation-stage) > :global(.analysis-workbench) {",
+    );
+    expect(source).not.toContain(
+      '.interrogation-stage[data-interrogation-mode="analysis"]',
+    );
+    expect(source).not.toContain(
+      ".shell.analysis-presentation > main > :global(.interrogation-stage.active)",
+    );
   });
 
   it("keeps the existing menu snippet available in Analysis presentation", async () => {

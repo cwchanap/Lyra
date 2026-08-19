@@ -699,9 +699,7 @@
   /* Analysis keeps the shared stage wrapper and backdrop, but the workbench
      must consume the remaining stage height rather than expanding below the
      fixed presentation viewport. */
-  .shell.analysis-presentation
-    > main
-    > :global(.interrogation-stage[data-interrogation-mode="analysis"]) {
+  .shell.analysis-presentation > main > :global(.interrogation-stage) {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
@@ -710,7 +708,7 @@
 
   .shell.analysis-presentation
     > main
-    > :global(.interrogation-stage[data-interrogation-mode="analysis"])
+    > :global(.interrogation-stage)
     > :global(.analysis-workbench) {
     flex: 1 1 0;
     min-height: 0;

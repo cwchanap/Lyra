@@ -152,6 +152,7 @@ describe("AnalysisWorkbench", () => {
     expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
 
     const rail = screen.getByRole("navigation", { name: "分析板導覽" });
+    expect(rail.closest("[data-analysis-rail]")).toBeInTheDocument();
     const entries = rail.querySelectorAll("[data-analysis-board-id]");
     expect(entries).toHaveLength(3);
 
@@ -176,7 +177,11 @@ describe("AnalysisWorkbench", () => {
 
     expect(screen.getAllByRole("progressbar")).toHaveLength(4);
     expect(screen.getByText(/完成\s*1\s*\/\s*3/)).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "分析板" })).toBeInTheDocument();
+    const workspace = screen.getByRole("region", { name: "分析板" });
+    expect(workspace).toBeInTheDocument();
+    expect(
+      workspace.querySelector("[data-analysis-content-frame]"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("contentinfo", { name: "分析操作" }),
     ).toBeInTheDocument();
@@ -930,13 +935,37 @@ describe("AnalysisWorkbench", () => {
     expect(onSubmit).toHaveBeenCalledWith(actionToken(selected));
   });
 
-  it("source-asserts keyboard focus and reduced-motion styles", () => {
+  it("source-asserts keyboard focus, reduced-motion, and host geometry styles", () => {
     const source = readFileSync(
       import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
       "utf8",
     );
     expect(source).toContain(":focus-visible");
     expect(source).toContain("prefers-reduced-motion: reduce");
+    expect(source).toContain("data-analysis-rail");
+    expect(source).toContain("data-analysis-content-frame");
+    expect(source).toContain("grid-template-columns: 248px minmax(0, 1fr);");
+    expect(source).toContain("width: min(960px, 100%);");
+    expect(source).toContain("margin-inline: auto;");
+    expect(source).toContain("@media (max-width: 720px)");
+    expect(source).toContain("grid-template-columns: 1fr;");
+    expect(source).toContain("--analysis-blue:");
+    expect(source).toContain("--analysis-panel:");
+    expect(source).toContain("--analysis-rule:");
+    expect(source).toContain("var(--bone)");
+    expect(source).toContain("var(--crimson)");
+    expect(source).toContain("var(--cyan)");
+    expect(source).toContain("var(--display-jp)");
+    expect(source).toContain("var(--serif-jp)");
+    expect(source).toContain("var(--impact)");
+    expect(source).toContain("var(--body-jp)");
+    expect(source).not.toContain("--bone:");
+    expect(source).not.toContain("--crimson:");
+    expect(source).not.toContain("--cyan:");
+    expect(source).not.toContain("--display-jp:");
+    expect(source).not.toContain("--serif-jp:");
+    expect(source).not.toContain("--impact:");
+    expect(source).not.toContain("--body-jp:");
   });
 
   it("navigates to the next board via the 下一板 button", async () => {
