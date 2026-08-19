@@ -158,6 +158,23 @@
 
 **早坂茜**：……謝謝。我們看資料就好。
 
+#### Topic: 保溫瓶 {#clerk_thermos}
+- **Status:** unlocked
+
+[相馬律的目光落在窗口角一個舊保溫瓶上，瓶身貼著褪色的便條。]
+
+**相馬律**：那個保溫瓶，也是你的？
+
+**承包商主管**：嗯。每天泡一壺，撐到五點。
+
+**承包商主管**：窗口不能離開，水杯不夠，得用壺。
+
+**早坂茜**：……什麼茶？
+
+**承包商主管**：麥茶。便宜，不用加糖。
+
+**承包商主管**：喝了太久，換別的反而怪。
+
 ### Hotspot: 前往質問北見 {#to_confront}
 - **Status:** locked
 - **Unlock:** evidence:temp_maintenance_workorder collected and evidence:kitami_external_access collected and evidence:contractor_umbrella_sleeve_match collected
@@ -305,6 +322,25 @@
 [北見沒有再接話，只是又把名片摺痕抹平了一次。]
 
 **北見修一**：……沒什麼好說的了。
+
+#### Topic: 眼鏡 {#kitami_glasses}
+- **Status:** unlocked
+
+[北見又推了一下眼鏡，中指在鏡架上停了兩秒。]
+
+**相馬律**：你的眼鏡，一直往下滑。
+
+**北見修一**：……鏡架鬆了。一直沒去修。
+
+**北見修一**：早上出門前想著要調，到了公司就忘。
+
+**相馬律**：多久了？
+
+**北見修一**：半年吧。反正不影響看螢幕。
+
+**早坂茜**：……你連這個也拖著。
+
+**北見修一**：小事。不急的就往後放。
 
 ## Evidence Manifest
 
