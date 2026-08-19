@@ -124,7 +124,7 @@ afterEach(() => {
 });
 
 describe("AnalysisWorkbench", () => {
-  it("renders the v3 rail with every visible board and native progress", async () => {
+  it("renders the v3 rail with every visible board and styled progress", async () => {
     const state = analysisState({
       scene: analysisSceneWith({
         visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
@@ -149,7 +149,7 @@ describe("AnalysisWorkbench", () => {
     renderWorkbench(state, { onSelectBoard });
 
     expect(screen.getByText("分析工作台")).toBeInTheDocument();
-    expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
+    expect(screen.getByText("Case File")).toBeInTheDocument();
 
     const rail = screen.getByRole("navigation", { name: "分析板導覽" });
     expect(rail.closest("[data-analysis-rail]")).toBeInTheDocument();
@@ -176,7 +176,9 @@ describe("AnalysisWorkbench", () => {
     expect(lockedEntry).toBeDisabled();
 
     expect(screen.getAllByRole("progressbar")).toHaveLength(4);
-    expect(screen.getByText(/完成\s*1\s*\/\s*3/)).toBeInTheDocument();
+    expect(
+      screen.getByText("1 / 3", { selector: "strong" }),
+    ).toBeInTheDocument();
     const workspace = screen.getByRole("region", { name: "分析板" });
     expect(workspace).toBeInTheDocument();
     expect(
@@ -342,7 +344,7 @@ describe("AnalysisWorkbench", () => {
     ).toHaveLength(1);
     expect(screen.getByText("標示 REPRINT 的收據")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("這組資料仍有矛盾。");
-    expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
+    expect(screen.getByText("Case File")).toBeInTheDocument();
   });
 
   it("focuses the card after fallback mutations and the host heading after board changes", async () => {
@@ -703,7 +705,7 @@ describe("AnalysisWorkbench", () => {
     });
   });
 
-  it("shows completed boards as read-only without mutation controls", () => {
+  it("shows completed boards as Confirmed without mutation controls", () => {
     const scene = analysisSceneWith({
       visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
         (board) =>
@@ -715,7 +717,7 @@ describe("AnalysisWorkbench", () => {
     const state = analysisState({ scene });
     renderWorkbench(state);
 
-    expect(screen.getByText("完成・只讀檢視")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "比對推論" }),
     ).not.toBeInTheDocument();
@@ -757,9 +759,10 @@ describe("AnalysisWorkbench", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it("does not render or own the Case File", () => {
+  it("renders the handoff Case File badge and Total footer", () => {
     renderWorkbench();
-    expect(screen.queryByText("案件檔案")).not.toBeInTheDocument();
+    expect(screen.getByText("Case File")).toBeInTheDocument();
+    expect(screen.getByText("Total")).toBeInTheDocument();
   });
 
   it("selects a fallback display board before updating it and uses the fresh token", async () => {
@@ -955,6 +958,21 @@ describe("AnalysisWorkbench", () => {
     expect(source).toContain("var(--bone)");
     expect(source).toContain("var(--crimson)");
     expect(source).toContain("var(--cyan)");
+    expect(source).toContain("var(--bone-dim)");
+    expect(source).toContain("var(--rule-strong)");
+    expect(source).toContain("height: 2px;");
+    expect(source).toContain("Case File");
+    expect(source).toContain("Confirmed");
+    expect(source).toContain("All Confirmed");
+    expect(source).toContain("SUBMIT");
+    expect(source).not.toContain("#79bd9d");
+    expect(source).not.toContain("#e2ad69");
+    expect(source).not.toContain("#f2d1b2");
+    expect(source).not.toContain("rgba(154, 104, 61");
+    expect(source).not.toContain("#c9cbd1");
+    expect(source).not.toContain("#d6e5ff");
+    expect(source).not.toContain("#aeb4c1");
+    expect(source).not.toContain("#efedf0");
     expect(source).toContain("var(--display-jp)");
     expect(source).toContain("var(--serif-jp)");
     expect(source).toContain("var(--impact)");
