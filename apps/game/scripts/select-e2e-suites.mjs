@@ -84,6 +84,7 @@ export const E2E_RISK_RULES = Object.freeze([
     id: "gameplay",
     patterns: [
       "apps/game/src/lib/components/ExploreView.svelte",
+      "apps/game/src/lib/components/Interrogation*.svelte",
       "apps/game/src/lib/components/Investigation*.svelte",
       "apps/game/src/lib/components/SceneNavigation*.svelte",
       "apps/game/src-tauri/src/game/acquisition.rs",

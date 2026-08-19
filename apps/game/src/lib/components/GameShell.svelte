@@ -392,7 +392,11 @@
   });
 </script>
 
-<div class="shell" class:analysis-presentation={analysisPresentation}>
+<div
+  class="shell"
+  class:analysis-presentation={analysisPresentation}
+  class:interrogation-presentation={interrogationPresentation}
+>
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
@@ -419,12 +423,6 @@
     </header>
 
     <div class="rule"></div>
-  {/if}
-
-  {#if interrogationPresentation && showPrimaryObjectiveHud}
-    <div class="interrogation-objective" inert={open || gameplayInert}>
-      <PrimaryObjectiveHud objective={activePrimaryObjective} />
-    </div>
   {/if}
 
   <main data-save-thumbnail-layout="main" inert={open || gameplayInert}>
@@ -581,7 +579,8 @@
     isolation: isolate;
   }
 
-  .shell.analysis-presentation {
+  .shell.analysis-presentation,
+  .shell.interrogation-presentation {
     display: flex;
     flex-direction: column;
     height: 100dvh;
@@ -688,7 +687,8 @@
     z-index: 2;
   }
 
-  .shell.analysis-presentation > main {
+  .shell.analysis-presentation > main,
+  .shell.interrogation-presentation > main {
     display: flex;
     flex: 1 1 0;
     flex-direction: column;
@@ -716,12 +716,14 @@
     min-height: 0;
   }
 
-  .interrogation-objective {
-    position: fixed;
-    z-index: 3;
-    top: 18px;
-    right: clamp(18px, 3vw, 40px);
-    width: min(360px, calc(100vw - 36px));
+  .shell.interrogation-presentation
+    > main
+    > :global(.interrogation-stage.active) {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
   }
 
   .game-menu-scrim {

@@ -1,14 +1,25 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
+import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import InterrogationStageHarness from "$lib/test-harnesses/InterrogationStageHarness.svelte";
-import type { Inventory, Mode, SceneView } from "../state/types";
+import InterrogationStage from "./InterrogationStage.svelte";
+import type {
+  Inventory,
+  Mode,
+  ObjectiveView,
+  PortraitRef,
+  SceneView,
+} from "../state/types";
 
 type InterrogationSceneView = Extract<SceneView, { kind: "interrogation" }>;
 
 const inventory: Inventory = { evidence: [], statements: [] };
 
-function scene(presenting = false): InterrogationSceneView {
+function scene(
+  presenting = false,
+  portrait: PortraitRef | null = null,
+): InterrogationSceneView {
   return {
     kind: "interrogation",
     id: "interrogation_1",
@@ -26,7 +37,7 @@ function scene(presenting = false): InterrogationSceneView {
           name: "三宅聰太",
           role: "證人",
           bio: "沉默地避開視線。",
-          portrait: null,
+          portrait,
         },
         questions: [
           { id: "q_1", label: "第一問", broken: true },
@@ -70,6 +81,32 @@ const ordinaryDialogue: Mode = {
   backgroundAssetId: null,
   bgm: null,
   bgs: null,
+};
+
+function dialogueWithPortrait(
+  portrait: PortraitRef,
+): Extract<Mode, { type: "dialogue" }> {
+  return {
+    type: "dialogue",
+    current: { kind: "line", speaker: "相馬律", text: "請回答。", portrait },
+    queueRemaining: 0,
+    queueToken: { sceneId: "interrogation_1", queueGen: 1, cursor: 0 },
+    crossExamLineId: null,
+    sceneTag: "訊問室",
+    backgroundAssetId: "background.interrogation_room",
+    bgm: null,
+    bgs: null,
+  };
+}
+
+const activeObjective: ObjectiveView = {
+  id: "objective_follow_witness",
+  label: "追查雨夜目擊者",
+  summary: "找出目擊者隱瞞的證詞。",
+  kind: "primary",
+  sortOrder: 10,
+  completed: false,
+  activePrimary: true,
 };
 
 function props(
@@ -127,6 +164,154 @@ describe("InterrogationStage", () => {
     expect(screen.getByText("stage child")).toBeInTheDocument();
     expect(screen.queryByText("三宅聰太")).toBeNull();
     expect(screen.queryByRole("button", { name: /案件檔案/ })).toBeNull();
+  });
+
+  it("renders the primary objective exactly once inside the active stage", () => {
+    render(InterrogationStage, {
+      ...props(),
+      activePrimaryObjective: activeObjective,
+      children: createRawSnippet(() => ({
+        render: () => '<p data-testid="stage-child">stage child</p>',
+      })),
+    });
+
+    expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
+    expect(screen.getByTestId("stage-child")).toBeInTheDocument();
+  });
+
+  it("keeps one stage-owned backdrop mounted across interrogation and same-scene dialogue", async () => {
+    const interrogation: Extract<Mode, { type: "interrogation" }> = {
+      ...interrogationMode,
+      backgroundAssetId: "background.interrogation_room",
+    };
+    const dialogue: Extract<Mode, { type: "dialogue" }> = {
+      ...dialogueWithPortrait({
+        characterId: "miyake_sota",
+        expression: "standard",
+        assetId: "portrait.miyake_sota.standard",
+      }),
+      backgroundAssetId: "background.interrogation_room_evening",
+    };
+    const result = render(
+      InterrogationStageHarness,
+      props({ mode: interrogation }),
+    );
+    const backdrop = await waitFor(() => {
+      const element = document.querySelector(
+        '[data-save-thumbnail-layout="backdrop"]',
+      );
+      if (!element) throw new Error("stage backdrop not mounted");
+      return element;
+    });
+
+    await result.rerender(props({ mode: dialogue }));
+
+    expect(
+      document.querySelector('[data-save-thumbnail-layout="backdrop"]'),
+    ).toBe(backdrop);
+  });
+
+  it("uses the phase subject standard portrait for interrogation menu art", async () => {
+    const subjectPortrait: PortraitRef = {
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    };
+    const { container } = render(
+      InterrogationStageHarness,
+      props({ scene: scene(false, subjectPortrait) }),
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          'img.interrogation-subject-portrait[src*="miyake_sota/standard"]',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("uses the current dialogue expression instead of the subject standard portrait", async () => {
+    const subjectPortrait: PortraitRef = {
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    };
+    const expressionPortrait: PortraitRef = {
+      characterId: "miyake_sota",
+      expression: "concerned",
+      assetId: "portrait.miyake_sota.concerned",
+    };
+    const { container } = render(
+      InterrogationStageHarness,
+      props({
+        scene: scene(false, subjectPortrait),
+        mode: dialogueWithPortrait(expressionPortrait),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          'img.interrogation-subject-portrait[src*="miyake_sota/concerned"]',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("falls back to the subject portrait for a portraitless dialogue line", async () => {
+    const subjectPortrait: PortraitRef = {
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    };
+    const portraitlessDialogue: Extract<Mode, { type: "dialogue" }> = {
+      ...dialogueWithPortrait(subjectPortrait),
+      current: { kind: "line", speaker: "相馬律", text: "請回答。" },
+    };
+    const { container } = render(
+      InterrogationStageHarness,
+      props({
+        scene: scene(false, subjectPortrait),
+        mode: portraitlessDialogue,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          'img.interrogation-subject-portrait[src*="miyake_sota/standard"]',
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("follows a non-subject speaker portrait during same-scene dialogue", async () => {
+    const subjectPortrait: PortraitRef = {
+      characterId: "miyake_sota",
+      expression: "standard",
+      assetId: "portrait.miyake_sota.standard",
+    };
+    const speakerPortrait: PortraitRef = {
+      characterId: "soma_ritsu",
+      expression: "focused",
+      assetId: "portrait.soma_ritsu.focused",
+    };
+    const { container } = render(
+      InterrogationStageHarness,
+      props({
+        scene: scene(false, subjectPortrait),
+        mode: dialogueWithPortrait(speakerPortrait),
+      }),
+    );
+
+    await waitFor(() => {
+      expect(
+        container.querySelector(
+          'img.interrogation-subject-portrait[src*="soma_ritsu/focused"]',
+        ),
+      ).toBeInTheDocument();
+    });
   });
 
   it("mounts the Present tray directly from restored engine presentation state", async () => {

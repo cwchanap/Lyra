@@ -932,6 +932,7 @@ describe("html-to-image gameplay capture", () => {
     backgroundGroup.append(background);
 
     const portraitGroup = document.createElement("div");
+    portraitGroup.setAttribute("data-interrogation-subject-art", "");
     const portrait = loadedImage({
       "data-save-crossfade-layer": "",
       "data-save-crossfade-request": "2",
@@ -939,6 +940,7 @@ describe("html-to-image gameplay capture", () => {
       "data-save-crossfade-state": "visible",
       "data-save-thumbnail-asset-role": "portrait",
     });
+    portrait.className = "portrait interrogation-subject-portrait";
     Object.defineProperties(portrait, {
       naturalWidth: { configurable: true, value: 800 },
       naturalHeight: { configurable: true, value: 1_200 },
@@ -977,6 +979,13 @@ describe("html-to-image gameplay capture", () => {
     });
 
     const [, options, assets] = renderToBlob.mock.calls[0] ?? [];
+    expect(
+      root.querySelector("[data-interrogation-subject-art]"),
+    ).toContainElement(portrait);
+    expect(portrait).toHaveAttribute(
+      "data-save-thumbnail-asset-role",
+      "portrait",
+    );
     expect((options as Options).filter?.(background)).toBe(false);
     expect((options as Options).filter?.(portrait)).toBe(false);
     expect(assets).toEqual([
