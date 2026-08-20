@@ -21,6 +21,8 @@
   } from "../state/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
 
+  type SpriteCharacterLayout = Extract<CharacterLayout, { kind: "sprite" }>;
+
   let {
     sublocation,
     backgroundAssetId = null,
@@ -70,6 +72,7 @@
 
     for (const character of placedCharacters) {
       const { id, layout } = character;
+      if (layout.kind !== "sprite") continue;
       resolveStoryAsset(
         layout.assetId,
         imageStoryAssetTypeForId(layout.assetId),
@@ -123,10 +126,8 @@
     return cropStyles[assetId] ?? "";
   }
 
-  function portraitAssetId(
-    character: CharacterView & { layout: CharacterLayout },
-  ) {
-    return portraits[character.id]?.assetId ?? character.layout.assetId;
+  function portraitAssetId(characterId: string, layout: SpriteCharacterLayout) {
+    return portraits[characterId]?.assetId ?? layout.assetId;
   }
 
   function loadCharacterCrop(assetId: string, event: Event) {
@@ -165,6 +166,15 @@
         image.naturalHeight,
       ),
     };
+  }
+
+  function loadCharacterCropForCharacter(
+    characterId: string,
+    layout: CharacterLayout,
+    event: Event,
+  ) {
+    if (layout.kind !== "sprite") return;
+    loadCharacterCrop(portraitAssetId(characterId, layout), event);
   }
 
   function toggleCharacter(characterId: string) {
@@ -232,15 +242,13 @@
     );
   }
 
-  function handlePortraitError(
-    character: CharacterView & { layout: CharacterLayout },
-  ) {
-    const current = portraits[character.id];
+  function handlePortraitError(characterId: string) {
+    const current = portraits[characterId];
     if (!current || current.placeholder) return;
     console.warn(
       `[InvestigationSceneSurface] Missing portrait asset: ${current.url} (assetId: ${current.assetId})`,
     );
-    portraits[character.id] = placeholderForMissingStoryAsset(
+    portraits[characterId] = placeholderForMissingStoryAsset(
       current.assetId,
       imageStoryAssetTypeForId(current.assetId),
     );
@@ -297,21 +305,29 @@
           onclick={() => toggleCharacter(character.id)}
         >
           <span class="character-highlight"></span>
-          {#if portraits[character.id]}
-            <div class="character-preview-crop">
-              <CrossfadeImage
-                src={portraits[character.id]?.url ?? null}
-                imageClass=""
-                imageStyle={cropStyleForAsset(portraitAssetId(character))}
-                alt=""
-                ariaHidden={true}
-                onImageLoad={(event) =>
-                  loadCharacterCrop(portraitAssetId(character), event)}
-                onImageError={() => handlePortraitError(character)}
-              />
-            </div>
-          {:else}
-            <span class="portrait-loading">{character.name}</span>
+          {#if character.layout.kind === "sprite"}
+            {#if portraits[character.id]}
+              <div class="character-preview-crop">
+                <CrossfadeImage
+                  src={portraits[character.id]?.url ?? null}
+                  imageClass=""
+                  imageStyle={cropStyleForAsset(
+                    portraitAssetId(character.id, character.layout),
+                  )}
+                  alt=""
+                  ariaHidden={true}
+                  onImageLoad={(event) =>
+                    loadCharacterCropForCharacter(
+                      character.id,
+                      character.layout,
+                      event,
+                    )}
+                  onImageError={() => handlePortraitError(character.id)}
+                />
+              </div>
+            {:else}
+              <span class="portrait-loading">{character.name}</span>
+            {/if}
           {/if}
           <span class="character-name">{character.name}</span>
         </button>
