@@ -826,11 +826,14 @@ Qualitative only; no CI millisecond budget.
 
 ### Step 6 — Review final diff
 
-Expected files only:
+Expected implementation files (documentation files — this plan and the
+accompanying design spec — are excluded from this list):
 
 ```text
 apps/game/src-tauri/src/lib.rs
 apps/game/src-tauri/src/game/test_support.rs
+apps/game/src/lib/components/DialogueBox.svelte
+apps/game/src/lib/components/DialogueBox.test.ts
 apps/game/src/lib/components/InterrogationEvidenceTray.svelte
 apps/game/src/lib/components/InterrogationEvidenceTray.test.ts
 apps/game/e2e-tauri/production-anchors.ts

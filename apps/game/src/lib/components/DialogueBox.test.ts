@@ -1341,7 +1341,25 @@ describe("DialogueBox", () => {
     expect(xexamActions).not.toBeNull();
     expect(isInert(xexamActions as HTMLElement)).toBe(false);
 
-    await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    try {
+      await user.click(screen.getByRole("button", { name: "開啟對話紀錄" }));
+    } catch (error) {
+      const availableButtons = screen
+        .queryAllByRole("button")
+        .map(
+          (b) =>
+            b.textContent?.trim() ||
+            b.getAttribute("aria-label") ||
+            "<unnamed>",
+        );
+      throw new Error(
+        `cross-exam inert test: failed to click 開啟對話紀錄. ` +
+          `Available buttons: [${availableButtons.join(", ")}]. ` +
+          `xexamActions present: ${xexamActions !== null}, ` +
+          `xexamActions inert before click: ${isInert(xexamActions as HTMLElement)}.`,
+        { cause: error },
+      );
+    }
     expect(isInert(xexamActions as HTMLElement)).toBe(true);
   });
 

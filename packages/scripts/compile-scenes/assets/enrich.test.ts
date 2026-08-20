@@ -2139,7 +2139,6 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
       );
     }
     const phase = ast.phases[0];
-    expect(phase?.kind).toBe("inquiry");
 
     if (phase?.kind !== "inquiry") {
       throw new Error(
