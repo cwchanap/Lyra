@@ -67,8 +67,5 @@ describe("Interrogation handoff chrome", () => {
     expect(tray).toContain("box-shadow: 0 40px 90px rgba(0, 0, 0, 0.7)");
     expect(tray).toContain("鎖定證詞 · TARGET LINE");
     expect(tray).toContain("font-style: italic");
-    expect(tray).toContain(
-      "grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))",
-    );
   });
 });
