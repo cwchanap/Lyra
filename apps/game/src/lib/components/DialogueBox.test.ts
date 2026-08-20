@@ -1223,22 +1223,28 @@ describe("DialogueBox", () => {
       { history },
     );
     const box = container.querySelector(".box") as HTMLElement;
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
 
     const logButton = screen.getByRole("button", { name: "開啟對話紀錄" });
     await user.click(logButton);
 
+    const backdrop = container.querySelector(".history-backdrop");
+    expect(backdrop).toBeInTheDocument();
+    expect(backdrop).toHaveAttribute("style", "pointer-events: none");
     expect(isInert(box)).toBe(true);
+    expect(isInert(advanceButton)).toBe(true);
+    expect(logButton).not.toBeDisabled();
     expect(closeTopmostEscapeClaim()).toBe(true);
     await waitFor(() => {
       expect(
         screen.queryByRole("dialog", { name: "對話紀錄" }),
       ).not.toBeInTheDocument();
       expect(isInert(box)).toBe(false);
+      expect(isInert(advanceButton)).toBe(false);
       // Escape closes history and focuses the advance button (not LOG), so a
       // subsequent Space advances dialogue instead of re-opening history.
       // Asserting LOG focus here would re-introduce the Space-reopens-history
       // bug this test guards against.
-      const advanceButton = screen.getByRole("button", { name: "推進對話" });
       expect(advanceButton).toHaveFocus();
       expect(logButton).not.toHaveFocus();
     });
