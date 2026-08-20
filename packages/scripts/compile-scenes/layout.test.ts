@@ -96,6 +96,28 @@ function validLayoutJson(overrides: Record<string, unknown> = {}) {
   });
 }
 
+function validBakedLayoutJson(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    version: 1,
+    sceneId: "investigation_scene_1",
+    sublocations: {
+      main_hall: {
+        hotspots: {},
+        characters: {
+          witness: {
+            kind: "baked",
+            x: 0.42,
+            y: 0.18,
+            w: 0.2,
+            h: 0.7,
+          },
+        },
+      },
+    },
+    ...overrides,
+  });
+}
+
 describe("parseInvestigationLayoutJson", () => {
   it("parses a valid layout sidecar with sublocation hotspots and characters", () => {
     const result = parseInvestigationLayoutJson(validLayoutJson(), sourceFile);
@@ -122,6 +144,53 @@ describe("parseInvestigationLayoutJson", () => {
       h: 0.7,
       anchor: "bottomCenter",
     });
+  });
+
+  it("parses a baked character interaction region", () => {
+    const result = parseInvestigationLayoutJson(
+      validBakedLayoutJson(),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(
+      result.value.sublocations.main_hall?.characters.witness,
+    ).toStrictEqual({
+      kind: "baked",
+      x: 0.42,
+      y: 0.18,
+      w: 0.2,
+      h: 0.7,
+    });
+  });
+
+  it("rejects invalid baked character geometry", () => {
+    const result = parseInvestigationLayoutJson(
+      validBakedLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {},
+            characters: {
+              witness: {
+                kind: "baked",
+                x: 0.42,
+                y: 0.18,
+                w: 0,
+                h: 0.7,
+              },
+            },
+          },
+        },
+      }),
+      sourceFile,
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.map((entry) => entry.code)).toContain(
+      "layoutInvalidSize",
+    );
   });
 
   it("rejects non-finite coordinates", () => {
@@ -319,6 +388,26 @@ describe("applyInvestigationLayout", () => {
       w: 0.2,
       h: 0.7,
       anchor: "bottomCenter",
+    });
+  });
+
+  it("attaches a baked character interaction region to the AST", () => {
+    const parsed = parseInvestigationLayoutJson(
+      validBakedLayoutJson(),
+      sourceFile,
+    );
+    if (!parsed.ok) throw new Error("Expected valid baked layout fixture");
+
+    const result = applyInvestigationLayout(minimalScene(), parsed.value);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sublocations[0]?.characters[0]?.layout).toStrictEqual({
+      kind: "baked",
+      x: 0.42,
+      y: 0.18,
+      w: 0.2,
+      h: 0.7,
     });
   });
 

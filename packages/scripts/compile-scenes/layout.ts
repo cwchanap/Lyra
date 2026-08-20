@@ -1,5 +1,7 @@
 import type {
   ASTInvestigationScene,
+  BakedCharacterLayout,
+  CharacterLayout,
   CompileError,
   IntentionalHotspotOverlap,
   InvestigationLayoutSidecar,
@@ -121,10 +123,10 @@ export function parseInvestigationLayoutJson(
       if (parsed.value) hotspots[hotspotId] = parsed.value;
     }
 
-    const characters: Record<string, SpriteLayout> = {};
+    const characters: Record<string, CharacterLayout> = {};
     for (const [characterId, rawLayout] of Object.entries(charactersRoot)) {
       const targetPath = `sublocations.${sublocationId}.characters.${characterId}`;
-      const parsed = parseSpriteLayout(rawLayout, sourceFile, targetPath);
+      const parsed = parseCharacterLayout(rawLayout, sourceFile, targetPath);
       errors.push(...parsed.errors);
       if (parsed.value) characters[characterId] = parsed.value;
     }
@@ -296,6 +298,52 @@ function parseRectLayout(
   };
 }
 
+function parseCharacterLayout(
+  rawLayout: unknown,
+  sourceFile: string,
+  targetPath: string,
+): { value: CharacterLayout | null; errors: CompileError[] } {
+  const layout = asRecord(rawLayout);
+  if (layout?.kind === "sprite") {
+    return parseSpriteLayout(rawLayout, sourceFile, targetPath);
+  }
+  if (layout?.kind === "baked") {
+    return parseBakedCharacterLayout(layout, sourceFile, targetPath);
+  }
+  return {
+    value: null,
+    errors: [
+      error(
+        sourceFile,
+        "layoutInvalidCharacterKind",
+        `${targetPath} character layout kind must be "sprite" or "baked".`,
+      ),
+    ],
+  };
+}
+
+function parseBakedCharacterLayout(
+  layout: Record<string, unknown>,
+  sourceFile: string,
+  targetPath: string,
+): { value: BakedCharacterLayout | null; errors: CompileError[] } {
+  const errors = validateRectNumbers(layout, sourceFile, targetPath);
+  if (errors.length > 0) return { value: null, errors };
+
+  const baked = {
+    kind: "baked" as const,
+    x: layout.x as number,
+    y: layout.y as number,
+    w: layout.w as number,
+    h: layout.h as number,
+  };
+  const geometryErrors = validateGeometry(baked, sourceFile, targetPath);
+  return {
+    value: geometryErrors.length > 0 ? null : baked,
+    errors: geometryErrors,
+  };
+}
+
 function parseSpriteLayout(
   rawLayout: unknown,
   sourceFile: string,
@@ -428,7 +476,7 @@ function validateRectNumbers(
 }
 
 function validateGeometry(
-  layout: RectLayout | SpriteLayout,
+  layout: RectLayout | CharacterLayout,
   sourceFile: string,
   targetPath: string,
 ): CompileError[] {
