@@ -44,6 +44,17 @@ export type SpriteLayout = {
   anchor: "bottomCenter";
 };
 
+/** Interaction geometry for a character already painted into the background. */
+export type BakedCharacterLayout = {
+  kind: "baked";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
+export type CharacterLayout = SpriteLayout | BakedCharacterLayout;
+
 /**
  * What a hotspot/character/topic/sublocation reveal can resolve to. The union
  * is identical for compiler AST/JSON and the editor's JSON view.
@@ -79,7 +90,7 @@ export type InvestigationLayoutSidecar = {
     string,
     {
       hotspots: Record<string, RectLayout>;
-      characters: Record<string, SpriteLayout>;
+      characters: Record<string, CharacterLayout>;
       intentionalOverlaps?: ReadonlyArray<IntentionalHotspotOverlap>;
     }
   >;

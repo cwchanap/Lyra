@@ -15,12 +15,21 @@
 // for a local binding and re-exported; JSONChaptersIndex and
 // InvestigationLayoutSidecar are pure re-exports. See packages/scene-types.
 import type {
+  BakedCharacterLayout,
+  CharacterLayout,
   EvidenceSource,
   RectLayout,
   RevealTarget,
   SpriteLayout,
 } from "@lyra/scene-types";
-export type { EvidenceSource, RectLayout, RevealTarget, SpriteLayout };
+export type {
+  BakedCharacterLayout,
+  CharacterLayout,
+  EvidenceSource,
+  RectLayout,
+  RevealTarget,
+  SpriteLayout,
+};
 export type {
   ChaptersIndex as JSONChaptersIndex,
   IntentionalHotspotOverlap,
@@ -372,7 +381,7 @@ export type ASTCharacter = Located<{
   role: string;
   bio: string;
   topics: ASTTopic[];
-  layout?: SpriteLayout | null;
+  layout?: CharacterLayout | null;
 }>;
 
 export type ASTTopic = Located<{
@@ -593,7 +602,7 @@ export type JSONLinearScene = {
 };
 
 export type JSONHotspotLayout = RectLayout;
-export type JSONCharacterLayout = SpriteLayout;
+export type JSONCharacterLayout = CharacterLayout;
 
 export type JSONInvestigationScene = {
   type: "investigation";
