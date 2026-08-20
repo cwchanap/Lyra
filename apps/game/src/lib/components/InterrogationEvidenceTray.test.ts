@@ -1,4 +1,10 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -130,6 +136,72 @@ describe("InterrogationEvidenceTray", () => {
     evidenceTile.focus();
     expect(detail).toHaveTextContent("物證 / EVIDENCE");
     expect(detail).toHaveTextContent("店內收銀匯出");
+  });
+
+  it("keeps the focused detail after the pointer leaves another tile", async () => {
+    const { container } = render(InterrogationEvidenceTray, props());
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+    const statementTile = screen.getByRole("button", { name: /目擊者/ });
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    evidenceTile.focus();
+    await waitFor(() => expect(detail).toHaveTextContent("咖啡收據"));
+    fireEvent.mouseEnter(statementTile);
+    await waitFor(() => expect(detail).toHaveTextContent("目擊者"));
+    fireEvent.mouseLeave(statementTile);
+    await waitFor(() => expect(detail).toHaveTextContent("咖啡收據"));
+  });
+
+  it("keeps evidence and statement detail distinct when their ids collide", async () => {
+    const user = userEvent.setup();
+    const sharedId = "shared-record";
+    const collisionInventory: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: sharedId,
+          name: "同名物證",
+          description: "物證詳情。",
+          details: "物證補充。",
+          imageAssetId: null,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [
+        neutralStatementRecordView({
+          id: sharedId,
+          speaker: "同名證言",
+          content: "證言詳情。",
+          onReexamine: null,
+          acquiredInChapterId: "chapter_1",
+          acquiredInSceneId: "scene_1",
+        }),
+      ],
+    };
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ inventory: collisionInventory }),
+    );
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+    const evidenceTile = screen.getByRole("button", { name: /同名物證/ });
+    const statementTile = screen.getByRole("button", { name: /同名證言/ });
+
+    await user.hover(evidenceTile);
+    expect(detail).toHaveTextContent("物證詳情。");
+    await user.unhover(evidenceTile);
+    await user.hover(statementTile);
+    expect(detail).toHaveTextContent("證言詳情。");
+    expect(detail).not.toHaveTextContent("物證詳情。");
   });
 
   it("presents the mapped kind and id immediately and exposes the tray Escape button", async () => {

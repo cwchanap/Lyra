@@ -7,9 +7,13 @@ import {
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import InterrogationStageHarness from "$lib/test-harnesses/InterrogationStageHarness.svelte";
 import InterrogationStage from "./InterrogationStage.svelte";
+import {
+  closeTopmostEscapeClaim,
+  resetEscapeCoordinator,
+} from "$lib/state/escape-coordinator";
 import type {
   DialogueHistoryEntry,
   Inventory,
@@ -189,6 +193,10 @@ function props(
   };
 }
 
+afterEach(() => {
+  resetEscapeCoordinator();
+});
+
 describe("InterrogationStage", () => {
   it("keeps its child mounted with menu-only controls and live subject progress", async () => {
     const user = userEvent.setup();
@@ -243,6 +251,51 @@ describe("InterrogationStage", () => {
 
     expect(onOpenCaseFile).toHaveBeenLastCalledWith("evidence", locker);
   });
+
+  it.each([{ label: "案件檔案" }, { label: "證物櫃 02" }])(
+    "closes Stage history before the $label request so Escape reaches Case File",
+    async ({ label }) => {
+      const user = userEvent.setup();
+      let caseFileOpen = false;
+      const onOpenCaseFile = vi.fn(() => {
+        caseFileOpen = true;
+      });
+      render(
+        InterrogationStageHarness,
+        props({ onOpenCaseFile, history, inventory: menuInventory }),
+      );
+
+      const log = screen.getByRole("button", { name: "LOG" });
+      await user.click(log);
+      expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+      const trigger = screen.getByRole("button", { name: label });
+      await user.click(trigger);
+
+      await waitFor(() => {
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(trigger).toHaveFocus();
+      });
+      expect(caseFileOpen).toBe(true);
+
+      // Model the GameShell's Case File submenu branch: its root has no
+      // nested claim, so Escape closes the submenu only after giving any
+      // nested layer (including Stage history) first refusal.
+      const dismissCaseFile = () => {
+        if (!closeTopmostEscapeClaim()) caseFileOpen = false;
+      };
+      window.addEventListener("keydown", dismissCaseFile);
+      try {
+        fireEvent.keyDown(window, { key: "Escape" });
+      } finally {
+        window.removeEventListener("keydown", dismissCaseFile);
+      }
+
+      expect(caseFileOpen).toBe(false);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(trigger).toHaveFocus();
+    },
+  );
 
   it("hides menu history and toolbar outside the interrogation menu", async () => {
     const user = userEvent.setup();

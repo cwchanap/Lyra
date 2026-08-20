@@ -116,9 +116,10 @@
     if (!disabled) stageHistoryOpen = true;
   }
 
-  function closeStageHistory(): void {
+  function closeStageHistory(options: { refocusLog?: boolean } = {}): void {
     if (!stageHistoryOpen) return;
     stageHistoryOpen = false;
+    if (options.refocusLog === false) return;
     void tick().then(() => stageLogButton?.focus());
   }
 
@@ -129,6 +130,7 @@
     if (disabled) return;
     const trigger = event.currentTarget;
     if (trigger instanceof HTMLElement) {
+      closeStageHistory({ refocusLog: false });
       onOpenCaseFile(section, trigger);
     }
   }
@@ -220,6 +222,7 @@
       <DialogueHistoryOverlay
         {history}
         bottom={180}
+        showCloseShortcutHint={false}
         onClose={closeStageHistory}
       />
     {/if}

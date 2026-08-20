@@ -144,6 +144,28 @@ describe("DialogueHistoryPanel", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the DialogueBox L shortcut hint available by default", () => {
+    render(DialogueHistoryPanel, { history, onClose: vi.fn() });
+
+    expect(
+      screen.getByRole("button", { name: "關閉對話紀錄" }),
+    ).toHaveAttribute("aria-describedby", "dialogue-history-close-hint");
+    expect(screen.getByText("按 L 關閉")).toBeInTheDocument();
+  });
+
+  it("omits the L shortcut hint when the host has no L shortcut", () => {
+    render(DialogueHistoryPanel, {
+      history,
+      onClose: vi.fn(),
+      showCloseShortcutHint: false,
+    });
+
+    expect(
+      screen.getByRole("button", { name: "關閉對話紀錄" }),
+    ).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText("按 L 關閉")).toBeNull();
+  });
+
   it("traps Tab focus between panel controls and the scrollable list", async () => {
     const user = userEvent.setup();
     render(DialogueHistoryPanel, { history, onClose: vi.fn() });

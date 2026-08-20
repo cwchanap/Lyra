@@ -45,13 +45,27 @@
     fallbackFocusTarget?: HTMLElement | null;
   } = $props();
 
+  type PresentableRecordKey = `${PresentableRecord["kind"]}:${string}`;
+
+  function presentableRecordKey(
+    record: PresentableRecord,
+  ): PresentableRecordKey {
+    return `${record.kind}:${record.id}`;
+  }
+
   let tray: HTMLDivElement | undefined = $state();
   let evidenceImages = $state<Record<string, ResolvedStoryAsset | null>>({});
   let records = $derived(presentableRecords(inventory));
-  let activeRecordId = $state<string | null>(null);
-  let activeRecord = $derived(
-    records.find((record) => record.id === activeRecordId) ?? null,
-  );
+  let hoveredRecordKey = $state<PresentableRecordKey | null>(null);
+  let focusedRecordKey = $state<PresentableRecordKey | null>(null);
+  let activeRecord = $derived.by(() => {
+    const activeRecordKey = hoveredRecordKey ?? focusedRecordKey;
+    return (
+      records.find(
+        (record) => presentableRecordKey(record) === activeRecordKey,
+      ) ?? null
+    );
+  });
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
@@ -85,12 +99,22 @@
     };
   });
 
-  function showRecordDetail(record: PresentableRecord): void {
-    activeRecordId = record.id;
+  function showHoveredRecordDetail(record: PresentableRecord): void {
+    hoveredRecordKey = presentableRecordKey(record);
   }
 
-  function clearRecordDetail(record: PresentableRecord): void {
-    if (activeRecordId === record.id) activeRecordId = null;
+  function clearHoveredRecordDetail(record: PresentableRecord): void {
+    const key = presentableRecordKey(record);
+    if (hoveredRecordKey === key) hoveredRecordKey = null;
+  }
+
+  function showFocusedRecordDetail(record: PresentableRecord): void {
+    focusedRecordKey = presentableRecordKey(record);
+  }
+
+  function clearFocusedRecordDetail(record: PresentableRecord): void {
+    const key = presentableRecordKey(record);
+    if (focusedRecordKey === key) focusedRecordKey = null;
   }
 
   function present(kind: "evidence" | "statement", itemId: string) {
@@ -230,10 +254,10 @@
           class="record-tile"
           type="button"
           {disabled}
-          onmouseenter={() => showRecordDetail(record)}
-          onmouseleave={() => clearRecordDetail(record)}
-          onfocus={() => showRecordDetail(record)}
-          onblur={() => clearRecordDetail(record)}
+          onmouseenter={() => showHoveredRecordDetail(record)}
+          onmouseleave={() => clearHoveredRecordDetail(record)}
+          onfocus={() => showFocusedRecordDetail(record)}
+          onblur={() => clearFocusedRecordDetail(record)}
           onclick={() => present(record.kind, record.id)}
         >
           <span class="record-visual" aria-hidden="true">

@@ -8,9 +8,15 @@
     history: DialogueHistoryEntry[];
     bottom: number;
     onClose: () => void;
+    showCloseShortcutHint?: boolean;
   };
 
-  let { history, bottom, onClose }: DialogueHistoryOverlayProps = $props();
+  let {
+    history,
+    bottom,
+    onClose,
+    showCloseShortcutHint = true,
+  }: DialogueHistoryOverlayProps = $props();
   let releaseEscapeClaim: (() => void) | null = null;
 
   function close(): void {
@@ -36,7 +42,12 @@
   aria-hidden="true"
   style="pointer-events: none"
 ></div>
-<DialogueHistoryPanel {history} {bottom} onClose={close} />
+<DialogueHistoryPanel
+  {history}
+  {bottom}
+  {showCloseShortcutHint}
+  onClose={close}
+/>
 
 <style>
   .history-backdrop {

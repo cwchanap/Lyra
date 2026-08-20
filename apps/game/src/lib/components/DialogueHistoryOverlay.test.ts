@@ -38,7 +38,21 @@ describe("DialogueHistoryOverlay", () => {
     expect(screen.getByRole("dialog")).toHaveAttribute("aria-modal", "false");
   });
 
-  it("closes through its Escape claim and releases the claim on destroy", () => {
+  it("omits the L shortcut hint for a host without the DialogueBox shortcut", () => {
+    render(DialogueHistoryOverlay, {
+      history,
+      bottom: 180,
+      onClose: vi.fn(),
+      showCloseShortcutHint: false,
+    });
+
+    expect(
+      screen.getByRole("button", { name: "關閉對話紀錄" }),
+    ).not.toHaveAttribute("aria-describedby");
+    expect(screen.queryByText("按 L 關閉")).toBeNull();
+  });
+
+  it("releases its Escape claim when unmounted without invoking onClose", () => {
     const onClose = vi.fn();
     const view = render(DialogueHistoryOverlay, {
       history,
@@ -46,11 +60,24 @@ describe("DialogueHistoryOverlay", () => {
       onClose,
     });
 
-    expect(closeTopmostEscapeClaim()).toBe(true);
-    expect(onClose).toHaveBeenCalledTimes(1);
-
     view.unmount();
     expect(closeTopmostEscapeClaim()).toBe(false);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("releases its Escape claim before invoking onClose", () => {
+    let claimStillPresentDuringClose = false;
+    const onClose = vi.fn(() => {
+      claimStillPresentDuringClose = closeTopmostEscapeClaim();
+    });
+    render(DialogueHistoryOverlay, {
+      history,
+      bottom: 180,
+      onClose,
+    });
+
+    expect(closeTopmostEscapeClaim()).toBe(true);
     expect(onClose).toHaveBeenCalledTimes(1);
+    expect(claimStillPresentDuringClose).toBe(false);
   });
 });
