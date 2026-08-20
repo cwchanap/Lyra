@@ -4,8 +4,14 @@ import {
   currentInterrogationPhase,
   interrogationLineText,
   isInterrogationPresentationActive,
+  presentableRecords,
 } from "./presentation";
 import type { Mode, SceneView } from "../state/types";
+import {
+  neutralCaseRecordProvenance,
+  neutralEvidenceRecordView,
+  neutralStatementRecordView,
+} from "../state/test-fixtures";
 
 type InterrogationSceneView = Extract<SceneView, { kind: "interrogation" }>;
 
@@ -121,5 +127,115 @@ describe("interrogation presentation helpers", () => {
         { kind: "line", speaker: "嫌疑人", text: "我沒去。" },
       ]),
     ).toBe("她移開視線。我沒去。");
+  });
+
+  it("maps Present records once while preserving their engine payload and display fallbacks", () => {
+    const evidence = neutralEvidenceRecordView({
+      id: "receipt",
+      name: "咖啡收據",
+      description: "十七點四十二分的消費紀錄。",
+      details: "付款末四碼 0192。",
+      imageAssetId: "evidence.coffee_receipt",
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "scene_1",
+    });
+    evidence.provenance = {
+      ...neutralCaseRecordProvenance(),
+      sourceLabel: "店內收銀匯出",
+    };
+    const statement = neutralStatementRecordView({
+      id: "witness",
+      speaker: "目擊者",
+      content: "我看見她走進巷子。",
+      onReexamine: null,
+      acquiredInChapterId: "chapter_1",
+      acquiredInSceneId: "scene_1",
+    });
+    statement.provenance = {
+      ...neutralCaseRecordProvenance(),
+      sourceLabel: "   ",
+    };
+    statement.acquisitionContext = {
+      ...statement.acquisitionContext,
+      sceneTitle: "雨夜巷口",
+    };
+
+    expect(
+      presentableRecords({ evidence: [evidence], statements: [statement] }),
+    ).toEqual([
+      {
+        kind: "evidence",
+        id: "receipt",
+        shortName: "咖啡收據",
+        typeLabel: "物證 / EVIDENCE",
+        sourceTag: "店內收銀匯出",
+        description: "十七點四十二分的消費紀錄。",
+        details: "付款末四碼 0192。",
+        imageAssetId: "evidence.coffee_receipt",
+      },
+      {
+        kind: "statement",
+        id: "witness",
+        shortName: "目擊者",
+        typeLabel: "證言 / STATEMENT",
+        sourceTag: "雨夜巷口",
+        description: "我看見她走進巷子。",
+        details: null,
+        imageAssetId: null,
+      },
+    ]);
+
+    const fallbackEvidence = neutralEvidenceRecordView({
+      id: "scene-note",
+      name: "現場筆記",
+      description: "雨夜巷口的記錄。",
+      details: "   ",
+      imageAssetId: null,
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "scene_1",
+    });
+    fallbackEvidence.provenance = {
+      ...neutralCaseRecordProvenance(),
+      sourceLabel: "   ",
+    };
+    fallbackEvidence.acquisitionContext = {
+      ...fallbackEvidence.acquisitionContext,
+      sceneTitle: "雨夜巷口",
+    };
+
+    expect(
+      presentableRecords({ evidence: [fallbackEvidence], statements: [] })[0],
+    ).toMatchObject({
+      sourceTag: "雨夜巷口",
+      details: null,
+    });
+
+    const blankSourceEvidence = neutralEvidenceRecordView({
+      id: "blank-source",
+      name: "無來源物證",
+      description: "沒有來源標籤的物證。",
+      details: "",
+      imageAssetId: null,
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "scene_1",
+    });
+    blankSourceEvidence.provenance = {
+      ...neutralCaseRecordProvenance(),
+      sourceLabel: "   ",
+    };
+    blankSourceEvidence.acquisitionContext = {
+      ...blankSourceEvidence.acquisitionContext,
+      sceneTitle: "",
+    };
+
+    expect(
+      presentableRecords({
+        evidence: [blankSourceEvidence],
+        statements: [],
+      })[0]?.sourceTag,
+    ).toBe("物證 / EVIDENCE");
   });
 });
