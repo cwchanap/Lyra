@@ -6,10 +6,12 @@
     history,
     onClose,
     bottom = 180,
+    showCloseShortcutHint = true,
   }: {
     history: DialogueHistoryEntry[];
     onClose: () => void;
     bottom?: number;
+    showCloseShortcutHint?: boolean;
   } = $props();
 
   let panel: HTMLDivElement | undefined = $state();
@@ -93,7 +95,9 @@
       class="close-button"
       type="button"
       aria-label="關閉對話紀錄"
-      aria-describedby="dialogue-history-close-hint"
+      aria-describedby={showCloseShortcutHint
+        ? "dialogue-history-close-hint"
+        : undefined}
       onclick={onClose}
     >
       CLOSE
@@ -119,9 +123,12 @@
     </ol>
   {/if}
 
-  <!-- Discovered via the CLOSE button's aria-describedby so AT users learn the
-       L shortcut also closes the popup. Visually hidden; not focusable. -->
-  <span id="dialogue-history-close-hint" class="sr-only">按 L 關閉</span>
+  {#if showCloseShortcutHint}
+    <!-- Discovered via the CLOSE button's aria-describedby so AT users learn
+         the L shortcut also closes the popup. Visually hidden; not
+         focusable. -->
+    <span id="dialogue-history-close-hint" class="sr-only">按 L 關閉</span>
+  {/if}
 </div>
 
 <style>

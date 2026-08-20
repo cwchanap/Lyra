@@ -173,7 +173,28 @@ export async function captureMockupViewport(input: {
   );
   const metadataPath = screenshotPath.replace(/\.png$/, ".json");
 
-  await browser.saveScreenshot(screenshotPath);
+  let hiddenCaptureProofProbe: { previousDisplay: string } | null = null;
+  try {
+    hiddenCaptureProofProbe = await browser.execute((probeSelector: string) => {
+      const probe = document.querySelector<HTMLElement>(probeSelector);
+      if (!probe) return null;
+      const previousDisplay = probe.style.display;
+      probe.style.display = "none";
+      return { previousDisplay };
+    }, anchors.captureProof.probe);
+    await browser.saveScreenshot(screenshotPath);
+  } finally {
+    if (hiddenCaptureProofProbe) {
+      await browser.execute(
+        (probeSelector: string, previousDisplay: string) => {
+          const probe = document.querySelector<HTMLElement>(probeSelector);
+          if (probe) probe.style.display = previousDisplay;
+        },
+        anchors.captureProof.probe,
+        hiddenCaptureProofProbe.previousDisplay,
+      );
+    }
+  }
   writeFileSync(
     metadataPath,
     `${JSON.stringify(

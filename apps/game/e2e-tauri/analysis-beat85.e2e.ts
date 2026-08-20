@@ -220,6 +220,22 @@ async function assertInterrogationBrokenProgress(): Promise<void> {
     meter.getAttribute("aria-valuenow"),
     meter.getAttribute("aria-valuemax"),
   ]);
+  expect(minimum).not.toBeNull();
+  expect(minimum?.trim()).not.toBe("");
+  expect(current).not.toBeNull();
+  expect(current?.trim()).not.toBe("");
+  expect(maximum).not.toBeNull();
+  expect(maximum?.trim()).not.toBe("");
+  if (
+    minimum === null ||
+    minimum.trim() === "" ||
+    current === null ||
+    current.trim() === "" ||
+    maximum === null ||
+    maximum.trim() === ""
+  ) {
+    throw new Error("Interrogation progress ARIA values are missing.");
+  }
   const minValue = Number(minimum);
   const currentValue = Number(current);
   const maxValue = Number(maximum);
