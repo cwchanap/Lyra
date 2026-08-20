@@ -114,6 +114,12 @@ pub enum CharacterLayoutJson {
         h: f64,
         anchor: CharacterLayoutAnchorJson,
     },
+    Baked {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1829,8 +1835,23 @@ mod tests {
             "topics": []
         }"#;
         let parsed: CharacterJson = serde_json::from_str(json).unwrap();
-        let CharacterLayoutJson::Sprite { asset_id, .. } = parsed.layout.unwrap();
+        let CharacterLayoutJson::Sprite { asset_id, .. } = parsed.layout.unwrap() else {
+            panic!("expected sprite character layout");
+        };
         assert_eq!(asset_id, "portrait.witness.standard");
+    }
+
+    #[test]
+    fn deserializes_baked_character_layout() {
+        let json = r#"{
+            "kind": "baked",
+            "x": 0.42,
+            "y": 0.18,
+            "w": 0.2,
+            "h": 0.7
+        }"#;
+        let parsed: CharacterLayoutJson = serde_json::from_str(json).unwrap();
+        assert!(matches!(parsed, CharacterLayoutJson::Baked { .. }));
     }
 
     #[test]
