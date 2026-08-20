@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
   anchors,
   DIALOGUE_DRAIN_CAP,
@@ -23,11 +25,11 @@ type E2eCheckpointBrowserBridge = {
   loadCheckpoint: (id: E2eCheckpointId) => Promise<void>;
 };
 
-type CssViewport = CssViewportSize & {
+export type ObservedCssViewport = CssViewportSize & {
   devicePixelRatio: number;
 };
 
-async function observedCssViewport(): Promise<CssViewport> {
+export async function observedCssViewport(): Promise<ObservedCssViewport> {
   return browser.execute(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
@@ -40,7 +42,7 @@ async function observedCssViewport(): Promise<CssViewport> {
  * pixels. Measure the CSS viewport first, request a DPR-scaled native size,
  * then compensate for any platform window chrome before layout assertions.
  */
-export async function ensureCaseFileViewport(): Promise<CssViewport> {
+export async function ensureCaseFileViewport(): Promise<ObservedCssViewport> {
   let viewport = await observedCssViewport();
   let { width: requestedWidth, height: requestedHeight } =
     caseFileViewportNativeSize(viewport.devicePixelRatio);
@@ -87,6 +89,129 @@ export async function ensureCaseFileViewport(): Promise<CssViewport> {
   throw new Error(
     `Case File viewport remained ${viewport.width}x${viewport.height} at DPR ${viewport.devicePixelRatio}.`,
   );
+}
+
+export type MockupCaptureResult = {
+  requested: CssViewportSize;
+  observed: ObservedCssViewport;
+  screenshotPath: string;
+  metadataPath: string;
+  strict: boolean;
+};
+
+function assertNonEmptyArtifact(filePath: string): void {
+  if (!existsSync(filePath) || statSync(filePath).size === 0) {
+    throw new Error(`Mockup capture artifact is missing or empty: ${filePath}`);
+  }
+}
+
+function meetsRequestedViewportTarget(
+  viewport: CssViewportSize,
+  requested: CssViewportSize,
+): boolean {
+  return (
+    viewport.width >= requested.width && viewport.height >= requested.height
+  );
+}
+
+/**
+ * Requests a target CSS viewport for visual evidence while retaining the
+ * observed dimensions when native window chrome or DPR prevents an exact fit.
+ * Strict mode is deliberately checked only after both artifacts are written.
+ */
+export async function captureMockupViewport(input: {
+  name: string;
+  requested: CssViewportSize;
+  outputDirectory: string;
+}): Promise<MockupCaptureResult> {
+  mkdirSync(input.outputDirectory, { recursive: true });
+
+  let observed = await observedCssViewport();
+  let { width: requestedWidth, height: requestedHeight } =
+    caseFileViewportNativeSize(observed.devicePixelRatio, input.requested);
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await browser.setWindowSize(requestedWidth, requestedHeight);
+    try {
+      await browser.waitUntil(
+        async () => {
+          observed = await observedCssViewport();
+          return meetsRequestedViewportTarget(observed, input.requested);
+        },
+        {
+          timeout: 10000,
+          interval: 100,
+          timeoutMsg: "Mockup capture viewport did not reach its CSS target.",
+        },
+      );
+    } catch (error) {
+      console.log(
+        `[MockupE2E] viewport attempt ${attempt + 1} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+
+    if (meetsRequestedViewportTarget(observed, input.requested)) break;
+
+    const devicePixelRatio = validDevicePixelRatio(observed.devicePixelRatio);
+    requestedWidth += Math.ceil(
+      Math.max(0, input.requested.width - observed.width) * devicePixelRatio,
+    );
+    requestedHeight += Math.ceil(
+      Math.max(0, input.requested.height - observed.height) * devicePixelRatio,
+    );
+  }
+
+  // Always take one final measurement after the compensation attempts. The
+  // screenshot filename and sidecar must describe the viewport that was
+  // actually captured, including when strict mode will reject its size.
+  observed = await observedCssViewport();
+  const strict = process.env.LYRA_E2E_REQUIRE_EXACT_CAPTURE_VIEWPORT === "1";
+  const observedSuffix = `css-${observed.width}x${observed.height}`;
+  const screenshotPath = path.join(
+    input.outputDirectory,
+    `${input.name}-${observedSuffix}.png`,
+  );
+  const metadataPath = screenshotPath.replace(/\.png$/, ".json");
+
+  await browser.saveScreenshot(screenshotPath);
+  writeFileSync(
+    metadataPath,
+    `${JSON.stringify(
+      {
+        requested: input.requested,
+        observed: { width: observed.width, height: observed.height },
+        devicePixelRatio: observed.devicePixelRatio,
+        strict,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  assertNonEmptyArtifact(screenshotPath);
+  assertNonEmptyArtifact(metadataPath);
+
+  const result: MockupCaptureResult = {
+    requested: input.requested,
+    observed,
+    screenshotPath,
+    metadataPath,
+    strict,
+  };
+  console.log(
+    `[MockupE2E] ${input.name}: requested ${input.requested.width}x${input.requested.height}, observed ${observed.width}x${observed.height} at DPR ${observed.devicePixelRatio}; PNG=${screenshotPath}; JSON=${metadataPath}; strict=${strict}`,
+  );
+
+  if (
+    strict &&
+    (observed.width !== input.requested.width ||
+      observed.height !== input.requested.height)
+  ) {
+    throw new Error(
+      `Exact mockup capture viewport unavailable: requested ${input.requested.width}x${input.requested.height}, observed ${observed.width}x${observed.height}`,
+    );
+  }
+
+  return result;
 }
 
 export async function invokePackagedCommand<T>(
