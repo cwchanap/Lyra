@@ -4,8 +4,9 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       26-year-old Japanese private detective, slim build, slightly disheveled
-      dark hair, shirt sleeves rolled to the elbows, quiet orderly posture,
-      worn leather case folder nearby, observant but inexperienced.
+      dark hair, gray-white shirt sleeves rolled to the elbows, charcoal
+      trousers, slightly forward observant posture, muted brown worn leather
+      case folder nearby, alert and inexperienced rather than withdrawn.
     referenceAssetId: null
     expressions:
       standard:
@@ -16,8 +17,10 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Japanese woman in her early thirties, practical defense attorney, sturdy
-      composed build, structured dark jacket over casual clothes, neatly tied
-      hair, organized document bag, direct procedural presence.
+      grounded build, structured navy jacket over a casual off-white inner
+      layer, loosely controlled low-tied hair, warm brown organized leather
+      document shoulder bag, direct procedural presence; not a lean rigid
+      graphite-suited prosecutor.
     referenceAssetId: null
     expressions:
       standard:
@@ -29,9 +32,10 @@ characters:
     displayNames: ["三宅母親"]
     portraitMode: portrait
     visualPrompt: >
-      Middle-aged Japanese mother, modest everyday clothes, tired restrained
-      face, hands often tense around a convenience-store rice-ball bag,
-      quiet dignity, not crying.
+      Middle-aged Japanese mother with a softly rounded silhouette, modest moss
+      green and warm beige everyday layers, tired restrained face, hands held
+      close and tense around a convenience-store rice-ball bag, quiet domestic
+      dignity, no work apron, not crying.
     referenceAssetId: null
     expressions:
       standard:
@@ -43,8 +47,10 @@ characters:
     displayNames: ["書記官"]
     portraitMode: portrait
     visualPrompt: >
-      Japanese review-board clerk behind a narrow counter, plain office attire,
-      precise bureaucratic posture, neutral face, controlled gatekeeping manner.
+      Japanese review-board clerk with a compact upright counter posture, plain
+      black office suit and cool white shirt, thin practical glasses, dark ID
+      lanyard, neat short-to-medium office hair, neutral face and controlled
+      gatekeeping manner; administrative rather than prosecutor styling.
     referenceAssetId: null
     expressions:
       standard:
@@ -55,8 +61,9 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Japanese cafe manager in her late thirties to early forties, apron over
-      loose casual clothes, tired brow from running a small shop for years,
-      practical ordinary presence, one hand habitually wiping a clean counter.
+      loose olive-brown casual clothes, faded rust-red work apron, shoulders
+      slightly lowered from standing for years, tired brow, practical ordinary
+      presence, one hand habitually holding a cleaning cloth at a clean counter.
     referenceAssetId: null
     expressions:
       standard:
@@ -69,8 +76,9 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Petite Japanese cafe employee in her early twenties, uniform apron, small
-      colorful hair tie and tiny earrings, hurried end-of-shift energy, glancing
-      toward the time.
+      muted teal uniform apron, colorful hair tie and tiny earrings, quick
+      light-footed silhouette with weight tipped toward the exit, hurried
+      end-of-shift energy, glancing toward the time; clearly younger than Takase.
     referenceAssetId: null
     expressions:
       standard:
@@ -81,8 +89,9 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Young Japanese cafe worker in his early twenties, slim build, slightly
-      hunched anxious posture, plain cafe staff shirt under a practical jacket,
-      tired eyes from family and work pressure, guarded but not foolish.
+      hunched anxious posture with shoulders drawn in, plain cafe staff shirt
+      under a practical gray-green jacket, tired downcast eyes from family and
+      work pressure, guarded but not foolish; no rolled detective sleeves.
     referenceAssetId: null
     expressions:
       standard:
@@ -94,9 +103,12 @@ characters:
     displayNames: ["神谷澪"]
     portraitMode: portrait
     visualPrompt: >
-      Japanese female prosecutor in her early thirties, dark tailored jacket,
-      hair tied back with exacting neatness, composed institutional posture,
-      calm precise gaze, restrained pressure without villain exaggeration.
+      Japanese female prosecutor in her early thirties, lean angular build and
+      sharper cheekbones, rigid vertical institutional posture, glossy black
+      hair in a severe sculpted low chignon, cool graphite longline
+      double-breasted suit with sharp lapels, high-neck ivory blouse and one
+      restrained silver bar pin, no shoulder bag, no casual inner shirt,
+      visually distinct from the sturdier warm-toned defense attorney Hayasaka.
     referenceAssetId: null
     expressions:
       standard:
@@ -108,8 +120,9 @@ characters:
     visualPrompt: >
       Japanese police detective nearly fifty, broad sturdy build, weathered
       face with deep eye-corner wrinkles from night shifts, rumpled field coat
-      as if slept in a car, muddy worn dress shoes, large steady hands, blunt
-      practical presence.
+      in brown-gray tones as if slept in a car, muddy worn dark dress shoes,
+      large steady hands, flattened rice-ball wrapper in one pocket, blunt
+      planted field presence rather than neat middle management.
     referenceAssetId: null
     expressions:
       standard:
@@ -120,8 +133,10 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Japanese man in his early forties, medium soft build, forgettable generic
-      business-casual outfit, metal-frame glasses slipping slightly, anxious
-      overlooked office-worker face, shoulders drawn inward.
+      beige-gray business-casual layers, thin metal-frame glasses slipping
+      slightly, dark contractor ID lanyard, deeply creased business card,
+      anxious overlooked office-worker face, shoulders drawn inward; not a
+      youthful rolled-sleeve detective.
     referenceAssetId: null
     expressions:
       standard:
@@ -131,10 +146,11 @@ characters:
     displayNames: ["承包商主管"]
     portraitMode: portrait
     visualPrompt: >
-      Middle-aged Japanese male supervisor of contractor records in a plain
-      gray business shirt and understated tie, short neat hair, middle
-      management posture, controlled bureaucratic distance, neutral office
-      expression, practical and cautious.
+      Middle-aged Japanese male supervisor of contractor records with a
+      rectangular middle-management posture, pressed cool-gray business shirt,
+      conservative low-saturation tie, short neat side-parted hair, record
+      clipboard, controlled bureaucratic distance and cautious neutral office
+      expression; clean and orderly rather than a rumpled field detective.
     referenceAssetId: null
     expressions:
       standard:
@@ -145,8 +161,10 @@ characters:
     portraitMode: portrait
     visualPrompt: >
       Middle-aged Japanese owner of a small stationery and copy shop, practical
-      work clothes, a calm neighborhood-shop presence, accustomed to handling
-      paper goods and copy orders, distinct from the Rain Bell cafe manager.
+      indigo work overshirt and cream utility apron in warm paper tones, relaxed
+      neighborhood-shop stance, paper cutter or stack of copy paper nearby,
+      accustomed to handling paper goods and copy orders, no cafe uniform,
+      distinct from the tired rust-apron Rain Bell cafe manager.
     referenceAssetId: null
     expressions:
       standard:
@@ -158,9 +176,11 @@ characters:
     displayNames: ["增田圭"]
     portraitMode: portrait
     visualPrompt: >
-      KAGAMI outsourced data reviewer in ordinary low-profile work attire,
-      quiet discreet bearing shaped by routine lock-data confirmation visits,
-      cautious self-protective presence, no dramatic styling.
+      KAGAMI outsourced data reviewer with a narrow discreet silhouette and
+      guarded slight side angle, slate commuter coat over ordinary low-profile
+      work attire, compact USB case or folded memo kept close, cautious
+      self-protective presence, no glasses or ID lanyard, distinct from Kitami's
+      softer inward office-worker silhouette, no dramatic styling.
     referenceAssetId: null
     expressions:
       standard:
