@@ -376,7 +376,10 @@ describe("+page interrogation presentation wiring", () => {
     expect(source).toContain("currentInterrogationPhase");
     expect(source).toContain("let caseFileRequestId = $state(0)");
     expect(source).toContain("function openInterrogationCaseFile");
-    expect(source).toContain('caseFileSection = "evidence"');
+    expect(source).toContain(
+      'section: Extract<CaseFileSection, "objective" | "evidence">',
+    );
+    expect(source).toContain("caseFileSection = section");
     expect(source).toContain("caseFileRequest = {");
     expect(source).toContain(
       "interrogationPresentation={interrogationPresentationActive}",
