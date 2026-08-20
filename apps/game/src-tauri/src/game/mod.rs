@@ -351,6 +351,20 @@ impl GameEngine {
         self.durable_revision
     }
 
+    /// Returns the `(chapter_id, scene_id)` identity of the currently loaded
+    /// scene. Scene IDs are chapter-scoped (see `StoryLocationIndex`), so the
+    /// full identity requires both components — a `scene_id` alone is not
+    /// unique across chapters.
+    pub fn current_scene_identity(&self) -> (String, String) {
+        let chapter_id = self
+            .chapters
+            .get(self.current_chapter_idx)
+            .map(|c| c.id.clone())
+            .unwrap_or_default();
+        let scene_id = self.scene.id().to_string();
+        (chapter_id, scene_id)
+    }
+
     pub(in crate::game) fn packaged_acquisition_scene(
         &self,
         chapter_id: &str,
