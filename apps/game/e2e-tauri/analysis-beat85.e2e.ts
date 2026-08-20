@@ -1,5 +1,7 @@
+import path from "node:path";
 import {
   advanceDialogueUntil,
+  captureMockupViewport,
   clickButton,
   closePersistenceBrowserToGameplay,
   continueFromTitle,
@@ -17,6 +19,11 @@ import type { AnalysisBoardView, GameStateView } from "$lib/state/types";
 const ANALYSIS_SCENE_ID = "analysis_scene_8_5";
 const HEARING_SCENE_ID = "interrogation_scene_10";
 const APPROVED_CLIP_ID = "approved_clip";
+const MOCKUP_CAPTURE_OUTPUT_DIRECTORY =
+  process.env.LYRA_E2E_OUTPUT_DIR || path.join(process.cwd(), "logs");
+const MOCKUP_VIEWPORT = { width: 1280, height: 720 } as const;
+const INTERROGATION_STAGE_CONTROLS =
+  "[data-interrogation-stage-log], [data-interrogation-case-file-objective], [data-interrogation-evidence-locker]";
 
 type Rect = {
   left: number;
@@ -203,6 +210,117 @@ async function snapshotAnalysisOrderGeometry(): Promise<void> {
       footer,
     };
   }
+}
+
+async function assertInterrogationBrokenProgress(): Promise<void> {
+  const meter = await $("[data-interrogation-broken-progress]");
+  expect(await meter.getAttribute("role")).toBe("progressbar");
+  const [minimum, current, maximum] = await Promise.all([
+    meter.getAttribute("aria-valuemin"),
+    meter.getAttribute("aria-valuenow"),
+    meter.getAttribute("aria-valuemax"),
+  ]);
+  const minValue = Number(minimum);
+  const currentValue = Number(current);
+  const maxValue = Number(maximum);
+  expect(Number.isFinite(minValue)).toBe(true);
+  expect(Number.isFinite(currentValue)).toBe(true);
+  expect(Number.isFinite(maxValue)).toBe(true);
+  expect(minValue).toBe(0);
+  expect(maxValue).toBeGreaterThan(0);
+  expect(currentValue).toBeGreaterThanOrEqual(minValue);
+  expect(currentValue).toBeLessThanOrEqual(maxValue);
+  expect(currentValue / maxValue).toBeGreaterThanOrEqual(0);
+  expect(currentValue / maxValue).toBeLessThanOrEqual(1);
+}
+
+async function assertInterrogationMenuSemantics(): Promise<void> {
+  const controls = await $$(INTERROGATION_STAGE_CONTROLS);
+  expect(controls).toHaveLength(3);
+  const labels = (await controls.map((control) => control.getText())).map(
+    (label) => label.trim(),
+  );
+  expect(new Set(labels).size).toBe(3);
+  expect(labels).toContain("LOG");
+  expect(labels).toContain("案件檔案");
+  expect(labels.some((label) => /^證物櫃 \d{2}$/.test(label))).toBe(true);
+  await assertInterrogationBrokenProgress();
+}
+
+async function assertInterrogationTestimonySemantics(): Promise<void> {
+  expect(await $$(INTERROGATION_STAGE_CONTROLS)).toHaveLength(0);
+  const dialogueLogs = await $$('button[aria-label="開啟對話紀錄"]');
+  expect(dialogueLogs).toHaveLength(1);
+  const dialogueLog = dialogueLogs[0];
+  if (!dialogueLog) throw new Error("DialogueBox LOG button is missing");
+  expect(await dialogueLog.isDisplayed()).toBe(true);
+  await assertInterrogationBrokenProgress();
+}
+
+async function assertInterrogationPresentSemantics(): Promise<void> {
+  expect(await $$(INTERROGATION_STAGE_CONTROLS)).toHaveLength(0);
+  const gridColumns = await browser.execute(() => {
+    const grid = document.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-grid]",
+    );
+    if (!grid) return 0;
+    return getComputedStyle(grid)
+      .gridTemplateColumns.split(/ (?![^()]*\))/)
+      .filter(Boolean).length;
+  });
+  expect(gridColumns).toBe(5);
+
+  const escapeButtons = await $$("[data-interrogation-tray-escape]");
+  expect(escapeButtons).toHaveLength(1);
+  const escapeButton = escapeButtons[0];
+  if (!escapeButton) throw new Error("Present ESC button is missing");
+  expect(await escapeButton.isDisplayed()).toBe(true);
+
+  const detailPanels = await $$("[data-interrogation-evidence-detail]");
+  expect(detailPanels).toHaveLength(1);
+  expect(
+    await browser.execute(() => {
+      const grid = document.querySelector("[data-interrogation-evidence-grid]");
+      const detail = document.querySelector(
+        "[data-interrogation-evidence-detail]",
+      );
+      return grid !== null && detail !== null && !grid.contains(detail);
+    }),
+  ).toBe(true);
+}
+
+async function assertAnalysisClassifySemantics(): Promise<void> {
+  const ordinalChips = await $$("[data-analysis-board-position]");
+  expect(ordinalChips).toHaveLength(1);
+  const ordinalChip = ordinalChips[0];
+  if (!ordinalChip) throw new Error("Analysis board ordinal chip is missing");
+  expect(await ordinalChip.getText()).toMatch(/^Board \d+ \/ \d+$/);
+
+  const heading = await $('[data-analysis-focus-key^="board:"]');
+  expect(
+    await browser.execute(() => {
+      const candidate = document.querySelector<HTMLElement>(
+        '[data-analysis-focus-key^="board:"]',
+      );
+      return candidate === null ? null : getComputedStyle(candidate).fontSize;
+    }),
+  ).toBe("22px");
+  expect(await heading.getTagName()).toBe("h2");
+
+  expect(
+    await browser.execute(() => {
+      const hint = document.querySelector('[data-analysis-focus-key="hint"]');
+      return hint?.closest(".workbench-footer") !== null;
+    }),
+  ).toBe(true);
+  expect(
+    await $$(
+      "[data-analysis-rail] .board-entry-kind, [data-analysis-rail] .board-entry-progress, [data-analysis-rail] .progress-row",
+    ),
+  ).toHaveLength(0);
+  expect(
+    (await $$("[data-analysis-rail] [data-analysis-board-id]")).length,
+  ).toBeGreaterThan(0);
 }
 
 function edgeCenter(rect: Rect): number {
@@ -527,6 +645,19 @@ async function challengePhase(
   );
   if (phaseId === "p1") {
     await snapshotTestimonyGeometry();
+    await assertInterrogationTestimonySemantics();
+    await captureMockupViewport({
+      name: "interrogation-testimony-rebut",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
+  } else if (phaseId === "p2") {
+    await assertInterrogationTestimonySemantics();
+    await captureMockupViewport({
+      name: "interrogation-testimony-tall",
+      requested: { width: 1280, height: 800 },
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
   }
   await clickButton("反駁");
   await advanceDialogueUntil(async () => {
@@ -557,6 +688,12 @@ async function challengePhase(
   );
   if (phaseId === "p1") {
     await snapshotPresentGeometry();
+    await assertInterrogationPresentSemantics();
+    await captureMockupViewport({
+      name: "interrogation-present",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
   }
   const evidence = presenting.inventory.evidence.find(
     (candidate) => candidate.id === evidenceId,
@@ -624,6 +761,12 @@ describe("packaged Analysis Beat 8.5 journey", () => {
 
     let state = await waitForAnalysisBoard("evidence_packages");
     await snapshotAnalysisClassifyGeometry();
+    await assertAnalysisClassifySemantics();
+    await captureMockupViewport({
+      name: "analysis-classify",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
     expect(
       state.inventory.evidence.some(
         (evidence) => evidence.id === APPROVED_CLIP_ID,
@@ -954,6 +1097,12 @@ describe("packaged Analysis Beat 8.5 journey", () => {
       160,
     );
     await snapshotMenuGeometry();
+    await assertInterrogationMenuSemantics();
+    await captureMockupViewport({
+      name: "interrogation-menu",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
     await challengePhase("p1", "closing_routine", "p2");
     await challengePhase("p2", "victim_phone_notification", "p3");
     const gateReady = await challengePhase("p3", "miyake_pov_replay", "gate");
