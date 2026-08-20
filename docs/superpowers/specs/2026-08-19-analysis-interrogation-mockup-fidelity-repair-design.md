@@ -29,8 +29,9 @@ untracked; no mock raster baseline is committed.
 
 ## Goals
 
-1. Match the mock's remaining desktop visual hierarchy at exact 1280x720 and
-   1280x800 CSS viewports.
+1. Match the mock's remaining desktop visual hierarchy at 1280x720 and
+   1280x800 CSS viewports, with opt-in exact-size captures for PR fidelity
+   review and recorded observed dimensions in ordinary CI.
 2. Make every visible mock-derived control a real, keyboard-accessible entry
    point to an existing production behavior.
 3. Preserve Rust as the authority for Analysis evaluation, interrogation
@@ -49,6 +50,8 @@ untracked; no mock raster baseline is committed.
 - No replacement Case File; the existing `GameShell` Case File remains the
   destination for the stage toolbar.
 - No committed screenshot baselines or screenshot-diff framework.
+- No new mandatory exact-viewport failure in ordinary CI; exact capture size
+  is an explicit local PR-review mode.
 - No change to normal dialogue history contents or the existing `L` shortcut
   contract.
 
@@ -105,31 +108,32 @@ meter derives from `brokenQuestionProgress(phase)`:
 ### History overlay
 
 The mock's stage `LOG` must reuse the same dialogue history model as the
-existing in-frame `DialogueBox` button. One route-owned controller governs
-both launchers:
+existing in-frame `DialogueBox` button. The launchers are mutually exclusive:
+DialogueBox is mounted only during dialogue/testimony, while the stage toolbar
+is rendered only in the interrogation menu. Therefore they reuse one
+self-contained presentation host without route-owned open state:
 
-- `+page.svelte` owns the one open request and its origin/focus behavior. It
-  carries the existing `DialogueHistoryPanel` `bottom` value rather than
-  inventing another geometry system: DialogueBox supplies its existing
-  measured bottom offset and the menu LOG uses the panel's 180px default.
 - A new `DialogueHistoryOverlay.svelte` renders the existing
-  `DialogueHistoryPanel`, claims Escape while mounted, and restores focus on
-  close. Its visual dimmer remains `pointer-events: none` and the panel
-  remains `aria-modal="false"`.
-- `DialogueBox.svelte` becomes a controlled launcher for history. Its normal
-  `L` shortcut stays local to dialogue and retains the current Escape/CLOSE/L
-  fallback to the advance button. Its content and advance target remain inert
-  while history is open, but its LOG button remains operable so a LOG click
-  toggles the panel closed.
-- `InterrogationStage.svelte` launches the same overlay from its toolbar. A
-  menu-origin close restores focus to the stage `LOG` button, which also stays
-  operable to toggle the panel closed.
-- The stage toolbar does not add a new global `L` shortcut during the
-  interrogation menu.
+  `DialogueHistoryPanel`, visual dimmer, and Escape claim. It accepts
+  `history`, the existing panel `bottom` value, and a parent close callback.
+  Its dimmer remains `pointer-events: none` and the panel remains
+  `aria-modal="false"`.
+- `DialogueBox.svelte` retains its existing local `historyOpen`,
+  `openHistory`, `closeHistory({ refocusLog })` behavior, wrapper measurement,
+  `L` shortcut, and focus restoration. It moves only the mounted visual layer
+  and history-specific Escape registration into `DialogueHistoryOverlay`.
+- `InterrogationStage.svelte` owns a separate menu-local open state and
+  mounts the same host with `bottom={180}`. It receives the current dialogue
+  history from the route and restores focus to the stage `LOG` button on
+  close. Its mount condition includes the menu mode, so a mode transition
+  unmounts this host before DialogueBox can mount its own.
+- The stage toolbar does not add a global `L` shortcut during the
+  interrogation menu. DialogueBox retains the existing dialogue-only `L`
+  behavior.
 
-This prevents separate history overlays from diverging in content, Escape
-priority, focus behavior, or accessibility behavior without changing the
-current non-modal LOG contract.
+Both launchers render the same `gameState.value.dialogueHistory` and are never
+mounted together. This avoids a new route controller while preserving the
+current non-modal LOG, Escape, inertness, and focus contracts.
 
 ### Present evidence tray
 
@@ -142,7 +146,7 @@ Only its presentation changes:
 - the target testimony remains in a dedicated record above the choices;
 - choices form a fixed five-column desktop tile grid, with a compact
   responsive fallback below the existing compact breakpoint;
-- a tile contains only its image/seal, short name, and state tag;
+- a tile contains only its image/seal, short name, and acquisition-source tag;
 - pointer hover and keyboard focus populate a separate detail panel with the
   record name, source/type, description, and details;
 - activating a tile immediately calls the existing `onPresent` callback;
@@ -152,25 +156,37 @@ Only its presentation changes:
   region.
 
 `presentableRecords(inventory)` is a small pure interrogation-presentation
-mapper. It produces one display list for evidence and statements, including
-the direct `kind`/`id` payload, short name, tag, description, details, image
-asset id, and provenance labels from `caseRecordProvenancePresentation`.
-The component keeps only transient hover/focus identity. It does not reuse the
-Case File's predecessor-normalization or reexamine/navigation view model, and
-it passes the mapper's unchanged `kind`/`id` values directly to `onPresent`.
+mapper. It produces one display list for evidence and statements with this
+closed display contract:
+
+- `kind` and `id` are the unchanged engine-facing Present payload;
+- `shortName` is an evidence record's `name` or a statement's `speaker`;
+- `typeLabel` is `物證 / EVIDENCE` or `證言 / STATEMENT`;
+- `sourceTag` is the non-empty acquisition-source chain
+  `caseRecordProvenancePresentation(record).source` →
+  `record.acquisitionContext.sceneTitle` → `typeLabel`;
+- `description` is an evidence record's `description` or a statement's
+  `content`;
+- `details` is `string | null`: evidence `details` when non-empty, otherwise
+  `null`; statements always use `null`;
+- `imageAssetId` is `string | null`: evidence preserves its asset id;
+  statements use `null` and render the `言` seal.
+
+The detail panel uses `typeLabel` and `sourceTag` beside the description and
+optional details. The component keeps only transient hover/focus identity. It
+does not reuse the Case File's predecessor-normalization or
+reexamine/navigation view model, and it passes the mapper's unchanged
+`kind`/`id` values directly to `onPresent`.
 
 ## Component and data-flow design
 
 ### `+page.svelte`
 
-Add route-local history-overlay request state in the existing Case File/Game
-Menu request style. It records the launch origin, safe return focus, and the
-existing `DialogueHistoryPanel` bottom value when DialogueBox supplies one.
-The route renders one `DialogueHistoryOverlay` when a request is active and
-passes the current `gameState.value.dialogueHistory` to it. Closing clears the
-request with the source-specific focus behavior above. The route also changes
-the existing Interrogation Case File callback
-to accept a `CaseFileSection` before issuing the unchanged Case File request:
+Do not add route-local history-overlay request state. Pass the existing
+`gameState.value.dialogueHistory` to `InterrogationStage`, which needs it only
+for its menu-local history host. The route also changes the existing
+Interrogation Case File callback to accept a `CaseFileSection` before issuing
+the unchanged Case File request:
 
 ```ts
 function openInterrogationCaseFile(
@@ -186,14 +202,16 @@ command, or persistence contract changes.
 ### `DialogueHistoryOverlay.svelte` (new)
 
 Own only overlay presentation and lifecycle: the non-blocking visual backdrop,
-`DialogueHistoryPanel`, Escape claim, close callback, and safe focus
-restoration. It consumes the route request, preserves `aria-modal="false"`,
-and does not own or mutate dialogue history.
+`DialogueHistoryPanel`, and Escape claim. It accepts an existing parent close
+callback, preserves `aria-modal="false"`, and does not own dialogue history or
+focus-restoration policy.
 
 ### `DialogueBox.svelte`
 
-Replace its private history-panel mounting with controlled history props and
-request callbacks. Preserve all current ordinary-dialogue behavior:
+Replace its private visual history-overlay block and history-specific Escape
+registration with `DialogueHistoryOverlay`, while retaining its existing local
+history state and close/focus behavior. Preserve all current ordinary-dialogue
+behavior:
 
 - the in-frame `LOG` button remains;
 - `L` opens/closes history only while a dialogue surface owns the shortcut;
@@ -208,11 +226,12 @@ request callbacks. Preserve all current ordinary-dialogue behavior:
 
 Add stable controls and callbacks for the three toolbar actions. Render them
 only in the menu state; testimony retains DialogueBox's LOG and Present renders
-only its tray. The stage receives the controlled history state and request
-callback, passes the correct Case File section to the route, and derives the
-padded evidence count and broken-progress meter from its existing `inventory`
-and `progress` values. It remains a presentation container, not an
-interrogation state machine.
+only its tray. The stage receives dialogue history from the route, owns its
+menu-local history state and focus restoration, passes the correct Case File
+section to the route, and derives the padded evidence count and broken-progress
+meter from its existing `inventory` and `progress` values. Its history host is
+rendered only while the menu mode is active. It remains a presentation
+container, not an interrogation state machine.
 
 Use stable hooks:
 
@@ -265,15 +284,15 @@ second hint-specific test hook is needed.
 
 Add or update tests for:
 
-1. `DialogueHistoryOverlay.svelte`: Escape claim, closing behavior, and
-   origin-specific focus restoration while preserving a non-modal,
-   non-blocking overlay.
-2. `DialogueBox.svelte`: controlled history requests, existing `L` behavior,
+1. `DialogueHistoryOverlay.svelte`: its Escape claim, parent-close callback,
+   and non-modal, non-blocking presentation.
+2. `DialogueBox.svelte`: existing local history behavior and `L` shortcut,
    in-frame `LOG` click-to-close, wrapper/advance inertness, and
-   advance-button focus restoration.
+   advance-button focus restoration after moving the host and Escape claim.
 3. `InterrogationStage.svelte`: exactly three distinct toolbar controls,
    menu-only HUD visibility, objective/evidence Case File routing, padded
-   evidence count, and broken-progress meter semantics.
+   evidence count, broken-progress meter semantics, and menu-local history
+   focus restoration/unmount-on-dialogue behavior.
 4. `InterrogationEvidenceTray.svelte`: fixed-grid hook, focus/hover detail
    content, direct Present callback, visible `ESC` using `onResume`, Game
    Menu without resume, focus trap, and disabled behavior.
@@ -281,11 +300,14 @@ Add or update tests for:
    compact rail status/bar contract, hint relocation using the existing focus
    key, and unchanged analysis callbacks/focus reconciliation.
 6. `presentation.test.ts`: `presentableRecords(inventory)` maps evidence and
-   statements once while retaining their exact `kind`/`id` Present payloads.
+   statements once while retaining their exact `kind`/`id` Present payloads,
+   source-tag fallback chain, nullable details, and nullable image asset id.
 7. `InterrogationChrome.test.ts`, `InterrogationStageHarness.svelte`, and
-   `page.test.ts`: update the frozen chrome contract, the Case File callback
-   signature, and the route assertion that objective/evidence sections are
-   selected before their existing Case File request.
+   `page.test.ts`: remove the obsolete stage/tray raw-source cases, update the
+   Case File callback signature, and assert that objective/evidence sections
+   are selected before their existing Case File request.
+8. `select-e2e-suites.test.mjs`: confirm an Analysis component path selects
+   the gameplay chain containing `analysis-beat85`.
 
 ### Packaged E2E contract
 
@@ -302,14 +324,14 @@ desktop assertions for the new hooks and visual structure:
 - Analysis board ordinal, 22px desktop title styling, footer hint, and the
   compact rail status/bar structure.
 
-During stable states, use an exact CSS viewport helper rather than the current
-at-least `ensureCaseFileViewport()` helper for capture. A capture step must
-assert its requested `innerWidth` and `innerHeight` before saving; if the
-native window cannot reach that CSS viewport, fail with the observed dimensions
-instead of uploading a misleading image. Save each PNG with
-`browser.saveScreenshot` to `LYRA_E2E_OUTPUT_DIR`, verify the resulting file
-exists and has non-zero size, and retain the actual CSS viewport in its name.
-Capture:
+Keep the suite's established at-least `ensureCaseFileViewport()` setup. For
+each capture, reuse its DPR/chrome-compensation approach and
+`caseFileViewportNativeSize(dpr, target)` to make a best-effort request for the
+desired CSS viewport. Save each PNG with `browser.saveScreenshot` to
+`LYRA_E2E_OUTPUT_DIR`, verify the resulting file exists and has non-zero size,
+and retain the observed CSS viewport in its name. Write a sidecar JSON beside
+each PNG with the requested viewport, observed viewport, DPR, and whether
+strict capture was requested. Capture:
 
 1. Analysis Classify at 1280x720;
 2. Interrogation menu at 1280x720;
@@ -317,9 +339,15 @@ Capture:
 4. Present tray at 1280x720;
 5. testimony at 1280x800.
 
-Layout assertions remain relative so normal CI stays portable. PR visual
-review requires the exact target-size captures and compares them side-by-side
-with `ui_mock/` using this explicit checklist:
+The semantic checks, PNG-existence checks, and sidecar checks are unconditional.
+Exact viewport equality is required only when
+`LYRA_E2E_REQUIRE_EXACT_CAPTURE_VIEWPORT=1`; that opt-in local PR-review mode
+throws with requested versus observed dimensions if a target is unavailable.
+Ordinary CI keeps the observed capture instead of failing solely because native
+window chrome or DPR prevents an exact size. Layout assertions remain relative
+so normal CI stays portable. PR visual review runs the strict local capture
+mode and compares the target-size images side-by-side with `ui_mock/` using
+this explicit checklist:
 
 1. The interrogation menu has three distinct native controls: `LOG`,
    `案件檔案`, and `證物櫃 NN`; the locker count is the two-digit evidence
@@ -337,17 +365,32 @@ with `ui_mock/` using this explicit checklist:
 
 No screenshot baseline or pixel-diff assertion is added.
 
+### E2E selection contract
+
+Add `apps/game/src/lib/components/analysis/**` to the existing `gameplay`
+selector rule in `apps/game/scripts/select-e2e-suites.mjs`. Its matching test
+must show that an Analysis-only component change selects `smoke`, `gameplay`,
+`production-journey`, and `analysis-beat85`, rather than falling through to
+the `general-ui` smoke-only rule.
+
 ### Implementation order
 
-1. Extract the shared history-overlay host and retain all existing DialogueBox
-   history tests before adding the menu LOG.
-2. Split the menu-only stage HUD and Case File section callback, updating the
-   harness, chrome test, and route test together.
-3. Add the pure Present-record mapper, then reshape the tray without changing
+1. Add the pure Present-record mapper, then reshape the tray without changing
    its direct engine callbacks or top-layer behavior.
-4. Apply the Analysis ordinal, compact rail, title, and hint relocation.
-5. Extend the existing packaged `analysis-beat85` journey with semantic checks
-   and exact-size capture artifacts.
+2. Apply the Analysis ordinal, compact rail, title, and hint relocation; add
+   the Analysis E2E-selector rule and its focused script test in the same
+   reviewable slice.
+3. Add `DialogueHistoryOverlay` for the stage's menu-local LOG and split the
+   menu-only HUD/Case File section callback, updating the harness, route test,
+   and removing the obsolete stage/tray source-string chrome cases together.
+4. Swap DialogueBox's inline history visual block for the same overlay host,
+   retaining its existing local history methods and tests.
+5. Extend the existing packaged `analysis-beat85` journey with semantic checks,
+   best-effort capture artifacts, and optional strict local capture mode.
+
+Each slice is separately reviewable; the tray and Analysis repairs lead because
+they directly close the largest visible mockup gaps without touching dialogue
+or route behavior.
 
 ### Required verification
 
@@ -356,11 +399,20 @@ completion, run:
 
 ```sh
 bun run --cwd apps/game check:e2e
+bun run --cwd apps/game test:e2e:ci-contracts
 node apps/game/scripts/build-e2e.mjs
 node apps/game/scripts/run-save-e2e.mjs --suite analysis-beat85
 bun run check
 bun run test
 bun run lint:all
+```
+
+For the five PR-review screenshots, rerun the focused suite locally with exact
+capture required:
+
+```sh
+LYRA_E2E_REQUIRE_EXACT_CAPTURE_VIEWPORT=1 \
+  node apps/game/scripts/run-save-e2e.mjs --suite analysis-beat85
 ```
 
 The CI/merge gate runs the risk-selected E2E chain, including
@@ -388,6 +440,9 @@ above before calling the work complete.
 - Modify `apps/game/src/lib/interrogation/presentation.test.ts`
 - Modify `apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte`
 - Modify `apps/game/src/lib/components/analysis/AnalysisWorkbench.test.ts`
+- Modify `apps/game/scripts/select-e2e-suites.mjs`
+- Modify `apps/game/scripts/select-e2e-suites.test.mjs`
+- Modify `apps/game/e2e-tauri/helpers.ts`
 - Modify `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 
 No generated resources, Rust files, scene sources, or Case File model files
@@ -397,9 +452,11 @@ change.
 
 | Risk | Mitigation |
 | --- | --- |
-| History refactor changes Escape/focus behavior | Keep current focus cases as explicit component tests and use one shared overlay host. |
+| History extraction changes Escape/focus behavior | Keep DialogueBox's state and focus methods local; test the shared visual host independently. |
 | Case File access closes Present | Reuse the existing Case File request/top-layer path and preserve the tray's top-layer suspension test. |
 | Five compact tiles clip a larger inventory | Keep the list scrollable after additional rows while preserving five columns at the desktop target. |
-| Capture artifact has the wrong viewport or is missing | Assert exact CSS dimensions and non-empty output files before the PR visual review. |
-| Visual drift passes geometry assertions | Add semantic structure assertions, an explicit visual checklist, and target-size screenshot artifacts for required PR review. |
+| Capture artifact has the wrong viewport or is missing | Always assert non-empty PNG/sidecar output; record observed dimensions and enable strict equality only for local PR review. |
+| Analysis visual checks are skipped after an Analysis-only change | Route `components/analysis/**` through the gameplay chain and lock that selection with a script test. |
+| Visual drift passes geometry assertions | Add semantic structure assertions, an explicit visual checklist, and strict target-size screenshot artifacts for PR review. |
+| Raw CSS source assertions block a valid visual repair | Remove the obsolete stage/tray chrome cases and cover their behavior through components plus computed E2E structure/style checks. |
 | Analysis hint becomes inaccessible after header cleanup | Move, rather than remove, the control and keep its existing test coverage. |
