@@ -83,6 +83,14 @@
       (candidate) => candidate.id === analysisMode?.boardId,
     ) ?? null,
   );
+  let boardPosition = $derived(
+    board && analysis
+      ? analysis.visibleBoards.findIndex(
+          (candidate) => candidate.id === board.id,
+        ) + 1
+      : 0,
+  );
+  let boardCount = $derived(analysis?.visibleBoards.length ?? 0);
   let boardFeedback = $derived<AnalysisFeedbackView | null>(
     analysisMode?.feedback ?? board?.feedback ?? null,
   );
@@ -487,8 +495,11 @@
           {@const progress = analysisBoardProgress(candidate)}
           {@const descriptionId = `analysis-board-description-${candidate.id}`}
           <span id={descriptionId} class="sr-only">
-            {boardStateLabel(state, candidate.readOnly)}，進度 {progress.current}
-            / {progress.target}
+            {boardStateLabel(state, candidate.readOnly) +
+              "，進度 " +
+              progress.current +
+              " / " +
+              progress.target}
           </span>
           <button
             type="button"
@@ -509,16 +520,12 @@
                 <span class="board-entry-diamond" aria-hidden="true"></span>
                 <span>{candidate.label}</span>
               </span>
-              <span class="board-entry-state"
+              <span class="sr-only"
                 >{boardStateLabel(state, candidate.readOnly)}</span
               >
-            </span>
-            <span class="board-entry-kind"
-              >{boardKindLabel(candidate.kind)}</span
-            >
-            <span class="board-entry-progress">
-              <span>進度</span>
-              <strong>{progress.current} / {progress.target}</strong>
+              <span class="board-entry-state"
+                >{progress.current} / {progress.target}</span
+              >
             </span>
             <progress
               max={100}
@@ -554,26 +561,24 @@
       {#if board}
         <header class="board-header">
           <div class="board-heading-copy">
+            <p class="board-position" data-analysis-board-position="">
+              Board {boardPosition} / {boardCount}
+            </p>
             <p class="eyebrow">{boardKindLabel(board.kind)}</p>
-            <h2 tabindex="-1" data-analysis-focus-key={`board:${board.id}`}>
+            <h2
+              tabindex="-1"
+              style:font-size={typeof window !== "undefined" &&
+              window.innerWidth >= 721
+                ? "22px"
+                : undefined}
+              data-analysis-focus-key={`board:${board.id}`}
+            >
               {board.label}
             </h2>
             <p class="board-prompt">{board.prompt}</p>
           </div>
 
           <div class="board-header-actions">
-            {#if board.hint !== null}
-              <button
-                type="button"
-                class="hint-toggle"
-                data-analysis-focus-key="hint"
-                disabled={boardReadOnly || disabled}
-                aria-expanded={hintOpen}
-                onclick={toggleHint}
-              >
-                {hintOpen ? "隱藏提示" : "顯示提示"}
-              </button>
-            {/if}
             {#if board.completed}
               <p class="board-status completed" role="status">
                 <span class="board-status-diamond" aria-hidden="true"></span>
@@ -585,10 +590,6 @@
               <p class="board-status locked" role="status">尚未解鎖</p>
             {/if}
           </div>
-
-          {#if hintOpen && board.hint !== null}
-            <p class="board-hint">提示：{board.hint}</p>
-          {/if}
         </header>
 
         <div
@@ -643,6 +644,19 @@
           {/if}
 
           <div class="footer-controls">
+            {#if !boardReadOnly && board.hint !== null}
+              <button
+                type="button"
+                class="hint-toggle"
+                data-analysis-focus-key="hint"
+                {disabled}
+                aria-expanded={hintOpen}
+                onclick={toggleHint}
+              >
+                {hintOpen ? "隱藏提示" : "顯示提示"}
+              </button>
+            {/if}
+
             {#if overallProgress.target > 0 && overallProgress.current >= overallProgress.target}
               <span class="all-confirmed">
                 <span class="all-confirmed-diamond" aria-hidden="true"></span>
@@ -703,6 +717,10 @@
               </button>
             {/if}
           </div>
+
+          {#if hintOpen && board.hint !== null}
+            <p class="board-hint">提示：{board.hint}</p>
+          {/if}
         </footer>
       {:else}
         <p class="feedback" role="status">分析板載入中。</p>
@@ -754,8 +772,6 @@
   .board-heading-copy p,
   .overall-progress-heading,
   .board-entry-heading,
-  .board-entry-kind,
-  .board-entry-progress,
   .board-status,
   .board-hint,
   .feedback {
@@ -895,8 +911,7 @@
     border: 0;
   }
 
-  .board-entry-heading,
-  .board-entry-progress {
+  .board-entry-heading {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
@@ -933,16 +948,11 @@
     box-shadow: 0 0 5px var(--cyan);
   }
 
-  .board-entry-state,
-  .board-entry-kind {
-    color: var(--bone-dim);
-    font-family: var(--impact);
-    font-size: 10px;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-  }
-
   .board-entry-state {
+    color: var(--bone-dim);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: normal;
     white-space: nowrap;
   }
 
@@ -962,17 +972,6 @@
     button[data-analysis-board-state="locked"]
     .board-entry-state {
     color: var(--bone-dim);
-  }
-
-  .board-entry-progress {
-    color: var(--bone-dim);
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.02em;
-  }
-
-  .board-entry-progress strong {
-    font-weight: 400;
   }
 
   progress {
@@ -1110,6 +1109,13 @@
     font-family: var(--display-jp);
     font-size: clamp(1.3rem, 2.4vw, 2rem);
     font-weight: 400;
+    letter-spacing: 0.04em;
+  }
+
+  .board-position {
+    color: var(--bone-dim);
+    font-family: var(--mono);
+    font-size: 11px;
     letter-spacing: 0.04em;
   }
 
@@ -1333,6 +1339,12 @@
       max-height: 16rem;
       border-right: 0;
       border-bottom: 1px solid var(--analysis-rule);
+    }
+  }
+
+  @media (min-width: 721px) {
+    .board-heading-copy h2 {
+      font-size: 22px;
     }
   }
 
