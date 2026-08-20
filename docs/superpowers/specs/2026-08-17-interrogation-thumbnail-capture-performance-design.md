@@ -47,7 +47,7 @@ The performance bug is therefore eager dynamic thumbnail capture on high-frequen
 | Save scheduling | Reuse `notify_committed_without_thumbnail`; do not add a fourth persistence policy. |
 | Mutation/revision ownership | Keep `run_gameplay_mutation` as the single lock/revision/coordinator owner. |
 | Conditional dialogue policy | Add one selector-capable wrapper around that same mutation path. |
-| Source-scene identity | Reuse `QueueToken.scene_id`; successful `advance_dialogue` already validates the full token against the live queue. |
+| Source-scene identity | Use the `(chapter_id, scene_id)` pair from `GameEngine::current_scene_identity` (`apps/game/src-tauri/src/game/mod.rs`); scene IDs are chapter-scoped (see `StoryLocationIndex`), so a reused scene ID across chapters is a different scene. `QueueToken` carries only `scene_id`, so the source chapter ID is read from the engine before the mutation runs. Successful `advance_dialogue` already validates the full token against the live queue. |
 | Interrogation classification | Match `SceneView::Interrogation`, not `ModeView`; testimony itself runs in `ModeView::Dialogue`. |
 | Transient action proof | Add a core only where a behavioral command-boundary test needs it. |
 | Capture exclusion | Reuse `data-save-thumbnail-exclude`, already consumed by the capture pipeline. |
@@ -93,39 +93,54 @@ Do not add another session lock, persistence owner, or general command-policy fr
 
 ### 2. `advance_dialogue` uses source scene identity plus committed scene identity
 
-Choosing only from the committed scene is insufficient because draining the final line of one scene can load the next scene inside the same `advance_dialogue` call.
+Choosing only from the committed scene is insufficient because draining the final line of one scene can load the next scene inside the same `advance_dialogue` call. Comparing only `scene_id` is also insufficient because scene IDs are chapter-scoped (see `StoryLocationIndex` in `apps/game/src-tauri/src/game/mod.rs`): a reused scene ID across a chapter boundary is a different scene, and the entry/exit thumbnail milestone must still fire there.
 
-The incoming `QueueToken` already carries the source `scene_id`. Reuse it:
+`QueueToken` carries only `scene_id` (plus `queue_gen`/`cursor`), not `chapter_id`, so the source chapter ID cannot be read off the token. The engine exposes the full `(chapter_id, scene_id)` identity of the currently loaded scene via `GameEngine::current_scene_identity` (defined in `apps/game/src-tauri/src/game/mod.rs`). Capture that identity from the engine *inside* the mutation closure — before `engine.advance_dialogue` runs and potentially crosses the chapter boundary — and thread it back to the policy selector through a shared cell:
 
 ```rust
 fn dialogue_persistence_policy(
+    source_chapter_id: &str,
     source_scene_id: &str,
     committed: &GameStateView,
 ) -> MutationPersistencePolicy {
     match &committed.scene {
-        SceneView::Interrogation { id, .. } if id == source_scene_id => {
+        SceneView::Interrogation { id, .. }
+            if committed.chapter.id == source_chapter_id && id == source_scene_id =>
+        {
             MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
         }
         _ => MutationPersistencePolicy::AutosaveIfAdvanced,
     }
 }
-```
 
-`advance_dialogue_core` captures only that ID before moving the token into the engine command:
-
-```rust
 fn advance_dialogue_core(
     state: &AppState,
     expected: QueueToken,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let source_scene_id = expected.scene_id.clone();
+    use std::cell::Cell;
+    let source_identity: Cell<Option<(String, String)>> = Cell::new(None);
     run_gameplay_mutation_selecting_policy(
         state,
-        move |committed| dialogue_persistence_policy(&source_scene_id, committed),
-        |engine| engine.advance_dialogue(expected),
+        {
+            let cell = &source_identity;
+            move |committed| {
+                let (chapter_id, scene_id) = cell.take().unwrap_or_default();
+                dialogue_persistence_policy(&chapter_id, &scene_id, committed)
+            }
+        },
+        {
+            let cell = &source_identity;
+            move |engine| {
+                let identity = engine.current_scene_identity();
+                cell.set(Some(identity));
+                engine.advance_dialogue(expected)
+            }
+        },
     )
 }
 ```
+
+The source identity is captured before the mutation advances the queue, so even when `advance_dialogue` exhausts the queue and `advance_scene` loads the next chapter's scene within this same mutation, the policy selector still compares against the original scene's full `(chapter_id, scene_id)`.
 
 Policy matrix:
 
@@ -133,8 +148,8 @@ Policy matrix:
 | --- | --- | --- |
 | ordinary scene | ordinary scene | ordinary autosave + thumbnail |
 | ordinary scene | interrogation scene | ordinary autosave + thumbnail — entry milestone |
-| interrogation scene | same interrogation scene | autosave without thumbnail |
-| interrogation scene | non-interrogation scene | ordinary autosave + thumbnail — exit milestone |
+| interrogation scene | same interrogation scene (same chapter) | autosave without thumbnail |
+| interrogation scene | non-interrogation scene, or a different chapter's scene | ordinary autosave + thumbnail — exit/cross-chapter milestone |
 
 ### 3. Five transient interrogation commands use the existing no-thumbnail policy
 
@@ -207,6 +222,7 @@ Required behavioral assertions:
 2. `advance_dialogue_core` on the existing ordinary fixture still returns a thumbnail request.
 3. `dialogue_persistence_policy` preserves entry and exit milestones.
 4. `challenge_interrogation_line_core` returns no thumbnail while advancing state.
+5. `advance_dialogue_core` crossing a chapter boundary into a scene that reuses the source `scene_id` still requests a thumbnail — proving the source identity comparison is `(chapter_id, scene_id)`, not `scene_id` alone. This test fixture builds two chapters under a `tempfile::tempdir()` guard, writes `chapter_1/scene_1` (linear) and `chapter_2/scene_1` (interrogation) sharing the scene ID, and asserts the boundary transition fires `AutosaveIfAdvanced`.
 
 The existing generic mutation tests already prove that ordinary/no-thumbnail persistence policies issue or omit tickets. Do not duplicate them with a phase-completion test that injects the policy under test.
 
@@ -312,6 +328,7 @@ It cannot pass solely because the probe was absent or because all capture instru
 Production behavior:
 
 - `apps/game/src-tauri/src/lib.rs`
+- `apps/game/src-tauri/src/game/mod.rs` — `GameEngine::current_scene_identity` exposes the `(chapter_id, scene_id)` source identity that `advance_dialogue_core` captures before the mutation runs; `StoryLocationIndex` is the chapter-scoped scene identity contract this fix relies on.
 - `apps/game/src/lib/components/InterrogationEvidenceTray.svelte`
 
 Test/support surface:
@@ -345,7 +362,7 @@ Do not add:
 | Risk | Mitigation |
 | --- | --- |
 | Testimony is `ModeView::Dialogue` and accidentally keeps thumbnails | Classify from `SceneView` and prove it at the command boundary. |
-| Last ordinary dialogue line entering interrogation loses its preview | Compare source `QueueToken.scene_id` with committed interrogation ID; mismatch keeps ordinary capture. |
+| Last ordinary dialogue line entering interrogation loses its preview | Compare the source `(chapter_id, scene_id)` identity (captured from the engine before the mutation) with the committed interrogation identity; mismatch keeps ordinary capture. |
 | Last interrogation line leaving the scene loses its milestone preview | Committed non-interrogation scene selects ordinary capture. |
 | Prefix-sensitive source helper inspects the wrong function | Change `function_body` marker to `fn {name}(` before adding `_core` names. |
 | Source tests falsely pass because one policy name contains the other | Use comma-terminated policy literals and behavioral ticket assertions. |
@@ -355,7 +372,8 @@ Do not add:
 
 ## Acceptance criteria
 
-- Advancing dialogue while the source token and committed state belong to the same interrogation scene returns `thumbnailCapture: null` and still schedules autosave persistence.
+- Advancing dialogue while the source `(chapter_id, scene_id)` identity and committed state belong to the same interrogation scene returns `thumbnailCapture: null` and still schedules autosave persistence.
+- Advancing dialogue across a chapter boundary into a scene that reuses the source `scene_id` retains ordinary thumbnail capture (the comparison is chapter-scoped, not `scene_id` alone).
 - Entering an interrogation via `advance_dialogue` retains ordinary thumbnail capture.
 - Leaving an interrogation via `advance_dialogue` retains ordinary thumbnail capture.
 - Ordinary dialogue outside interrogation retains dynamic thumbnail capture.

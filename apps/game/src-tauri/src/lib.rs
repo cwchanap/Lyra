@@ -4706,15 +4706,9 @@ mod tests {
         #[test]
         fn dialogue_advance_across_chapter_boundary_with_reused_scene_id_requests_thumbnail() {
             use std::fs;
-            use std::sync::atomic::{AtomicU64, Ordering};
 
-            static SEQ: AtomicU64 = AtomicU64::new(0);
-            let n = SEQ.fetch_add(1, Ordering::Relaxed);
-            let d = std::env::temp_dir().join(format!(
-                "lyra-cross-chapter-thumbnail-test-{}-{}",
-                std::process::id(),
-                n
-            ));
+            let guard = tempfile::tempdir().unwrap();
+            let d = guard.path().to_path_buf();
             let chapter_1 = d.join("chapter_1");
             let chapter_2 = d.join("chapter_2");
             fs::create_dir_all(&chapter_1).unwrap();
@@ -4813,7 +4807,8 @@ mod tests {
                 "cross-chapter boundary with a reused scene ID must request a thumbnail"
             );
 
-            let _ = fs::remove_dir_all(d);
+            // `guard` (a `tempfile::TempDir`) cleans up the fixture root on
+            // drop, including during panic unwinding.
         }
 
         /// Fixture: a started engine that has recorded acquisition events
