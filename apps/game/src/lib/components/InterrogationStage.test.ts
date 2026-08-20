@@ -1,20 +1,65 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import InterrogationStageHarness from "$lib/test-harnesses/InterrogationStageHarness.svelte";
 import InterrogationStage from "./InterrogationStage.svelte";
 import type {
+  DialogueHistoryEntry,
   Inventory,
   Mode,
   ObjectiveView,
   PortraitRef,
   SceneView,
 } from "../state/types";
+import { neutralEvidenceRecordView } from "../state/test-fixtures";
 
 type InterrogationSceneView = Extract<SceneView, { kind: "interrogation" }>;
 
 const inventory: Inventory = { evidence: [], statements: [] };
+
+const menuInventory: Inventory = {
+  evidence: [
+    neutralEvidenceRecordView({
+      id: "evidence_1",
+      name: "咖啡收據",
+      description: "收據上的時間被圈起。",
+      details: "",
+      imageAssetId: null,
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "scene_1",
+    }),
+    neutralEvidenceRecordView({
+      id: "evidence_2",
+      name: "錄音筆",
+      description: "錄音筆裡有一段未公開的錄音。",
+      details: "",
+      imageAssetId: null,
+      onReexamine: null,
+      collectedInChapterId: "chapter_1",
+      collectedInSceneId: "scene_1",
+    }),
+  ],
+  statements: [],
+};
+
+const history: DialogueHistoryEntry[] = [
+  {
+    id: 1,
+    kind: "line",
+    speaker: "相馬律",
+    text: "雨聲太乾淨了。",
+    chapterTitle: "雨夜的第一份證詞",
+    sceneTitle: "Opening",
+  },
+];
 
 function scene(
   presenting = false,
@@ -122,14 +167,20 @@ function props(
     ) => void;
     onResume: () => void;
     onOpenGameMenu: (trigger: HTMLElement) => void;
-    onOpenCaseFile: (trigger: HTMLElement) => void;
+    onOpenCaseFile: (
+      section: "objective" | "evidence",
+      trigger: HTMLElement,
+    ) => void;
+    inventory?: Inventory;
+    history?: DialogueHistoryEntry[];
   }> = {},
 ) {
   return {
     active: overrides.active ?? true,
     scene: overrides.scene ?? scene(),
     mode: overrides.mode ?? interrogationMode,
-    inventory,
+    inventory: overrides.inventory ?? inventory,
+    history: overrides.history ?? [],
     disabled: overrides.disabled ?? false,
     onPresent: overrides.onPresent ?? vi.fn(),
     onResume: overrides.onResume ?? vi.fn(),
@@ -139,21 +190,102 @@ function props(
 }
 
 describe("InterrogationStage", () => {
-  it("keeps its child mounted while active stage chrome exposes live subject progress", async () => {
+  it("keeps its child mounted with menu-only controls and live subject progress", async () => {
     const user = userEvent.setup();
     const onOpenCaseFile = vi.fn();
-    render(InterrogationStageHarness, props({ onOpenCaseFile }));
+    render(
+      InterrogationStageHarness,
+      props({
+        onOpenCaseFile,
+        inventory: menuInventory,
+      }),
+    );
 
     expect(screen.getByText("stage child")).toBeInTheDocument();
     expect(screen.getByText("三宅聰太")).toBeInTheDocument();
     expect(screen.getByText("證人")).toBeInTheDocument();
-    expect(screen.getByText("第一階段")).toBeInTheDocument();
-    expect(screen.getByText("1 / 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "LOG" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "案件檔案" }),
+    ).toBeInTheDocument();
+    const locker = screen.getByRole("button", { name: "證物櫃 02" });
+    expect(locker).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /案件檔案/ }));
-    expect(onOpenCaseFile).toHaveBeenCalledExactlyOnceWith(
-      expect.any(HTMLElement),
+    const objective = document.querySelector<HTMLButtonElement>(
+      "[data-interrogation-case-file-objective]",
     );
+    const meter = document.querySelector(
+      "[data-interrogation-broken-progress]",
+    );
+    expect(objective).toBeInTheDocument();
+    expect(meter).toHaveAttribute("role", "progressbar");
+    expect(meter).toHaveAttribute("aria-valuenow", "1");
+    expect(meter).toHaveAttribute("aria-valuemax", "3");
+    expect(meter).toHaveAccessibleName("已突破 1 / 3 題");
+
+    await user.click(objective!);
+    expect(onOpenCaseFile).toHaveBeenCalledExactlyOnceWith(
+      "objective",
+      objective!,
+    );
+  });
+
+  it("dispatches the evidence Case File section from the locker trigger", async () => {
+    const user = userEvent.setup();
+    const onOpenCaseFile = vi.fn();
+    render(
+      InterrogationStageHarness,
+      props({ onOpenCaseFile, inventory: menuInventory }),
+    );
+
+    const locker = screen.getByRole("button", { name: "證物櫃 02" });
+    await user.click(locker);
+
+    expect(onOpenCaseFile).toHaveBeenLastCalledWith("evidence", locker);
+  });
+
+  it("hides menu history and toolbar outside the interrogation menu", async () => {
+    const user = userEvent.setup();
+    const result = render(
+      InterrogationStageHarness,
+      props({ history, inventory: menuInventory }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "LOG" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await result.rerender(props({ mode: ordinaryDialogue, history }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("button", { name: "LOG" })).toBeNull();
+    expect(
+      document.querySelector("[data-interrogation-case-file-objective]"),
+    ).toBeNull();
+
+    await result.rerender(
+      props({ history, inventory: menuInventory, mode: interrogationMode }),
+    );
+    const log = screen.getByRole("button", { name: "LOG" });
+    await user.click(log);
+    const historyDialog = screen.getByRole("dialog");
+    await user.click(
+      within(historyDialog).getByRole("button", { name: "關閉對話紀錄" }),
+    );
+    await waitFor(() => expect(log).toHaveFocus());
+  });
+
+  it("hides the menu-only toolbar while Present is active", () => {
+    render(
+      InterrogationStageHarness,
+      props({ scene: scene(true), inventory: menuInventory }),
+    );
+
+    expect(screen.queryByRole("button", { name: "LOG" })).toBeNull();
+    expect(
+      document.querySelector("[data-interrogation-case-file-objective]"),
+    ).toBeNull();
+    expect(
+      screen.getByRole("dialog", { name: "提出證據" }),
+    ).toBeInTheDocument();
   });
 
   it("removes only its chrome while inactive and leaves the wrapped mode child intact", async () => {
@@ -163,7 +295,7 @@ describe("InterrogationStage", () => {
 
     expect(screen.getByText("stage child")).toBeInTheDocument();
     expect(screen.queryByText("三宅聰太")).toBeNull();
-    expect(screen.queryByRole("button", { name: /案件檔案/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "案件檔案" })).toBeNull();
   });
 
   it("renders the primary objective exactly once inside the active stage", () => {
@@ -334,7 +466,7 @@ describe("InterrogationStage", () => {
     // guard is exercised. userEvent.click would respect the disabled state
     // and never dispatch the click, leaving the guard's return branch
     // uncovered.
-    await fireEvent.click(screen.getByRole("button", { name: /案件檔案/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "案件檔案" }));
     expect(onOpenCaseFile).not.toHaveBeenCalled();
   });
 

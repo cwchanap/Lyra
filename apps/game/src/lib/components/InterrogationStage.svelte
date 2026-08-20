@@ -1,10 +1,13 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import type { Snippet } from "svelte";
   import {
     brokenQuestionProgress,
     currentInterrogationPhase,
   } from "$lib/interrogation/presentation";
+  import type { CaseFileSection } from "$lib/case-file/types";
   import type {
+    DialogueHistoryEntry,
     Inventory,
     Mode,
     ObjectiveView,
@@ -12,6 +15,7 @@
     SceneView,
   } from "../state/types";
   import InterrogationEvidenceTray from "./InterrogationEvidenceTray.svelte";
+  import DialogueHistoryOverlay from "./DialogueHistoryOverlay.svelte";
   import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
   import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
   import SceneBackdrop from "./SceneBackdrop.svelte";
@@ -21,6 +25,7 @@
     scene,
     mode,
     inventory,
+    history,
     onPresent,
     onResume,
     onOpenGameMenu,
@@ -41,7 +46,11 @@
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
     onOpenGameMenu: (trigger: HTMLElement) => void;
-    onOpenCaseFile: (trigger: HTMLElement) => void;
+    onOpenCaseFile: (
+      section: Extract<CaseFileSection, "objective" | "evidence">,
+      trigger: HTMLElement,
+    ) => void;
+    history: DialogueHistoryEntry[];
     activePrimaryObjective?: ObjectiveView | null;
     disabled?: boolean;
     // Forwarded to InterrogationEvidenceTray so its Tab trap suspends while
@@ -52,12 +61,17 @@
 
   let stageRoot: HTMLDivElement | undefined = $state();
   let trayReturnFocus = $state<HTMLElement | null>(null);
+  let stageHistoryOpen = $state(false);
+  let stageLogButton: HTMLButtonElement | undefined = $state();
   let wasPresenting = false;
 
   let phase = $derived(currentInterrogationPhase(scene));
   let progress = $derived(brokenQuestionProgress(phase));
   let crossExam = $derived(phase?.crossExam ?? null);
   let presenting = $derived(active && crossExam?.presenting === true);
+  let menuChromeVisible = $derived(
+    active && mode.type === "interrogation" && !presenting,
+  );
   let activePortrait = $derived<PortraitRef | null>(
     mode.type === "dialogue" &&
       mode.current.kind === "line" &&
@@ -86,6 +100,10 @@
   });
 
   $effect(() => {
+    if (!menuChromeVisible) stageHistoryOpen = false;
+  });
+
+  $effect(() => {
     if (presenting && !wasPresenting) {
       const activeElement = document.activeElement;
       trayReturnFocus =
@@ -94,11 +112,24 @@
     wasPresenting = presenting;
   });
 
-  function openCaseFile(event: MouseEvent) {
+  function openStageHistory(): void {
+    if (!disabled) stageHistoryOpen = true;
+  }
+
+  function closeStageHistory(): void {
+    if (!stageHistoryOpen) return;
+    stageHistoryOpen = false;
+    void tick().then(() => stageLogButton?.focus());
+  }
+
+  function openCaseFile(
+    section: Extract<CaseFileSection, "objective" | "evidence">,
+    event: MouseEvent,
+  ): void {
     if (disabled) return;
     const trigger = event.currentTarget;
     if (trigger instanceof HTMLElement) {
-      onOpenCaseFile(trigger);
+      onOpenCaseFile(section, trigger);
     }
   }
 </script>
@@ -128,27 +159,70 @@
             <p class="eyebrow">INTERROGATION / 訊問中</p>
             <h2>{phase.subject.name}</h2>
             <p class="role">{phase.subject.role}</p>
-            <div class="phase-record" aria-label="訊問進度">
-              <p>{phase.label}</p>
-              <strong>{progress.broken} / {progress.total}</strong>
-              <span>突破題目</span>
+            <div class="subject-meter">
+              <p>動搖 · COMPOSURE</p>
+              <div
+                data-interrogation-broken-progress=""
+                role="progressbar"
+                aria-label={"已突破 " +
+                  progress.broken +
+                  " / " +
+                  progress.total +
+                  " 題"}
+                aria-valuenow={progress.broken}
+                aria-valuemin="0"
+                aria-valuemax={progress.total}
+              >
+                <span
+                  style={"--progress: " +
+                    (progress.total === 0
+                      ? 0
+                      : progress.broken / progress.total)}
+                ></span>
+              </div>
             </div>
           </div>
         {/if}
       </div>
 
-      {#if phase}
-        <button
-          class="case-file-hud"
-          type="button"
-          {disabled}
-          onclick={openCaseFile}
-        >
-          <span class="case-file-ghost">案件檔案</span>
-          <span class="case-file-accent">CASE FILE</span>
-        </button>
+      {#if menuChromeVisible}
+        <div class="interrogation-menu-toolbar" aria-label="訊問工具">
+          <button
+            bind:this={stageLogButton}
+            data-interrogation-stage-log=""
+            type="button"
+            {disabled}
+            onclick={openStageHistory}
+          >
+            LOG
+          </button>
+          <button
+            data-interrogation-case-file-objective=""
+            type="button"
+            {disabled}
+            onclick={(event) => openCaseFile("objective", event)}
+          >
+            案件檔案
+          </button>
+          <button
+            data-interrogation-evidence-locker=""
+            type="button"
+            {disabled}
+            onclick={(event) => openCaseFile("evidence", event)}
+          >
+            證物櫃 {String(inventory.evidence.length).padStart(2, "0")}
+          </button>
+        </div>
       {/if}
     </section>
+
+    {#if menuChromeVisible && stageHistoryOpen}
+      <DialogueHistoryOverlay
+        {history}
+        bottom={180}
+        onClose={closeStageHistory}
+      />
+    {/if}
   {/if}
 
   {@render children()}
@@ -193,7 +267,7 @@
 
   .stage-left-stack,
   .subject-record,
-  .phase-record {
+  .subject-meter {
     min-width: 0;
   }
 
@@ -253,15 +327,12 @@
   .eyebrow,
   .subject-record h2,
   .subject-record .role,
-  .phase-record p,
-  .phase-record strong,
-  .phase-record span {
+  .subject-meter p {
     margin: 0;
   }
 
   .eyebrow,
-  .phase-record span,
-  .case-file-accent {
+  .subject-meter p {
     font-family: var(--impact);
     font-size: 10px;
     letter-spacing: 0.22em;
@@ -290,95 +361,83 @@
     letter-spacing: 0.1em;
   }
 
-  .phase-record {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    column-gap: 8px;
-    align-items: baseline;
+  .subject-meter {
     margin-top: 12px;
     padding-top: 10px;
     border-top: 1px solid rgba(236, 228, 207, 0.14);
     text-align: left;
   }
 
-  .phase-record p {
-    grid-column: 1 / -1;
-    color: var(--bone-dim);
-    font-family: var(--serif-jp);
-    font-size: 12px;
-  }
-
-  .phase-record strong {
-    color: var(--cyan);
-    font-family: var(--impact);
-    font-size: 20px;
-    font-weight: 500;
-    letter-spacing: 0.08em;
-  }
-
-  .phase-record span {
+  .subject-meter p {
     color: var(--bone-faint);
+    font-size: 10px;
+    letter-spacing: 0.18em;
   }
 
-  .case-file-hud {
+  .subject-meter [role="progressbar"] {
+    position: relative;
+    height: 6px;
+    margin-top: 8px;
+    overflow: hidden;
+    border: 1px solid rgba(236, 228, 207, 0.24);
+    background: rgba(8, 8, 14, 0.6);
+  }
+
+  .subject-meter [role="progressbar"] span {
+    display: block;
+    width: calc(var(--progress, 0) * 100%);
+    height: 100%;
+    background: linear-gradient(90deg, var(--crimson-deep), var(--crimson));
+    transition: width 0.2s ease;
+  }
+
+  .interrogation-menu-toolbar {
     position: absolute;
     top: 24px;
     right: 26px;
     z-index: 1;
-    display: inline-flex;
-    align-items: stretch;
-    gap: 4px;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--bone);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    max-width: min(560px, calc(100% - 52px));
+    pointer-events: auto;
+  }
+
+  .interrogation-menu-toolbar button {
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid var(--rule-strong);
+    background: rgba(8, 8, 14, 0.78);
+    color: var(--bone-dim);
     cursor: pointer;
     font: inherit;
-    text-align: left;
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    letter-spacing: 0.06em;
     pointer-events: auto;
     transition:
       border-color 0.18s ease,
+      color 0.18s ease,
       background 0.18s ease;
   }
 
-  .case-file-ghost,
-  .case-file-accent {
-    display: inline-flex;
-    align-items: center;
-    min-height: 38px;
-    padding: 8px 12px;
-    box-sizing: border-box;
+  .interrogation-menu-toolbar button:first-child {
+    color: var(--crimson);
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.22em;
   }
 
-  .case-file-ghost {
-    border: 1px solid var(--rule-strong);
-    background: transparent;
-    color: var(--bone-dim);
-    font-family: var(--serif-jp);
-    font-size: 13px;
-  }
-
-  .case-file-accent {
-    border: 1px solid var(--crimson);
+  .interrogation-menu-toolbar button:hover:not(:disabled),
+  .interrogation-menu-toolbar button:focus-visible {
+    border-color: var(--crimson);
     background: var(--crimson-soft);
     color: var(--bone);
-    clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
-  }
-
-  .case-file-hud:hover:not(:disabled) .case-file-ghost,
-  .case-file-hud:focus-visible .case-file-ghost {
-    border-color: var(--crimson);
-    color: var(--bone);
-  }
-
-  .case-file-hud:hover:not(:disabled) .case-file-accent,
-  .case-file-hud:focus-visible .case-file-accent {
-    background: rgba(174, 28, 49, 0.34);
     outline: none;
   }
 
-  .case-file-hud:disabled {
+  .interrogation-menu-toolbar button:disabled {
     cursor: wait;
     opacity: 0.55;
   }
@@ -395,16 +454,16 @@
       padding: 10px 14px 12px;
     }
 
-    .case-file-hud {
+    .interrogation-menu-toolbar {
       top: 18px;
       right: 20px;
-      min-width: 0;
-      padding: 8px 10px;
+      max-width: calc(100% - 40px);
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .case-file-hud {
+    .interrogation-menu-toolbar button,
+    .subject-meter [role="progressbar"] span {
       transition: none;
     }
   }

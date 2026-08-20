@@ -25,6 +25,7 @@ import type {
   SaveBrowserOpenResultView,
   SaveSlotStatusView,
 } from "$lib/persistence/types";
+import { neutralEvidenceRecordView } from "$lib/state/test-fixtures";
 import {
   advanceDialogue,
   gameState,
@@ -256,6 +257,36 @@ function interrogationDialogueState(): GameStateView {
     backgroundAssetId: "background.interrogation_room",
     bgm: null,
     bgs: null,
+  };
+  return state;
+}
+
+function interrogationMenuState(): GameStateView {
+  const state = interrogationPresentationState();
+  state.inventory = {
+    evidence: [
+      neutralEvidenceRecordView({
+        id: "evidence_1",
+        name: "咖啡收據",
+        description: "收據上的時間被圈起。",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "interrogation_1",
+      }),
+      neutralEvidenceRecordView({
+        id: "evidence_2",
+        name: "錄音筆",
+        description: "錄音筆裡有一段未公開的錄音。",
+        details: "",
+        imageAssetId: null,
+        onReexamine: null,
+        collectedInChapterId: "chapter_1",
+        collectedInSceneId: "interrogation_1",
+      }),
+    ],
+    statements: [],
   };
   return state;
 }
@@ -3097,6 +3128,29 @@ describe("+page Case File menu integration", () => {
     await user.click(screen.getByRole("button", { name: /案件檔案/ }));
     expect(
       await screen.findByRole("tab", { name: /目標/, selected: true }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the requested Case File section from each interrogation menu launcher", async () => {
+    const user = userEvent.setup();
+    gameState.value = interrogationMenuState();
+
+    render(Page);
+
+    await user.click(screen.getByRole("button", { name: "案件檔案" }));
+    expect(
+      await screen.findByRole("tab", { name: /目標/, selected: true }),
+    ).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    });
+
+    await user.click(screen.getByRole("button", { name: "證物櫃 02" }));
+    expect(
+      await screen.findByRole("tab", { name: /證物/, selected: true }),
     ).toBeInTheDocument();
   });
 });
