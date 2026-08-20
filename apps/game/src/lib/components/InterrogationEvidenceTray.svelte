@@ -5,7 +5,11 @@
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
-  import { interrogationLineText } from "$lib/interrogation/presentation";
+  import {
+    interrogationLineText,
+    presentableRecords,
+    type PresentableRecord,
+  } from "$lib/interrogation/presentation";
   import { claimEscape } from "$lib/state/escape-coordinator";
   import type { CrossExamView, Inventory } from "../state/types";
 
@@ -43,6 +47,11 @@
 
   let tray: HTMLDivElement | undefined = $state();
   let evidenceImages = $state<Record<string, ResolvedStoryAsset | null>>({});
+  let records = $derived(presentableRecords(inventory));
+  let activeRecordId = $state<string | null>(null);
+  let activeRecord = $derived(
+    records.find((record) => record.id === activeRecordId) ?? null,
+  );
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
@@ -51,19 +60,19 @@
     let cancelled = false;
     evidenceImages = {};
 
-    for (const evidence of inventory.evidence) {
-      const assetId = evidence.imageAssetId;
-      if (!assetId) continue;
+    for (const record of records) {
+      if (record.kind !== "evidence" || !record.imageAssetId) continue;
+      const assetId = record.imageAssetId;
 
       resolveStoryAsset(assetId, "evidence")
         .then((asset) => {
           if (!cancelled && asset) {
-            evidenceImages[evidence.id] = asset;
+            evidenceImages[record.id] = asset;
           }
         })
         .catch(() => {
           if (!cancelled) {
-            evidenceImages[evidence.id] = placeholderForMissingStoryAsset(
+            evidenceImages[record.id] = placeholderForMissingStoryAsset(
               assetId,
               "evidence",
             );
@@ -75,6 +84,14 @@
       cancelled = true;
     };
   });
+
+  function showRecordDetail(record: PresentableRecord): void {
+    activeRecordId = record.id;
+  }
+
+  function clearRecordDetail(record: PresentableRecord): void {
+    if (activeRecordId === record.id) activeRecordId = null;
+  }
 
   function present(kind: "evidence" | "statement", itemId: string) {
     if (disabled) return;
@@ -183,6 +200,15 @@
       <p class="progress">
         證詞 {crossExam.lineIndex + 1} / {crossExam.lineTotal}
       </p>
+      <button
+        type="button"
+        class="tray-escape"
+        data-interrogation-tray-escape=""
+        {disabled}
+        onclick={resume}
+      >
+        ESC
+      </button>
     </header>
 
     <blockquote id="interrogation-evidence-line" class="line-record">
@@ -192,50 +218,63 @@
       >
     </blockquote>
 
-    <section aria-label="可提出的紀錄" class="record-list">
-      {#each inventory.evidence as item (item.id)}
+    <section
+      class="record-grid"
+      data-interrogation-evidence-grid=""
+      aria-label="可提出的紀錄"
+    >
+      {#each records as record (record.kind + ":" + record.id)}
         <button
-          class="record-card evidence-card"
+          class:statement-card={record.kind === "statement"}
+          class:evidence-card={record.kind === "evidence"}
+          class="record-tile"
           type="button"
           {disabled}
-          onclick={() => present("evidence", item.id)}
+          onmouseenter={() => showRecordDetail(record)}
+          onmouseleave={() => clearRecordDetail(record)}
+          onfocus={() => showRecordDetail(record)}
+          onblur={() => clearRecordDetail(record)}
+          onclick={() => present(record.kind, record.id)}
         >
           <span class="record-visual" aria-hidden="true">
-            {#if evidenceImages[item.id]}
+            {#if record.kind === "evidence" && evidenceImages[record.id]}
               <img
-                src={evidenceImages[item.id]?.url}
+                src={evidenceImages[record.id]?.url}
                 alt=""
-                onerror={() => handleEvidenceImageError(item.id)}
+                onerror={() => handleEvidenceImageError(record.id)}
               />
-            {:else}
+            {:else if record.kind === "evidence"}
               <span class="record-seal">證</span>
+            {:else}
+              <span class="record-seal statement-seal">言</span>
             {/if}
           </span>
           <span class="record-copy">
-            <span class="record-kind">物證 / EVIDENCE</span>
-            <strong>{item.name}</strong>
-            <span>{item.description}</span>
-            <small>{item.details}</small>
+            <strong>{record.shortName}</strong>
+            <span class="record-source">{record.sourceTag}</span>
           </span>
         </button>
       {/each}
+    </section>
 
-      {#each inventory.statements as item (item.id)}
-        <button
-          class="record-card statement-card"
-          type="button"
-          {disabled}
-          onclick={() => present("statement", item.id)}
-        >
-          <span class="record-visual statement-seal" aria-hidden="true">言</span
-          >
-          <span class="record-copy">
-            <span class="record-kind">證言 / STATEMENT</span>
-            <strong>{item.speaker}</strong>
-            <span>{item.content}</span>
-          </span>
-        </button>
-      {/each}
+    <section
+      class="record-detail"
+      data-interrogation-evidence-detail=""
+      aria-live="polite"
+      aria-label="紀錄詳情"
+    >
+      {#if activeRecord}
+        <div class="record-detail-copy">
+          <p class="record-detail-meta">
+            {activeRecord.typeLabel} · {activeRecord.sourceTag}
+          </p>
+          <h3>{activeRecord.shortName}</h3>
+          <p>{activeRecord.description}</p>
+          {#if activeRecord.details}<p>{activeRecord.details}</p>{/if}
+        </div>
+      {:else}
+        <p>將游標移至紀錄，或以 Tab 選取以查看詳情。</p>
+      {/if}
     </section>
 
     <footer>
@@ -280,7 +319,7 @@
   .interrogation-evidence-tray {
     box-sizing: border-box;
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
     gap: 18px;
     width: min(900px, calc(100vw - 48px));
     max-height: min(760px, calc(100dvh - 48px));
@@ -330,7 +369,6 @@
   }
 
   .eyebrow,
-  .record-kind,
   .progress {
     font-family: var(--impact);
     font-size: 10px;
@@ -355,6 +393,27 @@
   .progress {
     color: var(--cyan);
     text-align: right;
+  }
+
+  .tray-escape {
+    flex: 0 0 auto;
+    min-width: 62px;
+    min-height: 32px;
+    padding: 7px 12px 6px;
+    border: 1px solid rgba(236, 228, 207, 0.2);
+    background: transparent;
+    color: var(--bone-dim);
+    cursor: pointer;
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+  }
+
+  .tray-escape:hover:not(:disabled),
+  .tray-escape:focus-visible {
+    border-color: var(--crimson);
+    color: var(--bone);
+    outline: none;
   }
 
   .line-record {
@@ -383,19 +442,20 @@
     line-height: 1.8;
   }
 
-  .record-list {
+  .record-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 12px;
     min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
   }
 
-  .record-card {
-    display: grid;
-    grid-template-columns: 52px minmax(0, 1fr);
-    gap: 12px;
+  .record-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
     width: 100%;
     padding: 13px;
     border: 1px solid var(--rule-strong);
@@ -410,15 +470,16 @@
       background 0.16s ease;
   }
 
-  .record-card:hover:not(:disabled),
-  .record-card:focus-visible {
+  .record-tile:hover:not(:disabled),
+  .record-tile:focus-visible {
     transform: translateY(-2px);
     border-color: var(--crimson);
     background: var(--crimson-soft);
     outline: none;
   }
 
-  .record-card:disabled,
+  .record-tile:disabled,
+  .tray-escape:disabled,
   .game-menu:disabled,
   .withdraw:disabled {
     cursor: wait;
@@ -428,8 +489,8 @@
   .record-visual {
     display: grid;
     place-items: center;
-    width: 52px;
-    height: 52px;
+    width: 100%;
+    height: 106px;
     overflow: hidden;
     border: 1px solid rgba(236, 228, 207, 0.18);
     background: rgba(0, 0, 0, 0.22);
@@ -463,19 +524,57 @@
     color: var(--bone-dim);
   }
 
-  .record-kind {
-    color: var(--bone-faint);
-  }
-
   .record-copy strong {
     color: var(--bone);
     font-size: 16px;
     font-weight: 500;
   }
 
-  .record-copy small {
+  .record-source {
     color: var(--bone-faint);
     font-size: 12px;
+  }
+
+  .record-detail {
+    box-sizing: border-box;
+    min-height: 96px;
+    padding: 14px 18px;
+    overflow-y: auto;
+    border: 1px solid rgba(236, 228, 207, 0.16);
+    border-left: 2px solid rgba(236, 228, 207, 0.16);
+    background: rgba(9, 9, 15, 0.72);
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .record-detail > p,
+  .record-detail-copy p,
+  .record-detail-copy h3 {
+    margin: 0;
+  }
+
+  .record-detail-copy {
+    display: grid;
+    gap: 6px;
+  }
+
+  .record-detail-meta {
+    color: var(--bone-faint);
+    font-family: var(--impact);
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+  }
+
+  .record-detail-copy h3 {
+    color: var(--bone);
+    font-family: var(--display-jp);
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    line-height: 1.4;
   }
 
   footer {
@@ -545,8 +644,8 @@
       padding: 20px;
     }
 
-    .record-list {
-      grid-template-columns: 1fr;
+    .record-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     footer {
@@ -565,7 +664,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .record-card {
+    .record-tile {
       transition: none;
     }
   }
