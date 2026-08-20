@@ -359,15 +359,54 @@ describe("InvestigationSceneSurface", () => {
     });
   });
 
+  it("keeps baked characters interactive without rendering a character image", async () => {
+    const user = userEvent.setup();
+    const bakedSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          layout: {
+            kind: "baked",
+            x: 0.34,
+            y: 0.2,
+            w: 0.24,
+            h: 0.68,
+          },
+        },
+      ],
+    } satisfies SublocationView;
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation: bakedSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const characterButton = screen.getByRole("button", {
+      name: /詢問：目擊者/,
+    });
+    expect(characterButton.style.getPropertyValue("--x")).toBe("34%");
+    expect(characterButton.style.getPropertyValue("--y")).toBe("20%");
+    expect(characterButton.style.getPropertyValue("--w")).toBe("24%");
+    expect(characterButton.style.getPropertyValue("--h")).toBe("68%");
+    expect(container.querySelector(".character-target img")).toBeNull();
+
+    await user.click(characterButton);
+
+    expect(characterButton).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("button", { name: /不在場證明/ }),
+    ).toBeInTheDocument();
+  });
+
   it("loads alpha crop variables for scene standees", () => {
     const source = surfaceSource();
     expect(source).toContain("loadCharacterCrop");
     expect(source).toContain("cropVariablesForAlphaBounds");
     expect(source).toContain("character-preview-crop");
     expect(source).toContain("portraitAssetId");
-    expect(source).toContain(
-      "imageStyle={cropStyleForAsset(portraitAssetId(character))}",
-    );
+    expect(source).toContain("portraitAssetId(character.id, character.layout)");
   });
 
   it("only highlights placed hotspots on navigation and shows checked state separately", () => {

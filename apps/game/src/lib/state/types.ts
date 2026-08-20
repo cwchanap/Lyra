@@ -90,15 +90,23 @@ export type HotspotLayout = {
   h: number;
 };
 
-export type CharacterLayout = {
-  kind: "sprite";
-  assetId: string;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  anchor: "bottomCenter";
-};
+export type CharacterLayout =
+  | {
+      kind: "sprite";
+      assetId: string;
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      anchor: "bottomCenter";
+    }
+  | {
+      kind: "baked";
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+    };
 
 export type HotspotView = {
   id: string;
