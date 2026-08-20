@@ -565,14 +565,7 @@
               Board {boardPosition} / {boardCount}
             </p>
             <p class="eyebrow">{boardKindLabel(board.kind)}</p>
-            <h2
-              tabindex="-1"
-              style:font-size={typeof window !== "undefined" &&
-              window.innerWidth >= 721
-                ? "22px"
-                : undefined}
-              data-analysis-focus-key={`board:${board.id}`}
-            >
+            <h2 tabindex="-1" data-analysis-focus-key={`board:${board.id}`}>
               {board.label}
             </h2>
             <p class="board-prompt">{board.prompt}</p>
@@ -644,12 +637,12 @@
           {/if}
 
           <div class="footer-controls">
-            {#if !boardReadOnly && board.hint !== null}
+            {#if board.hint !== null}
               <button
                 type="button"
                 class="hint-toggle"
                 data-analysis-focus-key="hint"
-                {disabled}
+                disabled={boardReadOnly || disabled}
                 aria-expanded={hintOpen}
                 onclick={toggleHint}
               >
@@ -1107,7 +1100,7 @@
 
   .board-heading-copy h2 {
     font-family: var(--display-jp);
-    font-size: clamp(1.3rem, 2.4vw, 2rem);
+    font-size: 22px;
     font-weight: 400;
     letter-spacing: 0.04em;
   }
@@ -1339,6 +1332,10 @@
       max-height: 16rem;
       border-right: 0;
       border-bottom: 1px solid var(--analysis-rule);
+    }
+
+    .board-heading-copy h2 {
+      font-size: clamp(1.3rem, 2.4vw, 2rem);
     }
   }
 

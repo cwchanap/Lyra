@@ -224,9 +224,15 @@ describe("AnalysisWorkbench", () => {
     expect(
       document.querySelector("[data-analysis-board-position]"),
     ).toHaveTextContent("Board 2 / 3");
-    expect(
-      getComputedStyle(screen.getByRole("heading", { level: 2 })).fontSize,
-    ).toBe("22px");
+    // jsdom does not apply component @media rules to getComputedStyle; assert
+    // the desktop rule directly so the responsive CSS remains the authority.
+    const source = readFileSync(
+      import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
+      "utf8",
+    );
+    expect(source).toMatch(
+      /@media \(min-width: 721px\)[\s\S]*?\.board-heading-copy h2[\s\S]*?font-size: 22px;/,
+    );
     expect(
       document.querySelector(
         ".analysis-workbench .workbench-footer [data-analysis-focus-key='hint']",
@@ -372,6 +378,32 @@ describe("AnalysisWorkbench", () => {
       : null;
     expect(description).toHaveTextContent("只讀");
     expect(description).not.toHaveTextContent("可進入");
+  });
+
+  it("keeps a read-only board hint control in the footer and disabled", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) =>
+            candidate.id === "local_event_sequence"
+              ? {
+                  ...candidate,
+                  readOnly: true,
+                  hint: "先固定本機事件的先後。",
+                }
+              : candidate,
+        ),
+      }),
+      mode: analysisModeWith({ boardId: "local_event_sequence" }),
+    });
+    renderWorkbench(state);
+
+    const hintButton = screen.getByRole("button", { name: "顯示提示" });
+    expect(hintButton).toBeDisabled();
+    expect(hintButton.closest(".workbench-footer")).not.toBeNull();
+    expect(
+      document.querySelector(".board-header [data-analysis-focus-key='hint']"),
+    ).toBeNull();
   });
 
   it("keeps non-completed read-only boards visibly distinct from completed boards", () => {
