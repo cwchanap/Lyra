@@ -1665,11 +1665,14 @@ fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError>
 }
 
 fn dialogue_persistence_policy(
+    source_chapter_id: &str,
     source_scene_id: &str,
     committed: &GameStateView,
 ) -> MutationPersistencePolicy {
     match &committed.scene {
-        SceneView::Interrogation { id, .. } if id == source_scene_id => {
+        SceneView::Interrogation { id, .. }
+            if committed.chapter.id == source_chapter_id && id == source_scene_id =>
+        {
             MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
         }
         _ => MutationPersistencePolicy::AutosaveIfAdvanced,
@@ -1680,11 +1683,33 @@ fn advance_dialogue_core(
     state: &AppState,
     expected: QueueToken,
 ) -> Result<GameplayCommandResultView, GameError> {
-    let source_scene_id = expected.scene_id.clone();
+    // Scene IDs are chapter-scoped (see `StoryLocationIndex`), so the
+    // "same interrogation" check must compare the full (chapter_id, scene_id)
+    // identity. `advance_dialogue` can exhaust a queue and call
+    // `advance_scene`, which may move into the next chapter within this same
+    // mutation; if the next scene reuses the source `scene_id`, comparing only
+    // the scene ID would wrongly suppress the entry/exit thumbnail milestone.
+    // The source identity is captured from the engine before the mutation runs
+    // and threaded to the policy selector via a shared cell.
+    use std::cell::Cell;
+    let source_identity: Cell<Option<(String, String)>> = Cell::new(None);
     run_gameplay_mutation_selecting_policy(
         state,
-        move |committed| dialogue_persistence_policy(&source_scene_id, committed),
-        |engine| engine.advance_dialogue(expected),
+        {
+            let cell = &source_identity;
+            move |committed| {
+                let (chapter_id, scene_id) = cell.take().unwrap_or_default();
+                dialogue_persistence_policy(&chapter_id, &scene_id, committed)
+            }
+        },
+        {
+            let cell = &source_identity;
+            move |engine| {
+                let identity = engine.current_scene_identity();
+                cell.set(Some(identity));
+                engine.advance_dialogue(expected)
+            }
+        },
     )
 }
 
@@ -2424,6 +2449,7 @@ mod tests {
         use crate::game::test_support::{
             analysis_fixture_resources, empty_engine_with_interrogation_scene,
             empty_engine_with_scene, investigation_scene_with_intro, two_line_question_scene,
+            write_empty_story_catalog_and_content_manifest,
         };
         use crate::game::view::ModeView;
         use std::cell::Cell;
@@ -4639,13 +4665,24 @@ mod tests {
                 .view()
                 .unwrap();
 
+            // Same chapter + same scene: suppress the thumbnail (still inside
+            // the same interrogation's dialogue progress).
             assert!(matches!(
-                dialogue_persistence_policy(&interrogation_id, &interrogation),
+                dialogue_persistence_policy("chapter_1", &interrogation_id, &interrogation),
                 MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
             ));
 
+            // Same chapter + different scene: ordinary thumbnail milestone.
             assert!(matches!(
-                dialogue_persistence_policy("previous_scene", &interrogation),
+                dialogue_persistence_policy("chapter_1", "previous_scene", &interrogation),
+                MutationPersistencePolicy::AutosaveIfAdvanced
+            ));
+
+            // Different chapter + same scene ID: scene IDs are chapter-scoped
+            // (see `StoryLocationIndex`), so a reused ID across chapters is a
+            // different scene. The entry/exit thumbnail must still fire.
+            assert!(matches!(
+                dialogue_persistence_policy("chapter_2", &interrogation_id, &interrogation),
                 MutationPersistencePolicy::AutosaveIfAdvanced
             ));
 
@@ -4661,9 +4698,122 @@ mod tests {
                 .unwrap();
 
             assert!(matches!(
-                dialogue_persistence_policy(&interrogation_id, &ordinary),
+                dialogue_persistence_policy("chapter_1", &interrogation_id, &ordinary),
                 MutationPersistencePolicy::AutosaveIfAdvanced
             ));
+        }
+
+        #[test]
+        fn dialogue_advance_across_chapter_boundary_with_reused_scene_id_requests_thumbnail() {
+            use std::fs;
+            use std::sync::atomic::{AtomicU64, Ordering};
+
+            static SEQ: AtomicU64 = AtomicU64::new(0);
+            let n = SEQ.fetch_add(1, Ordering::Relaxed);
+            let d = std::env::temp_dir().join(format!(
+                "lyra-cross-chapter-thumbnail-test-{}-{}",
+                std::process::id(),
+                n
+            ));
+            let chapter_1 = d.join("chapter_1");
+            let chapter_2 = d.join("chapter_2");
+            fs::create_dir_all(&chapter_1).unwrap();
+            fs::create_dir_all(&chapter_2).unwrap();
+            write_empty_story_catalog_and_content_manifest(&d);
+            fs::write(
+                d.join("chapters.json"),
+                r#"{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "title": "Chapter One",
+      "summary": "First",
+      "scenes": [
+        {"type":"linear","file":"chapter_1/scene_1.json"}
+      ]
+    },
+    {
+      "id": "chapter_2",
+      "title": "Chapter Two",
+      "summary": "Second",
+      "scenes": [
+        {"type":"interrogation","file":"chapter_2/scene_1.json"}
+      ]
+    }
+  ]
+}"#,
+            )
+            .unwrap();
+            // chapter_1/scene_1: linear scene with one dialogue line. Advancing
+            // past it exhausts the queue and advance_scene crosses into
+            // chapter_2 within the same advance_dialogue mutation.
+            fs::write(
+                chapter_1.join("scene_1.json"),
+                r#"{
+  "type": "linear",
+  "id": "scene_1",
+  "title": "Opening",
+  "summary": "Fixture scene summary.",
+  "queue": [{"kind":"line","speaker":"A","text":"line"}]
+}"#,
+            )
+            .unwrap();
+            // chapter_2/scene_1: interrogation scene that intentionally reuses
+            // the same scene_id. A non-empty intro keeps the engine in the
+            // interrogation scene after advance_scene loads it, so the
+            // committed view is an Interrogation with id "scene_1" in
+            // chapter_2 — exactly the cross-chapter duplicate-ID boundary.
+            fs::write(
+                chapter_2.join("scene_1.json"),
+                r#"{
+  "type": "interrogation",
+  "id": "scene_1",
+  "title": "Interrogation",
+  "summary": "Fixture scene summary.",
+  "intro": [{"kind":"line","speaker":"narrator","text":"intro"}],
+  "phases": [{
+    "kind": "inquiry",
+    "id": "phase_1",
+    "label": "證言",
+    "subject": {"id":"witness","name":"Witness","role":"Witness","bio":"Quiet."},
+    "required": true,
+    "status": "unlocked",
+    "unlock": null,
+    "reveals": [],
+    "sceneTag": "room",
+    "entryDialogue": [],
+    "complete": "auto",
+    "questions": []
+  }],
+  "evidenceManifest": [],
+  "statementManifest": [],
+  "outro": {"unlock":"auto","dialogue":[]}
+}"#,
+            )
+            .unwrap();
+
+            let engine = GameEngine::new_started(d.clone()).unwrap();
+            let app = mutation_app_with_engine(engine);
+            let expected = live_queue_token(&app);
+
+            let result = advance_dialogue_core(&app, expected).unwrap();
+
+            // The boundary transition moved from chapter_1/scene_1 (linear)
+            // into chapter_2/scene_1 (interrogation). Although the scene IDs
+            // match, the chapter changed, so this is a real scene boundary —
+            // the entry/exit thumbnail milestone must fire
+            // (AutosaveIfAdvanced, not the suppressed variant).
+            assert_eq!(result.state.chapter.id, "chapter_2");
+            assert!(matches!(
+                result.state.scene,
+                SceneView::Interrogation { .. }
+            ));
+            assert!(
+                result.thumbnail_capture.is_some(),
+                "cross-chapter boundary with a reused scene ID must request a thumbnail"
+            );
+
+            let _ = fs::remove_dir_all(d);
         }
 
         /// Fixture: a started engine that has recorded acquisition events
