@@ -7,6 +7,7 @@ import {
 } from "$lib/state/escape-coordinator";
 import type { CrossExamView, Inventory } from "../state/types";
 import {
+  neutralCaseRecordProvenance,
   neutralEvidenceRecordView,
   neutralStatementRecordView,
 } from "../state/test-fixtures";
@@ -27,24 +28,28 @@ const crossExam: CrossExamView = {
   presenting: true,
 };
 
+const coffeeReceipt = neutralEvidenceRecordView({
+  id: "receipt",
+  name: "咖啡收據",
+  description: "十七點四十二分的消費紀錄。",
+  details: "付款末四碼 0192。",
+  imageAssetId: null,
+  onReexamine: null,
+  collectedInChapterId: "chapter_1",
+  collectedInSceneId: "scene_1",
+});
+coffeeReceipt.provenance = {
+  ...neutralCaseRecordProvenance(),
+  sourceLabel: "店內收銀匯出",
+};
+
 const inventory: Inventory = {
-  evidence: [
-    neutralEvidenceRecordView({
-      id: "coffee-order",
-      name: "咖啡訂單",
-      description: "訂單時間與證詞不符。",
-      details: "最終列印時間為 21:17。",
-      imageAssetId: null,
-      onReexamine: null,
-      collectedInChapterId: "chapter_1",
-      collectedInSceneId: "scene_1",
-    }),
-  ],
+  evidence: [coffeeReceipt],
   statements: [
     neutralStatementRecordView({
-      id: "clerk-statement",
-      speaker: "店員的證言",
-      content: "她在雨勢轉大前離開。",
+      id: "witness",
+      speaker: "目擊者",
+      content: "我看見她走進巷子。",
       onReexamine: null,
       acquiredInChapterId: "chapter_1",
       acquiredInSceneId: "scene_1",
@@ -95,6 +100,55 @@ describe("InterrogationEvidenceTray", () => {
     expect(scrim).toHaveAttribute("data-save-thumbnail-exclude", "");
   });
 
+  it("renders tile choices with a transient hover and focus detail panel", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    const grid = container.querySelector("[data-interrogation-evidence-grid]");
+    expect(grid).not.toBeNull();
+
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+    expect(detail).not.toBeNull();
+    expect(detail).toHaveTextContent(
+      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+    );
+
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+    expect(evidenceTile).toHaveTextContent("咖啡收據");
+    expect(evidenceTile).toHaveTextContent("店內收銀匯出");
+    expect(evidenceTile).not.toHaveTextContent("十七點四十二分的消費紀錄。");
+    expect(evidenceTile).not.toHaveTextContent("付款末四碼 0192。");
+
+    await user.hover(evidenceTile);
+    expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+    expect(detail).toHaveTextContent("付款末四碼 0192。");
+
+    evidenceTile.focus();
+    expect(detail).toHaveTextContent("物證 / EVIDENCE");
+    expect(detail).toHaveTextContent("店內收銀匯出");
+  });
+
+  it("presents the mapped kind and id immediately and exposes the tray Escape button", async () => {
+    const user = userEvent.setup();
+    const onPresent = vi.fn();
+    const onResume = vi.fn();
+    render(InterrogationEvidenceTray, props({ onPresent, onResume }));
+
+    await user.click(
+      screen.getByRole("button", { name: /咖啡收據.*店內收銀匯出/ }),
+    );
+    expect(onPresent).toHaveBeenCalledWith("line_1", "evidence", "receipt");
+
+    const escape = screen.getByRole("button", { name: "ESC" });
+    expect(escape).toHaveAttribute("data-interrogation-tray-escape");
+    await user.click(escape);
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
   it("submits the selected evidence and statement against the live testimony line", async () => {
     const user = userEvent.setup();
     const onPresent = vi.fn();
@@ -109,23 +163,24 @@ describe("InterrogationEvidenceTray", () => {
     expect(screen.getByRole("dialog", { name: "提出證據" })).toHaveTextContent(
       "她移開視線。我沒去。",
     );
-    expect(screen.getByText("訂單時間與證詞不符。")).toBeInTheDocument();
-    expect(screen.getByText("最終列印時間為 21:17。")).toBeInTheDocument();
+    expect(
+      container.querySelector("[data-interrogation-evidence-detail]"),
+    ).toHaveTextContent("將游標移至紀錄，或以 Tab 選取以查看詳情。");
 
-    await user.click(screen.getByRole("button", { name: /咖啡訂單/ }));
-    await user.click(screen.getByRole("button", { name: /店員的證言/ }));
+    await user.click(screen.getByRole("button", { name: /咖啡收據/ }));
+    await user.click(screen.getByRole("button", { name: /目擊者/ }));
 
     expect(onPresent).toHaveBeenNthCalledWith(
       1,
       "line_1",
       "evidence",
-      "coffee-order",
+      "receipt",
     );
     expect(onPresent).toHaveBeenNthCalledWith(
       2,
       "line_1",
       "statement",
-      "clerk-statement",
+      "witness",
     );
   });
 
@@ -161,12 +216,15 @@ describe("InterrogationEvidenceTray", () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
-    const statement = screen.getByRole("button", { name: /店員的證言/ });
+    const escape = screen.getByRole("button", { name: "ESC" });
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+    const statement = screen.getByRole("button", { name: /目擊者/ });
     const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
     const withdraw = screen.getByRole("button", { name: "收回" });
 
-    await waitFor(() => expect(evidence).toHaveFocus());
+    await waitFor(() => expect(escape).toHaveFocus());
+    await user.tab();
+    expect(evidence).toHaveFocus();
     await user.tab();
     expect(statement).toHaveFocus();
     await user.tab();
@@ -174,7 +232,7 @@ describe("InterrogationEvidenceTray", () => {
     await user.tab();
     expect(withdraw).toHaveFocus();
     await user.tab();
-    expect(evidence).toHaveFocus();
+    expect(escape).toHaveFocus();
   });
 
   it("returns focus to a connected trigger when the tray unmounts", async () => {
@@ -221,14 +279,17 @@ describe("InterrogationEvidenceTray", () => {
       props({ disabled: true, onPresent, onResume, onOpenGameMenu }),
     );
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+    const escape = screen.getByRole("button", { name: "ESC" });
     const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
     const withdraw = screen.getByRole("button", { name: "收回" });
     expect(evidence).toBeDisabled();
+    expect(escape).toBeDisabled();
     expect(gameMenu).toBeDisabled();
     expect(withdraw).toBeDisabled();
 
     await user.click(evidence);
+    await user.click(escape);
     await user.click(gameMenu);
     await user.click(withdraw);
     expect(closeTopmostEscapeClaim()).toBe(true);
@@ -418,10 +479,10 @@ describe("InterrogationEvidenceTray", () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const escape = screen.getByRole("button", { name: "ESC" });
     const withdraw = screen.getByRole("button", { name: "收回" });
 
-    await waitFor(() => expect(evidence).toHaveFocus());
+    await waitFor(() => expect(escape).toHaveFocus());
     await user.tab({ shift: true });
     expect(withdraw).toHaveFocus();
   });
@@ -429,7 +490,7 @@ describe("InterrogationEvidenceTray", () => {
   it("focuses the first or last control when Tab arrives from outside the tray", async () => {
     render(InterrogationEvidenceTray, props());
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
+    const escape = screen.getByRole("button", { name: "ESC" });
     const withdraw = screen.getByRole("button", { name: "收回" });
 
     // Focus is on <body>, outside the tray's controls (activeIndex < 0).
@@ -439,7 +500,7 @@ describe("InterrogationEvidenceTray", () => {
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
     );
-    await waitFor(() => expect(evidence).toHaveFocus());
+    await waitFor(() => expect(escape).toHaveFocus());
 
     // Shift+Tab from outside wraps to the last control.
     document.body.focus();
@@ -470,14 +531,14 @@ describe("InterrogationEvidenceTray", () => {
   it("ignores non-Tab keys in the focus trap handler", async () => {
     render(InterrogationEvidenceTray, props());
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
-    await waitFor(() => expect(evidence).toHaveFocus());
+    const escape = screen.getByRole("button", { name: "ESC" });
+    await waitFor(() => expect(escape).toHaveFocus());
 
     // A non-Tab key must not be intercepted by the Tab trap handler.
     const event = new KeyboardEvent("keydown", { key: "Enter", bubbles: true });
     const dispatched = window.dispatchEvent(event);
     expect(dispatched).toBe(true);
-    expect(evidence).toHaveFocus();
+    expect(escape).toHaveFocus();
   });
 
   it("suspends the Tab trap while an upper layer is open", async () => {
@@ -487,8 +548,8 @@ describe("InterrogationEvidenceTray", () => {
     // rather than being swallowed by preventDefault + stopImmediatePropagation.
     const { rerender } = render(InterrogationEvidenceTray, props());
 
-    const evidence = screen.getByRole("button", { name: /咖啡訂單/ });
-    await waitFor(() => expect(evidence).toHaveFocus());
+    const escape = screen.getByRole("button", { name: "ESC" });
+    await waitFor(() => expect(escape).toHaveFocus());
 
     // While suspended, Tab is not cancelled and focus is not moved by the
     // trap.
@@ -500,7 +561,7 @@ describe("InterrogationEvidenceTray", () => {
     });
     expect(window.dispatchEvent(suspendedEvent)).toBe(true);
     expect(suspendedEvent.defaultPrevented).toBe(false);
-    expect(evidence).toHaveFocus();
+    expect(escape).toHaveFocus();
 
     // Once the upper layer closes, the trap resumes: Tab is cancelled
     // (preventDefault) so the browser's native Tab navigation is overridden
