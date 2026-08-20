@@ -1249,8 +1249,11 @@
     gameMenuOpen = false;
   }
 
-  function openInterrogationCaseFile(trigger: HTMLElement) {
-    caseFileSection = "evidence";
+  function openInterrogationCaseFile(
+    section: Extract<CaseFileSection, "objective" | "evidence">,
+    trigger: HTMLElement,
+  ): void {
+    caseFileSection = section;
     caseFileRequestId += 1;
     caseFileRequest = {
       id: caseFileRequestId,
@@ -1342,6 +1345,7 @@
           scene={gameState.value.scene}
           mode={gameState.value.mode}
           inventory={gameState.value.inventory}
+          history={gameState.value.dialogueHistory}
           onPresent={presentInterrogationEvidence}
           onResume={resumeInterrogationTestimony}
           onOpenGameMenu={openInterrogationGameMenu}

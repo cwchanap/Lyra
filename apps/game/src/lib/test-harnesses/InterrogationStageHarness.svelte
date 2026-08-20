@@ -1,12 +1,19 @@
 <script lang="ts">
   import InterrogationStage from "$lib/components/InterrogationStage.svelte";
-  import type { Inventory, Mode, SceneView } from "$lib/state/types";
+  import type { CaseFileSection } from "$lib/case-file/types";
+  import type {
+    DialogueHistoryEntry,
+    Inventory,
+    Mode,
+    SceneView,
+  } from "$lib/state/types";
 
   let {
     active,
     scene,
     mode,
     inventory,
+    history = [],
     disabled = false,
     topLayerOpen = false,
     onPresent,
@@ -18,6 +25,7 @@
     scene: SceneView;
     mode: Mode;
     inventory: Inventory;
+    history?: DialogueHistoryEntry[];
     disabled?: boolean;
     // Forwarded to InterrogationEvidenceTray so its Tab trap suspends while
     // an upper layer (Game Menu / Save Browser / acquisition popup) is open.
@@ -29,7 +37,10 @@
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
     onOpenGameMenu: (trigger: HTMLElement) => void;
-    onOpenCaseFile: (trigger: HTMLElement) => void;
+    onOpenCaseFile: (
+      section: Extract<CaseFileSection, "objective" | "evidence">,
+      trigger: HTMLElement,
+    ) => void;
   } = $props();
 </script>
 
@@ -38,6 +49,7 @@
   {scene}
   {mode}
   {inventory}
+  {history}
   {disabled}
   {topLayerOpen}
   {onPresent}

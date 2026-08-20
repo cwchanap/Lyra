@@ -52,9 +52,6 @@ describe("Interrogation handoff chrome", () => {
     expect(stage).toContain("backdrop-filter: blur(6px)");
     expect(stage).toContain("border-left: 3px solid var(--crimson)");
     expect(stage).toContain("background: linear-gradient(var(--crimson)");
-    expect(stage).toContain(".case-file-hud");
-    expect(stage).toContain("top: 24px");
-    expect(stage).toContain("right: 26px");
   });
 
   it("skins the evidence tray and target line", () => {
