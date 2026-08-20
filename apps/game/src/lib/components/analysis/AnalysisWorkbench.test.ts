@@ -202,6 +202,73 @@ describe("AnalysisWorkbench", () => {
     );
   });
 
+  it("uses authored board order for the header position and keeps the hint in the footer", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) => {
+            if (candidate.id === "evidence_packages") {
+              return { ...candidate, available: false };
+            }
+            if (candidate.id === "local_event_sequence") {
+              return { ...candidate, hint: "先固定本機事件的先後。" };
+            }
+            return candidate;
+          },
+        ),
+      }),
+      mode: analysisModeWith({ boardId: "local_event_sequence" }),
+    });
+    renderWorkbench(state);
+
+    expect(
+      document.querySelector("[data-analysis-board-position]"),
+    ).toHaveTextContent("Board 2 / 3");
+    expect(
+      getComputedStyle(screen.getByRole("heading", { level: 2 })).fontSize,
+    ).toBe("22px");
+    expect(
+      document.querySelector(
+        ".analysis-workbench .workbench-footer [data-analysis-focus-key='hint']",
+      ),
+    ).not.toBeNull();
+  });
+
+  it("keeps rail entries compact while exposing state and progress accessibly", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (candidate) => {
+            if (candidate.id === "evidence_packages") {
+              return { ...candidate, available: false };
+            }
+            if (candidate.id === "local_event_sequence") {
+              return {
+                ...candidate,
+                label: "時間順序",
+                cards: candidate.cards.slice(0, 3),
+                draft: { kind: "order", cardIds: ["event_1841"] },
+              };
+            }
+            return candidate;
+          },
+        ),
+      }),
+      mode: analysisModeWith({ boardId: "local_event_sequence" }),
+    });
+    renderWorkbench(state);
+
+    const entry = screen.getByRole("button", { name: "時間順序" });
+    expect(entry).toHaveTextContent("1 / 3");
+    expect(entry.querySelector("progress")).not.toBeNull();
+    expect(entry.querySelector(".board-entry-kind")).toBeNull();
+    expect(entry.querySelector(".board-entry-progress")).toBeNull();
+    expect(
+      document.getElementById(entry.getAttribute("aria-describedby") ?? "")
+        ?.textContent,
+    ).toMatch(/目前.*進度 1 \/ 3/);
+  });
+
   it("exposes each rail entry state and progress through an accessible description", () => {
     const state = analysisState({
       scene: analysisSceneWith({

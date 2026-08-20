@@ -119,6 +119,17 @@ test("routes every Interrogation component surface through gameplay coverage", (
   }
 });
 
+test("routes Analysis component changes through the gameplay chain", () => {
+  assert.deepEqual(
+    selectE2eSuites({
+      changedPaths: [
+        "apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte",
+      ],
+    }).suiteIds,
+    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+  );
+});
+
 test("routes persistence changes through every save lifecycle suite", () => {
   assert.deepEqual(
     selectE2eSuites({
