@@ -1109,6 +1109,22 @@ describe("enrichScenesWithAssets", () => {
                   sourceFile: "chapter_1/investigation_scene_1.md",
                   line: 5,
                 },
+                {
+                  id: "baked_hayasaka",
+                  name: "早坂茜",
+                  role: "助手",
+                  bio: "背景內建角色。",
+                  topics: [],
+                  layout: {
+                    kind: "baked",
+                    x: 0.32,
+                    y: 0.18,
+                    w: 0.2,
+                    h: 0.7,
+                  },
+                  sourceFile: "chapter_1/investigation_scene_1.md",
+                  line: 6,
+                },
               ],
             },
           ],
@@ -1134,10 +1150,19 @@ describe("enrichScenesWithAssets", () => {
       type: "standee",
       assetId: "standee.hayasaka_akane.standard",
     });
+    expect(ast.assetRefs.filter((ref) => ref.type === "standee")).toEqual([
+      {
+        type: "standee",
+        assetId: "standee.hayasaka_akane.standard",
+      },
+    ]);
 
     // Standee entry in manifest
     const manifestIds = result.manifest.entries.map((e) => e.assetId);
     expect(manifestIds).toContain("standee.hayasaka_akane.standard");
+    expect(
+      result.manifest.entries.filter((entry) => entry.type === "standee"),
+    ).toHaveLength(1);
 
     // Standee manifest entry has correct metadata
     const standeeEntry = result.manifest.entries.find(
