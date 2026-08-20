@@ -1,12 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  CharacterLayout,
   InvestigationLayoutSidecar,
   InvestigationSceneJson,
   RectLayout,
   SceneIndex,
-  SpriteLayout,
 } from "./layout-types";
-import { clampRectLayout, clampSpriteLayout } from "./layout-geometry";
+import { clampCharacterLayout, clampRectLayout } from "./layout-geometry";
 
 type ProjectFile = {
   path: string;
@@ -147,7 +147,7 @@ export function setHotspotLayout(
 export function setCharacterLayout(
   sublocationId: string,
   characterId: string,
-  layout: SpriteLayout,
+  layout: CharacterLayout,
 ) {
   if (!editorState.layout) return;
 
@@ -164,7 +164,7 @@ export function setCharacterLayout(
         ...sublocation,
         characters: {
           ...sublocation.characters,
-          [characterId]: clampSpriteLayout(layout),
+          [characterId]: clampCharacterLayout(layout),
         },
       },
     },
