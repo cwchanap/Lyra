@@ -35,13 +35,11 @@
       },
       "characters": {
         "hayasaka": {
-          "kind": "sprite",
-          "assetId": "standee.hayasaka_akane.standard",
-          "x": 0,
-          "y": 0.045,
-          "w": 0.31,
-          "h": 0.94,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.145,
+          "y": 0.044,
+          "w": 0.105,
+          "h": 0.45
         }
       }
     }

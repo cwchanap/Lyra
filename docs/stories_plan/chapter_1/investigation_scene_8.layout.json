@@ -14,13 +14,11 @@
       },
       "characters": {
         "kurose": {
-          "kind": "sprite",
-          "assetId": "standee.kurose_toru.standard",
-          "x": 0.549837,
-          "y": 0.189762,
-          "w": 0.18,
-          "h": 0.76,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.472,
+          "y": 0.068,
+          "w": 0.195,
+          "h": 0.919
         }
       }
     },
@@ -50,13 +48,11 @@
       },
       "characters": {
         "takase": {
-          "kind": "sprite",
-          "assetId": "standee.takase_manager.standard",
-          "x": 0.643898,
-          "y": 0.238529,
-          "w": 0.18,
-          "h": 0.76,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.32,
+          "y": 0.121,
+          "w": 0.09,
+          "h": 0.43
         }
       }
     }

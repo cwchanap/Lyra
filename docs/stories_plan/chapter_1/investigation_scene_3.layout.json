@@ -63,22 +63,18 @@
       },
       "characters": {
         "katase": {
-          "kind": "sprite",
-          "assetId": "standee.katase.standard",
-          "x": 0,
-          "y": 0.22247399999999995,
-          "w": 0.191187,
-          "h": 0.777526,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.1,
+          "y": 0.283,
+          "w": 0.095,
+          "h": 0.38
         },
         "takase": {
-          "kind": "sprite",
-          "assetId": "standee.takase_manager.standard",
-          "x": 0.364574,
-          "y": 0.24,
-          "w": 0.18,
-          "h": 0.76,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.7,
+          "y": 0.191,
+          "w": 0.11,
+          "h": 0.215
         }
       }
     },

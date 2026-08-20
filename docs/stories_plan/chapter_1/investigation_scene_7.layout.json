@@ -49,13 +49,11 @@
       },
       "characters": {
         "kurose": {
-          "kind": "sprite",
-          "assetId": "standee.kurose_toru.standard",
-          "x": 0.629625,
-          "y": 0.214711,
-          "w": 0.18,
-          "h": 0.76,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.62,
+          "y": 0.139,
+          "w": 0.145,
+          "h": 0.48
         }
       }
     },
@@ -99,13 +97,11 @@
       },
       "characters": {
         "kurose_back_door": {
-          "kind": "sprite",
-          "assetId": "standee.kurose_toru.standard",
-          "x": 0.122052,
-          "y": 0.197082,
-          "w": 0.18,
-          "h": 0.76,
-          "anchor": "bottomCenter"
+          "kind": "baked",
+          "x": 0.17,
+          "y": 0.029,
+          "w": 0.165,
+          "h": 0.52
         }
       }
     }
