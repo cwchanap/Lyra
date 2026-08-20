@@ -1,4 +1,4 @@
-import type { RectLayout, SpriteLayout } from "./layout-types";
+import type { CharacterLayout, RectLayout, SpriteLayout } from "./layout-types";
 
 export type ResizeHandle = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
 
@@ -12,7 +12,7 @@ export {
 
 export const MIN_LAYOUT_SIZE = 0.025;
 
-export function resizeLayoutFromHandle<T extends RectLayout | SpriteLayout>(
+export function resizeLayoutFromHandle<T extends RectLayout | CharacterLayout>(
   layout: T,
   handle: ResizeHandle,
   dx: number,
@@ -59,7 +59,7 @@ export function resizeLayoutFromHandle<T extends RectLayout | SpriteLayout>(
   };
 }
 
-export function moveLayout<T extends RectLayout | SpriteLayout>(
+export function moveLayout<T extends RectLayout | CharacterLayout>(
   layout: T,
   dx: number,
   dy: number,
@@ -114,4 +114,16 @@ export function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
     ...clampLayoutBox(layout),
     anchor: layout.anchor,
   };
+}
+
+export function clampCharacterLayout(layout: CharacterLayout): CharacterLayout {
+  const box = clampLayoutBox(layout);
+  return layout.kind === "sprite"
+    ? {
+        kind: "sprite",
+        assetId: layout.assetId,
+        ...box,
+        anchor: layout.anchor,
+      }
+    : { kind: "baked", ...box };
 }

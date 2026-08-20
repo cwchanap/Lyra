@@ -909,6 +909,81 @@ describe("EditorCanvas", () => {
     );
   });
 
+  it("edits a baked character region without rendering a sprite preview", async () => {
+    const onCharacterLayoutChange = vi.fn();
+    const bakedLayout = {
+      version: 1,
+      sceneId: "investigation_scene_1",
+      sublocations: {
+        office: {
+          hotspots: {},
+          characters: {
+            witness: {
+              kind: "baked",
+              x: 0.42,
+              y: 0.18,
+              w: 0.2,
+              h: 0.7,
+            },
+          },
+        },
+      },
+    } satisfies InvestigationLayoutSidecar;
+
+    const { container } = render(EditorCanvas, {
+      scene,
+      layout: bakedLayout,
+      sublocationId: "office",
+      onHotspotLayoutChange: vi.fn(),
+      onCharacterLayoutChange,
+    });
+
+    expect(screen.getByText("背景內建角色")).toBeInTheDocument();
+    expect(container.querySelector(".character-preview-crop img")).toBeNull();
+
+    const plate = container.querySelector(".plate") as HTMLElement;
+    const character = container.querySelector(
+      ".target.character",
+    ) as HTMLElement;
+    vi.spyOn(plate, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 1000,
+      width: 1000,
+      height: 1000,
+      toJSON: () => {},
+    } as DOMRect);
+
+    await fireEvent.pointerDown(character, {
+      pointerId: 1,
+      clientX: 200,
+      clientY: 200,
+    });
+    await fireEvent.pointerMove(plate, {
+      pointerId: 1,
+      clientX: 250,
+      clientY: 230,
+    });
+    await fireEvent.pointerUp(plate, {
+      pointerId: 1,
+      clientX: 250,
+      clientY: 230,
+    });
+
+    const [, , changedLayout] = onCharacterLayoutChange.mock.calls.at(-1)!;
+    expect(changedLayout).toMatchObject({
+      kind: "baked",
+      x: 0.47,
+      y: 0.21,
+      w: 0.2,
+      h: 0.7,
+    });
+    expect(changedLayout).not.toHaveProperty("assetId");
+  });
+
   it("resolves evidence sprite layout to evidence asset path", () => {
     const evidenceSpriteScene = {
       ...scene,

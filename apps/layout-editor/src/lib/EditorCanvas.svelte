@@ -1,5 +1,6 @@
 <script lang="ts">
   import type {
+    CharacterLayout,
     DialogueItem,
     EvidenceSource,
     InvestigationLayoutSidecar,
@@ -32,7 +33,7 @@
     startX: number;
     startY: number;
     moved: boolean;
-    startLayout: RectLayout | SpriteLayout;
+    startLayout: RectLayout | CharacterLayout;
   };
   type RevealedTarget = {
     kind: TargetKind;
@@ -90,7 +91,7 @@
     onCharacterLayoutChange: (
       sublocationId: string,
       characterId: string,
-      layout: SpriteLayout,
+      layout: CharacterLayout,
     ) => void;
   } = $props();
 
@@ -162,7 +163,7 @@
     kind: TargetKind,
     id: string,
     mode: DragMode,
-    targetLayout: RectLayout | SpriteLayout,
+    targetLayout: RectLayout | CharacterLayout,
     event: PointerEvent,
   ) {
     if (event.button === 2) return;
@@ -290,7 +291,7 @@
   function commitLayout(
     kind: TargetKind,
     id: string,
-    targetLayout: RectLayout | SpriteLayout,
+    targetLayout: RectLayout | CharacterLayout,
   ) {
     if (kind === "hotspot") {
       onHotspotLayoutChange(sublocationId, id, {
@@ -303,12 +304,12 @@
       return;
     }
 
-    const spriteLayout =
-      targetLayout.kind === "sprite"
-        ? targetLayout
-        : defaultCharacterLayout(characterById(id));
+    const characterLayout =
+      targetLayout.kind === "rect"
+        ? defaultCharacterLayout(characterById(id))
+        : targetLayout;
     onCharacterLayoutChange(sublocationId, id, {
-      ...spriteLayout,
+      ...characterLayout,
       x: targetLayout.x,
       y: targetLayout.y,
       w: targetLayout.w,
@@ -316,7 +317,7 @@
     });
   }
 
-  function layoutStyle(targetLayout: RectLayout | SpriteLayout): string {
+  function layoutStyle(targetLayout: RectLayout | CharacterLayout): string {
     return [
       `left: ${toPercent(targetLayout.x)}`,
       `top: ${toPercent(targetLayout.y)}`,
@@ -387,11 +388,22 @@
     return "portrait";
   }
 
-  function normalizeCharacterLayout(layout: SpriteLayout): SpriteLayout {
+  function normalizeCharacterLayout(layout: CharacterLayout): CharacterLayout {
+    if (layout.kind === "baked") return layout;
     return {
       ...layout,
       assetId: portraitAssetIdToStandee(layout.assetId),
     };
+  }
+
+  function loadCharacterCropForLayout(layout: CharacterLayout, event: Event) {
+    if (layout.kind !== "sprite") return;
+    loadCharacterCrop(layout.assetId, event);
+  }
+
+  function handleAssetErrorForLayout(layout: CharacterLayout) {
+    if (layout.kind !== "sprite") return;
+    handleAssetError(layout.assetId, characterAssetType(layout.assetId));
   }
 
   function standeeAssetIdForCharacter(character: SceneCharacter): string {
@@ -857,27 +869,30 @@
               event,
             )}
         >
-          <div
-            class="character-preview-crop pointer-events-none absolute inset-0 z-0 overflow-hidden"
-            style={cropStyleForAsset(character.layout.assetId)}
-          >
-            <img
-              class={characterPreviewClass(character.layout.assetId)}
-              src={assetUrl(
-                character.layout.assetId,
-                characterAssetType(character.layout.assetId),
-              )}
-              alt=""
-              aria-hidden="true"
-              onload={(event) =>
-                loadCharacterCrop(character.layout.assetId, event)}
-              onerror={() =>
-                handleAssetError(
+          {#if character.layout.kind === "sprite"}
+            <div
+              class="character-preview-crop pointer-events-none absolute inset-0 z-0 overflow-hidden"
+              style={cropStyleForAsset(character.layout.assetId)}
+            >
+              <img
+                class={characterPreviewClass(character.layout.assetId)}
+                src={assetUrl(
                   character.layout.assetId,
                   characterAssetType(character.layout.assetId),
                 )}
-            />
-          </div>
+                alt=""
+                aria-hidden="true"
+                onload={(event) =>
+                  loadCharacterCropForLayout(character.layout, event)}
+                onerror={() => handleAssetErrorForLayout(character.layout)}
+              />
+            </div>
+          {:else}
+            <span
+              class="pointer-events-none absolute inset-0 grid place-items-center border border-dashed border-[#7d5e9f] bg-[#7d5e9f]/10 text-[0.68rem] font-bold text-[#563a76]"
+              >背景內建角色</span
+            >
+          {/if}
           <span class={targetLabelClass("character", character.id)}
             >{character.name}</span
           >

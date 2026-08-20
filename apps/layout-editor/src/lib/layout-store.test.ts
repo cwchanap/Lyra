@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import type { RectLayout, SpriteLayout } from "./layout-types";
+import type { CharacterLayout, RectLayout, SpriteLayout } from "./layout-types";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -159,6 +159,36 @@ describe("layout-store", () => {
       expect(stored).toEqual(layout);
     });
 
+    it("stores a baked character layout without sprite fields", () => {
+      editorState.layout = {
+        version: 1,
+        sceneId: "scene_1",
+        sublocations: {
+          office: { hotspots: {}, characters: {} },
+        },
+      };
+
+      const layout = {
+        kind: "baked",
+        x: 0.42,
+        y: 0.18,
+        w: 0.2,
+        h: 0.7,
+      } satisfies CharacterLayout;
+
+      setCharacterLayout("office", "witness", layout);
+
+      expect(
+        editorState.layout?.sublocations.office.characters.witness,
+      ).toStrictEqual(layout);
+      expect(
+        editorState.layout?.sublocations.office.characters.witness,
+      ).not.toHaveProperty("assetId");
+      expect(
+        editorState.layout?.sublocations.office.characters.witness,
+      ).not.toHaveProperty("anchor");
+    });
+
     it("clamps out-of-range values when setting a character layout", () => {
       editorState.layout = {
         version: 1,
@@ -182,12 +212,14 @@ describe("layout-store", () => {
 
       const stored = editorState.layout?.sublocations.office.characters.witness;
       expect(stored).not.toBeNull();
-      expect(stored!.anchor).toBe("bottomCenter");
-      expect(stored!.x).toBeGreaterThanOrEqual(0);
-      expect(stored!.y).toBeGreaterThanOrEqual(0);
-      expect(stored!.w).toBeGreaterThanOrEqual(0.025);
-      expect(stored!.x + stored!.w).toBeLessThanOrEqual(1);
-      expect(stored!.y + stored!.h).toBeLessThanOrEqual(1);
+      expect(stored?.kind).toBe("sprite");
+      if (stored?.kind !== "sprite") throw new Error("Expected sprite layout");
+      expect(stored.anchor).toBe("bottomCenter");
+      expect(stored.x).toBeGreaterThanOrEqual(0);
+      expect(stored.y).toBeGreaterThanOrEqual(0);
+      expect(stored.w).toBeGreaterThanOrEqual(0.025);
+      expect(stored.x + stored.w).toBeLessThanOrEqual(1);
+      expect(stored.y + stored.h).toBeLessThanOrEqual(1);
     });
 
     it("preserves existing hotspots when setting a character", () => {

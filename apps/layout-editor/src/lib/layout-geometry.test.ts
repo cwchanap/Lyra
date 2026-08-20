@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  clampCharacterLayout,
   clampLayoutBox,
   clampRectLayout,
   clampSpriteLayout,
   MIN_LAYOUT_SIZE,
   resizeLayoutFromHandle,
 } from "./layout-geometry";
-import type { SpriteLayout } from "./layout-types";
+import type { CharacterLayout, SpriteLayout } from "./layout-types";
 
 const sprite = {
   kind: "sprite",
@@ -118,6 +119,26 @@ describe("layout geometry", () => {
       expect(result.anchor).toBe("bottomCenter");
       expect(result.w).toBe(MIN_LAYOUT_SIZE);
       expect(result.h).toBe(MIN_LAYOUT_SIZE);
+    });
+  });
+
+  describe("clampCharacterLayout", () => {
+    it("preserves a baked layout without adding sprite fields", () => {
+      const baked = {
+        kind: "baked",
+        x: 0.8,
+        y: 0.75,
+        w: 0.4,
+        h: 0.5,
+      } satisfies CharacterLayout;
+
+      expect(clampCharacterLayout(baked)).toStrictEqual({
+        kind: "baked",
+        x: 0.6,
+        y: 0.5,
+        w: 0.4,
+        h: 0.5,
+      });
     });
   });
 });

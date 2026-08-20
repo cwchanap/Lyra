@@ -4,12 +4,21 @@
 // local binding and re-exported; SceneIndex and InvestigationLayoutSidecar are
 // pure re-exports. See packages/scene-types.
 import type {
+  BakedCharacterLayout,
+  CharacterLayout,
   EvidenceSource,
   RectLayout,
   RevealTarget,
   SpriteLayout,
 } from "@lyra/scene-types";
-export type { EvidenceSource, RectLayout, RevealTarget, SpriteLayout };
+export type {
+  BakedCharacterLayout,
+  CharacterLayout,
+  EvidenceSource,
+  RectLayout,
+  RevealTarget,
+  SpriteLayout,
+};
 export type {
   ChaptersIndex as SceneIndex,
   InvestigationLayoutSidecar,
@@ -41,7 +50,7 @@ export type InvestigationSceneJson = {
       name: string;
       role: string;
       bio: string;
-      layout: SpriteLayout | null;
+      layout: CharacterLayout | null;
       topics: Array<{
         id: string;
         label: string;
@@ -71,7 +80,8 @@ export type DialogueItem =
       } | null;
     };
 
-// RevealTarget, RectLayout, SpriteLayout, and InvestigationLayoutSidecar are
-// re-exported from @lyra/scene-types (see top of file). DialogueItem stays
-// local: the editor's rendering view is intentionally narrower than the
-// compiler's (no assetCue, simplified portrait, no expression).
+// CharacterLayout, RevealTarget, RectLayout, SpriteLayout, and
+// InvestigationLayoutSidecar are re-exported from @lyra/scene-types (see top
+// of file). DialogueItem stays local: the editor's rendering view is
+// intentionally narrower than the compiler's (no assetCue, simplified
+// portrait, no expression).
