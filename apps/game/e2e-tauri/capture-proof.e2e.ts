@@ -935,6 +935,28 @@ describe("packaged gameplay thumbnail proof", () => {
   });
 
   it("skips transient interrogation capture and keeps explicit saves captured", async () => {
+    async function withStepContext<T>(
+      step: string,
+      fn: () => Promise<T>,
+    ): Promise<T> {
+      try {
+        return await fn();
+      } catch (error) {
+        let stateSummary = "state unavailable";
+        try {
+          const state = await getPackagedGameState();
+          stateSummary = `scene=${state.scene.id}, sceneKind=${state.scene.kind}, mode=${state.mode.type}`;
+        } catch {
+          // state retrieval also failed; keep "state unavailable"
+        }
+        throw new Error(
+          `interrogation capture proof: step "${step}" failed. ` +
+            `Game state: ${stateSummary}.`,
+          { cause: error },
+        );
+      }
+    }
+
     await waitForPersistenceIdle();
     await resetCaptureProofStorage();
     const startAtInterrogation = startCaptureProofAtScene(
@@ -966,7 +988,10 @@ describe("packaged gameplay thumbnail proof", () => {
         );
       }
       const cursorBefore = current.mode.queueToken.cursor;
-      if (!(await advanceDialogueOnce())) {
+      const advanced = await withStepContext(`intro advance step ${step}`, () =>
+        advanceDialogueOnce(),
+      );
+      if (!advanced) {
         throw new Error("interrogation intro advance control disappeared");
       }
       await waitForPackagedGameState(
@@ -988,14 +1013,18 @@ describe("packaged gameplay thumbnail proof", () => {
         timeoutMsg: "packaged capture proof probe did not mount",
       },
     );
-    await drainCurrentDialogue("interrogation");
+    await withStepContext("drain interrogation intro dialogue", () =>
+      drainCurrentDialogue("interrogation"),
+    );
     await dismissAllPendingAcquisitions();
     await waitForPersistenceIdle();
 
     const captureBefore = await captureWrapperStatus();
     const autosaveIdsBefore = autosaveSaveIds();
 
-    await clickButton(anchors.unicodeSave.interrogationQuestion);
+    await withStepContext("click interrogation question", () =>
+      clickButton(anchors.unicodeSave.interrogationQuestion),
+    );
     await waitForPackagedGameState(
       (state) =>
         state.mode.type === "dialogue" && state.scene.kind === "interrogation",
@@ -1003,25 +1032,35 @@ describe("packaged gameplay thumbnail proof", () => {
       "interrogation testimony did not enter Playing",
     );
 
-    await advanceDialogueUntil(async () => {
-      return browser.execute((label: string) => {
-        return Array.from(document.querySelectorAll("button")).some((button) =>
-          (button.textContent ?? "").includes(label),
-        );
-      }, anchors.unicodeSave.challenge);
-    }, 80);
+    await withStepContext(
+      "advance dialogue until challenge button appears",
+      () =>
+        advanceDialogueUntil(async () => {
+          return browser.execute((label: string) => {
+            return Array.from(document.querySelectorAll("button")).some(
+              (button) => (button.textContent ?? "").includes(label),
+            );
+          }, anchors.unicodeSave.challenge);
+        }, 80),
+    );
 
-    await clickButton(anchors.unicodeSave.challenge);
-    await advanceDialogueUntil(async () => {
-      const state = await getPackagedGameState();
-      return (
-        state.mode.type === "interrogation" &&
-        state.scene.kind === "interrogation" &&
-        state.scene.visiblePhases.some(
-          (phase) => phase.crossExam?.presenting === true,
-        )
-      );
-    }, 80);
+    await withStepContext("click challenge button", () =>
+      clickButton(anchors.unicodeSave.challenge),
+    );
+    await withStepContext(
+      "advance dialogue until presenting phase appears",
+      () =>
+        advanceDialogueUntil(async () => {
+          const state = await getPackagedGameState();
+          return (
+            state.mode.type === "interrogation" &&
+            state.scene.kind === "interrogation" &&
+            state.scene.visiblePhases.some(
+              (phase) => phase.crossExam?.presenting === true,
+            )
+          );
+        }, 80),
+    );
 
     await waitForPersistenceIdle();
     const captureAfterInterrogation = await captureWrapperStatus();
@@ -1055,7 +1094,9 @@ describe("packaged gameplay thumbnail proof", () => {
     expect(envelope.snapshot.scene.enteredPhaseIds.length).toBeGreaterThan(0);
 
     await waitForPersistenceIdle();
-    await saveManualSlot(3, "訊問捕捉正向控制");
+    await withStepContext("manual save slot 3", () =>
+      saveManualSlot(3, "訊問捕捉正向控制"),
+    );
 
     const captureAfterManualSave = await captureWrapperStatus();
     expect(captureAfterManualSave.calls).toBe(
