@@ -994,6 +994,22 @@ describe("emitter", () => {
               sourceFile: "i.md",
               line: 20,
             },
+            {
+              id: "baked_witness",
+              name: "Baked Witness",
+              role: "Witness",
+              bio: "Painted into the room.",
+              topics: [],
+              layout: {
+                kind: "baked",
+                x: 0.38,
+                y: 0.2,
+                w: 0.22,
+                h: 0.68,
+              },
+              sourceFile: "i.md",
+              line: 21,
+            },
           ],
           sourceFile: "i.md",
           line: 4,
@@ -1056,6 +1072,13 @@ describe("emitter", () => {
       w: 0.16,
       h: 0.72,
       anchor: "bottomCenter",
+    });
+    expect(json.sublocations[0]?.characters[1]?.layout).toEqual({
+      kind: "baked",
+      x: 0.38,
+      y: 0.2,
+      w: 0.22,
+      h: 0.68,
     });
     expect(json.evidenceManifest[0]?.imageAssetId).toBe("evidence_photo");
     expect(json.evidenceManifest[0]?.sourceSublocationId).toBe("room");
