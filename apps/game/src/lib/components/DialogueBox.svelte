@@ -5,9 +5,8 @@
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
-  import { claimEscape } from "$lib/state/escape-coordinator";
   import CrossfadeImage from "./CrossfadeImage.svelte";
-  import DialogueHistoryPanel from "./DialogueHistoryPanel.svelte";
+  import DialogueHistoryOverlay from "./DialogueHistoryOverlay.svelte";
   import type {
     DialogueHistoryEntry,
     DialogueItem,
@@ -297,12 +296,6 @@
     // open). We only need to seed the initial bottom offset here.
   }
 
-  // Held while history is open so closeHistory can release the escape claim
-  // synchronously rather than waiting for the $effect cleanup flush. The
-  // $effect below still claims/releases for unmount safety; release() is
-  // idempotent so the double-release on close is harmless.
-  let releaseEscapeClaim: (() => void) | null = null;
-
   // The default is `refocusLog: false` (focus the advance button) because
   // refocusing the LOG button reintroduces the Space-reopens-history hazard:
   // Space on the focused LOG button activates it natively and toggles history
@@ -315,10 +308,6 @@
     // The ResizeObserver is torn down by the $effect below keyed on
     // `historyOpen` (its cleanup runs when this flips to false, and also on
     // unmount), so no manual disconnect is needed here.
-    // Release synchronously so the escape coordinator's "close one layer per
-    // Escape" contract holds even before Svelte flushes the effect cleanup.
-    releaseEscapeClaim?.();
-    releaseEscapeClaim = null;
     if (refocusLog) {
       void tick().then(() => logButton?.focus());
     } else {
@@ -394,21 +383,6 @@
   function isModifiedHistoryShortcut(e: KeyboardEvent) {
     return e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.isComposing;
   }
-
-  $effect(() => {
-    if (!historyOpen) return;
-    // Escape closes history and focuses the advance button (not LOG), so a
-    // subsequent Space advances dialogue instead of re-opening history.
-    // Passing closeHistory directly would invoke it with no args, but the
-    // default is now refocusLog: false so the bare reference would also be
-    // safe; the arrow is kept for explicitness and to survive future default
-    // changes.
-    releaseEscapeClaim = claimEscape(() => closeHistory({ refocusLog: false }));
-    return () => {
-      releaseEscapeClaim?.();
-      releaseEscapeClaim = null;
-    };
-  });
 
   // Track wrapper resizes (e.g. window resize changing text wrap) while
   // history is open so the panel stays positioned above the wrapper. The
@@ -572,11 +546,7 @@
 {/if}
 
 {#if historyOpen}
-  <!-- Dim the gameplay behind the history popup. pointer-events: none keeps
-       existing click targets (e.g. the LOG button) reachable so the popup
-       can still be toggled; the backdrop is purely visual. -->
-  <div class="history-backdrop" aria-hidden="true"></div>
-  <DialogueHistoryPanel
+  <DialogueHistoryOverlay
     {history}
     bottom={historyPanelBottom}
     onClose={() => closeHistory({ refocusLog: false })}
@@ -800,18 +770,6 @@
     left: 50%;
     bottom: 28px;
     transform: translateX(-50%);
-  }
-
-  /* Sits above the dialogue box (z-index 30) and portrait (z-index 20) but
-     below the history panel (z-index 35) so the popup stays fully visible
-     while the gameplay behind it is dimmed. pointer-events: none so clicks
-     pass through to the LOG button / dialogue surface behind. */
-  .history-backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 32;
-    background: rgba(0, 0, 0, 0.55);
-    pointer-events: none;
   }
 
   .box {
