@@ -26,7 +26,7 @@
 
 ## Sub-location: 相馬事務所 {#office}
 - **Status:** unlocked
-- **Background Prompt:** Small private detective office in Tokyo on a rainy morning, stacked paper files, worn desk, broken coffee machine, canned coffee, narrow practical room.
+- **Background Prompt:** Small private detective office in Tokyo on a rainy morning, stacked paper files, worn desk, broken coffee machine, canned coffee, narrow practical room. Hayasaka Akane baked into the left-middle of the room: sturdy grounded build, practical navy structured jacket over a casual off-white inner layer, looser tied-back low ponytail, warm brown leather document shoulder bag, direct procedural stance standing just inside the doorway, perspective-correct scale and lighting matching the desk and paper files, no readable signage.
 - **BGS:** bgs_detective_office_rain
 
 [場景：相馬事務所，清晨，細雨，狹小、紙本堆疊、桌上一台壞掉的咖啡機。]

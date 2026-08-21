@@ -60,7 +60,7 @@
 
 ## Sub-location: 雨鐘前場 {#front}
 - **Status:** unlocked
-- **Background Prompt:** Rain Bell cafe front room at rainy night after closing, dim half-light, counter, register, umbrella stand with blue transparent umbrella, wet glass door, no readable signage.
+- **Background Prompt:** Rain Bell cafe front room at rainy night after closing, dim half-light, counter, register, umbrella stand with blue transparent umbrella, wet glass door, no readable signage. Two baked characters at perspective-correct scale and lighting. Manager Takase baked behind the counter on the right: tired long-standing posture with shoulders slightly drooped, faded rust-red apron over loose olive-brown casual wear, one hand habitually holding a rag, weathered middle-aged woman. Clerk Katase baked into the left corner: petite young woman in a clerk uniform with a low-saturation blue-green apron, colorful hair ties and small earrings, slightly hunched shoulders while tidying, rushing posture. The two characters stay visually separated and independently clickable, neither covering the umbrella stand, register, or counter evidence props.
 - **BGS:** bgs_cafe_closed_night
 
 [場景：吉祥寺咖啡館「雨鐘」前場，雨夜，閉店後。]

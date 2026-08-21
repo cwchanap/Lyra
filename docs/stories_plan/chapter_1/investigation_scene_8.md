@@ -50,7 +50,7 @@
 
 ## Sub-location: 店長辦公角落 {#office_corner}
 - **Status:** unlocked
-- **Background Prompt:** Cafe manager office corner near the backroom, small maintenance screen on wall, stacked boxes and account books, warm practical light, no readable UI text.
+- **Background Prompt:** Cafe manager office corner near the backroom, small maintenance screen on wall, stacked boxes and account books, warm practical light, no readable UI text. Manager Takase baked into the left-center of the corner: tired long-standing posture with shoulders slightly drooped, faded rust-red apron over loose olive-brown casual wear, one hand habitually holding a rag, weathered middle-aged woman waiting with her phone gripped tight, knuckles pale, perspective-correct scale and lighting under the warm lamp, not covering the maintenance screen, phone screenshot hotspot, stacked ledgers, or front doorway.
 - **BGS:** bgs_cafe_backroom_office
 
 [場景：店長辦公角落，後場門鎖維護頁顯示在牆邊一台小螢幕上，旁邊堆著紙箱與帳本，燈光偏暖。]
@@ -188,7 +188,7 @@
 
 ## Sub-location: 保全鏈固定 {#fixed_panel}
 - **Status:** locked
-- **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, room empty for portrait staging, uncluttered lower-center floor for dialogue UI, no readable text.
+- **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, no readable text. Detective Kurose Toru baked into the center of the room standing beside the panel: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he supervises the forensic fixation, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard practical lamp with cool rain spill, not covering the open maintenance panel, evidence record table, or the fixed-record hotspot on the table.
 - **BGS:** bgs_cafe_backroom_office
 
 [場景：後場另一處，一面已打開的維護面板前，鑑識重新拍攝固定，黑瀨徹站在一旁監督，桌上攤著一份正式紀錄表。]
