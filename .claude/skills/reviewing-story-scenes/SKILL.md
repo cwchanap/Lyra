@@ -230,7 +230,16 @@ For each axis N (1 → 9), in order:
    agent's findings verbatim. Wait for its fix report.
 5. Record the implementer's `FIXES-APPLIED` / `PARTIAL` /
    `STRUCTURAL-ESCALATED` / `NO-OP` verdict and the per-finding fix lines.
-6. Continue to the next axis. The next axis's review agent reads the
+6. **Compile gate:** after every implementer result (including serial-fallback
+   fixes), run `bun run scenes:compile` and require it to be **GREEN** before
+   advancing to the next axis. If compilation or validation fails, return the
+   error (failing file/line + message) to the **current axis** for
+   remediation — re-run that axis's implementer (or re-fix under serial
+   fallback) with the compile error as a new finding — then re-gate. The same
+   gate applies to the later compile points (Phase 3): stale or structurally
+   invalid output must never reach the next axis's reviewer or the
+   consolidated report.
+7. Continue to the next axis. The next axis's review agent reads the
    **post-fix** files, so its findings reflect the current state.
 
 **Do not run axes in parallel.** Do not spawn the next axis's review agent
@@ -240,11 +249,16 @@ the files it actually reads.
 
 **Serial fallback:** if your environment has no subagent-dispatch tool, run
 each axis yourself in the table order above (Axis 1 → Axis 9): review the
-axis's sources and produce findings, then apply Blocker/Important fixes
-directly to the authored scene files following the Step 2b guardrails. Keep
-each axis's findings and fixes separate before consolidation. Do not collapse
-them into a single pass — the axis separation is what prevents the
-monolithic-review failure mode.
+axis's sources and produce findings, then apply fixes. In this mode you
+temporarily assume the **implementer role**: you may apply **Blocker/Important
+fixes only**, only to authored scene `.md` files in the chapter directory, and
+only under the existing Step 2b guardrails (writing-* skill format rules,
+canon/forbidden guardrails, no structural changes, no generated-JSON edits).
+Minor/Nit findings are still recorded and left for the human; structural and
+asset-missing findings are still escalated, not self-fixed. Keep each axis's
+findings and fixes separate before consolidation. Do not collapse them into a
+single pass — the axis separation is what prevents the monolithic-review
+failure mode.
 
 ### Visual Background Minimum Checks (Axis 5)
 
@@ -297,13 +311,16 @@ Markdown and verify structural integrity.
 
 Produce **exactly one consolidated findings-and-fixes report** with:
 
-1. **Verdict** — the worst of the nine axes' **pre-fix** verdicts
-   (BLOCKERS-PRESENT wins over FIX-RECOMMENDED wins over SHIP), **combined
-   with** the worst implementer outcome. If any axis's implementer returned
-   `STRUCTURAL-ESCALATED` or `PARTIAL`, or the final compile failed, the
-   verdict is `BLOCKERS-PRESENT` regardless of pre-fix SHIPs. If all axes
-   shipped or were fully fixed and the final compile is green, the verdict is
-   `SHIP`.
+1. **Verdict** — derived from the merged **unresolved** finding statuses,
+   not from raw pre-fix or implementer outcome labels. A `PARTIAL` outcome is
+   not inherently blocking: it contributes only its still-unresolved
+   findings.
+   - `BLOCKERS-PRESENT` — any unresolved Blocker/Important finding remains,
+     any finding is escalated (`STRUCTURAL — needs human` or
+     `ASSET-MISSING — needs human`), or the final compile failed.
+   - `FIX-RECOMMENDED` — only Minor/Nit findings remain unresolved.
+   - `SHIP` — everything is resolved (including fully resolved
+     `FIXES-APPLIED` and `NO-OP` outcomes) and the final compile is green.
 2. **All findings merged with fix status** — deduplicate if the same
    `file:line` issue was caught by two axes. For each finding show: original
    severity, original `file:line`, the fix status (`FIXED → new file:line`,
@@ -365,7 +382,7 @@ Economy, Interrogation Loop Naturalness — all completed.
 
 | Rule | Enforcement |
 |---|---|
-| **Orchestrator + review agent edit nothing** | You and every **review agent** produce reports only. No `edit`, `write`, or `notebook_edit` on any file by the orchestrator or a review agent. The **implementer agent** is the only role permitted to edit, and only authored `.md` scene files in the chapter directory. |
+| **Orchestrator + review agent edit nothing** | You and every **review agent** produce reports only. No `edit`, `write`, or `notebook_edit` on any file by the orchestrator or a review agent. The **implementer agent** is the only role permitted to edit, and only authored `.md` scene files in the chapter directory. (Serial fallback: without a subagent-dispatch tool, the orchestrator temporarily assumes the implementer role under the same limits — see Phase 2.) |
 | **Implementer fixes Blocker + Important only** | The implementer addresses Blocker and Important findings. Minor/Nit findings are recorded and left for the human. |
 | **Implementer edits authored Markdown only** | The implementer never edits generated JSON under `src-tauri/resources/`, `characters.yaml`, the bible, the addendum, `chapter.md`, or the construction plan. It edits `scene_*.md` / `investigation_scene_*.md` / `interrogation_scene_*.md` / `analysis_scene_*.md` only. |
 | **Cite, don't assume** | Every canon/forbidden claim in a review finding must quote the bible/addendum line it was checked against. |
@@ -377,7 +394,10 @@ Economy, Interrogation Loop Naturalness — all completed.
 ## Red flags — STOP, you or a subagent is about to overstep:
 
 - The **orchestrator or a review agent** opens an `Edit` or `Write` tool on any
-  file. (The implementer agent editing authored scene `.md` files is expected.)
+  file. (The implementer agent editing authored scene `.md` files is expected.
+  Serial fallback is exempt: the orchestrator acting as the per-axis
+  implementer may edit authored scene `.md` files under the Step 2b
+  guardrails.)
 - An **implementer agent** opens `Edit`/`Write` on generated JSON, the bible,
   the addendum, `characters.yaml`, `chapter.md`, the construction plan, or any
   file outside the chapter's authored scene `.md` files.

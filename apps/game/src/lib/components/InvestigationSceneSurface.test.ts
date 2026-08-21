@@ -11,6 +11,27 @@ import {
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
 
+const { resolveStoryAssetCalls } = vi.hoisted(() => ({
+  resolveStoryAssetCalls: vi.fn(),
+}));
+
+vi.mock("$lib/assets/story-assets", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("$lib/assets/story-assets")>();
+  return {
+    ...actual,
+    // Wrap (not replace) so real resolution still runs for every test while
+    // recording which asset IDs the component resolves.
+    resolveStoryAsset: (
+      assetId: Parameters<typeof actual.resolveStoryAsset>[0],
+      type: Parameters<typeof actual.resolveStoryAsset>[1],
+    ) => {
+      resolveStoryAssetCalls(assetId, type);
+      return actual.resolveStoryAsset(assetId, type);
+    },
+  };
+});
+
 const sublocation = {
   id: "coffee_shop",
   label: "喫茶店",
@@ -360,44 +381,62 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("keeps baked characters interactive without rendering a character image", async () => {
-    const user = userEvent.setup();
-    const bakedSublocation = {
-      ...sublocation,
-      characters: [
-        {
-          ...sublocation.characters[0],
-          layout: {
-            kind: "baked",
-            x: 0.34,
-            y: 0.2,
-            w: 0.24,
-            h: 0.68,
+    const testName =
+      "keeps baked characters interactive without rendering a character image";
+
+    try {
+      const user = userEvent.setup();
+      const bakedSublocation = {
+        ...sublocation,
+        characters: [
+          {
+            ...sublocation.characters[0],
+            layout: {
+              kind: "baked",
+              x: 0.34,
+              y: 0.2,
+              w: 0.24,
+              h: 0.68,
+            },
           },
-        },
-      ],
-    } satisfies SublocationView;
+        ],
+      } satisfies SublocationView;
 
-    const { container } = render(InvestigationSceneSurface, {
-      sublocation: bakedSublocation,
-      onInspect: vi.fn(),
-      onInterview: vi.fn(),
-    });
+      resolveStoryAssetCalls.mockClear();
+      const { container } = render(InvestigationSceneSurface, {
+        sublocation: bakedSublocation,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
 
-    const characterButton = screen.getByRole("button", {
-      name: /詢問：目擊者/,
-    });
-    expect(characterButton.style.getPropertyValue("--x")).toBe("34%");
-    expect(characterButton.style.getPropertyValue("--y")).toBe("20%");
-    expect(characterButton.style.getPropertyValue("--w")).toBe("24%");
-    expect(characterButton.style.getPropertyValue("--h")).toBe("68%");
-    expect(container.querySelector(".character-target img")).toBeNull();
+      const characterButton = screen.getByRole("button", {
+        name: /詢問：目擊者/,
+      });
+      expect(characterButton.style.getPropertyValue("--x")).toBe("34%");
+      expect(characterButton.style.getPropertyValue("--y")).toBe("20%");
+      expect(characterButton.style.getPropertyValue("--w")).toBe("24%");
+      expect(characterButton.style.getPropertyValue("--h")).toBe("68%");
+      expect(container.querySelector(".character-target img")).toBeNull();
 
-    await user.click(characterButton);
+      // A baked character draws no sprite: the component must never ask the
+      // asset resolver for a portrait or standee asset for it.
+      const portraitOrStandeeAssetIds = resolveStoryAssetCalls.mock.calls
+        .map(([assetId]) => assetId)
+        .filter(
+          (assetId) =>
+            assetId?.startsWith("portrait.") || assetId?.startsWith("standee."),
+        );
+      expect(portraitOrStandeeAssetIds).toEqual([]);
 
-    expect(characterButton).toHaveAttribute("aria-expanded", "true");
-    expect(
-      screen.getByRole("button", { name: /不在場證明/ }),
-    ).toBeInTheDocument();
+      await user.click(characterButton);
+
+      expect(characterButton).toHaveAttribute("aria-expanded", "true");
+      expect(
+        screen.getByRole("button", { name: /不在場證明/ }),
+      ).toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
   });
 
   it("loads alpha crop variables for scene standees", () => {
