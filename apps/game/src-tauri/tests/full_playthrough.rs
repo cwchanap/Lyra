@@ -88,6 +88,34 @@ fn drain_counting_view_portraits(
     }
 }
 
+/// Drains the active dialogue queue, recording each line's speaker and
+/// whether its view portrait was kept (`true`) or suppressed (`false`).
+fn drain_topic_view_portraits_by_speaker(
+    engine: &mut GameEngine,
+    mut view: GameStateView,
+) -> Vec<(String, bool)> {
+    let mut out = Vec::new();
+    loop {
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                queue_token,
+                ..
+            } => {
+                if let DialogueItem::Line {
+                    speaker, portrait, ..
+                } = current
+                {
+                    out.push((speaker.clone(), portrait.is_some()));
+                }
+                view = engine.advance_dialogue(queue_token.clone()).unwrap();
+            }
+            ModeView::Explore { .. } => return out,
+            other => panic!("expected Explore after topic dialogue, got {other:?}"),
+        }
+    }
+}
+
 fn enter_sublocation_and_advance(engine: &mut GameEngine, sublocation_id: &str) -> GameStateView {
     let view = engine.enter_sublocation(sublocation_id).unwrap();
     advance_all_dialogue(engine, view)
@@ -246,11 +274,14 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
 }
 
 #[test]
-fn baked_character_topic_dialogue_suppresses_view_portraits() {
+fn baked_character_topic_dialogue_suppresses_only_the_baked_speaker_portrait() {
     // Explore → topic → Dialogue regression: the fixture's 早坂 is baked into
-    // the main-floor background, so the dialogue entered from her topic
-    // picker must not float a second portrait over it. Contrast: 黑瀨徹 is an
+    // the main-floor background, so dialogue entered from her topic picker
+    // must not float a second portrait over it. Contrast: 黑瀨徹 is an
     // unplaced character, and his topic dialogue keeps compiled portraits.
+    // Mixed-speaker guard: 早坂's `case_overview` topic also contains a
+    // 相馬律 line; Soma is not baked into main_floor, so his portrait must
+    // survive while 早坂's are suppressed.
     let mut engine = GameEngine::new_started(full_fixture_resources()).unwrap();
     let initial = engine.view().unwrap();
     let view = advance_all_dialogue(&mut engine, initial);
@@ -266,14 +297,30 @@ fn baked_character_topic_dialogue_suppresses_view_portraits() {
         "unplaced character topic dialogue must keep compiled portraits"
     );
 
-    // Suppression arm: every line of the baked character's topic renders
-    // portrait-free even though the fixture compiles portraits onto it.
+    // Suppression arm: 早坂's lines render portrait-free even though the
+    // fixture compiles portraits onto them, while 相馬律's line in the same
+    // topic keeps its compiled portrait.
     let view = engine.interview_topic("hayasaka", "case_overview").unwrap();
-    let (lines, portraits) = drain_counting_view_portraits(&mut engine, view);
-    assert!(lines > 0, "fixture topic must contain lines");
-    assert_eq!(
-        portraits, 0,
-        "baked-character topic dialogue must not attach a second portrait"
+    let by_speaker = drain_topic_view_portraits_by_speaker(&mut engine, view);
+    assert!(!by_speaker.is_empty(), "fixture topic must contain lines");
+    let hayasaka_lines = by_speaker.iter().filter(|(s, _)| s == "早坂茜").count();
+    assert!(
+        hayasaka_lines > 0,
+        "fixture case_overview must contain 早坂茜 lines"
+    );
+    assert!(
+        by_speaker
+            .iter()
+            .filter(|(s, _)| s == "早坂茜")
+            .all(|(_, kept)| !kept),
+        "baked-character (早坂茜) lines must be portrait-free, got {by_speaker:?}"
+    );
+    assert!(
+        by_speaker
+            .iter()
+            .filter(|(s, _)| s == "相馬律")
+            .any(|(_, kept)| *kept),
+        "相馬律 line in 早坂's topic must keep its compiled portrait, got {by_speaker:?}"
     );
 }
 

@@ -2261,41 +2261,45 @@ impl GameEngine {
         }
     }
 
-    /// True when the active investigation dialogue queue was installed by
-    /// interviewing a character whose visual is baked into the current
-    /// sublocation background. Keyed on the queue's first (trigger) segment
-    /// origin so chained reveal segments in the same queue stay suppressed;
-    /// a fresh queue (hotspot, sublocation transition, outro) has its own
-    /// origin and keeps its compiled portraits. Origins persist through
-    /// save/restore, so the suppression recomputes identically after a load.
-    fn topic_dialogue_from_baked_character(inv: &InvestigationSceneState) -> bool {
-        let Some(queue) = inv.pending_queue.as_ref() else {
-            return false;
-        };
-        let Some(DialogueSegmentOriginV1::InvestigationInteraction { segment_id, .. }) =
-            queue.first_segment_origin()
+    /// Returns the display name of the character baked into the current
+    /// sublocation background when the active investigation dialogue queue was
+    /// installed by interviewing that character (their topic picker), so the
+    /// caller can suppress only that character's floating portrait — other
+    /// speakers in the same mixed-speaker topic keep their compiled portraits.
+    /// Keyed on the queue's first (trigger) segment origin so chained reveal
+    /// segments in the same queue stay suppressed; a fresh queue (hotspot,
+    /// sublocation transition, outro) has its own origin and keeps its
+    /// compiled portraits. Origins persist through save/restore, so the
+    /// suppression recomputes identically after a load.
+    fn baked_character_name_for_topic_dialogue(inv: &InvestigationSceneState) -> Option<String> {
+        let queue = inv.pending_queue.as_ref()?;
+        let DialogueSegmentOriginV1::InvestigationInteraction { segment_id, .. } =
+            queue.first_segment_origin()?
         else {
-            return false;
+            return None;
         };
         // Topic segments are `topic:<character_id>:<topic_id>:{dialogue,reexamine}`;
         // ids are compiler-validated slugs, so the first `:`-separated field
-        // after the prefix is the character id.
-        let Some(character_id) = segment_id
+        // after the prefix is the sublocation character id. That id is a
+        // scene-local slug distinct from the portrait's `characterId` (the
+        // asset-config id, e.g. `hayasaka` vs `hayasaka_akane`), so the
+        // suppression matches the character's display name against each
+        // line's `speaker` — the compiler resolves that name to the portrait
+        // characterId 1:1 via `characters.byDisplayName`.
+        let character_id = segment_id
             .strip_prefix("topic:")
             .and_then(|rest| rest.split(':').next())
-            .filter(|id| !id.is_empty())
-        else {
-            return false;
-        };
-        let Some(sub_id) = inv.current_sublocation_id.as_deref() else {
-            return false;
-        };
+            .filter(|id| !id.is_empty())?;
+        let sub_id = inv.current_sublocation_id.as_deref()?;
         inv.def
             .sublocations
             .iter()
             .find(|sub| sub.id == sub_id)
             .and_then(|sub| sub.characters.iter().find(|c| c.id == character_id))
-            .is_some_and(|c| matches!(c.layout, Some(CharacterLayoutJson::Baked { .. })))
+            .and_then(|c| match &c.layout {
+                Some(CharacterLayoutJson::Baked { .. }) => Some(c.name.clone()),
+                _ => None,
+            })
     }
 
     fn mode_view(&self) -> ModeView {
@@ -2305,29 +2309,33 @@ impl GameEngine {
         let token = self.current_queue_token();
         let current_item: Option<DialogueItem> = match &self.scene {
             SceneRuntime::Linear(s) => s.current().cloned(),
-            SceneRuntime::Investigation(inv) => inv
-                .pending_queue
-                .as_ref()
-                .and_then(|queue| queue.current().cloned())
-                .map(|item| match item {
-                    // A baked character is already painted into the
-                    // sublocation background, so dialogue entered from their
-                    // topic picker must not float a second portrait over
-                    // that background. View-only suppression: the queue and
-                    // saves keep the compiled portraits, and every other
-                    // dialogue path (hotspots, transitions, linear,
-                    // interrogation, analysis) renders them unchanged.
-                    DialogueItem::Line { speaker, text, .. }
-                        if Self::topic_dialogue_from_baked_character(inv) =>
-                    {
-                        DialogueItem::Line {
-                            speaker,
-                            text,
-                            portrait: None,
+            SceneRuntime::Investigation(inv) => {
+                // A baked character is already painted into the sublocation
+                // background, so dialogue entered from their topic picker
+                // must not float a second portrait over that background.
+                // Suppress only the baked character's own lines (matched by
+                // display name); other speakers in the same mixed-speaker
+                // topic keep their compiled portraits. View-only: the queue
+                // and saves keep the compiled portraits, and every other
+                // dialogue path (hotspots, transitions, linear,
+                // interrogation, analysis) renders them unchanged.
+                let baked_name = Self::baked_character_name_for_topic_dialogue(inv);
+                inv.pending_queue
+                    .as_ref()
+                    .and_then(|queue| queue.current().cloned())
+                    .map(|item| match item {
+                        DialogueItem::Line { speaker, text, .. }
+                            if baked_name.as_deref() == Some(speaker.as_str()) =>
+                        {
+                            DialogueItem::Line {
+                                speaker,
+                                text,
+                                portrait: None,
+                            }
                         }
-                    }
-                    other => other,
-                }),
+                        other => other,
+                    })
+            }
             SceneRuntime::Interrogation(scene) => scene
                 .pending_queue
                 .as_ref()
