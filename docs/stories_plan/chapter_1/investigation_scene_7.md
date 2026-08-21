@@ -30,7 +30,7 @@
 
 ## Sub-location: 後場門口 {#back_door}
 - **Status:** unlocked
-- **Background Prompt:** Rain Bell cafe back door at rainy night, non-slip mat, half-dry water trace on floor, wet umbrella sleeve on wall, dark rear alley beyond.
+- **Background Prompt:** Rain Bell cafe back door at rainy night, non-slip mat, half-dry water trace on floor, wet umbrella sleeve on wall, dark rear alley beyond. Detective Kurose Toru baked into the left-center of the threshold: stocky weathered middle-aged man standing like nailed to the ground, wrinkled brown-gray field coat, worn dark leather shoes with outer-duty mud at the edges, thick hands resting loosely, flattened onigiri wrapper peeking from one coat pocket, deep crow's-feet and night-shift weariness in his face, perspective-correct scale and lighting matching the non-slip mat and doorframe, not covering the mat, water trace, umbrella sleeve, or staff shelf.
 - **BGS:** bgs_cafe_closed_night
 
 [場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只濕傘套，門外是後巷入口。]
@@ -159,7 +159,7 @@
 
 ## Sub-location: 內側倉庫 {#inner}
 - **Status:** locked
-- **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows, stopped old wall clock, shelf impact mark on floor, hard sensor light.
+- **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows, stopped old wall clock, shelf impact mark on floor, hard sensor light. Detective Kurose Toru baked into the right side of the storage room: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he leads the inspection, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard sensor light, not covering the old clock, shelf impact mark, phone drop position, bean can, or paperback hotspot.
 
 [場景：雨鐘咖啡館內側倉庫，冷，金屬味，高貨架投下長影；一跨過防火門、入口內側牆上的舊掛鐘指針卡住，地上一道貨架撞痕。]
 

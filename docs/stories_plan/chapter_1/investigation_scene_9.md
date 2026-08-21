@@ -191,7 +191,7 @@
 
 ## Sub-location: 質問北見 {#confront_kitami}
 - **Status:** locked
-- **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text.
+- **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text. Kitami Shuichi baked into the center seat across the table: middle-aged man of medium-soft build with shoulders drawn inward, unremarkable beige-gray business-casual layers, thin metal-frame glasses slipping down his nose, dark lanyard, a deeply creased business card gripped under his palm, a face used to being overlooked in the workplace, perspective-correct scale and lighting under the exposed fluorescent tubes, not covering the unsent memo or whistleblower draft printouts on the table.
 - **BGS:** bgs_interview_room_fluorescent
 
 [場景：訪談室，白日。日光燈照得無處可藏；窄室四面白牆，桌上攤著死者手機鑑識列印件。北見修一坐在對面，攥著摺痕很深的名片：眼鏡下滑，他每隔幾秒以中指推回，一張習慣在職場被忽略的臉。]
