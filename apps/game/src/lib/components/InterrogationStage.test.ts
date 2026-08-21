@@ -396,6 +396,25 @@ describe("InterrogationStage", () => {
     ).toBe(backdrop);
   });
 
+  it("mounts no stage backdrop for non-dialogue modes", () => {
+    render(
+      InterrogationStageHarness,
+      props({
+        mode: {
+          type: "explore",
+          sublocationId: "sub_1",
+          backgroundAssetId: null,
+          bgm: null,
+          bgs: null,
+        },
+      }),
+    );
+
+    expect(
+      document.querySelector('[data-save-thumbnail-layout="backdrop"]'),
+    ).toBeNull();
+  });
+
   it("uses the phase subject standard portrait for interrogation menu art", async () => {
     const subjectPortrait: PortraitRef = {
       characterId: "miyake_sota",

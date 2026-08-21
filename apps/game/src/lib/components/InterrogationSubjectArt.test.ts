@@ -1,7 +1,19 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PortraitRef } from "$lib/state/types";
 import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
+
+const resolveStoryAssetMock = vi.hoisted(() => vi.fn());
+
+vi.mock("$lib/assets/story-assets", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("$lib/assets/story-assets")>();
+  return {
+    ...actual,
+    resolveStoryAsset: (...args: Parameters<typeof actual.resolveStoryAsset>) =>
+      resolveStoryAssetMock(...args),
+  };
+});
 
 const portrait: PortraitRef = {
   characterId: "miyake_sota",
@@ -28,6 +40,18 @@ describe("InterrogationSubjectArt", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    resolveStoryAssetMock.mockReset();
+  });
+
+  beforeEach(() => {
+    resolveStoryAssetMock.mockImplementation(
+      async (assetId: string | null | undefined, type: string) => {
+        const actual = await vi.importActual<
+          typeof import("$lib/assets/story-assets")
+        >("$lib/assets/story-assets");
+        return actual.resolveStoryAsset(assetId, type as "portrait");
+      },
+    );
   });
 
   it("renders a stable decorative portrait layer with the thumbnail contract", async () => {
@@ -89,5 +113,92 @@ describe("InterrogationSubjectArt", () => {
     await expect(fireEvent.load(image)).resolves.toBe(true);
     expect(image.style.getPropertyValue("--crop-height")).toBe("");
     expect(context.getImageData).toHaveBeenCalledOnce();
+  });
+
+  it("renders no image layer without a portrait ref", async () => {
+    const { container } = render(InterrogationSubjectArt, {
+      portrait: null,
+    });
+
+    expect(
+      container.querySelector('[data-interrogation-subject-art=""]'),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        container.querySelector("img.interrogation-subject-portrait"),
+      ).toBeNull();
+    });
+  });
+
+  it("falls back to the placeholder asset when resolution fails and keeps the error handler inert", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    resolveStoryAssetMock.mockRejectedValue(new Error("asset unavailable"));
+
+    const { container } = render(InterrogationSubjectArt, { portrait });
+    const image = await waitFor(() => {
+      const candidate = imageFor(container);
+      expect(candidate.src).toContain("PORTRAIT");
+      return candidate;
+    });
+
+    await expect(fireEvent.error(image)).resolves.toBe(true);
+    expect(warn).not.toHaveBeenCalled();
+    expect(image.src).toContain("PORTRAIT");
+  });
+
+  it("records no crop when the loaded image has no decoded dimensions", async () => {
+    const { container } = render(InterrogationSubjectArt, { portrait });
+    const image = await waitFor(() => imageFor(container));
+    // jsdom reports naturalWidth/naturalHeight of 0 unless patched.
+
+    await expect(fireEvent.load(image)).resolves.toBe(true);
+    expect(image.style.getPropertyValue("--crop-height")).toBe("");
+  });
+
+  it("records no crop when a 2d context is unavailable", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+
+    const { container } = render(InterrogationSubjectArt, { portrait });
+    const image = await waitFor(() => imageFor(container));
+    setImageSize(image);
+
+    await expect(fireEvent.load(image)).resolves.toBe(true);
+    expect(image.style.getPropertyValue("--crop-height")).toBe("");
+  });
+
+  it("records no crop when pixel reading throws", async () => {
+    const context = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => {
+        throw new DOMException("tainted", "SecurityError");
+      }),
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context,
+    );
+
+    const { container } = render(InterrogationSubjectArt, { portrait });
+    const image = await waitFor(() => imageFor(container));
+    setImageSize(image);
+
+    await expect(fireEvent.load(image)).resolves.toBe(true);
+    expect(image.style.getPropertyValue("--crop-height")).toBe("");
+  });
+
+  it("swaps to the placeholder when the resolved asset fails to load", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const { container } = render(InterrogationSubjectArt, { portrait });
+    const image = await waitFor(() => {
+      const candidate = imageFor(container);
+      expect(candidate.src).not.toContain("PORTRAIT");
+      return candidate;
+    });
+
+    await expect(fireEvent.error(image)).resolves.toBe(true);
+    expect(warn).toHaveBeenCalledOnce();
+    await waitFor(() => {
+      expect(imageFor(container).src).toContain("PORTRAIT");
+    });
   });
 });
