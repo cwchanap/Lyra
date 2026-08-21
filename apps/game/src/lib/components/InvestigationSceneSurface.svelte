@@ -21,8 +21,6 @@
   } from "../state/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
 
-  type SpriteCharacterLayout = Extract<CharacterLayout, { kind: "sprite" }>;
-
   let {
     sublocation,
     backgroundAssetId = null,
@@ -126,10 +124,6 @@
     return cropStyles[assetId] ?? "";
   }
 
-  function portraitAssetId(characterId: string, layout: SpriteCharacterLayout) {
-    return portraits[characterId]?.assetId ?? layout.assetId;
-  }
-
   function loadCharacterCrop(assetId: string, event: Event) {
     if (cropStyles[assetId]) return;
 
@@ -166,15 +160,6 @@
         image.naturalHeight,
       ),
     };
-  }
-
-  function loadCharacterCropForCharacter(
-    characterId: string,
-    layout: CharacterLayout,
-    event: Event,
-  ) {
-    if (layout.kind !== "sprite") return;
-    loadCharacterCrop(portraitAssetId(characterId, layout), event);
   }
 
   function toggleCharacter(characterId: string) {
@@ -307,21 +292,16 @@
           <span class="character-highlight"></span>
           {#if character.layout.kind === "sprite"}
             {#if portraits[character.id]}
+              {@const portrait = portraits[character.id]!}
               <div class="character-preview-crop">
                 <CrossfadeImage
-                  src={portraits[character.id]?.url ?? null}
+                  src={portrait.url}
                   imageClass=""
-                  imageStyle={cropStyleForAsset(
-                    portraitAssetId(character.id, character.layout),
-                  )}
+                  imageStyle={cropStyleForAsset(portrait.assetId)}
                   alt=""
                   ariaHidden={true}
                   onImageLoad={(event) =>
-                    loadCharacterCropForCharacter(
-                      character.id,
-                      character.layout,
-                      event,
-                    )}
+                    loadCharacterCrop(portrait.assetId, event)}
                   onImageError={() => handlePortraitError(character.id)}
                 />
               </div>

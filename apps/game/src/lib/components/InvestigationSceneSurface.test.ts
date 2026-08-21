@@ -439,13 +439,68 @@ describe("InvestigationSceneSurface", () => {
     }
   });
 
+  it("removes the rendered character sprite when the layout bakes into the scene", async () => {
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".character-target img")).toHaveAttribute(
+        "src",
+        "/assets/portraits/witness/standard.png",
+      );
+    });
+
+    const bakedSublocation = {
+      ...sublocation,
+      characters: [
+        {
+          ...sublocation.characters[0],
+          layout: { kind: "baked", x: 0.34, y: 0.2, w: 0.24, h: 0.68 },
+        },
+      ],
+    } satisfies SublocationView;
+
+    await rerender({
+      sublocation: bakedSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".character-target img")).toBeNull();
+    });
+  });
+
+  it("shows the character name while the placed portrait is still resolving", async () => {
+    const storyAssets = await import("$lib/assets/story-assets");
+    vi.spyOn(storyAssets, "resolveStoryAsset").mockImplementation(
+      () => new Promise(() => {}),
+    );
+
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByText("目擊者", { selector: ".portrait-loading" }),
+      ).toBeInTheDocument();
+    });
+    expect(container.querySelector(".character-target img")).toBeNull();
+  });
+
   it("loads alpha crop variables for scene standees", () => {
     const source = surfaceSource();
     expect(source).toContain("loadCharacterCrop");
     expect(source).toContain("cropVariablesForAlphaBounds");
     expect(source).toContain("character-preview-crop");
-    expect(source).toContain("portraitAssetId");
-    expect(source).toContain("portraitAssetId(character.id, character.layout)");
+    expect(source).toContain("loadCharacterCrop(portrait.assetId");
+    expect(source).toContain("src={portrait.url}");
   });
 
   it("only highlights placed hotspots on navigation and shows checked state separately", () => {
