@@ -2294,9 +2294,14 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
     expect(result.errors).toEqual([]);
 
     const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
     const subject = ast.phases[0]?.subject;
-    expect(subject?.portrait).toEqual({
+    if (!subject) throw new Error("expected interrogation phase subject");
+    expect(subject.portrait).toEqual({
       characterId: "miyake_sota",
       expression: "standard",
       assetId: "portrait.miyake_sota.standard",
@@ -2327,8 +2332,12 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
 
   it("clears an interrogation subject portrait when assets are disabled", () => {
     const scene = interrogationScene();
-    if (scene.ast.kind !== "interrogationScene") return;
-    scene.ast.phases[0]!.subject.portrait = {
+    if (scene.ast.kind !== "interrogationScene") {
+      throw new Error(`expected interrogationScene ast, got ${scene.ast.kind}`);
+    }
+    const subject = scene.ast.phases[0]?.subject;
+    if (!subject) throw new Error("expected interrogation phase subject");
+    subject.portrait = {
       characterId: "miyake_sota",
       expression: "standard",
       assetId: "portrait.miyake_sota.standard",
@@ -2339,14 +2348,22 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
       config: { ...config(), enabled: false },
     });
     const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
     expect(ast.phases[0]?.subject.portrait).toBeNull();
   });
 
   it("uses assetUnknownInterrogationSubject for an unknown subject", () => {
     const scene = interrogationScene();
-    if (scene.ast.kind !== "interrogationScene") return;
-    scene.ast.phases[0]!.subject.name = "未登錄的詢問對象";
+    if (scene.ast.kind !== "interrogationScene") {
+      throw new Error(`expected interrogationScene ast, got ${scene.ast.kind}`);
+    }
+    const subject = scene.ast.phases[0]?.subject;
+    if (!subject) throw new Error("expected interrogation phase subject");
+    subject.name = "未登錄的詢問對象";
 
     const result = enrichScenesWithAssets({
       scenes: [scene],
@@ -2357,7 +2374,11 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
       "assetUnknownInterrogationSubject",
     );
     const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
     expect(ast.phases[0]?.subject.portrait).toBeNull();
   });
 
@@ -2377,7 +2398,11 @@ describe("enrichScenesWithAssets — interrogation scenes", () => {
       "assetUnknownInterrogationSubject",
     );
     const ast = result.scenes[0]?.ast;
-    if (ast?.kind !== "interrogationScene") return;
+    if (ast?.kind !== "interrogationScene") {
+      throw new Error(
+        `expected interrogationScene ast, got ${ast?.kind ?? "undefined"}`,
+      );
+    }
     expect(ast.phases[0]?.subject.portrait).toBeNull();
   });
 

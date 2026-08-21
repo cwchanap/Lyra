@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Antonio:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400&family=Dela+Gothic+One&family=Shippori+Mincho:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@keyframes snapIn{0%{transform:scale(.85) rotate(-2deg);opacity:0}60%{transform:scale(1.04) rotate(.5deg);opacity:1}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes shake{0%,100%{transform:translateX(0)}15%,45%,75%{transform:translateX(-6px)}30%,60%,90%{transform:translateX(6px)}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes stampIn{0%{transform:scale(2.8) rotate(-10deg);opacity:0}45%{transform:scale(.94) rotate(1.5deg);opacity:1}65%{transform:scale(1.04) rotate(-.8deg)}100%{transform:scale(1) rotate(0)}}
+@keyframes dropPulse{0%,100%{border-color:rgba(212,20,58,.2)}50%{border-color:rgba(212,20,58,.6)}}
+@keyframes cardEnter{from{transform:translateY(14px) scale(.97);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
+@keyframes lyra-pulse{0%,100%{opacity:.35}50%{opacity:1}}
+@keyframes selectedGlow{0%,100%{box-shadow:0 0 6px rgba(52,216,255,.15),inset 0 0 0 1px rgba(52,216,255,.12)}50%{box-shadow:0 0 20px rgba(52,216,255,.35),inset 0 0 0 1px rgba(52,216,255,.25)}}
+body{margin:0;overflow:hidden}
+a{color:#34d8ff}a:hover{color:#7ae8ff}
+</style>
+</helmet>
+
+<div style="width:100%;height:100vh;display:flex;background:#07070d;font-family:'Shippori Mincho','Noto Serif TC',serif;color:#ece4cf;overflow:hidden;position:relative">
+
+  <!-- ═══ ATMOSPHERE ═══ -->
+  <div style="position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden">
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 80% 12%,rgba(212,20,58,.1),transparent 65%),radial-gradient(ellipse 50% 50% at 8% 92%,rgba(52,216,255,.06),transparent 70%),linear-gradient(170deg,#07070d 0%,#0d0612 55%,#120410 100%)"></div>
+    <div style="position:absolute;inset:-10%;opacity:.12;mix-blend-mode:screen;background-image:radial-gradient(circle at center,rgba(236,228,207,.6) .6px,transparent 1.1px);background-size:11px 11px;mask-image:radial-gradient(ellipse 80% 70% at 75% 25%,black 0%,transparent 75%)"></div>
+    <div style="position:absolute;inset:0;background:radial-gradient(ellipse 100% 80% at 50% 50%,transparent 50%,rgba(0,0,0,.55) 100%)"></div>
+    <div style="position:absolute;inset:0;background:repeating-linear-gradient(to bottom,transparent 0,transparent 3px,rgba(0,0,0,.14) 4px);mix-blend-mode:multiply"></div>
+  </div>
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside style="width:248px;flex:none;background:rgba(8,8,14,.92);border-right:1px solid rgba(236,228,207,.14);display:flex;flex-direction:column;position:relative;z-index:2">
+    <div style="padding:24px 20px 20px;border-bottom:1px solid rgba(236,228,207,.14)">
+      <div style="display:inline-flex;align-items:center;gap:10px;padding:5px 10px 4px;border:1px solid #d4143a;background:rgba(212,20,58,.12);margin-bottom:12px">
+        <div style="width:5px;height:5px;background:#d4143a;transform:rotate(45deg);box-shadow:0 0 7px #d4143a"></div>
+        <span style="font-family:'Antonio','Dela Gothic One',sans-serif;font-weight:500;font-size:10px;letter-spacing:.32em;color:#ece4cf;text-transform:uppercase">Case File</span>
+      </div>
+      <h1 style="margin:0;font-family:'Dela Gothic One','Noto Serif TC',serif;font-weight:400;font-size:18px;line-height:1.15;letter-spacing:.06em;color:#ece4cf;text-shadow:2px 2px 0 #040408">{{ title }}</h1>
+      <p style="margin:6px 0 0;font-size:13px;color:#8b8674;line-height:1.55">{{ summary }}</p>
+    </div>
+
+    <nav style="flex:1;padding:14px 10px;display:flex;flex-direction:column;gap:4px;overflow-y:auto">
+      <div style="font-family:'Antonio',sans-serif;font-weight:500;font-size:10px;letter-spacing:.28em;color:#34d8ff;text-transform:uppercase;padding:0 10px 10px">分析板導覽</div>
+      <sc-for list="{{ boards }}" as="tab" hint-placeholder-count="3">
+        <button onClick="{{ tab.select }}" style="display:flex;align-items:center;gap:10px;padding:12px 12px;background:{{ tab.bg }};border:1px solid {{ tab.borderColor }};border-left:3px solid {{ tab.accent }};color:{{ tab.textColor }};font:inherit;font-family:'Shippori Mincho',serif;font-size:14px;letter-spacing:.06em;cursor:pointer;text-align:left;transition:background .18s,border-color .18s;width:100%;box-sizing:border-box" style-hover="background:rgba(91,135,210,.08);border-color:rgba(168,200,255,.4)">
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+              <div style="width:5px;height:5px;transform:rotate(45deg);background:{{ tab.diamondColor }};box-shadow:0 0 5px {{ tab.diamondGlow }};flex:none"></div>
+              <span style="font-weight:600">{{ tab.label }}</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;color:{{ tab.statusTextColor }};text-transform:uppercase">{{ tab.statusText }}</span>
+            </div>
+            <div style="height:2px;background:rgba(236,228,207,.08);overflow:hidden">
+              <div style="height:100%;width:{{ tab.progressPct }}%;background:{{ tab.progressColor }};transition:width .4s ease"></div>
+            </div>
+          </div>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="padding:16px 20px;border-top:1px solid rgba(236,228,207,.14)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.22em;color:#34d8ff;text-transform:uppercase">Total</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:{{ overallColor }}">{{ overallLabel }}</span>
+      </div>
+      <div style="height:3px;background:rgba(236,228,207,.06);overflow:hidden">
+        <div style="height:100%;width:{{ overallPct }}%;background:{{ overallColor }};transition:width .5s ease"></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══ MAIN AREA ═══ -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;position:relative;z-index:2">
+
+    <!-- Board Header -->
+    <header style="padding:20px 28px 16px;border-bottom:1px solid rgba(236,228,207,.14);flex:none;display:flex;align-items:flex-start;gap:14px;background:rgba(8,8,14,.7)">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+          <div style="display:inline-flex;align-items:center;gap:8px;padding:4px 9px 3px;border:1px solid rgba(236,228,207,.32);background:rgba(236,228,207,.04)">
+            <div style="width:4px;height:4px;background:#d4143a;transform:rotate(45deg);box-shadow:0 0 5px #d4143a"></div>
+            <span style="font-family:'Antonio',sans-serif;font-weight:500;font-size:10px;letter-spacing:.28em;color:#5a5648;text-transform:uppercase">Board {{ boardNumber }} / {{ boardCount }}</span>
+          </div>
+          <p style="margin:0;font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.28em;color:#34d8ff;text-transform:uppercase">{{ boardEyebrow }}</p>
+        </div>
+        <h2 style="margin:0;font-family:'Dela Gothic One',serif;font-weight:400;font-size:22px;line-height:1.1;letter-spacing:.06em;color:#ece4cf;text-shadow:2px 2px 0 #040408">{{ boardTitle }}</h2>
+        <p style="margin:6px 0 0;font-size:13px;color:#8b8674;line-height:1.6;max-width:56ch">{{ boardInstructions }}</p>
+      </div>
+      <sc-if value="{{ completed }}">
+        <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px 5px;border:1px solid rgba(52,216,255,.4);background:rgba(52,216,255,.06);flex:none">
+          <div style="width:5px;height:5px;background:#34d8ff;transform:rotate(45deg);box-shadow:0 0 6px #34d8ff"></div>
+          <span style="font-family:'Antonio',sans-serif;font-weight:500;font-size:10px;letter-spacing:.22em;color:#34d8ff;text-transform:uppercase">Confirmed</span>
+        </div>
+      </sc-if>
+    </header>
+
+    <!-- ═══ WORKSPACE ═══ -->
+    <div style="flex:1;min-height:0;overflow-y:auto;padding:24px 28px;background:transparent">
+
+      <!-- ═══ CLASSIFY BOARD ═══ -->
+      <sc-if value="{{ showClassify }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:20px;max-width:960px;animation:cardEnter .35s ease">
+          <!-- Unclassified Pool -->
+          <div data-zone-id="pool" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ classifyDrop }}" style="background:rgba(255,255,255,.025);border:1px solid rgba(179,191,214,.22);padding:16px;display:flex;flex-direction:column;gap:12px;min-height:120px;position:relative;transition:border-color .25s,background .2s">
+            <sc-if value="{{ isPoolOver }}">
+              <div style="position:absolute;inset:-1px;border:2px dashed #d4143a;background:rgba(212,20,58,.04);pointer-events:none;z-index:5;animation:dropPulse 1s ease infinite;display:flex;align-items:center;justify-content:center">
+                <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#ece4cf;background:rgba(8,8,14,.85);padding:5px 14px;border:1px solid rgba(236,228,207,.32)">Drop Here</span>
+              </div>
+            </sc-if>
+            <h3 style="margin:0;font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.22em;color:#5a5648;text-transform:uppercase">待分類</h3>
+            <sc-for list="{{ unassignedCards }}" as="card" hint-placeholder-count="3">
+              <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:rgba(255,255,255,.045);border:1px solid rgba(179,191,214,.3);padding:14px 16px;cursor:grab;transition:transform .18s ease,background .18s,border-color .18s;user-select:none;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))" style-hover="transform:translateY(-2px);background:rgba(91,135,210,.12);border-color:rgba(168,200,255,.5)" style-active="cursor:grabbing;transform:scale(.98)">
+                <strong style="display:block;font-size:14px;color:#ece4cf;margin-bottom:4px;letter-spacing:.04em">{{ card.label }}</strong>
+                <span style="font-size:12.5px;color:#8b8674;line-height:1.55;display:block">{{ card.summary }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ noUnassigned }}">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 0;color:#5a5648">
+                <div style="width:5px;height:5px;background:#34d8ff;transform:rotate(45deg);box-shadow:0 0 6px #34d8ff"></div>
+                <p style="margin:0;font-style:italic;font-size:12px">所有卡片都已放入分組。</p>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Groups -->
+          <div style="display:flex;flex-direction:column;gap:16px">
+            <sc-for list="{{ groups }}" as="group" hint-placeholder-count="2">
+              <div data-zone-id="{{ group.id }}" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ classifyDrop }}" style="background:rgba(255,255,255,.025);border:1px solid rgba(179,191,214,.22);border-left:3px solid {{ group.color }};padding:16px;min-height:100px;position:relative;transition:border-color .25s,background .2s">
+                <sc-if value="{{ group.isOver }}">
+                  <div style="position:absolute;inset:-1px;border:2px solid {{ group.color }};background:rgba(212,20,58,.03);pointer-events:none;z-index:5;display:flex;align-items:center;justify-content:center;animation:dropPulse 1s ease infinite">
+                    <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#ece4cf;background:rgba(8,8,14,.85);padding:5px 14px;border:1px solid rgba(236,228,207,.32)">放入「{{ group.label }}」</span>
+                  </div>
+                </sc-if>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+                  <div style="width:5px;height:5px;transform:rotate(45deg);background:{{ group.color }};box-shadow:0 0 5px {{ group.color }}"></div>
+                  <h4 style="margin:0;font-family:'Dela Gothic One',serif;font-weight:400;font-size:15px;letter-spacing:.06em;color:#ece4cf">{{ group.label }}</h4>
+                </div>
+                <p style="margin:0 0 12px;font-size:12px;color:#8b8674;line-height:1.55">{{ group.desc }}</p>
+                <div style="display:flex;flex-direction:column;gap:10px">
+                  <sc-for list="{{ group.cards }}" as="card" hint-placeholder-count="0">
+                    <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:rgba(91,135,210,.14);border:1px solid rgba(168,200,255,.4);padding:12px 16px;cursor:grab;transition:transform .18s,background .18s;user-select:none;animation:snapIn .4s ease-out;position:relative;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))" style-hover="transform:translateY(-1px);background:rgba(91,135,210,.22)" style-active="cursor:grabbing">
+                      <button data-card-id="{{ card.id }}" onClick="{{ classifyRemove }}" style="position:absolute;top:4px;right:4px;width:22px;height:22px;background:transparent;border:1px solid rgba(236,228,207,.14);color:#5a5648;cursor:pointer;font:inherit;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;transition:all .15s" style-hover="border-color:#d4143a;color:#d4143a;background:rgba(212,20,58,.12)">×</button>
+                      <strong style="display:block;font-size:13px;color:#ece4cf;margin-bottom:3px;letter-spacing:.04em">{{ card.label }}</strong>
+                      <span style="font-size:12px;color:#8b8674;line-height:1.5;display:block">{{ card.summary }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ group.isEmpty }}">
+                  <div style="display:flex;align-items:center;justify-content:center;padding:18px 0">
+                    <div style="border:1px dashed rgba(236,228,207,.12);padding:12px 20px;font-size:12px;font-style:italic;color:#5a5648">Drag evidence here</div>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ ORDER BOARD ═══ -->
+      <sc-if value="{{ showOrder }}">
+        <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px;max-width:960px;animation:cardEnter .35s ease">
+          <!-- Timeline -->
+          <div data-zone-id="timeline" onDragOver="{{ timelineDragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ orderDrop }}" style="background:rgba(255,255,255,.025);border:1px solid rgba(179,191,214,.22);padding:16px 16px 16px 22px;position:relative;min-height:140px;transition:border-color .25s">
+            <sc-if value="{{ orderTimelineOver }}">
+              <div style="position:absolute;inset:-1px;border:2px dashed #d4143a;background:rgba(212,20,58,.03);pointer-events:none;z-index:5;display:flex;align-items:flex-end;justify-content:center;padding-bottom:16px;animation:dropPulse 1s ease infinite">
+                <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#ece4cf;background:rgba(8,8,14,.85);padding:5px 14px;border:1px solid rgba(236,228,207,.32)">加入時間線</span>
+              </div>
+            </sc-if>
+            <h3 style="margin:0 0 18px;font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.22em;color:#5a5648;text-transform:uppercase">時間線</h3>
+            <div style="position:relative;padding-left:44px">
+              <div style="position:absolute;left:14px;top:6px;bottom:6px;width:1px;background:linear-gradient(180deg,rgba(212,20,58,.5),rgba(212,20,58,.08))"></div>
+              <div style="display:flex;flex-direction:column;gap:18px">
+                <sc-for list="{{ timelineCards }}" as="card" hint-placeholder-count="1">
+                  <sc-if value="{{ card.showInsertBefore }}">
+                    <div style="background:rgba(212,20,58,.06);border:2px dashed rgba(212,20,58,.4);padding:12px 16px;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));margin-left:0;position:relative">
+                      <strong style="display:block;font-size:13px;color:rgba(212,20,58,.45);margin-bottom:3px;letter-spacing:.04em">{{ insertPreview.label }}</strong>
+                      <span style="font-size:12px;color:rgba(212,20,58,.25);line-height:1.5;display:block">{{ insertPreview.summary }}</span>
+                    </div>
+                  </sc-if>
+                  <div data-timeline-idx="{{ card.position }}" draggable="{{ card.draggable }}" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="position:relative;cursor:{{ card.cursor }};user-select:none;transition:transform .18s,opacity .18s;opacity:{{ card.opacity }}" style-hover="transform:translateX(4px)" style-active="cursor:grabbing">
+                    <div style="position:absolute;left:-44px;top:10px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:11px;z-index:2;background:{{ card.nodeColor }};color:{{ card.nodeText }};transform:rotate(45deg);box-shadow:0 0 8px {{ card.nodeGlow }}">
+                      <span style="transform:rotate(-45deg)">{{ card.position }}</span>
+                    </div>
+                    <div style="background:rgba(255,255,255,.045);border:1px solid rgba(179,191,214,.3);padding:12px 16px;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px))">
+                      <strong style="display:block;font-size:13px;color:#ece4cf;margin-bottom:3px;letter-spacing:.04em">{{ card.label }}</strong>
+                      <span style="font-size:12px;color:#8b8674;line-height:1.5;display:block">{{ card.summary }}</span>
+                      <sc-if value="{{ card.fixed }}">
+                        <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+                          <div style="width:4px;height:4px;transform:rotate(45deg);background:#b08545;box-shadow:0 0 4px #b08545"></div>
+                          <span style="font-family:'Antonio',sans-serif;font-size:9px;letter-spacing:.18em;color:#b08545;text-transform:uppercase">固定位置</span>
+                        </div>
+                      </sc-if>
+
+                    </div>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ showInsertAtEnd }}">
+                  <div style="background:rgba(212,20,58,.06);border:2px dashed rgba(212,20,58,.4);padding:12px 16px;clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,12px 100%,0 calc(100% - 12px));position:relative">
+                    <strong style="display:block;font-size:13px;color:rgba(212,20,58,.45);margin-bottom:3px;letter-spacing:.04em">{{ insertPreview.label }}</strong>
+                    <span style="font-size:12px;color:rgba(212,20,58,.25);line-height:1.5;display:block">{{ insertPreview.summary }}</span>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+          <!-- Available Events -->
+          <div data-zone-id="order-pool" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ orderPoolDrop }}" style="background:rgba(255,255,255,.025);border:1px solid rgba(179,191,214,.22);padding:16px;display:flex;flex-direction:column;gap:12px;position:relative;transition:border-color .25s,background .2s">
+            <sc-if value="{{ orderPoolOver }}">
+              <div style="position:absolute;inset:-1px;border:2px dashed #d4143a;background:rgba(212,20,58,.04);pointer-events:none;z-index:5;animation:dropPulse 1s ease infinite;display:flex;align-items:center;justify-content:center">
+                <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#ece4cf;background:rgba(8,8,14,.85);padding:5px 14px;border:1px solid rgba(236,228,207,.32)">移除</span>
+              </div>
+            </sc-if>
+            <h3 style="margin:0;font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.22em;color:#5a5648;text-transform:uppercase">待加入</h3>
+            <sc-for list="{{ unplacedOrder }}" as="card" hint-placeholder-count="3">
+              <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:rgba(255,255,255,.045);border:1px solid rgba(179,191,214,.3);padding:14px 16px;cursor:grab;transition:transform .18s ease,background .18s,border-color .18s;user-select:none;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))" style-hover="transform:translateY(-2px);background:rgba(91,135,210,.12);border-color:rgba(168,200,255,.5)" style-active="cursor:grabbing;transform:scale(.98)">
+                <strong style="display:block;font-size:14px;color:#ece4cf;margin-bottom:4px;letter-spacing:.04em">{{ card.label }}</strong>
+                <span style="font-size:12.5px;color:#8b8674;line-height:1.55;display:block">{{ card.summary }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ noUnplacedOrder }}">
+              <div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:24px 0;color:#5a5648">
+                <div style="width:5px;height:5px;background:#34d8ff;transform:rotate(45deg);box-shadow:0 0 6px #34d8ff"></div>
+                <p style="margin:0;font-style:italic;font-size:12px">所有事件都已放入時間線。</p>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ═══ THRESHOLD BOARD ═══ -->
+      <sc-if value="{{ showThreshold }}">
+        <div style="max-width:780px;animation:cardEnter .35s ease">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;margin-bottom:20px">
+            <sc-for list="{{ tCards }}" as="card" hint-placeholder-count="3">
+              <div data-card-id="{{ card.id }}" onClick="{{ thresholdToggle }}" style="background:{{ card.cardBg }};border:1px solid {{ card.cardBorder }};padding:16px;cursor:pointer;transition:transform .18s ease,background .18s,border-color .18s,box-shadow .3s;user-select:none;position:relative;clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))" style-hover="transform:translateY(-2px);background:rgba(91,135,210,.18);border-color:rgba(168,200,255,.5)">
+                <sc-if value="{{ card.selected }}">
+                  <div style="position:absolute;top:8px;right:8px;width:5px;height:5px;transform:rotate(45deg);background:#34d8ff;box-shadow:0 0 8px #34d8ff"></div>
+                </sc-if>
+                <strong style="display:block;font-size:14px;color:#ece4cf;margin-bottom:5px;letter-spacing:.04em">{{ card.label }}</strong>
+                <span style="font-size:12px;color:#8b8674;line-height:1.55;display:block;margin-bottom:10px">{{ card.summary }}</span>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8b8674;background:rgba(255,255,255,.03);padding:2px 7px;border:1px solid rgba(179,191,214,.18)">{{ card.source }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#8b8674;background:rgba(255,255,255,.03);padding:2px 7px;border:1px solid rgba(179,191,214,.18)">{{ card.proofs }}</span>
+                </div>
+                <sc-if value="{{ card.selected }}">
+                  <div style="margin-top:10px;display:flex;align-items:center;gap:6px">
+                    <div style="width:4px;height:4px;transform:rotate(45deg);background:#34d8ff;box-shadow:0 0 4px #34d8ff"></div>
+                    <span style="font-family:'Antonio',sans-serif;font-size:9px;letter-spacing:.18em;color:#34d8ff;text-transform:uppercase">Selected</span>
+                  </div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:14px;padding:12px 16px;background:rgba(16,20,29,.95);border:1px solid rgba(179,191,214,.22)">
+            <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;color:#5a5648;text-transform:uppercase;flex:none;white-space:nowrap">Evidence</span>
+            <div style="flex:1;height:3px;background:rgba(236,228,207,.06);overflow:hidden">
+              <div style="height:100%;width:{{ tPct }}%;background:{{ tBarColor }};transition:width .4s ease,background .4s ease"></div>
+            </div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:{{ tCountColor }};white-space:nowrap">已選 {{ tLabel }}</span>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+
+    <!-- ═══ FOOTER ═══ -->
+    <footer style="flex:none;display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:14px 28px;background:rgba(16,20,29,.95);border-top:1px solid rgba(179,191,214,.3)">
+      <sc-if value="{{ allDone }}">
+        <span style="margin-right:auto;display:inline-flex;align-items:center;gap:8px;padding:5px 10px 4px;border:1px solid rgba(52,216,255,.4);background:rgba(52,216,255,.06)">
+          <div style="width:5px;height:5px;background:#34d8ff;transform:rotate(45deg);box-shadow:0 0 6px #34d8ff"></div>
+          <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.18em;color:#34d8ff;text-transform:uppercase">All Confirmed</span>
+        </span>
+      </sc-if>
+      <button onClick="{{ reset }}" style="padding:8px 16px;font:inherit;font-family:'Shippori Mincho',serif;font-size:13px;letter-spacing:.08em;background:rgba(236,228,207,.04);border:1px solid rgba(236,228,207,.32);color:#ece4cf;cursor:pointer;transition:background .18s,border-color .18s" style-hover="border-color:#d4143a;background:rgba(212,20,58,.12)">重設</button>
+      <sc-if value="{{ canSubmit }}">
+        <button onClick="{{ submit }}" style="display:flex;align-items:center;gap:8px;padding:8px 20px;font:inherit;font-family:'Shippori Mincho',serif;font-size:14px;letter-spacing:.08em;background:#b9cef1;border:1px solid #b9cef1;color:#11151c;font-weight:700;cursor:pointer;transition:all .18s" style-hover="background:#d6e5ff">
+          <span>比對推論</span>
+          <span style="font-family:'Antonio',sans-serif;font-size:10px;letter-spacing:.22em;color:#5a5648;font-weight:500">SUBMIT</span>
+        </button>
+      </sc-if>
+      <sc-if value="{{ cantSubmit }}">
+        <button disabled style="padding:8px 20px;font:inherit;font-family:'Shippori Mincho',serif;font-size:14px;letter-spacing:.08em;background:rgba(185,206,241,.15);border:1px solid rgba(185,206,241,.2);color:rgba(17,21,28,.3);font-weight:700;cursor:default">比對推論</button>
+      </sc-if>
+    </footer>
+  </div>
+
+  <!-- ═══ FEEDBACK OVERLAY ═══ -->
+  <sc-if value="{{ feedbackVisible }}">
+    <div onClick="{{ dismissFeedback }}" style="position:fixed;inset:0;z-index:100;display:grid;place-items:center;padding:24px;background:linear-gradient(rgba(6,6,10,.76),rgba(6,6,10,.82)),repeating-linear-gradient(to bottom,transparent 0,transparent 4px,rgba(0,0,0,.24) 5px);backdrop-filter:blur(5px);animation:fadeIn .2s ease;cursor:pointer">
+      <sc-if value="{{ feedbackCorrect }}">
+        <div style="text-align:center;animation:slideUp .3s ease;max-width:420px">
+          <div style="display:inline-block;border:1px solid rgba(52,216,255,.5);padding:16px 40px;animation:stampIn .45s ease;margin-bottom:20px;background:rgba(8,8,14,.94);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))">
+            <div style="font-family:'Antonio',sans-serif;font-weight:700;font-size:24px;letter-spacing:.32em;color:#34d8ff;text-transform:uppercase;text-shadow:0 0 12px rgba(52,216,255,.4)">Confirmed</div>
+          </div>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#ece4cf">{{ feedbackMsg }}</p>
+          <p style="margin:12px 0 0;font-size:11px;color:#5a5648">Click to dismiss</p>
+        </div>
+      </sc-if>
+      <sc-if value="{{ feedbackIncorrect }}">
+        <div style="background:rgba(8,8,14,.94);border:1px solid rgba(212,20,58,.45);padding:28px 40px;text-align:center;max-width:420px;animation:shake .45s ease;box-shadow:0 20px 70px rgba(0,0,0,.48),inset 0 0 0 1px rgba(236,228,207,.05);clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))">
+          <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px">
+            <div style="width:5px;height:5px;background:#d4143a;transform:rotate(45deg);box-shadow:0 0 8px #d4143a"></div>
+            <span style="font-family:'Antonio',sans-serif;font-weight:700;font-size:22px;letter-spacing:.28em;color:#d4143a;text-transform:uppercase">Rejected</span>
+            <div style="width:5px;height:5px;background:#d4143a;transform:rotate(45deg);box-shadow:0 0 8px #d4143a"></div>
+          </div>
+          <p style="margin:0;font-size:15px;line-height:1.6;color:#ece4cf">{{ feedbackMsg }}</p>
+          <p style="margin:12px 0 0;font-size:11px;color:#5a5648">Click to dismiss</p>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;defaultBoard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;classify&quot;,&quot;order&quot;,&quot;threshold&quot;],&quot;default&quot;:&quot;classify&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+
+class Component extends DCLogic {
+  classifyCards = [
+    { id: 'miyake_call', label: "宮池の通話記録", summary: "宮池が通話を隠蔽した理由を説明する記録。" },
+    { id: 'l_corridor', label: "L字廊下の再現映像", summary: "宮池の位置から内部倉庫が見えないことを証明。" },
+    { id: 'ext_credential', label: "外部認証記録", summary: "宮池到着前に業者ルートで侵入した人物がいた。" },
+  ];
+  classifyGroupDefs = [
+    { id: 'small_lies', label: "宮池の些細な嘘", desc: "個人的なストレスによる隠蔽行為を説明する証拠。", color: '#d4143a' },
+    { id: 'third_party', label: "先行する第三者", desc: "外部からの先行侵入者の存在を裏付ける証拠。", color: '#34d8ff' },
+  ];
+  orderCardDefs = [
+    { id: 'evt_1841', label: "保守モード起動", summary: "ロックパネルが保守モードの起動を記録。", fixed: true },
+    { id: 'evt_1842', label: "外部認証による侵入", summary: "外部保守認証で裏口が解錠された。", fixed: false },
+    { id: 'evt_1843', label: "従業員認証による入室", summary: "従業員認証で廊下のドアが解錠された。", fixed: false },
+    { id: 'evt_1844', label: "サーバー統合完了", summary: "保守同期とサーバー統合が完了。", fixed: false },
+  ];
+  thresholdCardDefs = [
+    { id: 'lock_seq', label: "ドアロックの順序", summary: "イベント順序が公式概要のタイムラインと矛盾。", source: 'ドアロック · デジタル', proofs: '時刻, 順序' },
+    { id: 'phone_notif', label: "被害者の通知ログ", summary: "通知ログによる独立した時間アンカー。", source: '電話記録 · デジタル', proofs: '時刻' },
+    { id: 'mgr_timing', label: "管理者の証言", summary: "パネル同期前に裏口の音を聞いたと証言。", source: '管理者面談', proofs: '時刻' },
+  ];
+  thresholdMin = 2;
+  state = {
+    activeBoard: 'classify',
+    classifyDraft: {},
+    orderDraft: ['evt_1841'],
+    thresholdDraft: [],
+    dragCardId: null,
+    dragOverZone: null,
+    timelineInsertIdx: null,
+    feedback: null,
+    boardCompleted: { classify: false, order: false, threshold: false },
+  };
+  componentDidMount() {
+    const b = this.props.defaultBoard;
+    if (b && ['classify','order','threshold'].includes(b)) this.setState({ activeBoard: b });
+  }
+  renderVals() {
+    const s = this.state, self = this;
+    const classifyTotal = self.classifyCards.length;
+    const classifyDone = Object.keys(s.classifyDraft).length;
+    const orderTotal = self.orderCardDefs.length;
+    const orderDone = s.orderDraft.length;
+    const tCount = s.thresholdDraft.length;
+    const tMet = tCount >= self.thresholdMin;
+    const boards = ['classify','order','threshold'].map(id => {
+      const active = s.activeBoard === id, completed = s.boardCompleted[id];
+      let total, done, label, statusText, eyebrow;
+      if (id === 'classify') { total = classifyTotal; done = classifyDone; label = '證據分類'; statusText = `${done}/${total}`; eyebrow = 'CLASSIFY'; }
+      else if (id === 'order') { total = orderTotal; done = orderDone; label = '事件順序'; statusText = `${done}/${total}`; eyebrow = 'ORDER'; }
+      else { total = self.thresholdMin; done = tCount; label = '證據門檻'; statusText = `${done}/${total}`; eyebrow = 'THRESHOLD'; }
+      const pct = Math.min(100, (done / total) * 100);
+      return {
+        id, label, active, eyebrow,
+        diamondColor: completed ? '#34d8ff' : active ? '#d4143a' : '#5a5648',
+        diamondGlow: completed ? '#34d8ff' : active ? '#d4143a' : 'transparent',
+        statusText, statusTextColor: completed ? '#34d8ff' : '#8b8674',
+        progressPct: pct, progressColor: completed ? '#34d8ff' : '#d4143a',
+        bg: active ? 'rgba(212,20,58,.06)' : 'transparent',
+        borderColor: active ? 'rgba(212,20,58,.35)' : 'rgba(236,228,207,.08)',
+        accent: active ? '#d4143a' : 'transparent',
+        textColor: active ? '#ece4cf' : '#8b8674',
+        select: () => self.setState({ activeBoard: id, feedback: null }),
+      };
+    });
+    const completedCount = Object.values(s.boardCompleted).filter(Boolean).length;
+    const eyebrows = { classify: '證據分類', order: '事件順序', threshold: '證據門檻' };
+    const meta = {
+      classify: { title: '證據分類', instructions: '將每條證據拖入它真正支持的命題中。', n: 1, eyebrow: 'CLASSIFY' },
+      order: { title: '事件順序', instructions: '重建事件的原始順序。將事件從待加入區拖入時間線。', n: 2, eyebrow: 'ORDER' },
+      threshold: { title: '證據門檻', instructions: `選擇至少 ${self.thresholdMin} 條獨立證據以支持有限調取請求。`, n: 3, eyebrow: 'THRESHOLD' },
+    }[s.activeBoard];
+    const unassignedCards = self.classifyCards.filter(c => !s.classifyDraft[c.id]);
+    const groups = self.classifyGroupDefs.map(g => ({
+      ...g,
+      cards: self.classifyCards.filter(c => s.classifyDraft[c.id] === g.id),
+      isOver: s.dragOverZone === g.id && s.activeBoard === 'classify',
+      isEmpty: !self.classifyCards.some(c => s.classifyDraft[c.id] === g.id),
+    }));
+    const isDraggingToTimeline = s.dragOverZone === 'timeline' && s.dragCardId && s.timelineInsertIdx !== null;
+    const draggedCardDef = s.dragCardId ? self.orderCardDefs.find(c => c.id === s.dragCardId) : null;
+    const insertPreview = isDraggingToTimeline && draggedCardDef ? { label: draggedCardDef.label, summary: draggedCardDef.summary } : null;
+    const timelineCards = s.orderDraft.map((id, i) => {
+      const def = self.orderCardDefs.find(c => c.id === id) || { id, label: id, summary: '', fixed: false };
+      const showInsertBefore = isDraggingToTimeline && s.timelineInsertIdx === i && id !== s.dragCardId;
+      const isDragging = id === s.dragCardId;
+      return { ...def, position: i + 1, canRemove: !def.fixed, fixed: !!def.fixed,
+        draggable: def.fixed ? 'false' : 'true', cursor: def.fixed ? 'default' : 'grab',
+        showInsertBefore, isDragging,
+        opacity: isDragging ? '.3' : '1',
+        nodeColor: def.fixed ? '#b08545' : '#6a0a1a', nodeText: def.fixed ? '#07070d' : '#ece4cf', nodeGlow: def.fixed ? 'rgba(176,133,69,.4)' : 'rgba(212,20,58,.3)' };
+    });
+    const showInsertAtEnd = isDraggingToTimeline && s.timelineInsertIdx >= s.orderDraft.length;
+    const unplacedOrder = self.orderCardDefs.filter(c => !s.orderDraft.includes(c.id));
+    const tCards = self.thresholdCardDefs.map(c => ({
+      ...c, selected: s.thresholdDraft.includes(c.id), notSelected: !s.thresholdDraft.includes(c.id),
+      cardBg: s.thresholdDraft.includes(c.id) ? 'rgba(52,216,255,.08)' : 'rgba(255,255,255,.045)',
+      cardBorder: s.thresholdDraft.includes(c.id) ? 'rgba(52,216,255,.35)' : 'rgba(179,191,214,.3)',
+    }));
+    const tPct = Math.min(100, (tCount / self.thresholdMin) * 100);
+    const dragStart = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'move';
+      // Create a ghost clone that follows cursor
+      const el = e.currentTarget.querySelector('div') || e.currentTarget;
+      const clone = el.cloneNode(true);
+      clone.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:'+el.offsetWidth+'px;background:rgba(16,20,29,.95);border:1px solid rgba(168,200,255,.5);padding:12px 16px;color:#ece4cf;font-family:Shippori Mincho,serif;font-size:13px;pointer-events:none;z-index:999;box-shadow:0 8px 32px rgba(0,0,0,.6);opacity:.92';
+      clone.id = '__drag-ghost';
+      document.body.appendChild(clone);
+      e.dataTransfer.setDragImage(clone, clone.offsetWidth / 2, 20);
+      setTimeout(() => clone.remove(), 0);
+      self.setState({ dragCardId: id });
+    };
+    const dragEnd = () => self.setState({ dragCardId: null, dragOverZone: null, timelineInsertIdx: null });
+    const dragOver = (e) => { e.preventDefault(); const z = e.currentTarget.dataset.zoneId; if (s.dragOverZone !== z) self.setState({ dragOverZone: z }); };
+    const dragLeave = (e) => { if (!e.currentTarget.contains(e.relatedTarget)) self.setState({ dragOverZone: null, timelineInsertIdx: null }); };
+    const timelineDragOver = (e) => {
+      e.preventDefault();
+      const z = 'timeline';
+      const container = e.currentTarget;
+      const cardEls = container.querySelectorAll('[data-timeline-idx]');
+      const fixedCount = self.orderCardDefs.filter(c => c.fixed).length;
+      let insertIdx = s.orderDraft.length;
+      for (const el of cardEls) {
+        const rect = el.getBoundingClientRect();
+        const mid = rect.top + rect.height / 2;
+        const idx = parseInt(el.dataset.timelineIdx) - 1;
+        if (e.clientY < mid) { insertIdx = Math.max(idx, fixedCount); break; }
+      }
+      if (s.dragOverZone !== z || s.timelineInsertIdx !== insertIdx) self.setState({ dragOverZone: z, timelineInsertIdx: insertIdx });
+    };
+    const classifyDrop = (e) => {
+      e.preventDefault(); const cardId = e.dataTransfer.getData('text/plain'), zone = e.currentTarget.dataset.zoneId;
+      if (!self.classifyCards.find(c => c.id === cardId)) return;
+      self.setState(p => { const d = { ...p.classifyDraft }; if (zone === 'pool') delete d[cardId]; else d[cardId] = zone; return { classifyDraft: d, dragCardId: null, dragOverZone: null }; });
+    };
+    const classifyRemove = (e) => { e.stopPropagation(); const id = e.currentTarget.dataset.cardId; self.setState(p => { const d = { ...p.classifyDraft }; delete d[id]; return { classifyDraft: d }; }); };
+    const orderDrop = (e) => {
+      e.preventDefault(); const cardId = e.dataTransfer.getData('text/plain');
+      if (!self.orderCardDefs.find(c => c.id === cardId)) return;
+      const fixedCount = self.orderCardDefs.filter(c => c.fixed).length;
+      self.setState(p => {
+        const insertAt = p.timelineInsertIdx;
+        const wasIn = p.orderDraft.includes(cardId);
+        const arr = p.orderDraft.filter(x => x !== cardId);
+        let idx = insertAt !== null ? insertAt : arr.length;
+        if (wasIn) {
+          const oldIdx = p.orderDraft.indexOf(cardId);
+          if (oldIdx < idx) idx = Math.max(idx - 1, fixedCount);
+        }
+        idx = Math.max(Math.min(idx, arr.length), fixedCount);
+        arr.splice(idx, 0, cardId);
+        return { orderDraft: arr, dragCardId: null, dragOverZone: null, timelineInsertIdx: null };
+      });
+    };
+    const orderRemove = (e) => { const id = e.currentTarget.dataset.cardId; if (self.orderCardDefs.find(c => c.id === id)?.fixed) return; self.setState(p => ({ orderDraft: p.orderDraft.filter(x => x !== id) })); };
+    const orderPoolDrop = (e) => {
+      e.preventDefault(); const cardId = e.dataTransfer.getData('text/plain');
+      if (!self.orderCardDefs.find(c => c.id === cardId)) return;
+      if (self.orderCardDefs.find(c => c.id === cardId)?.fixed) return;
+      self.setState(p => ({ orderDraft: p.orderDraft.filter(x => x !== cardId), dragCardId: null, dragOverZone: null }));
+    };
+    const orderMove = (e) => {
+      const id = e.currentTarget.dataset.cardId, dir = parseInt(e.currentTarget.dataset.dir);
+      self.setState(p => { const arr = [...p.orderDraft], i = arr.indexOf(id); if (i < 0) return p; const j = i + dir; if (j < 1 || j >= arr.length) return p; [arr[i], arr[j]] = [arr[j], arr[i]]; return { orderDraft: arr }; });
+    };
+    const thresholdToggle = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      self.setState(p => { const set = new Set(p.thresholdDraft); set.has(id) ? set.delete(id) : set.add(id); return { thresholdDraft: [...set] }; });
+    };
+    const submit = () => {
+      const b = s.activeBoard; let ok = false, msg = '';
+      if (b === 'classify') {
+        const n = Object.keys(s.classifyDraft).length;
+        if (n < classifyTotal) { ok = false; msg = `還有 ${classifyTotal - n} 張卡片未分類。`; }
+        else {
+          const correctAnswers = { miyake_call: 'small_lies', l_corridor: 'third_party', ext_credential: 'third_party' };
+          ok = Object.entries(correctAnswers).every(([cardId, groupId]) => s.classifyDraft[cardId] === groupId);
+          msg = ok ? '證據分類確認 — 所有命題已驗證。' : '分類結果不正確 — 請重新檢視每條證據所支持的命題。';
+        }
+      }
+      else if (b === 'order') {
+        if (s.orderDraft.length < orderTotal) { ok = false; msg = `還有 ${orderTotal - s.orderDraft.length} 個事件未放入時間線。`; }
+        else {
+          const correctOrder = ['evt_1841', 'evt_1842', 'evt_1843', 'evt_1844'];
+          ok = s.orderDraft.every((id, i) => id === correctOrder[i]);
+          msg = ok ? '時間線順序確認 — 事件順序已鎖定。' : '事件順序不正確 — 請重新檢視時間線的排列。';
+        }
+      }
+      else { ok = tMet; msg = ok ? '證據門檻達標 — 調取請求已核准。' : `需要至少 ${self.thresholdMin} 條證據。目前已選：${tCount}。`; }
+      self.setState(p => ({ feedback: { type: ok ? 'correct' : 'incorrect', message: msg }, boardCompleted: ok ? { ...p.boardCompleted, [b]: true } : p.boardCompleted }));
+      setTimeout(() => self.setState({ feedback: null }), ok ? 3500 : 2500);
+    };
+    const reset = () => {
+      const b = s.activeBoard, bc = { ...s.boardCompleted, [b]: false };
+      if (b === 'classify') self.setState({ classifyDraft: {}, boardCompleted: bc, feedback: null });
+      else if (b === 'order') self.setState({ orderDraft: ['evt_1841'], boardCompleted: bc, feedback: null });
+      else self.setState({ thresholdDraft: [], boardCompleted: bc, feedback: null });
+    };
+    let canSubmit = false;
+    if (s.activeBoard === 'classify') canSubmit = Object.keys(s.classifyDraft).length > 0;
+    else if (s.activeBoard === 'order') canSubmit = s.orderDraft.length > 1;
+    else canSubmit = tCount > 0;
+    return {
+      title: '誤判檢討', summary: '整理證據，找出經得起推敲的命題。',
+      boards, overallPct: (completedCount / 3) * 100, overallColor: completedCount === 3 ? '#34d8ff' : '#d4143a', overallLabel: `${completedCount}/3`,
+      boardTitle: meta.title, boardInstructions: meta.instructions, boardNumber: meta.n, boardCount: 3, boardEyebrow: meta.eyebrow,
+      showClassify: s.activeBoard === 'classify', showOrder: s.activeBoard === 'order', showThreshold: s.activeBoard === 'threshold',
+      unassignedCards, noUnassigned: unassignedCards.length === 0,
+      groups, isPoolOver: s.dragOverZone === 'pool' && s.activeBoard === 'classify',
+      timelineCards, unplacedOrder, noUnplacedOrder: unplacedOrder.length === 0,
+      orderTimelineOver: s.dragOverZone === 'timeline' && s.activeBoard === 'order',
+      showInsertAtEnd, insertPreview,
+      orderPoolOver: s.dragOverZone === 'order-pool' && s.activeBoard === 'order',
+      orderPoolDrop,
+      tCards, tPct, tLabel: `${tCount} / ${self.thresholdMin}`,
+      tBarColor: tMet ? '#34d8ff' : '#d4143a', tCountColor: tMet ? '#34d8ff' : '#8b8674',
+      dragStart, dragEnd, dragOver, dragLeave, timelineDragOver, classifyDrop, classifyRemove,
+      orderDrop, orderRemove, orderMove, thresholdToggle,
+      submit, reset,
+      dismissFeedback: () => self.setState({ feedback: null }),
+      feedbackVisible: s.feedback !== null, feedbackCorrect: s.feedback?.type === 'correct', feedbackIncorrect: s.feedback?.type === 'incorrect',
+      feedbackMsg: s.feedback?.message ?? '',
+      canSubmit, cantSubmit: !canSubmit,
+      completed: s.boardCompleted[s.activeBoard],
+      allDone: s.boardCompleted.classify && s.boardCompleted.order && s.boardCompleted.threshold,
+    };
+  }
+}
+
+</script>
+</body>
+</html>

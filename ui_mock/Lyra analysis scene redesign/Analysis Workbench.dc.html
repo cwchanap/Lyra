@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+@keyframes shake{0%,100%{transform:translateX(0)}15%,45%,75%{transform:translateX(-8px)}30%,60%,90%{transform:translateX(8px)}}
+@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes snapIn{0%{transform:scale(.88) rotate(-2deg);opacity:.4}60%{transform:scale(1.04) rotate(.5deg);opacity:1}100%{transform:scale(1) rotate(0);opacity:1}}
+@keyframes glow{0%,100%{box-shadow:0 0 8px rgba(76,175,80,.2)}50%{box-shadow:0 0 22px rgba(76,175,80,.45)}}
+body{margin:0;overflow:hidden}
+a{color:#c49a5c}a:hover{color:#d4b87a}
+</style>
+</helmet>
+
+<div style="width:100%;height:100vh;background:#0e1219;display:flex;flex-direction:column;font-family:'DM Sans',sans-serif;color:#e8e4dc;overflow:hidden">
+  <header style="padding:20px 28px 0;flex:none">
+    <div style="font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.2em;color:#c49a5c;text-transform:uppercase;margin-bottom:6px">Analysis Workbench</div>
+    <h1 style="margin:0;font-family:'Libre Baskerville',serif;font-size:22px;font-weight:400;color:#f5f0e8">{{ title }}</h1>
+    <p style="margin:3px 0 0;font-size:13px;color:#8b8a87">{{ summary }}</p>
+  </header>
+
+  <nav style="display:flex;gap:6px;padding:14px 28px 0">
+    <sc-for list="{{ boards }}" as="tab" hint-placeholder-count="3">
+      <sc-if value="{{ tab.active }}">
+        <button onClick="{{ tab.select }}" style="display:flex;align-items:center;gap:8px;padding:9px 16px;background:rgba(196,154,92,.15);border:1px solid rgba(196,154,92,.4);border-radius:6px;color:#e8e4dc;font:500 12px 'DM Sans',sans-serif;cursor:pointer">
+          <div style="width:8px;height:8px;border-radius:50%;background:{{ tab.statusColor }};flex:none;box-shadow:0 0 6px {{ tab.statusColor }}"></div>
+          {{ tab.label }}
+        </button>
+      </sc-if>
+      <sc-if value="{{ tab.inactive }}">
+        <button onClick="{{ tab.select }}" style="display:flex;align-items:center;gap:8px;padding:9px 16px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#8b8a87;font:500 12px 'DM Sans',sans-serif;cursor:pointer;transition:all .2s" style-hover="background:rgba(255,255,255,.07);color:#c0bdb5">
+          <div style="width:8px;height:8px;border-radius:50%;background:{{ tab.statusColor }};flex:none"></div>
+          {{ tab.label }}
+        </button>
+      </sc-if>
+    </sc-for>
+  </nav>
+
+  <div style="flex:1;min-height:0;margin:14px 20px 0;border-radius:10px;overflow-y:auto;position:relative;background:repeating-linear-gradient(45deg,transparent,transparent 3px,rgba(0,0,0,.012) 3px,rgba(0,0,0,.012) 6px),repeating-linear-gradient(-45deg,transparent,transparent 4px,rgba(0,0,0,.008) 4px,rgba(0,0,0,.008) 8px),linear-gradient(160deg,#9e7638 0%,#b5874a 25%,#a67c40 50%,#c49a5c 75%,#9e7638 100%);box-shadow:inset 0 2px 10px rgba(0,0,0,.35),0 4px 24px rgba(0,0,0,.4);border:3px solid #705428;padding:22px">
+
+    <!-- ═══ CLASSIFY BOARD ═══ -->
+    <sc-if value="{{ showClassify }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-bottom:18px">
+        <h2 style="margin:0 0 4px;font-family:'Libre Baskerville',serif;font-size:17px;font-weight:400;color:#f5f0e8">Evidence Classification</h2>
+        <p style="margin:0;font-size:12px;color:rgba(255,255,255,.45)">Drag each piece of evidence into the proposition it truly supports.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:20px">
+        <div data-zone-id="pool" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ classifyDrop }}" style="background:rgba(0,0,0,.14);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px;position:relative;min-height:120px;border:2px solid transparent;transition:border-color .2s">
+          <sc-if value="{{ isPoolOver }}">
+            <div style="position:absolute;inset:0;border:2px dashed #c49a5c;background:rgba(196,154,92,.08);border-radius:8px;pointer-events:none;z-index:5"></div>
+          </sc-if>
+          <h3 style="margin:0;font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em;color:rgba(255,255,255,.45);text-transform:uppercase">Unclassified</h3>
+          <sc-for list="{{ unassignedCards }}" as="card" hint-placeholder-count="3">
+            <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:linear-gradient(145deg,#f8f4ec,#efe8da);border-radius:3px;padding:20px 16px 14px;box-shadow:2px 3px 10px rgba(0,0,0,.28);position:relative;cursor:grab;transition:transform .2s,box-shadow .2s;user-select:none" style-hover="transform:translateY(-3px) rotate(-.5deg);box-shadow:3px 6px 18px rgba(0,0,0,.38)" style-active="cursor:grabbing">
+              <div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:radial-gradient(circle at 40% 35%,#ff7b7b,#c0392b);border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.45)"></div>
+              <strong style="display:block;font-size:13px;color:#2c2418;margin-bottom:4px;line-height:1.3">{{ card.label }}</strong>
+              <span style="font-size:11.5px;color:#5a4e3f;line-height:1.5;display:block">{{ card.summary }}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{ noUnassigned }}">
+            <p style="margin:0;color:rgba(255,255,255,.3);font-style:italic;font-size:12px;text-align:center;padding:24px 0">All evidence classified</p>
+          </sc-if>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <sc-for list="{{ groups }}" as="group" hint-placeholder-count="2">
+            <div data-zone-id="{{ group.id }}" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ classifyDrop }}" style="background:rgba(0,0,0,.12);border:2px dashed rgba(255,255,255,.14);border-radius:8px;padding:16px;min-height:110px;position:relative;transition:border-color .3s;border-left:4px solid {{ group.color }}">
+              <sc-if value="{{ group.isOver }}">
+                <div style="position:absolute;inset:0;border:2px solid #c49a5c;background:rgba(196,154,92,.1);border-radius:8px;pointer-events:none;z-index:5;display:flex;align-items:center;justify-content:center">
+                  <span style="color:#c49a5c;font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase">Drop here</span>
+                </div>
+              </sc-if>
+              <h4 style="margin:0 0 3px;font-size:14px;color:#f5f0e8;font-weight:600">{{ group.label }}</h4>
+              <p style="margin:0 0 10px;font-size:11.5px;color:#a09d96;line-height:1.4">{{ group.desc }}</p>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                <sc-for list="{{ group.cards }}" as="card" hint-placeholder-count="0">
+                  <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:linear-gradient(145deg,#f8f4ec,#efe8da);border-radius:3px;padding:20px 16px 14px;box-shadow:2px 3px 10px rgba(0,0,0,.28);position:relative;cursor:grab;user-select:none;animation:snapIn .45s ease-out;transition:transform .2s" style-hover="transform:translateY(-2px)" style-active="cursor:grabbing">
+                    <div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:{{ card.pinColor }};border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.45)"></div>
+                    <button data-card-id="{{ card.id }}" onClick="{{ classifyRemove }}" style="position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.06);border:none;color:#8b7d6b;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;padding:0;transition:all .15s" style-hover="background:rgba(192,57,43,.2);color:#c0392b">×</button>
+                    <strong style="display:block;font-size:13px;color:#2c2418;margin-bottom:4px;line-height:1.3">{{ card.label }}</strong>
+                    <span style="font-size:11.5px;color:#5a4e3f;line-height:1.5;display:block">{{ card.summary }}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <sc-if value="{{ group.isEmpty }}">
+                <p style="margin:0;color:rgba(255,255,255,.25);font-style:italic;font-size:12px;text-align:center;padding:20px 0">Drag evidence here</p>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ═══ ORDER BOARD ═══ -->
+    <sc-if value="{{ showOrder }}">
+      <div style="margin-bottom:18px">
+        <h2 style="margin:0 0 4px;font-family:'Libre Baskerville',serif;font-size:17px;font-weight:400;color:#f5f0e8">Event Timeline</h2>
+        <p style="margin:0;font-size:12px;color:rgba(255,255,255,.45)">Reconstruct the original sequence of local lock events. Drag cards from the pool onto the timeline.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:20px">
+        <div data-zone-id="timeline" onDragOver="{{ dragOver }}" onDragLeave="{{ dragLeave }}" onDrop="{{ orderDrop }}" style="background:rgba(0,0,0,.14);border-radius:8px;padding:16px 16px 16px 20px;position:relative;min-height:140px;border:2px solid transparent;transition:border-color .2s">
+          <sc-if value="{{ orderTimelineOver }}">
+            <div style="position:absolute;inset:0;border:2px dashed #c49a5c;background:rgba(196,154,92,.08);border-radius:8px;pointer-events:none;z-index:5;display:flex;align-items:flex-end;justify-content:center;padding-bottom:16px">
+              <span style="color:#c49a5c;font:600 11px 'IBM Plex Mono',monospace;letter-spacing:.1em;text-transform:uppercase">Drop to add</span>
+            </div>
+          </sc-if>
+          <h3 style="margin:0 0 18px;font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em;color:rgba(255,255,255,.45);text-transform:uppercase">Timeline</h3>
+          <div style="position:relative;padding-left:44px">
+            <div style="position:absolute;left:15px;top:4px;bottom:4px;width:2px;background:rgba(255,255,255,.12);border-radius:1px"></div>
+            <div style="display:flex;flex-direction:column;gap:18px">
+              <sc-for list="{{ timelineCards }}" as="card" hint-placeholder-count="1">
+                <div style="display:flex;gap:14px;align-items:flex-start;position:relative">
+                  <div style="position:absolute;left:-44px;top:10px;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 12px 'IBM Plex Mono',monospace;z-index:2;box-shadow:0 2px 6px rgba(0,0,0,.35);background:{{ card.nodeColor }};color:#1a1510">{{ card.position }}</div>
+                  <div style="flex:1;background:linear-gradient(145deg,#f8f4ec,#efe8da);border-radius:3px;padding:14px 16px;box-shadow:2px 3px 8px rgba(0,0,0,.22);position:relative">
+                    <strong style="display:block;font-size:13px;color:#2c2418;margin-bottom:3px;line-height:1.3">{{ card.label }}</strong>
+                    <span style="font-size:11.5px;color:#5a4e3f;line-height:1.45;display:block">{{ card.summary }}</span>
+                    <sc-if value="{{ card.fixed }}">
+                      <div style="display:flex;align-items:center;gap:5px;margin-top:7px">
+                        <div style="width:6px;height:6px;border-radius:50%;background:#d4a849"></div>
+                        <span style="font:600 9px 'IBM Plex Mono',monospace;color:#d4a849;letter-spacing:.08em;text-transform:uppercase">Anchored</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ card.canRemove }}">
+                      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+                        <sc-if value="{{ card.canUp }}">
+                          <button data-card-id="{{ card.id }}" data-dir="-1" onClick="{{ orderMove }}" style="padding:4px 10px;font:500 11px 'DM Sans',sans-serif;background:rgba(196,154,92,.18);border:1px solid rgba(196,154,92,.35);border-radius:3px;color:#5a4e3f;cursor:pointer;transition:all .15s" style-hover="background:rgba(196,154,92,.35)">↑ Up</button>
+                        </sc-if>
+                        <sc-if value="{{ card.canDown }}">
+                          <button data-card-id="{{ card.id }}" data-dir="1" onClick="{{ orderMove }}" style="padding:4px 10px;font:500 11px 'DM Sans',sans-serif;background:rgba(196,154,92,.18);border:1px solid rgba(196,154,92,.35);border-radius:3px;color:#5a4e3f;cursor:pointer;transition:all .15s" style-hover="background:rgba(196,154,92,.35)">↓ Down</button>
+                        </sc-if>
+                        <button data-card-id="{{ card.id }}" onClick="{{ orderRemove }}" style="padding:4px 10px;font:500 11px 'DM Sans',sans-serif;background:rgba(192,57,43,.08);border:1px solid rgba(192,57,43,.25);border-radius:3px;color:#9e4035;cursor:pointer;transition:all .15s" style-hover="background:rgba(192,57,43,.18)">Remove</button>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        <div style="background:rgba(0,0,0,.12);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:14px">
+          <h3 style="margin:0;font:500 10px 'IBM Plex Mono',monospace;letter-spacing:.15em;color:rgba(255,255,255,.45);text-transform:uppercase">Available Events</h3>
+          <sc-for list="{{ unplacedOrder }}" as="card" hint-placeholder-count="3">
+            <div draggable="true" data-card-id="{{ card.id }}" onDragStart="{{ dragStart }}" onDragEnd="{{ dragEnd }}" style="background:linear-gradient(145deg,#f8f4ec,#efe8da);border-radius:3px;padding:20px 16px 14px;box-shadow:2px 3px 10px rgba(0,0,0,.28);position:relative;cursor:grab;transition:transform .2s,box-shadow .2s;user-select:none" style-hover="transform:translateY(-3px) rotate(-.5deg);box-shadow:3px 6px 18px rgba(0,0,0,.38)" style-active="cursor:grabbing">
+              <div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:radial-gradient(circle at 40% 35%,#ff7b7b,#c0392b);border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.45)"></div>
+              <strong style="display:block;font-size:13px;color:#2c2418;margin-bottom:4px;line-height:1.3">{{ card.label }}</strong>
+              <span style="font-size:11.5px;color:#5a4e3f;line-height:1.5;display:block">{{ card.summary }}</span>
+            </div>
+          </sc-for>
+          <sc-if value="{{ noUnplacedOrder }}">
+            <p style="margin:0;color:rgba(255,255,255,.3);font-style:italic;font-size:12px;text-align:center;padding:24px 0">All events placed on timeline</p>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ═══ THRESHOLD BOARD ═══ -->
+    <sc-if value="{{ showThreshold }}">
+      <div style="margin-bottom:18px">
+        <h2 style="margin:0 0 4px;font-family:'Libre Baskerville',serif;font-size:17px;font-weight:400;color:#f5f0e8">Evidence Threshold</h2>
+        <p style="margin:0;font-size:12px;color:rgba(255,255,255,.45)">Select at least {{ tMin }} independent pieces of evidence to support the limited retrieval request.</p>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px">
+        <sc-for list="{{ tCards }}" as="card" hint-placeholder-count="3">
+          <div data-card-id="{{ card.id }}" onClick="{{ thresholdToggle }}" style="background:linear-gradient(145deg,#f8f4ec,#efe8da);border-radius:4px;padding:22px 16px 16px;box-shadow:2px 3px 10px rgba(0,0,0,.28);position:relative;cursor:pointer;transition:transform .2s,box-shadow .2s;user-select:none" style-hover="transform:translateY(-3px);box-shadow:3px 6px 18px rgba(0,0,0,.35)">
+            <sc-if value="{{ card.selected }}">
+              <div style="position:absolute;inset:-1px;border:2px solid rgba(39,174,96,.7);border-radius:5px;pointer-events:none;animation:glow 2s ease infinite"></div>
+              <div style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:radial-gradient(circle at 40% 35%,#5dde84,#27ae60);border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.4),0 0 8px rgba(39,174,96,.4)"></div>
+            </sc-if>
+            <sc-if value="{{ card.notSelected }}">
+              <div style="position:absolute;top:-7px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:radial-gradient(circle at 40% 35%,#ff7b7b,#c0392b);border-radius:50%;box-shadow:0 2px 4px rgba(0,0,0,.45)"></div>
+            </sc-if>
+            <strong style="display:block;font-size:13px;color:#2c2418;margin-bottom:5px;line-height:1.3">{{ card.label }}</strong>
+            <span style="font-size:11.5px;color:#5a4e3f;line-height:1.5;display:block;margin-bottom:10px">{{ card.summary }}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span style="font-size:9.5px;color:#6b5e4f;background:rgba(0,0,0,.06);padding:3px 7px;border-radius:2px;font-family:'IBM Plex Mono',monospace">{{ card.source }}</span>
+              <span style="font-size:9.5px;color:#6b5e4f;background:rgba(0,0,0,.06);padding:3px 7px;border-radius:2px;font-family:'IBM Plex Mono',monospace">{{ card.proofs }}</span>
+            </div>
+            <sc-if value="{{ card.selected }}">
+              <div style="margin-top:10px;font:600 9px 'IBM Plex Mono',monospace;color:#1e7a42;letter-spacing:.08em;text-transform:uppercase;display:flex;align-items:center;gap:5px">
+                <div style="width:6px;height:6px;border-radius:50%;background:#27ae60"></div>
+                Selected
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 0 4px">
+        <div style="flex:1;height:6px;background:rgba(0,0,0,.2);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:{{ tPct }}%;background:{{ tBarColor }};border-radius:3px;transition:width .35s ease,background .35s ease"></div>
+        </div>
+        <span style="font:500 12px 'IBM Plex Mono',monospace;color:rgba(255,255,255,.45);white-space:nowrap">{{ tLabel }} required</span>
+      </div>
+    </sc-if>
+
+    <!-- Decorative strings -->
+    <div style="position:absolute;top:30px;right:60px;width:180px;height:0;border-top:1px solid rgba(192,57,43,.2);transform:rotate(12deg);pointer-events:none"></div>
+    <div style="position:absolute;bottom:50px;left:40px;width:140px;height:0;border-top:1px solid rgba(192,57,43,.15);transform:rotate(-7deg);pointer-events:none"></div>
+    <div style="position:absolute;top:45%;right:30%;width:100px;height:0;border-top:1px solid rgba(192,57,43,.12);transform:rotate(25deg);pointer-events:none"></div>
+  </div>
+
+  <footer style="flex:none;display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:12px 28px 16px">
+    <sc-if value="{{ completed }}">
+      <span style="margin-right:auto;font:500 11px 'IBM Plex Mono',monospace;color:#27ae60;letter-spacing:.06em;display:flex;align-items:center;gap:6px">
+        <div style="width:7px;height:7px;border-radius:50%;background:#27ae60;box-shadow:0 0 6px rgba(39,174,96,.5)"></div>
+        Board complete
+      </span>
+    </sc-if>
+    <sc-if value="{{ allDone }}">
+      <span style="margin-right:auto;font:500 11px 'IBM Plex Mono',monospace;color:#d4a849;letter-spacing:.06em">All boards confirmed</span>
+    </sc-if>
+    <button onClick="{{ reset }}" style="padding:9px 18px;font:500 12px 'DM Sans',sans-serif;background:transparent;border:1px solid rgba(255,255,255,.12);border-radius:6px;color:#8b8a87;cursor:pointer;transition:all .2s" style-hover="border-color:rgba(255,255,255,.28);color:#e8e4dc">Reset Board</button>
+    <sc-if value="{{ canSubmit }}">
+      <button onClick="{{ submit }}" style="padding:9px 24px;font:600 13px 'DM Sans',sans-serif;background:linear-gradient(135deg,#c49a5c,#a07940);border:none;border-radius:6px;color:#1a1510;cursor:pointer;transition:all .2s;box-shadow:0 2px 10px rgba(196,154,92,.3)" style-hover="box-shadow:0 4px 20px rgba(196,154,92,.5);transform:translateY(-1px)">Submit Analysis</button>
+    </sc-if>
+    <sc-if value="{{ cantSubmit }}">
+      <button disabled style="padding:9px 24px;font:600 13px 'DM Sans',sans-serif;background:rgba(196,154,92,.18);border:none;border-radius:6px;color:rgba(26,21,16,.35);cursor:default">Submit Analysis</button>
+    </sc-if>
+  </footer>
+
+  <sc-if value="{{ feedbackVisible }}">
+    <div onClick="{{ dismissFeedback }}" style="position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.65);animation:fadeIn .2s ease;cursor:pointer">
+      <sc-if value="{{ feedbackCorrect }}">
+        <div style="background:linear-gradient(135deg,#152015,#1a2e1a);border:2px solid rgba(76,175,80,.45);border-radius:14px;padding:36px 48px;text-align:center;max-width:380px;animation:slideUp .35s ease;box-shadow:0 8px 48px rgba(0,0,0,.6),0 0 40px rgba(76,175,80,.12)">
+          <div style="width:56px;height:56px;border-radius:50%;background:rgba(76,175,80,.15);border:2px solid rgba(76,175,80,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:28px;color:#4caf50">✓</div>
+          <p style="margin:0;font:500 15px/1.5 'DM Sans',sans-serif;color:#e8e4dc">{{ feedbackMsg }}</p>
+          <p style="margin:10px 0 0;font-size:11px;color:rgba(255,255,255,.3)">Click to dismiss</p>
+        </div>
+      </sc-if>
+      <sc-if value="{{ feedbackIncorrect }}">
+        <div style="background:linear-gradient(135deg,#201515,#2e1a1a);border:2px solid rgba(231,76,60,.45);border-radius:14px;padding:36px 48px;text-align:center;max-width:380px;animation:shake .5s ease;box-shadow:0 8px 48px rgba(0,0,0,.6),0 0 40px rgba(231,76,60,.12)">
+          <div style="width:56px;height:56px;border-radius:50%;background:rgba(231,76,60,.15);border:2px solid rgba(231,76,60,.4);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:28px;color:#e74c3c">✗</div>
+          <p style="margin:0;font:500 15px/1.5 'DM Sans',sans-serif;color:#e8e4dc">{{ feedbackMsg }}</p>
+          <p style="margin:10px 0 0;font-size:11px;color:rgba(255,255,255,.3)">Click to dismiss</p>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;defaultBoard&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;classify&quot;,&quot;order&quot;,&quot;threshold&quot;],&quot;default&quot;:&quot;classify&quot;,&quot;section&quot;:&quot;Board&quot;}}">
+class Component extends DCLogic {
+  classifyCards = [
+    { id: 'miyake_call', label: "Miyake's Call Record", summary: "Explains why Miyake concealed the phone call from investigators." },
+    { id: 'l_corridor', label: "L-Corridor Replay", summary: "Proves Miyake couldn't see the inner storage from her position." },
+    { id: 'ext_credential', label: "External Credential", summary: "Someone entered via the contractor route before Miyake arrived." },
+  ];
+  classifyGroupDefs = [
+    { id: 'small_lies', label: "Miyake's White Lies", desc: "Evidence that only explains concealment from personal stress.", color: '#e74c3c' },
+    { id: 'third_party', label: "Earlier Third Party", desc: "Evidence supporting the existence of an earlier external entrant.", color: '#3498db' },
+  ];
+  orderCardDefs = [
+    { id: 'evt_1841', label: "Maintenance Mode On", summary: "Lock panel records maintenance mode activation.", fixed: true },
+    { id: 'evt_1842', label: "External Credential Entry", summary: "External maintenance credential opens back door.", fixed: false },
+    { id: 'evt_1843', label: "Employee Credential Entry", summary: "Employee credential opens corridor door.", fixed: false },
+    { id: 'evt_1844', label: "Server Merge Complete", summary: "Maintenance sync and server merge finished.", fixed: false },
+  ];
+  thresholdCardDefs = [
+    { id: 'lock_seq', label: "Door Lock Sequence", summary: "Event order contradicts the official summary timeline.", source: 'Door Lock · Digital', proofs: 'time, order' },
+    { id: 'phone_notif', label: "Victim's Phone Alert", summary: "Independent time anchor from notification log.", source: 'Phone Archive · Digital', proofs: 'time' },
+    { id: 'mgr_timing', label: "Manager's Testimony", summary: "Claims to have heard the back door before the panel sync.", source: 'Manager Interview', proofs: 'time' },
+  ];
+  thresholdMin = 2;
+  state = {
+    activeBoard: 'classify',
+    classifyDraft: {},
+    orderDraft: ['evt_1841'],
+    thresholdDraft: [],
+    dragCardId: null,
+    dragOverZone: null,
+    feedback: null,
+    lastSnappedCard: null,
+    boardCompleted: { classify: false, order: false, threshold: false },
+  };
+  renderVals() {
+    const s = this.state;
+    const self = this;
+    const boards = ['classify', 'order', 'threshold'].map(id => ({
+      id,
+      label: id === 'classify' ? 'Classification' : id === 'order' ? 'Timeline' : 'Threshold',
+      active: s.activeBoard === id,
+      inactive: s.activeBoard !== id,
+      statusColor: s.boardCompleted[id] ? '#4caf50' : s.activeBoard === id ? '#c49a5c' : 'rgba(255,255,255,.18)',
+      select: () => self.setState({ activeBoard: id, feedback: null }),
+    }));
+    const unassignedCards = self.classifyCards.filter(c => !s.classifyDraft[c.id]);
+    const groups = self.classifyGroupDefs.map(g => ({
+      ...g,
+      cards: self.classifyCards.filter(c => s.classifyDraft[c.id] === g.id).map(c => ({ ...c, pinColor: g.color })),
+      isOver: s.dragOverZone === g.id && s.activeBoard === 'classify',
+      isEmpty: !self.classifyCards.some(c => s.classifyDraft[c.id] === g.id),
+    }));
+    const timelineCards = s.orderDraft.map((id, i) => {
+      const def = self.orderCardDefs.find(c => c.id === id) || { id, label: id, summary: '', fixed: false };
+      return { ...def, position: i + 1, canUp: !def.fixed && i > 1, canDown: !def.fixed && i < s.orderDraft.length - 1, canRemove: !def.fixed, nodeColor: def.fixed ? '#d4a849' : '#c49a5c' };
+    });
+    const unplacedOrder = self.orderCardDefs.filter(c => !s.orderDraft.includes(c.id));
+    const tCards = self.thresholdCardDefs.map(c => ({
+      ...c, selected: s.thresholdDraft.includes(c.id), notSelected: !s.thresholdDraft.includes(c.id),
+    }));
+    const tCount = s.thresholdDraft.length;
+    const tMet = tCount >= self.thresholdMin;
+    const tPct = Math.min(100, (tCount / self.thresholdMin) * 100);
+    const dragStart = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      e.dataTransfer.setData('text/plain', id);
+      e.dataTransfer.effectAllowed = 'move';
+      self.setState({ dragCardId: id });
+    };
+    const dragEnd = () => self.setState({ dragCardId: null, dragOverZone: null });
+    const dragOver = (e) => {
+      e.preventDefault();
+      const z = e.currentTarget.dataset.zoneId;
+      if (s.dragOverZone !== z) self.setState({ dragOverZone: z });
+    };
+    const dragLeave = (e) => {
+      if (!e.currentTarget.contains(e.relatedTarget)) self.setState({ dragOverZone: null });
+    };
+    const classifyDrop = (e) => {
+      e.preventDefault();
+      const cardId = e.dataTransfer.getData('text/plain');
+      const zone = e.currentTarget.dataset.zoneId;
+      if (!self.classifyCards.find(c => c.id === cardId)) return;
+      self.setState(p => {
+        const d = { ...p.classifyDraft };
+        if (zone === 'pool') delete d[cardId]; else d[cardId] = zone;
+        return { classifyDraft: d, dragCardId: null, dragOverZone: null, lastSnappedCard: cardId };
+      });
+      setTimeout(() => self.setState({ lastSnappedCard: null }), 600);
+    };
+    const classifyRemove = (e) => {
+      e.stopPropagation();
+      const id = e.currentTarget.dataset.cardId;
+      self.setState(p => { const d = { ...p.classifyDraft }; delete d[id]; return { classifyDraft: d }; });
+    };
+    const orderDrop = (e) => {
+      e.preventDefault();
+      const cardId = e.dataTransfer.getData('text/plain');
+      if (!self.orderCardDefs.find(c => c.id === cardId)) return;
+      self.setState(p => {
+        if (p.orderDraft.includes(cardId)) return { dragCardId: null, dragOverZone: null };
+        return { orderDraft: [...p.orderDraft, cardId], dragCardId: null, dragOverZone: null, lastSnappedCard: cardId };
+      });
+      setTimeout(() => self.setState({ lastSnappedCard: null }), 600);
+    };
+    const orderRemove = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      if (self.orderCardDefs.find(c => c.id === id)?.fixed) return;
+      self.setState(p => ({ orderDraft: p.orderDraft.filter(x => x !== id) }));
+    };
+    const orderMove = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      const dir = parseInt(e.currentTarget.dataset.dir);
+      self.setState(p => {
+        const arr = [...p.orderDraft]; const i = arr.indexOf(id);
+        if (i < 0) return p;
+        const j = i + dir;
+        if (j < 1 || j >= arr.length) return p;
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+        return { orderDraft: arr };
+      });
+    };
+    const thresholdToggle = (e) => {
+      const id = e.currentTarget.dataset.cardId;
+      self.setState(p => {
+        const set = new Set(p.thresholdDraft);
+        set.has(id) ? set.delete(id) : set.add(id);
+        return { thresholdDraft: [...set] };
+      });
+    };
+    const submit = () => {
+      const b = s.activeBoard;
+      let ok = false, msg = '';
+      if (b === 'classify') {
+        const n = Object.keys(s.classifyDraft).length;
+        ok = n === self.classifyCards.length;
+        msg = ok ? 'Evidence classification confirmed — all propositions verified.' : `${self.classifyCards.length - n} card(s) still unclassified.`;
+      } else if (b === 'order') {
+        ok = s.orderDraft.length === self.orderCardDefs.length;
+        msg = ok ? 'Timeline sequence confirmed — event order locked.' : `${self.orderCardDefs.length - s.orderDraft.length} event(s) still missing from the timeline.`;
+      } else {
+        ok = tMet;
+        msg = ok ? 'Evidence threshold met — limited retrieval request approved.' : `Need at least ${self.thresholdMin} pieces. Currently selected: ${tCount}.`;
+      }
+      self.setState(p => ({
+        feedback: { type: ok ? 'correct' : 'incorrect', message: msg },
+        boardCompleted: ok ? { ...p.boardCompleted, [b]: true } : p.boardCompleted,
+      }));
+      setTimeout(() => self.setState({ feedback: null }), ok ? 3500 : 2500);
+    };
+    const reset = () => {
+      const b = s.activeBoard;
+      const bc = { ...s.boardCompleted, [b]: false };
+      if (b === 'classify') self.setState({ classifyDraft: {}, boardCompleted: bc, feedback: null });
+      else if (b === 'order') self.setState({ orderDraft: ['evt_1841'], boardCompleted: bc, feedback: null });
+      else self.setState({ thresholdDraft: [], boardCompleted: bc, feedback: null });
+    };
+    let canSubmit = false;
+    if (s.activeBoard === 'classify') canSubmit = Object.keys(s.classifyDraft).length > 0;
+    else if (s.activeBoard === 'order') canSubmit = s.orderDraft.length > 1;
+    else canSubmit = tCount > 0;
+    return {
+      title: 'Misjudgment Review',
+      summary: 'Organize the evidence and propositions that hold up under scrutiny.',
+      boards,
+      showClassify: s.activeBoard === 'classify',
+      showOrder: s.activeBoard === 'order',
+      showThreshold: s.activeBoard === 'threshold',
+      unassignedCards, noUnassigned: unassignedCards.length === 0,
+      groups, isPoolOver: s.dragOverZone === 'pool' && s.activeBoard === 'classify',
+      timelineCards, unplacedOrder, noUnplacedOrder: unplacedOrder.length === 0,
+      orderTimelineOver: s.dragOverZone === 'timeline' && s.activeBoard === 'order',
+      tCards, tCount, tMet, tPct,
+      tMin: self.thresholdMin,
+      tLabel: `${tCount} / ${self.thresholdMin}`,
+      tBarColor: tMet ? '#27ae60' : '#c49a5c',
+      dragStart, dragEnd, dragOver, dragLeave,
+      classifyDrop, classifyRemove,
+      orderDrop, orderRemove, orderMove,
+      thresholdToggle,
+      submit, reset,
+      dismissFeedback: () => self.setState({ feedback: null }),
+      feedbackVisible: s.feedback !== null,
+      feedbackCorrect: s.feedback?.type === 'correct',
+      feedbackIncorrect: s.feedback?.type === 'incorrect',
+      feedbackMsg: s.feedback?.message ?? '',
+      canSubmit, cantSubmit: !canSubmit,
+      completed: s.boardCompleted[s.activeBoard],
+      allDone: s.boardCompleted.classify && s.boardCompleted.order && s.boardCompleted.threshold,
+    };
+  }
+}
+</script>
+</body>
+</html>

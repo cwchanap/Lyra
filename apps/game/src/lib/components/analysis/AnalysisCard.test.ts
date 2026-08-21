@@ -556,7 +556,10 @@ describe("AnalysisCard", () => {
       "utf8",
     );
 
-    expect(source).toContain("clip-path: polygon(");
+    expect(source).toContain(
+      "clip-path: polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%);",
+    );
+    expect(source).toContain("clip-path: polygon(0 0, 100% 100%, 0 100%);");
     expect(source).toContain("var(--crimson)");
     expect(source).toContain("var(--cyan)");
     expect(source).toContain("font-family: var(--display-jp)");
