@@ -288,7 +288,12 @@
                 {
                   "kind": "line",
                   "speaker": "黑瀨徹",
-                  "text": "KAGAMI 整理的時間線很清楚。"
+                  "text": "KAGAMI 整理的時間線很清楚。",
+                  "portrait": {
+                    "characterId": "kuruse",
+                    "expression": "standard",
+                    "assetId": "portrait.kuruse.standard"
+                  }
                 },
                 {
                   "kind": "line",
@@ -482,22 +487,42 @@
                 {
                   "kind": "line",
                   "speaker": "早坂茜",
-                  "text": "若槻葵說，她弟弟昨天回家後一直在發抖。"
+                  "text": "若槻葵說，她弟弟昨天回家後一直在發抖。",
+                  "portrait": {
+                    "characterId": "hayasaka_akane",
+                    "expression": "standard",
+                    "assetId": "portrait.hayasaka_akane.standard"
+                  }
                 },
                 {
                   "kind": "line",
                   "speaker": "早坂茜",
-                  "text": "他說的時間和警察的說法不一樣，但他解釋不清楚為什麼。"
+                  "text": "他說的時間和警察的說法不一樣，但他解釋不清楚為什麼。",
+                  "portrait": {
+                    "characterId": "hayasaka_akane",
+                    "expression": "standard",
+                    "assetId": "portrait.hayasaka_akane.standard"
+                  }
                 },
                 {
                   "kind": "line",
                   "speaker": "相馬律",
-                  "text": "他有沒有說什麼時間進的倉庫？"
+                  "text": "他有沒有說什麼時間進的倉庫？",
+                  "portrait": {
+                    "characterId": "soma_ritsu",
+                    "expression": "standard",
+                    "assetId": "portrait.soma_ritsu.standard"
+                  }
                 },
                 {
                   "kind": "line",
                   "speaker": "早坂茜",
-                  "text": "說大約 21:12，但記不準。KAGAMI 說 21:13:21。差了一分多鐘。"
+                  "text": "說大約 21:12，但記不準。KAGAMI 說 21:13:21。差了一分多鐘。",
+                  "portrait": {
+                    "characterId": "hayasaka_akane",
+                    "expression": "standard",
+                    "assetId": "portrait.hayasaka_akane.standard"
+                  }
                 }
               ],
               "onReexamine": null
@@ -603,7 +628,14 @@
               ],
               "onReexamine": null
             }
-          ]
+          ],
+          "layout": {
+            "kind": "baked",
+            "x": 0.3,
+            "y": 0.35,
+            "w": 0.2,
+            "h": 0.55
+          }
         }
       ]
     },

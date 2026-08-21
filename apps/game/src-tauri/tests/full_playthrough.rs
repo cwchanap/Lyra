@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use lyra_lib::game::schema::DialogueItem;
 use lyra_lib::game::view::{ModeView, SceneView};
 use lyra_lib::game::{GameEngine, GameStateView, QueueToken};
 
@@ -57,6 +58,34 @@ fn interview_topic_and_advance(
 ) -> GameStateView {
     let view = engine.interview_topic(character_id, topic_id).unwrap();
     advance_all_dialogue(engine, view)
+}
+
+/// Drains the active dialogue queue, returning how many line items carried a
+/// portrait in the view while it played.
+fn drain_counting_view_portraits(
+    engine: &mut GameEngine,
+    mut view: GameStateView,
+) -> (usize, usize) {
+    let (mut lines, mut portraits) = (0, 0);
+    loop {
+        match &view.mode {
+            ModeView::Dialogue {
+                current,
+                queue_token,
+                ..
+            } => {
+                if let DialogueItem::Line { portrait, .. } = current {
+                    lines += 1;
+                    if portrait.is_some() {
+                        portraits += 1;
+                    }
+                }
+                view = engine.advance_dialogue(queue_token.clone()).unwrap();
+            }
+            ModeView::Explore { .. } => return (lines, portraits),
+            other => panic!("expected Explore after topic dialogue, got {other:?}"),
+        }
+    }
 }
 
 fn enter_sublocation_and_advance(engine: &mut GameEngine, sublocation_id: &str) -> GameStateView {
@@ -214,6 +243,38 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
             }
         }
     }
+}
+
+#[test]
+fn baked_character_topic_dialogue_suppresses_view_portraits() {
+    // Explore → topic → Dialogue regression: the fixture's 早坂 is baked into
+    // the main-floor background, so the dialogue entered from her topic
+    // picker must not float a second portrait over it. Contrast: 黑瀨徹 is an
+    // unplaced character, and his topic dialogue keeps compiled portraits.
+    let mut engine = GameEngine::new_started(full_fixture_resources()).unwrap();
+    let initial = engine.view().unwrap();
+    let view = advance_all_dialogue(&mut engine, initial);
+    assert!(matches!(view.mode, ModeView::Explore { .. }));
+    enter_sublocation_and_advance(&mut engine, "main_floor");
+
+    // Contrast arm first: an unplaced character's topic keeps portraits.
+    let view = engine.interview_topic("kuruse", "case_timeline").unwrap();
+    let (lines, portraits) = drain_counting_view_portraits(&mut engine, view);
+    assert!(lines > 0, "fixture topic must contain lines");
+    assert!(
+        portraits > 0,
+        "unplaced character topic dialogue must keep compiled portraits"
+    );
+
+    // Suppression arm: every line of the baked character's topic renders
+    // portrait-free even though the fixture compiles portraits onto it.
+    let view = engine.interview_topic("hayasaka", "case_overview").unwrap();
+    let (lines, portraits) = drain_counting_view_portraits(&mut engine, view);
+    assert!(lines > 0, "fixture topic must contain lines");
+    assert_eq!(
+        portraits, 0,
+        "baked-character topic dialogue must not attach a second portrait"
+    );
 }
 
 #[test]
