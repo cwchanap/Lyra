@@ -253,7 +253,8 @@ For each axis N (1 → 9), in order:
    bypasses the all-nine-loops-complete gate below; the escalation
    must never block report generation; it deterministically forces the
    consolidated verdict to `BLOCKERS-PRESENT` while preserving the recorded
-   failure details. The same
+   failure details, and Phase 3 **reuses that recorded failure** instead of
+   running `bun run scenes:compile` again. The same
    gate applies to the later compile points (Phase 3): stale or structurally
    invalid output must never reach the next axis's reviewer or the
    consolidated report.
@@ -315,11 +316,14 @@ For Axis 5, at minimum check:
 
 ## Phase 3: Compile and synthesize
 
-After all nine axes' review→implement loops complete — or immediately after a
-mid-loop `COMPILE-FAILED` escalation ends the loop early (remaining axes
-recorded `NOT-RUN`) — run **one**
+After all nine axes' review→implement loops complete, run **one**
 `bun run scenes:compile` to regenerate runtime JSON from the post-fix authored
-Markdown and verify structural integrity.
+Markdown and verify structural integrity. If Phase 2 instead ended early with
+a recorded `COMPILE-FAILED — needs human` escalation (remaining axes recorded
+`NOT-RUN`), **do not run the compile again** — reuse the recorded failure
+(failing file/line + last error) and go directly to the consolidated report
+synthesis below, preserving the failure details and the deterministic
+`BLOCKERS-PRESENT` verdict.
 
 - If the compile **fails**: do **not** attempt to fix compile errors yourself
   here — the implementer's edits introduced a structural break; escalate to the
@@ -383,8 +387,11 @@ Produce **exactly one consolidated findings-and-fixes report** with:
    `COMPILE-FAILED — needs human` and `REGRESSED — needs human` escalations
    from the compile gate and the stale-axis refresh pass, each with the
    original finding and the reason it was not addressed.
-5. **Strengths** — merged strengths from every review agent that ran,
-   deduplicated.
+5. **Strengths** — merged from the **final** result for each axis — the
+   refreshed result when the stale-axis refresh pass re-ran that axis, the
+   original result when it did not — deduplicated. Strengths from a
+   superseded pre-refresh review are not merged; later edits may have
+   invalidated them.
 
 **Do not synthesize by watering down.** If Axis 1's pre-fix verdict was
 BLOCKERS-PRESENT and its implementer returned `FIXES-APPLIED`, the
@@ -412,7 +419,7 @@ Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
 ### Findings & Fix Status
 
 [One line per finding:
- Severity — file:line — issue — suggested fix — status (FIXED → new file:line / ESCALATED — <kind> / LEFT — MINOR)]
+  Severity — file:line — issue — suggested fix — status (FIXED → new file:line / ESCALATED — <kind> / LEFT — MINOR / REGRESSED — needs human / NOT-ADDRESSED — reason)]
 [Blocker / Important findings must include the quoted offending text]
 [Canon/Forbidden findings must cite the source line checked against]
 
