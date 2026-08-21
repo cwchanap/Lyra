@@ -1233,7 +1233,7 @@ describe("+page in-game persistence browser", () => {
       wrapper?.querySelector("[data-interrogation-dialogue-frame]"),
     ).toBeInTheDocument();
     expect(container.querySelector(".portrait-shell")).toBeNull();
-    expect(screen.getByText("證詞 1 / 2")).toBeInTheDocument();
+    expect(screen.getByText("01 / 02 ↻")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /反駁/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
   });

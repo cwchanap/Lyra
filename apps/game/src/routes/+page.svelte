@@ -475,7 +475,9 @@
       closeTitleBrowser();
       await tick();
       const activeControl =
-        document.querySelector<HTMLElement>('[aria-label="推進對話"]') ??
+        document.querySelector<HTMLElement>(
+          '[aria-label="推進對話"], [aria-label="推進證詞"]',
+        ) ??
         document.querySelector<HTMLElement>(
           "[data-gameplay-root] button:not(:disabled)",
         ) ??
@@ -882,7 +884,9 @@
       acquisitionController.clear();
       await tick();
       const activeControl =
-        document.querySelector<HTMLElement>('[aria-label="推進對話"]') ??
+        document.querySelector<HTMLElement>(
+          '[aria-label="推進對話"], [aria-label="推進證詞"]',
+        ) ??
         document.querySelector<HTMLElement>(
           "[data-gameplay-root] button:not(:disabled)",
         ) ??
@@ -2042,13 +2046,14 @@
     position: fixed;
     right: 18px;
     bottom: 18px;
-    z-index: 90;
+    z-index: 30;
     max-width: min(420px, calc(100vw - 36px));
     margin: 0;
     padding: 10px 14px;
     border: 1px solid var(--rule-strong);
     background: var(--void);
     color: var(--bone);
+    pointer-events: none;
   }
   .thumbnail-warning {
     bottom: 70px;

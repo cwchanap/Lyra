@@ -193,6 +193,7 @@
   data-capture-proof-font-zh-hant-code-points={captureEmbeddedZhHantCodePointCount}
   data-save-thumbnail-exclude=""
   aria-label="Packaged capture proof"
+  style="pointer-events: none"
 >
   <button type="button" data-capture-proof-refresh="" onclick={refresh}>
     Refresh capture proof
@@ -217,14 +218,19 @@
 <style>
   aside {
     position: fixed;
-    right: 8px;
-    bottom: 8px;
+    right: 0;
+    bottom: 0;
     z-index: 1000;
-    display: grid;
-    gap: 4px;
-    max-width: min(40vw, 500px);
-    padding: 8px;
-    background: #111;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    opacity: 0;
+    pointer-events: none;
+    white-space: nowrap;
   }
 
   img {

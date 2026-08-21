@@ -111,6 +111,19 @@
       revealableText.length > 0 &&
       visibleTextLength < revealableText.length,
   );
+  const interrogationTestimony = $derived(
+    interrogationStageActive && crossExam?.presentation != null,
+  );
+  const testimonyCounter = $derived.by(() => {
+    const presentation = crossExam?.presentation;
+    if (!presentation) return "";
+    return `${String(presentation.lineIndex + 1).padStart(2, "0")} / ${String(
+      presentation.lineTotal,
+    ).padStart(2, "0")} ↻`;
+  });
+  const advanceLabel = $derived(
+    interrogationTestimony ? "推進證詞" : "推進對話",
+  );
 
   function placementForPortrait(characterId: string | null | undefined) {
     return rightSidePortraitCharacterIds.has(characterId ?? "")
@@ -165,6 +178,11 @@
       return;
     }
     dispatchAdvance();
+  }
+
+  function handleAdvanceButtonClick(event: MouseEvent) {
+    event.stopPropagation();
+    handleClick();
   }
 
   function invokeChallenge() {
@@ -560,23 +578,34 @@
   data-save-thumbnail-layer="over-portrait"
   bind:this={wrapper}
 >
-  <button
-    bind:this={logButton}
-    class="log-button"
-    type="button"
-    aria-label="開啟對話紀錄"
-    aria-pressed={historyOpen}
-    onclick={handleLogButtonClick}
+  <div
+    class="dialogue-utility-row"
+    class:interrogation-testimony-rail={interrogationTestimony}
   >
-    LOG
-  </button>
+    {#if interrogationTestimony}
+      <span class="testimony-counter">{testimonyCounter}</span>
+    {/if}
+    <button
+      bind:this={logButton}
+      class="log-button"
+      class:testimony-log={interrogationTestimony}
+      type="button"
+      aria-label="開啟對話紀錄"
+      aria-pressed={historyOpen}
+      onclick={handleLogButtonClick}
+    >
+      LOG
+    </button>
+  </div>
 
   <!-- The dialogue surface itself is click-only so it does not become a
-       selectable/focusable control. This avoids a nested-button role conflict
-       (LOG / cross-exam buttons live inside it). The sibling .advance-button
-       below is the visible, Tab-reachable, SR-announced advance target without
-       nesting a button inside .box. Sighted keyboard users activate it with
-       Enter/Space (native button activation) or click anywhere on .box.
+       selectable/focusable control. It remains a non-button container, which
+       lets the testimony action row live inside it without a nested-button
+       role conflict. The visible .advance-button is the Tab-reachable,
+       SR-announced advance target; it is a sibling in ordinary dialogue and
+       moves into the mock-shaped testimony action row during interrogation.
+       Sighted keyboard users activate it with Enter/Space (native button
+       activation) or click anywhere on .box.
 
        This button uses aria-disabled (not the native disabled attribute) so
        it remains Tab-focusable and SR-announced while signalling the disabled
@@ -595,18 +624,20 @@
        isAdvanceBlockedByFocusedControl returns true and handleKey returns
        without preventDefault, so native button auto-repeat proceeds
        unaffected. -->
-  <button
-    class="advance-button"
-    type="button"
-    aria-label="推進對話"
-    aria-disabled={disabled}
-    inert={historyOpen}
-    bind:this={advanceButton}
-    onclick={handleClick}
-  >
-    <span class="advance-label">推進對話</span>
-    <span class="advance-arrow" aria-hidden="true">▶</span>
-  </button>
+  {#if !interrogationTestimony}
+    <button
+      class="advance-button"
+      type="button"
+      aria-label={advanceLabel}
+      aria-disabled={disabled}
+      inert={historyOpen}
+      bind:this={advanceButton}
+      onclick={handleAdvanceButtonClick}
+    >
+      <span class="advance-label">{advanceLabel}</span>
+      <span class="advance-arrow" aria-hidden="true">▶</span>
+    </button>
+  {/if}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
@@ -637,20 +668,44 @@
           <span class="kind">發言 · LINE</span>
           <span class="speaker">{current.speaker}</span>
         </div>
-        <p class="text-line">{visibleDialogueText}</p>
+        <div class="line-content">
+          <p class="text-line">{visibleDialogueText}</p>
+          {#if interrogationTestimony && crossExam}
+            <div class="testimony-actions">
+              <button
+                class="xexam-withdraw"
+                type="button"
+                {disabled}
+                onclick={handleWithdrawClick}
+              >
+                退下
+              </button>
+              <button
+                class="advance-button"
+                type="button"
+                aria-label={advanceLabel}
+                aria-disabled={disabled}
+                inert={historyOpen}
+                bind:this={advanceButton}
+                onclick={handleAdvanceButtonClick}
+              >
+                <span class="advance-label">{advanceLabel}</span>
+                <span class="advance-arrow" aria-hidden="true">▶</span>
+              </button>
+            </div>
+          {/if}
+        </div>
       </div>
     {/if}
 
-    {#if crossExam}
-      {#if crossExam.presentation}
-        <div class="xexam-record" aria-label="交叉詰問進度">
-          <span>{crossExam.presentation.lineLabel}</span>
-          <strong
-            >證詞 {crossExam.presentation.lineIndex + 1} / {crossExam
-              .presentation.lineTotal}</strong
-          >
-        </div>
-      {/if}
+    {#if crossExam && crossExam.presentation && !interrogationTestimony}
+      <div class="xexam-record" aria-label="交叉詰問進度">
+        <span>{crossExam.presentation.lineLabel}</span>
+        <strong
+          >證詞 {crossExam.presentation.lineIndex + 1} / {crossExam.presentation
+            .lineTotal}</strong
+        >
+      </div>
     {/if}
   </div>
 
@@ -691,24 +746,55 @@
           反駁
         </button>
       {/if}
-      <button
-        class="xexam-withdraw"
-        type="button"
-        {disabled}
-        onclick={handleWithdrawClick}
-      >
-        退下
-      </button>
+      {#if !interrogationTestimony}
+        <button
+          class="xexam-withdraw"
+          type="button"
+          {disabled}
+          onclick={handleWithdrawClick}
+        >
+          退下
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
 
 <style>
-  /* The visible advance target, anchored to the bottom-right of the wrapper
-     so it clears the top-left kind label (敘述/發言) and the top-right LOG
-     button; active Interrogation cross-exam actions sit outside the clipped
-     .box. Click-to-advance still works on .box, but this pill is the named,
-     Tab-reachable, AT-announced affordance and the e2e anchor. */
+  .dialogue-utility-row {
+    position: absolute;
+    top: 14px;
+    right: 18px;
+    z-index: 2;
+  }
+
+  .dialogue-utility-row.interrogation-testimony-rail {
+    position: absolute;
+    top: auto;
+    right: 0;
+    bottom: calc(100% + 10px);
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+  }
+
+  .dialogue-utility-row.interrogation-testimony-rail .testimony-log {
+    margin-right: 76px;
+  }
+
+  .testimony-counter {
+    color: var(--crimson);
+    font-family: var(--impact);
+    font-size: 14px;
+    letter-spacing: 0.18em;
+  }
+
+  /* The ordinary-dialogue advance target is anchored to the bottom-right of
+     the wrapper so it clears the kind label and LOG button. Interrogation
+     testimony overrides this positioning inside .testimony-actions below. */
   .advance-button {
     position: absolute;
     bottom: 14px;
@@ -765,7 +851,7 @@
   }
 
   .wrapper.interrogation-stage-dialogue {
-    --dialogue-width: min(1000px, calc(100% - 56px));
+    --dialogue-width: min(1000px, calc(100% - 128px));
     position: absolute;
     left: 50%;
     bottom: 28px;
@@ -812,6 +898,7 @@
 
   .wrapper.interrogation-stage-dialogue .box {
     min-height: 196px;
+    padding: 26px 28px 20px;
     background: rgba(20, 20, 31, 0.94);
     border: 1px solid rgba(236, 228, 207, 0.32);
     border-left: 3px solid var(--crimson);
@@ -856,10 +943,6 @@
   }
 
   .log-button {
-    position: absolute;
-    top: 14px;
-    right: 18px;
-    z-index: 1;
     min-width: 52px;
     min-height: 32px;
     padding: 7px 10px 6px;
@@ -938,6 +1021,13 @@
     gap: 24px;
     align-items: stretch;
     flex: 1;
+  }
+
+  .line-content {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
   }
 
   .text-line {
@@ -1050,10 +1140,20 @@
     margin-top: 14px;
   }
 
+  .testimony-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+  }
+
   .wrapper.interrogation-stage-dialogue .xexam-actions {
     position: absolute;
-    right: -56px;
-    bottom: 82px;
+    top: -64px;
+    right: -64px;
+    bottom: auto;
     z-index: 3;
     width: 128px;
     height: 128px;
@@ -1154,6 +1254,10 @@
     letter-spacing: 0.08em;
   }
 
+  .wrapper.interrogation-stage-dialogue .testimony-actions .xexam-withdraw {
+    position: static;
+  }
+
   .wrapper.interrogation-stage-dialogue .xexam-withdraw:hover:not(:disabled),
   .wrapper.interrogation-stage-dialogue .xexam-withdraw:focus-visible {
     border-color: var(--crimson);
@@ -1172,6 +1276,10 @@
     font-size: 13px;
     letter-spacing: 0.08em;
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+  }
+
+  .wrapper.interrogation-stage-dialogue .testimony-actions .advance-button {
+    position: static;
   }
 
   .wrapper.interrogation-stage-dialogue
@@ -1193,7 +1301,8 @@
     }
   }
 
-  .xexam-actions button {
+  .xexam-actions button:not(.log-button),
+  .testimony-actions button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -1212,8 +1321,10 @@
       color 0.18s;
   }
 
-  .xexam-actions button:hover:not(:disabled),
-  .xexam-actions button:focus-visible:not(:disabled) {
+  .xexam-actions button:not(.log-button):hover:not(:disabled),
+  .xexam-actions button:not(.log-button):focus-visible:not(:disabled),
+  .testimony-actions button:hover:not(:disabled),
+  .testimony-actions button:focus-visible:not(:disabled) {
     border-color: var(--crimson);
     background: var(--crimson-soft);
     outline: none;
@@ -1255,7 +1366,8 @@
     color: var(--bone-faint);
   }
 
-  .xexam-actions button:disabled {
+  .xexam-actions button:not(.log-button):disabled,
+  .testimony-actions button:disabled {
     opacity: 0.55;
     cursor: wait;
   }
@@ -1265,13 +1377,19 @@
   }
 
   @media (max-width: 720px) {
+    .wrapper.interrogation-stage-dialogue {
+      --dialogue-width: calc(100% - 32px);
+    }
+
     .wrapper.interrogation-stage-dialogue .xexam-actions {
       position: static;
       flex-direction: row;
       margin-top: 14px;
     }
 
-    .wrapper.interrogation-stage-dialogue .xexam-actions button {
+    .wrapper.interrogation-stage-dialogue
+      .xexam-actions
+      button:not(.log-button) {
       min-width: 64px;
       min-height: 64px;
     }
@@ -1279,6 +1397,10 @@
     .wrapper.interrogation-stage-dialogue .xexam-actions {
       width: 64px;
       height: 64px;
+    }
+
+    .dialogue-utility-row.interrogation-testimony-rail .testimony-log {
+      margin-right: 0;
     }
 
     .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap {

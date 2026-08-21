@@ -159,6 +159,41 @@ describe("InterrogationEvidenceTray", () => {
     await waitFor(() => expect(detail).toHaveTextContent("咖啡收據"));
   });
 
+  it("shows the keyboard-selected record over a still-hovered tile", async () => {
+    const { container } = render(InterrogationEvidenceTray, props());
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+    const statementTile = screen.getByRole("button", { name: /目擊者/ });
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+
+    fireEvent.mouseEnter(statementTile);
+    await waitFor(() => expect(detail).toHaveTextContent("目擊者"));
+
+    evidenceTile.focus();
+    await waitFor(() => expect(detail).toHaveTextContent("咖啡收據"));
+  });
+
+  it("keeps the last inspected record visible after the pointer leaves", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+
+    await user.hover(evidenceTile);
+    expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+
+    await user.unhover(evidenceTile);
+    expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+    expect(detail).toHaveTextContent("付款末四碼 0192。");
+  });
+
   it("keeps evidence and statement detail distinct when their ids collide", async () => {
     const user = userEvent.setup();
     const sharedId = "shared-record";
