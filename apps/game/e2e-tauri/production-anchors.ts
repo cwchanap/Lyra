@@ -25,6 +25,7 @@ export const anchors = {
   confirmDelete: "確認刪除",
   previewUnavailable: "無法顯示預覽",
   advanceDialogue: "推進對話",
+  advanceTestimony: "推進證詞",
   gameMenu: "遊戲選單",
   continueInvestigation: "繼續調查",
   caseFileMenuEntry: "案件檔案",

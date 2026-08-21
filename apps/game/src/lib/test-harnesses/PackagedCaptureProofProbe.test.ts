@@ -158,6 +158,21 @@ describe("PackagedCaptureProofProbe", () => {
     expect(forceNext).toHaveBeenCalledOnce();
   });
 
+  it("keeps the proof harness out of the gameplay pointer layer", () => {
+    const rendered = render(PackagedCaptureProofProbe, {
+      onForceNextCaptureUnavailable: vi.fn(),
+    });
+    const probe = rendered.container.querySelector<HTMLElement>(
+      "[data-capture-proof]",
+    );
+
+    expect(probe).not.toBeNull();
+    expect(getComputedStyle(probe!).pointerEvents).toBe("none");
+    expect(
+      rendered.getByRole("button", { name: "Refresh capture proof" }),
+    ).toBeInTheDocument();
+  });
+
   it("exposes the closed owning-command settlement status", async () => {
     const rendered = render(PackagedCaptureProofProbe, {
       onForceNextCaptureUnavailable: vi.fn(),

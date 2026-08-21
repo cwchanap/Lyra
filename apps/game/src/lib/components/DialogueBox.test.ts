@@ -148,6 +148,37 @@ describe("DialogueBox", () => {
     ).toBeInTheDocument();
   });
 
+  it("uses the mock-shaped testimony rail and advance label", async () => {
+    const user = userEvent.setup();
+    const { onAdvance } = renderDialogueBox(
+      {
+        kind: "line",
+        speaker: "高瀬",
+        text: "閉店那段，做的事很碎，我沒特別記。",
+      },
+      {
+        interrogationStageActive: true,
+        crossExam: {
+          lineId: crossExamPresentation.lineId,
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+          presentation: crossExamPresentation,
+        },
+      },
+    );
+
+    expect(screen.getByText("02 / 03 ↻")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "推進證詞" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "推進對話" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "推進證詞" }));
+    expect(onAdvance).toHaveBeenCalledWith(token);
+  });
+
   it("falls back to a portrait placeholder when the portrait image fails to load", async () => {
     const { container } = renderDialogueBox({
       kind: "line",
@@ -1609,7 +1640,40 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
   });
 
-  it("renders live testimony progress when presentation data is supplied", () => {
+  it("keeps testimony actions in the dialogue frame while rebuttal stays outside", () => {
+    const { container, onAdvance } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        interrogationStageActive: true,
+        crossExam: {
+          lineId: "l_deny",
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+          presentation: crossExamPresentation,
+        },
+      },
+    );
+
+    const frame = container.querySelector(
+      "[data-interrogation-dialogue-frame]",
+    );
+    const challenge = screen.getByRole("button", { name: /反駁/ });
+    const withdraw = screen.getByRole("button", { name: /退下/ });
+    const advance = screen.getByRole("button", { name: "推進證詞" });
+
+    expect(screen.getByText("02 / 03 ↻")).toBeInTheDocument();
+    expect(frame).toHaveClass("box", "xexam-presentation");
+    expect(withdraw.closest("[data-interrogation-dialogue-frame]")).toBe(frame);
+    expect(advance.closest("[data-interrogation-dialogue-frame]")).toBe(frame);
+    expect(withdraw.closest(".testimony-actions")).toBe(
+      advance.closest(".testimony-actions"),
+    );
+    expect(challenge.closest("[data-interrogation-dialogue-frame]")).toBeNull();
+    fireEvent.click(advance);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps testimony LOG in the utility rail beside progress", () => {
     const { container } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
       {
@@ -1623,16 +1687,12 @@ describe("DialogueBox inline cross-examination controls", () => {
       },
     );
 
-    expect(screen.getByText("證詞 2 / 3")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /反駁/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /退下/ })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /反駁/ }).closest(".box"),
-    ).toBeNull();
-    expect(container.querySelector(".box")).toHaveClass("xexam-presentation");
-    expect(container.querySelector(".box")).toHaveAttribute(
-      "data-interrogation-dialogue-frame",
-    );
+    const rail = container.querySelector(".dialogue-utility-row");
+    const log = screen.getByRole("button", { name: "開啟對話紀錄" });
+
+    expect(log).toHaveClass("testimony-log");
+    expect(log.closest(".dialogue-utility-row")).toBe(rail);
+    expect(log.closest(".xexam-actions")).toBeNull();
   });
 
   it("challenges the current line without advancing the dialogue", async () => {

@@ -58,8 +58,10 @@
   let records = $derived(presentableRecords(inventory));
   let hoveredRecordKey = $state<PresentableRecordKey | null>(null);
   let focusedRecordKey = $state<PresentableRecordKey | null>(null);
+  let inspectedRecordKey = $state<PresentableRecordKey | null>(null);
   let activeRecord = $derived.by(() => {
-    const activeRecordKey = hoveredRecordKey ?? focusedRecordKey;
+    const activeRecordKey =
+      hoveredRecordKey ?? focusedRecordKey ?? inspectedRecordKey;
     return (
       records.find(
         (record) => presentableRecordKey(record) === activeRecordKey,
@@ -100,7 +102,9 @@
   });
 
   function showHoveredRecordDetail(record: PresentableRecord): void {
-    hoveredRecordKey = presentableRecordKey(record);
+    const key = presentableRecordKey(record);
+    hoveredRecordKey = key;
+    inspectedRecordKey = key;
   }
 
   function clearHoveredRecordDetail(record: PresentableRecord): void {
@@ -109,7 +113,10 @@
   }
 
   function showFocusedRecordDetail(record: PresentableRecord): void {
-    focusedRecordKey = presentableRecordKey(record);
+    const key = presentableRecordKey(record);
+    hoveredRecordKey = null;
+    focusedRecordKey = key;
+    inspectedRecordKey = key;
   }
 
   function clearFocusedRecordDetail(record: PresentableRecord): void {
@@ -251,6 +258,8 @@
         <button
           class:statement-card={record.kind === "statement"}
           class:evidence-card={record.kind === "evidence"}
+          class:inspected-record={presentableRecordKey(record) ===
+            inspectedRecordKey}
           class="record-tile"
           type="button"
           {disabled}
@@ -500,6 +509,11 @@
     border-color: var(--crimson);
     background: var(--crimson-soft);
     outline: none;
+  }
+
+  .record-tile.inspected-record:not(:hover):not(:focus-visible) {
+    border-color: rgba(212, 20, 58, 0.58);
+    background: rgba(212, 20, 58, 0.08);
   }
 
   .record-tile:disabled,

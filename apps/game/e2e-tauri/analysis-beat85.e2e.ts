@@ -62,6 +62,9 @@ const geometry: {
     frame: Rect;
     box: Rect;
     challenge: Rect;
+    log: Rect;
+    withdraw: Rect;
+    advance: Rect;
   };
   present?: { stage: Rect; tray: Rect };
   analysisClassify?: AnalysisClassifyGeometry;
@@ -91,16 +94,40 @@ async function snapshotMenuGeometry(): Promise<void> {
 }
 
 async function snapshotTestimonyGeometry(): Promise<void> {
-  const [stage, main, art, frame, box, challenge] = await Promise.all([
-    elementRect(".interrogation-stage.active"),
-    elementRect('main[data-save-thumbnail-layout="main"]'),
-    elementRect("[data-interrogation-subject-art]"),
-    elementRect(".wrapper.interrogation-stage-dialogue"),
-    elementRect("[data-interrogation-dialogue-frame]"),
-    elementRect("button.xexam-challenge"),
-  ]);
-  if (stage && main && art && frame && box && challenge) {
-    geometry.testimony = { stage, main, art, frame, box, challenge };
+  const [stage, main, art, frame, box, challenge, log, withdraw, advance] =
+    await Promise.all([
+      elementRect(".interrogation-stage.active"),
+      elementRect('main[data-save-thumbnail-layout="main"]'),
+      elementRect("[data-interrogation-subject-art]"),
+      elementRect(".wrapper.interrogation-stage-dialogue"),
+      elementRect("[data-interrogation-dialogue-frame]"),
+      elementRect("button.xexam-challenge"),
+      elementRect("button.testimony-log"),
+      elementRect("button.xexam-withdraw"),
+      elementRect("button.advance-button"),
+    ]);
+  if (
+    stage &&
+    main &&
+    art &&
+    frame &&
+    box &&
+    challenge &&
+    log &&
+    withdraw &&
+    advance
+  ) {
+    geometry.testimony = {
+      stage,
+      main,
+      art,
+      frame,
+      box,
+      challenge,
+      log,
+      withdraw,
+      advance,
+    };
   }
 }
 
@@ -303,6 +330,135 @@ async function assertInterrogationPresentSemantics(): Promise<void> {
       return grid !== null && detail !== null && !grid.contains(detail);
     }),
   ).toBe(true);
+
+  const warningLayer = await browser.execute(() => {
+    const modal = document.querySelector<HTMLElement>(
+      ".interrogation-tray-scrim",
+    );
+    const warning = document.querySelector<HTMLElement>(".thumbnail-warning");
+    if (!modal) {
+      return {
+        modalPresent: false,
+        warningPresent: warning !== null,
+        pointerEvents: "none",
+        warningAboveModal: false,
+        receivesPointerInput: false,
+      };
+    }
+    if (!warning) {
+      return {
+        modalPresent: true,
+        warningPresent: false,
+        pointerEvents: "none",
+        warningAboveModal: false,
+        receivesPointerInput: false,
+      };
+    }
+
+    const modalStyle = getComputedStyle(modal);
+    const warningStyle = getComputedStyle(warning);
+    const warningBounds = warning.getBoundingClientRect();
+    const topmost = document.elementFromPoint(
+      warningBounds.left + warningBounds.width / 2,
+      warningBounds.top + warningBounds.height / 2,
+    );
+
+    return {
+      modalPresent: true,
+      warningPresent: true,
+      pointerEvents: warningStyle.pointerEvents,
+      warningAboveModal:
+        Number.parseInt(warningStyle.zIndex, 10) >=
+        Number.parseInt(modalStyle.zIndex, 10),
+      receivesPointerInput: topmost === warning || warning.contains(topmost),
+    };
+  });
+  expect(warningLayer).toMatchObject({
+    modalPresent: true,
+    pointerEvents: "none",
+    warningAboveModal: false,
+    receivesPointerInput: false,
+  });
+}
+
+async function clickPresentRecordWithPointer(
+  recordName: string,
+): Promise<void> {
+  const tiles = await $$(
+    "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
+  );
+  const tileTexts = await tiles.map((candidate) => candidate.getText());
+  const tile = tiles[tileTexts.findIndex((text) => text.includes(recordName))];
+  if (!tile) {
+    throw new Error(`Present record ${recordName} was not available`);
+  }
+
+  await tile.scrollIntoView();
+  const hitTest = await browser.execute((name: string) => {
+    const target = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
+      ),
+    ).find((candidate) => (candidate.textContent ?? "").includes(name));
+    if (!target) return null;
+    const rect = target.getBoundingClientRect();
+    const hit = document.elementFromPoint(
+      rect.left + rect.width / 2,
+      rect.top + rect.height / 2,
+    );
+    return {
+      sameTile: hit?.closest("button") === target,
+      interceptedBy:
+        hit?.closest("button")?.className ?? hit?.className ?? null,
+    };
+  }, recordName);
+  if (!hitTest?.sameTile) {
+    throw new Error(
+      `Present record ${recordName} is blocked from pointer input: ${JSON.stringify(hitTest)}`,
+    );
+  }
+
+  const tileCount = await tiles.length;
+  for (let attempt = 0; attempt < tileCount; attempt += 1) {
+    const focused = await browser.execute((name: string) => {
+      const target = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
+        ),
+      ).find((candidate) => (candidate.textContent ?? "").includes(name));
+      return document.activeElement === target;
+    }, recordName);
+    if (focused) break;
+    await browser.keys("Tab");
+  }
+  expect(
+    await browser.execute((name: string) => {
+      const target = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
+        ),
+      ).find((candidate) => (candidate.textContent ?? "").includes(name));
+      return document.activeElement === target;
+    }, recordName),
+  ).toBe(true);
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (name: string) =>
+          (
+            document.querySelector("[data-interrogation-evidence-detail]")
+              ?.textContent ?? ""
+          ).includes(name),
+        recordName,
+      ),
+    {
+      timeout: 5000,
+      interval: 100,
+      timeoutMsg: `Present record ${recordName} did not show its detail after Tab selection`,
+    },
+  );
+
+  await tile.click();
 }
 
 async function assertAnalysisClassifySemantics(): Promise<void> {
@@ -341,6 +497,10 @@ async function assertAnalysisClassifySemantics(): Promise<void> {
 
 function edgeCenter(rect: Rect): number {
   return (rect.left + rect.right) / 2;
+}
+
+function verticalCenter(rect: Rect): number {
+  return (rect.top + rect.bottom) / 2;
 }
 
 function expectEdgesAligned(left: Rect, right: Rect): void {
@@ -716,7 +876,7 @@ async function challengePhase(
   );
   if (!evidence)
     throw new Error(`${phaseId} evidence ${evidenceId} was not seeded`);
-  await clickButton(evidence.name);
+  await clickPresentRecordWithPointer(evidence.name);
   if (phaseId === "p1") {
     // The correct response changes the current speaker/expression. This is a
     // nullable observation only; the functional journey must continue even if
@@ -1211,6 +1371,25 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(testimony.box.height).toBeGreaterThanOrEqual(194);
     expect(testimony.challenge.width).toBeGreaterThanOrEqual(124);
     expect(testimony.challenge.height).toBeGreaterThanOrEqual(124);
+    expect(
+      Math.abs(edgeCenter(testimony.challenge) - testimony.box.right),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(verticalCenter(testimony.challenge) - testimony.box.top),
+    ).toBeLessThanOrEqual(2);
+    expect(
+      testimony.challenge.left - testimony.log.right,
+    ).toBeGreaterThanOrEqual(10);
+    expect(testimony.challenge.left - testimony.log.right).toBeLessThanOrEqual(
+      14,
+    );
+    expect(testimony.log.bottom).toBeLessThanOrEqual(testimony.box.top - 8);
+    expectInside(testimony.log, testimony.stage);
+    expectInside(testimony.withdraw, testimony.box);
+    expectInside(testimony.advance, testimony.box);
+    expect(testimony.withdraw.right).toBeLessThan(testimony.advance.left);
+    expect(testimony.challenge.left).toBeLessThan(testimony.box.right);
+    expect(testimony.challenge.right).toBeGreaterThan(testimony.box.right);
     expect(
       Math.abs(
         testimony.stage.bottom -

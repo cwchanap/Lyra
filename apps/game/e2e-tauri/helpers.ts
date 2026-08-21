@@ -1289,11 +1289,13 @@ export async function waitForPackagedDisconnect(
   throw new Error("packaged process remained connected after exit flush");
 }
 
-/** DialogueBox renders a visible <button aria-label="推進對話"> as a sibling
- * of the click-to-advance .box div. The button is the named advance target
- * and the e2e anchor; the .box div itself is click-only (no role/tabindex)
- * to avoid nesting buttons inside a button role. */
-export const advanceDialogueSelector = `button[aria-label="${anchors.advanceDialogue}"]`;
+/** DialogueBox renders a visible advance button as a sibling of the
+ * click-to-advance .box div. Testimony changes only its player-facing label;
+ * both names remain the same advance target for the packaged journey. */
+export const advanceDialogueSelector = [
+  `button[aria-label="${anchors.advanceDialogue}"]`,
+  `button[aria-label="${anchors.advanceTestimony}"]`,
+].join(", ");
 
 /**
  * Main-menu cards animate with opacity 0 (fill-mode both). Under WebDriver the
