@@ -7,7 +7,7 @@ use super::super::{
     CoordinatorFuture, CoordinatorState, FailureChallengeIdentity, FailureTokenSource,
     FlushOperation, PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
     RetryEligibility, SaveCoordinator, SessionTransitionIdentity, ThumbnailActivityView,
-    ThumbnailCapturePurpose,
+    ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -166,7 +166,10 @@ async fn thumbnail_capture_request_view_serializes_ticket_and_timeout_ms() {
     let value = serde_json::to_value(&request).unwrap();
     assert!(value["ticket"].is_string());
     assert_eq!(value["ticket"], request.ticket);
-    assert_eq!(value["timeoutMs"], 1000);
+    assert_eq!(
+        value["timeoutMs"],
+        THUMBNAIL_CAPTURE_TIMEOUT.as_millis() as u64
+    );
     // Verify the exact wire shape: only `ticket` and `timeoutMs`.
     assert_eq!(value.as_object().unwrap().len(), 2);
 }
