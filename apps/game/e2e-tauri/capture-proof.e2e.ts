@@ -18,7 +18,11 @@ import {
   waitForPersistenceIdle,
   waitTypewriterIdle,
 } from "./helpers";
-import { autosaveSlots, newestAutosaveSlot } from "./save-fixtures";
+import {
+  autosaveSlots,
+  newestAutosaveSlot,
+  waitForSaveE2eEnvelope,
+} from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import {
   captureProofCommandIsSettled,
@@ -307,6 +311,7 @@ async function refreshProof(): Promise<void> {
 async function proofPixels(
   newestPortraitFragment: string = anchors.captureProof.newestPortrait,
   leavingPortraitFragment: string = anchors.captureProof.leavingPortrait,
+  thumbnailSelector: string = anchors.captureProof.thumbnail,
 ): Promise<CapturePixels> {
   const payload = await browser.executeAsync<
     CapturePixels | string,
@@ -627,7 +632,7 @@ async function proofPixels(
           );
         });
     },
-    anchors.captureProof.thumbnail,
+    thumbnailSelector,
     anchors.captureProof.root,
     newestPortraitFragment,
     leavingPortraitFragment,
@@ -1231,7 +1236,6 @@ describe("packaged gameplay thumbnail proof", () => {
 
     await waitForPersistenceIdle();
     const captureBeforeTransition = await captureWrapperStatus();
-    const autosaveIdsBeforeTransition = autosaveSaveIds();
     await clickButton(evidence.name);
     const transitioned = await waitForPackagedGameState(
       (state) =>
@@ -1268,9 +1272,19 @@ describe("packaged gameplay thumbnail proof", () => {
     expect(currentPortrait.winnerMatches).toBe(true);
     expect(currentPortrait.winnerSrc).not.toContain(standardPortrait);
 
+    // Interrogation-scene dialogue mutations autosave WITHOUT thumbnail
+    // capture by design (`dialogue_persistence_policy` keeps same-scene
+    // interrogation progress transient), so the post-Present autosaves never
+    // issue a capture request. Trigger the capture through the explicit
+    // manual-save path instead (plan §5.5) while the strained portrait is the
+    // current crossfade winner.
+    await saveManualSlot(3, "訊問表情轉換捕捉", true);
+
+    let lastPolledStatus: CaptureWrapperStatus | null = null;
     await browser.waitUntil(
       async () => {
         const status = await captureWrapperStatus();
+        lastPolledStatus = status;
         return (
           status.calls > captureBeforeTransition.calls &&
           status.available > captureBeforeTransition.available &&
@@ -1280,8 +1294,7 @@ describe("packaged gameplay thumbnail proof", () => {
       {
         timeout: 90000,
         interval: 100,
-        timeoutMsg:
-          "Interrogation portrait capture did not complete as available",
+        timeoutMsg: `Interrogation portrait capture did not complete as available (baseline=${JSON.stringify(captureBeforeTransition)} lastPolled=${JSON.stringify(lastPolledStatus)})`,
       },
     );
     const captureAfterTransition = await captureWrapperStatus();
@@ -1290,29 +1303,85 @@ describe("packaged gameplay thumbnail proof", () => {
     );
     expect(captureAfterTransition.lastClosedReason).toBe("");
 
-    const nativeAutosave = await waitForFreshNativeAutosave(
-      autosaveIdsBeforeTransition,
-      "Interrogation portrait capture proof",
+    const manualEnvelope = await waitForSaveE2eEnvelope(
+      "manual-3",
+      (envelope) => envelope.thumbnail.type === "available",
+      30000,
     );
-    expect(
-      captureProofNativeAutosaveIsReady({
-        priorSaveIds: autosaveIdsBeforeTransition,
-        currentSaveId: nativeAutosave.saveId,
-        currentThumbnailType: nativeAutosave.thumbnailType,
-      }),
-    ).toBe(true);
+    expect(manualEnvelope.summary.sceneId).toBe(interrogationSceneId);
 
-    await refreshProof();
-    expect(
-      await browser.execute(
-        (probe: string) =>
-          document
-            .querySelector(probe)
-            ?.getAttribute("data-capture-proof-status"),
-        anchors.captureProof.probe,
-      ),
-    ).toBe("ready");
-    const pixels = await proofPixels(strainedPortrait, standardPortrait);
+    await closePersistenceBrowserToGameplay();
+
+    const manualThumbnailSelector = "[data-capture-proof-manual-thumbnail]";
+    const thumbnailLoaded = await browser.executeAsync(
+      (saveId: string, done: (result: string) => void) => {
+        const image = document.createElement("img");
+        image.setAttribute("data-capture-proof-manual-thumbnail", "");
+        image.style.display = "none";
+        document.body.append(image);
+        const internals = (
+          window as unknown as {
+            __TAURI_INTERNALS__?: {
+              invoke: (command: string, args?: unknown) => Promise<unknown>;
+            };
+          }
+        ).__TAURI_INTERNALS__;
+        if (!internals) {
+          done("ERROR:tauri internals unavailable");
+          return;
+        }
+        void internals
+          .invoke("list_saves", {})
+          .then(async (opened) => {
+            const slots = (
+              opened as {
+                browser: {
+                  slots: Array<{
+                    reference: { type: string; slot?: number };
+                    status: { type: string };
+                  }>;
+                };
+              }
+            ).browser.slots;
+            const slot = slots.find(
+              (candidate) =>
+                candidate.reference.type === "manual" &&
+                candidate.reference.slot === 3,
+            );
+            if (!slot || slot.status.type !== "valid") {
+              done("ERROR:manual slot 3 is missing or invalid");
+              return;
+            }
+            const bytes = (await internals.invoke("read_save_thumbnail", {
+              reference: slot.reference,
+              observedSaveId: saveId,
+            })) as ArrayBuffer | Uint8Array;
+            const buffer = bytes instanceof Uint8Array ? bytes.buffer : bytes;
+            const url = URL.createObjectURL(
+              new Blob([buffer], { type: "image/png" }),
+            );
+            image.onload = () => done("ok");
+            image.onerror = () => done("ERROR:thumbnail decode failed");
+            image.src = url;
+          })
+          .catch((error: unknown) =>
+            done(
+              `ERROR:${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+      },
+      manualEnvelope.saveId,
+    );
+    if (thumbnailLoaded !== "ok") {
+      throw new Error(
+        `Manual slot 3 thumbnail did not load for the pixel proof: ${thumbnailLoaded}`,
+      );
+    }
+    const pixels = await proofPixels(
+      strainedPortrait,
+      standardPortrait,
+      manualThumbnailSelector,
+    );
     expect(pixels.newestPortraitSamples).toBeGreaterThan(1000);
     expect(pixels.newestPortraitMatchRatio).toBeGreaterThan(0.25);
     expect(

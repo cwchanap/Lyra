@@ -124,6 +124,19 @@ afterEach(() => {
 });
 
 describe("AnalysisWorkbench", () => {
+  it("celebrates fully confirmed practice with the All Confirmed badge", () => {
+    const state = analysisState({
+      scene: analysisSceneWith({
+        visibleBoards: beat85CompilerAnalysisSceneFixture.visibleBoards.map(
+          (board) => ({ ...board, completed: true }),
+        ),
+      }),
+    });
+    renderWorkbench(state);
+
+    expect(screen.getByText("All Confirmed")).toBeInTheDocument();
+  });
+
   it("renders the v3 rail with every visible board and styled progress", async () => {
     const state = analysisState({
       scene: analysisSceneWith({

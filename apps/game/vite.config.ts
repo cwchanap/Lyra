@@ -27,6 +27,7 @@ export default defineConfig(async () => ({
       exclude: [
         "src/lib/e2e/**",
         "src/lib/test-harnesses/PackagedCaptureProofProbe.svelte",
+        "src/lib/test-harnesses/InterrogationStageHarness.svelte",
       ],
     },
   },

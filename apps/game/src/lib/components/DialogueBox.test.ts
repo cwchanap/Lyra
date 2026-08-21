@@ -1625,6 +1625,27 @@ describe("DialogueBox inline cross-examination controls", () => {
     );
   });
 
+  it("shows the cross-exam record outside the interrogation stage", () => {
+    const { container } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      {
+        crossExam: {
+          lineId: crossExamPresentation.lineId,
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+          presentation: crossExamPresentation,
+        },
+      },
+    );
+
+    const record = container.querySelector("[aria-label='交叉詰問進度']");
+    expect(record).toBeInTheDocument();
+    expect(record).toHaveTextContent("否認");
+    expect(record).toHaveTextContent("證詞 2 / 3");
+    // The testimony rail/counter styling is interrogation-stage only.
+    expect(container.querySelector(".testimony-counter")).toBeNull();
+  });
+
   it("renders the inline 反駁 / 退下 controls while a testimony plays", () => {
     renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
