@@ -40,7 +40,10 @@ async fn ticket_is_a_canonical_uuid_v4_with_one_exact_deadline() {
             .get_version_num(),
         4
     );
-    assert_eq!(request.timeout_ms(), 1_000);
+    assert_eq!(
+        request.timeout_ms(),
+        THUMBNAIL_CAPTURE_TIMEOUT.as_millis() as u32
+    );
     assert_eq!(
         coordinator.ticket_deadline(&request.ticket).unwrap()
             - coordinator.ticket_issued_at(&request.ticket).unwrap(),
@@ -54,8 +57,11 @@ async fn remaining_timeout_spends_the_original_budget_and_never_extends_it() {
     let request = coordinator.prepare_thumbnail(manual(1, 2)).unwrap();
 
     tokio::time::advance(Duration::from_millis(375)).await;
-    assert_eq!(request.timeout_ms(), 625);
-    tokio::time::advance(Duration::from_millis(625)).await;
+    assert_eq!(
+        request.timeout_ms(),
+        (THUMBNAIL_CAPTURE_TIMEOUT.as_millis() - 375) as u32
+    );
+    tokio::time::advance(THUMBNAIL_CAPTURE_TIMEOUT - Duration::from_millis(375)).await;
     assert_eq!(request.timeout_ms(), 0);
     tokio::time::advance(Duration::from_secs(10)).await;
     assert_eq!(request.timeout_ms(), 0);
@@ -130,7 +136,7 @@ async fn reported_failure_is_terminal_unavailable_and_single_consume() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn expiry_is_terminal_unavailable_at_exactly_one_second() {
+async fn expiry_is_terminal_unavailable_at_the_capture_timeout() {
     let coordinator = coordinator();
     let purpose = manual(1, 9);
     let request = coordinator.prepare_thumbnail(purpose.clone()).unwrap();

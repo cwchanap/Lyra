@@ -1053,7 +1053,12 @@ async fn debounce_spends_the_existing_ticket_deadline() {
     tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
     tokio::task::yield_now().await;
 
-    assert_eq!(request.timeout_ms(), 500);
+    assert_eq!(
+        request.timeout_ms(),
+        (THUMBNAIL_CAPTURE_TIMEOUT
+            .saturating_sub(AUTOSAVE_DEBOUNCE)
+            .as_millis()) as u32
+    );
     assert!(backend.observations().is_empty());
 }
 

@@ -24,7 +24,7 @@ use tokio::time::Instant;
 use uuid::Uuid;
 
 pub(crate) const AUTOSAVE_DEBOUNCE: Duration = Duration::from_millis(500);
-pub(crate) const THUMBNAIL_CAPTURE_TIMEOUT: Duration = Duration::from_millis(1000);
+pub(crate) const THUMBNAIL_CAPTURE_TIMEOUT: Duration = Duration::from_millis(5000);
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum ThumbnailCapturePurpose {
