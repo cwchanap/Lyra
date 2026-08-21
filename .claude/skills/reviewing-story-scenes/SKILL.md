@@ -240,14 +240,20 @@ For each axis N (1 → 9), in order:
    advancing to the next axis. If compilation or validation fails, return the
    error (failing file/line + message) to the **current axis** for
    remediation — re-run that axis's implementer (or re-fix under serial
-   fallback) with the compile error as a new finding — then re-gate. Retries
-   are **bounded per axis**: at most two remediation re-runs. If the compile
-   is still failing after that budget is spent, stop retrying, record
+   fallback) with the compile error as a new finding classified
+   `Blocker — COMPILE-FAILED` — a Blocker, so it sits squarely in the
+   implementer's Step 2b Blocker/Important scope, and the implementer may not
+   return `NO-OP` or `PARTIAL` while that finding stands — then re-gate.
+   Retries are **bounded per axis**: at most two remediation re-runs. If the
+   compile is still failing after that budget is spent, stop retrying, record
+   every remaining axis as `NOT-RUN`, record
    `COMPILE-FAILED — needs human` (failing file/line + last error) as an
    escalation, do **not** advance to further axes (their reviewers would read
-   structurally invalid output), and go straight to Phase 3 — the escalation
+   structurally invalid output), and go straight to Phase 3 — this early stop
+   bypasses the all-nine-loops-complete gate below; the escalation
    must never block report generation; it deterministically forces the
-   consolidated verdict to `BLOCKERS-PRESENT`. The same
+   consolidated verdict to `BLOCKERS-PRESENT` while preserving the recorded
+   failure details. The same
    gate applies to the later compile points (Phase 3): stale or structurally
    invalid output must never reach the next axis's reviewer or the
    consolidated report.
@@ -309,7 +315,9 @@ For Axis 5, at minimum check:
 
 ## Phase 3: Compile and synthesize
 
-After all nine axes' review→implement loops complete, run **one**
+After all nine axes' review→implement loops complete — or immediately after a
+mid-loop `COMPILE-FAILED` escalation ends the loop early (remaining axes
+recorded `NOT-RUN`) — run **one**
 `bun run scenes:compile` to regenerate runtime JSON from the post-fix authored
 Markdown and verify structural integrity.
 
@@ -354,9 +362,9 @@ Produce **exactly one consolidated findings-and-fixes report** with:
 2. **All findings merged with fix status** — deduplicate if the same
    `file:line` issue was caught by two axes. For each finding show: original
    severity, original `file:line`, the fix status (`FIXED → new file:line`,
-   `ESCALATED — STRUCTURAL`, `ESCALATED — ASSET-MISSING`, `LEFT — MINOR`,
-   `REGRESSED — needs human`, or `NOT-ADDRESSED — reason`). Keep the more
-   severe severity on dedup.
+   `ESCALATED — <kind>` (`STRUCTURAL` / `ASSET-MISSING` / `COMPILE-FAILED`),
+   `LEFT — MINOR`, `REGRESSED — needs human`, or `NOT-ADDRESSED — reason`).
+   Keep the more severe severity on dedup.
 3. **Fixes applied** — the merged list of every edit the implementers made,
    with pre-fix and post-fix `file:line` so the human can audit the diff.
 4. **Escalations** — every finding the implementer did not fix
@@ -365,7 +373,8 @@ Produce **exactly one consolidated findings-and-fixes report** with:
    `COMPILE-FAILED — needs human` and `REGRESSED — needs human` escalations
    from the compile gate and the stale-axis refresh pass, each with the
    original finding and the reason it was not addressed.
-5. **Strengths** — merged strengths from all nine review agents, deduplicated.
+5. **Strengths** — merged strengths from every review agent that ran,
+   deduplicated.
 
 **Do not synthesize by watering down.** If Axis 1's pre-fix verdict was
 BLOCKERS-PRESENT and its implementer returned `FIXES-APPLIED`, the
@@ -383,7 +392,8 @@ finding and fix line verbatim; do not rewrite its evidence.
 **Subagent axes (sequential review→implement):** Canon, Forbidden,
 Voice/style/narration & expression, Continuity, Visual Background,
 Investigation Interaction Balance, Natural Conversation, Visual-novel Prose
-Economy, Interrogation Loop Naturalness — all completed.
+Economy, Interrogation Loop Naturalness — all completed (or early-stopped at
+Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
 
 **Final compile:** `bun run scenes:compile` — [GREEN / FAILED: <error>]
 
@@ -468,7 +478,7 @@ Economy, Interrogation Loop Naturalness — all completed.
 | Orchestrator reading source content | When subagents are dispatched, you locate paths and spawn subagents; you do NOT read bible, characters.md, construction plan, addendum, scenes, or JSON yourself. The only file you read is `chapter.md` (to get the scene list). Subagents read everything else directly. Under the serial fallback (no subagent-dispatch tool), this rule is inverted: you must run each axis's review and fixes yourself in table order. |
 | Pasting excerpts into subagent briefs | Give subagents file paths, not pasted content — **except** the implementer brief, which must paste the review agent's findings verbatim (the implementer works from the reviewer's cited findings, not from re-reading the reviewer's mind). Review agents read sources themselves so they see full text and can cite exact lines; pasted excerpts lose context and bloat the orchestrator. |
 | Verifying subagent findings by reading sources yourself | Do not re-read sources to "double-check" a review agent's citation. Quote the review agent's finding verbatim in your consolidated report; trust its citation. If a finding looks wrong, flag it as a question for the human, don't re-verify by reading the source. |
-| Forgetting the final compile | After all nine axes' fixes, run `bun run scenes:compile` once. A green compile is the structural gate that the implementers' edits did not break the scene graph. |
+| Forgetting the final compile | After all completed axes' fixes, run `bun run scenes:compile` once. A green compile is the structural gate that the implementers' edits did not break the scene graph. |
 
 ---
 
