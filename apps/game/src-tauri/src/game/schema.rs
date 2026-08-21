@@ -1835,10 +1835,11 @@ mod tests {
             "topics": []
         }"#;
         let parsed: CharacterJson = serde_json::from_str(json).unwrap();
-        let CharacterLayoutJson::Sprite { asset_id, .. } = parsed.layout.unwrap() else {
-            panic!("expected sprite character layout");
-        };
-        assert_eq!(asset_id, "portrait.witness.standard");
+        assert!(matches!(
+            parsed.layout.unwrap(),
+            CharacterLayoutJson::Sprite { ref asset_id, .. }
+                if asset_id == "portrait.witness.standard"
+        ));
     }
 
     #[test]
