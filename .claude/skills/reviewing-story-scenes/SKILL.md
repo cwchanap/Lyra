@@ -321,14 +321,24 @@ recorded `NOT-RUN`) — run **one**
 `bun run scenes:compile` to regenerate runtime JSON from the post-fix authored
 Markdown and verify structural integrity.
 
-- If the compile **fails**: report the compile error verbatim, mark the
-  consolidated verdict `BLOCKERS-PRESENT`, list the failing file/line, and
-  stop. Do not attempt to fix compile errors yourself here — the implementer's
-  edits introduced a structural break; escalate to the human (or re-run the
-  relevant axis's implementer with the compile error as a new finding, at the
-  human's discretion). A mid-loop `COMPILE-FAILED — needs human` escalation
-  from the Phase 2 gate lands here: report it verbatim in the Escalations
-  section with the same `BLOCKERS-PRESENT` verdict.
+- If the compile **fails**: do **not** attempt to fix compile errors yourself
+  here — the implementer's edits introduced a structural break; escalate to the
+  human (or re-run the relevant axis's implementer with the compile error as a
+  new finding, at the human's discretion). **Do not stop at the compile
+  error.** Skip the stale-axis refresh pass (the files are structurally
+  invalid, so refreshing earlier axes' verdicts against them would be
+  meaningless), record every axis that did not run as `NOT-RUN`, and
+  **continue directly to the consolidated report synthesis below**. The
+  consolidated verdict is `BLOCKERS-PRESENT` (the final compile failed); the
+  compile error is reported verbatim in the Escalations section with the
+  failing file/line, and the report still includes every finding, fix, and
+  escalation the axes that already ran produced — plus `NOT-RUN` for the
+  remainder. A mid-loop `COMPILE-FAILED — needs human` escalation from the
+  Phase 2 gate lands here: report it verbatim in the Escalations section with
+  the same `BLOCKERS-PRESENT` verdict, then continue to synthesis the same
+  way. This honors the Phase 2 contract that a `COMPILE-FAILED` escalation
+  must never block report generation; no additional remediation or compile
+  retry is needed here.
 - If the compile **succeeds**: run the **stale-axis refresh pass** below, then
   synthesize the consolidated report.
 
