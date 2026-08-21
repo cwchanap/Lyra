@@ -839,6 +839,14 @@ impl ActiveDialogueQueue {
             .collect()
     }
 
+    /// Origin of the segment that installed this queue (the trigger
+    /// segment). `interview_topic` queues always lead with their
+    /// `topic:<character>:<topic>` segment; chained reveal segments follow,
+    /// so keying on the first origin classifies the whole queue.
+    pub(super) fn first_segment_origin(&self) -> Option<&DialogueSegmentOriginV1> {
+        self.segments.first().map(|segment| &segment.origin)
+    }
+
     pub(super) fn flattened_segment_start(
         segments: &[DialogueSegment],
         segment_index: usize,

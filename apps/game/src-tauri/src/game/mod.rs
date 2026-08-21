@@ -46,8 +46,8 @@ use scenes::interrogation::{
 use scenes::investigation::InvestigationSceneState;
 use scenes::SceneRuntime;
 use schema::{
-    AnalysisBoardJson, AnalysisCardSource, DialogueItem, InterrogationPhaseJson, InventoryTarget,
-    LockStatus, SceneJson, SceneType,
+    AnalysisBoardJson, AnalysisCardSource, CharacterLayoutJson, DialogueItem,
+    InterrogationPhaseJson, InventoryTarget, LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory};
 use std::cell::RefCell;
@@ -2275,6 +2275,43 @@ impl GameEngine {
         }
     }
 
+    /// True when the active investigation dialogue queue was installed by
+    /// interviewing a character whose visual is baked into the current
+    /// sublocation background. Keyed on the queue's first (trigger) segment
+    /// origin so chained reveal segments in the same queue stay suppressed;
+    /// a fresh queue (hotspot, sublocation transition, outro) has its own
+    /// origin and keeps its compiled portraits. Origins persist through
+    /// save/restore, so the suppression recomputes identically after a load.
+    fn topic_dialogue_from_baked_character(inv: &InvestigationSceneState) -> bool {
+        let Some(queue) = inv.pending_queue.as_ref() else {
+            return false;
+        };
+        let Some(DialogueSegmentOriginV1::InvestigationInteraction { segment_id, .. }) =
+            queue.first_segment_origin()
+        else {
+            return false;
+        };
+        // Topic segments are `topic:<character_id>:<topic_id>:{dialogue,reexamine}`;
+        // ids are compiler-validated slugs, so the first `:`-separated field
+        // after the prefix is the character id.
+        let Some(character_id) = segment_id
+            .strip_prefix("topic:")
+            .and_then(|rest| rest.split(':').next())
+            .filter(|id| !id.is_empty())
+        else {
+            return false;
+        };
+        let Some(sub_id) = inv.current_sublocation_id.as_deref() else {
+            return false;
+        };
+        inv.def
+            .sublocations
+            .iter()
+            .find(|sub| sub.id == sub_id)
+            .and_then(|sub| sub.characters.iter().find(|c| c.id == character_id))
+            .is_some_and(|c| matches!(c.layout, Some(CharacterLayoutJson::Baked { .. })))
+    }
+
     fn mode_view(&self) -> ModeView {
         if self.current_chapter_idx >= self.chapters.len() {
             return ModeView::GameComplete;
@@ -2285,7 +2322,26 @@ impl GameEngine {
             SceneRuntime::Investigation(inv) => inv
                 .pending_queue
                 .as_ref()
-                .and_then(|queue| queue.current().cloned()),
+                .and_then(|queue| queue.current().cloned())
+                .map(|item| match item {
+                    // A baked character is already painted into the
+                    // sublocation background, so dialogue entered from their
+                    // topic picker must not float a second portrait over
+                    // that background. View-only suppression: the queue and
+                    // saves keep the compiled portraits, and every other
+                    // dialogue path (hotspots, transitions, linear,
+                    // interrogation, analysis) renders them unchanged.
+                    DialogueItem::Line { speaker, text, .. }
+                        if Self::topic_dialogue_from_baked_character(inv) =>
+                    {
+                        DialogueItem::Line {
+                            speaker,
+                            text,
+                            portrait: None,
+                        }
+                    }
+                    other => other,
+                }),
             SceneRuntime::Interrogation(scene) => scene
                 .pending_queue
                 .as_ref()
