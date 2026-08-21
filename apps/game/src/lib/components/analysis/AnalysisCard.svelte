@@ -314,7 +314,7 @@
     width: 14px;
     height: 14px;
     background: var(--analysis-blue, var(--cyan-deep));
-    clip-path: polygon(100% 0, 100% 100%, 0 0);
+    clip-path: polygon(0 0, 100% 100%, 0 100%);
     content: "";
     pointer-events: none;
   }

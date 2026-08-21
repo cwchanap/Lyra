@@ -27,6 +27,7 @@ export default defineConfig(
       "apps/layout-editor/src-tauri/gen/**",
       "apps/layout-editor/src-tauri/target/**",
       "node_modules/**",
+      "ui_mock/**",
     ],
   },
   js.configs.recommended,
