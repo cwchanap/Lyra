@@ -8,7 +8,7 @@ Close the remaining Chapter 1 visual-continuity follow-up for the Rain Bell caf�
 
 The two story plates must read as the **same physical clock** across the chapter:
 
-- `background.chapter_1.scene_p2.tag_002` is the ordinary-day seed: the old clock is still mounted at the inner-storage entrance and visibly operating slowly.
+- `background.chapter_1.scene_p2.tag_002` is the ordinary-day seed: the old clock is still mounted at the inner-storage entrance in its normal operational state; the authored scene supplies the fact that it runs slowly.
 - `background.chapter_1.scene_11.tag_002` is the post-case payoff: that same clock has been removed from the warehouse, is resting on the counter, and its hands are stopped near **22:59**.
 
 This is a raster-continuity task, not a story rewrite or an asset-system change.
@@ -93,7 +93,7 @@ Preserve the authored composition:
 - no foreground dialogue characters;
 - lower composition remains usable by the dialogue UI.
 
-The clock is **operational but slow**. The plate does not need to encode an exact story-critical time; the visual job is to establish the recognizable physical clock before the murder.
+A still raster does **not** need to prove that the clock runs slowly. Its job is to establish the recognizable physical clock in the correct operational location; the authored action and dialogue carry the slow-running fact. The plate also does not need to encode an exact story-critical time before the murder.
 
 ### `scene_11/tag_002` — payoff state
 
@@ -126,7 +126,7 @@ Follow `.claude/skills/generating-lyra-image-assets/SKILL.md` and the system ima
 1. Inspect target plates and café sibling backgrounds before prompt writing.
 2. Record stable room / prop anchors and the intended delta for each target.
 3. Generate the seed plate first.
-4. Use the accepted seed clock as the visual reference for the payoff plate where the available image-generation workflow supports reference-based continuity.
+4. Preserve the accepted seed clock in the payoff plate. Prefer direct visual-reference generation when the available workflow supports it; otherwise carry the same explicit clock descriptors and compare the outputs side by side before acceptance.
 5. Normalize both workspace files to the repository background policy:
    - opaque PNG;
    - exactly `1920x1080`;
