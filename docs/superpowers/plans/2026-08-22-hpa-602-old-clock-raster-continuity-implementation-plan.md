@@ -13,28 +13,26 @@
 ## Global Constraints
 
 - Deliver HPA-602 as this single PR.
-- Regenerate exactly these four clock-bearing player surfaces:
+- Regenerate exactly:
   - `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png`
   - `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png`
   - `static/assets/evidence/old_clock_photo.png`
   - `static/assets/backgrounds/chapter_1/scene_11/tag_002.png`
 - Inspect but do not regenerate `static/assets/backgrounds/chapter_1/investigation_scene_3/inner_entry.png`.
-- Use this literal identity in every touched `Background Prompt` / `Image Prompt`:
-  - **round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring**.
+- Use this literal identity in every touched asset prompt: **round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring**.
 - P2: mounted on the inner-storage entrance's inner wall; no exact time required.
-- Scene 7: same clock still mounted on that entrance wall, visible after crossing the fire door, not on the storage back wall, and consistent with Miyake being unable to see it from his 23:06 replay position.
+- Scene 7: same clock still on that entrance wall, visible after crossing the fire door, not on the deep storage back wall, and consistent with Miyake being unable to see it from his 23:06 replay position.
 - Scene 7/evidence/Scene 11 stopped state: minute hand nearly vertical at 12, hour hand just before 11; never render literal `22:59` or readable numerals.
-- Scene 11: same clock removed from the wall and resting naturally on the café counter.
-- Backgrounds remain opaque RGB PNG at exactly `1920x1080`.
-- Evidence remains transparent/RGBA PNG at exactly `512x512`.
-- Preserve all current asset IDs, paths, scene IDs, evidence IDs, hotspot/reveal wiring, story logic, and dialogue.
-- Preserve Scene 7 room geometry, shelf-impact/phone/bean-can/paperback landmarks, baked 黑瀨 placement, floor clearance, and interaction readability.
-- Do not add a clock sprite/overlay, image-similarity/CV/screenshot infrastructure, new validation script, generic prop-continuity framework, compiler/runtime/layout change, Chapter 2 work, or a follow-up ticket for a mismatch found here.
-- Generated JSON under `apps/game/src-tauri/resources/**` remains untracked and is never hand-edited.
+- Scene 11: same clock removed from the wall and resting on the café counter.
+- Backgrounds: opaque RGB PNG, exactly `1920x1080`.
+- Evidence: transparent/RGBA PNG, exactly `512x512`.
+- Preserve all current IDs, paths, scene/evidence semantics, hotspot/reveal wiring, dialogue, and Scene 7 interaction landmarks/baked 黑瀨 placement.
+- No sprite/overlay, new IDs, compiler/runtime/layout work, image-similarity/CV/screenshot infrastructure, new validation script, generic prop framework, unrelated Chapter 1 regeneration, Chapter 2 work, or follow-up ticket for a mismatch found here.
+- Generated JSON under `apps/game/src-tauri/resources/**` stays untracked and is never hand-edited.
 
 ---
 
-### Task 1: Make the identity and verification contracts durable
+### Task 1: Make identity and verification contracts durable
 
 **Files:**
 - Modify: `docs/stories_plan/chapter_1/scene_p2.md`
@@ -45,23 +43,14 @@
 - Inspect: `static/assets/backgrounds/chapter_1/investigation_scene_3/inner_entry.png`
 
 **Interfaces:**
-- Produces: four authored asset prompts containing the same literal clock identity.
-- Produces: Scene 7 prompt geometry that pins the clock to the entrance wall.
-- Produces: a greenable background-audit report aligned with current `analysis_scene_8_5` ownership.
-- Produces: an explicit reusable `file -b` dimension/color-type verification command in the asset skill.
-- Preserves: all story/evidence semantics and the historical frozen-manifest record.
+- Produces: four asset prompts containing the same literal physical identity.
+- Produces: Scene 7 prompt geometry pinning the clock to the entrance wall.
+- Produces: a background-audit report aligned with current `analysis_scene_8_5` ownership.
+- Produces: explicit reusable `file -b` raster metadata verification in the asset skill.
 
-- [ ] **Step 1: Read the owning asset/review contracts and inspect the five-surface context**
+- [ ] **Step 1: Inspect the five-surface spatial context before edits**
 
-Read:
-
-```text
-.claude/skills/generating-lyra-image-assets/SKILL.md
-.claude/skills/reviewing-story-scenes/SKILL.md
-static/assets/config/policy.yaml
-```
-
-Open these five rasters together with the available project image viewer:
+Read the asset/review skills plus `static/assets/config/policy.yaml`, then open together:
 
 ```text
 static/assets/backgrounds/chapter_1/scene_p2/tag_002.png
@@ -71,17 +60,18 @@ static/assets/evidence/old_clock_photo.png
 static/assets/backgrounds/chapter_1/scene_11/tag_002.png
 ```
 
-Record only one Scene 3 disposition in working notes:
+For Scene 3, select exactly one inspection disposition for Task 3:
 
 ```text
-scene3_inner_entry_context = wall-not-exposed | wall-exposed-but-nonblocking
+A. The Scene 3 inner-entry plate does not expose the precise clock wall; no change required.
+B. The Scene 3 inner-entry plate exposes entrance geometry but remains non-blocking because it is not the clock-interaction carrier; no change required.
 ```
 
-Do not add Scene 3 to the regeneration set.
+Do not regenerate Scene 3.
 
-- [ ] **Step 2: Patch the P2 `Background Prompt` with the literal identity**
+- [ ] **Step 2: Patch P2's `Background Prompt`**
 
-Replace the existing P2 clock prompt with:
+Use exactly this asset contract:
 
 ```markdown
 - **Background Prompt:** Eye-level medium-wide establishing view from the corridor mouth, camera pulled back to frame the narrow back corridor of a small Tokyo cafe leading to the inner-storage entrance at its end, focal area a round old analog cafe wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring, mounted on the entrance's inner wall above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text, keep the lower composition clear and uncluttered for dialogue UI.
@@ -89,9 +79,9 @@ Replace the existing P2 clock prompt with:
 
 Change no adjacent action/dialogue/BGS.
 
-- [ ] **Step 3: Patch the Scene 7 `inner` `Background Prompt` with identity + placement**
+- [ ] **Step 3: Patch Scene 7's `inner` `Background Prompt`**
 
-Replace only the sublocation `Background Prompt` with wording equivalent to this exact contract:
+Use this contract, retaining all existing room/黑瀨 anchors:
 
 ```markdown
 - **Background Prompt:** Cold inner storage room of a small Tokyo cafe, high metal shelves casting long shadows and preserving the blocked sightline from the corridor-side replay position, hard sensor light, shelf impact mark on floor. Immediately inside the fire door, on the inner-storage entrance's inner wall rather than the deep storage back wall, mount the recurring round old analog cafe wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; its minute hand is nearly vertical at 12 and its hour hand is just before 11, with no readable time text. Detective Kurose Toru baked into the right side of the storage room: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he leads the inspection, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard sensor light, not covering the clock, shelf impact mark, phone drop position, bean can, or paperback hotspot.
@@ -99,9 +89,9 @@ Replace only the sublocation `Background Prompt` with wording equivalent to this
 
 Keep hotspot geometry, `Scene Source Prompt`, reveals, and dialogue unchanged.
 
-- [ ] **Step 4: Patch `old_clock_photo` `Image Prompt` with the same literal identity**
+- [ ] **Step 4: Patch `old_clock_photo` `Image Prompt`**
 
-Replace only the evidence `Image Prompt` with:
+Use:
 
 ```markdown
 - **Image Prompt:** Isolated photo print of the recurring round old analog cafe wall clock examined at the inner-storage entrance, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; stopped at a vague late-night position with the minute hand nearly vertical at 12 and the hour hand just before 11, cracked shadowed aged appearance, no readable timestamp or text, transparent evidence-icon composition.
@@ -109,34 +99,23 @@ Replace only the evidence `Image Prompt` with:
 
 Keep Name, Description, Details, Source Sublocation, reveal wiring, and On Collect dialogue unchanged.
 
-- [ ] **Step 5: Patch the Scene 11 `Background Prompt` with the same literal identity**
+- [ ] **Step 5: Patch Scene 11's `Background Prompt`**
 
-Replace only the empty-café clock-shot prompt with:
+Use:
 
 ```markdown
 - **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the recurring round old analog cafe wall clock from the back-corridor inner-storage entrance now removed from the wall and resting naturally on the counter, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; its minute hand is nearly vertical at 12 and its hour hand is just before 11, no readable clock numerals or other text, quiet unresolved stillness.
 ```
 
-Change no adjacent story copy/BGM/BGS.
+Change no story copy/BGM/BGS.
 
 - [ ] **Step 6: Repair the already-red background-audit report baseline**
 
 In `docs/stories_plan/chapter_1/background-variety-audit.md`:
 
-1. Keep the historical **Frozen production manifest** entry `scene_8_5.md` unchanged.
-2. Change only the **Current accepted manifest** entry from:
-
-```text
-14. `scene_8_5.md`
-```
-
-to:
-
-```text
-14. `analysis_scene_8_5.md`
-```
-
-3. Change the current cue row key from:
+1. Keep the historical **Frozen production manifest** `scene_8_5.md` entry unchanged.
+2. In **Current accepted manifest**, change `14. scene_8_5.md` to `14. analysis_scene_8_5.md`.
+3. Change only this live cue key:
 
 ```text
 chapter_1/scene_8_5.json::/queue/0/assetCue/backgroundAssetId
@@ -149,57 +128,30 @@ chapter_1/analysis_scene_8_5.json::/intro/0/assetCue/backgroundAssetId
 ```
 
 Keep the row's Police station vending corridor semantics/decision/priority unchanged.
-
-4. Update the current-state prose immediately above the current accepted manifest to mention that HPA-265 later replaced the former linear `scene_8_5.md` with `analysis_scene_8_5.md`. Do not rewrite the historical freeze.
+4. Adjust current-state prose to note HPA-265 replaced the former linear `scene_8_5.md` with `analysis_scene_8_5.md`; do not rewrite the frozen historical baseline.
 
 - [ ] **Step 7: Make the asset skill's dimension scan concrete**
 
-In `.claude/skills/generating-lyra-image-assets/SKILL.md`, replace the vague verification bullet:
-
-```text
-- a dimension scan for touched asset types
-```
-
-with:
+Replace its vague `a dimension scan for touched asset types` bullet with:
 
 ```text
 - on Unix-like development/CI hosts, run `file -b <touched PNG paths>` and verify each output reports the policy dimensions plus RGB for opaque backgrounds or RGBA for transparent portrait/evidence assets; use an equivalent image-metadata inspector only when `file` is unavailable
 ```
 
-Do not add a repo script or PNG parser.
+Do not add a script or PNG parser.
 
 - [ ] **Step 8: Compile and prove the repaired audit baseline before art generation**
-
-Run:
 
 ```bash
 bun run scenes:compile
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-Expected: both exit 0. If the audit still reports any stale/missing cue key, stop and repair only the report row/current-manifest drift required by the current compiler output before generating art.
+Expected: both exit 0. If coverage still reports a stale/missing cue key, repair only current report ownership required by the compiler output before continuing.
 
-- [ ] **Step 9: Inspect the authored diff**
+- [ ] **Step 9: Review and commit this contract slice**
 
-Run:
-
-```bash
-git diff -- \
-  docs/stories_plan/chapter_1/scene_p2.md \
-  docs/stories_plan/chapter_1/investigation_scene_7.md \
-  docs/stories_plan/chapter_1/scene_11.md \
-  docs/stories_plan/chapter_1/background-variety-audit.md \
-  .claude/skills/generating-lyra-image-assets/SKILL.md
-```
-
-Expected:
-
-- only the four owning asset prompts change in the three scene files;
-- no dialogue/evidence semantics/reveal wiring changes;
-- only current (not frozen historical) `scene_8_5` audit ownership changes;
-- asset skill changes only the dimension-scan instruction.
-
-- [ ] **Step 10: Commit the durable contracts**
+`git diff` must show only four asset-prompt edits, current audit ownership repair, and the skill's dimension-scan wording; no story/reveal changes.
 
 ```bash
 git add \
@@ -223,111 +175,72 @@ git commit -m "docs: lock Chapter 1 old-clock asset identity"
 - Inspect: `static/assets/backgrounds/chapter_1/investigation_scene_3/inner_entry.png`
 
 **Interfaces:**
-- Consumes: the four durable prompts from Task 1.
-- Produces: one four-surface clock family satisfying the six-dimension gate.
-- Preserves: existing background/evidence paths and Scene 7 interaction landmarks.
+- Consumes: Task 1's four durable prompts.
+- Produces: one four-surface family satisfying the six-dimension visual gate.
 
-- [ ] **Step 1: Generate P2 from its live authored prompt**
+- [ ] **Step 1: Generate and normalize P2**
 
-Use `.claude/skills/generating-lyra-image-assets/SKILL.md` and one built-in image-generation call.
-
-Required composition/state:
+Use the repo asset skill and built-in image generation. Required result:
 
 ```text
-wide 16:9 story background
-corridor-mouth medium-wide view
-inner-storage entrance is the corridor endpoint
-clock mounted on entrance inner wall above/near supplies
-literal durable identity from Task 1
-no exact clock time
-no readable text/logos/watermark
+wide 16:9 corridor-mouth view
+inner-storage entrance at corridor endpoint
+literal recurring clock identity on entrance inner wall
+no exact clock time/readable text
 lower dialogue area clear
 ```
 
-Copy/normalize the accepted output to:
+Write opaque RGB `1920x1080` to `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png`.
 
-```text
-static/assets/backgrounds/chapter_1/scene_p2/tag_002.png
-```
+- [ ] **Step 2: Generate and normalize Scene 7 `inner.png`**
 
-Normalize to opaque RGB `1920x1080` without non-uniform stretching.
-
-- [ ] **Step 2: Generate Scene 7 `inner.png` from its live authored prompt**
-
-Use the accepted P2 clock as a visual reference when the available generation workflow supports it; the authored prompt remains sufficient without the reference.
-
-Reject any output that violates one of these anchors:
+Use P2 as visual reference when supported, but rely on the authored prompt as durable truth. Reject output unless:
 
 ```text
 same literal clock identity
-clock on entrance inner wall, not storage back wall
+clock mounted immediately inside fire door on entrance inner wall, never storage back wall
 stopped hands: minute near 12, hour just before 11
 high shelves preserve blocked corridor-side sightline
-baked 黑瀨 remains on right, perspective-correct
-clock / shelf-impact / phone-drop / bean-can / paperback landmarks unobstructed
-hard sensor-light/cold-storage mood preserved
-no readable numerals/text
+baked 黑瀨 remains right-side/perspective-correct
+clock + shelf impact + phone + bean can + paperback landmarks remain unobstructed
 ```
 
-Copy/normalize to opaque RGB `1920x1080` at:
+Write opaque RGB `1920x1080` to `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png`.
 
-```text
-static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png
-```
-
-- [ ] **Step 3: Generate `old_clock_photo.png` from its live evidence prompt**
-
-Use one built-in image-generation call with the evidence transparent workflow.
+- [ ] **Step 3: Generate and normalize `old_clock_photo.png`**
 
 Required result:
 
 ```text
-photo-print / isolated evidence composition
-same literal clock identity as P2/Scene 7
-same stopped analog hand position as Scene 7
+isolated photo-print evidence composition
+same literal clock identity
+same stopped hand position as Scene 7
 cracked/aged appearance retained
 no readable numerals/timestamp/text
 transparent background
 ```
 
-Copy/normalize to RGBA `512x512` at:
+Write RGBA `512x512` to `static/assets/evidence/old_clock_photo.png`.
 
-```text
-static/assets/evidence/old_clock_photo.png
-```
+- [ ] **Step 4: Generate and normalize Scene 11**
 
-- [ ] **Step 4: Generate Scene 11 from its live authored prompt**
-
-Use the accepted clock identity/reference and preserve the state change:
+Required result:
 
 ```text
 empty Rain Bell cafe aftermath
 same literal clock identity
-clock removed from wall and resting naturally on counter
-same stopped analog hand position
+clock removed and resting naturally on counter
+same stopped hand position
 quiet afternoon / latte context
-no people/readable numerals/text/logos/watermark
+no readable text/numerals
 lower dialogue area clear
 ```
 
-Copy/normalize to opaque RGB `1920x1080` at:
-
-```text
-static/assets/backgrounds/chapter_1/scene_11/tag_002.png
-```
+Write opaque RGB `1920x1080` to `static/assets/backgrounds/chapter_1/scene_11/tag_002.png`.
 
 - [ ] **Step 5: Run the six-dimension side-by-side gate**
 
-Open together:
-
-```text
-scene_p2/tag_002.png
-investigation_scene_7/inner.png
-old_clock_photo.png
-scene_11/tag_002.png
-```
-
-Verify all six dimensions:
+Open all four regenerated surfaces together and require:
 
 ```text
 1. casing/rim — heavy black multi-ring metal bezel
@@ -335,31 +248,16 @@ Verify all six dimensions:
 3. hands — thick tapered black hands
 4. wear — same aged finish + lower-right outer-ring scuff
 5. proportions — same round face / thick-bezel relationship
-6. placement/sightline — correct mounted/photo/removed state for each scene; Scene 7 entrance-wall placement remains compatible with Miyake not seeing the clock from his replay position
+6. placement/sightline — P2 and Scene 7 entrance-wall placement; Scene 7 blocked replay sightline; evidence photo of that clock; Scene 11 removed-to-counter state
 ```
 
-Mismatch rule:
+Any failed dimension means reject/regenerate the affected raster and repeat the complete four-surface gate. Do not accept a mismatch as follow-up work.
 
-```text
-any failed dimension -> reject the affected raster -> regenerate within HPA-602 -> repeat the full four-surface gate
-```
+- [ ] **Step 6: Reinspect Scene 3 `inner_entry.png`**
 
-Do not file a follow-up for an accepted known mismatch.
+Compare it with the accepted entrance-wall placement and retain the exact A or B disposition selected in Task 1 Step 1. Do not regenerate it.
 
-- [ ] **Step 6: Re-open Scene 3 `inner_entry.png` beside the accepted family**
-
-Confirm the inspection-only plate does not introduce a direct spatial contradiction with the selected entrance-wall placement. Record one of these dispositions for the closeout:
-
-```text
-Scene 3 plate does not expose the precise clock wall; no change required.
-Scene 3 plate exposes entrance geometry but remains non-blocking because the clock interaction is not represented on that plate; no change required.
-```
-
-Do not regenerate Scene 3 in this ticket.
-
-- [ ] **Step 7: Verify raster metadata with the reusable skill command**
-
-Run:
+- [ ] **Step 7: Verify dimensions/color types**
 
 ```bash
 file -b \
@@ -369,18 +267,18 @@ file -b \
   static/assets/backgrounds/chapter_1/scene_11/tag_002.png
 ```
 
-Expected:
+Required metadata:
 
 ```text
-P2 background: PNG image data, 1920 x 1080, ... RGB ...
-Scene 7 background: PNG image data, 1920 x 1080, ... RGB ...
-old_clock_photo evidence: PNG image data, 512 x 512, ... RGBA ...
-Scene 11 background: PNG image data, 1920 x 1080, ... RGB ...
+P2: 1920 x 1080, RGB
+Scene 7: 1920 x 1080, RGB
+old_clock_photo: 512 x 512, RGBA
+Scene 11: 1920 x 1080, RGB
 ```
 
-Exact bit-depth/interlace wording may vary; dimensions and RGB/RGBA type are the gate.
+Bit-depth/interlace wording may vary.
 
-- [ ] **Step 8: Commit the four regenerated rasters**
+- [ ] **Step 8: Commit the raster family**
 
 ```bash
 git add \
@@ -397,42 +295,37 @@ git commit -m "feat: unify Chapter 1 old-clock rasters"
 
 **Files:**
 - Modify: `docs/stories_plan/chapter_1/semantic-content-reaudit.md`
-- Verify only: all Task 1/2 files
 
 **Interfaces:**
-- Consumes: accepted four-surface family, Scene 3 inspection disposition, raster metadata, compiler/audit results.
-- Produces: durable HPA-602 Axis 5 `SHIP` closeout in the existing re-audit document.
+- Consumes: accepted four-surface family, Scene 3 inspection disposition, `file -b` output, compiler/audit results.
+- Produces: durable HPA-602 Axis 5 `SHIP` closeout.
 
-- [ ] **Step 1: Run final compiler and audit checks**
-
-Run:
+- [ ] **Step 1: Run final mechanical checks**
 
 ```bash
 bun run scenes:compile
 bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md
 ```
 
-Expected: both exit 0.
-
-Do not treat these commands as visual proof; the Task 2 side-by-side gate owns clock identity/placement acceptance.
+Expected: both exit 0. These commands are structural/report gates, not visual identity proof.
 
 - [ ] **Step 2: Re-run only the old-clock Axis 5 item**
 
-Use `.claude/skills/reviewing-story-scenes/SKILL.md` visual/background criteria against:
+Review these five surfaces with `.claude/skills/reviewing-story-scenes/SKILL.md`:
 
 ```text
-static/assets/backgrounds/chapter_1/scene_p2/tag_002.png
-static/assets/backgrounds/chapter_1/investigation_scene_3/inner_entry.png
-static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png
-static/assets/evidence/old_clock_photo.png
-static/assets/backgrounds/chapter_1/scene_11/tag_002.png
+scene_p2/tag_002.png
+investigation_scene_3/inner_entry.png
+investigation_scene_7/inner.png
+old_clock_photo.png
+scene_11/tag_002.png
 ```
 
-Required verdict: `SHIP` only if the four regeneration targets pass the six-dimension gate and the Scene 3 inspection-only plate has a recorded non-blocking spatial disposition.
+Verdict is `SHIP` only if the four regeneration targets pass all six dimensions and Scene 3 has the recorded A/B non-blocking disposition.
 
-- [ ] **Step 3: Replace the deferred HPA-602 section with the resolved closeout**
+- [ ] **Step 3: Replace the deferred HPA-602 block with the resolved closeout**
 
-In `docs/stories_plan/chapter_1/semantic-content-reaudit.md`, replace only the current `### Deferred follow-up — old-clock raster continuity` block with:
+Use this common block:
 
 ```markdown
 ### Resolved follow-up — old-clock raster continuity (HPA-602)
@@ -440,27 +333,31 @@ In `docs/stories_plan/chapter_1/semantic-content-reaudit.md`, replace only the c
 - **Status:** Resolved. Axis 5 clock-item verdict: `SHIP`.
 - **Inspected surfaces:** `scene_p2/tag_002.png`, `investigation_scene_3/inner_entry.png`, `investigation_scene_7/inner.png`, `old_clock_photo.png`, `scene_11/tag_002.png`.
 - **Regenerated surfaces:** `scene_p2/tag_002.png`, `investigation_scene_7/inner.png`, `old_clock_photo.png`, `scene_11/tag_002.png`.
-- **Durable identity:** round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring. The four owning asset prompts now carry those literal traits.
+- **Durable identity:** round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring. The four owning asset prompts contain these literal traits.
 - **Placement/sightline:** P2 and Scene 7 keep the clock on the inner-storage entrance wall; Scene 7 keeps the corridor-side replay sightline blocked by the existing shelf/fire-door geometry; Scene 11 shows the same clock removed to the counter.
 - **Stopped-time depiction:** Scene 7, evidence, and Scene 11 use only the vague analog late-night position (minute hand near 12, hour hand just before 11); exact `22:59` remains authored text, not readable raster content.
-- **Scene 3 inspection:** record the Task 2 Step 6 disposition here; no Scene 3 raster regeneration was required by HPA-602.
 - **Asset policy:** `file -b` verifies the three backgrounds as RGB `1920x1080` PNGs and `old_clock_photo.png` as RGBA `512x512` PNG.
-- **Mechanical verification:** `bun run scenes:compile` and `bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md` both exit 0 after the stale `scene_8_5` report ownership is updated to `analysis_scene_8_5`.
+- **Mechanical verification:** `bun run scenes:compile` and `bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md` both exit 0 after the stale current `scene_8_5` report ownership is updated to `analysis_scene_8_5`.
 - **Owner/tracking:** HPA-602 complete; no further old-clock visual follow-up remains.
 ```
 
-Replace `record the Task 2 Step 6 disposition here` with the exact disposition sentence already selected in Task 2. Do not create a separate Axis 5 report file.
+Then append exactly one of these two lines, matching Task 1 Step 1:
 
-- [ ] **Step 4: Inspect final scope**
-
-Run:
-
-```bash
-git diff --stat main...HEAD
-git diff --name-only main...HEAD
+```markdown
+- **Scene 3 inspection:** The `inner_entry.png` plate does not expose the precise clock wall; no change required.
 ```
 
-Expected implementation surface beyond the two planning docs:
+or
+
+```markdown
+- **Scene 3 inspection:** The `inner_entry.png` plate exposes entrance geometry but remains non-blocking because it is not the clock-interaction carrier; no change required.
+```
+
+Do not create a replacement standalone Axis 5 report file.
+
+- [ ] **Step 4: Verify final diff scope**
+
+`git diff --name-only main...HEAD` may contain the two planning docs plus exactly these implementation files:
 
 ```text
 .claude/skills/generating-lyra-image-assets/SKILL.md
@@ -475,26 +372,26 @@ static/assets/backgrounds/chapter_1/scene_p2/tag_002.png
 static/assets/evidence/old_clock_photo.png
 ```
 
-`investigation_scene_3/inner_entry.png` must not appear in the diff.
+`investigation_scene_3/inner_entry.png` must not be in the diff.
 
-- [ ] **Step 5: Commit the closeout**
+- [ ] **Step 5: Commit closeout**
 
 ```bash
 git add docs/stories_plan/chapter_1/semantic-content-reaudit.md
 git commit -m "docs: close HPA-602 clock continuity audit"
 ```
 
-- [ ] **Step 6: Final PR verification summary**
+- [ ] **Step 6: Record final PR evidence**
 
-Record in PR #68:
+PR #68 must state:
 
 ```text
-- four regenerated clock surfaces pass the six-dimension side-by-side identity/placement gate
-- Scene 3 inner_entry inspection disposition
+- four regenerated clock surfaces pass six-dimension side-by-side identity/placement review
+- Scene 3 A/B inspection disposition
 - file -b dimensions/color types
-- scenes:compile result
-- background-cues:audit --check-report result
+- scenes:compile exit 0
+- background-cues:audit --check-report exit 0
 - Axis 5 clock-item verdict SHIP
 ```
 
-Do not mark HPA-602 Done until all six lines are backed by the current branch.
+Do not mark HPA-602 Done until each statement is backed by the current branch.
