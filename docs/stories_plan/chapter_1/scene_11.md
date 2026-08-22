@@ -70,7 +70,7 @@
 [三宅紅了臉，店長在一旁低聲笑了。]
 
 [場景：雨鐘咖啡館，午後，店內空鏡。人聲漸遠，只剩光線落在木桌上。]
-- **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, old wall clock resting on the counter, quiet unresolved stillness.
+- **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the recurring round old analog cafe wall clock from the back-corridor inner-storage entrance now removed from the wall and resting naturally on the counter, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; its minute hand is nearly vertical at 12 and its hour hand is just before 11, no readable clock numerals or other text, quiet unresolved stillness.
 - **BGM:** bgm_chapter_close
 - **BGS:** bgs_cafe_afternoon_after_rain
 

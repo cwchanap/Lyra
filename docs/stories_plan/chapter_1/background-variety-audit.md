@@ -2,7 +2,7 @@
 
 **Audit date:** 2026-08-07
 **Ruleset:** compiler-owned Chapter 1 cue inventory; `keep`, `prompt-adjust`, `regenerate`, and `add-variant` decisions; Priority A only for material comprehension, usability, evidence, reveal, state, or continuity impact.
-**Production analysis:** None present at the production freeze. The user-approved post-freeze P1 amendment split the former linear `scene_p1.md` into `investigation_scene_p1.md` and `analysis_scene_p1_5.md`; the current accepted manifest therefore has 17 scenes. P1.5 intentionally reuses the existing stationery-counter plate (`background.chapter_1.scene_p1.tag_002`) rather than adding a new background.
+**Production analysis:** None present at the production freeze. The user-approved post-freeze P1 amendment split the former linear `scene_p1.md` into `investigation_scene_p1.md` and `analysis_scene_p1_5.md`; the current accepted manifest therefore has 17 scenes. P1.5 intentionally reuses the existing stationery-counter plate (`background.chapter_1.scene_p1.tag_002`) rather than adding a new background. HPA-265 later replaced the former linear `scene_8_5.md` with `analysis_scene_8_5.md`; the current accepted manifest and the live cue inventory below reflect that replacement, while the frozen historical baseline above is unchanged.
 
 ## Frozen production manifest
 
@@ -25,7 +25,7 @@ The ordered scene list copied from `chapter.md` at the audit freeze:
 15. `interrogation_scene_10.md`
 16. `scene_11.md`
 
-## Current accepted manifest after the P1 amendment
+## Current accepted manifest after the P1 amendment and HPA-265
 
 The historical freeze above remains the 16-scene audit baseline. The current
 compiler-derived manifest adds the approved P1 investigation/analysis split:
@@ -43,7 +43,7 @@ compiler-derived manifest adds the approved P1 investigation/analysis split:
 11. `scene_6.md`
 12. `investigation_scene_7.md`
 13. `investigation_scene_8.md`
-14. `scene_8_5.md`
+14. `analysis_scene_8_5.md`
 15. `investigation_scene_9.md`
 16. `interrogation_scene_10.md`
 17. `scene_11.md`
@@ -97,7 +97,7 @@ The audit distinguishes intentional holds from accidental repetition. In particu
 | `chapter_1/investigation_scene_8.json::/intro/0/assetCue/backgroundAssetId` | Rain Bell manager-office corner | Maintenance-page establish | Warm lamp, boxes, account books, maintenance screen | Wide office-corner view gives the evidence chain a stable origin | keep | B | Retain evidence-location establish | Accepted |
 | `chapter_1/investigation_scene_8.json::/sublocations/0/backgroundAssetId` | Rain Bell manager-office corner | Maintenance-screen exploration | Same screen, account books, boxes | Tighter office corner directs attention to the screen after the wide establish | keep | B | Retain readable exploration focal point | Accepted |
 | `chapter_1/investigation_scene_8.json::/sublocations/1/backgroundAssetId` | Rain Bell fixed panel | Formal evidence capture | Same maintenance hardware, paperwork, harder light | State changes from discovery to documented chain-of-custody | keep | B | Retain formalized evidence state | Accepted |
-| `chapter_1/scene_8_5.json::/queue/0/assetCue/backgroundAssetId` | Police station vending corridor | Progress recap | Vending glow, bench folder, rain-dark window | Single pause location is distinct from both hearing room and interrogation room | keep | B | Retain recap breathing space | Accepted |
+| `chapter_1/analysis_scene_8_5.json::/intro/0/assetCue/backgroundAssetId` | Police station vending corridor | Progress recap | Vending glow, bench folder, rain-dark window | Single pause location is distinct from both hearing room and interrogation room | keep | B | Retain recap breathing space | Accepted |
 | `chapter_1/investigation_scene_9.json::/intro/0/assetCue/backgroundAssetId` | KAGAMI contractor records office | Records-handoff establish | Glass window, file cabinets, reply packet, daylight | Wide service-window geometry establishes bureaucratic distance | keep | B | Retain constrained-records establish | Accepted |
 | `chapter_1/investigation_scene_9.json::/sublocations/0/backgroundAssetId` | KAGAMI contractor service desk | Packet/detail exploration | Same partition, cabinets, limited packet | Desk-focused version preserves location continuity while isolating the responsive document surface | keep | B | Retain document-response focal point | Accepted |
 | `chapter_1/investigation_scene_9.json::/sublocations/1/backgroundAssetId` | White interview room | Kitami confrontation | Plain walls, exposed fluorescent tubes, forensic sheets | Deliberate move away from the records counter gives confrontation a neutral pressure chamber | keep | B | Retain confrontation isolation | Accepted |
