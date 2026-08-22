@@ -1,4 +1,6 @@
 import { fireEvent, render } from "@testing-library/svelte";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import InterrogationView from "./InterrogationView.svelte";
 import type { SceneView } from "../state/types";
@@ -180,5 +182,22 @@ describe("InterrogationView", () => {
     for (const button of getAllByRole("button")) {
       expect((button as HTMLButtonElement).disabled).toBe(true);
     }
+  });
+
+  it("clamps the question panel max-height to a 160px floor so short viewports cannot collapse it to zero", () => {
+    // The Tauri window has no minHeight, so a user can resize below 250px
+    // where the old `calc(100% - 250px)` would yield 0 or negative. The
+    // `max(160px, ...)` floor keeps the question panel scrollable. jsdom
+    // cannot evaluate `max()` in CSS values (getComputedStyle returns
+    // "none"), so this pins the declared rule in the component source —
+    // the same approach used by DialogueBox.test.ts's dialogueBoxSource()
+    // and page-source.test.ts for CSS jsdom cannot resolve at runtime.
+    const source = readFileSync(
+      join(process.cwd(), "src/lib/components/InterrogationView.svelte"),
+      "utf8",
+    );
+    expect(source).toContain("max-height: max(160px, calc(100% - 250px))");
+    // Guard against a regression that drops back to the unfloored form.
+    expect(source).not.toContain("max-height: calc(100% - 250px)");
   });
 });

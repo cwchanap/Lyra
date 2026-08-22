@@ -70,7 +70,7 @@
     bottom: 28px;
     width: min(1000px, calc(100% - 56px));
     transform: translateX(-50%);
-    max-height: calc(100% - 250px);
+    max-height: max(160px, calc(100% - 250px));
     overflow: auto;
     box-sizing: border-box;
     z-index: 25;

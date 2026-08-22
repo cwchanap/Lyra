@@ -197,6 +197,13 @@ afterEach(() => {
   resetEscapeCoordinator();
 });
 
+function isInert(element: HTMLElement): boolean {
+  return Boolean(
+    (element as HTMLElement & { inert?: boolean }).inert ||
+    element.hasAttribute("inert"),
+  );
+}
+
 describe("InterrogationStage", () => {
   it("keeps its child mounted with menu-only controls and live subject progress", async () => {
     const user = userEvent.setup();
@@ -643,5 +650,55 @@ describe("InterrogationStage", () => {
     expect(meter).toHaveAttribute("aria-valuenow", "0");
     expect(meter).toHaveAttribute("aria-valuemax", "0");
     expect(meter).toHaveAccessibleName("已突破 0 / 0 題");
+  });
+
+  it("inerts the wrapped interrogation content while Stage LOG is open but keeps the toolbar active", async () => {
+    // The DialogueHistoryOverlay backdrop is pointer-events: none, so without
+    // inert on the children wrapper, question/complete controls that peek out
+    // from behind the history panel remain clickable while LOG is open. The
+    // stage toolbar (LOG / 案件檔案 / 證物櫃) must stay interactive so the
+    // player can close LOG or open Case File (which closes LOG first).
+    // jsdom does not enforce `inert` (it does not block click dispatch); this
+    // test pins the inert attribute on the wrapper, matching the DialogueBox
+    // test pattern. Real inert enforcement is covered by the e2e path.
+    const user = userEvent.setup();
+    const { container } = render(InterrogationStage, {
+      ...props({ history, inventory: menuInventory }),
+      children: createRawSnippet(() => ({
+        render: () =>
+          '<button type="button" data-testid="child-question">提問</button>',
+      })),
+    });
+
+    const childWrapper = container.querySelector(".stage-children");
+    expect(childWrapper).not.toBeNull();
+    expect(isInert(childWrapper as HTMLElement)).toBe(false);
+
+    const logButton = screen.getByRole("button", { name: "LOG" });
+    expect(isInert(logButton)).toBe(false);
+
+    await user.click(logButton);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    // Children wrapper is now inert — question/complete controls are sealed.
+    expect(isInert(childWrapper as HTMLElement)).toBe(true);
+    // Toolbar buttons remain non-inert so the player can dismiss LOG or open
+    // Case File (which closes history first via closeStageHistory).
+    expect(isInert(logButton)).toBe(false);
+    expect(isInert(screen.getByRole("button", { name: "案件檔案" }))).toBe(
+      false,
+    );
+    expect(isInert(screen.getByRole("button", { name: "證物櫃 02" }))).toBe(
+      false,
+    );
+
+    // Closing LOG restores the children wrapper to interactive.
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "關閉對話紀錄",
+      }),
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(isInert(childWrapper as HTMLElement)).toBe(false);
   });
 });
