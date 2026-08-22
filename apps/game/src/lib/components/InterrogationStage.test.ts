@@ -589,4 +589,59 @@ describe("InterrogationStage", () => {
       screen.getByRole("dialog", { name: "提出證據" }),
     ).toBeInTheDocument();
   });
+
+  it("does not open Stage history when the stage is disabled", async () => {
+    // The LOG button's onclick handler openStageHistory guards on
+    // `if (!disabled)`. fireEvent.click bypasses the native disabled button
+    // guard in jsdom, reaching the handler so its return branch is exercised.
+    render(InterrogationStageHarness, props({ disabled: true, history }));
+
+    await fireEvent.click(screen.getByRole("button", { name: "LOG" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("hides the subject record when the current phase is not found", () => {
+    // When currentPhaseId doesn't match any visible phase, phase is null and
+    // the {#if phase} block doesn't render. This covers the false arm of the
+    // phase guard and the empty-questions progress fallback.
+    render(
+      InterrogationStageHarness,
+      props({
+        scene: {
+          ...scene(),
+          currentPhaseId: "missing_phase",
+        },
+      }),
+    );
+
+    expect(screen.queryByText("三宅聰太")).toBeNull();
+    expect(screen.queryByText("INTERROGATION / 訊問中")).toBeNull();
+  });
+
+  it("renders zero-progress meter when the current phase has no questions", () => {
+    // When the phase has an empty questions array, brokenQuestionProgress
+    // returns { broken: 0, total: 0 }. The progress bar's
+    // `progress.total === 0 ? 0 : ...` ternary must take the zero arm.
+    render(
+      InterrogationStageHarness,
+      props({
+        scene: {
+          ...scene(),
+          visiblePhases: [
+            {
+              ...scene().visiblePhases[0],
+              questions: [],
+            },
+          ],
+        },
+      }),
+    );
+
+    const meter = document.querySelector(
+      "[data-interrogation-broken-progress]",
+    );
+    expect(meter).toHaveAttribute("aria-valuenow", "0");
+    expect(meter).toHaveAttribute("aria-valuemax", "0");
+    expect(meter).toHaveAccessibleName("已突破 0 / 0 題");
+  });
 });

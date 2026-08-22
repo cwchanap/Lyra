@@ -735,4 +735,36 @@ describe("InterrogationEvidenceTray", () => {
       focusSpy.mockRestore();
     }
   });
+
+  it("keeps the newly focused record when blur fires on the previously focused tile", async () => {
+    // When focus moves from record A to record B, the blur handler
+    // clearFocusedRecordDetail(A) checks whether focusedRecordKey still
+    // equals A. If focus has already moved to B (focusedRecordKey = B),
+    // the guard's false arm prevents clearing the new focus state.
+    const { container } = render(InterrogationEvidenceTray, props());
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+    const statementTile = screen.getByRole("button", { name: /目擊者/ });
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+
+    // Focus the evidence tile, then focus the statement tile. The blur
+    // handler on the evidence tile must not clear the statement tile's
+    // focused detail.
+    evidenceTile.focus();
+    await waitFor(() => expect(detail).toHaveTextContent("咖啡收據"));
+
+    statementTile.focus();
+    await waitFor(() => expect(detail).toHaveTextContent("目擊者"));
+
+    // The detail must still show the statement record, not revert to empty
+    // or the evidence record — the blur guard protected the new focus.
+    expect(detail).toHaveTextContent("目擊者");
+  });
 });

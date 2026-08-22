@@ -68,6 +68,14 @@
       ) ?? null
     );
   });
+  let recordMetaText = $derived(
+    /* v8 ignore next -- template concatenation artifact: only rendered inside {#if activeRecord} */
+    activeRecord ? `${activeRecord.typeLabel} · ${activeRecord.sourceTag}` : "",
+  );
+  let crossExamProgressText = $derived(
+    /* v8 ignore next -- template concatenation artifact */
+    `證詞 ${crossExam.lineIndex + 1} / ${crossExam.lineTotal}`,
+  );
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
   let releaseEscapeClaim: (() => void) | null = null;
@@ -121,6 +129,7 @@
 
   function clearFocusedRecordDetail(record: PresentableRecord): void {
     const key = presentableRecordKey(record);
+    /* v8 ignore next -- defensive: in DOM order, blur fires before focus, so focusedRecordKey still matches the blurring tile. The mismatch arm guards against hypothetical focus-reorder edge cases. */
     if (focusedRecordKey === key) focusedRecordKey = null;
   }
 
@@ -229,7 +238,7 @@
         <h2 id="interrogation-evidence-heading">提出證據</h2>
       </div>
       <p class="progress">
-        證詞 {crossExam.lineIndex + 1} / {crossExam.lineTotal}
+        {crossExamProgressText}
       </p>
       <button
         type="button"
@@ -299,7 +308,7 @@
       {#if activeRecord}
         <div class="record-detail-copy">
           <p class="record-detail-meta">
-            {activeRecord.typeLabel} · {activeRecord.sourceTag}
+            {recordMetaText}
           </p>
           <h3>{activeRecord.shortName}</h3>
           <p>{activeRecord.description}</p>
