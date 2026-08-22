@@ -610,7 +610,10 @@
        lets the testimony action row live inside it without a nested-button
        role conflict. The visible .advance-button is the Tab-reachable,
        SR-announced advance target; it is a sibling in ordinary dialogue and
-       moves into the mock-shaped testimony action row during interrogation.
+       moves into the mock-shaped testimony action row during interrogation
+       line items. For non-line items (action/sceneTag) the inline row does
+       not render, so the standalone sibling stays put to keep an advance
+       target available.
        Sighted keyboard users activate it with Enter/Space (native button
        activation) or click anywhere on .box.
 
@@ -631,7 +634,7 @@
        isAdvanceBlockedByFocusedControl returns true and handleKey returns
        without preventDefault, so native button auto-repeat proceeds
        unaffected. -->
-  {#if !interrogationTestimony}
+  {#if !(interrogationTestimony && current.kind === "line")}
     <button
       class="advance-button"
       type="button"

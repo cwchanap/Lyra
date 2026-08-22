@@ -5,14 +5,28 @@ import type { PortraitRef } from "$lib/state/types";
 import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
 
 const resolveStoryAssetMock = vi.hoisted(() => vi.fn());
+const placeholderForMissingStoryAssetMock = vi.hoisted(() => vi.fn());
+// Captured inside the mock factory so beforeEach can wire the spy to call
+// through to the real implementation synchronously (the factory runs before
+// any test, so the ref is populated by the time beforeEach executes).
+const realPlaceholderForMissingStoryAsset = vi.hoisted(() => ({
+  current: null as
+    | null
+    | (typeof import("$lib/assets/story-assets"))["placeholderForMissingStoryAsset"],
+}));
 
 vi.mock("$lib/assets/story-assets", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("$lib/assets/story-assets")>();
+  realPlaceholderForMissingStoryAsset.current =
+    actual.placeholderForMissingStoryAsset;
   return {
     ...actual,
     resolveStoryAsset: (...args: Parameters<typeof actual.resolveStoryAsset>) =>
       resolveStoryAssetMock(...args),
+    placeholderForMissingStoryAsset: (
+      ...args: Parameters<typeof actual.placeholderForMissingStoryAsset>
+    ) => placeholderForMissingStoryAssetMock(...args),
   };
 });
 
@@ -42,6 +56,7 @@ describe("InterrogationSubjectArt", () => {
     cleanup();
     vi.restoreAllMocks();
     resolveStoryAssetMock.mockReset();
+    placeholderForMissingStoryAssetMock.mockReset();
   });
 
   beforeEach(() => {
@@ -52,6 +67,13 @@ describe("InterrogationSubjectArt", () => {
         >("$lib/assets/story-assets");
         return actual.resolveStoryAsset(assetId, type as "portrait");
       },
+    );
+    placeholderForMissingStoryAssetMock.mockImplementation(
+      (assetId: string, type: string) =>
+        realPlaceholderForMissingStoryAsset.current!(
+          assetId,
+          type as "portrait",
+        ),
     );
   });
 
@@ -279,7 +301,7 @@ describe("InterrogationSubjectArt", () => {
       assetId: "portrait.soma_ritsu.focused",
     };
 
-    const { container, rerender } = render(InterrogationSubjectArt, {
+    const { rerender } = render(InterrogationSubjectArt, {
       portrait,
     });
 
@@ -294,19 +316,22 @@ describe("InterrogationSubjectArt", () => {
     await tick();
 
     // Now reject the stale (first) promise. The cancelled guard must skip
-    // the placeholder assignment, so no PORTRAIT placeholder for the first
-    // asset appears.
+    // the placeholder assignment for the stale asset. Asserting the spy was
+    // not called with the stale assetId is non-vacuous: if the guard were
+    // broken, the .catch would invoke placeholderForMissingStoryAsset with
+    // "portrait.miyake_sota.standard". (Checking the rendered <img> is
+    // unreliable here — jsdom fires onerror for the placeholder data URL and
+    // CrossfadeImage removes the layer, so the DOM converges to the same
+    // empty state whether or not the guard held.)
     firstPromiseControllers[0].reject(new Error("stale asset unavailable"));
 
-    await waitFor(() => {
-      const images = container.querySelectorAll(
-        "img.interrogation-subject-portrait",
-      ) as NodeListOf<HTMLImageElement>;
-      // No image should show the first portrait's placeholder asset ID.
-      for (const img of images) {
-        expect(img.src).not.toContain("miyake_sota");
-      }
-    });
+    await waitFor(() =>
+      expect(placeholderForMissingStoryAssetMock).not.toHaveBeenCalled(),
+    );
+    expect(placeholderForMissingStoryAssetMock).not.toHaveBeenCalledWith(
+      "portrait.miyake_sota.standard",
+      "portrait",
+    );
   });
 
   it("skips crop recalculation when the same asset reloads after a portrait swap", async () => {

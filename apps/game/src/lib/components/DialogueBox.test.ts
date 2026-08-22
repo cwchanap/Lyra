@@ -1694,6 +1694,35 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(onAdvance).toHaveBeenCalledTimes(1);
   });
 
+  it("renders an advance target for non-line items while testimony is active", () => {
+    // When interrogationTestimony is true but the current item is an action
+    // (or sceneTag), the inline .testimony-actions row does not render — it
+    // lives inside the line branch. The standalone advance button must still
+    // appear so the player can advance; suppressing it only because
+    // interrogationTestimony is true would leave no advance target.
+    const { onAdvance } = renderDialogueBox(
+      { kind: "action", text: "證言席的燈光暗了一拍。" },
+      {
+        interrogationStageActive: true,
+        crossExam: {
+          lineId: crossExamPresentation.lineId,
+          onChallenge: vi.fn(),
+          onWithdraw: vi.fn(),
+          presentation: crossExamPresentation,
+        },
+      },
+    );
+
+    const advance = screen.getByRole("button", { name: "推進證詞" });
+    expect(advance).toBeInTheDocument();
+    // The inline testimony action row is line-only, so the standalone button
+    // must not be nested inside .testimony-actions.
+    expect(advance.closest(".testimony-actions")).toBeNull();
+
+    fireEvent.click(advance);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps testimony LOG in the utility rail beside progress", () => {
     const { container } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
