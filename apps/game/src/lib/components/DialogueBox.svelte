@@ -116,6 +116,7 @@
   );
   const testimonyCounter = $derived.by(() => {
     const presentation = crossExam?.presentation;
+    /* v8 ignore next -- unreachable: testimonyCounter is only read when interrogationTestimony is true, which requires crossExam.presentation != null */
     if (!presentation) return "";
     return `${String(presentation.lineIndex + 1).padStart(2, "0")} / ${String(
       presentation.lineTotal,
@@ -123,6 +124,12 @@
   });
   const advanceLabel = $derived(
     interrogationTestimony ? "推進證詞" : "推進對話",
+  );
+  const crossExamLineLabel = $derived(
+    /* v8 ignore next -- template concatenation artifact: only rendered inside the crossExam.presentation guard */
+    crossExam?.presentation
+      ? `證詞 ${crossExam.presentation.lineIndex + 1} / ${crossExam.presentation.lineTotal}`
+      : "",
   );
 
   function placementForPortrait(characterId: string | null | undefined) {
@@ -656,55 +663,54 @@
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
       <p class="text-scene">（場景切換）</p>
-    {:else if current.kind === "action"}
-      <span class="kind">敘述 · NARRATION</span>
-      <p class="text-action">{visibleDialogueText}</p>
-    {:else if current.kind === "line"}
-      <div class="line-grid">
-        <div class="speaker-block">
-          {#if interrogationStageActive}
-            <span class="interrogation-kicker">證言 · TESTIMONY</span>
-          {/if}
-          <span class="kind">發言 · LINE</span>
-          <span class="speaker">{current.speaker}</span>
+    {:else}
+      {#if current.kind === "action"}
+        <span class="kind">敘述 · NARRATION</span>
+        <p class="text-action">{visibleDialogueText}</p>
+      {:else}
+        <div class="line-grid">
+          <div class="speaker-block">
+            {#if interrogationStageActive}
+              <span class="interrogation-kicker">證言 · TESTIMONY</span>
+            {/if}
+            <span class="kind">發言 · LINE</span>
+            <span class="speaker">{current.speaker}</span>
+          </div>
+          <div class="line-content">
+            <p class="text-line">{visibleDialogueText}</p>
+            {#if interrogationTestimony && crossExam}
+              <div class="testimony-actions">
+                <button
+                  class="xexam-withdraw"
+                  type="button"
+                  {disabled}
+                  onclick={handleWithdrawClick}
+                >
+                  退下
+                </button>
+                <button
+                  class="advance-button"
+                  type="button"
+                  aria-label={advanceLabel}
+                  aria-disabled={disabled}
+                  inert={historyOpen}
+                  bind:this={advanceButton}
+                  onclick={handleAdvanceButtonClick}
+                >
+                  <span class="advance-label">{advanceLabel}</span>
+                  <span class="advance-arrow" aria-hidden="true">▶</span>
+                </button>
+              </div>
+            {/if}
+          </div>
         </div>
-        <div class="line-content">
-          <p class="text-line">{visibleDialogueText}</p>
-          {#if interrogationTestimony && crossExam}
-            <div class="testimony-actions">
-              <button
-                class="xexam-withdraw"
-                type="button"
-                {disabled}
-                onclick={handleWithdrawClick}
-              >
-                退下
-              </button>
-              <button
-                class="advance-button"
-                type="button"
-                aria-label={advanceLabel}
-                aria-disabled={disabled}
-                inert={historyOpen}
-                bind:this={advanceButton}
-                onclick={handleAdvanceButtonClick}
-              >
-                <span class="advance-label">{advanceLabel}</span>
-                <span class="advance-arrow" aria-hidden="true">▶</span>
-              </button>
-            </div>
-          {/if}
-        </div>
-      </div>
+      {/if}
     {/if}
 
     {#if crossExam && crossExam.presentation && !interrogationTestimony}
       <div class="xexam-record" aria-label="交叉詰問進度">
         <span>{crossExam.presentation.lineLabel}</span>
-        <strong
-          >證詞 {crossExam.presentation.lineIndex + 1} / {crossExam.presentation
-            .lineTotal}</strong
-        >
+        <strong>{crossExamLineLabel}</strong>
       </div>
     {/if}
   </div>

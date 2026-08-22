@@ -60,6 +60,7 @@
     }
 
     const image = event.currentTarget;
+    /* v8 ignore next -- unreachable: CrossfadeImage only renders <img> elements, so event.currentTarget is always an HTMLImageElement */
     if (!(image instanceof HTMLImageElement)) {
       rememberCrop(assetId, null);
       return;

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/svelte";
+import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PortraitRef } from "$lib/state/types";
 import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
@@ -200,5 +201,165 @@ describe("InterrogationSubjectArt", () => {
     await waitFor(() => {
       expect(imageFor(container).src).toContain("PORTRAIT");
     });
+  });
+
+  it("skips the resolved assignment when the portrait changes before resolution settles", async () => {
+    // When the portrait prop changes before resolveStoryAsset settles, the
+    // $effect cleanup sets cancelled=true. The .then callback must skip the
+    // `resolved = asset` assignment for the stale asset.
+    const firstPromiseControllers: {
+      resolve: (asset: {
+        url: string;
+        placeholder: boolean;
+        assetId: string;
+      }) => void;
+    }[] = [];
+    resolveStoryAssetMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          firstPromiseControllers.push({ resolve });
+        }),
+    );
+
+    const otherPortrait: PortraitRef = {
+      characterId: "soma_ritsu",
+      expression: "focused",
+      assetId: "portrait.soma_ritsu.focused",
+    };
+
+    const { container, rerender } = render(InterrogationSubjectArt, {
+      portrait,
+    });
+
+    // Wait for the $effect to run and call resolveStoryAsset, capturing
+    // the first promise's resolve function.
+    await waitFor(() => expect(resolveStoryAssetMock).toHaveBeenCalledOnce());
+    expect(firstPromiseControllers).toHaveLength(1);
+
+    // Switch to a different portrait before the first resolve settles.
+    rerender({ portrait: otherPortrait });
+    // Flush Svelte effects so the $effect cleanup sets cancelled=true.
+    await tick();
+
+    // Now resolve the stale (first) promise. The cancelled guard must skip
+    // the assignment, so no image for the first portrait appears.
+    firstPromiseControllers[0].resolve({
+      url: "/stale-asset.png",
+      placeholder: false,
+      assetId: "portrait.miyake_sota.standard",
+    });
+
+    await waitFor(() => {
+      const image = container.querySelector(
+        "img.interrogation-subject-portrait",
+      ) as HTMLImageElement | null;
+      // The stale asset URL must not appear; the component should either
+      // have no image or show the second portrait's resolved/placeholder.
+      expect(image?.src ?? "").not.toContain("/stale-asset.png");
+    });
+  });
+
+  it("skips the placeholder assignment when the portrait changes before rejection settles", async () => {
+    // When the portrait prop changes before resolveStoryAsset rejects, the
+    // $effect cleanup sets cancelled=true. The .catch callback must skip the
+    // placeholder assignment for the stale asset.
+    const firstPromiseControllers: {
+      reject: (error: Error) => void;
+    }[] = [];
+    resolveStoryAssetMock.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          firstPromiseControllers.push({ reject });
+        }),
+    );
+
+    const otherPortrait: PortraitRef = {
+      characterId: "soma_ritsu",
+      expression: "focused",
+      assetId: "portrait.soma_ritsu.focused",
+    };
+
+    const { container, rerender } = render(InterrogationSubjectArt, {
+      portrait,
+    });
+
+    // Wait for the $effect to run and call resolveStoryAsset, capturing
+    // the first promise's reject function.
+    await waitFor(() => expect(resolveStoryAssetMock).toHaveBeenCalledOnce());
+    expect(firstPromiseControllers).toHaveLength(1);
+
+    // Switch to a different portrait before the first rejection settles.
+    rerender({ portrait: otherPortrait });
+    // Flush Svelte effects so the $effect cleanup sets cancelled=true.
+    await tick();
+
+    // Now reject the stale (first) promise. The cancelled guard must skip
+    // the placeholder assignment, so no PORTRAIT placeholder for the first
+    // asset appears.
+    firstPromiseControllers[0].reject(new Error("stale asset unavailable"));
+
+    await waitFor(() => {
+      const images = container.querySelectorAll(
+        "img.interrogation-subject-portrait",
+      ) as NodeListOf<HTMLImageElement>;
+      // No image should show the first portrait's placeholder asset ID.
+      for (const img of images) {
+        expect(img.src).not.toContain("miyake_sota");
+      }
+    });
+  });
+
+  it("skips crop recalculation when the same asset reloads after a portrait swap", async () => {
+    // After a portrait loads and its crop is cached, switching away and back
+    // creates a new CrossfadeImage layer for the same asset. When it loads
+    // again, handleImageLoad finds the cached crop and returns early.
+    const context = {
+      drawImage: vi.fn(),
+      getImageData: vi.fn(() => ({ data: new Uint8ClampedArray(4 * 4 * 4) })),
+    } as unknown as CanvasRenderingContext2D;
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(
+      context,
+    );
+
+    const otherPortrait: PortraitRef = {
+      characterId: "soma_ritsu",
+      expression: "focused",
+      assetId: "portrait.soma_ritsu.focused",
+    };
+
+    const { container, rerender } = render(InterrogationSubjectArt, {
+      portrait,
+    });
+    const firstImage = await waitFor(() => imageFor(container));
+    setImageSize(firstImage);
+
+    // Load the first portrait — this caches the crop.
+    await fireEvent.load(firstImage);
+    await waitFor(() => {
+      expect(context.getImageData).toHaveBeenCalledOnce();
+    });
+
+    // Switch to a different portrait.
+    rerender({ portrait: otherPortrait });
+    // Wait for the other portrait's image to appear.
+    await waitFor(() => {
+      const img = imageFor(container);
+      expect(img.src).toContain("soma_ritsu");
+    });
+
+    // Switch back to the first portrait.
+    rerender({ portrait });
+    // Wait for the first portrait's image to reappear.
+    const backImage = await waitFor(() => {
+      const img = imageFor(container);
+      expect(img.src).toContain("miyake_sota");
+      return img;
+    });
+    setImageSize(backImage);
+
+    // Fire load on the reappeared image. handleImageLoad should find the
+    // cached crop and return early — getImageData must NOT be called again.
+    await fireEvent.load(backImage);
+    expect(context.getImageData).toHaveBeenCalledOnce();
   });
 });

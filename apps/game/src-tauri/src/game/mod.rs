@@ -4422,6 +4422,149 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
     }
 
     #[test]
+    fn baked_character_topic_dialogue_suppresses_only_the_baked_speaker_portrait() {
+        // A character baked into the sublocation background is already
+        // visible, so dialogue entered from their topic picker must not float
+        // a second portrait for their own lines. Other speakers in the same
+        // mixed-speaker topic keep their compiled portraits. This exercises
+        // `baked_character_name_for_topic_dialogue`'s `Baked` layout arm and
+        // the `mode_view` suppression branch for the Investigation scene.
+        let baked_portrait = PortraitRefJson {
+            character_id: "witness".into(),
+            expression: "standard".into(),
+            asset_id: "portrait.witness.standard".into(),
+        };
+        let other_portrait = PortraitRefJson {
+            character_id: "detective".into(),
+            expression: "focused".into(),
+            asset_id: "portrait.detective.focused".into(),
+        };
+        let scene = InvestigationSceneJson {
+            id: "investigation_scene_1".into(),
+            title: "Investigation".into(),
+            summary: "Summary".into(),
+            asset_refs: vec![],
+            intro: vec![],
+            sublocations: vec![SublocationJson {
+                id: "room".into(),
+                label: "Room".into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                scene_tag: "room".into(),
+                flattened_asset_cue: VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots: vec![],
+                characters: vec![CharacterJson {
+                    id: "witness".into(),
+                    name: "Witness".into(),
+                    role: "Witness".into(),
+                    bio: "Saw something.".into(),
+                    layout: Some(CharacterLayoutJson::Baked {
+                        x: 0.5,
+                        y: 0.3,
+                        w: 0.2,
+                        h: 0.7,
+                    }),
+                    topics: vec![],
+                }],
+            }],
+            evidence_manifest: vec![],
+            statement_manifest: vec![],
+            outro: OutroJson {
+                unlock: OutroUnlock::Auto(AutoMarker::Auto),
+                dialogue: vec![],
+            },
+        };
+        let mut engine = empty_engine_with_scene(scene, 1);
+
+        // Install a topic dialogue queue for the baked character. The first
+        // segment's origin carries the `topic:<character_id>:<topic>:dialogue`
+        // segment id that `baked_character_name_for_topic_dialogue` keys on.
+        // The queue leads with the baked character's own line (portrait
+        // suppressed) followed by a different speaker (portrait kept).
+        let queue_gen = engine.next_queue_gen;
+        let segment = DialogueSegment::new(
+            DialogueSegmentOriginV1::InvestigationInteraction {
+                chapter_id: "chapter_1".into(),
+                scene_id: "investigation_scene_1".into(),
+                segment_id: "topic:witness:alibi:dialogue".into(),
+            },
+            vec![
+                DialogueItem::Line {
+                    speaker: "Witness".into(),
+                    text: "I was elsewhere.".into(),
+                    portrait: Some(baked_portrait.clone()),
+                },
+                DialogueItem::Line {
+                    speaker: "Detective".into(),
+                    text: "Is that so?".into(),
+                    portrait: Some(other_portrait.clone()),
+                },
+            ],
+        )
+        .expect("non-empty topic segment");
+        {
+            let SceneRuntime::Investigation(inv) = &mut engine.scene else {
+                panic!("expected investigation scene");
+            };
+            inv.current_sublocation_id = Some("room".into());
+            inv.pending_queue = ActiveDialogueQueue::new(vec![segment], queue_gen);
+        }
+
+        // The view-current item is the baked character's own line, so its
+        // floating portrait must be suppressed (the background already paints
+        // them).
+        let view = engine.view().unwrap();
+        let ModeView::Dialogue { current, .. } = &view.mode else {
+            panic!("expected dialogue mode for active topic queue");
+        };
+        match current {
+            DialogueItem::Line {
+                speaker,
+                text,
+                portrait,
+            } => {
+                assert_eq!(speaker, "Witness");
+                assert_eq!(text, "I was elsewhere.");
+                assert_eq!(
+                    *portrait, None,
+                    "baked speaker portrait should be suppressed in topic dialogue"
+                );
+            }
+            other => panic!("expected line item, got {other:?}"),
+        }
+
+        // Advancing to the second line (a different speaker) keeps its
+        // compiled portrait — only the baked character's own lines suppress.
+        let token = match &view.mode {
+            ModeView::Dialogue { queue_token, .. } => queue_token.clone(),
+            _ => unreachable!("checked dialogue mode above"),
+        };
+        let advanced = engine.advance_dialogue(token).unwrap();
+        let ModeView::Dialogue {
+            current: advanced_current,
+            ..
+        } = &advanced.mode
+        else {
+            panic!("expected dialogue mode after advancing");
+        };
+        match advanced_current {
+            DialogueItem::Line {
+                speaker, portrait, ..
+            } => {
+                assert_eq!(speaker, "Detective");
+                assert_eq!(
+                    *portrait,
+                    Some(other_portrait),
+                    "non-baked speaker portrait must be preserved"
+                );
+            }
+            other => panic!("expected line item after advance, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn interrogation_view_reflects_active_cross_exam() {
         let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
         match &mut engine.scene {

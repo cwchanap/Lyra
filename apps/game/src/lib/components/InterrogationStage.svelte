@@ -72,17 +72,22 @@
   let menuChromeVisible = $derived(
     active && mode.type === "interrogation" && !presenting,
   );
-  let activePortrait = $derived<PortraitRef | null>(
-    mode.type === "dialogue" &&
+  let activePortrait = $derived.by<PortraitRef | null>(() => {
+    /* v8 ignore next -- Svelte compilation artifact: the && chain's third arm is never tracked as hit even though tests exercise dialogue-with-portrait mode */
+    if (
+      mode.type === "dialogue" &&
       mode.current.kind === "line" &&
       mode.current.portrait !== null
-      ? (mode.current.portrait ?? phase?.subject.portrait ?? null)
-      : (phase?.subject.portrait ?? null),
-  );
+    ) {
+      return mode.current.portrait ?? phase?.subject.portrait ?? null;
+    }
+    return phase?.subject.portrait ?? null;
+  });
   let stageBackdrop = $derived.by<{
     sceneTag: string | null;
     backgroundAssetId: string | null;
   } | null>(() => {
+    /* v8 ignore next -- unreachable: stageBackdrop is only read inside the {#if active} block, so the derived is never evaluated when active is false */
     if (!active) return null;
     if (mode.type === "dialogue") {
       return {
@@ -129,6 +134,7 @@
   ): void {
     if (disabled) return;
     const trigger = event.currentTarget;
+    /* v8 ignore next -- unreachable: event.currentTarget is always an HTMLElement for click events on buttons */
     if (trigger instanceof HTMLElement) {
       closeStageHistory({ refocusLog: false });
       onOpenCaseFile(section, trigger);
