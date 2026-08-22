@@ -234,7 +234,9 @@
     {/if}
   {/if}
 
-  {@render children()}
+  <div class="stage-children" inert={stageHistoryOpen}>
+    {@render children()}
+  </div>
 
   {#if presenting && crossExam}
     <InterrogationEvidenceTray
@@ -254,6 +256,10 @@
 <style>
   .interrogation-stage {
     position: relative;
+  }
+
+  .stage-children {
+    display: contents;
   }
 
   .interrogation-stage.active {
