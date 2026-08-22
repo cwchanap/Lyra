@@ -84,7 +84,7 @@ with `bun run scenes:compile`.
    removal, cropping, or resizing.
 9. Run verification:
    - `bun run scenes:compile`
-   - a dimension scan for touched asset types
+   - on Unix-like development/CI hosts, run `file -b <touched PNG paths>` and verify each output reports the policy dimensions plus RGB for opaque backgrounds or RGBA for transparent portrait/evidence assets; use an equivalent image-metadata inspector only when `file` is unavailable
    - focused UI/e2e checks when portrait or evidence dimensions/layout changed
 9. Report final workspace paths, whether built-in `image_gen` or CLI fallback
    was used, and any remaining unrelated asset warnings.
