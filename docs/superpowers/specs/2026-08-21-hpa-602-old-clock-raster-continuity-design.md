@@ -254,12 +254,18 @@ Implementation is expected to modify:
 - `docs/stories_plan/chapter_1/scene_11.md`
 - `docs/stories_plan/chapter_1/background-variety-audit.md`
 - `docs/stories_plan/chapter_1/semantic-content-reaudit.md`
+- `docs/stories_plan/chapter_1/investigation_scene_3.md` (durable-framing background prompt)
 - `.claude/skills/generating-lyra-image-assets/SKILL.md`
+- `apps/game/e2e-tauri/production-anchors.ts` (dialogue-drain cap measurement after the new Scene 11 cue)
+- `packages/scripts/__snapshots__/compile-scenes.test.ts.snap` (contentRevision hash coupling)
 - `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png`
 - `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png`
 - `static/assets/evidence/old_clock_photo.png`
 - `static/assets/backgrounds/chapter_1/scene_11/tag_002.png`
 - `static/assets/backgrounds/chapter_1/scene_11/tag_003.png` (new; former `tag_003`–`tag_005` shift to `tag_004`–`tag_006`)
+- `static/assets/backgrounds/chapter_1/scene_11/tag_004.png` (shifted; content unchanged from former `tag_003`)
+- `static/assets/backgrounds/chapter_1/scene_11/tag_005.png` (shifted; content unchanged from former `tag_004`)
+- `static/assets/backgrounds/chapter_1/scene_11/tag_006.png` (shifted; content unchanged from former `tag_005`)
 
 Inspect only:
 

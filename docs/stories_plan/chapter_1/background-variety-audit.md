@@ -50,7 +50,7 @@ compiler-derived manifest adds the approved P1 investigation/analysis split:
 
 ## Methodology
 
-`bun run scenes:compile` generated the current production manifests, then `bun run background-cues:audit --chapter chapter_1` supplied the 55 exact cue keys below. The review groups cues by physical location rather than filename. Within each group it compares stable geometry, recurring props, palette, and adjacent cue continuity against the camera angle, focal emphasis, and environment/state delta. The production plates were visually reviewed as four temporary contact sheets; no generated resource JSON was edited.
+`bun run scenes:compile` generated the current production manifests, then `bun run background-cues:audit --chapter chapter_1` supplied the 56 exact cue keys below. The review groups cues by physical location rather than filename. Within each group it compares stable geometry, recurring props, palette, and adjacent cue continuity against the camera angle, focal emphasis, and environment/state delta. The production plates were visually reviewed as four temporary contact sheets; no generated resource JSON was edited.
 
 The audit distinguishes intentional holds from accidental repetition. In particular, the final KAGAMI hearing holds the same room and defense-side sightline through its evidence sequence: the changing focal objects (summary, time records, floor plan, authorization, lock excerpt, and chain) are the intended state progression. Reframing that uninterrupted sequence just to add variety would be gratuitous.
 
