@@ -45,6 +45,8 @@ Outcome A confirmed: remove dynamic thumbnails.
 
 or a stop decision containing the concrete save-identification gap.
 
+**Recorded outcome (2026-08-23):** Outcome A rejected — keep dynamic save thumbnails. Closed by product-owner decision; the packaged playtest (Steps 1-6) was not run. Per Step 7, implementation stops before Task 1 and Tasks 1-5 below are void pending explicit HPA-550 revision.
+
 - [ ] **Step 1: Run the current packaged Chapter 1 build before changing thumbnails**
 
 Use the current thumbnail-bearing runtime. Do not fake the candidate text-only UI first.

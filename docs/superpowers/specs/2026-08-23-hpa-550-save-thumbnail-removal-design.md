@@ -1,6 +1,6 @@
 # HPA-550 Save Thumbnail Removal Design
 
-**Status:** Provisional product recommendation for the single HPA-550 PR. Outcome A is not confirmed until the validation gate below is completed. If the gate confirms the recommendation, implementation continues on this same branch/PR.
+**Status:** Gate closed 2026-08-23 — Outcome A rejected by product-owner decision; dynamic save thumbnails stay. The packaged playtest was not run; the owner closed the gate directly. Implementation is stopped before Task 1 and the companion plan's Tasks 1-5 are void. Revise HPA-550 explicitly before any follow-up (including any native-capture evaluation).
 
 **Issue:** HPA-550 — [Post-Chapter 1 product decision] Remove save thumbnails or prove native capture value
 
