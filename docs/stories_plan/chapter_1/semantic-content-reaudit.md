@@ -170,10 +170,15 @@ The initial 16-file/no-analysis record above remains a historical checkpoint. Th
 - P1's four practice cards remain local to its board, its wrong-feedback state survives save/restore, and it never pollutes the main Case File.
 - The final USB custody, authored clock continuity, P1.5 visual-cue, Scene 8 geometry, approved-clip, and merge-time chains have fresh rerun evidence after their fixes; the old-clock raster continuity is the only deferred item.
 
-### Deferred follow-up — old-clock raster continuity
+### Resolved follow-up — old-clock raster continuity (HPA-602)
 
-- **Item:** Regenerate the old-clock background plates so the slow-clock seed (`scene_p2` back corridor, `queue/16`) and the stopped-clock payoff (`scene_11` front room, `queue/32`) read as the same clock with hands stopped near `22:59`, then perform visual acceptance.
-- **Status:** Deferred from HPA-561 by explicit user decision; not a HPA-561 merge gate.
-- **Already complete (authored-text continuity):** the false continuous-sightline claim was removed; Scene 3's manager mentions the old clock and Scene 7 explicitly identifies the same manager-mentioned clock with hands stopped near `22:59`.
-- **Remaining work:** coordinated raster regeneration of the two plates + visual acceptance/rerun of Axis 5 for that item.
-- **Owner/tracking:** [HPA-602 — Old-clock raster continuity for scene_p2 / scene_11 (HPA-561 follow-up)](https://linear.app/cwchanap/issue/HPA-602/old-clock-raster-continuity-for-scene_p2-scene_11-hpa-561-follow-up). Until it is complete, the deferred visual item stays open here.
+- **Status:** Resolved. Axis 5 clock-item verdict: `SHIP`.
+- **Inspected surfaces:** `scene_p2/tag_002.png`, `investigation_scene_3/inner_entry.png`, `investigation_scene_7/inner.png`, `old_clock_photo.png`, `scene_11/tag_002.png`.
+- **Regenerated surfaces:** `scene_p2/tag_002.png`, `investigation_scene_7/inner.png`, `old_clock_photo.png`, `scene_11/tag_002.png`.
+- **Durable identity:** round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring. The four owning asset prompts contain these literal traits.
+- **Placement/sightline:** P2 and Scene 7 keep the clock on the inner-storage entrance wall; Scene 7 keeps the corridor-side replay sightline blocked by the existing shelf/fire-door geometry; Scene 11 shows the same clock removed to the counter.
+- **Stopped-time depiction:** Scene 7, evidence, and Scene 11 use only the vague analog late-night position (minute hand near 12, hour hand just before 11); exact `22:59` remains authored text, not readable raster content.
+- **Asset policy:** `file -b` verifies the three backgrounds as RGB `1920x1080` PNGs and `old_clock_photo.png` as RGBA `512x512` PNG.
+- **Mechanical verification:** `bun run scenes:compile` and `bun run background-cues:audit --chapter chapter_1 --check-report docs/stories_plan/chapter_1/background-variety-audit.md` both exit 0 after the stale current `scene_8_5` report ownership is updated to `analysis_scene_8_5`.
+- **Owner/tracking:** HPA-602 complete; no further old-clock visual follow-up remains.
+- **Scene 3 inspection:** The `inner_entry.png` plate exposes entrance geometry but remains non-blocking because it is not the clock-interaction carrier; no change required.
