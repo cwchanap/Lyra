@@ -6,7 +6,7 @@
 
 Close the remaining Chapter 1 old-clock visual-continuity follow-up without changing the already-correct case logic.
 
-The player encounters one physical clock through five raster surfaces:
+The physical clock's continuity sequence spans five raster surfaces, including its final boxed/hidden state:
 
 1. `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png` — ordinary-day seed, mounted at the inner-storage entrance.
 2. `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png` — interactive crime-scene inspection, still mounted and stopped.
@@ -14,9 +14,9 @@ The player encounters one physical clock through five raster surfaces:
 4. `static/assets/backgrounds/chapter_1/scene_11/tag_002.png` — post-case payoff, the same clock removed from the wall and resting on the counter.
 5. `static/assets/backgrounds/chapter_1/scene_11/tag_003.png` — post-box final café cue, the closed cardboard box in the corner with the clock no longer on the counter.
 
-HPA-602 succeeds only when all five surfaces show the same recognizable prop in the correct state and location.
+HPA-602 succeeds only when the four clock-visible surfaces show the same recognizable prop in the correct state/location and the fifth surface shows the correct post-box state with the clock no longer visible.
 
-This remains a raster/prompt continuity task. It does not introduce a clock sprite, rendering feature, compiler feature, visual-test framework, or new asset ID.
+This remains a raster/prompt continuity task. It does not introduce a clock sprite, rendering feature, compiler feature, visual-test framework, or new runtime asset mechanism; the single approved Scene 11 post-box cue uses the existing scene-tag/background pipeline.
 
 > **Post-review revision (2026-08-22):** external review of the HPA-602 closeout found three gaps, accepted and folded into this contract: (1) Scene 3 `inner_entry.png` is now covered by a durable framing clause rather than the "not the interaction carrier" exemption; (2) Scene 11 gains the `tag_003` post-box cue so the authored boxing no longer plays over the clock-on-counter plate; (3) one literal post-impact dial crack is carried across Scene 7 → evidence → Scene 11 so the physical state cannot regenerate intact/cracked/intact.
 
@@ -140,16 +140,19 @@ P2 does not need an exact time.
 
 Side-by-side human review is the acceptance owner. No image-similarity or CV test is added.
 
-All five regenerated surfaces must pass these six dimensions:
+The four clock-visible regenerated surfaces (P2, Scene 7, evidence, and Scene 11 `tag_002`) must pass dimensions 1–5:
 
 1. **Casing/rim** — heavy black multi-ring metal bezel.
 2. **Dial/markers** — aged cream enamel, hairline crazing, short black baton markers, no numerals.
 3. **Hands** — thick tapered black hands.
 4. **Wear/imperfection** — same aged finish and lower-right outer-ring scuff; post-impact surfaces (Scene 7, evidence, Scene 11 counter) additionally show the same sharp diagonal impact crack across the lower-left of the dial, distinct from the crazing. P2 shows no crack.
 5. **Proportions** — same round face / unusually thick bezel relationship.
-6. **Placement and sightline** — the physical state/location is correct for that scene.
 
-Placement/sightline rules:
+All five regenerated surfaces, including the no-clock Scene 11 `tag_003` post-box cue, must pass dimension 6:
+
+6. **Placement and state** — the physical state/location is correct for that scene.
+
+Placement/state rules:
 
 - P2: mounted on the inner-storage entrance's inner wall at the corridor endpoint.
 - Scene 7: still mounted on that entrance wall, visible just after crossing the fire door, not relocated to the storage back wall, and consistent with Miyake being unable to see it from his 23:06 position.
@@ -158,7 +161,7 @@ Placement/sightline rules:
 - Scene 11 `tag_003`: closed cardboard box in the corner, clock no longer on the counter, umbrella stand at the frame edge.
 - Scene 3 `inner_entry`: entrance wall out of frame; no wall clock visible.
 
-A mismatch on any of these dimensions is rejected and regenerated in HPA-602. Do not file another clock-continuity follow-up.
+A mismatch on any dimension applicable to that surface is rejected and regenerated in HPA-602. Do not file another clock-continuity follow-up.
 
 ## Scene 7 Composition Contract
 
@@ -235,8 +238,8 @@ Record:
 - all six surfaces inspected (five regenerated + `inner_entry.png`);
 - the five regenerated paths;
 - the literal durable clock identity (including the post-impact dial crack) used in the asset prompts;
-- six-dimension side-by-side acceptance;
-- the Scene 3 `inner_entry.png` inspection disposition;
+- split six-dimension side-by-side acceptance (dimensions 1–5 on the four clock-visible rasters; dimension 6 on all five regenerated rasters);
+- the Scene 3 `inner_entry.png` durable-framing confirmation;
 - `file -b` metadata results;
 - `scenes:compile` result;
 - `background-cues:audit --check-report` result;
@@ -270,7 +273,7 @@ Keep the existing decisions:
 
 - clock stays baked into backgrounds/evidence;
 - no sprite/overlay;
-- no new asset IDs or scene carriers;
+- no new runtime asset mechanism; the single approved Scene 11 `tag_003` post-box cue and resulting later-tag renumbering use the existing scene carrier;
 - no compiler/runtime/layout change;
 - no image-similarity, CV, screenshot, or generic prop-continuity test infrastructure;
 - no new repo validation script;
