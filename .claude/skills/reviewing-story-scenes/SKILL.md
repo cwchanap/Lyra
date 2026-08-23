@@ -54,7 +54,7 @@ exact lines.
 For the chapter under review (under `docs/stories_plan/` and/or
 `static/stories_plan/`), locate these paths (list the directory if needed):
 
-- **Story bible** `tokyo_rain_witness_final_story_bible_v*.md` — canon facts.
+- **Story bible** `docs/stories_plan/final_story_bible.md` — canon facts.
 - **Character sheet** `docs/stories_plan/characters.md` — per-character
   設定/性格/台詞風格/禁止 integrated view for writers and reviewers. This is the
   primary voice/character reference; the addendum's voice guide supplements it.
@@ -64,10 +64,10 @@ For the chapter under review (under `docs/stories_plan/` and/or
 - **Chapter manifest** `chapter.md` — the chapter's title, summary, and ordered
   scene list; the chapter-level plan the review checks roster and beat order
   against.
-- **Chapter construction plan** `*_final_result_plan.md` (the high-level plan)
-  — beat intent; what each scene is supposed to accomplish.
+- **Chapter construction plan** `docs/stories_plan/chapter_<N>_plan.md`
+  (the high-level plan) — beat intent; what each scene is supposed to accomplish.
   (Note: `chapter.md` is the chapter *manifest* — a separate file.
-  "Construction plan" always means `*_final_result_plan.md`, never `chapter.md`.)
+  "Construction plan" always means `chapter_<N>_plan.md`, never `chapter.md`.)
 - **Chapter writing addendum** `*_addendum.md` — per-character voice, Do/Don't,
   the 不要做 forbidden-reveal list, and 伏筆留白 (what may be *shown* vs *said*).
 - **Scene files** — every `scene_*.md`, `investigation_scene_*.md`,

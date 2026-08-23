@@ -37,11 +37,12 @@ format details (those live in the `writing-*` skills this skill dispatches to).
 
 ## Workflow
 
-1. **Read the authoritative sources and reconcile canon first.** The chapter's
-   construction plan (施工圖/`*_final_result_plan.md`), the writing addendum
-   (voice + Do/Don't), and the story bible (`*_story_bible_v*.md`) under
-   `docs/stories_plan/`. Resolve any discrepancy (stale names, old examples in a
-   `writing-*` skill) and record the correction — it goes in every brief.
+1. **Read the authoritative sources and reconcile canon first.** Use the
+   chapter construction plan `docs/stories_plan/chapter_<N>_plan.md`, the
+   writing addendum (voice + Do/Don't), and the story bible
+   `docs/stories_plan/final_story_bible.md`. Resolve any discrepancy (stale
+   names, old examples in a `writing-*` skill) and record the correction — it
+   goes in every brief.
 2. **Map beats → scene files and pick granularity.** Linear →
    `scene_<K>.md`; interactive investigation → `investigation_scene_<K>.md`;
    interrogation → `interrogation_scene_<K>.md`; evidence-arrangement
@@ -188,7 +189,7 @@ restate the axes, verdict, or finding format in the brief, the skill owns them:
 | Letting writers invent IDs | Orchestrator owns IDs; put them in the brief. |
 | Passing a hand-maintained cast table | Pass authoritative source paths and the catalog escalation rule; writers read the global catalog themselves. |
 | Shipping on a clean compile alone | The compiler can't catch a canon contradiction or flat voice — the review gate is mandatory. |
-| Committing unprompted | Commit only when the user asks; branch off `main`. |
+| Committing unprompted | Commit only if the user asks; branch off `main` first. |
 
 **Related skills:** `reviewing-story-scenes` (the REVIEW gate),
 `writing-chapter-manifest`, `writing-detective-game-dialogue`,

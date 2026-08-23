@@ -247,11 +247,11 @@ This repo is a detective/mystery game (《東京雨證：第零證人》, Tradit
 Chinese). Narrative content has two kinds — keep them straight even though both
 roots now feed the compiler:
 
-- **Planning/design** is reference for writers, not playable input: the story
-  bible (`tokyo_rain_witness_final_story_bible_v*.md`), per-chapter writing
-  plans, and agent addenda. The compiler only descends into `chapter_<N>/`
-  directories and within each only reads the files its `chapter.md` manifest
-  lists, so planning docs are ignored even when they sit beside authored scenes.
+- **Planning/design** is reference for writers, not playable input: the canonical
+  story bible (`docs/stories_plan/final_story_bible.md`), per-chapter plans
+  (`docs/stories_plan/chapter_<N>_plan.md`), and agent addenda. The compiler only
+  descends into `chapter_<N>/` directories and within each only reads the files
+  its `chapter.md` manifest lists, so root-level planning docs are ignored.
 - **Authored playable content** lives in `<root>/chapter_<N>/`, where `<root>`
   is either `static/stories_plan/` or `docs/stories_plan/` — the compiler
   merges both (`packages/scripts/compile-scenes.ts` passes them as a `sourceRoot` list;
