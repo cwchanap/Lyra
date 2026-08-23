@@ -6,16 +6,19 @@
 
 Close the remaining Chapter 1 old-clock visual-continuity follow-up without changing the already-correct case logic.
 
-The player encounters one physical clock through four raster surfaces:
+The player encounters one physical clock through five raster surfaces:
 
 1. `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png` — ordinary-day seed, mounted at the inner-storage entrance.
 2. `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png` — interactive crime-scene inspection, still mounted and stopped.
 3. `static/assets/evidence/old_clock_photo.png` — Case File photograph collected from that inspection.
 4. `static/assets/backgrounds/chapter_1/scene_11/tag_002.png` — post-case payoff, the same clock removed from the wall and resting on the counter.
+5. `static/assets/backgrounds/chapter_1/scene_11/tag_003.png` — post-box final café cue, the closed cardboard box in the corner with the clock no longer on the counter.
 
-HPA-602 succeeds only when all four surfaces show the same recognizable prop in the correct state and location.
+HPA-602 succeeds only when all five surfaces show the same recognizable prop in the correct state and location.
 
 This remains a raster/prompt continuity task. It does not introduce a clock sprite, rendering feature, compiler feature, visual-test framework, or new asset ID.
+
+> **Post-review revision (2026-08-22):** external review of the HPA-602 closeout found three gaps, accepted and folded into this contract: (1) Scene 3 `inner_entry.png` is now covered by a durable framing clause rather than the "not the interaction carrier" exemption; (2) Scene 11 gains the `tag_003` post-box cue so the authored boxing no longer plays over the clock-on-counter plate; (3) one literal post-impact dial crack is carried across Scene 7 → evidence → Scene 11 so the physical state cannot regenerate intact/cracked/intact.
 
 ## Canon and Current Contract
 
@@ -31,26 +34,27 @@ The old semantic re-audit also records the original defect as a location mismatc
 
 ## Scope
 
-### Four regeneration targets
+### Five regeneration targets
 
-Regenerate all four clock-bearing player surfaces in this PR:
+Regenerate all five clock-state player surfaces in this PR:
 
 - `static/assets/backgrounds/chapter_1/scene_p2/tag_002.png`
 - `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png`
 - `static/assets/evidence/old_clock_photo.png`
 - `static/assets/backgrounds/chapter_1/scene_11/tag_002.png`
+- `static/assets/backgrounds/chapter_1/scene_11/tag_003.png` (new post-box cue; later scene_11 tags shift by one)
 
 The previous conditional sibling path is removed. The current family is already known to contain materially different clock designs, so planning a no-op branch adds process without reducing work.
 
-### Fifth inspection-only surface
+### Sixth inspection-only surface
 
 Also inspect, but do not regenerate as part of this ticket:
 
 - `static/assets/backgrounds/chapter_1/investigation_scene_3/inner_entry.png`
 
-This is the pre-murder rendering of the same physical entrance. It is weaker than the four named surfaces because the player does not inspect the clock on this plate, but it must be looked at before acceptance so the final placement decision is made with the adjacent geometry visible.
+This is a rendering of the same physical entrance. It is weaker than the five named surfaces because the player does not inspect the clock on this plate, but it must be looked at before acceptance so the final placement decision is made with the adjacent geometry visible.
 
-Its absence of a clock is not automatically a failure; the review must determine whether the plate actually exposes the precise wall area where the clock should be visible. HPA-602 does not regenerate this plate.
+Its absence of a clock is acceptable only when the plate durably does not expose the entrance wall where the clock hangs. Its `Background Prompt` therefore pins the camera at the fire-door threshold facing deeper into storage, with the entrance wall behind the camera and out of frame and no wall clock visible — a future regeneration cannot contradict Scene 7's entrance-wall placement. Acceptance requires human confirmation that the existing plate complies with this framing. HPA-602 does not regenerate this plate unless the confirmation fails.
 
 ## Durable Clock Identity
 
@@ -59,6 +63,12 @@ The identity must live in authored asset prompts, not in temporary working notes
 Use this literal recurring identity across every touched `Background Prompt` / `Image Prompt`:
 
 > **round old analog café wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring**
+
+Post-impact surfaces (Scene 7 `inner`, `old_clock_photo`, Scene 11 `tag_002`) additionally carry one literal damage trait:
+
+> **one sharp diagonal impact crack crossing the lower-left of the cream dial, distinct from the fine hairline crazing**
+
+P2 stays intact (pre-impact, no crack). The Scene 11 `tag_003` post-box plate carries no visible clock; its state is the closed cardboard box itself.
 
 These are visual continuity traits, not evidence facts.
 
@@ -88,9 +98,9 @@ The existing `Scene Source Prompt` can remain the concise source-object descript
 
 ### `investigation_scene_7.md` — `old_clock_photo`
 
-Replace the generic evidence `Image Prompt` with a durable description containing the same literal clock identity.
+Replace the generic evidence `Image Prompt` with a durable description containing the same literal clock identity plus the literal post-impact dial crack.
 
-Keep the existing cracked/aged character rather than replacing it with a self-reference. The evidence image remains a photo-print style isolated object, not a generic clock icon.
+Keep the aged photo-print character rather than replacing it with a self-reference. The evidence image remains a photo-print style isolated object, not a generic clock icon.
 
 ### `scene_11.md`
 
@@ -99,7 +109,17 @@ Replace the generic “old wall clock resting on the counter” prompt with the 
 - same recurring physical clock;
 - removed from the entrance wall;
 - resting naturally on the café counter;
-- stopped in the same vague late-night analog position as Scene 7.
+- stopped in the same vague late-night analog position as Scene 7;
+- carrying the same post-impact dial crack as Scene 7 and the evidence photo.
+
+Additionally add the post-box final café cue before the office cut:
+
+- a new `[場景：...]` tag with its own `Background Prompt`;
+- the old café wall clock no longer on the counter;
+- a closed cardboard box resting on the floor in the corner;
+- the umbrella stand at the frame edge;
+- the latte cup anchor retained;
+- later scene_11 tags shift by one (`tag_003` → `tag_004`, etc.).
 
 ## Time Depiction Rule
 
@@ -120,12 +140,12 @@ P2 does not need an exact time.
 
 Side-by-side human review is the acceptance owner. No image-similarity or CV test is added.
 
-All four regenerated surfaces must pass these six dimensions:
+All five regenerated surfaces must pass these six dimensions:
 
 1. **Casing/rim** — heavy black multi-ring metal bezel.
 2. **Dial/markers** — aged cream enamel, hairline crazing, short black baton markers, no numerals.
 3. **Hands** — thick tapered black hands.
-4. **Wear/imperfection** — same aged finish and lower-right outer-ring scuff.
+4. **Wear/imperfection** — same aged finish and lower-right outer-ring scuff; post-impact surfaces (Scene 7, evidence, Scene 11 counter) additionally show the same sharp diagonal impact crack across the lower-left of the dial, distinct from the crazing. P2 shows no crack.
 5. **Proportions** — same round face / unusually thick bezel relationship.
 6. **Placement and sightline** — the physical state/location is correct for that scene.
 
@@ -133,8 +153,10 @@ Placement/sightline rules:
 
 - P2: mounted on the inner-storage entrance's inner wall at the corridor endpoint.
 - Scene 7: still mounted on that entrance wall, visible just after crossing the fire door, not relocated to the storage back wall, and consistent with Miyake being unable to see it from his 23:06 position.
-- evidence photo: isolated photograph of the same Scene 7 clock in the stopped state.
-- Scene 11: removed from the wall and resting on the café counter.
+- evidence photo: isolated photograph of the same Scene 7 clock in the stopped, impact-cracked state.
+- Scene 11 `tag_002`: removed from the wall and resting on the café counter through the packing beats.
+- Scene 11 `tag_003`: closed cardboard box in the corner, clock no longer on the counter, umbrella stand at the frame edge.
+- Scene 3 `inner_entry`: entrance wall out of frame; no wall clock visible.
 
 A mismatch on any of these dimensions is rejected and regenerated in HPA-602. Do not file another clock-continuity follow-up.
 
@@ -151,7 +173,7 @@ Regenerating `investigation_scene_7/inner.png` must preserve more than the clock
 - baked 黑瀨徹 on the right at perspective-correct scale;
 - floor clearance and existing interaction readability.
 
-The only intended prop correction is the clock's identity, stopped hand position, and entrance-wall placement.
+The only intended prop corrections are the clock's identity, stopped hand position, entrance-wall placement, and the post-impact dial crack.
 
 ## Background Audit Baseline Repair
 
@@ -186,7 +208,7 @@ file -b <touched PNG paths>
 
 For HPA-602 the expected metadata is:
 
-- three regenerated backgrounds: `1920 x 1080`, RGB/non-alpha PNG;
+- four regenerated backgrounds (`scene_p2/tag_002`, `investigation_scene_7/inner`, `scene_11/tag_002`, `scene_11/tag_003`): `1920 x 1080`, RGB/non-alpha PNG;
 - regenerated evidence: `512 x 512`, RGBA PNG.
 
 This is sufficient for the normalizer used by the asset workflow. Do not add another ticket-specific validator.
@@ -210,9 +232,9 @@ Write the HPA-602 result directly into `docs/stories_plan/chapter_1/semantic-con
 
 Record:
 
-- all five surfaces inspected;
-- the four regenerated paths;
-- the literal durable clock identity used in the four asset prompts;
+- all six surfaces inspected (five regenerated + `inner_entry.png`);
+- the five regenerated paths;
+- the literal durable clock identity (including the post-impact dial crack) used in the asset prompts;
 - six-dimension side-by-side acceptance;
 - the Scene 3 `inner_entry.png` inspection disposition;
 - `file -b` metadata results;
@@ -234,6 +256,7 @@ Implementation is expected to modify:
 - `static/assets/backgrounds/chapter_1/investigation_scene_7/inner.png`
 - `static/assets/evidence/old_clock_photo.png`
 - `static/assets/backgrounds/chapter_1/scene_11/tag_002.png`
+- `static/assets/backgrounds/chapter_1/scene_11/tag_003.png` (new; former `tag_003`–`tag_005` shift to `tag_004`–`tag_006`)
 
 Inspect only:
 
