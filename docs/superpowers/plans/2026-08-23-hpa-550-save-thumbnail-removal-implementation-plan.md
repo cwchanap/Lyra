@@ -395,14 +395,14 @@ bun run --cwd apps/game test:e2e:smoke
 
 This is the first real Tauri proof that the bare `GameStateView` IPC shape landed correctly. Do not call Task 2 complete on compile/mock evidence alone.
 
-Production grep after Task 2 should show no live ticket/capture protocol:
+Production grep after Task 2 should show no live ticket/command/activity capture protocol:
 
 ```bash
 rg 'thumbnailCapture|prepare_save_thumbnail|submit_save_thumbnail|report_save_thumbnail_failure|read_save_thumbnail|get_thumbnail_activity|thumbnail-activity-changed|VITE_LYRA_E2E_CAPTURE_PROOF' \
   apps/game/src apps/game/src-tauri/src apps/game/e2e-tauri apps/game/scripts
 ```
 
-`thumbnail` may still remain in schema/storage/sidecar fixtures until Tasks 3-4.
+`thumbnail` metadata/storage concepts may still remain until Tasks 3-4, and capture-only DOM annotations intentionally remain until Task 4.
 
 - [ ] Commit this entire Rust+TS+capture-proof+CI-routing boundary atomically.
 
