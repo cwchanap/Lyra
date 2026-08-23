@@ -10,7 +10,7 @@ skill. Includes small compiler/pipeline changes needed to validate draft scenes 
 
 ## 1. Goal
 
-Turn the V1.2 施工圖 (`docs/stories_plan/chapter_1/chapter1_final_result_plan.md`)
+Turn the V1.2 施工圖 (`docs/stories_plan/chapter_1_plan.md`)
 Beats 0 and 1 — together with the writing addendum
 (`chapter1_actual_writing_agent_addendum.md`) — into authored scene files in the
 project's scene format, validated against the scene compiler.
@@ -22,9 +22,9 @@ output location.
 
 ## 2. Source-of-truth & canon reconciliation
 
-- **Authoritative plan:** `chapter1_final_result_plan.md` (V1.2 final施工圖) +
+- **Authoritative plan:** `docs/stories_plan/chapter_1_plan.md` (V1.2 final施工圖) +
   `chapter1_actual_writing_agent_addendum.md` (voice / Do-Don't).
-- **Story bible:** `tokyo_rain_witness_final_story_bible_v64.md`.
+- **Story bible:** `docs/stories_plan/final_story_bible.md`.
 - **Canon correction (must enforce in every subagent brief):** the surface
   suspect is **三宅蒼太**, not 若槻蓮. The stale planning `chapter.md` and the
   `writing-investigation-scene` SKILL.md worked example both still show 若槻蓮 —

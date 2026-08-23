@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun + the TypeScript scene compiler (`scripts/compile-scenes/`), the project writing skills (`writing-chapter-manifest`, `writing-detective-game-dialogue`, `writing-investigation-scene`, `writing-interrogation-scene`).
 
-**Spec:** `docs/stories_plan/chapter_1/chapter1_final_result_plan.md` (V1.2 施工圖) + `chapter1_actual_writing_agent_addendum.md` (voice/Do-Don't) + `docs/stories_plan/tokyo_rain_witness_final_story_bible_v64.md` (canon).
+**Spec:** `docs/stories_plan/chapter_1_plan.md` (V1.2 施工圖) + `chapter1_actual_writing_agent_addendum.md` (voice/Do-Don't) + `docs/stories_plan/final_story_bible.md` (canon).
 
 ---
 

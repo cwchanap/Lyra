@@ -4,7 +4,7 @@
 > 寫任何 `scene_*.md` / `investigation_scene_*.md` / `interrogation_scene_*.md` 的對白之前，
 > 先讀本檔，確認每個角色的**設定（背景）、性格、台詞風格**，再動筆。
 >
-> 來源：`tokyo_rain_witness_final_story_bible_v64.md`（§7 主要角色、§8 早期角色）與
+> 來源：`final_story_bible.md`（§7 主要角色、§8 早期角色）與
 > 第 1 章施工圖 / writing addendum 的角色聲音指南。本檔是上述來源的整合版，
 > **不新增 canon**；若與 story bible 衝突，以 story bible 為準。
 

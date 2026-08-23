@@ -14,12 +14,12 @@ This skill is the canonical authority for the project's script format.
 ## When to use
 
 Use when the user asks you to:
-- Convert a `第_X_章_..._詳細計劃.md` into the corresponding `第_X_章_..._劇本.md`
+- Convert a `docs/stories_plan/chapter_<N>_plan.md` into the corresponding playable chapter scenes
 - Write or extend any Part of any chapter's script
 - Write a single scene (e.g. "write Part 0 of Chapter 1")
 - Add new dialogue beats to an existing 劇本
 
-**Do not use for:** chapter outlines, character bios, plot planning documents, the General Plan, or any non-dialogue planning file. Those are pre-writing artefacts, not script.
+**Do not use for:** chapter outlines, character bios, plot planning documents, the story bible, or any non-dialogue planning file. Those are pre-writing artefacts, not script.
 
 ## Core principles (non-negotiable)
 
@@ -179,13 +179,15 @@ Each chapter is split into **one file per scene**. Four authored file kinds exis
 
 ```
 stories_plan/               ← either docs/stories_plan/ or static/stories_plan/
-  General Plan.md                                  ← master outline (do not modify)
-  第_X_章_<章節標題>_詳細計劃.md                       ← per-chapter planning (read before writing)
-  chapter_X/
+  final_story_bible.md                             ← canonical story bible (planning only)
+  chapter_<N>_plan.md                              ← per-chapter construction plan (planning only)
+  characters.md                                   ← consolidated cast reference
+  chapter_<N>/
+    chapter.md                                     ← playable chapter manifest
     scene_0.md                                     ← linear dialogue scene (this skill)
     investigation_scene_1.md                       ← interactive investigation (see writing-investigation-scene)
     interrogation_scene_2.md                       ← inquiry / testimony authoring (see writing-interrogation-scene)
-    analysis_scene_3.md                             ← threshold analysis board (see writing-analysis-scene)
+    analysis_scene_3.md                             ← analysis board (see writing-analysis-scene)
     scene_3.md
     ...
 ```
@@ -193,18 +195,19 @@ stories_plan/               ← either docs/stories_plan/ or static/stories_plan
 - **`scene_<N>.md`** — linear dialogue (intro cutscenes, transitions, in-car conversations). Covered fully by this skill.
 - **`investigation_scene_<N>.md`** — interactive scenes with hotspots, characters, evidence and statement manifests. Authored using the **`writing-investigation-scene`** skill, which inherits the base dialogue rules from this skill. Use that skill when the file you are writing has the `investigation_scene_` prefix.
 - **`interrogation_scene_<N>.md`** — suspect inquiry and testimony cross-examination authoring. Use the **`writing-interrogation-scene`** skill; this skill supplies only the base dialogue rules for its dialogue bodies.
-- **`analysis_scene_<N>.md`** — threshold evidence-arrangement boards. Use the
+- **`analysis_scene_<N>.md`** — evidence-arrangement boards. Use the
   **`writing-analysis-scene`** skill; this skill supplies only the base dialogue
   rules for its dialogue carriers.
 
 ### Path convention
 
 - **All filenames and folder names are English / ASCII.** Only the file **contents** are Traditional Chinese.
-- **Folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is either `docs/stories_plan/` or `static/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
-- **Filename:** `scene_<N>.md` — scene numbers align with the Part numbers in the chapter's `_詳細計劃.md` (so Part 0 → `scene_0.md`, Part 1 → `scene_1.md`, etc.).
-- Create the folder if it doesn't exist before writing.
+- **Playable folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is either `docs/stories_plan/` or `static/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
+- **Construction plan:** `docs/stories_plan/chapter_<N>_plan.md`.
+- **Filename:** `scene_<N>.md` — scene numbers align with the beat/scene numbers in the construction plan (so Beat 0 → `scene_0.md`, etc.).
+- Create the playable folder if it doesn't exist before writing.
 
-**Do not confuse with `第_X_章_..._詳細計劃.md`** at the top level — the detail plan is planning material (kept under its existing Chinese filename); the scene files are the dialogue output of this skill.
+**Do not confuse `chapter_<N>_plan.md` with `chapter_<N>/chapter.md`:** the former is planning material; the latter is the playable scene manifest consumed by the compiler.
 
 ### Internal structure of one scene file
 
@@ -226,18 +229,18 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 **早坂茜**：...
 ```
 
-- One `#` H1 at the top: `# Scene <N>: <title>`. Title is Traditional Chinese, matches the corresponding Part title in `_詳細計劃.md`.
+- One `#` H1 at the top: `# Scene <N>: <title>`. Title is Traditional Chinese, matches the corresponding beat title in `chapter_<N>_plan.md`.
 - Immediately after the H1, write `- **Summary:** <...>`: one sentence of player-facing recap copy, not a beat list. The `[場景：...]` block follows the Summary.
 - **No `##` Part headings inside the file** — the file *is* the scene.
 - If a single Part needs multiple sub-scenes (rare — e.g. location change mid-Part), use additional `[場景：...]` blocks within the same file rather than `##` subheadings.
 
 ### Related project files
 
-- `General Plan.md` — the eight-chapter master outline. **Do not modify.** Read it to understand cross-chapter foreshadowing pacing.
-- `第_X_章_..._詳細計劃.md` — per-chapter setup, characters, clues, timeline. **Read before** writing that chapter's script.
-- `characters.md` — consolidated cast reference (see below). **Read before** writing any character's dialogue.
+- `docs/stories_plan/final_story_bible.md` — canonical eight-chapter story canon and reveal boundaries. **Do not modify while authoring a scene.**
+- `docs/stories_plan/chapter_<N>_plan.md` — per-chapter construction plan, timeline, clue placement and beat intent. **Read before** writing that chapter's script.
+- `docs/stories_plan/characters.md` — consolidated cast reference (see below). **Read before** writing any character's dialogue.
 - `static/assets/config/characters.yaml` — the global runtime speaker catalog for authored display labels, portrait intent, and configured expression slugs. **Read before** writing any speaker who appears on-screen.
-- `chapter_X/scene_<N>.md` — the output of this skill (one file per scene).
+- `chapter_<N>/scene_<K>.md` — the output of this skill (one file per scene).
 
 ### Character reference (`stories_plan/characters.md`)
 
@@ -253,7 +256,7 @@ Use it like this:
   (sentence length, register, verbal tics) — not a generic voice.
 - **Honour the 禁止 / 🔒 主線封印 list.** Each entry flags what would break the character or leak
   a sealed reveal. This is the per-character companion to the chapter-level foreshadowing rules
-  in `General Plan.md`.
+  in `final_story_bible.md` and `chapter_<N>_plan.md`.
 - If `characters.md` and the story bible ever disagree, the **story bible wins** (characters.md says so).
 - Adding a new named character? Add the story-voice entry to `characters.md`
   when planning requires it, and resolve the global catalog label and
@@ -282,9 +285,9 @@ an entry in `characters.md` as a substitute for the global catalog.
 
 When asked to write any part of a chapter:
 
-1. **Read the matching `_詳細計劃.md`** in full — characters, timeline, clue placement, foreshadow seeds.
+1. **Read `docs/stories_plan/final_story_bible.md` and the matching `docs/stories_plan/chapter_<N>_plan.md`** — canon, timeline, clue placement, foreshadow seeds and reveal boundaries.
 2. **Read `characters.md` and `static/assets/config/characters.yaml`** for every speaker in this scene — lock their 台詞風格 / 禁止, catalog display label, portrait mode, and configured expression slugs before drafting lines.
-3. **Check `General Plan.md` for the chapter's row** — which foreshadows are seeded *this* chapter, and critically, which secrets **must not yet be revealed** (青葉火災, 雨宮真實身份, KAGAMI 大陰謀 framing, etc.).
+3. **Check the chapter's reveal contract in the story bible and chapter plan** — which foreshadows are seeded *this* chapter, and critically, which secrets must not yet be revealed.
 4. **Confirm scope with the user before writing** — which Part(s)? If unclear, write one Part and stop, so tone can be reviewed before scaling.
 5. **Plan the Part structure** — opening scene tag, 3–5 conversation beats, ending moment. Output the plan first when scope is ambiguous.
 6. **Write each Part starting with `[場景：...]`**.
@@ -297,7 +300,7 @@ When asked to write any part of a chapter:
    - Does each character's voice match their `characters.md` 台詞風格, with no 禁止 / 🔒 line crossed?
    - Does every speaker resolve to the global catalog label and an intentional `portraitMode`, with no uncatalogued portraitless fallback?
    - Does each meaningful visual state transition use a fitting configured expression slug when one exists, without flickering on every line?
-   - Foreshadows match the chapter's pacing in `General Plan.md`?
+   - Foreshadows match `final_story_bible.md` and the current `chapter_<N>_plan.md`?
 
 ## Quick reference
 
@@ -322,19 +325,21 @@ When asked to write any part of a chapter:
 | Action written inside dialogue line | Move to a bracketed line above or below |
 | Scene change with no `[場景：...]` | Add one covering all four required elements |
 | Simplified Chinese / raw Japanese kanji | Convert to Traditional (経→經, 実→實, 関→關, etc.) |
-| Revealing a post-Chapter-1 secret in Chapter 1 | Cross-check `General Plan.md`; hold back |
+| Revealing a sealed cross-chapter secret too early | Cross-check `final_story_bible.md` + the current `chapter_<N>_plan.md`; hold back |
 | Inline phone qualifier `（電話）` on speaker name | Use `[相馬的手機震動，他接起]` stage direction instead |
 | Writing multiple Parts when user asked for one | Stop. Scope creep is a process failure, not a feature. |
 
 ## Foreshadowing discipline
 
-This is a multi-chapter mystery with deliberately staged reveals. Before placing any clue or hint, check `General Plan.md` for which secrets are sealed until which chapter.
+This is a multi-chapter mystery with deliberately staged reveals. Before placing any clue or hint, check `docs/stories_plan/final_story_bible.md` and the current `docs/stories_plan/chapter_<N>_plan.md`.
 
 For Chapter 1 specifically:
-- **OK to seed:** 90 秒 (framed as "maintenance sync delay" only), 藍色透明傘 (no owner ID yet), 金木犀香氣 + 相馬's brief headache (no explanation), `ZERO_WITNESS / Aoba_2016` folder (just a name on screen), 雨宮的訊息 (sounds threatening, accidentally helpful).
-- **Must NOT reveal in Chapter 1:** 青葉火災, 雨宮真實身份, KAGAMI conspiracy framing, 主角's left-side blind spot as a plot point (only show it as character texture), anything from Chapters 2–8.
+- **Prologue 0–2:** do not name 青葉, A-90, 雨宮, `ZW_A16.lock`, or 相馬's old-case identity.
+- **Beats 0–11 may seed only:** 約 90 秒 as a maintenance/sync discrepancy without origin; 藍色透明傘 without owner ID or formal-evidence treatment; 金木犀 with only a hand-pause / brief low-intensity reaction, **no headache or flashback**; `ZW_A16.lock` as an inaccessible filename only, **not** `ZERO_WITNESS` or `Aoba_2016`; 雨宮's anonymous message without identity or explanation.
+- **Beat 11.5 is the only Chapter 1 青葉-name exception:** a public Mashiro preview may say **「2016 年青葉記憶研究所火災」**, and 相馬 may mute, look away, or pause briefly. Do not label the flashed image as raw / actual / reenactment, do not explain his reaction, and keep `ZW_A16.lock` off-screen so the two source chains are not linked.
+- **Still forbidden through Chapter 1:** `A16 = Aoba_2016`, `ZW = ZERO WITNESS`, 雨宮's real identity, 相馬 being an Aoba witness, his father's full Aoba role, left/right escape truth, A-90 Hold, Kagamihara involvement, or any KAGAMI-conspiracy explanation.
 
-For other chapters: read that chapter's row in `General Plan.md` and the matching `_詳細計劃.md`. Stay strict.
+For later chapters: read that chapter's reveal-ladder row and the matching `chapter_<N>_plan.md`. Stay strict.
 
 ## Linear scene file format (`chapter_<N>/scene_<K>.md`)
 
