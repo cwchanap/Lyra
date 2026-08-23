@@ -348,7 +348,7 @@
 
 ## Sub-location: 內側倉庫入口 {#inner_entry}
 - **Status:** locked
-- **Background Prompt:** Dark inner storage entrance of Rain Bell cafe, high shelves, thin dust, sensor light just out of range, occluded view into deeper storage, tense spatial clue.
+- **Background Prompt:** Dark inner storage entrance of Rain Bell cafe seen from the fire-door threshold, camera facing deeper into the storage so the entrance wall behind the camera stays out of frame, high shelves blocking the view into deeper storage, thin dust, sensor light just out of range, no wall clock visible, tense spatial clue.
 
 [場景：雨鐘內側倉庫入口，高貨架，光線昏暗。]
 

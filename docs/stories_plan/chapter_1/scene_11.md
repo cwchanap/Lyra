@@ -70,7 +70,7 @@
 [三宅紅了臉，店長在一旁低聲笑了。]
 
 [場景：雨鐘咖啡館，午後，店內空鏡。人聲漸遠，只剩光線落在木桌上。]
-- **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the recurring round old analog cafe wall clock from the back-corridor inner-storage entrance now removed from the wall and resting naturally on the counter, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; its minute hand is nearly vertical at 12 and its hour hand is just before 11, no readable clock numerals or other text, quiet unresolved stillness.
+- **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the recurring round old analog cafe wall clock from the back-corridor inner-storage entrance now removed from the wall and resting naturally on the counter, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, a small scuff on the lower-right outer ring, and one sharp diagonal impact crack crossing the lower-left of the cream dial, distinct from the fine hairline crazing; its minute hand is nearly vertical at 12 and its hour hand is just before 11, no readable clock numerals or other text, quiet unresolved stillness.
 - **BGM:** bgm_chapter_close
 - **BGS:** bgs_cafe_afternoon_after_rain
 
@@ -87,6 +87,11 @@
 [她的手停在箱口，停了一會兒。]
 
 **旁白**：她沒有立刻把它丟掉。
+
+[場景：雨鐘咖啡館，午後。吧台上已不見掛鐘，角落放著一只封好的紙箱，門邊傘架在畫面邊緣。]
+- **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the old cafe wall clock no longer on the counter, a closed cardboard box resting on the floor in the corner, the umbrella stand standing quietly at the frame edge near the door, quiet unresolved stillness, no readable text.
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_cafe_afternoon_after_rain
 
 [店長把紙箱蓋上，放到角落。門邊的傘架，只在畫面邊緣靜靜立著。]
 
