@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove Lyra's dynamic save-thumbnail product and all capture-only frontend, Rust, IPC, storage-sidecar, and packaged-E2E machinery while preserving the existing text-rich Save / Load / Continue experience and all durable save semantics.
+**Goal:** Remove Lyra's dynamic save-thumbnail product and all capture-only frontend, Rust, IPC, storage-sidecar, dependency, and packaged-E2E machinery while preserving the text-rich Save / Load / Continue experience and every non-thumbnail persistence invariant.
 
-**Architecture:** Save slots remain strict JSON snapshots written through the existing serialized persistence path. Save cards identify slots using existing name / timestamp / chapter / scene / objective metadata. The gameplay-command wire changes from `{ state, thumbnailCapture }` to bare `GameStateView` as one Rust+TypeScript contract change, never as two separately runnable commits. Thumbnail deletion stays local and deliberately leaves the broader HPA-521 coordinator ownership refactor for its own ticket.
+**Architecture:** Save slots remain strict JSON snapshots written through the existing serialized persistence path. Save identity comes from existing name / timestamp / chapter / scene / objective metadata. The gameplay wire changes from `{ state, thumbnailCapture }` to bare `GameStateView` as one Rust+TypeScript contract change. The same task deletes the packaged proof for that removed protocol so no task boundary intentionally leaves the canonical E2E chain red. The save-format/storage deletion follows separately, then dead UI/E2E/dependency cleanup. HPA-521 remains a later coordinator-ownership task.
 
 **Tech Stack:** Svelte 5, TypeScript, Tauri 2, Rust, Bun, Vitest, WebdriverIO packaged Tauri E2E.
 
@@ -12,198 +12,174 @@
 
 ## Global Constraints
 
-- One ticket, one PR: continue implementation on the same HPA-550 branch / draft PR that contains this plan.
+- One ticket, one PR: continue implementation on this HPA-550 branch / draft PR.
 - Do not merge the planning state and open a second implementation PR.
-- Complete Task 0 before runtime changes. If the playtest shows material screenshot value, stop and revise the product decision instead of implementing Outcome A.
-- Do not pre-record or assume the Task 0 outcome.
-- Keep `SAVE_SCHEMA_VERSION = 2` and follow HPA-540's pre-release policy: no migration and no backward compatibility for unshipped local saves.
-- Do not add a static-image registry, placeholder renderer, native screenshot provider, or capture abstraction.
-- Do not implement HPA-521's coordinator ownership refactor or HPA-560's broader E2E simplification.
-- Preserve atomic JSON writes, stale-write guards, session / durable-revision checks, autosave coalescing, overwrite expectations, corruption discovery, detached restore, exact recapture, flush / exit semantics, and delete ordering.
-- Keep every implementation task compileable/runnable at its stated verification boundary. In particular, never teach the frontend to expect a bare `GameStateView` before Rust returns one.
-- Use TDD for behavior changes: make the narrowest affected test fail first, implement the deletion/simplification, then rerun the focused test before moving on.
-- Historical docs may still describe thumbnails. Do not rewrite old accepted design/history documents; new HPA-550 docs supersede the live runtime contract.
+- Complete Task 0 before runtime changes. Do not assume or pre-record its outcome.
+- If the playtest shows material screenshot value, stop before Task 1 and revise HPA-550 explicitly.
+- Do not add authored replacement art, a placeholder renderer, native screenshot provider, provider trait, or new capture abstraction.
+- Keep `SAVE_SCHEMA_VERSION = 2`; follow HPA-540's pre-release policy with no migration/backward-compat decoder for unshipped local saves.
+- Preserve atomic/staged JSON writes, overwrite expectations, stale-write guards, session generation, durable revision checks, autosave coalescing, corruption discovery, Continue selection, detached restore/exact recapture, flush/exit semantics, failure challenges, and delete ordering.
+- Preserve the source-level mutation lock-discipline invariant: mutating commands must route through the centralized mutation helper and must not grab `session.lock()` directly.
+- Keep every implementation task runnable at its stated boundary. In particular:
+  - never change the TypeScript response shape before Rust changes with it;
+  - do not leave `capture-proof` registered after its capture protocol is deleted.
+- `apps/game/src-tauri/src/game/save/capture.rs` means **checkpoint/save snapshot capture**, not screenshot capture. It remains persistence-owned.
+- The previous draft's “keep Rust `sha2`” instruction was wrong. After deleting `save/thumbnail.rs`, verify direct Rust uses are gone and remove the direct Cargo dependency.
+- Do not implement HPA-521's coordinator ownership refactor or HPA-560's generic E2E runner redesign.
+- Historical accepted docs may still describe thumbnails. Do not rewrite PR #66 history; this HPA-550 spec/plan defines the new live contract.
+- Use TDD for behavior changes: narrow RED first, implement the deletion/simplification, then focused GREEN before widening verification.
 
 ---
 
 ## Task 0: Close the product-validation gate
 
-**Files:**
-- No runtime files.
-- Record the result in the HPA-550 Linear thread and the existing draft PR description/comment.
+**Runtime files:** none.
 
-**Produces:** An explicit human product decision: either `Outcome A confirmed: remove dynamic thumbnails` or a stop decision with the observed save-identification gap.
+**Tracking:** HPA-550 Linear thread + this draft PR description/comment.
 
-- [ ] **Step 1: Run the current packaged build before changing thumbnail behavior**
-
-Use the current `main`/planning branch runtime, not a hypothetical text-only mock.
-
-- [ ] **Step 2: Create representative saves**
-
-Create at least three distinct saves across different scenes / primary objectives and give at least one manual save a meaningful display name.
-
-- [ ] **Step 3: Exercise Continue**
-
-Return to title and use Continue once so the test includes the primary resume path.
-
-- [ ] **Step 4: Exercise deliberate Load selection**
-
-Open Load and deliberately choose a non-newest save. Use the actual card information rather than memorizing slot number alone.
-
-- [ ] **Step 5: Reopen the in-game Save / Load browser**
-
-Judge whether display name, timestamp, chapter, scene, recap, and active objective are sufficient to distinguish the intended save.
-
-- [ ] **Step 6: Record the thumbnail's actual product value**
-
-Record whether screenshot content materially changed which save was chosen.
-
-- [ ] **Step 7: Branch on the evidence**
-
-If text metadata is sufficient, record exactly:
+**Produces:** one explicit human product decision:
 
 ```text
 Outcome A confirmed: remove dynamic thumbnails.
 ```
 
-Then continue to Task 1.
+or a stop decision containing the concrete save-identification gap.
 
-If screenshot content is materially required, stop before Task 1 and record the concrete ambiguity (for example, which two saves could not be distinguished). Do not start native capture or another image system implicitly.
+- [ ] **Step 1: Run the current packaged Chapter 1 build before changing thumbnails**
+
+Use the current thumbnail-bearing runtime. Do not fake the candidate text-only UI first.
+
+- [ ] **Step 2: Create representative saves**
+
+Create at least three saves across different scenes / primary objectives. Give at least one manual save a meaningful display name.
+
+- [ ] **Step 3: Exercise Continue**
+
+Return to title and use Continue once.
+
+- [ ] **Step 4: Exercise deliberate Load selection**
+
+Open Load and choose a non-newest save using the visible card information, not memorized slot position alone.
+
+- [ ] **Step 5: Reopen the in-game Save / Load browser**
+
+Judge whether display name, timestamp, chapter, scene, recap, and active objective are enough to identify the intended saves.
+
+- [ ] **Step 6: Record the screenshot's actual value**
+
+Record whether screenshot content materially changed which save was selected.
+
+- [ ] **Step 7: Branch on evidence**
+
+If text is sufficient, record `Outcome A confirmed: remove dynamic thumbnails.` and continue.
+
+If screenshots are materially required, stop before Task 1, record the specific ambiguity, and revise the product decision. Do not start a native-capture spike implicitly.
 
 ---
 
-## Task 1: Make every SaveCard consumer text-only
+## Task 1: Make every text-save consumer independent of thumbnail metadata
 
-**Files:**
+**Files — modify/check:**
+
 - Modify: `apps/game/src/lib/components/SaveCard.svelte`
 - Modify: `apps/game/src/lib/components/SaveCard.test.ts`
 - Check: `apps/game/src/lib/components/SaveBrowser.svelte`
+- Modify: `apps/game/src/lib/components/SaveBrowser.test.ts`
 - Check: `apps/game/src/lib/components/SaveConfirmationDialog.svelte`
 - Modify: `apps/game/src/lib/components/SaveConfirmationDialog.test.ts`
+- Modify: `apps/game/src/lib/components/MainMenu.test.ts`
+- Modify: `apps/game/src/lib/components/SaveRecapDetails.test.ts`
+- Modify: `apps/game/src/lib/components/SaveNameDialog.test.ts`
 - Modify: `apps/game/src/lib/persistence/types.ts`
 - Modify: `apps/game/src/lib/persistence/types.test.ts`
+- Fix any additional **unit-test fixture only** found by the full game Vitest run if it carries the same removed metadata field.
 
 **Interfaces:**
-- Consumes: current Rust save-browser JSON; it may still contain an extra `thumbnail` field during this task.
-- Produces: TypeScript save metadata and all mounted SaveCard surfaces that require no thumbnail field or image read to identify a save.
-- Temporary boundary: capture ticket/activity types remain until Task 2 because `persistence-store` and gameplay capture still compile against them.
 
-### 1A. Write the text-only card tests first
+- Rust still sends the old save metadata shape during this task; extra JSON `thumbnail` data is ignored by TypeScript.
+- Only `thumbnail` properties on `SaveMetadataView` / `ReadableSaveMetadataView` disappear here.
+- Capture ticket/activity types remain until Task 2 so the existing persistence/gameplay code still compiles.
 
-- [ ] **Step 1: Remove thumbnail metadata from the SaveCard fixtures**
+### 1A. Write the text-only UI contract first
 
-Update valid and readable-invalid fixtures in `SaveCard.test.ts` so `metadata` contains no `thumbnail` field.
+- [ ] Remove `thumbnail` fields from valid/readable-invalid fixtures in `SaveCard.test.ts`.
+- [ ] Assert a valid card still renders:
+  - display name;
+  - saved timestamp;
+  - chapter title/recap;
+  - scene title/recap;
+  - active primary objective;
+  - appropriate select/load/delete actions.
+- [ ] Assert there is no preview `<img>`, `thumbnail-frame`, or `無法顯示預覽` placeholder.
+- [ ] Keep explicit empty-slot and invalid-slot coverage.
+- [ ] Update `SaveConfirmationDialog.test.ts` to prove the mounted old-slot `SaveCard` still exposes existing-save name/chapter/scene while overwrite comparison exposes current-game chapter/scene/objective.
 
-- [ ] **Step 2: Lock valid save identity**
+### 1B. Remove thumbnail-only fixtures/mocks from sibling consumers
 
-Assert the valid card renders:
+- [ ] `SaveBrowser.test.ts`: remove `unavailableThumbnail` and all thumbnail metadata fixture fields.
+- [ ] `SaveNameDialog.test.ts`: remove thumbnail fields from occupied/readable-invalid slot fixtures.
+- [ ] `MainMenu.test.ts`:
+  - remove thumbnail fields from save fixtures;
+  - delete the `readSaveThumbnail` mock/reset;
+  - delete `not.toHaveBeenCalled()` assertions that are meaningless because MainMenu does not read thumbnails.
+- [ ] `SaveRecapDetails.test.ts`: remove the whole `$lib/persistence/commands` mock containing only `readSaveThumbnail`; the component imports only persistence types.
+- [ ] Update `types.test.ts` representative metadata to the text-only frontend shape.
 
-- display name;
-- saved timestamp through `SaveRecapDetails`;
-- chapter title;
-- scene title;
-- active primary objective;
-- select/load/delete actions.
+### 1C. Remove SaveCard image lifecycle
 
-Also assert the card has no `thumbnail-frame`, preview `<img>`, or `無法顯示預覽` copy.
+- [ ] Delete `readSaveThumbnail` import/injected reader prop from `SaveCard.svelte`.
+- [ ] Delete thumbnail URL/unavailable state, reactive image reads, object URL ownership/revocation, decode-failure handling, and preview rendering.
+- [ ] Keep slot header, newest/selected indicators, `SaveRecapDetails`, diagnostic, and actions.
+- [ ] Tighten only spacing/min-height made obviously dead by frame removal. Do not redesign SaveBrowser.
 
-- [ ] **Step 3: Keep empty/invalid identity tests**
+### 1D. Narrow frontend metadata only
 
-Keep an empty-slot assertion for `空白存檔`. Keep an invalid-slot assertion that safe readable metadata plus the diagnostic renders without image state.
+- [ ] Remove `thumbnail` from `SaveMetadataView` and `ReadableSaveMetadataView`.
+- [ ] Do **not** yet remove `ThumbnailActivityView`, `ThumbnailCaptureRequestView`, `GameplayCommandResultView`, or other live capture-wire types.
 
-- [ ] **Step 4: Lock the second SaveCard mount**
+### 1E. Verify Task 1 GREEN
 
-Update `SaveConfirmationDialog.test.ts` fixtures to omit thumbnail metadata. In the overwrite test, assert the embedded existing-save card still exposes at least:
-
-```text
-舊的雨夜
-第一章
-律師事務所
-```
-
-and that the current-game comparison still exposes:
-
-```text
-第二章
-證物保管室
-比對證物
-```
-
-This proves the confirmation flow remains understandable after the image frame disappears.
-
-- [ ] **Step 5: Run the focused tests and verify RED**
-
-```bash
-bun run --cwd apps/game test -- \
-  src/lib/components/SaveCard.test.ts \
-  src/lib/components/SaveConfirmationDialog.test.ts
-```
-
-Expected: current thumbnail-bearing component/fixtures fail the new text-only contract.
-
-### 1B. Remove the SaveCard image lifecycle
-
-- [ ] **Step 6: Delete image loading from SaveCard**
-
-Remove:
-
-- `readSaveThumbnail` import;
-- injectable `readThumbnail` prop;
-- `thumbnailUrl` / `thumbnailUnavailable` state;
-- object URL ownership/revocation;
-- reactive thumbnail reads;
-- decode-failure handling;
-- thumbnail frame / `<img>` / preview placeholders.
-
-Keep the existing header, `SaveRecapDetails`, diagnostic, selected/newest state, and action buttons.
-
-- [ ] **Step 7: Tighten only obvious dead spacing**
-
-Remove spacing/min-height that existed solely for the preview frame. Do not redesign `SaveBrowser` grids unless Task 0 showed a concrete layout problem.
-
-### 1C. Narrow the frontend save metadata contract
-
-- [ ] **Step 8: Remove metadata fields only**
-
-From `SaveMetadataView` and `ReadableSaveMetadataView`, remove the `thumbnail` property.
-
-Do **not** yet delete `ThumbnailActivityView`, `ThumbnailCaptureRequestView`, or other capture-wire types used by the still-live Task 2 surfaces. Rust may still serialize an extra thumbnail field in save metadata; TypeScript ignores it because there is no runtime exact-object validator on this view.
-
-- [ ] **Step 9: Update type fixtures**
-
-Update `types.test.ts` representative save metadata to the no-thumbnail frontend view.
-
-- [ ] **Step 10: Verify Task 1 GREEN**
+Run focused tests first:
 
 ```bash
 bun run --cwd apps/game test -- \
   src/lib/components/SaveCard.test.ts \
   src/lib/components/SaveConfirmationDialog.test.ts \
+  src/lib/components/SaveBrowser.test.ts \
+  src/lib/components/SaveNameDialog.test.ts \
+  src/lib/components/MainMenu.test.ts \
+  src/lib/components/SaveRecapDetails.test.ts \
   src/lib/persistence/types.test.ts
+```
+
+Then run the **full game unit suite** so no thumbnail-bearing frontend fixture is deferred several tasks:
+
+```bash
+bun run --cwd apps/game test
 bun run --cwd apps/game check
 ```
 
-Expected: PASS, with `SaveBrowser.svelte` and `SaveConfirmationDialog.svelte` compiling without replacement image props.
+Expected: all game Vitest tests/type checks are green with the live capture protocol still otherwise intact.
 
-- [ ] **Step 11: Commit**
-
-```bash
-git add apps/game/src/lib/components/SaveCard.svelte \
-  apps/game/src/lib/components/SaveCard.test.ts \
-  apps/game/src/lib/components/SaveConfirmationDialog.test.ts \
-  apps/game/src/lib/persistence/types.ts \
-  apps/game/src/lib/persistence/types.test.ts
-git commit -m "refactor(save): make save identity text-only"
-```
+- [ ] Commit this UI-only slice.
 
 ---
 
-## Task 2: Change the capture wire atomically across Rust and TypeScript
+## Task 2: Atomically remove the capture wire **and its packaged proof**
 
-**Files:**
+This is the highest-risk task. It must change Rust and TypeScript together, preserve the central mutation guard, remove `capture-proof` in the same commit, correct CI routing for checkpoint capture, and end with a packaged smoke run.
+
+### Files — Rust wire/coordinator
+
 - Modify: `apps/game/src-tauri/src/lib.rs`
 - Modify: `apps/game/src-tauri/src/game/save/coordinator/mod.rs`
+- Delete: `apps/game/src-tauri/src/game/save/coordinator/tests/ticket.rs`
 - Modify affected coordinator tests under `apps/game/src-tauri/src/game/save/coordinator/tests/`
+
+### Files — frontend wire/pipeline
+
+- Delete: `apps/game/src/lib/persistence/thumbnail-capture.ts`
+- Delete: `apps/game/src/lib/persistence/thumbnail-capture.test.ts`
 - Modify: `apps/game/src/lib/persistence/commands.ts`
 - Modify: `apps/game/src/lib/persistence/commands.test.ts`
 - Modify: `apps/game/src/lib/persistence/persistence-store.svelte.ts`
@@ -214,20 +190,38 @@ git commit -m "refactor(save): make save identity text-only"
 - Modify: `apps/game/src/lib/state/game-client-source.test.ts`
 - Modify: `apps/game/src/routes/+page.svelte`
 - Modify: `apps/game/src/routes/page.test.ts`
-- Modify: `apps/game/src/routes/page-source.test.ts`
+- Modify: `apps/game/src/routes/page-source.test.ts` (capture-protocol/probe assertions now; DOM-annotation assertions remain until Task 4)
 
-**Interfaces:**
-- Consumes: Task 1 text-only save UI; current save schema/storage still accepts `ThumbnailDescriptorV1::Unavailable` / `ThumbnailWrite::Unavailable`.
-- Produces: bare `GameStateView` gameplay/persistence command responses, one-call manual save, no capture tickets/commands/activity channel, and one ordinary autosave policy.
-- Temporary boundary: save envelopes may still contain `thumbnail: { type: "unavailable" }` until Task 3. No PNG capture or ticket exists after this task.
+### Files — packaged capture proof
 
-### 2A. Write one cross-language wire contract before implementation
+- Delete: `apps/game/e2e-tauri/capture-proof.e2e.ts`
+- Delete: `apps/game/src/lib/test-harnesses/PackagedCaptureProofProbe.svelte`
+- Delete: `apps/game/src/lib/test-harnesses/PackagedCaptureProofProbe.test.ts`
+- Delete: `apps/game/src/lib/test-harnesses/capture-proof-settlement.ts`
+- Delete: `apps/game/src/lib/test-harnesses/capture-proof-settlement.test.ts`
+- Modify capture-proof-specific references as required in:
+  - `apps/game/e2e-tauri/helpers.ts`
+  - `apps/game/e2e-tauri/production-anchors.ts`
+  - `apps/game/e2e-tauri/save-seed.e2e.ts`
+  - `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 
-- [ ] **Step 1: Add a Rust serialization regression test**
+### Files — suite/CI routing + agent contract
 
-In `src-tauri/src/lib.rs` tests, exercise a representative successful mutating gameplay command/helper and serialize its returned value with `serde_json::to_value`.
+- Modify: `apps/game/package.json`
+- Modify: `apps/game/scripts/e2e-suite-registry.mjs`
+- Modify: `apps/game/scripts/e2e-suite-registry.test.mjs`
+- Modify: `apps/game/scripts/select-e2e-suites.mjs`
+- Modify: `apps/game/scripts/select-e2e-suites.test.mjs`
+- Modify: `apps/game/scripts/plan-e2e-ci.test.mjs`
+- Modify: `apps/game/scripts/e2e-ci-results.test.mjs`
+- Modify other CI-contract fixtures only where their canonical suite/chain expectations include `capture-proof`.
+- Modify: `CLAUDE.md` so the documented persistence chain no longer names `capture-proof` (AGENTS.md mirrors this content).
 
-Assert the serialized JSON is the `GameStateView` object itself:
+**Temporary storage boundary:** schema/storage still accepts `ThumbnailDescriptorV1::Unavailable` / `ThumbnailWrite::Unavailable`. New writes use that existing unavailable value until Task 3 removes the field; no capture ticket/PNG is produced.
+
+### 2A. Lock the bare wire contract RED
+
+- [ ] Add a Rust serialization regression for a representative successful mutating gameplay command/helper:
 
 ```rust
 let value = serde_json::to_value(result).unwrap();
@@ -237,441 +231,402 @@ assert!(value.get("state").is_none());
 assert!(value.get("thumbnailCapture").is_none());
 ```
 
-Name the test around the contract, e.g. `mutating_gameplay_command_serializes_bare_game_state`.
+Use a name such as `mutating_gameplay_command_serializes_bare_game_state`.
 
-- [ ] **Step 2: Change frontend mocks to the same shape**
+- [ ] Update focused frontend mocks so successful mutations return `GameStateView`, not `{ state, thumbnailCapture }`.
+- [ ] Assert `gameState.value` commits that direct state without any secondary thumbnail submit/failure command.
+- [ ] Change the manual-save route test to expect exactly one `save_manual(reference, displayName, expectation)` save operation and no prepare/submit/failure calls.
 
-Update focused `game-client-source.test.ts` / `page.test.ts` fixtures so mutating commands return `GameStateView`, not `{ state, thumbnailCapture }`.
-
-Add a game-client assertion that the returned state becomes `gameState.value` without a secondary thumbnail submit/failure command.
-
-- [ ] **Step 3: Lock one-call manual save**
-
-Update the route test so a successful manual save invokes only:
-
-```text
-save_manual(reference, displayName, expectation)
-```
-
-for the save operation. Assert there is no `prepare_save_thumbnail`, `submit_save_thumbnail`, or `report_save_thumbnail_failure` call.
-
-- [ ] **Step 4: Run the contract tests and verify RED**
+Run and confirm RED against current code:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features mutating_gameplay_command_serializes_bare_game_state
 bun run --cwd apps/game test -- \
-  src/lib/persistence/commands.test.ts \
   src/lib/state/game-client-source.test.ts \
   src/routes/page.test.ts \
-  src/routes/page-source.test.ts
+  src/routes/page-source.test.ts \
+  src/lib/persistence/commands.test.ts
 ```
 
-Expected: current Rust wrapper and frontend handshake fail the new contract.
+### 2B. Preserve the non-thumbnail mutation guard
 
-### 2B. Remove capture tickets while keeping the old envelope temporarily writable
+The current source tests split commands into ordinary-thumbnail and no-thumbnail lists. Do **not** delete `direct_no_thumbnail_commands_pin_no_thumbnail_autosave_policy` wholesale.
 
-- [ ] **Step 5: Collapse autosave policy semantics**
+- [ ] Merge `every_ordinary_mutation_routes_through_the_central_autosave_policy` and `direct_no_thumbnail_commands_pin_no_thumbnail_autosave_policy` into one test named along the lines of:
 
-In `src-tauri/src/lib.rs` remove `AutosaveIfAdvancedWithoutThumbnail`. Keep `AutosaveIfAdvanced` and `CoordinatorManaged` only.
+```text
+every_mutating_command_routes_through_the_central_autosave_policy
+```
 
-Interrogation actions that PR #66 routed through the no-thumbnail variant now use ordinary autosave; the semantic distinction no longer exists.
+- [ ] Cover the union of the existing command lists, including:
+  - `jump_to_scene`;
+  - `inspect_hotspot`;
+  - `interview_topic`;
+  - `enter_sublocation`;
+  - `reexamine_evidence`;
+  - `reexamine_statement`;
+  - `complete_interrogation_phase`;
+  - `acknowledge_acquisition_event_core`;
+  - `select_analysis_board`;
+  - `update_analysis_draft`;
+  - `submit_analysis_board`;
+  - `ask_interrogation_question`;
+  - `present_interrogation_evidence`;
+  - `withdraw_interrogation`;
+  - `resume_interrogation_testimony`;
+  - `challenge_interrogation_line_core`.
 
-Remove `run_gameplay_mutation_selecting_policy` if it has no remaining reason to exist after policy collapse.
+For each, preserve/assert:
 
-- [ ] **Step 6: Remove coordinator capture-ticket state**
+```text
+contains run_gameplay_mutation
+selects AutosaveIfAdvanced after policy collapse
+does not contain session.lock()
+```
 
-Delete capture-ticket concepts required only to wait for screenshots:
+Drop only assertions that distinguish `AutosaveIfAdvancedWithoutThumbnail`.
 
-- `THUMBNAIL_CAPTURE_TIMEOUT`;
-- `ThumbnailCapturePurpose` / `PreparedThumbnailPurpose`;
-- `ThumbnailCaptureRequestView`;
-- ticket records/maps/supersession/deadlines;
-- capture result claiming/submission/failure/expiry;
-- capture-required flags;
-- thumbnail activity subscribers/state.
+- [ ] Keep/adjust the separate `advance_dialogue`/`advance_dialogue_core` source assertion so removing `run_gameplay_mutation_selecting_policy` does not accidentally bypass centralized mutation handling.
 
-Keep the writer queue, task scheduler, session/durable revision guards, autosave debounce, failure challenges, flush semantics, delete ordering, and exit handling.
+### 2C. Collapse Rust autosave/capture state
 
-Until Task 3 removes the schema field, make autosave/manual save construct the existing storage request with `ThumbnailWrite::Unavailable`; do not create a new abstraction for this temporary value.
+- [ ] Remove `AutosaveIfAdvancedWithoutThumbnail`.
+- [ ] Route commands formerly using it through ordinary `AutosaveIfAdvanced`.
+- [ ] Remove `run_gameplay_mutation_selecting_policy` / `dialogue_persistence_policy` if no non-thumbnail distinction remains.
+- [ ] Delete coordinator screenshot-ticket state:
+  - capture timeout;
+  - capture/prepared purposes;
+  - capture request/activity views;
+  - capture intent/ticket records/maps/deadlines;
+  - capture-required flags;
+  - claim/submit/failure/expiration APIs;
+  - activity subscribers/publication.
+- [ ] Delete `coordinator/tests/ticket.rs` and replace/remove thumbnail-only coordinator assertions while preserving autosave debounce/coalescing, flush, failure, writer ordering, generation/revision, and exit behavior.
+- [ ] For the temporary schema boundary, construct the existing unavailable thumbnail write/descriptor directly; do not invent a temporary abstraction.
 
-- [ ] **Step 7: Make gameplay commands return `GameStateView` directly**
+### 2D. Return bare `GameStateView` and simplify manual save
 
-Delete the Rust `GameplayCommandResultView` wrapper and change mutating gameplay commands, install/start/load helpers, and persistence transitions to return the committed `GameStateView` directly.
+- [ ] Delete Rust `GameplayCommandResultView`.
+- [ ] Change mutating gameplay/persistence-transition commands and relevant start/install/load helpers to return direct `GameStateView`.
+- [ ] Remove `prepared_thumbnail_ticket` from manual save and make it a single command.
+- [ ] Delete Tauri capture commands and event plumbing:
+  - `prepare_save_thumbnail`;
+  - `submit_save_thumbnail`;
+  - `report_save_thumbnail_failure`;
+  - `read_save_thumbnail`;
+  - `get_thumbnail_activity`;
+  - thumbnail ticket request header;
+  - `thumbnail-activity-changed` event.
+- [ ] Update command-registration/source tests to the new handler set.
 
-Do this in the same commit as the frontend consumer change below.
+### 2E. Remove TypeScript capture protocol in the same commit
 
-- [ ] **Step 8: Make manual save one command**
+- [ ] Delete `thumbnail-capture.ts` + test.
+- [ ] Remove thumbnail command helpers from `commands.ts`.
+- [ ] In `game-client.svelte.ts`, delete:
+  - capture imports;
+  - `finishThumbnailCapture`;
+  - `applyGameplayCommandResult`;
+  - capture deadline pinning;
+  - detached capture submission;
+  - prepared-capture settling.
+- [ ] Consume direct `GameStateView` while preserving in-flight state, committed-state publication, presentation epoch behavior, SFX inference, and SFX error isolation.
+- [ ] Remove `GameplayCommandResultView` and capture-wire TS types once all call sites are changed.
+- [ ] In `+page.svelte`, make manual save one command and remove capture-proof probe mounting/environment logic.
+- [ ] Remove thumbnail activity from `PersistenceStore` while preserving persistence + exit subscribe-before-reread race protection.
 
-Delete the prepared-thumbnail argument from `save_manual`. It captures the checkpoint and writes through the existing serialized save path with the temporary unavailable descriptor.
+### 2F. Delete capture-proof now, not later
 
-Delete Tauri capture commands and wire owned solely by the ticket protocol:
+- [ ] Delete the WDIO `capture-proof.e2e.ts` spec.
+- [ ] Delete `PackagedCaptureProofProbe.*`.
+- [ ] Delete `capture-proof-settlement.ts` + test; its production importer is the deleted capture-proof spec.
+- [ ] Remove capture-proof-only E2E helpers/anchors/source assertions.
+- [ ] Remove `capture-proof` from the suite registry and persistence chain.
+- [ ] Remove `test:e2e:capture-proof` / `test:e2e:capture-proof:run`.
+- [ ] Remove `--suite capture-proof` from `test:e2e:save:run`.
 
-- `prepare_save_thumbnail`;
-- `submit_save_thumbnail`;
-- `report_save_thumbnail_failure`;
-- `read_save_thumbnail`;
-- `get_thumbnail_activity`;
-- thumbnail ticket request header;
-- `thumbnail-activity-changed` event plumbing.
+### 2G. Fix checkpoint-capture CI routing
 
-### 2C. Change the TypeScript side in the same task
+In `select-e2e-suites.mjs`:
 
-- [ ] **Step 9: Simplify persistence command helpers**
+- [ ] Delete the obsolete `capture` rule completely.
+- [ ] Remove `apps/game/src-tauri/src/game/save/capture.rs` from `persistence.excludedPatterns`.
+- [ ] Remove `capture-proof` from persistence `suiteIds`.
+- [ ] Keep exit exclusions unchanged.
+- [ ] Rewrite the `dialogue-capture-surface` comment/name if necessary so it no longer describes “capture-proven persistence carriers”; its broad `E2E_SUITE_IDS` behavior may remain if still justified after the canonical list shrinks.
 
-Delete from `commands.ts`:
+Update selector/CI tests so a change to `save/capture.rs` selects the remaining full persistence coverage instead of smoke-only.
 
-- `thumbnailTicketHeader`;
-- `getThumbnailActivity`;
-- `reportSaveThumbnailFailure`;
-- `submitSaveThumbnail`;
-- `readSaveThumbnail`.
+### 2H. Keep the agent command contract synchronized
 
-- [ ] **Step 10: Consume bare state in game-client**
+Update `CLAUDE.md` at the same boundary as the registry change:
 
-Delete `finishThumbnailCapture`, `applyGameplayCommandResult`, deadline pinning, detached capture submission, and `settlePreparedThumbnailCapture`.
+```text
+persistence owns save-core and save-management
+exit owns exit-lifecycle
+```
 
-Make gameplay dispatch and persistence transitions invoke/consume `GameStateView` directly while preserving:
+Keep the existing wording about serial persistence phases as applicable. Do not separately edit the mirrored/symlinked AGENTS content if the repository link already points at CLAUDE.md.
 
-- `gameState.inFlight` behavior;
-- committed-state publication;
-- SFX inference after a successful state change;
-- SFX error isolation;
-- presentation epoch resets for load/continue where currently required.
+### 2I. Verify Task 2 GREEN across the real boundary
 
-Remove `GameplayCommandResultView` and capture-wire types after all Rust/TS consumers in this task are changed.
-
-- [ ] **Step 11: Simplify the manual-save route**
-
-Replace prepare → settle → `save_manual` with one `save_manual` call containing only `reference`, `displayName`, and `expectation`.
-
-Preserve the current error recovery, browser/menu close, and post-save focus restoration, including the Present-tray focus target.
-
-- [ ] **Step 12: Remove thumbnail activity from persistence-store**
-
-Delete:
-
-- `thumbnailActivity` state/getter/replacement;
-- initial `getThumbnailActivity()` query;
-- `thumbnail-activity-changed` listener;
-- thumbnail version counter.
-
-Keep the subscribe-before-reread race protection for persistence health and exit status.
-
-### 2D. Verify the merged wire contract before touching E2E capture proof
-
-- [ ] **Step 13: Run Rust and focused frontend tests GREEN**
+Focused Rust/frontend:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
-bun run --cwd apps/game test -- \
-  src/lib/persistence/commands.test.ts \
-  src/lib/persistence/persistence-store.test.ts \
-  src/lib/persistence/types.test.ts \
-  src/lib/state/game-client-source.test.ts \
-  src/routes/page.test.ts \
-  src/routes/page-source.test.ts
+bun run --cwd apps/game test
 bun run --cwd apps/game check
 ```
 
-Expected: PASS. The Rust serialization test is the local proof that frontend mocks match the actual command JSON shape; packaged gameplay remains Task 5's integration proof.
-
-- [ ] **Step 14: Check the live wire is gone**
+E2E contracts/types after deleting the suite:
 
 ```bash
-rg 'GameplayCommandResultView|thumbnailCapture|prepare_save_thumbnail|submit_save_thumbnail|report_save_thumbnail_failure|read_save_thumbnail|get_thumbnail_activity|thumbnail-activity-changed|AutosaveIfAdvancedWithoutThumbnail' \
-  apps/game/src apps/game/src-tauri/src
+bun run --cwd apps/game test:e2e:ci-contracts
+bun run --cwd apps/game check:e2e
 ```
 
-Expected: no live command/ticket/activity matches. `thumbnail-capture.ts` and capture-proof test harness may still exist temporarily as Task 4 deletion targets, but production dispatch must no longer import/use them.
+Verify routing explicitly through the selector tests: `save/capture.rs` must resolve to the remaining persistence chain.
 
-- [ ] **Step 15: Commit Rust and TypeScript together**
+Then run packaged smoke **before Task 3**:
 
 ```bash
-git add apps/game/src-tauri/src/lib.rs \
-  apps/game/src-tauri/src/game/save/coordinator \
-  apps/game/src/lib/persistence \
-  apps/game/src/lib/state/game-client.svelte.ts \
-  apps/game/src/lib/state/game-client-source.test.ts \
-  apps/game/src/routes/+page.svelte \
-  apps/game/src/routes/page.test.ts \
-  apps/game/src/routes/page-source.test.ts
-git commit -m "refactor(save): remove thumbnail capture wire"
+bun run --cwd apps/game test:e2e:smoke
 ```
+
+This is the first real Tauri proof that the bare `GameStateView` IPC shape landed correctly. Do not call Task 2 complete on compile/mock evidence alone.
+
+Production grep after Task 2 should show no live ticket/capture protocol:
+
+```bash
+rg 'thumbnailCapture|prepare_save_thumbnail|submit_save_thumbnail|report_save_thumbnail_failure|read_save_thumbnail|get_thumbnail_activity|thumbnail-activity-changed|VITE_LYRA_E2E_CAPTURE_PROOF' \
+  apps/game/src apps/game/src-tauri/src apps/game/e2e-tauri apps/game/scripts
+```
+
+`thumbnail` may still remain in schema/storage/sidecar fixtures until Tasks 3-4.
+
+- [ ] Commit this entire Rust+TS+capture-proof+CI-routing boundary atomically.
 
 ---
 
-## Task 3: Remove the unavailable-thumbnail remainder from schema, storage, and coordinator
+## Task 3: Remove thumbnail from the save format/storage transaction and drop direct Rust `sha2`
 
-**Files:**
+### Files — runtime format/storage
+
 - Modify: `apps/game/src-tauri/src/game/save/schema.rs`
 - Modify: `apps/game/src-tauri/src/game/save/storage.rs`
 - Delete: `apps/game/src-tauri/src/game/save/thumbnail.rs`
 - Modify: `apps/game/src-tauri/src/game/save/mod.rs`
-- Modify as compile errors require: `apps/game/src-tauri/src/game/save/restore.rs`
-- Modify: `apps/game/src-tauri/src/game/error.rs`
+- Modify as required: `apps/game/src-tauri/src/game/save/restore.rs`
 - Modify: `apps/game/src-tauri/src/game/save/e2e_faults.rs`
-- Modify affected coordinator/storage tests, especially `storage_integration.rs`, `unit.rs`, `e2e_replacement.rs`, and any module found by the thumbnail grep.
-- Delete `apps/game/src-tauri/src/game/save/coordinator/tests/ticket.rs` if Task 2 did not already make it empty/unnecessary.
-- Check/remove thumbnail-only test helpers such as `png_fixture` if no non-thumbnail consumer remains.
+- Modify: `apps/game/src-tauri/src/game/error.rs`
+- Modify: `apps/game/src-tauri/src/game/test_support.rs` if thumbnail-only PNG fixtures remain
+- Modify: `apps/game/src-tauri/src/lib.rs` to stop constructing the temporary unavailable descriptor/write
+- Modify affected Rust save/coordinator tests.
 
-**Interfaces:**
-- Consumes: Task 2 runtime with no capture tickets; new saves currently use the old `Unavailable` envelope branch only as a temporary schema bridge.
-- Produces: a strict schema-2 JSON save with no thumbnail field, no PNG sidecar ownership, and no thumbnail-specific Rust persistence concepts.
+### Files — dependency
 
-### 3A. Write no-thumbnail schema/storage tests first
+- Modify: `apps/game/src-tauri/Cargo.toml`
+- Modify the tracked Cargo lockfile mechanically if Cargo changes it; do not hand-edit dependency graph entries.
 
-- [ ] **Step 1: Update current envelope fixtures**
+### 3A. Write no-thumbnail schema/storage tests RED
 
-Remove `thumbnail` while retaining `schemaVersion: 2`.
+- [ ] Current schema-2 envelope fixture omits `thumbnail`.
+- [ ] Round trip proves serialized current envelope has no thumbnail field.
+- [ ] Strict parser rejects an old pre-HPA-550 envelope containing the removed top-level field under the intentional pre-release policy.
+- [ ] `ensure_save_layout` creates only the save root/required JSON layout and not `saves/thumbnails/`.
+- [ ] Staged write test proves one JSON envelope is staged/installed with no PNG sidecar branch.
+- [ ] Preserve overwrite expectation, atomic replacement, directory sync, stale write, corruption, delete, orphan JSON temp, Continue, restore, and exit tests.
 
-- [ ] **Step 2: Lock strict round trip**
+Run focused Rust tests and confirm RED before implementation.
 
-Add/adjust a round-trip test proving the serialized current envelope has no `thumbnail` key.
-
-- [ ] **Step 3: Lock the intentional pre-release break**
-
-Add a strict-parser test passing a schema-2 envelope with the former top-level `thumbnail` field. Assert parsing fails because `deny_unknown_fields` rejects the unshipped old shape. Do not add a migration.
-
-- [ ] **Step 4: Lock one-file save layout**
-
-Add/adjust storage tests proving `ensure_save_layout` creates/uses the save root without `saves/thumbnails/`, and a staged write installs one JSON envelope with no PNG sidecar.
-
-Preserve overwrite expectation, atomic replacement, directory sync, stale-write, corruption, delete, and orphan-JSON-temporary tests.
-
-- [ ] **Step 5: Run focused Rust tests RED**
-
-```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features game::save
-```
-
-Expected: current schema/storage still owns the unavailable thumbnail branch and fails the new assertions.
-
-### 3B. Delete schema and PNG sidecar concepts
-
-- [ ] **Step 6: Delete thumbnail schema fields/types**
-
-Remove from Rust schema:
-
-- thumbnail byte/dimension constants;
-- `ThumbnailFormat`;
-- `ThumbnailDescriptorV1`;
-- `ThumbnailAvailabilityView`;
-- `ThumbnailUnavailableReason`;
-- `ThumbnailDiagnosticView`;
-- `thumbnail` from `SaveMetadataView`;
-- `thumbnail` from `ReadableSaveMetadataView`;
-- `thumbnail` from `SaveEnvelope`.
-
-Keep `SAVE_SCHEMA_VERSION = 2`, strict parsing, content revision, summary validation, and snapshot validation unchanged.
-
-- [ ] **Step 7: Collapse storage to one staged JSON envelope**
+### 3B. Delete schema thumbnail types
 
 Remove:
 
-- `ThumbnailWrite` from `SlotWriteRequest`;
-- available/unavailable envelope variants;
-- staged PNG writes;
-- thumbnail directory creation;
-- thumbnail availability probing;
-- PNG-header reads;
-- thumbnail fields from readable invalid metadata;
-- canonical thumbnail path/temp/reference cleanup;
-- sidecar overwrite/delete/orphan cleanup.
+- byte/dimension constants;
+- `ThumbnailFormat`;
+- `ThumbnailDescriptorV1`;
+- thumbnail availability/unavailable/diagnostic view types;
+- `thumbnail` from `SaveEnvelope`;
+- `thumbnail` from Rust public/readable metadata views.
 
-Keep `PreparedSlotWrite` if it remains useful as the staged JSON transaction boundary; do not restructure the writer architecture.
+Keep:
 
-- [ ] **Step 8: Delete PNG validation/error surface**
+- `SAVE_SCHEMA_VERSION = 2`;
+- `deny_unknown_fields`/strict parse;
+- content revision validation;
+- snapshot/summary validation.
 
-Delete `save/thumbnail.rs` and its module export. Remove thumbnail PNG/ticket error constructors after `rg` proves no remaining Rust caller.
+### 3C. Collapse storage to JSON-only writes
 
-Keep `sha2`; it is used by non-thumbnail content hashing.
+- [ ] Remove `ThumbnailWrite`.
+- [ ] Simplify `PreparedSlotWrite` to its JSON transaction data and existing overwrite expectation.
+- [ ] Remove available/unavailable envelope variants.
+- [ ] Remove sidecar stage/install/discard/read/validation branches.
+- [ ] Stop creating the thumbnail directory.
+- [ ] Remove sidecar canonical path/digest/reference/cleanup helpers.
+- [ ] Remove thumbnail availability from readable invalid-slot metadata.
+- [ ] Keep JSON temporary cleanup and directory sync.
 
-- [ ] **Step 9: Remove thumbnail-only fault/test remainder**
+### 3D. Delete PNG validation / thumbnail-only errors/faults
 
-Remove `ThumbnailInstall` / `thumbnailInstall` from the E2E persistence fault enum and any Rust test fixture that exists only for PNG sidecars.
+- [ ] Delete `save/thumbnail.rs` and module registration.
+- [ ] Remove PNG/ticket error constructors/codes once `rg` proves no non-thumbnail call site.
+- [ ] Remove `ThumbnailInstall`/`thumbnailInstall` persistence E2E fault boundary; keep envelope replacement, directory sync, exit flush, and other non-thumbnail fault points.
+- [ ] Remove `png_fixture`/similar test helpers only when unused after thumbnail tests are gone.
 
-### 3C. Verify Task 3 GREEN
+### 3E. Verify and remove the direct Rust hash dependency
 
-- [ ] **Step 10: Run Rust tests**
+After `save/thumbnail.rs` is deleted, run:
+
+```bash
+rg 'sha2::|Sha256' apps/game/src-tauri/src
+```
+
+Expected: no Rust source use.
+
+Then:
+
+- [ ] Remove `sha2 = "0.10"` from `apps/game/src-tauri/Cargo.toml`.
+- [ ] Let Cargo update the tracked lockfile through normal commands if resolution changes.
+- [ ] Do **not** require a transitive `sha2` package to disappear from a lockfile if another dependency still owns it.
+
+### 3F. Verify Task 3 GREEN
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features game::save
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
+bun run --cwd apps/game check
 ```
 
-- [ ] **Step 11: Run Rust zero-match classification**
+Run source checks:
 
 ```bash
-rg -n 'thumbnail|Thumbnail' apps/game/src-tauri/src
+rg 'ThumbnailDescriptorV1|ThumbnailWrite|ThumbnailInstall|saves/thumbnails|sha2::|Sha256' apps/game/src-tauri/src
 ```
 
-Expected: no product thumbnail concept remains. Inspect any unrelated textual match individually rather than adding a compatibility shim.
+Expected: no live production/test dependency on the deleted thumbnail storage/hash path, except historical prose outside source if any.
 
-- [ ] **Step 12: Commit**
-
-```bash
-git add apps/game/src-tauri/src/game/save \
-  apps/game/src-tauri/src/game/error.rs
-git commit -m "refactor(save): remove thumbnail sidecars"
-```
+- [ ] Commit the JSON-only schema/storage slice.
 
 ---
 
-## Task 4: Delete capture-owned frontend/E2E/dependency surface
+## Task 4: Delete remaining dead thumbnail UI/E2E fixtures and frontend dependencies
 
-**Files:**
-- Delete: `apps/game/src/lib/persistence/thumbnail-capture.ts`
-- Delete: `apps/game/src/lib/persistence/thumbnail-capture.test.ts`
-- Delete: `apps/game/src/lib/test-harnesses/PackagedCaptureProofProbe.svelte`
-- Delete: `apps/game/src/lib/test-harnesses/PackagedCaptureProofProbe.test.ts`
-- Delete: `apps/game/e2e-tauri/capture-proof.e2e.ts`
+Task 2 removed the capture protocol and dedicated packaged suite. Task 3 removed the save-format/storage sidecar. This task cleans the now-dead presentation annotations, sidecar test fixtures/phases, and frontend packages.
+
+### Files — DOM capture annotations/source tests
+
+Modify all live matches found by:
+
+```bash
+rg -n 'data-save-thumbnail|save-thumbnail-asset-role|save-thumbnail-layout|save-thumbnail-layer' apps/game/src
+```
+
+Known surfaces include:
+
+- `apps/game/src/routes/+page.svelte`
+- `apps/game/src/routes/page-source.test.ts`
+- `apps/game/src/lib/components/GameAtmosphere.svelte`
+- `apps/game/src/lib/components/SceneBackdrop.svelte`
+- `apps/game/src/lib/components/GameShell.svelte`
+- `apps/game/src/lib/components/DialogueBox.svelte`
+- `apps/game/src/lib/components/InterrogationEvidenceTray.svelte`
+- `apps/game/src/lib/components/InterrogationSubjectArt.svelte`
+- `apps/game/src/lib/components/InvestigationSceneSurface.svelte`
+- any other live component returned by the grep.
+
+Remove capture-only attributes/comments without changing actual gameplay layout, rain animation, portrait/backdrop behavior, interrogation tray behavior, or component ownership.
+
+In `page-source.test.ts`:
+
+- [ ] Delete the remaining save-thumbnail boundary/layout assertions.
+- [ ] Remove `無法顯示預覽` from canonical player-copy expectations because that copy no longer exists.
+- [ ] Keep unrelated Case File, audio, acquisition, navigation, and save/load copy assertions.
+
+### Files — sidecar E2E fixtures/phases
+
 - Modify: `apps/game/e2e-tauri/save-fixtures.ts`
 - Modify: `apps/game/e2e-tauri/save-management.e2e.ts`
-- Modify capture-only references in `helpers.ts`, `production-anchors.ts`, `save-seed.e2e.ts`, `analysis-beat85.e2e.ts` as found by grep.
-- Modify: `apps/game/scripts/e2e-suite-registry.mjs`
+- Modify as needed: `apps/game/e2e-tauri/helpers.ts`
+- Modify as needed: `apps/game/e2e-tauri/production-anchors.ts`
+- Modify as needed: `apps/game/e2e-tauri/save-seed.e2e.ts`
+- Modify as needed: `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 - Modify: `apps/game/scripts/save-e2e-paths.mjs`
-- Modify affected E2E registry/path/CI contract tests.
-- Modify capture-only DOM markup/comments in:
-  - `apps/game/src/lib/components/GameAtmosphere.svelte`
-  - `apps/game/src/lib/components/SceneBackdrop.svelte`
-  - `apps/game/src/lib/components/GameShell.svelte`
-  - `apps/game/src/lib/components/DialogueBox.svelte`
-  - `apps/game/src/lib/components/InterrogationEvidenceTray.svelte`
+- Modify: `apps/game/scripts/save-e2e-paths.test.mjs`
+- Modify suite/CI contract tests if their expected management phase counts include deleted thumbnail phases.
+
+Delete:
+
+- thumbnail descriptor fields from E2E envelope fixtures;
+- thumbnail sidecar path/hash ownership snapshots;
+- sidecar resolve/remove/corrupt/assert helpers;
+- `management-missing-thumbnail`;
+- `management-corrupt-thumbnail`;
+- thumbnail-specific management assertions.
+
+Keep:
+
+- save-core seed/resume;
+- JSON corrupt-slot management;
+- ordinary manual save/load/delete/overwrite;
+- autosave / Continue candidate behavior;
+- exit-lifecycle.
+
+Strengthen user-visible save-management assertions around display name/chapter/scene/timestamp/objective where useful instead of replacing image checks with technical hooks.
+
+### Files — frontend dependencies
+
 - Modify: `apps/game/package.json`
 - Modify mechanically: `bun.lock`
 
-**Interfaces:**
-- Consumes: runtime/schema with no thumbnail behavior.
-- Produces: no capture-proof suite, sidecar fixture APIs, DOM capture annotations, html-to-image/Fontsource dependencies, or capture-only package scripts.
-
-### 4A. Change E2E contracts first
-
-- [ ] **Step 1: Update suite registry expectations**
-
-Remove `capture-proof` from suite IDs and the persistence chain.
-
-- [ ] **Step 2: Remove thumbnail management phases**
-
-Delete expectations for:
-
-- `management-missing-thumbnail`;
-- `management-corrupt-thumbnail`.
-
-Keep JSON corrupt-slot management coverage.
-
-- [ ] **Step 3: Remove sidecar fixture contracts**
-
-Update save path/fixture tests so there is no sidecar resolution/removal/corruption/ownership API and `SaveE2eSaveEnvelope` has no thumbnail descriptor.
-
-- [ ] **Step 4: Run E2E contract tests RED**
-
-```bash
-bun run --cwd apps/game test:e2e:ci-contracts
-```
-
-Expected: current registry/path implementation still exposes capture/sidecar concepts.
-
-### 4B. Delete capture-proof and preserve user-facing save verification
-
-- [ ] **Step 5: Delete capture proof**
-
-Delete the capture-proof E2E spec, probe component/tests, capture-specific anchors/helpers, and capture-only frontend module/tests.
-
-- [ ] **Step 6: Simplify save management fixtures**
-
-Remove sidecar path/hash from ownership snapshots and remove sidecar before-actions/helpers from `save-fixtures.ts` and `save-e2e-paths.mjs`.
-
-- [ ] **Step 7: Strengthen text identity coverage**
-
-In `save-management.e2e.ts`, assert the relevant occupied save cards expose enough visible text to distinguish them using display name / chapter / scene / timestamp or objective, as appropriate to the existing fixture.
-
-Do not add another technical marker as a replacement for the removed image assertion.
-
-### 4C. Remove capture-only UI hooks and dependencies
-
-- [ ] **Step 8: Remove DOM capture annotations/comments**
-
-Delete `data-save-thumbnail-*` attributes and comments whose only owner was DOM capture. Preserve actual rain animation, scene presentation, dialogue, interrogation tray behavior, and layout.
-
-- [ ] **Step 9: Remove package scripts/dependencies**
-
-Remove from `apps/game/package.json`:
+Remove:
 
 - `html-to-image`;
-- `@fontsource-variable/noto-serif-tc`;
-- `test:e2e:capture-proof`;
-- `test:e2e:capture-proof:run`;
-- `--suite capture-proof` from the save-chain script.
+- `@fontsource-variable/noto-serif-tc`.
 
-Regenerate `bun.lock` through the repository's normal Bun install workflow; do not hand-edit it.
+The package scripts for capture-proof were already removed in Task 2; do not recreate them here.
 
-### 4D. Verify Task 4 GREEN
+Regenerate lockfile with the repository's normal Bun install workflow. Do not hand-edit it.
 
-- [ ] **Step 10: Run frontend/unit/type contracts**
+### 4A. Verify Task 4 GREEN
+
+Frontend/unit/type:
 
 ```bash
 bun run --cwd apps/game test
 bun run --cwd apps/game check
-bun run --cwd apps/game check:e2e
-bun run --cwd apps/game test:e2e:ci-contracts
 ```
 
-- [ ] **Step 11: Run live capture zero-match checks**
+E2E contracts/types:
 
 ```bash
-rg 'html-to-image|@fontsource-variable/noto-serif-tc|data-save-thumbnail|thumbnail-activity-changed|prepare_save_thumbnail|submit_save_thumbnail|report_save_thumbnail_failure|read_save_thumbnail|get_thumbnail_activity' \
+bun run --cwd apps/game test:e2e:ci-contracts
+bun run --cwd apps/game check:e2e
+```
+
+Zero-match checks:
+
+```bash
+rg 'html-to-image|@fontsource-variable/noto-serif-tc|data-save-thumbnail|save-thumbnail-asset-role|save-thumbnail-layout|save-thumbnail-layer|thumbnail-activity-changed|prepare_save_thumbnail|submit_save_thumbnail|report_save_thumbnail_failure|read_save_thumbnail|get_thumbnail_activity' \
   apps/game --glob '!docs/**'
+```
+
+Inspect all remaining generic thumbnail matches:
+
+```bash
 rg -n 'thumbnail|Thumbnail' apps/game --glob '!docs/**'
 ```
 
-Expected: no product/runtime thumbnail concept. Classify any unrelated match explicitly.
+Classify every hit. The intended live product architecture has no save-thumbnail concept. Do not add a compatibility shim just to make a grep quiet.
 
-- [ ] **Step 12: Commit**
-
-```bash
-git add apps/game/e2e-tauri \
-  apps/game/scripts \
-  apps/game/src/lib/components \
-  apps/game/src/lib/persistence \
-  apps/game/src/lib/test-harnesses \
-  apps/game/package.json bun.lock
-git commit -m "test(save): remove thumbnail capture coverage"
-```
+- [ ] Commit cleanup/dependency/E2E-fixture deletion.
 
 ---
 
-## Task 5: Run packaged integration, full verification, and close tracking
+## Task 5: Full verification, self-review, and tracking on the same PR
 
-**Files:**
-- No new feature files expected.
-- Modify only existing tests/docs if fresh verification exposes a real HPA-550 regression.
-- Update HPA-550 and HPA-521 tracking after the implementation is proven.
-
-**Consumes:** Tasks 0-4.
-
-**Produces:** Verified single-PR HPA-550 implementation and downstream tracking that no longer treats thumbnail machinery as an invariant.
-
-### 5A. Prove the real Tauri/gameplay wire
-
-- [ ] **Step 1: Run packaged gameplay**
-
-```bash
-bun run --cwd apps/game test:e2e:gameplay
-```
-
-This is the integration proof for the Task 2 `GameStateView` wire change. It runs after the capture-proof suite has been deleted, so no obsolete screenshot assertion can mask/fail the new product contract.
-
-- [ ] **Step 2: Run the remaining packaged save chain**
-
-```bash
-bun run --cwd apps/game test:e2e:save
-```
-
-Expected suite ownership is the remaining save-core / save-management / exit-lifecycle chain; phase counts may decrease only by the deliberately deleted capture-proof and two thumbnail-corruption phases.
-
-### 5B. Run the full repository verification
-
-- [ ] **Step 3: Run frontend/unit/type/lint**
+### 5A. Full frontend/unit/lint verification
 
 ```bash
 bun run test
@@ -679,7 +634,7 @@ bun run check
 bun run lint:all
 ```
 
-- [ ] **Step 4: Run Rust verification**
+### 5B. Full Rust verification
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
@@ -687,72 +642,84 @@ bun run --cwd apps/game rust:fmt
 bun run --cwd apps/game rust:lint
 ```
 
-- [ ] **Step 5: Re-run E2E type/contracts**
+Reconfirm direct hash cleanup:
+
+```bash
+rg 'sha2::|Sha256' apps/game/src-tauri/src
+```
+
+Expected: no direct source use.
+
+### 5C. E2E contract/type verification
 
 ```bash
 bun run --cwd apps/game check:e2e
 bun run --cwd apps/game test:e2e:ci-contracts
 ```
 
-### 5C. Self-review deletion value and scope
+Verify the selector contract specifically includes checkpoint capture in persistence routing after `capture-proof` deletion.
 
-- [ ] **Step 6: Inspect diff size**
+### 5D. Packaged gameplay proof
+
+The gameplay command response shape changed, so run:
 
 ```bash
-git diff --stat main...HEAD
+bun run --cwd apps/game test:e2e:gameplay
 ```
 
-The implementation should have material net line deletion. If it grows substantially, inspect for a retained/reinvented capture abstraction.
+### 5E. Remaining packaged persistence proof
 
-- [ ] **Step 7: Check product/architecture invariants**
+Run:
 
-Confirm:
+```bash
+bun run --cwd apps/game test:e2e:save
+```
 
-- no authored/static/native capture replacement was added;
-- `SAVE_SCHEMA_VERSION` remains `2`;
-- no migration/compatibility decoder was added;
-- no HPA-521 writer/coordinator ownership redesign was pulled in;
-- no HPA-560 generic E2E runner redesign was pulled in;
-- historical PR #66 thumbnail docs were not rewritten;
-- Save / Load / Continue expose enough text context to select the intended save.
+The save chain no longer includes `capture-proof`, and save-management has fewer phases because thumbnail-corruption cases are deleted. Update only the contractual counts caused by those intentional deletions.
 
-### 5D. Update tracking on this same PR
+### 5F. Scope/deletion self-review
 
-- [ ] **Step 8: Record final HPA-550 evidence**
+- [ ] `git diff --stat main...HEAD` shows material net line deletion after tests are rewritten.
+- [ ] No replacement image/provider/capture abstraction was added.
+- [ ] `SAVE_SCHEMA_VERSION` remains 2 and no compatibility decoder/migration exists.
+- [ ] The central mutation helper/no-direct-session-lock regression still covers commands formerly in the no-thumbnail list.
+- [ ] `save/capture.rs` routes to persistence coverage, not a deleted/smoke-only capture rule.
+- [ ] No direct Rust `sha2` dependency remains after its only source consumer is deleted.
+- [ ] `CLAUDE.md` documents the new suite chain.
+- [ ] HPA-521-owned writer/coordinator restructuring is not pulled in.
+- [ ] HPA-560-owned generic E2E runner simplification is not pulled in.
+- [ ] Save / Load / Continue remain distinguishable by text per Task 0 and packaged verification.
 
-Update the Linear issue/PR with:
+### 5G. Update tracking
 
-- Task 0 product decision;
-- final verification commands/results;
-- net deletion summary;
-- final save-card text identity behavior.
-
-- [ ] **Step 9: Update HPA-521 after deletion is real**
-
-Only now update HPA-521 so it treats capture tickets, thumbnail activity, PNG sidecars, and capture deadlines as already deleted. Do not update HPA-521 merely from the plan.
-
-- [ ] **Step 10: Keep one PR**
-
-Mark the existing HPA-550 PR ready only after all above verification passes. Do not open a second implementation PR.
+- [ ] Update HPA-550 with the Task 0 product result and final verification evidence.
+- [ ] After the deletion is actually implemented, update/comment HPA-521 so it no longer treats capture tickets, thumbnail activity, or PNG sidecars as invariants.
+- [ ] Keep this same HPA-550 PR; do not open another implementation PR.
+- [ ] Mark the PR ready only after Task 0, implementation, and all verification above are complete.
 
 ---
 
-## Expected final architecture if Task 0 confirms Outcome A
+## Expected end-state architecture
 
 ```text
 Gameplay mutation
+  → centralized run_gameplay_mutation guard
   → GameStateView
   → durable revision advanced?
       → debounced autosave through existing serialized writer
 
 Manual Save
   → save_manual(reference, displayName, expectation)
-  → staged JSON envelope
+  → staged JSON SaveEnvelope
   → refreshed save browser
 
-Save Browser / Confirmation
+Save Browser / Continue / Confirmation
   → strict slot metadata + recap text
-  → select / load / delete / overwrite confirmation
+  → select / load / delete / overwrite
+
+Checkpoint capture (save/capture.rs)
+  → builds SaveSummary + SaveSnapshot
+  → remains persistence-owned and persistence-tested
 ```
 
-There is no screenshot ticket, DOM rasterization, screenshot font embedding, PNG descriptor/sidecar, thumbnail activity state, thumbnail IPC, or packaged capture-proof suite.
+There is no screenshot ticket, no DOM rasterization, no screenshot font embedding, no PNG descriptor/sidecar, no thumbnail activity state, no thumbnail IPC, no capture-proof suite, and no thumbnail-only autosave policy.
