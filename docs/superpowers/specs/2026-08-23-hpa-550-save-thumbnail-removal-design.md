@@ -1,14 +1,16 @@
 # HPA-550 Save Thumbnail Removal Design
 
-**Status:** Proposed product decision for the single HPA-550 PR. The PR begins as design/plan-only and should receive the implementation on the same branch after the validation gate below passes.
+**Status:** Provisional product recommendation for the single HPA-550 PR. Outcome A is not confirmed until the validation gate below is completed. If the gate confirms the recommendation, implementation continues on this same branch/PR.
 
 **Issue:** HPA-550 — [Post-Chapter 1 product decision] Remove save thumbnails or prove native capture value
 
-## 1. Decision
+## 1. Provisional recommendation
 
-Default to **Outcome A: remove dynamic save thumbnails entirely**.
+The current lowest-cost candidate is **Outcome A: remove dynamic save thumbnails entirely**.
 
-The resulting Save / Load / Continue experience is text-first:
+This is a recommendation to validate, not a pre-decided playtest result.
+
+If confirmed, the resulting Save / Load / Continue experience is text-first:
 
 - slot type and number;
 - manual display name when present;
@@ -27,9 +29,9 @@ Do **not** replace the dynamic screenshot with another image system. In particul
 - renderer-specific capture hooks;
 - a fallback capture pipeline.
 
-`SaveRecapDetails` already renders enough stable story context for a player to identify a save without an image. The simplest product is therefore to remove the preview frame from occupied and invalid save cards instead of replacing one decorative subsystem with another.
+`SaveRecapDetails` already renders stable story context for save identification. The candidate design therefore removes the preview frame from occupied and invalid save cards instead of replacing one decorative subsystem with another.
 
-## 2. Remaining product-validation gate
+## 2. Product-validation gate
 
 HPA-550 asked for at least one real Save / Load / Continue playtest before finalizing the product decision. HPA-265 explicitly skipped the optional human playtest, so this document does not claim that requirement has already happened.
 
@@ -41,11 +43,11 @@ Before runtime implementation begins on this same PR, perform one short Chapter 
 4. reopen the in-game save browser and distinguish the saves using the existing chapter / scene / objective / timestamp / name metadata;
 5. record whether the image materially changed which save the player chose.
 
-**Proceed with this design** when the text metadata is sufficient to select the intended save and the thumbnail is only decorative / reassuring.
+**Proceed with Outcome A** only when the text metadata is sufficient to select the intended save and the thumbnail is only decorative / reassuring.
 
-**Stop implementation** if the player materially depends on the screenshot to distinguish saves. Do not silently switch this PR to a native-capture implementation. Update HPA-550 with the observed value and make the next design decision explicitly; a native Tauri capture spike would then be justified before choosing Outcome B.
+**Stop implementation** if the player materially depends on the screenshot to distinguish saves. Do not silently switch this PR to a native-capture implementation. Update HPA-550 with the observed value and make the next product decision explicitly; a native Tauri capture spike would then be justified before choosing Outcome B.
 
-The expected result is Outcome A because the current save card already presents chapter, scene, objective, timestamp, slot type, and display name independently of the image, while PR #66 demonstrates real feature cost from DOM capture.
+Current evidence makes Outcome A worth testing first: the save card already exposes chapter, scene, objective, timestamp, slot type, and display name independently of the image, while PR #66 demonstrates real feature cost from DOM capture. That evidence does **not** substitute for the gate.
 
 ## 3. Why this is the next useful simplification
 
@@ -94,15 +96,19 @@ Empty save:
 
 Invalid save keeps the readable safe metadata that the current parser can independently validate, plus the existing diagnostic. It does not attempt to render or recover an image.
 
-### 4.2 No thumbnail state in public views
+`SaveConfirmationDialog` also mounts `SaveCard` for overwrite / delete / load confirmation. It therefore inherits the same text-only identity contract and must keep enough name / chapter / scene / objective context after the frame disappears.
+
+### 4.2 No thumbnail state in public save metadata
 
 Remove thumbnail availability from `SaveMetadataView` and `ReadableSaveMetadataView`. A missing / corrupt / unreadable PNG can no longer make an otherwise valid save look degraded because there is no PNG object to own.
 
-Remove `ThumbnailActivityView`. Persistence status has only persistence health and exit status.
+The capture/activity types may remain temporarily during the first UI-only implementation slice while the Rust wire still owns capture. They disappear atomically with the capture wire in the next slice; do not create a broken intermediate compile state merely to delete all thumbnail-named types at once.
 
 ### 4.3 Gameplay command wire contract
 
 The `GameplayCommandResultView { state, thumbnailCapture }` wrapper exists to hand a capture ticket to the frontend after a committed mutation. With capture gone, mutating gameplay and persistence-transition commands return `GameStateView` directly.
+
+This is a **single cross-language contract change**. Rust command return types and the Svelte/TypeScript consumers must change in the same implementation task. The frontend must never be committed in a state where it expects a bare `GameStateView` while Rust still returns `{ state, thumbnailCapture }`.
 
 There is one autosave policy for ordinary durable mutations:
 
@@ -152,7 +158,7 @@ This is intentionally a pre-release breaking format change without a migration. 
 
 The save write still uses the existing serialized / staged persistence owner. HPA-550 removes thumbnail branching; it does **not** implement HPA-521.
 
-Current shape, simplified conceptually:
+Final shape:
 
 ```text
 checkpoint
@@ -221,7 +227,7 @@ Preserve the current writer queue, session-generation guards, durable-revision g
 
 ## 8. Frontend design
 
-Delete `apps/game/src/lib/persistence/thumbnail-capture.ts` and its tests.
+Delete `apps/game/src/lib/persistence/thumbnail-capture.ts` and its tests after the cross-language wire no longer requests capture.
 
 Delete capture-specific command helpers:
 
@@ -232,17 +238,28 @@ Delete capture-specific command helpers:
 
 Simplify `game-client.svelte.ts`:
 
-- consume `GameStateView` directly from mutating commands;
+- consume `GameStateView` directly from mutating commands **only in the same task that changes Rust command responses**;
 - remove `finishThumbnailCapture`, `applyGameplayCommandResult`, deadline pinning, detached capture submission, and prepared-capture settling;
 - remove `MUTATING_GAMEPLAY_COMMANDS` if its only remaining purpose is teaching the test harness to wrap responses for thumbnail capture.
 
-Simplify `+page.svelte` manual save to the one `save_manual` call.
+Simplify `+page.svelte` manual save to the one `save_manual` call in that same wire-contract task.
 
-Simplify `persistence-store.svelte.ts` to persistence health + exit status only. Delete the thumbnail-activity initial query, listener, version counter, state, and replacement method.
+Simplify `persistence-store.svelte.ts` to persistence health + exit status only once the Rust thumbnail activity channel is removed.
 
-Remove capture-only DOM attributes / comments from gameplay components. Do not otherwise restyle or restructure those components.
+Remove capture-only DOM attributes / comments from gameplay components with the remaining capture-owned cleanup. Do not otherwise restyle or restructure those components.
 
-## 9. Dependencies
+## 9. Green implementation sequencing
+
+Every implementation task must leave the branch runnable. The deletion therefore crosses layers in this order:
+
+1. **Text-only UI first.** `SaveCard` and `SaveConfirmationDialog` stop reading/rendering thumbnail metadata. TypeScript save metadata omits the thumbnail field. Rust may still send that extra JSON field temporarily; the UI ignores it.
+2. **Wire contract atomically.** Rust mutating commands and TypeScript consumers switch together from `GameplayCommandResultView` to `GameStateView`; manual save becomes one call; capture tickets/commands and the two autosave policy variants disappear together. While the save envelope still requires a thumbnail field, new writes may temporarily use the existing `ThumbnailDescriptorV1::Unavailable` / `ThumbnailWrite::Unavailable` storage path with no capture ticket or PNG.
+3. **Delete the remaining envelope/storage placeholder.** Remove the envelope thumbnail field, PNG sidecars, validation, activity/fault leftovers, and the now-unused unavailable branch.
+4. **Delete capture-owned tests/dependencies/E2E.** Only after the runtime no longer depends on them.
+
+The key invariant is that no commit teaches the frontend to deserialize a bare `GameStateView` before Rust actually returns one.
+
+## 10. Dependencies
 
 Remove frontend dependencies that become unused:
 
@@ -253,7 +270,7 @@ Regenerate `bun.lock` through Bun rather than editing lockfile entries by hand.
 
 Do **not** remove Rust `sha2`; it is also used outside thumbnails (for example content-manifest hashing).
 
-## 10. E2E and test design
+## 11. E2E and test design
 
 Delete the dedicated packaged capture proof rather than preserving it as an empty suite:
 
@@ -280,16 +297,19 @@ exit-lifecycle
 
 Keep the gameplay chain because the gameplay command response contract changes from a wrapper to `GameStateView`.
 
-Rewrite `SaveCard` component coverage around the text-only contract:
+The cross-language wire task must have a Rust serialization contract test proving a representative mutating command serializes as a bare `GameStateView` with no `state` wrapper and no `thumbnailCapture` key, plus focused game-client tests consuming that same shape. Packaged gameplay can remain the later integration gate.
 
-- valid slot exposes name, timestamp, chapter, scene, objective, and actions;
-- empty slot is clearly empty;
-- invalid slot exposes diagnostic and any safe readable metadata;
+Rewrite component coverage around the text-only contract:
+
+- `SaveCard`: valid slot exposes name, timestamp, chapter, scene, objective, and actions;
+- `SaveCard`: empty slot is clearly empty;
+- `SaveCard`: invalid slot exposes diagnostic and any safe readable metadata;
+- `SaveConfirmationDialog`: the embedded card remains identifiable by text in overwrite/delete/load confirmation;
 - no thumbnail reader is invoked because no thumbnail reader exists.
 
 Storage / coordinator tests should continue proving durable write, stale-generation, coalescing, flush, overwrite, delete, corruption, and exit behavior after capture state is removed.
 
-## 11. HPA-521 boundary
+## 12. HPA-521 boundary
 
 HPA-550 is allowed to delete thumbnail branches from `SaveCoordinator`, but it must not use that deletion as an excuse to implement HPA-521's full ownership refactor.
 
@@ -305,7 +325,7 @@ This keeps the intended order:
 HPA-549 → HPA-550 → HPA-521 → HPA-536
 ```
 
-## 12. Single-PR boundary
+## 13. Single-PR boundary
 
 HPA-550 uses one PR.
 
@@ -319,7 +339,7 @@ After the product-validation gate passes, implementation commits are added to **
 
 If the gate fails, keep the PR draft and revise the decision explicitly before any native-capture work.
 
-## 13. Non-goals
+## 14. Non-goals
 
 - No native screenshot spike unless the validation gate rejects Outcome A.
 - No authored screenshot / chapter-art registry.
@@ -331,12 +351,15 @@ If the gate fails, keep the PR draft and revise the decision explicitly before a
 - No changes to recap authority or spoiler rules.
 - No changes to autosave durability semantics.
 - No security / hardening expansion unrelated to the deleted thumbnail path.
+- No rewrite of historical PR #66 / older thumbnail design documents.
 
-## 14. Acceptance criteria
+## 15. Acceptance criteria
 
 - [ ] The short Chapter 1 Save / Load / Continue validation is recorded and does not show material dependence on dynamic screenshots; otherwise implementation stops for a new decision.
-- [ ] Save cards remain understandable using name / time / chapter / scene / objective text without an image frame.
-- [ ] Save envelopes, metadata views, storage layout, and invalid-slot readable metadata contain no thumbnail contract.
+- [ ] Save cards and save confirmation dialogs remain understandable using name / time / chapter / scene / objective text without an image frame.
+- [ ] No implementation task commits a split wire contract where TypeScript expects `GameStateView` but Rust still returns `{ state, thumbnailCapture }`.
+- [ ] The direct command wire is covered by a Rust serialization contract test plus focused game-client tests before capture-proof E2E is deleted.
+- [ ] Save envelopes, metadata views, storage layout, and invalid-slot readable metadata contain no thumbnail contract in the final state.
 - [ ] Existing pre-release saves are not migrated; `SAVE_SCHEMA_VERSION` remains `2` under the accepted HPA-540 policy.
 - [ ] Gameplay and persistence transition commands return `GameStateView` directly; no capture-ticket wrapper remains.
 - [ ] Manual save is a single save command with no thumbnail prepare / submit handshake.
