@@ -88,12 +88,12 @@
 
 **旁白**：她沒有立刻把它丟掉。
 
+[店長把紙箱蓋上，放到角落。門邊的傘架，只在畫面邊緣靜靜立著。]
+
 [場景：雨鐘咖啡館，午後。吧台上已不見掛鐘，角落放著一只封好的紙箱，門邊傘架在畫面邊緣。]
 - **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the old cafe wall clock no longer on the counter, a closed cardboard box resting on the floor in the corner, the umbrella stand standing quietly at the frame edge near the door, quiet unresolved stillness, no readable text.
 - **BGM:** bgm_chapter_close
 - **BGS:** bgs_cafe_afternoon_after_rain
-
-[店長把紙箱蓋上，放到角落。門邊的傘架，只在畫面邊緣靜靜立著。]
 
 **旁白**：案子結了。三宅的那杯太甜的拿鐵，也喝完了。
 
