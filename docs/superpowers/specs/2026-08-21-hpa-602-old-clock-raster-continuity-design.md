@@ -289,4 +289,4 @@ Keep the existing decisions:
 
 ## Single-PR Boundary
 
-HPA-602 remains one PR. The same branch carries the design, implementation plan, prompt/report/skill corrections, four regenerated rasters, visual closeout, and verification evidence.
+HPA-602 remains one PR. The same branch carries the design, implementation plan, prompt/report/skill corrections, five regenerated rasters, visual closeout, and verification evidence.
