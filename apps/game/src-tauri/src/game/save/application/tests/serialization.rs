@@ -6,6 +6,33 @@ use crate::game::save::schema::SaveSlotRef;
 use std::time::Duration;
 use tokio::time::Instant;
 
+#[tokio::test]
+async fn discovery_layout_initialization_waits_for_operation_gate() {
+    let fixture = application_fixture();
+    std::fs::remove_dir_all(&fixture.persistence.root).unwrap();
+    let gate = fixture
+        .persistence
+        .operation_gate
+        .clone()
+        .lock_owned()
+        .await;
+    let persistence = fixture.persistence.clone();
+    let mut discovery = tokio::spawn(async move { persistence.discover().await });
+
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut discovery)
+            .await
+            .is_err()
+    );
+
+    drop(gate);
+    let browser = discovery.await.unwrap();
+    assert!(matches!(
+        browser.discovery,
+        crate::game::save::schema::SaveDiscoveryStatusView::Available
+    ));
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn storage_mutations_share_one_operation_gate() {
     let fixture = application_fixture();

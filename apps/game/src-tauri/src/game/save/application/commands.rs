@@ -20,7 +20,7 @@ pub(crate) async fn start_game_with_persistence_core(
     state: &AppState,
 ) -> Result<GameplayCommandResultView, GameError> {
     let persistence = state.persistence.as_ref();
-    let _ = persistence.discover();
+    let _ = persistence.discover().await;
     if let Some(error) = persistence.availability_error() {
         return Err(state.persistence.challenge_current_discovery_failure(
             state,
@@ -32,7 +32,7 @@ pub(crate) async fn start_game_with_persistence_core(
     if expected.durable_revision.is_some() {
         if let Err(error) = state
             .persistence
-            .flush_session(state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
         {
             let error = challengeable_flush_failure(error)?;
@@ -44,7 +44,7 @@ pub(crate) async fn start_game_with_persistence_core(
         }
     }
     let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    let state_view = session_persistence(state)?
+    let state_view = session_persistence(state)
         .install_session_if_current(engine, None, expected)
         .await?;
     Ok(GameplayCommandResultView {
@@ -61,7 +61,7 @@ pub(crate) async fn start_game_without_saving_core(
     let expected = state
         .persistence
         .consume_current_start_without_saving_failure(state, &failure_token)?;
-    let state_view = session_persistence(state)?
+    let state_view = session_persistence(state)
         .install_session_if_current(engine, None, expected)
         .await?;
     finish_persistence_mutation(state_view, MutationPersistencePolicy::PersistenceManaged)
@@ -83,7 +83,7 @@ pub(crate) async fn e2e_load_checkpoint_core(
 ) -> Result<E2eLoadCheckpointResult, GameError> {
     let checkpoint = build_checkpoint(state.resources_dir.clone(), id)?;
     let projection = checkpoint.projection;
-    let replacement = session_persistence(state)?
+    let replacement = session_persistence(state)
         .replace_session_for_e2e(checkpoint.engine)
         .await?;
     Ok(E2eLoadCheckpointResult {
@@ -153,7 +153,7 @@ pub(crate) async fn list_saves_core_impl(
         before_flush(state)?;
         match state
             .persistence
-            .flush_session(state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
         {
             Ok(_) => None,
@@ -169,7 +169,10 @@ pub(crate) async fn list_saves_core_impl(
     } else {
         None
     };
-    let browser = discover();
+    let browser = {
+        let _gate = state.persistence.operation_gate.lock().await;
+        discover()
+    };
     let discovery_generation = state.persistence.complete_discovery_attempt()?;
     let continue_candidate = select_continue_candidate(&browser.slots);
     let preflight = match flush_error {
@@ -227,7 +230,7 @@ pub(crate) async fn save_manual_core(
 ) -> Result<ManualSaveResultView, GameError> {
     state
         .persistence
-        .flush_session(state, FlushOperation::ManualSave)
+        .flush_session(FlushOperation::ManualSave)
         .await?;
     let SaveSlotRef::Manual { .. } = reference else {
         return Err(GameError::save_slot_mismatch());
@@ -301,7 +304,7 @@ pub(crate) async fn save_manual_core(
         }
     };
     publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
-    let browser = persistence.discover();
+    let browser = persistence.discover().await;
     state
         .persistence
         .complete_discovery_attempt_for_session(session_generation)?;
@@ -348,10 +351,10 @@ pub(crate) fn build_selected_candidate(
     Ok(candidate)
 }
 
-pub(crate) fn fresh_ready_browser(
+pub(crate) async fn fresh_ready_browser(
     state: &AppState,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
-    let browser = state.persistence.discover();
+    let browser = state.persistence.discover().await;
     state.persistence.complete_discovery_attempt()?;
     Ok(SaveBrowserOpenResultView {
         continue_candidate: select_continue_candidate(&browser.slots),
@@ -379,7 +382,7 @@ pub(crate) async fn load_save_core_impl(
     if has_active_session {
         if let Err(error) = state
             .persistence
-            .flush_session(state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
         {
             let error = challengeable_flush_failure(error)?;
@@ -394,7 +397,7 @@ pub(crate) async fn load_save_core_impl(
     }
     after_flush(state)?;
     let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
+    let state_view = session_persistence(state)
         .install_session_if_current(candidate.engine, Some(candidate.source), expected)
         .await?;
     finish_persistence_mutation(state_view, MutationPersistencePolicy::PersistenceManaged)
@@ -424,7 +427,7 @@ pub(crate) async fn load_save_discarding_current_core(
         &observed_save_id,
     )?;
     let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
+    let state_view = session_persistence(state)
         .install_session_if_current(candidate.engine, Some(candidate.source), expected)
         .await?;
     finish_persistence_mutation(state_view, MutationPersistencePolicy::PersistenceManaged)
@@ -445,7 +448,7 @@ pub(crate) async fn continue_game_core_impl(
     if has_active_session {
         if let Err(error) = state
             .persistence
-            .flush_session(state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
         {
             let error = challengeable_flush_failure(error)?;
@@ -458,7 +461,7 @@ pub(crate) async fn continue_game_core_impl(
     }
     after_flush(state)?;
     let persistence = state.persistence.as_ref();
-    let browser = persistence.discover();
+    let browser = persistence.discover().await;
     state.persistence.complete_discovery_attempt()?;
     if let SaveDiscoveryStatusView::Unavailable { diagnostic } = browser.discovery {
         return Err(diagnostic);
@@ -476,7 +479,7 @@ pub(crate) async fn continue_game_core_impl(
         SaveSlotStatusView::Empty => return Err(GameError::stale_save_selection()),
     };
     let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
+    let state_view = session_persistence(state)
         .install_session_if_current(candidate.engine, Some(candidate.source), expected)
         .await?;
     finish_persistence_mutation(state_view, MutationPersistencePolicy::PersistenceManaged)
@@ -523,7 +526,7 @@ pub(crate) async fn delete_save_core(
         }
     };
     publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
-    let browser = persistence.discover();
+    let browser = persistence.discover().await;
     state
         .persistence
         .complete_discovery_attempt_for_session(session_generation)?;
@@ -547,7 +550,7 @@ pub(crate) async fn return_to_title_core_impl(
     let expected = state.persistence.transition_identity(state)?;
     if let Err(error) = state
         .persistence
-        .flush_session(state, FlushOperation::ReturnToTitle)
+        .flush_session(FlushOperation::ReturnToTitle)
         .await
     {
         let error = challengeable_flush_failure(error)?;
@@ -558,10 +561,10 @@ pub(crate) async fn return_to_title_core_impl(
         )?);
     }
     after_flush(state)?;
-    session_persistence(state)?
+    session_persistence(state)
         .clear_session_if_current(expected)
         .await?;
-    fresh_ready_browser(state)
+    fresh_ready_browser(state).await
 }
 
 #[cfg(test)]
@@ -581,10 +584,10 @@ pub(crate) async fn return_to_title_without_saving_core(
         &failure_token,
         PersistenceBypassOperation::ReturnWithoutSaving,
     )?;
-    session_persistence(state)?
+    session_persistence(state)
         .clear_session_if_current(expected)
         .await?;
-    fresh_ready_browser(state)
+    fresh_ready_browser(state).await
 }
 
 pub(crate) fn challengeable_flush_failure(error: GameError) -> Result<GameError, GameError> {

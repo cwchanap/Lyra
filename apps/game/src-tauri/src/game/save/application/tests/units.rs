@@ -785,7 +785,7 @@ async fn flush_session_without_engine_fails() {
     assert_eq!(
         fixture
             .persistence
-            .flush_session(&app(&fixture), FlushOperation::ManualSave)
+            .flush_session(FlushOperation::ManualSave)
             .await
             .unwrap_err()
             .code,

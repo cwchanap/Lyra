@@ -762,8 +762,30 @@ impl ApplicationPersistence {
 }
 
 impl ApplicationPersistence {
-    pub(crate) fn discover(&self) -> super::schema::SaveBrowserView {
-        if let Err(error) = super::storage::ensure_save_layout(self.fs.as_ref(), &self.root) {
+    pub(crate) async fn discover(&self) -> super::schema::SaveBrowserView {
+        let layout = {
+            let _gate = self.operation_gate.lock().await;
+            super::storage::ensure_save_layout(self.fs.as_ref(), &self.root)
+        };
+        self.discover_after_layout(layout)
+    }
+
+    /// Discover while the caller already owns `operation_gate`.
+    ///
+    /// Tokio's mutex is not reentrant, so storage paths that hold the gate
+    /// across capture and staging must use this path instead of `discover`.
+    pub(crate) fn discover_under_operation_gate(&self) -> super::schema::SaveBrowserView {
+        self.discover_after_layout(super::storage::ensure_save_layout(
+            self.fs.as_ref(),
+            &self.root,
+        ))
+    }
+
+    fn discover_after_layout(
+        &self,
+        layout: Result<(), GameError>,
+    ) -> super::schema::SaveBrowserView {
+        if let Err(error) = layout {
             if let Ok(mut availability) = self.availability_error.lock() {
                 *availability = Some(error);
             }

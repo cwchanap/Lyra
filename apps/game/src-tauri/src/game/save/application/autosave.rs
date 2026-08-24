@@ -102,7 +102,7 @@ impl ApplicationPersistence {
             return;
         }
         let capture = match self
-            .capture_checkpoint(AutosaveWriteJob {
+            .capture_checkpoint_under_operation_gate(AutosaveWriteJob {
                 session_generation: pending.session_generation,
                 durable_revision: pending.durable_revision,
                 thumbnail,
@@ -205,6 +205,17 @@ impl ApplicationPersistence {
         &self,
         job: AutosaveWriteJob,
     ) -> Result<AutosaveCapture, GameError> {
+        let _operation_gate = self
+            .acquire_operation_gate()
+            .await
+            .expect("ApplicationPersistence always has an operation gate");
+        self.capture_checkpoint_under_operation_gate(job).await
+    }
+
+    async fn capture_checkpoint_under_operation_gate(
+        &self,
+        job: AutosaveWriteJob,
+    ) -> Result<AutosaveCapture, GameError> {
         let (checkpoint, content_revision) = {
             let session = self.session.lock().map_err(|_| GameError::unavailable())?;
             let engine = session
@@ -221,7 +232,7 @@ impl ApplicationPersistence {
                 self.discovery.definitions.content_revision().to_owned(),
             )
         };
-        let slots = self.discover().slots;
+        let slots = self.discover_under_operation_gate().slots;
         Ok(AutosaveCapture::captured(
             job,
             slots,
@@ -274,10 +285,8 @@ impl ApplicationPersistence {
 
     pub(crate) async fn flush_session(
         &self,
-        app: &crate::AppState,
         operation: super::FlushOperation,
     ) -> Result<super::FlushOutcome, GameError> {
-        let _ = app;
         self.flush_session_parts(&self.session, &self.operation_gate, operation)
             .await
     }
@@ -384,7 +393,7 @@ impl ApplicationPersistence {
         }
         let write_result = async {
             let capture = self
-                .capture_checkpoint(AutosaveWriteJob {
+                .capture_checkpoint_under_operation_gate(AutosaveWriteJob {
                     session_generation,
                     durable_revision,
                     thumbnail,

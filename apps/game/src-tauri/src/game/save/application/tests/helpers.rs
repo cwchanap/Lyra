@@ -28,6 +28,7 @@ pub(super) struct TrackingFilesystem {
     fail_cleanup: AtomicBool,
     fail_stage: AtomicBool,
     fail_discard: Arc<AtomicBool>,
+    stage_hook: Mutex<Option<Box<dyn FnOnce() + Send>>>,
     stage_update: Notify,
     release_staging: (Mutex<()>, Condvar),
 }
@@ -45,6 +46,7 @@ impl Default for TrackingFilesystem {
             fail_cleanup: AtomicBool::new(false),
             fail_stage: AtomicBool::new(false),
             fail_discard: Arc::new(AtomicBool::new(false)),
+            stage_hook: Mutex::new(None),
             stage_update: Notify::new(),
             release_staging: (Mutex::new(()), Condvar::new()),
         }
@@ -71,6 +73,10 @@ impl TrackingFilesystem {
 
     pub(super) fn fail_next_discard(&self) {
         self.fail_discard.store(true, Ordering::SeqCst);
+    }
+
+    pub(super) fn set_stage_hook(&self, hook: impl FnOnce() + Send + 'static) {
+        *self.stage_hook.lock().unwrap() = Some(Box::new(hook));
     }
 
     pub(super) fn installed_count(&self) -> usize {
@@ -187,6 +193,9 @@ impl SaveFilesystem for TrackingFilesystem {
         }
 
         let inner = self.inner.stage_atomic(path, bytes)?;
+        if let Some(hook) = self.stage_hook.lock().unwrap().take() {
+            hook();
+        }
         Ok(Box::new(TrackingStagedWrite {
             inner,
             installed: Arc::clone(&self.installed),

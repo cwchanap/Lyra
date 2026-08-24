@@ -576,6 +576,46 @@ async fn failed_revision_does_not_timer_loop_and_explicit_actions_retry_once() {
         .is_some());
 }
 
+#[tokio::test(start_paused = true)]
+async fn superseded_autosave_discard_leaves_health_pending_not_failed() {
+    let fixture = application_fixture_at_revision(1);
+    let persistence = fixture.persistence.clone();
+    fixture.filesystem.set_stage_hook(move || {
+        set_revision(&persistence, 2);
+        persistence.notify_durable_commit_without_thumbnail(1, 2);
+        persistence.session.lock().unwrap().persistence.generation = 2;
+    });
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 1);
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    fixture.filesystem.wait_for_stage().await;
+
+    tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if fixture.filesystem.discarded_count() == 1 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the stale staged write must be discarded");
+
+    assert_eq!(fixture.filesystem.installed_count(), 0);
+    let state = fixture.persistence.state.lock().unwrap();
+    assert_eq!(
+        state
+            .pending_autosave
+            .as_ref()
+            .map(|pending| pending.durable_revision),
+        Some(2)
+    );
+    assert!(state.failed_write.is_none());
+    assert!(state.failure_challenges.is_empty());
+    assert_eq!(state.persistence_health, PersistenceHealthView::Pending);
+}
+
 #[test]
 fn stale_generation_discards_prepared_write_without_installing_it() {
     let fixture = application_fixture_at_revision(1);
@@ -654,15 +694,9 @@ async fn exit_flush_fault_cancels_pending_autosave_before_failing() {
         .persistence
         .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::ExitFlush, 1)
         .unwrap();
-    let state = crate::AppState {
-        session: fixture.session.clone(),
-        persistence: fixture.persistence.clone(),
-        resources_dir: std::path::PathBuf::new(),
-    };
-
     let error = fixture
         .persistence
-        .flush_session(&state, FlushOperation::Exit)
+        .flush_session(FlushOperation::Exit)
         .await
         .unwrap_err();
 
