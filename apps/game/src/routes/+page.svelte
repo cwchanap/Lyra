@@ -1760,6 +1760,7 @@
 {:else if gameState.loading}
   <main><p class="status">載入中...</p></main>
 {:else}
+  <GameplayAudio mode="mainMenu" />
   <MainMenu
     onNewGame={handleStartGame}
     onContinue={handleContinue}

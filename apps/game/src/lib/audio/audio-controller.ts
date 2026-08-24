@@ -70,7 +70,9 @@ type SfxState = {
 };
 
 export type LoopChannelInput = {
+  /** The effective cue for this state; null means the channel must be silent. */
   bgm: AudioCue | null;
+  /** The effective cue for this state; null means the channel must be silent. */
   bgs: AudioCue | null;
 };
 
@@ -312,7 +314,10 @@ export class GameplayAudioController {
   private readonly logger: LoggerLike;
   private readonly sfxBackend: SfxBackend | null;
   private disposed = false;
-  private playbackLocked = false;
+  private playbackLocked: Record<LoopChannel, boolean> = {
+    bgm: false,
+    bgs: false,
+  };
   private lastDesiredInput: LoopChannelInput = { bgm: null, bgs: null };
 
   constructor(options: GameplayAudioControllerOptions = {}) {
@@ -366,8 +371,9 @@ export class GameplayAudioController {
    * locked state and retries after the next player gesture.
    */
   unlock(preferences: AudioPreferences): void {
-    if (!this.playbackLocked) return;
-    this.playbackLocked = false;
+    const channels = ["bgm", "bgs"] as const;
+    if (!channels.some((channel) => this.playbackLocked[channel])) return;
+    for (const channel of channels) this.playbackLocked[channel] = false;
     void this.updateLoopChannels(this.lastDesiredInput, preferences);
   }
 
@@ -489,6 +495,8 @@ export class GameplayAudioController {
    * dispose() for true teardown.
    */
   stopLoopChannels(): void {
+    this.playbackLocked.bgm = false;
+    this.playbackLocked.bgs = false;
     this.stopLoop("bgm");
     this.stopLoop("bgs");
   }
@@ -499,10 +507,12 @@ export class GameplayAudioController {
     preferences: AudioPreferences,
   ): Promise<void> {
     if (!cue) {
-      this.applyPreferences(preferences);
+      this.playbackLocked[channel] = false;
+      this.stopLoop(channel);
       return;
     }
     if (cue.assetId === null) {
+      this.playbackLocked[channel] = false;
       this.stopLoop(channel);
       return;
     }
@@ -511,6 +521,7 @@ export class GameplayAudioController {
       return;
     }
 
+    this.playbackLocked[channel] = false;
     this.stopLoop(channel);
     await this.startLoop(channel, cue.assetId, preferences);
   }
@@ -566,17 +577,22 @@ export class GameplayAudioController {
     const playActiveLoop = async () => {
       try {
         await audio.play();
+        if (this.loops[channel]?.audio !== audio) {
+          audio.pause();
+          audio.currentTime = 0;
+          return;
+        }
         // Any successful loop playback clears an autoplay lock: once media is
         // actually playing the session is unlocked and earlier rejections no
         // longer need a gesture-driven retry.
-        this.playbackLocked = false;
+        this.playbackLocked[channel] = false;
       } catch (error) {
         if (this.loops[channel]?.audio !== audio) return;
         // Autoplay-policy rejection (e.g. NotAllowedError/AbortError before the
         // first user gesture) is recoverable. Record a locked state so a later
         // gesture can re-sync the desired loops via unlock(); the loop itself
         // is still stopped so it does not sit in a half-started state.
-        this.playbackLocked = true;
+        this.playbackLocked[channel] = true;
         warnOnce(playbackFailureDetail(url, error));
         if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
       }

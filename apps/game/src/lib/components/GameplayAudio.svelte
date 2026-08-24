@@ -4,14 +4,19 @@
     disposeGameplayAudio,
     preloadKnownGameplaySfx,
     retryLockedGameplayAudio,
+    syncMainMenuAudio,
     syncGameplayAudioMode,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
   import type { Mode } from "$lib/state/types";
 
-  let { mode }: { mode: Mode } = $props();
+  let { mode }: { mode: Mode | "mainMenu" } = $props();
 
   $effect(() => {
-    syncGameplayAudioMode(mode);
+    if (mode === "mainMenu") {
+      syncMainMenuAudio();
+    } else {
+      syncGameplayAudioMode(mode);
+    }
   });
 
   // Browser autoplay policy can reject BGM/BGS startup before the first user

@@ -75,6 +75,19 @@ export function syncGameplayAudioMode(mode: Mode): void {
   );
 }
 
+export function syncMainMenuAudio(): void {
+  void activeController().updateLoopChannels(
+    {
+      bgm: {
+        channel: "bgm",
+        assetId: "audio.bgm.bgm_chapter_close",
+      },
+      bgs: null,
+    },
+    audioPreferences,
+  );
+}
+
 export function playGameplaySfxEvent(event: GameplaySfxEvent): void {
   const assetId = assetIdForGameplaySfxEvent(event);
   if (!assetId) return;

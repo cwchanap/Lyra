@@ -175,6 +175,23 @@ describe("gameplay audio runtime", () => {
     expect(controller().dispose).not.toHaveBeenCalled();
   });
 
+  it("syncs the title theme as an explicitly owned main-menu loop", async () => {
+    const runtime = await loadRuntime();
+
+    runtime.syncMainMenuAudio();
+
+    expect(controller().updateLoopChannels).toHaveBeenCalledExactlyOnceWith(
+      {
+        bgm: {
+          channel: "bgm",
+          assetId: "audio.bgm.bgm_chapter_close",
+        },
+        bgs: null,
+      },
+      expect.objectContaining({ muted: false }),
+    );
+  });
+
   it("plays an SFX event that resolves to an asset", async () => {
     const runtime = await loadRuntime();
     mocks.assetIdForGameplaySfxEvent.mockReturnValue("audio.sfx.tick");
