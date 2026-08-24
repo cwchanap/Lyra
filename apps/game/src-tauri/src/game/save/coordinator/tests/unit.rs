@@ -47,7 +47,7 @@ fn app(coordinator: SaveCoordinator, generation: u64, revision: u64) -> AppState
                 None,
             ),
         )),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator,
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -60,7 +60,7 @@ fn empty_app(coordinator: SaveCoordinator, generation: u64) -> AppState {
         session: Arc::new(Mutex::new(
             crate::game::save::coordinator::AppSession::empty_at_generation(generation),
         )),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator,
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -1167,26 +1167,6 @@ fn enqueue_orphan_cleanup_fails_without_backend() {
         coordinator.enqueue_orphan_cleanup().unwrap_err().code,
         "saveWriteFailed"
     );
-}
-
-// ---------------------------------------------------------------------------
-// reserve_manual_writer / reserve_delete_writer
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn reserve_manual_writer_succeeds_with_default_scheduler() {
-    let coordinator = coordinator();
-    coordinator
-        .reserve_manual_writer(Box::pin(async {}))
-        .unwrap();
-}
-
-#[tokio::test]
-async fn reserve_delete_writer_succeeds_with_default_scheduler() {
-    let coordinator = coordinator();
-    coordinator
-        .reserve_delete_writer(Box::pin(async {}))
-        .unwrap();
 }
 
 // ---------------------------------------------------------------------------

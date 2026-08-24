@@ -1,5 +1,5 @@
 use super::super::{
-    AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
+    AppSession, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
     AutosaveRegisteredIntent, AutosaveWriteJob, AutosaveWriteReceipt, BackgroundRetryTrigger,
     CaptureIntent, CleanupOwner, CoordinatorFuture, CoordinatorTask, CoordinatorTaskScheduler,
     PersistenceHealthView, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
@@ -1346,6 +1346,37 @@ async fn stale_generation_discards_prepared_write_without_installing_it() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn superseded_autosave_discard_leaves_health_pending_not_failed() {
+    let backend = Arc::new(PhasedBackend::new(1));
+    backend.pause_prepare();
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    backend.wait_for_prepare().await;
+
+    assert!(coordinator
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    backend.current_generation.store(2, Ordering::SeqCst);
+    backend.release_prepare();
+    for _ in 0..10 {
+        if backend.phases().ends_with(&["G", "G:S:revalidate"]) {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+
+    let state = coordinator.state.lock().unwrap();
+    assert!(state.pending_autosave.is_some());
+    assert!(state.failed_write.is_none());
+    assert!(state.failure_challenges.is_empty());
+    assert_eq!(state.persistence_health, PersistenceHealthView::Pending);
+}
+
+#[tokio::test(start_paused = true)]
 async fn ordinary_recovery_points_rotate_and_record_generation_scoped_success() {
     let backend = Arc::new(PhasedBackend::new(2));
     let coordinator = SaveCoordinator::with_backend(backend.clone());
@@ -1490,10 +1521,13 @@ async fn later_durable_revision_retries_after_background_failure() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn orphan_cleanup_runs_through_writer_after_active_save() {
+async fn orphan_cleanup_waits_for_active_save() {
     let backend = Arc::new(PhasedBackend::new(1));
     backend.pause_prepare();
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
+    let session = Arc::new(Mutex::new(AppSession::empty()));
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let coordinator =
+        SaveCoordinator::with_backend_for_application(backend.clone(), session, operation_gate);
     let request = coordinator.notify_durable_commit(1, 1).unwrap();
     coordinator
         .report_thumbnail_failure(&request.ticket)
@@ -1565,65 +1599,6 @@ async fn later_queued_receipt_less_cleanup_success_resolves_earlier_failure() {
     backend.wait_for_cleanup_attempts(2).await;
     tokio::task::yield_now().await;
 
-    assert_eq!(
-        backend
-            .phases()
-            .into_iter()
-            .filter(|phase| *phase == "W:cleanup")
-            .count(),
-        2
-    );
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Healthy
-    );
-    assert!(coordinator.state.lock().unwrap().cleanup_failure.is_none());
-}
-
-#[tokio::test(start_paused = true)]
-async fn cleanup_attempt_identity_follows_concurrent_writer_enqueue_order() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.fail_cleanup.store(true, Ordering::SeqCst);
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-    let before_lock = Arc::new(Barrier::new(2));
-    let release = Arc::new(Barrier::new(2));
-    let hook_before_lock = Arc::clone(&before_lock);
-    let hook_release = Arc::clone(&release);
-    coordinator
-        .writer_queue
-        .set_cleanup_before_lock_hook(Arc::new(move || {
-            hook_before_lock.wait();
-            hook_release.wait();
-        }));
-
-    let runtime = tokio::runtime::Handle::current();
-    let first_coordinator = coordinator.clone();
-    let first_caller = std::thread::spawn(move || {
-        let _runtime_guard = runtime.enter();
-        first_coordinator.enqueue_orphan_cleanup()
-    });
-    before_lock.wait();
-
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    backend.wait_for_cleanup_attempts(1).await;
-    tokio::task::yield_now().await;
-    let first_failure_owner = coordinator
-        .state
-        .lock()
-        .unwrap()
-        .cleanup_failure
-        .as_ref()
-        .map(|failure| failure.owner.clone());
-
-    release.wait();
-    first_caller.join().unwrap().unwrap();
-    backend.wait_for_cleanup_attempts(2).await;
-    tokio::task::yield_now().await;
-
-    assert!(matches!(
-        first_failure_owner,
-        Some(CleanupOwner::Attempt(1))
-    ));
     assert_eq!(
         backend
             .phases()

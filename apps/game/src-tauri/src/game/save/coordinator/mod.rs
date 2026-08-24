@@ -13,7 +13,9 @@ use super::storage::{
 use super::thumbnail::ValidatedThumbnailCandidate;
 use crate::game::{GameEngine, GameError};
 use serde::{Deserialize, Serialize, Serializer};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::VecDeque;
 use std::future::Future;
 use std::path::Path;
 use std::pin::Pin;
@@ -618,258 +620,6 @@ fn selected_save_challenge_key(reference: SaveSlotRef, observed_save_id: &str) -
     format!("{save_type}:{slot}:{observed_save_id}")
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum WriterJobClass {
-    Debounced {
-        session_generation: u64,
-        durable_revision: u64,
-    },
-    BlockingFlush {
-        session_generation: u64,
-        durable_revision: u64,
-    },
-    ManualSave,
-    DeleteSave,
-    OrphanCleanup,
-}
-
-struct QueuedWriterJob {
-    class: WriterJobClass,
-    run: CoordinatorFuture<'static, ()>,
-}
-
-#[derive(Default)]
-struct WriterQueueState {
-    running: bool,
-    next_cleanup_attempt: u64,
-    ordinary: VecDeque<QueuedWriterJob>,
-}
-
-struct WriterQueue {
-    state: Mutex<WriterQueueState>,
-    #[cfg(test)]
-    cleanup_before_lock: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
-    /// Test-only notification fired whenever a `WriterJobClass::DeleteSave`
-    /// job is placed into the ordinary queue. Tests await
-    /// [`Self::wait_for_queued_delete`] to deterministically confirm the
-    /// delete writer is queued before driving replacement, replacing the
-    /// racy "publish Pending then sleep" pattern — `delete_save_core`
-    /// publishes `Pending` *before* calling `reserve_delete_writer`, so
-    /// observing `Pending` alone does not prove the writer is enqueued.
-    #[cfg(test)]
-    delete_enqueued: Notify,
-}
-
-impl Default for WriterQueue {
-    fn default() -> Self {
-        Self {
-            state: Mutex::new(WriterQueueState::default()),
-            #[cfg(test)]
-            cleanup_before_lock: Mutex::new(None),
-            #[cfg(test)]
-            delete_enqueued: Notify::new(),
-        }
-    }
-}
-
-impl WriterQueue {
-    #[cfg(feature = "e2e")]
-    fn invalidate_queued_for_e2e(&self) -> Result<u64, GameError> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| GameError::save_write_failed())?;
-        let minimum_cleanup_attempt = state
-            .next_cleanup_attempt
-            .checked_add(1)
-            .ok_or_else(GameError::save_write_failed)?;
-        state.ordinary.clear();
-        state.next_cleanup_attempt = minimum_cleanup_attempt;
-        Ok(minimum_cleanup_attempt)
-    }
-
-    fn enqueue(
-        self: &Arc<Self>,
-        scheduler: Arc<dyn CoordinatorTaskScheduler>,
-        class: WriterJobClass,
-        run: CoordinatorFuture<'static, ()>,
-    ) -> Result<(), GameError> {
-        #[cfg(test)]
-        let enqueued_delete = matches!(class, WriterJobClass::DeleteSave);
-        {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| GameError::save_write_failed())?;
-            if state.running {
-                Self::enqueue_locked(&mut state, class, run);
-                #[cfg(test)]
-                if enqueued_delete {
-                    self.delete_enqueued.notify_one();
-                }
-                return Ok(());
-            }
-        }
-        let start = self.schedule_worker_candidate(scheduler)?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| GameError::save_write_failed())?;
-        let start_worker = Self::enqueue_locked(&mut state, class, run);
-        #[cfg(test)]
-        if enqueued_delete {
-            self.delete_enqueued.notify_one();
-        }
-        drop(state);
-        if start_worker {
-            start.send(()).map_err(|_| GameError::save_write_failed())?;
-        }
-        Ok(())
-    }
-
-    /// Test-only: block until a `WriterJobClass::DeleteSave` job is present
-    /// in the ordinary queue. Uses a check-then-wait loop against
-    /// [`Self::delete_enqueued`] so a notification issued before the wait
-    /// begins is not lost (`Notify::notify_one` stores a permit that the
-    /// next `Notified` future consumes).
-    #[cfg(test)]
-    async fn wait_for_queued_delete(&self) {
-        loop {
-            {
-                let state = self
-                    .state
-                    .lock()
-                    .expect("writer queue state mutex must not be poisoned");
-                if state
-                    .ordinary
-                    .iter()
-                    .any(|job| matches!(job.class, WriterJobClass::DeleteSave))
-                {
-                    return;
-                }
-            }
-            self.delete_enqueued.notified().await;
-        }
-    }
-
-    fn enqueue_cleanup<F>(
-        self: &Arc<Self>,
-        scheduler: Arc<dyn CoordinatorTaskScheduler>,
-        owner: Option<CleanupOwner>,
-        make_run: F,
-    ) -> Result<(), GameError>
-    where
-        F: FnOnce(CleanupOwner) -> CoordinatorFuture<'static, ()>,
-    {
-        #[cfg(test)]
-        {
-            let hook = self.cleanup_before_lock.lock().unwrap().take();
-            if let Some(hook) = hook {
-                hook();
-            }
-        }
-        {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| GameError::save_write_failed())?;
-            if state.running {
-                let owner = owner.unwrap_or_else(|| {
-                    state.next_cleanup_attempt = state.next_cleanup_attempt.wrapping_add(1);
-                    CleanupOwner::Attempt(state.next_cleanup_attempt)
-                });
-                Self::enqueue_locked(&mut state, WriterJobClass::OrphanCleanup, make_run(owner));
-                return Ok(());
-            }
-        }
-        let start = self.schedule_worker_candidate(scheduler)?;
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| GameError::save_write_failed())?;
-        let owner = owner.unwrap_or_else(|| {
-            state.next_cleanup_attempt = state.next_cleanup_attempt.wrapping_add(1);
-            CleanupOwner::Attempt(state.next_cleanup_attempt)
-        });
-        let start_worker =
-            Self::enqueue_locked(&mut state, WriterJobClass::OrphanCleanup, make_run(owner));
-        drop(state);
-        if start_worker {
-            start.send(()).map_err(|_| GameError::save_write_failed())?;
-        }
-        Ok(())
-    }
-
-    fn enqueue_locked(
-        state: &mut WriterQueueState,
-        class: WriterJobClass,
-        run: CoordinatorFuture<'static, ()>,
-    ) -> bool {
-        if let WriterJobClass::Debounced {
-            session_generation, ..
-        } = class
-        {
-            state.ordinary.retain(|job| {
-                !matches!(
-                    job.class,
-                    WriterJobClass::Debounced {
-                        session_generation: queued_generation,
-                        ..
-                    } if queued_generation == session_generation
-                )
-            });
-        }
-        let job = QueuedWriterJob {
-            class: class.clone(),
-            run,
-        };
-        state.ordinary.push_back(job);
-        let start_worker = !state.running;
-        if start_worker {
-            state.running = true;
-        }
-        start_worker
-    }
-
-    fn schedule_worker_candidate(
-        self: &Arc<Self>,
-        scheduler: Arc<dyn CoordinatorTaskScheduler>,
-    ) -> Result<tokio::sync::oneshot::Sender<()>, GameError> {
-        let queue = Arc::clone(self);
-        let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-        scheduler.spawn(Box::pin(async move {
-            if start_rx.await.is_ok() {
-                queue.run().await;
-            }
-        }))?;
-        Ok(start_tx)
-    }
-
-    #[cfg(test)]
-    fn set_cleanup_before_lock_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
-        *self.cleanup_before_lock.lock().unwrap() = Some(hook);
-    }
-
-    async fn run(self: Arc<Self>) {
-        loop {
-            let next = {
-                let Ok(mut state) = self.state.lock() else {
-                    return;
-                };
-                let next = state.ordinary.pop_front();
-                if next.is_none() {
-                    state.running = false;
-                }
-                next
-            };
-            let Some(job) = next else {
-                return;
-            };
-            job.run.await;
-        }
-    }
-}
-
 type HealthSubscriber = Arc<dyn Fn(PersistenceHealthView) + Send + Sync>;
 type ActivitySubscriber = Arc<dyn Fn(ThumbnailActivityView) + Send + Sync>;
 type ExitSubscriber = Arc<dyn Fn(ExitStatusView) + Send + Sync>;
@@ -982,6 +732,7 @@ struct CoordinatorState {
     next_session_generation: u64,
     discovery_generation: u64,
     next_autosave_serial: u64,
+    next_cleanup_attempt: u64,
     pending_autosave: Option<PendingAutosave>,
     last_successful_write: Option<AutosaveWriteReceipt>,
     failed_write: Option<BackgroundWriteFailure>,
@@ -1007,6 +758,7 @@ impl Default for CoordinatorState {
             next_session_generation: 0,
             discovery_generation: 0,
             next_autosave_serial: 0,
+            next_cleanup_attempt: 0,
             pending_autosave: None,
             last_successful_write: None,
             failed_write: None,
@@ -1050,7 +802,7 @@ impl CoordinatorState {
 #[derive(Clone)]
 struct ExitApplicationContext {
     session: Arc<Mutex<AppSession>>,
-    replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    operation_gate: Arc<tokio::sync::Mutex<()>>,
 }
 
 struct ExitArmSnapshot {
@@ -1083,7 +835,6 @@ impl ExitFailureNotification {
 pub(crate) struct SaveCoordinator {
     state: Arc<Mutex<CoordinatorState>>,
     ticket_updates: Arc<Notify>,
-    writer_queue: Arc<WriterQueue>,
     backend: Option<Arc<dyn AutosaveBackend>>,
     fail_next_schedule: Arc<AtomicBool>,
     exit_application: Option<ExitApplicationContext>,
@@ -1144,7 +895,6 @@ impl Default for SaveCoordinator {
         Self {
             state: Arc::new(Mutex::new(CoordinatorState::default())),
             ticket_updates: Arc::new(Notify::new()),
-            writer_queue: Arc::new(WriterQueue::default()),
             backend: None,
             fail_next_schedule: Arc::new(AtomicBool::new(false)),
             exit_application: None,
@@ -1170,12 +920,12 @@ impl SaveCoordinator {
 
     pub(crate) fn for_application(
         session: Arc<Mutex<AppSession>>,
-        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+        operation_gate: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             exit_application: Some(ExitApplicationContext {
                 session,
-                replacement_gate,
+                operation_gate,
             }),
             ..Self::default()
         }
@@ -1184,13 +934,13 @@ impl SaveCoordinator {
     pub(crate) fn with_backend_for_application(
         backend: Arc<dyn AutosaveBackend>,
         session: Arc<Mutex<AppSession>>,
-        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+        operation_gate: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         Self {
             backend: Some(backend),
             exit_application: Some(ExitApplicationContext {
                 session,
-                replacement_gate,
+                operation_gate,
             }),
             ..Self::default()
         }
@@ -1199,11 +949,11 @@ impl SaveCoordinator {
     pub(crate) fn with_exit_application(
         mut self,
         session: Arc<Mutex<AppSession>>,
-        replacement_gate: Arc<tokio::sync::Mutex<()>>,
+        operation_gate: Arc<tokio::sync::Mutex<()>>,
     ) -> Self {
         self.exit_application = Some(ExitApplicationContext {
             session,
-            replacement_gate,
+            operation_gate,
         });
         self
     }
@@ -1683,7 +1433,7 @@ impl SaveCoordinator {
         }
         self.flush_session_parts(
             &application.session,
-            &application.replacement_gate,
+            &application.operation_gate,
             FlushOperation::Exit,
         )
         .await
@@ -1774,7 +1524,7 @@ impl SaveCoordinator {
             }
         }
 
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let _exit_transition = self
             .exit_transition
             .lock()
@@ -1789,10 +1539,14 @@ impl SaveCoordinator {
             .next_session_generation
             .checked_add(1)
             .ok_or_else(GameError::save_write_failed)?;
-        // Keep the coordinator state locked while invalidating the writer queue and
-        // installing the session. An active stale writer therefore cannot enqueue a
-        // follow-up between queue invalidation and the generation fence becoming live.
-        let minimum_cleanup_attempt = self.writer_queue.invalidate_queued_for_e2e()?;
+        // Keep the coordinator state locked while advancing all stale-work
+        // identities and installing the session. An active stale writer cannot
+        // publish through the new generation fence.
+        let minimum_cleanup_attempt = state
+            .next_cleanup_attempt
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        state.next_cleanup_attempt = minimum_cleanup_attempt;
         state.next_session_generation = generation;
         state.discovery_generation = state.discovery_generation.wrapping_add(1);
         state.next_autosave_serial = state.next_autosave_serial.wrapping_add(1);
@@ -1845,7 +1599,7 @@ impl SaveCoordinator {
             session.ensure_persistence_available()?;
         }
         let view = engine.view()?;
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         let generation = self.next_session_generation()?;
@@ -1877,7 +1631,7 @@ impl SaveCoordinator {
         expected: SessionTransitionIdentity,
     ) -> Result<crate::game::GameStateView, GameError> {
         let view = engine.view()?;
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         if session.persistence.generation != expected.generation
@@ -1899,7 +1653,7 @@ impl SaveCoordinator {
             let session = app.session.lock().map_err(|_| GameError::unavailable())?;
             session.ensure_persistence_available()?;
         }
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         let generation = self.next_session_generation()?;
@@ -1912,7 +1666,7 @@ impl SaveCoordinator {
         app: &crate::AppState,
         expected: SessionTransitionIdentity,
     ) -> Result<u64, GameError> {
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
         if session.persistence.generation != expected.generation
@@ -2033,7 +1787,7 @@ impl SaveCoordinator {
         app: &crate::AppState,
         token: PersistenceFailureTokenView,
     ) -> Result<(), GameError> {
-        let _gate = app.replacement_gate.lock().await;
+        let _gate = app.operation_gate.lock().await;
         let parsed = Uuid::parse_str(&token.0)
             .ok()
             .filter(|parsed| parsed.hyphenated().to_string() == token.0)
@@ -2468,19 +2222,27 @@ impl SaveCoordinator {
         }
     }
 
+    async fn acquire_operation_gate(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let operation_gate = self
+            .exit_application
+            .as_ref()
+            .map(|application| Arc::clone(&application.operation_gate))?;
+        Some(operation_gate.lock_owned().await)
+    }
+
     pub(crate) async fn flush_session(
         &self,
         app: &crate::AppState,
         operation: FlushOperation,
     ) -> Result<FlushOutcome, GameError> {
-        self.flush_session_parts(&app.session, &app.replacement_gate, operation)
+        self.flush_session_parts(&app.session, &app.operation_gate, operation)
             .await
     }
 
     async fn flush_session_parts(
         &self,
         session_state: &Arc<Mutex<AppSession>>,
-        replacement_gate: &Arc<tokio::sync::Mutex<()>>,
+        operation_gate: &Arc<tokio::sync::Mutex<()>>,
         operation: FlushOperation,
     ) -> Result<FlushOutcome, GameError> {
         let (session_generation, durable_revision, flush_revision, preferred_target) = {
@@ -2522,40 +2284,17 @@ impl SaveCoordinator {
                 .map_err(|_| GameError::save_write_failed())?;
         }
 
-        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
-        let coordinator = self.clone();
-        if let Err(error) = self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            WriterJobClass::BlockingFlush {
-                session_generation,
-                durable_revision: flush_revision,
-            },
-            Box::pin(async move {
-                let result = coordinator
-                    .execute_blocking_flush(
-                        session_generation,
-                        flush_revision,
-                        preferred_target,
-                        thumbnail,
-                        thumbnail_capture_required,
-                    )
-                    .await;
-                let _ = result_tx.send(result);
-            }),
-        ) {
-            self.record_background_failure(
+        let (receipt, wrote) = self
+            .execute_blocking_flush(
                 session_generation,
                 flush_revision,
+                preferred_target,
+                thumbnail,
                 thumbnail_capture_required,
-                error.clone(),
-            );
-            return Err(error);
-        }
-        let (receipt, wrote) = result_rx
-            .await
-            .map_err(|_| GameError::save_write_failed())??;
+            )
+            .await?;
 
-        let _gate = replacement_gate.lock().await;
+        let _gate = operation_gate.lock().await;
         let mut session = session_state.lock().map_err(|_| GameError::unavailable())?;
         if operation == FlushOperation::Exit {
             session.ensure_exit_flush_available()?;
@@ -2590,6 +2329,7 @@ impl SaveCoordinator {
         thumbnail: CaptureTerminalResult,
         thumbnail_capture_required: bool,
     ) -> Result<(AutosaveWriteReceipt, bool), GameError> {
+        let _operation_gate = self.acquire_operation_gate().await;
         if let Some(receipt) = self.last_successful_write().filter(|receipt| {
             receipt.session_generation == session_generation
                 && receipt.durable_revision >= durable_revision
@@ -2706,39 +2446,6 @@ impl SaveCoordinator {
             .map(|receipt| receipt.slot)
     }
 
-    pub(crate) fn reserve_manual_writer(
-        &self,
-        run: CoordinatorFuture<'static, ()>,
-    ) -> Result<(), GameError> {
-        self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            WriterJobClass::ManualSave,
-            run,
-        )
-    }
-
-    pub(crate) fn reserve_delete_writer(
-        &self,
-        run: CoordinatorFuture<'static, ()>,
-    ) -> Result<(), GameError> {
-        self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            WriterJobClass::DeleteSave,
-            run,
-        )
-    }
-
-    /// Test-only: deterministically wait until a `DeleteSave` writer job has
-    /// been enqueued by a prior `reserve_delete_writer` call. Replacement
-    /// tests use this instead of polling `PersistenceHealthView::Pending`
-    /// (which is published *before* the writer is enqueued) plus a fixed
-    /// sleep, so they can prove replacement dropped the queued future
-    /// rather than clearing an empty queue.
-    #[cfg(test)]
-    pub(crate) async fn wait_for_queued_delete_writer(&self) {
-        self.writer_queue.wait_for_queued_delete().await;
-    }
-
     pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
         let owner = self
             .lock_state()?
@@ -2754,16 +2461,25 @@ impl SaveCoordinator {
             .as_ref()
             .cloned()
             .ok_or_else(GameError::save_write_failed)?;
+        let owner = match owner {
+            Some(owner) => owner,
+            None => {
+                let mut state = self.lock_state()?;
+                state.next_cleanup_attempt = state
+                    .next_cleanup_attempt
+                    .checked_add(1)
+                    .ok_or_else(GameError::save_write_failed)?;
+                CleanupOwner::Attempt(state.next_cleanup_attempt)
+            }
+        };
         let coordinator = self.clone();
-        self.writer_queue
-            .enqueue_cleanup(Arc::clone(&self.task_scheduler), owner, move |owner| {
-                Box::pin(async move {
-                    match backend.cleanup_orphans().await {
-                        Ok(()) => coordinator.resolve_cleanup_failure(&owner),
-                        Err(error) => coordinator.record_cleanup_failure(owner, error),
-                    }
-                })
-            })
+        self.task_scheduler.spawn(Box::pin(async move {
+            let _operation_gate = coordinator.acquire_operation_gate().await;
+            match backend.cleanup_orphans().await {
+                Ok(()) => coordinator.resolve_cleanup_failure(&owner),
+                Err(error) => coordinator.record_cleanup_failure(owner, error),
+            }
+        }))
     }
 
     pub(crate) fn prepare_thumbnail(
@@ -3066,29 +2782,7 @@ impl SaveCoordinator {
         if !self.pending_matches(&pending) {
             return;
         }
-        let coordinator = self.clone();
-        let class = WriterJobClass::Debounced {
-            session_generation: pending.session_generation,
-            durable_revision: pending.durable_revision,
-        };
-        let failed_identity = (pending.session_generation, pending.durable_revision);
-        let thumbnail_capture_required = pending.thumbnail_capture_required;
-        if let Err(error) = self.writer_queue.enqueue(
-            Arc::clone(&self.task_scheduler),
-            class,
-            Box::pin(async move {
-                coordinator
-                    .execute_pending_autosave(pending, thumbnail)
-                    .await;
-            }),
-        ) {
-            self.record_background_failure(
-                failed_identity.0,
-                failed_identity.1,
-                thumbnail_capture_required,
-                error,
-            );
-        }
+        self.execute_pending_autosave(pending, thumbnail).await;
     }
 
     async fn execute_pending_autosave(
@@ -3096,6 +2790,10 @@ impl SaveCoordinator {
         pending: PendingAutosave,
         thumbnail: CaptureTerminalResult,
     ) {
+        if !self.pending_matches(&pending) {
+            return;
+        }
+        let _operation_gate = self.acquire_operation_gate().await;
         if !self.pending_matches(&pending) {
             return;
         }
@@ -3117,6 +2815,10 @@ impl SaveCoordinator {
             .await
         {
             Ok(capture) => capture,
+            Err(error) if error.code == "staleSessionGeneration" => {
+                self.record_stale_write(&pending);
+                return;
+            }
             Err(error) => {
                 self.record_background_failure(
                     pending.session_generation,
@@ -3842,24 +3544,6 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn enqueue_writer_probe(
-        &self,
-        class: WriterJobClass,
-        label: &'static str,
-        probe: Arc<WriterQueueProbe>,
-    ) {
-        self.writer_queue
-            .enqueue(
-                Arc::clone(&self.task_scheduler),
-                class,
-                Box::pin(async move {
-                    probe.run(label).await;
-                }),
-            )
-            .expect("test runtime and writer queue are available");
-    }
-
-    #[cfg(test)]
     fn ticket_deadline(&self, ticket: &str) -> Result<Instant, GameError> {
         self.lock_state()?
             .tickets
@@ -3875,87 +3559,6 @@ impl SaveCoordinator {
             .get(ticket)
             .map(|record| record.issued_at)
             .ok_or_else(GameError::stale_thumbnail_ticket)
-    }
-}
-
-#[cfg(test)]
-#[derive(Default)]
-struct WriterProbeState {
-    started: Vec<&'static str>,
-    completed: usize,
-    active: usize,
-    max_concurrent: usize,
-}
-
-#[cfg(test)]
-pub(crate) struct WriterQueueProbe {
-    state: Mutex<WriterProbeState>,
-    paused: AtomicBool,
-    started: Notify,
-    completed: Notify,
-    release: Notify,
-}
-
-#[cfg(test)]
-impl WriterQueueProbe {
-    fn paused() -> Self {
-        Self {
-            state: Mutex::new(WriterProbeState::default()),
-            paused: AtomicBool::new(true),
-            started: Notify::new(),
-            completed: Notify::new(),
-            release: Notify::new(),
-        }
-    }
-
-    async fn run(&self, label: &'static str) {
-        {
-            let mut state = self.state.lock().unwrap();
-            state.started.push(label);
-            state.active += 1;
-            state.max_concurrent = state.max_concurrent.max(state.active);
-        }
-        self.started.notify_waiters();
-        while self.paused.load(Ordering::SeqCst) {
-            self.release.notified().await;
-        }
-        {
-            let mut state = self.state.lock().unwrap();
-            state.active -= 1;
-            state.completed += 1;
-        }
-        self.completed.notify_waiters();
-    }
-
-    async fn wait_until_started(&self, label: &str) {
-        loop {
-            if self.started_labels().contains(&label) {
-                return;
-            }
-            self.started.notified().await;
-        }
-    }
-
-    fn release_all(&self) {
-        self.paused.store(false, Ordering::SeqCst);
-        self.release.notify_waiters();
-    }
-
-    async fn wait_for_completions(&self, expected: usize) {
-        loop {
-            if self.state.lock().unwrap().completed >= expected {
-                return;
-            }
-            self.completed.notified().await;
-        }
-    }
-
-    fn started_labels(&self) -> Vec<&'static str> {
-        self.state.lock().unwrap().started.clone()
-    }
-
-    fn max_concurrent(&self) -> usize {
-        self.state.lock().unwrap().max_concurrent
     }
 }
 
@@ -4150,5 +3753,4 @@ mod tests {
     mod storage_integration;
     mod ticket;
     mod unit;
-    mod writer;
 }

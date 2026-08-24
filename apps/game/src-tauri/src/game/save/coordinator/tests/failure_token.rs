@@ -50,7 +50,7 @@ fn app(coordinator: SaveCoordinator, session_generation: u64, durable_revision: 
             session_generation,
             None,
         ))),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator,
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),

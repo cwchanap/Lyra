@@ -2,7 +2,7 @@ use super::super::{
     AppSession, AutosaveWriteReceipt, BackgroundWriteFailure, CleanupFailure, CleanupOwner,
     ExitStatusView, FailureChallengeIdentity, PendingAutosave, PersistenceBypassOperation,
     PersistenceFailureTokenView, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
-    ThumbnailCapturePurpose, WriterJobClass, WriterQueueProbe,
+    ThumbnailCapturePurpose,
 };
 use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
 use crate::game::save::schema::SaveSlotRef;
@@ -21,12 +21,12 @@ fn engine(scene_id: &str, revision: u64) -> GameEngine {
 
 fn app() -> AppState {
     let session = Arc::new(Mutex::new(AppSession::installed(engine("old", 4), 0, None)));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let coordinator =
-        SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&replacement_gate));
+        SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&operation_gate));
     AppState {
         session,
-        replacement_gate,
+        operation_gate,
         coordinator,
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -158,7 +158,7 @@ async fn replacement_rejects_exit_saving_before_waiting_for_the_gate() {
     let app = app();
     app.session.lock().unwrap().persistence.exit_flush_requested = true;
     app.coordinator.state.lock().unwrap().exit_status = ExitStatusView::Saving;
-    let gate = app.replacement_gate.clone().lock_owned().await;
+    let gate = app.operation_gate.clone().lock_owned().await;
 
     let result = tokio::time::timeout(
         Duration::from_millis(50),
@@ -197,26 +197,8 @@ async fn replacement_reserves_monotonic_coordinator_generations() {
 }
 
 #[tokio::test]
-async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion() {
+async fn replacement_bumps_generation_and_ignores_stale_completion() {
     let app = app();
-    let probe = Arc::new(WriterQueueProbe::paused());
-    app.coordinator.enqueue_writer_probe(
-        WriterJobClass::Debounced {
-            session_generation: 0,
-            durable_revision: 4,
-        },
-        "active-old",
-        Arc::clone(&probe),
-    );
-    probe.wait_until_started("active-old").await;
-    app.coordinator.enqueue_writer_probe(
-        WriterJobClass::Debounced {
-            session_generation: 0,
-            durable_revision: 5,
-        },
-        "queued-old",
-        Arc::clone(&probe),
-    );
 
     app.coordinator
         .replace_session_for_e2e(&app, engine("checkpoint", 1))
@@ -273,9 +255,4 @@ async fn replacement_drops_queued_writers_and_ignores_an_active_stale_completion
         app.coordinator.persistence_health(),
         PersistenceHealthView::Healthy
     );
-
-    probe.release_all();
-    probe.wait_for_completions(1).await;
-    tokio::task::yield_now().await;
-    assert_eq!(probe.started_labels(), ["active-old"]);
 }

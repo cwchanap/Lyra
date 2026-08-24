@@ -193,8 +193,8 @@ fn exit_lifecycle_request_without_application_context_stays_idle() {
 async fn exit_lifecycle_repeated_native_requests_share_one_noop_flush_and_one_exit_bypass() {
     let engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), operation_gate);
     let exit = Arc::new(RecordingExit::default());
 
     coordinator
@@ -215,8 +215,8 @@ async fn exit_lifecycle_repeated_native_requests_share_one_noop_flush_and_one_ex
 async fn exit_lifecycle_plain_thread_request_still_schedules_and_exits_once() {
     let engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), operation_gate);
     let exit = Arc::new(RecordingExit::default());
     let thread_coordinator = coordinator.clone();
     let thread_exit = exit.clone();
@@ -259,8 +259,8 @@ async fn exit_lifecycle_releases_transition_and_session_before_external_exit_act
 fn exit_lifecycle_scheduler_rejection_restores_idle_and_session_admission() {
     let engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), replacement_gate)
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), operation_gate)
         .with_task_scheduler(Arc::new(RejectingExitScheduler));
 
     assert_eq!(
@@ -583,8 +583,8 @@ async fn exit_lifecycle_panicking_initial_worker_unwinds_to_idle_and_can_retry()
 fn exit_lifecycle_prerequisite_failure_does_not_arm_saving() {
     let engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     let session = Arc::new(Mutex::new(AppSession::installed(engine, 4, None)));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), replacement_gate);
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let coordinator = SaveCoordinator::for_application(Arc::clone(&session), operation_gate);
     coordinator.fail_next_exit_prerequisite_for_test();
     let exit = Arc::new(RecordingExit::default());
 
@@ -599,14 +599,14 @@ fn exit_lifecycle_prerequisite_failure_does_not_arm_saving() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session_or_gate() {
+async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session() {
     let backend = Arc::new(RecordingBackend::paused());
     let session = active_session(1);
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let coordinator = SaveCoordinator::with_backend_for_application(
         backend.clone(),
         Arc::clone(&session),
-        Arc::clone(&replacement_gate),
+        Arc::clone(&operation_gate),
     );
     advance_revision(&session, 2);
     let request = coordinator.notify_durable_commit(4, 2).unwrap();
@@ -622,7 +622,7 @@ async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session_or_ga
         .unwrap();
 
     assert!(session.try_lock().is_ok());
-    assert!(replacement_gate.try_lock().is_ok());
+    assert!(operation_gate.try_lock().is_err());
     assert_eq!(
         session
             .lock()
@@ -680,15 +680,15 @@ async fn exit_lifecycle_failure_publishes_complete_status_and_cancel_consumes_ex
     backend.fail_next_commit();
     let session = active_session(1);
     advance_revision(&session, 2);
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let coordinator = SaveCoordinator::with_backend_for_application(
         backend.clone(),
         Arc::clone(&session),
-        Arc::clone(&replacement_gate),
+        Arc::clone(&operation_gate),
     );
     let app = AppState {
         session,
-        replacement_gate,
+        operation_gate,
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),

@@ -30,7 +30,7 @@ async fn fresh_revision_zero_flush_never_enters_the_writer() {
     let engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     let app = AppState {
         session: Arc::new(Mutex::new(AppSession::installed(engine, 1, None))),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -80,7 +80,7 @@ async fn loaded_revision_44_flushes_only_after_revision_45() {
     let source = SaveSlotRef::Auto { slot: 3 };
     let app = AppState {
         session: Arc::new(Mutex::new(AppSession::installed(engine, 7, Some(source)))),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -216,7 +216,7 @@ async fn blocking_flush_writes_once_then_becomes_idempotent_without_advancing_re
     session.engine.as_mut().unwrap().durable_revision = 1;
     let app = AppState {
         session: Arc::new(Mutex::new(session)),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -270,7 +270,7 @@ async fn blocking_flush_cancels_same_revision_debounce_before_it_enters_writer()
     session.engine.as_mut().unwrap().durable_revision = 1;
     let app = AppState {
         session: Arc::new(Mutex::new(session)),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -303,7 +303,7 @@ async fn blocking_flush_preserves_a_terminal_thumbnail_from_the_covered_autosave
     session.engine.as_mut().unwrap().durable_revision = 1;
     let app = AppState {
         session: Arc::new(Mutex::new(session)),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -335,7 +335,7 @@ async fn blocking_flush_discards_an_older_autosave_thumbnail() {
     session.engine.as_mut().unwrap().durable_revision = 2;
     let app = AppState {
         session: Arc::new(Mutex::new(session)),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator: coordinator.clone(),
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
