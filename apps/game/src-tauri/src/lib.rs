@@ -217,7 +217,12 @@ fn build_app_state_with_storage(
     let definitions = Arc::new(load_current_definitions(&resources_dir)?);
     let session = Arc::new(Mutex::new(AppSession::empty()));
     let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let initial_error = ensure_save_layout(fs.as_ref(), &save_root).err();
+    let initial_error = {
+        let _gate = operation_gate
+            .try_lock()
+            .expect("operation gate is unused during persistence construction");
+        ensure_save_layout(fs.as_ref(), &save_root).err()
+    };
     let persistence = Arc::new(ApplicationPersistence::from_parts(
         Arc::clone(&session),
         Arc::clone(&operation_gate),
@@ -250,8 +255,8 @@ fn unavailable_error() -> GameError {
     GameError::unavailable()
 }
 
-fn session_persistence(state: &AppState) -> Result<&ApplicationPersistence, GameError> {
-    Ok(state.persistence.as_ref())
+fn session_persistence(state: &AppState) -> &ApplicationPersistence {
+    state.persistence.as_ref()
 }
 
 // Publishes the terminal health for a completed storage write and retries
@@ -411,7 +416,7 @@ async fn install_session_candidate(
     candidate: Result<(GameEngine, Option<SaveSlotRef>), GameError>,
 ) -> Result<GameplayCommandResultView, GameError> {
     let (engine, autosave_target) = candidate?;
-    let state = session_persistence(state)?
+    let state = session_persistence(state)
         .install_session(engine, autosave_target)
         .await?;
     Ok(GameplayCommandResultView {
@@ -578,7 +583,7 @@ async fn list_saves(
     state: tauri::State<'_, AppState>,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
     let persistence = Arc::clone(&state.persistence);
-    list_saves_core(&state, move || persistence.discover()).await
+    list_saves_core(&state, move || persistence.discover_under_operation_gate()).await
 }
 
 #[tauri::command]
@@ -2038,13 +2043,13 @@ mod tests {
 
             let outcome = app
                 .persistence
-                .flush_session(&app, FlushOperation::ManualSave)
+                .flush_session(FlushOperation::ManualSave)
                 .await
                 .unwrap();
             let FlushOutcome::Written { slot, .. } = outcome else {
                 panic!("dirty fixture must flush");
             };
-            let browser = app.persistence.as_ref().discover();
+            let browser = app.persistence.as_ref().discover().await;
             assert!(browser.slots.iter().any(|candidate| {
                 candidate.reference == slot
                     && matches!(candidate.status, SaveSlotStatusView::Valid { .. })
@@ -2076,7 +2081,7 @@ mod tests {
                 "reset must install a fresh session generation"
             );
             let persistence = app.persistence.as_ref();
-            let browser = persistence.discover();
+            let browser = persistence.discover().await;
             let persisted = browser
                 .slots
                 .iter()
@@ -2138,6 +2143,7 @@ mod tests {
                 .persistence
                 .as_ref()
                 .discover()
+                .await
                 .slots
                 .iter()
                 .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
@@ -2206,7 +2212,7 @@ mod tests {
             start_game_with_persistence_core(&app).await.unwrap();
 
             let persistence = app.persistence.as_ref();
-            let browser = persistence.discover();
+            let browser = persistence.discover().await;
             let persisted = browser
                 .slots
                 .iter()
@@ -2249,14 +2255,16 @@ mod tests {
                 tokio::task::yield_now().await;
             }
 
-            let session = app.session.lock().unwrap();
-            assert_eq!(session.persistence.generation, 1);
-            assert_eq!(session.durable_revision(), Some(0));
-            drop(session);
+            {
+                let session = app.session.lock().unwrap();
+                assert_eq!(session.persistence.generation, 1);
+                assert_eq!(session.durable_revision(), Some(0));
+            }
             assert!(app
                 .persistence
                 .as_ref()
                 .discover()
+                .await
                 .slots
                 .iter()
                 .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
@@ -2307,7 +2315,7 @@ mod tests {
             advance_fixture_dialogue(&app);
             let first = app
                 .persistence
-                .flush_session(&app, FlushOperation::InGameLoad)
+                .flush_session(FlushOperation::InGameLoad)
                 .await
                 .unwrap();
             let FlushOutcome::Written { slot, .. } = first else {
@@ -2317,6 +2325,7 @@ mod tests {
                 app.persistence
                     .as_ref()
                     .discover()
+                    .await
                     .slots
                     .iter()
                     .find(|candidate| candidate.reference == slot)
@@ -2336,6 +2345,7 @@ mod tests {
                     app.persistence
                         .as_ref()
                         .discover()
+                        .await
                         .slots
                         .iter()
                         .find(|candidate| candidate.reference == slot)
@@ -2460,6 +2470,7 @@ mod tests {
                 .persistence
                 .as_ref()
                 .discover()
+                .await
                 .slots
                 .iter()
                 .filter(|slot| matches!(slot.reference, SaveSlotRef::Auto { .. }))
@@ -2517,7 +2528,7 @@ mod tests {
             advance_fixture_dialogue(&app);
             failing.store(false, Ordering::SeqCst);
             app.persistence
-                .flush_session(&app, FlushOperation::ManualSave)
+                .flush_session(FlushOperation::ManualSave)
                 .await
                 .unwrap();
 
@@ -2525,6 +2536,7 @@ mod tests {
                 .persistence
                 .as_ref()
                 .discover()
+                .await
                 .slots
                 .iter()
                 .any(|slot| matches!(slot.status, SaveSlotStatusView::Valid { .. })));
@@ -2753,7 +2765,8 @@ mod tests {
                 .unwrap();
             let saved = seed_manual(&app, 1, "Keep me").await;
             let save_id = valid_save_id(&saved.saved_slot);
-            let browser_before = serde_json::to_value(app.persistence.as_ref().discover()).unwrap();
+            let browser_before =
+                serde_json::to_value(app.persistence.as_ref().discover().await).unwrap();
             let health_before = app.persistence.persistence_health();
             let removes_before = fs.removes.load(Ordering::SeqCst);
             app.persistence
@@ -2779,7 +2792,7 @@ mod tests {
             assert_eq!(app.persistence.persistence_health(), health_before);
             assert_eq!(fs.removes.load(Ordering::SeqCst), removes_before);
             assert_eq!(
-                serde_json::to_value(app.persistence.as_ref().discover()).unwrap(),
+                serde_json::to_value(app.persistence.as_ref().discover().await).unwrap(),
                 browser_before
             );
         }
@@ -3169,7 +3182,7 @@ mod tests {
             std::fs::write(&invalid_path, b"{ invalid without id").unwrap();
             let foreign = temporary.path().join("saves/thumbnails/foreign.png");
             std::fs::write(&foreign, b"foreign").unwrap();
-            let discovered = app.persistence.as_ref().discover();
+            let discovered = app.persistence.as_ref().discover().await;
             let invalid = discovered
                 .slots
                 .iter()

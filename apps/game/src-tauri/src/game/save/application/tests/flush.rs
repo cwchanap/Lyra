@@ -7,25 +7,13 @@ use crate::game::save::schema::{SaveSlotRef, ThumbnailDescriptorV1};
 use crate::game::test_support::{
     empty_engine_with_scene, investigation_scene_with_intro, png_fixture,
 };
-use crate::AppState;
-use std::path::PathBuf;
-
-fn app(fixture: &super::helpers::ApplicationFixture) -> AppState {
-    AppState {
-        session: fixture.session.clone(),
-        persistence: fixture.persistence.clone(),
-        resources_dir: PathBuf::new(),
-    }
-}
-
 #[tokio::test]
 async fn fresh_revision_zero_flush_is_a_physical_no_op() {
     let fixture = application_fixture_at(1, 0);
-    let state = app(&fixture);
     assert_eq!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::ManualSave)
+            .flush_session(FlushOperation::ManualSave)
             .await
             .unwrap(),
         FlushOutcome::Noop {
@@ -38,12 +26,11 @@ async fn fresh_revision_zero_flush_is_a_physical_no_op() {
 #[tokio::test]
 async fn fresh_revision_zero_flush_never_enters_the_writer() {
     let fixture = application_fixture_at(1, 0);
-    let state = app(&fixture);
 
     assert_eq!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::ReturnToTitle)
+            .flush_session(FlushOperation::ReturnToTitle)
             .await
             .unwrap(),
         FlushOutcome::Noop {
@@ -73,16 +60,15 @@ async fn blocking_flush_writes_once_then_becomes_idempotent_without_advancing_re
         .as_mut()
         .unwrap()
         .durable_revision = 1;
-    let state = app(&fixture);
     let first = fixture
         .persistence
-        .flush_session(&state, FlushOperation::ManualSave)
+        .flush_session(FlushOperation::ManualSave)
         .await
         .unwrap();
     assert!(matches!(first, FlushOutcome::Written { .. }));
     let second = fixture
         .persistence
-        .flush_session(&state, FlushOperation::ManualSave)
+        .flush_session(FlushOperation::ManualSave)
         .await
         .unwrap();
     assert!(matches!(second, FlushOutcome::Noop { .. }));
@@ -97,11 +83,10 @@ async fn blocking_flush_writes_once_then_becomes_idempotent_without_advancing_re
 #[tokio::test]
 async fn loaded_baseline_flushes_only_after_a_newer_revision() {
     let fixture = application_fixture_at(7, 44);
-    let state = app(&fixture);
     assert!(matches!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
             .unwrap(),
         FlushOutcome::Noop {
@@ -120,7 +105,7 @@ async fn loaded_baseline_flushes_only_after_a_newer_revision() {
     assert!(matches!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::InGameLoad)
+            .flush_session(FlushOperation::InGameLoad)
             .await
             .unwrap(),
         FlushOutcome::Written {
@@ -222,13 +207,12 @@ async fn blocking_flush_cancels_same_revision_debounce_before_it_enters_writer()
         .as_mut()
         .unwrap()
         .durable_revision = 1;
-    let state = app(&fixture);
     assert!(fixture.persistence.notify_durable_commit(3, 1).is_some());
 
     assert!(matches!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::ReturnToTitle)
+            .flush_session(FlushOperation::ReturnToTitle)
             .await
             .unwrap(),
         FlushOutcome::Written { .. }
@@ -253,7 +237,6 @@ async fn blocking_flush_preserves_a_terminal_thumbnail_from_the_covered_autosave
         .as_mut()
         .unwrap()
         .durable_revision = 1;
-    let state = app(&fixture);
     let request = fixture.persistence.notify_durable_commit(3, 1).unwrap();
     fixture
         .persistence
@@ -263,7 +246,7 @@ async fn blocking_flush_preserves_a_terminal_thumbnail_from_the_covered_autosave
     assert!(matches!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::ReturnToTitle)
+            .flush_session(FlushOperation::ReturnToTitle)
             .await
             .unwrap(),
         FlushOutcome::Written { .. }
@@ -293,7 +276,6 @@ async fn blocking_flush_discards_an_older_autosave_thumbnail() {
         .as_mut()
         .unwrap()
         .durable_revision = 2;
-    let state = app(&fixture);
     let request = fixture.persistence.notify_durable_commit(3, 1).unwrap();
     fixture
         .persistence
@@ -303,7 +285,7 @@ async fn blocking_flush_discards_an_older_autosave_thumbnail() {
     assert!(matches!(
         fixture
             .persistence
-            .flush_session(&state, FlushOperation::ReturnToTitle)
+            .flush_session(FlushOperation::ReturnToTitle)
             .await
             .unwrap(),
         FlushOutcome::Written { .. }
