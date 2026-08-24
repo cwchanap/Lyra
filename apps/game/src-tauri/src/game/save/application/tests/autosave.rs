@@ -1,13 +1,15 @@
-use super::helpers::registered_write;
+use super::helpers::{application_fixture, registered_write};
 #[cfg(feature = "e2e")]
 use crate::game::save::application::FlushOperation;
 use crate::game::save::application::{
     ApplicationPersistence, BackgroundRetryTrigger, PersistenceHealthView, ThumbnailActivityView,
-    AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
+    ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 #[cfg(feature = "e2e")]
 use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
+use crate::game::save::schema::SaveSlotRef;
 use crate::game::GameError;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 async fn settle_autosave() {
@@ -208,6 +210,128 @@ async fn ordinary_retry_does_not_supersede_newer_pending_write_after_eligibility
         .is_none());
 }
 
+#[tokio::test]
+async fn no_thumbnail_autosave_does_not_hide_unrelated_live_activity() {
+    let persistence = ApplicationPersistence::ticket_only();
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    persistence.subscribe(
+        |_| {},
+        move |activity| activity_log.lock().unwrap().push(activity),
+    );
+    let manual = persistence
+        .prepare_thumbnail(ThumbnailCapturePurpose::ManualSave {
+            session_generation: 1,
+            durable_revision: 1,
+        })
+        .unwrap();
+
+    assert!(persistence
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(persistence
+        .state
+        .lock()
+        .unwrap()
+        .tickets
+        .contains_key(&manual.ticket));
+    assert_eq!(
+        activities.lock().unwrap().as_slice(),
+        &[
+            ThumbnailActivityView::Idle,
+            ThumbnailActivityView::Capturing
+        ]
+    );
+}
+
+#[tokio::test]
+async fn autosave_supersession_recomputes_activity_without_hiding_unrelated_capture() {
+    let persistence = ApplicationPersistence::ticket_only();
+    let activities = Arc::new(Mutex::new(Vec::new()));
+    let activity_log = Arc::clone(&activities);
+    persistence.subscribe(
+        |_| {},
+        move |activity| activity_log.lock().unwrap().push(activity),
+    );
+
+    let ordinary = persistence.notify_durable_commit(1, 1).unwrap();
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(persistence
+        .notify_durable_commit_without_thumbnail(1, 2)
+        .is_none());
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
+    assert!(!persistence
+        .state
+        .lock()
+        .unwrap()
+        .tickets
+        .contains_key(&ordinary.ticket));
+    assert_eq!(
+        activities.lock().unwrap().as_slice(),
+        &[
+            ThumbnailActivityView::Idle,
+            ThumbnailActivityView::Capturing,
+            ThumbnailActivityView::Idle,
+        ]
+    );
+
+    let manual = persistence
+        .prepare_thumbnail(ThumbnailCapturePurpose::ManualSave {
+            session_generation: 1,
+            durable_revision: 2,
+        })
+        .unwrap();
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    let newer_ordinary = persistence.notify_durable_commit(1, 3).unwrap();
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert!(persistence
+        .notify_durable_commit_without_thumbnail(1, 4)
+        .is_none());
+    assert_eq!(
+        persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    let state = persistence.state.lock().unwrap();
+    assert!(state.tickets.contains_key(&manual.ticket));
+    assert!(!state.tickets.contains_key(&newer_ordinary.ticket));
+    drop(state);
+    assert!(activities
+        .lock()
+        .unwrap()
+        .iter()
+        .skip(3)
+        .all(|activity| *activity == ThumbnailActivityView::Capturing));
+}
+
+#[tokio::test(start_paused = true)]
+async fn debounce_and_thumbnail_wait_do_not_hold_operation_gate() {
+    let fixture = application_fixture();
+    fixture.persistence.notify_durable_commit(1, 1).unwrap();
+
+    tokio::task::yield_now().await;
+    assert!(fixture.persistence.operation_gate.try_lock().is_ok());
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    tokio::task::yield_now().await;
+    assert!(fixture.persistence.operation_gate.try_lock().is_ok());
+}
+
 #[tokio::test(start_paused = true)]
 async fn debounce_spends_the_existing_ticket_deadline() {
     let fixture = application_fixture_at_revision(1);
@@ -309,6 +433,131 @@ async fn prior_generation_high_revision_never_suppresses_new_generation_low_revi
 }
 
 #[tokio::test(start_paused = true)]
+async fn ordinary_recovery_points_rotate_and_record_generation_scoped_success() {
+    let fixture = application_fixture_at_revision(0);
+    for revision in [8, 9] {
+        set_revision(&fixture.persistence, revision);
+        fixture
+            .persistence
+            .notify_durable_commit_without_thumbnail(1, revision);
+        settle_autosave().await;
+        assert_eq!(
+            fixture
+                .persistence
+                .last_successful_write()
+                .unwrap()
+                .durable_revision,
+            revision
+        );
+    }
+
+    let written = fixture.persistence.last_successful_write().unwrap();
+    assert_eq!(written.session_generation, 1);
+    assert_eq!(written.durable_revision, 9);
+    assert_eq!(written.slot, SaveSlotRef::Auto { slot: 2 });
+    assert_eq!(
+        fixture.persistence.autosave_target(1),
+        Some(SaveSlotRef::Auto { slot: 2 })
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn prior_generation_target_is_not_visible_to_new_generation_before_first_success() {
+    let fixture = application_fixture_at_revision(0);
+    set_revision(&fixture.persistence, 1);
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 1);
+    settle_autosave().await;
+
+    assert_eq!(
+        fixture.persistence.autosave_target(1),
+        Some(SaveSlotRef::Auto { slot: 1 })
+    );
+    assert!(fixture.persistence.autosave_target(2).is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn later_durable_revision_retries_after_background_failure() {
+    let fixture = application_fixture_at_revision(0);
+    set_revision(&fixture.persistence, 6);
+    fixture.filesystem.fail_next_stage();
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 6);
+    settle_autosave().await;
+    assert!(matches!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+
+    set_revision(&fixture.persistence, 7);
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 7);
+    settle_autosave().await;
+    assert_eq!(
+        fixture
+            .persistence
+            .last_successful_write()
+            .unwrap()
+            .durable_revision,
+        7
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn storage_faults_before_temporary_gate_and_replacement_degrade_without_adoption() {
+    let fixture = application_fixture_at_revision(0);
+    set_revision(&fixture.persistence, 1);
+    fixture.filesystem.fail_next_stage();
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 1);
+    settle_autosave().await;
+
+    assert!(matches!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+    assert!(fixture.persistence.last_successful_write().is_none());
+    assert!(fixture.persistence.autosave_target(1).is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn stale_session_generation_fence_rejects_autosave_without_reinstalling_pending_or_overwriting_health(
+) {
+    let fixture = application_fixture_at_revision(1);
+    {
+        let mut state = fixture.persistence.state.lock().unwrap();
+        state.next_session_generation = 2;
+        state.pending_autosave = None;
+        state.persistence_health = PersistenceHealthView::Healthy;
+    }
+
+    assert!(fixture.persistence.notify_durable_commit(1, 11).is_none());
+    let state = fixture.persistence.state.lock().unwrap();
+    assert!(state.pending_autosave.is_none());
+    assert!(state.tickets.is_empty());
+    drop(state);
+    assert_eq!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(2, 20);
+    assert!(fixture
+        .persistence
+        .state
+        .lock()
+        .unwrap()
+        .pending_autosave
+        .is_some());
+}
+
+#[tokio::test(start_paused = true)]
 async fn failed_revision_does_not_timer_loop_and_explicit_actions_retry_once() {
     let fixture = application_fixture_at_revision(1);
     fixture
@@ -328,12 +577,13 @@ async fn failed_revision_does_not_timer_loop_and_explicit_actions_retry_once() {
 }
 
 #[test]
-fn superseded_autosave_discard_leaves_health_pending_not_failed() {
+fn stale_generation_discards_prepared_write_without_installing_it() {
     let fixture = application_fixture_at_revision(1);
     let prepared = registered_write(1, 1)
         .prepare(fixture.persistence.fs.as_ref(), &fixture.persistence.root)
         .unwrap();
     set_revision(&fixture.persistence, 2);
+    fixture.session.lock().unwrap().persistence.generation = 2;
     fixture
         .persistence
         .notify_durable_commit_without_thumbnail(1, 2);
@@ -341,7 +591,7 @@ fn superseded_autosave_discard_leaves_health_pending_not_failed() {
     let stale = match fixture.persistence.commit_current(prepared).unwrap() {
         crate::game::save::application::AutosaveCommitOutcome::Stale(prepared) => prepared,
         crate::game::save::application::AutosaveCommitOutcome::Committed(_) => {
-            panic!("revision drift must make the staged write stale")
+            panic!("generation drift must make the staged write stale")
         }
     };
     stale.discard().unwrap();

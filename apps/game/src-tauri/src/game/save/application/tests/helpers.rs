@@ -26,6 +26,7 @@ pub(super) struct TrackingFilesystem {
     stage_reached: AtomicBool,
     pause_staging: AtomicBool,
     fail_cleanup: AtomicBool,
+    fail_stage: AtomicBool,
     stage_update: Notify,
     release_staging: (Mutex<()>, Condvar),
 }
@@ -41,6 +42,7 @@ impl Default for TrackingFilesystem {
             stage_reached: AtomicBool::new(false),
             pause_staging: AtomicBool::new(false),
             fail_cleanup: AtomicBool::new(false),
+            fail_stage: AtomicBool::new(false),
             stage_update: Notify::new(),
             release_staging: (Mutex::new(()), Condvar::new()),
         }
@@ -60,6 +62,15 @@ impl TrackingFilesystem {
     pub(super) fn fail_next_cleanup(&self) {
         self.fail_cleanup.store(true, Ordering::SeqCst);
     }
+
+    pub(super) fn fail_next_stage(&self) {
+        self.fail_stage.store(true, Ordering::SeqCst);
+    }
+
+    pub(super) fn installed_count(&self) -> usize {
+        self.installed.load(Ordering::SeqCst)
+    }
+
     pub(super) async fn wait_for_stage(&self) {
         loop {
             if self.stage_reached.load(Ordering::SeqCst) {
@@ -161,6 +172,9 @@ impl SaveFilesystem for TrackingFilesystem {
             release = self.release_staging.1.wait(release).unwrap();
         }
         drop(release);
+        if self.fail_stage.swap(false, Ordering::SeqCst) {
+            return Err(io::Error::other("injected staging failure"));
+        }
 
         let inner = self.inner.stage_atomic(path, bytes)?;
         Ok(Box::new(TrackingStagedWrite {

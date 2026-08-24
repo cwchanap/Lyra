@@ -1,8 +1,14 @@
+use super::helpers::application_fixture_at;
 use crate::game::save::application::{
-    ApplicationExit, ApplicationPersistence, ExitRequestSource, ExitStatusView,
+    AppSession, ApplicationExit, ApplicationPersistence, ExitRequestSource, ExitStatusView,
+    FailureChallengeIdentity, FailureTokenSource, PersistenceBypassOperation,
+    PersistenceFailureChallenge, PersistenceFailureTokenView, AUTOSAVE_DEBOUNCE,
 };
 use crate::game::GameError;
-use std::sync::Arc;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::sync::{mpsc, Notify};
 
 struct FailingExit;
 
@@ -12,20 +18,110 @@ impl ApplicationExit for FailingExit {
     }
 }
 
+#[derive(Default)]
+struct RecordingExit {
+    calls: Mutex<Vec<i32>>,
+    called: Notify,
+}
+
+impl ApplicationExit for RecordingExit {
+    fn exit(&self, code: i32) -> Result<(), GameError> {
+        self.calls.lock().unwrap().push(code);
+        self.called.notify_waiters();
+        Ok(())
+    }
+}
+
+impl RecordingExit {
+    async fn wait_for_call(&self) {
+        loop {
+            let notified = self.called.notified();
+            if !self.calls.lock().unwrap().is_empty() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
+
+struct LockProbeExit {
+    persistence: ApplicationPersistence,
+    session: Arc<Mutex<AppSession>>,
+    called: Notify,
+}
+
+impl ApplicationExit for LockProbeExit {
+    fn exit(&self, _code: i32) -> Result<(), GameError> {
+        assert!(self.persistence.lock_exit_transition().is_ok());
+        assert!(self.session.try_lock().is_ok());
+        self.called.notify_waiters();
+        Ok(())
+    }
+}
+
+fn status_receiver(
+    persistence: &ApplicationPersistence,
+) -> mpsc::UnboundedReceiver<ExitStatusView> {
+    let (tx, rx) = mpsc::unbounded_channel();
+    persistence.subscribe_exit_status(move |status| {
+        let _ = tx.send(status);
+    });
+    let mut rx = rx;
+    assert_eq!(rx.try_recv().unwrap(), ExitStatusView::Idle);
+    rx
+}
+
 #[test]
-fn exit_status_uses_the_camel_case_tagged_wire_shape() {
-    let value = serde_json::to_value(ExitStatusView::Saving).unwrap();
-    assert_eq!(value, serde_json::json!({ "type": "saving" }));
+fn exit_lifecycle_status_uses_complete_camel_case_tagged_views() {
+    assert_eq!(
+        serde_json::to_value(ExitStatusView::Idle).unwrap(),
+        serde_json::json!({ "type": "idle" })
+    );
+    assert_eq!(
+        serde_json::to_value(ExitStatusView::Saving).unwrap(),
+        serde_json::json!({ "type": "saving" })
+    );
 }
 
 #[tokio::test]
-async fn failed_exit_can_be_cancelled_by_its_exact_token() {
+async fn exit_lifecycle_failure_publishes_complete_status_and_cancel_consumes_exact_token() {
     let persistence = Arc::new(ApplicationPersistence::new());
     persistence
         .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
         .unwrap();
 
-    let token = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+    let status = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            if let ExitStatusView::Failed { .. } = persistence.exit_status() {
+                break persistence.exit_status();
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let ExitStatusView::Failed {
+        diagnostic,
+        failure_token: token,
+    } = status
+    else {
+        panic!("exit failure must publish a complete status");
+    };
+    assert_eq!(diagnostic.code, "saveWriteFailed");
+
+    assert_eq!(
+        persistence.cancel_exit(token).unwrap(),
+        ExitStatusView::Idle
+    );
+}
+
+#[tokio::test]
+async fn exit_lifecycle_cancel_guard_clear_failure_preserves_exact_failed_token() {
+    let persistence = ApplicationPersistence::new();
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    let token = tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             if let ExitStatusView::Failed { failure_token, .. } = persistence.exit_status() {
                 break failure_token;
@@ -35,9 +131,335 @@ async fn failed_exit_can_be_cancelled_by_its_exact_token() {
     })
     .await
     .unwrap();
-
+    let failed = persistence.exit_status();
+    persistence.fail_next_cancel_guard_clear_for_test();
+    assert_eq!(
+        persistence.cancel_exit(token.clone()).unwrap_err().code,
+        "saveWriteFailed"
+    );
+    assert_eq!(persistence.exit_status(), failed);
     assert_eq!(
         persistence.cancel_exit(token).unwrap(),
         ExitStatusView::Idle
     );
+}
+
+#[tokio::test]
+async fn exit_lifecycle_without_saving_action_failure_preserves_exact_failed_token() {
+    let persistence = ApplicationPersistence::new();
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::ApplicationQuit)
+        .unwrap();
+    let token = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let ExitStatusView::Failed { failure_token, .. } = persistence.exit_status() {
+                break failure_token;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let failed = persistence.exit_status();
+    assert_eq!(
+        persistence
+            .exit_without_saving(Arc::new(FailingExit), token.clone())
+            .unwrap_err()
+            .code,
+        "saveWriteFailed"
+    );
+    assert_eq!(persistence.exit_status(), failed);
+
+    let exit = Arc::new(RecordingExit::default());
+    persistence
+        .exit_without_saving(exit.clone(), token.clone())
+        .unwrap();
+    exit.wait_for_call().await;
+    assert!(persistence.consume_programmatic_exit_bypass());
+    assert_eq!(
+        persistence
+            .exit_without_saving(exit, token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+#[tokio::test]
+async fn exit_lifecycle_challenge_publication_failure_restores_recoverable_idle() {
+    let persistence = ApplicationPersistence::new();
+    persistence.fail_next_exit_challenge_for_test();
+    let mut statuses = status_receiver(&persistence);
+    let exit = Arc::new(RecordingExit::default());
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+    assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Idle);
+    assert!(
+        !persistence
+            .session
+            .lock()
+            .unwrap()
+            .persistence
+            .exit_flush_requested
+    );
+    assert!(exit.calls.lock().unwrap().is_empty());
+
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+    exit.wait_for_call().await;
+    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+}
+
+#[tokio::test]
+async fn exit_lifecycle_repeated_native_requests_share_one_noop_flush_and_one_exit_bypass() {
+    let persistence = ApplicationPersistence::new();
+    let exit = Arc::new(RecordingExit::default());
+
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+        .unwrap();
+    exit.wait_for_call().await;
+
+    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+    assert_eq!(persistence.exit_status(), ExitStatusView::Saving);
+    assert!(persistence.consume_programmatic_exit_bypass());
+    assert!(!persistence.consume_programmatic_exit_bypass());
+}
+
+#[tokio::test]
+async fn exit_lifecycle_releases_transition_and_session_before_external_exit_action() {
+    let persistence = ApplicationPersistence::new();
+    let session = persistence.session.clone();
+    let exit = Arc::new(LockProbeExit {
+        persistence: persistence.clone(),
+        session,
+        called: Notify::new(),
+    });
+    let called = exit.called.notified();
+
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), called)
+        .await
+        .unwrap();
+}
+
+#[test]
+fn exit_lifecycle_prerequisite_failure_does_not_arm_saving() {
+    let persistence = ApplicationPersistence::new();
+    persistence.fail_next_exit_prerequisite_for_test();
+    let exit = Arc::new(RecordingExit::default());
+
+    let error = persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap_err();
+
+    assert_eq!(error.code, "saveWriteFailed");
+    assert_eq!(persistence.exit_status(), ExitStatusView::Idle);
+    assert!(
+        !persistence
+            .session
+            .lock()
+            .unwrap()
+            .persistence
+            .exit_flush_requested
+    );
+    assert!(exit.calls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn exit_lifecycle_retry_and_without_saving_each_consume_one_exact_challenge() {
+    let retry_persistence = ApplicationPersistence::new();
+    let mut retry_statuses = status_receiver(&retry_persistence);
+    retry_persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    assert_eq!(retry_statuses.recv().await.unwrap(), ExitStatusView::Saving);
+    let ExitStatusView::Failed {
+        failure_token: retry_token,
+        ..
+    } = retry_statuses.recv().await.unwrap()
+    else {
+        panic!("first exit flush must fail");
+    };
+
+    let retry_exit = Arc::new(RecordingExit::default());
+    retry_persistence
+        .retry_exit(retry_exit.clone(), retry_token.clone())
+        .unwrap();
+    assert_eq!(retry_statuses.recv().await.unwrap(), ExitStatusView::Saving);
+    retry_exit.wait_for_call().await;
+    assert_eq!(*retry_exit.calls.lock().unwrap(), vec![0]);
+    assert!(retry_persistence.consume_programmatic_exit_bypass());
+    assert_eq!(
+        retry_persistence
+            .retry_exit(retry_exit, retry_token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+
+    let bypass_persistence = ApplicationPersistence::new();
+    let mut bypass_statuses = status_receiver(&bypass_persistence);
+    bypass_persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::ApplicationQuit)
+        .unwrap();
+    assert_eq!(
+        bypass_statuses.recv().await.unwrap(),
+        ExitStatusView::Saving
+    );
+    let ExitStatusView::Failed {
+        failure_token: bypass_token,
+        ..
+    } = bypass_statuses.recv().await.unwrap()
+    else {
+        panic!("exit flush must fail before bypass");
+    };
+
+    let bypass_exit = Arc::new(RecordingExit::default());
+    bypass_persistence
+        .exit_without_saving(bypass_exit.clone(), bypass_token.clone())
+        .unwrap();
+    bypass_exit.wait_for_call().await;
+    assert_eq!(*bypass_exit.calls.lock().unwrap(), vec![0]);
+    assert!(bypass_persistence.consume_programmatic_exit_bypass());
+    assert_eq!(
+        bypass_persistence
+            .exit_without_saving(bypass_exit, bypass_token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+#[tokio::test]
+async fn exit_lifecycle_failure_token_collision_reserves_a_new_matching_challenge() {
+    let occupied = uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000001").unwrap();
+    let unique = uuid::Uuid::parse_str("00000000-0000-4000-8000-000000000002").unwrap();
+    let persistence = ApplicationPersistence::new();
+    {
+        let mut state = persistence.state.lock().unwrap();
+        state.failure_token_source =
+            FailureTokenSource::Deterministic(VecDeque::from([occupied, unique]));
+        state.failure_challenges.insert(
+            occupied,
+            PersistenceFailureChallenge {
+                token: occupied,
+                operation: PersistenceBypassOperation::StartWithoutSaving,
+                session_generation: 0,
+                discovery_generation: None,
+                durable_revision: 0,
+                selected_save_id: None,
+            },
+        );
+    }
+
+    let mut statuses = status_receiver(&persistence);
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    assert_eq!(statuses.recv().await.unwrap(), ExitStatusView::Saving);
+    let ExitStatusView::Failed {
+        failure_token: exit_token,
+        ..
+    } = statuses.recv().await.unwrap()
+    else {
+        panic!("exit failure must publish a failed status");
+    };
+
+    assert_eq!(uuid::Uuid::parse_str(&exit_token.0).unwrap(), unique);
+    assert_eq!(
+        persistence.state.lock().unwrap().failure_challenges.len(),
+        2
+    );
+
+    let original: PersistenceFailureTokenView =
+        serde_json::from_value(serde_json::json!(occupied.hyphenated().to_string())).unwrap();
+    persistence
+        .cancel_failure_token(
+            &original,
+            PersistenceBypassOperation::StartWithoutSaving,
+            FailureChallengeIdentity {
+                session_generation: 0,
+                discovery_generation: None,
+                durable_revision: 0,
+                selected_save_id: None,
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        persistence.cancel_exit(exit_token).unwrap(),
+        ExitStatusView::Idle
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn exit_lifecycle_supersedes_pending_debounce_without_waiting_for_its_deadline() {
+    let fixture = application_fixture_at(4, 1);
+    fixture
+        .session
+        .lock()
+        .unwrap()
+        .engine
+        .as_mut()
+        .unwrap()
+        .durable_revision = 2;
+    assert!(fixture.persistence.notify_durable_commit(4, 2).is_some());
+
+    let exit = Arc::new(RecordingExit::default());
+    fixture
+        .persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(1), exit.wait_for_call())
+        .await
+        .unwrap();
+
+    assert_eq!(fixture.filesystem.installed_count(), 1);
+    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 3)]
+async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session() {
+    let fixture = application_fixture_at(4, 1);
+    fixture
+        .session
+        .lock()
+        .unwrap()
+        .engine
+        .as_mut()
+        .unwrap()
+        .durable_revision = 2;
+    fixture.filesystem.pause_staging();
+    fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(4, 2);
+    std::thread::sleep(AUTOSAVE_DEBOUNCE + Duration::from_millis(50));
+    tokio::time::timeout(Duration::from_secs(2), fixture.filesystem.wait_for_stage())
+        .await
+        .unwrap();
+
+    let exit = Arc::new(RecordingExit::default());
+    fixture
+        .persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    tokio::task::yield_now().await;
+    assert!(fixture.session.try_lock().is_ok());
+    assert!(fixture.persistence.operation_gate.try_lock().is_err());
+    assert!(exit.calls.lock().unwrap().is_empty());
+
+    fixture.filesystem.release_staging();
+    tokio::time::timeout(Duration::from_secs(1), exit.wait_for_call())
+        .await
+        .unwrap();
+    assert_eq!(fixture.filesystem.installed_count(), 1);
 }
