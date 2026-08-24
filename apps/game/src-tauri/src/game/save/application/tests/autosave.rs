@@ -1,9 +1,8 @@
-use super::super::{
+use crate::game::save::coordinator::{
     AppSession, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
     AutosaveRegisteredIntent, AutosaveWriteJob, AutosaveWriteReceipt, BackgroundRetryTrigger,
-    CaptureIntent, CleanupOwner, CoordinatorFuture, CoordinatorTask, CoordinatorTaskScheduler,
-    PersistenceHealthView, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
-    AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
+    CaptureIntent, CleanupOwner, CoordinatorFuture, PersistenceHealthView, SaveCoordinator,
+    ThumbnailActivityView, ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -24,25 +23,12 @@ struct WriteObservation {
 }
 
 #[derive(Default)]
-pub(super) struct RecordingBackend {
+pub(crate) struct RecordingBackend {
     writes: Mutex<Vec<WriteObservation>>,
     write_committed: Condvar,
     pause_writes: AtomicBool,
     started: Notify,
     release: Notify,
-}
-
-#[derive(Default)]
-struct CountingScheduler {
-    spawned: AtomicU64,
-}
-
-impl CoordinatorTaskScheduler for CountingScheduler {
-    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
-        self.spawned.fetch_add(1, Ordering::SeqCst);
-        tokio::spawn(task);
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,7 +47,7 @@ enum FaultPoint {
 }
 
 impl RecordingBackend {
-    pub(super) fn paused() -> Self {
+    pub(crate) fn paused() -> Self {
         Self {
             pause_writes: AtomicBool::new(true),
             ..Self::default()
@@ -72,11 +58,11 @@ impl RecordingBackend {
         self.writes.lock().unwrap().clone()
     }
 
-    pub(super) fn write_count(&self) -> usize {
+    pub(crate) fn write_count(&self) -> usize {
         self.writes.lock().unwrap().len()
     }
 
-    pub(super) fn last_thumbnail_available(&self) -> Option<bool> {
+    pub(crate) fn last_thumbnail_available(&self) -> Option<bool> {
         self.writes
             .lock()
             .unwrap()
@@ -91,14 +77,14 @@ impl RecordingBackend {
         }
     }
 
-    pub(super) async fn wait_until_started(&self) {
+    pub(crate) async fn wait_until_started(&self) {
         let notified = self.started.notified();
         if self.observations().is_empty() {
             notified.await;
         }
     }
 
-    pub(super) fn release(&self) {
+    pub(crate) fn release(&self) {
         self.pause_writes.store(false, Ordering::SeqCst);
         self.release.notify_waiters();
     }
@@ -157,7 +143,7 @@ impl AutosaveBackend for RecordingBackend {
     }
 }
 
-pub(super) struct PhasedBackend {
+pub(crate) struct PhasedBackend {
     phases: Mutex<Vec<&'static str>>,
     slots: Mutex<Vec<SaveSlotView>>,
     pause_prepare: AtomicBool,
@@ -184,7 +170,7 @@ pub(super) struct PhasedBackend {
 }
 
 impl PhasedBackend {
-    pub(super) fn new(generation: u64) -> Self {
+    pub(crate) fn new(generation: u64) -> Self {
         Self {
             phases: Mutex::new(Vec::new()),
             slots: Mutex::new(empty_autosave_slots()),
@@ -212,18 +198,18 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) fn pause_prepare(&self) {
+    pub(crate) fn pause_prepare(&self) {
         self.pause_prepare.store(true, Ordering::SeqCst);
     }
 
-    pub(super) async fn wait_for_prepare(&self) {
+    pub(crate) async fn wait_for_prepare(&self) {
         let notified = self.prepare_started.notified();
         if !self.phases.lock().unwrap().contains(&"W:prepare") {
             notified.await;
         }
     }
 
-    pub(super) async fn wait_for_prepare_count(&self, count: usize) {
+    pub(crate) async fn wait_for_prepare_count(&self, count: usize) {
         loop {
             let notified = self.prepare_started.notified();
             let prepare_count = self
@@ -240,12 +226,12 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) fn release_prepare(&self) {
+    pub(crate) fn release_prepare(&self) {
         self.pause_prepare.store(false, Ordering::SeqCst);
         self.release_prepare.notify_waiters();
     }
 
-    pub(super) fn fail_next_commit(&self) {
+    pub(crate) fn fail_next_commit(&self) {
         self.fail_commit.store(true, Ordering::SeqCst);
     }
 
@@ -307,7 +293,7 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) async fn wait_for_receipts(&self, count: usize) {
+    pub(crate) async fn wait_for_receipts(&self, count: usize) {
         loop {
             let notified = self.committed.notified();
             if self.receipts.lock().unwrap().len() >= count {
@@ -317,7 +303,7 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) async fn wait_for_failed_commits(&self, count: u64) {
+    pub(crate) async fn wait_for_failed_commits(&self, count: u64) {
         loop {
             let notified = self.commit_failed.notified();
             if self.failed_commits.load(Ordering::SeqCst) >= count {
@@ -327,7 +313,7 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) fn mark_slot_used(&self, slot_number: u8) {
+    pub(crate) fn mark_slot_used(&self, slot_number: u8) {
         let mut slots = self.slots.lock().unwrap();
         let slot = slots
             .iter_mut()
@@ -340,12 +326,12 @@ impl PhasedBackend {
         slot.observed_modified_at = Some(SystemTime::UNIX_EPOCH);
     }
 
-    pub(super) fn probe_selected_target(&self) -> SaveSlotRef {
+    pub(crate) fn probe_selected_target(&self) -> SaveSlotRef {
         self.selection_probes.fetch_add(1, Ordering::SeqCst);
         crate::game::save::storage::select_autosave_target(&self.slots.lock().unwrap()).unwrap()
     }
 
-    pub(super) fn selection_probe_count(&self) -> u64 {
+    pub(crate) fn selection_probe_count(&self) -> u64 {
         self.selection_probes.load(Ordering::SeqCst)
     }
 
@@ -358,11 +344,11 @@ impl PhasedBackend {
         }
     }
 
-    pub(super) fn phases(&self) -> Vec<&'static str> {
+    pub(crate) fn phases(&self) -> Vec<&'static str> {
         self.phases.lock().unwrap().clone()
     }
 
-    pub(super) fn targets(&self) -> Vec<SaveSlotRef> {
+    pub(crate) fn targets(&self) -> Vec<SaveSlotRef> {
         self.receipts
             .lock()
             .unwrap()
@@ -371,11 +357,11 @@ impl PhasedBackend {
             .collect()
     }
 
-    pub(super) fn registered_targets(&self) -> Vec<SaveSlotRef> {
+    pub(crate) fn registered_targets(&self) -> Vec<SaveSlotRef> {
         self.registered_targets.lock().unwrap().clone()
     }
 
-    pub(super) fn receipt_revisions(&self) -> Vec<u64> {
+    pub(crate) fn receipt_revisions(&self) -> Vec<u64> {
         self.receipts
             .lock()
             .unwrap()
@@ -534,33 +520,6 @@ fn autosave_envelope(save_id: &str, target: SaveSlotRef, durable_revision: u64) 
     envelope
 }
 
-#[test]
-fn plain_thread_issues_a_ticket_and_eventually_runs_the_debounced_writer() {
-    let backend = Arc::new(RecordingBackend::default());
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-
-    let request = coordinator
-        .notify_durable_commit(1, 1)
-        .expect("a synchronous command must receive its capture ticket");
-    coordinator
-        .report_thumbnail_failure(&request.ticket)
-        .unwrap();
-
-    backend.wait_for_write_count_blocking(1);
-
-    assert_eq!(
-        backend.observations(),
-        [WriteObservation {
-            generation: 1,
-            revision: 1,
-            thumbnail_available: false,
-        }],
-        "health={:?} activity={:?}",
-        coordinator.persistence_health(),
-        coordinator.thumbnail_activity(),
-    );
-}
-
 #[tokio::test(start_paused = true)]
 async fn revisions_one_two_three_within_trailing_window_write_only_three() {
     let backend = Arc::new(RecordingBackend::default());
@@ -594,9 +553,7 @@ async fn revisions_one_two_three_within_trailing_window_write_only_three() {
 #[tokio::test(start_paused = true)]
 async fn no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_activity() {
     let backend = Arc::new(RecordingBackend::default());
-    let scheduler = Arc::new(CountingScheduler::default());
-    let coordinator =
-        SaveCoordinator::with_backend(backend.clone()).with_task_scheduler(scheduler.clone());
+    let coordinator = SaveCoordinator::with_backend(backend.clone());
     let activities = Arc::new(Mutex::new(Vec::new()));
     let activity_log = Arc::clone(&activities);
     coordinator.subscribe(
@@ -615,8 +572,6 @@ async fn no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_ac
             ThumbnailActivityView::Idle
         );
     }
-    assert_eq!(scheduler.spawned.load(Ordering::SeqCst), 50);
-
     tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
     tokio::task::yield_now().await;
     tokio::task::yield_now().await;
@@ -1144,158 +1099,6 @@ async fn first_write_success_keeps_health_pending_while_follow_up_is_outstanding
 }
 
 #[tokio::test(start_paused = true)]
-async fn scheduler_failure_preserves_committed_view_and_degrades_health() {
-    let backend = Arc::new(RecordingBackend::default());
-    let coordinator = SaveCoordinator::with_backend(backend);
-    coordinator.fail_next_schedule_for_test();
-
-    let result = coordinator.notify_committed("committed-view", 9, 30);
-
-    assert_eq!(result.committed, "committed-view");
-    assert!(result.thumbnail_capture.is_none());
-    assert!(matches!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded { .. }
-    ));
-}
-
-#[tokio::test(start_paused = true)]
-async fn newer_schedule_failure_survives_older_writer_success_and_retries_exact_revision() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.pause_prepare();
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-    let older = coordinator.notify_durable_commit(1, 40).unwrap();
-    coordinator.report_thumbnail_failure(&older.ticket).unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_prepare().await;
-
-    coordinator.fail_next_schedule_for_test();
-    assert!(coordinator.notify_durable_commit(1, 41).is_none());
-    assert!(matches!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded { .. }
-    ));
-    assert!(!matches!(
-        coordinator.thumbnail_activity(),
-        ThumbnailActivityView::Capturing
-    ));
-    assert!(!coordinator
-        .state
-        .lock()
-        .unwrap()
-        .tickets
-        .values()
-        .any(|record| record.purpose.intent() == CaptureIntent::Autosave));
-
-    backend.release_prepare();
-    backend.wait_for_receipts(1).await;
-    assert!(matches!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded { .. }
-    ));
-    assert_eq!(
-        coordinator
-            .state
-            .lock()
-            .unwrap()
-            .failed_write
-            .as_ref()
-            .map(|failure| failure.identity),
-        Some((1, 41))
-    );
-
-    let retry = coordinator
-        .retry_failed_background(BackgroundRetryTrigger::ManualSave)
-        .unwrap();
-    assert_eq!(
-        coordinator
-            .state
-            .lock()
-            .unwrap()
-            .tickets
-            .get(&retry.ticket)
-            .map(|record| record.purpose.clone()),
-        Some(ThumbnailCapturePurpose::Autosave {
-            session_generation: 1,
-            durable_revision: 41,
-        })
-    );
-    coordinator.report_thumbnail_failure(&retry.ticket).unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_receipts(2).await;
-
-    assert_eq!(
-        backend
-            .receipts
-            .lock()
-            .unwrap()
-            .iter()
-            .map(|receipt| receipt.durable_revision)
-            .collect::<Vec<_>>(),
-        [40, 41]
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn newer_schedule_failure_diagnostic_survives_older_writer_failure() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.pause_prepare();
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-    let older = coordinator.notify_durable_commit(1, 50).unwrap();
-    coordinator.report_thumbnail_failure(&older.ticket).unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_prepare().await;
-
-    coordinator.fail_next_schedule_for_test();
-    assert!(coordinator.notify_durable_commit(1, 51).is_none());
-    let scheduling_failure = coordinator.persistence_health();
-    assert_eq!(
-        scheduling_failure,
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_write_failed(),
-        }
-    );
-
-    backend.fail_commit.store(true, Ordering::SeqCst);
-    backend.release_prepare();
-    backend.wait_for_failed_commits(1).await;
-    tokio::task::yield_now().await;
-
-    assert_eq!(coordinator.persistence_health(), scheduling_failure);
-    assert_eq!(
-        coordinator
-            .state
-            .lock()
-            .unwrap()
-            .failed_write
-            .as_ref()
-            .map(|failure| failure.identity),
-        Some((1, 51))
-    );
-
-    let retry = coordinator
-        .retry_failed_background(BackgroundRetryTrigger::Flush)
-        .unwrap();
-    assert_eq!(
-        coordinator
-            .state
-            .lock()
-            .unwrap()
-            .tickets
-            .get(&retry.ticket)
-            .map(|record| record.purpose.clone()),
-        Some(ThumbnailCapturePurpose::Autosave {
-            session_generation: 1,
-            durable_revision: 51,
-        })
-    );
-    coordinator.report_thumbnail_failure(&retry.ticket).unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_receipts(1).await;
-    assert_eq!(backend.receipts.lock().unwrap()[0].durable_revision, 51);
-}
-
-#[tokio::test(start_paused = true)]
 async fn normal_write_orders_capture_prepare_revalidate_commit_and_keeps_session_responsive() {
     let backend = Arc::new(PhasedBackend::new(1));
     backend.pause_prepare();
@@ -1750,7 +1553,7 @@ async fn stale_session_generation_fence_rejects_autosave_without_reinstalling_pe
     };
     let serial_before = coordinator.state.lock().unwrap().next_autosave_serial;
     let stale_error = coordinator
-        .schedule_autosave(
+        .prepare_autosave(
             stale_purpose,
             "stale-ticket".into(),
             tokio::time::Instant::now() + Duration::from_secs(10),
@@ -1912,4 +1715,41 @@ async fn stale_notify_durable_commit_cannot_supersede_live_replacement_autosave_
         ThumbnailActivityView::Capturing,
         "thumbnail activity must still reflect the live capture"
     );
+}
+
+use super::helpers::application_fixture;
+
+#[tokio::test(start_paused = true)]
+async fn debounce_and_thumbnail_wait_do_not_hold_operation_gate() {
+    let fixture = application_fixture();
+    let request = fixture
+        .coordinator
+        .prepare_thumbnail(
+            crate::game::save::coordinator::ThumbnailCapturePurpose::Autosave {
+                session_generation: 1,
+                durable_revision: 1,
+            },
+        )
+        .unwrap();
+    let pending = fixture
+        .coordinator
+        .pending_autosave_for_test(request.ticket.clone(), request.deadline_at_for_test())
+        .unwrap();
+    let persistence = fixture.persistence.clone();
+    let coordinator = fixture.coordinator.clone();
+    let task = tokio::spawn(async move {
+        persistence
+            .await_pending_autosave(&coordinator, pending)
+            .await;
+    });
+
+    tokio::task::yield_now().await;
+    assert!(fixture.persistence.operation_gate.try_lock().is_ok());
+
+    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
+    tokio::task::yield_now().await;
+    assert!(fixture.persistence.operation_gate.try_lock().is_ok());
+
+    task.abort();
+    let _ = task.await;
 }

@@ -15,10 +15,9 @@ use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection
 use game::save::application::{AppSession, ApplicationPersistence};
 use game::save::capture::capture_checkpoint;
 use game::save::coordinator::{
-    ApplicationExit, CoordinatorTask, CoordinatorTaskScheduler, ExitRequestSource, ExitStatusView,
-    FlushOperation, PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
-    PreparedThumbnailPurpose, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
-    ThumbnailCaptureRequestView,
+    ApplicationExit, ExitRequestSource, ExitStatusView, FlushOperation, PersistenceBypassOperation,
+    PersistenceFailureTokenView, PersistenceHealthView, PreparedThumbnailPurpose, SaveCoordinator,
+    ThumbnailActivityView, ThumbnailCapturePurpose, ThumbnailCaptureRequestView,
 };
 #[cfg(feature = "e2e")]
 use game::save::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
@@ -210,7 +209,7 @@ fn build_app_state_with_storage(
         last_saved_at: Mutex::new(None),
         availability_error: Mutex::new(initial_error.clone()),
     });
-    let coordinator = SaveCoordinator::with_backend_for_application(
+    let coordinator = SaveCoordinator::with_application(
         persistence.clone(),
         Arc::clone(&session),
         Arc::clone(&operation_gate),
@@ -1654,15 +1653,6 @@ impl ApplicationExit for TauriApplicationExit {
     }
 }
 
-struct TauriCoordinatorTaskScheduler;
-
-impl CoordinatorTaskScheduler for TauriCoordinatorTaskScheduler {
-    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
-        tauri::async_runtime::spawn(task);
-        Ok(())
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
@@ -1683,16 +1673,12 @@ pub fn run() {
                 &app.config().identifier,
             )
             .map_err(|error| std::io::Error::other(error.message))?;
-            let mut state = build_app_state_with_storage(
+            let state = build_app_state_with_storage(
                 resources_dir,
                 save_root,
                 Arc::new(ProductionSaveFilesystem),
             )
             .map_err(|error| std::io::Error::other(error.message))?;
-            state.coordinator = state
-                .coordinator
-                .clone()
-                .with_task_scheduler(Arc::new(TauriCoordinatorTaskScheduler));
             let app_handle = app.handle().clone();
             bind_persistence_status_events(&state.coordinator, move |event, payload| {
                 if let Err(error) = app_handle.emit(event, payload) {
@@ -4629,26 +4615,6 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(exclusive.code, "persistenceOperationInProgress");
-        }
-
-        #[tokio::test]
-        async fn scheduler_failure_degrades_health_but_returns_committed_state() {
-            let app = mutation_app();
-            app.coordinator.fail_next_schedule_for_test();
-
-            let result = run_gameplay_mutation(
-                &app,
-                MutationPersistencePolicy::AutosaveIfAdvanced,
-                |engine| engine.enter_sublocation("room"),
-            )
-            .unwrap();
-
-            assert_eq!(result.state.chapter.id, "chapter_1");
-            assert!(result.thumbnail_capture.is_none());
-            assert!(matches!(
-                app.coordinator.persistence_health(),
-                PersistenceHealthView::Degraded { .. }
-            ));
         }
 
         #[tokio::test]

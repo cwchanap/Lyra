@@ -1,4 +1,5 @@
-pub(crate) use super::application::{AppSession, SessionTransitionIdentity};
+pub(crate) use super::application::session::SessionTransitionIdentity;
+pub(crate) use super::application::{AppSession, ApplicationPersistence};
 use super::capture::CapturedCheckpoint;
 #[cfg(feature = "e2e")]
 use super::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
@@ -120,6 +121,13 @@ pub(crate) struct ThumbnailCaptureRequestView {
     deadline_at: Instant,
 }
 
+#[cfg(test)]
+impl ThumbnailCaptureRequestView {
+    pub(crate) fn deadline_at_for_test(&self) -> Instant {
+        self.deadline_at
+    }
+}
+
 impl ThumbnailCaptureRequestView {
     pub(crate) fn timeout_ms(&self) -> u32 {
         remaining_timeout_ms(self.deadline_at, Instant::now())
@@ -183,61 +191,6 @@ pub(crate) trait ApplicationExit: Send + Sync {
     fn exit(&self, code: i32) -> Result<(), GameError>;
 }
 
-pub(crate) type CoordinatorTask = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
-
-pub(crate) trait CoordinatorTaskScheduler: Send + Sync {
-    /// Accepts ownership of `task`. Returning an error means the task was not
-    /// accepted and will never be polled.
-    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError>;
-}
-
-struct PortableCoordinatorTaskScheduler {
-    runtime: Option<tokio::runtime::Handle>,
-    fallback: Mutex<Option<tokio::runtime::Handle>>,
-}
-
-impl PortableCoordinatorTaskScheduler {
-    fn capture() -> Self {
-        Self {
-            runtime: tokio::runtime::Handle::try_current().ok(),
-            fallback: Mutex::new(None),
-        }
-    }
-}
-
-impl CoordinatorTaskScheduler for PortableCoordinatorTaskScheduler {
-    fn spawn(&self, task: CoordinatorTask) -> Result<(), GameError> {
-        if let Some(handle) = tokio::runtime::Handle::try_current()
-            .ok()
-            .or_else(|| self.runtime.clone())
-        {
-            handle.spawn(task);
-            return Ok(());
-        }
-        let handle = {
-            let mut guard = self
-                .fallback
-                .lock()
-                .map_err(|_| GameError::save_write_failed())?;
-            if guard.is_none() {
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|_| GameError::save_write_failed())?;
-                let handle = runtime.handle().clone();
-                std::thread::Builder::new()
-                    .name("lyra-save-coordinator".into())
-                    .spawn(move || runtime.block_on(std::future::pending::<()>()))
-                    .map_err(|_| GameError::save_write_failed())?;
-                *guard = Some(handle);
-            }
-            guard.as_ref().unwrap().clone()
-        };
-        handle.spawn(task);
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(
     tag = "type",
@@ -279,7 +232,7 @@ pub(crate) struct AutosaveWriteReceipt {
 }
 
 pub(crate) struct AutosaveCapture {
-    job: AutosaveWriteJob,
+    pub(crate) job: AutosaveWriteJob,
     slots: Vec<SaveSlotView>,
     checkpoint: Option<CapturedCheckpoint>,
     content_revision: Option<String>,
@@ -314,6 +267,10 @@ impl AutosaveCapture {
             .clone()
             .zip(self.content_revision.clone())
             .ok_or_else(GameError::save_write_failed)
+    }
+
+    pub(crate) fn slots(&self) -> &[SaveSlotView] {
+        &self.slots
     }
 
     pub(crate) fn register(
@@ -383,7 +340,7 @@ impl AutosaveRegisteredIntent {
     }
 
     #[cfg(test)]
-    fn prepare_simulated(self) -> AutosavePreparedWrite {
+    pub(crate) fn prepare_simulated(self) -> AutosavePreparedWrite {
         AutosavePreparedWrite {
             identity: self.identity,
             thumbnail_available: self.thumbnail_available,
@@ -398,7 +355,7 @@ enum AutosavePreparedStorage {
 }
 
 pub(crate) struct AutosavePreparedWrite {
-    identity: AutosaveWriteReceipt,
+    pub(crate) identity: AutosaveWriteReceipt,
     thumbnail_available: bool,
     storage: AutosavePreparedStorage,
 }
@@ -441,7 +398,7 @@ impl AutosavePreparedWrite {
     }
 
     #[cfg(test)]
-    fn commit_simulated(self) -> AutosaveCommittedWrite {
+    pub(crate) fn commit_simulated(self) -> AutosaveCommittedWrite {
         AutosaveCommittedWrite {
             receipt: self.identity,
             cleanup_diagnostic: None,
@@ -480,7 +437,7 @@ impl AutosaveCommittedWrite {
         })
     }
 
-    fn into_parts(self) -> (AutosaveWriteReceipt, Option<GameError>) {
+    pub(crate) fn into_parts(self) -> (AutosaveWriteReceipt, Option<GameError>) {
         (self.receipt, self.cleanup_diagnostic)
     }
 }
@@ -620,14 +577,14 @@ fn selected_save_challenge_key(reference: SaveSlotRef, observed_save_id: &str) -
     format!("{save_type}:{slot}:{observed_save_id}")
 }
 
-type HealthSubscriber = Arc<dyn Fn(PersistenceHealthView) + Send + Sync>;
-type ActivitySubscriber = Arc<dyn Fn(ThumbnailActivityView) + Send + Sync>;
-type ExitSubscriber = Arc<dyn Fn(ExitStatusView) + Send + Sync>;
+pub(crate) type HealthSubscriber = Arc<dyn Fn(PersistenceHealthView) + Send + Sync>;
+pub(crate) type ActivitySubscriber = Arc<dyn Fn(ThumbnailActivityView) + Send + Sync>;
+pub(crate) type ExitSubscriber = Arc<dyn Fn(ExitStatusView) + Send + Sync>;
 #[cfg(test)]
-type RetryEligibilityHook = Arc<dyn Fn() + Send + Sync>;
+pub(crate) type RetryEligibilityHook = Arc<dyn Fn() + Send + Sync>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum CaptureIntent {
+pub(crate) enum CaptureIntent {
     Autosave,
     ManualSave,
 }
@@ -656,30 +613,30 @@ impl ThumbnailCapturePurpose {
     }
 }
 
-struct TicketRecord {
-    purpose: ThumbnailCapturePurpose,
-    issued_at: Instant,
-    deadline_at: Instant,
-    terminal: Option<CaptureTerminalResult>,
+pub(crate) struct TicketRecord {
+    pub(crate) purpose: ThumbnailCapturePurpose,
+    pub(crate) issued_at: Instant,
+    pub(crate) deadline_at: Instant,
+    pub(crate) terminal: Option<CaptureTerminalResult>,
 }
 
 #[derive(Clone)]
-struct PendingAutosave {
-    serial: u64,
-    session_generation: u64,
-    durable_revision: u64,
-    ticket: String,
-    purpose: ThumbnailCapturePurpose,
-    thumbnail_capture_required: bool,
-    debounce_deadline: Instant,
-    capture_deadline: Instant,
+pub(crate) struct PendingAutosave {
+    pub(crate) serial: u64,
+    pub(crate) session_generation: u64,
+    pub(crate) durable_revision: u64,
+    pub(crate) ticket: String,
+    pub(crate) purpose: ThumbnailCapturePurpose,
+    pub(crate) thumbnail_capture_required: bool,
+    pub(crate) debounce_deadline: Instant,
+    pub(crate) capture_deadline: Instant,
 }
 
 #[derive(Clone)]
-struct BackgroundWriteFailure {
-    identity: (u64, u64),
-    diagnostic: GameError,
-    thumbnail_capture_required: bool,
+pub(crate) struct BackgroundWriteFailure {
+    pub(crate) identity: (u64, u64),
+    pub(crate) diagnostic: GameError,
+    pub(crate) thumbnail_capture_required: bool,
 }
 
 enum RetryEligibility {
@@ -692,18 +649,18 @@ enum RetryEligibility {
 }
 
 #[derive(Clone, PartialEq, Eq)]
-enum CleanupOwner {
+pub(crate) enum CleanupOwner {
     Receipt(AutosaveWriteReceipt),
     Attempt(u64),
 }
 
 #[derive(Clone)]
-struct CleanupFailure {
-    owner: CleanupOwner,
+pub(crate) struct CleanupFailure {
+    pub(crate) owner: CleanupOwner,
     diagnostic: GameError,
 }
 
-enum FailureTokenSource {
+pub(crate) enum FailureTokenSource {
     Random,
     #[cfg(test)]
     Deterministic(VecDeque<Uuid>),
@@ -721,28 +678,28 @@ impl FailureTokenSource {
     }
 }
 
-struct CoordinatorState {
-    tickets: HashMap<String, TicketRecord>,
-    latest_by_intent: HashMap<CaptureIntent, String>,
-    persistence_health: PersistenceHealthView,
-    thumbnail_activity: ThumbnailActivityView,
-    health_subscribers: Vec<HealthSubscriber>,
-    activity_subscribers: Vec<ActivitySubscriber>,
-    exit_subscribers: Vec<ExitSubscriber>,
-    next_session_generation: u64,
-    discovery_generation: u64,
-    next_autosave_serial: u64,
-    next_cleanup_attempt: u64,
-    pending_autosave: Option<PendingAutosave>,
-    last_successful_write: Option<AutosaveWriteReceipt>,
-    failed_write: Option<BackgroundWriteFailure>,
-    cleanup_failure: Option<CleanupFailure>,
-    minimum_cleanup_attempt: u64,
-    failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
-    failure_token_source: FailureTokenSource,
-    exit_status: ExitStatusView,
-    programmatic_exit_bypass: bool,
-    exit_action_in_progress: bool,
+pub(crate) struct CoordinatorState {
+    pub(crate) tickets: HashMap<String, TicketRecord>,
+    pub(crate) latest_by_intent: HashMap<CaptureIntent, String>,
+    pub(crate) persistence_health: PersistenceHealthView,
+    pub(crate) thumbnail_activity: ThumbnailActivityView,
+    pub(crate) health_subscribers: Vec<HealthSubscriber>,
+    pub(crate) activity_subscribers: Vec<ActivitySubscriber>,
+    pub(crate) exit_subscribers: Vec<ExitSubscriber>,
+    pub(crate) next_session_generation: u64,
+    pub(crate) discovery_generation: u64,
+    pub(crate) next_autosave_serial: u64,
+    pub(crate) next_cleanup_attempt: u64,
+    pub(crate) pending_autosave: Option<PendingAutosave>,
+    pub(crate) last_successful_write: Option<AutosaveWriteReceipt>,
+    pub(crate) failed_write: Option<BackgroundWriteFailure>,
+    pub(crate) cleanup_failure: Option<CleanupFailure>,
+    pub(crate) minimum_cleanup_attempt: u64,
+    pub(crate) failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
+    pub(crate) failure_token_source: FailureTokenSource,
+    pub(crate) exit_status: ExitStatusView,
+    pub(crate) programmatic_exit_bypass: bool,
+    pub(crate) exit_action_in_progress: bool,
 }
 
 impl Default for CoordinatorState {
@@ -833,18 +790,15 @@ impl ExitFailureNotification {
 
 #[derive(Clone)]
 pub(crate) struct SaveCoordinator {
-    state: Arc<Mutex<CoordinatorState>>,
+    pub(crate) state: Arc<Mutex<CoordinatorState>>,
     ticket_updates: Arc<Notify>,
     backend: Option<Arc<dyn AutosaveBackend>>,
-    fail_next_schedule: Arc<AtomicBool>,
+    application: Option<Arc<ApplicationPersistence>>,
     exit_application: Option<ExitApplicationContext>,
-    task_scheduler: Arc<dyn CoordinatorTaskScheduler>,
     exit_transition: Arc<Mutex<()>>,
     fail_next_exit_prerequisite: Arc<AtomicBool>,
     fail_next_cancel_guard_clear: Arc<AtomicBool>,
     fail_next_exit_challenge: Arc<AtomicBool>,
-    #[cfg(test)]
-    panic_next_exit_worker: Arc<AtomicBool>,
     #[cfg(test)]
     retry_after_eligibility_hook: Arc<Mutex<Option<RetryEligibilityHook>>>,
     #[cfg(feature = "e2e")]
@@ -896,15 +850,12 @@ impl Default for SaveCoordinator {
             state: Arc::new(Mutex::new(CoordinatorState::default())),
             ticket_updates: Arc::new(Notify::new()),
             backend: None,
-            fail_next_schedule: Arc::new(AtomicBool::new(false)),
+            application: None,
             exit_application: None,
-            task_scheduler: Arc::new(PortableCoordinatorTaskScheduler::capture()),
             exit_transition: Arc::new(Mutex::new(())),
             fail_next_exit_prerequisite: Arc::new(AtomicBool::new(false)),
             fail_next_cancel_guard_clear: Arc::new(AtomicBool::new(false)),
             fail_next_exit_challenge: Arc::new(AtomicBool::new(false)),
-            #[cfg(test)]
-            panic_next_exit_worker: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             retry_after_eligibility_hook: Arc::new(Mutex::new(None)),
             #[cfg(feature = "e2e")]
@@ -946,6 +897,22 @@ impl SaveCoordinator {
         }
     }
 
+    pub(crate) fn with_application(
+        application: Arc<ApplicationPersistence>,
+        session: Arc<Mutex<AppSession>>,
+        operation_gate: Arc<tokio::sync::Mutex<()>>,
+    ) -> Self {
+        Self {
+            backend: Some(application.clone()),
+            application: Some(application),
+            exit_application: Some(ExitApplicationContext {
+                session,
+                operation_gate,
+            }),
+            ..Self::default()
+        }
+    }
+
     pub(crate) fn with_exit_application(
         mut self,
         session: Arc<Mutex<AppSession>>,
@@ -955,14 +922,6 @@ impl SaveCoordinator {
             session,
             operation_gate,
         });
-        self
-    }
-
-    pub(crate) fn with_task_scheduler(
-        mut self,
-        scheduler: Arc<dyn CoordinatorTaskScheduler>,
-    ) -> Self {
-        self.task_scheduler = scheduler;
         self
     }
 
@@ -1376,18 +1335,46 @@ impl SaveCoordinator {
     ) -> Result<tokio::sync::oneshot::Sender<ExitAttemptRecovery>, GameError> {
         let coordinator = self.clone();
         let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-        self.task_scheduler.spawn(Box::pin(async move {
+        #[cfg(test)]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let Ok(recovery) = start_rx.await else {
+                    return;
+                };
+                let mut recovery = ExitAttemptRecoveryGuard::new(coordinator.clone(), recovery);
+                match coordinator.flush_for_exit().await {
+                    Ok(()) => {
+                        {
+                            let Ok(mut state) = coordinator.state.lock() else {
+                                return;
+                            };
+                            state.programmatic_exit_bypass = true;
+                        }
+                        match exit.exit(0) {
+                            Ok(()) => recovery.disarm(),
+                            Err(error) => {
+                                if let Ok(notification) = coordinator.commit_exit_failure(error) {
+                                    recovery.disarm();
+                                    notification.publish();
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        if let Ok(notification) = coordinator.commit_exit_failure(error) {
+                            recovery.disarm();
+                            notification.publish();
+                        }
+                    }
+                }
+            });
+        }
+        #[cfg(not(test))]
+        tauri::async_runtime::spawn(async move {
             let Ok(recovery) = start_rx.await else {
                 return;
             };
             let mut recovery = ExitAttemptRecoveryGuard::new(coordinator.clone(), recovery);
-            #[cfg(test)]
-            if coordinator
-                .panic_next_exit_worker
-                .swap(false, Ordering::SeqCst)
-            {
-                panic!("controlled post-start exit worker panic");
-            }
             match coordinator.flush_for_exit().await {
                 Ok(()) => {
                     {
@@ -1413,7 +1400,7 @@ impl SaveCoordinator {
                     }
                 }
             }
-        }))?;
+        });
         Ok(start_tx)
     }
 
@@ -1568,7 +1555,6 @@ impl SaveCoordinator {
         let exit_subscribers = state.exit_subscribers.clone();
         *session = AppSession::installed(engine, generation, None);
         self.e2e_persistence_faults.reset();
-        self.fail_next_schedule.store(false, Ordering::SeqCst);
         self.fail_next_exit_prerequisite
             .store(false, Ordering::SeqCst);
         self.fail_next_cancel_guard_clear
@@ -2039,7 +2025,7 @@ impl SaveCoordinator {
         };
         match self.issue_thumbnail(purpose.clone()) {
             Ok(request) => {
-                if let Err(error) = self.schedule_autosave(
+                if let Err(error) = self.prepare_autosave(
                     purpose,
                     request.ticket.clone(),
                     request.deadline_at,
@@ -2091,7 +2077,7 @@ impl SaveCoordinator {
             }
         };
         if let Err(error) =
-            self.schedule_autosave(purpose, ticket.clone(), deadline_at, false, false)
+            self.prepare_autosave(purpose, ticket.clone(), deadline_at, false, false)
         {
             self.record_schedule_failure_without_thumbnail(
                 session_generation,
@@ -2184,7 +2170,7 @@ impl SaveCoordinator {
                 }
             };
             if let Err(error) =
-                self.schedule_autosave(purpose, ticket.clone(), deadline_at, true, false)
+                self.prepare_autosave(purpose, ticket.clone(), deadline_at, true, false)
             {
                 self.record_schedule_failure_without_thumbnail(
                     session_generation,
@@ -2203,7 +2189,7 @@ impl SaveCoordinator {
                 return None;
             }
         };
-        if let Err(error) = self.schedule_autosave(
+        if let Err(error) = self.prepare_autosave(
             purpose,
             request.ticket.clone(),
             request.deadline_at,
@@ -2222,7 +2208,7 @@ impl SaveCoordinator {
         }
     }
 
-    async fn acquire_operation_gate(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+    pub(crate) async fn acquire_operation_gate(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
         let operation_gate = self
             .exit_application
             .as_ref()
@@ -2430,6 +2416,10 @@ impl SaveCoordinator {
         Ok(thumbnail)
     }
 
+    pub(crate) fn ticket_updates(&self) -> Arc<Notify> {
+        Arc::clone(&self.ticket_updates)
+    }
+
     pub(crate) fn last_successful_write(&self) -> Option<AutosaveWriteReceipt> {
         self.state
             .lock()
@@ -2473,13 +2463,25 @@ impl SaveCoordinator {
             }
         };
         let coordinator = self.clone();
-        self.task_scheduler.spawn(Box::pin(async move {
+        #[cfg(test)]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _operation_gate = coordinator.acquire_operation_gate().await;
+                match backend.cleanup_orphans().await {
+                    Ok(()) => coordinator.resolve_cleanup_failure(&owner),
+                    Err(error) => coordinator.record_cleanup_failure(owner, error),
+                }
+            });
+        }
+        #[cfg(not(test))]
+        tauri::async_runtime::spawn(async move {
             let _operation_gate = coordinator.acquire_operation_gate().await;
             match backend.cleanup_orphans().await {
                 Ok(()) => coordinator.resolve_cleanup_failure(&owner),
                 Err(error) => coordinator.record_cleanup_failure(owner, error),
             }
-        }))
+        });
+        Ok(())
     }
 
     pub(crate) fn prepare_thumbnail(
@@ -2681,7 +2683,7 @@ impl SaveCoordinator {
         Ok(())
     }
 
-    fn schedule_autosave(
+    pub(crate) fn prepare_autosave(
         &self,
         purpose: ThumbnailCapturePurpose,
         ticket: String,
@@ -2689,9 +2691,6 @@ impl SaveCoordinator {
         allow_unchanged_retry: bool,
         thumbnail_capture_required: bool,
     ) -> Result<(), GameError> {
-        if self.backend.is_none() || self.fail_next_schedule.swap(false, Ordering::SeqCst) {
-            return Err(GameError::save_write_failed());
-        }
         let (session_generation, durable_revision) = match purpose {
             ThumbnailCapturePurpose::Autosave {
                 session_generation,
@@ -2747,184 +2746,25 @@ impl SaveCoordinator {
             session_generation,
             PersistenceHealthView::Pending,
         )?;
-        let coordinator = self.clone();
-        self.task_scheduler.spawn(Box::pin(async move {
-            tokio::time::sleep_until(pending.debounce_deadline).await;
-            coordinator.run_pending_autosave(pending).await;
-        }))?;
-        Ok(())
-    }
-
-    async fn run_pending_autosave(&self, pending: PendingAutosave) {
-        if !self.pending_matches(&pending) {
-            return;
+        if let Some(application) = self.application.as_ref() {
+            return application.clone().schedule_autosave(self.clone(), pending);
         }
-        let thumbnail = match self
-            .wait_for_terminal_thumbnail(
-                &pending.ticket,
-                &pending.purpose,
-                pending.capture_deadline,
-            )
-            .await
+        #[cfg(test)]
         {
-            Ok(result) => result,
-            Err(error) if error.code == "staleThumbnailTicket" => return,
-            Err(error) => {
-                self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                );
-                return;
-            }
-        };
-        if !self.pending_matches(&pending) {
-            return;
+            let backend = self
+                .backend
+                .as_ref()
+                .cloned()
+                .ok_or_else(GameError::save_write_failed)?;
+            ApplicationPersistence::schedule_autosave_with_backend(backend, self.clone(), pending)
         }
-        self.execute_pending_autosave(pending, thumbnail).await;
-    }
-
-    async fn execute_pending_autosave(
-        &self,
-        pending: PendingAutosave,
-        thumbnail: CaptureTerminalResult,
-    ) {
-        if !self.pending_matches(&pending) {
-            return;
-        }
-        let _operation_gate = self.acquire_operation_gate().await;
-        if !self.pending_matches(&pending) {
-            return;
-        }
-        let Some(backend) = self.backend.as_ref() else {
-            self.record_background_failure(
-                pending.session_generation,
-                pending.durable_revision,
-                pending.thumbnail_capture_required,
-                GameError::save_write_failed(),
-            );
-            return;
-        };
-        let capture = match backend
-            .capture(AutosaveWriteJob {
-                session_generation: pending.session_generation,
-                durable_revision: pending.durable_revision,
-                thumbnail,
-            })
-            .await
+        #[cfg(not(test))]
         {
-            Ok(capture) => capture,
-            Err(error) if error.code == "staleSessionGeneration" => {
-                self.record_stale_write(&pending);
-                return;
-            }
-            Err(error) => {
-                self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                );
-                return;
-            }
-        };
-        let target = match select_autosave_target(&capture.slots) {
-            Ok(target) => target,
-            Err(error) => {
-                self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                );
-                return;
-            }
-        };
-        let save_id = Uuid::new_v4().hyphenated().to_string();
-        let expected_receipt = AutosaveWriteReceipt {
-            session_generation: pending.session_generation,
-            durable_revision: pending.durable_revision,
-            slot: target,
-            save_id: save_id.clone(),
-        };
-        let registered = match backend.register(capture, target, save_id).await {
-            Ok(registered) => registered,
-            Err(error) => {
-                self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                );
-                return;
-            }
-        };
-        let prepared = match backend.prepare(registered).await {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                );
-                return;
-            }
-        };
-        match backend.commit_if_current(prepared).await {
-            Ok(AutosaveCommitOutcome::Committed(committed)) => {
-                let (receipt, cleanup_diagnostic) = committed.into_parts();
-                if receipt == expected_receipt {
-                    self.record_background_success(&pending, receipt, cleanup_diagnostic);
-                } else {
-                    self.record_background_failure(
-                        pending.session_generation,
-                        pending.durable_revision,
-                        pending.thumbnail_capture_required,
-                        GameError::save_write_failed(),
-                    );
-                }
-            }
-            Ok(AutosaveCommitOutcome::Stale(prepared)) => match prepared.discard() {
-                Ok(()) => self.record_stale_write(&pending),
-                Err(error) => self.record_background_failure(
-                    pending.session_generation,
-                    pending.durable_revision,
-                    pending.thumbnail_capture_required,
-                    error,
-                ),
-            },
-            Err(error) => self.record_background_failure(
-                pending.session_generation,
-                pending.durable_revision,
-                pending.thumbnail_capture_required,
-                error,
-            ),
+            Err(GameError::save_write_failed())
         }
     }
 
-    async fn wait_for_terminal_thumbnail(
-        &self,
-        ticket: &str,
-        expected: &ThumbnailCapturePurpose,
-        deadline: Instant,
-    ) -> Result<CaptureTerminalResult, GameError> {
-        loop {
-            if let Some(result) = self.take_terminal_thumbnail(ticket, expected)? {
-                return Ok(result);
-            }
-            if Instant::now() >= deadline {
-                return self.claim_thumbnail(ticket, expected);
-            }
-            tokio::select! {
-                _ = self.ticket_updates.notified() => {}
-                _ = tokio::time::sleep_until(deadline) => {}
-            }
-        }
-    }
-
-    fn take_terminal_thumbnail(
+    pub(crate) fn take_terminal_thumbnail(
         &self,
         ticket: &str,
         expected: &ThumbnailCapturePurpose,
@@ -2948,7 +2788,7 @@ impl SaveCoordinator {
         Ok(record.terminal.take())
     }
 
-    fn pending_matches(&self, pending: &PendingAutosave) -> bool {
+    pub(crate) fn pending_matches(&self, pending: &PendingAutosave) -> bool {
         self.state
             .lock()
             .ok()
@@ -2956,7 +2796,7 @@ impl SaveCoordinator {
             == Some(pending.serial)
     }
 
-    fn record_background_success(
+    pub(crate) fn record_background_success(
         &self,
         completed: &PendingAutosave,
         receipt: AutosaveWriteReceipt,
@@ -3077,7 +2917,7 @@ impl SaveCoordinator {
         }
     }
 
-    fn record_stale_write(&self, completed: &PendingAutosave) {
+    pub(crate) fn record_stale_write(&self, completed: &PendingAutosave) {
         let (health, subscribers) = if let Ok(mut state) = self.state.lock() {
             if state
                 .pending_autosave
@@ -3098,7 +2938,7 @@ impl SaveCoordinator {
         publish_health(&subscribers, &health);
     }
 
-    fn resolve_cleanup_failure(&self, owner: &CleanupOwner) {
+    pub(crate) fn resolve_cleanup_failure(&self, owner: &CleanupOwner) {
         let publication = if let Ok(mut state) = self.state.lock() {
             if state
                 .cleanup_failure
@@ -3120,7 +2960,7 @@ impl SaveCoordinator {
         }
     }
 
-    fn record_cleanup_failure(&self, owner: CleanupOwner, error: GameError) {
+    pub(crate) fn record_cleanup_failure(&self, owner: CleanupOwner, error: GameError) {
         let publication = if let Ok(mut state) = self.state.lock() {
             let stale = match &owner {
                 CleanupOwner::Receipt(receipt) => {
@@ -3154,7 +2994,7 @@ impl SaveCoordinator {
         }
     }
 
-    fn record_background_failure(
+    pub(crate) fn record_background_failure(
         &self,
         session_generation: u64,
         durable_revision: u64,
@@ -3331,10 +3171,10 @@ impl SaveCoordinator {
         // state is mutated. `next_session_generation` is the replacement
         // high-water mark; a capture for a prior generation must not insert a
         // ticket, supersede `latest_by_intent`, or publish `Capturing`, because
-        // the late `schedule_autosave` / `record_schedule_failure` fences would
+        // the late autosave scheduling / `record_schedule_failure` fences would
         // otherwise leave that stale ticket installed (and, for the autosave
         // intent, evict a live replacement-session ticket). `<` (not `!=`)
-        // matches the high-water-mark semantic used by `schedule_autosave` and
+        // matches the high-water-mark semantic used by autosave scheduling and
         // `record_schedule_failure`, so a current-or-ahead generation still
         // issues normally.
         if purpose.session_generation() < state.next_session_generation {
@@ -3370,33 +3210,23 @@ impl SaveCoordinator {
         let subscribers = set_thumbnail_activity(&mut state, view.clone());
         drop(state);
         publish_activity(&subscribers, &view);
-        if let Err(error) = self.task_scheduler.spawn(thumbnail_ticket_expiry_task(
-            Arc::downgrade(&self.state),
-            ticket.clone(),
-            deadline_at,
-            Arc::downgrade(&self.ticket_updates),
-        )) {
-            // The expiry task never started, so without an explicit terminal
-            // publication the activity would remain stuck at `Capturing` for
-            // any subscriber that already observed it. Revert to a terminal
-            // `Unavailable` view (the same terminal state the expiry task
-            // publishes on timeout) while preserving the ticket /
-            // latest_by_intent cleanup and the original error return.
-            let terminal = capture_unavailable_activity();
-            let activity_subscribers = if let Ok(mut state) = self.state.lock() {
-                if let Some(record) = state.tickets.remove(&ticket) {
-                    let intent = record.purpose.intent();
-                    if state.latest_by_intent.get(&intent) == Some(&ticket) {
-                        state.latest_by_intent.remove(&intent);
-                    }
-                }
-                set_thumbnail_activity(&mut state, terminal.clone())
-            } else {
-                Vec::new()
-            };
-            publish_activity(&activity_subscribers, &terminal);
-            return Err(error);
+        let expiry_state = Arc::downgrade(&self.state);
+        let expiry_updates = Arc::downgrade(&self.ticket_updates);
+        let expiry_ticket = ticket.clone();
+        #[cfg(test)]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(thumbnail_ticket_expiry_task(
+                expiry_state,
+                expiry_ticket,
+                deadline_at,
+                expiry_updates,
+            ));
         }
+        #[cfg(not(test))]
+        tauri::async_runtime::spawn(async move {
+            thumbnail_ticket_expiry_task(expiry_state, expiry_ticket, deadline_at, expiry_updates)
+                .await;
+        });
         Ok(Some(ThumbnailCaptureRequestView {
             ticket,
             deadline_at,
@@ -3492,7 +3322,7 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn ticket_only() -> Self {
+    pub(crate) fn ticket_only() -> Self {
         Self::new()
     }
 
@@ -3504,12 +3334,7 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    pub(crate) fn fail_next_schedule_for_test(&self) {
-        self.fail_next_schedule.store(true, Ordering::SeqCst);
-    }
-
-    #[cfg(test)]
-    fn set_retry_after_eligibility_hook(&self, hook: RetryEligibilityHook) {
+    pub(crate) fn set_retry_after_eligibility_hook(&self, hook: RetryEligibilityHook) {
         *self.retry_after_eligibility_hook.lock().unwrap() = Some(hook);
     }
 
@@ -3539,12 +3364,32 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn panic_next_exit_worker_for_test(&self) {
-        self.panic_next_exit_worker.store(true, Ordering::SeqCst);
+    pub(crate) fn pending_autosave_for_test(
+        &self,
+        ticket: String,
+        capture_deadline: Instant,
+    ) -> Result<PendingAutosave, GameError> {
+        let mut state = self.lock_state()?;
+        state.next_autosave_serial = state.next_autosave_serial.wrapping_add(1);
+        let pending = PendingAutosave {
+            serial: state.next_autosave_serial,
+            session_generation: 1,
+            durable_revision: 1,
+            ticket,
+            purpose: ThumbnailCapturePurpose::Autosave {
+                session_generation: 1,
+                durable_revision: 1,
+            },
+            thumbnail_capture_required: true,
+            debounce_deadline: Instant::now() + AUTOSAVE_DEBOUNCE,
+            capture_deadline,
+        };
+        state.pending_autosave = Some(pending.clone());
+        Ok(pending)
     }
 
     #[cfg(test)]
-    fn ticket_deadline(&self, ticket: &str) -> Result<Instant, GameError> {
+    pub(crate) fn ticket_deadline(&self, ticket: &str) -> Result<Instant, GameError> {
         self.lock_state()?
             .tickets
             .get(ticket)
@@ -3553,7 +3398,7 @@ impl SaveCoordinator {
     }
 
     #[cfg(test)]
-    fn ticket_issued_at(&self, ticket: &str) -> Result<Instant, GameError> {
+    pub(crate) fn ticket_issued_at(&self, ticket: &str) -> Result<Instant, GameError> {
         self.lock_state()?
             .tickets
             .get(ticket)
@@ -3710,40 +3555,37 @@ fn publish_exit(subscribers: &[ExitSubscriber], view: &ExitStatusView) {
     }
 }
 
-fn thumbnail_ticket_expiry_task(
+async fn thumbnail_ticket_expiry_task(
     state: Weak<Mutex<CoordinatorState>>,
     ticket: String,
     deadline_at: Instant,
     updates: Weak<Notify>,
-) -> CoordinatorTask {
-    Box::pin(async move {
-        tokio::time::sleep_until(deadline_at).await;
-        let Some(state) = state.upgrade() else {
-            return;
-        };
-        let Ok(mut state) = state.lock() else {
-            return;
-        };
-        let Some(record) = state.tickets.get_mut(&ticket) else {
-            return;
-        };
-        if record.terminal.is_some() {
-            return;
-        }
-        record.terminal = Some(CaptureTerminalResult::Unavailable);
-        let view = capture_unavailable_activity();
-        let subscribers = set_thumbnail_activity(&mut state, view.clone());
-        drop(state);
-        publish_activity(&subscribers, &view);
-        if let Some(updates) = updates.upgrade() {
-            updates.notify_waiters();
-        }
-    })
+) {
+    tokio::time::sleep_until(deadline_at).await;
+    let Some(state) = state.upgrade() else {
+        return;
+    };
+    let Ok(mut state) = state.lock() else {
+        return;
+    };
+    let Some(record) = state.tickets.get_mut(&ticket) else {
+        return;
+    };
+    if record.terminal.is_some() {
+        return;
+    }
+    record.terminal = Some(CaptureTerminalResult::Unavailable);
+    let view = capture_unavailable_activity();
+    let subscribers = set_thumbnail_activity(&mut state, view.clone());
+    drop(state);
+    publish_activity(&subscribers, &view);
+    if let Some(updates) = updates.upgrade() {
+        updates.notify_waiters();
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    mod debounce;
     #[cfg(feature = "e2e")]
     mod e2e_replacement;
     mod exit_lifecycle;
