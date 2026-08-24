@@ -1,13 +1,11 @@
 use super::super::super::capture::CapturedCheckpoint;
 use super::super::{
-    cleanup_owner_replaces, cleanup_success_resolves, retry_eligibility,
-    selected_save_challenge_key, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome,
-    AutosaveCommittedWrite, AutosavePreparedWrite, AutosaveRegisteredIntent, AutosaveWriteJob,
-    AutosaveWriteReceipt, BackgroundWriteFailure, CaptureTerminalResult, CleanupOwner,
-    CoordinatorFuture, CoordinatorState, FailureChallengeIdentity, FailureTokenSource,
-    FlushOperation, PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
-    RetryEligibility, SaveCoordinator, SessionTransitionIdentity, ThumbnailActivityView,
-    ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
+    retry_eligibility, selected_save_challenge_key, AutosaveCapture, AutosaveCommittedWrite,
+    AutosaveWriteJob, AutosaveWriteReceipt, BackgroundWriteFailure, CaptureTerminalResult,
+    CoordinatorState, FailureChallengeIdentity, FailureTokenSource, FlushOperation,
+    PersistenceBypassOperation, PersistenceFailureTokenView, PersistenceHealthView,
+    RetryEligibility, SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose,
+    THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     SaveEnvelope, SaveSlotRef, SaveSlotStatusView, SaveSlotView, SaveType,
@@ -349,61 +347,6 @@ fn autosave_committed_write_from_envelope_rejects_mismatched_slot_type() {
 }
 
 // ---------------------------------------------------------------------------
-// AutosaveBackend::cleanup_orphans default (lines 526-528)
-// ---------------------------------------------------------------------------
-
-struct DefaultCleanupBackend;
-
-impl AutosaveBackend for DefaultCleanupBackend {
-    fn capture(
-        &self,
-        job: AutosaveWriteJob,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCapture, GameError>> {
-        Box::pin(async move { Ok(AutosaveCapture::new(job, empty_autosave_slots())) })
-    }
-
-    fn register(
-        &self,
-        capture: AutosaveCapture,
-        target: SaveSlotRef,
-        save_id: String,
-    ) -> CoordinatorFuture<'_, Result<AutosaveRegisteredIntent, GameError>> {
-        Box::pin(async move {
-            capture.register(
-                target,
-                save_id.clone(),
-                autosave_envelope(&save_id, target, 1),
-            )
-        })
-    }
-
-    fn prepare(
-        &self,
-        registered: AutosaveRegisteredIntent,
-    ) -> CoordinatorFuture<'_, Result<AutosavePreparedWrite, GameError>> {
-        Box::pin(async move { Ok(registered.prepare_simulated()) })
-    }
-
-    fn commit_if_current(
-        &self,
-        prepared: AutosavePreparedWrite,
-    ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-        Box::pin(async move {
-            Ok(AutosaveCommitOutcome::Committed(
-                prepared.commit_simulated(),
-            ))
-        })
-    }
-}
-
-#[tokio::test]
-async fn default_cleanup_orphans_is_a_noop() {
-    let backend = DefaultCleanupBackend;
-    let result = backend.cleanup_orphans().await;
-    assert!(result.is_ok());
-}
-
-// ---------------------------------------------------------------------------
 // selected_save_challenge_key (lines 635-641)
 // ---------------------------------------------------------------------------
 
@@ -449,61 +392,6 @@ fn ensure_exit_flush_available_requires_exit_flush_requested() {
     // Exit flush requested: OK.
     session.persistence.exit_flush_requested = true;
     assert!(session.ensure_exit_flush_available().is_ok());
-}
-
-// ---------------------------------------------------------------------------
-// cleanup_owner_replaces (lines 4813-4830)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn cleanup_owner_replaces_ranks_receipts_and_attempts() {
-    let r1 = CleanupOwner::Receipt(receipt(SaveSlotRef::Auto { slot: 1 }, "save-a", 1));
-    let r2 = CleanupOwner::Receipt(receipt(SaveSlotRef::Auto { slot: 1 }, "save-b", 2));
-    let a1 = CleanupOwner::Attempt(1);
-    let a2 = CleanupOwner::Attempt(2);
-
-    // Receipt > Attempt always.
-    assert!(cleanup_owner_replaces(&r1, &a1));
-    assert!(!cleanup_owner_replaces(&a1, &r1));
-
-    // Higher receipt replaces lower.
-    assert!(cleanup_owner_replaces(&r2, &r1));
-    assert!(!cleanup_owner_replaces(&r1, &r2));
-
-    // Equal receipt does not replace.
-    assert!(!cleanup_owner_replaces(&r1, &r1));
-
-    // Higher attempt replaces lower.
-    assert!(cleanup_owner_replaces(&a2, &a1));
-    assert!(!cleanup_owner_replaces(&a1, &a2));
-
-    // Equal attempt does not replace.
-    assert!(!cleanup_owner_replaces(&a1, &a1));
-}
-
-// ---------------------------------------------------------------------------
-// cleanup_success_resolves (lines 4832-4837)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn cleanup_success_resolves_matches_exact_owners_or_attempt_range() {
-    let r1 = CleanupOwner::Receipt(receipt(SaveSlotRef::Auto { slot: 1 }, "save-a", 1));
-    let r2 = CleanupOwner::Receipt(receipt(SaveSlotRef::Auto { slot: 1 }, "save-b", 2));
-    let a1 = CleanupOwner::Attempt(1);
-    let a2 = CleanupOwner::Attempt(2);
-
-    // Same receipt resolves.
-    assert!(cleanup_success_resolves(&r1, &r1));
-    assert!(!cleanup_success_resolves(&r1, &r2));
-
-    // Attempt: success >= failure resolves.
-    assert!(cleanup_success_resolves(&a2, &a1));
-    assert!(cleanup_success_resolves(&a1, &a1));
-    assert!(!cleanup_success_resolves(&a1, &a2));
-
-    // Cross-type never resolves.
-    assert!(!cleanup_success_resolves(&r1, &a1));
-    assert!(!cleanup_success_resolves(&a1, &r1));
 }
 
 // ---------------------------------------------------------------------------
@@ -652,104 +540,6 @@ fn complete_discovery_attempt_for_session_succeeds_for_current_generation() {
         .complete_discovery_attempt_for_session(gen)
         .unwrap();
     assert_eq!(result, 1);
-}
-
-// ---------------------------------------------------------------------------
-// install_session_if_current (lines 2190-2213)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn install_session_if_current_succeeds_with_matching_identity() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 0);
-
-    let expected = coordinator.transition_identity(&app).unwrap();
-    coordinator
-        .install_session_if_current(&app, engine(10), None, expected)
-        .await
-        .unwrap();
-
-    let session = app.session.lock().unwrap();
-    assert_eq!(session.persistence.generation, 1);
-    assert_eq!(session.persistence.flush_baseline_revision, 10);
-}
-
-#[tokio::test]
-async fn install_session_if_current_rejects_stale_identity() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 0);
-
-    let stale = SessionTransitionIdentity {
-        generation: 0,
-        durable_revision: Some(99),
-    };
-    assert_eq!(
-        coordinator
-            .install_session_if_current(&app, engine(10), None, stale)
-            .await
-            .unwrap_err()
-            .code,
-        "staleSaveSelection"
-    );
-}
-
-#[tokio::test]
-async fn install_session_if_current_drops_manual_autosave_target() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 0);
-
-    let expected = coordinator.transition_identity(&app).unwrap();
-    coordinator
-        .install_session_if_current(
-            &app,
-            engine(10),
-            Some(SaveSlotRef::Manual { slot: 2 }),
-            expected,
-        )
-        .await
-        .unwrap();
-
-    let session = app.session.lock().unwrap();
-    assert!(session.persistence.autosave_target.is_none());
-}
-
-// ---------------------------------------------------------------------------
-// clear_session_if_current (lines 2228-2244)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn clear_session_if_current_succeeds_with_matching_identity() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 5);
-
-    let expected = coordinator.transition_identity(&app).unwrap();
-    let gen = coordinator
-        .clear_session_if_current(&app, expected)
-        .await
-        .unwrap();
-    assert_eq!(gen, 1);
-
-    let session = app.session.lock().unwrap();
-    assert!(session.engine.is_none());
-}
-
-#[tokio::test]
-async fn clear_session_if_current_rejects_stale_identity() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 5);
-
-    let stale = SessionTransitionIdentity {
-        generation: 0,
-        durable_revision: Some(99),
-    };
-    assert_eq!(
-        coordinator
-            .clear_session_if_current(&app, stale)
-            .await
-            .unwrap_err()
-            .code,
-        "stalePersistenceFailureToken"
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -1157,19 +947,6 @@ fn retry_failed_background_returns_none_without_failed_write() {
 }
 
 // ---------------------------------------------------------------------------
-// enqueue_orphan_cleanup without backend (lines 3498-3505)
-// ---------------------------------------------------------------------------
-
-#[test]
-fn enqueue_orphan_cleanup_fails_without_backend() {
-    let coordinator = coordinator();
-    assert_eq!(
-        coordinator.enqueue_orphan_cleanup().unwrap_err().code,
-        "saveWriteFailed"
-    );
-}
-
-// ---------------------------------------------------------------------------
 // transition_identity (lines 2178-2188)
 // ---------------------------------------------------------------------------
 
@@ -1452,116 +1229,6 @@ fn autosave_capture_register_rejects_mismatched_revision() {
             .unwrap()
             .code,
         "saveWriteFailed"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// install_session (lines 2155-2176)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn install_session_succeeds_and_advances_generation() {
-    let coordinator = coordinator();
-    let app = empty_app(coordinator.clone(), 0);
-    coordinator
-        .install_session(&app, engine(10), None)
-        .await
-        .unwrap();
-    let session = app.session.lock().unwrap();
-    assert_eq!(session.persistence.generation, 1);
-    assert_eq!(session.persistence.flush_baseline_revision, 10);
-}
-
-#[tokio::test]
-async fn install_session_with_auto_target_retains_target() {
-    let coordinator = coordinator();
-    let app = empty_app(coordinator.clone(), 0);
-    coordinator
-        .install_session(&app, engine(10), Some(SaveSlotRef::Auto { slot: 2 }))
-        .await
-        .unwrap();
-    let session = app.session.lock().unwrap();
-    assert_eq!(
-        session.persistence.autosave_target,
-        Some(SaveSlotRef::Auto { slot: 2 })
-    );
-}
-
-#[tokio::test]
-async fn install_session_with_manual_target_drops_target() {
-    let coordinator = coordinator();
-    let app = empty_app(coordinator.clone(), 0);
-    coordinator
-        .install_session(&app, engine(10), Some(SaveSlotRef::Manual { slot: 1 }))
-        .await
-        .unwrap();
-    let session = app.session.lock().unwrap();
-    assert_eq!(session.persistence.autosave_target, None);
-}
-
-#[tokio::test]
-async fn install_session_rejects_exit_flush_request() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 5, 12);
-    app.session.lock().unwrap().persistence.exit_flush_requested = true;
-    assert_eq!(
-        coordinator
-            .install_session(&app, engine(10), None)
-            .await
-            .unwrap_err()
-            .code,
-        "persistenceOperationInProgress"
-    );
-}
-
-// ---------------------------------------------------------------------------
-// install_session_if_current with autosave target (line 2208)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn install_session_if_current_with_auto_target_retains_target() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 0, 0);
-    let expected = coordinator.transition_identity(&app).unwrap();
-    coordinator
-        .install_session_if_current(
-            &app,
-            engine(10),
-            Some(SaveSlotRef::Auto { slot: 3 }),
-            expected,
-        )
-        .await
-        .unwrap();
-    let session = app.session.lock().unwrap();
-    assert_eq!(
-        session.persistence.autosave_target,
-        Some(SaveSlotRef::Auto { slot: 3 })
-    );
-}
-
-// ---------------------------------------------------------------------------
-// clear_session (lines 2215-2226)
-// ---------------------------------------------------------------------------
-
-#[tokio::test]
-async fn clear_session_succeeds_and_advances_generation() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 5, 10);
-    let generation = coordinator.clear_session(&app).await.unwrap();
-    assert_eq!(generation, 1);
-    let session = app.session.lock().unwrap();
-    assert_eq!(session.persistence.generation, 1);
-    assert!(session.engine.is_none());
-}
-
-#[tokio::test]
-async fn clear_session_rejects_exit_flush_request() {
-    let coordinator = coordinator();
-    let app = app(coordinator.clone(), 5, 10);
-    app.session.lock().unwrap().persistence.exit_flush_requested = true;
-    assert_eq!(
-        coordinator.clear_session(&app).await.unwrap_err().code,
-        "persistenceOperationInProgress"
     );
 }
 

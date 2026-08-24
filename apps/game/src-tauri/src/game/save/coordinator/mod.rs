@@ -12,7 +12,7 @@ use super::storage::{
     select_autosave_target, PreparedSlotWrite, SaveFilesystem, SlotWriteRequest, ThumbnailWrite,
 };
 use super::thumbnail::ValidatedThumbnailCandidate;
-use crate::game::{GameEngine, GameError};
+use crate::game::GameError;
 use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 #[cfg(test)]
@@ -469,10 +469,6 @@ pub(crate) trait AutosaveBackend: Send + Sync {
         &self,
         prepared: AutosavePreparedWrite,
     ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>>;
-
-    fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
-        Box::pin(async { Ok(()) })
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -648,16 +644,9 @@ enum RetryEligibility {
     },
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub(crate) enum CleanupOwner {
-    Receipt(AutosaveWriteReceipt),
-    Attempt(u64),
-}
-
 #[derive(Clone)]
 pub(crate) struct CleanupFailure {
-    pub(crate) owner: CleanupOwner,
-    diagnostic: GameError,
+    pub(crate) diagnostic: GameError,
 }
 
 pub(crate) enum FailureTokenSource {
@@ -689,12 +678,10 @@ pub(crate) struct CoordinatorState {
     pub(crate) next_session_generation: u64,
     pub(crate) discovery_generation: u64,
     pub(crate) next_autosave_serial: u64,
-    pub(crate) next_cleanup_attempt: u64,
     pub(crate) pending_autosave: Option<PendingAutosave>,
     pub(crate) last_successful_write: Option<AutosaveWriteReceipt>,
     pub(crate) failed_write: Option<BackgroundWriteFailure>,
     pub(crate) cleanup_failure: Option<CleanupFailure>,
-    pub(crate) minimum_cleanup_attempt: u64,
     pub(crate) failure_challenges: HashMap<Uuid, PersistenceFailureChallenge>,
     pub(crate) failure_token_source: FailureTokenSource,
     pub(crate) exit_status: ExitStatusView,
@@ -715,12 +702,10 @@ impl Default for CoordinatorState {
             next_session_generation: 0,
             discovery_generation: 0,
             next_autosave_serial: 0,
-            next_cleanup_attempt: 0,
             pending_autosave: None,
             last_successful_write: None,
             failed_write: None,
             cleanup_failure: None,
-            minimum_cleanup_attempt: 0,
             failure_challenges: HashMap::new(),
             failure_token_source: FailureTokenSource::Random,
             exit_status: ExitStatusView::Idle,
@@ -803,12 +788,6 @@ pub(crate) struct SaveCoordinator {
     retry_after_eligibility_hook: Arc<Mutex<Option<RetryEligibilityHook>>>,
     #[cfg(feature = "e2e")]
     e2e_persistence_faults: Arc<E2ePersistenceFaultState>,
-}
-
-#[cfg(feature = "e2e")]
-pub(crate) struct E2eSessionReplacement {
-    pub(crate) generation: u64,
-    pub(crate) state: crate::game::GameStateView,
 }
 
 struct ExitAttemptRecoveryGuard {
@@ -941,6 +920,22 @@ impl SaveCoordinator {
         occurrence_count: u8,
     ) -> Result<(), GameError> {
         self.e2e_persistence_faults.arm(boundary, occurrence_count)
+    }
+
+    #[cfg(feature = "e2e")]
+    pub(crate) fn reset_e2e_replacement_controls(&self) {
+        self.e2e_persistence_faults.reset();
+        self.fail_next_exit_prerequisite
+            .store(false, Ordering::SeqCst);
+        self.fail_next_cancel_guard_clear
+            .store(false, Ordering::SeqCst);
+        self.fail_next_exit_challenge.store(false, Ordering::SeqCst);
+    }
+
+    pub(crate) fn lock_exit_transition(&self) -> Result<MutexGuard<'_, ()>, GameError> {
+        self.exit_transition
+            .lock()
+            .map_err(|_| GameError::unavailable())
     }
 
     pub(crate) fn exit_status(&self) -> ExitStatusView {
@@ -1232,9 +1227,11 @@ impl SaveCoordinator {
         Ok(())
     }
 
-    /// Exit transitions take `exit_transition -> S -> coordinator state`.
-    /// They never acquire the writer gate or G and release every guard before
-    /// publishing callbacks, scheduling work, awaiting, or invoking exit.
+    /// Exit-only transitions take `exit_transition -> session -> persistence
+    /// state` and never acquire `operation_gate`. A path requiring both uses
+    /// `operation_gate -> exit_transition -> session -> persistence state`.
+    /// No exit transition holds its guard while publishing callbacks,
+    /// scheduling work, awaiting, or invoking the external exit action.
     fn begin_exit_saving(
         &self,
         expected: ExitStatusView,
@@ -1493,110 +1490,6 @@ impl SaveCoordinator {
         Ok(state.next_session_generation)
     }
 
-    #[cfg(feature = "e2e")]
-    pub(crate) async fn replace_session_for_e2e(
-        &self,
-        app: &crate::AppState,
-        engine: GameEngine,
-    ) -> Result<E2eSessionReplacement, GameError> {
-        let view = engine.view()?;
-        {
-            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
-        }
-        {
-            let state = self.lock_state()?;
-            if state.exit_status == ExitStatusView::Saving {
-                return Err(GameError::persistence_operation_in_progress());
-            }
-        }
-
-        let _gate = app.operation_gate.lock().await;
-        let _exit_transition = self
-            .exit_transition
-            .lock()
-            .map_err(|_| GameError::unavailable())?;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        let mut state = self.lock_state()?;
-        if state.exit_status == ExitStatusView::Saving {
-            return Err(GameError::persistence_operation_in_progress());
-        }
-        let generation = state
-            .next_session_generation
-            .checked_add(1)
-            .ok_or_else(GameError::save_write_failed)?;
-        // Keep the coordinator state locked while advancing all stale-work
-        // identities and installing the session. An active stale writer cannot
-        // publish through the new generation fence.
-        let minimum_cleanup_attempt = state
-            .next_cleanup_attempt
-            .checked_add(1)
-            .ok_or_else(GameError::save_write_failed)?;
-        state.next_cleanup_attempt = minimum_cleanup_attempt;
-        state.next_session_generation = generation;
-        state.discovery_generation = state.discovery_generation.wrapping_add(1);
-        state.next_autosave_serial = state.next_autosave_serial.wrapping_add(1);
-        state.tickets.clear();
-        state.latest_by_intent.clear();
-        state.pending_autosave = None;
-        state.last_successful_write = None;
-        state.failed_write = None;
-        state.cleanup_failure = None;
-        state.minimum_cleanup_attempt = minimum_cleanup_attempt;
-        state.failure_challenges.clear();
-        state.persistence_health = PersistenceHealthView::Healthy;
-        state.thumbnail_activity = ThumbnailActivityView::Idle;
-        state.exit_status = ExitStatusView::Idle;
-        state.programmatic_exit_bypass = false;
-        state.exit_action_in_progress = false;
-        let health_subscribers = state.health_subscribers.clone();
-        let activity_subscribers = state.activity_subscribers.clone();
-        let exit_subscribers = state.exit_subscribers.clone();
-        *session = AppSession::installed(engine, generation, None);
-        self.e2e_persistence_faults.reset();
-        self.fail_next_exit_prerequisite
-            .store(false, Ordering::SeqCst);
-        self.fail_next_cancel_guard_clear
-            .store(false, Ordering::SeqCst);
-        self.fail_next_exit_challenge.store(false, Ordering::SeqCst);
-        drop(state);
-        drop(session);
-
-        publish_health(&health_subscribers, &PersistenceHealthView::Healthy);
-        publish_activity(&activity_subscribers, &ThumbnailActivityView::Idle);
-        publish_exit(&exit_subscribers, &ExitStatusView::Idle);
-        self.ticket_updates.notify_waiters();
-
-        Ok(E2eSessionReplacement {
-            generation,
-            state: view,
-        })
-    }
-
-    pub(crate) async fn install_session(
-        &self,
-        app: &crate::AppState,
-        engine: GameEngine,
-        autosave_target: Option<SaveSlotRef>,
-    ) -> Result<crate::game::GameStateView, GameError> {
-        {
-            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
-        }
-        let view = engine.view()?;
-        let _gate = app.operation_gate.lock().await;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        let generation = self.next_session_generation()?;
-        let autosave_target = match autosave_target {
-            Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
-            Some(SaveSlotRef::Manual { .. }) | None => None,
-        };
-        *session = AppSession::installed(engine, generation, autosave_target);
-        Ok(view)
-    }
-
     pub(crate) fn transition_identity(
         &self,
         app: &crate::AppState,
@@ -1607,62 +1500,6 @@ impl SaveCoordinator {
             generation: session.persistence.generation,
             durable_revision: session.durable_revision(),
         })
-    }
-
-    pub(crate) async fn install_session_if_current(
-        &self,
-        app: &crate::AppState,
-        engine: GameEngine,
-        autosave_target: Option<SaveSlotRef>,
-        expected: SessionTransitionIdentity,
-    ) -> Result<crate::game::GameStateView, GameError> {
-        let view = engine.view()?;
-        let _gate = app.operation_gate.lock().await;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        if session.persistence.generation != expected.generation
-            || session.durable_revision() != expected.durable_revision
-        {
-            return Err(GameError::stale_save_selection());
-        }
-        let generation = self.next_session_generation()?;
-        let autosave_target = match autosave_target {
-            Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
-            Some(SaveSlotRef::Manual { .. }) | None => None,
-        };
-        *session = AppSession::installed(engine, generation, autosave_target);
-        Ok(view)
-    }
-
-    pub(crate) async fn clear_session(&self, app: &crate::AppState) -> Result<u64, GameError> {
-        {
-            let session = app.session.lock().map_err(|_| GameError::unavailable())?;
-            session.ensure_persistence_available()?;
-        }
-        let _gate = app.operation_gate.lock().await;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        let generation = self.next_session_generation()?;
-        *session = AppSession::empty_at_generation(generation);
-        Ok(generation)
-    }
-
-    pub(crate) async fn clear_session_if_current(
-        &self,
-        app: &crate::AppState,
-        expected: SessionTransitionIdentity,
-    ) -> Result<u64, GameError> {
-        let _gate = app.operation_gate.lock().await;
-        let mut session = app.session.lock().map_err(|_| GameError::unavailable())?;
-        session.ensure_persistence_available()?;
-        if session.persistence.generation != expected.generation
-            || session.durable_revision() != expected.durable_revision
-        {
-            return Err(GameError::stale_persistence_failure_token());
-        }
-        let generation = self.next_session_generation()?;
-        *session = AppSession::empty_at_generation(generation);
-        Ok(generation)
     }
 
     pub(crate) fn complete_discovery_attempt(&self) -> Result<u64, GameError> {
@@ -2436,54 +2273,6 @@ impl SaveCoordinator {
             .map(|receipt| receipt.slot)
     }
 
-    pub(crate) fn enqueue_orphan_cleanup(&self) -> Result<(), GameError> {
-        let owner = self
-            .lock_state()?
-            .cleanup_failure
-            .as_ref()
-            .map(|failure| failure.owner.clone());
-        self.enqueue_cleanup_retry(owner)
-    }
-
-    fn enqueue_cleanup_retry(&self, owner: Option<CleanupOwner>) -> Result<(), GameError> {
-        let backend = self
-            .backend
-            .as_ref()
-            .cloned()
-            .ok_or_else(GameError::save_write_failed)?;
-        let owner = match owner {
-            Some(owner) => owner,
-            None => {
-                let mut state = self.lock_state()?;
-                state.next_cleanup_attempt = state
-                    .next_cleanup_attempt
-                    .checked_add(1)
-                    .ok_or_else(GameError::save_write_failed)?;
-                CleanupOwner::Attempt(state.next_cleanup_attempt)
-            }
-        };
-        let coordinator = self.clone();
-        #[cfg(test)]
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                let _operation_gate = coordinator.acquire_operation_gate().await;
-                match backend.cleanup_orphans().await {
-                    Ok(()) => coordinator.resolve_cleanup_failure(&owner),
-                    Err(error) => coordinator.record_cleanup_failure(owner, error),
-                }
-            });
-        }
-        #[cfg(not(test))]
-        tauri::async_runtime::spawn(async move {
-            let _operation_gate = coordinator.acquire_operation_gate().await;
-            match backend.cleanup_orphans().await {
-                Ok(()) => coordinator.resolve_cleanup_failure(&owner),
-                Err(error) => coordinator.record_cleanup_failure(owner, error),
-            }
-        });
-        Ok(())
-    }
-
     pub(crate) fn prepare_thumbnail(
         &self,
         purpose: ThumbnailCapturePurpose,
@@ -2683,6 +2472,34 @@ impl SaveCoordinator {
         Ok(())
     }
 
+    pub(crate) fn publish_storage_write_health(
+        &self,
+        session_generation: u64,
+        cleanup_diagnostic: Option<GameError>,
+    ) -> Result<(), GameError> {
+        let (health, subscribers, retry_cleanup) = {
+            let mut state = self.lock_state()?;
+            if session_generation < state.next_session_generation {
+                return Err(GameError::stale_session_generation());
+            }
+            if let Some(diagnostic) = cleanup_diagnostic {
+                state.cleanup_failure = Some(CleanupFailure { diagnostic });
+            }
+            let health = state
+                .cleanup_failure
+                .as_ref()
+                .map(|failure| PersistenceHealthView::Degraded {
+                    diagnostic: failure.diagnostic.clone(),
+                })
+                .unwrap_or(PersistenceHealthView::Healthy);
+            let subscribers = set_persistence_health(&mut state, health.clone());
+            (health, subscribers, state.cleanup_failure.is_some())
+        };
+        publish_health(&subscribers, &health);
+        self.retry_cleanup_if_needed(retry_cleanup);
+        Ok(())
+    }
+
     pub(crate) fn prepare_autosave(
         &self,
         purpose: ThumbnailCapturePurpose,
@@ -2818,7 +2635,7 @@ impl SaveCoordinator {
                     receipt_identity >= (successful.session_generation, successful.durable_revision)
                 })
             {
-                state.last_successful_write = Some(receipt.clone());
+                state.last_successful_write = Some(receipt);
             }
             if completed_is_current {
                 state.pending_autosave = None;
@@ -2831,20 +2648,10 @@ impl SaveCoordinator {
             {
                 state.failed_write = None;
             }
-            let cleanup_retry = cleanup_diagnostic.and_then(|diagnostic| {
-                let candidate = CleanupFailure {
-                    owner: CleanupOwner::Receipt(receipt),
-                    diagnostic,
-                };
-                if state.cleanup_failure.as_ref().is_none_or(|existing| {
-                    cleanup_owner_replaces(&candidate.owner, &existing.owner)
-                }) {
-                    state.cleanup_failure = Some(candidate.clone());
-                    Some(candidate.owner)
-                } else {
-                    None
-                }
-            });
+            if let Some(diagnostic) = cleanup_diagnostic {
+                state.cleanup_failure = Some(CleanupFailure { diagnostic });
+            }
+            let cleanup_retry = state.cleanup_failure.is_some();
             let health = health_after_completion(&state);
             let subscribers = set_persistence_health(&mut state, health.clone());
             (health, subscribers, cleanup_retry)
@@ -2852,12 +2659,10 @@ impl SaveCoordinator {
             let health = PersistenceHealthView::Degraded {
                 diagnostic: GameError::save_write_failed(),
             };
-            (health, Vec::new(), None)
+            (health, Vec::new(), false)
         };
         publish_health(&subscribers, &health);
-        if let Some(owner) = cleanup_retry {
-            let _ = self.enqueue_cleanup_retry(Some(owner));
-        }
+        self.retry_cleanup_if_needed(cleanup_retry);
     }
 
     fn record_blocking_success(
@@ -2877,7 +2682,7 @@ impl SaveCoordinator {
                     receipt_identity >= (successful.session_generation, successful.durable_revision)
                 })
             {
-                state.last_successful_write = Some(receipt.clone());
+                state.last_successful_write = Some(receipt);
             }
             if state
                 .failed_write
@@ -2886,20 +2691,10 @@ impl SaveCoordinator {
             {
                 state.failed_write = None;
             }
-            let cleanup_retry = cleanup_diagnostic.and_then(|diagnostic| {
-                let candidate = CleanupFailure {
-                    owner: CleanupOwner::Receipt(receipt),
-                    diagnostic,
-                };
-                if state.cleanup_failure.as_ref().is_none_or(|existing| {
-                    cleanup_owner_replaces(&candidate.owner, &existing.owner)
-                }) {
-                    state.cleanup_failure = Some(candidate.clone());
-                    Some(candidate.owner)
-                } else {
-                    None
-                }
-            });
+            if let Some(diagnostic) = cleanup_diagnostic {
+                state.cleanup_failure = Some(CleanupFailure { diagnostic });
+            }
+            let cleanup_retry = state.cleanup_failure.is_some();
             let health = health_after_completion(&state);
             let subscribers = set_persistence_health(&mut state, health.clone());
             (health, subscribers, cleanup_retry)
@@ -2907,14 +2702,10 @@ impl SaveCoordinator {
             let health = PersistenceHealthView::Degraded {
                 diagnostic: GameError::save_write_failed(),
             };
-            (health, Vec::new(), None)
+            (health, Vec::new(), false)
         };
         publish_health(&subscribers, &health);
-        if let Some(owner) = cleanup_retry {
-            if let Err(error) = self.enqueue_cleanup_retry(Some(owner.clone())) {
-                self.record_cleanup_failure(owner, error);
-            }
-        }
+        self.retry_cleanup_if_needed(cleanup_retry);
     }
 
     pub(crate) fn record_stale_write(&self, completed: &PendingAutosave) {
@@ -2938,14 +2729,9 @@ impl SaveCoordinator {
         publish_health(&subscribers, &health);
     }
 
-    pub(crate) fn resolve_cleanup_failure(&self, owner: &CleanupOwner) {
+    pub(crate) fn resolve_cleanup_failure(&self) {
         let publication = if let Ok(mut state) = self.state.lock() {
-            if state
-                .cleanup_failure
-                .as_ref()
-                .is_some_and(|failure| cleanup_success_resolves(owner, &failure.owner))
-            {
-                state.cleanup_failure = None;
+            if state.cleanup_failure.take().is_some() {
                 let health = health_after_completion(&state);
                 let subscribers = set_persistence_health(&mut state, health.clone());
                 Some((health, subscribers))
@@ -2960,37 +2746,31 @@ impl SaveCoordinator {
         }
     }
 
-    pub(crate) fn record_cleanup_failure(&self, owner: CleanupOwner, error: GameError) {
+    pub(crate) fn record_cleanup_failure(&self, error: GameError) {
         let publication = if let Ok(mut state) = self.state.lock() {
-            let stale = match &owner {
-                CleanupOwner::Receipt(receipt) => {
-                    receipt.session_generation < state.next_session_generation
-                }
-                CleanupOwner::Attempt(attempt) => *attempt < state.minimum_cleanup_attempt,
-            };
-            if stale {
-                return;
-            }
-            let replace = state
-                .cleanup_failure
-                .as_ref()
-                .is_none_or(|existing| cleanup_owner_replaces(&owner, &existing.owner));
-            if replace {
-                state.cleanup_failure = Some(CleanupFailure {
-                    owner,
-                    diagnostic: error.clone(),
-                });
-                let health = health_after_completion(&state);
-                let subscribers = set_persistence_health(&mut state, health.clone());
-                Some((health, subscribers))
-            } else {
-                None
-            }
+            state.cleanup_failure = Some(CleanupFailure {
+                diagnostic: error.clone(),
+            });
+            let health = health_after_completion(&state);
+            let subscribers = set_persistence_health(&mut state, health.clone());
+            Some((health, subscribers))
         } else {
             None
         };
         if let Some((health, subscribers)) = publication {
             publish_health(&subscribers, &health);
+        }
+    }
+
+    fn retry_cleanup_if_needed(&self, needed: bool) {
+        if !needed {
+            return;
+        }
+        let Some(application) = self.application.as_ref().cloned() else {
+            return;
+        };
+        if let Err(error) = application.enqueue_orphan_cleanup(self.clone()) {
+            self.record_cleanup_failure(error);
         }
     }
 
@@ -3440,32 +3220,6 @@ fn capture_unavailable_activity() -> ThumbnailActivityView {
     }
 }
 
-fn cleanup_owner_replaces(candidate: &CleanupOwner, existing: &CleanupOwner) -> bool {
-    match (candidate, existing) {
-        (CleanupOwner::Receipt(candidate), CleanupOwner::Receipt(existing)) => {
-            (
-                candidate.session_generation,
-                candidate.durable_revision,
-                &candidate.save_id,
-            ) > (
-                existing.session_generation,
-                existing.durable_revision,
-                &existing.save_id,
-            )
-        }
-        (CleanupOwner::Receipt(_), CleanupOwner::Attempt(_)) => true,
-        (CleanupOwner::Attempt(_), CleanupOwner::Receipt(_)) => false,
-        (CleanupOwner::Attempt(candidate), CleanupOwner::Attempt(existing)) => candidate > existing,
-    }
-}
-
-fn cleanup_success_resolves(success: &CleanupOwner, failure: &CleanupOwner) -> bool {
-    match (success, failure) {
-        (CleanupOwner::Attempt(success), CleanupOwner::Attempt(failure)) => failure <= success,
-        _ => success == failure,
-    }
-}
-
 fn health_after_completion(state: &CoordinatorState) -> PersistenceHealthView {
     if state.pending_autosave.is_some() {
         PersistenceHealthView::Pending
@@ -3515,7 +3269,7 @@ fn set_persistence_health(
     state.health_subscribers.clone()
 }
 
-fn publish_health(subscribers: &[HealthSubscriber], view: &PersistenceHealthView) {
+pub(crate) fn publish_health(subscribers: &[HealthSubscriber], view: &PersistenceHealthView) {
     for subscriber in subscribers {
         subscriber(view.clone());
     }
@@ -3543,13 +3297,13 @@ fn clear_thumbnail_activity_if_no_live_capture(
     (set_thumbnail_activity(state, view.clone()), Some(view))
 }
 
-fn publish_activity(subscribers: &[ActivitySubscriber], view: &ThumbnailActivityView) {
+pub(crate) fn publish_activity(subscribers: &[ActivitySubscriber], view: &ThumbnailActivityView) {
     for subscriber in subscribers {
         subscriber(view.clone());
     }
 }
 
-fn publish_exit(subscribers: &[ExitSubscriber], view: &ExitStatusView) {
+pub(crate) fn publish_exit(subscribers: &[ExitSubscriber], view: &ExitStatusView) {
     for subscriber in subscribers {
         subscriber(view.clone());
     }
@@ -3586,12 +3340,9 @@ async fn thumbnail_ticket_expiry_task(
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "e2e")]
-    mod e2e_replacement;
     mod exit_lifecycle;
     mod failure_token;
     mod flush;
-    mod lock_order;
     mod storage_integration;
     mod ticket;
     mod unit;

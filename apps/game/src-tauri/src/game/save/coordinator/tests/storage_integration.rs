@@ -7,11 +7,9 @@ use crate::game::save::schema::{
     parse_current_envelope, SaveEnvelope, SaveSlotStatusView, SaveSlotView, SaveType,
 };
 use crate::game::save::storage::{
-    clean_orphaned_save_files, ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem,
-    StagedAtomicWrite,
+    ProductionSaveFilesystem, SaveFileMetadata, SaveFilesystem, StagedAtomicWrite,
 };
-use crate::game::save::thumbnail::ValidatedThumbnail;
-use crate::game::test_support::{png_fixture, representative_save_envelope};
+use crate::game::test_support::representative_save_envelope;
 use crate::game::GameError;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -27,7 +25,6 @@ struct TrackingFilesystem {
     discarded: Arc<AtomicUsize>,
     discard_update: Arc<Notify>,
     fail_install_once: Arc<AtomicBool>,
-    fail_remove_once: AtomicBool,
 }
 
 impl TrackingFilesystem {
@@ -105,9 +102,6 @@ impl SaveFilesystem for TrackingFilesystem {
     }
 
     fn remove_file(&self, path: &Path) -> io::Result<()> {
-        if self.fail_remove_once.swap(false, Ordering::SeqCst) {
-            return Err(io::Error::other("injected cleanup removal failure"));
-        }
         self.inner.remove_file(path)
     }
 
@@ -149,11 +143,6 @@ pub(super) struct StorageBackend {
     registration_update: Notify,
     corruption: Mutex<Option<RegistrationCorruption>>,
     commit_receipt_corruption: Mutex<Option<CommitReceiptCorruption>>,
-    pause_cleanup: AtomicBool,
-    cleanup_started: AtomicBool,
-    cleanup_update: Notify,
-    cleanup_release: Notify,
-    cleanup_completions: AtomicUsize,
     register_held_session: AtomicBool,
     prepare_held_writer: AtomicBool,
     revalidate_held_gate_and_session: AtomicBool,
@@ -187,11 +176,6 @@ impl StorageBackend {
             registration_update: Notify::new(),
             corruption: Mutex::new(None),
             commit_receipt_corruption: Mutex::new(None),
-            pause_cleanup: AtomicBool::new(false),
-            cleanup_started: AtomicBool::new(false),
-            cleanup_update: Notify::new(),
-            cleanup_release: Notify::new(),
-            cleanup_completions: AtomicUsize::new(0),
             register_held_session: AtomicBool::new(false),
             prepare_held_writer: AtomicBool::new(false),
             revalidate_held_gate_and_session: AtomicBool::new(false),
@@ -337,72 +321,12 @@ impl StorageBackend {
         self.fs.fail_install_once.store(true, Ordering::SeqCst);
     }
 
-    pub(super) fn fail_next_cleanup_removal(&self) {
-        self.fs.fail_remove_once.store(true, Ordering::SeqCst);
-    }
-
     fn corrupt_registration(&self, corruption: RegistrationCorruption) {
         *self.corruption.lock().unwrap() = Some(corruption);
     }
 
     fn corrupt_commit_receipt(&self, corruption: CommitReceiptCorruption) {
         *self.commit_receipt_corruption.lock().unwrap() = Some(corruption);
-    }
-
-    fn pause_cleanup(&self) {
-        self.pause_cleanup.store(true, Ordering::SeqCst);
-    }
-
-    async fn wait_for_cleanup_start(&self) {
-        for _ in 0..100 {
-            if self.cleanup_started.load(Ordering::SeqCst) {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-        panic!(
-            "timed out waiting for cleanup start; phases={:?}",
-            self.phases()
-        );
-    }
-
-    fn release_cleanup(&self) {
-        self.pause_cleanup.store(false, Ordering::SeqCst);
-        self.cleanup_release.notify_waiters();
-    }
-
-    async fn wait_for_cleanup_completions(&self, expected: usize) {
-        for _ in 0..100 {
-            if self.cleanup_completions.load(Ordering::SeqCst) >= expected {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
-        panic!(
-            "timed out waiting for {expected} cleanup completions; phases={:?}",
-            self.phases()
-        );
-    }
-
-    pub(super) fn install_old_autosave_with_sidecar(&self) -> PathBuf {
-        const OLD_SAVE_ID: &str = "33333333-3333-4333-8333-333333333333";
-        let thumbnail_bytes = png_fixture(1, 1);
-        let mut envelope = autosave_envelope(
-            OLD_SAVE_ID,
-            SaveSlotRef::Auto { slot: 1 },
-            self.current_revision
-                .load(Ordering::SeqCst)
-                .saturating_sub(1),
-        );
-        envelope.thumbnail = ValidatedThumbnail::from_png(thumbnail_bytes.clone(), OLD_SAVE_ID)
-            .unwrap()
-            .descriptor;
-        let thumbnails = self.root.join("thumbnails");
-        self.fs.create_dir_all(&thumbnails).unwrap();
-        std::fs::write(self.slot_path(1), serde_json::to_vec(&envelope).unwrap()).unwrap();
-        let sidecar = thumbnails.join(format!("{OLD_SAVE_ID}.png"));
-        std::fs::write(&sidecar, thumbnail_bytes).unwrap();
-        sidecar
     }
 }
 
@@ -514,22 +438,6 @@ impl AutosaveBackend for StorageBackend {
             self.commit_locked(prepared).await
         })
     }
-
-    fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
-        Box::pin(async move {
-            let _writer = self.writer.lock().await;
-            self.phases.lock().unwrap().push("W:cleanup");
-            self.cleanup_started.store(true, Ordering::SeqCst);
-            self.cleanup_update.notify_waiters();
-            while self.pause_cleanup.load(Ordering::SeqCst) {
-                self.cleanup_release.notified().await;
-            }
-            let result = clean_orphaned_save_files(self.fs.as_ref(), &self.root);
-            self.cleanup_completions.fetch_add(1, Ordering::SeqCst);
-            self.cleanup_update.notify_waiters();
-            result
-        })
-    }
 }
 
 #[test]
@@ -607,51 +515,6 @@ async fn real_staged_write_uses_s_w_g_s_and_receipt_from_committed_envelope() {
     assert_eq!(
         coordinator.autosave_target(4),
         Some(SaveSlotRef::Auto { slot: 1 })
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn committed_cleanup_diagnostic_adopts_receipt_and_retries_through_writer() {
-    let backend = Arc::new(StorageBackend::new(7, 22));
-    let old_sidecar = backend.install_old_autosave_with_sidecar();
-    backend.fs.fail_remove_once.store(true, Ordering::SeqCst);
-    backend.pause_cleanup();
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-    let request = coordinator.notify_durable_commit(7, 22).unwrap();
-    coordinator
-        .report_thumbnail_failure(&request.ticket)
-        .unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_completions(1).await;
-    backend.wait_for_cleanup_start().await;
-
-    let envelope =
-        parse_current_envelope(&backend.fs.read(&backend.slot_path(1)).unwrap()).unwrap();
-    let receipt = coordinator.last_successful_write().unwrap();
-    assert_eq!(receipt.durable_revision, 22);
-    assert_eq!(receipt.save_id, envelope.save_id);
-    assert_eq!(
-        coordinator.autosave_target(7),
-        Some(SaveSlotRef::Auto { slot: 1 })
-    );
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_write_failed(),
-        }
-    );
-    assert!(old_sidecar.exists());
-    assert!(backend.writer.try_lock().is_err());
-    assert!(backend.phases().ends_with(&["W+G:commit", "W:cleanup"]));
-
-    backend.release_cleanup();
-    backend.wait_for_cleanup_completions(1).await;
-    tokio::task::yield_now().await;
-
-    assert!(!old_sidecar.exists());
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Healthy
     );
 }
 

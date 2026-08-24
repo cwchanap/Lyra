@@ -53,6 +53,36 @@ impl ApplicationPersistence {
         let backend: Arc<dyn AutosaveBackend> = self.clone();
         await_pending_autosave_with_backend(backend, coordinator, pending).await;
     }
+
+    pub(crate) fn enqueue_orphan_cleanup(
+        self: Arc<Self>,
+        coordinator: SaveCoordinator,
+    ) -> Result<(), GameError> {
+        #[cfg(test)]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                let _gate = self.operation_gate.lock().await;
+                match clean_orphaned_save_files(self.fs.as_ref(), &self.root) {
+                    Ok(()) => coordinator.resolve_cleanup_failure(),
+                    Err(error) => coordinator.record_cleanup_failure(error),
+                }
+            });
+            return Ok(());
+        }
+        #[cfg(not(test))]
+        {
+            tauri::async_runtime::spawn(async move {
+                let _gate = self.operation_gate.lock().await;
+                match clean_orphaned_save_files(self.fs.as_ref(), &self.root) {
+                    Ok(()) => coordinator.resolve_cleanup_failure(),
+                    Err(error) => coordinator.record_cleanup_failure(error),
+                }
+            });
+            Ok(())
+        }
+        #[cfg(test)]
+        Err(GameError::save_write_failed())
+    }
 }
 
 impl AutosaveBackend for ApplicationPersistence {
@@ -124,10 +154,6 @@ impl AutosaveBackend for ApplicationPersistence {
         prepared: AutosavePreparedWrite,
     ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
         Box::pin(async move { self.commit_current(prepared) })
-    }
-
-    fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
-        Box::pin(async move { clean_orphaned_save_files(self.fs.as_ref(), &self.root) })
     }
 }
 
