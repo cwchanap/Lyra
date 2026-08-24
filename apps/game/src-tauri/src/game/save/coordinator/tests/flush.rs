@@ -1,8 +1,8 @@
 use super::super::{
     AppSession, AutosaveWriteReceipt, FlushOperation, FlushOutcome, SaveCoordinator,
-    SessionPersistence,
 };
 use super::debounce::RecordingBackend;
+use crate::game::save::application::session::SessionPersistence;
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::test_support::{
     empty_engine_with_scene, investigation_scene_with_intro, png_fixture,

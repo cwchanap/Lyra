@@ -1046,7 +1046,9 @@ fn thumbnail_activity_is_idle_by_default() {
 #[test]
 fn flush_revision_returns_none_when_live_equals_baseline() {
     let persistence =
-        crate::game::save::coordinator::SessionPersistence::for_installed_engine(1, 10, None);
+        crate::game::save::application::session::SessionPersistence::for_installed_engine(
+            1, 10, None,
+        );
     assert!(persistence
         .flush_revision(FlushOperation::ManualSave, 10)
         .is_none());
@@ -1055,7 +1057,9 @@ fn flush_revision_returns_none_when_live_equals_baseline() {
 #[test]
 fn flush_revision_returns_some_when_live_exceeds_baseline() {
     let persistence =
-        crate::game::save::coordinator::SessionPersistence::for_installed_engine(1, 10, None);
+        crate::game::save::application::session::SessionPersistence::for_installed_engine(
+            1, 10, None,
+        );
     assert_eq!(
         persistence.flush_revision(FlushOperation::ManualSave, 15),
         Some(15)
@@ -1065,7 +1069,9 @@ fn flush_revision_returns_some_when_live_exceeds_baseline() {
 #[test]
 fn flush_revision_uses_written_revision_as_covered_when_higher() {
     let mut persistence =
-        crate::game::save::coordinator::SessionPersistence::for_installed_engine(1, 10, None);
+        crate::game::save::application::session::SessionPersistence::for_installed_engine(
+            1, 10, None,
+        );
     let r = AutosaveWriteReceipt {
         session_generation: 1,
         durable_revision: 20,
@@ -1091,7 +1097,9 @@ fn flush_revision_uses_written_revision_as_covered_when_higher() {
 #[test]
 fn record_written_ignores_mismatched_generation() {
     let mut persistence =
-        crate::game::save::coordinator::SessionPersistence::for_installed_engine(1, 10, None);
+        crate::game::save::application::session::SessionPersistence::for_installed_engine(
+            1, 10, None,
+        );
     let r = AutosaveWriteReceipt {
         session_generation: 99,
         durable_revision: 20,
