@@ -12,30 +12,55 @@ use tauri::{Emitter, Manager};
 use game::analysis::{AnalysisActionToken, AnalysisDraft};
 #[cfg(feature = "e2e")]
 use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
-use game::save::application::{AppSession, ApplicationPersistence};
-use game::save::capture::capture_checkpoint;
-use game::save::coordinator::{
-    ApplicationExit, ExitRequestSource, ExitStatusView, FlushOperation, PersistenceBypassOperation,
-    PersistenceFailureTokenView, PersistenceHealthView, PreparedThumbnailPurpose, SaveCoordinator,
-    ThumbnailActivityView, ThumbnailCapturePurpose, ThumbnailCaptureRequestView,
+use game::save::application::commands::{
+    cancel_exit_core, cancel_persistence_failure_core, continue_game_core, delete_save_core,
+    exit_without_saving_core, get_exit_status_core, list_saves_core, load_save_core,
+    load_save_discarding_current_core, read_save_thumbnail_core, retry_exit_core,
+    return_to_title_core, return_to_title_without_saving_core, save_manual_core,
+    start_game_with_persistence_core, start_game_without_saving_core,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+use game::save::application::commands::{
+    challengeable_flush_failure, continue_game_core_impl, continue_game_core_with_post_flush_hook,
+    finish_persistence_mutation, list_saves_core_impl, list_saves_core_with_flush_hooks,
+    load_save_core_impl, load_save_core_with_post_flush_hook, return_to_title_core_impl,
+    return_to_title_core_with_post_flush_hook,
+};
+#[cfg(feature = "e2e")]
+use game::save::application::commands::{e2e_load_checkpoint_core, e2e_set_persistence_fault_core};
+use game::save::application::{
+    AppSession, ApplicationExit, ApplicationPersistence, ExitRequestSource, ExitStatusView,
+    PersistenceFailureTokenView, PersistenceHealthView, PreparedThumbnailPurpose,
+    ThumbnailActivityView, ThumbnailCaptureRequestView,
+};
+#[cfg(test)]
+#[allow(unused_imports)]
+use game::save::application::{
+    FlushOperation, PersistenceBypassOperation, ThumbnailCapturePurpose,
 };
 #[cfg(feature = "e2e")]
 use game::save::e2e_faults::{E2ePersistenceFaultBoundary, E2ePersistenceFaultState};
-use game::save::restore::{
-    build_restore_candidate, load_current_definitions, RestoredGameCandidate,
-};
+use game::save::restore::load_current_definitions;
+#[cfg(test)]
+#[allow(unused_imports)]
+use game::save::schema::{validate_manual_display_name, SaveSlotStatusView};
 use game::save::schema::{
-    validate_manual_display_name, SaveBrowserView, SaveDiagnosticView, SaveDiscoveryStatusView,
-    SaveSlotRef, SaveSlotStatusView, SaveSlotView, MAX_THUMBNAIL_BYTES,
+    SaveBrowserView, SaveDiagnosticView, SaveDiscoveryStatusView, SaveSlotRef, SaveSlotView,
+    MAX_THUMBNAIL_BYTES,
 };
 #[cfg(feature = "e2e")]
 use game::save::storage::with_e2e_persistence_faults;
+#[cfg(test)]
+#[allow(unused_imports)]
 use game::save::storage::{
-    commit_prepared_slot_write, delete_slot, ensure_save_layout, prepare_slot_write,
-    read_save_envelope, read_save_thumbnail as read_save_thumbnail_from_storage, resolve_save_root,
-    select_continue_candidate, ManualSlotExpectation, OccupiedSlotExpectation,
-    ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem, SlotWriteRequest,
-    ThumbnailWrite, PRODUCTION_APP_IDENTIFIER,
+    commit_prepared_slot_write, delete_slot, prepare_slot_write, read_save_envelope,
+    read_save_thumbnail as read_save_thumbnail_from_storage, select_continue_candidate,
+    SlotWriteRequest, ThumbnailWrite,
+};
+use game::save::storage::{
+    ensure_save_layout, resolve_save_root, ManualSlotExpectation, OccupiedSlotExpectation,
+    ProductionSaveFilesystem, SaveDiscoveryContext, SaveFilesystem, PRODUCTION_APP_IDENTIFIER,
 };
 use game::view::SceneView;
 use game::{GameEngine, GameError, GameStateView, QueueToken, SceneNavigationIndex};
@@ -82,22 +107,22 @@ const MAIN_WINDOW_LABEL: &str = "main";
 #[cfg(all(test, feature = "e2e"))]
 mod e2e_persistence_fault_command_tests {
     use super::e2e_set_persistence_fault_core;
-    use crate::game::save::coordinator::SaveCoordinator;
+    use crate::game::save::application::ApplicationPersistence;
     use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
 
     #[test]
     fn command_core_accepts_only_one_pending_closed_fault() {
-        let coordinator = SaveCoordinator::new();
+        let persistence = ApplicationPersistence::new();
 
         e2e_set_persistence_fault_core(
-            &coordinator,
+            &persistence,
             E2ePersistenceFaultBoundary::EnvelopeReplace,
             1,
         )
         .unwrap();
 
         assert!(e2e_set_persistence_fault_core(
-            &coordinator,
+            &persistence,
             E2ePersistenceFaultBoundary::ThumbnailInstall,
             1,
         )
@@ -167,20 +192,16 @@ pub(crate) enum SaveBrowserPreflightView {
 pub(crate) enum MutationPersistencePolicy {
     AutosaveIfAdvanced,
     AutosaveIfAdvancedWithoutThumbnail,
-    CoordinatorManaged,
+    PersistenceManaged,
 }
 
 #[doc(hidden)]
-pub struct AppState {
+pub(crate) struct AppState {
     // Task 9 exposed one session mutex. Task 10 wraps that exact mutex in Arc
     // so the disk backend can share it without introducing duplicate state.
     pub(crate) session: Arc<Mutex<AppSession>>,
-    pub(crate) operation_gate: Arc<tokio::sync::Mutex<()>>,
-    pub(crate) coordinator: SaveCoordinator,
+    pub(crate) persistence: Arc<ApplicationPersistence>,
     pub(crate) resources_dir: PathBuf,
-    #[allow(dead_code)] // Part B2 load/delete commands consume the configured root directly.
-    pub(crate) save_root: PathBuf,
-    pub(crate) persistence: Option<Arc<ApplicationPersistence>>,
 }
 
 fn build_app_state_with_storage(
@@ -197,38 +218,31 @@ fn build_app_state_with_storage(
     let session = Arc::new(Mutex::new(AppSession::empty()));
     let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let initial_error = ensure_save_layout(fs.as_ref(), &save_root).err();
-    let persistence = Arc::new(ApplicationPersistence {
-        session: Arc::clone(&session),
-        operation_gate: Arc::clone(&operation_gate),
+    let persistence = Arc::new(ApplicationPersistence::from_parts(
+        Arc::clone(&session),
+        Arc::clone(&operation_gate),
         fs,
-        root: save_root.clone(),
-        discovery: SaveDiscoveryContext {
+        save_root,
+        SaveDiscoveryContext {
             resources_dir: resources_dir.clone(),
             definitions,
         },
-        last_saved_at: Mutex::new(None),
-        availability_error: Mutex::new(initial_error.clone()),
-    });
-    let coordinator = SaveCoordinator::with_application(
-        persistence.clone(),
-        Arc::clone(&session),
-        Arc::clone(&operation_gate),
-    );
+        initial_error.clone(),
+    ));
     #[cfg(feature = "e2e")]
-    let coordinator = coordinator.with_e2e_persistence_faults(e2e_persistence_faults);
-    let _ = persistence
-        .clone()
-        .enqueue_orphan_cleanup(coordinator.clone());
+    let persistence = Arc::new(
+        (*persistence)
+            .clone()
+            .with_e2e_persistence_faults(e2e_persistence_faults),
+    );
+    let _ = persistence.enqueue_orphan_cleanup();
     if let Some(diagnostic) = initial_error {
-        coordinator.publish_persistence_health(PersistenceHealthView::Degraded { diagnostic });
+        persistence.publish_persistence_health(PersistenceHealthView::Degraded { diagnostic });
     }
     Ok(AppState {
         session,
-        operation_gate,
-        coordinator,
+        persistence,
         resources_dir,
-        save_root,
-        persistence: Some(persistence),
     })
 }
 
@@ -237,10 +251,7 @@ fn unavailable_error() -> GameError {
 }
 
 fn session_persistence(state: &AppState) -> Result<&ApplicationPersistence, GameError> {
-    state
-        .persistence
-        .as_deref()
-        .ok_or_else(GameError::unavailable)
+    Ok(state.persistence.as_ref())
 }
 
 // Publishes the terminal health for a completed storage write and retries
@@ -251,7 +262,7 @@ fn publish_write_outcome_health(
     cleanup_diagnostic: &Option<GameError>,
 ) -> Result<(), GameError> {
     state
-        .coordinator
+        .persistence
         .publish_storage_write_health(session_generation, cleanup_diagnostic.clone())
 }
 
@@ -278,11 +289,11 @@ fn handle_close_requested(
 
 fn handle_exit_requested(
     code: Option<i32>,
-    coordinator: &SaveCoordinator,
+    persistence: &ApplicationPersistence,
     prevent_exit: impl FnOnce(),
     schedule: impl FnOnce(ExitRequestSource) -> Result<(), GameError>,
 ) -> Result<(), GameError> {
-    if code.is_some() && coordinator.consume_programmatic_exit_bypass() {
+    if code.is_some() && persistence.consume_programmatic_exit_bypass() {
         return Ok(());
     }
     prevent_exit();
@@ -317,13 +328,13 @@ fn run_gameplay_mutation_selecting_policy(
         let notification = match select_policy(&committed) {
             MutationPersistencePolicy::AutosaveIfAdvanced => {
                 state
-                    .coordinator
+                    .persistence
                     .notify_committed(committed, session_generation, after_revision)
             }
             MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => state
-                .coordinator
+                .persistence
                 .notify_committed_without_thumbnail(committed, session_generation, after_revision),
-            MutationPersistencePolicy::CoordinatorManaged => {
+            MutationPersistencePolicy::PersistenceManaged => {
                 return Ok(GameplayCommandResultView {
                     state: committed,
                     thumbnail_capture: None,
@@ -348,22 +359,6 @@ fn run_gameplay_mutation(
     mutation: impl FnOnce(&mut GameEngine) -> Result<GameStateView, GameError>,
 ) -> Result<GameplayCommandResultView, GameError> {
     run_gameplay_mutation_selecting_policy(state, |_| policy, mutation)
-}
-
-fn finish_coordinator_mutation(
-    state: GameStateView,
-    policy: MutationPersistencePolicy,
-) -> Result<GameplayCommandResultView, GameError> {
-    match policy {
-        MutationPersistencePolicy::CoordinatorManaged => Ok(GameplayCommandResultView {
-            state,
-            thumbnail_capture: None,
-        }),
-        MutationPersistencePolicy::AutosaveIfAdvanced
-        | MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail => {
-            Err(GameError::unavailable())
-        }
-    }
 }
 
 /// Resolve the `resources/scenes` directory.
@@ -417,7 +412,7 @@ async fn install_session_candidate(
 ) -> Result<GameplayCommandResultView, GameError> {
     let (engine, autosave_target) = candidate?;
     let state = session_persistence(state)?
-        .install_session(&state.coordinator, engine, autosave_target)
+        .install_session(engine, autosave_target)
         .await?;
     Ok(GameplayCommandResultView {
         state,
@@ -431,60 +426,6 @@ async fn start_game_core(
     engine: GameEngine,
 ) -> Result<GameplayCommandResultView, GameError> {
     install_session_candidate(state, Ok((engine, None))).await
-}
-
-async fn start_game_with_persistence_core(
-    state: &AppState,
-) -> Result<GameplayCommandResultView, GameError> {
-    let persistence = state
-        .persistence
-        .as_ref()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    let _ = persistence.discover();
-    if let Some(error) = persistence.availability_error() {
-        return Err(state.coordinator.challenge_current_discovery_failure(
-            state,
-            PersistenceBypassOperation::StartWithoutSaving,
-            error,
-        )?);
-    }
-    let expected = state.coordinator.transition_identity(state)?;
-    if expected.durable_revision.is_some() {
-        if let Err(error) = state
-            .coordinator
-            .flush_session(state, FlushOperation::InGameLoad)
-            .await
-        {
-            let error = challengeable_flush_failure(error)?;
-            return Err(state.coordinator.challenge_current_session_error(
-                state,
-                PersistenceBypassOperation::StartWithoutSaving,
-                error,
-            )?);
-        }
-    }
-    let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    let state_view = session_persistence(state)?
-        .install_session_if_current(&state.coordinator, engine, None, expected)
-        .await?;
-    Ok(GameplayCommandResultView {
-        state: state_view,
-        thumbnail_capture: None,
-    })
-}
-
-async fn start_game_without_saving_core(
-    state: &AppState,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<GameplayCommandResultView, GameError> {
-    let engine = GameEngine::new_started(state.resources_dir.clone())?;
-    let expected = state
-        .coordinator
-        .consume_current_start_without_saving_failure(state, &failure_token)?;
-    let state_view = session_persistence(state)?
-        .install_session_if_current(&state.coordinator, engine, None, expected)
-        .await?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[tauri::command]
@@ -506,42 +447,16 @@ fn get_state(state: tauri::State<'_, AppState>) -> Result<GameStateView, GameErr
     read_game_state(&state)
 }
 
-fn persistence_status_snapshot(coordinator: &SaveCoordinator) -> PersistenceHealthView {
-    coordinator.persistence_health()
+fn persistence_status_snapshot(persistence: &ApplicationPersistence) -> PersistenceHealthView {
+    persistence.persistence_health()
 }
 
-fn thumbnail_activity_snapshot(coordinator: &SaveCoordinator) -> ThumbnailActivityView {
-    coordinator.thumbnail_activity()
+fn thumbnail_activity_snapshot(persistence: &ApplicationPersistence) -> ThumbnailActivityView {
+    persistence.thumbnail_activity()
 }
 
-fn exit_status_snapshot(coordinator: &SaveCoordinator) -> ExitStatusView {
-    coordinator.exit_status()
-}
-
-#[cfg(feature = "e2e")]
-fn e2e_set_persistence_fault_core(
-    coordinator: &SaveCoordinator,
-    boundary: E2ePersistenceFaultBoundary,
-    occurrence_count: u8,
-) -> Result<(), GameError> {
-    coordinator.arm_e2e_persistence_fault(boundary, occurrence_count)
-}
-
-#[cfg(feature = "e2e")]
-async fn e2e_load_checkpoint_core(
-    state: &AppState,
-    id: CheckpointId,
-) -> Result<E2eLoadCheckpointResult, GameError> {
-    let checkpoint = build_checkpoint(state.resources_dir.clone(), id)?;
-    let projection = checkpoint.projection;
-    let replacement = session_persistence(state)?
-        .replace_session_for_e2e(&state.coordinator, checkpoint.engine)
-        .await?;
-    Ok(E2eLoadCheckpointResult {
-        generation: replacement.generation,
-        state: replacement.state,
-        projection,
-    })
+fn exit_status_snapshot(persistence: &ApplicationPersistence) -> ExitStatusView {
+    persistence.exit_status()
 }
 
 #[cfg(feature = "e2e")]
@@ -560,7 +475,7 @@ fn e2e_set_persistence_fault(
     boundary: E2ePersistenceFaultBoundary,
     occurrence_count: u8,
 ) -> Result<(), GameError> {
-    e2e_set_persistence_fault_core(&state.coordinator, boundary, occurrence_count)
+    e2e_set_persistence_fault_core(&state.persistence, boundary, occurrence_count)
 }
 
 #[cfg(feature = "e2e")]
@@ -579,14 +494,14 @@ async fn e2e_request_application_quit(
 }
 
 fn bind_persistence_status_events(
-    coordinator: &SaveCoordinator,
+    persistence: &ApplicationPersistence,
     emit: impl Fn(&'static str, serde_json::Value) + Send + Sync + 'static,
 ) {
     let emit = Arc::new(emit);
     let health_emitter = Arc::clone(&emit);
     let activity_emitter = Arc::clone(&emit);
     let exit_emitter = emit;
-    coordinator.subscribe(
+    persistence.subscribe(
         move |view| {
             if let Ok(payload) = serde_json::to_value(view) {
                 health_emitter(PERSISTENCE_STATUS_CHANGED_EVENT, payload);
@@ -598,7 +513,7 @@ fn bind_persistence_status_events(
             }
         },
     );
-    coordinator.subscribe_exit_status(move |view| {
+    persistence.subscribe_exit_status(move |view| {
         if let Ok(payload) = serde_json::to_value(view) {
             exit_emitter(EXIT_STATUS_CHANGED_EVENT, payload);
         }
@@ -607,16 +522,12 @@ fn bind_persistence_status_events(
 
 #[tauri::command]
 fn get_persistence_status(state: tauri::State<'_, AppState>) -> PersistenceHealthView {
-    persistence_status_snapshot(&state.coordinator)
+    persistence_status_snapshot(&state.persistence)
 }
 
 #[tauri::command]
 fn get_thumbnail_activity(state: tauri::State<'_, AppState>) -> ThumbnailActivityView {
-    thumbnail_activity_snapshot(&state.coordinator)
-}
-
-fn get_exit_status_core(state: &AppState) -> ExitStatusView {
-    exit_status_snapshot(&state.coordinator)
+    thumbnail_activity_snapshot(&state.persistence)
 }
 
 #[tauri::command]
@@ -628,31 +539,12 @@ fn application_exit(app: tauri::AppHandle) -> Arc<dyn ApplicationExit> {
     Arc::new(TauriApplicationExit { app })
 }
 
-async fn cancel_persistence_failure_core(
-    state: &AppState,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<(), GameError> {
-    state
-        .coordinator
-        .cancel_persistence_failure(state, failure_token)
-        .await
-}
-
 #[tauri::command]
 async fn cancel_persistence_failure(
     state: tauri::State<'_, AppState>,
     failure_token: PersistenceFailureTokenView,
 ) -> Result<(), GameError> {
     cancel_persistence_failure_core(&state, failure_token).await
-}
-
-fn retry_exit_core(
-    state: &AppState,
-    exit: Arc<dyn ApplicationExit>,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<ExitStatusView, GameError> {
-    state.coordinator.retry_exit(exit, failure_token)?;
-    Ok(exit_status_snapshot(&state.coordinator))
 }
 
 #[tauri::command]
@@ -664,27 +556,12 @@ fn retry_exit(
     retry_exit_core(&state, application_exit(app), failure_token)
 }
 
-fn cancel_exit_core(
-    state: &AppState,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<ExitStatusView, GameError> {
-    state.coordinator.cancel_exit(failure_token)
-}
-
 #[tauri::command]
 fn cancel_exit(
     state: tauri::State<'_, AppState>,
     failure_token: PersistenceFailureTokenView,
 ) -> Result<ExitStatusView, GameError> {
     cancel_exit_core(&state, failure_token)
-}
-
-fn exit_without_saving_core(
-    state: &AppState,
-    exit: Arc<dyn ApplicationExit>,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<(), GameError> {
-    state.coordinator.exit_without_saving(exit, failure_token)
 }
 
 #[tauri::command]
@@ -696,99 +573,12 @@ fn exit_without_saving(
     exit_without_saving_core(&state, application_exit(app), failure_token)
 }
 
-fn challengeable_flush_failure(error: GameError) -> Result<GameError, GameError> {
-    if error.is_persistence_operation_in_progress() {
-        Err(error)
-    } else {
-        Ok(error)
-    }
-}
-
-async fn list_saves_core(
-    state: &AppState,
-    discover: impl FnOnce() -> SaveBrowserView,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    list_saves_core_impl(state, discover, |_| Ok(()), |_, _| Ok(())).await
-}
-
-async fn list_saves_core_impl(
-    state: &AppState,
-    discover: impl FnOnce() -> SaveBrowserView,
-    before_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-    after_flush_error: impl FnOnce(&AppState, &GameError) -> Result<(), GameError>,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    let has_active_session = {
-        let session = state.session.lock().map_err(|_| unavailable_error())?;
-        session.ensure_persistence_available()?;
-        session.engine.is_some()
-    };
-    let flush_error = if has_active_session {
-        before_flush(state)?;
-        match state
-            .coordinator
-            .flush_session(state, FlushOperation::InGameLoad)
-            .await
-        {
-            Ok(_) => None,
-            Err(error) => {
-                let classified = challengeable_flush_failure(error);
-                let original = match &classified {
-                    Ok(error) | Err(error) => error,
-                };
-                after_flush_error(state, original)?;
-                Some(classified?)
-            }
-        }
-    } else {
-        None
-    };
-    let browser = discover();
-    let discovery_generation = state.coordinator.complete_discovery_attempt()?;
-    let continue_candidate = select_continue_candidate(&browser.slots);
-    let preflight = match flush_error {
-        Some(error) => {
-            let (diagnostic, failure_token) = state.coordinator.challenge_current_session_failure(
-                state,
-                PersistenceBypassOperation::LoadDiscardingCurrent,
-                Some(discovery_generation),
-                error,
-            )?;
-            SaveBrowserPreflightView::FlushFailed {
-                diagnostic,
-                failure_token,
-            }
-        }
-        None => SaveBrowserPreflightView::Ready,
-    };
-    Ok(SaveBrowserOpenResultView {
-        browser,
-        continue_candidate,
-        preflight,
-    })
-}
-
-#[cfg(test)]
-async fn list_saves_core_with_flush_hooks(
-    state: &AppState,
-    discover: impl FnOnce() -> SaveBrowserView,
-    before_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-    after_flush_error: impl FnOnce(&AppState, &GameError) -> Result<(), GameError>,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    list_saves_core_impl(state, discover, before_flush, after_flush_error).await
-}
-
 #[tauri::command]
 async fn list_saves(
     state: tauri::State<'_, AppState>,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
-    let persistence = state.persistence.clone();
-    list_saves_core(&state, move || {
-        persistence
-            .as_ref()
-            .map(|persistence| persistence.discover())
-            .unwrap_or_else(unavailable_save_browser)
-    })
-    .await
+    let persistence = Arc::clone(&state.persistence);
+    list_saves_core(&state, move || persistence.discover()).await
 }
 
 #[tauri::command]
@@ -805,7 +595,7 @@ fn prepare_save_thumbnail(
     purpose: PreparedThumbnailPurpose,
 ) -> Result<ThumbnailCaptureRequestView, GameError> {
     state
-        .coordinator
+        .persistence
         .prepare_application_thumbnail(&state, purpose)
 }
 
@@ -845,12 +635,12 @@ pub(crate) fn validate_thumbnail_submission<'a>(
 }
 
 pub(crate) fn submit_save_thumbnail_core(
-    coordinator: &SaveCoordinator,
+    persistence: &ApplicationPersistence,
     headers: &[RawThumbnailHeader<'_>],
     body: &[u8],
 ) -> Result<ThumbnailActivityView, GameError> {
     let ticket = validate_thumbnail_submission(headers, body)?;
-    coordinator.submit_thumbnail(ticket, body)
+    persistence.submit_thumbnail(ticket, body)
 }
 
 #[tauri::command]
@@ -867,7 +657,7 @@ fn submit_save_thumbnail(
     let tauri::ipc::InvokeBody::Raw(body) = request.body() else {
         return Err(GameError::thumbnail_png_malformed());
     };
-    submit_save_thumbnail_core(&state.coordinator, &ticket_headers, body)
+    submit_save_thumbnail_core(&state.persistence, &ticket_headers, body)
 }
 
 #[tauri::command]
@@ -875,24 +665,7 @@ fn report_save_thumbnail_failure(
     state: tauri::State<'_, AppState>,
     ticket: String,
 ) -> Result<ThumbnailActivityView, GameError> {
-    state.coordinator.report_thumbnail_failure(&ticket)
-}
-
-fn read_save_thumbnail_core(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: &str,
-) -> Result<Vec<u8>, GameError> {
-    let persistence = state
-        .persistence
-        .as_ref()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    read_save_thumbnail_from_storage(
-        persistence.fs.as_ref(),
-        &persistence.root,
-        reference,
-        observed_save_id,
-    )
+    state.persistence.report_thumbnail_failure(&ticket)
 }
 
 #[tauri::command]
@@ -902,118 +675,6 @@ fn read_save_thumbnail(
     observed_save_id: String,
 ) -> Result<tauri::ipc::Response, GameError> {
     read_save_thumbnail_core(&state, reference, &observed_save_id).map(tauri::ipc::Response::new)
-}
-
-#[tauri::command]
-async fn save_manual_core(
-    state: &AppState,
-    reference: SaveSlotRef,
-    display_name: String,
-    expectation: ManualSlotExpectation,
-    prepared_thumbnail_ticket: String,
-) -> Result<ManualSaveResultView, GameError> {
-    state
-        .coordinator
-        .flush_session(state, FlushOperation::ManualSave)
-        .await?;
-    let SaveSlotRef::Manual { .. } = reference else {
-        return Err(GameError::save_slot_mismatch());
-    };
-    let display_name = validate_manual_display_name(&display_name)?;
-    let persistence = state
-        .persistence
-        .as_ref()
-        .cloned()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    let (session_generation, durable_revision, checkpoint) = {
-        let session = state.session.lock().map_err(|_| unavailable_error())?;
-        session.ensure_persistence_available()?;
-        let engine = session
-            .engine
-            .as_ref()
-            .ok_or_else(GameError::game_not_started)?;
-        (
-            session.persistence.generation,
-            engine.durable_revision(),
-            capture_checkpoint(engine)?,
-        )
-    };
-    let purpose = ThumbnailCapturePurpose::ManualSave {
-        session_generation,
-        durable_revision,
-    };
-    let thumbnail = state
-        .coordinator
-        .claim_thumbnail(&prepared_thumbnail_ticket, &purpose)?;
-    let save_id = uuid::Uuid::new_v4().hyphenated().to_string();
-    let envelope = persistence.envelope(
-        checkpoint,
-        persistence
-            .discovery
-            .definitions
-            .content_revision()
-            .to_owned(),
-        reference,
-        save_id.clone(),
-        display_name,
-    )?;
-    let thumbnail = match thumbnail {
-        game::save::coordinator::CaptureTerminalResult::Available(candidate) => {
-            ThumbnailWrite::Available(candidate.bind(&save_id)?)
-        }
-        game::save::coordinator::CaptureTerminalResult::Unavailable => ThumbnailWrite::Unavailable,
-    };
-    let request = SlotWriteRequest {
-        reference,
-        envelope,
-        thumbnail,
-        expected_manual: Some(expectation),
-    };
-    state.coordinator.publish_persistence_health_for_session(
-        session_generation,
-        PersistenceHealthView::Pending,
-    )?;
-    let outcome = match persistence
-        .run_storage_write_if_session_current(session_generation, move |fs, root| {
-            prepare_slot_write(fs, root, request)
-                .and_then(|prepared| commit_prepared_slot_write(fs, root, prepared))
-        })
-        .await
-    {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let _ = state.coordinator.publish_persistence_health_for_session(
-                session_generation,
-                PersistenceHealthView::Degraded {
-                    diagnostic: error.clone(),
-                },
-            );
-            return Err(error);
-        }
-    };
-    publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
-    let browser = persistence.discover();
-    state
-        .coordinator
-        .complete_discovery_attempt_for_session(session_generation)?;
-    let saved_slot = browser
-        .slots
-        .iter()
-        .find(|slot| slot.reference == reference)
-        .cloned()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    let rediscovered_save_id = match &saved_slot.status {
-        SaveSlotStatusView::Valid { metadata } => &metadata.save_id,
-        _ => return Err(GameError::save_write_failed()),
-    };
-    if rediscovered_save_id != &save_id {
-        return Err(GameError::save_write_failed());
-    }
-    Ok(ManualSaveResultView {
-        saved_slot,
-        browser,
-        thumbnail_activity: state.coordinator.thumbnail_activity(),
-    })
 }
 
 #[tauri::command]
@@ -1043,101 +704,6 @@ fn unavailable_save_browser() -> SaveBrowserView {
     }
 }
 
-fn build_selected_candidate(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: &str,
-) -> Result<RestoredGameCandidate, GameError> {
-    let persistence = state
-        .persistence
-        .as_ref()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    let envelope = read_save_envelope(
-        persistence.fs.as_ref(),
-        &persistence.root,
-        reference,
-        observed_save_id,
-    )?;
-    let candidate = build_restore_candidate(
-        persistence.discovery.resources_dir.clone(),
-        &persistence.discovery.definitions,
-        envelope,
-    )?;
-    if candidate.source != reference || candidate.save_id != observed_save_id {
-        return Err(GameError::stale_save_selection());
-    }
-    Ok(candidate)
-}
-
-fn fresh_ready_browser(state: &AppState) -> Result<SaveBrowserOpenResultView, GameError> {
-    let browser = state
-        .persistence
-        .as_ref()
-        .map(|persistence| persistence.discover())
-        .unwrap_or_else(unavailable_save_browser);
-    state.coordinator.complete_discovery_attempt()?;
-    Ok(SaveBrowserOpenResultView {
-        continue_candidate: select_continue_candidate(&browser.slots),
-        browser,
-        preflight: SaveBrowserPreflightView::Ready,
-    })
-}
-
-async fn load_save_core(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: String,
-) -> Result<GameplayCommandResultView, GameError> {
-    load_save_core_impl(state, reference, observed_save_id, |_| Ok(())).await
-}
-
-async fn load_save_core_impl(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: String,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<GameplayCommandResultView, GameError> {
-    let expected = state.coordinator.transition_identity(state)?;
-    let has_active_session = expected.durable_revision.is_some();
-    if has_active_session {
-        if let Err(error) = state
-            .coordinator
-            .flush_session(state, FlushOperation::InGameLoad)
-            .await
-        {
-            let error = challengeable_flush_failure(error)?;
-            return Err(state.coordinator.challenge_current_selected_save_failure(
-                state,
-                PersistenceBypassOperation::LoadDiscardingCurrent,
-                reference,
-                &observed_save_id,
-                error,
-            )?);
-        }
-    }
-    after_flush(state)?;
-    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
-        .install_session_if_current(
-            &state.coordinator,
-            candidate.engine,
-            Some(candidate.source),
-            expected,
-        )
-        .await?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
-}
-
-#[cfg(test)]
-async fn load_save_core_with_post_flush_hook(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: String,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<GameplayCommandResultView, GameError> {
-    load_save_core_impl(state, reference, observed_save_id, after_flush).await
-}
-
 #[tauri::command]
 async fn load_save(
     state: tauri::State<'_, AppState>,
@@ -1145,31 +711,6 @@ async fn load_save(
     observed_save_id: String,
 ) -> Result<GameplayCommandResultView, GameError> {
     load_save_core(&state, reference, observed_save_id).await
-}
-
-async fn load_save_discarding_current_core(
-    state: &AppState,
-    reference: SaveSlotRef,
-    observed_save_id: String,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<GameplayCommandResultView, GameError> {
-    let expected = state.coordinator.consume_current_selected_save_failure(
-        state,
-        &failure_token,
-        PersistenceBypassOperation::LoadDiscardingCurrent,
-        reference,
-        &observed_save_id,
-    )?;
-    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
-        .install_session_if_current(
-            &state.coordinator,
-            candidate.engine,
-            Some(candidate.source),
-            expected,
-        )
-        .await?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
 }
 
 #[tauri::command]
@@ -1182,125 +723,11 @@ async fn load_save_discarding_current(
     load_save_discarding_current_core(&state, reference, observed_save_id, failure_token).await
 }
 
-async fn continue_game_core(state: &AppState) -> Result<GameplayCommandResultView, GameError> {
-    continue_game_core_impl(state, |_| Ok(())).await
-}
-
-async fn continue_game_core_impl(
-    state: &AppState,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<GameplayCommandResultView, GameError> {
-    let expected = state.coordinator.transition_identity(state)?;
-    let has_active_session = expected.durable_revision.is_some();
-    if has_active_session {
-        if let Err(error) = state
-            .coordinator
-            .flush_session(state, FlushOperation::InGameLoad)
-            .await
-        {
-            let error = challengeable_flush_failure(error)?;
-            return Err(state.coordinator.challenge_current_discovery_failure(
-                state,
-                PersistenceBypassOperation::LoadDiscardingCurrent,
-                error,
-            )?);
-        }
-    }
-    after_flush(state)?;
-    let persistence = state
-        .persistence
-        .as_ref()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    let browser = persistence.discover();
-    state.coordinator.complete_discovery_attempt()?;
-    if let SaveDiscoveryStatusView::Unavailable { diagnostic } = browser.discovery {
-        return Err(diagnostic);
-    }
-    let reference =
-        select_continue_candidate(&browser.slots).ok_or_else(GameError::stale_save_selection)?;
-    let selected = browser
-        .slots
-        .iter()
-        .find(|slot| slot.reference == reference)
-        .ok_or_else(GameError::stale_save_selection)?;
-    let observed_save_id = match &selected.status {
-        SaveSlotStatusView::Valid { metadata } => metadata.save_id.clone(),
-        SaveSlotStatusView::Invalid { diagnostic, .. } => return Err(diagnostic.clone()),
-        SaveSlotStatusView::Empty => return Err(GameError::stale_save_selection()),
-    };
-    let candidate = build_selected_candidate(state, reference, &observed_save_id)?;
-    let state_view = session_persistence(state)?
-        .install_session_if_current(
-            &state.coordinator,
-            candidate.engine,
-            Some(candidate.source),
-            expected,
-        )
-        .await?;
-    finish_coordinator_mutation(state_view, MutationPersistencePolicy::CoordinatorManaged)
-}
-
-#[cfg(test)]
-async fn continue_game_core_with_post_flush_hook(
-    state: &AppState,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<GameplayCommandResultView, GameError> {
-    continue_game_core_impl(state, after_flush).await
-}
-
 #[tauri::command]
 async fn continue_game(
     state: tauri::State<'_, AppState>,
 ) -> Result<GameplayCommandResultView, GameError> {
     continue_game_core(&state).await
-}
-
-async fn delete_save_core(
-    state: &AppState,
-    reference: SaveSlotRef,
-    expectation: OccupiedSlotExpectation,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    let session_generation = {
-        let session = state.session.lock().map_err(|_| unavailable_error())?;
-        session.ensure_persistence_available()?;
-        session.persistence.generation
-    };
-    let persistence = state
-        .persistence
-        .as_ref()
-        .cloned()
-        .ok_or_else(GameError::save_discovery_unavailable)?;
-    state.coordinator.publish_persistence_health_for_session(
-        session_generation,
-        PersistenceHealthView::Pending,
-    )?;
-    let outcome = match persistence
-        .run_storage_write_if_session_current(session_generation, move |fs, root| {
-            delete_slot(fs, root, reference, expectation)
-        })
-        .await
-    {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let _ = state.coordinator.publish_persistence_health_for_session(
-                session_generation,
-                PersistenceHealthView::Degraded {
-                    diagnostic: error.clone(),
-                },
-            );
-            return Err(error);
-        }
-    };
-    publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
-    let browser = persistence.discover();
-    state
-        .coordinator
-        .complete_discovery_attempt_for_session(session_generation)?;
-    Ok(SaveBrowserOpenResultView {
-        continue_candidate: select_continue_candidate(&browser.slots),
-        browser,
-        preflight: SaveBrowserPreflightView::Ready,
-    })
 }
 
 #[tauri::command]
@@ -1312,62 +739,11 @@ async fn delete_save(
     delete_save_core(&state, reference, expectation).await
 }
 
-async fn return_to_title_core(state: &AppState) -> Result<SaveBrowserOpenResultView, GameError> {
-    return_to_title_core_impl(state, |_| Ok(())).await
-}
-
-async fn return_to_title_core_impl(
-    state: &AppState,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    let expected = state.coordinator.transition_identity(state)?;
-    if let Err(error) = state
-        .coordinator
-        .flush_session(state, FlushOperation::ReturnToTitle)
-        .await
-    {
-        let error = challengeable_flush_failure(error)?;
-        return Err(state.coordinator.challenge_current_session_error(
-            state,
-            PersistenceBypassOperation::ReturnWithoutSaving,
-            error,
-        )?);
-    }
-    after_flush(state)?;
-    session_persistence(state)?
-        .clear_session_if_current(&state.coordinator, expected)
-        .await?;
-    fresh_ready_browser(state)
-}
-
-#[cfg(test)]
-async fn return_to_title_core_with_post_flush_hook(
-    state: &AppState,
-    after_flush: impl FnOnce(&AppState) -> Result<(), GameError>,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    return_to_title_core_impl(state, after_flush).await
-}
-
 #[tauri::command]
 async fn return_to_title(
     state: tauri::State<'_, AppState>,
 ) -> Result<SaveBrowserOpenResultView, GameError> {
     return_to_title_core(&state).await
-}
-
-async fn return_to_title_without_saving_core(
-    state: &AppState,
-    failure_token: PersistenceFailureTokenView,
-) -> Result<SaveBrowserOpenResultView, GameError> {
-    let expected = state.coordinator.consume_current_session_failure(
-        state,
-        &failure_token,
-        PersistenceBypassOperation::ReturnWithoutSaving,
-    )?;
-    session_persistence(state)?
-        .clear_session_if_current(&state.coordinator, expected)
-        .await?;
-    fresh_ready_browser(state)
 }
 
 #[tauri::command]
@@ -1691,7 +1067,7 @@ pub fn run() {
             )
             .map_err(|error| std::io::Error::other(error.message))?;
             let app_handle = app.handle().clone();
-            bind_persistence_status_events(&state.coordinator, move |event, payload| {
+            bind_persistence_status_events(state.persistence.as_ref(), move |event, payload| {
                 if let Err(error) = app_handle.emit(event, payload) {
                     eprintln!("failed to emit {event}: {error}");
                 }
@@ -1766,7 +1142,7 @@ pub fn run() {
             if let Err(error) = handle_close_requested(
                 &label,
                 || api.prevent_close(),
-                |source| state.coordinator.request_exit_flush(exit, source),
+                |source| state.persistence.request_exit_flush(exit, source),
             ) {
                 eprintln!("failed to schedule exit flush: {}", error.message);
             }
@@ -1780,9 +1156,9 @@ pub fn run() {
             });
             if let Err(error) = handle_exit_requested(
                 code,
-                &state.coordinator,
+                &state.persistence,
                 || api.prevent_exit(),
-                |source| state.coordinator.request_exit_flush(exit, source),
+                |source| state.persistence.request_exit_flush(exit, source),
             ) {
                 eprintln!("failed to schedule exit flush: {}", error.message);
             }
@@ -1804,18 +1180,17 @@ mod tests {
         let (_resources, resources_dir) =
             crate::game::test_support::save_capture_fixture_resources();
         let definitions = Arc::new(load_current_definitions(&resources_dir).unwrap());
-        Arc::new(ApplicationPersistence {
+        Arc::new(ApplicationPersistence::from_parts(
             session,
             operation_gate,
-            fs: Arc::new(ProductionSaveFilesystem),
-            root: PathBuf::new(),
-            discovery: SaveDiscoveryContext {
+            Arc::new(ProductionSaveFilesystem),
+            PathBuf::new(),
+            SaveDiscoveryContext {
                 resources_dir,
                 definitions,
             },
-            last_saved_at: Mutex::new(None),
-            availability_error: Mutex::new(None),
-        })
+            None,
+        ))
     }
 
     mod raw_thumbnail_command_contract {
@@ -1830,7 +1205,7 @@ mod tests {
         }
 
         #[test]
-        fn missing_duplicate_non_utf8_and_malformed_tickets_stop_before_the_coordinator() {
+        fn missing_duplicate_non_utf8_and_malformed_tickets_stop_before_the_persistence() {
             let malformed_headers = [
                 vec![],
                 vec![
@@ -1845,54 +1220,54 @@ mod tests {
             ];
 
             for headers in malformed_headers {
-                let coordinator = SaveCoordinator::new();
-                let request = coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+                let persistence = ApplicationPersistence::new();
+                let request = persistence.prepare_thumbnail(manual_purpose()).unwrap();
 
                 let error =
-                    submit_save_thumbnail_core(&coordinator, &headers, b"not-a-png").unwrap_err();
+                    submit_save_thumbnail_core(&persistence, &headers, b"not-a-png").unwrap_err();
 
                 assert_eq!(error, GameError::stale_thumbnail_ticket());
                 assert_eq!(
-                    coordinator.thumbnail_activity(),
+                    persistence.thumbnail_activity(),
                     ThumbnailActivityView::Capturing,
-                    "the request parser must fail before coordinator submission"
+                    "the request parser must fail before persistence submission"
                 );
-                coordinator
+                persistence
                     .report_thumbnail_failure(&request.ticket)
                     .unwrap();
             }
         }
 
         #[tokio::test]
-        async fn oversized_raw_body_stops_before_clone_or_coordinator_submission() {
-            let coordinator = SaveCoordinator::new();
-            let request = coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+        async fn oversized_raw_body_stops_before_clone_or_persistence_submission() {
+            let persistence = ApplicationPersistence::new();
+            let request = persistence.prepare_thumbnail(manual_purpose()).unwrap();
             let headers = [RawThumbnailHeader::new(
                 b"x-lyra-thumbnail-ticket",
                 request.ticket.as_bytes(),
             )];
             let oversized = vec![0; MAX_THUMBNAIL_BYTES + 1];
 
-            let error = submit_save_thumbnail_core(&coordinator, &headers, &oversized).unwrap_err();
+            let error = submit_save_thumbnail_core(&persistence, &headers, &oversized).unwrap_err();
 
             assert_eq!(error.code, "thumbnailPngTooLarge");
             assert_eq!(
-                coordinator.thumbnail_activity(),
+                persistence.thumbnail_activity(),
                 ThumbnailActivityView::Capturing,
-                "the ingress cap must fail before coordinator submission"
+                "the ingress cap must fail before persistence submission"
             );
-            coordinator
+            persistence
                 .report_thumbnail_failure(&request.ticket)
                 .unwrap();
         }
 
         #[tokio::test]
         async fn status_events_are_named_complete_snapshots_matching_the_getters() {
-            let coordinator = SaveCoordinator::new();
+            let persistence = ApplicationPersistence::new();
             let events = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
             let recorded = Arc::clone(&events);
 
-            bind_persistence_status_events(&coordinator, move |name, payload| {
+            bind_persistence_status_events(&persistence, move |name, payload| {
                 recorded.lock().unwrap().push((name.into(), payload));
             });
 
@@ -1902,37 +1277,37 @@ mod tests {
                 [
                     (
                         PERSISTENCE_STATUS_CHANGED_EVENT.into(),
-                        serde_json::to_value(coordinator.persistence_health()).unwrap(),
+                        serde_json::to_value(persistence.persistence_health()).unwrap(),
                     ),
                     (
                         THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
-                        serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
+                        serde_json::to_value(persistence.thumbnail_activity()).unwrap(),
                     ),
                     (
                         EXIT_STATUS_CHANGED_EVENT.into(),
-                        serde_json::to_value(exit_status_snapshot(&coordinator)).unwrap(),
+                        serde_json::to_value(exit_status_snapshot(&persistence)).unwrap(),
                     ),
                 ]
             );
 
-            coordinator.publish_persistence_health(PersistenceHealthView::Degraded {
+            persistence.publish_persistence_health(PersistenceHealthView::Degraded {
                 diagnostic: GameError::save_write_failed(),
             });
-            coordinator.prepare_thumbnail(manual_purpose()).unwrap();
+            persistence.prepare_thumbnail(manual_purpose()).unwrap();
 
             let published = events.lock().unwrap().clone();
             assert_eq!(
                 published[published.len() - 2],
                 (
                     PERSISTENCE_STATUS_CHANGED_EVENT.into(),
-                    serde_json::to_value(coordinator.persistence_health()).unwrap(),
+                    serde_json::to_value(persistence.persistence_health()).unwrap(),
                 )
             );
             assert_eq!(
                 published[published.len() - 1],
                 (
                     THUMBNAIL_ACTIVITY_CHANGED_EVENT.into(),
-                    serde_json::to_value(coordinator.thumbnail_activity()).unwrap(),
+                    serde_json::to_value(persistence.thumbnail_activity()).unwrap(),
                 )
             );
         }
@@ -1940,8 +1315,8 @@ mod tests {
 
     mod exit_lifecycle {
         use super::*;
-        use crate::game::save::coordinator::{
-            AppSession, ApplicationExit, ExitRequestSource, SaveCoordinator,
+        use crate::game::save::application::{
+            AppSession, ApplicationExit, ApplicationPersistence, ExitRequestSource,
         };
         use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
         use std::cell::{Cell, RefCell};
@@ -2003,11 +1378,9 @@ mod tests {
 
         #[tokio::test]
         async fn exit_lifecycle_user_exit_is_prevented_but_programmatic_bypass_is_consumed_once() {
-            let session = Arc::new(Mutex::new(AppSession::empty()));
-            let coordinator =
-                SaveCoordinator::for_application(session, Arc::new(tokio::sync::Mutex::new(())));
+            let persistence = Arc::new(ApplicationPersistence::new());
             let exit = Arc::new(RecordingExit::default());
-            coordinator
+            persistence
                 .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
                 .unwrap();
             exit.wait_for_call().await;
@@ -2016,7 +1389,7 @@ mod tests {
             let scheduled = RefCell::new(Vec::new());
             handle_exit_requested(
                 Some(0),
-                &coordinator,
+                &persistence,
                 || prevented.set(prevented.get() + 1),
                 |source| {
                     scheduled.borrow_mut().push(source);
@@ -2029,7 +1402,7 @@ mod tests {
 
             handle_exit_requested(
                 Some(0),
-                &coordinator,
+                &persistence,
                 || prevented.set(prevented.get() + 1),
                 |source| {
                     scheduled.borrow_mut().push(source);
@@ -2039,7 +1412,7 @@ mod tests {
             .unwrap();
             handle_exit_requested(
                 None,
-                &coordinator,
+                &persistence,
                 || prevented.set(prevented.get() + 1),
                 |source| {
                     scheduled.borrow_mut().push(source);
@@ -2067,17 +1440,13 @@ mod tests {
             let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
             let persistence =
                 test_application_persistence(Arc::clone(&session), Arc::clone(&operation_gate));
-            let coordinator =
-                SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&operation_gate));
             let app = AppState {
                 session,
-                operation_gate,
-                coordinator: coordinator.clone(),
+                persistence,
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: Some(persistence),
             };
-            coordinator
+            let persistence = Arc::clone(&app.persistence);
+            persistence
                 .request_exit_flush(
                     Arc::new(RecordingExit::default()),
                     ExitRequestSource::WindowClose,
@@ -2130,24 +1499,19 @@ mod tests {
         #[tokio::test]
         async fn exit_lifecycle_getter_event_and_cancel_core_preserve_status_and_errors() {
             let session = Arc::new(Mutex::new(AppSession::empty()));
-            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
-            let coordinator =
-                SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&operation_gate));
+            let persistence = Arc::new(ApplicationPersistence::new());
             let app = AppState {
                 session,
-                operation_gate,
-                coordinator: coordinator.clone(),
+                persistence: Arc::clone(&persistence),
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
             };
             let events = Arc::new(Mutex::new(Vec::<(String, serde_json::Value)>::new()));
             let recorded = Arc::clone(&events);
-            bind_persistence_status_events(&coordinator, move |name, payload| {
+            bind_persistence_status_events(&persistence, move |name, payload| {
                 recorded.lock().unwrap().push((name.into(), payload));
             });
             let exit = Arc::new(RecordingExit::default());
-            coordinator
+            persistence
                 .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
                 .unwrap();
 
@@ -2177,10 +1541,7 @@ mod tests {
 
     mod application_command_contract {
         use super::*;
-        use crate::game::save::coordinator::{
-            AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
-            AutosaveRegisteredIntent, AutosaveWriteJob, CoordinatorFuture, FlushOutcome,
-        };
+        use crate::game::save::application::{AutosaveWriteJob, FlushOutcome};
         use crate::game::save::schema::{
             SaveBrowserView, SaveDiscoveryStatusView, SaveSlotStatusView, SaveSlotView,
         };
@@ -2203,8 +1564,6 @@ mod tests {
         use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
         use std::sync::Condvar;
         use std::time::{Duration as StdDuration, SystemTime};
-
-        struct PassiveBackend;
 
         struct NoopApplicationExit;
 
@@ -2353,63 +1712,24 @@ mod tests {
             }
         }
 
-        impl AutosaveBackend for PassiveBackend {
-            fn capture(
-                &self,
-                _job: AutosaveWriteJob,
-            ) -> CoordinatorFuture<'_, Result<AutosaveCapture, GameError>> {
-                Box::pin(async { Err(GameError::save_write_failed()) })
-            }
-
-            fn register(
-                &self,
-                _capture: AutosaveCapture,
-                _target: crate::game::save::schema::SaveSlotRef,
-                _save_id: String,
-            ) -> CoordinatorFuture<'_, Result<AutosaveRegisteredIntent, GameError>> {
-                Box::pin(async { Err(GameError::save_write_failed()) })
-            }
-
-            fn prepare(
-                &self,
-                _registered: AutosaveRegisteredIntent,
-            ) -> CoordinatorFuture<'_, Result<AutosavePreparedWrite, GameError>> {
-                Box::pin(async { Err(GameError::save_write_failed()) })
-            }
-
-            fn commit_if_current(
-                &self,
-                _prepared: AutosavePreparedWrite,
-            ) -> CoordinatorFuture<'_, Result<AutosaveCommitOutcome, GameError>> {
-                Box::pin(async { Err(GameError::save_write_failed()) })
-            }
-        }
-
         fn mutation_app() -> AppState {
             let mut scene = investigation_scene_with_intro("scene", vec![]);
             scene.outro.unlock = OutroUnlock::Expr(UnlockExpr::HotspotInvestigated {
                 _predicate: PredicateHotspotInvestigated::X,
                 id: "absent".into(),
             });
-            let engine = empty_engine_with_scene(scene, 1);
-            AppState {
-                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
-                resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
-            }
+            mutation_app_with_engine(empty_engine_with_scene(scene, 1))
         }
 
         fn mutation_app_with_engine(engine: GameEngine) -> AppState {
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 7, None)));
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let persistence =
+                test_application_persistence(Arc::clone(&session), Arc::clone(&operation_gate));
             AppState {
-                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
+                session,
+                persistence,
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
             }
         }
 
@@ -2443,13 +1763,14 @@ mod tests {
         }
 
         fn title_app() -> AppState {
+            let session = Arc::new(Mutex::new(AppSession::empty()));
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let persistence =
+                test_application_persistence(Arc::clone(&session), Arc::clone(&operation_gate));
             AppState {
-                session: Arc::new(Mutex::new(AppSession::empty())),
-                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::new(),
+                session,
+                persistence,
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
             }
         }
 
@@ -2618,11 +1939,11 @@ mod tests {
                 Arc::new(ProductionSaveFilesystem),
             )
             .unwrap();
-            let persistence = app.persistence.as_ref().unwrap();
+            let persistence = app.persistence.as_ref();
 
             assert!(Arc::ptr_eq(&app.session, &persistence.session));
             assert!(Arc::ptr_eq(
-                &app.operation_gate,
+                &app.persistence.operation_gate,
                 &persistence.operation_gate
             ));
             assert!(temporary.path().join("saves").is_dir());
@@ -2636,10 +1957,10 @@ mod tests {
             )
             .unwrap();
             assert!(matches!(
-                failed.coordinator.persistence_health(),
+                failed.persistence.persistence_health(),
                 PersistenceHealthView::Degraded { .. }
             ));
-            let failed_persistence = failed.persistence.as_ref().unwrap();
+            let failed_persistence = failed.persistence.as_ref();
             assert!(Arc::ptr_eq(&failed.session, &failed_persistence.session));
             assert!(failed_persistence.availability_error().is_some());
         }
@@ -2665,19 +1986,19 @@ mod tests {
             )
             .unwrap();
             let engine = GameEngine::new_started(resources).unwrap();
-            let generation = app.coordinator.next_session_generation().unwrap();
+            let generation = app.persistence.next_session_generation().unwrap();
             *app.session.lock().unwrap() = AppSession::installed(engine, generation, None);
 
-            let persistence = app.persistence.as_ref().unwrap().clone();
+            let persistence = app.persistence.as_ref().clone();
             let durable_revision = app.session.lock().unwrap().durable_revision().unwrap();
             let session = app.session.clone();
             let task = tokio::spawn(async move {
                 persistence
-                    .capture(AutosaveWriteJob {
+                    .capture_checkpoint(AutosaveWriteJob {
                         session_generation: generation,
                         durable_revision,
                         thumbnail:
-                            crate::game::save::coordinator::CaptureTerminalResult::Unavailable,
+                            crate::game::save::application::CaptureTerminalResult::Unavailable,
                     })
                     .await
             });
@@ -2716,14 +2037,14 @@ mod tests {
             };
 
             let outcome = app
-                .coordinator
+                .persistence
                 .flush_session(&app, FlushOperation::ManualSave)
                 .await
                 .unwrap();
             let FlushOutcome::Written { slot, .. } = outcome else {
                 panic!("dirty fixture must flush");
             };
-            let browser = app.persistence.as_ref().unwrap().discover();
+            let browser = app.persistence.as_ref().discover();
             assert!(browser.slots.iter().any(|candidate| {
                 candidate.reference == slot
                     && matches!(candidate.status, SaveSlotStatusView::Valid { .. })
@@ -2754,7 +2075,7 @@ mod tests {
                 app.session.lock().unwrap().persistence.generation > old_generation,
                 "reset must install a fresh session generation"
             );
-            let persistence = app.persistence.as_ref().unwrap();
+            let persistence = app.persistence.as_ref();
             let browser = persistence.discover();
             let persisted = browser
                 .slots
@@ -2800,7 +2121,7 @@ mod tests {
             assert_eq!(error.code, "saveWriteFailed");
             assert_eq!(session_observation(&app), before);
             let token = PersistenceFailureTokenView::from_error(&error).unwrap();
-            app.coordinator.complete_discovery_attempt().unwrap();
+            app.persistence.complete_discovery_attempt().unwrap();
             let replaced = start_game_without_saving_core(&app, token.clone())
                 .await
                 .unwrap();
@@ -2816,7 +2137,6 @@ mod tests {
             assert!(app
                 .persistence
                 .as_ref()
-                .unwrap()
                 .discover()
                 .slots
                 .iter()
@@ -2885,7 +2205,7 @@ mod tests {
             failing.store(false, Ordering::SeqCst);
             start_game_with_persistence_core(&app).await.unwrap();
 
-            let persistence = app.persistence.as_ref().unwrap();
+            let persistence = app.persistence.as_ref();
             let browser = persistence.discover();
             let persisted = browser
                 .slots
@@ -2936,7 +2256,6 @@ mod tests {
             assert!(app
                 .persistence
                 .as_ref()
-                .unwrap()
                 .discover()
                 .slots
                 .iter()
@@ -2961,7 +2280,7 @@ mod tests {
             let error = start_game_with_persistence_core(&app).await.unwrap_err();
             let token = PersistenceFailureTokenView::from_error(&error).unwrap();
 
-            app.coordinator.complete_discovery_attempt().unwrap();
+            app.persistence.complete_discovery_attempt().unwrap();
 
             assert_eq!(
                 start_game_without_saving_core(&app, token)
@@ -2987,7 +2306,7 @@ mod tests {
                 .unwrap();
             advance_fixture_dialogue(&app);
             let first = app
-                .coordinator
+                .persistence
                 .flush_session(&app, FlushOperation::InGameLoad)
                 .await
                 .unwrap();
@@ -2997,7 +2316,6 @@ mod tests {
             let observed_save_id = valid_save_id(
                 app.persistence
                     .as_ref()
-                    .unwrap()
                     .discover()
                     .slots
                     .iter()
@@ -3017,7 +2335,6 @@ mod tests {
                 valid_save_id(
                     app.persistence
                         .as_ref()
-                        .unwrap()
                         .discover()
                         .slots
                         .iter()
@@ -3043,10 +2360,10 @@ mod tests {
                 .await
                 .unwrap();
             let ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&ticket.ticket)
                 .unwrap();
             let saved = save_manual_core(
@@ -3090,9 +2407,9 @@ mod tests {
             let saved = seed_manual(&app, 1, "Discard source").await;
             let observed_save_id = valid_save_id(&saved.saved_slot);
             advance_fixture_dialogue(&app);
-            let discovery_generation = app.coordinator.complete_discovery_attempt().unwrap();
+            let discovery_generation = app.persistence.complete_discovery_attempt().unwrap();
             let (_, wrong_token) = app
-                .coordinator
+                .persistence
                 .challenge_current_session_failure(
                     &app,
                     PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -3121,7 +2438,7 @@ mod tests {
             assert_eq!(replay.code, "stalePersistenceFailureToken");
 
             let (_, token) = app
-                .coordinator
+                .persistence
                 .challenge_current_session_failure(
                     &app,
                     PersistenceBypassOperation::LoadDiscardingCurrent,
@@ -3142,7 +2459,6 @@ mod tests {
             assert!(app
                 .persistence
                 .as_ref()
-                .unwrap()
                 .discover()
                 .slots
                 .iter()
@@ -3165,23 +2481,18 @@ mod tests {
                 .await
                 .unwrap();
             seed_manual(&app, 1, "Older valid").await;
-            app.persistence
-                .as_ref()
-                .unwrap()
-                .clear_session(&app.coordinator)
-                .await
-                .unwrap();
+            app.persistence.as_ref().clear_session().await.unwrap();
             std::fs::write(
                 temporary.path().join("saves/manual-2.json"),
                 b"{ newest but malformed",
             )
             .unwrap();
-            let before = app.coordinator.transition_identity(&app).unwrap();
+            let before = app.persistence.transition_identity(&app).unwrap();
 
             let error = continue_game_core(&app).await.unwrap_err();
 
             assert_eq!(error.code, "malformedSaveJson");
-            assert_eq!(app.coordinator.transition_identity(&app).unwrap(), before);
+            assert_eq!(app.persistence.transition_identity(&app).unwrap(), before);
         }
 
         #[tokio::test]
@@ -3205,7 +2516,7 @@ mod tests {
             assert!(started.thumbnail_capture.is_none());
             advance_fixture_dialogue(&app);
             failing.store(false, Ordering::SeqCst);
-            app.coordinator
+            app.persistence
                 .flush_session(&app, FlushOperation::ManualSave)
                 .await
                 .unwrap();
@@ -3213,7 +2524,6 @@ mod tests {
             assert!(app
                 .persistence
                 .as_ref()
-                .unwrap()
                 .discover()
                 .slots
                 .iter()
@@ -3284,17 +2594,13 @@ mod tests {
             assert!(slot_path.exists());
             fs.arm();
 
-            let gate = app.operation_gate.clone().lock_owned().await;
+            let gate = app.persistence.operation_gate.clone().lock_owned().await;
             let replacement_app = Arc::clone(&app);
             let mut replacement = tokio::spawn(async move {
                 replacement_app
                     .persistence
                     .as_ref()
-                    .unwrap()
-                    .replace_session_for_e2e(
-                        &replacement_app.coordinator,
-                        GameEngine::new_started(resources).unwrap(),
-                    )
+                    .replace_session_for_e2e(GameEngine::new_started(resources).unwrap())
                     .await
             });
             assert!(
@@ -3338,7 +2644,7 @@ mod tests {
             assert_eq!(delete_error.code, "staleSessionGeneration");
             assert!(slot_path.exists(), "stale delete must not remove the save");
             assert_eq!(
-                app.coordinator.persistence_health(),
+                app.persistence.persistence_health(),
                 PersistenceHealthView::Healthy,
                 "stale completion must not repopulate replacement state"
             );
@@ -3366,17 +2672,13 @@ mod tests {
             let slot_path = temporary.path().join("saves/manual-1.json");
             assert!(slot_path.exists());
 
-            let gate = app.operation_gate.clone().lock_owned().await;
+            let gate = app.persistence.operation_gate.clone().lock_owned().await;
             let replacement_app = Arc::clone(&app);
             let mut replacement = tokio::spawn(async move {
                 replacement_app
                     .persistence
                     .as_ref()
-                    .unwrap()
-                    .replace_session_for_e2e(
-                        &replacement_app.coordinator,
-                        GameEngine::new_started(resources).unwrap(),
-                    )
+                    .replace_session_for_e2e(GameEngine::new_started(resources).unwrap())
                     .await
             });
             assert!(
@@ -3401,7 +2703,7 @@ mod tests {
             tokio::time::timeout(Duration::from_secs(2), async {
                 loop {
                     if matches!(
-                        app.coordinator.persistence_health(),
+                        app.persistence.persistence_health(),
                         PersistenceHealthView::Pending
                     ) {
                         return;
@@ -3428,7 +2730,7 @@ mod tests {
             assert_eq!(delete_error.code, "staleSessionGeneration");
             assert!(slot_path.exists(), "stale delete must not remove the save");
             assert_eq!(
-                app.coordinator.persistence_health(),
+                app.persistence.persistence_health(),
                 PersistenceHealthView::Healthy,
                 "replacement health must remain Healthy after stale delete"
             );
@@ -3451,17 +2753,16 @@ mod tests {
                 .unwrap();
             let saved = seed_manual(&app, 1, "Keep me").await;
             let save_id = valid_save_id(&saved.saved_slot);
-            let browser_before =
-                serde_json::to_value(app.persistence.as_ref().unwrap().discover()).unwrap();
-            let health_before = app.coordinator.persistence_health();
+            let browser_before = serde_json::to_value(app.persistence.as_ref().discover()).unwrap();
+            let health_before = app.persistence.persistence_health();
             let removes_before = fs.removes.load(Ordering::SeqCst);
-            app.coordinator
+            app.persistence
                 .request_exit_flush(
                     Arc::new(NoopApplicationExit),
                     ExitRequestSource::WindowClose,
                 )
                 .unwrap();
-            assert_eq!(app.coordinator.exit_status(), ExitStatusView::Saving);
+            assert_eq!(app.persistence.exit_status(), ExitStatusView::Saving);
 
             let error = delete_save_core(
                 &app,
@@ -3475,10 +2776,10 @@ mod tests {
             .unwrap_err();
 
             assert_eq!(error.code, "persistenceOperationInProgress");
-            assert_eq!(app.coordinator.persistence_health(), health_before);
+            assert_eq!(app.persistence.persistence_health(), health_before);
             assert_eq!(fs.removes.load(Ordering::SeqCst), removes_before);
             assert_eq!(
-                serde_json::to_value(app.persistence.as_ref().unwrap().discover()).unwrap(),
+                serde_json::to_value(app.persistence.as_ref().discover()).unwrap(),
                 browser_before
             );
         }
@@ -3496,16 +2797,14 @@ mod tests {
             start_game_core(&app, GameEngine::new_started(resources.clone()).unwrap())
                 .await
                 .unwrap();
-            let expected = app.coordinator.transition_identity(&app).unwrap();
+            let expected = app.persistence.transition_identity(&app).unwrap();
             advance_fixture_dialogue(&app);
             let after_drift = session_observation(&app);
 
             let error = app
                 .persistence
                 .as_ref()
-                .unwrap()
                 .install_session_if_current(
-                    &app.coordinator,
                     GameEngine::new_started(resources).unwrap(),
                     None,
                     expected,
@@ -3518,7 +2817,7 @@ mod tests {
 
             let saved = seed_manual(&app, 1, "Live session remains writable").await;
             assert_eq!(
-                app.coordinator.persistence_health(),
+                app.persistence.persistence_health(),
                 PersistenceHealthView::Healthy
             );
             let save_id = valid_save_id(&saved.saved_slot);
@@ -3544,7 +2843,7 @@ mod tests {
                 SaveSlotStatusView::Empty
             ));
             assert_eq!(
-                app.coordinator.persistence_health(),
+                app.persistence.persistence_health(),
                 PersistenceHealthView::Healthy
             );
         }
@@ -3680,12 +2979,7 @@ mod tests {
                 .unwrap();
             let saved = seed_manual(&app, 1, "Load from title").await;
             let observed_save_id = valid_save_id(&saved.saved_slot);
-            app.persistence
-                .as_ref()
-                .unwrap()
-                .clear_session(&app.coordinator)
-                .await
-                .unwrap();
+            app.persistence.as_ref().clear_session().await.unwrap();
             let after_hook = Arc::new(Mutex::new(None));
             let recorded = Arc::clone(&after_hook);
 
@@ -3835,10 +3129,10 @@ mod tests {
             let first = seed_manual(&app, 1, "First identity").await;
             let first_id = valid_save_id(&first.saved_slot);
             let ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&ticket.ticket)
                 .unwrap();
             save_manual_core(
@@ -3870,17 +3164,12 @@ mod tests {
                 "staleSaveSelection"
             );
 
-            app.persistence
-                .as_ref()
-                .unwrap()
-                .clear_session(&app.coordinator)
-                .await
-                .unwrap();
+            app.persistence.as_ref().clear_session().await.unwrap();
             let invalid_path = temporary.path().join("saves/manual-3.json");
             std::fs::write(&invalid_path, b"{ invalid without id").unwrap();
             let foreign = temporary.path().join("saves/thumbnails/foreign.png");
             std::fs::write(&foreign, b"foreign").unwrap();
-            let discovered = app.persistence.as_ref().unwrap().discover();
+            let discovered = app.persistence.as_ref().discover();
             let invalid = discovered
                 .slots
                 .iter()
@@ -3903,10 +3192,10 @@ mod tests {
 
         async fn seed_manual(app: &AppState, slot: u8, name: &str) -> ManualSaveResultView {
             let ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&ticket.ticket)
                 .unwrap();
             save_manual_core(
@@ -3944,7 +3233,7 @@ mod tests {
             let pending = mutated
                 .thumbnail_capture
                 .expect("durable mutation must schedule its debounced autosave");
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&pending.ticket)
                 .unwrap();
             let (generation, revision, _) = session_observation(app);
@@ -4028,11 +3317,11 @@ mod tests {
                 .await
                 .unwrap();
             let request = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
             let expected = png(320, 180);
-            app.coordinator
+            app.persistence
                 .submit_thumbnail(&request.ticket, &expected)
                 .unwrap();
             let saved = save_manual_core(
@@ -4078,10 +3367,10 @@ mod tests {
             let before_revision = app.session.lock().unwrap().durable_revision().unwrap();
 
             let first_ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&first_ticket.ticket)
                 .unwrap();
             let first = save_manual_core(
@@ -4095,10 +3384,10 @@ mod tests {
             .unwrap();
 
             let second_ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&second_ticket.ticket)
                 .unwrap();
             let second = save_manual_core(
@@ -4337,7 +3626,7 @@ mod tests {
 
             assert!(result.thumbnail_capture.is_none());
             assert_eq!(
-                app.coordinator.thumbnail_activity(),
+                app.persistence.thumbnail_activity(),
                 ThumbnailActivityView::Idle
             );
             assert_eq!(app.session.lock().unwrap().durable_revision(), Some(1));
@@ -4356,7 +3645,7 @@ mod tests {
             assert!(result.thumbnail_capture.is_none());
             assert!(app.session.lock().unwrap().durable_revision().unwrap() > before);
             assert_eq!(
-                app.coordinator.thumbnail_activity(),
+                app.persistence.thumbnail_activity(),
                 ThumbnailActivityView::Idle
             );
         }
@@ -4374,7 +3663,7 @@ mod tests {
             assert!(result.thumbnail_capture.is_none());
             assert!(app.session.lock().unwrap().durable_revision().unwrap() > before);
             assert_eq!(
-                app.coordinator.thumbnail_activity(),
+                app.persistence.thumbnail_activity(),
                 ThumbnailActivityView::Idle
             );
         }
@@ -4562,13 +3851,13 @@ mod tests {
             let mut engine = GameEngine::new_started(resources).unwrap();
             engine.enter_sublocation("room").unwrap();
             engine.inspect_hotspot("collect_sources").unwrap();
+            let session = Arc::new(Mutex::new(AppSession::installed(engine, 7, None)));
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let persistence = test_application_persistence(Arc::clone(&session), operation_gate);
             let app = AppState {
-                session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
+                session,
+                persistence,
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
             };
             (guard, app)
         }
@@ -4582,7 +3871,7 @@ mod tests {
 
             assert!(result.thumbnail_capture.is_none());
             assert_eq!(
-                app.coordinator.thumbnail_activity(),
+                app.persistence.thumbnail_activity(),
                 ThumbnailActivityView::Idle
             );
             assert_eq!(app.session.lock().unwrap().durable_revision(), Some(3));
@@ -4614,7 +3903,7 @@ mod tests {
             assert_eq!(error.code, "unknownAcquisitionEvent");
             assert_eq!(app.session.lock().unwrap().durable_revision(), before);
             assert_eq!(
-                app.coordinator.thumbnail_activity(),
+                app.persistence.thumbnail_activity(),
                 ThumbnailActivityView::Idle
             );
         }
@@ -4645,13 +3934,13 @@ mod tests {
 
         #[test]
         fn centralized_guard_rejects_missing_game_and_busy_persistence() {
+            let session = Arc::new(Mutex::new(AppSession::empty()));
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let persistence = test_application_persistence(Arc::clone(&session), operation_gate);
             let empty = AppState {
-                session: Arc::new(Mutex::new(AppSession::empty())),
-                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-                coordinator: SaveCoordinator::new(),
+                session,
+                persistence,
                 resources_dir: PathBuf::new(),
-                save_root: PathBuf::new(),
-                persistence: None,
             };
             let missing = run_gameplay_mutation(
                 &empty,
@@ -4904,21 +4193,21 @@ mod tests {
             panic!("unterminated body for {name}");
         }
 
-        // Wraps ProductionSaveFilesystem and bumps the coordinator's session
+        // Wraps ProductionSaveFilesystem and bumps the persistence's session
         // generation after the first successful sync_dir, simulating checkpoint
         // replacement winning immediately after the storage operation settles
         // but before the final health publication.
         struct GenerationBumpingFilesystem {
             inner: ProductionSaveFilesystem,
-            coordinator: Arc<Mutex<Option<SaveCoordinator>>>,
+            persistence: Arc<Mutex<Option<Arc<ApplicationPersistence>>>>,
             armed: AtomicBool,
         }
 
         impl GenerationBumpingFilesystem {
-            fn new(coordinator: Arc<Mutex<Option<SaveCoordinator>>>) -> Self {
+            fn new(persistence: Arc<Mutex<Option<Arc<ApplicationPersistence>>>>) -> Self {
                 Self {
                     inner: ProductionSaveFilesystem,
-                    coordinator,
+                    persistence,
                     armed: AtomicBool::new(false),
                 }
             }
@@ -4957,8 +4246,8 @@ mod tests {
             fn sync_dir(&self, path: &Path) -> io::Result<()> {
                 let result = self.inner.sync_dir(path);
                 if result.is_ok() && self.armed.swap(false, Ordering::SeqCst) {
-                    if let Some(coordinator) = self.coordinator.lock().unwrap().as_ref() {
-                        let _ = coordinator.next_session_generation();
+                    if let Some(persistence) = self.persistence.lock().unwrap().as_ref() {
+                        let _ = persistence.next_session_generation();
                     }
                 }
                 result
@@ -4987,10 +4276,10 @@ mod tests {
             // atomically at thumbnail preparation -- before a stale ticket is
             // issued, before `latest_by_intent` is superseded, and before any
             // Pending publication -- rather than leaking into `save_manual`.
-            app.coordinator.next_session_generation().unwrap();
+            app.persistence.next_session_generation().unwrap();
 
             let error = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap_err();
 
@@ -4999,10 +4288,10 @@ mod tests {
 
         #[tokio::test]
         async fn manual_save_reports_stale_session_when_replacement_wins_after_storage_settles() {
-            let shared_coordinator: Arc<Mutex<Option<SaveCoordinator>>> =
+            let shared_persistence: Arc<Mutex<Option<Arc<ApplicationPersistence>>>> =
                 Arc::new(Mutex::new(None));
             let bumping_fs = Arc::new(GenerationBumpingFilesystem::new(Arc::clone(
-                &shared_coordinator,
+                &shared_persistence,
             )));
             let bumping_fs_dyn: Arc<dyn SaveFilesystem> = bumping_fs.clone();
             let (_guard, resources) = save_capture_fixture_resources();
@@ -5017,17 +4306,17 @@ mod tests {
                 .await
                 .unwrap();
 
-            // Share the coordinator so the filesystem can bump the generation
+            // Share the persistence so the filesystem can bump the generation
             // during the storage write, simulating replacement winning after
             // the write settles but before the final health publication.
-            *shared_coordinator.lock().unwrap() = Some(app.coordinator.clone());
+            *shared_persistence.lock().unwrap() = Some(app.persistence.clone());
             bumping_fs.arm();
 
             let ticket = app
-                .coordinator
+                .persistence
                 .prepare_application_thumbnail(&app, PreparedThumbnailPurpose::ManualSave)
                 .unwrap();
-            app.coordinator
+            app.persistence
                 .report_thumbnail_failure(&ticket.ticket)
                 .unwrap();
 
@@ -5064,7 +4353,7 @@ mod tests {
             // Simulate replacement winning before the initial Pending
             // publication. No delete was attempted, so the caller must see
             // staleSessionGeneration, not saveWriteFailed.
-            app.coordinator.next_session_generation().unwrap();
+            app.persistence.next_session_generation().unwrap();
 
             let error = delete_save_core(
                 &app,
@@ -5082,10 +4371,10 @@ mod tests {
 
         #[tokio::test]
         async fn delete_save_reports_stale_session_when_replacement_wins_after_storage_settles() {
-            let shared_coordinator: Arc<Mutex<Option<SaveCoordinator>>> =
+            let shared_persistence: Arc<Mutex<Option<Arc<ApplicationPersistence>>>> =
                 Arc::new(Mutex::new(None));
             let bumping_fs = Arc::new(GenerationBumpingFilesystem::new(Arc::clone(
-                &shared_coordinator,
+                &shared_persistence,
             )));
             let bumping_fs_dyn: Arc<dyn SaveFilesystem> = bumping_fs.clone();
             let (_guard, resources) = save_capture_fixture_resources();
@@ -5102,11 +4391,11 @@ mod tests {
             let saved = seed_manual(&app, 1, "To delete").await;
             let save_id = valid_save_id(&saved.saved_slot);
 
-            // Share the coordinator so the filesystem can bump the generation
+            // Share the persistence so the filesystem can bump the generation
             // during the delete storage operation, simulating replacement
             // winning after the delete settles but before the final health
             // publication.
-            *shared_coordinator.lock().unwrap() = Some(app.coordinator.clone());
+            *shared_persistence.lock().unwrap() = Some(app.persistence.clone());
             bumping_fs.arm();
 
             let error = delete_save_core(
@@ -5144,11 +4433,8 @@ mod tests {
             test_application_persistence(Arc::clone(&session), Arc::clone(&operation_gate));
         AppState {
             session,
-            operation_gate,
-            coordinator: SaveCoordinator::new(),
+            persistence,
             resources_dir: PathBuf::new(),
-            save_root: PathBuf::new(),
-            persistence: Some(persistence),
         }
     }
 
@@ -5178,7 +4464,7 @@ mod tests {
     async fn reset_core_rejects_exit_flush_without_waiting_for_its_gate() {
         let app = app();
         app.session.lock().unwrap().persistence.exit_flush_requested = true;
-        let gate = app.operation_gate.clone().lock_owned().await;
+        let gate = app.persistence.operation_gate.clone().lock_owned().await;
 
         let error = tokio::time::timeout(
             Duration::from_millis(50),

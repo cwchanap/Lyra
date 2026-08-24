@@ -1,9 +1,9 @@
-use super::ApplicationPersistence;
-use crate::game::save::coordinator::{AutosaveWriteReceipt, FlushOperation, SaveCoordinator};
 #[cfg(feature = "e2e")]
-use crate::game::save::coordinator::{
-    ExitStatusView, PersistenceHealthView, ThumbnailActivityView,
+use super::{
+    publish_activity, publish_exit, publish_health, ExitStatusView, PersistenceHealthView,
+    ThumbnailActivityView,
 };
+use super::{ApplicationPersistence, AutosaveWriteReceipt, FlushOperation};
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::{GameEngine, GameError};
 
@@ -118,7 +118,6 @@ impl SessionPersistence {
 impl ApplicationPersistence {
     pub(crate) async fn install_session(
         &self,
-        coordinator: &SaveCoordinator,
         engine: GameEngine,
         autosave_target: Option<SaveSlotRef>,
     ) -> Result<crate::game::GameStateView, GameError> {
@@ -130,7 +129,7 @@ impl ApplicationPersistence {
         let _gate = self.operation_gate.lock().await;
         let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
-        let generation = coordinator.next_session_generation()?;
+        let generation = self.next_session_generation()?;
         let autosave_target = match autosave_target {
             Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
             Some(SaveSlotRef::Manual { .. }) | None => None,
@@ -141,7 +140,6 @@ impl ApplicationPersistence {
 
     pub(crate) async fn install_session_if_current(
         &self,
-        coordinator: &SaveCoordinator,
         engine: GameEngine,
         autosave_target: Option<SaveSlotRef>,
         expected: SessionTransitionIdentity,
@@ -155,7 +153,7 @@ impl ApplicationPersistence {
         {
             return Err(GameError::stale_save_selection());
         }
-        let generation = coordinator.next_session_generation()?;
+        let generation = self.next_session_generation()?;
         let autosave_target = match autosave_target {
             Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
             Some(SaveSlotRef::Manual { .. }) | None => None,
@@ -164,10 +162,7 @@ impl ApplicationPersistence {
         Ok(view)
     }
 
-    pub(crate) async fn clear_session(
-        &self,
-        coordinator: &SaveCoordinator,
-    ) -> Result<u64, GameError> {
+    pub(crate) async fn clear_session(&self) -> Result<u64, GameError> {
         {
             let session = self.session.lock().map_err(|_| GameError::unavailable())?;
             session.ensure_persistence_available()?;
@@ -175,14 +170,13 @@ impl ApplicationPersistence {
         let _gate = self.operation_gate.lock().await;
         let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
-        let generation = coordinator.next_session_generation()?;
+        let generation = self.next_session_generation()?;
         *session = AppSession::empty_at_generation(generation);
         Ok(generation)
     }
 
     pub(crate) async fn clear_session_if_current(
         &self,
-        coordinator: &SaveCoordinator,
         expected: SessionTransitionIdentity,
     ) -> Result<u64, GameError> {
         let _gate = self.operation_gate.lock().await;
@@ -193,7 +187,7 @@ impl ApplicationPersistence {
         {
             return Err(GameError::stale_persistence_failure_token());
         }
-        let generation = coordinator.next_session_generation()?;
+        let generation = self.next_session_generation()?;
         *session = AppSession::empty_at_generation(generation);
         Ok(generation)
     }
@@ -210,7 +204,6 @@ pub(crate) struct E2eSessionReplacement {
 impl ApplicationPersistence {
     pub(crate) async fn replace_session_for_e2e(
         &self,
-        coordinator: &SaveCoordinator,
         engine: GameEngine,
     ) -> Result<E2eSessionReplacement, GameError> {
         let view = engine.view()?;
@@ -219,10 +212,7 @@ impl ApplicationPersistence {
             session.ensure_persistence_available()?;
         }
         {
-            let state = coordinator
-                .state
-                .lock()
-                .map_err(|_| GameError::unavailable())?;
+            let state = self.state.lock().map_err(|_| GameError::unavailable())?;
             if state.exit_status == ExitStatusView::Saving {
                 return Err(GameError::persistence_operation_in_progress());
             }
@@ -230,15 +220,12 @@ impl ApplicationPersistence {
 
         let _gate = self.operation_gate.lock().await;
         // The dual-lock path is deliberately operation_gate -> exit_transition
-        // -> session -> coordinator state. Exit-only transitions never acquire
+        // -> session -> persistence state. Exit-only transitions never acquire
         // or await operation_gate, so this path cannot reverse the hierarchy.
-        let _exit_transition = coordinator.lock_exit_transition()?;
+        let _exit_transition = self.lock_exit_transition()?;
         let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
         session.ensure_persistence_available()?;
-        let mut state = coordinator
-            .state
-            .lock()
-            .map_err(|_| GameError::unavailable())?;
+        let mut state = self.state.lock().map_err(|_| GameError::unavailable())?;
         if state.exit_status == ExitStatusView::Saving {
             return Err(GameError::persistence_operation_in_progress());
         }
@@ -268,17 +255,11 @@ impl ApplicationPersistence {
         drop(session);
         drop(_exit_transition);
 
-        coordinator.reset_e2e_replacement_controls();
-        crate::game::save::coordinator::publish_health(
-            &health_subscribers,
-            &PersistenceHealthView::Healthy,
-        );
-        crate::game::save::coordinator::publish_activity(
-            &activity_subscribers,
-            &ThumbnailActivityView::Idle,
-        );
-        crate::game::save::coordinator::publish_exit(&exit_subscribers, &ExitStatusView::Idle);
-        coordinator.ticket_updates().notify_waiters();
+        self.reset_e2e_replacement_controls();
+        publish_health(&health_subscribers, &PersistenceHealthView::Healthy);
+        publish_activity(&activity_subscribers, &ThumbnailActivityView::Idle);
+        publish_exit(&exit_subscribers, &ExitStatusView::Idle);
+        self.ticket_updates().notify_waiters();
 
         Ok(E2eSessionReplacement {
             generation,

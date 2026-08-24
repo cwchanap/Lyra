@@ -1,5 +1,5 @@
 use super::helpers::{application_fixture, registered_write};
-use crate::game::save::coordinator::{
+use crate::game::save::application::{
     AutosaveWriteReceipt, PersistenceHealthView, AUTOSAVE_DEBOUNCE,
 };
 use crate::game::save::schema::SaveSlotRef;
@@ -11,7 +11,7 @@ async fn storage_mutations_share_one_operation_gate() {
     let fixture = application_fixture();
     fixture.filesystem.pause_staging();
     assert!(fixture
-        .coordinator
+        .persistence
         .notify_durable_commit_without_thumbnail(1, 1)
         .is_none());
     std::thread::sleep(AUTOSAVE_DEBOUNCE + Duration::from_millis(50));
@@ -58,14 +58,10 @@ async fn orphan_cleanup_runs_under_operation_gate_and_retries_after_successful_p
         .clone()
         .lock_owned()
         .await;
-    fixture
-        .persistence
-        .clone()
-        .enqueue_orphan_cleanup(fixture.coordinator.clone())
-        .unwrap();
+    fixture.persistence.enqueue_orphan_cleanup().unwrap();
     tokio::task::yield_now().await;
     assert_eq!(
-        fixture.coordinator.persistence_health(),
+        fixture.persistence.persistence_health(),
         PersistenceHealthView::Healthy
     );
 
@@ -73,7 +69,7 @@ async fn orphan_cleanup_runs_under_operation_gate_and_retries_after_successful_p
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
             if matches!(
-                fixture.coordinator.persistence_health(),
+                fixture.persistence.persistence_health(),
                 PersistenceHealthView::Degraded {
                     diagnostic: ref error
                 } if error.code == "saveReadFailed"
@@ -87,10 +83,10 @@ async fn orphan_cleanup_runs_under_operation_gate_and_retries_after_successful_p
     .unwrap();
 
     let pending = fixture
-        .coordinator
+        .persistence
         .pending_autosave_for_test("cleanup-retry-ticket".into(), Instant::now())
         .unwrap();
-    fixture.coordinator.record_background_success(
+    fixture.persistence.record_background_success(
         &pending,
         AutosaveWriteReceipt {
             session_generation: pending.session_generation,
@@ -102,7 +98,7 @@ async fn orphan_cleanup_runs_under_operation_gate_and_retries_after_successful_p
     );
     tokio::time::timeout(Duration::from_secs(1), async {
         loop {
-            if fixture.coordinator.persistence_health() == PersistenceHealthView::Healthy {
+            if fixture.persistence.persistence_health() == PersistenceHealthView::Healthy {
                 return;
             }
             tokio::task::yield_now().await;
@@ -111,7 +107,7 @@ async fn orphan_cleanup_runs_under_operation_gate_and_retries_after_successful_p
     .await
     .unwrap();
     assert_eq!(
-        fixture.coordinator.persistence_health(),
+        fixture.persistence.persistence_health(),
         PersistenceHealthView::Healthy
     );
 }
@@ -121,7 +117,7 @@ async fn blocked_staged_write_does_not_hold_gameplay_session_mutex() {
     let fixture = application_fixture();
     fixture.filesystem.pause_staging();
     assert!(fixture
-        .coordinator
+        .persistence
         .notify_durable_commit_without_thumbnail(1, 1)
         .is_none());
     std::thread::sleep(AUTOSAVE_DEBOUNCE + Duration::from_millis(50));
@@ -131,7 +127,7 @@ async fn blocked_staged_write_does_not_hold_gameplay_session_mutex() {
 
     fixture.filesystem.release_staging();
     for _ in 0..10 {
-        if fixture.coordinator.last_successful_write().is_some() {
+        if fixture.persistence.last_successful_write().is_some() {
             break;
         }
         tokio::task::yield_now().await;

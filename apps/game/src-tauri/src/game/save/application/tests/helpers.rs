@@ -1,9 +1,8 @@
 use super::super::{AppSession, ApplicationPersistence};
-use crate::game::save::capture::CapturedCheckpoint;
-use crate::game::save::coordinator::{
+use crate::game::save::application::{
     AutosaveCapture, AutosaveRegisteredIntent, AutosaveWriteJob, CaptureTerminalResult,
-    SaveCoordinator,
 };
+use crate::game::save::capture::CapturedCheckpoint;
 use crate::game::save::restore::load_current_definitions;
 use crate::game::save::schema::{SaveSlotRef, SaveType};
 use crate::game::save::storage::{
@@ -182,7 +181,6 @@ impl SaveFilesystem for TrackingFilesystem {
 
 pub(super) struct ApplicationFixture {
     pub(super) persistence: Arc<ApplicationPersistence>,
-    pub(super) coordinator: SaveCoordinator,
     pub(super) session: Arc<Mutex<AppSession>>,
     pub(super) filesystem: Arc<TrackingFilesystem>,
     _resources: tempfile::TempDir,
@@ -205,27 +203,20 @@ pub(super) fn application_fixture_at(generation: u64, revision: u64) -> Applicat
     engine.durable_revision = revision;
     let session = Arc::new(Mutex::new(AppSession::installed(engine, generation, None)));
     let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let persistence = Arc::new(ApplicationPersistence {
-        session: Arc::clone(&session),
-        operation_gate: Arc::clone(&operation_gate),
-        fs: filesystem.clone(),
+    let persistence = Arc::new(ApplicationPersistence::from_parts(
+        Arc::clone(&session),
+        operation_gate,
+        filesystem.clone(),
         root,
-        discovery: SaveDiscoveryContext {
+        SaveDiscoveryContext {
             resources_dir: resources_dir.clone(),
             definitions,
         },
-        last_saved_at: Mutex::new(None),
-        availability_error: Mutex::new(None),
-    });
-    let coordinator = SaveCoordinator::with_application(
-        persistence.clone(),
-        Arc::clone(&session),
-        operation_gate,
-    );
+        None,
+    ));
 
     ApplicationFixture {
         persistence,
-        coordinator,
         session,
         filesystem,
         _resources: resources,

@@ -4,7 +4,6 @@
 
 pub(crate) mod application;
 pub(crate) mod capture;
-pub(crate) mod coordinator;
 #[cfg(feature = "e2e")]
 pub(crate) mod e2e_faults;
 pub(crate) mod restore;

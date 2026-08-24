@@ -2,7 +2,7 @@ use super::helpers::{application_fixture, application_fixture_at};
 use crate::game::save::application::session::SessionTransitionIdentity;
 #[cfg(feature = "e2e")]
 use crate::game::save::application::AppSession;
-use crate::game::save::coordinator::{ApplicationExit, ExitRequestSource, ExitStatusView};
+use crate::game::save::application::{ApplicationExit, ExitRequestSource, ExitStatusView};
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
 use crate::game::GameError;
@@ -29,7 +29,7 @@ async fn install_session_if_current_succeeds_with_matching_identity() {
     };
     fixture
         .persistence
-        .install_session_if_current(&fixture.coordinator, engine(10), None, expected)
+        .install_session_if_current(engine(10), None, expected)
         .await
         .unwrap();
 
@@ -44,7 +44,6 @@ async fn install_session_if_current_mismatch_is_stale_save_selection() {
     let error = fixture
         .persistence
         .install_session_if_current(
-            &fixture.coordinator,
             engine(2),
             None,
             SessionTransitionIdentity {
@@ -67,12 +66,7 @@ async fn install_session_if_current_drops_manual_autosave_target() {
     };
     fixture
         .persistence
-        .install_session_if_current(
-            &fixture.coordinator,
-            engine(10),
-            Some(SaveSlotRef::Manual { slot: 2 }),
-            expected,
-        )
+        .install_session_if_current(engine(10), Some(SaveSlotRef::Manual { slot: 2 }), expected)
         .await
         .unwrap();
 
@@ -94,7 +88,7 @@ async fn clear_session_if_current_succeeds_with_matching_identity() {
     };
     let generation = fixture
         .persistence
-        .clear_session_if_current(&fixture.coordinator, expected)
+        .clear_session_if_current(expected)
         .await
         .unwrap();
 
@@ -107,13 +101,10 @@ async fn clear_session_if_current_mismatch_is_stale_persistence_failure_token() 
     let fixture = application_fixture();
     let error = fixture
         .persistence
-        .clear_session_if_current(
-            &fixture.coordinator,
-            SessionTransitionIdentity {
-                generation: 1,
-                durable_revision: Some(99),
-            },
-        )
+        .clear_session_if_current(SessionTransitionIdentity {
+            generation: 1,
+            durable_revision: Some(99),
+        })
         .await
         .unwrap_err();
 
@@ -125,7 +116,7 @@ async fn install_session_succeeds_and_advances_generation() {
     let fixture = application_fixture_at(0, 0);
     fixture
         .persistence
-        .install_session(&fixture.coordinator, engine(10), None)
+        .install_session(engine(10), None)
         .await
         .unwrap();
 
@@ -139,11 +130,7 @@ async fn install_session_with_auto_target_retains_target() {
     let fixture = application_fixture_at(0, 0);
     fixture
         .persistence
-        .install_session(
-            &fixture.coordinator,
-            engine(10),
-            Some(SaveSlotRef::Auto { slot: 2 }),
-        )
+        .install_session(engine(10), Some(SaveSlotRef::Auto { slot: 2 }))
         .await
         .unwrap();
 
@@ -158,11 +145,7 @@ async fn install_session_with_manual_target_drops_target() {
     let fixture = application_fixture_at(0, 0);
     fixture
         .persistence
-        .install_session(
-            &fixture.coordinator,
-            engine(10),
-            Some(SaveSlotRef::Manual { slot: 1 }),
-        )
+        .install_session(engine(10), Some(SaveSlotRef::Manual { slot: 1 }))
         .await
         .unwrap();
 
@@ -187,7 +170,7 @@ async fn install_session_rejects_exit_flush_request() {
     assert_eq!(
         fixture
             .persistence
-            .install_session(&fixture.coordinator, engine(10), None)
+            .install_session(engine(10), None)
             .await
             .unwrap_err()
             .code,
@@ -204,12 +187,7 @@ async fn install_session_if_current_with_auto_target_retains_target() {
     };
     fixture
         .persistence
-        .install_session_if_current(
-            &fixture.coordinator,
-            engine(10),
-            Some(SaveSlotRef::Auto { slot: 3 }),
-            expected,
-        )
+        .install_session_if_current(engine(10), Some(SaveSlotRef::Auto { slot: 3 }), expected)
         .await
         .unwrap();
 
@@ -222,11 +200,7 @@ async fn install_session_if_current_with_auto_target_retains_target() {
 #[tokio::test]
 async fn clear_session_succeeds_and_advances_generation() {
     let fixture = application_fixture_at(5, 10);
-    let generation = fixture
-        .persistence
-        .clear_session(&fixture.coordinator)
-        .await
-        .unwrap();
+    let generation = fixture.persistence.clear_session().await.unwrap();
 
     assert_eq!(generation, 1);
     let session = fixture.session.lock().unwrap();
@@ -244,12 +218,7 @@ async fn clear_session_rejects_exit_flush_request() {
         .persistence
         .exit_flush_requested = true;
     assert_eq!(
-        fixture
-            .persistence
-            .clear_session(&fixture.coordinator)
-            .await
-            .unwrap_err()
-            .code,
+        fixture.persistence.clear_session().await.unwrap_err().code,
         "persistenceOperationInProgress"
     );
 }
@@ -264,14 +233,13 @@ async fn transitions_waiting_for_operation_gate_do_not_hold_session_mutex() {
             .clone()
             .lock_owned()
             .await;
-        let persistence = Arc::clone(&fixture.persistence);
-        let coordinator = fixture.coordinator.clone();
+        let persistence = fixture.persistence.clone();
         let task = tokio::spawn(async move {
             if clear {
-                persistence.clear_session(&coordinator).await.map(|_| ())
+                persistence.clear_session().await.map(|_| ())
             } else {
                 persistence
-                    .install_session(&coordinator, engine(33), None)
+                    .install_session(engine(33), None)
                     .await
                     .map(|_| ())
             }
@@ -326,10 +294,10 @@ async fn exit_request_arms_while_operation_gate_is_busy_and_flush_waits_afterwar
         .await;
 
     fixture
-        .coordinator
+        .persistence
         .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
         .unwrap();
-    assert_eq!(fixture.coordinator.exit_status(), ExitStatusView::Saving);
+    assert_eq!(fixture.persistence.exit_status(), ExitStatusView::Saving);
     assert!(exit.calls.lock().unwrap().is_empty());
 
     drop(gate);
@@ -342,7 +310,7 @@ async fn exit_request_arms_while_operation_gate_is_busy_and_flush_waits_afterwar
 #[cfg(feature = "e2e")]
 mod e2e {
     use super::*;
-    use crate::game::save::coordinator::{
+    use crate::game::save::application::{
         AutosaveWriteReceipt, BackgroundWriteFailure, CleanupFailure, PendingAutosave,
         PersistenceHealthView, ThumbnailActivityView, ThumbnailCapturePurpose,
     };
@@ -360,13 +328,12 @@ mod e2e {
             durable_revision: 4,
         };
         let capture = fixture
-            .coordinator
+            .persistence
             .prepare_thumbnail(purpose.clone())
             .unwrap();
         {
-            let mut state = fixture.coordinator.state.lock().unwrap();
+            let mut state = fixture.persistence.state.lock().unwrap();
             state.pending_autosave = Some(PendingAutosave {
-                serial: 7,
                 session_generation: 0,
                 durable_revision: 4,
                 ticket: capture.ticket,
@@ -395,7 +362,7 @@ mod e2e {
             state.exit_status = ExitStatusView::Failed {
                 diagnostic: GameError::save_write_failed(),
                 failure_token:
-                    crate::game::save::coordinator::PersistenceFailureTokenView::from_error(
+                    crate::game::save::application::PersistenceFailureTokenView::from_error(
                         &GameError::save_write_failed()
                             .with_failure_token("00000000-0000-4000-8000-000000000001".into()),
                     )
@@ -405,13 +372,13 @@ mod e2e {
             state.exit_action_in_progress = true;
         }
         fixture
-            .coordinator
+            .persistence
             .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::EnvelopeReplace, 1)
             .unwrap();
 
         let replacement = fixture
             .persistence
-            .replace_session_for_e2e(&fixture.coordinator, engine_with_scene("checkpoint", 12))
+            .replace_session_for_e2e(engine_with_scene("checkpoint", 12))
             .await
             .unwrap();
 
@@ -424,7 +391,7 @@ mod e2e {
         assert_eq!(session.persistence.generation, 1);
         assert_eq!(session.persistence.flush_baseline_revision, 12);
         drop(session);
-        let state = fixture.coordinator.state.lock().unwrap();
+        let state = fixture.persistence.state.lock().unwrap();
         assert!(state.tickets.is_empty());
         assert!(state.latest_by_intent.is_empty());
         assert!(state.pending_autosave.is_none());
@@ -438,7 +405,7 @@ mod e2e {
         assert!(!state.exit_action_in_progress);
         drop(state);
         fixture
-            .coordinator
+            .persistence
             .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::ThumbnailInstall, 1)
             .unwrap();
     }
@@ -452,7 +419,7 @@ mod e2e {
             .unwrap()
             .persistence
             .exit_flush_requested = true;
-        fixture.coordinator.state.lock().unwrap().exit_status = ExitStatusView::Saving;
+        fixture.persistence.state.lock().unwrap().exit_status = ExitStatusView::Saving;
         let gate = fixture
             .persistence
             .operation_gate
@@ -464,7 +431,7 @@ mod e2e {
             Duration::from_millis(50),
             fixture
                 .persistence
-                .replace_session_for_e2e(&fixture.coordinator, engine_with_scene("checkpoint", 1)),
+                .replace_session_for_e2e(engine_with_scene("checkpoint", 1)),
         )
         .await
         .unwrap();
@@ -481,12 +448,12 @@ mod e2e {
 
         let first = fixture
             .persistence
-            .replace_session_for_e2e(&fixture.coordinator, engine_with_scene("one", 1))
+            .replace_session_for_e2e(engine_with_scene("one", 1))
             .await
             .unwrap();
         let second = fixture
             .persistence
-            .replace_session_for_e2e(&fixture.coordinator, engine_with_scene("two", 2))
+            .replace_session_for_e2e(engine_with_scene("two", 2))
             .await
             .unwrap();
 
@@ -499,12 +466,11 @@ mod e2e {
         let fixture = application_fixture_at(0, 4);
         fixture
             .persistence
-            .replace_session_for_e2e(&fixture.coordinator, engine_with_scene("checkpoint", 1))
+            .replace_session_for_e2e(engine_with_scene("checkpoint", 1))
             .await
             .unwrap();
 
         let completed = PendingAutosave {
-            serial: 7,
             session_generation: 0,
             durable_revision: 4,
             ticket: "old-ticket".into(),
@@ -516,7 +482,7 @@ mod e2e {
             debounce_deadline: Instant::now(),
             capture_deadline: Instant::now(),
         };
-        fixture.coordinator.record_background_success(
+        fixture.persistence.record_background_success(
             &completed,
             AutosaveWriteReceipt {
                 session_generation: 0,
@@ -527,11 +493,11 @@ mod e2e {
             None,
         );
         fixture
-            .coordinator
+            .persistence
             .record_background_failure(0, 4, true, GameError::save_write_failed());
-        assert!(fixture.coordinator.last_successful_write().is_none());
+        assert!(fixture.persistence.last_successful_write().is_none());
         assert_eq!(
-            fixture.coordinator.persistence_health(),
+            fixture.persistence.persistence_health(),
             PersistenceHealthView::Healthy
         );
     }

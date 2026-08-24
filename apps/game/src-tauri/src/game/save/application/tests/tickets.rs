@@ -1,5 +1,5 @@
-use super::super::{
-    CaptureTerminalResult, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
+use crate::game::save::application::{
+    ApplicationPersistence, CaptureTerminalResult, PersistenceHealthView, ThumbnailActivityView,
     ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
@@ -9,8 +9,8 @@ use crate::game::test_support::png_fixture;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-fn coordinator() -> SaveCoordinator {
-    SaveCoordinator::ticket_only()
+fn coordinator() -> ApplicationPersistence {
+    ApplicationPersistence::ticket_only()
 }
 
 fn manual(generation: u64, revision: u64) -> ThumbnailCapturePurpose {

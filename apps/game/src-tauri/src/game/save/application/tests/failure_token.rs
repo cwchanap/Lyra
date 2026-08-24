@@ -1,6 +1,6 @@
-use super::super::{
-    AppSession, FailureChallengeIdentity, PersistenceBypassOperation, PersistenceFailureTokenView,
-    PersistenceHealthView, SaveCoordinator,
+use crate::game::save::application::{
+    AppSession, ApplicationPersistence, FailureChallengeIdentity, PersistenceBypassOperation,
+    PersistenceFailureTokenView, PersistenceHealthView,
 };
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
@@ -26,7 +26,7 @@ fn identity<'a>(
 }
 
 fn issue(
-    coordinator: &SaveCoordinator,
+    coordinator: &ApplicationPersistence,
     operation: PersistenceBypassOperation,
     identity: FailureChallengeIdentity<'_>,
 ) -> (GameError, PersistenceFailureTokenView) {
@@ -41,7 +41,11 @@ fn issue(
     (error, token)
 }
 
-fn app(coordinator: SaveCoordinator, session_generation: u64, durable_revision: u64) -> AppState {
+fn app(
+    coordinator: ApplicationPersistence,
+    session_generation: u64,
+    durable_revision: u64,
+) -> AppState {
     let mut engine = empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
     engine.durable_revision = durable_revision;
     AppState {
@@ -50,17 +54,14 @@ fn app(coordinator: SaveCoordinator, session_generation: u64, durable_revision: 
             session_generation,
             None,
         ))),
-        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
-        coordinator,
+        persistence: Arc::new(coordinator),
         resources_dir: PathBuf::new(),
-        save_root: PathBuf::new(),
-        persistence: None,
     }
 }
 
 #[test]
 fn challenge_error_exposes_only_a_canonical_uuid_v4_token_on_the_wire() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let (error, token) = issue(
         &coordinator,
         PersistenceBypassOperation::ReturnWithoutSaving,
@@ -93,7 +94,7 @@ fn challenge_error_exposes_only_a_canonical_uuid_v4_token_on_the_wire() {
 
 #[test]
 fn matching_retry_claim_is_one_shot_and_a_failed_retry_gets_a_new_token() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let current = identity(9, None, 14, Some("save-a"));
     let (_, token) = issue(
         &coordinator,
@@ -144,7 +145,7 @@ fn matching_retry_claim_is_one_shot_and_a_failed_retry_gets_a_new_token() {
 
 #[test]
 fn exact_identity_rejects_stale_session_revision_discovery_and_save() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 3);
@@ -174,7 +175,7 @@ fn exact_identity_rejects_stale_session_revision_discovery_and_save() {
 
 #[test]
 fn wrong_uuid_is_rejected_without_exposing_challenge_fields() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let current = identity(2, None, 4, None);
     let (_, issued) = issue(
         &coordinator,
@@ -203,7 +204,7 @@ fn wrong_uuid_is_rejected_without_exposing_challenge_fields() {
 
 #[test]
 fn completed_discovery_is_monotonic_and_invalidates_older_global_challenges() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let first = coordinator.complete_discovery_attempt().unwrap();
     let (_, token) = issue(
         &coordinator,
@@ -228,7 +229,7 @@ fn completed_discovery_is_monotonic_and_invalidates_older_global_challenges() {
 
 #[test]
 fn typed_without_saving_operations_cannot_consume_each_others_challenges() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 1);
     assert_eq!(coordinator.complete_discovery_attempt().unwrap(), 2);
     let current = identity(3, Some(2), 7, Some("save-a"));
@@ -254,7 +255,7 @@ fn typed_without_saving_operations_cannot_consume_each_others_challenges() {
 
 #[test]
 fn cancel_consumes_the_exact_challenge_and_retains_degraded_health() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let operation = PersistenceBypassOperation::ReturnWithoutSaving;
     let current = identity(12, None, 22, None);
     let (_, token) = issue(&coordinator, operation, current);
@@ -278,7 +279,7 @@ fn cancel_consumes_the_exact_challenge_and_retains_degraded_health() {
 
 #[tokio::test]
 async fn token_only_cancel_derives_the_exact_operation_and_selection_then_rejects_replay() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let app = app(coordinator.clone(), 12, 22);
     coordinator.complete_discovery_attempt().unwrap();
     let error = coordinator
@@ -318,7 +319,7 @@ async fn token_only_cancel_derives_the_exact_operation_and_selection_then_reject
 
 #[tokio::test]
 async fn token_only_cancel_rejects_stale_session_and_a_different_token() {
-    let coordinator = SaveCoordinator::new();
+    let coordinator = ApplicationPersistence::new();
     let app = app(coordinator.clone(), 3, 7);
     let error = coordinator
         .challenge_current_session_error(
