@@ -2,6 +2,7 @@
 //! policy is recorded in
 //! `docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md`.
 
+pub(crate) mod application;
 pub(crate) mod capture;
 pub(crate) mod coordinator;
 #[cfg(feature = "e2e")]
