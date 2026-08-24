@@ -4,75 +4,132 @@
 
 Planning specification for HPA-521 against `main` at `0521a122636847a43fada24478dd9b74f1df84d0`.
 
-This is a pre-release architecture simplification. It deliberately optimizes for development speed and maintainability rather than preserving the internal persistence architecture shipped by HPA-392. There is no released save-format compatibility requirement beyond the current-format behavior explicitly retained below.
+This is a pre-release architecture simplification. It optimizes for development speed, correctness, and maintainability rather than preserving the internal persistence machinery shipped by HPA-392.
 
-The prerequisite product decisions are now settled:
+The prerequisite product decisions are settled:
 
-- HPA-549 is complete: acquisition acknowledgement is an ordinary gameplay mutation plus ordinary autosave. There is no second acknowledgement persistence transaction to preserve.
-- HPA-550 is complete with the product-owner decision **retain current dynamic save thumbnails**. HPA-521 must therefore keep the existing thumbnail ticket/capture behavior; removing or replacing it would reopen a closed product decision.
-- HPA-265 is complete and HPA-266 was marked duplicate of HPA-265, so the Chapter 1 acceptance dependency has an effective completed successor.
+- HPA-549 is complete: acquisition acknowledgement is an ordinary gameplay mutation plus ordinary no-thumbnail autosave. There is no dedicated acknowledgement persistence transaction to preserve.
+- HPA-550 is complete with the product-owner decision **retain current dynamic save thumbnails**. HPA-521 keeps the existing thumbnail capture-ticket product; removing or replacing it would reopen a closed product decision.
+- HPA-265 is complete and HPA-266 is a duplicate of HPA-265, so the Chapter 1 first-version gate has an effective completed successor.
 
-HPA-521 is the next persistence task before HPA-536 production hardening and before HPA-560 considers simplifying E2E orchestration.
+HPA-521 is the next persistence architecture task before HPA-536 release hardening and before HPA-560 considers E2E orchestration simplification.
+
+## Review resolution
+
+A follow-up design review was checked against current `main` rather than accepted mechanically.
+
+| Finding | Verdict | Resolution |
+| --- | --- | --- |
+| Identity-bound checkpoint capture must survive the queue deletion | **Valid** | The pending autosave's `(session_generation, durable_revision)` is checked before capture and again immediately before commit. Never capture "whatever is current" under a receipt for an older revision. |
+| `operation_gate` scope must exclude debounce and thumbnail waiting | **Valid** | Debounce and terminal-thumbnail wait happen before the gate. The gate begins only when disk mutation/final session replacement is ready to run. |
+| Existing debounce tests contain product behavior, not only queue choreography | **Valid** | The implementation plan now has a named migration ledger for the retained HPA-549/HPA-550/generation/retry/health cases plus the waiting-delete replacement invariant. Test coverage outranks test-line reduction. |
+| Reuse the existing staged-write filesystem seam | **Valid with narrowing** | Reuse/extract the existing `TrackingFilesystem` / `ProductionSaveFilesystem` + `StagedAtomicWrite` tracking/pause pattern. Do not carry the old `AutosaveBackend` W/G/S harness into the new design and do not invent a second backend trait. |
+| One owner must not become one 4k-line file | **Valid** | `ApplicationPersistence` is one public owner split across a few private responsibility modules. No service container or trait graph is introduced. |
+| Closeout must run e2e-gated Rust tests explicitly | **Valid** | Both default and `--all-features` Rust test suites are mandatory closeout commands. |
+| Scheduler abstraction should disappear | **Valid, with test-runtime correction** | Production timer/continuation work calls `tauri::async_runtime::spawn` directly. Tests do not replace it with another scheduler trait, but most deterministic tests call the private async behavior directly because Tauri's singleton runtime is not assumed to share each `#[tokio::test(start_paused)]` clock. Keep at most one real-time scheduling smoke. |
+
+The architecture remains Option A: one owner and one `tokio::sync::Mutex<()>` operation gate.
 
 ## Current-state survey
 
 The current architecture still contains the complexity HPA-521 was created to remove:
 
-- `apps/game/src-tauri/src/game/save/coordinator/mod.rs` is about 150 KB and owns a custom writer queue, scheduling abstraction, retry ordering, session generations, thumbnail tickets, persistence health, exit lifecycle, stale-write handling, cleanup ordering, and failure challenges.
-- `apps/game/src-tauri/src/lib.rs` is about 205 KB despite its header saying it only registers Tauri commands. It contains `ApplicationPersistence`, save storage orchestration, manual save/delete/load/continue/return-to-title flows, persistence events, and persistence-specific command cores.
-- The coordinator test directory contains large mechanism-focused suites: `debounce.rs` (~65 KB), `exit_lifecycle.rs` (~38 KB), `storage_integration.rs` (~32 KB), `unit.rs` (~55 KB), plus dedicated `writer.rs` and `lock_order.rs` tests.
+- `apps/game/src-tauri/src/game/save/coordinator/mod.rs` is about 150 KB and combines writer serialization, task scheduling, autosave debounce, retry state, thumbnail tickets, persistence health, exit lifecycle, session generations, stale-write handling, cleanup ordering, and failure challenges.
+- `apps/game/src-tauri/src/lib.rs` is about 205 KB despite its header saying it primarily registers Tauri commands. It still contains `ApplicationPersistence`, storage orchestration, manual save/delete/load/continue/return-to-title flows, persistence events, and persistence-specific command cores.
+- `coordinator/tests/debounce.rs` is large because it covers both queue internals **and real autosave product rules**. It must be inventoried, not bulk-deleted.
+- `coordinator/tests/writer.rs` is primarily queue-mechanism coverage and can disappear once equivalent serialization behavior is proven at the application boundary.
+- `coordinator/tests/lock_order.rs` mixes lock choreography with real stale-write/session-responsiveness behavior. The choreography disappears; the behavior remains.
 
-The current writer architecture is:
+The current writer flow is roughly:
 
 ```text
 gameplay mutation
-  -> debounce task
+  -> pending autosave + thumbnail ticket
+  -> debounce / thumbnail wait
   -> WriterQueue / WriterJobClass
-  -> backend trait capture/register/prepare
+  -> AutosaveBackend capture/register/prepare
   -> replacement_gate
-  -> session-generation/revision revalidation
+  -> generation/revision revalidation
   -> commit
 
-manual save / delete / blocking flush / orphan cleanup
+manual save / delete / blocking flush / cleanup
   -> WriterQueue
   -> oneshot result channel
-  -> backend/storage operation
+  -> storage operation
 ```
 
-`WriterQueue` is not providing parallel throughput; it exists to serialize work in a single-process, single-window game. That makes it an expensive representation of a mutex.
+`WriterQueue` supplies serialization, not useful throughput. A mutex expresses the requirement more directly.
 
 ## Decision summary
 
 Replace the persistence scheduler graph with **one concrete application persistence owner and one async operation gate**.
 
-The chosen architecture is:
+Final high-level ownership:
 
 ```text
 AppState
   -> session: Arc<Mutex<AppSession>>
   -> persistence: Arc<ApplicationPersistence>
+  -> resources_dir
 
 ApplicationPersistence
   -> state: Mutex<PersistenceState>
   -> operation_gate: tokio::sync::Mutex<()>
   -> session: Arc<Mutex<AppSession>>
   -> fs / root / discovery / saved-at clock
-  -> thumbnail tickets + health + exit/failure state
+  -> autosave + flush + manual save + delete + cleanup
+  -> final session install/clear
+  -> retained thumbnail tickets/activity
+  -> health/failure/exit state
 ```
 
-All disk-mutating persistence operations serialize through `operation_gate`:
+All **disk-mutating persistence work and final session replacement** serialize through `operation_gate`.
 
-- debounced autosave;
-- blocking flush;
-- manual save;
-- save deletion;
-- orphan cleanup;
-- session installation/clearing at the final replacement boundary;
-- exit flush.
+The gate does **not** cover:
 
-There is no writer-job queue, writer class hierarchy, background writer worker, replacement gate, or queue-specific ordering policy after this refactor.
+- the 500 ms autosave debounce sleep;
+- waiting for an autosave thumbnail ticket to become terminal or reach its existing deadline;
+- frontend thumbnail capture;
+- detached restore candidate construction;
+- ordinary gameplay mutation while no persistence commit/final replacement is occurring.
 
-`ApplicationPersistence` is the one owner. The existing `SaveCoordinator` type is removed rather than retained as a second persistence state machine with a new name.
+There is no writer-job queue, writer class hierarchy, queue worker, replacement gate, generic persistence backend, or custom scheduler after this refactor.
+
+`ApplicationPersistence` is the one application persistence owner. `SaveCoordinator` is deleted rather than retained as a façade over the same state machine.
+
+## File and module boundary
+
+"One owner" does not mean one giant source file.
+
+Use one public crate-private owner with a small number of private responsibility modules:
+
+```text
+apps/game/src-tauri/src/game/save/
+├── application/
+│   ├── mod.rs          # ApplicationPersistence, PersistenceState, shared views/helpers
+│   ├── autosave.rs     # debounce completion, identity-bound capture, flush, commit, cleanup
+│   ├── tickets.rs      # retained HPA-550 thumbnail ticket/activity lifecycle
+│   ├── session.rs      # AppSession/SessionPersistence and final install/clear identity checks
+│   ├── exit.rs         # close/quit Saving/Failed/Retry/Cancel/Without Saving behavior
+│   ├── commands.rs     # persistence-specific command cores; no Tauri transport decoding
+│   └── tests/
+├── capture.rs
+├── e2e_faults.rs
+├── mod.rs
+├── restore.rs
+├── schema.rs
+├── storage.rs
+└── thumbnail.rs
+```
+
+This is a responsibility split behind one owner, not multiple services:
+
+- no module has its own operation gate;
+- no module owns a second persistence state object;
+- no trait is added to connect these private modules;
+- `ApplicationPersistence` remains the only object held by `AppState` for persistence operations.
+
+If implementation shows one listed private module is too small to earn a file, fold it into the nearest owner module. Do not add more layers merely to match this diagram.
 
 ## Why direct serialization is the right mechanism
 
@@ -80,311 +137,333 @@ There is no writer-job queue, writer class hierarchy, background writer worker, 
 
 Advantages:
 
-- expresses the actual requirement directly: only one persistence mutation may own disk/session-replacement authority at a time;
-- deletes `WriterQueue`, `WriterJobClass`, `QueuedWriterJob`, queue worker startup, queue invalidation, writer probes, and oneshot handoff plumbing;
-- turns flush/manual/delete into normal async calls that await the operation they requested;
-- makes stale-write protection explicit at the storage boundary instead of emergent from queue ordering;
-- keeps gameplay responsive because the long disk operation holds only `operation_gate`, not the gameplay session mutex;
-- is easy to reason about for a hobby project and easy to extend when Chapter 2 adds ordinary content rather than new persistence products.
+- expresses the real invariant directly: only one disk mutation or final session replacement owns persistence authority at once;
+- deletes `WriterQueue`, `WriterJobClass`, worker startup, queue invalidation, writer probes, and oneshot handoff plumbing;
+- turns flush/manual/delete into ordinary async calls;
+- preserves stale-write correctness explicitly through identity checks rather than queue position;
+- keeps long filesystem work off the gameplay session mutex;
+- is small enough for a hobby project without sacrificing later feature maintainability.
 
-### Option B — shrink the existing queue — rejected
+### Option B — smaller queue — rejected
 
-A smaller queue could keep one worker and fewer job classes, but the remaining object would still need enqueueing, worker startup, cancellation/supersession rules, result delivery, and queue-specific tests. It solves a problem the application does not have: prioritizing multiple independent persistence producers.
+A smaller queue still needs enqueueing, worker lifetime, cancellation/supersession rules, result delivery, and queue-specific tests. It preserves the wrong abstraction.
 
-### Option C — channel-owned actor/task — rejected
+### Option C — actor/channel owner — rejected
 
-A dedicated persistence actor would centralize ownership but adds a mailbox protocol, task lifetime, request/response channels, shutdown semantics, and another class of tests. There is no evidence that Lyra needs an actor for one local save directory and one window.
+An actor adds a mailbox protocol, request/response channels, shutdown semantics, and another concurrency product. No evidence justifies it for one local save directory and one window.
 
 ## Core behavior after the refactor
 
-### 1. Autosave debounce stays, the writer queue does not
+### 1. Autosave coalescing happens before the gate
 
-Autosave remains trailing-edge debounced. A pending autosave is identified by the current session generation, durable revision, and thumbnail ticket identity.
+A pending autosave retains the existing product identity:
+
+```text
+(session_generation, durable_revision, thumbnail_ticket)
+```
+
+`next_autosave_serial` is removed. The ticket is already a UUID; generation + revision + ticket uniquely identifies the pending attempt.
+
+Flow:
 
 ```text
 notify durable commit
-  -> replace pending autosave
-  -> spawn debounce timer
-  -> timer wakes
-  -> if it is no longer the pending identity: return
+  -> issue/retain the HPA-550 thumbnail ticket behavior
+  -> replace pending autosave identity
+  -> spawn trailing debounce timer
+  -> sleep until debounce deadline                         [NO operation_gate]
+  -> verify this identity is still pending
+  -> wait for existing ticket deadline/terminal result   [NO operation_gate]
+  -> verify this identity is still pending
   -> acquire operation_gate
-  -> re-check pending identity
-  -> capture current checkpoint
-  -> prepare write
-  -> re-check generation + durable revision
-  -> commit or discard stale prepared write
+  -> verify this identity is still pending again
+  -> identity-bound checkpoint capture
+  -> prepare staged write
+  -> revalidate same session generation + durable revision
+  -> commit, or discard stale staged write
 ```
 
-A later durable revision supersedes an earlier pending autosave before either acquires the operation gate. This preserves debounce coalescing without `VecDeque` or `WriterJobClass::Debounced`.
+A later durable revision supersedes the earlier pending identity before the gate. An in-flight write for an older revision may finish as stale; the newer pending identity remains responsible for the follow-up write.
 
-`next_autosave_serial` is deleted. The already-unique pending ticket/identity is sufficient to reject stale timer tasks.
+### 2. Capture is identity-bound, never "capture current checkpoint"
 
-### 2. One gate owns every disk mutation
+The current production safety rule remains mandatory:
 
-Manual save, delete, flush, autosave, and cleanup call the concrete `ApplicationPersistence` operation directly after acquiring `operation_gate`.
+> For an autosave job for `(generation = G, revision = R)`, checkpoint capture is allowed only while the live session is still `G` and the live engine durable revision is still `R`.
 
-There are no `reserve_manual_writer`, `reserve_delete_writer`, result oneshots, or generic `CoordinatorFuture` wrappers.
+Therefore `execute_pending_autosave` must perform a pre-capture check equivalent to today's `ApplicationPersistence::capture`:
 
-This is serialization, not a global gameplay lock. The session mutex is held only long enough to:
+```rust
+if session.persistence.generation != pending.session_generation
+    || engine.durable_revision() != pending.durable_revision
+{
+    // stale pending work: retire/discard; never bind a newer checkpoint to R
+}
+```
 
-- capture a checkpoint or read a generation/revision;
-- validate the current session immediately before commit;
-- install or clear a session after a detached restore succeeds.
+After staging, immediately before `commit_prepared_slot_write`, revalidate **the same** `(G, R)` identity again. If it no longer matches, discard the staged write.
 
-Disk staging and filesystem work do not hold the gameplay session mutex.
+The operation gate prevents another persistence install from racing the commit, but ordinary gameplay can still advance the durable revision while filesystem staging is in progress. The pre-capture and pre-commit checks are therefore both required.
 
-### 3. Session replacement uses the same gate
+### 3. Gate scope begins only when persistence mutation is ready
+
+The operation gate may be held across filesystem staging/install because its purpose is disk mutation serialization.
+
+It must not be held while waiting for:
+
+- debounce time;
+- a thumbnail capture response;
+- the 5 second thumbnail timeout;
+- detached restore construction.
+
+This prevents a slow or unavailable thumbnail capture from blocking Load, Continue, manual save, delete, or exit before those operations even reach their disk work.
+
+For flush/exit, wait on the operation gate only for the persistence work itself. Do not wait for a new thumbnail capture while holding the gate.
+
+### 4. Manual save, delete, autosave, flush, cleanup share the same gate
+
+Manual save/delete no longer reserve queue turns or create oneshot result channels. They await the gate and perform their existing storage operations directly.
+
+A waiting operation must revalidate any captured session/browser identity **after acquiring the gate and before mutating storage**.
+
+This is important for delete:
+
+- delete captures the observed session/save-browser identity;
+- if final replacement wins `operation_gate` first, the waiting delete must fail with stale identity and leave the slot intact;
+- if delete wins first, it may complete before replacement installs.
+
+Do not preserve queue invalidation to achieve this ordering.
+
+### 5. Load/Continue may wait for in-flight disk work
 
 `replacement_gate` is removed.
 
-Load/Continue continue to build `RestoredGameCandidate` detached from the live session. Only the final install step acquires `operation_gate`, re-checks the expected `SessionTransitionIdentity`, increments the session generation, and swaps the engine.
+Load/Continue still build `RestoredGameCandidate` detached from the live session. Final install acquires the same `operation_gate`, then revalidates `SessionTransitionIdentity` and swaps the engine.
 
-A failed restore therefore still leaves the current session untouched.
+It is acceptable that Load/Continue wait for an in-flight save/delete operation. Preserving the old prepare/install overlap would require recreating a second lock graph, defeating HPA-521.
 
-A save write already holding `operation_gate` completes or becomes stale before replacement can install. A replacement already holding the gate installs before a waiting writer is allowed to revalidate. This is the whole ordering rule; no separate lock graph is needed.
+A failed restore still leaves the current session untouched because candidate construction remains detached and no install occurs until all validation succeeds.
 
-### 4. Stale writes are rejected by identity, not queue position
+### 6. Flush is a direct barrier
 
-The durable safety invariant remains:
+A blocking flush:
 
-> A prepared write may commit only when its session generation and durable revision still match the live session identity expected by that operation.
-
-The operation gate prevents two storage mutations from committing concurrently, while the generation/revision check prevents an old captured state from becoming current merely because it reached the gate later.
-
-The refactor must keep a behavior test that pauses a real staged write, changes the current session identity, resumes the write, and proves the staged data is discarded rather than installed.
-
-### 5. Flush becomes a direct barrier
-
-A blocking flush does not enqueue a special job.
-
-It:
-
-1. reads the live session identity and required revision;
-2. cancels a pending autosave covered by that revision, retaining a terminal thumbnail result when it matches exactly;
+1. reads the required live session identity/revision;
+2. cancels a covered pending autosave using the existing terminal thumbnail result when available;
 3. acquires `operation_gate`;
-4. checks whether a successful write already covers the revision;
-5. writes the exact required revision if needed;
-6. validates the session is still the expected generation/revision;
-7. records the committed receipt in `SessionPersistence`.
+4. revalidates the required identity;
+5. observes whether an already-committed receipt covers the revision;
+6. otherwise captures **that exact revision**, stages it, revalidates it, and commits;
+7. records the receipt in `SessionPersistence`.
 
-If an autosave is already in the operation gate, flush simply waits for the same gate and then observes whether that write covered the requested revision.
+If an autosave already owns the gate, flush waits and then decides whether another write is necessary.
 
-### 6. Cleanup is best-effort state, not an ordered job class
+### 7. Cleanup is best-effort state, not job ordering
 
-`CleanupOwner`, `next_cleanup_attempt`, `minimum_cleanup_attempt`, and `WriterJobClass::OrphanCleanup` are removed.
+Remove:
 
-Orphan cleanup runs under the same operation gate:
+- `CleanupOwner`;
+- `next_cleanup_attempt`;
+- `minimum_cleanup_attempt`;
+- receipt-vs-attempt precedence helpers;
+- `WriterJobClass::OrphanCleanup`.
 
-- once during application persistence initialization/startup;
-- after a write reports cleanup work or on the next successful persistence operation when a prior cleanup failed.
+Orphan cleanup runs through the same operation gate at startup and when retrying a current cleanup diagnostic. Only the current diagnostic matters to the UI.
 
-Only the current cleanup diagnostic matters to the UI. We do not need receipt-vs-attempt ordering for orphan files in a single local save directory.
+Cleanup must not recreate its own queue, generation counter, or worker class.
 
-### 7. Background task spawning becomes concrete
+### 8. Background task spawning is concrete
 
 Delete:
 
 - `CoordinatorTask`;
 - `CoordinatorTaskScheduler`;
 - `PortableCoordinatorTaskScheduler`;
-- the fallback current-thread Tokio runtime and `lyra-save-coordinator` thread;
-- scheduler-rejection tests whose only subject is that abstraction.
+- fallback Tokio runtime/thread;
+- `TauriCoordinatorTaskScheduler`;
+- scheduler injection and scheduler-failure tests.
 
-Application-level debounce, thumbnail-expiry, and exit tasks are spawned with the existing Tauri async runtime directly. They remain small timer/continuation tasks; they do not own persistence serialization.
+Production debounce, thumbnail-expiry, and exit continuation tasks call:
 
-This intentionally makes the Tauri boundary concrete rather than preserving a one-production-implementation scheduler interface.
+```rust
+tauri::async_runtime::spawn(async move {
+    // timer/continuation only; persistence serialization is operation_gate
+});
+```
 
-### 8. Dynamic thumbnail behavior is retained exactly
+Do not add `TaskSpawner`, `Scheduler`, or another one-production-implementation wrapper.
 
-HPA-550 closed the removal question. HPA-521 therefore retains:
+#### Test-runtime rule
+
+Tauri's async runtime is a singleton runtime. Deterministic tests must not assume `tauri::async_runtime::spawn` shares the current `#[tokio::test(start_paused = true)]` clock.
+
+Therefore:
+
+- most unit tests call the private async behavior that runs **after** debounce/ticket readiness, with explicit pending identities;
+- timer deadline math is tested as pure/state behavior where useful;
+- keep at most one real-time scheduling smoke proving a scheduled debounce eventually invokes the real path;
+- delete the plain-thread/fallback-runtime test;
+- do not add a scheduler trait merely to regain clock injection.
+
+### 9. Dynamic thumbnail behavior is retained exactly
+
+HPA-550 retained the current product. HPA-521 keeps:
 
 - autosave/manual-save thumbnail purposes;
-- capture tickets;
+- capture tickets and UUID identity;
 - ticket deadlines;
 - intent supersession;
-- submit/failure IPC;
+- prepare/submit/failure/read IPC;
 - `ThumbnailActivityView`;
-- PNG validation/size limits;
+- PNG validation and size limits;
 - non-blocking thumbnail failure semantics;
-- stored thumbnail descriptors and read behavior.
+- stored descriptors/read behavior.
 
-Thumbnail ticket state lives inside `ApplicationPersistence::state`, but it is not serialized through `operation_gate` until a save operation consumes a terminal result.
+The gate begins **after** autosave terminal-thumbnail wait. Thumbnail ticket state uses `PersistenceState`, not the operation gate, until a persistence operation consumes the result.
 
-Do not add native capture, remove dynamic previews, or change frontend capture behavior in this PR.
+No native capture or preview removal is in scope.
 
-### 9. Failure-token and discovery identity stay unless proven dead during implementation
+### 10. Failure/discovery identities stay because they protect player actions
 
-The following are retained deliberately in this refactor:
+Retain unless an implementation-time search proves a field has no production consumer:
 
-- `next_session_generation`: protects stale session replacement and stale background work;
-- `discovery_generation`: protects actions against a save-browser snapshot that has already been rediscovered;
-- persistence failure UUID challenges: protect Retry/Cancel/Without Saving actions from stale UI commands;
-- thumbnail ticket UUIDs and `latest_by_intent`: required by the retained dynamic thumbnail protocol.
+- `next_session_generation`;
+- `discovery_generation`;
+- persistence failure UUID challenges;
+- thumbnail ticket UUIDs and `latest_by_intent`.
 
-These identities are tied to player-visible stale-action protection, not writer-queue implementation. HPA-521 must not broaden into a separate modal/failure-token product redesign unless implementation proves one of these fields has no production consumer after the queue collapse.
+Remove queue-only identities:
 
-The counters removed by design are queue-only identities: autosave serials and cleanup-attempt ordering.
+- `next_autosave_serial`;
+- cleanup attempt ordering.
 
-### 10. Exit keeps behavior, not the old lock graph
+A stale late `notify_durable_commit` from an old session must still be rejected before it mutates pending/ticket state or supersedes a replacement session's live ticket.
 
-The player contract remains:
+### 11. Exit keeps behavior, not lock choreography
 
-- ordinary close/quit requests enter Saving;
-- a successful flush exits;
-- a failed flush produces one typed actionable failure;
-- Retry, Cancel, and Exit Without Saving require the current failure token;
-- duplicate close/quit requests do not start duplicate exit flushes.
+Player contract remains:
 
-Exit state stays inside `PersistenceState`. No separate writer priority is required because exit flush waits on the same operation gate.
+- ordinary close/quit enters Saving;
+- successful flush exits;
+- failed flush produces one typed actionable failure;
+- Retry/Cancel/Exit Without Saving require the current failure token;
+- duplicate close/quit does not start duplicate flushes.
 
-The implementation should remove `exit_transition` if the state/session transition can be expressed with the owner state mutex plus the single operation gate. If a tiny synchronous guard remains necessary to make the Idle -> Saving transition atomic with the session exit flag, it must remain exit-specific and must not become a second disk-serialization boundary. There should be no general lock-order test suite after this refactor.
+Exit waits for `operation_gate` only when persistence work is ready to run. It does not create writer priority.
 
-## Application module and `lib.rs` boundary
-
-Create `apps/game/src-tauri/src/game/save/application.rs` and move application persistence ownership/orchestration there.
-
-The module owns:
-
-- `AppSession` / `SessionPersistence` persistence-facing session metadata;
-- `ApplicationPersistence` and `PersistenceState`;
-- concrete storage/discovery context;
-- autosave scheduling and flush;
-- thumbnail ticket lifecycle;
-- save browser discovery;
-- manual save/delete;
-- detached restore + final session install helpers;
-- return-to-title persistence behavior;
-- persistence health and exit lifecycle;
-- persistence-specific result views that are not generic gameplay views.
-
-`src-tauri/src/lib.rs` should be left primarily with:
-
-- Tauri setup;
-- `AppState` wiring;
-- event binding;
-- thin `#[tauri::command]` wrappers;
-- gameplay mutation routing that is not persistence implementation;
-- command registration.
-
-Do not introduce a service container, repository layer, generic command bus, DI framework, or trait-per-operation structure.
+If a tiny synchronous exit-state transition guard remains necessary, it is exit-specific state protection, not a second disk-serialization boundary. There is no general lock-order suite in the final design.
 
 ## Reuse survey
 
 | Need | Decision |
 | --- | --- |
-| Atomic slot writes | Reuse `save/storage.rs` `prepare_slot_write`, `commit_prepared_slot_write`, and `delete_slot`. |
-| Filesystem test seam | Keep `SaveFilesystem`; it has production, E2E-faulting, and test implementations and protects real disk behavior. |
-| Detached load safety | Reuse `build_restore_candidate` and current `SessionTransitionIdentity` semantics. |
+| Atomic slot writes | Reuse `save/storage.rs` `prepare_slot_write`, `commit_prepared_slot_write`, `discard_prepared_slot_write`, and `delete_slot`. |
+| Filesystem seam | Keep `SaveFilesystem`; it has production, E2E-faulting, and useful test implementations. |
+| Staged-write behavior tests | Extract/reuse the existing `TrackingFilesystem` pattern that delegates to `ProductionSaveFilesystem` and wraps `StagedAtomicWrite`. Reuse the existing pause-after-prepare technique; do not add a second fake backend. |
+| Detached load safety | Reuse `build_restore_candidate` and `SessionTransitionIdentity`. |
 | Autosave target selection | Reuse `select_autosave_target`. |
-| Thumbnail validation/storage | Reuse current thumbnail and schema types unchanged. |
-| Persistence status events | Reuse existing health/activity/exit views and Tauri events. |
-| Acquisition acknowledgement | Reuse HPA-549 ordinary no-thumbnail autosave path; do not reintroduce dedicated acknowledgement persistence. |
-| Writer serialization | Replace with one `tokio::sync::Mutex<()>`; do not extend `WriterQueue`. |
-| Background scheduling | Use concrete Tauri async runtime spawning; no custom scheduler abstraction. |
-| Application persistence | Move/extend the existing `ApplicationPersistence` implementation from `lib.rs`; do not create a parallel service. |
+| Thumbnail validation/storage | Reuse current types/IPC unchanged. |
+| Persistence status | Reuse health/activity/exit views/events. |
+| Acquisition acknowledgement | Keep HPA-549 ordinary no-thumbnail autosave behavior. |
+| Disk serialization | One `tokio::sync::Mutex<()>`. |
+| Background scheduling | Direct `tauri::async_runtime::spawn` in production; no scheduler abstraction. |
+| Exit boundary | Keep `ApplicationExit`: production `app.exit` and test implementations give it more than one meaningful implementation. |
 
-## Test strategy
+## Test migration is an inventory, not a deletion slogan
 
-Tests should prove behavior, not the deleted machinery.
+The queue is an implementation detail; the following existing tests encode retained product rules and must be migrated deliberately.
+
+### Required debounce/retry/identity migrations
+
+Each old test below must either:
+
+1. still exist under `application/tests/` with the same name (preferred when semantics are unchanged), or
+2. have an explicit one-line disposition in the PR closeout naming the new test that supersedes it, or stating why the product rule itself was intentionally removed.
+
+Required inventory:
+
+```text
+no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_activity
+no_thumbnail_retry_and_supersession_never_issue_capture_request
+stale_no_thumbnail_retry_cannot_replace_a_newer_pending_write
+<the two existing *_does_not_supersede_newer_pending_write_after_eligibility tests>
+debounce_spends_the_existing_ticket_deadline
+capture_timeout_writes_unavailable_without_degrading_persistence
+revision_during_write_schedules_one_follow_up_for_newest_revision
+first_write_success_keeps_health_pending_while_follow_up_is_outstanding
+prior_generation_high_revision_never_suppresses_new_generation_low_revision
+failed_revision_does_not_timer_loop_and_explicit_actions_retry_once
+stale_notify_durable_commit_is_rejected_before_mutating_coordinator_state
+stale_notify_durable_commit_cannot_supersede_live_replacement_autosave_ticket
+```
+
+These cover HPA-549 no-thumbnail behavior, HPA-550 deadline/failure behavior, follow-up scheduling, health truth, generation-scoped receipts, retry-storm prevention, and stale late notifications.
+
+### Required queued-delete successor
+
+The queue-specific mechanism may disappear, but the player-visible invariant must remain:
+
+> If replacement installs before a delete that was waiting for persistence authority, the stale delete returns `staleSessionGeneration` and does not remove the slot.
+
+Migrate `replacement_invalidating_queued_delete_returns_stale_session_generation` to an application-level test such as:
+
+```text
+replacement_before_waiting_delete_returns_stale_session_generation_and_preserves_slot
+```
+
+No test should observe a queued future or delete-enqueued notification.
 
 ### Delete outright
 
-- `coordinator/tests/writer.rs`: its production subject is the writer queue itself.
-- `coordinator/tests/lock_order.rs` as a lock-order suite.
-- scheduler rejection/fallback-thread tests whose only purpose is `CoordinatorTaskScheduler`/`PortableCoordinatorTaskScheduler`.
-- queue invalidation probes and delete-enqueued notifications that exist only to observe queue internals.
-- cleanup-owner ordering tests that only compare `Receipt` vs `Attempt` ownership.
+Delete tests whose only subject is:
 
-### Re-home the behavior worth keeping
+- `WriterQueue` ordering/worker startup;
+- scheduler rejection/fallback thread;
+- W/G/S lock labels;
+- queue invalidation mechanics;
+- cleanup receipt-vs-attempt ordering.
 
-Preserve or rewrite tests for:
+### Staged-write helper rule
 
-- trailing-edge autosave coalesces multiple durable revisions to the newest revision;
-- manual save/delete/autosave never mutate storage concurrently;
-- a blocked disk operation does not hold the gameplay session mutex;
-- a stale prepared autosave cannot install after session identity changes;
-- flush waits for an in-flight persistence operation and either observes its receipt or writes the required revision itself;
-- failed load/Continue leaves the old session installed;
-- session generations remain monotonic and only auto slots become autosave targets;
-- exit flush succeeds/fails/retries without duplicate work;
-- dynamic thumbnail ticket expiry/supersession/submission still behaves exactly as HPA-550 retained;
-- real storage atomic replacement and corrupt-save handling still pass.
+Do not create a new persistence backend fake.
 
-Use the existing `SaveFilesystem` fake/fault seams for serialization and stale-write tests instead of adding a new persistence backend trait just for tests.
+Move/extract the minimum useful helper from current storage integration tests:
 
-## File-level plan
+- delegate real file behavior to `ProductionSaveFilesystem`;
+- wrap `StagedAtomicWrite` to count install/discard;
+- add a pause/release hook around the staged-write boundary or immediately after preparation;
+- optionally track active mutation count for the one-gate serialization assertion.
 
-### Create
+This proves real staging/discard behavior while keeping `AutosaveBackend` deleted.
 
-- `apps/game/src-tauri/src/game/save/application.rs` — the single concrete application persistence owner and orchestration surface.
+## Line-count policy
 
-### Modify
+Line counts are diagnostic evidence, not permission to delete product tests.
 
-- `apps/game/src-tauri/src/game/save/mod.rs` — export `application`; remove `coordinator` after migration.
-- `apps/game/src-tauri/src/lib.rs` — remove persistence implementation and keep setup/thin Tauri wrappers.
-- `apps/game/src-tauri/src/game/save/storage.rs` — only if a small test hook/helper is needed to express behavior at the existing filesystem seam; do not redesign storage.
-- existing Rust persistence tests — move assertions from queue/lock identity to behavior.
+Closeout records production and test counts separately:
 
-### Delete after migration
+- production persistence owner/modules;
+- remaining production portion of `src-tauri/src/lib.rs`;
+- persistence test code.
 
-- `apps/game/src-tauri/src/game/save/coordinator/mod.rs`.
-- `apps/game/src-tauri/src/game/save/coordinator/tests/writer.rs`.
-- `apps/game/src-tauri/src/game/save/coordinator/tests/lock_order.rs`.
-- remaining coordinator test files only after equivalent player-visible/storage behavior is re-homed under application persistence tests.
+Expected result: **material production-code deletion** because queue/backend/scheduler/lock-graph machinery disappears.
 
-No frontend production file, save schema, story content, or IPC payload change is planned.
+Do not fail the refactor merely because migrated behavior tests do not shrink by the same percentage. If test code grows slightly to express behavior instead of internals, that is acceptable when the named migration inventory remains intact.
 
-## Single-PR boundary
+A large production increase or a new replacement abstraction is a stop signal and requires simplification before completion.
 
-HPA-521 is one implementation PR.
+## Verification contract
 
-The PR may use multiple reviewable commits/tasks internally, but it must end with one coherent architecture. Do not merge an intermediate state that has both `WriterQueue` and the new operation gate as two permanent serialization products.
-
-In scope:
-
-- single owner + single operation gate;
-- writer queue/scheduler/fallback runtime deletion;
-- stale-write/flush/replacement behavior preservation;
-- app persistence extraction from `lib.rs`;
-- behavior-level test migration;
-- material net deletion.
-
-Out of scope:
-
-- thumbnail product redesign (HPA-550 is closed as retain current behavior);
-- save schema or compatibility framework changes;
-- Chapter 2 content/gameplay;
-- generic repository/service architecture;
-- E2E router simplification (HPA-560);
-- full Chapter 1 production hardening (HPA-536);
-- new persistence features.
-
-## Acceptance criteria
-
-The implementation is complete when:
-
-1. `ApplicationPersistence` is the only application persistence owner.
-2. Every disk-mutating persistence operation and final session replacement serializes through one async operation gate.
-3. `WriterQueue`, `WriterJobClass`, queued writer futures, queue worker machinery, and queue-specific probes are gone.
-4. `replacement_gate` is gone.
-5. `CoordinatorTaskScheduler`, `PortableCoordinatorTaskScheduler`, and the fallback runtime/thread are gone.
-6. `AutosaveBackend`/`CoordinatorFuture` are gone unless implementation discovers a second real production backend; tests alone are not justification.
-7. Autosave debounce still coalesces to the newest durable revision.
-8. Stale prepared writes cannot clobber a newer session/revision.
-9. Flush/manual/delete/exit preserve their current player-visible guarantees.
-10. HPA-549 acquisition acknowledgement remains ordinary no-thumbnail autosave behavior.
-11. HPA-550 dynamic thumbnails retain their current ticket/capture behavior.
-12. `lib.rs` is materially smaller and setup/registration oriented.
-13. Mechanism-only writer/lock/scheduler tests are removed and surviving guarantees are covered by behavior tests.
-14. Production persistence code plus persistence-specific tests have a material net line reduction; record before/after counts in the PR closeout.
-15. No actor, channel protocol, new framework, compatibility shim, or generic abstraction replaces the deleted machinery.
-
-## Verification
-
-Minimum implementation verification:
+Closeout must run both Rust feature surfaces explicitly:
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
+```
+
+Also run:
+
+```bash
 bun run check
 bun run lint
 bun run format:check
@@ -392,14 +471,51 @@ bun run rust:fmt
 bun run rust:lint
 ```
 
-Run the existing packaged save/Continue smoke when the current PR policy requires it. Do not add a new packaged suite solely to test the operation gate; HPA-560 owns future E2E suite simplification.
+Keep the existing packaged save/Continue smoke only when current PR policy selects it. Do not add a new packaged E2E suite for HPA-521.
 
-Before closing the implementation PR, record line counts for:
+## Single-PR boundary
 
-```bash
-wc -l apps/game/src-tauri/src/game/save/application.rs
-wc -l apps/game/src-tauri/src/lib.rs
-find apps/game/src-tauri/src/game/save -path '*test*' -name '*.rs' -print0 | xargs -0 wc -l
-```
+HPA-521 remains one implementation PR with reviewable internal commits.
 
-Compare them against the pre-refactor coordinator/lib/test footprint and explain any retained complexity by player-visible behavior.
+Do not merge an intermediate architecture with two permanent serialization products.
+
+In scope:
+
+- one `ApplicationPersistence` owner;
+- one operation gate;
+- identity-bound capture and pre-commit revalidation;
+- writer queue/backend/scheduler/fallback-runtime deletion;
+- stale-write/flush/replacement/delete behavior preservation;
+- modular extraction from `lib.rs`;
+- named behavior-test migration;
+- production net deletion.
+
+Out of scope:
+
+- thumbnail product redesign;
+- acquisition acknowledgement transaction redesign;
+- save schema/compatibility framework changes;
+- Chapter 2 work;
+- generic service/repository architecture;
+- E2E router simplification;
+- full Chapter 1 release hardening.
+
+## Acceptance criteria
+
+- [ ] `ApplicationPersistence` is the only application persistence owner held by `AppState`.
+- [ ] Exactly one async `operation_gate` serializes disk mutation and final session replacement.
+- [ ] No actor/channel/queue replaces `WriterQueue`.
+- [ ] Debounce and autosave thumbnail waiting happen outside `operation_gate`.
+- [ ] Autosave checkpoint capture is bound to the pending generation/revision, not merely the current live checkpoint.
+- [ ] Every staged save revalidates that same identity immediately before commit and discards stale staging.
+- [ ] Load/Continue may wait for in-flight disk work; no second replacement gate survives.
+- [ ] Waiting stale delete after replacement cannot remove the slot.
+- [ ] `SaveCoordinator`, `WriterQueue`, `WriterJobClass`, custom scheduler/fallback runtime, and `AutosaveBackend`/`CoordinatorFuture` are gone.
+- [ ] HPA-550 dynamic thumbnail behavior is unchanged.
+- [ ] HPA-549 acknowledgement remains ordinary no-thumbnail autosave.
+- [ ] Failure/discovery identities that protect stale player actions remain.
+- [ ] The named debounce/retry/generation/health test inventory has explicit migration dispositions.
+- [ ] Tests use the existing real staged-write filesystem seam rather than a new backend abstraction.
+- [ ] `lib.rs` is setup/transport/gameplay routing rather than persistence implementation.
+- [ ] Production persistence code is materially smaller; test counts are recorded separately without using line-count pressure to remove product behavior.
+- [ ] Default and `--all-features` Rust suites plus repository checks pass.
