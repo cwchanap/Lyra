@@ -27,6 +27,7 @@ pub(super) struct TrackingFilesystem {
     pause_staging: AtomicBool,
     fail_cleanup: AtomicBool,
     fail_stage: AtomicBool,
+    fail_discard: Arc<AtomicBool>,
     stage_update: Notify,
     release_staging: (Mutex<()>, Condvar),
 }
@@ -43,6 +44,7 @@ impl Default for TrackingFilesystem {
             pause_staging: AtomicBool::new(false),
             fail_cleanup: AtomicBool::new(false),
             fail_stage: AtomicBool::new(false),
+            fail_discard: Arc::new(AtomicBool::new(false)),
             stage_update: Notify::new(),
             release_staging: (Mutex::new(()), Condvar::new()),
         }
@@ -65,6 +67,10 @@ impl TrackingFilesystem {
 
     pub(super) fn fail_next_stage(&self) {
         self.fail_stage.store(true, Ordering::SeqCst);
+    }
+
+    pub(super) fn fail_next_discard(&self) {
+        self.fail_discard.store(true, Ordering::SeqCst);
     }
 
     pub(super) fn installed_count(&self) -> usize {
@@ -123,6 +129,7 @@ struct TrackingStagedWrite {
     inner: Box<dyn StagedAtomicWrite>,
     installed: Arc<AtomicUsize>,
     discarded: Arc<AtomicUsize>,
+    fail_discard: Arc<AtomicBool>,
 }
 
 impl StagedAtomicWrite for TrackingStagedWrite {
@@ -133,6 +140,9 @@ impl StagedAtomicWrite for TrackingStagedWrite {
     }
 
     fn discard(self: Box<Self>) -> io::Result<()> {
+        if self.fail_discard.swap(false, Ordering::SeqCst) {
+            return Err(io::Error::other("injected discard failure"));
+        }
         self.inner.discard()?;
         self.discarded.fetch_add(1, Ordering::SeqCst);
         Ok(())
@@ -181,6 +191,7 @@ impl SaveFilesystem for TrackingFilesystem {
             inner,
             installed: Arc::clone(&self.installed),
             discarded: Arc::clone(&self.discarded),
+            fail_discard: Arc::clone(&self.fail_discard),
         }))
     }
 

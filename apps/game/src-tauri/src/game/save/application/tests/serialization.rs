@@ -184,6 +184,37 @@ async fn stale_registered_token_discards_the_exact_real_staged_write() {
     assert!(fixture.persistence.last_successful_write().is_none());
 }
 
+#[tokio::test]
+async fn stale_discard_io_failure_is_reported_as_a_save_failure() {
+    let fixture = application_fixture();
+    fixture.filesystem.fail_next_discard();
+    let prepared = fixture
+        .persistence
+        .prepare_autosave_write(registered_write(1, 1))
+        .await
+        .unwrap();
+
+    fixture.session.lock().unwrap().persistence.generation = 2;
+    let stale = match fixture
+        .persistence
+        .commit_prepared_slot_write(prepared)
+        .await
+        .unwrap()
+    {
+        AutosaveCommitOutcome::Stale(prepared) => prepared,
+        AutosaveCommitOutcome::Committed(_) => panic!("stale generation must not install a save"),
+    };
+
+    assert_eq!(
+        fixture
+            .persistence
+            .discard_prepared_slot_write(stale)
+            .unwrap_err()
+            .code,
+        "saveWriteFailed"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
 async fn application_owner_adopts_the_committed_slot_and_save_id() {
     let fixture = application_fixture();
