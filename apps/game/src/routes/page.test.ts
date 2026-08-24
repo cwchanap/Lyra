@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => ({
   updateAudioPreferences: vi.fn(),
   playGameplaySfxEvent: vi.fn(),
   syncGameplayAudioMode: vi.fn(),
+  syncMainMenuAudio: vi.fn(),
   preloadKnownGameplaySfx: vi.fn(),
   retryLockedGameplayAudio: vi.fn(),
   disposeGameplayAudio: vi.fn(),
@@ -75,6 +76,7 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   updateAudioPreferences: mocks.updateAudioPreferences,
   playGameplaySfxEvent: mocks.playGameplaySfxEvent,
   syncGameplayAudioMode: mocks.syncGameplayAudioMode,
+  syncMainMenuAudio: mocks.syncMainMenuAudio,
   preloadKnownGameplaySfx: mocks.preloadKnownGameplaySfx,
   retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
@@ -456,6 +458,9 @@ describe("+page title persistence flows", () => {
       .spyOn(HTMLCanvasElement.prototype, "getContext")
       .mockReturnValue(null);
     mocks.invoke.mockReset();
+    mocks.syncGameplayAudioMode.mockReset();
+    mocks.syncMainMenuAudio.mockReset();
+    mocks.disposeGameplayAudio.mockReset();
     gameState.value = null;
     gameState.error = null;
     gameState.loading = false;
@@ -469,6 +474,37 @@ describe("+page title persistence flows", () => {
     gameState.error = null;
     gameState.loading = false;
     gameState.inFlight = false;
+  });
+
+  it("owns the title BGM only until gameplay starts", async () => {
+    const user = userEvent.setup();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return titleDiscovery();
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      if (command === "start_game") {
+        return { state: currentState(), thumbnailCapture: null };
+      }
+      return {};
+    });
+
+    render(Page);
+
+    await waitFor(() =>
+      expect(mocks.syncMainMenuAudio).toHaveBeenCalledTimes(1),
+    );
+    expect(mocks.syncGameplayAudioMode).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByRole("button", { name: "開始新遊戲" }));
+
+    await waitFor(() =>
+      expect(mocks.syncGameplayAudioMode).toHaveBeenCalledTimes(1),
+    );
+    expect(mocks.disposeGameplayAudio).toHaveBeenCalledTimes(1);
+    expect(mocks.disposeGameplayAudio.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.syncGameplayAudioMode.mock.invocationCallOrder[0]!,
+    );
   });
 
   it("discovers saves on title and disables Continue and Load for eight empty slots", async () => {

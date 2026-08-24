@@ -4,6 +4,7 @@ import type { Mode } from "$lib/state/types";
 
 const mocks = vi.hoisted(() => ({
   syncGameplayAudioMode: vi.fn(),
+  syncMainMenuAudio: vi.fn(),
   disposeGameplayAudio: vi.fn(),
   retryLockedGameplayAudio: vi.fn(),
   preloadKnownGameplaySfx: vi.fn(),
@@ -11,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   syncGameplayAudioMode: mocks.syncGameplayAudioMode,
+  syncMainMenuAudio: mocks.syncMainMenuAudio,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
   retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
   preloadKnownGameplaySfx: mocks.preloadKnownGameplaySfx,
@@ -30,6 +32,7 @@ describe("GameplayAudio", () => {
   afterEach(() => {
     cleanup();
     mocks.syncGameplayAudioMode.mockClear();
+    mocks.syncMainMenuAudio.mockClear();
     mocks.disposeGameplayAudio.mockClear();
     mocks.retryLockedGameplayAudio.mockClear();
     mocks.preloadKnownGameplaySfx.mockClear();
@@ -38,6 +41,13 @@ describe("GameplayAudio", () => {
   it("syncs the initial mode to the audio runtime on mount", () => {
     render(GameplayAudio, { mode: exploreMode });
     expect(mocks.syncGameplayAudioMode).toHaveBeenCalledWith(exploreMode);
+  });
+
+  it("syncs the explicitly owned title loop while the main menu is mounted", () => {
+    render(GameplayAudio, { mode: "mainMenu" });
+
+    expect(mocks.syncMainMenuAudio).toHaveBeenCalledTimes(1);
+    expect(mocks.syncGameplayAudioMode).not.toHaveBeenCalled();
   });
 
   it("disposes the audio runtime when unmounted", () => {

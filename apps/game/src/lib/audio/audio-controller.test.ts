@@ -107,6 +107,26 @@ describe("GameplayAudioController", () => {
     expect(created[1]?.play).toHaveBeenCalledTimes(1);
   });
 
+  it("stops old scene loops when the next effective state has no cues", async () => {
+    const audio = controller();
+    await audio.updateLoopChannels(
+      {
+        bgm: { channel: "bgm", assetId: "audio.bgm.review" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.rain" },
+      },
+      preferences,
+    );
+    const [oldBgm, oldBgs] = created;
+
+    await audio.updateLoopChannels({ bgm: null, bgs: null }, preferences);
+
+    expect(oldBgm?.pause).toHaveBeenCalledTimes(1);
+    expect(oldBgm?.currentTime).toBe(0);
+    expect(oldBgs?.pause).toHaveBeenCalledTimes(1);
+    expect(oldBgs?.currentTime).toBe(0);
+    expect(created).toHaveLength(2);
+  });
+
   it("restarts loops before the encoded tail can create an audible seam", async () => {
     const audio = controller();
     await audio.updateLoopChannels(
@@ -242,6 +262,45 @@ describe("GameplayAudioController", () => {
       preferences,
     );
     expect(created).toHaveLength(2);
+  });
+
+  it("does not let a replaced loop clear the current scene autoplay lock", async () => {
+    const stalePlay = deferred();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0) {
+          element.play = vi.fn(() => stalePlay.promise);
+        } else if (created.length === 1) {
+          element.play = vi.fn(() =>
+            Promise.reject(new Error("NotAllowedError: autoplay blocked")),
+          );
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+
+    const staleUpdate = audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.tense" }, bgs: null },
+      preferences,
+    );
+    stalePlay.resolve();
+    await staleUpdate;
+
+    audio.unlock(preferences);
+    await Promise.resolve();
+
+    expect(created[0]?.pause).toHaveBeenCalledTimes(2);
+    expect(created[0]?.currentTime).toBe(0);
+    expect(created).toHaveLength(3);
+    expect(created[2]?.src).toBe("/assets/audio/bgm/tense.ogg");
+    expect(created[2]?.play).toHaveBeenCalledTimes(1);
   });
 
   it("stops on explicit none", async () => {
@@ -590,6 +649,32 @@ describe("GameplayAudioController", () => {
     );
   });
 
+  it("does not resurrect stopped scene loops when an autoplay lock clears", async () => {
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0) {
+          element.play = vi.fn(() =>
+            Promise.reject(new Error("NotAllowedError: autoplay blocked")),
+          );
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+    await audio.updateLoopChannels(
+      { bgm: { channel: "bgm", assetId: "audio.bgm.review" }, bgs: null },
+      preferences,
+    );
+
+    audio.stopLoopChannels();
+    audio.unlock(preferences);
+    await Promise.resolve();
+
+    expect(created).toHaveLength(1);
+  });
+
   it("suppresses SFX while muted", async () => {
     const audio = controller();
     await audio.playSfx("audio.sfx.sfx_usb_insert_chime", {
@@ -693,6 +778,37 @@ describe("GameplayAudioController", () => {
     expect(created).toHaveLength(2);
     expect(created[1]?.play).toHaveBeenCalledTimes(1);
     expect(created[1]?.volume).toBe(preferences.bgmVolume);
+  });
+
+  it("retries a locked channel when the other loop channel is already playing", async () => {
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0) {
+          element.play = vi.fn(() =>
+            Promise.reject(new Error("NotAllowedError: autoplay blocked")),
+          );
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+    });
+    await audio.updateLoopChannels(
+      {
+        bgm: { channel: "bgm", assetId: "audio.bgm.review" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.rain" },
+      },
+      preferences,
+    );
+
+    audio.unlock(preferences);
+    await Promise.resolve();
+
+    expect(created).toHaveLength(3);
+    expect(created[2]?.src).toBe("/assets/audio/bgm/review.ogg");
+    expect(created[2]?.play).toHaveBeenCalledTimes(1);
+    expect(created[1]?.play).toHaveBeenCalledTimes(1);
   });
 
   it("unlock() is a no-op when playback was never locked", async () => {
