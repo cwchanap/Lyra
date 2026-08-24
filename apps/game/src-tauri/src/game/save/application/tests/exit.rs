@@ -83,6 +83,22 @@ fn exit_lifecycle_status_uses_complete_camel_case_tagged_views() {
     );
 }
 
+#[test]
+fn cancel_exit_rejects_while_idle() {
+    let persistence = ApplicationPersistence::new();
+    let token = PersistenceFailureTokenView::from_error(
+        &GameError::save_write_failed()
+            .with_failure_token("00000000-0000-4000-8000-000000000001".into()),
+    )
+    .unwrap();
+
+    assert_eq!(
+        persistence.cancel_exit(token).unwrap_err().code,
+        "stalePersistenceFailureToken"
+    );
+    assert_eq!(persistence.exit_status(), ExitStatusView::Idle);
+}
+
 #[tokio::test]
 async fn exit_lifecycle_failure_publishes_complete_status_and_cancel_consumes_exact_token() {
     let persistence = Arc::new(ApplicationPersistence::new());
