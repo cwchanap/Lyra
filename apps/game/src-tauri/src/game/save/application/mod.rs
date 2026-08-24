@@ -13,7 +13,7 @@ use crate::game::GameError;
 
 pub(crate) mod autosave;
 pub(crate) mod session;
-pub(crate) use session::{AppSession, SessionTransitionIdentity};
+pub(crate) use session::AppSession;
 
 pub(crate) struct ApplicationPersistence {
     pub(crate) session: Arc<Mutex<AppSession>>,
@@ -138,7 +138,8 @@ impl ApplicationPersistence {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
+    pub(crate) mod autosave;
     mod helpers;
     mod serialization;
 }

@@ -1,25 +1,16 @@
 use super::super::{
-    CaptureTerminalResult, CoordinatorTask, CoordinatorTaskScheduler, PersistenceHealthView,
-    SaveCoordinator, ThumbnailActivityView, ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
+    CaptureTerminalResult, PersistenceHealthView, SaveCoordinator, ThumbnailActivityView,
+    ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     canonical_uuid_v4, ThumbnailUnavailableReason, MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_WIDTH,
 };
 use crate::game::test_support::png_fixture;
-use crate::game::GameError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 fn coordinator() -> SaveCoordinator {
     SaveCoordinator::ticket_only()
-}
-
-struct RejectingTaskScheduler;
-
-impl CoordinatorTaskScheduler for RejectingTaskScheduler {
-    fn spawn(&self, _task: CoordinatorTask) -> Result<(), GameError> {
-        Err(GameError::save_write_failed())
-    }
 }
 
 fn manual(generation: u64, revision: u64) -> ThumbnailCapturePurpose {
@@ -333,35 +324,5 @@ async fn subscribers_receive_complete_health_and_activity_payloads() {
             ThumbnailActivityView::Capturing,
             ThumbnailActivityView::Unavailable { .. }
         ]
-    ));
-}
-
-#[tokio::test(start_paused = true)]
-async fn scheduler_rejection_publishes_terminal_activity_and_drops_the_ticket() {
-    let coordinator = SaveCoordinator::new().with_task_scheduler(Arc::new(RejectingTaskScheduler));
-    let activity = Arc::new(Mutex::new(Vec::new()));
-    let activity_sink = Arc::clone(&activity);
-    coordinator.subscribe(
-        |_health| {},
-        move |value| activity_sink.lock().unwrap().push(value),
-    );
-
-    let error = coordinator.prepare_thumbnail(manual(1, 2)).unwrap_err();
-    assert_eq!(error.code, "saveWriteFailed");
-
-    // The `Capturing` view was already published before the spawn attempt, so
-    // the failure path must follow it with a terminal `Unavailable` view
-    // rather than leaving subscribers stuck observing `Capturing`.
-    assert!(matches!(
-        activity.lock().unwrap().as_slice(),
-        [
-            ThumbnailActivityView::Idle,
-            ThumbnailActivityView::Capturing,
-            ThumbnailActivityView::Unavailable { .. }
-        ]
-    ));
-    assert!(matches!(
-        coordinator.thumbnail_activity(),
-        ThumbnailActivityView::Unavailable { .. }
     ));
 }

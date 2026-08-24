@@ -1,6 +1,6 @@
 use super::super::{AppSession, FlushOperation, SaveCoordinator, AUTOSAVE_DEBOUNCE};
-use super::debounce::PhasedBackend;
 use super::storage_integration::StorageBackend;
+use crate::game::save::application::tests::autosave::PhasedBackend;
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
 use crate::AppState;

@@ -205,7 +205,7 @@ pub(super) fn application_fixture() -> ApplicationFixture {
         last_saved_at: Mutex::new(None),
         availability_error: Mutex::new(None),
     });
-    let coordinator = SaveCoordinator::with_backend_for_application(
+    let coordinator = SaveCoordinator::with_application(
         persistence.clone(),
         Arc::clone(&session),
         operation_gate,
