@@ -21,6 +21,58 @@ fn engine_with_scene(scene_id: &str, revision: u64) -> crate::game::GameEngine {
 }
 
 #[tokio::test]
+async fn replacements_install_monotonic_generations_and_only_adopt_auto_targets() {
+    let fixture = application_fixture_at(0, 0);
+
+    fixture
+        .persistence
+        .install_session(engine(0), None)
+        .await
+        .unwrap();
+    assert_eq!(fixture.session.lock().unwrap().persistence.generation, 1);
+    assert!(fixture
+        .session
+        .lock()
+        .unwrap()
+        .persistence
+        .autosave_target
+        .is_none());
+
+    fixture
+        .persistence
+        .install_session(engine(44), Some(SaveSlotRef::Auto { slot: 4 }))
+        .await
+        .unwrap();
+    {
+        let session = fixture.session.lock().unwrap();
+        assert_eq!(session.persistence.generation, 2);
+        assert_eq!(session.persistence.flush_baseline_revision, 44);
+        assert_eq!(
+            session.persistence.autosave_target,
+            Some(SaveSlotRef::Auto { slot: 4 })
+        );
+    }
+
+    fixture
+        .persistence
+        .install_session(engine(18), Some(SaveSlotRef::Manual { slot: 2 }))
+        .await
+        .unwrap();
+    {
+        let session = fixture.session.lock().unwrap();
+        assert_eq!(session.persistence.generation, 3);
+        assert_eq!(session.persistence.flush_baseline_revision, 18);
+        assert!(session.persistence.autosave_target.is_none());
+    }
+
+    assert_eq!(fixture.persistence.clear_session().await.unwrap(), 4);
+    let session = fixture.session.lock().unwrap();
+    assert!(session.engine.is_none());
+    assert_eq!(session.persistence.generation, 4);
+    assert!(session.persistence.autosave_target.is_none());
+}
+
+#[tokio::test]
 async fn install_session_if_current_succeeds_with_matching_identity() {
     let fixture = application_fixture_at(0, 0);
     let expected = SessionTransitionIdentity {
