@@ -26,6 +26,7 @@ pub(super) struct TrackingFilesystem {
     max_concurrent_mutations: AtomicUsize,
     stage_reached: AtomicBool,
     pause_staging: AtomicBool,
+    fail_cleanup: AtomicBool,
     stage_update: Notify,
     release_staging: (Mutex<()>, Condvar),
 }
@@ -40,6 +41,7 @@ impl Default for TrackingFilesystem {
             max_concurrent_mutations: AtomicUsize::new(0),
             stage_reached: AtomicBool::new(false),
             pause_staging: AtomicBool::new(false),
+            fail_cleanup: AtomicBool::new(false),
             stage_update: Notify::new(),
             release_staging: (Mutex::new(()), Condvar::new()),
         }
@@ -56,6 +58,9 @@ impl TrackingFilesystem {
         self.release_staging.1.notify_all();
     }
 
+    pub(super) fn fail_next_cleanup(&self) {
+        self.fail_cleanup.store(true, Ordering::SeqCst);
+    }
     pub(super) async fn wait_for_stage(&self) {
         loop {
             if self.stage_reached.load(Ordering::SeqCst) {
@@ -142,6 +147,9 @@ impl SaveFilesystem for TrackingFilesystem {
     }
 
     fn list_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+        if self.fail_cleanup.swap(false, Ordering::SeqCst) {
+            return Err(io::Error::other("injected cleanup scan failure"));
+        }
         self.inner.list_dir(path)
     }
 
@@ -182,6 +190,10 @@ pub(super) struct ApplicationFixture {
 }
 
 pub(super) fn application_fixture() -> ApplicationFixture {
+    application_fixture_at(1, 1)
+}
+
+pub(super) fn application_fixture_at(generation: u64, revision: u64) -> ApplicationFixture {
     let (resources, resources_dir) = save_capture_fixture_resources();
     let definitions = Arc::new(load_current_definitions(&resources_dir).unwrap());
     let saves = tempfile::tempdir().unwrap();
@@ -190,8 +202,8 @@ pub(super) fn application_fixture() -> ApplicationFixture {
     ensure_save_layout(filesystem.as_ref(), &root).unwrap();
 
     let mut engine = GameEngine::new_started(resources_dir.clone()).unwrap();
-    engine.durable_revision = 1;
-    let session = Arc::new(Mutex::new(AppSession::installed(engine, 1, None)));
+    engine.durable_revision = revision;
+    let session = Arc::new(Mutex::new(AppSession::installed(engine, generation, None)));
     let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let persistence = Arc::new(ApplicationPersistence {
         session: Arc::clone(&session),

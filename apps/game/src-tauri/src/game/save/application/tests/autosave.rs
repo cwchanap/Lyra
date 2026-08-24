@@ -1,7 +1,7 @@
 use crate::game::save::coordinator::{
-    AppSession, AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
+    AutosaveBackend, AutosaveCapture, AutosaveCommitOutcome, AutosavePreparedWrite,
     AutosaveRegisteredIntent, AutosaveWriteJob, AutosaveWriteReceipt, BackgroundRetryTrigger,
-    CaptureIntent, CleanupOwner, CoordinatorFuture, PersistenceHealthView, SaveCoordinator,
+    CaptureIntent, CoordinatorFuture, PersistenceHealthView, SaveCoordinator,
     ThumbnailActivityView, ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
@@ -158,9 +158,6 @@ pub(crate) struct PhasedBackend {
     receipts: Mutex<Vec<AutosaveWriteReceipt>>,
     committed: Notify,
     selection_probes: AtomicU64,
-    fail_cleanup: AtomicBool,
-    cleanup_attempts: AtomicU64,
-    cleanup_done: Notify,
     gameplay_lock: Mutex<()>,
     pause_point: Mutex<Option<PausePoint>>,
     reached_point: Mutex<Option<PausePoint>>,
@@ -186,9 +183,6 @@ impl PhasedBackend {
             receipts: Mutex::new(Vec::new()),
             committed: Notify::new(),
             selection_probes: AtomicU64::new(0),
-            fail_cleanup: AtomicBool::new(false),
-            cleanup_attempts: AtomicU64::new(0),
-            cleanup_done: Notify::new(),
             gameplay_lock: Mutex::new(()),
             pause_point: Mutex::new(None),
             reached_point: Mutex::new(None),
@@ -335,15 +329,6 @@ impl PhasedBackend {
         self.selection_probes.load(Ordering::SeqCst)
     }
 
-    async fn wait_for_cleanup_attempts(&self, count: u64) {
-        loop {
-            if self.cleanup_attempts.load(Ordering::SeqCst) >= count {
-                return;
-            }
-            self.cleanup_done.notified().await;
-        }
-    }
-
     pub(crate) fn phases(&self) -> Vec<&'static str> {
         self.phases.lock().unwrap().clone()
     }
@@ -474,19 +459,6 @@ impl AutosaveBackend for PhasedBackend {
             Ok(AutosaveCommitOutcome::Committed(
                 prepared.commit_simulated(),
             ))
-        })
-    }
-
-    fn cleanup_orphans(&self) -> CoordinatorFuture<'_, Result<(), GameError>> {
-        Box::pin(async move {
-            self.phases.lock().unwrap().push("W:cleanup");
-            self.cleanup_attempts.fetch_add(1, Ordering::SeqCst);
-            self.cleanup_done.notify_waiters();
-            if self.fail_cleanup.swap(false, Ordering::SeqCst) {
-                Err(GameError::save_read_failed())
-            } else {
-                Ok(())
-            }
         })
     }
 }
@@ -1321,153 +1293,6 @@ async fn later_durable_revision_retries_after_background_failure() {
     backend.wait_for_receipts(1).await;
 
     assert_eq!(backend.receipts.lock().unwrap()[0].durable_revision, 7);
-}
-
-#[tokio::test(start_paused = true)]
-async fn orphan_cleanup_waits_for_active_save() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.pause_prepare();
-    let session = Arc::new(Mutex::new(AppSession::empty()));
-    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
-    let coordinator =
-        SaveCoordinator::with_backend_for_application(backend.clone(), session, operation_gate);
-    let request = coordinator.notify_durable_commit(1, 1).unwrap();
-    coordinator
-        .report_thumbnail_failure(&request.ticket)
-        .unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_prepare().await;
-
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    backend.release_prepare();
-    backend.cleanup_done.notified().await;
-
-    assert!(backend.phases().ends_with(&["W+G:commit", "W:cleanup"]));
-}
-
-#[tokio::test(start_paused = true)]
-async fn receipt_less_cleanup_failure_survives_autosave_until_matching_retry_succeeds() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.fail_cleanup.store(true, Ordering::SeqCst);
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    backend.wait_for_cleanup_attempts(1).await;
-    tokio::task::yield_now().await;
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_read_failed(),
-        }
-    );
-
-    let request = coordinator.notify_durable_commit(1, 1).unwrap();
-    coordinator
-        .report_thumbnail_failure(&request.ticket)
-        .unwrap();
-    tokio::time::advance(AUTOSAVE_DEBOUNCE).await;
-    backend.wait_for_receipts(1).await;
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_read_failed(),
-        }
-    );
-
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    backend.wait_for_cleanup_attempts(2).await;
-    tokio::task::yield_now().await;
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Healthy
-    );
-    assert_eq!(
-        backend
-            .phases()
-            .into_iter()
-            .filter(|phase| *phase == "W:cleanup")
-            .count(),
-        2
-    );
-}
-
-#[tokio::test(start_paused = true)]
-async fn later_queued_receipt_less_cleanup_success_resolves_earlier_failure() {
-    let backend = Arc::new(PhasedBackend::new(1));
-    backend.fail_cleanup.store(true, Ordering::SeqCst);
-    let coordinator = SaveCoordinator::with_backend(backend.clone());
-
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    coordinator.enqueue_orphan_cleanup().unwrap();
-    backend.wait_for_cleanup_attempts(2).await;
-    tokio::task::yield_now().await;
-
-    assert_eq!(
-        backend
-            .phases()
-            .into_iter()
-            .filter(|phase| *phase == "W:cleanup")
-            .count(),
-        2
-    );
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Healthy
-    );
-    assert!(coordinator.state.lock().unwrap().cleanup_failure.is_none());
-}
-
-#[test]
-fn older_receipt_less_cleanup_success_does_not_clear_later_failure() {
-    let coordinator = SaveCoordinator::new();
-    coordinator.record_cleanup_failure(CleanupOwner::Attempt(2), GameError::save_read_failed());
-
-    coordinator.resolve_cleanup_failure(&CleanupOwner::Attempt(1));
-
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_read_failed(),
-        }
-    );
-    assert!(matches!(
-        coordinator
-            .state
-            .lock()
-            .unwrap()
-            .cleanup_failure
-            .as_ref()
-            .map(|failure| &failure.owner),
-        Some(CleanupOwner::Attempt(2))
-    ));
-}
-
-#[test]
-fn receipt_less_cleanup_success_does_not_clear_receipt_owned_failure() {
-    let coordinator = SaveCoordinator::new();
-    let receipt_owner = CleanupOwner::Receipt(AutosaveWriteReceipt {
-        session_generation: 1,
-        durable_revision: 7,
-        slot: SaveSlotRef::Auto { slot: 2 },
-        save_id: "receipt-owned".into(),
-    });
-    coordinator.record_cleanup_failure(receipt_owner.clone(), GameError::save_write_failed());
-
-    coordinator.resolve_cleanup_failure(&CleanupOwner::Attempt(u64::MAX));
-
-    assert_eq!(
-        coordinator.persistence_health(),
-        PersistenceHealthView::Degraded {
-            diagnostic: GameError::save_write_failed(),
-        }
-    );
-    assert!(coordinator
-        .state
-        .lock()
-        .unwrap()
-        .cleanup_failure
-        .as_ref()
-        .is_some_and(|failure| failure.owner == receipt_owner));
 }
 
 #[tokio::test(start_paused = true)]

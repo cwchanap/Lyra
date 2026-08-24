@@ -1,4 +1,9 @@
-use crate::game::save::coordinator::{AutosaveWriteReceipt, FlushOperation};
+use super::ApplicationPersistence;
+use crate::game::save::coordinator::{AutosaveWriteReceipt, FlushOperation, SaveCoordinator};
+#[cfg(feature = "e2e")]
+use crate::game::save::coordinator::{
+    ExitStatusView, PersistenceHealthView, ThumbnailActivityView,
+};
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::{GameEngine, GameError};
 
@@ -107,5 +112,177 @@ impl SessionPersistence {
                 .max(receipt.durable_revision),
         );
         self.autosave_target = Some(receipt.slot);
+    }
+}
+
+impl ApplicationPersistence {
+    pub(crate) async fn install_session(
+        &self,
+        coordinator: &SaveCoordinator,
+        engine: GameEngine,
+        autosave_target: Option<SaveSlotRef>,
+    ) -> Result<crate::game::GameStateView, GameError> {
+        {
+            let session = self.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+        }
+        let view = engine.view()?;
+        let _gate = self.operation_gate.lock().await;
+        let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        let generation = coordinator.next_session_generation()?;
+        let autosave_target = match autosave_target {
+            Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
+            Some(SaveSlotRef::Manual { .. }) | None => None,
+        };
+        *session = AppSession::installed(engine, generation, autosave_target);
+        Ok(view)
+    }
+
+    pub(crate) async fn install_session_if_current(
+        &self,
+        coordinator: &SaveCoordinator,
+        engine: GameEngine,
+        autosave_target: Option<SaveSlotRef>,
+        expected: SessionTransitionIdentity,
+    ) -> Result<crate::game::GameStateView, GameError> {
+        let view = engine.view()?;
+        let _gate = self.operation_gate.lock().await;
+        let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != expected.generation
+            || session.durable_revision() != expected.durable_revision
+        {
+            return Err(GameError::stale_save_selection());
+        }
+        let generation = coordinator.next_session_generation()?;
+        let autosave_target = match autosave_target {
+            Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
+            Some(SaveSlotRef::Manual { .. }) | None => None,
+        };
+        *session = AppSession::installed(engine, generation, autosave_target);
+        Ok(view)
+    }
+
+    pub(crate) async fn clear_session(
+        &self,
+        coordinator: &SaveCoordinator,
+    ) -> Result<u64, GameError> {
+        {
+            let session = self.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+        }
+        let _gate = self.operation_gate.lock().await;
+        let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        let generation = coordinator.next_session_generation()?;
+        *session = AppSession::empty_at_generation(generation);
+        Ok(generation)
+    }
+
+    pub(crate) async fn clear_session_if_current(
+        &self,
+        coordinator: &SaveCoordinator,
+        expected: SessionTransitionIdentity,
+    ) -> Result<u64, GameError> {
+        let _gate = self.operation_gate.lock().await;
+        let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        if session.persistence.generation != expected.generation
+            || session.durable_revision() != expected.durable_revision
+        {
+            return Err(GameError::stale_persistence_failure_token());
+        }
+        let generation = coordinator.next_session_generation()?;
+        *session = AppSession::empty_at_generation(generation);
+        Ok(generation)
+    }
+}
+
+#[cfg(feature = "e2e")]
+#[derive(Debug)]
+pub(crate) struct E2eSessionReplacement {
+    pub(crate) generation: u64,
+    pub(crate) state: crate::game::GameStateView,
+}
+
+#[cfg(feature = "e2e")]
+impl ApplicationPersistence {
+    pub(crate) async fn replace_session_for_e2e(
+        &self,
+        coordinator: &SaveCoordinator,
+        engine: GameEngine,
+    ) -> Result<E2eSessionReplacement, GameError> {
+        let view = engine.view()?;
+        {
+            let session = self.session.lock().map_err(|_| GameError::unavailable())?;
+            session.ensure_persistence_available()?;
+        }
+        {
+            let state = coordinator
+                .state
+                .lock()
+                .map_err(|_| GameError::unavailable())?;
+            if state.exit_status == ExitStatusView::Saving {
+                return Err(GameError::persistence_operation_in_progress());
+            }
+        }
+
+        let _gate = self.operation_gate.lock().await;
+        // The dual-lock path is deliberately operation_gate -> exit_transition
+        // -> session -> coordinator state. Exit-only transitions never acquire
+        // or await operation_gate, so this path cannot reverse the hierarchy.
+        let _exit_transition = coordinator.lock_exit_transition()?;
+        let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+        session.ensure_persistence_available()?;
+        let mut state = coordinator
+            .state
+            .lock()
+            .map_err(|_| GameError::unavailable())?;
+        if state.exit_status == ExitStatusView::Saving {
+            return Err(GameError::persistence_operation_in_progress());
+        }
+        let generation = state
+            .next_session_generation
+            .checked_add(1)
+            .ok_or_else(GameError::save_write_failed)?;
+        state.next_session_generation = generation;
+        state.discovery_generation = state.discovery_generation.wrapping_add(1);
+        state.tickets.clear();
+        state.latest_by_intent.clear();
+        state.pending_autosave = None;
+        state.last_successful_write = None;
+        state.failed_write = None;
+        state.cleanup_failure = None;
+        state.failure_challenges.clear();
+        state.persistence_health = PersistenceHealthView::Healthy;
+        state.thumbnail_activity = ThumbnailActivityView::Idle;
+        state.exit_status = ExitStatusView::Idle;
+        state.programmatic_exit_bypass = false;
+        state.exit_action_in_progress = false;
+        let health_subscribers = state.health_subscribers.clone();
+        let activity_subscribers = state.activity_subscribers.clone();
+        let exit_subscribers = state.exit_subscribers.clone();
+        *session = AppSession::installed(engine, generation, None);
+        drop(state);
+        drop(session);
+        drop(_exit_transition);
+
+        coordinator.reset_e2e_replacement_controls();
+        crate::game::save::coordinator::publish_health(
+            &health_subscribers,
+            &PersistenceHealthView::Healthy,
+        );
+        crate::game::save::coordinator::publish_activity(
+            &activity_subscribers,
+            &ThumbnailActivityView::Idle,
+        );
+        crate::game::save::coordinator::publish_exit(&exit_subscribers, &ExitStatusView::Idle);
+        coordinator.ticket_updates().notify_waiters();
+
+        Ok(E2eSessionReplacement {
+            generation,
+            state: view,
+        })
     }
 }

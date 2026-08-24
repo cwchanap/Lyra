@@ -142,4 +142,5 @@ pub(crate) mod tests {
     pub(crate) mod autosave;
     mod helpers;
     mod serialization;
+    mod session;
 }
