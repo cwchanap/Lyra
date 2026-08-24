@@ -321,7 +321,7 @@ impl StorageBackend {
         )
     }
 
-    pub(super) fn replacement_gate(&self) -> Arc<AsyncMutex<()>> {
+    pub(super) fn operation_gate(&self) -> Arc<AsyncMutex<()>> {
         Arc::clone(&self.gate)
     }
 

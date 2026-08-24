@@ -26,7 +26,7 @@ fn app(
             generation,
             autosave_target,
         ))),
-        replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+        operation_gate: Arc::new(tokio::sync::Mutex::new(())),
         coordinator,
         resources_dir: PathBuf::new(),
         save_root: PathBuf::new(),
@@ -87,7 +87,7 @@ async fn writer_holding_gate_never_blocks_session_access_for_install_or_clear() 
     for clear in [false, true] {
         let coordinator = SaveCoordinator::new();
         let app = Arc::new(app(coordinator.clone(), 7, 12, None));
-        let gate = app.replacement_gate.clone().lock_owned().await;
+        let gate = app.operation_gate.clone().lock_owned().await;
         let transition = {
             let app = Arc::clone(&app);
             let coordinator = coordinator.clone();
@@ -118,7 +118,7 @@ async fn writer_holding_gate_never_blocks_session_access_for_install_or_clear() 
 }
 
 #[tokio::test(start_paused = true)]
-async fn waiter_for_writer_owns_neither_session_nor_replacement_gate() {
+async fn waiter_for_writer_owns_neither_session_nor_operation_gate() {
     let backend = Arc::new(PhasedBackend::new(3));
     backend.pause_prepare();
     let coordinator = SaveCoordinator::with_backend(backend.clone());
@@ -144,7 +144,7 @@ async fn waiter_for_writer_owns_neither_session_nor_replacement_gate() {
 
     assert!(app.session.try_lock().is_ok(), "W waiter must not own S");
     assert!(
-        app.replacement_gate.try_lock().is_ok(),
+        app.operation_gate.try_lock().is_ok(),
         "W waiter must not own G"
     );
 
@@ -153,7 +153,7 @@ async fn waiter_for_writer_owns_neither_session_nor_replacement_gate() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn real_temporary_write_keeps_gameplay_session_and_replacement_gate_responsive() {
+async fn real_temporary_write_keeps_gameplay_session_and_operation_gate_responsive() {
     let backend = Arc::new(StorageBackend::new(10, 15));
     backend.pause_after_prepare();
     let coordinator = SaveCoordinator::with_backend(backend.clone());
@@ -167,7 +167,7 @@ async fn real_temporary_write_keeps_gameplay_session_and_replacement_gate_respon
     backend.wait_for_prepare().await;
 
     assert_eq!(app.session.try_lock().unwrap().durable_revision(), Some(15));
-    assert!(app.replacement_gate.try_lock().is_ok());
+    assert!(app.operation_gate.try_lock().is_ok());
     assert_eq!(backend.phases(), ["S:capture", "S:register", "W:prepare"]);
     assert_eq!(
         backend.observed_required_lock_phases(),

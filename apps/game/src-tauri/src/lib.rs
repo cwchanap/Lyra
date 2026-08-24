@@ -176,7 +176,7 @@ pub struct AppState {
     // Task 9 exposed one session mutex. Task 10 wraps that exact mutex in Arc
     // so the disk backend can share it without introducing duplicate state.
     pub(crate) session: Arc<Mutex<AppSession>>,
-    pub(crate) replacement_gate: Arc<tokio::sync::Mutex<()>>,
+    pub(crate) operation_gate: Arc<tokio::sync::Mutex<()>>,
     pub(crate) coordinator: SaveCoordinator,
     pub(crate) resources_dir: PathBuf,
     #[allow(dead_code)] // Part B2 load/delete commands consume the configured root directly.
@@ -196,11 +196,11 @@ fn build_app_state_with_storage(
     };
     let definitions = Arc::new(load_current_definitions(&resources_dir)?);
     let session = Arc::new(Mutex::new(AppSession::empty()));
-    let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
+    let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
     let initial_error = ensure_save_layout(fs.as_ref(), &save_root).err();
     let persistence = Arc::new(ApplicationPersistence {
         session: Arc::clone(&session),
-        replacement_gate: Arc::clone(&replacement_gate),
+        operation_gate: Arc::clone(&operation_gate),
         fs,
         root: save_root.clone(),
         discovery: SaveDiscoveryContext {
@@ -213,7 +213,7 @@ fn build_app_state_with_storage(
     let coordinator = SaveCoordinator::with_backend_for_application(
         persistence.clone(),
         Arc::clone(&session),
-        Arc::clone(&replacement_gate),
+        Arc::clone(&operation_gate),
     );
     #[cfg(feature = "e2e")]
     let coordinator = coordinator.with_e2e_persistence_faults(e2e_persistence_faults);
@@ -222,7 +222,7 @@ fn build_app_state_with_storage(
     }
     Ok(AppState {
         session,
-        replacement_gate,
+        operation_gate,
         coordinator,
         resources_dir,
         save_root,
@@ -232,32 +232,6 @@ fn build_app_state_with_storage(
 
 fn unavailable_error() -> GameError {
     GameError::unavailable()
-}
-
-// The writer future was dropped before sending a result. The only
-// coordinator-driven drop path is `invalidate_queued_for_e2e()` during
-// session replacement, which advances the generation first. If the
-// generation has moved on, the drop was replacement — not a storage write
-// attempt — so return the typed stale result and skip the Degraded
-// publication (replacement already published Healthy). A genuine runtime
-// cancellation leaves the generation unchanged and falls through to
-// saveWriteFailed after publishing Degraded.
-fn classify_dropped_writer(state: &AppState, session_generation: u64) -> GameError {
-    let current_generation = match state.session.lock() {
-        Ok(session) => session.persistence.generation,
-        Err(_) => return unavailable_error(),
-    };
-    if current_generation != session_generation {
-        return GameError::stale_session_generation();
-    }
-    let error = GameError::save_write_failed();
-    let _ = state.coordinator.publish_persistence_health_for_session(
-        session_generation,
-        PersistenceHealthView::Degraded {
-            diagnostic: error.clone(),
-        },
-    );
-    error
 }
 
 // Publishes the terminal health for a completed storage write: Degraded when
@@ -995,35 +969,19 @@ async fn save_manual_core(
         thumbnail,
         expected_manual: Some(expectation),
     };
-    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
     state.coordinator.publish_persistence_health_for_session(
         session_generation,
         PersistenceHealthView::Pending,
     )?;
-    let writer_persistence = Arc::clone(&persistence);
-    if let Err(error) = state
-        .coordinator
-        .reserve_manual_writer(Box::pin(async move {
-            let result = writer_persistence
-                .run_storage_write_if_session_current(session_generation, move |fs, root| {
-                    prepare_slot_write(fs, root, request)
-                        .and_then(|prepared| commit_prepared_slot_write(fs, root, prepared))
-                })
-                .await;
-            let _ = result_tx.send(result);
-        }))
+    let outcome = match persistence
+        .run_storage_write_if_session_current(session_generation, move |fs, root| {
+            prepare_slot_write(fs, root, request)
+                .and_then(|prepared| commit_prepared_slot_write(fs, root, prepared))
+        })
+        .await
     {
-        let _ = state.coordinator.publish_persistence_health_for_session(
-            session_generation,
-            PersistenceHealthView::Degraded {
-                diagnostic: error.clone(),
-            },
-        );
-        return Err(error);
-    }
-    let outcome = match result_rx.await {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err(error)) => {
+        Ok(outcome) => outcome,
+        Err(error) => {
             let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
@@ -1031,9 +989,6 @@ async fn save_manual_core(
                 },
             );
             return Err(error);
-        }
-        Err(_) => {
-            return Err(classify_dropped_writer(state, session_generation));
         }
     };
     publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
@@ -1303,34 +1258,18 @@ async fn delete_save_core(
         .as_ref()
         .cloned()
         .ok_or_else(GameError::save_discovery_unavailable)?;
-    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
     state.coordinator.publish_persistence_health_for_session(
         session_generation,
         PersistenceHealthView::Pending,
     )?;
-    let writer_persistence = Arc::clone(&persistence);
-    if let Err(error) = state
-        .coordinator
-        .reserve_delete_writer(Box::pin(async move {
-            let result = writer_persistence
-                .run_storage_write_if_session_current(session_generation, move |fs, root| {
-                    delete_slot(fs, root, reference, expectation)
-                })
-                .await;
-            let _ = result_tx.send(result);
-        }))
+    let outcome = match persistence
+        .run_storage_write_if_session_current(session_generation, move |fs, root| {
+            delete_slot(fs, root, reference, expectation)
+        })
+        .await
     {
-        let _ = state.coordinator.publish_persistence_health_for_session(
-            session_generation,
-            PersistenceHealthView::Degraded {
-                diagnostic: error.clone(),
-            },
-        );
-        return Err(error);
-    }
-    let outcome = match result_rx.await {
-        Ok(Ok(outcome)) => outcome,
-        Ok(Err(error)) => {
+        Ok(outcome) => outcome,
+        Err(error) => {
             let _ = state.coordinator.publish_persistence_health_for_session(
                 session_generation,
                 PersistenceHealthView::Degraded {
@@ -1338,9 +1277,6 @@ async fn delete_save_core(
                 },
             );
             return Err(error);
-        }
-        Err(_) => {
-            return Err(classify_dropped_writer(state, session_generation));
         }
     };
     publish_write_outcome_health(state, session_generation, &outcome.cleanup_diagnostic)?;
@@ -2110,14 +2046,12 @@ mod tests {
                 empty_engine_with_scene(investigation_scene_with_intro("scene", vec![]), 1);
             let expected = engine.view().unwrap();
             let session = Arc::new(Mutex::new(AppSession::installed(engine, 8, None)));
-            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-            let coordinator = SaveCoordinator::for_application(
-                Arc::clone(&session),
-                Arc::clone(&replacement_gate),
-            );
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&operation_gate));
             let app = AppState {
                 session,
-                replacement_gate,
+                operation_gate,
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -2176,14 +2110,12 @@ mod tests {
         #[tokio::test]
         async fn exit_lifecycle_getter_event_and_cancel_core_preserve_status_and_errors() {
             let session = Arc::new(Mutex::new(AppSession::empty()));
-            let replacement_gate = Arc::new(tokio::sync::Mutex::new(()));
-            let coordinator = SaveCoordinator::for_application(
-                Arc::clone(&session),
-                Arc::clone(&replacement_gate),
-            );
+            let operation_gate = Arc::new(tokio::sync::Mutex::new(()));
+            let coordinator =
+                SaveCoordinator::for_application(Arc::clone(&session), Arc::clone(&operation_gate));
             let app = AppState {
                 session,
-                replacement_gate,
+                operation_gate,
                 coordinator: coordinator.clone(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -2442,7 +2374,7 @@ mod tests {
             let engine = empty_engine_with_scene(scene, 1);
             AppState {
                 session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -2453,7 +2385,7 @@ mod tests {
         fn mutation_app_with_engine(engine: GameEngine) -> AppState {
             AppState {
                 session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -2493,7 +2425,7 @@ mod tests {
         fn title_app() -> AppState {
             AppState {
                 session: Arc::new(Mutex::new(AppSession::empty())),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: SaveCoordinator::new(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -2670,8 +2602,8 @@ mod tests {
 
             assert!(Arc::ptr_eq(&app.session, &persistence.session));
             assert!(Arc::ptr_eq(
-                &app.replacement_gate,
-                &persistence.replacement_gate
+                &app.operation_gate,
+                &persistence.operation_gate
             ));
             assert!(temporary.path().join("saves").is_dir());
             assert!(temporary.path().join("saves/thumbnails").is_dir());
@@ -3327,7 +3259,7 @@ mod tests {
             assert!(slot_path.exists());
             fs.arm();
 
-            let gate = app.replacement_gate.clone().lock_owned().await;
+            let gate = app.operation_gate.clone().lock_owned().await;
             let replacement_app = Arc::clone(&app);
             let mut replacement = tokio::spawn(async move {
                 replacement_app
@@ -3387,7 +3319,8 @@ mod tests {
 
         #[cfg(feature = "e2e")]
         #[tokio::test(flavor = "multi_thread", worker_threads = 3)]
-        async fn replacement_invalidating_queued_delete_returns_stale_session_generation() {
+        async fn replacement_before_waiting_delete_returns_stale_session_generation_and_preserves_slot(
+        ) {
             let (_guard, resources) = save_capture_fixture_resources();
             let temporary = tempfile::tempdir().unwrap();
             let app = Arc::new(
@@ -3401,29 +3334,29 @@ mod tests {
             start_game_core(&app, GameEngine::new_started(resources.clone()).unwrap())
                 .await
                 .unwrap();
-            let saved = seed_manual(&app, 1, "Must survive queued-delete invalidation").await;
+            let saved = seed_manual(&app, 1, "Must survive replacement before delete").await;
             let save_id = valid_save_id(&saved.saved_slot);
             let slot_path = temporary.path().join("saves/manual-1.json");
             assert!(slot_path.exists());
 
-            // Hold the writer queue active with a placeholder
-            // manual writer that does not hold the replacement gate, so
-            // replacement can proceed while the queued delete sits behind
-            // it in the ordinary queue.
-            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-            let (turn_tx, turn_rx) = tokio::sync::oneshot::channel();
-            app.coordinator
-                .reserve_manual_writer(Box::pin(async move {
-                    let _ = turn_tx.send(());
-                    let _ = release_rx.await;
-                }))
-                .unwrap();
-            turn_rx
-                .await
-                .expect("placeholder writer must become active");
+            let gate = app.operation_gate.clone().lock_owned().await;
+            let replacement_app = Arc::clone(&app);
+            let mut replacement = tokio::spawn(async move {
+                replacement_app
+                    .coordinator
+                    .replace_session_for_e2e(
+                        &replacement_app,
+                        GameEngine::new_started(resources).unwrap(),
+                    )
+                    .await
+            });
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), &mut replacement)
+                    .await
+                    .is_err(),
+                "replacement must be waiting on the held operation gate"
+            );
 
-            // Start delete_save_core — its writer is queued behind the
-            // placeholder because the queue is already running.
             let delete_app = Arc::clone(&app);
             let delete = tokio::spawn(async move {
                 delete_save_core(
@@ -3436,66 +3369,39 @@ mod tests {
                 )
                 .await
             });
-
-            // Deterministically confirm the DeleteSave writer is queued
-            // before replacement runs. `delete_save_core` publishes
-            // `Pending` *before* calling `reserve_delete_writer`, so polling
-            // health alone does not prove the writer is enqueued — a fixed
-            // sleep after `Pending` would let replacement clear an empty
-            // queue and let the delete run through the normal stale-storage
-            // guard later, masking the channel-close branch under test.
-            tokio::time::timeout(
-                Duration::from_secs(2),
-                app.coordinator.wait_for_queued_delete_writer(),
-            )
+            tokio::time::timeout(Duration::from_secs(2), async {
+                loop {
+                    if matches!(
+                        app.coordinator.persistence_health(),
+                        PersistenceHealthView::Pending
+                    ) {
+                        return;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
             .await
-            .expect("delete writer must be queued before replacement");
+            .expect("delete must publish Pending before waiting for the operation gate");
 
-            // Replace the session — this invalidates the queued delete
-            // writer, dropping its future and closing the result channel.
-            let replacement = app
-                .coordinator
-                .replace_session_for_e2e(&app, GameEngine::new_started(resources).unwrap())
+            drop(gate);
+            let replacement = tokio::time::timeout(Duration::from_secs(2), &mut replacement)
                 .await
+                .expect("replacement must complete before the waiting delete")
+                .unwrap()
                 .unwrap();
             assert_eq!(replacement.generation, 2);
 
-            // Await the delete result with a bounded timeout *while the
-            // placeholder writer is still blocked*. The worker cannot drain
-            // the queue, so the only way the delete resolves here is the
-            // `result_rx.await -> Err(_)` channel-close branch: replacement
-            // dropped the queued future. If the placeholder were released
-            // first, the delete could instead run through the normal
-            // stale-storage guard and still return staleSessionGeneration,
-            // hiding the path under test.
-            let delete_error = tokio::time::timeout(
-                Duration::from_secs(2),
-                delete,
-            )
-            .await
-            .expect("invalidated queued delete must resolve while the placeholder writer is still blocked")
-            .unwrap()
-            .unwrap_err();
-            assert_eq!(
-                delete_error.code, "staleSessionGeneration",
-                "invalidated queued delete must return staleSessionGeneration, not saveWriteFailed"
-            );
-
-            // The save slot must not have been deleted.
-            assert!(
-                slot_path.exists(),
-                "invalidated queued delete must not remove the save"
-            );
-
-            // Release the placeholder writer so the worker can drain and
-            // the runtime can shut down cleanly.
-            let _ = release_tx.send(());
-
-            // Replacement health must remain Healthy.
+            let delete_error = tokio::time::timeout(Duration::from_secs(2), delete)
+                .await
+                .expect("waiting delete must complete after replacement")
+                .unwrap()
+                .unwrap_err();
+            assert_eq!(delete_error.code, "staleSessionGeneration");
+            assert!(slot_path.exists(), "stale delete must not remove the save");
             assert_eq!(
                 app.coordinator.persistence_health(),
                 PersistenceHealthView::Healthy,
-                "replacement health must remain Healthy after invalidating queued delete"
+                "replacement health must remain Healthy after stale delete"
             );
         }
 
@@ -4617,7 +4523,7 @@ mod tests {
             engine.inspect_hotspot("collect_sources").unwrap();
             let app = AppState {
                 session: Arc::new(Mutex::new(AppSession::installed(engine, 7, None))),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: SaveCoordinator::with_backend(Arc::new(PassiveBackend)),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -4700,7 +4606,7 @@ mod tests {
         fn centralized_guard_rejects_missing_game_and_busy_persistence() {
             let empty = AppState {
                 session: Arc::new(Mutex::new(AppSession::empty())),
-                replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+                operation_gate: Arc::new(tokio::sync::Mutex::new(())),
                 coordinator: SaveCoordinator::new(),
                 resources_dir: PathBuf::new(),
                 save_root: PathBuf::new(),
@@ -5213,7 +5119,7 @@ mod tests {
     fn app() -> AppState {
         AppState {
             session: Arc::new(Mutex::new(AppSession::installed(engine("old"), 40, None))),
-            replacement_gate: Arc::new(tokio::sync::Mutex::new(())),
+            operation_gate: Arc::new(tokio::sync::Mutex::new(())),
             coordinator: SaveCoordinator::new(),
             resources_dir: PathBuf::new(),
             save_root: PathBuf::new(),
@@ -5247,7 +5153,7 @@ mod tests {
     async fn reset_core_rejects_exit_flush_without_waiting_for_its_gate() {
         let app = app();
         app.session.lock().unwrap().persistence.exit_flush_requested = true;
-        let gate = app.replacement_gate.clone().lock_owned().await;
+        let gate = app.operation_gate.clone().lock_owned().await;
 
         let error = tokio::time::timeout(
             Duration::from_millis(50),
