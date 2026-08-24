@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace Lyra's custom save writer queue/lock graph with one concrete application persistence owner and one async serialization gate, while preserving identity-bound saves, HPA-549 no-thumbnail autosave behavior, HPA-550 dynamic thumbnails, stale-action safety, and exit/load guarantees.
+**Goal:** Replace Lyra's custom save writer queue/lock graph with one concrete application persistence owner and one async serialization gate, while preserving exact autosave identity, HPA-549 no-thumbnail autosave behavior, HPA-550 dynamic thumbnails, stale-action safety, and exit/load guarantees.
 
-**Architecture:** `ApplicationPersistence` becomes the only persistence owner held by `AppState`. One `tokio::sync::Mutex<()>` serializes disk mutation and final session replacement, while autosave debounce and terminal-thumbnail waiting remain outside that gate. Autosave checkpoint capture is bound to the pending `(session_generation, durable_revision)` before staging and revalidated again immediately before commit. `SaveCoordinator`, `WriterQueue`, `replacement_gate`, `AutosaveBackend`, the custom scheduler/fallback runtime, and queue-only counters are deleted rather than renamed.
+**Architecture:** `ApplicationPersistence` becomes the only persistence owner held by `AppState`. One `tokio::sync::Mutex<()>` serializes disk mutation and final session replacement. Autosave debounce and terminal-thumbnail waiting remain outside that gate. Autosave checkpoint capture is bound to the pending `(session_generation, durable_revision)` before staging and the same identity is revalidated immediately before commit. `SaveCoordinator`, `WriterQueue`, `replacement_gate`, `AutosaveBackend`, `CoordinatorFuture`, the custom scheduler/fallback runtime, and queue-only counters are deleted rather than renamed.
 
-**Tech Stack:** Rust, Tokio, Tauri 2 async runtime, existing `SaveFilesystem` / `StagedAtomicWrite` / atomic storage primitives, existing Tauri E2E feature gates, Bun/Turbo repository checks.
+**Tech Stack:** Rust, Tokio, Tauri 2 async runtime, existing `SaveFilesystem` / `StagedAtomicWrite` / atomic slot-write layer, existing Tauri E2E feature gates, Bun/Turbo repository checks.
 
 **Spec:** `docs/superpowers/specs/2026-08-23-hpa-521-single-owner-save-persistence-design.md`
 
@@ -14,35 +14,33 @@
 
 - One Linear ticket and one implementation PR for HPA-521.
 - No save-schema, disk-layout, content-revision, atomic-replacement, or frontend IPC semantic change.
-- HPA-549 stays in force: acquisition acknowledgement remains an ordinary `AutosaveIfAdvancedWithoutThumbnail` gameplay mutation.
-- HPA-550 stays in force: retain dynamic save thumbnails, capture tickets, existing deadlines, submit/failure/read IPC, activity view, and non-blocking capture failure.
+- HPA-549 remains authoritative: acquisition acknowledgement is an ordinary `AutosaveIfAdvancedWithoutThumbnail` gameplay mutation.
+- HPA-550 remains authoritative: retain dynamic save thumbnails, capture tickets, existing deadlines, submit/failure/read IPC, `ThumbnailActivityView`, and non-blocking capture failure.
 - Exactly one async `operation_gate` serializes disk mutation and final session replacement.
 - The 500 ms debounce sleep and terminal-thumbnail wait happen **before** `operation_gate` acquisition.
-- Every autosave/flush captures only the pending operation's exact session generation and durable revision; never bind a newer live checkpoint to an older receipt.
-- Every staged save revalidates that same generation/revision immediately before commit and discards stale staging.
+- Every autosave/flush captures only the requested operation's exact session generation and durable revision; never bind a newer live checkpoint to an older receipt.
+- Every staged autosave/flush revalidates the same generation/revision immediately before commit and discards stale staging.
 - Long filesystem work must not hold the gameplay `AppSession` mutex.
-- Load/Continue are allowed to wait for an in-flight persistence operation; do not preserve the old prepare/replacement overlap with a second gate.
+- Load/Continue may wait for an in-flight persistence operation; do not preserve the old prepare/replacement overlap with a second gate.
 - A waiting delete that becomes stale after replacement must return `staleSessionGeneration` and leave the slot intact.
-- `SaveFilesystem` remains the test seam. Do not introduce a replacement `AutosaveBackend`, repository interface, actor, channel, service container, command bus, DI framework, generic scheduler, or task-spawner trait.
-- Keep `ApplicationExit`; it has meaningful production/test implementations.
-- Preserve current failure-token and discovery-generation semantics unless a field is proven dead by production call-site search.
+- `SaveFilesystem` remains the storage/test seam. Do not introduce a replacement `AutosaveBackend`, repository interface, actor, channel, service container, command bus, DI framework, scheduler, or task-spawner trait.
+- Keep `ApplicationExit`; production `app.exit` and test exit implementations justify the seam.
+- Preserve current failure-token and discovery-generation semantics unless production call-site search proves a field dead.
 - Product-behavior test migration outranks test-line reduction. Production net deletion is expected; test counts are measured separately.
 
 ---
 
 ## Final File Structure
 
-Use one owner with private modules instead of one monolithic `application.rs`:
-
 ```text
 apps/game/src-tauri/src/game/save/
 ├── application/
 │   ├── mod.rs          # ApplicationPersistence + PersistenceState + shared owner surface
-│   ├── autosave.rs     # pending autosave, terminal wait handoff, exact capture, flush, cleanup
-│   ├── tickets.rs      # retained HPA-550 thumbnail tickets/activity
+│   ├── autosave.rs     # pending autosave, readiness, exact capture, flush, commit, cleanup
+│   ├── tickets.rs      # retained HPA-550 thumbnail ticket/activity lifecycle
 │   ├── session.rs      # AppSession/SessionPersistence + transition/install/clear
 │   ├── exit.rs         # Saving/Failed/Retry/Cancel/Without Saving lifecycle
-│   ├── commands.rs     # persistence-specific command cores, no Tauri request decoding
+│   ├── commands.rs     # persistence command cores; no Tauri raw-request decoding
 │   └── tests/
 │       ├── mod.rs
 │       ├── helpers.rs
@@ -60,14 +58,12 @@ apps/game/src-tauri/src/game/save/
 ├── storage.rs
 └── thumbnail.rs
 
-apps/game/src-tauri/src/lib.rs  # setup/event binding/thin Tauri wrappers/gameplay routing
+apps/game/src-tauri/src/lib.rs  # Tauri setup/events/thin command adapters/gameplay routing
 ```
 
-`ApplicationPersistence` is the only application persistence type exposed from `game::save::application`. Private modules do not get separate state owners, gates, or traits.
+`ApplicationPersistence` is the only application persistence type exposed from `game::save::application`. Private modules share its state and gate; they do not define separate owners, services, or traits. If a listed private file stays trivial, fold it into the closest neighboring module rather than preserving a file for ceremony.
 
-If one private file remains trivial after implementation, fold it into its closest neighbor. Do not create a file merely to match the diagram.
-
-Deleted before completion:
+Delete before completion:
 
 ```text
 apps/game/src-tauri/src/game/save/coordinator/mod.rs
@@ -78,9 +74,7 @@ apps/game/src-tauri/src/game/save/coordinator/tests/*
 
 ## Required Existing-Test Migration Ledger
 
-Before deleting `coordinator/tests/debounce.rs`, account for every retained product test below. Prefer keeping the same test name under `application/tests/`; if a name changes, record `old -> new` in the PR closeout. A product rule may be deleted only with an explicit one-line disposition explaining why the rule itself no longer exists.
-
-### HPA-549/HPA-550/autosave/generation behavior
+Before deleting `coordinator/tests/debounce.rs`, account for every retained product test below. Prefer keeping the same name under `application/tests/`. If a name changes, record `old -> new` in the PR closeout. A test may disappear without a replacement only when the **product rule itself** was intentionally removed, with a one-line reason.
 
 ```text
 no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_activity
@@ -98,29 +92,30 @@ stale_notify_durable_commit_is_rejected_before_mutating_coordinator_state
 stale_notify_durable_commit_cannot_supersede_live_replacement_autosave_ticket
 ```
 
-### Replacement vs waiting delete
-
-Existing feature-gated test:
+Also replace the queue-specific feature-gated test:
 
 ```text
 replacement_invalidating_queued_delete_returns_stale_session_generation
 ```
 
-Replace its queue observation with the product-level successor:
+with the product-level successor:
 
 ```text
 replacement_before_waiting_delete_returns_stale_session_generation_and_preserves_slot
 ```
 
-Required assertions:
+Required successor assertions:
 
 ```rust
-assert_eq!(error.code, "staleSessionGeneration");
-assert!(slot_path.exists());
-assert_eq!(persistence.persistence_health(), PersistenceHealthView::Healthy);
+assert_eq!(delete_error.code, "staleSessionGeneration");
+assert!(slot_path.exists(), "stale delete must not remove the save");
+assert_eq!(
+    persistence.persistence_health(),
+    PersistenceHealthView::Healthy,
+);
 ```
 
-No test may keep `wait_for_queued_delete_writer`, queue probes, or a placeholder writer merely to reproduce the old mechanism.
+No migrated test may retain `wait_for_queued_delete_writer`, queue probes, a placeholder writer, scheduler injection, or W/G/S lock labels.
 
 ---
 
@@ -131,15 +126,14 @@ No test may keep `wait_for_queued_delete_writer`, queue probes, or a placeholder
 - Create: `apps/game/src-tauri/src/game/save/application/session.rs`
 - Modify: `apps/game/src-tauri/src/game/save/mod.rs`
 - Modify: `apps/game/src-tauri/src/lib.rs`
-- Test: existing `apps/game/src-tauri/src/game/save/coordinator/tests/storage_integration.rs`
-- Test: existing `apps/game/src-tauri/src/lib.rs` tests
+- Test: existing persistence/storage tests and `lib.rs` tests
 
 **Interfaces:**
 - Consumes current `ApplicationPersistence`, `AppSession`, `SessionPersistence`, `SaveFilesystem`, `SaveDiscoveryContext`, `CapturedCheckpoint`, and `SaveEnvelope`.
-- Produces `game::save::application::ApplicationPersistence` while the old coordinator still delegates behavior during this move-only task.
+- Produces `game::save::application::ApplicationPersistence` while the old `SaveCoordinator` still delegates behavior during this move-only task.
 - Produces `application::session::{AppSession, SessionPersistence, SessionTransitionIdentity}` as the final home for persistence-facing session metadata.
 
-- [ ] **Step 1: Record the pinned baseline without turning test deletion into a target**
+- [ ] **Step 1: Record the pinned baseline without making test deletion a target**
 
 Run on the HPA-521 base commit:
 
@@ -150,7 +144,7 @@ wc -l apps/game/src-tauri/src/lib.rs
 sed -n '1,2067p' apps/game/src-tauri/src/lib.rs | wc -l
 ```
 
-`2067` is the production/setup prefix before the current top-level `#[cfg(test)] mod tests` on the pinned base. Record:
+Record in the PR description:
 
 ```text
 coordinator production lines
@@ -159,11 +153,11 @@ full lib.rs lines
 pre-top-level-test lib.rs lines
 ```
 
-Do not require the final test total to decrease by a fixed percentage.
+`2067` is the pinned-base line before the current top-level `#[cfg(test)] mod tests`. Do not require final test lines to shrink by a fixed percentage.
 
 - [ ] **Step 2: Move `ApplicationPersistence` storage/discovery behavior to `application/mod.rs` without semantic change**
 
-Move the current production fields and methods from `lib.rs`, including:
+Move the current fields:
 
 ```rust
 pub(crate) struct ApplicationPersistence {
@@ -177,15 +171,24 @@ pub(crate) struct ApplicationPersistence {
 }
 ```
 
-Move `discover`, `availability_error`, `next_saved_at`, `envelope`, `run_storage_write_if_session_current`, `commit_current`, and the temporary `impl AutosaveBackend for ApplicationPersistence` unchanged.
+Move these current methods unchanged:
 
-- [ ] **Step 3: Move `AppSession` / `SessionPersistence` to `application/session.rs`**
+```text
+discover
+availability_error
+next_saved_at
+envelope
+run_storage_write_if_session_current
+commit_current
+```
 
-Move their existing fields/behavior without changing generation, written-revision, flush-baseline, autosave-target, or exit-flush semantics.
+Keep the existing `impl AutosaveBackend for ApplicationPersistence` temporarily in Task 1. This task is only a module move.
 
-Keep call sites compiling through imports; do not redesign transition identity yet.
+- [ ] **Step 3: Move `AppSession`, `SessionPersistence`, and `SessionTransitionIdentity` to `application/session.rs`**
 
-- [ ] **Step 4: Export the module and update imports**
+Preserve generation, flush-baseline, written-revision, autosave-target, and exit-flush semantics exactly. Update imports only.
+
+- [ ] **Step 4: Export the module and remove the local `lib.rs` definitions**
 
 In `save/mod.rs`:
 
@@ -193,9 +196,15 @@ In `save/mod.rs`:
 pub(crate) mod application;
 ```
 
-In `lib.rs` import the moved owner/session types. Keep command orchestration in place for Task 1.
+In `lib.rs`:
 
-- [ ] **Step 5: Prove the move is neutral on both Rust feature surfaces**
+```rust
+use game::save::application::{ApplicationPersistence, AppSession};
+```
+
+Keep persistence command cores in `lib.rs` for this task.
+
+- [ ] **Step 5: Verify the move on both Rust feature surfaces**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml
@@ -215,7 +224,7 @@ git commit -m "refactor(save): extract application persistence owner"
 
 ---
 
-### Task 2: Introduce the one operation gate and delete WriterQueue without changing capture identity
+### Task 2: Introduce one operation gate and delete `WriterQueue`
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/save/application/mod.rs`
@@ -224,31 +233,48 @@ git commit -m "refactor(save): extract application persistence owner"
 - Create: `apps/game/src-tauri/src/game/save/application/tests/serialization.rs`
 - Modify: `apps/game/src-tauri/src/game/save/coordinator/mod.rs`
 - Modify: `apps/game/src-tauri/src/lib.rs`
-- Delete after green replacement coverage: `apps/game/src-tauri/src/game/save/coordinator/tests/writer.rs`
+- Delete after green behavior coverage: `apps/game/src-tauri/src/game/save/coordinator/tests/writer.rs`
 
 **Interfaces:**
-- `ApplicationPersistence` gains exactly one:
+
+`ApplicationPersistence` gains exactly one serialization primitive:
 
 ```rust
-operation_gate: Arc<tokio::sync::Mutex<()>>
+operation_gate: Arc<tokio::sync::Mutex<()>>,
 ```
 
-- `application/autosave.rs` owns direct persistence-operation code that formerly needed `WriterQueue`.
-- The existing HPA-550 ticket state still lives in the old coordinator until Task 5; this task changes serialization, not product ownership.
+Add these concrete methods during Task 2:
 
-- [ ] **Step 1: Reuse the real staged-write test seam instead of creating a new backend fake**
+```rust
+impl ApplicationPersistence {
+    fn ensure_session_generation(&self, expected: u64) -> Result<(), GameError>;
 
-Move the minimum useful parts of these existing helpers into `application/tests/helpers.rs`:
+    async fn write_manual_current(
+        &self,
+        session_generation: u64,
+        request: SlotWriteRequest,
+    ) -> Result<SlotWriteOutcome, GameError>;
+
+    async fn delete_current(
+        &self,
+        session_generation: u64,
+        reference: SaveSlotRef,
+        expectation: OccupiedSlotExpectation,
+    ) -> Result<SlotDeleteOutcome, GameError>;
+}
+```
+
+- [ ] **Step 1: Extract the real staged-write filesystem helper instead of creating a new backend fake**
+
+Move the minimum useful behavior from the current storage integration helpers into `application/tests/helpers.rs`:
 
 ```text
-coordinator/tests/storage_integration.rs::TrackingFilesystem
-coordinator/tests/storage_integration.rs::TrackingStagedWrite
-StorageBackend's pause-after-prepare technique
+TrackingFilesystem
+TrackingStagedWrite
+pause-after-prepare/stage notification pattern
 ```
 
-The helper must still delegate to `ProductionSaveFilesystem` and wrap the real `StagedAtomicWrite`.
-
-Extend test-only state with:
+The helper must delegate to `ProductionSaveFilesystem` and wrap real `StagedAtomicWrite` values. Add only these test controls:
 
 ```rust
 active_mutations: AtomicUsize,
@@ -258,11 +284,11 @@ stage_reached: Notify,
 stage_release: Notify,
 ```
 
-Do **not** port `AutosaveBackend`, `writer`, `gate`, `gameplay_lock`, phase labels, or `W/G/S` assertions.
+Do not port `AutosaveBackend`, `StorageBackend.writer`, `StorageBackend.gate`, `gameplay_lock`, phase labels, or W/G/S assertions.
 
-- [ ] **Step 2: Write RED behavior tests for single serialization and gameplay-session responsiveness**
+- [ ] **Step 2: Write RED serialization and session-responsiveness tests**
 
-Add:
+Create:
 
 ```rust
 #[tokio::test]
@@ -272,56 +298,93 @@ async fn storage_mutations_share_one_operation_gate()
 async fn blocked_staged_write_does_not_hold_gameplay_session_mutex()
 ```
 
-The first starts two real application persistence mutations through the filesystem helper and requires:
+The first starts two actual application persistence mutations and asserts:
 
 ```rust
 assert_eq!(fs.max_concurrent_mutations(), 1);
 ```
 
-The second pauses after staging and requires:
+The second pauses filesystem staging and asserts:
 
 ```rust
 assert!(session.try_lock().is_ok());
 ```
 
-Run the focused tests and require RED because the new operation gate is not wired yet.
+Run:
 
-- [ ] **Step 3: Add one shared `operation_gate` to `ApplicationPersistence`**
-
-All application persistence clones share the same `Arc<tokio::sync::Mutex<()>>`.
-
-Do not add a generic `with_operation_gate` abstraction unless it materially shortens code; explicit lock sites are acceptable.
-
-- [ ] **Step 4: Route manual save and delete directly through the gate**
-
-Replace:
-
-```text
-publish Pending
--> reserve_manual_writer/reserve_delete_writer
--> oneshot result
--> await queue worker
+```bash
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml application::tests::serialization -- --nocapture
 ```
 
-with direct async operation:
+Expected before the gate is wired: at least the serialization test fails.
+
+- [ ] **Step 3: Add `operation_gate` and exact generation helper**
+
+Implement:
 
 ```rust
-let _operation = persistence.operation_gate.lock().await;
-persistence.ensure_session_generation(session_generation)?;
-let outcome = /* existing prepare+commit or delete_slot operation */;
+fn ensure_session_generation(&self, expected: u64) -> Result<(), GameError> {
+    let session = self.session.lock().map_err(|_| GameError::unavailable())?;
+    session.ensure_persistence_available()?;
+    if session.persistence.generation != expected {
+        return Err(GameError::stale_session_generation());
+    }
+    Ok(())
+}
 ```
 
-The generation check occurs **after gate acquisition and before storage mutation**.
+Construct one shared `Arc<tokio::sync::Mutex<()>>` per `ApplicationPersistence`.
 
-This is mandatory for delete: a replacement that wins the gate first makes a waiting delete stale before `delete_slot` runs.
+- [ ] **Step 4: Replace manual-save queue reservation with a direct gated storage method**
 
-- [ ] **Step 5: Route ready autosave and blocking flush through the same gate**
+Implement:
 
-Important ordering contract:
+```rust
+async fn write_manual_current(
+    &self,
+    session_generation: u64,
+    request: SlotWriteRequest,
+) -> Result<SlotWriteOutcome, GameError> {
+    let _operation = self.operation_gate.lock().await;
+    self.ensure_session_generation(session_generation)?;
+    let prepared = prepare_slot_write(self.fs.as_ref(), &self.root, request)?;
+    commit_prepared_slot_write(self.fs.as_ref(), &self.root, prepared)
+}
+```
+
+Change `save_manual_core` to call `write_manual_current` and keep its existing health publication, rediscovery, and saved-ID validation. Remove `reserve_manual_writer` and its oneshot handoff.
+
+- [ ] **Step 5: Replace delete queue reservation with a direct gated storage method**
+
+Implement:
+
+```rust
+async fn delete_current(
+    &self,
+    session_generation: u64,
+    reference: SaveSlotRef,
+    expectation: OccupiedSlotExpectation,
+) -> Result<SlotDeleteOutcome, GameError> {
+    let _operation = self.operation_gate.lock().await;
+    self.ensure_session_generation(session_generation)?;
+    delete_slot(
+        self.fs.as_ref(),
+        &self.root,
+        reference,
+        expectation,
+    )
+}
+```
+
+Change `delete_save_core` to call `delete_current`, then preserve current health publication and rediscovery. Remove `reserve_delete_writer`, `wait_for_queued_delete_writer`, and the delete-enqueued notification.
+
+- [ ] **Step 6: Route ready autosave and blocking flush through the same gate without moving waits under it**
+
+The required flow is fixed:
 
 ```text
 debounce sleep                       NO GATE
-wait for terminal thumbnail/deadline NO GATE
+terminal thumbnail/deadline wait     NO GATE
 acquire operation_gate
 pending identity re-check
 exact generation/revision capture
@@ -330,35 +393,45 @@ same generation/revision re-check
 commit or discard
 ```
 
-Do not call a helper that can sleep for debounce or thumbnail readiness while holding the gate.
+For flush, acquire `operation_gate` only after the caller has decided which exact revision must be written. Do not request or wait for a new thumbnail under the gate.
 
-For blocking flush, acquire the gate only when ready to observe/write the required revision. Do not request or wait for new thumbnail capture under the gate.
+- [ ] **Step 7: Preserve exact generation/revision capture before staging**
 
-- [ ] **Step 6: Preserve identity-bound capture while removing the queue**
-
-Before `capture_checkpoint(engine)` for pending `(G, R)`:
+For pending autosave `(G, R)`, use this shape before `capture_checkpoint`:
 
 ```rust
-let session = self.session.lock().map_err(|_| GameError::unavailable())?;
-let engine = session.engine.as_ref().ok_or_else(GameError::game_not_started)?;
-if session.persistence.generation != pending.session_generation
-    || engine.durable_revision() != pending.durable_revision
-{
-    return Err(GameError::stale_session_generation());
-}
-let checkpoint = capture_checkpoint(engine)?;
-drop(session);
+let (checkpoint, content_revision) = {
+    let session = self.session.lock().map_err(|_| GameError::unavailable())?;
+    let engine = session
+        .engine
+        .as_ref()
+        .ok_or_else(GameError::game_not_started)?;
+    if session.persistence.generation != pending.session_generation
+        || engine.durable_revision() != pending.durable_revision
+    {
+        return Err(GameError::stale_session_generation());
+    }
+    (
+        capture_checkpoint(engine)?,
+        self.discovery.definitions.content_revision().to_owned(),
+    )
+};
 ```
 
-After staging and immediately before `commit_prepared_slot_write`, lock only long enough to revalidate the **same** `G/R`. If stale, call `discard_prepared_slot_write` and do not publish a successful receipt.
+After `prepare_slot_write`, lock the session only long enough to compare the same `G/R` immediately before `commit_prepared_slot_write`. On mismatch:
 
-Do not replace this with `capture current checkpoint` after gate acquisition.
+```rust
+discard_prepared_slot_write(prepared)?;
+return Err(GameError::stale_session_generation());
+```
 
-- [ ] **Step 7: Delete writer-queue production machinery**
+Do not replace this with “capture current checkpoint after acquiring the gate”.
+
+- [ ] **Step 8: Delete writer-queue production machinery**
 
 Delete:
 
-```rust
+```text
 WriterJobClass
 QueuedWriterJob
 WriterQueueState
@@ -370,9 +443,9 @@ wait_for_queued_delete_writer
 enqueue_writer_probe
 ```
 
-Delete `coordinator/tests/writer.rs` only after Steps 2-6 are green.
+Delete `coordinator/tests/writer.rs` after Steps 2-7 are green.
 
-- [ ] **Step 8: Verify Task 2**
+- [ ] **Step 9: Verify Task 2**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml application::tests::serialization
@@ -380,7 +453,7 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
 ```
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add -A apps/game/src-tauri/src/game/save apps/game/src-tauri/src/lib.rs
@@ -389,36 +462,58 @@ git commit -m "refactor(save): serialize persistence through one gate"
 
 ---
 
-### Task 3: Re-home the autosave/retry/thumbnail-wait product matrix before deleting debounce internals
+### Task 3: Re-home autosave/retry/thumbnail-wait behavior before deleting debounce internals
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/save/application/autosave.rs`
-- Create/Modify: `apps/game/src-tauri/src/game/save/application/tests/autosave.rs`
+- Create: `apps/game/src-tauri/src/game/save/application/tests/autosave.rs`
 - Modify: `apps/game/src-tauri/src/game/save/application/tests/helpers.rs`
 - Migrate from: `apps/game/src-tauri/src/game/save/coordinator/tests/debounce.rs`
 
 **Interfaces:**
-- Production scheduling decomposes naturally into:
+
+These method names are fixed for this plan:
 
 ```rust
-fn schedule_autosave(&self, pending: PendingAutosave);
-async fn await_pending_autosave(self: Arc<Self>, pending: PendingAutosave);
-async fn execute_ready_autosave(&self, pending: PendingAutosave, thumbnail: CaptureTerminalResult);
+impl ApplicationPersistence {
+    fn schedule_autosave(self: &Arc<Self>, pending: PendingAutosave);
+
+    async fn await_pending_autosave(self: Arc<Self>, pending: PendingAutosave);
+
+    async fn execute_ready_autosave(
+        &self,
+        pending: PendingAutosave,
+        thumbnail: CaptureTerminalResult,
+    );
+}
 ```
 
-Names may vary, but keep the boundary: `await_pending_autosave` owns debounce + thumbnail wait; `execute_ready_autosave` acquires `operation_gate` and performs the exact-identity write.
+Ownership boundary:
 
-- [ ] **Step 1: Preserve deterministic timing tests without a scheduler trait**
+- `schedule_autosave` performs only the concrete Tauri spawn.
+- `await_pending_autosave` owns debounce sleep, pending checks, and terminal-thumbnail wait; it does **not** acquire `operation_gate` until it calls `execute_ready_autosave`.
+- `execute_ready_autosave` acquires `operation_gate` and performs the exact-identity storage path from Task 2.
 
-Production `schedule_autosave` will eventually call Tauri spawn, but deterministic tests should directly await `await_pending_autosave` or `execute_ready_autosave` inside their `#[tokio::test]` runtime.
+- [ ] **Step 1: Preserve deterministic time tests without a scheduler trait**
 
-This lets `start_paused = true` continue to control `tokio::time` **without** assuming Tauri's singleton runtime shares the test clock.
+Production scheduling:
 
-Do not create `TaskSpawner`, `CoordinatorTaskScheduler`, or a test scheduler.
+```rust
+fn schedule_autosave(self: &Arc<Self>, pending: PendingAutosave) {
+    let persistence = Arc::clone(self);
+    tauri::async_runtime::spawn(async move {
+        persistence.await_pending_autosave(pending).await;
+    });
+}
+```
 
-- [ ] **Step 2: Migrate every named test in the required ledger**
+Deterministic `#[tokio::test(start_paused = true)]` tests call `await_pending_autosave` or `execute_ready_autosave` directly on their own Tokio runtime. They do not invoke `schedule_autosave`.
 
-Move/rewrite these exact behaviors under `application/tests/autosave.rs`:
+Do not create `TaskSpawner`, `CoordinatorTaskScheduler`, or another test scheduler.
+
+- [ ] **Step 2: Migrate every named product test from the ledger**
+
+Recreate each exact behavior under `application/tests/autosave.rs`:
 
 ```text
 no_thumbnail_analysis_burst_writes_latest_revision_without_thumbnail_activity
@@ -436,43 +531,60 @@ stale_notify_durable_commit_is_rejected_before_mutating_coordinator_state
 stale_notify_durable_commit_cannot_supersede_live_replacement_autosave_ticket
 ```
 
-Each test must assert observable writes, current pending identity, health/activity state, or returned ticket behavior. No test may assert a `WriterJobClass`, queued order, or scheduler count.
+Assertions must use observable write receipts, pending identity, health/activity state, or returned ticket behavior. No test may assert queue class/order or scheduler count.
 
-- [ ] **Step 3: Pin the gate timing explicitly**
+- [ ] **Step 3: Pin gate timing with a focused paused-time test**
 
-Add a focused test:
+Add:
 
 ```rust
 #[tokio::test(start_paused = true)]
 async fn debounce_and_thumbnail_wait_do_not_hold_operation_gate()
 ```
 
-Arrange a pending autosave whose thumbnail is not terminal. While directly polling/awaiting the pre-gate readiness path, prove another operation can acquire `operation_gate`.
+Arrange a pending autosave with a nonterminal ticket. Drive `await_pending_autosave` on the current test runtime. Before terminalizing the ticket, assert another task can acquire:
 
-Then terminalize the ticket and prove the ready write acquires the gate only for storage work.
+```rust
+let guard = persistence
+    .operation_gate
+    .try_lock()
+    .expect("thumbnail wait must not hold operation gate");
+drop(guard);
+```
 
-- [ ] **Step 4: Keep one real scheduling smoke; delete the portable-thread product**
+Terminalize the ticket, advance to readiness, and prove the actual filesystem mutation is serialized by the Task 2 helper.
 
-Add at most one non-paused test using the production schedule entry point:
+- [ ] **Step 4: Keep one real-time production-spawn smoke**
+
+Add one non-paused test:
 
 ```rust
 #[tokio::test]
 async fn scheduled_debounce_eventually_runs_ready_autosave()
 ```
 
-Use a bounded timeout longer than `AUTOSAVE_DEBOUNCE` and a notification from the filesystem helper.
+Call `schedule_autosave` once, terminalize its ticket, and await a filesystem-helper notification with:
 
-Delete `plain_thread_issues_a_ticket_and_eventually_runs_the_debounced_writer` and scheduler-rejection tests. The fallback thread/runtime is not a product guarantee.
-
-- [ ] **Step 5: Do not delete `debounce.rs` yet unless the migration ledger is complete**
-
-At this checkpoint, produce a PR comment/table with one row per required old test:
-
-```text
-old test | new file/test | kept/replaced/deleted-with-product-reason
+```rust
+let observed = tokio::time::timeout(
+    AUTOSAVE_DEBOUNCE + Duration::from_secs(2),
+    fs.wait_for_first_mutation(),
+)
+.await;
+assert!(observed.is_ok());
 ```
 
-Only rows with an explicit disposition may disappear from the old file.
+Delete the old plain-thread fallback-runtime test and all scheduler-rejection tests. Do not add another runtime abstraction.
+
+- [ ] **Step 5: Publish the migration ledger before deleting old debounce tests**
+
+Add a PR comment table:
+
+```text
+old test | new file/test | KEPT / RENAMED / DELETED PRODUCT RULE
+```
+
+Every required ledger row must have an explicit disposition before the old test is removed.
 
 - [ ] **Step 6: Verify Task 3**
 
@@ -491,33 +603,46 @@ git commit -m "test(save): preserve autosave behavior across queue removal"
 
 ---
 
-### Task 4: Use the same gate for final replacement and cleanup; preserve the stale-delete slot invariant
+### Task 4: Use the same gate for final replacement and cleanup; preserve stale-delete behavior
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/save/application/mod.rs`
 - Modify: `apps/game/src-tauri/src/game/save/application/session.rs`
 - Modify: `apps/game/src-tauri/src/game/save/application/autosave.rs`
-- Create/Modify: `apps/game/src-tauri/src/game/save/application/tests/session.rs`
-- Create/Modify: `apps/game/src-tauri/src/game/save/application/tests/serialization.rs`
+- Create: `apps/game/src-tauri/src/game/save/application/tests/session.rs`
+- Modify: `apps/game/src-tauri/src/game/save/application/tests/serialization.rs`
 - Migrate from: `apps/game/src-tauri/src/game/save/coordinator/tests/lock_order.rs`
 - Migrate from: `apps/game/src-tauri/src/lib.rs` feature-gated replacement/delete test
 - Delete after migration: `apps/game/src-tauri/src/game/save/coordinator/tests/lock_order.rs`
 
 **Interfaces:**
-- Final install/clear acquires `ApplicationPersistence::operation_gate`.
-- `replacement_gate` is deleted.
-- Cleanup state becomes one current diagnostic; cleanup-attempt ownership ordering disappears.
 
-- [ ] **Step 1: Migrate real staged-write stale-discard coverage using the extracted filesystem helper**
+Final replacement methods live on `ApplicationPersistence`:
 
-Create/retain:
+```rust
+async fn install_session_if_current(
+    &self,
+    engine: GameEngine,
+    autosave_target: Option<SaveSlotRef>,
+    expected: SessionTransitionIdentity,
+) -> Result<GameStateView, GameError>;
+
+async fn clear_session_if_current(
+    &self,
+    expected: SessionTransitionIdentity,
+) -> Result<u64, GameError>;
+```
+
+- [ ] **Step 1: Add real staged-write stale-discard coverage**
+
+Add:
 
 ```rust
 #[tokio::test]
 async fn stale_prepared_autosave_never_installs_after_revision_changes_during_staging()
 ```
 
-Pause after a real staged write has been prepared. Advance the live engine durable revision without holding the persistence gate. Release staging.
+Pause after a real staged write is prepared. Advance the live engine durable revision without holding `operation_gate`, then release staging.
 
 Assert:
 
@@ -527,39 +652,43 @@ assert_eq!(fs.discarded_count(), 1);
 assert!(persistence.last_successful_write().is_none());
 ```
 
-This proves the second generation/revision fence rather than queue order.
+- [ ] **Step 2: Replace final `replacement_gate` with `operation_gate`**
 
-- [ ] **Step 2: Replace final `replacement_gate` use with `operation_gate`**
-
-Detached candidate creation remains before the gate.
-
-Final install:
+Detached restore construction remains before this method. Implement final install as:
 
 ```rust
-let _operation = self.operation_gate.lock().await;
-let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
-if session.persistence.generation != expected.generation
-    || session.durable_revision() != expected.durable_revision
-{
-    return Err(GameError::stale_save_selection());
+async fn install_session_if_current(
+    &self,
+    engine: GameEngine,
+    autosave_target: Option<SaveSlotRef>,
+    expected: SessionTransitionIdentity,
+) -> Result<GameStateView, GameError> {
+    let view = engine.view()?;
+    let _operation = self.operation_gate.lock().await;
+    let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
+    session.ensure_persistence_available()?;
+    if session.persistence.generation != expected.generation
+        || session.durable_revision() != expected.durable_revision
+    {
+        return Err(GameError::stale_save_selection());
+    }
+    let generation = self.next_session_generation()?;
+    let autosave_target = match autosave_target {
+        Some(target @ SaveSlotRef::Auto { .. }) => Some(target),
+        Some(SaveSlotRef::Manual { .. }) | None => None,
+    };
+    *session = AppSession::installed(engine, generation, autosave_target);
+    Ok(view)
 }
-let generation = self.next_session_generation()?;
-*session = AppSession::installed(engine, generation, autosave_target);
 ```
+
+Implement `clear_session_if_current` with the same gate + expected identity check before replacing the session with `AppSession::empty_at_generation(generation)`.
 
 Remove `replacement_gate` from `AppState`, `ApplicationPersistence`, constructors, and tests.
 
-Accept that Load/Continue now wait for in-flight disk work.
+- [ ] **Step 3: Migrate the waiting-delete replacement invariant without queue mechanics**
 
-- [ ] **Step 3: Preserve the waiting-delete replacement behavior without queue mechanics**
-
-Migrate:
-
-```text
-replacement_invalidating_queued_delete_returns_stale_session_generation
-```
-
-to:
+Create the feature-gated test:
 
 ```rust
 #[cfg(feature = "e2e")]
@@ -567,51 +696,50 @@ to:
 async fn replacement_before_waiting_delete_returns_stale_session_generation_and_preserves_slot()
 ```
 
-Use the filesystem pause hook to make delete wait for `operation_gate`, allow replacement to win the gate, then release the delete.
+Use the filesystem helper to hold the operation gate with one persistence mutation. Start delete so it waits. Release the first operation, make replacement acquire and complete before delete reacquires, then allow delete to continue.
 
-Assert exactly:
+Assert:
 
 ```rust
 assert_eq!(delete_error.code, "staleSessionGeneration");
 assert!(slot_path.exists(), "stale delete must not remove the save");
-assert_eq!(persistence.persistence_health(), PersistenceHealthView::Healthy);
+assert_eq!(
+    persistence.persistence_health(),
+    PersistenceHealthView::Healthy,
+);
 ```
 
-Do not inspect queue presence.
+Do not inspect queued work.
 
-- [ ] **Step 4: Migrate only useful lock-order behaviors**
+- [ ] **Step 4: Migrate only behavior from `lock_order.rs`**
 
 Keep application-level tests for:
 
 ```text
-session generations are monotonic
+session generations increment monotonically
 only auto slots become autosave targets
-blocked storage leaves AppSession mutex responsive
-stale prepared data is discarded after revision/session identity changes
+blocked staged I/O leaves AppSession mutex available
+stale staged data is discarded after revision/session identity changes
 ```
 
-Delete tests whose only assertion is that a waiter owns neither named `G/S/W` lock.
+Delete tests whose only assertion is which named G/S/W lock a waiter owns.
 
 - [ ] **Step 5: Collapse cleanup ordering**
 
 Delete:
 
-```rust
+```text
 CleanupOwner
 next_cleanup_attempt
 minimum_cleanup_attempt
 cleanup_owner_replaces
 cleanup_success_resolves
-WriterJobClass::OrphanCleanup // if any transitional reference remains
+WriterJobClass::OrphanCleanup
 ```
 
-Keep one current cleanup diagnostic. Run cleanup under `operation_gate` at startup and retry it after a later successful persistence operation while the diagnostic remains.
+Keep one current cleanup diagnostic. Run `clean_orphaned_save_files` under `operation_gate` at startup and retry it after a later successful persistence operation while the diagnostic remains. Do not create a cleanup job identity.
 
-Do not create a cleanup worker identity.
-
-- [ ] **Step 6: Delete `lock_order.rs` after its product assertions are green**
-
-Run:
+- [ ] **Step 6: Delete `lock_order.rs` after migrated behavior is green**
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml application::tests::session
@@ -632,23 +760,23 @@ git commit -m "refactor(save): unify replacement and cleanup ownership"
 
 **Files:**
 - Modify: `apps/game/src-tauri/src/game/save/application/mod.rs`
-- Modify/Create: `apps/game/src-tauri/src/game/save/application/tickets.rs`
-- Modify/Create: `apps/game/src-tauri/src/game/save/application/exit.rs`
-- Modify/Create: `apps/game/src-tauri/src/game/save/application/commands.rs`
+- Create: `apps/game/src-tauri/src/game/save/application/tickets.rs`
+- Create: `apps/game/src-tauri/src/game/save/application/exit.rs`
+- Create: `apps/game/src-tauri/src/game/save/application/commands.rs`
 - Modify: `apps/game/src-tauri/src/game/save/application/autosave.rs`
 - Modify: `apps/game/src-tauri/src/game/save/mod.rs`
 - Modify: `apps/game/src-tauri/src/lib.rs`
-- Move/rewrite: remaining `apps/game/src-tauri/src/game/save/coordinator/tests/*.rs`
+- Move/rewrite: remaining coordinator tests
 - Delete: `apps/game/src-tauri/src/game/save/coordinator/mod.rs`
 
 **Interfaces:**
 - Final owner: `ApplicationPersistence`.
-- Final spawn path: direct `tauri::async_runtime::spawn` in production scheduling entry points.
-- No `SaveCoordinator`, `AutosaveBackend`, `CoordinatorFuture`, `CoordinatorTaskScheduler`, or `PortableCoordinatorTaskScheduler`.
+- Final timer/continuation spawn: direct `tauri::async_runtime::spawn`.
+- Final `AppState` has `session`, `persistence`, and `resources_dir`; no `coordinator` or `replacement_gate`.
 
-- [ ] **Step 1: Move surviving state into `PersistenceState`**
+- [ ] **Step 1: Move only behavior-backed coordinator state into `PersistenceState`**
 
-Final state shape includes only behavior-backed fields:
+Final state:
 
 ```rust
 struct PersistenceState {
@@ -682,7 +810,9 @@ cleanup attempt counters/owners
 scheduler state/failure injection
 ```
 
-- [ ] **Step 2: Match pending autosave by product identity instead of serial**
+- [ ] **Step 2: Replace serial-only pending matching with retained product identity**
+
+Implement:
 
 ```rust
 fn pending_matches(state: &PersistenceState, pending: &PendingAutosave) -> bool {
@@ -694,11 +824,11 @@ fn pending_matches(state: &PersistenceState, pending: &PendingAutosave) -> bool 
 }
 ```
 
-This is not a new ticket protocol: retained HPA-550 tickets are already UUIDs.
+Retained HPA-550 tickets are UUIDs, so this removes a redundant queue-era serial instead of creating a new protocol.
 
-- [ ] **Step 3: Delete `AutosaveBackend` / `CoordinatorFuture` and use concrete storage methods**
+- [ ] **Step 3: Delete `AutosaveBackend` and `CoordinatorFuture`**
 
-Move current capture/register/prepare/commit logic into private methods on the application owner/autosave module using:
+Move the current capture/register/prepare/commit behavior into private `ApplicationPersistence` / `autosave.rs` methods that call these concrete seams directly:
 
 ```text
 capture_checkpoint
@@ -709,35 +839,44 @@ discard_prepared_slot_write
 SaveFilesystem
 ```
 
-Tests use the `SaveFilesystem` helper from Task 2. Do not create another backend trait.
+Delete:
 
-- [ ] **Step 4: Move retained thumbnail ticket behavior to `tickets.rs`**
+```text
+AutosaveBackend
+CoordinatorFuture
+with_backend
+with_backend_for_application
+```
 
-Preserve current semantics for:
+Tests use the Task 2 filesystem helper only.
+
+- [ ] **Step 4: Move retained thumbnail-ticket state to `tickets.rs` without changing behavior**
+
+Preserve tests/behavior for:
 
 ```text
 purpose matching
 stale ticket rejection
-existing deadline
+original deadline
 intent supersession
-terminal available/unavailable state
+available/unavailable terminal state
 submit/report failure
 thumbnail activity publication
 ```
 
-Keep ticket state outside `operation_gate` until the ready persistence operation consumes the result.
+Ticket state is protected by `PersistenceState` and is not held behind `operation_gate` while waiting for frontend capture.
 
-- [ ] **Step 5: Move exit behavior to `exit.rs`; keep `ApplicationExit`**
+- [ ] **Step 5: Move exit lifecycle to `exit.rs`; keep `ApplicationExit`**
 
-Preserve Saving/Failed/Retry/Cancel/Without Saving behavior and failure-token checks.
+Preserve Saving/Failed/Retry/Cancel/Exit Without Saving behavior and current failure-token checks. Remove general writer/replacement lock-order commentary.
 
-Remove general lock-order commentary/state that only existed for writer/replacement gates. If a tiny synchronous exit transition mutex is still required, document it as exit state protection only; it must not serialize disk work.
+If an exit-specific synchronous transition mutex remains necessary for atomic Idle/Failed -> Saving state changes, name and document it as exit-state protection only. It must not serialize disk work.
 
-- [ ] **Step 6: Delete scheduler abstractions; production calls Tauri spawn directly**
+- [ ] **Step 6: Delete all scheduler abstractions; production calls Tauri spawn directly**
 
 Delete:
 
-```rust
+```text
 CoordinatorTask
 CoordinatorTaskScheduler
 PortableCoordinatorTaskScheduler
@@ -748,17 +887,9 @@ lyra-save-coordinator thread
 fail_next_schedule
 ```
 
-Production timer/continuation sites use:
+The production debounce entry point is the fixed `schedule_autosave` implementation from Task 3. Ticket-expiry and exit continuations also call `tauri::async_runtime::spawn` directly.
 
-```rust
-tauri::async_runtime::spawn(async move {
-    persistence.await_pending_autosave(pending).await;
-});
-```
-
-and equivalent direct spawn for ticket expiry/exit continuation.
-
-Do not modify deterministic tests to depend on this singleton runtime; they call the private async behavior directly as established in Task 3.
+Do not change deterministic tests to use the Tauri singleton runtime; they keep calling private async behavior directly.
 
 - [ ] **Step 7: Move persistence command cores to `commands.rs`**
 
@@ -776,11 +907,15 @@ persistence failure cancel
 exit retry/cancel/without-saving core
 ```
 
-Keep raw Tauri IPC request decoding and thin `#[tauri::command]` wrappers in `lib.rs`.
+Keep raw Tauri request/header/body decoding and thin `#[tauri::command]` wrappers in `lib.rs`.
 
-Keep generic `run_gameplay_mutation` / `MutationPersistencePolicy` in `lib.rs` if still shared by gameplay commands. Acquisition acknowledgement must continue to select `AutosaveIfAdvancedWithoutThumbnail`.
+Keep generic `run_gameplay_mutation` and `MutationPersistencePolicy` in `lib.rs` when still shared by gameplay commands. Acquisition acknowledgement must continue to use:
 
-- [ ] **Step 8: Delete `SaveCoordinator` and update `AppState`**
+```rust
+MutationPersistencePolicy::AutosaveIfAdvancedWithoutThumbnail
+```
+
+- [ ] **Step 8: Delete `SaveCoordinator` and reduce `AppState`**
 
 Final state:
 
@@ -792,9 +927,7 @@ pub struct AppState {
 }
 ```
 
-Remove `save_root` from `AppState` if it has no non-persistence production consumer.
-
-Remove `pub(crate) mod coordinator;` and delete the coordinator production file after all imports compile.
+Remove `save_root` from `AppState` if its production call-site search shows only persistence ownership. Remove `pub(crate) mod coordinator;` from `save/mod.rs` and delete the coordinator production file once compilation succeeds.
 
 - [ ] **Step 9: Verify owner collapse**
 
@@ -812,13 +945,13 @@ git commit -m "refactor(save): collapse persistence into application owner"
 
 ---
 
-### Task 6: Complete the behavior-test inventory, verify both Rust feature surfaces, and close out production deletion
+### Task 6: Complete the behavior-test inventory and close out production deletion
 
 **Files:**
 - Modify/create: `apps/game/src-tauri/src/game/save/application/tests/*.rs`
 - Delete: remaining `apps/game/src-tauri/src/game/save/coordinator/tests/*`
-- Modify: PR description / Linear closeout only after verification
-- No new production behavior
+- Update: PR description / Linear closeout only after verification
+- No production behavior expansion
 
 **Interfaces:**
 - Tests speak only in save/session/disk/health/activity/exit/ticket behavior.
@@ -826,25 +959,25 @@ git commit -m "refactor(save): collapse persistence into application owner"
 
 - [ ] **Step 1: Finish the named migration ledger**
 
-For every required old test listed at the top of this plan, record one of:
+For every required old test at the top of this plan, record exactly one:
 
 ```text
-KEPT: old name -> application/tests/<file>.rs::<same name>
-RENAMED: old name -> application/tests/<file>.rs::<new behavior name>
-DELETED PRODUCT RULE: old name -> <one sentence why the product rule itself no longer exists>
+KEPT: old_name -> application/tests/file.rs::same_name
+RENAMED: old_name -> application/tests/file.rs::new_behavior_name
+DELETED PRODUCT RULE: old_name -> one sentence explaining why the product rule itself no longer exists
 ```
 
-`DELETED PRODUCT RULE` is not allowed for a test merely because its old fixture used `WriterQueue` or `AutosaveBackend`.
+`DELETED PRODUCT RULE` is not allowed merely because the old fixture used `WriterQueue` or `AutosaveBackend`.
 
-The replacement/delete row must point to:
+The replacement/delete row must resolve to:
 
 ```text
 replacement_before_waiting_delete_returns_stale_session_generation_and_preserves_slot
 ```
 
-- [ ] **Step 2: Preserve the broad player/storage behavior matrix**
+- [ ] **Step 2: Verify the complete retained behavior matrix**
 
-Ensure focused application tests cover:
+Ensure focused tests prove:
 
 ```text
 failed gameplay command -> no autosave / prior committed save intact
@@ -870,19 +1003,19 @@ real storage atomic replacement/corrupt-save behavior unchanged
 
 - [ ] **Step 3: Delete mechanism-only tests and helpers**
 
-Remove tests whose only subject is:
+Remove tests/types whose only subject is:
 
 ```text
 WriterQueue / WriterJobClass
 queue worker startup/order
-scheduler rejection or fallback thread
+scheduler rejection/fallback thread
 queue invalidation notification
 G/S/W lock choreography
 replacement_gate availability
 CleanupOwner Receipt vs Attempt ordering
 ```
 
-Delete old backend/test types after all product assertions have moved.
+Delete old backend test types only after every product assertion has a migration disposition.
 
 - [ ] **Step 4: Run both Rust test surfaces explicitly**
 
@@ -891,7 +1024,7 @@ cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
 ```
 
-Both are mandatory. Do not rely on the default CI Rust coverage command to execute `#[cfg(feature = "e2e")]` tests.
+Both are mandatory. Do not rely on the default CI Rust coverage path to execute `#[cfg(feature = "e2e")]` tests.
 
 - [ ] **Step 5: Run repository validation**
 
@@ -911,9 +1044,9 @@ Run the existing packaged save/Continue smoke only when current PR selection pol
 rg 'WriterQueue|WriterJobClass|QueuedWriterJob|replacement_gate|CoordinatorTaskScheduler|PortableCoordinatorTaskScheduler|TauriCoordinatorTaskScheduler|AutosaveBackend|CoordinatorFuture|CleanupOwner|lyra-save-coordinator' apps/game/src-tauri/src
 ```
 
-Expected: no production matches. Test/historical documentation outside the implementation source is handled by the migration ledger, not compatibility shims.
+Expected: no production matches.
 
-- [ ] **Step 7: Record production and test line counts separately**
+- [ ] **Step 7: Record production and test counts separately**
 
 Production application modules:
 
@@ -921,7 +1054,7 @@ Production application modules:
 find apps/game/src-tauri/src/game/save/application -maxdepth 1 -name '*.rs' -print0 | xargs -0 wc -l
 ```
 
-Remaining `lib.rs` production/setup prefix: locate the final top-level `#[cfg(test)] mod tests` and record the prefix line count separately from the full file.
+Find the final top-level `#[cfg(test)] mod tests` in `lib.rs` and record the production/setup prefix separately from the full file.
 
 Persistence tests:
 
@@ -929,27 +1062,25 @@ Persistence tests:
 find apps/game/src-tauri/src/game/save/application/tests -name '*.rs' -print0 | xargs -0 wc -l
 ```
 
-Compare with Task 1 baseline.
+Compare against Task 1 baseline. Completion expectation:
 
-Completion expectation:
-
-- production persistence/orchestration code shows material net deletion;
-- no replacement framework appears;
-- test count is reported separately and is **not** forced lower if the named product matrix requires equivalent coverage.
+- material production persistence/orchestration deletion;
+- no replacement framework;
+- test count reported separately and not forced lower when equivalent behavior coverage requires it.
 
 If production code grows or remains roughly equivalent because queue/scheduler concepts were merely relocated, stop and simplify before closeout.
 
-- [ ] **Step 8: Self-review owner/gate/capture timing**
+- [ ] **Step 8: Self-review the three load-bearing ordering invariants in source**
 
-Confirm all three invariants directly in source:
+Confirm directly:
 
 ```text
 A. debounce sleep + terminal-thumbnail wait occur before operation_gate
-B. checkpoint capture checks pending generation + revision before capture
+B. checkpoint capture checks the requested generation + revision before capture
 C. staged commit checks the same generation + revision immediately before install
 ```
 
-Also confirm Load/Continue final install and delete both revalidate their captured identity after acquiring `operation_gate`.
+Also confirm Load/Continue final install and delete revalidate their captured identities after acquiring `operation_gate`.
 
 - [ ] **Step 9: Commit closeout cleanup**
 
@@ -976,7 +1107,7 @@ git commit -m "test(save): keep persistence coverage behavior-focused"
 - [ ] No `SaveCoordinator`, writer queue, backend trait, scheduler/fallback runtime, or cleanup-owner ordering remains.
 - [ ] `ApplicationPersistence` is modular internally rather than a replacement 4k-line blob.
 - [ ] Every named debounce/retry/generation/health test has a migration disposition.
-- [ ] Real staged-write tracking reuses the existing `SaveFilesystem`/`StagedAtomicWrite` seam.
+- [ ] Staged-write tracking reuses the existing `SaveFilesystem`/`StagedAtomicWrite` seam.
 - [ ] Deterministic tests do not depend on Tauri's singleton runtime sharing a paused Tokio test clock.
 - [ ] Default and `--all-features` Rust tests pass.
 - [ ] Repository validation passes.
