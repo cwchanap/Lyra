@@ -636,10 +636,17 @@ async fn cancel_exit_rejects_during_in_progress_exit_without_saving() {
     });
     let persistence_for_task = persistence.clone();
     let token_for_task = token.clone();
+    // Register the Notified future before spawning the blocking worker:
+    // `notify_waiters()` only wakes `Notified` futures that already exist, so
+    // if the worker enters `BlockingExit::exit()` and calls
+    // `reached.notify_waiters()` before this future is created, the wakeup is
+    // lost and the test hangs. Mirrors the ordering in
+    // `TrackingFilesystem::wait_for_stage` and `RecordingExit::wait_for_call`.
+    let reached_signal = reached.notified();
     let task = tokio::task::spawn_blocking(move || {
         persistence_for_task.exit_without_saving(blocking_exit, token_for_task)
     });
-    reached.notified().await;
+    reached_signal.await;
     // `exit_without_saving` has set `exit_action_in_progress = true` and is
     // blocked inside the external `exit()` call. `cancel_exit` must not
     // clear the challenge or switch the state back to `Idle` while the
