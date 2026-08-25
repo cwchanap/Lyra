@@ -1,4 +1,4 @@
-use super::helpers::application_fixture_at;
+use super::helpers::{application_fixture_at, RecordingExit};
 use crate::game::save::application::{
     AppSession, ApplicationExit, ApplicationPersistence, ExitRequestSource, ExitStatusView,
     FailureChallengeIdentity, FailureTokenSource, PersistenceBypassOperation,
@@ -15,32 +15,6 @@ struct FailingExit;
 impl ApplicationExit for FailingExit {
     fn exit(&self, _code: i32) -> Result<(), GameError> {
         Err(GameError::save_write_failed())
-    }
-}
-
-#[derive(Default)]
-struct RecordingExit {
-    calls: Mutex<Vec<i32>>,
-    called: Notify,
-}
-
-impl ApplicationExit for RecordingExit {
-    fn exit(&self, code: i32) -> Result<(), GameError> {
-        self.calls.lock().unwrap().push(code);
-        self.called.notify_waiters();
-        Ok(())
-    }
-}
-
-impl RecordingExit {
-    async fn wait_for_call(&self) {
-        loop {
-            let notified = self.called.notified();
-            if !self.calls.lock().unwrap().is_empty() {
-                return;
-            }
-            notified.await;
-        }
     }
 }
 
@@ -80,6 +54,25 @@ fn exit_lifecycle_status_uses_complete_camel_case_tagged_views() {
     assert_eq!(
         serde_json::to_value(ExitStatusView::Saving).unwrap(),
         serde_json::json!({ "type": "saving" })
+    );
+    assert_eq!(
+        serde_json::to_value(ExitStatusView::Failed {
+            diagnostic: GameError::save_write_failed(),
+            failure_token: PersistenceFailureTokenView::from_error(
+                &GameError::save_write_failed()
+                    .with_failure_token("00000000-0000-4000-8000-000000000001".into())
+            )
+            .unwrap(),
+        })
+        .unwrap(),
+        serde_json::json!({
+            "type": "failed",
+            "diagnostic": {
+                "code": "saveWriteFailed",
+                "message": "Save could not be written.",
+            },
+            "failureToken": "00000000-0000-4000-8000-000000000001"
+        })
     );
 }
 
@@ -458,6 +451,10 @@ async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session() {
     fixture
         .persistence
         .notify_durable_commit_without_thumbnail(4, 2);
+    // Deliberately a blocking sleep: `pause_staging` leaves a runtime worker
+    // blocked mid-poll inside `stage_atomic`'s sync condvar, which starves the
+    // time driver — an async `tokio::time::sleep` here deadlocks because its
+    // timer never fires. Every `pause_staging` test waits out real time this way.
     std::thread::sleep(AUTOSAVE_DEBOUNCE + Duration::from_millis(50));
     tokio::time::timeout(Duration::from_secs(2), fixture.filesystem.wait_for_stage())
         .await

@@ -176,24 +176,28 @@ fn installed_session_baseline_and_target_come_from_the_installed_engine() {
     assert_eq!(session.persistence.autosave_target, Some(source));
 }
 
-#[test]
-fn flush_and_manual_save_decisions_do_not_advance_durable_revision() {
-    let mut durable_revision = 27;
-    let persistence = SessionPersistence::for_installed_engine(4, 0, None);
+#[tokio::test]
+async fn flush_and_manual_save_decisions_do_not_advance_durable_revision() {
+    for operation in [FlushOperation::ReturnToTitle, FlushOperation::ManualSave] {
+        let fixture = application_fixture_at(4, 20);
+        fixture
+            .session
+            .lock()
+            .unwrap()
+            .engine
+            .as_mut()
+            .unwrap()
+            .durable_revision = 27;
 
-    assert_eq!(
-        persistence.flush_revision(FlushOperation::ReturnToTitle, durable_revision),
-        Some(27)
-    );
-    assert_eq!(durable_revision, 27);
-    assert_eq!(
-        persistence.flush_revision(FlushOperation::ManualSave, durable_revision),
-        Some(27)
-    );
-    assert_eq!(durable_revision, 27);
-
-    durable_revision += 1;
-    assert_eq!(durable_revision, 28);
+        assert!(matches!(
+            fixture.persistence.flush_session(operation).await.unwrap(),
+            FlushOutcome::Written {
+                durable_revision: 27,
+                ..
+            }
+        ));
+        assert_eq!(fixture.session.lock().unwrap().durable_revision(), Some(27));
+    }
 }
 
 #[tokio::test(start_paused = true)]

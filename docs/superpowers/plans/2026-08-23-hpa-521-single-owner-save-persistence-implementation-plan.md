@@ -49,7 +49,9 @@ apps/game/src-tauri/src/game/save/
 │       ├── session.rs
 │       ├── tickets.rs
 │       ├── exit.rs
-│       └── commands.rs
+│       ├── commands.rs
+│       ├── failure_token.rs
+│       └── units.rs
 ├── capture.rs
 ├── e2e_faults.rs
 ├── mod.rs

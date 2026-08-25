@@ -21,6 +21,7 @@ pub(crate) async fn start_game_with_persistence_core(
 ) -> Result<GameplayCommandResultView, GameError> {
     let persistence = state.persistence.as_ref();
     let _ = persistence.discover().await;
+    state.persistence.complete_discovery_attempt()?;
     if let Some(error) = persistence.availability_error() {
         return Err(state.persistence.challenge_current_discovery_failure(
             state,

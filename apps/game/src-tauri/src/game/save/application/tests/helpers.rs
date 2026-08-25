@@ -1,4 +1,4 @@
-use super::super::{AppSession, ApplicationPersistence};
+use super::super::{AppSession, ApplicationExit, ApplicationPersistence};
 use crate::game::save::application::{
     AutosaveCapture, AutosaveRegisteredIntent, AutosaveWriteJob, CaptureTerminalResult,
 };
@@ -10,12 +10,38 @@ use crate::game::save::storage::{
     SaveFilesystem, StagedAtomicWrite,
 };
 use crate::game::test_support::{representative_save_envelope, save_capture_fixture_resources};
-use crate::game::GameEngine;
+use crate::game::{GameEngine, GameError};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use tokio::sync::Notify;
+
+#[derive(Default)]
+pub(super) struct RecordingExit {
+    pub(super) calls: Mutex<Vec<i32>>,
+    called: Notify,
+}
+
+impl ApplicationExit for RecordingExit {
+    fn exit(&self, code: i32) -> Result<(), GameError> {
+        self.calls.lock().unwrap().push(code);
+        self.called.notify_waiters();
+        Ok(())
+    }
+}
+
+impl RecordingExit {
+    pub(super) async fn wait_for_call(&self) {
+        loop {
+            let notified = self.called.notified();
+            if !self.calls.lock().unwrap().is_empty() {
+                return;
+            }
+            notified.await;
+        }
+    }
+}
 
 pub(super) struct TrackingFilesystem {
     inner: ProductionSaveFilesystem,
@@ -85,10 +111,14 @@ impl TrackingFilesystem {
 
     pub(super) async fn wait_for_stage(&self) {
         loop {
+            // Create the Notified future before checking the flag: tokio only
+            // delivers `notify_waiters` calls made after the future's creation,
+            // so checking first can miss the one wakeup that ends the wait.
+            let notified = self.stage_update.notified();
             if self.stage_reached.load(Ordering::SeqCst) {
                 return;
             }
-            self.stage_update.notified().await;
+            notified.await;
         }
     }
 
