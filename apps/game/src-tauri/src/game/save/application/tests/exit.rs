@@ -476,3 +476,148 @@ async fn exit_lifecycle_waits_for_an_active_writer_without_holding_session() {
         .unwrap();
     assert_eq!(fixture.filesystem.installed_count(), 1);
 }
+
+// ---------------------------------------------------------------------------
+// request_exit_flush noop when already saving
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn request_exit_flush_is_noop_when_already_saving() {
+    let persistence = ApplicationPersistence::new();
+    let exit = Arc::new(RecordingExit::default());
+    // First request starts saving.
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    // Second request while saving is a noop (returns Ok without scheduling).
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::ApplicationQuit)
+        .unwrap();
+    // Only one exit call should happen.
+    exit.wait_for_call().await;
+    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+}
+
+// ---------------------------------------------------------------------------
+// retry_exit rejects stale token when status is not Failed
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn retry_exit_rejects_when_status_is_saving() {
+    let persistence = ApplicationPersistence::new();
+    let exit = Arc::new(RecordingExit::default());
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    // While saving, retry_exit should fail because status is Saving, not Failed.
+    let fake_token = PersistenceFailureTokenView::from_error(
+        &GameError::save_write_failed()
+            .with_failure_token("00000000-0000-4000-8000-000000000001".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        persistence.retry_exit(exit, fake_token).unwrap_err().code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// exit_without_saving rejects when status is not Failed
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn exit_without_saving_rejects_when_status_is_idle() {
+    let persistence = ApplicationPersistence::new();
+    let exit = Arc::new(RecordingExit::default());
+    let fake_token = PersistenceFailureTokenView::from_error(
+        &GameError::save_write_failed()
+            .with_failure_token("00000000-0000-4000-8000-000000000001".into()),
+    )
+    .unwrap();
+    assert_eq!(
+        persistence
+            .exit_without_saving(exit, fake_token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// exit_without_saving rejects when exit_action_in_progress
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn exit_without_saving_rejects_when_action_in_progress() {
+    let persistence = ApplicationPersistence::new();
+    // Force a failed exit first.
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    let token = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let ExitStatusView::Failed { failure_token, .. } = persistence.exit_status() {
+                break failure_token;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Set exit_action_in_progress to simulate a concurrent bypass.
+    persistence.state.lock().unwrap().exit_action_in_progress = true;
+    let exit = Arc::new(RecordingExit::default());
+    assert_eq!(
+        persistence
+            .exit_without_saving(exit, token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// cancel_exit rejects when challenge doesn't match identity
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn cancel_exit_rejects_when_challenge_identity_mismatches() {
+    let persistence = ApplicationPersistence::new();
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    let token = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let ExitStatusView::Failed { failure_token, .. } = persistence.exit_status() {
+                break failure_token;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    // Advance the session generation so the challenge identity no longer matches.
+    persistence.next_session_generation().unwrap();
+    persistence.session.lock().unwrap().persistence.generation = 2;
+    assert_eq!(
+        persistence.cancel_exit(token).unwrap_err().code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// flush_for_exit succeeds when no engine is installed
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn flush_for_exit_succeeds_without_engine() {
+    let persistence = ApplicationPersistence::new();
+    // No engine installed, so flush_for_exit should return Ok(()).
+    // We test this indirectly via request_exit_flush with a RecordingExit.
+    let exit = Arc::new(RecordingExit::default());
+    persistence
+        .request_exit_flush(exit.clone(), ExitRequestSource::WindowClose)
+        .unwrap();
+    exit.wait_for_call().await;
+    assert_eq!(*exit.calls.lock().unwrap(), vec![0]);
+}

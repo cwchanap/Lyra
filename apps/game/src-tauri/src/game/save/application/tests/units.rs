@@ -951,3 +951,191 @@ fn notify_committed_without_thumbnail_wraps_none() {
     assert_eq!(notification.committed, 42);
     assert!(notification.thumbnail_capture.is_none());
 }
+
+// ---------------------------------------------------------------------------
+// run_storage_write_if_session_current stale generation
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn run_storage_write_if_session_current_rejects_stale_generation() {
+    let fixture = application_fixture_at(3, 7);
+    // Advance the session generation so generation 3 is stale.
+    fixture.persistence.next_session_generation().unwrap();
+    // Replace the session with a new generation.
+    {
+        let mut session = fixture.session.lock().unwrap();
+        session.persistence.generation = 4;
+    }
+    let result: Result<(), GameError> = fixture
+        .persistence
+        .run_storage_write_if_session_current(3, |_, _| Ok(()))
+        .await;
+    assert_eq!(result.unwrap_err().code, "staleSessionGeneration");
+}
+
+#[tokio::test]
+async fn run_storage_write_if_session_current_runs_write_for_current_generation() {
+    let fixture = application_fixture_at(3, 7);
+    let result: Result<bool, GameError> = fixture
+        .persistence
+        .run_storage_write_if_session_current(3, |_, _| Ok(true))
+        .await;
+    assert!(result.unwrap());
+}
+
+// ---------------------------------------------------------------------------
+// health_after_completion with failed_write but no pending/cleanup
+// ---------------------------------------------------------------------------
+
+#[test]
+fn health_after_completion_returns_degraded_for_failed_write() {
+    let state = super::super::PersistenceState {
+        failed_write: Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        }),
+        ..Default::default()
+    };
+    assert!(matches!(
+        super::super::health_after_completion(&state),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+#[test]
+fn health_after_completion_returns_degraded_for_cleanup_failure() {
+    let state = super::super::PersistenceState {
+        cleanup_failure: Some(super::super::CleanupFailure {
+            diagnostic: GameError::save_write_failed(),
+        }),
+        ..Default::default()
+    };
+    assert!(matches!(
+        super::super::health_after_completion(&state),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+#[test]
+fn health_after_completion_returns_pending_when_autosave_pending() {
+    let state = super::super::PersistenceState {
+        pending_autosave: Some(PendingAutosave {
+            session_generation: 1,
+            durable_revision: 1,
+            ticket: "t".into(),
+            purpose: ThumbnailCapturePurpose::Autosave {
+                session_generation: 1,
+                durable_revision: 1,
+            },
+            thumbnail_capture_required: true,
+            debounce_deadline: Instant::now(),
+            capture_deadline: Instant::now() + std::time::Duration::from_secs(1),
+        }),
+        failed_write: Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        }),
+        ..Default::default()
+    };
+    assert_eq!(
+        super::super::health_after_completion(&state),
+        PersistenceHealthView::Pending
+    );
+}
+
+// ---------------------------------------------------------------------------
+// consume_current_discovery_failure / consume_current_session_failure error paths
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn consume_current_discovery_failure_rejects_stale_token() {
+    let fixture = application_fixture_at(3, 7);
+    // Issue a token for a different identity.
+    let token = issue(
+        &fixture.persistence,
+        PersistenceBypassOperation::LoadDiscardingCurrent,
+        identity(99, None, 99, None),
+    );
+    assert_eq!(
+        fixture
+            .persistence
+            .consume_current_discovery_failure(
+                &app(&fixture),
+                &token,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+            )
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+#[tokio::test]
+async fn consume_current_session_failure_rejects_stale_token() {
+    let fixture = application_fixture_at(3, 7);
+    let token = issue(
+        &fixture.persistence,
+        PersistenceBypassOperation::ReturnWithoutSaving,
+        identity(99, None, 99, None),
+    );
+    assert_eq!(
+        fixture
+            .persistence
+            .consume_current_session_failure(
+                &app(&fixture),
+                &token,
+                PersistenceBypassOperation::ReturnWithoutSaving,
+            )
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+#[tokio::test]
+async fn consume_current_start_without_saving_failure_rejects_stale_token() {
+    let fixture = application_fixture_at(3, 7);
+    let token = issue(
+        &fixture.persistence,
+        PersistenceBypassOperation::StartWithoutSaving,
+        identity(99, None, 99, None),
+    );
+    assert_eq!(
+        fixture
+            .persistence
+            .consume_current_start_without_saving_failure(&app(&fixture), &token)
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// consume_current_selected_save_failure error paths
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn consume_current_selected_save_failure_rejects_stale_token() {
+    let fixture = application_fixture_at(3, 7);
+    let token = issue(
+        &fixture.persistence,
+        PersistenceBypassOperation::LoadDiscardingCurrent,
+        identity(99, None, 99, None),
+    );
+    assert_eq!(
+        fixture
+            .persistence
+            .consume_current_selected_save_failure(
+                &app(&fixture),
+                &token,
+                PersistenceBypassOperation::LoadDiscardingCurrent,
+                SaveSlotRef::Auto { slot: 1 },
+                "save-abc",
+            )
+            .unwrap_err()
+            .code,
+        "stalePersistenceFailureToken"
+    );
+}

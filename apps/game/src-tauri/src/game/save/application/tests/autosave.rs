@@ -1,9 +1,8 @@
 use super::helpers::{application_fixture, registered_write};
-#[cfg(feature = "e2e")]
-use crate::game::save::application::FlushOperation;
 use crate::game::save::application::{
-    ApplicationPersistence, BackgroundRetryTrigger, PersistenceHealthView, ThumbnailActivityView,
-    ThumbnailCapturePurpose, AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
+    ApplicationPersistence, AutosaveWriteReceipt, BackgroundRetryTrigger, FlushOperation,
+    PendingAutosave, PersistenceHealthView, ThumbnailActivityView, ThumbnailCapturePurpose,
+    AUTOSAVE_DEBOUNCE, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 #[cfg(feature = "e2e")]
 use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
@@ -713,3 +712,467 @@ async fn exit_flush_fault_cancels_pending_autosave_before_failing() {
 fn application_fixture_at_revision(revision: u64) -> super::helpers::ApplicationFixture {
     super::helpers::application_fixture_at(1, revision)
 }
+
+// ---------------------------------------------------------------------------
+// record_schedule_failure / record_schedule_failure_without_thumbnail
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn notify_durable_commit_after_background_failure_records_schedule_failure() {
+    let fixture = application_fixture_at_revision(1);
+    fixture
+        .persistence
+        .record_background_failure(1, 1, true, GameError::save_write_failed());
+    // issue_thumbnail succeeds, but prepare_autosave fails because
+    // failed_write exists at (1,1) and allow_unchanged_retry is false.
+    assert!(fixture.persistence.notify_durable_commit(1, 1).is_none());
+    assert!(matches!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+    let state = fixture.persistence.state.lock().unwrap();
+    assert!(state.tickets.is_empty());
+    assert!(state.latest_by_intent.is_empty());
+    assert!(state.pending_autosave.is_none());
+    drop(state);
+    assert!(matches!(
+        fixture.persistence.thumbnail_activity(),
+        ThumbnailActivityView::Unavailable { .. }
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn notify_durable_commit_without_thumbnail_after_failure_records_schedule_failure() {
+    let fixture = application_fixture_at_revision(1);
+    fixture
+        .persistence
+        .record_background_failure(1, 1, false, GameError::save_write_failed());
+    assert!(fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+    assert!(matches!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+    let state = fixture.persistence.state.lock().unwrap();
+    assert!(state.tickets.is_empty());
+    assert!(state.pending_autosave.is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn notify_durable_commit_without_thumbnail_stale_generation_skips_schedule_failure() {
+    let fixture = application_fixture_at_revision(1);
+    fixture.persistence.next_session_generation().unwrap();
+    fixture
+        .persistence
+        .record_background_failure(1, 1, false, GameError::save_write_failed());
+    // The failure is for generation 1, but next_session_generation is now 2.
+    // issue_terminal_unavailable_thumbnail rejects the stale generation, so
+    // record_schedule_failure_without_thumbnail is called with the issue error.
+    assert!(fixture
+        .persistence
+        .notify_durable_commit_without_thumbnail(1, 1)
+        .is_none());
+}
+
+// ---------------------------------------------------------------------------
+// retry_failed_background with thumbnail_capture_required
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn retry_with_thumbnail_required_reissues_capture_and_reschedules() {
+    let fixture = application_fixture_at_revision(1);
+    fixture
+        .persistence
+        .record_background_failure(1, 1, true, GameError::save_write_failed());
+    let request = fixture
+        .persistence
+        .retry_failed_background(BackgroundRetryTrigger::ManualSave);
+    assert!(request.is_some());
+    assert_eq!(
+        fixture.persistence.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    assert_eq!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Pending
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_with_thumbnail_required_retires_when_superseded_by_success() {
+    let fixture = application_fixture_at_revision(1);
+    fixture
+        .persistence
+        .record_background_failure(1, 1, true, GameError::save_write_failed());
+    {
+        let mut state = fixture.persistence.state.lock().unwrap();
+        state.last_successful_write = Some(AutosaveWriteReceipt {
+            session_generation: 1,
+            durable_revision: 1,
+            slot: SaveSlotRef::Auto { slot: 1 },
+            save_id: "save-a".into(),
+        });
+    }
+    assert!(fixture
+        .persistence
+        .retry_failed_background(BackgroundRetryTrigger::ManualSave)
+        .is_none());
+    assert_eq!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+    assert!(fixture
+        .persistence
+        .state
+        .lock()
+        .unwrap()
+        .failed_write
+        .is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn retry_with_thumbnail_required_retires_when_superseded_by_pending() {
+    let fixture = application_fixture_at_revision(2);
+    fixture
+        .persistence
+        .record_background_failure(1, 1, true, GameError::save_write_failed());
+    {
+        let mut state = fixture.persistence.state.lock().unwrap();
+        state.pending_autosave = Some(PendingAutosave {
+            session_generation: 1,
+            durable_revision: 2,
+            ticket: "pending-ticket".into(),
+            purpose: ThumbnailCapturePurpose::Autosave {
+                session_generation: 1,
+                durable_revision: 2,
+            },
+            thumbnail_capture_required: true,
+            debounce_deadline: tokio::time::Instant::now(),
+            capture_deadline: tokio::time::Instant::now() + Duration::from_secs(1),
+        });
+    }
+    assert!(fixture
+        .persistence
+        .retry_failed_background(BackgroundRetryTrigger::ManualSave)
+        .is_none());
+    assert_eq!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Pending
+    );
+}
+
+// ---------------------------------------------------------------------------
+// publish_storage_write_health
+// ---------------------------------------------------------------------------
+
+#[test]
+fn publish_storage_write_health_publishes_degraded_with_cleanup_diagnostic() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence
+        .publish_storage_write_health(1, Some(GameError::save_write_failed()))
+        .unwrap();
+    assert!(matches!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+#[test]
+fn publish_storage_write_health_publishes_healthy_without_diagnostic() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.publish_storage_write_health(1, None).unwrap();
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[test]
+fn publish_storage_write_health_rejects_stale_generation() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.next_session_generation().unwrap();
+    assert_eq!(
+        persistence
+            .publish_storage_write_health(0, None)
+            .unwrap_err()
+            .code,
+        "staleSessionGeneration"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// prepare_autosave error paths
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn prepare_autosave_rejects_non_autosave_purpose() {
+    let persistence = ApplicationPersistence::ticket_only();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert_eq!(
+        persistence
+            .prepare_autosave(
+                ThumbnailCapturePurpose::ManualSave {
+                    session_generation: 1,
+                    durable_revision: 1,
+                },
+                "ticket".into(),
+                deadline,
+                false,
+                true,
+            )
+            .unwrap_err()
+            .code,
+        "thumbnailTicketPurposeMismatch"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn prepare_autosave_rejects_stale_session_generation() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.next_session_generation().unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert_eq!(
+        persistence
+            .prepare_autosave(
+                ThumbnailCapturePurpose::Autosave {
+                    session_generation: 0,
+                    durable_revision: 1,
+                },
+                "ticket".into(),
+                deadline,
+                false,
+                true,
+            )
+            .unwrap_err()
+            .code,
+        "staleSessionGeneration"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn prepare_autosave_rejects_newer_pending_write() {
+    let persistence = ApplicationPersistence::ticket_only();
+    {
+        let mut state = persistence.state.lock().unwrap();
+        state.pending_autosave = Some(PendingAutosave {
+            session_generation: 1,
+            durable_revision: 5,
+            ticket: "existing".into(),
+            purpose: ThumbnailCapturePurpose::Autosave {
+                session_generation: 1,
+                durable_revision: 5,
+            },
+            thumbnail_capture_required: true,
+            debounce_deadline: tokio::time::Instant::now(),
+            capture_deadline: tokio::time::Instant::now() + Duration::from_secs(1),
+        });
+    }
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert_eq!(
+        persistence
+            .prepare_autosave(
+                ThumbnailCapturePurpose::Autosave {
+                    session_generation: 1,
+                    durable_revision: 3,
+                },
+                "ticket".into(),
+                deadline,
+                false,
+                true,
+            )
+            .unwrap_err()
+            .code,
+        "saveWriteFailed"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn prepare_autosave_rejects_unchanged_revision_after_failure() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence
+        .state
+        .lock()
+        .unwrap()
+        .failed_write
+        .get_or_insert(crate::game::save::application::BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        });
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert_eq!(
+        persistence
+            .prepare_autosave(
+                ThumbnailCapturePurpose::Autosave {
+                    session_generation: 1,
+                    durable_revision: 1,
+                },
+                "ticket".into(),
+                deadline,
+                false,
+                true,
+            )
+            .unwrap_err()
+            .code,
+        "saveWriteFailed"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// resolve_cleanup_failure / record_cleanup_failure
+// ---------------------------------------------------------------------------
+
+#[test]
+fn resolve_cleanup_failure_clears_degraded_health() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.record_cleanup_failure(GameError::save_write_failed());
+    assert!(matches!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+    persistence.resolve_cleanup_failure();
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[test]
+fn resolve_cleanup_failure_without_existing_failure_is_noop() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.resolve_cleanup_failure();
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[test]
+fn record_cleanup_failure_publishes_degraded_health() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.record_cleanup_failure(GameError::save_write_failed());
+    assert!(matches!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// record_background_failure stale generation
+// ---------------------------------------------------------------------------
+
+#[test]
+fn record_background_failure_skips_stale_generation() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.next_session_generation().unwrap();
+    persistence.state.lock().unwrap().persistence_health = PersistenceHealthView::Healthy;
+    persistence.record_background_failure(0, 1, true, GameError::save_write_failed());
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+// ---------------------------------------------------------------------------
+// record_background_success / record_blocking_success edge cases
+// ---------------------------------------------------------------------------
+
+#[test]
+fn record_background_success_skips_stale_generation() {
+    let persistence = ApplicationPersistence::ticket_only();
+    persistence.next_session_generation().unwrap();
+    let pending = persistence
+        .pending_autosave_for_test(
+            "ticket".into(),
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+    persistence.state.lock().unwrap().persistence_health = PersistenceHealthView::Healthy;
+    persistence.record_background_success(
+        &pending,
+        AutosaveWriteReceipt {
+            session_generation: 0,
+            durable_revision: 1,
+            slot: SaveSlotRef::Auto { slot: 1 },
+            save_id: "save-a".into(),
+        },
+        None,
+    );
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[test]
+fn record_background_success_with_cleanup_diagnostic_publishes_degraded() {
+    let persistence = ApplicationPersistence::ticket_only();
+    let pending = persistence
+        .pending_autosave_for_test(
+            "ticket".into(),
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+    persistence.record_background_success(
+        &pending,
+        AutosaveWriteReceipt {
+            session_generation: 1,
+            durable_revision: 1,
+            slot: SaveSlotRef::Auto { slot: 1 },
+            save_id: "save-a".into(),
+        },
+        Some(GameError::save_write_failed()),
+    );
+    assert!(matches!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+#[tokio::test(start_paused = true)]
+async fn blocking_flush_with_manual_preferred_target_fails_with_save_write_failed() {
+    let fixture = application_fixture_at_revision(0);
+    set_revision(&fixture.persistence, 1);
+    // Set autosave_target to a manual slot to simulate a corrupted preferred target.
+    fixture.session.lock().unwrap().persistence.autosave_target =
+        Some(SaveSlotRef::Manual { slot: 1 });
+    let result = fixture
+        .persistence
+        .flush_session(FlushOperation::ManualSave)
+        .await;
+    // The manual preferred target causes execute_blocking_flush to fail.
+    assert_eq!(result.unwrap_err().code, "saveWriteFailed");
+    assert!(matches!(
+        fixture.persistence.persistence_health(),
+        PersistenceHealthView::Degraded { .. }
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// record_stale_write with pending match
+// ---------------------------------------------------------------------------
+
+#[test]
+fn record_stale_write_clears_matching_pending() {
+    let persistence = ApplicationPersistence::ticket_only();
+    let pending = persistence
+        .pending_autosave_for_test(
+            "ticket".into(),
+            tokio::time::Instant::now() + Duration::from_secs(1),
+        )
+        .unwrap();
+    persistence.record_stale_write(&pending);
+    assert!(persistence.state.lock().unwrap().pending_autosave.is_none());
+    assert_eq!(
+        persistence.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+// ---------------------------------------------------------------------------
+// execute_blocking_flush with manual preferred target
+// ---------------------------------------------------------------------------
+
+// (covered by blocking_flush_with_manual_preferred_target_fails_with_save_write_failed above)
