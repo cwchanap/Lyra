@@ -6,7 +6,7 @@ use crate::game::save::application::{
 };
 use crate::game::GameError;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::Duration;
 use tokio::sync::{mpsc, Notify};
 
@@ -29,6 +29,26 @@ impl ApplicationExit for LockProbeExit {
         assert!(self.persistence.lock_exit_transition().is_ok());
         assert!(self.session.try_lock().is_ok());
         self.called.notify_waiters();
+        Ok(())
+    }
+}
+
+/// An `ApplicationExit` that signals when `exit()` is entered and blocks
+/// until the test releases it, holding `exit_without_saving` inside the
+/// external-exit window between its two `exit_transition` locks.
+struct BlockingExit {
+    reached: Arc<Notify>,
+    release: Arc<(Mutex<bool>, Condvar)>,
+}
+
+impl ApplicationExit for BlockingExit {
+    fn exit(&self, _code: i32) -> Result<(), GameError> {
+        self.reached.notify_waiters();
+        let (lock, cvar) = &*self.release;
+        let mut guard = lock.lock().unwrap();
+        while !*guard {
+            guard = cvar.wait(guard).unwrap();
+        }
         Ok(())
     }
 }
@@ -574,6 +594,113 @@ async fn exit_without_saving_rejects_when_action_in_progress() {
             .code,
         "stalePersistenceFailureToken"
     );
+}
+
+// ---------------------------------------------------------------------------
+// cancel_exit rejects during an in-progress exit_without_saving
+//
+// Verifies the end-to-end mutual-exclusion contract: while
+// `exit_without_saving` is inside the external `exit()` call (having set
+// `exit_action_in_progress = true` and released `exit_transition`),
+// `cancel_exit` must not clear the challenge or roll the state back to
+// `Idle`. In this scenario the rejection is observed via the preliminary
+// `validate_current_exit_token`; the under-`exit_transition` recheck of
+// `exit_action_in_progress` is defense-in-depth for the narrower window
+// between that preliminary check and the lock acquisition (a few
+// instructions with no await point, so not deterministically testable
+// from outside).
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancel_exit_rejects_during_in_progress_exit_without_saving() {
+    let persistence = ApplicationPersistence::new();
+    persistence
+        .request_exit_flush(Arc::new(FailingExit), ExitRequestSource::WindowClose)
+        .unwrap();
+    let token = tokio::time::timeout(Duration::from_secs(1), async {
+        loop {
+            if let ExitStatusView::Failed { failure_token, .. } = persistence.exit_status() {
+                break failure_token;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+
+    let reached = Arc::new(Notify::new());
+    let release = Arc::new((Mutex::new(false), Condvar::new()));
+    let blocking_exit = Arc::new(BlockingExit {
+        reached: reached.clone(),
+        release: release.clone(),
+    });
+    let persistence_for_task = persistence.clone();
+    let token_for_task = token.clone();
+    let task = tokio::task::spawn_blocking(move || {
+        persistence_for_task.exit_without_saving(blocking_exit, token_for_task)
+    });
+    reached.notified().await;
+    // `exit_without_saving` has set `exit_action_in_progress = true` and is
+    // blocked inside the external `exit()` call. `cancel_exit` must not
+    // clear the challenge or switch the state back to `Idle` while the
+    // external exit is already executing.
+    assert_eq!(
+        persistence.cancel_exit(token).unwrap_err().code,
+        "stalePersistenceFailureToken"
+    );
+    {
+        let state = persistence.state.lock().unwrap();
+        assert!(state.exit_action_in_progress);
+        assert!(matches!(state.exit_status, ExitStatusView::Failed { .. }));
+    }
+    // Release the external exit; `exit_without_saving` should complete and
+    // clear the flag.
+    {
+        let (lock, cvar) = &*release;
+        let mut guard = lock.lock().unwrap();
+        *guard = true;
+        cvar.notify_all();
+    }
+    let outcome = task.await.unwrap();
+    assert!(outcome.is_ok());
+    {
+        let state = persistence.state.lock().unwrap();
+        assert!(!state.exit_action_in_progress);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// request_exit_flush no-ops when a terminal action is in progress
+//
+// Covers the `begin_exit_saving` half of the TOCTOU: the preliminary
+// `validate_current_exit_token` in `retry_exit` (and the `Idle` check in
+// `request_exit_flush`) run before `exit_transition` is acquired, so
+// `begin_exit_saving` must recheck `exit_action_in_progress` under the lock
+// and refuse to start a second terminal action.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn request_exit_flush_noops_when_action_in_progress() {
+    let persistence = ApplicationPersistence::new();
+    // Simulate a concurrent in-progress terminal action that has set the
+    // mutual-exclusion flag but not yet changed `exit_status` (the window
+    // `exit_without_saving` opens between its two `exit_transition` locks).
+    persistence.state.lock().unwrap().exit_action_in_progress = true;
+    let exit = Arc::new(RecordingExit::default());
+    let result = persistence.request_exit_flush(exit.clone(), ExitRequestSource::WindowClose);
+    assert!(
+        result.is_ok(),
+        "request_exit_flush should no-op via begin_exit_saving, got: {result:?}"
+    );
+    // `begin_exit_saving` must not have transitioned to `Saving` or cleared
+    // the flag.
+    let state = persistence.state.lock().unwrap();
+    assert_eq!(state.exit_status, ExitStatusView::Idle);
+    assert!(state.exit_action_in_progress);
+    drop(state);
+    // The spawned flush task never received a recovery (the oneshot sender
+    // was dropped without sending), so the external exit was never called.
+    assert!(exit.calls.lock().unwrap().is_empty());
 }
 
 // ---------------------------------------------------------------------------

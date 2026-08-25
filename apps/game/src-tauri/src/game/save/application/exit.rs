@@ -131,8 +131,16 @@ impl ApplicationPersistence {
                 .filter(|parsed| parsed.hyphenated().to_string() == token.0)
                 .ok_or_else(GameError::stale_persistence_failure_token)?;
             let mut state = self.lock_state()?;
+            // The under-`exit_transition` check is authoritative: the
+            // preliminary `validate_current_exit_token` ran before this lock,
+            // so a competing `exit_without_saving` could have set
+            // `exit_action_in_progress` and be running the external exit in
+            // the gap. Canceling then would clear the challenge and roll the
+            // state back to `Idle` while the external exit is already in
+            // flight. Require the flag to be clear here as well.
             match &state.exit_status {
-                ExitStatusView::Failed { failure_token, .. } if failure_token == &token => {}
+                ExitStatusView::Failed { failure_token, .. }
+                    if failure_token == &token && !state.exit_action_in_progress => {}
                 _ => return Err(GameError::stale_persistence_failure_token()),
             }
             let challenge = state
@@ -288,7 +296,15 @@ impl ApplicationPersistence {
                 .map_err(|_| GameError::unavailable())?;
             let mut session = self.session.lock().map_err(|_| GameError::unavailable())?;
             let mut state = self.lock_state()?;
-            if state.exit_status != expected {
+            // Reject an in-progress terminal action: the preliminary
+            // `validate_current_exit_token` in `retry_exit` ran before this
+            // lock, so a competing `exit_without_saving` could have set
+            // `exit_action_in_progress` and be running the external exit in
+            // the gap. Starting a second exit save here would race the
+            // external exit. The flag is the mutual-exclusion contract for
+            // terminal actions, so check it under the same lock as the
+            // status comparison.
+            if state.exit_status != expected || state.exit_action_in_progress {
                 return if deduplicate_mismatch {
                     Ok(None)
                 } else {
