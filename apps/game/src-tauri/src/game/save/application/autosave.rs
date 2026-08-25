@@ -449,15 +449,23 @@ impl ApplicationPersistence {
         deadline: Instant,
     ) -> Result<CaptureTerminalResult, GameError> {
         loop {
+            // Register the Notified future before observing terminal state:
+            // `notify_waiters()` only wakes `Notified` futures that already
+            // exist, so a thumbnail becoming terminal between
+            // `take_terminal_thumbnail` and `updates.notified()` would
+            // otherwise be lost and this task would sleep until `deadline`
+            // even though the result is already ready. Mirrors the pattern in
+            // `TrackingFilesystem::wait_for_stage`.
+            let updates = self.ticket_updates();
+            let notified = updates.notified();
             if let Some(result) = self.take_terminal_thumbnail(ticket, expected)? {
                 return Ok(result);
             }
             if Instant::now() >= deadline {
                 return self.claim_thumbnail(ticket, expected);
             }
-            let updates = self.ticket_updates();
             tokio::select! {
-                _ = updates.notified() => {}
+                _ = notified => {}
                 _ = tokio::time::sleep_until(deadline) => {}
             }
         }
