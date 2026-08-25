@@ -11,6 +11,7 @@ use crate::game::save::storage::{
 };
 use crate::game::test_support::{representative_save_envelope, save_capture_fixture_resources};
 use crate::game::{GameEngine, GameError};
+use crate::AppState;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -285,6 +286,14 @@ pub(super) fn application_fixture_at(generation: u64, revision: u64) -> Applicat
         filesystem,
         _resources: resources,
         _saves: saves,
+    }
+}
+
+pub(super) fn app(fixture: &ApplicationFixture) -> AppState {
+    AppState {
+        session: fixture.session.clone(),
+        persistence: fixture.persistence.clone(),
+        resources_dir: PathBuf::new(),
     }
 }
 

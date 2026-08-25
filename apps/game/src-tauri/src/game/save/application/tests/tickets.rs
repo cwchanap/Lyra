@@ -1,11 +1,12 @@
 use crate::game::save::application::{
-    ApplicationPersistence, CaptureTerminalResult, PersistenceHealthView, ThumbnailActivityView,
-    ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
+    ApplicationPersistence, BackgroundWriteFailure, CaptureTerminalResult, PersistenceHealthView,
+    ThumbnailActivityView, ThumbnailCapturePurpose, THUMBNAIL_CAPTURE_TIMEOUT,
 };
 use crate::game::save::schema::{
     canonical_uuid_v4, ThumbnailUnavailableReason, MAX_THUMBNAIL_BYTES, MAX_THUMBNAIL_WIDTH,
 };
 use crate::game::test_support::png_fixture;
+use crate::game::GameError;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -325,4 +326,238 @@ async fn subscribers_receive_complete_health_and_activity_payloads() {
             ThumbnailActivityView::Unavailable { .. }
         ]
     ));
+}
+
+// ---------------------------------------------------------------------------
+// take_terminal_thumbnail purpose mismatch
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn take_terminal_thumbnail_rejects_mismatched_purpose() {
+    let coordinator = coordinator();
+    let purpose = manual(1, 1);
+    let request = coordinator.prepare_thumbnail(purpose).unwrap();
+    // Submit a thumbnail so terminal is set, then try to take with wrong purpose.
+    coordinator
+        .submit_thumbnail(&request.ticket, &png_fixture(1, 1))
+        .unwrap();
+    let wrong_purpose = ThumbnailCapturePurpose::Autosave {
+        session_generation: 1,
+        durable_revision: 1,
+    };
+    assert_eq!(
+        coordinator
+            .take_terminal_thumbnail(&request.ticket, &wrong_purpose)
+            .unwrap_err()
+            .code,
+        "staleThumbnailTicket"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// issue_thumbnail_for_retry
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn issue_thumbnail_for_retry_returns_none_when_no_failure() {
+    let coordinator = coordinator();
+    let result = coordinator.issue_thumbnail_for_retry(manual(1, 1), (1, 1));
+    assert!(result.unwrap().is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_thumbnail_for_retry_returns_none_when_failure_mismatched() {
+    let coordinator = coordinator();
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 5),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        });
+    }
+    let result = coordinator.issue_thumbnail_for_retry(manual(1, 1), (1, 3));
+    assert!(result.unwrap().is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_thumbnail_for_retry_retires_when_superseded_by_success() {
+    let coordinator = coordinator();
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        });
+        state.last_successful_write = Some(crate::game::save::application::AutosaveWriteReceipt {
+            session_generation: 1,
+            durable_revision: 1,
+            slot: crate::game::save::schema::SaveSlotRef::Auto { slot: 1 },
+            save_id: "save-a".into(),
+        });
+    }
+    let result = coordinator.issue_thumbnail_for_retry(manual(1, 1), (1, 1));
+    assert!(result.unwrap().is_none());
+    assert_eq!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_thumbnail_for_retry_proceeds_and_issues_ticket_when_failure_matches() {
+    let coordinator = coordinator();
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: true,
+        });
+    }
+    let request = coordinator
+        .issue_thumbnail_for_retry(manual(1, 1), (1, 1))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    // The ticket should be tracked.
+    assert!(coordinator.ticket_deadline(&request.ticket).is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_thumbnail_for_retry_rejects_stale_session_generation() {
+    let coordinator = coordinator();
+    coordinator.next_session_generation().unwrap();
+    assert_eq!(
+        coordinator
+            .issue_thumbnail_for_retry(manual(0, 1), (0, 1))
+            .unwrap_err()
+            .code,
+        "staleSessionGeneration"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// issue_terminal_unavailable_thumbnail_for_retry
+// ---------------------------------------------------------------------------
+
+#[tokio::test(start_paused = true)]
+async fn issue_terminal_unavailable_for_retry_returns_none_when_no_failure() {
+    let coordinator = coordinator();
+    let result = coordinator.issue_terminal_unavailable_thumbnail_for_retry(manual(1, 1), (1, 1));
+    assert!(result.unwrap().is_none());
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_terminal_unavailable_for_retry_retires_when_superseded_by_success() {
+    let coordinator = coordinator();
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: false,
+        });
+        state.last_successful_write = Some(crate::game::save::application::AutosaveWriteReceipt {
+            session_generation: 1,
+            durable_revision: 1,
+            slot: crate::game::save::schema::SaveSlotRef::Auto { slot: 1 },
+            save_id: "save-a".into(),
+        });
+    }
+    let result = coordinator.issue_terminal_unavailable_thumbnail_for_retry(manual(1, 1), (1, 1));
+    assert!(result.unwrap().is_none());
+    assert_eq!(
+        coordinator.persistence_health(),
+        PersistenceHealthView::Healthy
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_terminal_unavailable_for_retry_proceeds_and_issues_terminal_ticket() {
+    let coordinator = coordinator();
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: false,
+        });
+    }
+    let (ticket, _) = coordinator
+        .issue_terminal_unavailable_thumbnail_for_retry(manual(1, 1), (1, 1))
+        .unwrap()
+        .unwrap();
+    // The terminal ticket should already be unavailable.
+    let result = coordinator.claim_thumbnail(&ticket, &manual(1, 1)).unwrap();
+    assert!(matches!(result, CaptureTerminalResult::Unavailable));
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_terminal_unavailable_for_retry_rejects_stale_session_generation() {
+    let coordinator = coordinator();
+    coordinator.next_session_generation().unwrap();
+    assert_eq!(
+        coordinator
+            .issue_terminal_unavailable_thumbnail_for_retry(manual(0, 1), (0, 1))
+            .unwrap_err()
+            .code,
+        "staleSessionGeneration"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn issue_terminal_unavailable_supersedes_nonterminal_autosave_and_clears_activity() {
+    let coordinator = coordinator();
+    // Issue a live (nonterminal) autosave ticket first.
+    let autosave_purpose = ThumbnailCapturePurpose::Autosave {
+        session_generation: 1,
+        durable_revision: 1,
+    };
+    let autosave_request = coordinator
+        .issue_thumbnail(autosave_purpose.clone())
+        .unwrap();
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Capturing
+    );
+    // Now issue a terminal unavailable ticket for the same autosave intent.
+    // This should supersede the nonterminal autosave and clear activity.
+    {
+        let mut state = coordinator.state.lock().unwrap();
+        state.failed_write = Some(BackgroundWriteFailure {
+            identity: (1, 1),
+            diagnostic: GameError::save_write_failed(),
+            thumbnail_capture_required: false,
+        });
+    }
+    let (terminal_ticket, _) = coordinator
+        .issue_terminal_unavailable_thumbnail_for_retry(autosave_purpose.clone(), (1, 1))
+        .unwrap()
+        .unwrap();
+    // The old autosave ticket should be gone.
+    assert_eq!(
+        coordinator
+            .claim_thumbnail(&autosave_request.ticket, &autosave_purpose)
+            .unwrap_err()
+            .code,
+        "staleThumbnailTicket"
+    );
+    // The new terminal ticket should be unavailable.
+    assert!(matches!(
+        coordinator
+            .claim_thumbnail(&terminal_ticket, &autosave_purpose)
+            .unwrap(),
+        CaptureTerminalResult::Unavailable
+    ));
+    // Activity should be Idle since the nonterminal autosave was superseded
+    // by a terminal ticket and no other live captures remain.
+    assert_eq!(
+        coordinator.thumbnail_activity(),
+        ThumbnailActivityView::Idle
+    );
 }

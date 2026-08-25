@@ -1534,6 +1534,7 @@ async fn thumbnail_ticket_expiry_task(
 #[cfg(test)]
 mod tests {
     mod autosave;
+    mod commands;
     mod exit;
     mod failure_token;
     mod flush;
