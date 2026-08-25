@@ -651,15 +651,22 @@ async fn cancel_exit_rejects_during_in_progress_exit_without_saving() {
     // blocked inside the external `exit()` call. `cancel_exit` must not
     // clear the challenge or switch the state back to `Idle` while the
     // external exit is already executing.
-    assert_eq!(
-        persistence.cancel_exit(token).unwrap_err().code,
-        "stalePersistenceFailureToken"
-    );
-    {
+    //
+    // Capture the observations while the external exit is in-flight, then
+    // release/join the blocking worker BEFORE asserting. If a regression
+    // makes `cancel_exit` succeed or the state assertions fail, panicking
+    // before release would leave the `spawn_blocking` worker blocked on the
+    // condvar indefinitely; Tokio cannot abort a started `spawn_blocking`
+    // task and runtime shutdown waits forever for it, so the test job would
+    // hang instead of reporting the failure.
+    let cancel_result = persistence.cancel_exit(token);
+    let observed_state = {
         let state = persistence.state.lock().unwrap();
-        assert!(state.exit_action_in_progress);
-        assert!(matches!(state.exit_status, ExitStatusView::Failed { .. }));
-    }
+        (
+            state.exit_action_in_progress,
+            matches!(state.exit_status, ExitStatusView::Failed { .. }),
+        )
+    };
     // Release the external exit; `exit_without_saving` should complete and
     // clear the flag.
     {
@@ -669,6 +676,12 @@ async fn cancel_exit_rejects_during_in_progress_exit_without_saving() {
         cvar.notify_all();
     }
     let outcome = task.await.unwrap();
+    assert_eq!(
+        cancel_result.unwrap_err().code,
+        "stalePersistenceFailureToken"
+    );
+    assert!(observed_state.0);
+    assert!(observed_state.1);
     assert!(outcome.is_ok());
     {
         let state = persistence.state.lock().unwrap();
