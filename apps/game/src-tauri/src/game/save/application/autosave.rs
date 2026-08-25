@@ -48,6 +48,9 @@ impl ApplicationPersistence {
             });
             Ok(())
         }
+        // Test builds without an ambient tokio runtime reach this fallback; the
+        // returned error is recorded by `retry_cleanup_if_needed`, which
+        // publishes Degraded persistence health via `record_cleanup_failure`.
         #[cfg(test)]
         Err(GameError::save_write_failed())
     }
@@ -562,29 +565,19 @@ impl ApplicationPersistence {
         &self,
         _trigger: BackgroundRetryTrigger,
     ) -> Option<ThumbnailCaptureRequestView> {
-        let (failure, stale_health_publication) = {
+        let (failure, retirement) = {
             let mut state = self.state.lock().ok()?;
             let failure = state.failed_write.clone()?;
-            let (session_generation, durable_revision) = failure.identity;
-            let superseded_by_pending = state.pending_autosave.as_ref().is_some_and(|pending| {
-                pending.session_generation == session_generation
-                    && pending.durable_revision > durable_revision
-            });
-            let superseded_by_success =
-                state.last_successful_write.as_ref().is_some_and(|receipt| {
-                    receipt.session_generation == session_generation
-                        && receipt.durable_revision >= durable_revision
-                });
-            if superseded_by_pending || superseded_by_success {
-                state.failed_write = None;
-                let health = health_after_completion(&state);
-                let subscribers = set_persistence_health(&mut state, health.clone());
-                (None, Some((health, subscribers)))
-            } else {
-                (Some(failure), None)
+            match retry_eligibility(&mut state, failure.identity) {
+                RetryEligibility::Proceed => (Some(failure), None),
+                RetryEligibility::Ignore => (None, None),
+                RetryEligibility::Retire {
+                    health,
+                    subscribers,
+                } => (None, Some((health, subscribers))),
             }
         };
-        if let Some((health, subscribers)) = stale_health_publication {
+        if let Some((health, subscribers)) = retirement {
             publish_health(&subscribers, &health);
         }
         let failure = failure?;

@@ -1,14 +1,12 @@
-use super::helpers::{application_fixture, application_fixture_at};
+use super::helpers::{application_fixture, application_fixture_at, RecordingExit};
 use crate::game::save::application::session::SessionTransitionIdentity;
 #[cfg(feature = "e2e")]
 use crate::game::save::application::AppSession;
-use crate::game::save::application::{ApplicationExit, ExitRequestSource, ExitStatusView};
+use crate::game::save::application::{ExitRequestSource, ExitStatusView};
 use crate::game::save::schema::SaveSlotRef;
 use crate::game::test_support::{empty_engine_with_scene, investigation_scene_with_intro};
-use crate::game::GameError;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
 
 fn engine(revision: u64) -> crate::game::GameEngine {
     engine_with_scene("scene", revision)
@@ -308,32 +306,6 @@ async fn transitions_waiting_for_operation_gate_do_not_hold_session_mutex() {
     }
 }
 
-#[derive(Default)]
-struct RecordingExit {
-    calls: Mutex<Vec<i32>>,
-    called: Notify,
-}
-
-impl ApplicationExit for RecordingExit {
-    fn exit(&self, code: i32) -> Result<(), GameError> {
-        self.calls.lock().unwrap().push(code);
-        self.called.notify_waiters();
-        Ok(())
-    }
-}
-
-impl RecordingExit {
-    async fn wait_for_call(&self) {
-        loop {
-            let notified = self.called.notified();
-            if !self.calls.lock().unwrap().is_empty() {
-                return;
-            }
-            notified.await;
-        }
-    }
-}
-
 #[tokio::test]
 async fn exit_request_arms_while_operation_gate_is_busy_and_flush_waits_afterward() {
     let fixture = application_fixture();
@@ -366,8 +338,7 @@ mod e2e {
         AutosaveWriteReceipt, BackgroundWriteFailure, CleanupFailure, PendingAutosave,
         PersistenceHealthView, ThumbnailActivityView, ThumbnailCapturePurpose,
     };
-    use crate::game::save::e2e_faults::E2ePersistenceFaultBoundary;
-    use crate::game::SceneView;
+    use crate::game::{GameError, SceneView};
     use tokio::time::Instant;
 
     #[tokio::test]
@@ -423,10 +394,6 @@ mod e2e {
             state.programmatic_exit_bypass = true;
             state.exit_action_in_progress = true;
         }
-        fixture
-            .persistence
-            .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::EnvelopeReplace, 1)
-            .unwrap();
 
         let replacement = fixture
             .persistence
@@ -455,11 +422,6 @@ mod e2e {
         assert_eq!(state.exit_status, ExitStatusView::Idle);
         assert!(!state.programmatic_exit_bypass);
         assert!(!state.exit_action_in_progress);
-        drop(state);
-        fixture
-            .persistence
-            .arm_e2e_persistence_fault(E2ePersistenceFaultBoundary::ThumbnailInstall, 1)
-            .unwrap();
     }
 
     #[tokio::test]

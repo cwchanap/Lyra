@@ -365,42 +365,7 @@ impl ApplicationPersistence {
     ) -> Result<tokio::sync::oneshot::Sender<ExitAttemptRecovery>, GameError> {
         let persistence = self.clone();
         let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-        #[cfg(test)]
-        if let Ok(handle) = tokio::runtime::Handle::try_current() {
-            handle.spawn(async move {
-                let Ok(recovery) = start_rx.await else {
-                    return;
-                };
-                let mut recovery = ExitAttemptRecoveryGuard::new(persistence.clone(), recovery);
-                match persistence.flush_for_exit().await {
-                    Ok(()) => {
-                        {
-                            let Ok(mut state) = persistence.state.lock() else {
-                                return;
-                            };
-                            state.programmatic_exit_bypass = true;
-                        }
-                        match exit.exit(0) {
-                            Ok(()) => recovery.disarm(),
-                            Err(error) => {
-                                if let Ok(notification) = persistence.commit_exit_failure(error) {
-                                    recovery.disarm();
-                                    notification.publish();
-                                }
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        if let Ok(notification) = persistence.commit_exit_failure(error) {
-                            recovery.disarm();
-                            notification.publish();
-                        }
-                    }
-                }
-            });
-        }
-        #[cfg(not(test))]
-        tauri::async_runtime::spawn(async move {
+        let run = async move {
             let Ok(recovery) = start_rx.await else {
                 return;
             };
@@ -430,7 +395,14 @@ impl ApplicationPersistence {
                     }
                 }
             }
-        });
+        };
+        #[cfg(test)]
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(run);
+            return Ok(start_tx);
+        }
+        #[cfg(not(test))]
+        tauri::async_runtime::spawn(run);
         Ok(start_tx)
     }
 
