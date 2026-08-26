@@ -11,8 +11,10 @@ Durable evidence record for the Chapter 1 production release-hardening plan
   `7ab0daf35b1e35c1d7a1bb0e3c883de1e2bb6931`
 - Canonical evidence is the command + observed outcome recorded per section
   below, not the branch/head snapshot.
-- All Task-1 commits are docs-only, so the verified code state is identical to
-  the recorded head.
+- Task 1 deterministic evidence was observed at head `5b3d3258` (code identical
+  to later heads except docs commits; the subsequent `helpers.ts` E2E-wait
+  change is separately covered by the focused greens and the gate-closing full
+  run `6de0b45b`).
 - Deterministic evidence below was gathered with the repo-documented
   `bun run scenes:compile` resource tree present (see the Step 4 note).
 
@@ -212,8 +214,9 @@ observation, VoiceOver observation, and Bounded long-session observation.
   Both failures had the same `refreshed manual save browser did not appear`
   timeout and the dependent geometry test then saw `geometry.menu` as undefined.
   The failure artifacts' `manual-3.json` files contain the expected saved name
-  and exact Threshold draft, while the WDIO logs show packaged discovery taking
-  beyond the helper's 30-second refresh wait. The geometry failure was a
+  and exact Threshold draft, while the WDIO logs show the refreshed save browser
+  had not appeared when the helper's 30-second wait expired (absence through
+  timeout; no observation exists in the 30–90s band). The geometry failure was a
   downstream test-order effect: the first test aborted before collecting menu,
   testimony, and Present geometry; no separate app defect was reproduced.
 - Changed owner: `apps/game/e2e-tauri/helpers.ts` (`saveManualSlot`, lines
