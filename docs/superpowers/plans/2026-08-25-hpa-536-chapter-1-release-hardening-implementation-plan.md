@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prove the accepted Chapter 1 build is release-ready using the current Analysis/persistence architecture, add the one missing failed-load session-preservation regression, and record a concrete first-public-release compatibility/evidence baseline.
+**Goal:** Prove the accepted Chapter 1 build is release-ready using current Analysis/persistence contracts, record the first public Chapter 1 save/content baseline, and fix only release blockers that fresh verification actually reproduces.
 
-**Architecture:** This is a verification-first closeout. Reuse existing Rust/component/packaged tests at their current owner boundaries; do not build a new hardening framework or duplicate packaged journeys. Production code is not planned. If a fresh release contract fails, stop at that concrete owner, amend this plan in the same HPA-536 PR, and make only the minimum fix required by the failing player-visible contract.
+**Architecture:** Verification-first closeout. Reuse existing Rust/component/packaged tests at their current owners; do not add the duplicate failed-Load regression from the first draft. Production code is not planned. The only planned repository artifacts are the release-readiness execution record plus the living HPA-540 compatibility-policy handoff.
 
 **Tech Stack:** Rust/Tauri 2, Svelte 5, TypeScript, Vitest/Testing Library, WebdriverIO Tauri E2E, Bun.
 
@@ -12,177 +12,96 @@
 
 ## Global Constraints
 
-- One HPA-536 implementation PR; do not split this ticket into multiple PRs.
-- Default production-code delta is zero; add production edits only for a freshly reproduced release blocker.
-- Keep the post-HPA-521 `ApplicationPersistence` + one `operation_gate` ownership model.
+- One HPA-536 PR; do not split this closeout into multiple PRs.
+- Default production/test code delta is zero; edit code only after a fresh existing contract reproduces a release blocker.
+- Reuse `lib.rs` transition-contract tests for failed selected Load preservation; do not add a weaker copy in `application/tests/commands.rs`.
+- Keep post-HPA-521 `ApplicationPersistence` + one `operation_gate` ownership.
 - Keep HPA-549 acquisition semantics: abnormal-crash popup replay is allowed; durable grants remain idempotent.
-- Keep HPA-550 dynamic DOM-based save thumbnails and the current capture/sidecar behavior.
+- Keep HPA-550 dynamic DOM-based save thumbnails and current capture/sidecar behavior.
 - Do not redesign E2E suites/router/chains; HPA-560 owns that simplification.
-- Do not add Chapter 2 content, future Analysis board types, save migration infrastructure, controller support, an accessibility framework, or a performance harness.
+- Do not add Chapter 2 content, future Analysis board kinds, migration/golden-save frameworks, controller support, accessibility automation, or performance harnesses.
 - Primary supported Chapter 1 desktop acceptance viewport is 1280x720.
-- Public pre-release compatibility is strict current-format compatibility; no backward compatibility branch is required before the first public baseline.
+- The first public baseline is an audit/reference contract; recording it does not create a migration framework or future compatibility window.
 
 ---
 
 ## File Map
 
-### Planned modifications
+### Planned creation during execution
 
-- `apps/game/src-tauri/src/game/save/application/tests/commands.rs`
-  - add one release characterization proving a failed selected Load does not replace the current live session.
+- `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
+  - one-time Chapter 1 release evidence and first-public-baseline record.
 
-### Planned creation
+### Planned living-policy update during execution
 
-- `docs/plans/2026-08-25-chapter-1-release-readiness.md`
-  - one-time Chapter 1 release evidence/compatibility record.
+- `docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md`
+  - mark the HPA-536 recorded commit/schema/contentRevision tuple as the first public baseline and point future persistence work to the release-readiness record.
 
-### Read-only evidence sources
+### Read-only evidence owners
 
-Do not modify these merely to make HPA-536 larger:
+Do not modify these unless fresh verification fails:
 
+- `apps/game/src-tauri/src/lib.rs`
 - `apps/game/src-tauri/src/game/analysis_integration_tests.rs`
-- `apps/game/src-tauri/src/game/save/application/mod.rs`
-- `apps/game/src-tauri/src/game/save/application/commands.rs`
-- `apps/game/src-tauri/src/game/save/application/tests/*.rs`
-- `apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte`
-- `apps/game/src/lib/components/analysis/AnalysisWorkbench.test.ts`
-- `apps/game/src/lib/components/analysis/AnalysisCard.svelte`
-- `apps/game/src/lib/components/analysis/AnalysisCard.test.ts`
-- `apps/game/src/lib/components/analysis/ClassifyBoard.svelte`
-- `apps/game/src/lib/components/analysis/ClassifyBoard.test.ts`
-- `apps/game/src/lib/components/analysis/OrderBoard.svelte`
-- `apps/game/src/lib/components/analysis/OrderBoard.test.ts`
-- `apps/game/src/lib/components/analysis/ThresholdBoard.svelte`
-- `apps/game/src/lib/components/analysis/ThresholdBoard.test.ts`
+- `apps/game/src-tauri/src/game/save/application/**`
+- `apps/game/src-tauri/src/game/save/restore.rs`
+- `apps/game/src-tauri/src/game/save/storage.rs`
+- `apps/game/src/lib/components/analysis/**`
 - `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 - `apps/game/scripts/e2e-suite-registry.mjs`
 - `apps/game/src-tauri/src/game/content_manifest.rs`
 
 ---
 
-### Task 1: Pin failed selected-Load session preservation
+### Task 1: Re-verify deterministic Chapter 1 release contracts
 
 **Files:**
-- Modify: `apps/game/src-tauri/src/game/save/application/tests/commands.rs`
-- Test: `apps/game/src-tauri/src/game/save/application/tests/commands.rs`
+- No planned source/test changes.
+- Record results later in `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`.
 
 **Interfaces:**
-- Consumes: `load_save_core(&AppState, SaveSlotRef, String) -> Result<GameplayCommandResultView, GameError>` and `ApplicationPersistence::transition_identity(&AppState) -> Result<SessionTransitionIdentity, GameError>`.
-- Produces: one named regression/characterization test; no new runtime API.
+- Consumes existing Analysis, transition-contract, acquisition, save/storage/restore, thumbnail, and exit tests.
+- Produces fresh command evidence only.
 
-This is a characterization of an intended existing invariant, not a pre-authorized production change. The test is expected to pass on a correct current implementation. If it fails, the failure is the concrete HPA-536 release blocker; do not invent another transaction/rollback layer.
-
-- [ ] **Step 1: Add the current command-core import and characterization test**
-
-Extend the existing command import list with `load_save_core`, then add:
-
-```rust
-#[tokio::test]
-async fn failed_selected_load_keeps_current_session_installed() {
-    let fixture = application_fixture_at(7, 12);
-    let state = app(&fixture);
-
-    let before = fixture.persistence.transition_identity(&state).unwrap();
-    let before_scene = {
-        let session = fixture.session.lock().unwrap();
-        session
-            .engine
-            .as_ref()
-            .expect("fixture must have a live session")
-            .view()
-            .unwrap()
-            .scene
-    };
-
-    let result = load_save_core(
-        &state,
-        SaveSlotRef::Manual { slot: 1 },
-        "missing-selected-save".into(),
-    )
-    .await;
-
-    assert!(result.is_err());
-
-    let after = fixture.persistence.transition_identity(&state).unwrap();
-    assert_eq!(after.generation, before.generation);
-    assert_eq!(after.durable_revision, before.durable_revision);
-
-    let after_scene = {
-        let session = fixture.session.lock().unwrap();
-        session
-            .engine
-            .as_ref()
-            .expect("failed load must keep the live session")
-            .view()
-            .unwrap()
-            .scene
-    };
-    assert_eq!(after_scene, before_scene);
-}
-```
-
-If `SceneView` cannot be compared directly on the current baseline, compare the stable scene ID/kind extracted from the two views instead; do not add `PartialEq` solely for this test.
-
-- [ ] **Step 2: Run the focused characterization**
+- [ ] **Step 1: Prove the existing failed selected-Load preservation owner**
 
 Run:
 
 ```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml failed_selected_load_keeps_current_session_installed -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged \
+  -- --nocapture
 ```
 
-Expected: one matching test passes. A failure is not permission for speculative refactoring; inspect whether `load_save_core` replaced/cleared the session before restore-candidate validation and fix only that owner if necessary.
+Required evidence from the existing test:
 
-- [ ] **Step 3: Run the surrounding command/application persistence tests**
+```text
+load_save_core fails with incompatibleContentRevision
+session_observation before == session_observation after
+session_observation covers generation + durable revision + serialized public view
+```
+
+Do not add `failed_selected_load_keeps_current_session_installed` to `application/tests/commands.rs`. The existing transition contract is stronger.
+
+- [ ] **Step 2: Verify Analysis exact-state/result ownership**
 
 Run:
 
 ```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::save::application::tests::commands -- --nocapture
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::save::application::tests -- --nocapture
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml \
+  game::analysis_integration_tests -- --nocapture
 ```
 
-Expected: both filters complete with zero failed tests.
-
-- [ ] **Step 4: Commit the characterization**
-
-```bash
-git add apps/game/src-tauri/src/game/save/application/tests/commands.rs
-git commit -m "test(save): pin failed load session preservation"
-```
-
----
-
-### Task 2: Re-verify the existing Chapter 1 deterministic contracts
-
-**Files:**
-- Create later in Task 4: `docs/plans/2026-08-25-chapter-1-release-readiness.md`
-- No production file changes in this task.
-
-**Interfaces:**
-- Consumes: current Analysis integration, Svelte Analysis component, acquisition, save/storage/restore, thumbnail, and exit tests.
-- Produces: fresh command evidence to be copied into the release-readiness record; no new framework.
-
-- [ ] **Step 1: Verify Analysis exact-state and result-dialogue persistence**
-
-Run:
-
-```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml game::analysis_integration_tests -- --nocapture
-```
-
-The evidence must include the existing contracts for:
+Fresh evidence must include the existing contracts for:
 
 - incomplete Order draft detached restore;
 - incomplete Threshold draft detached restore;
-- full Analysis acceptance round-trip;
+- Classify round-trip in the full acceptance flow;
+- completed/read-only board behavior;
 - mid-result-dialogue detached restore;
-- completed board read-only semantics;
 - no duplicated completed-board/scene effects.
 
-Expected: zero failures.
-
-- [ ] **Step 2: Verify Analysis accessibility/semantic fallback ownership**
+- [ ] **Step 3: Verify Analysis accessibility and semantic fallback owners**
 
 Run:
 
@@ -195,326 +114,321 @@ bun run --cwd apps/game test -- \
   src/lib/components/analysis/ThresholdBoard.test.ts
 ```
 
-Expected: zero failures. Use these tests as the primary proof for ARIA state/progress, focus restoration, read-only review, live feedback, native Threshold selection, and non-drag semantic controls. Do not add a second packaged keyboard journey unless these tests reveal a cross-layer behavior they cannot prove.
+Use these as the primary deterministic proof for:
 
-- [ ] **Step 3: Verify acquisition and persistence semantics at their current owners**
+- accessible rail state/progress;
+- focus restoration;
+- read-only review;
+- mounted Classify live feedback;
+- Classify/Order semantic fallback controls;
+- native Threshold `aria-pressed` selection.
 
-Run the full Rust suite rather than resurrecting removed mechanism-specific filters:
-
-```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-```
-
-Expected: zero failures, including current acquisition idempotency/replay, storage/restore strictness, atomic write behavior, stale-generation rejection, thumbnail ticket/state, and exit lifecycle contracts.
-
-- [ ] **Step 4: Verify frontend/type/E2E contract compilation**
+- [ ] **Step 4: Run the complete Rust regression surface once**
 
 Run:
 
 ```bash
-bun run --cwd apps/game check
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
+```
+
+This is the authoritative deterministic closeout for current acquisition replay/idempotency, strict restore, atomic storage, stale-generation/session transitions, thumbnail state, persistence health, and exit lifecycle. Do not reconstruct deleted HPA-521 mechanism tests.
+
+- [ ] **Step 5: Run frontend/static contract checks**
+
+Run:
+
+```bash
 bun run --cwd apps/game test
+bun run --cwd apps/game check
 bun run --cwd apps/game check:e2e
 bun run --cwd apps/game test:e2e:ci-contracts
 ```
 
-Expected: all commands exit 0.
+If a command fails, preserve the failure output and fix only the concrete existing owner. Do not widen HPA-536 into a framework refactor.
 
-- [ ] **Step 5: Do not commit an empty verification task**
+- [ ] **Step 6: No empty commit**
 
-There is intentionally no commit for Task 2. Fresh command output is evidence for Task 4's release record. If a deterministic contract fails, keep the failing output, identify the existing owner, amend this plan with the exact minimal production/test change, and keep the fix in the same HPA-536 PR.
+Task 1 creates no commit when all existing contracts pass. Its outputs become evidence in Task 3.
 
 ---
 
-### Task 3: Run packaged and real-desktop release acceptance
+### Task 2: Run focused packaged Analysis and real-desktop acceptance
 
 **Files:**
-- Update later in Task 4: `docs/plans/2026-08-25-chapter-1-release-readiness.md`
-- No E2E registry/router edits.
+- No E2E registry/router changes.
+- Record results later in the release-readiness document.
 
 **Interfaces:**
-- Consumes: current `analysis-beat85`, `production-journey`, `capture-proof`, save, management, and exit packaged suites.
-- Produces: fresh packaged/manual release evidence; no new suite ID.
+- Consumes the existing `analysis-beat85` packaged suite and packaged desktop app.
+- Produces cross-layer and human-observation evidence.
 
-- [ ] **Step 1: Run focused packaged Beat 8.5 verification during iteration**
-
-Build the E2E app through the existing script, then run the existing suite:
-
-```bash
-bun run --cwd apps/game test:e2e:gameplay
-node apps/game/scripts/run-save-e2e.mjs --suite analysis-beat85
-```
-
-Expected: the existing packaged path proves real resources/IPC, Classify+Order Pointer Events listeners, Threshold selection, three partial Save -> Title -> Continue states, board submission, and hearing handoff without adding a second Analysis E2E.
-
-If the local environment cannot launch the packaged binary, do not mark this pass manually. Use the actual CI/manual packaged run as the evidence source in Task 4.
-
-- [ ] **Step 2: Run the existing full release E2E set**
+- [ ] **Step 1: Build packaged E2E once for the focused iteration pass**
 
 Run:
 
 ```bash
-bun run --cwd apps/game test:e2e:all
+cd apps/game
+node scripts/build-e2e.mjs
+node scripts/run-save-e2e.mjs --suite analysis-beat85
+cd ../..
 ```
 
-Expected: all current suite groups pass. This intentionally reuses the current HPA-516 orchestration; do not simplify it here.
+Do **not** run `test:e2e:gameplay` first. That command selects only suite ID `gameplay`; it is not the gameplay chain and does not include `analysis-beat85`.
 
-- [ ] **Step 3: Perform the 1280x720 normal-motion desktop check**
+The focused suite must prove its existing claims:
 
-On the packaged desktop build, use the existing Chapter 1/Beat 8.5 checkpoint or production path and verify all of the following at 1280x720:
+- real packaged resources and Tauri IPC;
+- production Pointer Events listener path for Classify/Order using the intentionally selected synthetic transport;
+- Threshold selection;
+- partial Classify Save -> Title -> Continue;
+- partial Order Save -> Title -> Continue;
+- partial Threshold Save -> Title -> Continue;
+- board submission and hearing handoff.
+
+If local packaged execution cannot launch, record that limitation and use an exact CI/manual run as the evidence source instead of inventing a pass.
+
+- [ ] **Step 2: 1280x720 normal-motion desktop pass**
+
+On the packaged build, at 1280x720 verify:
 
 ```text
-Analysis rail/header/footer all remain visible
+Analysis rail/header/footer remain visible
 long board content scrolls inside the workspace
 Classify semantic controls remain reachable
 Order semantic controls remain reachable
-Threshold selected state is textual + aria-pressed, not color-only
-Case File opens/closes without clipping
-Save UI opens/closes without clipping
-closing the top layer returns focus to a usable game control
+Threshold selected state remains textual + aria-pressed
+Case File opens/closes without clipping its close controls
+Save UI opens/closes without clipping its close/confirm controls
+closing the top layer returns focus to a usable control
 Escape closes only the topmost active layer
 ```
 
-Record the exact build commit and result in Task 4.
+Record pass/fail and any concrete blocker; do not create viewport-test infrastructure.
 
-- [ ] **Step 4: Perform the reduced-motion check at the same viewport**
+- [ ] **Step 3: Reduced-motion pass at the same viewport**
 
-Enable the host OS/browser reduced-motion preference, relaunch the packaged build, and repeat one Classify move, one Order edit, one Threshold selection, one rejection, and one completed/read-only board review.
+Enable the host reduced-motion preference, relaunch, and exercise:
 
-Required result:
+```text
+one Classify edit
+one Order edit
+one Threshold selection
+one rejected submit
+one completed/read-only board review
+```
+
+Required contract:
 
 ```text
 No required conclusion depends on animation.
-Selected/completed/rejected/read-only state remains available as text/semantics.
+Selected/completed/rejected/read-only state remains textual/semantic.
 All three board types remain operable.
 ```
 
-Do not add a runtime preference store or animation framework for this check.
+- [ ] **Step 4: Keyboard-only Analysis pass**
 
-- [ ] **Step 5: Perform one keyboard-only Analysis pass**
-
-Without pointer drag:
+Without drag:
 
 ```text
-Classify: select card -> use 放入 action -> remove/reassign at least once
-Order: Add/Up/Down/Remove through the authored semantic controls
-Threshold: Tab to cards -> Space/Enter selection -> Submit
-Completed board: navigate back into read-only review
+Classify: select -> 放入 -> remove/reassign
+Order: Add/Up/Down/Remove
+Threshold: Tab -> Space/Enter -> Submit
+Completed board: navigate back to read-only review
 ```
 
-Required result: all Chapter 1 board types can be completed/reviewed and focus never becomes stranded on `<body>` or an unreachable control.
+Required result: all three board types can be completed/reviewed and focus is never stranded on `<body>` or an unreachable control.
 
-- [ ] **Step 6: Perform a short VoiceOver semantics/focus pass**
+- [ ] **Step 5: Short VoiceOver semantics/focus pass**
 
-At minimum verify:
+Verify:
 
 ```text
 rail board names expose current/completed/locked/read-only state and progress
 Threshold announces selected/unselected state
-Classify operation live feedback is announced after an assign/remove/no-op
+Classify assign/remove/no-op feedback is announced
 rejected submit text is announced/focusable
-board change announces/focuses the new board heading
+board change focuses/announces the new board heading
 ```
 
-This is a release observation, not the start of a screen-reader automation framework.
+No screen-reader automation framework is introduced.
 
-- [ ] **Step 7: Perform one long-session observation**
+- [ ] **Step 6: Long-session observation**
 
-Run Chapter 1 through the production journey while repeatedly opening Case File, save UI, dialogue history, entering Analysis boards, saving/loading, and returning to title/Continue.
+Run Chapter 1 with repeated Case File, dialogue history, Analysis, save/load, Return to Title, Continue, and audio transitions.
 
-A pass means no reproducible release blocker such as progressive input lag, multi-second board transition degradation, duplicate audio/presentation state, or save/load slowdown severe enough to threaten a normal Chapter 1 playthrough.
+A blocker must be reproducible and player-visible, such as progressive input lag, multi-second transition degradation, severe save/load slowdown, or duplicated audio/presentation state. Do not add telemetry/benchmark machinery when no blocker is reproduced.
 
-Do not create performance benchmarks or telemetry when no blocker is reproduced.
+- [ ] **Step 7: No empty commit**
+
+Task 2 records observations for Task 3. It does not create a commit unless verification exposed a concrete fix.
 
 ---
 
-### Task 4: Record the first Chapter 1 public release baseline
+### Task 3: Record the first public baseline and close the living HPA-540 policy
 
 **Files:**
-- Create: `docs/plans/2026-08-25-chapter-1-release-readiness.md`
+- Create: `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
+- Modify: `docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md`
 
 **Interfaces:**
-- Consumes: actual command output from Tasks 1-3, `SAVE_SCHEMA_VERSION`, generated `save_content_manifest.json`, and the tested Git commit.
-- Produces: one human-readable release evidence record; this is not a reusable release-management subsystem.
+- Consumes actual output from Tasks 1-2, current `SAVE_SCHEMA_VERSION`, generated `save_content_manifest.json`, and the tested Git commit.
+- Produces a discoverable first-public baseline reference without a migration framework.
 
-- [ ] **Step 1: Capture the exact tested commit and generated content revision**
+- [ ] **Step 1: Capture exact baseline identity from the branch under test**
 
-Run from repo root after scene compilation/build has generated resources:
+Run from repository root:
 
 ```bash
 git rev-parse HEAD
 bun run scenes:compile
+grep -n "SAVE_SCHEMA_VERSION" apps/game/src-tauri/src/game/save/schema.rs
 find apps/game/src-tauri -name save_content_manifest.json -print -exec cat {} \;
 ```
 
-Copy the exact Git SHA and exact `contentRevision` value into the release document. Also read the current `SAVE_SCHEMA_VERSION` from `apps/game/src-tauri/src/game/save/schema.rs`; do not copy a remembered value from an old PR.
+For the execution record, copy the literal Git SHA, the literal current schema constant, and the literal generated `contentRevision`. Do not copy remembered values from HPA-540 or an old PR.
 
-- [ ] **Step 2: Create the release-readiness record with actual evidence**
+- [ ] **Step 2: Create the HPA-536 release-readiness execution record**
 
-Write `docs/plans/2026-08-25-chapter-1-release-readiness.md` with this structure, replacing every result line with the actual observed command/manual outcome from this PR:
+Create:
+
+`docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
+
+Use these exact sections:
 
 ```markdown
-# Chapter 1 Release Readiness — HPA-536
+# HPA-536 Chapter 1 Release Readiness
 
-## Release baseline
-- Verified commit: <paste `git rev-parse HEAD` output>
-- Save schema: <paste current `SAVE_SCHEMA_VERSION`>
-- Content revision: <paste generated `contentRevision`>
-- Supported desktop acceptance viewport: 1280x720
-- Supported Analysis input paths: pointer, keyboard, touch semantic controls
-
-## Compatibility contract
-- This is the first supported public Chapter 1 save/content baseline.
-- Pre-release/development saves are not supported.
-- Current-format `contentRevision` compatibility remains strict.
-- Dynamic DOM-based thumbnails remain the selected release behavior.
-- No save migration framework exists or is required for this baseline.
-
-## Automated evidence
-| Contract | Evidence | Result |
-| --- | --- | --- |
-| Failed selected Load preserves live session | `failed_selected_load_keeps_current_session_installed` | PASS/FAIL from Task 1 |
-| Analysis exact drafts + mid-result restore | `game::analysis_integration_tests` | PASS/FAIL from Task 2 |
-| Analysis semantics/focus/fallback controls | five Analysis component test files | PASS/FAIL from Task 2 |
-| Rust acquisition/persistence/storage/exit | full `cargo test` | PASS/FAIL from Task 2 |
-| Frontend/type/E2E contracts | `check`, `test`, `check:e2e`, `test:e2e:ci-contracts` | PASS/FAIL from Task 2 |
-| Packaged Chapter 1/persistence/lifecycle | `test:e2e:all` or named CI/manual run | PASS/FAIL from Task 3 |
-
-## Desktop/manual acceptance
-| Check | Result | Notes |
-| --- | --- | --- |
-| 1280x720 normal motion | PASS/FAIL | actual observation |
-| 1280x720 reduced motion | PASS/FAIL | actual observation |
-| keyboard-only Analysis completion | PASS/FAIL | actual observation |
-| VoiceOver semantics/focus | PASS/FAIL | actual observation |
-| long Chapter 1 session | PASS/FAIL | actual observation |
-
+## Baseline identity
+## Compatibility policy
+## Deterministic automated evidence
+## Focused packaged Analysis evidence
+## 1280x720 desktop observations
+## Reduced-motion observation
+## Keyboard-only Analysis observation
+## VoiceOver observation
+## Long-session observation
+## Full packaged closeout
 ## Accepted limitations
-- Controller support is not certified for Chapter 1.
-- An unacknowledged acquisition popup may replay after an abnormal crash; acknowledgement/grants are idempotent.
-- Save thumbnails remain the current DOM-capture/sidecar design.
-- Pre-release saves have no compatibility guarantee.
-- E2E orchestration remains the current HPA-516 shape until HPA-560.
-
-## Release blockers
-State `None observed in the recorded checks.` only if every required row above is backed by a fresh passing result. Otherwise list the concrete failing contract and its owner.
+## Release blockers / follow-ups
 ```
 
-Do not literally leave angle-bracket instructions or `PASS/FAIL` alternatives in the committed file; they are execution instructions for this plan. The committed record contains only observed values/results.
+Populate every section with actual evidence already obtained. Under deterministic failed-Load evidence, name the existing `transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged`; do not claim HPA-536 added a new test.
 
-- [ ] **Step 3: Cross-check the record against HPA-536 acceptance criteria**
+Under compatibility policy state:
 
-For each HPA-536 acceptance bullet, point to either:
+```text
+This recorded commit + SAVE_SCHEMA_VERSION + contentRevision tuple is the first public Chapter 1 persistence baseline.
+Pre-release/development saves remain unsupported.
+The baseline is an audit/reference contract, not a migration framework or compatibility-window promise.
+Future support for a second shipped format requires a separate explicit product decision.
+```
 
-- one deterministic test result;
-- one packaged suite result; or
-- one named real-desktop observation.
+- [ ] **Step 3: Update HPA-540 from pending handoff to recorded baseline**
 
-If a bullet has no evidence, do not mark the release ready. Add the smallest missing proof at its existing owner boundary, then update the document.
+In `docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md`:
 
-- [ ] **Step 4: Commit the release evidence**
+1. keep the current one-format/strict-parser/current-content rules;
+2. make the status distinguish pre-release development saves from the recorded public Chapter 1 baseline;
+3. point the first-public baseline to the HPA-536 release-readiness execution record;
+4. state that the pre-release "clear stale development saves" rule does not describe that recorded released tuple;
+5. remove the old requirement to create golden-save registries or a compatibility-window framework as part of this closeout;
+6. retain the rule that migration machinery is only considered after another actually shipped format creates a real need.
+
+Do not add runtime migration code, fixtures, golden-save directories, or a compatibility registry.
+
+- [ ] **Step 4: Commit the baseline documentation**
 
 ```bash
-git add docs/plans/2026-08-25-chapter-1-release-readiness.md
-git commit -m "docs: record Chapter 1 release readiness"
+git add \
+  docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md \
+  docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md
+git commit -m "docs: record Chapter 1 release baseline"
 ```
 
 ---
 
-### Task 5: Final verification and PR closeout
+### Task 4: Run one full packaged closeout and finalize the evidence record
 
 **Files:**
-- Modify only if command output requires correcting the release-readiness record.
+- Modify: `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
+- No E2E orchestration changes.
 
 **Interfaces:**
-- Consumes: the complete HPA-536 diff and all current repository validation commands.
-- Produces: evidence that the implementation PR itself is reviewable; no new architecture.
+- Consumes the current complete suite registry and final HPA-536 branch state.
+- Produces final release evidence and PR closeout.
 
-- [ ] **Step 1: Format/lint/type-check the final tree**
-
-Run:
-
-```bash
-cargo fmt --manifest-path apps/game/src-tauri/Cargo.toml --all --check
-cargo clippy --manifest-path apps/game/src-tauri/Cargo.toml --all-targets --all-features -- -D warnings
-bun run --cwd apps/game check
-bun run --cwd apps/game check:e2e
-```
-
-Expected: all commands exit 0.
-
-- [ ] **Step 2: Run final deterministic tests after all edits**
+- [ ] **Step 1: Run the full packaged registry exactly once at closeout**
 
 Run:
-
-```bash
-cargo test --manifest-path apps/game/src-tauri/Cargo.toml
-bun run --cwd apps/game test
-bun run --cwd apps/game test:e2e:ci-contracts
-```
-
-Expected: zero failures.
-
-- [ ] **Step 3: Re-run the release packaged command or cite the exact fresh CI run**
-
-Prefer:
 
 ```bash
 bun run --cwd apps/game test:e2e:all
 ```
 
-If the local environment cannot launch packaged Tauri E2E, use the exact fresh workflow run for the current HEAD and add that run reference/result to the release-readiness record before making any release-ready claim.
+Do not run another full registry elsewhere in the plan. If this environment cannot execute the packaged app, record the exact CI/manual run URL/identifier that supplies the full result instead.
 
-- [ ] **Step 4: Verify the diff is narrow**
+- [ ] **Step 2: Run final repository checks after any blocker fixes/document edits**
 
 Run:
 
 ```bash
-git diff --check main...HEAD
+bun run check
+bun run lint
+bun run format:check
+bun run rust:fmt
+bun run rust:lint
+```
+
+If HPA-536 needed no production/test fixes, these checks still validate the final branch and documentation formatting/ownership assumptions.
+
+- [ ] **Step 3: Finalize the release-readiness record with the real full result**
+
+Update `## Full packaged closeout` with the exact command and observed outcome from Step 1 (or exact external evidence source). Update `## Release blockers / follow-ups` to contain only concrete unresolved items; if there are none, state that no release blocker was reproduced by the recorded verification.
+
+Do not claim a manual or packaged pass that was not actually observed.
+
+- [ ] **Step 4: Commit final evidence**
+
+```bash
+git add docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md
+git commit -m "docs: close Chapter 1 release verification"
+```
+
+- [ ] **Step 5: Re-check scope against main**
+
+Run:
+
+```bash
 git diff --stat main...HEAD
 git diff --name-only main...HEAD
 ```
 
-Expected planned implementation shape before any concrete blocker fix:
+Expected planned files are HPA-536 design/plan, the release-readiness record, and the HPA-540 living-policy update. Any production/test file must correspond to a concrete blocker reproduced during Tasks 1-4 and documented in the readiness record.
 
-```text
-apps/game/src-tauri/src/game/save/application/tests/commands.rs
-docs/plans/2026-08-25-chapter-1-release-readiness.md
-```
+- [ ] **Step 6: Update tracking**
 
-If production files appear, the PR description must identify the exact failing release contract that justified each one. There must be no E2E router redesign, Chapter 2 content, persistence architecture rewrite, or save migration framework.
+Update PR #74 and Linear HPA-536 with:
 
-- [ ] **Step 5: Commit any evidence-only correction**
+- actual deterministic/package/manual evidence;
+- exact first-public baseline identity;
+- any production fix that was required and why;
+- accepted limitations/follow-ups;
+- confirmation that HPA-560 and Chapter 2 remained out of scope.
 
-Only if the final commands changed facts recorded in the release document:
-
-```bash
-git add docs/plans/2026-08-25-chapter-1-release-readiness.md
-git commit -m "docs: finalize Chapter 1 release evidence"
-```
-
-- [ ] **Step 6: Update HPA-536 / PR status from evidence, not intent**
-
-Keep the PR draft while any release row is failing or unverified. Mark HPA-536 ready for completion only after the release-readiness record contains fresh evidence for every required contract.
+Do not mark HPA-536 complete until the evidence record matches the final branch state.
 
 ---
 
-## Self-review result
+## Plan self-review checklist
 
-### Spec coverage
+Before execution handoff, verify:
 
-- Persistence/recovery: covered by Task 1 + existing Rust/storage/restore/acquisition/thumbnail suites in Task 2.
-- Analysis exact draft/result restore: explicitly reused in Task 2; no duplicate packaged scenario.
-- Accessibility/interaction: component ownership in Task 2; real keyboard/reduced-motion/VoiceOver checks in Task 3.
-- Integrated systems: existing packaged suite set in Task 3.
-- Packaged/release: full current E2E in Task 3/5, 1280x720 acceptance, long-session observation, and release evidence record.
-- First public compatibility baseline: Task 4 records exact schema/content revision without migrations.
-- HPA-560 boundary: explicitly protected throughout.
-
-### Placeholder scan
-
-The implementation plan contains no committed-file placeholder requirement. Angle-bracket and `PASS/FAIL` text appears only inside Task 4's execution template and is explicitly forbidden from remaining in the committed release record.
-
-### Type/interface consistency
-
-The only planned code change consumes existing `load_save_core`, `SaveSlotRef`, `ApplicationPersistence::transition_identity`, and fixture helpers already owned by `commands.rs` tests. No new runtime type or cross-task interface is introduced.
+- [ ] no new failed-Load test is planned;
+- [ ] existing `lib.rs` transition contracts are named as the owner;
+- [ ] release evidence lives under `docs/superpowers/plans/`;
+- [ ] HPA-540 is updated as the living baseline policy;
+- [ ] focused iteration uses build once + `analysis-beat85`, not `test:e2e:gameplay`;
+- [ ] full `test:e2e:all` appears exactly once;
+- [ ] no HPA-560, Chapter 2, migration, accessibility, or performance framework work is included;
+- [ ] production/test code remains zero by default.
