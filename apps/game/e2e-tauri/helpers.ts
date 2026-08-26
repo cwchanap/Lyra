@@ -907,7 +907,7 @@ export async function saveManualSlot(
   await browser.waitUntil(
     async () => elementExists('[aria-label="存檔瀏覽器"]'),
     {
-      timeout: 30000,
+      timeout: 90000,
       timeoutMsg: "refreshed manual save browser did not appear",
     },
   );

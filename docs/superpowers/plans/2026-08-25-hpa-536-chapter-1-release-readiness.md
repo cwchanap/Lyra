@@ -179,9 +179,28 @@ observation, VoiceOver observation, and Bounded long-session observation.
 
 ## Release blockers / follow-ups
 
-- The full packaged closeout is not release-green. Resolve the two
-  `analysis-beat85` failures above and obtain an authorized passing full-registry
-  run before treating the packaged release gate as closed; no rerun was made in
-  this task.
+- Task 2b repair (2026-08-26): the blocker reproduced in both
+  `bee3808d-1d10-4174-90f6-cef0e3b889eb` (full registry, stopped at
+  `analysis-beat85`) and `7783d18b-ef5d-4598-b122-d95c78d40279` (focused).
+  Both failures had the same `refreshed manual save browser did not appear`
+  timeout and the dependent geometry test then saw `geometry.menu` as undefined.
+  The failure artifacts' `manual-3.json` files contain the expected saved name
+  and exact Threshold draft, while the WDIO logs show packaged discovery taking
+  beyond the helper's 30-second refresh wait. The geometry failure was a
+  downstream test-order effect: the first test aborted before collecting menu,
+  testimony, and Present geometry; no separate app defect was reproduced.
+- Changed owner: `apps/game/e2e-tauri/helpers.ts` (`saveManualSlot`, lines
+  897-913). Fix: increase only the refreshed Save Browser condition wait from
+  30,000ms to 90,000ms; no production or registry changes were made.
+- Fresh verification: build plus focused run
+  `3390fa4e-9024-470f-8e3e-d04920427f6c` — PASS, both tests; immediately
+  followed by focused run `4af9afe9-8620-43ed-8245-7947a4e6fff2` — PASS, both
+  tests. `bun run --cwd apps/game check:e2e` also passed. The required full
+  registry was not rerun; the historical full run remains a controller-owned
+  closeout decision.
+
+- The full packaged closeout is not release-green. Obtain an authorized passing
+  full-registry run before treating the packaged release gate as closed; no
+  rerun was made in this task.
 - Human Task 3 must complete the five still-`PENDING` real-host observations
   before the release decision.
