@@ -8,7 +8,7 @@ Durable evidence record for the Chapter 1 production release-hardening plan
 - Recorded branch (non-canonical, local working branch):
   `jack65786656/hpa-536-post-playtest-hardening-prepare-chapter-1-for-production`
 - Recorded head (non-canonical, moves with the working branch):
-  `366bff67110f3146c16c3e1f73b1c7f81da6e749`
+  `7ab0daf35b1e35c1d7a1bb0e3c883de1e2bb6931`
 - Canonical evidence is the command + observed outcome recorded per section
   below, not the branch/head snapshot.
 - All Task-1 commits are docs-only, so the verified code state is identical to
@@ -26,7 +26,7 @@ The tested manifest is byte-identical to the source manifest (`cmp` passed):
 SAVE_SCHEMA_VERSION: 2
 contentRevision: sha256:2d997860ed85592ccca9940e5572bdc80faf65659069fd4c928be073809ca7d7
 Verification PR: #74
-Verification head: 47518bb7e98870d5a98dc36ecf9872205ff71f17
+Verification head: 7ab0daf35b1e35c1d7a1bb0e3c883de1e2bb6931
 
 The `SAVE_SCHEMA_VERSION` / `contentRevision` pair is the merge-stable
 compatibility identity. Verification PR/head are provenance only. HPA-540
@@ -157,6 +157,8 @@ PENDING
 
 ## Full packaged closeout
 
+### Historical failed run (superseded by the gate-closing rerun)
+
 - Command (run exactly once): `bun run --cwd apps/game test:e2e:all`
 - Run ID: `bee3808d-1d10-4174-90f6-cef0e3b889eb`.
 - Result: `apps/game/e2e-artifacts/save-e2e/runs/bee3808d-1d10-4174-90f6-cef0e3b889eb/run-result.json`.
@@ -165,7 +167,32 @@ PENDING
   - `persists partial Analysis drafts, proves pointer ordering, and reaches p4` — `refreshed manual save browser did not appear` (`helpers.ts:907`, called from `analysis-beat85.e2e.ts:1147`).
   - `matches the Interrogation mockup geometry contract` — `expect(received).toBeDefined()` received `undefined` (`analysis-beat85.e2e.ts:1319`).
 
-Final repository checks:
+Historical repository checks for the failed invocation:
+
+- `bun run check` — PASS: 3 successful / 3 total; svelte-check reported 0 errors and 0 warnings.
+- `bun run lint:all` — PASS: ESLint, Prettier, Rust fmt, and Rust clippy all passed.
+
+### Gate-closing full run
+
+- Command (authorized rerun, run exactly once):
+  `bun run --cwd apps/game test:e2e:all`
+- Run ID: `6de0b45b-3017-47d3-a860-98b5bdd9070d`.
+- Result: **PASS** — `apps/game/e2e-artifacts/save-e2e/runs/6de0b45b-3017-47d3-a860-98b5bdd9070d/run-result.json` records `result: "passed"`, `exitCode: 0`, one configured/used attempt, zero retries, and no final failed suite.
+- Registry selection: `forcedFull: true`, `reason: "direct-full"`; selected suites were `smoke`, `gameplay`, `production-journey`, `analysis-beat85`, `capture-proof`, `save-core`, `save-management`, and `exit-lifecycle`.
+- All selected suites passed:
+  - `smoke` — PASS.
+  - `gameplay` — PASS.
+  - `production-journey` — PASS.
+  - `analysis-beat85` — PASS.
+  - `capture-proof` — PASS.
+  - `save-core` — PASS (`save-seed`, `save-resume`).
+  - `save-management` — PASS (`management-seed`, `management-corrupt-newest`, `management-missing-thumbnail`, `management-corrupt-thumbnail`).
+  - `exit-lifecycle` — PASS (`exit-close-seed`, `exit-close-resume`, `exit-quit-resume`, `exit-failure-bypass`, `exit-final-verification`).
+- All 16 phases passed in one attempt; no first-attempt failures, recovered flakes, or final failed suite.
+- The invocation rebuilt the tested E2E binary and copied 5 scene entries into `apps/game/src-tauri/target-e2e/debug/resources/`.
+- Baseline verification after the run: `cmp apps/game/src-tauri/resources/scenes/save_content_manifest.json apps/game/src-tauri/target-e2e/debug/resources/scenes/save_content_manifest.json` — PASS. Observed `SAVE_SCHEMA_VERSION: 2` and `contentRevision: sha256:2d997860ed85592ccca9940e5572bdc80faf65659069fd4c928be073809ca7d7`.
+
+### Final repository checks after the green rerun
 
 - `bun run check` — PASS: 3 successful / 3 total; svelte-check reported 0 errors and 0 warnings.
 - `bun run lint:all` — PASS: ESLint, Prettier, Rust fmt, and Rust clippy all passed.
@@ -195,12 +222,12 @@ observation, VoiceOver observation, and Bounded long-session observation.
 - Fresh verification: build plus focused run
   `3390fa4e-9024-470f-8e3e-d04920427f6c` — PASS, both tests; immediately
   followed by focused run `4af9afe9-8620-43ed-8245-7947a4e6fff2` — PASS, both
-  tests. `bun run --cwd apps/game check:e2e` also passed. The required full
-  registry was not rerun; the historical full run remains a controller-owned
-  closeout decision.
+  tests. `bun run --cwd apps/game check:e2e` also passed. The authorized green
+  full-registry rerun is recorded above and closes this automated packaged gate.
 
-- The full packaged closeout is not release-green. Obtain an authorized passing
-  full-registry run before treating the packaged release gate as closed; no
-  rerun was made in this task.
+- The failed `bee3808d-1d10-4174-90f6-cef0e3b889eb` closeout is superseded by
+  the green gate-closing run `6de0b45b-3017-47d3-a860-98b5bdd9070d`; the
+  `analysis-beat85` timing blocker is resolved by the focused helper wait
+  change recorded above.
 - Human Task 3 must complete the five still-`PENDING` real-host observations
   before the release decision.
