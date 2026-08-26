@@ -2,11 +2,13 @@
 
 ## Status
 
-Accepted for active Chapter 1 development, subject to one precondition:
+Accepted for active Chapter 1 development.
 
-> No publicly shipped Lyra build has promised save compatibility.
+HPA-536 owns the transition from this pre-release policy to the first recorded public Chapter 1 persistence baseline. Until the HPA-536 release-readiness execution record is populated with an actual tested commit/schema/contentRevision tuple, development saves remain governed by the pre-release rules below.
 
-The implementation PR must re-run the release audit before deleting legacy decoding. If a released compatibility promise exists, stop and preserve that released format in a dedicated legacy module.
+Once that record is committed, the exact recorded tuple is the **first public Chapter 1 persistence baseline**. Future persistence work must not describe that released tuple as an internal prototype or accidentally apply the development-only "clear stale saves" rule to it.
+
+This baseline is an audit/reference contract. Recording it does **not** create a compatibility-window promise, golden-save registry, migration framework, or backward-compatibility branch. Support for a later actually shipped format remains a separate product decision.
 
 ## Decision
 
@@ -135,16 +137,24 @@ Save recap copy is presentation cache, not restore authority.
 
 HPA-508 owns completion-aware spoiler safety and must merge before final HPA-540 recap integration.
 
-## First public release
+## First public release handoff — HPA-536
 
-At the first public release:
+HPA-536 records the first public Chapter 1 persistence baseline in:
 
-1. Record the then-current on-disk contract as the first supported released save schema.
-2. Commit representative golden saves for that released contract.
-3. Define the supported compatibility window.
-4. Require explicit deterministic migrations only from formats that were actually shipped.
+`docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
 
-HPA-274 and HPA-536 begin their compatibility matrices from that first shipped contract, not from internal prototypes.
+The execution record must contain the exact tested:
+
+1. Git commit;
+2. current serialized `SAVE_SCHEMA_VERSION`;
+3. generated package-wide `contentRevision`;
+4. strict current-format/content-revision behavior used by that build.
+
+When those literal values are recorded, that tuple is the first public Chapter 1 persistence baseline for audit and future planning. The pre-release development-save invalidation rule does not make that recorded released tuple disappear from project history.
+
+HPA-536 deliberately does **not** create representative golden-save registries, a supported compatibility-window framework, migration modules, or version-routing infrastructure. There is no second shipped format that justifies those mechanisms yet.
+
+If a later product decision requires compatibility with another actually shipped format, create the smallest explicit migration/support ticket at that time. HPA-274 or other later work should start from the HPA-536 recorded baseline rather than from unshipped internal prototypes.
 
 ## HPA-260 contract
 
