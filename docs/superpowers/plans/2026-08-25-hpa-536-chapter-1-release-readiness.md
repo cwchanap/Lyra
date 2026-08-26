@@ -202,7 +202,9 @@ Historical repository checks for the failed invocation:
 ## Accepted limitations
 
 The manual real-host acceptance sections remain `PENDING` for the human Task 3;
-that outstanding work is a recorded limitation of this evidence record:
+by owner decision (2026-08-26) that work is **deferred to after HPA-536 closes** —
+the owner will perform and record the five observations post-closeout. It is a
+recorded limitation and follow-up of this evidence record, not a merge blocker:
 Physical desktop observation, Reduced-motion observation, Keyboard-only Analysis
 observation, VoiceOver observation, and Bounded long-session observation.
 
@@ -232,5 +234,6 @@ observation, VoiceOver observation, and Bounded long-session observation.
   the green gate-closing run `6de0b45b-3017-47d3-a860-98b5bdd9070d`; the
   `analysis-beat85` timing blocker is resolved by the focused helper wait
   change recorded above.
-- Human Task 3 must complete the five still-`PENDING` real-host observations
-  before the release decision.
+- Human Task 3 real-host observations: deferred by owner decision (2026-08-26) —
+  owner will perform the five still-`PENDING` observations after HPA-536 closes
+  and append them here; no automated release blocker remains open.
