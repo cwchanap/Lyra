@@ -18,8 +18,20 @@ Durable evidence record for the Chapter 1 production release-hardening plan
 
 ## Canonical persistence baseline
 
-PENDING — to be filled by Task 4 (`SAVE_SCHEMA_VERSION` / `contentRevision`
-read from the tested full-build resources; deliberately not recorded here yet).
+The tested manifest is byte-identical to the source manifest (`cmp` passed):
+
+- Source: `apps/game/src-tauri/resources/scenes/save_content_manifest.json`
+- Tested: `apps/game/src-tauri/target-e2e/debug/resources/scenes/save_content_manifest.json`
+
+SAVE_SCHEMA_VERSION: 2
+contentRevision: sha256:2d997860ed85592ccca9940e5572bdc80faf65659069fd4c928be073809ca7d7
+Verification PR: #74
+Verification head: 47518bb7e98870d5a98dc36ecf9872205ff71f17
+
+The `SAVE_SCHEMA_VERSION` / `contentRevision` pair is the merge-stable
+compatibility identity. Verification PR/head are provenance only. HPA-540
+pointer verification: PASS — `docs/superpowers/specs/2026-08-03-hpa-540-pre-release-save-compatibility-policy.md`
+points to this record under “First public release handoff — HPA-536”.
 
 ## Deterministic automated evidence
 
@@ -145,12 +157,31 @@ PENDING
 
 ## Full packaged closeout
 
-PENDING
+- Command (run exactly once): `bun run --cwd apps/game test:e2e:all`
+- Run ID: `bee3808d-1d10-4174-90f6-cef0e3b889eb`.
+- Result: `apps/game/e2e-artifacts/save-e2e/runs/bee3808d-1d10-4174-90f6-cef0e3b889eb/run-result.json`.
+- Outcome: **FAIL** — `result: "failed"`, `exitCode: 1`, one configured/used attempt, zero retries. `smoke`, `gameplay`, and `production-journey` passed; `analysis-beat85` failed and stopped the registry before the remaining selected persistence and exit phases.
+- `analysis-beat85` failures:
+  - `persists partial Analysis drafts, proves pointer ordering, and reaches p4` — `refreshed manual save browser did not appear` (`helpers.ts:907`, called from `analysis-beat85.e2e.ts:1147`).
+  - `matches the Interrogation mockup geometry contract` — `expect(received).toBeDefined()` received `undefined` (`analysis-beat85.e2e.ts:1319`).
+
+Final repository checks:
+
+- `bun run check` — PASS: 3 successful / 3 total; svelte-check reported 0 errors and 0 warnings.
+- `bun run lint:all` — PASS: ESLint, Prettier, Rust fmt, and Rust clippy all passed.
 
 ## Accepted limitations
 
-PENDING
+The manual real-host acceptance sections remain `PENDING` for the human Task 3;
+that outstanding work is a recorded limitation of this evidence record:
+Physical desktop observation, Reduced-motion observation, Keyboard-only Analysis
+observation, VoiceOver observation, and Bounded long-session observation.
 
 ## Release blockers / follow-ups
 
-PENDING
+- The full packaged closeout is not release-green. Resolve the two
+  `analysis-beat85` failures above and obtain an authorized passing full-registry
+  run before treating the packaged release gate as closed; no rerun was made in
+  this task.
+- Human Task 3 must complete the five still-`PENDING` real-host observations
+  before the release decision.
