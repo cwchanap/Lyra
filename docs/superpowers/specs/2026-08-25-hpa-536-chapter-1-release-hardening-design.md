@@ -1,7 +1,7 @@
 # HPA-536 Chapter 1 Production Release Hardening Design
 
 **Date:** 2026-08-25  
-**Status:** Planning baseline for HPA-536, revised after reuse review  
+**Status:** Planning baseline for HPA-536, revised after reuse/evidence review  
 **Linear:** HPA-536 — `[Post-playtest hardening] Prepare Chapter 1 for production release`  
 **Target baseline:** current `main` after HPA-549, HPA-550, HPA-521, HPA-621, and the Chapter 1 Beat 8.5 vertical slice
 
@@ -9,63 +9,27 @@
 
 Treat HPA-536 as a **release closeout**, not another architecture project.
 
-The implementation PR is verification-first:
+The implementation is verification-first:
 
-1. map each Chapter 1 release promise to the lowest existing test or runtime owner that already proves it;
-2. reuse those contracts instead of adding weaker copies;
-3. run the existing packaged Chapter 1/persistence/lifecycle suites rather than creating a new E2E framework;
-4. perform only the real-desktop checks that Rust/jsdom cannot prove;
-5. record the first public Chapter 1 save/content baseline in the existing execution-record area;
-6. update the living HPA-540 compatibility policy so later save work cannot accidentally treat that baseline as an internal prototype;
-7. change production code only when fresh verification exposes a concrete player-visible blocker.
+1. reuse the lowest existing owner for each release contract;
+2. persist evidence as each verification phase finishes instead of reconstructing it later from executor memory;
+3. run the existing packaged suites rather than adding a release-specific E2E framework;
+4. keep manual checks only for behavior that automated layers cannot prove reliably;
+5. fix production/test code only after a current contract reproduces a concrete release blocker;
+6. record the first public save/content baseline through the living HPA-540 policy.
 
-The expected production-code delta is **zero by default**. This remains one HPA-536 PR.
-
-## Why HPA-536 is the next actionable P2 task
-
-The Chapter 1 vertical slice and its post-acceptance dependencies are settled:
-
-- Beat 8.5 Classify / Order / Threshold and hearing handoff are implemented.
-- HPA-549 simplified acquisition acknowledgement to ordinary gameplay/autosave semantics.
-- HPA-550 explicitly retained the current dynamic thumbnail behavior.
-- HPA-521 collapsed persistence coordination into application-owned `ApplicationPersistence` with one `operation_gate`.
-- HPA-621 shipped the redesigned Analysis workbench and its 1280x720 desktop target.
-
-Chapter 2 remains deferred. HPA-536 should close P2 using the product that actually exists, not build future platform machinery.
-
-## Review correction: there is no failed-Load coverage gap
-
-The first draft proposed a new `application/tests/commands.rs` regression for:
-
-> a failed selected Load leaves the current live session unchanged.
-
-That test is unnecessary and weaker than existing coverage.
-
-Current `apps/game/src-tauri/src/lib.rs` already owns the live-session transition contracts:
-
-- `transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged`
-  - starts from a live session;
-  - writes a real manual save;
-  - corrupts its `contentRevision`;
-  - calls `load_save_core`;
-  - expects `incompatibleContentRevision`;
-  - asserts `session_observation` is unchanged.
-- the stale-selected-save transition contract also calls `load_save_core` and asserts the same preservation boundary.
-- `session_observation` compares the session generation, durable revision, and full serialized public `GameStateView`.
-- `game/save/application/tests/commands.rs::build_selected_candidate_rejects_missing_save` already owns the isolated missing-save error path.
-
-Therefore HPA-536 adds **no new Rust test by default**. The existing transition tests are the stronger release proof. If one fails during closeout, fix that concrete existing owner in this same PR.
+Expected production/test-code delta is **zero by default**. This remains one HPA-536 PR.
 
 ## Current architecture to preserve
 
-### Analysis runtime and presentation
+### Analysis
 
 ```text
 Rust GameEngine
-  -> authored Analysis scene/boards
-  -> AnalysisActionToken + whole AnalysisDraft mutation
+  -> authored Analysis boards
+  -> AnalysisActionToken + AnalysisDraft mutation
   -> Rust validation/completion/result dialogue
-  -> public GameStateView
+  -> GameStateView
 
 Svelte
   -> AnalysisWorkbench
@@ -73,18 +37,9 @@ Svelte
   -> AnalysisCard
 ```
 
-Existing release contracts:
+Rust owns accepted answers, completion, story effects, durable drafts, and Result Dialogue. Svelte owns presentation, focus restoration, semantic fallback controls, and board navigation. HPA-536 does not add another state model, focus manager, DnD layer, or result overlay.
 
-- Rust owns accepted answers, completion, story effects, and result dialogue.
-- Classify and Order have direct pointer manipulation plus semantic fallback controls.
-- Threshold uses native button selection with `aria-pressed`.
-- completed boards remain navigable for read-only review.
-- `AnalysisWorkbench` owns focus restoration, status/error surfaces, hint/reset/undo/submit, and board navigation.
-- authored Result Dialogue is the success surface; no generated result modal exists.
-
-HPA-536 does not add another state model, focus manager, DnD layer, result overlay, or future board abstraction.
-
-### Save/persistence ownership after HPA-521
+### Persistence after HPA-521
 
 ```text
 ApplicationPersistence
@@ -96,269 +51,204 @@ ApplicationPersistence
   -> thumbnail tickets/activity
 ```
 
-The deleted writer queue/backend/scheduler/counter machinery is not a release contract and must not be recreated or tested.
+Deleted writer/backend/scheduler mechanisms are not release contracts and are not resurrected for testing.
 
-### Acquisition after HPA-549
+### Acquisition and thumbnails
 
-Accepted behavior:
+HPA-549 remains the acquisition contract: durable outputs are idempotent, while an unacknowledged popup may replay after abnormal crash.
 
-- acquisition atomically commits record, story effects, pending acquisition event, and durable revision;
-- ordinary autosave persists that state;
-- an unacknowledged popup may replay after an abnormal crash;
-- replay/acknowledgement is idempotent and cannot double-grant durable outputs.
+HPA-550 remains the thumbnail decision: dynamic DOM-based capture and current sidecar behavior stay in place. HPA-536 consumes existing capture/save-management evidence and does not redesign thumbnails.
 
-HPA-536 does not restore exactly-once acknowledgement persistence.
+### E2E orchestration
 
-### Thumbnails after HPA-550
+HPA-536 consumes the current suite registry. HPA-560 owns future orchestration simplification.
 
-The release-window product decision is explicit:
+`test:e2e:gameplay` selects only suite ID `gameplay`; it is not the gameplay chain and does not include `analysis-beat85`. Focused Analysis verification therefore builds once and invokes `analysis-beat85` directly.
 
-- retain current dynamic save thumbnails;
-- retain the DOM capture/manual-save handshake and current sidecar behavior;
-- reuse `capture-proof` and save-management coverage;
-- do not add native capture or remove/redesign thumbnail infrastructure here.
+## Review correction: no new failed-Load test
 
-### E2E orchestration boundary
+The first draft proposed a `commands.rs` regression for failed selected Load preserving the live session. Existing `apps/game/src-tauri/src/lib.rs` transition contracts are stronger:
 
-Current packaged suite IDs are:
+- `transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged` uses a real manual save, invalidates its `contentRevision`, calls `load_save_core`, and expects `incompatibleContentRevision`;
+- `session_observation` compares generation, durable revision, and the complete serialized public view;
+- the stale-selected-save transition contract protects the same live-session boundary;
+- `build_selected_candidate_rejects_missing_save` already owns the isolated missing-ID path.
 
-- `smoke`
-- `gameplay`
-- `production-journey`
-- `analysis-beat85`
-- `capture-proof`
-- `save-core`
-- `save-management`
-- `exit-lifecycle`
+HPA-536 re-runs those owners. It adds no duplicate regression unless fresh verification finds a genuinely uncovered failure mode.
 
-HPA-560 owns simplifying the registry/router/chains. HPA-536 only consumes them.
+## Evidence lifecycle
 
-Important command distinction:
+Release verification is long enough that evidence must not exist only in one task/subagent context.
 
-- `bun run --cwd apps/game test:e2e:gameplay` selects only suite ID `gameplay`.
-- it is **not** the full gameplay chain and does not include `analysis-beat85`.
-- HPA-536 therefore does not use it as a prerequisite to the focused Analysis run.
+Create the readiness record before the first verification command:
 
-## Options considered
+`docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
 
-### Option A — Broad new hardening matrix
+Append and commit observed evidence after each phase:
 
-Rejected. It duplicates existing Analysis, save, acquisition, thumbnail, and exit proof.
+1. deterministic Rust/frontend contracts;
+2. focused `analysis-beat85` packaged run;
+3. bounded real-desktop observations;
+4. final full packaged closeout and baseline identity.
 
-### Option B — One giant release E2E
+Do not paste large terminal transcripts into the record. Reference durable evidence where it already exists:
 
-Rejected. It would be slow, fragile, hard to diagnose, and overlap HPA-560.
+- `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json`;
+- runner phase output directories under that run;
+- 1280x720 PNG/JSON captures emitted by `captureMockupViewport`.
 
-### Option C — Release evidence matrix + only real gaps
-
-**Selected.** Reuse existing proof, run it fresh, manually check only real desktop-only behavior, record the release baseline, and fix only failures that actually reproduce.
-
-The reuse review found no pre-existing deterministic behavior gap that deserves a new test before verification runs.
+`run-save-e2e.mjs` already gives every phase an attempt-specific `LYRA_E2E_OUTPUT_DIR`; HPA-536 does not add another artifact/output mechanism or require a caller-managed output-directory override.
 
 ## Release contract ownership matrix
 
-| Release promise | Primary owner | Existing evidence to reuse | HPA-536 delta |
+| Release promise | Primary owner | Existing evidence | HPA-536 action |
 |---|---|---|---|
-| Partial Classify draft survives Save -> Title -> Continue | Packaged Analysis journey | `analysis-beat85.e2e.ts` | Fresh run + record |
-| Partial Order draft survives Save -> Title -> Continue | Packaged Analysis journey | `analysis-beat85.e2e.ts` | Fresh run + record |
-| Partial Threshold draft survives Save -> Title -> Continue | Packaged Analysis journey | `analysis-beat85.e2e.ts` | Fresh run + record |
-| Result dialogue restores mid-queue without replaying prior effects | Rust Analysis integration | `analysis_integration_tests.rs` mid-result detached restore | Fresh run + record |
-| Completed board is read-only/reviewable | Rust + Svelte | Analysis integration + `AnalysisWorkbench.test.ts` | Fresh run + record |
-| Board/result story effects are not duplicated by restore | Rust Analysis integration | full Analysis acceptance round-trip | Fresh run + record |
-| Failed selected Load preserves the live session | Tauri command transition contract | `transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged` + stale-selected-save transition contract | **Reuse; no new test** |
-| Missing selected save is rejected | application command unit | `build_selected_candidate_rejects_missing_save` | Reuse |
-| Committed replacement is atomic/current-format parsing is strict | storage/restore | existing storage/restore/application tests | Fresh full Rust run |
-| Acquisition survives restart; popup replay is harmless | acquisition + persistence | HPA-549 unit/integration/packaged coverage | Fresh full Rust/packaged run |
-| Dynamic thumbnail succeeds/falls back safely on sidecar failure | thumbnail/storage/packaged | `capture-proof`, `save-management` | Full packaged closeout |
-| Persistence has one application owner; stale generations cannot replace newer session | `ApplicationPersistence` | post-HPA-521 application tests | Fresh full Rust run |
-| Analysis rail state/progress is textual/semantic | Svelte component | `AnalysisWorkbench.test.ts` | Fresh component run |
-| Focus returns to board/card/feedback instead of `<body>` | Svelte component | `AnalysisWorkbench.test.ts` | Fresh component + manual pass |
-| Classify screen-reader operation feedback is mounted before mutation | Classify component | mounted polite live region + tests | Fresh component + VoiceOver spot check |
-| Classify/Order can complete without pointer drag | board semantic fallback controls | board component tests | Fresh component + keyboard pass |
-| Threshold keyboard selection is native | Threshold component | native button + `aria-pressed` tests | Fresh component + keyboard pass |
-| Pointer Classify/Order path reaches production Pointer Events listeners | packaged Analysis journey | `analysis-beat85` synthetic PointerEvent path | Focused packaged run |
-| 1280x720 fits one Analysis desktop viewport | packaged geometry + desktop | HPA-621 geometry assertions | Focused packaged + manual pass |
-| reduced-motion retains understandable state | CSS + textual semantics + desktop | component CSS/semantics | Manual reduced-motion pass |
-| Case File/objective/history/acquisition/audio/save/title/continue/exit remain integrated | existing packaged suites | current full suite registry | One full packaged closeout |
-| long Chapter 1 session has no release-blocking degradation | real packaged playthrough | production journey + manual observation | Manual release observation |
-| first public save/content baseline is visible to future persistence work | living compatibility policy | HPA-540 + HPA-536 execution record | **Update HPA-540 + record actual baseline** |
+| Partial Classify/Order/Threshold drafts survive Save -> Title -> Continue | packaged Analysis | `analysis-beat85.e2e.ts` | fresh run + record run artifact |
+| Mid-result restore does not replay prior board effects | Rust Analysis integration | `analysis_integration_tests.rs` | fresh run |
+| Completed board is read-only/reviewable | Rust + Svelte | Analysis integration + `AnalysisWorkbench.test.ts` | fresh run |
+| Failed selected Load preserves live session | Tauri transition contract | `transition_contract_load_build_failure_keeps_public_view_and_generation_unchanged` + stale-selection contract | fresh run; no new test |
+| Atomic replacement/current-format strictness | storage/restore | current Rust suites | plain + `--all-features` Rust runs |
+| Acquisition replay is harmless/idempotent | acquisition + persistence | HPA-549 coverage | full Rust/packaged closeout |
+| Dynamic thumbnails succeed/fallback safely | thumbnail/storage/packaged | `capture-proof`, `save-management` | full packaged closeout |
+| One persistence owner / stale session replacement rejected | `ApplicationPersistence` | post-HPA-521 tests | full Rust run |
+| Analysis rail/progress/fallback semantics | Analysis components | Analysis component tests | focused frontend run |
+| Escape closes only topmost claimed layer | escape coordinator | `escape-coordinator.test.ts` | focused frontend run; not manual |
+| GameShell overlay Escape/focus integration | GameShell | `GameShell.test.ts` | focused frontend run; manual only for native focus observations not represented in jsdom |
+| Pointer Classify/Order reaches production Pointer Events listeners | packaged Analysis | `analysis-beat85` | focused packaged run |
+| 1280x720 Analysis geometry/captures | packaged Analysis | `MOCKUP_VIEWPORT`, geometry assertions, `captureMockupViewport` | fresh run + retain artifact paths; physical-window spot check only |
+| reduced-motion keeps state understandable | CSS + semantic state + host preference | existing media rules/component semantics | real-host reduced-motion spot check |
+| VoiceOver exposes key state/focus | macOS screen reader | no deterministic screen-reader owner | short real-host spot check |
+| Chapter 1 integrations remain intact | current packaged registry | gameplay/production/persistence/exit suites | one full packaged closeout |
+| no release-blocking progressive degradation | real packaged session | bounded manual observation | record exact route/cycles/result |
+| first public save/content baseline is discoverable | HPA-540 + readiness record | current strict parser/content manifest | record merge-stable identity |
+
+## Why both Rust feature surfaces remain
+
+Run both:
+
+```bash
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml --all-features
+```
+
+They are intentionally not collapsed. Real persistence/E2E-adjacent tests are gated behind the `e2e` feature, so plain `cargo test` and all-features exercise different surfaces.
 
 ## Accessibility and interaction closeout
 
-### Supported inputs
+Supported Chapter 1 input paths are pointer/mouse, keyboard, and touch through semantic controls. Controller support is not certified.
 
-Release acceptance covers:
+Keyboard completion remains:
 
-- mouse/pointer;
-- keyboard;
-- touch through semantic click/tap controls where applicable.
+- Classify: select -> `放入...` -> remove/reassign;
+- Order: Add/Up/Down/Remove;
+- Threshold: native pressed-button selection -> Submit.
 
-Controller support is not a Chapter 1 release contract.
+Deterministic Escape ordering belongs to `escape-coordinator.test.ts` and `GameShell.test.ts`, not a human checklist. The real-host pass checks only what those tests cannot prove, such as actual OS focus behavior after native-window interaction.
 
-### Keyboard path
+VoiceOver remains a small release observation, not a new automation framework.
 
-A player must be able to complete all Chapter 1 Analysis boards without drag:
+## 1280x720 ownership
 
-- Classify: select card -> authored `放入...` action -> remove/reassign.
-- Order: existing Add/Up/Down/Remove controls.
-- Threshold: native button selection -> Submit.
+1280x720 is the primary Chapter 1 desktop acceptance viewport.
 
-Do not duplicate the packaged Beat 8.5 journey just to automate Tab/Enter. Component semantics plus one manual keyboard release pass are sufficient.
+`analysis-beat85.e2e.ts` already requests `MOCKUP_VIEWPORT = { width: 1280, height: 720 }`, captures screenshots/metadata, and performs Analysis geometry assertions. HPA-536 must reuse that evidence rather than treating viewport fit as purely manual.
 
-### Screen-reader semantics
-
-Check that state does not depend only on color/position/motion:
-
-- rail board states and progress have accessible descriptions;
-- progress elements have labels;
-- Threshold selection exposes `aria-pressed`;
-- Classify feedback uses the mounted polite live region;
-- rejected submit feedback is textual/focusable;
-- completed/read-only/locked states have text labels.
-
-One short VoiceOver pass is sufficient. No screen-reader automation framework is added.
-
-### Focus and Escape
-
-Reuse existing ownership:
-
-- Analysis owns board/card/feedback focus restoration.
-- GameShell owns Case File, persistence overlays, and topmost Escape ordering.
-- Result Dialogue stays dialogue rather than an Analysis modal.
-
-### Reduced motion
-
-The release contract is functional:
-
-- no required conclusion depends on animation;
-- selected/completed/rejected/read-only states remain textual/semantic;
-- board operations remain usable with reduced motion enabled.
-
-CSS media queries remain the owner; no runtime preference store is added.
-
-## Supported desktop viewport
-
-Primary Chapter 1 acceptance viewport remains **1280x720**.
-
-At that size:
-
-- GameShell owns one fitted viewport;
-- Analysis rail/header/footer stay visible;
-- long board content scrolls within the workspace;
-- primary actions remain reachable;
-- Case File/save overlays retain reachable close/confirm controls.
-
-No multi-breakpoint certification matrix is introduced.
+The manual pass is narrowed to physical-window/native-host behavior: visible clipping that differs from the packaged capture, reachable overlay controls, and usable focus after closing overlays.
 
 ## Packaged verification policy
 
-HPA-536 does not create a suite ID or routing policy.
-
-During implementation/iteration, when a focused packaged Analysis proof is useful:
+Focused iteration:
 
 ```bash
 cd apps/game
 node scripts/build-e2e.mjs
 node scripts/run-save-e2e.mjs --suite analysis-beat85
+cd ../..
 ```
 
-This avoids the unrelated `gameplay` suite detour.
+The runner already writes `run-result.json` and attempt output/captures below `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/`.
 
-At release closeout run the current full registry **once**:
+Final closeout runs the full registry **once**:
 
 ```bash
 bun run --cwd apps/game test:e2e:all
 ```
 
-If local packaged execution is unavailable, record the exact CI/manual run that supplies the evidence. Never infer a pass from unit coverage.
+If local packaged execution is unavailable, cite the exact CI/manual run that supplied equivalent evidence. Do not infer a pass from lower-level tests.
 
-HPA-560 may later replace these suite boundaries.
+## Conditional blocker path
 
-## Long-session/performance closeout
+If any deterministic, packaged, or manual release check fails:
 
-Do not add benchmarks, telemetry, soak harnesses, or performance budgets.
+1. reproduce the failure at the smallest existing owner named in the matrix;
+2. add or strengthen a failing regression at that owner only when existing coverage does not already fail;
+3. make the smallest production fix;
+4. re-run the owner that caught the bug plus the higher-level suite/check that exposed it;
+5. append the blocker, fix, and fresh results to the readiness record.
 
-Use one real Chapter 1 run with repeated Analysis/save/load/menu activity. A blocker is a reproducible player-visible problem such as progressive input lag, multi-second transition degradation, severe save/load slowdown, or duplicate audio/presentation state.
+Hard stop: if the required fix is framework-scale, requires HPA-560-style E2E restructuring, broad persistence architecture work, or another out-of-scope subsystem, do not widen HPA-536. Record the limitation/blocker and create a focused follow-up instead.
 
-If a blocker is reproduced, fix/file that concrete issue. Do not build a performance platform.
+## Bounded long-session observation
 
-## First public save/content baseline
+Keep this qualitative; do not add telemetry or benchmarks.
 
-HPA-536 records the first public Chapter 1 persistence baseline as an **audit/reference contract**, not a reason to build migration machinery now.
+Use the packaged production-journey route as the anchor, then perform **five repeated integration cycles** during the same session. Each cycle includes:
 
-The execution record must capture:
+```text
+open/close Case File
+open/close dialogue history
+enter/revisit Analysis
+manual Save or Load
+Return to Title
+Continue
+confirm audio/presentation state remains singular
+```
 
-- exact tested Git commit;
-- current `SAVE_SCHEMA_VERSION` read from source;
-- exact generated `contentRevision` from the tested packaged content;
-- current strict parser/content-revision behavior;
-- selected dynamic-thumbnail presentation behavior.
+Record the elapsed observation window approximately and the five-cycle result verbatim, for example `no progressive degradation noticed during ~N minutes / five cycles`. A failure must identify a reproducible player-visible symptom; do not invent a numeric performance budget.
 
-The living HPA-540 policy must point at that record. After the record exists, later persistence work must not call this released tuple an internal prototype or apply the pre-release "delete development saves" rule to it by accident.
+## First public baseline identity
 
-This does **not** add golden-save registries, compatibility-window infrastructure, a migration module, or backward-compatibility branches. If future compatibility is needed for a second actually shipped format, make that a separate product decision/ticket.
+The canonical persistence identity must survive squash/rebase landing. Therefore the release baseline is:
 
-## Release evidence record location
+```text
+SAVE_SCHEMA_VERSION + exact contentRevision loaded by the tested packaged binary
+```
 
-Use the existing execution-record area:
+The readiness record also names PR #74 and the tested branch/head as provenance, but the branch SHA is not the compatibility key.
 
-`docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
+Do not run `scenes:compile` again after packaged verification just to obtain the baseline. `build-e2e.mjs` already runs the Tauri `beforeBuildCommand`, then copies emitted resources into the tested binary layout.
 
-It is a one-time evidence report, not a permanent QA framework. Record:
+Read the pinned paths:
 
-1. tested commit/branch;
-2. `SAVE_SCHEMA_VERSION` and exact `contentRevision`;
-3. existing test/suite names and fresh results;
-4. packaged suite result or exact CI/manual run source;
-5. 1280x720 normal-motion observation;
-6. 1280x720 reduced-motion observation;
-7. keyboard-only Analysis observation;
-8. VoiceOver semantics/focus observation;
-9. long-session observation;
-10. accepted limitations.
+```text
+apps/game/src-tauri/resources/scenes/save_content_manifest.json
+apps/game/src-tauri/target-e2e/debug/resources/scenes/save_content_manifest.json
+```
 
-Accepted limitations include:
+The two manifests must agree before recording the tested `contentRevision`. Do not use `find` across fixture or stale target trees.
 
-- controller support is not certified;
-- abnormal-crash acquisition popup replay is allowed and idempotent;
-- dynamic DOM thumbnail capture remains the selected behavior;
-- pre-release development saves are unsupported;
-- no migration framework is introduced by this closeout;
-- E2E orchestration stays on the HPA-516 shape until HPA-560.
+After PR #74 merges, record the resulting `main` SHA in HPA-536/PR closeout tracking for source provenance. No second documentation PR or compatibility tag is required.
 
 ## Implementation scope
 
-Expected HPA-536 implementation delta:
+Expected HPA-536 repository delta:
 
-- create/update the release evidence record under `docs/superpowers/plans/`;
-- update the HPA-540 living compatibility policy to point future work at the recorded first-public baseline;
-- no Rust/TypeScript/Svelte/E2E production or test changes unless a fresh existing contract fails.
+- the release-readiness execution record;
+- the HPA-540 living-policy handoff;
+- production/test files only if a concrete blocker is reproduced.
 
-Explicitly out of scope:
-
-- duplicate failed-Load regression;
-- HPA-560 router/chain cleanup;
-- Chapter 2/P3 work;
-- migration/golden-save framework;
-- controller support;
-- accessibility/performance frameworks;
-- thumbnail redesign;
-- acquisition transaction resurrection.
+Out of scope: duplicate failed-Load tests, HPA-560 restructuring, Chapter 2/P3, controller certification, migration/golden-save infrastructure, thumbnail redesign, acquisition transaction resurrection, accessibility frameworks, and performance frameworks.
 
 ## Acceptance criteria
 
-- [ ] release matrix references only current architecture and current test owners;
-- [ ] existing failed-Load transition contracts are reused rather than duplicated;
-- [ ] Classify/Order/Threshold high-risk restore positions are freshly verified;
-- [ ] acquisition replay remains idempotent and cannot double-grant;
-- [ ] dynamic thumbnail behavior remains consistent with HPA-550;
-- [ ] strict current-format parsing, exact `contentRevision`, atomic storage, detached restore, and one-owner persistence are freshly verified;
-- [ ] supported pointer/keyboard/touch-semantic Analysis paths remain usable;
-- [ ] 1280x720 normal/reduced-motion acceptance has no release blocker;
-- [ ] VoiceOver/focus/Escape spot check has no release blocker;
-- [ ] Case File, objective, dialogue, audio, popup, save/load/title/continue/exit integrations remain consistent;
-- [ ] current packaged registry is run once at closeout or an exact CI/manual run is cited;
-- [ ] long-session observation identifies no release blocker;
-- [ ] first public baseline is recorded under `docs/superpowers/plans/` and linked from HPA-540;
-- [ ] no new migration, E2E, accessibility, or performance framework is introduced;
-- [ ] remaining polish is explicitly accepted or moved to focused follow-ups.
+- [ ] readiness skeleton exists before long verification begins and is committed after each evidence phase;
+- [ ] existing failed-Load transition contracts are reused;
+- [ ] plain and all-features Rust surfaces pass;
+- [ ] Analysis component tests plus Escape/GameShell owners pass;
+- [ ] focused `analysis-beat85` run records its `run-result.json` and 1280x720 capture paths;
+- [ ] physical-window, reduced-motion, keyboard, VoiceOver, and bounded five-cycle long-session observations are recorded;
+- [ ] any blocker follows the conditional reproduce -> owner regression -> minimal fix -> reverify path;
+- [ ] full packaged registry is run once at closeout or an exact external run is cited;
+- [ ] baseline uses the pinned tested manifest and canonical `SAVE_SCHEMA_VERSION + contentRevision` identity;
+- [ ] merge result SHA is recorded in HPA-536/PR tracking after landing;
+- [ ] no out-of-scope framework work is introduced.
