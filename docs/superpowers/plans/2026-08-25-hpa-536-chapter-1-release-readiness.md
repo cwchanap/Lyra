@@ -94,11 +94,34 @@ uncompiled local resource tree, documented in Step 4.
 
 ## Focused packaged Analysis evidence
 
-PENDING
+- Run date: 2026-08-26.
+- Build: `cd apps/game && node scripts/build-e2e.mjs` — PASS. Built the debug E2E binary with Cargo feature `e2e` and copied resources into `apps/game/src-tauri/target-e2e/debug/resources/` (5 scene entries).
+- Run: `cd apps/game && node scripts/run-save-e2e.mjs --suite analysis-beat85` — PASS. The packaged WebKit run reported 2 passing tests in 4m 1.5s.
+- Run ID: `e9927cb0-24a1-4235-9670-ef847ee2953c`.
+- Result: `apps/game/e2e-artifacts/save-e2e/runs/e9927cb0-24a1-4235-9670-ef847ee2953c/run-result.json`; observed `selectedSuites: ["analysis-beat85"]`, `suite: "analysis-beat85"`, `result: "passed"`, `exitCode: 0`, and 1 attempt.
+- Save → Title → Continue evidence:
+  - Classify: saved `Beat 8.5 分類部分草稿`, returned to Title, then Continue restored the partial `miyake_call → miyake_small_lies` and `miyake_pov_replay → earlier_third_party` draft; the completed Classify board submitted and reached its authored result dialogue.
+  - Order: saved `Beat 8.5 順序部分草稿`, returned to Title, then Continue restored the partial order `[event_1841, event_1843]` with the fixed `event_1841` prefix; the completed Order board submitted and reached its authored result dialogue.
+  - Threshold: saved `Beat 8.5 門鎖申請草稿` with `selectedCardIds: ["lock_sequence"]`, returned to Title, then Continue restored that exact one-card draft; adding `phone_notification` and submitting completed Threshold.
+- Hearing handoff: PASS. The packaged journey reached `interrogation_scene_10` with fact `two_independent_lock_contradictions_identified` and completed objective `prepare_narrow_lock_request`, with `approved_clip` absent before the gate. Completing p1, p2, p3, and the gate made p4 visible and produced exactly one `narrow_lock_export` authorization and exactly one `approved_clip`.
 
 ## 1280x720 packaged capture evidence
 
-PENDING
+The existing `analysis-beat85` geometry test and capture helper owned the viewport request/assertions; this is not a manual-only fit claim.
+
+- Analysis Classify capture metadata: requested `1280x720`; observed `1280x720`; device pixel ratio `2`; `strict: false`.
+- The run also captured the following relative PNG/JSON pairs under `apps/game/e2e-artifacts/save-e2e/runs/e9927cb0-24a1-4235-9670-ef847ee2953c/`:
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/analysis-classify-css-1280x720.png`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/analysis-classify-css-1280x720.json`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-menu-css-1280x720.png`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-menu-css-1280x720.json`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-present-css-1280x720.png`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-present-css-1280x720.json`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-testimony-rebut-css-1280x720.png`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-testimony-rebut-css-1280x720.json`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-testimony-tall-css-1280x800.png`
+  - `outputs/attempt-1/analysisBeat85/analysis-beat85/interrogation-testimony-tall-css-1280x800.json`
+- All four 1280x720 sidecars observed `1280x720` at DPR 2; the 1280x800 sidecar observed `1280x800` at DPR 2. The geometry-contract test passed. The runner logged an initial viewport-normalization retry for the Case File and each capture, but the final observed metadata was exact and the suite remained green.
 
 ## Physical desktop observation
 
