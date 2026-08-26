@@ -4,11 +4,9 @@
 
 Accepted for active Chapter 1 development.
 
-HPA-536 owns the transition from this pre-release policy to the first recorded public Chapter 1 persistence baseline. Until the HPA-536 release-readiness execution record is populated with an actual tested commit/schema/contentRevision tuple, development saves remain governed by the pre-release rules below.
+HPA-536 owns the transition from this pre-release policy to the first recorded public Chapter 1 persistence baseline. Until the HPA-536 release-readiness execution record is populated, development saves remain governed by the pre-release rules below.
 
-Once that record is committed, the exact recorded tuple is the **first public Chapter 1 persistence baseline**. Future persistence work must not describe that released tuple as an internal prototype or accidentally apply the development-only "clear stale saves" rule to it.
-
-This baseline is an audit/reference contract. Recording it does **not** create a compatibility-window promise, golden-save registry, migration framework, or backward-compatibility branch. Support for a later actually shipped format remains a separate product decision.
+Once that record is committed, the first public persistence baseline is identified by its serialized `SAVE_SCHEMA_VERSION` plus exact package-wide `contentRevision`. The tested branch SHA and PR are verification provenance, not compatibility selectors; this matters because the repository may squash or otherwise rewrite the implementation branch when it lands on `main`.
 
 ## Decision
 
@@ -143,18 +141,14 @@ HPA-536 records the first public Chapter 1 persistence baseline in:
 
 `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md`
 
-The execution record must contain the exact tested:
+The canonical compatibility identity is the exact tested pair:
 
-1. Git commit;
-2. current serialized `SAVE_SCHEMA_VERSION`;
-3. generated package-wide `contentRevision`;
-4. strict current-format/content-revision behavior used by that build.
+1. serialized `SAVE_SCHEMA_VERSION`;
+2. generated package-wide `contentRevision` loaded by the tested packaged binary.
 
-When those literal values are recorded, that tuple is the first public Chapter 1 persistence baseline for audit and future planning. The pre-release development-save invalidation rule does not make that recorded released tuple disappear from project history.
+The same execution record also records the verification branch/head and PR #74 for provenance. Those Git references identify what was tested but are not part of save-file compatibility matching. After merge, HPA-536 tracking records the resulting `main` SHA from PR #74 so the landed source remains easy to locate without requiring a second documentation PR or a compatibility tag.
 
-HPA-536 deliberately does **not** create representative golden-save registries, a supported compatibility-window framework, migration modules, or version-routing infrastructure. There is no second shipped format that justifies those mechanisms yet.
-
-If a later product decision requires compatibility with another actually shipped format, create the smallest explicit migration/support ticket at that time. HPA-274 or other later work should start from the HPA-536 recorded baseline rather than from unshipped internal prototypes.
+The pre-release development-save invalidation rule does not apply retroactively to this recorded public baseline. If a later product decision requires support for another actually shipped format, create the smallest explicit migration/support ticket at that time; do not retain migration machinery speculatively.
 
 ## HPA-260 contract
 
