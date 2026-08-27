@@ -6,7 +6,7 @@ Accepted for active Chapter 1 development.
 
 HPA-536 owns the transition from this pre-release policy to the first recorded public Chapter 1 persistence baseline. Until the HPA-536 release-readiness execution record is populated, development saves remain governed by the pre-release rules below.
 
-The first public persistence baseline becomes active only once the HPA-536 release-readiness execution record is committed **and** its canonical serialized `SAVE_SCHEMA_VERSION` and exact package-wide `contentRevision` fields are both populated in that record. A committed record with blank or missing version fields does not activate the baseline; development saves remain under the pre-release rules until both fields are present and committed.
+The first public persistence baseline becomes active only when a build containing the recorded pair has actually landed — that is, when the PR carrying the populated HPA-536 release-readiness record (PR #74) merges. A populated record on an unmerged branch, or a record with blank or missing version fields, does not activate the baseline; development saves remain under the pre-release rules until that build lands.
 
 Once active, the baseline is identified by its serialized `SAVE_SCHEMA_VERSION` plus exact package-wide `contentRevision`. The tested branch SHA and PR are verification provenance only, not activation selectors; this matters because the repository may squash or otherwise rewrite the implementation branch when it lands on `main`.
 
@@ -150,7 +150,7 @@ The canonical compatibility identity is the exact tested pair:
 
 The same execution record also records the verification branch/head and PR #74 for provenance. Those Git references identify what was tested but are not part of save-file compatibility matching. After merge, HPA-536 tracking records the resulting `main` SHA from PR #74 so the landed source remains easy to locate without requiring a second documentation PR or a compatibility tag.
 
-The pre-release development-save invalidation rule does not apply retroactively to this recorded public baseline. If a later product decision requires support for another actually shipped format, create the smallest explicit migration/support ticket at that time; do not retain migration machinery speculatively.
+The pre-release development-save invalidation rule does not apply retroactively to this recorded public baseline. Once the baseline is active, a later public release that changes the recorded `SAVE_SCHEMA_VERSION` / `contentRevision` pair must either preserve or migrate saves written under the recorded baseline, or record an explicit decision in that release's own readiness/plan record that the release intentionally breaks compatibility with the shipped baseline. Silent invalidation of the shipped baseline is not permitted. Absent such a breaking decision, create the smallest explicit migration/support ticket at the time the new format ships; do not retain migration machinery speculatively.
 
 ## HPA-260 contract
 

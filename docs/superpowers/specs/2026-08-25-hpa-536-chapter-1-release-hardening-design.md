@@ -246,7 +246,7 @@ Out of scope: duplicate failed-Load tests, HPA-560 restructuring, Chapter 2/P3, 
 - [ ] plain and all-features Rust surfaces pass;
 - [ ] Analysis component tests plus Escape/GameShell owners pass;
 - [ ] focused `analysis-beat85` run records its `run-result.json` and 1280x720 capture paths;
-- [ ] physical-window, reduced-motion, keyboard, VoiceOver, and bounded five-cycle long-session observations are recorded;
+- [ ] physical-window, reduced-motion, keyboard, VoiceOver, and bounded five-cycle long-session observations are recorded — or explicitly deferred to post-closeout follow-up by an owner decision recorded in the readiness record before closeout (the 2026-08-26 deferral in `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md` is that recorded decision); a deferral must be visible in the readiness record, never silent;
 - [ ] any blocker follows the conditional reproduce -> owner regression -> minimal fix -> reverify path;
 - [ ] full packaged registry is run once at closeout or an exact external run is cited;
 - [ ] baseline uses the pinned tested manifest and canonical `SAVE_SCHEMA_VERSION + contentRevision` identity;

@@ -913,8 +913,35 @@ export async function saveManualSlot(
       },
     );
   } catch (error) {
-    const [native, rendered] = await Promise.all([
-      invokePackagedCommand<SaveBrowserOpenResultView>("list_saves"),
+    // ponytail: probe races a 10s timer so a hung list_saves cannot mask the
+    // original timeout; raise the timer if the degraded mode ever needs longer.
+    const [nativeSlot, rendered] = await Promise.all([
+      Promise.race([
+        invokePackagedCommand<SaveBrowserOpenResultView>("list_saves")
+          .then(
+            (native) =>
+              native.browser.slots.find(
+                (candidate) =>
+                  candidate.reference.type === "manual" &&
+                  candidate.reference.slot === slot,
+              ) ?? null,
+          )
+          .catch((probeError: unknown) => ({
+            probeError:
+              probeError instanceof Error
+                ? probeError.message
+                : String(probeError),
+          })),
+        new Promise<{ probeError: string }>((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                probeError: "list_saves probe did not settle within 10s",
+              }),
+            10_000,
+          );
+        }),
+      ]),
       browser.execute(() => ({
         bodyText: (document.body.textContent ?? "").trim().slice(-2000),
         saveBrowserText:
@@ -940,11 +967,6 @@ export async function saveManualSlot(
           .slice(-20),
       })),
     ]);
-    const nativeSlot = native.browser.slots.find(
-      (candidate) =>
-        candidate.reference.type === "manual" &&
-        candidate.reference.slot === slot,
-    );
     throw new Error(
       [
         error instanceof Error ? error.message : String(error),
@@ -974,8 +996,33 @@ export async function saveManualSlot(
       },
     );
   } catch (error) {
-    const [native, rendered] = await Promise.all([
-      invokePackagedCommand<SaveBrowserOpenResultView>("list_saves"),
+    const [nativeSlot, rendered] = await Promise.all([
+      Promise.race([
+        invokePackagedCommand<SaveBrowserOpenResultView>("list_saves")
+          .then(
+            (native) =>
+              native.browser.slots.find(
+                (candidate) =>
+                  candidate.reference.type === "manual" &&
+                  candidate.reference.slot === slot,
+              ) ?? null,
+          )
+          .catch((probeError: unknown) => ({
+            probeError:
+              probeError instanceof Error
+                ? probeError.message
+                : String(probeError),
+          })),
+        new Promise<{ probeError: string }>((resolve) => {
+          setTimeout(
+            () =>
+              resolve({
+                probeError: "list_saves probe did not settle within 10s",
+              }),
+            10_000,
+          );
+        }),
+      ]),
       browser.execute(() => ({
         browserText:
           document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
@@ -991,11 +1038,6 @@ export async function saveManualSlot(
         })),
       })),
     ]);
-    const nativeSlot = native.browser.slots.find(
-      (candidate) =>
-        candidate.reference.type === "manual" &&
-        candidate.reference.slot === slot,
-    );
     throw new Error(
       [
         error instanceof Error ? error.message : String(error),
