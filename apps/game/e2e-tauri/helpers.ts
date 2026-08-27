@@ -904,13 +904,56 @@ export async function saveManualSlot(
   // continue exercising load/delete/preview behavior in the same phase.
   await openGameMenu();
   await clickButton(anchors.saveGame);
-  await browser.waitUntil(
-    async () => elementExists('[aria-label="存檔瀏覽器"]'),
-    {
-      timeout: 90000,
-      timeoutMsg: "refreshed manual save browser did not appear",
-    },
-  );
+  try {
+    await browser.waitUntil(
+      async () => elementExists('[aria-label="存檔瀏覽器"]'),
+      {
+        timeout: 90000,
+        timeoutMsg: "refreshed manual save browser did not appear",
+      },
+    );
+  } catch (error) {
+    const [native, rendered] = await Promise.all([
+      invokePackagedCommand<SaveBrowserOpenResultView>("list_saves"),
+      browser.execute(() => ({
+        bodyText: (document.body.textContent ?? "").trim().slice(-2000),
+        saveBrowserText:
+          document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
+          null,
+        dialogs: Array.from(
+          document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+        ).map((dialog) => ({
+          ariaLabel: dialog.getAttribute("aria-label"),
+          headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
+            (heading.textContent ?? "").trim(),
+          ),
+          text: (dialog.textContent ?? "").trim().slice(0, 500),
+        })),
+        buttons: Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button"),
+        )
+          .map((button) => ({
+            ariaLabel: button.getAttribute("aria-label"),
+            text: (button.textContent ?? "").trim().slice(0, 120),
+            disabled: button.disabled,
+          }))
+          .slice(-20),
+      })),
+    ]);
+    const nativeSlot = native.browser.slots.find(
+      (candidate) =>
+        candidate.reference.type === "manual" &&
+        candidate.reference.slot === slot,
+    );
+    throw new Error(
+      [
+        error instanceof Error ? error.message : String(error),
+        `native=${JSON.stringify(nativeSlot ?? null)}`,
+        `rendered=${JSON.stringify(rendered)}`,
+      ].join("\n"),
+      { cause: error },
+    );
+  }
   try {
     await browser.waitUntil(
       async () =>
