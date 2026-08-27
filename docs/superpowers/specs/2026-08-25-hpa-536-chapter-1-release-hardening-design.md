@@ -120,7 +120,7 @@ Do not paste large terminal transcripts into the record. Reference durable evide
 | VoiceOver exposes key state/focus | macOS screen reader | no deterministic screen-reader owner | short real-host spot check |
 | Chapter 1 integrations remain intact | current packaged registry | gameplay/production/persistence/exit suites | one full packaged closeout |
 | no release-blocking progressive degradation | real packaged session | bounded manual observation | record exact route/cycles/result |
-| first public save/content baseline is discoverable | HPA-540 + readiness record | current strict parser/content manifest | record merge-stable identity |
+| first public save/content baseline is discoverable | HPA-540 + readiness record | current strict parser/content manifest | record merge-stable identity; activate the compatibility promise on first public distribution |
 
 ## Why both Rust feature surfaces remain
 
@@ -229,6 +229,8 @@ The two manifests must agree before recording the tested `contentRevision`. Do n
 
 After PR #74 merges, record the resulting `main` SHA in HPA-536/PR closeout tracking for source provenance. No second documentation PR or compatibility tag is required.
 
+HPA-540 keeps that recorded pair as the candidate public identity. The compatibility promise activates only when a build containing that pair is distributed as the first public Chapter 1 build. Merge into `main` is not that event: this repository has a CI workflow only, and a once-active baseline cannot later be silently invalidated.
+
 ## Implementation scope
 
 Expected HPA-536 repository delta:
@@ -251,4 +253,5 @@ Out of scope: duplicate failed-Load tests, HPA-560 restructuring, Chapter 2/P3, 
 - [ ] full packaged registry is run once at closeout or an exact external run is cited;
 - [ ] baseline uses the pinned tested manifest and canonical `SAVE_SCHEMA_VERSION + contentRevision` identity;
 - [ ] merge result SHA is recorded in HPA-536/PR tracking after landing;
+- [ ] HPA-540 records the pair at merge and activates the compatibility promise only on first public distribution of that pair;
 - [ ] no out-of-scope framework work is introduced.

@@ -12,7 +12,6 @@ import {
   validDevicePixelRatio,
   type CssViewportSize,
 } from "../src/lib/e2e/case-file-viewport";
-import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import { drainPendingAcquisitionsWithinCap } from "$lib/e2e/pending-acquisition-drain";
@@ -282,6 +281,76 @@ export async function invokePackagedCommand<T>(
     throw new Error(message, { cause: payload });
   }
   return result.value as T;
+}
+
+const LIST_SAVES_PROBE_TIMEOUT_MS = 10_000;
+
+type ListSavesProbeError = { probeError: string };
+
+type ListSavesProbeSlot = {
+  reference?: { type?: string; slot?: number };
+};
+
+type ListSavesManualSlotProbe = ListSavesProbeSlot | ListSavesProbeError | null;
+
+/**
+ * Probe `list_saves` inside one page-side execute so a hung native invoke
+ * cannot leave an uncancelled WebDriver command in flight. The page returns
+ * either the matching manual slot or a timeout/error marker; callers capture
+ * rendered DOM in a separate execute afterward.
+ */
+async function probeListSavesManualSlot(
+  slot: number,
+): Promise<ListSavesManualSlotProbe> {
+  return browser.execute(
+    async (slotNumber: number, timeoutMs: number) => {
+      const internals = (
+        window as unknown as { __TAURI_INTERNALS__?: TauriInternals }
+      ).__TAURI_INTERNALS__;
+      if (!internals) {
+        return { probeError: "Tauri internals are unavailable." };
+      }
+
+      const invokePromise = internals
+        .invoke("list_saves")
+        .then((value) => {
+          const slots = (
+            value as { browser?: { slots?: ListSavesProbeSlot[] } }
+          ).browser?.slots;
+          return (
+            slots?.find(
+              (candidate) =>
+                candidate.reference?.type === "manual" &&
+                candidate.reference?.slot === slotNumber,
+            ) ?? null
+          );
+        })
+        .catch((error: unknown) => {
+          const message =
+            error !== null &&
+            typeof error === "object" &&
+            "message" in error &&
+            typeof (error as { message: unknown }).message === "string"
+              ? (error as { message: string }).message
+              : String(error);
+          return { probeError: message };
+        });
+
+      const timeoutPromise = new Promise<ListSavesProbeError>((resolve) => {
+        setTimeout(
+          () =>
+            resolve({
+              probeError: "list_saves probe did not settle within 10s",
+            }),
+          timeoutMs,
+        );
+      });
+
+      return Promise.race([invokePromise, timeoutPromise]);
+    },
+    slot,
+    LIST_SAVES_PROBE_TIMEOUT_MS,
+  );
 }
 
 export async function loadPackagedCheckpoint(
@@ -913,60 +982,31 @@ export async function saveManualSlot(
       },
     );
   } catch (error) {
-    // ponytail: probe races a 10s timer so a hung list_saves cannot mask the
-    // original timeout; raise the timer if the degraded mode ever needs longer.
-    const [nativeSlot, rendered] = await Promise.all([
-      Promise.race([
-        invokePackagedCommand<SaveBrowserOpenResultView>("list_saves")
-          .then(
-            (native) =>
-              native.browser.slots.find(
-                (candidate) =>
-                  candidate.reference.type === "manual" &&
-                  candidate.reference.slot === slot,
-              ) ?? null,
-          )
-          .catch((probeError: unknown) => ({
-            probeError:
-              probeError instanceof Error
-                ? probeError.message
-                : String(probeError),
-          })),
-        new Promise<{ probeError: string }>((resolve) => {
-          setTimeout(
-            () =>
-              resolve({
-                probeError: "list_saves probe did not settle within 10s",
-              }),
-            10_000,
-          );
-        }),
-      ]),
-      browser.execute(() => ({
-        bodyText: (document.body.textContent ?? "").trim().slice(-2000),
-        saveBrowserText:
-          document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
-          null,
-        dialogs: Array.from(
-          document.querySelectorAll<HTMLElement>('[role="dialog"]'),
-        ).map((dialog) => ({
-          ariaLabel: dialog.getAttribute("aria-label"),
-          headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
-            (heading.textContent ?? "").trim(),
-          ),
-          text: (dialog.textContent ?? "").trim().slice(0, 500),
-        })),
-        buttons: Array.from(
-          document.querySelectorAll<HTMLButtonElement>("button"),
-        )
-          .map((button) => ({
-            ariaLabel: button.getAttribute("aria-label"),
-            text: (button.textContent ?? "").trim().slice(0, 120),
-            disabled: button.disabled,
-          }))
-          .slice(-20),
+    const nativeSlot = await probeListSavesManualSlot(slot);
+    const rendered = await browser.execute(() => ({
+      bodyText: (document.body.textContent ?? "").trim().slice(-2000),
+      saveBrowserText:
+        document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
+        null,
+      dialogs: Array.from(
+        document.querySelectorAll<HTMLElement>('[role="dialog"]'),
+      ).map((dialog) => ({
+        ariaLabel: dialog.getAttribute("aria-label"),
+        headings: Array.from(dialog.querySelectorAll("h2")).map((heading) =>
+          (heading.textContent ?? "").trim(),
+        ),
+        text: (dialog.textContent ?? "").trim().slice(0, 500),
       })),
-    ]);
+      buttons: Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button"),
+      )
+        .map((button) => ({
+          ariaLabel: button.getAttribute("aria-label"),
+          text: (button.textContent ?? "").trim().slice(0, 120),
+          disabled: button.disabled,
+        }))
+        .slice(-20),
+    }));
     throw new Error(
       [
         error instanceof Error ? error.message : String(error),
@@ -996,48 +1036,21 @@ export async function saveManualSlot(
       },
     );
   } catch (error) {
-    const [nativeSlot, rendered] = await Promise.all([
-      Promise.race([
-        invokePackagedCommand<SaveBrowserOpenResultView>("list_saves")
-          .then(
-            (native) =>
-              native.browser.slots.find(
-                (candidate) =>
-                  candidate.reference.type === "manual" &&
-                  candidate.reference.slot === slot,
-              ) ?? null,
-          )
-          .catch((probeError: unknown) => ({
-            probeError:
-              probeError instanceof Error
-                ? probeError.message
-                : String(probeError),
-          })),
-        new Promise<{ probeError: string }>((resolve) => {
-          setTimeout(
-            () =>
-              resolve({
-                probeError: "list_saves probe did not settle within 10s",
-              }),
-            10_000,
-          );
-        }),
-      ]),
-      browser.execute(() => ({
-        browserText:
-          document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
-          null,
-        cards: Array.from(
-          document.querySelectorAll<HTMLElement>(
-            "article[data-slot-type][data-slot-number]",
-          ),
-        ).map((card) => ({
-          type: card.dataset.slotType ?? null,
-          slot: card.dataset.slotNumber ?? null,
-          text: (card.textContent ?? "").trim(),
-        })),
+    const nativeSlot = await probeListSavesManualSlot(slot);
+    const rendered = await browser.execute(() => ({
+      browserText:
+        document.querySelector('[aria-label="存檔瀏覽器"]')?.textContent ??
+        null,
+      cards: Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "article[data-slot-type][data-slot-number]",
+        ),
+      ).map((card) => ({
+        type: card.dataset.slotType ?? null,
+        slot: card.dataset.slotNumber ?? null,
+        text: (card.textContent ?? "").trim(),
       })),
-    ]);
+    }));
     throw new Error(
       [
         error instanceof Error ? error.message : String(error),
