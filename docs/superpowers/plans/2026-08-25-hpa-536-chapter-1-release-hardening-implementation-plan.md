@@ -415,7 +415,6 @@ SOURCE_MANIFEST=apps/game/src-tauri/resources/scenes/save_content_manifest.json
 TESTED_MANIFEST=apps/game/src-tauri/target-e2e/debug/resources/scenes/save_content_manifest.json
 
 cmp "$SOURCE_MANIFEST" "$TESTED_MANIFEST"
-grep -n "SAVE_SCHEMA_VERSION" apps/game/src-tauri/src/game/save/schema.rs
 cat "$TESTED_MANIFEST"
 git rev-parse HEAD
 ```
@@ -423,7 +422,8 @@ git rev-parse HEAD
 Required result:
 
 - `cmp` succeeds;
-- record the literal current `SAVE_SCHEMA_VERSION`;
+- record the literal `SAVE_SCHEMA_VERSION` observed from the tested target-e2e binary, not from `schema.rs`: the closeout run's save-seed suite (`apps/game/e2e-tauri/save-seed.e2e.ts`) reads the save envelope the tested binary wrote and fails unless its serialized `schemaVersion` equals the asserted literal. The generated manifest carries only `contentRevision`, so it cannot substitute for this observation;
+- fail this readiness check (do not freeze or re-freeze the baseline) when the observed value differs from the `SAVE_SCHEMA_VERSION` already recorded in the readiness record;
 - record the literal `contentRevision` from `TESTED_MANIFEST`;
 - record the branch/head as **verification provenance**, not as the canonical compatibility identity.
 
