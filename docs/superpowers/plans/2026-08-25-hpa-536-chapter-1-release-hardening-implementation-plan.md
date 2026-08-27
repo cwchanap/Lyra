@@ -294,6 +294,10 @@ Append reproduction, changed owner, regression (if any), fix, and fresh verifica
 
 Automated ownership has already covered geometry, semantic Escape ordering, and most keyboard semantics. This task covers real OS/window/screen-reader behavior only.
 
+**Owner deferral:** The design permits all five real-host observations to be deferred by an owner decision recorded in the readiness record before closeout. The 2026-08-26 deferral in `docs/superpowers/plans/2026-08-25-hpa-536-chapter-1-release-readiness.md` is that recorded decision: all five remain `PENDING` until after HPA-536 closes. When that recorded deferral stands, skip Steps 1–6 and leave Task 3; do not invent PASS outcomes or treat this task as an unconditional execution gate.
+
+If the owner later executes the observations instead of deferring, follow Steps 1–6 and commit the evidence.
+
 ### Step 1: Physical 1280x720 packaged-window spot check
 
 Use the packaged binary at a 1280x720 CSS target and confirm only native-host observations that the packaged screenshot/geometry assertions cannot settle:
@@ -434,7 +438,7 @@ SAVE_SCHEMA_VERSION: <literal value>
 contentRevision: <literal value from TESTED_MANIFEST>
 ```
 
-This pair is the merge-stable compatibility baseline referenced by HPA-540.
+This pair is the merge-stable compatibility identity referenced by HPA-540. Recording it at closeout/merge does not activate the compatibility promise; that happens when the pair is distributed as the first public Chapter 1 build.
 
 Also record:
 
@@ -486,7 +490,7 @@ Update PR #74 and Linear HPA-536 with the final evidence summary. Do not mark th
 
 **Trigger:** PR #74 has merged.
 
-This task makes **no repository file change** and does not create another PR or tag.
+This task makes **no repository file change** and does not create another PR or tag. It records source provenance only. It does not activate the HPA-540 compatibility promise.
 
 ### Step 1: Resolve the landed main SHA from PR #74
 
@@ -502,7 +506,7 @@ Landed main SHA: <merged PR result>
 Verification head: <pre-merge tested head>
 ```
 
-The landed SHA is source provenance; it does not replace schema/contentRevision as the compatibility identity.
+The landed SHA is source provenance; it does not replace schema/contentRevision as the compatibility identity, and it does not activate the compatibility promise.
 
 ### Step 3: Complete HPA-536
 
@@ -523,8 +527,10 @@ Before execution handoff, confirm:
 - [ ] focused packaged run reuses runner-owned `run-result.json`/output directories;
 - [ ] conditional blocker repair has an explicit hard stop for framework-scale work;
 - [ ] long-session observation is bounded to five integration cycles;
+- [ ] Task 3 has an explicit owner-deferral escape hatch matching the design/readiness record;
 - [ ] full `test:e2e:all` green closeout appears exactly once (Task 2b higher-level rerun allowed, distinct from the closeout);
 - [ ] baseline reads the pinned tested-binary manifest and does not recompile afterward;
 - [ ] canonical baseline is `SAVE_SCHEMA_VERSION + contentRevision`, not a branch SHA;
+- [ ] HPA-540 activation is first public distribution of that pair, not merge;
 - [ ] final checks are `bun run check` + `bun run lint:all`;
 - [ ] post-merge SHA closeout changes tracking only, preserving one ticket -> one PR.

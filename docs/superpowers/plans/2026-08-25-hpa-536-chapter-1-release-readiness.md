@@ -37,8 +37,10 @@ contentRevision: sha256:2d997860ed85592ccca9940e5572bdc80faf65659069fd4c928be073
 Verification PR: #74
 Verification head: 7ab0daf35b1e35c1d7a1bb0e3c883de1e2bb6931
 
-Baseline activation follows HPA-540: the recorded pair becomes the public
-baseline only when the PR #74 build lands, not at record-commit time.
+Baseline activation follows HPA-540: the recorded pair is stored when PR #74
+merges; the compatibility promise becomes active only when that pair is
+actually distributed as the first public Chapter 1 build, not at
+record-commit time and not merely because CI on `main` has run.
 
 The `SAVE_SCHEMA_VERSION` / `contentRevision` pair is the merge-stable
 compatibility identity. Verification PR/head are provenance only. HPA-540
@@ -259,9 +261,10 @@ observation, VoiceOver observation, and Bounded long-session observation.
     degraded mode's root cause remains undiagnosed (it did not reproduce in
     three consecutive post-fix runs); if it recurs, the `saveManualSlot`
     catch-path diagnostics now capture native `list_saves` and rendered DOM
-    state, hardened so a hung or rejected `list_saves` probe cannot replace
-    the original timeout diagnostic (post-`1e1cc70c` follow-up; covered by
-    `check:e2e`).
+    state. The `list_saves` timeout lives inside one page-side execute so a
+    hung native invoke cannot leave an uncancelled WebDriver command in
+    flight or delay the subsequent DOM snapshot (post-`1e1cc70c` follow-up,
+    page-side bound; covered by `check:e2e`).
 
 - The failed `bee3808d-1d10-4174-90f6-cef0e3b889eb` closeout is superseded by
   the green gate-closing run `6de0b45b-3017-47d3-a860-98b5bdd9070d`; the
