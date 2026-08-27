@@ -15,6 +15,13 @@ Durable evidence record for the Chapter 1 production release-hardening plan
   to later heads except docs commits; the subsequent `helpers.ts` E2E-wait
   change is separately covered by the focused greens and the gate-closing full
   run `6de0b45b`).
+- Gate-closing provenance: full run `6de0b45b` finished 2026-08-26T16:51:38Z
+  and is recorded by commit `2801808e` (2026-08-26T16:54:35Z). That run
+  exercised `apps/game/e2e-tauri/helpers.ts` exactly as of `7ab0daf3` —
+  the 90-second wait fix. The later `1e1cc70c` helpers delta adds only
+  catch-path diagnostics that green runs never execute; it is covered by
+  `bun run --cwd apps/game check:e2e` (type-check) plus the follow-up
+  diagnostic-hardening note under Task 2b, not by a packaged run.
 - Deterministic evidence below was gathered with the repo-documented
   `bun run scenes:compile` resource tree present (see the Step 4 note).
 
@@ -29,6 +36,9 @@ SAVE_SCHEMA_VERSION: 2
 contentRevision: sha256:2d997860ed85592ccca9940e5572bdc80faf65659069fd4c928be073809ca7d7
 Verification PR: #74
 Verification head: 7ab0daf35b1e35c1d7a1bb0e3c883de1e2bb6931
+
+Baseline activation follows HPA-540: the recorded pair becomes the public
+baseline only when the PR #74 build lands, not at record-commit time.
 
 The `SAVE_SCHEMA_VERSION` / `contentRevision` pair is the merge-stable
 compatibility identity. Verification PR/head are provenance only. HPA-540
@@ -229,6 +239,29 @@ observation, VoiceOver observation, and Bounded long-session observation.
   followed by focused run `4af9afe9-8620-43ed-8245-7947a4e6fff2` — PASS, both
   tests. `bun run --cwd apps/game check:e2e` also passed. The authorized green
   full-registry rerun is recorded above and closes this automated packaged gate.
+- Save-browser reopen timing evidence (2026-08-27, extracted from the runs'
+  WDIO poll logs for the `elementExists('[aria-label="存檔瀏覽器"]')`
+  condition — the exact wait that failed):
+  - Gate-closing run `6de0b45b`, all suites, 23 observed waits: every wait
+    resolved true in at most 3.94s (most sub-second; all others ≤ 2.3s).
+    Focused greens `3390fa4e` max 0.9s and `4af9afe9` max 1.7s. No green
+    observation ever landed in — or relied on — the 30–90s band; the 90s
+    ceiling never carried a green run.
+  - The two failed runs show a distinct degraded mode rather than a steady
+    slow UI: healthy 0.1–0.3s opens early in the run, then within-run
+    progressive degradation (one 7.6s and one 19.9s late-but-successful
+    appearance, with poll cadence stretching from ~100ms to ~265ms per poll)
+    ending in a >30s never-appears timeout. The 30–90s band exists only inside
+    that degrading mode and has not been observed in any post-fix run.
+  - Conclusion: on the packaged host the Save Browser reopen completes in
+    under 4 seconds whenever the run is healthy — the gate-closing green run
+    is fast-open evidence, not a hidden 30–90s player-visible stall. The
+    degraded mode's root cause remains undiagnosed (it did not reproduce in
+    three consecutive post-fix runs); if it recurs, the `saveManualSlot`
+    catch-path diagnostics now capture native `list_saves` and rendered DOM
+    state, hardened so a hung or rejected `list_saves` probe cannot replace
+    the original timeout diagnostic (post-`1e1cc70c` follow-up; covered by
+    `check:e2e`).
 
 - The failed `bee3808d-1d10-4174-90f6-cef0e3b889eb` closeout is superseded by
   the green gate-closing run `6de0b45b-3017-47d3-a860-98b5bdd9070d`; the
