@@ -387,15 +387,18 @@ If a blocker is found, return to Task 2b.
 - Update: release-readiness record.
 - Verify HPA-540 still points to that record.
 
-### Step 1: Run the full packaged registry exactly once
+### Step 1: Run the full packaged registry exactly once as the green closeout
 
 ```bash
 bun run --cwd apps/game test:e2e:all
 ```
 
-This command already rebuilds the E2E binary before running the full registry. Do not add another full run elsewhere in HPA-536.
+This command already rebuilds the E2E binary before running the full registry. The "exactly once" constraint applies to the final green closeout run only: there must be exactly one full `test:e2e:all` invocation whose `run-result.json` records the gate-closing PASS. It does not forbid the Task 2b higher-level suite/check rerun (Task 2b step 2) needed to confirm a blocker repair — that rerun is explicitly allowed and is distinct from the closeout run.
 
-Record the run-id / `run-result.json` for this exact full invocation, or the exact CI/manual run if local execution is unavailable.
+Record both:
+
+- the failed full (or higher-level) run that exposed the blocker, including its run-id / `run-result.json`; and
+- the final gate-closing green full invocation's run-id / `run-result.json` (or the exact CI/manual run if local execution is unavailable).
 
 ### Step 2: Read the baseline from the resources actually used by that tested binary
 
@@ -520,7 +523,7 @@ Before execution handoff, confirm:
 - [ ] focused packaged run reuses runner-owned `run-result.json`/output directories;
 - [ ] conditional blocker repair has an explicit hard stop for framework-scale work;
 - [ ] long-session observation is bounded to five integration cycles;
-- [ ] full `test:e2e:all` appears exactly once;
+- [ ] full `test:e2e:all` green closeout appears exactly once (Task 2b higher-level rerun allowed, distinct from the closeout);
 - [ ] baseline reads the pinned tested-binary manifest and does not recompile afterward;
 - [ ] canonical baseline is `SAVE_SCHEMA_VERSION + contentRevision`, not a branch SHA;
 - [ ] final checks are `bun run check` + `bun run lint:all`;

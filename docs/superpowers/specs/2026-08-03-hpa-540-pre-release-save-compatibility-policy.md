@@ -6,7 +6,9 @@ Accepted for active Chapter 1 development.
 
 HPA-536 owns the transition from this pre-release policy to the first recorded public Chapter 1 persistence baseline. Until the HPA-536 release-readiness execution record is populated, development saves remain governed by the pre-release rules below.
 
-Once that record is committed, the first public persistence baseline is identified by its serialized `SAVE_SCHEMA_VERSION` plus exact package-wide `contentRevision`. The tested branch SHA and PR are verification provenance, not compatibility selectors; this matters because the repository may squash or otherwise rewrite the implementation branch when it lands on `main`.
+The first public persistence baseline becomes active only once the HPA-536 release-readiness execution record is committed **and** its canonical serialized `SAVE_SCHEMA_VERSION` and exact package-wide `contentRevision` fields are both populated in that record. A committed record with blank or missing version fields does not activate the baseline; development saves remain under the pre-release rules until both fields are present and committed.
+
+Once active, the baseline is identified by its serialized `SAVE_SCHEMA_VERSION` plus exact package-wide `contentRevision`. The tested branch SHA and PR are verification provenance only, not activation selectors; this matters because the repository may squash or otherwise rewrite the implementation branch when it lands on `main`.
 
 ## Decision
 
