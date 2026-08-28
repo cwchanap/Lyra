@@ -369,6 +369,27 @@ describe("isStaleLock", () => {
     expect(await isStaleLock(lockDir)).toBe(true);
   });
 
+  it("reaps a lock immediately when its recorded PID is dead, even with a recent mtime", async () => {
+    // Guards the bug fix: a crashed holder leaves an orphaned lock whose
+    // mtime is recent. Before the fix, isStaleLock required ageMs >
+    // STALE_LOCK_MS (5 min) even when the recorded PID was provably dead,
+    // blocking every subsequent compile for up to 5 minutes. A confirmed-dead
+    // PID must be reaped right away regardless of mtime.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 999999999,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+    // Recent mtime — well under STALE_LOCK_MS. Without the fix this would be
+    // treated as fresh and the assertion would fail.
+    const recent = Math.floor(Date.now() / 1000);
+    utimesSync(lockDir, recent, recent);
+
+    expect(await isStaleLock(lockDir)).toBe(true);
+  });
+
   it("falls back to mtime when owner.json is missing", async () => {
     // No owner.json; old mtime. Should be considered stale by mtime fallback.
     utimesSync(lockDir, 1, 1);

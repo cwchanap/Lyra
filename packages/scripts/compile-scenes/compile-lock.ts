@@ -152,9 +152,14 @@ export async function isStaleLock(lockDir: string): Promise<boolean> {
   // on mtime alone (mtimes do not refresh while a long compile runs). But
   // guard against PID reuse: if the lock is older than MAX_LOCK_MS, the
   // recorded PID was likely recycled for an unrelated process, so reap it
-  // rather than waiting forever.
+  // rather than waiting forever. A recorded PID that is provably dead means
+  // the holder is gone — reap immediately instead of waiting on the mtime
+  // fallback (STALE_LOCK_MS, 5 min), which only applies when there is no
+  // usable owner record to check. Waiting 5 min on a confirmed-dead holder
+  // is what made a crashed compile block every subsequent one.
   const ownerPid = await readOwnerPid(lockDir);
-  if (ownerPid !== null && isProcessAlive(ownerPid)) {
+  if (ownerPid !== null) {
+    if (!isProcessAlive(ownerPid)) return true;
     return ageMs > MAX_LOCK_MS;
   }
 
