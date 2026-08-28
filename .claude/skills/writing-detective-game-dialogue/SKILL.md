@@ -1,6 +1,6 @@
 ---
 name: writing-detective-game-dialogue
-description: Use when writing or expanding chapter scripts for the Lyra detective game project 《東京雨證：第零證人》 under docs/stories_plan/ or static/stories_plan/. Output must be Traditional Chinese game-style dialogue with scene tags, bracketed stage directions, per-line bold character labels, and short (≤100 Chinese char) dialogue lines — not prose. Trigger when given a chapter detail plan (詳細計劃) and asked to produce a playable script (劇本), or to extend an existing 劇本.
+description: Use when writing or expanding chapter scripts for the Lyra detective game project 《東京雨證：第零證人》 under docs/stories_plan/. Output must be Traditional Chinese game-style dialogue with scene tags, bracketed stage directions, per-line bold character labels, and short (≤100 Chinese char) dialogue lines — not prose. Trigger when given a chapter detail plan (詳細計劃) and asked to produce a playable script (劇本), or to extend an existing 劇本.
 ---
 
 # Writing Detective Game Dialogue (《東京雨證：第零證人》)
@@ -178,7 +178,7 @@ standard-only / calm scenes remain valid
 Each chapter is split into **one file per scene**. Four authored file kinds exist:
 
 ```
-stories_plan/               ← either docs/stories_plan/ or static/stories_plan/
+stories_plan/               ← docs/stories_plan/
   final_story_bible.md                             ← canonical story bible (planning only)
   chapter_<N>_plan.md                              ← per-chapter construction plan (planning only)
   characters.md                                   ← consolidated cast reference
@@ -202,7 +202,7 @@ stories_plan/               ← either docs/stories_plan/ or static/stories_plan
 ### Path convention
 
 - **All filenames and folder names are English / ASCII.** Only the file **contents** are Traditional Chinese.
-- **Playable folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is either `docs/stories_plan/` or `static/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
+- **Playable folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is `docs/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
 - **Construction plan:** `docs/stories_plan/chapter_<N>_plan.md`.
 - **Filename:** `scene_<N>.md` — scene numbers align with the beat/scene numbers in the construction plan (so Beat 0 → `scene_0.md`, etc.).
 - Create the playable folder if it doesn't exist before writing.

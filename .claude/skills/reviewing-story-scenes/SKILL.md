@@ -51,8 +51,7 @@ orchestrator's context bloats it and forces you to curate excerpts that lose
 context; subagents reading sources themselves see the full text and can cite
 exact lines.
 
-For the chapter under review (under `docs/stories_plan/` and/or
-`static/stories_plan/`), locate these paths (list the directory if needed):
+For the chapter under review (under `docs/stories_plan/`), locate these paths (list the directory if needed):
 
 - **Story bible** `docs/stories_plan/final_story_bible.md` — canon facts.
 - **Character sheet** `docs/stories_plan/characters.md` — per-character

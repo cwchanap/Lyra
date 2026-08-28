@@ -30,8 +30,7 @@ writes, prose edits, or applying approved plans.
 
 ## Inputs
 
-Read one root: `docs/stories_plan/chapter_<N>/` or
-`static/stories_plan/chapter_<N>/`, plus its `chapter.md`, manifest scenes,
+Read `docs/stories_plan/chapter_<N>/`, plus its `chapter.md`, manifest scenes,
 `static/assets/config/audio.yaml`, `static/assets/audio/**`, and any existing
 plan.
 

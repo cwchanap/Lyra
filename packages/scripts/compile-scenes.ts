@@ -21,13 +21,8 @@ import {
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
-// Source trees compiled into the runtime, merged in a single pass. A root that
-// does not exist is skipped, so an empty static/ tree is fine while authored
-// content lives under docs/. The same chapter_<N> must not appear in both.
-const SOURCE_ROOTS = [
-  resolve(REPO_ROOT, "static/stories_plan"),
-  resolve(REPO_ROOT, "docs/stories_plan"),
-];
+// Canonical authored source tree compiled into the runtime.
+const SOURCE_ROOTS = [resolve(REPO_ROOT, "docs/stories_plan")];
 const OUTPUT_ROOT = resolve(REPO_ROOT, "apps/game/src-tauri/resources/scenes");
 const ASSET_CONFIG_ROOT = resolve(REPO_ROOT, "static/assets/config");
 const ASSET_OUTPUT_ROOT = resolve(

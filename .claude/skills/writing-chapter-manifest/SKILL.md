@@ -1,6 +1,6 @@
 ---
 name: writing-chapter-manifest
-description: Use when authoring or updating a chapter.md file under docs/stories_plan/chapter_<N>/ or static/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
+description: Use when authoring or updating a chapter.md file under docs/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
 ---
 
 # Writing Chapter Manifests (《東京雨證：第零證人》)
@@ -12,16 +12,14 @@ A chapter manifest declares **what scenes a chapter contains, in what playable o
 ## When to use
 
 Use when:
-- Starting a new chapter — author `<stories_plan_root>/chapter_<N>/chapter.md` before writing any scene files, where the root is `docs/stories_plan/` or `static/stories_plan/`.
+- Starting a new chapter — author `docs/stories_plan/chapter_<N>/chapter.md` before writing any scene files.
 - Adding a new scene to an existing chapter — append it to the `## Scenes` list.
 - Reordering scenes — edit the list.
 - Renaming the chapter title — edit the H1.
 
 ## File location
 
-`<stories_plan_root>/chapter_<N>/chapter.md` — one per chapter directory, where
-`<stories_plan_root>` is `docs/stories_plan/` or `static/stories_plan/`. The
-compiler skips a missing root and rejects the same `chapter_<N>` in both roots.
+`docs/stories_plan/chapter_<N>/chapter.md` — one per chapter directory.
 Chapter ordering across chapters is derived from the directory name
 (`chapter_1`, `chapter_2`, …); there is no top-level index file.
 

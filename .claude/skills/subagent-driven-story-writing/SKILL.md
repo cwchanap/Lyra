@@ -52,8 +52,7 @@ format details (those live in the `writing-*` skills this skill dispatches to).
    agents.
 3. **Author the manifest.** Use `writing-chapter-manifest` to write
    `chapter.md` listing exactly the scene files you are about to author.
-4. **RED gate.** Run `bun run scenes:compile` (it merges `static/stories_plan/`
-   and `docs/stories_plan/`). Expect failure naming the missing scene files —
+4. **RED gate.** Run `bun run scenes:compile`. Expect failure naming the missing scene files —
    this proves the manifest + validator are wired before any prose exists.
 5. **Dispatch writing subagents — in parallel when independent.** Two scene
    files that share no evidence/statement IDs are independent; dispatch them in
@@ -174,8 +173,7 @@ restate the axes, verdict, or finding format in the brief, the skill owns them:
 
 - The exact files under review, and the chapter id.
 - The authoritative sources to check against: the story bible, the chapter
-  construction plan, and the writing addendum (under `docs/stories_plan/` and/or
-  `static/stories_plan/`).
+  construction plan, and the writing addendum (under `docs/stories_plan/`).
 - "First action: invoke Skill `reviewing-story-scenes`. Edit nothing — return a
   findings report only, not corrected files."
 

@@ -28,11 +28,10 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   `apps/game/src-tauri/tauri.conf.json`. Tauri's `beforeBuildCommand` compiles
   scenes then runs `vite build` before bundling.
 - `bun run editor:build` - produce the editor desktop app bundle.
-- `bun run scenes:compile` - one-shot compile. Merges scenes from both
-  `static/stories_plan/` and `docs/stories_plan/` (a root that does not exist
-  is skipped) plus `static/assets/config/` into Tauri resource JSON. It always
-  generates the runtime-required `story_catalog.json`; repair a stale local
-  resource tree with exactly `bun run scenes:compile`.
+- `bun run scenes:compile` - one-shot compile. Compiles scenes from
+  `docs/stories_plan/` plus `static/assets/config/` into Tauri resource JSON.
+  It always generates the runtime-required `story_catalog.json`; repair a
+  stale local resource tree with exactly `bun run scenes:compile`.
 - `bun run scenes:watch` - watch authored scene Markdown and asset YAML while
   iterating on story content.
 - `bun run evidence-sources:audit` - audit investigation-scene evidence
@@ -195,10 +194,7 @@ that is what prevents silent drift in the emitted JSON/wire contract:
 
 Lyra's playable content is compiler-driven:
 
-1. Authored Markdown lives under `static/stories_plan/` and/or
-   `docs/stories_plan/`. The compiler merges both source roots in a single
-   pass; a root that does not exist is skipped, and the same `chapter_<N>`
-   must not appear in both roots.
+1. Authored Markdown lives under `docs/stories_plan/`.
 2. Asset policy/catalog YAML lives under `static/assets/config/`.
 3. `packages/scripts/compile-scenes.ts` validates and emits runtime JSON under
    `apps/game/src-tauri/resources/scenes/` and asset manifests/reports under
@@ -244,19 +240,14 @@ attributes like `onsubmit={...}` rather than legacy `on:submit` /
 ## Project domain
 
 This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional
-Chinese). Narrative content has two kinds — keep them straight even though both
-roots now feed the compiler:
+Chinese). Narrative content has two kinds — keep them straight:
 
 - **Planning/design** is reference for writers, not playable input: the canonical
   story bible (`docs/stories_plan/final_story_bible.md`), per-chapter plans
   (`docs/stories_plan/chapter_<N>_plan.md`), and agent addenda. The compiler only
   descends into `chapter_<N>/` directories and within each only reads the files
   its `chapter.md` manifest lists, so root-level planning docs are ignored.
-- **Authored playable content** lives in `<root>/chapter_<N>/`, where `<root>`
-  is either `static/stories_plan/` or `docs/stories_plan/` — the compiler
-  merges both (`packages/scripts/compile-scenes.ts` passes them as a `sourceRoot` list;
-  `compile()` skips a missing root and rejects a `chapter_<N>` that appears in
-  both). A given chapter must live in exactly one root. Files in a chapter dir:
+- **Authored playable content** lives in `docs/stories_plan/chapter_<N>/`, containing:
   - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
     Authored via the `writing-chapter-manifest` skill.
   - `scene_<K>.md` - linear-dialogue scenes (intros, transitions, endings).
@@ -272,8 +263,7 @@ roots now feed the compiler:
 
 Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with
-matching `expected-error.txt`), not the live `static/stories_plan/` or
-`docs/stories_plan/` trees.
+matching `expected-error.txt`), not the live `docs/stories_plan/` tree.
 
 Active writer instructions live in `.claude/skills/*/SKILL.md` and are part of
 the repo contract. When writing or modifying scene content, invoke the relevant

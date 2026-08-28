@@ -49,7 +49,7 @@ export type EvidenceSourceAuditResult = {
   problems: AuditProblem[];
 };
 
-const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan", "static/stories_plan"];
+export const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan"] as const;
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const RECORD_WORDS = [
   "打卡",
@@ -149,7 +149,7 @@ export function suggestEvidenceSource(input: {
 }
 
 export function auditEvidenceSources(
-  sourceRoots: string[] = DEFAULT_SOURCE_ROOTS,
+  sourceRoots: readonly string[] = DEFAULT_SOURCE_ROOTS,
 ): EvidenceSourceAuditResult {
   const items: EvidenceSourceAuditItem[] = [];
   const problems: AuditProblem[] = [];
