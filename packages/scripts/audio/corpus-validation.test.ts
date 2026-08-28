@@ -322,6 +322,10 @@ describe("validateSoundPlanAgainstCorpus — first visual unit BGM+BGS (#4a)", (
 });
 
 describe("loadCorpusForPlan — disk loader", () => {
+  it("defaults authored corpus loading to docs/stories_plan only", () => {
+    expect(DEFAULT_SOURCE_ROOTS).toEqual(["docs/stories_plan"]);
+  });
+
   function writeChapter(repoRoot: string): void {
     const dir = join(repoRoot, "docs/stories_plan/chapter_1");
     mkdirSync(dir, { recursive: true });

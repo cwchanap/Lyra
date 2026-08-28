@@ -15,14 +15,14 @@ import {
   type GameplayCommandName,
 } from "./sfx-events";
 
-// Authored-content source roots, mirroring the compiler's source-root merge
-// (see packages/scripts/compile-scenes.ts): a chapter may live in either
-// static/stories_plan or docs/stories_plan, and a missing root is skipped.
+// Authored-content source root, mirroring the compiler's canonical source
+// root (see packages/scripts/compile-scenes.ts): authored chapters live under
+// docs/stories_plan.
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   "../../../../../",
 );
-const AUTHORED_ROOTS = ["static/stories_plan", "docs/stories_plan"];
+const AUTHORED_ROOTS = ["docs/stories_plan"];
 
 function readAuthoredScene(chapterId: string, sceneFile: string): string {
   for (const root of AUTHORED_ROOTS) {

@@ -22,12 +22,9 @@ import type { SoundPlan, SoundPlanCue, SoundPlanDiagnostic } from "./types";
 
 /**
  * Default source roots searched for the chapter directory, mirroring the
- * compile-scenes entry point. A root that does not exist is skipped.
+ * compile-scenes entry point (docs/stories_plan only).
  */
-export const DEFAULT_SOURCE_ROOTS = [
-  "static/stories_plan",
-  "docs/stories_plan",
-] as const;
+export const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan"] as const;
 
 export type CorpusData = {
   /**

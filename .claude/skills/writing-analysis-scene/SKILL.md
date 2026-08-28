@@ -1,6 +1,6 @@
 ---
 name: writing-analysis-scene
-description: Use when writing or extending an analysis_scene_<K>.md file under static/stories_plan/chapter_<N>/ or docs/stories_plan/chapter_<N>/ for compiler-validated Analysis boards (classify, order, or threshold) whose cards reference case records or practice items, each with Result Dialogue and story Reveals.
+description: Use when writing or extending an analysis_scene_<K>.md file under docs/stories_plan/chapter_<N>/ for compiler-validated Analysis boards (classify, order, or threshold) whose cards reference case records or practice items, each with Result Dialogue and story Reveals.
 ---
 
 # Writing Analysis Scenes (《東京雨證：第零證人》)

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_SOURCE_ROOTS,
   auditEvidenceSources,
   auditGateShouldFail,
   findUntaggedHotspots,
@@ -693,6 +694,10 @@ describe("resolveAuditRoots", () => {
   // process cwd (which is `packages/scripts` under the root script).
   const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 
+  it("defaults the evidence audit to docs/stories_plan only", () => {
+    expect(DEFAULT_SOURCE_ROOTS).toEqual(["docs/stories_plan"]);
+  });
+
   it("anchors relative roots to REPO_ROOT regardless of cwd (regression guard)", () => {
     // The root `package.json` runs this module via
     // `bun run --cwd packages/scripts evidence-sources:audit <roots>`, so the
@@ -731,7 +736,6 @@ describe("resolveAuditRoots", () => {
   it("falls back to the default roots when none are supplied", () => {
     expect(resolveAuditRoots([])).toEqual([
       resolve(repoRoot, "docs/stories_plan"),
-      resolve(repoRoot, "static/stories_plan"),
     ]);
   });
 });

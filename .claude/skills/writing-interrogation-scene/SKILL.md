@@ -1,6 +1,6 @@
 ---
 name: writing-interrogation-scene
-description: Use when writing or extending an interrogation_scene_<N>.md file under static/stories_plan/chapter_<N>/ for compiler-validated suspect cross-examination — locked/unlocked Questions whose Testimony lines the player challenges with evidence.
+description: Use when writing or extending an interrogation_scene_<N>.md file under docs/stories_plan/chapter_<N>/ for compiler-validated suspect cross-examination — locked/unlocked Questions whose Testimony lines the player challenges with evidence.
 ---
 
 # Writing Interrogation Scenes (《東京雨證：第零證人》)

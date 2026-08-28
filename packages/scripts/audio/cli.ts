@@ -22,7 +22,7 @@ const DEFAULT_REPO_ROOT = resolve(
   "../../..",
 );
 const AUDIO_CATALOG_PATH = "static/assets/config/audio.yaml";
-const STORY_ROOTS = ["static/stories_plan/", "docs/stories_plan/"] as const;
+const STORY_ROOTS = ["docs/stories_plan/"] as const;
 
 type CliDiagnostic = {
   code: string;
@@ -336,7 +336,7 @@ function validateCueFilePaths(
       diagnostics.push({
         code: "audioApplyCueFileOutsideStoryRoot",
         path,
-        message: `Cue file path "${cue.file}" must be under static/stories_plan/ or docs/stories_plan/.`,
+        message: `Cue file path "${cue.file}" must be under docs/stories_plan/.`,
       });
     }
   }

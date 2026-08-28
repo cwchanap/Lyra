@@ -368,13 +368,302 @@ fn find_source_scene_path_at_root(root: &Path, scene_path: &str) -> Result<PathB
     Ok(source_path.clone())
 }
 
+const CHAPTERS_INDEX_RELATIVE_PATH: &str = "apps/game/src-tauri/resources/scenes/chapters.json";
+const COMPILED_SCENES_RELATIVE_ROOT: &str = "apps/game/src-tauri/resources/scenes";
+const STORY_SOURCE_RELATIVE_ROOT: &str = "docs/stories_plan";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum SceneType {
+    Linear,
+    Investigation,
+    Interrogation,
+    Analysis,
+}
+
+impl SceneType {
+    fn stage_capable(self) -> bool {
+        !matches!(self, SceneType::Linear)
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchIndex {
+    chapters: Vec<WorkbenchChapterEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchChapterEntry {
+    id: String,
+    title: String,
+    summary: String,
+    scenes: Vec<WorkbenchSceneEntry>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchSceneEntry {
+    id: String,
+    #[serde(rename = "type")]
+    scene_type: SceneType,
+    source_path: String,
+    stage_capable: bool,
+}
+
+#[derive(Debug)]
+// ponytail: unused in non-test builds until Task 4 registers a command that
+// reads it; keep the resolved shape wired now so the cutover is registration-only.
+#[allow(dead_code)]
+struct ResolvedScene {
+    chapter_id: String,
+    scene_id: String,
+    scene_type: SceneType,
+    compiled_path: PathBuf,
+    source_path: PathBuf,
+}
+
+// Private mirror of the compiler-emitted chapters.json (the @lyra/scene-types
+// ChaptersIndex shape) restricted to the fields the workbench consumes.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChaptersIndexFile {
+    chapters: Vec<ChaptersIndexChapter>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChaptersIndexChapter {
+    id: String,
+    title: String,
+    summary: String,
+    scenes: Vec<ChaptersIndexScene>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChaptersIndexScene {
+    #[serde(rename = "type")]
+    scene_type: SceneType,
+    file: String,
+}
+
+/// One manifest scene with its backend-validated authored source resolved.
+#[derive(Debug)]
+struct ManifestScene {
+    id: String,
+    scene_type: SceneType,
+    file: String,
+    source_path: String,
+    canonical_source: PathBuf,
+}
+
+#[tauri::command]
+fn load_workbench_index() -> Result<WorkbenchIndex, EditorError> {
+    let root = workspace_root()?;
+    load_workbench_index_at_root(&root)
+}
+
+fn load_workbench_index_at_root(root: &Path) -> Result<WorkbenchIndex, EditorError> {
+    let chapters = load_manifest_chapters(root)?;
+    Ok(WorkbenchIndex {
+        chapters: chapters
+            .into_iter()
+            .map(|chapter| WorkbenchChapterEntry {
+                id: chapter.id,
+                title: chapter.title,
+                summary: chapter.summary,
+                scenes: chapter
+                    .scenes
+                    .into_iter()
+                    .map(|scene| WorkbenchSceneEntry {
+                        id: scene.id,
+                        scene_type: scene.scene_type,
+                        source_path: scene.source_path,
+                        stage_capable: scene.scene_type.stage_capable(),
+                    })
+                    .collect(),
+            })
+            .collect(),
+    })
+}
+
+// ponytail: unused in non-test builds until Task 4 registers a command that
+// resolves scenes through the manifest; tests pin its contract now.
+#[allow(dead_code)]
+fn resolve_manifest_scene_at_root(
+    root: &Path,
+    chapter_id: &str,
+    scene_id: &str,
+) -> Result<ResolvedScene, EditorError> {
+    let canonical_root = normalize_existing_root(root)?;
+    let chapters = load_manifest_chapters(root)?;
+    let chapter = chapters
+        .into_iter()
+        .find(|chapter| chapter.id == chapter_id)
+        .ok_or_else(|| {
+            EditorError::new(
+                "chapterNotFound",
+                format!("chapter \"{chapter_id}\" is not in the workbench index"),
+            )
+        })?;
+    let scene = chapter
+        .scenes
+        .into_iter()
+        .find(|scene| scene.id == scene_id)
+        .ok_or_else(|| {
+            EditorError::new(
+                "sceneNotFound",
+                format!("scene \"{scene_id}\" is not in chapter \"{chapter_id}\""),
+            )
+        })?;
+    Ok(ResolvedScene {
+        chapter_id: chapter.id,
+        scene_id: scene.id,
+        scene_type: scene.scene_type,
+        compiled_path: canonical_root
+            .join(COMPILED_SCENES_RELATIVE_ROOT)
+            .join(&scene.file),
+        source_path: scene.canonical_source,
+    })
+}
+
+struct ManifestChapter {
+    id: String,
+    title: String,
+    summary: String,
+    scenes: Vec<ManifestScene>,
+}
+
+fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
+    let canonical_root = normalize_existing_root(root)?;
+    let index_path = canonical_root.join(CHAPTERS_INDEX_RELATIVE_PATH);
+    let text = fs::read_to_string(&index_path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::not_found(&index_path)
+        } else {
+            EditorError::new(
+                "indexReadFailed",
+                format!("failed to read {}: {error}", index_path.display()),
+            )
+        }
+    })?;
+    let parsed: ChaptersIndexFile = serde_json::from_str(&text).map_err(|error| {
+        EditorError::new(
+            "indexInvalid",
+            format!("failed to parse {}: {error}", index_path.display()),
+        )
+    })?;
+
+    parsed
+        .chapters
+        .into_iter()
+        .map(|chapter| {
+            let scenes = chapter
+                .scenes
+                .iter()
+                .map(|scene| manifest_scene(&canonical_root, scene))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(ManifestChapter {
+                id: chapter.id,
+                title: chapter.title,
+                summary: chapter.summary,
+                scenes,
+            })
+        })
+        .collect()
+}
+
+/// Derives the scene id from the manifest filename stem and resolves the
+/// authored markdown under exactly docs/stories_plan. Does not scan authored
+/// directories; the manifest owns the order and membership.
+fn manifest_scene(
+    canonical_root: &Path,
+    scene: &ChaptersIndexScene,
+) -> Result<ManifestScene, EditorError> {
+    // The manifest is compiler-generated (`chapter_<N>/<scene>.json`), but its
+    // `file` string is concatenated into backend-constructed paths below, so
+    // reject traversal/absolute components before any filesystem access.
+    for component in Path::new(&scene.file).components() {
+        match component {
+            Component::Normal(_) | Component::CurDir => {}
+            Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                return Err(EditorError::new(
+                    "scenePathInvalid",
+                    "manifest scene file must be a relative path under the compiled scenes root",
+                ));
+            }
+        }
+    }
+
+    let id = Path::new(&scene.file)
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::to_owned)
+        .ok_or_else(|| {
+            EditorError::new(
+                "scenePathInvalid",
+                format!("manifest scene file has no stem: {}", scene.file),
+            )
+        })?;
+
+    let source_file = scene.file.replace('\\', "/");
+    let json_suffix = source_file.strip_suffix(".json").ok_or_else(|| {
+        EditorError::new(
+            "scenePathInvalid",
+            format!("manifest scene file must end in .json: {}", scene.file),
+        )
+    })?;
+    let source_path = format!("{STORY_SOURCE_RELATIVE_ROOT}/{json_suffix}.md");
+    let canonical_source = canonicalize_source_under_story_root(canonical_root, &source_path)?;
+
+    Ok(ManifestScene {
+        id,
+        scene_type: scene.scene_type,
+        file: scene.file.clone(),
+        source_path,
+        canonical_source,
+    })
+}
+
+/// Canonicalizes the backend-constructed source path and asserts it stays
+/// under the canonical workspace/story root before it is trusted.
+fn canonicalize_source_under_story_root(
+    canonical_root: &Path,
+    source_relative: &str,
+) -> Result<PathBuf, EditorError> {
+    let candidate = canonical_root.join(source_relative);
+    let canonical = candidate.canonicalize().map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::new(
+                "sourceNotFound",
+                format!("authored source not found: {source_relative}"),
+            )
+        } else {
+            EditorError::new(
+                "pathResolveFailed",
+                format!("failed to resolve authored source {source_relative}: {error}"),
+            )
+        }
+    })?;
+    let story_root = canonical_root.join(STORY_SOURCE_RELATIVE_ROOT);
+    if !canonical.starts_with(&story_root) {
+        return Err(EditorError::new(
+            "pathEscape",
+            format!("authored source escapes {STORY_SOURCE_RELATIVE_ROOT}: {source_relative}"),
+        ));
+    }
+    Ok(canonical)
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             resolve_layout_path,
             read_project_file,
-            write_project_file
+            write_project_file,
+            load_workbench_index
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -635,6 +924,101 @@ mod tests {
         assert!(err
             .message
             .contains("static/stories_plan/chapter_1/investigation_scene_1.md"));
+    }
+
+    #[test]
+    fn workbench_index_preserves_manifest_order_and_docs_source_paths() {
+        let root = temp_workbench_root();
+        let index = load_workbench_index_at_root(&root).unwrap();
+        let scenes = &index.chapters[0].scenes;
+
+        assert_eq!(
+            scenes
+                .iter()
+                .map(|scene| scene.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "scene_a",
+                "investigation_scene_b",
+                "interrogation_scene_c",
+                "analysis_scene_d"
+            ]
+        );
+        assert_eq!(scenes[0].scene_type, SceneType::Linear);
+        assert_eq!(
+            scenes[0].source_path,
+            "docs/stories_plan/chapter_1/scene_a.md"
+        );
+        assert!(!scenes[0].stage_capable);
+        assert!(scenes[1].stage_capable);
+    }
+
+    #[test]
+    fn manifest_scene_resolver_rejects_unknown_chapter_and_scene() {
+        let root = temp_workbench_root();
+        assert_eq!(
+            resolve_manifest_scene_at_root(&root, "missing", "scene_a")
+                .unwrap_err()
+                .code,
+            "chapterNotFound"
+        );
+        assert_eq!(
+            resolve_manifest_scene_at_root(&root, "chapter_1", "missing")
+                .unwrap_err()
+                .code,
+            "sceneNotFound"
+        );
+    }
+
+    #[test]
+    fn workbench_index_fails_when_canonical_source_is_missing() {
+        let root = temp_workbench_root();
+        std::fs::remove_file(root.join("docs/stories_plan/chapter_1/scene_a.md")).unwrap();
+        assert_eq!(
+            load_workbench_index_at_root(&root).unwrap_err().code,
+            "sourceNotFound"
+        );
+    }
+
+    fn temp_workbench_root() -> PathBuf {
+        let mut root = std::env::temp_dir();
+        root.push(format!(
+            "lyra-layout-editor-workbench-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join("apps/game/src-tauri/resources/scenes")).unwrap();
+        fs::create_dir_all(root.join("docs/stories_plan/chapter_1")).unwrap();
+        fs::write(
+            root.join("apps/game/src-tauri/resources/scenes/chapters.json"),
+            r#"{
+  "chapters": [
+    {
+      "id": "chapter_1",
+      "title": "Chapter One",
+      "summary": "Fixture chapter",
+      "scenes": [
+        {"type":"linear","file":"chapter_1/scene_a.json"},
+        {"type":"investigation","file":"chapter_1/investigation_scene_b.json"},
+        {"type":"interrogation","file":"chapter_1/interrogation_scene_c.json"},
+        {"type":"analysis","file":"chapter_1/analysis_scene_d.json"}
+      ]
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+        for scene in [
+            "scene_a.md",
+            "investigation_scene_b.md",
+            "interrogation_scene_c.md",
+            "analysis_scene_d.md",
+        ] {
+            fs::write(root.join("docs/stories_plan/chapter_1").join(scene), "").unwrap();
+        }
+        root
     }
 
     fn temp_workspace_root() -> PathBuf {
