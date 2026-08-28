@@ -146,6 +146,7 @@ The backend verifies that path exists and remains under the canonical story root
 - `ReaderGroup.kind` is a closed TypeScript union, not `string`.
 - generic commands may remain registered for intermediate green commits; they are deleted only after every caller has cut over.
 - no temporary investigation-only Workbench filter is introduced and then deleted in the next task.
+- the implementation sequence does not expose Reader/Stage mode selection until Reader loading/rendering is functional in the same green commit.
 
 ## Selected architecture
 
@@ -481,7 +482,7 @@ Tests pin:
 - all four scene types list in manifest order;
 - Stage remains functional for investigation scenes;
 - non-investigation Stage state is truthful;
-- Reader/Stage mode switch is only shown once Reader is functional;
+- Reader/Stage mode switch is introduced only in the same green change that makes Reader functional;
 - cue/speaker/branch/search filters;
 - current-scene / whole-chapter scope;
 - Refresh invalidates and reloads current scope;
