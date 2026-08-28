@@ -4,115 +4,213 @@
 
 Planning design for Linear HPA-634: **Ship the workbench shell and continuous story Reader**.
 
-This is the first implementation slice under HPA-639. Planning and implementation stay in one HPA-634 PR; the current state remains planning-only.
+This is the first implementation slice under HPA-639. Planning and implementation stay in one HPA-634 branch/PR.
 
 ## Goal
 
-Turn the existing `apps/layout-editor` developer tool into the first useful **Lyra Story Workbench** slice without creating a second story model:
+Turn `apps/layout-editor` into the first useful **Lyra Story Workbench** slice without creating a new editor platform:
 
-- preserve investigation layout authoring as **Stage**;
-- add a read-only **Reader** for linear / investigation / interrogation / analysis;
-- navigate manifest-listed scenes in deterministic chapter order;
-- read one scene or a whole chapter without advancing the game;
-- show canonical authored source references;
-- replace arbitrary-path frontend IPC with narrow domain commands;
-- keep authored Markdown/layout sidecars authoritative.
+- preserve the existing investigation layout workflow as **Stage**;
+- add a read-only **Reader** for every manifest-listed scene type;
+- navigate by chapter/scene identifiers, never frontend-built repository paths;
+- make `docs/stories_plan` the actual repository-wide canonical authored story root;
+- reuse the compiler's emitted TypeScript contracts and existing dialogue-carrier traversal;
+- keep hidden Analysis correctness/progression data out of Reader IPC;
+- keep all Reader state local to the current session.
 
-No Assets, Plan, source editing, or AI workflow ships here.
+No Assets/Plan/Review placeholders, source editing, AI review, router, docking system, generic document model, second catalog, or production-game ownership change belongs here.
 
-## Baseline and reuse
+## Current baseline
 
-Current `main` already has the owners HPA-634 should extend:
+Current `main` already contains most of the seams HPA-634 should extend:
 
-- `apps/layout-editor/src/App.svelte` is the composition root but currently lists only investigation scenes.
-- `layout-store.svelte.ts` owns investigation scene/layout state, Save Layout, and generation fencing.
+- `apps/layout-editor/src/App.svelte` is the composition root and currently lists investigation scenes only.
+- `layout-store.svelte.ts` owns investigation Stage state, Save Layout, and request-generation fencing.
 - `TargetList`, `EvidenceAssignmentPanel`, and `EditorCanvas` own Stage interaction.
-- `@lyra/scene-types` owns the byte-identical `ChaptersIndex` / layout-sidecar subset and intentionally does not own the full compiled scene schema.
-- the compiler already emits ordered `linear`, `investigation`, `interrogation`, and `analysis` scene JSON.
-- current compiler JSON already contains investigation re-examine/acquisition dialogue, interrogation entry/testimony/fallback dialogue, and Analysis board text.
-- `docs/stories_plan` is the live authored root; the layout-editor backend is the remaining `static/stories_plan` fallback owner.
-- the production Analysis view proves accepted maps can stay off the wire while public board presentation content is projected.
-
-The backend today exposes:
-
-```text
-read_project_file(path)
-write_project_file(path, contents)
-resolve_layout_path(scene_path)
-```
-
-That makes Svelte construct repository paths and keeps caller-path traversal, dual-root ambiguity, and symlink/no-follow write machinery alive. HPA-634 replaces this with identifiers and deletes the now-unreachable generic machinery instead of wrapping it in a new repository/service abstraction.
+- `@lyra/scene-types` intentionally owns only the byte-identical compiler/editor subset such as `ChaptersIndex` and layout-sidecar types; it does **not** own full scene JSON.
+- `packages/scripts/compile-scenes/types.ts` is already the public TypeScript contract for the compiler's emitted `JSONLinearScene`, `JSONInvestigationScene`, `JSONInterrogationScene`, and `JSONAnalysisScene` shapes.
+- `packages/scripts/compile-scenes/dialogue-segment-origins.ts` already walks every current dialogue carrier and assigns stable semantic segment IDs.
+- compiled resources are the Reader read model; authored Markdown remains authoritative.
+- the layout-editor Rust shell currently exposes generic `read_project_file`, `write_project_file`, and `resolve_layout_path` commands, which is why it still carries arbitrary-path/symlink/TOCTOU machinery.
+- the compiler entrypoint currently still accepts both `static/stories_plan` and `docs/stories_plan`, even though the live story tree is under `docs/stories_plan`.
 
 ## Review disposition
 
-### Adopted
+### Adopted: TypeScript owns Reader projection
 
-- Analysis Reader must include public authored board material, not only prompt/result dialogue.
-- Task 2 must pin Reader tree structure, not pass on `serialized.contains(...)` alone.
-- all current compiled dialogue carriers get explicit projection rules.
-- unknown dialogue/phase/board variants produce typed errors rather than silently disappearing.
-- Reader TypeScript dialogue types exactly mirror Reader Rust types instead of reusing wider Stage `DialogueItem`.
-- App becomes the sole Workbench index owner; `loadChapters()` / `editorState.chapters` are deleted during IPC cutover.
-- `readableSceneLabel` gains an `analysis_` arm and regression test.
+The previous design put the Reader tree projection in Rust over `serde_json::Value`. That was the wrong ownership boundary because the compiler output shape is already typed in TypeScript and the compiler already has tested carrier traversal.
 
-### Partially adopted: Analysis visibility boundary
+The revised design keeps Rust responsible only for:
 
-The Reader is for writer story review, not a second Analysis debugger/runtime view.
+- workspace/root resolution;
+- manifest ID lookup;
+- compiled-file I/O;
+- narrow Analysis sanitization required by HPA-634's hidden-answer boundary;
+- investigation layout-sidecar load/save;
+- one root-containment assertion.
 
-Include:
+TypeScript owns:
 
-- board kind / label / prompt;
-- public cards: id / label / summary / source reference;
-- classify groups: id / label / description;
-- generic Incomplete / Incorrect / Hint copy;
-- Result Dialogue;
-- Intro / Outro.
+- typed scene projection;
+- Reader tree construction;
+- exhaustive scene/dialogue/board switches;
+- Reader filters/search;
+- human labels and semantic source references.
 
-Exclude:
+### Adopted: reuse compiler carrier IDs
+
+Reader dialogue-group IDs use the spelling already emitted by `deriveDialogueSegments()` instead of inventing aliases such as `:press` or `:collect`.
+
+Examples:
+
+```text
+sublocation:<id>:transition
+hotspot:<id>:inspect
+hotspot:<id>:reexamine
+topic:<characterId>:<topicId>:dialogue
+topic:<characterId>:<topicId>:reexamine
+evidence:<id>:onCollect
+evidence:<id>:onReexamine
+statement:<id>:onAcquire
+statement:<id>:onReexamine
+phase:<id>:entry
+question:<id>:onLoop
+question:<id>:loopPrompt
+question:<id>:defaultChallenge
+question:<id>:defaultWrong
+question:<id>:wrongReply
+question:<id>:line:<lineId>:content
+question:<id>:line:<lineId>:challenge
+question:<id>:line:<lineId>:onCorrect
+question:<id>:line:<lineId>:onWrongEvidence
+```
+
+The Reader adds only structural container IDs that the compiler walker does not need, for example `sublocation:<id>`, `hotspot:<id>`, `phase:<id>`, `question:<id>`, `board:<id>`, `card:<id>`, and `group:<id>`.
+
+A projection test compares the non-empty dialogue carriers consumed by Reader against `deriveDialogueSegments()` for the same typed scene. A compiler-side carrier addition therefore cannot silently disappear from Reader.
+
+### Adopted: refresh is required for the writer loop
+
+`dev:tauri` compiles once at launch, while writers may subsequently run `scenes:watch` or recompile manually. A session cache without invalidation would make Reader visibly stale.
+
+Reader therefore gets one narrow **Refresh** affordance. It is not a persisted preference or new navigation mode: it clears loaded bundle data for the current Reader scope and reloads it through the same ID-based commands. Existing request-generation fencing prevents stale responses from winning.
+
+### Retained: hidden Analysis data is an IPC boundary
+
+The review suggestion to send raw Analysis JSON to Svelte is rejected because it conflicts with the HPA-634 requirement that Reader **must not receive** hidden Analysis answer keys, accepted mappings, thresholds, scoring rules, or runtime progression semantics solely for rendering.
+
+This is a product contract, not an adversary/security claim.
+
+Rust therefore performs a very small Analysis sanitizer before returning `load_scene_bundle`:
+
+Include only the public story-review shape required by this ticket:
+
+- scene `id`, `type`, `title`, `summary`, Intro, Outro;
+- board `kind`, `id`, `label`, `prompt`;
+- public cards: `id`, `label`, `summary`, source reference;
+- classify groups: `id`, `label`, `description`;
+- generic `incomplete`, `incorrect`, and optional `hint` copy;
+- board Result Dialogue.
+
+Do not send:
 
 - `acceptedGroupByCard`;
 - `acceptedOrder`;
 - `acceptedSelections`;
-- `incorrectSelections[].cards` and selection-specific feedback mapping;
+- `incorrectSelections` selection mappings;
 - `fixedAnchors`;
 - `minimumSelected`;
-- draft/completion/availability/evaluation state;
-- Analysis `unlock` / `reveals` progression rules.
+- Analysis `unlock` / `reveals`;
+- draft/completion/availability/evaluation/progression state.
 
-Some excluded fields are player-visible in the production runtime. That does not make them necessary for a story Reader, and HPA-634 explicitly avoids importing threshold/scoring/runtime correctness semantics solely to render text.
+One backend sentinel test is retained because it directly proves this acceptance boundary. The previous repo-wide grep gate is removed as redundant.
+
+### Adopted: make the single-root claim true
+
+HPA-634 says `docs/stories_plan` is the canonical authored root unless a current live exception is proven. No live `static/stories_plan` tree exists, but the compiler and current repo guidance still advertise a dual-root merge.
+
+This PR therefore removes `static/stories_plan` from the compiler's `SOURCE_ROOTS` and updates active authoring/agent guidance that still describes it as a live source root. Historical design/implementation documents are not rewritten.
+
+After this change, source paths can be constructed deterministically as:
+
+```text
+docs/stories_plan/<chapterId>/<compiled-stem>.md
+```
+
+The backend verifies that path exists and remains under the canonical story root when constructing the Workbench index. It does not silently display a nonexistent source path.
+
+### Adopted: dependency and task-shape corrections
+
+- `serde_json = "1"` is added explicitly to the editor Rust crate because manifest parsing and Analysis sanitization require it. This is already an existing repository dependency, not a new technology choice.
+- `libc` is removed once `O_NOFOLLOW` generic-write machinery is deleted.
+- `ReaderGroup.kind` is a closed TypeScript union, not `string`.
+- generic commands may remain registered for intermediate green commits; they are deleted only after every caller has cut over.
+- no temporary investigation-only Workbench filter is introduced and then deleted in the next task.
 
 ## Selected architecture
 
-### Backend-owned writer-safe bundle
-
 ```text
-docs/stories_plan/**/*.md                  authoritative story source
+docs/stories_plan/**/*.md
         │
         ├── existing compiler
         ▼
-apps/game/src-tauri/resources/scenes/      existing compiled read model
+apps/game/src-tauri/resources/scenes/
         │
+        │  chapters.json + typed compiled scene JSON
         ▼
 layout-editor Tauri domain commands
-        │  ID resolution + safe projection
-        ▼
-WorkbenchIndex + WorkbenchSceneBundle
         │
-        ├── Reader: generic read-only tree + local filters
-        └── Stage: existing investigation scene + layout sidecar
+        ├── ID resolution / containment
+        ├── raw compiled JSON for linear/investigation/interrogation
+        └── public-only sanitized JSON for analysis
+        ▼
+workbench-api.ts
+        │
+        ▼
+reader-projection.ts
+        │  imports compiler JSON types
+        │  reuses deriveDialogueSegments()
+        ▼
+ReaderScene tree
+        │
+        ├── ReaderView + local filters/search
+        └── Stage keeps existing investigation geometry/layout ownership
 ```
 
-The backend stays stateless. No database, document registry, DI container, cache service, file watcher, or second compiler artifact.
+The backend remains stateless. There is no database, service/repository abstraction, file watcher, document registry, second compiler artifact, or shared Rust scene-schema crate.
 
-### Rejected alternatives
+## Why `@lyra/scripts` is the right reuse boundary
 
-**Raw compiled JSON to Svelte:** rejected because Analysis correctness data would cross Reader IPC only to be discarded in the browser.
+`packages/scripts/compile-scenes/types.ts` explicitly defines the compiler's emitted JSON contract. Moving the four full scene types into `@lyra/scene-types` would contradict that package's deliberately narrow ownership and widen a shared runtime/editor package solely for this developer tool.
 
-**Second writer manifest/compiler artifact:** rejected because current index/scene JSON are sufficient and another catalog creates synchronization ownership.
+Instead `apps/layout-editor` adds a workspace dependency on `@lyra/scripts` and imports only:
 
-**Move full scene schema into `@lyra/scene-types` or game crate:** rejected because the shared package deliberately stays narrower and the Workbench only needs a writer projection.
+```ts
+import type {
+  JSONAnalysisScene,
+  JSONDialogueItem,
+  JSONInterrogationScene,
+  JSONInvestigationScene,
+  JSONLinearScene,
+} from "@lyra/scripts/compile-scenes/types";
+
+import { deriveDialogueSegments } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
+```
+
+The imported runtime walker has no need to parse Markdown; when called without `sourceAst`, it derives stable carrier origins from emitted JSON. Its optional AST `sourceFile/line` data is **not** available to Reader because the AST is not emitted and HPA-634 forbids reparsing Markdown. Exact line navigation remains out of scope.
 
 ## Domain IPC
+
+The public command surface is exactly four commands:
+
+```text
+load_workbench_index()
+load_scene_bundle(chapterId, sceneId)
+load_investigation_layout(chapterId, sceneId)
+save_investigation_layout(chapterId, sceneId, layout)
+```
+
+### Workbench index
 
 ```ts
 type SceneType = "linear" | "investigation" | "interrogation" | "analysis";
@@ -130,87 +228,57 @@ type WorkbenchIndex = {
     }>;
   }>;
 };
-
-type WorkbenchSceneBundle = {
-  reader: ReaderScene;
-  investigationScene: InvestigationSceneJson | null;
-};
 ```
 
-Commands:
+The index is built from the existing compiled `chapters.json` in manifest order. It does not scan Markdown directories and does not list unmanifested drafts.
 
-```text
-load_workbench_index()
-load_scene_bundle(chapter_id, scene_id)
-load_investigation_layout(chapter_id, scene_id)
-save_investigation_layout(chapter_id, scene_id, layout)
-```
+### Scene bundle
 
-Rules:
+For linear/investigation/interrogation scenes, `load_scene_bundle` returns the compiler-emitted scene JSON unchanged after validating manifest ID/type consistency.
 
-- frontend callers never supply repository-relative paths;
-- IDs must resolve to exactly one manifest scene;
-- layout commands reject non-investigation scenes;
-- backend constructs canonical `docs/stories_plan/...` paths;
-- save writes only the canonical `.layout.json` sibling;
-- keep one containment assertion on backend-constructed paths plus normal typed I/O errors;
-- delete dual-root/caller-path traversal/symlink/TOCTOU machinery after the cutover.
+For Analysis, the backend returns the sanitized public shape above.
 
-## Workbench index ownership
-
-`load_workbench_index()` reads existing compiled `chapters.json` and preserves array order.
-
-For each manifest scene it derives only:
-
-- scene ID from compiled filename stem;
-- scene type;
-- canonical `docs/stories_plan/...md` source path;
-- `stageCapable` for investigation only.
-
-It does not scan unlisted drafts or future asset/plan files.
-
-`App.svelte` is the only frontend index owner. During domain-IPC cutover delete:
-
-- `loadChapters()`;
-- `loadChaptersGeneration`;
-- `editorState.chapters`;
-- old chapter-index `read_project_file` tests.
-
-Stage store then owns only selected investigation scene/layout + `{chapterId, sceneId}`.
-
-## Closed Reader wire model
-
-Reader does not reuse Stage `DialogueItem` because Stage permits portrait data not present on the Reader wire.
+Frontend types model this as:
 
 ```ts
-type ReaderDialogue =
-  | { kind: "sceneTag"; text: string }
-  | { kind: "action"; text: string }
-  | { kind: "line"; speaker: string; text: string };
+type WorkbenchScenePayload =
+  | JSONLinearScene
+  | JSONInvestigationScene
+  | JSONInterrogationScene
+  | PublicAnalysisScene;
 
-type ReaderNoticeKind =
-  | "reveal"
+type WorkbenchSceneBundle = {
+  scene: WorkbenchScenePayload;
+};
+```
+
+`PublicAnalysisScene` is derived with `Pick`/indexed access from the compiler's `JSONAnalysisScene` public fields where practical, so public field renames remain TypeScript-visible. It intentionally cannot be assignable to full `JSONAnalysisScene` because hidden fields are absent.
+
+Stage accepts only a bundle whose `scene.type === "investigation"`.
+
+## Reader model
+
+Reader is frontend-only presentation state.
+
+```ts
+type ReaderGroupKind =
+  | "intro"
+  | "outro"
+  | "sublocation"
+  | "hotspot"
+  | "topic"
   | "evidence"
   | "statement"
-  | "contradiction"
-  | "prompt"
+  | "phase"
+  | "question"
+  | "line"
+  | "branch"
+  | "board"
   | "card"
   | "group"
-  | "feedback";
+  | "result";
 
-type ReaderItem =
-  | { kind: "dialogue"; dialogue: ReaderDialogue }
-  | { kind: "notice"; noticeKind: ReaderNoticeKind; text: string };
-
-type ReaderGroup = {
-  id: string;
-  kind: string;
-  label: string;
-  flow: "main" | "branch";
-  sourceAnchor: string | null;
-  items: ReaderItem[];
-  children: ReaderGroup[];
-};
+type ReaderFlow = "main" | "branch";
 
 type ReaderScene = {
   id: string;
@@ -219,250 +287,243 @@ type ReaderScene = {
   sourcePath: string;
   groups: ReaderGroup[];
 };
+
+type ReaderGroup = {
+  id: string;
+  kind: ReaderGroupKind;
+  label: string;
+  flow: ReaderFlow;
+  sourceAnchor: string | null;
+  items: ReaderItem[];
+  children: ReaderGroup[];
+};
+
+type ReaderItem =
+  | { kind: "sceneTag"; text: string }
+  | { kind: "action"; text: string }
+  | { kind: "line"; speaker: string; text: string }
+  | {
+      kind: "notice";
+      noticeKind:
+        | "reveal"
+        | "evidence"
+        | "statement"
+        | "contradiction"
+        | "prompt"
+        | "card"
+        | "group"
+        | "feedback";
+      text: string;
+    };
 ```
 
-No portraits, asset IDs, audio, geometry, unlock expressions, runtime state, or puzzle-evaluation data are carried. HPA-134 later owns asset/prompt/audio inspection.
+Portraits, asset IDs, audio cues, unlock expressions, and runtime state are not copied into Reader items. HPA-134 owns asset/prompt inspection later.
 
-## Projection policy
+## Typed projection rules
 
-Projection reads compiled JSON through local `serde_json::Value` pickers. It does not import the game schema or create a second `SceneJson` family.
-
-Unknown `DialogueItem.kind`, interrogation phase kind, or Analysis board kind is a typed error. New compiler variants must not silently disappear from Writer Reader output.
+`reader-projection.ts` uses exhaustive switches with `assertNever()` runtime fallbacks for stale/corrupt generated data.
 
 ### Linear
 
-One Main Flow group preserving `queue` item order exactly.
+- one main group containing compiler queue order;
+- dialogue item order preserved exactly.
 
 ### Investigation
 
-Main groups:
-
-- Intro;
-- Outro.
-
-Branch groups:
-
-- sublocation: transition dialogue + reveal notices;
-- hotspot: inspect dialogue, public reveal notices, optional `On Re-examine` child;
-- character/topic: topic dialogue, reveal notices, optional `On Re-examine` child;
-- evidence manifest: labelled evidence group with `On Collect` and optional `On Re-examine` children;
-- statement manifest: labelled statement group with `On Acquire` and optional `On Re-examine` children.
-
-No unlock evaluation or fake canonical investigation order.
+- Intro / Outro are main flow;
+- sublocation is a structural group;
+- transition dialogue uses `sublocation:<id>:transition`;
+- hotspot inspect/re-examine use the compiler's segment IDs;
+- topic dialogue/re-examine use the compiler's segment IDs;
+- evidence onCollect/onReexamine and statement onAcquire/onReexamine use the compiler's segment IDs;
+- public reveal/evidence/statement notices are added beside their authored interaction group;
+- optional/re-examine/acquisition branches are branch flow, not flattened into a fake canonical play path.
 
 ### Interrogation
 
-Main groups:
-
-- Intro;
-- Outro.
-
-Branch groups:
-
-- phase;
-- `Entry Dialogue`;
-- question;
-- testimony line content;
-- `Press` from `challenge`;
-- `Correct Present` from `onCorrect`;
-- `Wrong Present` from `onWrongEvidence`;
-- contradiction notice;
-- testimony-level `Fallback` containing labelled On Loop / Loop Prompt / Default Press / Default Wrong Present / Wrong Reply groups;
-- evidence `On Collect` / `On Re-examine`;
-- statement `On Acquire` / `On Re-examine`.
-
-Parser array order is preserved, but mutually exclusive branches stay grouped.
+- Intro / Outro are main flow;
+- phase and question are structural containers;
+- phase entry uses `phase:<id>:entry`;
+- testimony line content is grouped under the line container;
+- `challenge` is labelled **Press**;
+- `onCorrect` is labelled **Correct Present**;
+- `onWrongEvidence` is labelled **Wrong Present**;
+- question-level `onLoop`, `loopPrompt`, `defaultChallenge`, `defaultWrong`, and `wrongReply` stay as distinct labelled branch groups;
+- contradiction/evidence/statement notices are public presentation metadata;
+- inventory acquisition/re-examine carriers use the compiler's existing IDs.
 
 ### Analysis
 
-Each Board is a `ReaderGroup` anchored to board ID.
+- Intro / Outro;
+- board structural groups;
+- prompt notice;
+- card child groups with public label/summary/source;
+- classify group child groups with public label/description;
+- generic incomplete/incorrect/hint feedback notices;
+- Result Dialogue child group;
+- no accepted solution, threshold, fixed-anchor, selection-mapping, unlock/reveal, or runtime-state data exists in the frontend payload.
 
-Board items:
+## Carrier completeness contract
 
-- Prompt notice;
-- generic Incomplete / Incorrect / Hint feedback notices.
+For linear/investigation/interrogation typed fixtures, tests call `deriveDialogueSegments({ chapterId, json: scene })` and collect its non-empty dialogue origin IDs.
 
-Board children:
+The Reader projector tracks every consumed compiler segment. Projection fails if a non-empty compiler-derived segment remains unconsumed.
 
-- each Card is a child `ReaderGroup` anchored to card ID; its `card` notices show label, summary, and source reference;
-- each classify Group is a child `ReaderGroup` anchored to group ID; its `group` notice shows description;
-- Result Dialogue is a child group containing public dialogue.
+This gives two protections:
 
-Order/Threshold boards still show public cards/feedback/result but do not expose fixed anchors, minimum threshold, accepted selections/order, or other correctness/progression configuration.
+1. compiler union changes fail TypeScript exhaustiveness/type checking;
+2. compiler carrier additions fail Reader projection tests/runtime instead of silently disappearing.
 
-A Rust sentinel test must prove public card/group/feedback/result text is present while all excluded secret/config values are absent.
-
-## Source references
-
-Every ReaderScene exposes canonical `docs/stories_plan/...md`.
-
-Reuse public IDs as semantic anchors for meaningful authored groups:
-
-- investigation sublocation/hotspot/topic/evidence/statement;
-- interrogation phase/question/testimony line/evidence/statement;
-- Analysis board/card/classify group.
-
-Examples:
-
-```text
-docs/stories_plan/chapter_1/interrogation_scene_4.md#q_backroom
-docs/stories_plan/chapter_1/analysis_scene_8_5.md#evidence_packages
-```
-
-Intro/Outro and other unanchored groups show path + label only. No line source-map framework. External-editor launch is deferred; literal copyable reference is sufficient.
-
-## Workbench shell
-
-Final shell:
-
-```text
-Lyra Story Workbench
-[Reader] [Stage]
-
-Chapter 1
-  Scene P0
-  Investigation Scene 1
-  Interrogation Scene 4
-  Analysis Scene 8.5
-```
-
-Rules:
-
-- only functional Reader/Stage modes;
-- every manifest-listed type appears in deterministic order;
-- selection uses IDs, never path;
-- mode switch preserves selection;
-- Stage loads only investigation scenes;
-- non-investigation Stage shows a truthful limitation state;
-- Save Layout only for loaded investigation layout;
-- no router/docking/command palette/placeholder tabs.
-
-Extend `readableSceneLabel` prefix regex from investigation/interrogation to investigation/interrogation/analysis so `analysis_scene_8_5` becomes `Analysis Scene 8.5`.
-
-Package path and identifier remain unchanged; visible product/window title becomes Lyra Story Workbench.
+Analysis is tested separately because its frontend payload is intentionally sanitized and is not a full `JSONAnalysisScene`.
 
 ## Reader controls
 
-Session-memory only:
+Reader keeps only the ticket's review controls plus the operational Refresh affordance:
 
-1. Dialogue only / Dialogue + actions & scene tags.
-2. All speakers / one speaker.
-3. Main flow / Expanded branches.
-4. Current scene / Whole chapter.
-5. Case-insensitive text search over loaded Reader content.
+- dialogue only / dialogue + cues;
+- all speakers / one speaker;
+- main flow / expanded branches;
+- current scene / whole chapter;
+- local text search;
+- Refresh loaded content.
 
-Behavior:
+No preference persistence, bookmarks, annotations, project-wide index, or watcher is added.
 
-- speaker filters line dialogue only;
-- cue visibility is independent of speaker filter;
-- collapsed mode leaves branch headings discoverable but hides their content;
-- search retains ancestor context and reports match count;
-- chapter mode uses manifest order and visible scene boundaries;
-- chapter loads through existing `load_scene_bundle` per scene, reusing a session-local Map.
+`filterReaderScene()` remains a pure function for cue/speaker/branch/search filtering. Refresh is data loading, not a filter.
 
-No preference persistence, annotation, bookmark, project search index, fifth bulk command, or cache service.
+## Loading and refresh
+
+- `App.svelte` owns the single `WorkbenchIndex`.
+- selected/current-scene bundle state is local to the Workbench shell.
+- whole-chapter loading requests each manifest scene through the existing `load_scene_bundle` command in deterministic order; no fifth bulk command is added.
+- a small session `Map` may avoid duplicate loads while navigating, but Refresh clears the current scene or current chapter entries before reloading.
+- request-generation tokens prevent older async results from replacing newer selection/refresh results.
+
+## Source references
+
+Every scene shows its canonical source path from `WorkbenchIndex`.
+
+Meaningful Reader groups show a copyable semantic reference such as:
+
+```text
+docs/stories_plan/chapter_1/investigation_scene_3.md#door
+```
+
+Use authored semantic IDs where they map to headings: sublocation/hotspot/topic/evidence/statement/phase/question/line/board/card/group.
+
+Compiler `deriveDialogueSegments()` can carry AST line metadata only when a source AST is supplied. The editor receives compiled JSON only, and it must not parse Markdown again, so line-number navigation is not part of this ticket.
 
 ## Stage preservation
 
-- `layout-store.svelte.ts` keeps mutable layout, generation fencing, `setHotspotLayout`, `setCharacterLayout`;
-- it loses chapters/path ownership;
-- `loadInvestigationScene(chapterId, sceneId)` uses scene bundle + layout domain command;
-- Save uses domain IDs/layout;
-- TargetList/EvidenceAssignmentPanel/EditorCanvas/geometry/sidecar semantics remain current.
+Stage continues to own only investigation layout editing:
 
-## Error behavior
+- selecting an investigation scene loads its compiled scene bundle and layout sidecar by IDs;
+- generation counters remain;
+- canvas geometry/evidence assignment logic remains in the existing store/components;
+- Save Layout calls `save_investigation_layout(chapterId, sceneId, layout)`;
+- selecting Stage on a non-investigation scene shows a truthful non-editable state and does not issue a layout load.
 
-- shell error for index/Reader load failure;
-- Reader loading state for current/chapter load;
-- Stage keeps existing layout error behavior;
-- generation counters reject stale selection/chapter responses;
-- chapter failure names exact manifest scene and never silently omits it;
-- cached successful bundles remain reusable;
-- unsupported compiled variants fail typed.
+## Error handling
 
-No retry framework, read toasts, watcher, or background subscription.
+Backend returns typed `EditorError { code, message }` for:
 
-## Testing
+- workspace/root failure;
+- chapter not found;
+- scene not found;
+- manifest/type mismatch;
+- canonical source path missing/outside root;
+- compiled JSON I/O/parse failure;
+- invalid Analysis payload during sanitization;
+- investigation-layout command used for a non-investigation scene;
+- layout JSON I/O/parse/write failure.
+
+Frontend projection has a small `ReaderProjectionError` for stale/corrupt payload variants that escape the compiler contract. It is not a second validation framework.
+
+## Canonical-root migration
+
+Implementation changes live ownership, not history:
+
+- `packages/scripts/compile-scenes.ts` becomes docs-only.
+- `CLAUDE.md` current Commands/Scene Pipeline sections become docs-only.
+- active `.claude/skills/**` instructions that tell writers to use `static/stories_plan` are updated to `docs/stories_plan` where they describe current authoring behavior.
+- historical specs/plans are left unchanged.
+- an `rg` closeout checks active code/current guidance for remaining dual-root ownership claims.
+
+## Test strategy
 
 ### Rust
 
-Prove:
+- index preserves manifest chapter/scene order;
+- canonical source paths resolve under `docs/stories_plan`;
+- unknown chapter/scene fail;
+- manifest scene type mismatch fails;
+- `load_scene_bundle` returns non-Analysis payload and sanitizes Analysis payload;
+- Analysis sentinel test proves hidden keys and values never serialize over Reader IPC;
+- investigation layout load/save round-trip;
+- layout command rejects non-investigation scene;
+- root-containment assertion rejects escaped constructed paths.
 
-- manifest ordering and docs source paths;
-- unknown IDs;
-- investigation-only layout round trip;
-- one backend-constructed containment check;
-- no static root ambiguity;
-- structural Reader tree for all four types;
-- investigation inspect/re-examine + evidence/statement acquire/collect branches;
-- interrogation entry/Press/Correct/Wrong/Fallback structure;
-- Analysis public card/group/feedback/result presence;
-- Analysis accepted/scoring/config fields absent;
-- unsupported dialogue/phase/board typed errors.
+### TypeScript projection
 
-Delete tests whose only subject is caller-controlled arbitrary paths once those commands disappear.
+Typed fixtures use `satisfies JSONLinearScene`, `satisfies JSONInvestigationScene`, and `satisfies JSONInterrogationScene` so field drift is a type error.
 
-### Frontend
+Tests pin:
 
-Prove:
+- linear dialogue order;
+- investigation hierarchy and every non-empty compiler-derived carrier consumed;
+- interrogation phase/question/line hierarchy and every non-empty compiler-derived carrier consumed;
+- public Analysis board/card/classify-group/feedback/result structure;
+- exhaustive unknown-kind fallback for malformed runtime payloads;
+- closed source references and group IDs.
 
-- branding and only functional modes;
-- deterministic all-scene tree;
-- Analysis readable label;
-- Stage load/save preservation and non-investigation state;
-- Reader fixtures for four types and current authored carriers;
-- Analysis public content with no hidden field names;
+### Svelte / store
+
+- all four scene types list in manifest order;
+- Stage remains functional for investigation scenes;
+- non-investigation Stage state is truthful;
+- Reader/Stage mode switch is only shown once Reader is functional;
 - cue/speaker/branch/search filters;
-- scene/chapter scope, order/cache/failure;
-- source refs;
-- no old loadChapters/generic path calls.
+- current-scene / whole-chapter scope;
+- Refresh invalidates and reloads current scope;
+- source path/reference copy UI;
+- stale async responses cannot replace newer selection/refresh results.
 
-Required gates:
+### Real-content closeout
+
+After `bun run scenes:compile`, run the Workbench against the real Chapter 1 generated graph and inspect at least:
+
+- one linear scene;
+- `investigation_scene_3`;
+- `interrogation_scene_4`;
+- `analysis_scene_8_5`;
+- whole-chapter Reader.
+
+Confirm no projection error, manifest order is preserved, a known Chapter 1 dialogue line appears, Analysis public board text appears, and Stage still opens/saves an investigation layout. Record this smoke result in PR #75.
+
+## Required verification
 
 ```bash
 bun run scenes:compile
-bun run --cwd apps/layout-editor test
-cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run editor:check
 bun run editor:build
+bun run --cwd apps/layout-editor test
 bun run test:scripts
+cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run lint:all
 ```
 
+Then perform the real-content closeout above.
+
 ## Non-goals
 
-- Assets / Plan / Review / AI modes;
-- asset/prompt/audio inspection;
-- Story Bible visualization;
-- source editing;
-- second parser/catalog/database;
-- source maps;
-- project-wide search;
-- annotations/bookmarks/preferences;
-- router/docking/event bus/plugin framework;
-- Chapter 2 authoring abstractions;
-- production game changes;
-- `static/stories_plan` compatibility;
-- Analysis debugger/runtime evaluation UI.
-
-## Acceptance
-
-One PR must prove:
-
-- Lyra Story Workbench visible branding;
-- only Reader/Stage functional modes;
-- App is the single Workbench index owner;
-- all manifest scene types navigate in order;
-- Analysis labels format correctly;
-- all four scene types read without game UI;
-- current investigation/interrogation dialogue carriers are represented;
-- branches stay grouped;
-- Analysis story-review content is useful without accepted/scoring semantics crossing IPC;
-- whole chapter follows manifest order;
-- five Reader controls stay local;
-- canonical source refs are copyable;
-- frontend uses ID domain IPC only;
-- docs root is singular and generic path machinery is deleted;
-- existing Stage editing/saving remains functional;
-- unknown variants fail loud;
-- no production game/new source-write ownership changes.
+- no Assets / Plan / Review placeholders;
+- no asset/prompt inspection;
+- no Story Bible visualization;
+- no source/dialogue/prompt editing;
+- no AI provider/review queue;
+- no package/directory rename;
+- no generic document store, event bus, router, docking framework, plugin model, source-map framework, watcher, or project-wide search index;
+- no second compiler artifact/catalog;
+- no full scene-schema move into `@lyra/scene-types`;
+- no shared Rust scene-schema crate;
+- no production game changes.
