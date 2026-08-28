@@ -4,7 +4,7 @@
 
 **Goal:** Ship the first useful Lyra Story Workbench slice: an all-scene read-only Reader plus the existing investigation Stage workflow, using identifier-based Tauri commands, compiler-owned TypeScript scene contracts, and a narrow backend Analysis sanitization boundary.
 
-**Architecture:** Keep authored Markdown/layout sidecars and the existing compiler authoritative. Rust owns manifest ID resolution, filesystem containment, Analysis public-wire sanitization, and layout-sidecar I/O; TypeScript owns Reader projection using the compiler's `JSON*Scene` types plus `deriveDialogueSegments()`. `App.svelte` owns one Workbench index, Reader state remains in memory, and no new compiler artifact/runtime story model/router/document registry is introduced.
+**Architecture:** Authored Markdown/layout sidecars and the existing scene compiler remain authoritative. Rust owns manifest ID resolution, filesystem containment, Analysis public-wire sanitization, and layout-sidecar I/O; TypeScript owns Reader projection using the compiler's `JSON*Scene` types plus `deriveDialogueSegments()`, with explicit typed tests for non-dialogue notices. `App.svelte` owns one Workbench index, Reader state remains in memory, and no new compiler artifact/runtime story model/router/document registry is introduced.
 
 **Tech Stack:** Tauri 2 / Rust, Svelte 5, TypeScript, Vitest, Bun workspace packages, existing scene compiler.
 
@@ -14,13 +14,15 @@
 
 - Keep `apps/layout-editor` package/path and Tauri identifier; visible product/window title becomes **Lyra Story Workbench**.
 - Exactly two functional modes in the finished PR: Reader and Stage. Never expose a Reader control in an intermediate commit before Reader is functional.
-- `docs/stories_plan` becomes the one live authored story root in this PR.
+- `docs/stories_plan` becomes the one live authored-story default across current tools in this PR.
+- Keep generic compiler/orchestrator APIs able to accept caller-supplied root arrays for fixtures/tests; only live defaults become docs-only.
 - Frontend passes chapter/scene IDs only; it never builds arbitrary repository paths for IPC.
 - No second story catalog/compiler artifact/database/router/docking/event bus/plugin model/source-map framework/project-wide search index.
 - Do not move the full compiler scene schema into `@lyra/scene-types` and do not add a shared Rust scene-schema crate.
-- Add only two dependency edges required by the selected design: existing workspace package `@lyra/scripts` to the editor frontend and existing repository crate dependency `serde_json = "1"` to the editor Rust crate.
-- Remove `libc` when the generic `O_NOFOLLOW` write machinery becomes unreachable.
+- Add only two dependency edges required by the design: workspace `@lyra/scripts` to the editor frontend and repository-existing `serde_json = "1"` to the editor Rust crate.
+- Remove `libc` when generic `O_NOFOLLOW` write machinery becomes unreachable.
 - Hidden Analysis accepted mappings, thresholds, scoring/progression semantics must not cross Reader IPC.
+- Public Analysis order `fixedAnchors` may cross Reader IPC; `minimumSelected`, accepted maps, selection mappings, unlock/reveals, and runtime state may not.
 - Existing Stage geometry/evidence/layout semantics and generation fencing remain owned by `layout-store.svelte.ts` and current Stage components.
 - One implementation PR only: continue on PR #75.
 
@@ -30,12 +32,18 @@
 
 ### Existing files modified
 
-- `packages/scripts/compile-scenes.ts` — canonical story source root.
+- `packages/scripts/compile-scenes.ts` — live compiler CLI source-root default.
+- `packages/scripts/compile-scenes/evidence-sources-audit.ts` — evidence-audit source-root default.
+- `packages/scripts/audio/corpus-validation.ts` — audio corpus source-root default.
+- `packages/scripts/audio/corpus-validation.test.ts` — default-root regression.
+- `packages/scripts/audio/cli.ts` — audio apply/validate source-root default.
+- `packages/scripts/audio/cli.test.ts` — CLI source-path regressions if current expectations reference the dual-root default.
+- `apps/game/src/lib/audio/sfx-events.test.ts` — authored-content test helper root.
 - `CLAUDE.md` — current source-root guidance.
-- active `.claude/skills/**` files that currently instruct writers to use `static/stories_plan` — current authoring guidance only.
-- `apps/layout-editor/package.json` — add `@lyra/scripts` workspace dependency.
+- active `.claude/skills/**` files that describe current `static/stories_plan` authoring — current guidance only.
+- `apps/layout-editor/package.json` — add `@lyra/scripts` and `verify:reader-real-content` script.
 - `apps/layout-editor/src-tauri/Cargo.toml` — add `serde_json`; later remove `libc`.
-- `apps/layout-editor/src-tauri/src/lib.rs` — Workbench index/resolver, narrow scene/layout commands, Analysis sanitizer, removal of generic commands.
+- `apps/layout-editor/src-tauri/src/lib.rs` — Workbench index/resolver, domain scene/layout commands, Analysis sanitizer, removal of generic commands.
 - `apps/layout-editor/src/lib/layout-store.svelte.ts` — Stage ID-based load/save only.
 - `apps/layout-editor/src/lib/layout-store.test.ts` — Stage IPC/generation tests.
 - `apps/layout-editor/src/lib/layout-types.ts` — retain Stage-only investigation types; do not add Reader wire here.
@@ -48,19 +56,26 @@
 - `apps/layout-editor/src/lib/workbench-types.ts` — frontend Workbench payload + Reader presentation types.
 - `apps/layout-editor/src/lib/workbench-api.ts` — four thin Tauri invoke wrappers.
 - `apps/layout-editor/src/lib/reader-projection.ts` — compiler-typed scene → Reader tree projection.
-- `apps/layout-editor/src/lib/reader-projection.test.ts` — typed carrier-completeness/projection tests.
+- `apps/layout-editor/src/lib/reader-projection.test.ts` — typed carrier + non-dialogue notice projection tests.
 - `apps/layout-editor/src/lib/reader-view.ts` — pure cue/speaker/branch/search filtering helpers.
 - `apps/layout-editor/src/lib/reader-view.test.ts` — filter/search tests.
 - `apps/layout-editor/src/lib/ReaderView.svelte` — read-only grouped scene renderer.
+- `apps/layout-editor/scripts/verify-reader-real-content.ts` — compile-then-project Chapter 1 integration gate.
 
 ---
 
-### Task 1: Make the canonical root true and add the manifest-owned Workbench index
+## Task 1: Make current live story-root defaults docs-only and add the manifest-owned Workbench index
 
 **Files:**
 - Modify: `packages/scripts/compile-scenes.ts`
+- Modify: `packages/scripts/compile-scenes/evidence-sources-audit.ts`
+- Modify: `packages/scripts/audio/corpus-validation.ts`
+- Modify/Test: `packages/scripts/audio/corpus-validation.test.ts`
+- Modify: `packages/scripts/audio/cli.ts`
+- Modify/Test if current assertions mention the old live default: `packages/scripts/audio/cli.test.ts`
+- Modify: `apps/game/src/lib/audio/sfx-events.test.ts`
 - Modify: `CLAUDE.md`
-- Modify: active `.claude/skills/**` files returned by the source-root audit below when they describe current authoring behavior
+- Modify: active `.claude/skills/**` current-authoring instructions found by the audit below
 - Modify: `apps/layout-editor/src-tauri/Cargo.toml`
 - Modify/Test: `apps/layout-editor/src-tauri/src/lib.rs`
 
@@ -84,40 +99,103 @@ and Tauri command:
 fn load_workbench_index() -> Result<WorkbenchIndex, EditorError>;
 ```
 
-- [ ] **Step 1: Record the current dual-root references before editing**
+### Steps
+
+- [ ] **Step 1: Record every current live dual-root owner before editing**
 
 Run:
 
 ```bash
-rg -n "static/stories_plan|both.*stories_plan|two.*stories_plan" \
-  packages/scripts/compile-scenes.ts CLAUDE.md .claude/skills apps/layout-editor/src-tauri/src/lib.rs
+rg -n 'static/stories_plan|docs/stories_plan' \
+  packages/scripts/compile-scenes.ts \
+  packages/scripts/compile-scenes/evidence-sources-audit.ts \
+  packages/scripts/audio/corpus-validation.ts \
+  packages/scripts/audio/cli.ts \
+  apps/game/src/lib/audio/sfx-events.test.ts \
+  apps/layout-editor/src-tauri/src/lib.rs \
+  CLAUDE.md .claude/skills
 ```
 
-Expected baseline includes `packages/scripts/compile-scenes.ts`, `CLAUDE.md`, and current authoring instructions. Do not edit historical files under `docs/superpowers/**` merely because they describe the old architecture.
+Expected baseline includes:
 
-- [ ] **Step 2: Make the compiler entrypoint docs-only**
+```text
+packages/scripts/compile-scenes.ts                      SOURCE_ROOTS
+packages/scripts/compile-scenes/evidence-sources-audit.ts DEFAULT_SOURCE_ROOTS
+packages/scripts/audio/corpus-validation.ts             DEFAULT_SOURCE_ROOTS
+packages/scripts/audio/cli.ts                           STORY_ROOTS
+apps/game/src/lib/audio/sfx-events.test.ts              AUTHORED_ROOTS
+apps/layout-editor/src-tauri/src/lib.rs                 old dual-root source probe
+CLAUDE.md / active authoring skills                     current dual-root guidance
+```
 
-Change `packages/scripts/compile-scenes.ts` from two roots to:
+Do not edit historical `docs/superpowers/**` documents. Do not remove caller-supplied multi-root support from `compile(...)`/orchestrator tests.
+
+- [ ] **Step 2: Write default-root regressions before changing live defaults**
+
+In `packages/scripts/audio/corpus-validation.test.ts`, add:
 
 ```ts
-const SOURCE_ROOTS = [resolve(REPO_ROOT, "docs/stories_plan")];
+it("defaults authored corpus loading to docs/stories_plan only", () => {
+  expect(DEFAULT_SOURCE_ROOTS).toEqual(["docs/stories_plan"]);
+});
 ```
 
-Update the adjacent comment so it states that `docs/stories_plan` is the canonical authored story root. Do not add a compatibility fallback.
+In `packages/scripts/compile-scenes/evidence-sources-audit.test.ts`, import/export the default constant if necessary and pin:
 
-- [ ] **Step 3: Update current repo/authoring guidance**
+```ts
+expect(DEFAULT_SOURCE_ROOTS).toEqual(["docs/stories_plan"]);
+```
+
+If `DEFAULT_SOURCE_ROOTS` is currently private in the evidence audit, export only that constant; do not expose a broader audit configuration API.
+
+Run:
+
+```bash
+bun run test:scripts -- -t "docs/stories_plan only"
+```
+
+Expected: FAIL because current defaults still include `static/stories_plan`.
+
+- [ ] **Step 3: Change every current live default to docs-only**
+
+Use these exact defaults:
+
+```ts
+// packages/scripts/compile-scenes.ts
+const SOURCE_ROOTS = [resolve(REPO_ROOT, "docs/stories_plan")];
+
+// packages/scripts/compile-scenes/evidence-sources-audit.ts
+export const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan"] as const;
+
+// packages/scripts/audio/corpus-validation.ts
+export const DEFAULT_SOURCE_ROOTS = ["docs/stories_plan"] as const;
+
+// packages/scripts/audio/cli.ts
+const STORY_ROOTS = ["docs/stories_plan/"] as const;
+
+// apps/game/src/lib/audio/sfx-events.test.ts
+const AUTHORED_ROOTS = ["docs/stories_plan"];
+```
+
+Update adjacent comments so none claim current compiler/audio/audit/SFX behavior merges both roots.
+
+Do **not** change generic APIs that accept an explicit `sourceRoots`/`sourceRoot` argument. Fixture tests may continue to create alternate roots intentionally.
+
+- [ ] **Step 4: Update current repo/authoring guidance**
 
 In `CLAUDE.md`:
 
 - `bun run scenes:compile` describes only `docs/stories_plan`;
 - Scene Pipeline step 1 says authored Markdown lives under `docs/stories_plan/`;
-- remove wording about merging both source roots.
+- remove wording about current live two-root merge.
 
-For active `.claude/skills/**` files found in Step 1, change current write/read instructions from `static/stories_plan/...` to `docs/stories_plan/...`. Preserve references that are explicitly historical examples rather than current ownership instructions.
+For active `.claude/skills/**` files found in Step 1, change current write/read instructions from `static/stories_plan/...` to `docs/stories_plan/...`. Preserve explicitly historical examples.
 
-- [ ] **Step 4: Add the explicit JSON dependency**
+`.agents/skills` is a symlink to `.claude/skills`; do not duplicate edits through the symlink.
 
-Change `apps/layout-editor/src-tauri/Cargo.toml` dependencies to include:
+- [ ] **Step 5: Add the explicit editor JSON dependency**
+
+Change `apps/layout-editor/src-tauri/Cargo.toml` to include:
 
 ```toml
 serde = { version = "1", features = ["derive"] }
@@ -126,9 +204,9 @@ serde_json = "1"
 
 Keep `libc` for now because old generic write commands still compile until Task 4.
 
-- [ ] **Step 5: Write failing Workbench index/resolver tests**
+- [ ] **Step 6: Write failing Workbench index/resolver tests**
 
-In `apps/layout-editor/src-tauri/src/lib.rs`, add test helpers that create a temporary root containing:
+In `apps/layout-editor/src-tauri/src/lib.rs`, add a temporary-root helper containing:
 
 ```text
 apps/game/src-tauri/resources/scenes/chapters.json
@@ -138,7 +216,7 @@ docs/stories_plan/chapter_1/interrogation_scene_c.md
 docs/stories_plan/chapter_1/analysis_scene_d.md
 ```
 
-Use this exact chapters fixture:
+Use this chapters fixture:
 
 ```json
 {
@@ -181,15 +259,11 @@ fn workbench_index_preserves_manifest_order_and_docs_source_paths() {
 fn manifest_scene_resolver_rejects_unknown_chapter_and_scene() {
     let root = temp_workbench_root();
     assert_eq!(
-        resolve_manifest_scene_at_root(&root, "missing", "scene_a")
-            .unwrap_err()
-            .code,
+        resolve_manifest_scene_at_root(&root, "missing", "scene_a").unwrap_err().code,
         "chapterNotFound"
     );
     assert_eq!(
-        resolve_manifest_scene_at_root(&root, "chapter_1", "missing")
-            .unwrap_err()
-            .code,
+        resolve_manifest_scene_at_root(&root, "chapter_1", "missing").unwrap_err().code,
         "sceneNotFound"
     );
 }
@@ -202,16 +276,16 @@ fn workbench_index_fails_when_canonical_source_is_missing() {
 }
 ```
 
-- [ ] **Step 6: Run the focused Rust tests and confirm red**
+- [ ] **Step 7: Run focused tests and confirm red**
 
 ```bash
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml workbench_index_
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml manifest_scene_resolver_
 ```
 
-Expected: compile failures because the Workbench index/resolver does not exist.
+Expected: compile failures because Workbench resolver types/functions do not exist.
 
-- [ ] **Step 7: Implement minimal index/resolver types**
+- [ ] **Step 8: Implement the minimal manifest-owned index/resolver**
 
 Add:
 
@@ -260,40 +334,57 @@ struct ResolvedScene {
 }
 ```
 
-Use private `Deserialize` structs for only the fields in `chapters.json` that this command consumes. Derive scene ID from the manifest filename stem; do not scan authored directories.
+Use private `Deserialize` structs for only the fields consumed from `chapters.json`. Derive scene ID from the manifest filename stem; do not scan authored directories.
 
-Construct the source path by replacing `.json` with `.md` under `docs/stories_plan`. Canonicalize existing backend-constructed paths and assert they remain under the canonical workspace/story roots before reading.
+Construct source path by replacing `.json` with `.md` under exactly `docs/stories_plan`. Canonicalize existing backend-constructed paths and assert they remain under the canonical workspace/story roots before reading.
 
-- [ ] **Step 8: Register only the new index command**
+- [ ] **Step 9: Register only `load_workbench_index`**
 
-Add `load_workbench_index` to `tauri::generate_handler!` while leaving all old commands registered. Intermediate commits remain green until Task 4 cuts every caller over.
+Add `load_workbench_index` to `tauri::generate_handler!` while leaving old generic commands registered. Intermediate commits remain green until Task 4 cuts callers over.
 
-- [ ] **Step 9: Verify compiler + Rust task**
+- [ ] **Step 10: Verify Task 1 live defaults explicitly**
+
+Run:
 
 ```bash
 bun run scenes:compile
+bun run test:scripts
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
-rg -n "static/stories_plan|both.*stories_plan|two.*stories_plan" \
-  packages/scripts/compile-scenes.ts CLAUDE.md .claude/skills
+rg -n 'static/stories_plan' \
+  packages/scripts/compile-scenes.ts \
+  packages/scripts/compile-scenes/evidence-sources-audit.ts \
+  packages/scripts/audio/corpus-validation.ts \
+  packages/scripts/audio/cli.ts \
+  apps/game/src/lib/audio/sfx-events.test.ts \
+  CLAUDE.md .claude/skills
 ```
 
 Expected:
 
-- compile passes;
-- Rust tests pass;
-- no active current-authoring guidance claims two live story roots.
+- compile/tests pass;
+- the explicit live-default/current-guidance grep returns no `static/stories_plan` hit;
+- `apps/layout-editor/src-tauri/src/lib.rs` is intentionally not in this Task 1 zero-hit gate because its old generic dual-root probe remains temporarily registered until Task 4. Task 6 verifies that final owner is gone.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add packages/scripts/compile-scenes.ts CLAUDE.md .claude/skills \
+git add packages/scripts/compile-scenes.ts \
+  packages/scripts/compile-scenes/evidence-sources-audit.ts \
+  packages/scripts/compile-scenes/evidence-sources-audit.test.ts \
+  packages/scripts/audio/corpus-validation.ts \
+  packages/scripts/audio/corpus-validation.test.ts \
+  packages/scripts/audio/cli.ts packages/scripts/audio/cli.test.ts \
+  apps/game/src/lib/audio/sfx-events.test.ts \
+  CLAUDE.md .claude/skills \
   apps/layout-editor/src-tauri/Cargo.toml apps/layout-editor/src-tauri/src/lib.rs
-git commit -m "feat(editor): add canonical workbench index"
+git commit -m "feat(editor): establish canonical story root and index"
 ```
+
+If `cli.test.ts` has no changed expectation after the implementation, do not stage it.
 
 ---
 
-### Task 2: Add narrow ID-based scene/layout commands and sanitize Analysis at the wire
+## Task 2: Add ID-based scene/layout commands and sanitize Analysis at the wire
 
 **Files:**
 - Modify/Test: `apps/layout-editor/src-tauri/src/lib.rs`
@@ -339,61 +430,68 @@ save_investigation_layout(chapterId, sceneId, layout)
 
 Old generic commands remain registered until Task 4.
 
-- [ ] **Step 1: Extend the temporary fixture with compiled scenes and a layout sidecar**
+### Steps
 
-Create minimal valid compiled JSON files matching each manifest entry. The Analysis fixture must contain both public and forbidden sentinel data:
+- [ ] **Step 1: Extend the temporary fixture with compiled scenes and layout sidecar**
+
+Create minimal compiled JSON files matching each manifest entry. The Analysis fixture contains public and forbidden sentinel data. Use these board fragments:
 
 ```json
 {
-  "type":"analysis",
-  "id":"analysis_scene_d",
-  "title":"Analysis",
-  "summary":"Fixture",
-  "assetRefs":[],
-  "intro":[{"kind":"line","speaker":"相馬律","text":"analysis intro","portrait":null}],
-  "boards":[
-    {
-      "kind":"classify",
-      "common":{
-        "id":"board_a",
-        "label":"Board A",
-        "prompt":"public prompt",
-        "unlock":{"fact":"secret_progression"},
-        "reveals":[{"kind":"fact","id":"secret_reveal"}],
-        "feedback":{
-          "incomplete":"public incomplete",
-          "incorrect":"public incorrect",
-          "hint":"public hint",
-          "incorrectSelections":[{"cards":["secret_wrong_combo"],"feedback":"secret mapped feedback"}]
-        },
-        "cards":[{"id":"card_a","label":"Card A","source":{"kind":"evidence","id":"evidence_a"},"summary":"public card summary"}],
-        "resultDialogue":[{"kind":"line","speaker":"相馬律","text":"public result","portrait":null}]
-      },
-      "groups":[{"id":"group_a","label":"Group A","description":"public group description"}],
-      "acceptedGroupByCard":{"card_a":"secret_group"}
+  "kind":"classify",
+  "common":{
+    "id":"board_a",
+    "label":"Board A",
+    "prompt":"public prompt",
+    "unlock":{"predicate":"fact_asserted","id":"secret_progression"},
+    "reveals":[{"kind":"assertFact","factId":"secret_reveal"}],
+    "feedback":{
+      "incomplete":"public incomplete",
+      "incorrect":"public incorrect",
+      "hint":"public hint",
+      "incorrectSelections":[{"cards":["card_a"],"feedback":"secret mapped feedback"}]
     },
-    {
-      "kind":"order",
-      "common":{
-        "id":"board_b","label":"Board B","prompt":"order prompt","unlock":null,"reveals":[],
-        "feedback":{"incomplete":"i","incorrect":"x","hint":null,"incorrectSelections":[]},
-        "cards":[],"resultDialogue":[]
-      },
-      "acceptedOrder":["secret_order"],
-      "fixedAnchors":[{"cardId":"secret_anchor","position":1}]
-    },
-    {
-      "kind":"threshold",
-      "common":{
-        "id":"board_c","label":"Board C","prompt":"threshold prompt","unlock":null,"reveals":[],
-        "feedback":{"incomplete":"i","incorrect":"x","hint":null,"incorrectSelections":[]},
-        "cards":[],"resultDialogue":[]
-      },
-      "minimumSelected":7,
-      "acceptedSelections":[["secret_selection"]]
-    }
-  ],
-  "outro":[{"kind":"line","speaker":"相馬律","text":"analysis outro","portrait":null}]
+    "cards":[{
+      "id":"card_a",
+      "label":"Card A",
+      "source":{"kind":"evidence","id":"evidence_a"},
+      "summary":"public card summary"
+    }],
+    "resultDialogue":[{"kind":"line","speaker":"相馬律","text":"public result","portrait":null}]
+  },
+  "groups":[{"id":"group_a","label":"Group A","description":"public group description"}],
+  "acceptedGroupByCard":{"card_a":"secret_group"}
+}
+```
+
+Order board:
+
+```json
+{
+  "kind":"order",
+  "common":{
+    "id":"board_b","label":"Board B","prompt":"order prompt","unlock":null,"reveals":[],
+    "feedback":{"incomplete":"order incomplete","incorrect":"order incorrect","hint":null,"incorrectSelections":[]},
+    "cards":[{"id":"anchor_card","label":"Anchor Card","source":{"kind":"evidence","id":"evidence_b"},"summary":"anchor summary"}],
+    "resultDialogue":[]
+  },
+  "acceptedOrder":["secret_order"],
+  "fixedAnchors":[{"cardId":"anchor_card","position":1}]
+}
+```
+
+Threshold board:
+
+```json
+{
+  "kind":"threshold",
+  "common":{
+    "id":"board_c","label":"Board C","prompt":"threshold prompt","unlock":null,"reveals":[],
+    "feedback":{"incomplete":"threshold incomplete","incorrect":"threshold incorrect","hint":null,"incorrectSelections":[]},
+    "cards":[],"resultDialogue":[]
+  },
+  "minimumSelected":7,
+  "acceptedSelections":[["secret_selection"]]
 }
 ```
 
@@ -409,7 +507,7 @@ fn non_analysis_bundle_preserves_compiler_payload() {
 }
 
 #[test]
-fn analysis_bundle_keeps_public_story_content_and_strips_hidden_semantics() {
+fn analysis_bundle_keeps_public_writer_fields_and_strips_forbidden_semantics() {
     let root = temp_workbench_root();
     let bundle = load_scene_bundle_at_root(&root, "chapter_1", "analysis_scene_d").unwrap();
     let serialized = serde_json::to_string(&bundle).unwrap();
@@ -422,8 +520,10 @@ fn analysis_bundle_keeps_public_story_content_and_strips_hidden_semantics() {
         "public card summary",
         "public group description",
         "public result",
+        "fixedAnchors",
+        "anchor_card",
     ] {
-        assert!(serialized.contains(required), "missing {required}");
+        assert!(serialized.contains(required), "missing public field/value {required}");
     }
 
     for forbidden in [
@@ -431,18 +531,15 @@ fn analysis_bundle_keeps_public_story_content_and_strips_hidden_semantics() {
         "secret_group",
         "acceptedOrder",
         "secret_order",
-        "fixedAnchors",
-        "secret_anchor",
         "minimumSelected",
         "acceptedSelections",
         "secret_selection",
         "incorrectSelections",
-        "secret_wrong_combo",
         "secret mapped feedback",
         "secret_progression",
         "secret_reveal",
     ] {
-        assert!(!serialized.contains(forbidden), "leaked {forbidden}");
+        assert!(!serialized.contains(forbidden), "leaked forbidden field/value {forbidden}");
     }
 }
 
@@ -506,39 +603,54 @@ cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml layout_comman
 
 Expected: compile failures for missing functions/commands.
 
-- [ ] **Step 5: Implement raw non-Analysis load plus a small Analysis whitelist**
+- [ ] **Step 5: Implement raw non-Analysis load plus a narrow Analysis whitelist**
 
 `load_scene_bundle_at_root` must:
 
-1. resolve the manifest scene by IDs;
-2. read/parse the compiled JSON as `serde_json::Value`;
-3. assert compiled `id` and `type` match the manifest resolution;
-4. keep the value unchanged for linear/investigation/interrogation;
-5. for Analysis, call `public_analysis_value(&value)` and place only that public value in `WorkbenchSceneBundle { scene }`.
+1. resolve manifest scene by IDs;
+2. read/parse compiled JSON as `serde_json::Value`;
+3. assert compiled `id` and `type` match manifest resolution;
+4. keep value unchanged for linear/investigation/interrogation;
+5. for Analysis, call `public_analysis_value(&value)` and return only the public value.
 
-Keep `public_analysis_value` local to `lib.rs`. It may use small `object_field` / `array_field` helpers, but it must whitelist the public Analysis keys rather than recursively deleting a blacklist.
+Keep `public_analysis_value` local to `lib.rs`. It may use small `object_field` / `array_field` helpers, but it must whitelist fields rather than recursively deleting a blacklist.
 
-The whitelist output contains only:
+Whitelist:
 
 ```text
 type, id, title, summary, intro, boards, outro
 board.kind
 board.common.id/label/prompt/cards/feedback/resultDialogue
 board.groups for classify only
+board.fixedAnchors for order only
 feedback.incomplete/incorrect/hint
 card.id/label/source/summary
 group.id/label/description
+fixedAnchor.cardId/position
 ```
 
-Reject an unknown Analysis board kind with `EditorError { code: "unsupportedAnalysisBoardKind", ... }`.
+Do **not** copy:
+
+```text
+acceptedGroupByCard
+acceptedOrder
+acceptedSelections
+incorrectSelections
+minimumSelected
+board.common.unlock
+board.common.reveals
+runtime available/completed/readOnly/draft/selected-card fields
+```
+
+Reject unknown Analysis board kind with `EditorError { code: "unsupportedAnalysisBoardKind", ... }`.
 
 - [ ] **Step 6: Implement ID-based layout resolution**
 
-Resolve the layout sidecar only after verifying `ResolvedScene.scene_type == SceneType::Investigation`. Build the sidecar path from the resolved canonical authored `.md` path using the existing sidecar naming convention. Keep one containment assertion and ordinary I/O diagnostics; do not call the old caller-path validation helpers.
+Resolve layout sidecar only after verifying `ResolvedScene.scene_type == SceneType::Investigation`. Build sidecar path from the resolved canonical authored `.md` path using the existing sidecar naming convention. Keep one containment assertion and ordinary I/O diagnostics; do not call old caller-path validation helpers.
 
 - [ ] **Step 7: Register the three commands but keep old commands temporarily**
 
-`tauri::generate_handler!` now contains the four new Workbench commands **and** the old generic commands. This is intentionally temporary and green.
+`tauri::generate_handler!` now contains all four Workbench commands plus the old generic commands. This is intentionally temporary and green.
 
 - [ ] **Step 8: Verify all editor Rust tests**
 
@@ -546,7 +658,7 @@ Resolve the layout sidecar only after verifying `ResolvedScene.scene_type == Sce
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 ```
 
-Expected: PASS, including the Analysis wire sentinel and layout round-trip.
+Expected: PASS, including public `fixedAnchors`, hidden threshold/progression sentinels, and layout round-trip.
 
 - [ ] **Step 9: Commit**
 
@@ -557,7 +669,7 @@ git commit -m "feat(editor): add workbench domain commands"
 
 ---
 
-### Task 3: Build the Reader projection in compiler-typed TypeScript
+## Task 3: Build Reader projection in compiler-typed TypeScript and pin non-dialogue notices
 
 **Files:**
 - Modify: `apps/layout-editor/package.json`
@@ -576,6 +688,8 @@ export function projectReaderScene(
   scene: WorkbenchScenePayload,
 ): ReaderScene;
 ```
+
+### Steps
 
 - [ ] **Step 1: Add the workspace dependency**
 
@@ -600,11 +714,7 @@ import type {
   JSONLinearScene,
 } from "@lyra/scripts/compile-scenes/types";
 
-export type SceneType =
-  | "linear"
-  | "investigation"
-  | "interrogation"
-  | "analysis";
+export type SceneType = "linear" | "investigation" | "interrogation" | "analysis";
 
 export type WorkbenchIndex = {
   chapters: Array<{
@@ -622,6 +732,7 @@ export type WorkbenchIndex = {
 
 type AnalysisBoard = JSONAnalysisScene["boards"][number];
 type AnalysisCommon = AnalysisBoard["common"];
+
 type PublicAnalysisCommon = Pick<
   AnalysisCommon,
   "id" | "label" | "prompt" | "cards" | "resultDialogue"
@@ -638,6 +749,7 @@ type PublicClassifyBoard = {
 type PublicOrderBoard = {
   kind: "order";
   common: PublicAnalysisCommon;
+  fixedAnchors: Extract<AnalysisBoard, { kind: "order" }>["fixedAnchors"];
 };
 
 type PublicThresholdBoard = {
@@ -693,7 +805,8 @@ export type ReaderItem =
         | "prompt"
         | "card"
         | "group"
-        | "feedback";
+        | "feedback"
+        | "constraint";
       text: string;
     };
 
@@ -718,9 +831,9 @@ export type ReaderScene = {
 export type CompilerDialogueItem = JSONDialogueItem;
 ```
 
-- [ ] **Step 3: Write typed fixtures before the projector**
+- [ ] **Step 3: Write typed fixtures including non-dialogue presentation**
 
-In `reader-projection.test.ts`, import the compiler types and define fixtures with `satisfies` rather than casts.
+In `reader-projection.test.ts`, import compiler types and define fixtures with `satisfies`, not casts.
 
 Linear fixture:
 
@@ -738,37 +851,50 @@ const linearScene = {
 } satisfies JSONLinearScene;
 ```
 
-Investigation fixture must contain one sublocation, one hotspot with inspect/re-examine, one character/topic with dialogue/re-examine, one evidence with onCollect/onReexamine, one statement with onAcquire/onReexamine, Intro/transition/Outro, and otherwise use valid empty/default fields from the compiler type. Every dialogue array uses a unique sentinel string matching its carrier ID.
+Investigation fixture requirements:
 
-Interrogation fixture must contain one inquiry phase, phase entry, one question/testimony line, `onLoop`, `loopPrompt`, `defaultChallenge`, `defaultWrong`, `wrongReply`, line `content`, `challenge`, `onCorrect`, `onWrongEvidence`, plus evidence/statement acquisition/re-examine carriers. Again every carrier gets a unique sentinel.
-
-Public Analysis fixture is typed as `PublicAnalysisScene` and contains:
-
-- Intro/Outro;
-- classify board with one public card, one group, incomplete/incorrect/hint text and result dialogue;
-- empty order/threshold public boards to exercise exhaustive kind handling.
-
-Because all non-Analysis fixtures use `satisfies JSON*Scene`, compiler field drift must fail TypeScript before projection tests execute.
-
-- [ ] **Step 4: Write failing projection/carrier tests**
-
-Add:
+- one sublocation;
+- one hotspot with `inspectDialogue`, `onReexamine`, and this reveal:
 
 ```ts
-it("preserves linear item order", () => {
-  const reader = projectReaderScene(
-    "chapter_1",
-    "docs/stories_plan/chapter_1/scene_a.md",
-    linearScene,
-  );
-  expect(reader.groups[0].items).toEqual([
-    { kind: "line", speaker: "相馬律", text: "first" },
-    { kind: "action", text: "second" },
-  ]);
-});
+reveals: [{ kind: "evidence", id: "door_log" }],
 ```
 
-For investigation/interrogation, derive expected compiler segments:
+- one character/topic with dialogue/re-examine;
+- one evidence with onCollect/onReexamine;
+- one statement with onAcquire/onReexamine;
+- Intro/transition/Outro;
+- each dialogue array has a unique sentinel string matching its compiler carrier ID.
+
+Interrogation fixture requirements:
+
+- one inquiry phase and phase entry;
+- one question with all question-level fallback carriers;
+- one testimony line with content/challenge/onCorrect/onWrongEvidence;
+- the line has this non-null contradiction:
+
+```ts
+contradiction: { kind: "evidence", id: "cctv" },
+```
+
+- one evidence and one statement manifest with acquisition/re-examine carriers;
+- each dialogue carrier has a unique sentinel.
+
+Public Analysis fixture requirements:
+
+- Intro/Outro;
+- classify board with one public card/group and feedback/result;
+- order board with:
+
+```ts
+fixedAnchors: [{ cardId: "anchor_card", position: 1 }],
+```
+
+- threshold board without `minimumSelected` because the Workbench payload intentionally excludes it.
+
+- [ ] **Step 4: Write failing dialogue-carrier completeness tests**
+
+For investigation/interrogation:
 
 ```ts
 const expected = deriveDialogueSegments({
@@ -785,7 +911,7 @@ const reader = projectReaderScene(
 expect(collectDialogueCarrierIds(reader)).toEqual(new Set(expected));
 ```
 
-Also pin representative nesting:
+Pin representative compiler-owned IDs:
 
 ```ts
 expect(findGroup(reader, "hotspot:door:inspect")?.label).toBe("Inspect");
@@ -794,7 +920,7 @@ expect(findGroup(reader, "evidence:door_log:onCollect")?.label).toBe("On Collect
 expect(findGroup(reader, "statement:witness:onAcquire")?.label).toBe("On Acquire");
 ```
 
-Interrogation labels must map existing compiler IDs without renaming IDs:
+Interrogation labels may be humanized, IDs may not be renamed:
 
 ```ts
 expect(findGroup(reader, "question:q1:line:l1:challenge")?.label).toBe("Press");
@@ -802,18 +928,44 @@ expect(findGroup(reader, "question:q1:line:l1:onCorrect")?.label).toBe("Correct 
 expect(findGroup(reader, "question:q1:line:l1:onWrongEvidence")?.label).toBe("Wrong Present");
 ```
 
-Analysis public-content test:
+- [ ] **Step 5: Write failing non-dialogue notice tests**
+
+Investigation reveal assertion:
 
 ```ts
-expect(collectReaderText(reader)).toContain("public card summary");
-expect(collectReaderText(reader)).toContain("public group description");
-expect(collectReaderText(reader)).toContain("public incomplete");
-expect(collectReaderText(reader)).toContain("public incorrect");
-expect(collectReaderText(reader)).toContain("public hint");
-expect(collectReaderText(reader)).toContain("public result");
+const hotspot = findGroup(investigationReader, "hotspot:door");
+expect(hotspot?.items).toContainEqual({
+  kind: "notice",
+  noticeKind: "evidence",
+  text: "Reveals evidence: door_log",
+});
 ```
 
-- [ ] **Step 5: Run the projection tests and confirm red**
+Interrogation contradiction assertion:
+
+```ts
+const line = findGroup(interrogationReader, "line:l1");
+expect(line?.items).toContainEqual({
+  kind: "notice",
+  noticeKind: "contradiction",
+  text: "Contradiction: evidence:cctv",
+});
+```
+
+Analysis fixed-anchor assertion:
+
+```ts
+const orderBoard = findGroup(analysisReader, "board:order_board");
+expect(orderBoard?.items).toContainEqual({
+  kind: "notice",
+  noticeKind: "constraint",
+  text: "Fixed card anchor_card at position 1",
+});
+```
+
+Also assert public Analysis card/group/generic feedback/result text appears.
+
+- [ ] **Step 6: Run projection tests and confirm red**
 
 ```bash
 bun run --cwd apps/layout-editor test src/lib/reader-projection.test.ts
@@ -821,9 +973,7 @@ bun run --cwd apps/layout-editor test src/lib/reader-projection.test.ts
 
 Expected: FAIL because projection functions do not exist.
 
-- [ ] **Step 6: Implement exhaustive dialogue conversion**
-
-In `reader-projection.ts`:
+- [ ] **Step 7: Implement exhaustive dialogue conversion**
 
 ```ts
 function projectDialogue(item: JSONDialogueItem): ReaderItem {
@@ -840,13 +990,13 @@ function projectDialogue(item: JSONDialogueItem): ReaderItem {
 }
 ```
 
-`assertNever` throws `ReaderProjectionError` at runtime for stale malformed data while preserving compile-time exhaustiveness.
+`assertNever` throws `ReaderProjectionError` for stale malformed runtime data while preserving compile-time exhaustiveness.
 
-- [ ] **Step 7: Reuse `deriveDialogueSegments()` through a consumable segment pool**
+- [ ] **Step 8: Reuse `deriveDialogueSegments()` through a consumable SegmentPool**
 
 For full compiler scenes (linear/investigation/interrogation), call `deriveDialogueSegments({ chapterId, json: scene })` once.
 
-Normalize existing origin variants with an exhaustive `readerSegmentId(origin)`:
+Normalize origin variants with exhaustive `readerSegmentId(origin)`:
 
 ```text
 linearScene -> main
@@ -861,15 +1011,34 @@ analysisResult -> board:<boardId>:result
 analysisOutro -> outro
 ```
 
-The Analysis origin cases make the helper exhaustive over the compiler origin union even though sanitized Analysis projection does not call the walker.
+Create `SegmentPool.take(id)` and `SegmentPool.assertFullyConsumed()`. `assertFullyConsumed()` throws `unconsumedCompilerDialogueSegment` when a non-empty compiler segment remains.
 
-Create a `SegmentPool` whose `take(id)` removes and returns one segment and whose `assertFullyConsumed()` throws `unconsumedCompilerDialogueSegment` if any non-empty segment remains.
+- [ ] **Step 9: Implement typed non-dialogue notice helpers**
 
-Reader dialogue child-group IDs are the compiler segment IDs returned by `readerSegmentId`; human labels may differ.
+Use exhaustive helpers for current reveal/target unions. Required stable copy:
 
-- [ ] **Step 8: Implement scene-specific structural projection**
+```ts
+function inventoryTargetText(target: { kind: "evidence" | "statement"; id: string }) {
+  return `${target.kind}:${target.id}`;
+}
+```
 
-Use the typed scene union:
+Investigation `RevealTarget` examples:
+
+```text
+evidence -> Reveals evidence: <id>
+statement -> Reveals statement: <id>
+practice -> Reveals practice: <id>
+topic -> Reveals topic: <characterId>/<topicId>
+hotspot -> Reveals hotspot: <id>
+sublocation -> Reveals sublocation: <id>
+```
+
+Story reveal variants are rendered with concise writer-facing labels using their IDs, without evaluating them. Interrogation line contradiction uses exactly `Contradiction: <kind>:<id>`.
+
+Do not add Analysis unlock/reveal helpers because those fields never cross Workbench IPC.
+
+- [ ] **Step 10: Implement scene-specific structural projection**
 
 ```ts
 export function projectReaderScene(
@@ -892,18 +1061,18 @@ export function projectReaderScene(
 }
 ```
 
-Rules are exactly those in the design spec. Structural containers use closed `ReaderGroupKind`; dialogue carriers consume the compiler segment pool; Analysis never calls `deriveDialogueSegments()` because its frontend payload is intentionally not full compiler JSON.
+Structural containers use closed `ReaderGroupKind`; dialogue groups consume the compiler SegmentPool; non-dialogue notices are projected explicitly from typed fields. Analysis order fixed anchors become `constraint` notices.
 
-- [ ] **Step 9: Run projection tests and editor type-check**
+- [ ] **Step 11: Run projection tests and editor type-check**
 
 ```bash
 bun run --cwd apps/layout-editor test src/lib/reader-projection.test.ts
 bun run editor:check
 ```
 
-Expected: PASS. A missing compiler carrier must fail either the TypeScript build or `SegmentPool.assertFullyConsumed()` test.
+Expected: PASS. Missing dialogue carrier fails SegmentPool; missing reveal/contradiction/fixed-anchor presentation fails explicit notice assertions.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
 git add apps/layout-editor/package.json bun.lock \
@@ -915,7 +1084,7 @@ git commit -m "feat(editor): add typed story reader projection"
 
 ---
 
-### Task 4: Cut Stage/index to domain IPC, ship the branded all-scene shell, then delete generic path commands
+## Task 4: Cut Stage/index to domain IPC, ship the branded all-scene shell, then delete generic path commands
 
 **Files:**
 - Create: `apps/layout-editor/src/lib/workbench-api.ts`
@@ -931,7 +1100,9 @@ git commit -m "feat(editor): add typed story reader projection"
 
 **Consumes:** Four backend commands + Workbench types from Tasks 1–3.
 
-**Produces:** One branded all-scene project tree with the preserved Stage workflow. Reader projection code exists from Task 3 but no Reader mode/control is exposed until Task 5 makes it functional.
+**Produces:** One branded all-scene project tree with preserved Stage workflow. Reader projection code exists from Task 3 but no Reader mode/control is exposed until Task 5 makes it functional.
+
+### Steps
 
 - [ ] **Step 1: Add four thin invoke wrappers**
 
@@ -961,8 +1132,6 @@ export const saveInvestigationLayout = (
 ) => invoke<void>("save_investigation_layout", { chapterId, sceneId, layout });
 ```
 
-No cache/path/state logic belongs here.
-
 - [ ] **Step 2: Write failing Stage ID-contract tests**
 
 Update `layout-store.test.ts` so selecting an investigation scene by IDs expects:
@@ -978,55 +1147,49 @@ expect(invoke).toHaveBeenCalledWith("load_investigation_layout", {
 });
 ```
 
-Save expects:
+Save expects `save_investigation_layout` with selected IDs and current layout. Retain existing stale-generation tests and adapt only their call shape.
 
-```ts
-expect(invoke).toHaveBeenCalledWith(
-  "save_investigation_layout",
-  expect.objectContaining({
-    chapterId: "chapter_1",
-    sceneId: "investigation_scene_3",
-    layout: expect.any(Object),
-  }),
-);
-```
+- [ ] **Step 3: Refactor Stage store without Workbench index ownership**
 
-Retain existing stale-generation tests and adapt only their call shape.
-
-- [ ] **Step 3: Refactor Stage store without adding Workbench index ownership**
-
-Change the Stage store entrypoint to:
+Change Stage entrypoint to:
 
 ```ts
 loadInvestigationScene(chapterId: string, sceneId: string): Promise<void>
 ```
 
-It loads `loadSceneBundle` and `loadInvestigationLayout`, rejects a non-investigation bundle, and keeps existing layout mutations/save semantics.
+It loads `loadSceneBundle` + `loadInvestigationLayout`, rejects non-investigation bundle, and keeps existing mutations/save semantics.
 
-Delete from the store:
+Delete from Stage store:
 
-- `loadChapters()`;
-- `editorState.chapters`;
-- chapter-load generation fields that only existed for `loadChapters`.
-
-`App.svelte`, not Stage store, becomes the single index owner in the next step of this same task.
+```text
+loadChapters()
+editorState.chapters
+chapter-load generation fields used only by loadChapters
+```
 
 - [ ] **Step 4: Write failing all-scene shell/index tests**
 
-In `App.test.ts`, mock `load_workbench_index` with one scene of each type. Assert all four are rendered in exact order and that selecting a non-investigation scene does not call `load_investigation_layout`.
+In `App.test.ts`, mock one scene of each type. Assert exact manifest order and that selecting a non-investigation scene in Stage does not call layout load.
 
-Pin visible copy in this intermediate green state:
+Pin this intermediate UI truthfully:
 
 ```text
 Lyra Story Workbench
 Stage
+Stage is available for investigation scenes only.
 ```
 
-Also assert there is **no Reader mode control yet**. Task 5 adds Reader and the mode switch atomically once Reader loading/rendering is functional. Do not render Assets/Plan/Review controls.
+Do **not** render a Reader button yet.
 
-- [ ] **Step 5: Fix all-four scene labels**
+- [ ] **Step 5: Extend scene-label helper for Analysis**
 
-Change the regex in `scene-labels.ts` to:
+Change:
+
+```ts
+/^(?:(investigation|interrogation)_)?scene_(.+)$/
+```
+
+to:
 
 ```ts
 /^(?:(investigation|interrogation|analysis)_)?scene_(.+)$/
@@ -1040,86 +1203,70 @@ expect(readableSceneLabel("chapter_1/analysis_scene_8_5.json")).toBe(
 );
 ```
 
-- [ ] **Step 6: Build the all-scene Stage shell directly, with no throwaway investigation filter**
+- [ ] **Step 6: Implement all-scene Stage shell and Workbench index ownership**
 
-`App.svelte` loads `loadWorkbenchIndex()` directly and owns:
+`App.svelte` loads `loadWorkbenchIndex()` directly, owns selected chapter/scene IDs, lists all manifest scenes, and calls Stage store only when selected scene is investigation.
 
-```ts
-let workbenchIndex: WorkbenchIndex | null;
-let selectedChapterId: string | null;
-let selectedSceneId: string | null;
-```
+Keep `TargetList`, `EvidenceAssignmentPanel`, `EditorCanvas`, sublocation controls, and Save Layout behavior unchanged under Stage.
 
-The project tree lists every manifest scene in order. The only exposed workspace mode in this intermediate commit is the existing Stage surface:
+- [ ] **Step 7: Update visible branding only**
 
-- if selected scene is `stageCapable`, call `loadInvestigationScene`;
-- otherwise show `Stage is available for investigation scenes.` and do not issue layout IPC.
+Change heading/window/product display to **Lyra Story Workbench**. Keep package directory and Tauri identifier unchanged.
 
-Do **not** add a Reader button, Reader placeholder, or disabled Reader tab in Task 4.
-
-- [ ] **Step 7: Update visible Tauri branding without renaming package/identifier**
-
-In `apps/layout-editor/src-tauri/tauri.conf.json` change `productName` and window title to `Lyra Story Workbench`. Keep the existing identifier unchanged.
-
-- [ ] **Step 8: Run frontend tests before deleting old backend commands**
+- [ ] **Step 8: Run frontend/store tests before deleting old commands**
 
 ```bash
-bun run --cwd apps/layout-editor test
+bun run --cwd apps/layout-editor test src/lib/layout-store.test.ts
+bun run --cwd apps/layout-editor test src/lib/scene-labels.test.ts
+bun run --cwd apps/layout-editor test src/App.test.ts
 bun run editor:check
 ```
 
-Expected: PASS with all live frontend callers using only the four domain commands.
+Expected: PASS with no frontend caller of generic file IPC.
 
-- [ ] **Step 9: Delete now-unreachable generic IPC and its dependency**
+- [ ] **Step 9: Delete now-unreachable generic path machinery and `libc`**
 
-From `apps/layout-editor/src-tauri/src/lib.rs`, remove:
+Delete backend commands:
 
 ```text
 read_project_file
 write_project_file
 resolve_layout_path
-checked_existing_project_path
-checked_project_path_from_root
-ensure_layout_sidecar_write_path
-ensure_path_stays_in_root
-ensure_parent_dirs
-reject_symlink
-write_regular_file
-O_NOFOLLOW-specific helpers
-static/stories_plan probe/ambiguity helpers
 ```
 
-Remove the old commands from `tauri::generate_handler!`.
+Delete helper machinery used only by caller-supplied paths, including dual-root probing, arbitrary write-path validation, symlink rejection, `O_NOFOLLOW`, and TOCTOU-specific write helpers. Keep one containment assertion for backend-constructed canonical paths plus ordinary I/O errors.
 
-From `apps/layout-editor/src-tauri/Cargo.toml`, remove:
+Remove:
 
 ```toml
 libc = "0.2"
 ```
 
-Keep only the straightforward containment check used by backend-constructed canonical paths.
+from editor `Cargo.toml` once no source uses it.
 
-- [ ] **Step 10: Run Rust + frontend regression checks**
+- [ ] **Step 10: Run Rust/front-end regression after deletion**
 
 ```bash
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run --cwd apps/layout-editor test
 bun run editor:check
-rg -n 'read_project_file|write_project_file|resolve_layout_path' apps/layout-editor
+rg -n 'read_project_file|write_project_file|resolve_layout_path|static/stories_plan' \
+  apps/layout-editor
+rg -n 'libc' apps/layout-editor/src-tauri/Cargo.toml apps/layout-editor/src-tauri/src
 ```
 
-Expected: all tests pass and grep returns no live caller/command.
+Expected: all tests pass; greps return no old generic IPC, old editor dual-root probe, or editor `libc` use.
 
 - [ ] **Step 11: Commit**
 
 ```bash
-git add apps/layout-editor/src-tauri apps/layout-editor/src
+git add apps/layout-editor
 git commit -m "feat(editor): cut workbench shell to domain IPC"
 ```
 
 ---
 
-### Task 5: Add the functional current-scene Reader, mode switch, filters, source references, and Refresh
+## Task 5: Add functional current-scene Reader, mode switch, filters, source references, and Refresh
 
 **Files:**
 - Create/Test: `apps/layout-editor/src/lib/reader-view.ts`
@@ -1130,7 +1277,9 @@ git commit -m "feat(editor): cut workbench shell to domain IPC"
 
 **Consumes:** `projectReaderScene`, `loadSceneBundle`, selected Workbench source path.
 
-**Produces:** Functional Reader/Stage mode switch for one selected scene plus four local Reader filters and one refresh affordance. Whole-chapter scope is added in Task 6.
+**Produces:** Functional Reader/Stage mode switch for one selected scene, four Reader filters, and Refresh. Whole-chapter scope is Task 6.
+
+### Steps
 
 - [ ] **Step 1: Write failing pure filter tests**
 
@@ -1150,25 +1299,25 @@ export function filterReaderScene(
 ): ReaderScene;
 ```
 
-Tests must prove:
+Tests prove:
 
-- `showCues: false` removes `sceneTag` and `action` items but leaves dialogue/notices;
-- speaker filter removes nonmatching `line` items while retaining structural groups needed to understand matching content;
-- `showBranches: false` removes groups whose `flow === "branch"`;
+- `showCues: false` removes sceneTag/action but leaves dialogue/notices;
+- speaker filter removes nonmatching lines while retaining ancestors;
+- `showBranches: false` removes `flow === "branch"` groups;
 - search is case-insensitive and retains ancestors of matching descendants;
-- empty groups after filtering are omitted unless they are the scene's only structural boundary.
+- empty groups are omitted unless they are the only scene boundary needed for context.
 
 - [ ] **Step 2: Implement `filterReaderScene` as one pure tree walk**
 
-Do not spread filtering logic across scene-specific renderers. Normalize search with `trim().toLocaleLowerCase()` and recursively keep a group when its own label/items match or any child remains.
+Normalize search with `trim().toLocaleLowerCase()`. Do not spread filters across scene-specific renderers.
 
 - [ ] **Step 3: Write failing current-scene Reader UI tests**
 
-Mock `load_scene_bundle` and assert that selecting each current type renders known fixture text through Reader mode.
+Mock `load_scene_bundle` and assert selecting each scene type renders known fixture text through Reader.
 
-Pin that **Reader and Stage controls appear together only now**, after functional Reader behavior exists.
+Pin that Reader and Stage controls appear **together only in this task**, when current-scene Reader is functional.
 
-For interrogation, assert visible separate labels:
+Interrogation labels:
 
 ```text
 Press
@@ -1177,7 +1326,7 @@ Wrong Present
 Fallback
 ```
 
-For Analysis, assert public card/group/feedback/result content appears and no hidden answer field is part of the frontend fixture type.
+Analysis UI includes public card/group/feedback/fixed-anchor/result content and does not receive threshold/accepted/progression fields in its fixture type.
 
 - [ ] **Step 4: Implement `ReaderView.svelte`**
 
@@ -1186,20 +1335,20 @@ Responsibilities:
 - render scene boundary/type/title;
 - recursively render `ReaderGroup` labels;
 - render line as `speaker: text`;
-- render action/sceneTag/notice with small cue labels;
+- render actions/tags/notices with small cue labels;
 - collapse/expand branch/group content locally;
 - show copyable source reference for scene and meaningful groups.
 
-Do not add scene-type-specific projection logic to the Svelte component.
+No scene-specific projection logic belongs in Svelte.
 
-- [ ] **Step 5: Add the real Reader/Stage mode switch and current-scene loading in one change**
+- [ ] **Step 5: Add real Reader/Stage mode switch and current-scene loading atomically**
 
-`App.svelte` now adds:
+`App.svelte` adds:
 
 ```ts
 let mode: "reader" | "stage" = "reader";
-let currentBundle: WorkbenchSceneBundle | null;
-let currentReaderScene: ReaderScene | null;
+let currentBundle: WorkbenchSceneBundle | null = null;
+let currentReaderScene: ReaderScene | null = null;
 let readerLoadGeneration = 0;
 const bundleCache = new Map<string, WorkbenchSceneBundle>();
 ```
@@ -1207,16 +1356,16 @@ const bundleCache = new Map<string, WorkbenchSceneBundle>();
 On selection in Reader mode:
 
 1. increment generation;
-2. use cached bundle or `loadSceneBundle(chapterId, sceneId)`;
-3. ignore stale responses;
+2. use cached bundle or `loadSceneBundle`;
+3. ignore stale response;
 4. call `projectReaderScene(chapterId, sourcePath, bundle.scene)`;
-5. render the filtered result.
+5. render filtered tree.
 
-On switching to Stage, preserve Task 4 behavior and load layout only for `stageCapable` investigation scenes.
+On Stage, preserve Task 4 behavior and load layout only for investigation scenes.
 
 - [ ] **Step 6: Add the four current-scene Reader filters**
 
-Keep state in `App.svelte` only:
+State stays in `App.svelte`:
 
 ```ts
 let showCues = true;
@@ -1225,7 +1374,7 @@ let showBranches = false;
 let search = "";
 ```
 
-Controls are:
+Controls:
 
 ```text
 Dialogue only | Dialogue + cues
@@ -1234,11 +1383,9 @@ Main flow | Expanded branches
 Search loaded Reader text
 ```
 
-Do not add the current-scene/whole-chapter scope control until Task 6, where both choices are functional in the same commit.
+Do not add current-scene/whole-chapter scope control until Task 6.
 
-- [ ] **Step 7: Add Refresh as a data-load affordance**
-
-Implement:
+- [ ] **Step 7: Add Refresh**
 
 ```ts
 async function refreshReader(): Promise<void> {
@@ -1248,17 +1395,16 @@ async function refreshReader(): Promise<void> {
 }
 ```
 
-Refresh must increment the same generation token used by selection so an older load cannot win.
+Refresh uses same generation token so older loads cannot win. No watcher, mtime display, persistence, or polling.
 
-No watcher, mtime display, preference persistence, or background polling is added.
-
-- [ ] **Step 8: Pin Refresh and stale-response tests**
+- [ ] **Step 8: Pin Refresh/stale-response tests**
 
 In `App.test.ts`:
 
-- first scene load returns `old text`;
-- Refresh triggers a second `load_scene_bundle` and renders `new text`;
-- resolve the old request after the new one and assert it does not replace the refreshed view.
+- first load resolves `old text`;
+- Refresh triggers second load and renders `new text`;
+- old request resolves after new request;
+- `new text` remains rendered.
 
 - [ ] **Step 9: Verify Task 5**
 
@@ -1268,7 +1414,7 @@ bun run --cwd apps/layout-editor test src/App.test.ts
 bun run editor:check
 ```
 
-Expected: PASS; Reader current-scene mode and the Reader/Stage switch are now both truthful and functional.
+Expected: PASS; current-scene Reader and Reader/Stage switch are both truthful and functional.
 
 - [ ] **Step 10: Commit**
 
@@ -1282,21 +1428,25 @@ git commit -m "feat(editor): ship current-scene story reader"
 
 ---
 
-### Task 6: Add whole-chapter Reader scope and close against real Chapter 1 content
+## Task 6: Add whole-chapter scope and close against real compiled Chapter 1 content
 
 **Files:**
 - Modify/Test: `apps/layout-editor/src/App.svelte`
 - Modify/Test: `apps/layout-editor/src/App.test.ts`
-- Modify/Test only if required by failures: files already owned by Tasks 1–5
+- Modify: `apps/layout-editor/package.json`
+- Create: `apps/layout-editor/scripts/verify-reader-real-content.ts`
+- Modify/Test only when a concrete failing verification points back to a Task 1–5 owner
 - Update: PR #75 description with verification evidence
 
 **Consumes:** manifest-ordered Workbench index, per-scene `loadSceneBundle`, cache/Refresh, `projectReaderScene`.
 
-**Produces:** Whole-chapter continuous reading and final HPA-634 verification.
+**Produces:** Whole-chapter continuous reading plus automated and UI real-content verification.
+
+### Steps
 
 - [ ] **Step 1: Write failing deterministic chapter-load test**
 
-Mock a chapter with four scenes in this order:
+Mock chapter order:
 
 ```text
 scene_a
@@ -1307,44 +1457,40 @@ analysis_scene_d
 
 Switch scope to chapter and assert:
 
-- exactly those four scene IDs are requested;
-- unlisted fixture files are never requested;
-- rendered scene boundaries remain in manifest order even if promises resolve out of order.
+- exactly those IDs requested;
+- unlisted fixture file never requested;
+- rendered boundaries remain manifest-ordered even when promises resolve out of order.
 
-- [ ] **Step 2: Implement chapter loading through the existing command**
-
-Add:
+- [ ] **Step 2: Implement chapter loading through existing command**
 
 ```ts
 async function loadChapterReader(chapterId: string, force = false): Promise<void>
 ```
 
-Use the selected chapter's manifest scene array as the only source of IDs. `Promise.all` is allowed because it preserves input result order; no fifth bulk Tauri command is added.
+Use selected chapter manifest as only ID source. `Promise.all` may be used because result order follows input order. No fifth bulk command.
 
-For every scene:
+For each scene:
 
-1. resolve its cache key;
-2. load or reuse the bundle;
-3. call `projectReaderScene(chapterId, scene.sourcePath, bundle.scene)`;
-4. preserve manifest order in the final `ReaderScene[]`.
+1. cache key;
+2. load/reuse bundle;
+3. `projectReaderScene(chapterId, scene.sourcePath, bundle.scene)`;
+4. preserve manifest order.
 
-Use a chapter-generation token to ignore stale chapter loads after scope/chapter/refresh changes.
+Use chapter-generation token to ignore stale chapter loads.
 
-- [ ] **Step 3: Add the now-functional current-scene / whole-chapter scope control**
-
-Add:
+- [ ] **Step 3: Add functional scope control**
 
 ```text
 Current scene | Whole chapter
 ```
 
-Whole chapter renders a `ReaderView` per projected scene with visible scene type/title boundaries. Scene/group collapse state remains local; do not persist it.
+Whole chapter renders one `ReaderView` per projected scene with visible scene type/title boundaries. Collapse state is local and not persisted.
 
 - [ ] **Step 4: Extend Refresh to current scope**
 
-For scene scope, delete/reload only the selected scene key.
+Scene scope deletes/reloads selected key.
 
-For chapter scope:
+Chapter scope:
 
 ```ts
 for (const scene of selectedChapter.scenes) {
@@ -1353,22 +1499,98 @@ for (const scene of selectedChapter.scenes) {
 await loadChapterReader(selectedChapter.id, true);
 ```
 
-Test that chapter Refresh reissues every manifest scene load and no unlisted draft load.
+Test chapter Refresh reissues every manifest scene load and no unlisted draft load.
 
-- [ ] **Step 5: Run focused editor tests**
+- [ ] **Step 5: Add explicit real-content verification script**
+
+Add package script:
+
+```json
+"verify:reader-real-content": "bun run scripts/verify-reader-real-content.ts"
+```
+
+Create `apps/layout-editor/scripts/verify-reader-real-content.ts` with this shape:
+
+```ts
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ChaptersIndex } from "@lyra/scene-types";
+import { projectReaderScene } from "../src/lib/reader-projection";
+import type { ReaderGroup, ReaderItem, WorkbenchScenePayload } from "../src/lib/workbench-types";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const resourcesRoot = resolve(repoRoot, "apps/game/src-tauri/resources/scenes");
+const chapters = JSON.parse(
+  readFileSync(resolve(resourcesRoot, "chapters.json"), "utf8"),
+) as ChaptersIndex;
+const chapter = chapters.chapters.find(({ id }) => id === "chapter_1");
+if (!chapter) throw new Error("chapter_1 missing from compiled manifest");
+
+const stems = chapter.scenes.map(({ file }) => file.replace(/^.*\//, "").replace(/\.json$/, ""));
+const linearIndex = chapter.scenes.findIndex(({ type }) => type === "linear");
+const requiredIndexes = [
+  linearIndex,
+  stems.indexOf("investigation_scene_3"),
+  stems.indexOf("interrogation_scene_4"),
+  stems.indexOf("analysis_scene_8_5"),
+];
+if (requiredIndexes.some((index) => index < 0)) {
+  throw new Error("required Chapter 1 Reader verification scene missing from manifest");
+}
+
+const readers = requiredIndexes.map((index) => {
+  const entry = chapter.scenes[index]!;
+  const compiled = JSON.parse(
+    readFileSync(resolve(resourcesRoot, entry.file), "utf8"),
+  ) as WorkbenchScenePayload;
+  const sourcePath = `docs/stories_plan/${entry.file.replace(/\.json$/, ".md")}`;
+  return projectReaderScene(chapter.id, sourcePath, compiled);
+});
+
+function items(groups: ReaderGroup[]): ReaderItem[] {
+  return groups.flatMap((group) => [...group.items, ...items(group.children)]);
+}
+
+const investigationItems = items(readers[1]!.groups);
+if (!investigationItems.some((item) => item.kind === "notice" && item.noticeKind === "evidence")) {
+  throw new Error("investigation_scene_3 projected no evidence/reveal notice");
+}
+
+const interrogationItems = items(readers[2]!.groups);
+if (!interrogationItems.some((item) => item.kind === "notice" && item.noticeKind === "contradiction")) {
+  throw new Error("interrogation_scene_4 projected no contradiction notice");
+}
+
+for (const reader of readers) {
+  if (reader.groups.length === 0) throw new Error(`${reader.id} projected an empty Reader`);
+}
+```
+
+This script intentionally feeds raw compiled Analysis only as a **test-time structural superset** to exercise `projectPublicAnalysis`; production Workbench IPC still passes Rust-sanitized `PublicAnalysisScene`. The Rust real-payload sentinel remains authoritative for hidden-field exclusion.
+
+`projectReaderScene`'s SegmentPool must call `assertFullyConsumed()` internally before returning each full compiler scene, so this script automatically fails on real dialogue-carrier drift.
+
+- [ ] **Step 6: Run focused editor tests**
 
 ```bash
 bun run --cwd apps/layout-editor test
 ```
 
-Expected: PASS for Stage, all four Reader types, filters, refresh, source references, deterministic whole chapter, and stale-load fencing.
+Expected: PASS for Stage, all four Reader types, filters, Refresh, source references, deterministic whole chapter, and stale-load fencing.
 
-- [ ] **Step 6: Run the required compile/build/static checks**
-
-Run in this order:
+- [ ] **Step 7: Run compile then automated real-content projector gate**
 
 ```bash
 bun run scenes:compile
+bun run --cwd apps/layout-editor verify:reader-real-content
+```
+
+Expected: PASS for one real linear scene plus `investigation_scene_3`, `interrogation_scene_4`, and `analysis_scene_8_5`; SegmentPool leaves no unconsumed dialogue carrier; real investigation reveal/evidence notice and interrogation contradiction notice are present.
+
+- [ ] **Step 8: Run complete required checks**
+
+```bash
 bun run editor:check
 bun run editor:build
 bun run --cwd apps/layout-editor test
@@ -1377,73 +1599,81 @@ cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run lint:all
 ```
 
-All commands must pass before claiming implementation complete.
+All must pass before claiming implementation complete.
 
-- [ ] **Step 7: Verify dependency/path cleanup**
+- [ ] **Step 9: Verify final path/dependency cleanup against actual live owners**
 
 Run:
 
 ```bash
 rg -n 'read_project_file|write_project_file|resolve_layout_path' apps/layout-editor
 rg -n 'libc' apps/layout-editor/src-tauri/Cargo.toml apps/layout-editor/src-tauri/src
-rg -n 'static/stories_plan|both.*stories_plan|two.*stories_plan' \
-  packages/scripts/compile-scenes.ts CLAUDE.md .claude/skills
+rg -n 'static/stories_plan' \
+  packages/scripts/compile-scenes.ts \
+  packages/scripts/compile-scenes/evidence-sources-audit.ts \
+  packages/scripts/audio/corpus-validation.ts \
+  packages/scripts/audio/cli.ts \
+  apps/game/src/lib/audio/sfx-events.test.ts \
+  apps/layout-editor/src-tauri/src/lib.rs \
+  CLAUDE.md .claude/skills
 ```
 
 Expected:
 
-- first grep: no generic IPC implementation/caller;
-- second grep: no editor `libc` dependency/use;
-- third grep: no active current-source dual-root instruction. Historical plans/specs are intentionally outside this gate.
+- no generic editor IPC implementation/caller;
+- no editor `libc` dependency/use;
+- no `static/stories_plan` in any current live-default owner/current guidance named above.
 
-Do **not** use a grep for `acceptedGroupByCard|acceptedOrder|...` as hidden-answer proof; the Rust Analysis wire sentinel test is the authoritative boundary check.
+Do not use a broad repository zero-hit requirement: historical docs and compiler fixtures may deliberately mention alternate roots. Do not use grep as hidden-Analysis proof; the Rust whitelist test is authoritative.
 
-- [ ] **Step 8: Run the Workbench against real compiled Chapter 1**
+- [ ] **Step 10: Run Workbench UI smoke against real compiled Chapter 1**
 
-After `bun run scenes:compile`, launch:
+Launch:
 
 ```bash
 bun run dev:editor
 ```
 
-Using actual Chapter 1 generated resources, inspect:
+Inspect:
 
 1. one linear scene;
 2. `investigation_scene_3`;
 3. `interrogation_scene_4`;
 4. `analysis_scene_8_5`;
-5. Whole chapter scope.
+5. whole-chapter Reader.
 
-Acceptance for the smoke:
+Acceptance:
 
 - no `ReaderProjectionError` or backend typed error;
-- project tree/order follows Chapter 1 manifest;
-- a known line from `investigation_scene_3` is visible;
-- interrogation Press/Present branches are distinct;
-- Analysis shows public card/group/feedback/result content but not accepted solution configuration;
-- switching to Stage on `investigation_scene_3` loads the layout and Save Layout still succeeds;
-- modify one harmless dialogue line in a local working copy, run `bun run scenes:compile` (or `bun run scenes:watch`), press Refresh, and confirm the Reader updates without restarting the Workbench; restore the source edit before committing.
+- project tree follows manifest order;
+- known investigation dialogue and reveal/evidence notice visible;
+- interrogation Press/Present branches and contradiction notice visible;
+- Analysis shows public card/group/feedback/fixed-anchor/result content but no accepted solution, threshold, or progression configuration;
+- Stage on `investigation_scene_3` loads layout and Save Layout succeeds;
+- make one harmless local dialogue edit, run `bun run scenes:compile` or `bun run scenes:watch`, press Refresh, and confirm new text appears without restarting; restore source edit before committing.
 
-Record the observed scenes and successful Refresh/Stage check in PR #75's verification section.
+Record observed scenes and successful Refresh/Stage checks in PR #75.
 
-- [ ] **Step 9: Inspect the final diff for scope**
+- [ ] **Step 11: Inspect final diff for scope**
 
 ```bash
 git diff --stat main...HEAD
 git diff --name-only main...HEAD
 ```
 
-Expected scope includes only HPA-634 Workbench/editor changes, the compiler single-root cut, active source-root guidance updates, and the two planning docs. No production game source ownership changes, Chapter 2 authoring, or future Workbench modes.
+Expected scope contains HPA-634 Workbench/editor implementation, current live-root default/guidance changes, and the two planning docs. No Chapter 2 authoring or future Workbench mode.
 
-- [ ] **Step 10: Commit the final chapter Reader slice**
+The one `apps/game` source-path change expected by Task 1 is the existing SFX authored-content **test helper only**, not production game runtime ownership.
+
+- [ ] **Step 12: Commit final chapter Reader slice**
 
 ```bash
 git add apps/layout-editor
-# add only any Task 6 files changed by final fixes; do not stage generated scene resources
+# stage only concrete Task 6 implementation files; generated scene resources remain ignored
 git commit -m "feat(editor): add continuous chapter reader"
 ```
 
-If Task 6 required no code changes after the previous commit except verification, do not create an empty commit; update PR #75 with verification evidence instead.
+If no Task 6 code changed after earlier commits except verification evidence, do not create an empty commit; update PR #75 instead.
 
 ---
 
@@ -1452,32 +1682,38 @@ If Task 6 required no code changes after the previous commit except verification
 | HPA-634 requirement | Owning task |
 | --- | --- |
 | Visible Lyra Story Workbench + only functional Reader/Stage | Task 4 branding, Task 5 mode switch |
-| Preserve Stage investigation workflow/save | Task 2/4/6 |
-| All four manifest scene types in deterministic tree | Task 1/4 |
-| ID-only IPC and generic path deletion | Task 2/4 |
-| `docs/stories_plan` actual canonical root | Task 1 |
-| Current-scene Reader | Task 3/5 |
-| Investigation carrier completeness | Task 3 |
-| Interrogation Press/Present/fallback grouping | Task 3/5 |
-| Analysis public content without hidden wire data | Task 2/3 |
+| Preserve Stage investigation workflow/save | Tasks 2, 4, 6 |
+| All four manifest scene types in deterministic tree | Tasks 1, 4 |
+| ID-only IPC and generic path deletion | Tasks 2, 4 |
+| `docs/stories_plan` actual live canonical default | Tasks 1, 4, 6 |
+| Current-scene Reader | Tasks 3, 5 |
+| Investigation dialogue carrier completeness | Task 3 |
+| Investigation reveal/evidence notices | Tasks 3, 6 |
+| Interrogation Press/Present/fallback grouping | Tasks 3, 5 |
+| Interrogation contradiction notices | Tasks 3, 6 |
+| Analysis public content + fixed anchors without hidden threshold/progression wire data | Tasks 2, 3 |
 | Whole manifest chapter Reader | Task 6 |
-| Cue/speaker/branch/scope/search controls | Task 5/6 |
-| Refresh after recompilation | Task 5/6 |
-| Source path + semantic anchor | Task 3/5 |
+| Cue/speaker/branch/scope/search controls | Tasks 5, 6 |
+| Refresh after recompilation | Tasks 5, 6 |
+| Source path + semantic anchor | Tasks 3, 5 |
 | No source-map/second Markdown parser | All tasks |
-| Real Chapter 1 verification | Task 6 |
+| Automated real Chapter 1 projection | Task 6 |
+| Real Chapter 1 UI/Stage/Refresh verification | Task 6 |
 | One PR | All tasks |
 
 ## Self-review gates before execution
 
-The executor must re-check these invariants after each task rather than deferring them to final review:
+The executor must re-check these invariants after each task:
 
 1. `@lyra/scene-types` remains narrow; full scene JSON is imported from `@lyra/scripts` only.
-2. The compiler remains the single owner of dialogue-carrier enumeration; Reader consumes `deriveDialogueSegments()` rather than maintaining a second list.
-3. Analysis is the only scene type whose compiled payload is sanitized at the backend because HPA-634 explicitly requires the hidden-answer IPC boundary.
-4. Old generic commands remain only while a live caller needs them and are deleted in Task 4.
-5. No Reader cache path exists without Refresh invalidation and generation fencing.
-6. No current source-root guidance still promises a live `static/stories_plan` tree after Task 1.
-7. `ReaderGroup.kind`, scene type, dialogue type, and compiler origin switches stay exhaustive.
-8. No task introduces a fifth/bulk IPC command, watcher, persisted Reader settings, future mode placeholder, or intermediate nonfunctional Reader control.
-9. Rust `WorkbenchSceneBundle { scene }` and TypeScript `WorkbenchSceneBundle = { scene: WorkbenchScenePayload }` remain shape-identical.
+2. Compiler remains the single owner of dialogue-carrier enumeration; Reader consumes `deriveDialogueSegments()` rather than maintaining a second dialogue list.
+3. Non-dialogue notices are independently typed/tested because `deriveDialogueSegments()` does not cover them.
+4. Analysis is the only scene type sanitized at backend because HPA-634 requires the hidden-answer/threshold/progression IPC boundary.
+5. Analysis public order `fixedAnchors` remain visible; `minimumSelected`, accepted maps/selections, incorrect-selection mappings, unlock/reveals, and runtime state remain absent.
+6. Old generic commands remain only while a live caller needs them and are deleted in Task 4.
+7. No Reader cache path exists without Refresh invalidation and generation fencing.
+8. Every current live source-root default named in Task 1 is docs-only; generic caller-supplied compiler fixture roots remain supported.
+9. `ReaderGroup.kind`, scene type, dialogue type, reveal-target handling, and compiler origin switches stay exhaustive.
+10. No task introduces a fifth/bulk IPC command, watcher, persisted Reader settings, future mode placeholder, or intermediate nonfunctional Reader control.
+11. Rust `WorkbenchSceneBundle { scene }` and TypeScript `WorkbenchSceneBundle = { scene: WorkbenchScenePayload }` remain shape-compatible.
+12. Task 6 automated real-content projection and UI smoke both pass before completion is claimed.
