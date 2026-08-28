@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Keep `apps/layout-editor` package/path and Tauri identifier; visible product/window title becomes **Lyra Story Workbench**.
-- Exactly two functional modes: Reader and Stage. No empty future tabs.
+- Exactly two functional modes in the finished PR: Reader and Stage. Never expose a Reader control in an intermediate commit before Reader is functional.
 - `docs/stories_plan` becomes the one live authored story root in this PR.
 - Frontend passes chapter/scene IDs only; it never builds arbitrary repository paths for IPC.
 - No second story catalog/compiler artifact/database/router/docking/event bus/plugin model/source-map framework/project-wide search index.
@@ -303,11 +303,17 @@ git commit -m "feat(editor): add canonical workbench index"
 **Produces:**
 
 ```rust
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchSceneBundle {
+    scene: serde_json::Value,
+}
+
 fn load_scene_bundle_at_root(
     root: &Path,
     chapter_id: &str,
     scene_id: &str,
-) -> Result<serde_json::Value, EditorError>;
+) -> Result<WorkbenchSceneBundle, EditorError>;
 
 fn load_investigation_layout_at_root(
     root: &Path,
@@ -397,16 +403,16 @@ Create minimal valid compiled JSON files matching each manifest entry. The Analy
 #[test]
 fn non_analysis_bundle_preserves_compiler_payload() {
     let root = temp_workbench_root();
-    let value = load_scene_bundle_at_root(&root, "chapter_1", "investigation_scene_b").unwrap();
-    assert_eq!(value["type"], "investigation");
-    assert_eq!(value["id"], "investigation_scene_b");
+    let bundle = load_scene_bundle_at_root(&root, "chapter_1", "investigation_scene_b").unwrap();
+    assert_eq!(bundle.scene["type"], "investigation");
+    assert_eq!(bundle.scene["id"], "investigation_scene_b");
 }
 
 #[test]
 fn analysis_bundle_keeps_public_story_content_and_strips_hidden_semantics() {
     let root = temp_workbench_root();
-    let value = load_scene_bundle_at_root(&root, "chapter_1", "analysis_scene_d").unwrap();
-    let serialized = serde_json::to_string(&value).unwrap();
+    let bundle = load_scene_bundle_at_root(&root, "chapter_1", "analysis_scene_d").unwrap();
+    let serialized = serde_json::to_string(&bundle).unwrap();
 
     for required in [
         "public prompt",
@@ -507,8 +513,8 @@ Expected: compile failures for missing functions/commands.
 1. resolve the manifest scene by IDs;
 2. read/parse the compiled JSON as `serde_json::Value`;
 3. assert compiled `id` and `type` match the manifest resolution;
-4. return the value unchanged for linear/investigation/interrogation;
-5. for Analysis, call `public_analysis_value(&value)` and return only the ticket-approved public shape.
+4. keep the value unchanged for linear/investigation/interrogation;
+5. for Analysis, call `public_analysis_value(&value)` and place only that public value in `WorkbenchSceneBundle { scene }`.
 
 Keep `public_analysis_value` local to `lib.rs`. It may use small `object_field` / `array_field` helpers, but it must whitelist the public Analysis keys rather than recursively deleting a blacklist.
 
@@ -850,8 +856,12 @@ investigationInteraction -> origin.segmentId
 interrogationIntro -> intro
 interrogationOutro -> outro
 interrogationPhase -> origin.segmentId
-analysisIntro / analysisResult / analysisOutro are not used because Analysis payload is sanitized
+analysisIntro -> intro
+analysisResult -> board:<boardId>:result
+analysisOutro -> outro
 ```
+
+The Analysis origin cases make the helper exhaustive over the compiler origin union even though sanitized Analysis projection does not call the walker.
 
 Create a `SegmentPool` whose `take(id)` removes and returns one segment and whose `assertFullyConsumed()` throws `unconsumedCompilerDialogueSegment` if any non-empty segment remains.
 
@@ -905,7 +915,7 @@ git commit -m "feat(editor): add typed story reader projection"
 
 ---
 
-### Task 4: Cut the frontend to domain IPC, ship the all-scene shell, then delete generic path commands
+### Task 4: Cut Stage/index to domain IPC, ship the branded all-scene shell, then delete generic path commands
 
 **Files:**
 - Create: `apps/layout-editor/src/lib/workbench-api.ts`
@@ -921,7 +931,7 @@ git commit -m "feat(editor): add typed story reader projection"
 
 **Consumes:** Four backend commands + Workbench types from Tasks 1–3.
 
-**Produces:** One branded all-scene Workbench shell with Stage preserved; no generic project-file commands remain.
+**Produces:** One branded all-scene project tree with the preserved Stage workflow. Reader projection code exists from Task 3 but no Reader mode/control is exposed until Task 5 makes it functional.
 
 - [ ] **Step 1: Add four thin invoke wrappers**
 
@@ -1001,19 +1011,18 @@ Delete from the store:
 
 `App.svelte`, not Stage store, becomes the single index owner in the next step of this same task.
 
-- [ ] **Step 4: Write failing shell/index tests**
+- [ ] **Step 4: Write failing all-scene shell/index tests**
 
-In `App.test.ts`, mock `load_workbench_index` with one scene of each type. Assert all four are rendered in exact order and that selecting a non-investigation scene does not call `load_investigation_layout` while Stage is active.
+In `App.test.ts`, mock `load_workbench_index` with one scene of each type. Assert all four are rendered in exact order and that selecting a non-investigation scene does not call `load_investigation_layout`.
 
-Pin visible copy:
+Pin visible copy in this intermediate green state:
 
 ```text
 Lyra Story Workbench
-Reader
 Stage
 ```
 
-Do not render Assets/Plan/Review controls.
+Also assert there is **no Reader mode control yet**. Task 5 adds Reader and the mode switch atomically once Reader loading/rendering is functional. Do not render Assets/Plan/Review controls.
 
 - [ ] **Step 5: Fix all-four scene labels**
 
@@ -1031,7 +1040,7 @@ expect(readableSceneLabel("chapter_1/analysis_scene_8_5.json")).toBe(
 );
 ```
 
-- [ ] **Step 6: Build the all-scene shell directly, with no throwaway investigation filter**
+- [ ] **Step 6: Build the all-scene Stage shell directly, with no throwaway investigation filter**
 
 `App.svelte` loads `loadWorkbenchIndex()` directly and owns:
 
@@ -1039,12 +1048,14 @@ expect(readableSceneLabel("chapter_1/analysis_scene_8_5.json")).toBe(
 let workbenchIndex: WorkbenchIndex | null;
 let selectedChapterId: string | null;
 let selectedSceneId: string | null;
-let mode: "reader" | "stage";
 ```
 
-The project tree lists every manifest scene in order. Stage invokes `loadInvestigationScene` only when the selected scene is `stageCapable`; otherwise show a concise truthful message such as `Stage is available for investigation scenes.`
+The project tree lists every manifest scene in order. The only exposed workspace mode in this intermediate commit is the existing Stage surface:
 
-Reader mode may show a short loading/not-yet-rendered state **inside this task only** while Task 5 wires the functional Reader. Do not expose disabled future modes.
+- if selected scene is `stageCapable`, call `loadInvestigationScene`;
+- otherwise show `Stage is available for investigation scenes.` and do not issue layout IPC.
+
+Do **not** add a Reader button, Reader placeholder, or disabled Reader tab in Task 4.
 
 - [ ] **Step 7: Update visible Tauri branding without renaming package/identifier**
 
@@ -1057,7 +1068,7 @@ bun run --cwd apps/layout-editor test
 bun run editor:check
 ```
 
-Expected: PASS with all frontend callers using only the four domain commands.
+Expected: PASS with all live frontend callers using only the four domain commands.
 
 - [ ] **Step 9: Delete now-unreachable generic IPC and its dependency**
 
@@ -1108,7 +1119,7 @@ git commit -m "feat(editor): cut workbench shell to domain IPC"
 
 ---
 
-### Task 5: Ship the functional current-scene Reader, filters, source references, and Refresh
+### Task 5: Add the functional current-scene Reader, mode switch, filters, source references, and Refresh
 
 **Files:**
 - Create/Test: `apps/layout-editor/src/lib/reader-view.ts`
@@ -1119,7 +1130,7 @@ git commit -m "feat(editor): cut workbench shell to domain IPC"
 
 **Consumes:** `projectReaderScene`, `loadSceneBundle`, selected Workbench source path.
 
-**Produces:** Functional Reader mode for one selected scene plus five ticket filters and one refresh affordance.
+**Produces:** Functional Reader/Stage mode switch for one selected scene plus four local Reader filters and one refresh affordance. Whole-chapter scope is added in Task 6.
 
 - [ ] **Step 1: Write failing pure filter tests**
 
@@ -1155,6 +1166,8 @@ Do not spread filtering logic across scene-specific renderers. Normalize search 
 
 Mock `load_scene_bundle` and assert that selecting each current type renders known fixture text through Reader mode.
 
+Pin that **Reader and Stage controls appear together only now**, after functional Reader behavior exists.
+
 For interrogation, assert visible separate labels:
 
 ```text
@@ -1179,11 +1192,12 @@ Responsibilities:
 
 Do not add scene-type-specific projection logic to the Svelte component.
 
-- [ ] **Step 5: Wire current-scene bundle loading in `App.svelte`**
+- [ ] **Step 5: Add the real Reader/Stage mode switch and current-scene loading in one change**
 
-Maintain:
+`App.svelte` now adds:
 
 ```ts
+let mode: "reader" | "stage" = "reader";
 let currentBundle: WorkbenchSceneBundle | null;
 let currentReaderScene: ReaderScene | null;
 let readerLoadGeneration = 0;
@@ -1198,7 +1212,9 @@ On selection in Reader mode:
 4. call `projectReaderScene(chapterId, sourcePath, bundle.scene)`;
 5. render the filtered result.
 
-- [ ] **Step 6: Add the five Reader controls**
+On switching to Stage, preserve Task 4 behavior and load layout only for `stageCapable` investigation scenes.
+
+- [ ] **Step 6: Add the four current-scene Reader filters**
 
 Keep state in `App.svelte` only:
 
@@ -1206,11 +1222,19 @@ Keep state in `App.svelte` only:
 let showCues = true;
 let speaker: string | null = null;
 let showBranches = false;
-let readerScope: "scene" | "chapter" = "scene";
 let search = "";
 ```
 
-Task 5 implements scene scope; chapter scope UI may be selectable only once Task 6 completes in the immediately following green commit. If exposed here, keep it wired to the current scene until Task 6 only if tests mark it non-final; preferred approach is to add the scope control in Task 6 so no misleading intermediate UI ships.
+Controls are:
+
+```text
+Dialogue only | Dialogue + cues
+All speakers | <one speaker>
+Main flow | Expanded branches
+Search loaded Reader text
+```
+
+Do not add the current-scene/whole-chapter scope control until Task 6, where both choices are functional in the same commit.
 
 - [ ] **Step 7: Add Refresh as a data-load affordance**
 
@@ -1244,7 +1268,7 @@ bun run --cwd apps/layout-editor test src/App.test.ts
 bun run editor:check
 ```
 
-Expected: PASS; Reader current-scene mode is now functional, so the Reader/Stage switch is truthful.
+Expected: PASS; Reader current-scene mode and the Reader/Stage switch are now both truthful and functional.
 
 - [ ] **Step 10: Commit**
 
@@ -1306,9 +1330,9 @@ For every scene:
 
 Use a chapter-generation token to ignore stale chapter loads after scope/chapter/refresh changes.
 
-- [ ] **Step 3: Wire the current-scene / whole-chapter scope control**
+- [ ] **Step 3: Add the now-functional current-scene / whole-chapter scope control**
 
-Add the ticket's fifth filter/control now:
+Add:
 
 ```text
 Current scene | Whole chapter
@@ -1427,7 +1451,7 @@ If Task 6 required no code changes after the previous commit except verification
 
 | HPA-634 requirement | Owning task |
 | --- | --- |
-| Visible Lyra Story Workbench + only Reader/Stage | Task 4/5 |
+| Visible Lyra Story Workbench + only functional Reader/Stage | Task 4 branding, Task 5 mode switch |
 | Preserve Stage investigation workflow/save | Task 2/4/6 |
 | All four manifest scene types in deterministic tree | Task 1/4 |
 | ID-only IPC and generic path deletion | Task 2/4 |
@@ -1455,4 +1479,5 @@ The executor must re-check these invariants after each task rather than deferrin
 5. No Reader cache path exists without Refresh invalidation and generation fencing.
 6. No current source-root guidance still promises a live `static/stories_plan` tree after Task 1.
 7. `ReaderGroup.kind`, scene type, dialogue type, and compiler origin switches stay exhaustive.
-8. No task introduces a fifth/bulk IPC command, watcher, persisted Reader settings, or future mode placeholder.
+8. No task introduces a fifth/bulk IPC command, watcher, persisted Reader settings, future mode placeholder, or intermediate nonfunctional Reader control.
+9. Rust `WorkbenchSceneBundle { scene }` and TypeScript `WorkbenchSceneBundle = { scene: WorkbenchScenePayload }` remain shape-identical.
