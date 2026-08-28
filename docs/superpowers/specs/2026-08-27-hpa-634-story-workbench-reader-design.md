@@ -106,7 +106,7 @@ Rust therefore performs a very small Analysis sanitizer before returning `load_s
 Include only the public story-review shape required by this ticket:
 
 - scene `id`, `type`, `title`, `summary`, Intro, Outro;
-- board `kind`, `id`, `label`, `prompt`;
+- board `kind` plus common `id`, `label`, `prompt`;
 - public cards: `id`, `label`, `summary`, source reference;
 - classify groups: `id`, `label`, `description`;
 - generic `incomplete`, `incorrect`, and optional `hint` copy;
