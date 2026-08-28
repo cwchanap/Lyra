@@ -2339,7 +2339,7 @@ async function p1PracticeHotspotIsInspected(
 }
 
 /**
- * Completes the authored P1 tutorial through the same fallback hotspot and
+ * Completes the authored P1 tutorial through the same hotspot and
  * analysis-board controls a fresh player uses. It deliberately never uses an
  * E2E checkpoint or a native state mutation.
  */

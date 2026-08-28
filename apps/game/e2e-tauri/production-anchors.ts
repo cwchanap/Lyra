@@ -35,14 +35,14 @@ export const anchors = {
   caseFileEvidenceTab: "證物",
   caseFileReexamine: "重新檢視",
 
-  // investigation_scene_p1: every hotspot currently renders in the
-  // InvestigationSceneSurface fallback controls (no authored layout yet).
+  // investigation_scene_p1: hotspots have authored layouts and render as
+  // placed InvestigationSceneSurface targets (調查：<label>).
   p1Practice: {
     hotspotLabels: [
-      "未放置：櫃台上的收據",
-      "未放置：老舊收銀機的出紙口",
-      "未放置：櫃台後的監視器",
-      "未放置：店主的手寫帳本",
+      "調查：櫃台上的收據",
+      "調查：老舊收銀機的出紙口",
+      "調查：櫃台後的監視器",
+      "調查：店主的手寫帳本",
     ],
     analysisBoard: "分析板",
     acceptedCards: [
