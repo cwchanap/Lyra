@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs::{self, OpenOptions},
     io::{self, Write},
     path::{Component, Path, PathBuf},
@@ -387,6 +388,73 @@ impl SceneType {
     }
 }
 
+/// A compiled scene handed to the workbench frontend. Analysis scenes carry
+/// only the public writer view (see `public_analysis_value`); every other
+/// scene type is passed through as the compiler emitted it.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchSceneBundle {
+    scene: serde_json::Value,
+}
+
+/// Author-checked-in layout sidecar for an investigation scene, mirroring the
+/// `InvestigationLayoutSidecar` wire shape from `@lyra/scene-types`.
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct InvestigationLayoutSidecar {
+    version: u32,
+    scene_id: String,
+    sublocations: HashMap<String, SublocationLayout>,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct SublocationLayout {
+    hotspots: HashMap<String, SceneLayout>,
+    characters: HashMap<String, SceneLayout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    intentional_overlaps: Option<Vec<IntentionalHotspotOverlap>>,
+}
+
+/// Axis-aligned hotspot rect or character sprite/baked layout, in scene
+/// coordinates (the `kind`-tagged `RectLayout`/`CharacterLayout` wire union).
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+enum SceneLayout {
+    Rect {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+    Sprite {
+        #[serde(rename = "assetId")]
+        asset_id: String,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        anchor: LayoutAnchor,
+    },
+    Baked {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+enum LayoutAnchor {
+    #[serde(rename = "bottomCenter")]
+    BottomCenter,
+}
+
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
+struct IntentionalHotspotOverlap {
+    hotspots: (String, String),
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkbenchIndex {
@@ -413,10 +481,9 @@ struct WorkbenchSceneEntry {
 }
 
 #[derive(Debug)]
-// ponytail: unused in non-test builds until Task 4 registers a command that
-// reads it; keep the resolved shape wired now so the cutover is registration-only.
-#[allow(dead_code)]
 struct ResolvedScene {
+    // ponytail: not read until Task 4 wires save/next-scene commands by ids.
+    #[allow(dead_code)]
     chapter_id: String,
     scene_id: String,
     scene_type: SceneType,
@@ -488,9 +555,6 @@ fn load_workbench_index_at_root(root: &Path) -> Result<WorkbenchIndex, EditorErr
     })
 }
 
-// ponytail: unused in non-test builds until Task 4 registers a command that
-// resolves scenes through the manifest; tests pin its contract now.
-#[allow(dead_code)]
 fn resolve_manifest_scene_at_root(
     root: &Path,
     chapter_id: &str,
@@ -533,6 +597,287 @@ struct ManifestChapter {
     title: String,
     summary: String,
     scenes: Vec<ManifestScene>,
+}
+
+#[tauri::command]
+fn load_scene_bundle(
+    chapter_id: String,
+    scene_id: String,
+) -> Result<WorkbenchSceneBundle, EditorError> {
+    let root = workspace_root()?;
+    load_scene_bundle_at_root(&root, &chapter_id, &scene_id)
+}
+
+#[tauri::command]
+fn load_investigation_layout(
+    chapter_id: String,
+    scene_id: String,
+) -> Result<Option<InvestigationLayoutSidecar>, EditorError> {
+    let root = workspace_root()?;
+    load_investigation_layout_at_root(&root, &chapter_id, &scene_id)
+}
+
+#[tauri::command]
+fn save_investigation_layout(
+    chapter_id: String,
+    scene_id: String,
+    layout: InvestigationLayoutSidecar,
+) -> Result<(), EditorError> {
+    let root = workspace_root()?;
+    save_investigation_layout_at_root(&root, &chapter_id, &scene_id, &layout)
+}
+
+fn load_scene_bundle_at_root(
+    root: &Path,
+    chapter_id: &str,
+    scene_id: &str,
+) -> Result<WorkbenchSceneBundle, EditorError> {
+    let resolved = resolve_manifest_scene_at_root(root, chapter_id, scene_id)?;
+    let compiled_path = &resolved.compiled_path;
+    let text = fs::read_to_string(compiled_path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::not_found(compiled_path)
+        } else {
+            EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", compiled_path.display()),
+            )
+        }
+    })?;
+    let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
+        EditorError::new(
+            "sceneInvalid",
+            format!("failed to parse {}: {error}", compiled_path.display()),
+        )
+    })?;
+
+    let expected_type = manifest_scene_type_tag(resolved.scene_type);
+    let compiled_id = value.get("id").and_then(|id| id.as_str());
+    let compiled_type = value.get("type").and_then(|scene_type| scene_type.as_str());
+    if compiled_id != Some(resolved.scene_id.as_str()) || compiled_type != Some(expected_type) {
+        return Err(EditorError::new(
+            "sceneManifestMismatch",
+            format!(
+                "compiled scene {} does not match the manifest: expected id \"{}\" type \"{expected_type}\", found id {compiled_id:?} type {compiled_type:?}",
+                compiled_path.display(),
+                resolved.scene_id,
+            ),
+        ));
+    }
+
+    let scene = if resolved.scene_type == SceneType::Analysis {
+        public_analysis_value(&value)?
+    } else {
+        value
+    };
+    Ok(WorkbenchSceneBundle { scene })
+}
+
+fn manifest_scene_type_tag(scene_type: SceneType) -> &'static str {
+    match scene_type {
+        SceneType::Linear => "linear",
+        SceneType::Investigation => "investigation",
+        SceneType::Interrogation => "interrogation",
+        SceneType::Analysis => "analysis",
+    }
+}
+
+/// Builds the public editor view of a compiled Analysis scene by copying a
+/// whitelist of writer-facing fields into a fresh value. Answer keys
+/// (`acceptedGroupByCard`/`acceptedOrder`/`acceptedSelections`), progression
+/// gates (`unlock`/`reveals`), per-selection feedback, and runtime state are
+/// never copied — this is a copy-list, never a recursive delete.
+fn public_analysis_value(scene: &serde_json::Value) -> Result<serde_json::Value, EditorError> {
+    let mut public =
+        whitelisted_map_of(scene, &["type", "id", "title", "summary", "intro", "outro"]);
+    let empty = Vec::new();
+    let boards = array_field(scene, "boards").unwrap_or(&empty);
+    let public_boards = boards
+        .iter()
+        .map(public_analysis_board)
+        .collect::<Result<Vec<_>, _>>()?;
+    public.insert(
+        "boards".to_string(),
+        serde_json::Value::Array(public_boards),
+    );
+    Ok(serde_json::Value::Object(public))
+}
+
+fn public_analysis_board(board: &serde_json::Value) -> Result<serde_json::Value, EditorError> {
+    let Some(kind) = board.get("kind").and_then(|kind| kind.as_str()) else {
+        return Err(EditorError::new(
+            "unsupportedAnalysisBoardKind",
+            "unsupported analysis board kind: <missing>",
+        ));
+    };
+    if !matches!(kind, "classify" | "order" | "threshold") {
+        return Err(EditorError::new(
+            "unsupportedAnalysisBoardKind",
+            format!("unsupported analysis board kind: {kind}"),
+        ));
+    }
+
+    let mut public = serde_json::Map::new();
+    public.insert("kind".to_string(), serde_json::Value::from(kind));
+    if let Some(common) = board.get("common") {
+        let mut public_common = whitelisted_map_of(common, &["id", "label", "prompt"]);
+        if let Some(cards) = array_field(common, "cards") {
+            let public_cards = cards
+                .iter()
+                .map(|card| {
+                    serde_json::Value::Object(whitelisted_map_of(
+                        card,
+                        &["id", "label", "source", "summary"],
+                    ))
+                })
+                .collect();
+            public_common.insert("cards".to_string(), serde_json::Value::Array(public_cards));
+        }
+        if let Some(feedback) = common.get("feedback") {
+            let public_feedback =
+                whitelisted_map_of(feedback, &["incomplete", "incorrect", "hint"]);
+            public_common.insert(
+                "feedback".to_string(),
+                serde_json::Value::Object(public_feedback),
+            );
+        }
+        if let Some(result_dialogue) = common.get("resultDialogue") {
+            public_common.insert("resultDialogue".to_string(), result_dialogue.clone());
+        }
+        public.insert(
+            "common".to_string(),
+            serde_json::Value::Object(public_common),
+        );
+    }
+    if kind == "classify" {
+        if let Some(groups) = array_field(board, "groups") {
+            let public_groups = groups
+                .iter()
+                .map(|group| {
+                    serde_json::Value::Object(whitelisted_map_of(
+                        group,
+                        &["id", "label", "description"],
+                    ))
+                })
+                .collect();
+            public.insert(
+                "groups".to_string(),
+                serde_json::Value::Array(public_groups),
+            );
+        }
+    }
+    if kind == "order" {
+        if let Some(anchors) = array_field(board, "fixedAnchors") {
+            let public_anchors = anchors
+                .iter()
+                .map(|anchor| {
+                    serde_json::Value::Object(whitelisted_map_of(anchor, &["cardId", "position"]))
+                })
+                .collect();
+            public.insert(
+                "fixedAnchors".to_string(),
+                serde_json::Value::Array(public_anchors),
+            );
+        }
+    }
+    Ok(serde_json::Value::Object(public))
+}
+
+fn whitelisted_map_of(
+    source: &serde_json::Value,
+    fields: &[&str],
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut out = serde_json::Map::new();
+    for field in fields {
+        if let Some(copied) = source.get(*field) {
+            out.insert(field.to_string(), copied.clone());
+        }
+    }
+    out
+}
+
+fn array_field<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a Vec<serde_json::Value>> {
+    value.get(key).and_then(|field| field.as_array())
+}
+
+fn load_investigation_layout_at_root(
+    root: &Path,
+    chapter_id: &str,
+    scene_id: &str,
+) -> Result<Option<InvestigationLayoutSidecar>, EditorError> {
+    let layout_path = investigation_layout_path_at_root(root, chapter_id, scene_id)?;
+    let text = match fs::read_to_string(&layout_path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", layout_path.display()),
+            ))
+        }
+    };
+    let layout: InvestigationLayoutSidecar = serde_json::from_str(&text).map_err(|error| {
+        EditorError::new(
+            "layoutInvalid",
+            format!("failed to parse {}: {error}", layout_path.display()),
+        )
+    })?;
+    Ok(Some(layout))
+}
+
+fn save_investigation_layout_at_root(
+    root: &Path,
+    chapter_id: &str,
+    scene_id: &str,
+    layout: &InvestigationLayoutSidecar,
+) -> Result<(), EditorError> {
+    let layout_path = investigation_layout_path_at_root(root, chapter_id, scene_id)?;
+    let serialized = serde_json::to_string_pretty(layout).map_err(|error| {
+        EditorError::new(
+            "layoutInvalid",
+            format!(
+                "failed to serialize layout for {}: {error}",
+                layout_path.display()
+            ),
+        )
+    })?;
+    write_regular_file(&layout_path, format!("{serialized}\n"))
+}
+
+/// Resolves the `*.layout.json` sidecar path for an investigation scene from
+/// its backend-resolved canonical authored `.md` path, per the existing
+/// sidecar naming convention. Never accepts a caller-supplied path.
+fn investigation_layout_path_at_root(
+    root: &Path,
+    chapter_id: &str,
+    scene_id: &str,
+) -> Result<PathBuf, EditorError> {
+    let resolved = resolve_manifest_scene_at_root(root, chapter_id, scene_id)?;
+    if resolved.scene_type != SceneType::Investigation {
+        return Err(EditorError::new(
+            "stageUnsupportedSceneType",
+            format!(
+                "scene \"{scene_id}\" has type \"{}\" but layout editing requires an investigation scene",
+                manifest_scene_type_tag(resolved.scene_type)
+            ),
+        ));
+    }
+
+    let mut layout_path = resolved.source_path.clone();
+    layout_path.set_extension("layout.json");
+    // The sidecar is backend-constructed from the canonical authored path, but
+    // assert the containment invariant before trusting it for I/O.
+    let canonical_root = normalize_existing_root(root)?;
+    if !layout_path.starts_with(canonical_root.join(STORY_SOURCE_RELATIVE_ROOT)) {
+        return Err(EditorError::new(
+            "pathEscape",
+            format!(
+                "layout sidecar escapes {STORY_SOURCE_RELATIVE_ROOT}: {}",
+                layout_path.display()
+            ),
+        ));
+    }
+    Ok(layout_path)
 }
 
 fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
@@ -663,7 +1008,10 @@ pub fn run() {
             resolve_layout_path,
             read_project_file,
             write_project_file,
-            load_workbench_index
+            load_workbench_index,
+            load_scene_bundle,
+            load_investigation_layout,
+            save_investigation_layout
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -980,6 +1328,140 @@ mod tests {
         );
     }
 
+    #[test]
+    fn non_analysis_bundle_preserves_compiler_payload() {
+        let root = temp_workbench_root();
+        let bundle =
+            load_scene_bundle_at_root(&root, "chapter_1", "investigation_scene_b").unwrap();
+        assert_eq!(bundle.scene["type"], "investigation");
+        assert_eq!(bundle.scene["id"], "investigation_scene_b");
+    }
+
+    #[test]
+    fn analysis_bundle_keeps_public_writer_fields_and_strips_forbidden_semantics() {
+        let root = temp_workbench_root();
+        let bundle = load_scene_bundle_at_root(&root, "chapter_1", "analysis_scene_d").unwrap();
+        let serialized = serde_json::to_string(&bundle).unwrap();
+
+        for required in [
+            "public prompt",
+            "public incomplete",
+            "public incorrect",
+            "public hint",
+            "public card summary",
+            "public group description",
+            "public result",
+            "fixedAnchors",
+            "anchor_card",
+        ] {
+            assert!(
+                serialized.contains(required),
+                "missing public field/value {required}"
+            );
+        }
+
+        for forbidden in [
+            "acceptedGroupByCard",
+            "secret_group",
+            "acceptedOrder",
+            "secret_order",
+            "minimumSelected",
+            "acceptedSelections",
+            "secret_selection",
+            "incorrectSelections",
+            "secret mapped feedback",
+            "secret_progression",
+            "secret_reveal",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "leaked forbidden field/value {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn scene_bundle_rejects_compiled_id_or_type_mismatch() {
+        let root = temp_workbench_root();
+        overwrite_compiled_scene_field(&root, "scene_a", "id", "wrong_id");
+        assert_eq!(
+            load_scene_bundle_at_root(&root, "chapter_1", "scene_a")
+                .unwrap_err()
+                .code,
+            "sceneManifestMismatch"
+        );
+    }
+
+    #[test]
+    fn investigation_layout_round_trips_by_ids() {
+        let root = temp_workbench_root();
+        let layout = fixture_layout();
+        save_investigation_layout_at_root(&root, "chapter_1", "investigation_scene_b", &layout)
+            .unwrap();
+
+        assert_eq!(
+            load_investigation_layout_at_root(&root, "chapter_1", "investigation_scene_b").unwrap(),
+            Some(layout)
+        );
+    }
+
+    #[test]
+    fn layout_commands_reject_non_investigation_scene() {
+        let root = temp_workbench_root();
+        assert_eq!(
+            load_investigation_layout_at_root(&root, "chapter_1", "scene_a")
+                .unwrap_err()
+                .code,
+            "stageUnsupportedSceneType"
+        );
+    }
+
+    fn overwrite_compiled_scene_field(root: &Path, scene: &str, field: &str, value: &str) {
+        let path = root
+            .join(COMPILED_SCENES_RELATIVE_ROOT)
+            .join("chapter_1")
+            .join(format!("{scene}.json"));
+        let mut parsed: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+        parsed[field] = serde_json::Value::from(value);
+        fs::write(&path, serde_json::to_string_pretty(&parsed).unwrap()).unwrap();
+    }
+
+    fn fixture_layout() -> InvestigationLayoutSidecar {
+        InvestigationLayoutSidecar {
+            version: 1,
+            scene_id: "investigation_scene_b".to_string(),
+            sublocations: HashMap::from([(
+                "sublocation_a".to_string(),
+                SublocationLayout {
+                    hotspots: HashMap::from([(
+                        "hotspot_a".to_string(),
+                        SceneLayout::Rect {
+                            x: 1.0,
+                            y: 2.0,
+                            w: 30.0,
+                            h: 40.0,
+                        },
+                    )]),
+                    characters: HashMap::from([(
+                        "character_a".to_string(),
+                        SceneLayout::Sprite {
+                            asset_id: "standee.fixture_a".to_string(),
+                            x: 3.0,
+                            y: 4.0,
+                            w: 50.0,
+                            h: 60.0,
+                            anchor: LayoutAnchor::BottomCenter,
+                        },
+                    )]),
+                    intentional_overlaps: Some(vec![IntentionalHotspotOverlap {
+                        hotspots: ("hotspot_a".to_string(), "hotspot_b".to_string()),
+                    }]),
+                },
+            )]),
+        }
+    }
+
     fn temp_workbench_root() -> PathBuf {
         let mut root = std::env::temp_dir();
         root.push(format!(
@@ -1018,6 +1500,33 @@ mod tests {
         ] {
             fs::write(root.join("docs/stories_plan/chapter_1").join(scene), "").unwrap();
         }
+        let compiled = root.join("apps/game/src-tauri/resources/scenes/chapter_1");
+        fs::create_dir_all(&compiled).unwrap();
+        for (file, contents) in [
+            ("scene_a.json", r#"{"type":"linear","id":"scene_a"}"#),
+            (
+                "investigation_scene_b.json",
+                r#"{"type":"investigation","id":"investigation_scene_b"}"#,
+            ),
+            (
+                "interrogation_scene_c.json",
+                r#"{"type":"interrogation","id":"interrogation_scene_c"}"#,
+            ),
+        ] {
+            fs::write(compiled.join(file), contents).unwrap();
+        }
+        // Analysis fixture: public writer fields plus forbidden sentinel
+        // data (answer keys, progression gates, per-selection feedback) the
+        // bundle loader must strip at the wire.
+        fs::write(
+            compiled.join("analysis_scene_d.json"),
+            r#"{"type":"analysis","id":"analysis_scene_d","title":"Analysis Scene D","summary":"public analysis summary","intro":[],"outro":[],"boards":[
+{"kind":"classify","common":{"id":"board_a","label":"Board A","prompt":"public prompt","unlock":{"predicate":"fact_asserted","id":"secret_progression"},"reveals":[{"kind":"assertFact","factId":"secret_reveal"}],"feedback":{"incomplete":"public incomplete","incorrect":"public incorrect","hint":"public hint","incorrectSelections":[{"cards":["card_a"],"feedback":"secret mapped feedback"}]},"cards":[{"id":"card_a","label":"Card A","source":{"kind":"evidence","id":"evidence_a"},"summary":"public card summary"}],"resultDialogue":[{"kind":"line","speaker":"相馬律","text":"public result","portrait":null}]},"groups":[{"id":"group_a","label":"Group A","description":"public group description"}],"acceptedGroupByCard":{"card_a":"secret_group"}},
+{"kind":"order","common":{"id":"board_b","label":"Board B","prompt":"order prompt","unlock":null,"reveals":[],"feedback":{"incomplete":"order incomplete","incorrect":"order incorrect","hint":null,"incorrectSelections":[]},"cards":[{"id":"anchor_card","label":"Anchor Card","source":{"kind":"evidence","id":"evidence_b"},"summary":"anchor summary"}],"resultDialogue":[]},"acceptedOrder":["secret_order"],"fixedAnchors":[{"cardId":"anchor_card","position":1}]},
+{"kind":"threshold","common":{"id":"board_c","label":"Board C","prompt":"threshold prompt","unlock":null,"reveals":[],"feedback":{"incomplete":"threshold incomplete","incorrect":"threshold incorrect","hint":null,"incorrectSelections":[]},"cards":[],"resultDialogue":[]},"minimumSelected":7,"acceptedSelections":[["secret_selection"]]}
+]}"#,
+        )
+        .unwrap();
         root
     }
 
