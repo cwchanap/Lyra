@@ -1,6 +1,5 @@
 {
   "lockfileVersion": 1,
-  "configVersion": 0,
   "workspaces": {
     "": {
       "name": "lyra",
@@ -70,6 +69,7 @@
       "dependencies": {
         "@lyra/asset-paths": "workspace:*",
         "@lyra/scene-types": "workspace:*",
+        "@lyra/scripts": "workspace:*",
         "@lyra/shared": "workspace:*",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-dialog": "^2",

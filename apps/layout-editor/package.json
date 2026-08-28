@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@lyra/asset-paths": "workspace:*",
+    "@lyra/scripts": "workspace:*",
     "@lyra/shared": "workspace:*",
     "@lyra/scene-types": "workspace:*",
     "@tauri-apps/api": "^2",
