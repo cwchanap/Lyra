@@ -540,6 +540,78 @@ describe("layout-store", () => {
       expect(editorState.sceneId).toBeNull();
       expect(editorState.layout).toBeNull();
     });
+
+    it("clears the previous scene before the next scene's ids are applied so saveLayout during a pending load cannot persist the old layout under the new ids", async () => {
+      // Load scene A fully and give it a detectable layout.
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_a")),
+        )
+        .mockResolvedValueOnce({
+          version: 1,
+          sceneId: "scene_a",
+          sublocations: {
+            office: {
+              hotspots: {
+                desk: { kind: "rect", x: 0.2, y: 0.3, w: 0.15, h: 0.1 },
+              },
+              characters: {},
+            },
+          },
+        });
+      await loadInvestigationScene("chapter_1", "scene_a");
+      expect(editorState.sceneId).toBe("scene_a");
+      expect(editorState.layout).not.toBeNull();
+
+      // Start loading scene B; hold its layout fetch pending so we can probe
+      // the window between the bundle resolving and the layout resolving.
+      let resolveLayoutB!: (value: unknown) => void;
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_b")),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveLayoutB = resolve;
+            }),
+        );
+
+      const pending = loadInvestigationScene("chapter_1", "scene_b");
+
+      // The previous scene's state is cleared synchronously at load start,
+      // before any await, so a save during the pending load has nothing to
+      // persist and never reaches the save command.
+      expect(editorState.scene).toBeNull();
+      expect(editorState.layout).toBeNull();
+      expect(editorState.chapterId).toBeNull();
+      expect(editorState.sceneId).toBeNull();
+
+      // Let the bundle resolve and the layout fetch be issued.
+      await Promise.resolve();
+      await Promise.resolve();
+
+      // Even after the bundle resolves and scene_b's ids are applied, the
+      // previous layout must not be present, so saveLayout is a no-op.
+      await saveLayout();
+      expect(invoke).not.toHaveBeenCalledWith(
+        "save_investigation_layout",
+        expect.objectContaining({
+          chapterId: "chapter_1",
+          sceneId: "scene_b",
+        }),
+      );
+
+      // Finish the load; scene_b populates the stage with its own layout.
+      resolveLayoutB({ version: 1, sceneId: "scene_b", sublocations: {} });
+      await pending;
+      expect(editorState.sceneId).toBe("scene_b");
+      expect(editorState.layout).toEqual({
+        version: 1,
+        sceneId: "scene_b",
+        sublocations: {},
+      });
+    });
   });
 
   describe("saveLayout", () => {

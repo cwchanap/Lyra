@@ -1,9 +1,16 @@
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    fs, io,
+    fs,
+    io::{self, Write},
     path::{Component, Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+/// Monotonic counter for unique layout sidecar temp-file names so concurrent
+/// or rapid saves never collide on the temp path (see
+/// `write_layout_sidecar_no_follow`).
+static LAYOUT_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -534,10 +541,66 @@ fn save_investigation_layout_at_root(
             ),
         )
     })?;
-    fs::write(&layout_path, format!("{serialized}\n")).map_err(|error| {
+    write_layout_sidecar_no_follow(&layout_path, &format!("{serialized}\n"))
+}
+
+/// Writes the layout sidecar without following an existing symlink at the
+/// target path. `fs::write` opens with `O_CREAT|O_TRUNC` which follows
+/// symlinks, so a planted `*.layout.json` symlink could redirect the write
+/// outside the containment root even though the sidecar path itself was
+/// validated. Instead, serialize into a uniquely-named temp file in the same
+/// directory (so `rename` is atomic on a single filesystem) and rename it
+/// over the target: `rename` replaces the directory entry itself rather than
+/// writing through a symlink. The temp file lives next to the validated
+/// sidecar path, so it stays within the containment root.
+fn write_layout_sidecar_no_follow(layout_path: &Path, contents: &str) -> Result<(), EditorError> {
+    let parent = layout_path.parent().ok_or_else(|| {
         EditorError::new(
             "writeFailed",
-            format!("failed to write {}: {error}", layout_path.display()),
+            format!("layout path has no parent: {}", layout_path.display()),
+        )
+    })?;
+    let file_name = layout_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("layout.json");
+    let unique = LAYOUT_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let temp_path = parent.join(format!(".{file_name}.{}.{unique}.tmp", std::process::id()));
+
+    {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temp_path)
+            .map_err(|error| {
+                EditorError::new(
+                    "writeFailed",
+                    format!("failed to open temp {}: {error}", temp_path.display()),
+                )
+            })?;
+        file.write_all(contents.as_bytes()).map_err(|error| {
+            EditorError::new(
+                "writeFailed",
+                format!("failed to write temp {}: {error}", temp_path.display()),
+            )
+        })?;
+        file.sync_all().map_err(|error| {
+            EditorError::new(
+                "writeFailed",
+                format!("failed to sync temp {}: {error}", temp_path.display()),
+            )
+        })?;
+    }
+
+    fs::rename(&temp_path, layout_path).map_err(|error| {
+        // Best-effort cleanup so a failed rename does not leave a stale temp.
+        let _ = fs::remove_file(&temp_path);
+        EditorError::new(
+            "writeFailed",
+            format!(
+                "failed to rename temp to {}: {error}",
+                layout_path.display()
+            ),
         )
     })
 }

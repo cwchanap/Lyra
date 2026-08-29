@@ -50,6 +50,15 @@ export async function loadInvestigationScene(
   sceneId: string,
 ) {
   const generation = ++loadSceneGeneration;
+  // Clear the previous scene immediately so a pending save during this load
+  // cannot persist the previous scene's layout under the next scene's ids.
+  // The bundle fetch below sets scene/chapterId/sceneId before its own layout
+  // fetch awaits, which would otherwise leave the new ids paired with the old
+  // layout for the duration of that second await.
+  editorState.scene = null;
+  editorState.layout = null;
+  editorState.chapterId = null;
+  editorState.sceneId = null;
   editorState.error = null;
 
   try {

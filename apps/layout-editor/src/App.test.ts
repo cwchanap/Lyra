@@ -635,7 +635,7 @@ describe("Lyra Story Workbench shell", () => {
     render(App);
     await selectSceneByLabel("Scene 1");
 
-    await user.click(screen.getByRole("button", { name: "Dialogue only" }));
+    await user.click(screen.getByRole("button", { name: "Hide cues" }));
     expect(screen.queryByText("rain hits the blinds.")).not.toBeInTheDocument();
     expect(screen.queryByText("場景：雨中辦公室")).not.toBeInTheDocument();
     expect(screen.getByText("相馬律: first linear line")).toBeInTheDocument();
