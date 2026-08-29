@@ -9,6 +9,7 @@ export default defineConfig({
       "**/.worktrees/**",
       "**/dist/**",
       "**/build/**",
+      "packages/scripts/audio/audio-boundary.test.ts",
     ],
   },
 });
