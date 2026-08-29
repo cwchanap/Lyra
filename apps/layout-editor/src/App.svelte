@@ -5,6 +5,7 @@
   import ReaderView from "./lib/ReaderView.svelte";
   import TargetList from "./lib/TargetList.svelte";
   import {
+    clearStage,
     editorState,
     loadInvestigationScene,
     normalizeError,
@@ -187,6 +188,14 @@
     }, 2500);
   }
 
+  function setReaderScope(next: "scene" | "chapter"): void {
+    if (readerScope === next) return;
+    readerScope = next;
+    // Returning to scene scope must show the current selection; chapter
+    // scope loading is owned by the effect above.
+    if (next === "scene") void loadCurrentReaderScene();
+  }
+
   function toggleClass(active: boolean): string {
     return [
       "min-h-9 cursor-pointer rounded-md border px-3 text-sm font-bold text-[#26302e]",
@@ -194,14 +203,6 @@
         ? "border-[#57776a] bg-[#edf4f0]"
         : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
     ].join(" ");
-  }
-
-  function clearStage() {
-    editorState.scene = null;
-    editorState.layout = null;
-    editorState.chapterId = null;
-    editorState.sceneId = null;
-    editorState.error = null;
   }
 
   async function loadCurrentReaderScene(): Promise<void> {
@@ -269,15 +270,31 @@
     try {
       // The chapter manifest is the only scene-ID source; Promise.all keeps
       // result order equal to manifest order.
-      const readers = await Promise.all(
-        chapter.scenes.map(async (scene) => {
-          const cacheKey = `${chapterId}:${scene.id}`;
-          const cached = force ? undefined : bundleCache.get(cacheKey);
-          const bundle = cached ?? (await loadSceneBundle(chapterId, scene.id));
-          if (!cached) bundleCache.set(cacheKey, bundle);
-          return projectReaderScene(chapterId, scene.sourcePath, bundle.scene);
-        }),
-      );
+      const readers = (
+        await Promise.all(
+          chapter.scenes.map(async (scene) => {
+            const cacheKey = `${chapterId}:${scene.id}`;
+            const cached = force ? undefined : bundleCache.get(cacheKey);
+            if (cached) {
+              return projectReaderScene(
+                chapterId,
+                scene.sourcePath,
+                cached.scene,
+              );
+            }
+            const bundle = await loadSceneBundle(chapterId, scene.id);
+            // A stale chapter load must not overwrite cache entries written
+            // by the newer load that superseded it.
+            if (generation !== chapterLoadGeneration) return null;
+            bundleCache.set(cacheKey, bundle);
+            return projectReaderScene(
+              chapterId,
+              scene.sourcePath,
+              bundle.scene,
+            );
+          }),
+        )
+      ).filter((reader): reader is ReaderScene => reader !== null);
       if (generation !== chapterLoadGeneration) return; // stale chapter load
       chapterReaders = readers;
     } catch (error) {
@@ -308,7 +325,12 @@
   function setMode(next: "reader" | "stage"): void {
     if (mode === next) return;
     mode = next;
-    if (next !== "stage") return;
+    if (next !== "stage") {
+      // Entering Reader must reflect the current selection; the bundle cache
+      // makes this cheap when nothing changed since the last load.
+      if (readerScope === "scene") void loadCurrentReaderScene();
+      return;
+    }
     const scene = selectedScene;
     if (
       scene &&
@@ -475,7 +497,7 @@
             type="button"
             class={toggleClass(readerScope === "scene")}
             aria-pressed={readerScope === "scene"}
-            onclick={() => (readerScope = "scene")}
+            onclick={() => setReaderScope("scene")}
           >
             Current scene
           </button>
@@ -483,7 +505,7 @@
             type="button"
             class={toggleClass(readerScope === "chapter")}
             aria-pressed={readerScope === "chapter"}
-            onclick={() => (readerScope = "chapter")}
+            onclick={() => setReaderScope("chapter")}
           >
             Whole chapter
           </button>

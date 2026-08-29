@@ -32,6 +32,19 @@ export const editorState = $state<{
 
 let loadSceneGeneration = 0;
 
+/**
+ * Clears Stage state and cancels any in-flight loadInvestigationScene so a
+ * late bundle cannot repopulate the stage with the wrong scene.
+ */
+export function clearStage() {
+  loadSceneGeneration += 1;
+  editorState.scene = null;
+  editorState.layout = null;
+  editorState.chapterId = null;
+  editorState.sceneId = null;
+  editorState.error = null;
+}
+
 export async function loadInvestigationScene(
   chapterId: string,
   sceneId: string,

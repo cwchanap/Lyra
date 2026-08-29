@@ -43,13 +43,13 @@ const workbenchIndex: WorkbenchIndex = {
           id: "interrogation_scene_2",
           type: "interrogation",
           sourcePath: "docs/stories_plan/chapter_1/interrogation_scene_2.md",
-          stageCapable: true,
+          stageCapable: false,
         },
         {
           id: "analysis_scene_8_5",
           type: "analysis",
           sourcePath: "docs/stories_plan/chapter_1/analysis_scene_8_5.md",
-          stageCapable: true,
+          stageCapable: false,
         },
       ],
     },
@@ -840,6 +840,132 @@ describe("Lyra Story Workbench shell", () => {
     ]);
     expect(requestedSceneIds).not.toContain("scene_draft");
     expect(screen.getAllByRole("article")).toHaveLength(4);
+  });
+
+  it("switching back to Reader renders the newly selected scene, not the previously read one", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    expect(
+      await screen.findByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Stage" }));
+    await selectSceneByLabel("Investigation Scene 3");
+    await user.click(screen.getByRole("button", { name: "Reader" }));
+
+    expect(
+      await screen.findByRole("article", { name: "Reader for Rainy Office" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("相馬律: first linear line"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("returning from chapter scope to scene scope renders the scene selected while in chapter scope", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    expect(
+      await screen.findByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Whole chapter" }));
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(4));
+
+    // Selection happens while chapter scope owns loading.
+    await selectSceneByLabel("Analysis Scene 8.5");
+    await user.click(screen.getByRole("button", { name: "Current scene" }));
+
+    expect(
+      await screen.findByRole("article", { name: "Reader for Analysis" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("相馬律: first linear line"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a stale chapter load cannot overwrite refreshed cache entries", async () => {
+    const requests: Array<{
+      sceneId: string;
+      resolve: (bundle: WorkbenchSceneBundle) => void;
+    }> = [];
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return chapterFixtureIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              requests.push({ sceneId, resolve });
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene a");
+    requests[0]?.resolve(chapterFixtureBundle("scene_a"));
+    expect(
+      await screen.findByRole("article", { name: "Reader for Alpha" }),
+    ).toBeInTheDocument();
+
+    // Chapter load gen 1: scene_a is cached; b/c/d go over IPC.
+    await user.click(screen.getByRole("button", { name: "Whole chapter" }));
+    await waitFor(() => expect(requests).toHaveLength(4));
+
+    // Refresh starts gen 2 and clears the cache, so all four reload.
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requests).toHaveLength(8));
+    const gen1 = new Map(
+      requests.slice(1, 4).map((request) => [request.sceneId, request.resolve]),
+    );
+    const gen2 = new Map(
+      requests.slice(4).map((request) => [request.sceneId, request.resolve]),
+    );
+
+    // The refreshed gen 2 scene_b lands first; the stale gen 1 scene_b
+    // resolves LAST and must not overwrite the refreshed cache entry.
+    gen2.get("investigation_scene_b")?.(
+      chapterBundle("investigation_scene_b", "Beta NEW", "investigation"),
+    );
+    gen1.get("investigation_scene_b")?.(
+      chapterBundle("investigation_scene_b", "Beta OLD", "investigation"),
+    );
+    gen2.get("scene_a")?.(chapterFixtureBundle("scene_a"));
+    gen2.get("interrogation_scene_c")?.(
+      chapterFixtureBundle("interrogation_scene_c"),
+    );
+    gen2.get("analysis_scene_d")?.(chapterFixtureBundle("analysis_scene_d"));
+
+    await waitFor(() => {
+      const readerNames = screen
+        .getAllByRole("article")
+        .map((article) => article.getAttribute("aria-label"));
+      expect(readerNames).toEqual([
+        "Reader for Alpha",
+        "Reader for Beta NEW",
+        "Reader for Gamma",
+        "Reader for Delta",
+      ]);
+    });
+
+    // Navigating back through scene scope serves the SECOND load's data
+    // from the cache without a third fetch.
+    await user.click(screen.getByRole("button", { name: "Current scene" }));
+    await selectSceneByLabel("Investigation Scene b");
+    expect(
+      await screen.findByRole("article", { name: "Reader for Beta NEW" }),
+    ).toBeInTheDocument();
+    expect(
+      requests.filter((request) => request.sceneId === "investigation_scene_b"),
+    ).toHaveLength(2);
   });
 
   it("cached selection supersedes an in-flight load without sticking the reloading indicator", async () => {

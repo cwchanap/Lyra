@@ -173,6 +173,14 @@ function pushGroup(groups: ReaderGroup[], group: ReaderGroup | null): void {
   if (group) groups.push(group);
 }
 
+function withPrependedNotices(
+  group: ReaderGroup | null,
+  notices: ReaderItem[],
+): ReaderGroup | null {
+  if (group === null || notices.length === 0) return group;
+  return { ...group, items: [...notices, ...group.items] };
+}
+
 // ----- Non-dialogue notice helpers ----------------------------------------------
 
 function inventoryTargetText(target: {
@@ -330,61 +338,115 @@ function projectLinear(
   };
 }
 
+function evidenceMetadataNotices(evidence: {
+  name: string;
+  description: string;
+}): ReaderItem[] {
+  return [
+    {
+      kind: "notice",
+      noticeKind: "evidence",
+      text: `Evidence: ${evidence.name}`,
+    },
+    {
+      kind: "notice",
+      noticeKind: "evidence",
+      text: `Description: ${evidence.description}`,
+    },
+  ];
+}
+
+function statementMetadataNotices(statement: {
+  speaker: string;
+  content: string;
+}): ReaderItem[] {
+  return [
+    {
+      kind: "notice",
+      noticeKind: "statement",
+      text: `Statement — ${statement.speaker}: ${statement.content}`,
+    },
+  ];
+}
+
 function appendInventoryCarrierGroups(
   pool: SegmentPool,
   groups: ReaderGroup[],
   evidenceManifest: Array<{
     id: string;
+    name: string;
+    description: string;
     onCollect: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>,
   statementManifest: Array<{
     id: string;
+    speaker: string;
+    content: string;
     onAcquire: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>,
+  withMetadata: boolean,
 ): void {
   for (const evidence of evidenceManifest) {
+    const notices = withMetadata ? evidenceMetadataNotices(evidence) : [];
     pushGroup(
       groups,
-      pooledCarrierGroup(
-        pool,
-        `evidence:${evidence.id}:onCollect`,
-        "evidence",
-        "On Collect",
-        evidence.onCollect,
+      withPrependedNotices(
+        pooledCarrierGroup(
+          pool,
+          `evidence:${evidence.id}:onCollect`,
+          "evidence",
+          "On Collect",
+          evidence.onCollect,
+          "branch",
+        ),
+        notices,
       ),
     );
     pushGroup(
       groups,
-      pooledCarrierGroup(
-        pool,
-        `evidence:${evidence.id}:onReexamine`,
-        "evidence",
-        "On Re-examine",
-        evidence.onReexamine ?? [],
+      withPrependedNotices(
+        pooledCarrierGroup(
+          pool,
+          `evidence:${evidence.id}:onReexamine`,
+          "evidence",
+          "On Re-examine",
+          evidence.onReexamine ?? [],
+          "branch",
+        ),
+        notices,
       ),
     );
   }
   for (const statement of statementManifest) {
+    const notices = withMetadata ? statementMetadataNotices(statement) : [];
     pushGroup(
       groups,
-      pooledCarrierGroup(
-        pool,
-        `statement:${statement.id}:onAcquire`,
-        "statement",
-        "On Acquire",
-        statement.onAcquire,
+      withPrependedNotices(
+        pooledCarrierGroup(
+          pool,
+          `statement:${statement.id}:onAcquire`,
+          "statement",
+          "On Acquire",
+          statement.onAcquire,
+          "branch",
+        ),
+        notices,
       ),
     );
     pushGroup(
       groups,
-      pooledCarrierGroup(
-        pool,
-        `statement:${statement.id}:onReexamine`,
-        "statement",
-        "On Re-examine",
-        statement.onReexamine ?? [],
+      withPrependedNotices(
+        pooledCarrierGroup(
+          pool,
+          `statement:${statement.id}:onReexamine`,
+          "statement",
+          "On Re-examine",
+          statement.onReexamine ?? [],
+          "branch",
+        ),
+        notices,
       ),
     );
   }
@@ -435,6 +497,7 @@ function projectInvestigation(
           "hotspot",
           "On Re-examine",
           hotspot.onReexamine ?? [],
+          "branch",
         ),
       );
       children.push(
@@ -469,6 +532,7 @@ function projectInvestigation(
             "topic",
             "On Re-examine",
             topic.onReexamine ?? [],
+            "branch",
           ),
         );
         children.push(
@@ -499,6 +563,7 @@ function projectInvestigation(
     groups,
     scene.evidenceManifest,
     scene.statementManifest,
+    false,
   );
   pushGroup(
     groups,
@@ -550,6 +615,7 @@ function projectInterrogation(
           "question",
           "On Loop",
           testimony.onLoop,
+          "branch",
         ),
       );
       pushGroup(
@@ -683,6 +749,7 @@ function projectInterrogation(
     groups,
     scene.evidenceManifest,
     scene.statementManifest,
+    true,
   );
   pushGroup(
     groups,
