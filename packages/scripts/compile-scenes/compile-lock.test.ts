@@ -390,6 +390,37 @@ describe("isStaleLock", () => {
     expect(await isStaleLock(lockDir)).toBe(true);
   });
 
+  it("does not reap immediately on an ambiguous liveness-probe failure", async () => {
+    // Guards the P1 narrowing: process.kill(pid, 0) can fail for reasons other
+    // than ESRCH (dead) or EPERM (alive but not ours) — e.g. a sandboxed
+    // runtime rejecting the probe. Such an ambiguous result must NOT be
+    // treated as "dead", or isStaleLock would immediately delete a lock whose
+    // holder may still be live. Only ESRCH (confirmed dead) is permission to
+    // reap right away; every other error falls back to the conservative mtime
+    // path. With a recent mtime the lock is therefore fresh, not stale.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 424242,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+    const recent = Math.floor(Date.now() / 1000);
+    utimesSync(lockDir, recent, recent);
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), {
+        code: "EACCES",
+      });
+    });
+
+    try {
+      expect(await isStaleLock(lockDir)).toBe(false);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
   it("falls back to mtime when owner.json is missing", async () => {
     // No owner.json; old mtime. Should be considered stale by mtime fallback.
     utimesSync(lockDir, 1, 1);
