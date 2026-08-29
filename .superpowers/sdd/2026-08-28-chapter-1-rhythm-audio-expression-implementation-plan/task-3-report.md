@@ -2,12 +2,11 @@
 
 ## Status
 
-BLOCKED for the required real packaged `analysis-beat85` evidence. The closed
-late-arc structural slice is implemented and all source-level, compiler,
-inventory, focused-test, type-check, and packaged-build gates pass. The
-packaged runner cannot create a WebDriver session on this host after the
-normal sandbox attempt and elevated retry path; no substitute evidence is
-claimed.
+Complete. The closed late-arc structural slice is implemented and all
+source-level, compiler, inventory, focused-test, type-check, packaged-build,
+and real packaged `analysis-beat85` gates pass. The implementer recorded a
+transient pre-session `UND_ERR_INVALID_ARG`; a controller-owned retry after
+confirming port 4445 was clear created a real session and passed the suite.
 
 Implementation commit: `82dc39f8a8a07db099ea345f334b034e380c0468`
 
@@ -65,6 +64,20 @@ slugs, audio, or raster assets were added.
   paths, Scene 11 bridge/final reuse, and a `Retired hearing plates` note for
   the former p2/p3 plates.
 
+## Review round 1 fix
+
+The review found one descriptive drift in the analysis Scene 8.5 intro row.
+The row now describes the authored Rain Bell fixed-panel backdrop and its
+continuity anchors instead of a police-station vending corridor. Its cue key,
+decision, and priority are unchanged; no authored scene, runtime, or test
+content was changed.
+
+- `bun run background-cues:audit --chapter chapter_1 --check-report
+  docs/stories_plan/chapter_1/background-variety-audit.md`: pass; the exact
+  57-cue inventory still matches the report with no missing files or stale
+  rows.
+- `git diff --check`: pass.
+
 ## Verification evidence
 
 - `bun run scenes:compile`: pass; 1 chapter, 17 scenes, backgrounds 52,
@@ -84,21 +97,21 @@ slugs, audio, or raster assets were added.
   tsconfig.e2e.json`).
 - `node scripts/build-e2e.mjs`: pass; fresh `target-e2e/debug/lyra` built,
   resources copied, and packaged resources contained 5 scene entries.
-- Required real packaged run:
-  `node scripts/run-save-e2e.mjs --suite analysis-beat85` first hit the
-  sandbox's embedded-driver readiness timeout on port 4445. Elevated retries
-  reached the runner but failed session creation with
-  `UND_ERR_INVALID_ARG` on `POST http://127.0.0.1:4445/session`; the normal
-  two-attempt retry failed identically on both attempts (run
-  `11c92358-100e-4f58-ab36-bc317f6efb99`). Guarded app-data roots were cleaned
-  after each run. `check:e2e` is not used as a substitute.
+- Required real packaged run: the implementer's first sandbox attempt hit the
+  embedded-driver readiness timeout and elevated run
+  `11c92358-100e-4f58-ab36-bc317f6efb99` failed before session creation with
+  `UND_ERR_INVALID_ARG`. After confirming no listener remained on port 4445,
+  the controller reran the already-built artifact with
+  `rtk node scripts/run-save-e2e.mjs --suite analysis-beat85 --attempts 2`.
+  Run `f41e06d7-1e99-4f3c-8c3c-10a7cd05876c` passed on attempt 1: 2/2 tests
+  passed in 7m30.2s, covering partial-draft persistence, pointer ordering,
+  threshold/objective flow through p4, and Interrogation geometry. Cleanup
+  removed the guarded app-data root. `check:e2e` is not used as a substitute.
 - `git diff --check`: pass.
 
 ## Concerns
 
-The packaged analysis journey remains unverified solely because the local
-embedded WebDriver cannot create a session after the normal escalation and
-retry path. The fresh packaged binary does build, and the failure occurs
-before the suite can execute any gameplay assertion. No synthetic Rust
-fixture, production anchor, generated resource, or progress ledger was
+No Task 3 gate remains open. The earlier WebDriver session error was transient
+and occurred before gameplay; the later real packaged run passed without a
+retry. No synthetic Rust fixture, production anchor, or generated resource was
 changed.
