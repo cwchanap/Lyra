@@ -21,9 +21,8 @@ export type AudioElementLike = {
   pause: () => void;
   // Required, not optional: every real producer (HTMLAudioElement, the test
   // FakeAudio) implements EventTarget, and the controller's absorb-as-warning
-  // contract depends on error/ended/timeupdate/loadedmetadata actually being
-  // wired. Making these optional let a backend compile cleanly while silently
-  // dropping every handler — the opposite of the contract.
+  // contract depends on error/ended actually being wired. Making these
+  // optional would let a backend compile while silently dropping handlers.
   addEventListener: (type: string, listener: () => void) => void;
   removeEventListener: (type: string, listener: () => void) => void;
 };
@@ -55,9 +54,6 @@ type LoopState = {
   audio: AudioElementLike;
   onEnded: () => void;
   onError: () => void;
-  onLoadedMetadata: () => void;
-  onTimeUpdate: () => void;
-  restartTimer: ReturnType<typeof setTimeout> | null;
 };
 
 type SfxState = {
@@ -81,8 +77,6 @@ export type GameplayAudioControllerOptions = {
   logger?: LoggerLike;
   sfxBackend?: SfxBackend | null;
 };
-
-const LOOP_RESTART_MARGIN_SECONDS = 0.5;
 
 function defaultAudioFactory(url: string): AudioElementLike {
   const audio = new Audio(url);
@@ -545,34 +539,12 @@ export class GameplayAudioController {
       audio,
       onEnded: () => {},
       onError: () => {},
-      onLoadedMetadata: () => {},
-      onTimeUpdate: () => {},
-      restartTimer: null,
     };
     let warned = false;
     const warnOnce = (detail: string) => {
       if (warned) return;
       warned = true;
       this.warn(assetId, detail);
-    };
-    const clearRestartTimer = () => {
-      if (loop.restartTimer === null) return;
-      clearTimeout(loop.restartTimer);
-      loop.restartTimer = null;
-    };
-    const scheduleLoopRestart = () => {
-      clearRestartTimer();
-      if (this.loops[channel]?.audio !== audio) return;
-      if (!Number.isFinite(audio.duration)) return;
-      if (audio.duration <= LOOP_RESTART_MARGIN_SECONDS) return;
-      const restartInSeconds = Math.max(
-        0,
-        audio.duration - audio.currentTime - LOOP_RESTART_MARGIN_SECONDS,
-      );
-      loop.restartTimer = setTimeout(
-        restartActiveLoop,
-        restartInSeconds * 1000,
-      );
     };
     const playActiveLoop = async () => {
       try {
@@ -599,9 +571,7 @@ export class GameplayAudioController {
     };
     const restartActiveLoop = () => {
       if (this.loops[channel]?.audio !== audio) return;
-      clearRestartTimer();
       audio.currentTime = 0;
-      scheduleLoopRestart();
       if (audio.paused) void playActiveLoop();
     };
     loop.onEnded = () => restartActiveLoop();
@@ -609,32 +579,19 @@ export class GameplayAudioController {
       warnOnce(mediaErrorDetail(audio, url));
       if (this.loops[channel]?.audio === audio) this.stopLoop(channel);
     };
-    loop.onLoadedMetadata = () => scheduleLoopRestart();
-    loop.onTimeUpdate = () => {
-      if (!Number.isFinite(audio.duration)) return;
-      if (audio.duration <= LOOP_RESTART_MARGIN_SECONDS) return;
-      if (audio.currentTime < audio.duration - LOOP_RESTART_MARGIN_SECONDS)
-        return;
-      restartActiveLoop();
-    };
     // Native seamless looping is the primary anti-seam mechanism: with
     // `loop=true` the media element rewinds at the decode layer without an
-    // audible gap. The scheduled-restart path below (loadedmetadata/timeupdate
-    // timers + onEnded) is defense-in-depth for engines where native looping
-    // still seamed at the boundary. Both must stay: setting loop=false here
-    // regresses to timer-only looping and reintroduces a click at the loop
-    // point (the 7e54845 regression).
+    // audible gap. The ended handler is only a fallback for engines that do
+    // not honor the native loop flag; a timer-based early seek would cut the
+    // track before its actual boundary and make every loop audible.
     audio.loop = true;
     audio.preload = "auto";
     audio.muted = preferences.muted;
     audio.volume = channelVolume(channel, preferences);
     audio.addEventListener("error", loop.onError);
     audio.addEventListener("ended", loop.onEnded);
-    audio.addEventListener("loadedmetadata", loop.onLoadedMetadata);
-    audio.addEventListener("timeupdate", loop.onTimeUpdate);
     this.loops[channel] = loop;
     audio.load?.();
-    scheduleLoopRestart();
 
     await playActiveLoop();
   }
@@ -642,11 +599,8 @@ export class GameplayAudioController {
   private stopLoop(channel: LoopChannel): void {
     const loop = this.loops[channel];
     if (!loop) return;
-    if (loop.restartTimer !== null) clearTimeout(loop.restartTimer);
     loop.audio.removeEventListener("error", loop.onError);
     loop.audio.removeEventListener("ended", loop.onEnded);
-    loop.audio.removeEventListener("loadedmetadata", loop.onLoadedMetadata);
-    loop.audio.removeEventListener("timeupdate", loop.onTimeUpdate);
     loop.audio.pause();
     loop.audio.currentTime = 0;
     this.loops[channel] = null;
