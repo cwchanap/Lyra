@@ -152,10 +152,22 @@ export async function isStaleLock(lockDir: string): Promise<boolean> {
   // on mtime alone (mtimes do not refresh while a long compile runs). But
   // guard against PID reuse: if the lock is older than MAX_LOCK_MS, the
   // recorded PID was likely recycled for an unrelated process, so reap it
-  // rather than waiting forever.
+  // rather than waiting forever. A recorded PID that is provably dead
+  // (ESRCH) means the holder is gone — reap immediately instead of waiting
+  // on the mtime fallback. An ambiguous liveness probe (neither confirmed
+  // dead nor confirmed alive) is neither safe to reap immediately nor
+  // evidence the holder is long-lived, so it falls back to the shorter
+  // STALE_LOCK_MS (5 min) bound — the same bound used when there is no
+  // usable owner record — rather than the MAX_LOCK_MS (30 min) hard cap
+  // reserved for a confirmed-live holder. Lumping ambiguous into "alive"
+  // would block compiles behind an orphaned lock for 30 min on runtimes
+  // where the probe fails for reasons other than ESRCH/EPERM.
   const ownerPid = await readOwnerPid(lockDir);
-  if (ownerPid !== null && isProcessAlive(ownerPid)) {
-    return ageMs > MAX_LOCK_MS;
+  if (ownerPid !== null) {
+    const liveness = isProcessAlive(ownerPid);
+    if (liveness === false) return true;
+    if (liveness === true) return ageMs > MAX_LOCK_MS;
+    return ageMs > STALE_LOCK_MS;
   }
 
   return ageMs > STALE_LOCK_MS;
@@ -191,18 +203,34 @@ function ownersMatch(a: LockOwner, b: LockOwner): boolean {
   return a.pid === b.pid && a.createdAt === b.createdAt;
 }
 
-function isProcessAlive(pid: number): boolean {
+function isProcessAlive(pid: number): boolean | null {
   // PID reuse is handled by the MAX_LOCK_MS hard cap in isStaleLock: even if
   // the OS recycles `pid` for an unrelated long-lived process, the lock is
   // reaped once it exceeds the cap. We do NOT narrow the check to the
   // holder's command line or start time because that would add
   // platform-specific fragility for negligible benefit.
+  //
+  // Returns a tri-state so isStaleLock can distinguish "confirmed dead"
+  // (reap now) from "confirmed alive" (wait for the hard cap) from
+  // "unknown" (fall back to the short mtime bound). A boolean would force
+  // ambiguous probe failures into one of those two buckets and either risk
+  // reaping a live holder's lock or needlessly block compiles for the hard
+  // cap's full duration.
   try {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    // ESRCH = no such process; EPERM = process exists but not ours to signal.
-    return isErrorCode(err, "EPERM");
+    // ESRCH = no such process (confirmed dead); EPERM = process exists but
+    // is not ours to signal (alive). Any other error is ambiguous (e.g. a
+    // sandboxed/containerized runtime rejecting the probe) and must NOT be
+    // treated as "dead": isStaleLock uses `false` as permission to reap the
+    // lock immediately, so a spurious false would delete a lock whose holder
+    // may still be live. Nor should it be treated as "alive", which would
+    // push an orphaned lock out to the MAX_LOCK_MS hard cap. Return null so
+    // staleness falls back to the short STALE_LOCK_MS bound instead.
+    if (isErrorCode(err, "ESRCH")) return false;
+    if (isErrorCode(err, "EPERM")) return true;
+    return null;
   }
 }
 

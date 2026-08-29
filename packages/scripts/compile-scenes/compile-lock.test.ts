@@ -369,6 +369,92 @@ describe("isStaleLock", () => {
     expect(await isStaleLock(lockDir)).toBe(true);
   });
 
+  it("reaps a lock immediately when its recorded PID is dead, even with a recent mtime", async () => {
+    // Guards the bug fix: a crashed holder leaves an orphaned lock whose
+    // mtime is recent. Before the fix, isStaleLock required ageMs >
+    // STALE_LOCK_MS (5 min) even when the recorded PID was provably dead,
+    // blocking every subsequent compile for up to 5 minutes. A confirmed-dead
+    // PID must be reaped right away regardless of mtime.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 999999999,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+    // Recent mtime — well under STALE_LOCK_MS. Without the fix this would be
+    // treated as fresh and the assertion would fail.
+    const recent = Math.floor(Date.now() / 1000);
+    utimesSync(lockDir, recent, recent);
+
+    expect(await isStaleLock(lockDir)).toBe(true);
+  });
+
+  it("does not reap immediately on an ambiguous liveness-probe failure", async () => {
+    // Guards the P1 narrowing: process.kill(pid, 0) can fail for reasons other
+    // than ESRCH (dead) or EPERM (alive but not ours) — e.g. a sandboxed
+    // runtime rejecting the probe. Such an ambiguous result must NOT be
+    // treated as "dead", or isStaleLock would immediately delete a lock whose
+    // holder may still be live. Only ESRCH (confirmed dead) is permission to
+    // reap right away; every other error falls back to the conservative mtime
+    // path. With a recent mtime the lock is therefore fresh, not stale.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 424242,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+    );
+    const recent = Math.floor(Date.now() / 1000);
+    utimesSync(lockDir, recent, recent);
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), {
+        code: "EACCES",
+      });
+    });
+
+    try {
+      expect(await isStaleLock(lockDir)).toBe(false);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
+  it("reaps an ambiguous-probe lock once mtime exceeds the short fallback, not the hard cap", async () => {
+    // Guards the P2 narrowing: an ambiguous liveness-probe failure (neither
+    // ESRCH nor EPERM) must fall back to STALE_LOCK_MS (5 min) — the same
+    // bound used when there is no usable owner record — NOT the MAX_LOCK_MS
+    // (30 min) hard cap reserved for a confirmed-live holder. Before this
+    // distinction, ambiguous probes were lumped with "alive" and an
+    // orphaned lock on a runtime where the probe fails ambiguously blocked
+    // compiles for 30 min instead of 5. Plant a mtime between the two
+    // bounds: this test reaps (ageMs > STALE_LOCK_MS), while the pre-fix
+    // code (ambiguous => alive => MAX_LOCK_MS) would not.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 424242,
+        createdAt: new Date(0).toISOString(),
+      })}\n`,
+    );
+    // 10 min old — past STALE_LOCK_MS (5 min) but under MAX_LOCK_MS (30 min).
+    const tenMinAgo = Math.floor(Date.now() / 1000) - 10 * 60;
+    utimesSync(lockDir, tenMinAgo, tenMinAgo);
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), {
+        code: "EACCES",
+      });
+    });
+
+    try {
+      expect(await isStaleLock(lockDir)).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
   it("falls back to mtime when owner.json is missing", async () => {
     // No owner.json; old mtime. Should be considered stale by mtime fallback.
     utimesSync(lockDir, 1, 1);
