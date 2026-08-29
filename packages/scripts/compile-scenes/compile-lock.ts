@@ -206,8 +206,15 @@ function isProcessAlive(pid: number): boolean {
     process.kill(pid, 0);
     return true;
   } catch (err) {
-    // ESRCH = no such process; EPERM = process exists but not ours to signal.
-    return isErrorCode(err, "EPERM");
+    // ESRCH = no such process (confirmed dead); EPERM = process exists but
+    // is not ours to signal (alive). Any other error is ambiguous (e.g. a
+    // sandboxed/containerized runtime rejecting the probe) and must NOT be
+    // treated as "dead": isStaleLock uses `false` as permission to reap the
+    // lock immediately, so a spurious false would delete a lock whose holder
+    // may still be live. Treat every non-ESRCH error conservatively as
+    // alive/unknown so staleness falls back to the mtime path instead of
+    // reaping on an unconfirmed signal.
+    return !isErrorCode(err, "ESRCH");
   }
 }
 
