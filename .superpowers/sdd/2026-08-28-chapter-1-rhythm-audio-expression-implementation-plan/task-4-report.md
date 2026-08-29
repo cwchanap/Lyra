@@ -8,6 +8,8 @@ mechanics.
 
 Implementation commit: `c5f54a32d006e40964851db394fc37068715a1e2`
 
+Review correction commit: `708de2d3`
+
 Baseline: `781f1c1402446aadf5c14eb725a3293de0ec75ac`
 
 ## Files
@@ -42,7 +44,7 @@ Exactly nine new slugs were added to `characters.yaml` before authored use:
 - `interrogation_scene_10.md:80-84`: Kamiya `skeptical`, 3 spoken lines at the opening challenge.
 - `interrogation_scene_10.md:301-307`: Kamiya `conceding`, 4 spoken lines during the formal ruling.
 - `scene_11.md:30-32`: Miyake `relieved`, 2 spoken lines after his return is secured.
-- `scene_11.md:40,48,52,56,60`: Soma `relieved`, 5 same-speaker lines across the café latte exchange; intervening actions and Miyake's reply preserve the same calm state.
+- `analysis_scene_8_5.md:181-183`: Soma `relieved`, 2 consecutive spoken lines during the post-analysis snack break.
 - `scene_11.md:64-66`: Hayasaka `softened`, 2 spoken lines in the warm café exchange.
 
 No expression metadata was added to narration or action lines. Soma's Aoba
