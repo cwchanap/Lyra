@@ -198,10 +198,15 @@ entries:
     outputPath: static/assets/audio/bgm/bgm_city_summary_motif.ogg
     forced: false
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg native vorbis encoder, then locally
-      loop-normalized from source 8.0-42.5s: body 10.0-40.5s plus a 2.0s
-      triangular circular crossfade from 40.5-42.5s into 8.0-10.0s; final
-      loop is 32.5s. The local ffmpeg build does not expose libvorbis.
+      converted from cached provider MP3
+      packages/scripts/.audio-cache/bgm/bgm_city_summary_motif.mp3 to stereo
+      44.1 kHz OGG with ffmpeg native vorbis (-strict experimental, -q:a 5),
+      then locally loop-normalized from source 8.0-42.5s: body 10.0-40.5s
+      plus a 2.0s triangular circular crossfade from 40.5-42.5s into
+      8.0-10.0s; the final PCM received a symmetric 10 ms triangular
+      fade-in/out to zero after the splice before encoding to absorb native
+      Vorbis trailing granule padding; nominal loop is 32.5s. The local ffmpeg
+      build does not expose libvorbis.
 
   - id: bgm_casework_day
     channel: bgm
@@ -241,10 +246,15 @@ entries:
     outputPath: static/assets/audio/bgm/bgm_casework_day.ogg
     forced: false
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg native vorbis encoder, then locally
-      loop-normalized from source 0.0-39.8s: body 2.0-37.8s plus a 2.0s
-      triangular circular crossfade from 37.8-39.8s into 0.0-2.0s; final
-      loop is 37.8s. The local ffmpeg build does not expose libvorbis.
+      converted from cached provider MP3
+      packages/scripts/.audio-cache/bgm/bgm_casework_day.mp3 to stereo 44.1
+      kHz OGG with ffmpeg native vorbis (-strict experimental, -q:a 5), then
+      locally loop-normalized from source 0.0-39.8s: body 2.0-37.8s plus a
+      2.0s triangular circular crossfade from 37.8-39.8s into 0.0-2.0s; the
+      final PCM received a symmetric 10 ms triangular fade-in/out to zero
+      after the splice before encoding to absorb native Vorbis trailing
+      granule padding; nominal loop is 37.8s. The local ffmpeg build does not
+      expose libvorbis.
 
   - id: bgm_rain_bell_daily
     channel: bgm
@@ -275,10 +285,15 @@ entries:
     outputPath: static/assets/audio/bgm/bgm_rain_bell_daily.ogg
     forced: false
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg native vorbis encoder, then locally
-      loop-normalized from source 9.03-37.67s: body 10.03-36.67s plus a 1.0s
-      triangular circular crossfade from 36.67-37.67s into 9.03-10.03s; final
-      loop is 27.64s. The local ffmpeg build does not expose libvorbis.
+      converted from cached provider MP3
+      packages/scripts/.audio-cache/bgm/bgm_rain_bell_daily.mp3 to stereo 44.1
+      kHz OGG with ffmpeg native vorbis (-strict experimental, -q:a 5), then
+      locally loop-normalized from source 9.03-37.67s: body 10.03-36.67s plus
+      a 1.0s triangular circular crossfade from 36.67-37.67s into 9.03-10.03s;
+      the final PCM received a symmetric 10 ms triangular fade-in/out to zero
+      after the splice before encoding to absorb native Vorbis trailing
+      granule padding; nominal loop is 27.64s. The local ffmpeg build does not
+      expose libvorbis.
 
   - id: bgm_breakthrough_pursuit
     channel: bgm
@@ -317,10 +332,15 @@ entries:
     outputPath: static/assets/audio/bgm/bgm_breakthrough_pursuit.ogg
     forced: false
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg native vorbis encoder, then locally
-      loop-normalized from source 12.0-42.5s: body 14.0-40.5s plus a 2.0s
-      triangular circular crossfade from 40.5-42.5s into 12.0-14.0s; final
-      loop is 28.5s. The local ffmpeg build does not expose libvorbis.
+      converted from cached provider MP3
+      packages/scripts/.audio-cache/bgm/bgm_breakthrough_pursuit.mp3 to stereo
+      44.1 kHz OGG with ffmpeg native vorbis (-strict experimental, -q:a 5),
+      then locally loop-normalized from source 12.0-42.5s: body 14.0-40.5s
+      plus a 2.0s triangular circular crossfade from 40.5-42.5s into
+      12.0-14.0s; the final PCM received a symmetric 10 ms triangular
+      fade-in/out to zero after the splice before encoding to absorb native
+      Vorbis trailing granule padding; nominal loop is 28.5s. The local ffmpeg
+      build does not expose libvorbis.
 
   # ---- BGS: acoustic environments ----
   - id: bgs_detective_office_rain
