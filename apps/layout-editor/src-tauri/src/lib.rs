@@ -522,6 +522,21 @@ fn load_investigation_layout_at_root(
             format!("failed to parse {}: {error}", layout_path.display()),
         )
     })?;
+    // The sidecar is resolved by (chapter_id, scene_id), so a copied/stale
+    // sidecar claiming a different scene id must be rejected at the domain
+    // boundary; otherwise it can be loaded as scene B and later written back
+    // to B's file while still claiming sceneId: A.
+    if layout.scene_id != scene_id {
+        return Err(EditorError::new(
+            "layoutSceneIdMismatch",
+            format!(
+                "layout sidecar at {} claims sceneId \"{}\" but was requested as scene \"{}\"",
+                layout_path.display(),
+                layout.scene_id,
+                scene_id
+            ),
+        ));
+    }
     Ok(Some(layout))
 }
 
@@ -532,6 +547,20 @@ fn save_investigation_layout_at_root(
     layout: &InvestigationLayoutSidecar,
 ) -> Result<(), EditorError> {
     let layout_path = investigation_layout_path_at_root(root, chapter_id, scene_id)?;
+    // Mirror the load-side check: refuse to write a sidecar whose embedded
+    // scene id does not match the domain id it is being saved under, so a
+    // stale/mismatched layout cannot propagate into later compiler/editor runs.
+    if layout.scene_id != scene_id {
+        return Err(EditorError::new(
+            "layoutSceneIdMismatch",
+            format!(
+                "layout claims sceneId \"{}\" but is being saved as scene \"{}\" at {}",
+                layout.scene_id,
+                scene_id,
+                layout_path.display()
+            ),
+        ));
+    }
     let serialized = serde_json::to_string_pretty(layout).map_err(|error| {
         EditorError::new(
             "layoutInvalid",
@@ -925,6 +954,42 @@ mod tests {
                 .unwrap_err()
                 .code,
             "stageUnsupportedSceneType"
+        );
+    }
+
+    #[test]
+    fn save_investigation_layout_rejects_mismatched_scene_id() {
+        let root = temp_workbench_root();
+        let mut layout = fixture_layout();
+        layout.scene_id = "investigation_scene_a".to_string();
+        assert_eq!(
+            save_investigation_layout_at_root(&root, "chapter_1", "investigation_scene_b", &layout)
+                .unwrap_err()
+                .code,
+            "layoutSceneIdMismatch"
+        );
+    }
+
+    #[test]
+    fn load_investigation_layout_rejects_mismatched_embedded_scene_id() {
+        let root = temp_workbench_root();
+        // Plant a sidecar at scene B's path that claims a different scene id,
+        // simulating a copied/stale sidecar. The domain boundary must reject it
+        // rather than load it as scene B.
+        let sidecar_path = root
+            .join(STORY_SOURCE_RELATIVE_ROOT)
+            .join("chapter_1")
+            .join("investigation_scene_b.layout.json");
+        fs::write(
+            &sidecar_path,
+            r#"{"version":1,"sceneId":"investigation_scene_a","sublocations":{}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            load_investigation_layout_at_root(&root, "chapter_1", "investigation_scene_b")
+                .unwrap_err()
+                .code,
+            "layoutSceneIdMismatch"
         );
     }
 

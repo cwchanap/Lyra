@@ -996,18 +996,65 @@ describe("Lyra Story Workbench shell", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Reloading…")).not.toBeInTheDocument();
 
+    // Selecting an uncached scene clears the previous render and shows the
+    // loading placeholder while its bundle is in flight.
     await selectSceneByLabel("Investigation Scene 3");
-    expect(screen.getByText("Reloading…")).toBeInTheDocument();
+    expect(screen.getByText("Loading scene…")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Reader for First Rain" }),
+    ).not.toBeInTheDocument();
 
     // Cached path must clear the indicator even though the investigation
     // load is still in flight and its stale finally will skip the clear.
     await selectSceneByLabel("Scene 1");
     deferred.get("investigation_scene_3")!(investigationBundle);
     await waitFor(() =>
-      expect(screen.queryByText("Reloading…")).not.toBeInTheDocument(),
+      expect(screen.queryByText("Loading scene…")).not.toBeInTheDocument(),
     );
+    expect(screen.queryByText("Reloading…")).not.toBeInTheDocument();
     expect(
       screen.getByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+  });
+
+  it("clears the previously rendered scene while an uncached scene is loading", async () => {
+    const deferred = new Map<string, (bundle: WorkbenchSceneBundle) => void>();
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return workbenchIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              deferred.set(sceneId, resolve);
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    deferred.get("scene_1")!(linearBundle("first linear line"));
+    expect(
+      await screen.findByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+
+    // Select an uncached scene and keep its bundle load pending. The
+    // previously rendered scene A must not remain visible before B resolves.
+    await selectSceneByLabel("Investigation Scene 3");
+    expect(screen.getByText("Loading scene…")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Reader for First Rain" }),
+    ).not.toBeInTheDocument();
+
+    deferred.get("investigation_scene_3")!(investigationBundle);
+    expect(
+      await screen.findByRole("article", { name: "Reader for Rainy Office" }),
     ).toBeInTheDocument();
   });
 
