@@ -35,6 +35,8 @@ impl EditorError {
     }
 }
 
+/// Locates the Lyra workspace root by walking up from the current directory
+/// until it finds both `docs/stories_plan` and `apps/game/src-tauri/resources/scenes`.
 fn workspace_root() -> Result<PathBuf, EditorError> {
     let mut dir = std::env::current_dir().map_err(|error| {
         EditorError::new(
@@ -57,6 +59,7 @@ fn workspace_root() -> Result<PathBuf, EditorError> {
     }
 }
 
+/// Canonicalizes the workspace root path, resolving symlinks and relative paths.
 fn normalize_existing_root(root: &Path) -> Result<PathBuf, EditorError> {
     root.canonicalize().map_err(|error| {
         EditorError::new(
@@ -225,12 +228,14 @@ struct ManifestScene {
     canonical_source: PathBuf,
 }
 
+/// Loads the workbench chapter and scene index from the compiled manifest.
 #[tauri::command]
 fn load_workbench_index() -> Result<WorkbenchIndex, EditorError> {
     let root = workspace_root()?;
     load_workbench_index_at_root(&root)
 }
 
+/// Builds the workbench index from the loaded manifest chapters at the given root.
 fn load_workbench_index_at_root(root: &Path) -> Result<WorkbenchIndex, EditorError> {
     let chapters = load_manifest_chapters(root)?;
     Ok(WorkbenchIndex {
@@ -255,6 +260,7 @@ fn load_workbench_index_at_root(root: &Path) -> Result<WorkbenchIndex, EditorErr
     })
 }
 
+/// Resolves a scene by chapter and scene ID, returning its compiled and source paths.
 fn resolve_manifest_scene_at_root(
     root: &Path,
     chapter_id: &str,
@@ -299,6 +305,7 @@ struct ManifestChapter {
     scenes: Vec<ManifestScene>,
 }
 
+/// Loads a compiled scene bundle by chapter and scene ID.
 #[tauri::command]
 fn load_scene_bundle(
     chapter_id: String,
@@ -308,6 +315,7 @@ fn load_scene_bundle(
     load_scene_bundle_at_root(&root, &chapter_id, &scene_id)
 }
 
+/// Loads the layout sidecar for an investigation scene, returning None if not found.
 #[tauri::command]
 fn load_investigation_layout(
     chapter_id: String,
@@ -317,6 +325,7 @@ fn load_investigation_layout(
     load_investigation_layout_at_root(&root, &chapter_id, &scene_id)
 }
 
+/// Saves the layout sidecar for an investigation scene.
 #[tauri::command]
 fn save_investigation_layout(
     chapter_id: String,
@@ -327,6 +336,8 @@ fn save_investigation_layout(
     save_investigation_layout_at_root(&root, &chapter_id, &scene_id, &layout)
 }
 
+/// Loads and validates a compiled scene bundle at the given workspace root.
+/// For analysis scenes, returns only the public writer-facing fields.
 fn load_scene_bundle_at_root(
     root: &Path,
     chapter_id: &str,
@@ -373,6 +384,7 @@ fn load_scene_bundle_at_root(
     Ok(WorkbenchSceneBundle { scene })
 }
 
+/// Returns the string tag for a scene type as used in compiled JSON.
 fn manifest_scene_type_tag(scene_type: SceneType) -> &'static str {
     match scene_type {
         SceneType::Linear => "linear",
@@ -403,6 +415,7 @@ fn public_analysis_value(scene: &serde_json::Value) -> Result<serde_json::Value,
     Ok(serde_json::Value::Object(public))
 }
 
+/// Extracts public fields from an analysis board, filtering out answer keys and progression gates.
 fn public_analysis_board(board: &serde_json::Value) -> Result<serde_json::Value, EditorError> {
     let Some(kind) = board.get("kind").and_then(|kind| kind.as_str()) else {
         return Err(EditorError::new(
@@ -483,6 +496,7 @@ fn public_analysis_board(board: &serde_json::Value) -> Result<serde_json::Value,
     Ok(serde_json::Value::Object(public))
 }
 
+/// Copies only the specified fields from a JSON object into a new map.
 fn whitelisted_map_of(
     source: &serde_json::Value,
     fields: &[&str],
@@ -496,10 +510,12 @@ fn whitelisted_map_of(
     out
 }
 
+/// Retrieves a field as an array, returning None if the field is missing or not an array.
 fn array_field<'a>(value: &'a serde_json::Value, key: &str) -> Option<&'a Vec<serde_json::Value>> {
     value.get(key).and_then(|field| field.as_array())
 }
 
+/// Loads and validates an investigation layout sidecar, verifying the embedded scene ID matches.
 fn load_investigation_layout_at_root(
     root: &Path,
     chapter_id: &str,
@@ -540,6 +556,7 @@ fn load_investigation_layout_at_root(
     Ok(Some(layout))
 }
 
+/// Saves an investigation layout sidecar after validating the embedded scene ID matches.
 fn save_investigation_layout_at_root(
     root: &Path,
     chapter_id: &str,
@@ -670,6 +687,7 @@ fn investigation_layout_path_at_root(
     Ok(layout_path)
 }
 
+/// Loads and parses the chapters.json manifest, resolving authored source paths.
 fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
     let canonical_root = normalize_existing_root(root)?;
     let index_path = canonical_root.join(CHAPTERS_INDEX_RELATIVE_PATH);
@@ -791,6 +809,7 @@ fn canonicalize_source_under_story_root(
     Ok(canonical)
 }
 
+/// Initializes and runs the Lyra Layout Editor Tauri application.
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

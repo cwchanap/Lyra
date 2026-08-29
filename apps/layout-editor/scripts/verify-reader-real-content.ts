@@ -42,6 +42,9 @@ const readers = requiredIndexes.map((index) => {
   return projectReaderScene(chapter.id, sourcePath, compiled);
 });
 
+/**
+ * Recursively flattens all reader items from a group hierarchy.
+ */
 function items(groups: ReaderGroup[]): ReaderItem[] {
   return groups.flatMap((group) => [...group.items, ...items(group.children)]);
 }

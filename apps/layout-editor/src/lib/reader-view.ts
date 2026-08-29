@@ -52,6 +52,9 @@ function filterGroup(
   return { ...group, items, children };
 }
 
+/**
+ * Filters a reader scene by the given criteria (cues, speaker, branches, search).
+ */
 export function filterReaderScene(
   scene: ReaderScene,
   filter: ReaderFilter,

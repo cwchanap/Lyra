@@ -12,6 +12,9 @@ export {
 
 export const MIN_LAYOUT_SIZE = 0.025;
 
+/**
+ * Resizes a layout box from a given handle by the specified deltas, clamping to valid bounds.
+ */
 export function resizeLayoutFromHandle<T extends RectLayout | CharacterLayout>(
   layout: T,
   handle: ResizeHandle,
@@ -59,6 +62,9 @@ export function resizeLayoutFromHandle<T extends RectLayout | CharacterLayout>(
   };
 }
 
+/**
+ * Moves a layout box by the specified deltas, clamping to stay within scene bounds.
+ */
 export function moveLayout<T extends RectLayout | CharacterLayout>(
   layout: T,
   dx: number,
@@ -103,10 +109,16 @@ export function clampLayoutBox(layout: {
   };
 }
 
+/**
+ * Clamps a rect layout to valid normalized coordinates.
+ */
 export function clampRectLayout(layout: RectLayout): RectLayout {
   return { kind: "rect", ...clampLayoutBox(layout) };
 }
 
+/**
+ * Clamps a sprite layout to valid normalized coordinates.
+ */
 export function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
   return {
     kind: "sprite",
@@ -116,6 +128,9 @@ export function clampSpriteLayout(layout: SpriteLayout): SpriteLayout {
   };
 }
 
+/**
+ * Clamps a character layout (sprite or baked) to valid normalized coordinates.
+ */
 export function clampCharacterLayout(layout: CharacterLayout): CharacterLayout {
   const box = clampLayoutBox(layout);
   return layout.kind === "sprite"

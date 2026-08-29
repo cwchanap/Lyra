@@ -42,6 +42,9 @@ function assertNever(value: never): never {
 
 // ----- Dialogue conversion ---------------------------------------------------
 
+/**
+ * Converts a compiled dialogue item into a reader item representation.
+ */
 export function projectDialogue(item: JSONDialogueItem): ReaderItem {
   switch (item.kind) {
     case "sceneTag":
@@ -57,6 +60,9 @@ export function projectDialogue(item: JSONDialogueItem): ReaderItem {
 
 // ----- Compiler segment normalization ------------------------------------------
 
+/**
+ * Derives a reader segment ID from a compiler dialogue segment origin.
+ */
 export function readerSegmentId(origin: DialogueSegmentOriginV1): string {
   switch (origin.type) {
     case "linearScene":
@@ -296,6 +302,9 @@ function fixedAnchorNotice(anchor: {
 
 // ----- Scene projection ---------------------------------------------------
 
+/**
+ * Projects a compiled scene into a reader-friendly hierarchical structure.
+ */
 export function projectReaderScene(
   chapterId: string,
   sourcePath: string,

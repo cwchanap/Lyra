@@ -1,3 +1,6 @@
+/**
+ * Converts a scene filename into a human-readable label (e.g. "investigation_scene_3" → "Investigation Scene 3").
+ */
 export function readableSceneLabel(file: string): string {
   const basename =
     file
@@ -15,6 +18,9 @@ export function readableSceneLabel(file: string): string {
   return basename.split("_").filter(Boolean).map(titleCase).join(" ");
 }
 
+/**
+ * Returns the chapter title if present, otherwise derives a label from the chapter ID.
+ */
 export function readableChapterLabel(chapterId: string, title: string): string {
   if (title.trim()) return title;
   const chapterNumber = chapterId.match(/\d+(?:_\d+)?/)?.[0];

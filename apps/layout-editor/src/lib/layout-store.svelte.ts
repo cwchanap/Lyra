@@ -45,6 +45,9 @@ export function clearStage() {
   editorState.error = null;
 }
 
+/**
+ * Loads an investigation scene bundle and its layout sidecar, updating the editor state.
+ */
 export async function loadInvestigationScene(
   chapterId: string,
   sceneId: string,
@@ -104,6 +107,9 @@ export async function loadInvestigationScene(
   }
 }
 
+/**
+ * Saves the current layout sidecar to disk via the Tauri backend.
+ */
 export async function saveLayout() {
   if (!editorState.chapterId || !editorState.sceneId || !editorState.layout)
     return;
@@ -120,6 +126,9 @@ export async function saveLayout() {
   }
 }
 
+/**
+ * Updates the layout for a specific hotspot in a sublocation.
+ */
 export function setHotspotLayout(
   sublocationId: string,
   hotspotId: string,
@@ -147,6 +156,9 @@ export function setHotspotLayout(
   };
 }
 
+/**
+ * Updates the layout for a specific character in a sublocation.
+ */
 export function setCharacterLayout(
   sublocationId: string,
   characterId: string,
@@ -174,6 +186,9 @@ export function setCharacterLayout(
   };
 }
 
+/**
+ * Converts any error into a human-readable string message.
+ */
 export function normalizeError(error: unknown): string {
   if (isEditorCommandError(error)) return error.message;
   if (error instanceof Error) return error.message;

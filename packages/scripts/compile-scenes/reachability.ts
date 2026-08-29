@@ -97,6 +97,9 @@ export type ReachabilityAnalysis = {
   warnings: ReachabilityDiagnostic[];
 };
 
+/**
+ * Evaluates whether a reachability expression may be satisfied by the given atom set.
+ */
 export function evaluateMay(
   expression: PositiveExpression<ReachabilityPredicate>,
   atoms: ReadonlySet<ReachabilityAtom>,
@@ -104,6 +107,9 @@ export function evaluateMay(
   return evaluatePositive(expression, atoms);
 }
 
+/**
+ * Evaluates whether a reachability expression must be satisfied by the given atom set.
+ */
 export function evaluateMust(
   expression: PositiveExpression<ReachabilityPredicate>,
   atoms: ReadonlySet<ReachabilityAtom>,
@@ -111,6 +117,10 @@ export function evaluateMust(
   return evaluatePositive(expression, atoms);
 }
 
+/**
+ * Performs reachability analysis on the given nodes and story catalog,
+ * returning errors, warnings, and analysis results.
+ */
 export function analyzeReachability(input: {
   nodes: ReachabilityNode[];
   catalog: ASTStoryCatalog;
@@ -312,6 +322,9 @@ export function analyzeReachability(input: {
   };
 }
 
+/**
+ * Builds an index mapping each reachability atom to the node keys that produce it.
+ */
 export function buildPositiveProducerIndex(
   nodes: readonly ReachabilityNode[],
 ): ReadonlyMap<ReachabilityAtom, readonly string[]> {

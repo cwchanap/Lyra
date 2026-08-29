@@ -24,6 +24,10 @@ export type AlphaBounds = {
   height: number;
 };
 
+/**
+ * Computes the bounding box of visible (non-transparent) pixels in an RGBA image.
+ * Returns null if the image is fully transparent or malformed.
+ */
 export function alphaBoundsFromImageData(
   data: Uint8ClampedArray,
   imageWidth: number,
@@ -64,6 +68,10 @@ export function alphaBoundsFromImageData(
 export const DEFAULT_ASSET_WIDTH = 1024;
 export const DEFAULT_ASSET_HEIGHT = 1536;
 
+/**
+ * Converts alpha bounds into CSS custom properties for cropping sprite assets.
+ * Returns a semicolon-separated string of --crop-* variables.
+ */
 export function cropVariablesForAlphaBounds(
   bounds: AlphaBounds,
   imageWidth = DEFAULT_ASSET_WIDTH,

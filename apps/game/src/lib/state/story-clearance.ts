@@ -11,6 +11,9 @@ function describeError(error: unknown): string {
   return String(error);
 }
 
+/**
+ * Returns browser localStorage for story-clearance persistence, or null if unavailable.
+ */
 export function browserStoryClearanceStorage(): StorageLike | null {
   if (typeof window === "undefined") return null;
   try {
@@ -26,6 +29,9 @@ export function browserStoryClearanceStorage(): StorageLike | null {
   }
 }
 
+/**
+ * Loads the story-cleared flag from storage, returning true if the player has cleared the story at least once.
+ */
 export function loadStoryClearedOnce(
   storage: StorageLike | null = browserStoryClearanceStorage(),
 ): boolean {
@@ -43,6 +49,9 @@ export function loadStoryClearedOnce(
   }
 }
 
+/**
+ * Saves the story-cleared flag to storage, returning true on success.
+ */
 export function saveStoryClearedOnce(
   storage: StorageLike | null = browserStoryClearanceStorage(),
 ): boolean {
