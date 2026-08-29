@@ -1114,4 +1114,293 @@ describe("Lyra Story Workbench shell", () => {
     expect(screen.getByText("Layout saved")).toBeInTheDocument();
     expect(within(screen.getByRole("status")).getByText("Layout saved"));
   });
+
+  it("a pending chapter load cannot overwrite a newer scene-scope load after switching scope", async () => {
+    const requests: Array<{
+      sceneId: string;
+      resolve: (bundle: WorkbenchSceneBundle) => void;
+    }> = [];
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return chapterFixtureIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              requests.push({ sceneId, resolve });
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene a");
+    requests[0]?.resolve(chapterFixtureBundle("scene_a"));
+    expect(
+      await screen.findByRole("article", { name: "Reader for Alpha" }),
+    ).toBeInTheDocument();
+
+    // Chapter-scope load starts: scene_a is cached, b/c/d go over IPC.
+    await user.click(screen.getByRole("button", { name: "Whole chapter" }));
+    await waitFor(() => expect(requests).toHaveLength(4));
+    const chapterSceneB = requests.find(
+      (request) => request.sceneId === "investigation_scene_b",
+    )!;
+
+    // Select scene b while chapter scope owns loading (no fetch), then switch
+    // to scene scope. The switch invalidates the outgoing chapter load's
+    // cache writes and starts a newer scene-scope load for b.
+    await selectSceneByLabel("Investigation Scene b");
+    await user.click(screen.getByRole("button", { name: "Current scene" }));
+    await waitFor(() =>
+      expect(
+        requests.filter((r) => r.sceneId === "investigation_scene_b"),
+      ).toHaveLength(2),
+    );
+    const sceneScopeSceneB = requests
+      .filter((r) => r.sceneId === "investigation_scene_b")
+      .at(-1)!;
+
+    // Newer scene-scope b lands first; stale chapter-scope b resolves LAST
+    // and must not overwrite the newer cache entry.
+    sceneScopeSceneB.resolve(
+      chapterBundle("investigation_scene_b", "Beta NEW", "investigation"),
+    );
+    chapterSceneB.resolve(
+      chapterBundle("investigation_scene_b", "Beta OLD", "investigation"),
+    );
+
+    expect(
+      await screen.findByRole("article", { name: "Reader for Beta NEW" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("article", { name: "Reader for Beta OLD" }),
+    ).not.toBeInTheDocument();
+
+    // The cache must serve the newer bundle: navigating away and back to b
+    // re-renders Beta NEW without a third fetch.
+    await selectSceneByLabel("Scene a");
+    await selectSceneByLabel("Investigation Scene b");
+    expect(
+      await screen.findByRole("article", { name: "Reader for Beta NEW" }),
+    ).toBeInTheDocument();
+    expect(
+      requests.filter((r) => r.sceneId === "investigation_scene_b"),
+    ).toHaveLength(2);
+  });
+
+  it("does not render the Stage sublocation tree under a Reader-selected scene", async () => {
+    const user = userEvent.setup();
+    render(App);
+    // Stage an investigation scene so editorState.scene is populated.
+    await selectSceneByLabel("Investigation Scene 3");
+    await user.click(screen.getByRole("button", { name: "Stage" }));
+    expect(
+      await screen.findByRole("heading", { name: "Rainy Office" }),
+    ).toBeInTheDocument();
+    // The sublocation tree is shown in the sidebar only while in Stage mode.
+    expect(screen.getByLabelText("Sublocations")).toBeInTheDocument();
+
+    // Switch to Reader and select a different scene. The Stage scene still
+    // lives in editorState, but its sublocation tree must not render under
+    // the newly selected scene's sidebar entry.
+    await user.click(screen.getByRole("button", { name: "Reader" }));
+    await selectSceneByLabel("Scene 1");
+
+    expect(
+      await screen.findByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Sublocations")).not.toBeInTheDocument();
+  });
+
+  it("resets the Stage sublocation selection when restaging a same-named investigation scene in another chapter", async () => {
+    // Two chapters each carry an investigation scene with the same id but
+    // different sublocation contents; scene ids repeat across chapters. The
+    // sublocation selection is tracked by a chapter+scene key so a Stage
+    // scene change always resets to the first sublocation even when scene
+    // ids repeat across chapters (loadInvestigationScene also clears scene
+    // state mid-load, so this contract holds either way; the key hardens
+    // against any future load path that skips that clear).
+    const sharedSceneId = "investigation_scene_7";
+    const sharedIndex: WorkbenchIndex = {
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "Chapter One",
+          summary: "Cross-chapter fixture",
+          scenes: [
+            {
+              id: sharedSceneId,
+              type: "investigation",
+              sourcePath: `docs/stories_plan/chapter_1/${sharedSceneId}.md`,
+              stageCapable: true,
+            },
+          ],
+        },
+        {
+          id: "chapter_2",
+          title: "Chapter Two",
+          summary: "Cross-chapter fixture",
+          scenes: [
+            {
+              id: sharedSceneId,
+              type: "investigation",
+              sourcePath: `docs/stories_plan/chapter_2/${sharedSceneId}.md`,
+              stageCapable: true,
+            },
+          ],
+        },
+      ],
+    };
+
+    function sharedBundle(
+      chapterId: string,
+      firstHotspotId: string,
+    ): WorkbenchSceneBundle {
+      return {
+        scene: {
+          type: "investigation",
+          id: sharedSceneId,
+          title: `Shared ${chapterId}`,
+          summary: "Fixture",
+          intro: [line("intro")],
+          assetRefs: [],
+          sublocations: [
+            {
+              id: "lobby",
+              label: "Lobby",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "場景：大廳",
+              backgroundAssetId: null,
+              bgm: null,
+              bgs: null,
+              transitionDialogue: [line("transition")],
+              hotspots: [
+                {
+                  id: firstHotspotId,
+                  label: firstHotspotId,
+                  description: "A hotspot.",
+                  status: "unlocked",
+                  unlock: null,
+                  reveals: [],
+                  evidenceSource: null,
+                  sceneSourcePrompt: null,
+                  inspectDialogue: [line("inspect")],
+                  onReexamine: [line("reexamine")],
+                  layout: null,
+                },
+              ],
+              characters: [],
+            },
+            {
+              id: "roof",
+              label: "Roof",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              sceneTag: "場景：屋頂",
+              backgroundAssetId: null,
+              bgm: null,
+              bgs: null,
+              transitionDialogue: [line("transition")],
+              hotspots: [
+                {
+                  id: "skylight",
+                  label: "Skylight",
+                  description: "A skylight.",
+                  status: "unlocked",
+                  unlock: null,
+                  reveals: [],
+                  evidenceSource: null,
+                  sceneSourcePrompt: null,
+                  inspectDialogue: [line("inspect")],
+                  onReexamine: [line("reexamine")],
+                  layout: null,
+                },
+              ],
+              characters: [],
+            },
+          ],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [line("outro")] },
+        },
+      };
+    }
+
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return sharedIndex;
+          case "load_scene_bundle": {
+            const chapterId =
+              (args as { chapterId?: string } | undefined)?.chapterId ?? "";
+            return sharedBundle(
+              chapterId,
+              chapterId === "chapter_1" ? "door" : "window",
+            );
+          }
+          case "load_investigation_layout":
+            return { version: 1, sceneId: sharedSceneId, sublocations: {} };
+          case "save_investigation_layout":
+            return undefined;
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    async function selectSceneInChapter(chapterTitle: string) {
+      const user = userEvent.setup();
+      // The chapter title appears in the <summary>; the scene buttons repeat
+      // the same label in both chapters, so scope the search to that details.
+      const summary = (await screen.findAllByText(chapterTitle)).find((node) =>
+        Boolean(node.closest("summary")),
+      )!;
+      const details = summary.closest("details")!;
+      const strong = within(details).getByText("Investigation Scene 7");
+      await user.click(strong.closest("button")!);
+    }
+
+    function activeSublocationLabel(): string | null {
+      const section = screen.getByLabelText("Sublocations");
+      const buttons = section.querySelectorAll("button");
+      for (const button of buttons) {
+        if (button.className.includes("active")) {
+          return button.querySelector("span")?.textContent ?? null;
+        }
+      }
+      return null;
+    }
+
+    const user = userEvent.setup();
+    render(App);
+
+    // Stage chapter_1's scene and select the second sublocation (Roof).
+    await selectSceneInChapter("Chapter One");
+    await user.click(screen.getByRole("button", { name: "Stage" }));
+    expect(
+      await screen.findByRole("heading", { name: "Shared chapter_1" }),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Roof/u }));
+    await waitFor(() => expect(activeSublocationLabel()).toBe("Roof"));
+
+    // Restage the same-named scene in chapter_2. The chapter+scene key
+    // changes, so the sublocation selection must reset to the first
+    // sublocation (Lobby) rather than keeping the stale Roof selection.
+    await selectSceneInChapter("Chapter Two");
+    expect(
+      await screen.findByRole("heading", { name: "Shared chapter_2" }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(activeSublocationLabel()).toBe("Lobby"));
+  });
 });

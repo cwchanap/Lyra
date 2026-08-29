@@ -31,7 +31,11 @@
   let selectedChapterId = $state<string | null>(null);
   let selectedSceneId = $state<string | null>(null);
   let currentSublocationId = $state<string | null>(null);
-  let currentSublocationSceneId = $state<string | null>(null);
+  // Tracks the chapter+scene key of the Stage scene whose sublocations
+  // `currentSublocationId` belongs to. Scene IDs can repeat across chapters,
+  // so the key must include the chapter id or switching between same-named
+  // investigation scenes in different chapters would not reset the selection.
+  let currentSublocationStageKey = $state<string | null>(null);
   let isSavingLayout = $state(false);
   let saveToastMessage = $state<string | null>(null);
   let saveToastTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -48,6 +52,14 @@
   let chapterReaderError = $state<string | null>(null);
   let chapterLoading = $state(false);
   let chapterLoadGeneration = 0;
+  // Shared cache-write epoch: bumped whenever the active cache owner changes
+  // (Reader scope switch, or leaving Reader for Stage). Each load captures the
+  // epoch at start and refuses to write `bundleCache` if a newer owner took
+  // over, so a pending request from the scope being left cannot overwrite a
+  // newer load's cache entry. The per-loader generations above still fence
+  // reactive state (currentReaderScene / chapterReaders); this epoch fences
+  // the shared cache, which both loaders write.
+  let cacheWriteEpoch = 0;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- session cache is deliberately non-reactive; generation tokens own re-render
   const bundleCache = new Map<string, WorkbenchSceneBundle>();
   // Tracks the cache key of the scene currently rendered in the Reader pane.
@@ -157,19 +169,20 @@
     const scene = editorState.scene;
     if (!scene) {
       currentSublocationId = null;
-      currentSublocationSceneId = null;
+      currentSublocationStageKey = null;
       return;
     }
 
     const firstSublocationId = scene.sublocations[0]?.id ?? null;
-    const sceneChanged = editorState.sceneId !== currentSublocationSceneId;
+    const stageKey = `${editorState.chapterId}:${editorState.sceneId}`;
+    const stageChanged = stageKey !== currentSublocationStageKey;
     const hasCurrentSublocation = scene.sublocations.some(
       (sublocation) => sublocation.id === currentSublocationId,
     );
 
-    if (sceneChanged || !currentSublocationId || !hasCurrentSublocation) {
+    if (stageChanged || !currentSublocationId || !hasCurrentSublocation) {
       currentSublocationId = firstSublocationId;
-      currentSublocationSceneId = editorState.sceneId;
+      currentSublocationStageKey = stageKey;
     }
   });
 
@@ -194,6 +207,10 @@
 
   function setReaderScope(next: "scene" | "chapter"): void {
     if (readerScope === next) return;
+    // Invalidate the outgoing scope's pending cache writes before the new
+    // owner starts loading, so a late resolution from the scope being left
+    // cannot overwrite the newer load's cache entry.
+    cacheWriteEpoch += 1;
     readerScope = next;
     // Returning to scene scope must show the current selection; chapter
     // scope loading is owned by the effect above.
@@ -219,6 +236,7 @@
       return;
     }
     const generation = ++readerLoadGeneration;
+    const epoch = cacheWriteEpoch;
     readerError = null;
     const cacheKey = `${chapterId}:${sceneId}`;
     // When the selection key changes (including the Reader→Stage→Reader path,
@@ -253,6 +271,9 @@
     try {
       const bundle = await loadSceneBundle(chapterId, sceneId);
       if (generation !== readerLoadGeneration) return; // stale response
+      // A scope/mode switch bumped the epoch after this load started; the
+      // newer owner's cache entry must not be overwritten by this stale write.
+      if (epoch !== cacheWriteEpoch) return;
       bundleCache.set(cacheKey, bundle);
       currentBundle = bundle;
       currentReaderScene = projectReaderScene(
@@ -280,6 +301,7 @@
     );
     if (!chapter) return;
     const generation = ++chapterLoadGeneration;
+    const epoch = cacheWriteEpoch;
     chapterReaders = null;
     chapterReaderError = null;
     chapterLoading = true;
@@ -300,8 +322,13 @@
             }
             const bundle = await loadSceneBundle(chapterId, scene.id);
             // A stale chapter load must not overwrite cache entries written
-            // by the newer load that superseded it.
-            if (generation !== chapterLoadGeneration) return null;
+            // by the newer load that superseded it, and must not pollute the
+            // shared cache after a scope/mode switch invalidated this load.
+            if (
+              generation !== chapterLoadGeneration ||
+              epoch !== cacheWriteEpoch
+            )
+              return null;
             bundleCache.set(cacheKey, bundle);
             return projectReaderScene(
               chapterId,
@@ -340,6 +367,11 @@
 
   function setMode(next: "reader" | "stage"): void {
     if (mode === next) return;
+    // Leaving Reader for Stage invalidates any pending Reader cache writes so
+    // a late scene/chapter resolution cannot pollute the cache after Stage
+    // took over. Entering Reader starts a fresh load that captures the new
+    // epoch, so no bump is needed on that direction.
+    if (next === "stage") cacheWriteEpoch += 1;
     mode = next;
     if (next !== "stage") {
       // Entering Reader must reflect the current selection; the bundle cache
@@ -454,7 +486,7 @@
                     >{readableChapterLabel(chapter.id, chapter.title)}</small
                   >
                 </button>
-                {#if scene.id === selectedSceneId && chapter.id === selectedChapterId && editorState.scene}
+                {#if mode === "stage" && editorState.chapterId === chapter.id && editorState.sceneId === scene.id && editorState.scene}
                   <div
                     class="scene-sublocations ml-3 border-l-2 border-[#e4ded3] pl-2.5"
                   >
