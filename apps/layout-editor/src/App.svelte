@@ -37,29 +37,40 @@
 
   // Reader state: Reader is the default mode now that it is functional.
   let mode = $state<"reader" | "stage">("reader");
+  let readerScope = $state<"scene" | "chapter">("scene");
   let currentBundle = $state<WorkbenchSceneBundle | null>(null);
   let currentReaderScene = $state<ReaderScene | null>(null);
   let readerError = $state<string | null>(null);
   let readerLoading = $state(false);
   let readerLoadGeneration = 0;
+  let chapterReaders = $state<ReaderScene[] | null>(null);
+  let chapterReaderError = $state<string | null>(null);
+  let chapterLoading = $state(false);
+  let chapterLoadGeneration = 0;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- session cache is deliberately non-reactive; generation tokens own re-render
   const bundleCache = new Map<string, WorkbenchSceneBundle>();
 
-  // The four Reader filters; scope control (current scene vs whole chapter)
-  // intentionally waits for the whole-chapter task.
+  // The four Reader filters.
   let showCues = $state(true);
   let speaker: string | null = $state(null);
   let showBranches = $state(false);
   let search = $state("");
 
-  const selectedScene = $derived.by(() => {
-    if (!workbenchIndex || !selectedChapterId || !selectedSceneId) return null;
-    const chapter = workbenchIndex.chapters.find(
-      (candidate) => candidate.id === selectedChapterId,
-    );
+  const selectedChapter = $derived.by(() => {
+    if (!workbenchIndex || !selectedChapterId) return null;
     return (
-      chapter?.scenes.find((candidate) => candidate.id === selectedSceneId) ??
-      null
+      workbenchIndex.chapters.find(
+        (candidate) => candidate.id === selectedChapterId,
+      ) ?? null
+    );
+  });
+
+  const selectedScene = $derived.by(() => {
+    if (!selectedChapter || !selectedSceneId) return null;
+    return (
+      selectedChapter.scenes.find(
+        (candidate) => candidate.id === selectedSceneId,
+      ) ?? null
     );
   });
 
@@ -74,8 +85,24 @@
       : null,
   );
 
+  const filteredChapterReaders = $derived(
+    chapterReaders?.map((chapterScene) =>
+      filterReaderScene(chapterScene, {
+        showCues,
+        speaker,
+        showBranches,
+        search,
+      }),
+    ) ?? null,
+  );
+
   const availableSpeakers = $derived.by(() => {
-    if (!currentReaderScene) return [];
+    const scenes =
+      readerScope === "chapter"
+        ? (chapterReaders ?? [])
+        : currentReaderScene
+          ? [currentReaderScene]
+          : [];
     // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local accumulator, never read reactively
     const speakers = new Set<string>();
     const visit = (group: ReaderGroup): void => {
@@ -84,7 +111,9 @@
       }
       for (const child of group.children) visit(child);
     };
-    for (const group of currentReaderScene.groups) visit(group);
+    for (const scene of scenes) {
+      for (const group of scene.groups) visit(group);
+    }
     return [...speakers].sort((a, b) => a.localeCompare(b));
   });
 
@@ -110,6 +139,13 @@
       .catch((error) => {
         indexError = normalizeError(error);
       });
+  });
+
+  $effect(() => {
+    if (mode !== "reader" || readerScope !== "chapter") return;
+    const chapterId = selectedChapterId;
+    if (!chapterId) return;
+    void loadChapterReader(chapterId);
   });
 
   $effect(() => {
@@ -182,6 +218,9 @@
     const cacheKey = `${chapterId}:${sceneId}`;
     const cached = bundleCache.get(cacheKey);
     if (cached) {
+      // A cache hit supersedes any in-flight load; clear the indicator here
+      // because the stale load's finally will skip the generation check.
+      readerLoading = false;
       currentBundle = cached;
       try {
         currentReaderScene = projectReaderScene(
@@ -216,8 +255,52 @@
     }
   }
 
+  async function loadChapterReader(
+    chapterId: string,
+    force = false,
+  ): Promise<void> {
+    const chapter = workbenchIndex?.chapters.find(
+      (candidate) => candidate.id === chapterId,
+    );
+    if (!chapter) return;
+    const generation = ++chapterLoadGeneration;
+    chapterReaderError = null;
+    chapterLoading = true;
+    try {
+      // The chapter manifest is the only scene-ID source; Promise.all keeps
+      // result order equal to manifest order.
+      const readers = await Promise.all(
+        chapter.scenes.map(async (scene) => {
+          const cacheKey = `${chapterId}:${scene.id}`;
+          const cached = force ? undefined : bundleCache.get(cacheKey);
+          const bundle = cached ?? (await loadSceneBundle(chapterId, scene.id));
+          if (!cached) bundleCache.set(cacheKey, bundle);
+          return projectReaderScene(chapterId, scene.sourcePath, bundle.scene);
+        }),
+      );
+      if (generation !== chapterLoadGeneration) return; // stale chapter load
+      chapterReaders = readers;
+    } catch (error) {
+      if (generation !== chapterLoadGeneration) return;
+      chapterReaderError = normalizeError(error);
+      chapterReaders = null;
+    } finally {
+      if (generation === chapterLoadGeneration) chapterLoading = false;
+    }
+  }
+
   async function refreshReader(): Promise<void> {
-    if (!selectedChapterId || !selectedSceneId) return;
+    if (!selectedChapterId) return;
+    if (readerScope === "chapter") {
+      const chapter = selectedChapter;
+      if (!chapter) return;
+      for (const scene of chapter.scenes) {
+        bundleCache.delete(`${chapter.id}:${scene.id}`);
+      }
+      await loadChapterReader(chapter.id, true);
+      return;
+    }
+    if (!selectedSceneId) return;
     bundleCache.delete(`${selectedChapterId}:${selectedSceneId}`);
     await loadCurrentReaderScene();
   }
@@ -246,17 +329,18 @@
   ) {
     selectedChapterId = chapterId;
     selectedSceneId = sceneId;
-    if (mode === "reader") {
-      await loadCurrentReaderScene();
+    if (mode !== "reader") {
+      if (sceneType !== "investigation") {
+        // Stage never loads a bundle for scenes it cannot lay out; the
+        // placeholder below explains why instead.
+        clearStage();
+        return;
+      }
+      await loadInvestigationScene(chapterId, sceneId);
       return;
     }
-    if (sceneType !== "investigation") {
-      // Stage never loads a bundle for scenes it cannot lay out; the
-      // placeholder below explains why instead.
-      clearStage();
-      return;
-    }
-    await loadInvestigationScene(chapterId, sceneId);
+    if (readerScope === "chapter") return; // the chapter effect owns loading
+    await loadCurrentReaderScene();
   }
 
   async function handleSaveLayout() {
@@ -381,6 +465,30 @@
           Stage
         </button>
       </div>
+      {#if mode === "reader" && selectedChapterId}
+        <div
+          class="flex gap-1 rounded-md border border-[#bfc7bf] bg-white p-1"
+          role="group"
+          aria-label="Reader scope"
+        >
+          <button
+            type="button"
+            class={toggleClass(readerScope === "scene")}
+            aria-pressed={readerScope === "scene"}
+            onclick={() => (readerScope = "scene")}
+          >
+            Current scene
+          </button>
+          <button
+            type="button"
+            class={toggleClass(readerScope === "chapter")}
+            aria-pressed={readerScope === "chapter"}
+            onclick={() => (readerScope = "chapter")}
+          >
+            Whole chapter
+          </button>
+        </div>
+      {/if}
       {#if mode === "reader"}
         <button
           type="button"
@@ -395,14 +503,7 @@
 
     {#if mode === "reader"}
       <div class="reader-area mt-7 grid gap-5">
-        {#if readerError}
-          <p
-            class="error m-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
-          >
-            {readerError}
-          </p>
-        {/if}
-        {#if filteredReaderScene}
+        {#snippet readerControls()}
           <div
             class="reader-controls grid gap-3 rounded-md border border-[#e4ded3] bg-[#fffefb] p-4 sm:grid-cols-2"
           >
@@ -470,23 +571,81 @@
               bind:value={search}
             />
           </div>
-          {#if readerLoading}
-            <p class="m-0 text-[0.85rem] text-[#60706b]">Reloading…</p>
-          {/if}
-          <ReaderView scene={filteredReaderScene} />
-        {:else}
-          <div
-            class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]"
-          >
+        {/snippet}
+
+        {#if readerScope === "chapter"}
+          {#if chapterReaderError}
             <p
-              class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+              class="error m-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
             >
-              Reader
+              {chapterReaderError}
             </p>
-            <p class="m-0 text-xl text-[#4f5756]">
-              {readerLoading ? "Loading scene…" : "Select a scene to read."}
+          {/if}
+          {#if filteredChapterReaders}
+            {@render readerControls()}
+            {#each filteredChapterReaders as chapterScene (chapterScene.id)}
+              <!-- Collapse is a native <details>: local, never persisted. -->
+              <details
+                class="rounded-md border border-[#e4ded3] bg-[#fffefb] p-4"
+                open
+              >
+                <summary
+                  class="cursor-pointer text-sm font-bold text-[#26302e]"
+                >
+                  {chapterScene.title}
+                  <span class="ml-2 text-[0.78rem] font-normal text-[#60706b]"
+                    >{chapterScene.type} scene</span
+                  >
+                </summary>
+                <div class="mt-3">
+                  <ReaderView scene={chapterScene} />
+                </div>
+              </details>
+            {/each}
+          {:else}
+            <div
+              class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]"
+            >
+              <p
+                class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+              >
+                Reader
+              </p>
+              <p class="m-0 text-xl text-[#4f5756]">
+                {chapterLoading
+                  ? "Loading chapter…"
+                  : "Select a scene to read."}
+              </p>
+            </div>
+          {/if}
+        {:else}
+          {#if readerError}
+            <p
+              class="error m-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
+            >
+              {readerError}
             </p>
-          </div>
+          {/if}
+          {#if filteredReaderScene}
+            {@render readerControls()}
+            {#if readerLoading}
+              <p class="m-0 text-[0.85rem] text-[#60706b]">Reloading…</p>
+            {/if}
+            <ReaderView scene={filteredReaderScene} />
+          {:else}
+            <div
+              class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]"
+            >
+              <p
+                class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+              >
+                Reader
+              </p>
+              <p class="m-0 text-xl text-[#4f5756]">
+                {readerLoading ? "Loading scene…" : "Select a scene to read."}
+              </p>
+            </div>
+          {/if}
         {/if}
       </div>
     {:else if editorState.scene}

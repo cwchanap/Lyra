@@ -363,6 +363,106 @@ const analysisScene = {
 
 const analysisBundle: WorkbenchSceneBundle = { scene: analysisScene };
 
+// Whole-chapter fixtures: manifest order is scene_a → investigation_scene_b →
+// interrogation_scene_c → analysis_scene_d; scene_draft exists in the backend
+// but is unlisted and must never be requested.
+const chapterFixtureOrder = [
+  { id: "scene_a", type: "linear", title: "Alpha" },
+  { id: "investigation_scene_b", type: "investigation", title: "Beta" },
+  { id: "interrogation_scene_c", type: "interrogation", title: "Gamma" },
+  { id: "analysis_scene_d", type: "analysis", title: "Delta" },
+] as const;
+
+const chapterFixtureIndex: WorkbenchIndex = {
+  chapters: [
+    {
+      id: "chapter_9",
+      title: "Deterministic Fixture",
+      summary: "Whole-chapter order fixture",
+      scenes: chapterFixtureOrder.map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        sourcePath: `docs/stories_plan/chapter_9/${entry.id}.md`,
+        stageCapable: entry.type === "investigation",
+      })),
+    },
+  ],
+};
+
+function chapterBundle(
+  sceneId: string,
+  title: string,
+  type: "linear" | "investigation" | "interrogation" | "analysis",
+): WorkbenchSceneBundle {
+  switch (type) {
+    case "linear":
+      return {
+        scene: {
+          type: "linear",
+          id: sceneId,
+          title,
+          summary: "Fixture",
+          queue: [line("chapter linear line")],
+          assetRefs: [],
+        },
+      };
+    case "investigation":
+      return {
+        scene: {
+          type: "investigation",
+          id: sceneId,
+          title,
+          summary: "Fixture",
+          intro: [line("intro")],
+          assetRefs: [],
+          sublocations: [],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [line("outro")] },
+        },
+      };
+    case "interrogation":
+      return {
+        scene: {
+          type: "interrogation",
+          id: sceneId,
+          title,
+          summary: "Fixture",
+          intro: [line("intro")],
+          assetRefs: [],
+          phases: [],
+          evidenceManifest: [],
+          statementManifest: [],
+          outro: { unlock: "auto", dialogue: [line("outro")] },
+        },
+      };
+    case "analysis":
+      return {
+        scene: {
+          type: "analysis",
+          id: sceneId,
+          title,
+          summary: "Fixture",
+          intro: [line("intro")],
+          outro: [line("outro")],
+          boards: [],
+        },
+      };
+  }
+}
+
+function chapterFixtureBundle(sceneId: string): WorkbenchSceneBundle {
+  const entry = chapterFixtureOrder.find(
+    (candidate) => candidate.id === sceneId,
+  );
+  if (!entry) {
+    // Unlisted fixture files stay servable so a stray request is caught by
+    // assertion instead of a thrown mock error.
+    return chapterBundle(sceneId, `${sceneId} draft`, "linear");
+  }
+  return chapterBundle(sceneId, entry.title, entry.type);
+}
+
 const bundlesBySceneId: Record<string, WorkbenchSceneBundle> = {
   scene_1: linearBundle("first linear line"),
   investigation_scene_3: investigationBundle,
@@ -622,6 +722,167 @@ describe("Lyra Story Workbench shell", () => {
     expect(await screen.findByText("相馬律: new text")).toBeInTheDocument();
     expect(screen.queryByText("相馬律: old text")).not.toBeInTheDocument();
     expect(bundleCalls).toBe(2);
+  });
+
+  it("whole-chapter scope requests exactly the manifest scenes and renders manifest-order boundaries", async () => {
+    const deferred = new Map<string, (bundle: WorkbenchSceneBundle) => void>();
+    const requestedSceneIds: string[] = [];
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return chapterFixtureIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            requestedSceneIds.push(sceneId);
+            if (sceneId === "scene_draft") {
+              return chapterFixtureBundle(sceneId);
+            }
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              deferred.set(sceneId, resolve);
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene a");
+    deferred.get("scene_a")!(chapterFixtureBundle("scene_a"));
+    expect(
+      await screen.findByRole("article", { name: "Reader for Alpha" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Whole chapter" }));
+    expect(await screen.findByText("Loading chapter…")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(requestedSceneIds).toEqual([
+        "scene_a",
+        "investigation_scene_b",
+        "interrogation_scene_c",
+        "analysis_scene_d",
+      ]),
+    );
+
+    // Resolve in reverse manifest order; boundaries must stay manifest-ordered.
+    deferred.get("analysis_scene_d")!(chapterFixtureBundle("analysis_scene_d"));
+    deferred.get("interrogation_scene_c")!(
+      chapterFixtureBundle("interrogation_scene_c"),
+    );
+    deferred.get("investigation_scene_b")!(
+      chapterFixtureBundle("investigation_scene_b"),
+    );
+
+    await waitFor(() => {
+      const readerNames = screen
+        .getAllByRole("article")
+        .map((article) => article.getAttribute("aria-label"));
+      expect(readerNames).toEqual([
+        "Reader for Alpha",
+        "Reader for Beta",
+        "Reader for Gamma",
+        "Reader for Delta",
+      ]);
+    });
+    expect(requestedSceneIds).not.toContain("scene_draft");
+  });
+
+  it("chapter Refresh reissues every manifest scene load and no unlisted draft load", async () => {
+    const requestedSceneIds: string[] = [];
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return chapterFixtureIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            requestedSceneIds.push(sceneId);
+            return chapterFixtureBundle(sceneId);
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene a");
+    expect(
+      await screen.findByRole("article", { name: "Reader for Alpha" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Whole chapter" }));
+    await waitFor(() => expect(screen.getAllByRole("article")).toHaveLength(4));
+    expect(requestedSceneIds).toEqual([
+      "scene_a",
+      "investigation_scene_b",
+      "interrogation_scene_c",
+      "analysis_scene_d",
+    ]);
+
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(requestedSceneIds).toHaveLength(8));
+    expect(requestedSceneIds).toEqual([
+      "scene_a",
+      "investigation_scene_b",
+      "interrogation_scene_c",
+      "analysis_scene_d",
+      "scene_a",
+      "investigation_scene_b",
+      "interrogation_scene_c",
+      "analysis_scene_d",
+    ]);
+    expect(requestedSceneIds).not.toContain("scene_draft");
+    expect(screen.getAllByRole("article")).toHaveLength(4);
+  });
+
+  it("cached selection supersedes an in-flight load without sticking the reloading indicator", async () => {
+    const deferred = new Map<string, (bundle: WorkbenchSceneBundle) => void>();
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return workbenchIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              deferred.set(sceneId, resolve);
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    deferred.get("scene_1")!(linearBundle("first linear line"));
+    expect(
+      await screen.findByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Reloading…")).not.toBeInTheDocument();
+
+    await selectSceneByLabel("Investigation Scene 3");
+    expect(screen.getByText("Reloading…")).toBeInTheDocument();
+
+    // Cached path must clear the indicator even though the investigation
+    // load is still in flight and its stale finally will skip the clear.
+    await selectSceneByLabel("Scene 1");
+    deferred.get("investigation_scene_3")!(investigationBundle);
+    await waitFor(() =>
+      expect(screen.queryByText("Reloading…")).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.getByRole("article", { name: "Reader for First Rain" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the truthful Stage placeholder without loading a layout when a non-investigation scene is staged", async () => {
