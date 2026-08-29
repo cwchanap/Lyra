@@ -77,7 +77,7 @@ enum SceneType {
 
 impl SceneType {
     fn stage_capable(self) -> bool {
-        !matches!(self, SceneType::Linear)
+        matches!(self, SceneType::Investigation)
     }
 }
 
@@ -746,6 +746,8 @@ mod tests {
         );
         assert!(!scenes[0].stage_capable);
         assert!(scenes[1].stage_capable);
+        assert!(!scenes[2].stage_capable);
+        assert!(!scenes[3].stage_capable);
     }
 
     #[test]

@@ -425,6 +425,83 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
       findGroup(reader, "question:q1:line:l1:onWrongEvidence")?.label,
     ).toBe("Wrong Present");
   });
+
+  it("pins main flow for canonical play-path carriers and null carrier anchors", () => {
+    const investigation = investigationReader();
+    expect(findGroup(investigation, "intro")?.flow).toBe("main");
+    expect(findGroup(investigation, "outro")?.flow).toBe("main");
+    expect(findGroup(investigation, "sublocation:lobby:transition")?.flow).toBe(
+      "main",
+    );
+    expect(findGroup(investigation, "hotspot:door:inspect")?.flow).toBe("main");
+    expect(findGroup(investigation, "topic:npc1:topic1:dialogue")?.flow).toBe(
+      "main",
+    );
+    // Carrier groups never carry anchors; structural groups do.
+    expect(
+      findGroup(investigation, "hotspot:door:inspect")?.sourceAnchor,
+    ).toBeNull();
+
+    const interrogation = interrogationReader();
+    expect(findGroup(interrogation, "intro")?.flow).toBe("main");
+    expect(findGroup(interrogation, "outro")?.flow).toBe("main");
+    expect(findGroup(interrogation, "phase:phase1:entry")?.flow).toBe("main");
+    expect(findGroup(interrogation, "question:q1:line:l1:content")?.flow).toBe(
+      "main",
+    );
+  });
+
+  it("pins branch flow for optional, re-examine, and acquisition carriers", () => {
+    const investigation = investigationReader();
+    expect(findGroup(investigation, "hotspot:door:reexamine")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(investigation, "topic:npc1:topic1:reexamine")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(investigation, "evidence:door_log:onCollect")?.flow).toBe(
+      "branch",
+    );
+    expect(
+      findGroup(investigation, "evidence:door_log:onReexamine")?.flow,
+    ).toBe("branch");
+    expect(findGroup(investigation, "statement:witness:onAcquire")?.flow).toBe(
+      "branch",
+    );
+    expect(
+      findGroup(investigation, "statement:witness:onReexamine")?.flow,
+    ).toBe("branch");
+
+    const interrogation = interrogationReader();
+    expect(
+      findGroup(interrogation, "question:q1:line:l1:challenge")?.flow,
+    ).toBe("branch");
+    expect(
+      findGroup(interrogation, "question:q1:line:l1:onCorrect")?.flow,
+    ).toBe("branch");
+    expect(
+      findGroup(interrogation, "question:q1:line:l1:onWrongEvidence")?.flow,
+    ).toBe("branch");
+    expect(findGroup(interrogation, "question:q1:onLoop")?.flow).toBe("branch");
+    expect(findGroup(interrogation, "question:q1:loopPrompt")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(interrogation, "question:q1:defaultChallenge")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(interrogation, "question:q1:defaultWrong")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(interrogation, "question:q1:wrongReply")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(interrogation, "evidence:cctv:onCollect")?.flow).toBe(
+      "branch",
+    );
+    expect(findGroup(interrogation, "statement:witness:onAcquire")?.flow).toBe(
+      "branch",
+    );
+  });
 });
 
 describe("projectReaderScene non-dialogue notices", () => {
@@ -472,6 +549,41 @@ describe("projectReaderScene non-dialogue notices", () => {
       noticeKind: "reveal",
       text: "Reveals question: q2",
     });
+  });
+
+  it("projects interrogation inventory metadata as public notices", () => {
+    const reader = interrogationReader();
+    const collect = findGroup(reader, "evidence:cctv:onCollect");
+    expect(collect?.items).toContainEqual({
+      kind: "notice",
+      noticeKind: "evidence",
+      text: "Evidence: CCTV Footage",
+    });
+    expect(collect?.items).toContainEqual({
+      kind: "notice",
+      noticeKind: "evidence",
+      text: "Description: Camera recording.",
+    });
+    const acquire = findGroup(reader, "statement:witness:onAcquire");
+    expect(acquire?.items).toContainEqual({
+      kind: "notice",
+      noticeKind: "statement",
+      text: "Statement — Witness: He left at ten.",
+    });
+  });
+
+  it("keeps investigation inventory carriers free of metadata notices", () => {
+    const collect = findGroup(
+      investigationReader(),
+      "evidence:door_log:onCollect",
+    );
+    expect(collect?.items).toEqual([
+      {
+        kind: "line",
+        speaker: SENTINEL_SPEAKER,
+        text: "evidence:door_log:onCollect",
+      },
+    ]);
   });
 
   it("projects order-board fixed anchors as constraint notices", () => {

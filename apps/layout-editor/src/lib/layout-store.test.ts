@@ -10,6 +10,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 import { invoke } from "@tauri-apps/api/core";
 import {
+  clearStage,
   editorState,
   setHotspotLayout,
   setCharacterLayout,
@@ -481,6 +482,32 @@ describe("layout-store", () => {
 
       expect(editorState.error).toBe("Access denied");
       expect(editorState.layout).toBeNull();
+    });
+
+    it("clearStage cancels an in-flight load so a late bundle cannot repopulate the stage", async () => {
+      let resolveBundle!: (bundle: WorkbenchSceneBundle) => void;
+      mockInvoke.mockImplementationOnce(
+        () =>
+          new Promise<WorkbenchSceneBundle>((resolve) => {
+            resolveBundle = resolve;
+          }),
+      );
+
+      const pending = loadInvestigationScene("chapter_1", "scene_slow");
+      clearStage();
+      resolveBundle(bundleWithScene(investigationBundleScene("scene_slow")));
+      await pending;
+
+      expect(editorState.scene).toBeNull();
+      expect(editorState.layout).toBeNull();
+      expect(editorState.chapterId).toBeNull();
+      expect(editorState.sceneId).toBeNull();
+      expect(editorState.error).toBeNull();
+      // The cancelled load must not proceed to its layout fetch either.
+      expect(invoke).not.toHaveBeenCalledWith("load_investigation_layout", {
+        chapterId: "chapter_1",
+        sceneId: "scene_slow",
+      });
     });
 
     it("clears stale scene state when the bundle load fails", async () => {
