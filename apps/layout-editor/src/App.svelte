@@ -50,6 +50,10 @@
   let chapterLoadGeneration = 0;
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- session cache is deliberately non-reactive; generation tokens own re-render
   const bundleCache = new Map<string, WorkbenchSceneBundle>();
+  // Tracks the cache key of the scene currently rendered in the Reader pane.
+  // Non-reactive on purpose: it only drives the stale-payload clear inside
+  // loadCurrentReaderScene, never the template directly.
+  let displayedReaderKey: string | null = null;
 
   // The four Reader filters.
   let showCues = $state(true);
@@ -217,6 +221,15 @@
     const generation = ++readerLoadGeneration;
     readerError = null;
     const cacheKey = `${chapterId}:${sceneId}`;
+    // When the selection key changes (including the Reader→Stage→Reader path,
+    // where selectScene does not run a Reader load), clear the previously
+    // rendered scene so the placeholder replaces it while the new bundle loads.
+    // Same-scene Refresh keeps displayedReaderKey in sync, so the "Reloading…"
+    // indicator can render alongside the existing content instead.
+    if (cacheKey !== displayedReaderKey) {
+      currentReaderScene = null;
+      currentBundle = null;
+    }
     const cached = bundleCache.get(cacheKey);
     if (cached) {
       // A cache hit supersedes any in-flight load; clear the indicator here
@@ -229,6 +242,7 @@
           sceneEntry.sourcePath,
           currentBundle.scene,
         );
+        displayedReaderKey = cacheKey;
       } catch (error) {
         readerError = normalizeError(error);
         currentReaderScene = null;
@@ -246,6 +260,7 @@
         sceneEntry.sourcePath,
         currentBundle.scene,
       );
+      displayedReaderKey = cacheKey;
     } catch (error) {
       if (generation !== readerLoadGeneration) return;
       readerError = normalizeError(error);
