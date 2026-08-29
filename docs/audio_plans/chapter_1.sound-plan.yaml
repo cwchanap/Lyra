@@ -66,7 +66,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_5.md,
-          line: 3,
+          line: 5,
           note: 審查會場，空氣冷而安靜，翻一頁紙都太響
         }
       - {
@@ -100,7 +100,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
-          line: 5,
+          line: 7,
           note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席
         }
       - {
@@ -134,7 +134,12 @@ entries:
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
           line: 104,
-          note: 相馬事務所夜晚，USB 與未解密檔案的章末尾奏
+          note: 相馬事務所夜晚，筆電與檯燈的章末尾奏入口
+        }
+      - {
+          file: docs/stories_plan/chapter_1/scene_11.md,
+          line: 115,
+          note: 隨身碟插入筆電，未解密檔案鉤子開始
         }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
@@ -208,9 +213,9 @@ entries:
       climax, seamless 45-second loop.
     reuseRationale: >-
       New reusable daytime work state for the zero-case investigation and its
-      analysis board, then the office, commission, cafe survey, and first
-      questioning before the hearing loss; keeps routine investigation distinct
-      from the later breakthrough pursuit.
+      analysis board, then the office and law-office procedural setup; keeps
+      routine investigation distinct from the later Rain Bell daily and
+      breakthrough-pursuit states.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_p1.md,
@@ -249,18 +254,14 @@ entries:
       dramatic climax, seamless 45-second loop.
     reuseRationale: >-
       New reusable Rain Bell ordinary-life state for the pre-case cafe montage,
-      the Scene 6 breathing beat, and the post-case cafe return; the USB and
-      public-media tail changes to the retained chapter-close track.
+      and the post-case cafe return; Scene 6 remains an intentional silent
+      breathing boundary, while the USB and public-media tail changes to the
+      retained chapter-close track.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
           line: 5,
           note: 雨鐘命案前普通午後與金木犀拿鐵
-        }
-      - {
-          file: docs/stories_plan/chapter_1/scene_6.md,
-          line: 5,
-          note: 審查失利後在商店街屋簷下喘息
         }
       - { file: docs/stories_plan/chapter_1/scene_11.md, line: 5, note: 結案後雨鐘重新開門的午後 }
     provider: elevenlabs
@@ -284,9 +285,9 @@ entries:
       percussion, urgent but controlled, no vocals, no triumphant victory chord,
       seamless 45-second loop with a tense open ending.
     reuseRationale: >-
-      New reusable pursuit state for the Scene 7 re-entry, fixed-record handoff,
-      Scene 8.5 order boundary, contractor follow-up, and Scene 10 p4
-      breakthrough; the existing victory track waits for the formal ruling.
+      New reusable pursuit state for the Scene 7 re-entry, the Scene 8.5
+      fixed-record result, and the Scene 10 p4/p5 breakthrough; the existing
+      victory track waits for the formal ruling.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
@@ -295,12 +296,12 @@ entries:
         }
       - {
           file: docs/stories_plan/chapter_1/analysis_scene_8_5.md,
-          line: 90,
-          note: classify 結果轉入本機事件順序的 BGM 邊界
+          line: 91,
+          note: 雨鐘後場固定區，紀錄桌與維護面板的 BGM 邊界
         }
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
-          line: 185,
+          line: 194,
           note: p4 門鎖時間重新定義的正式突破
         }
     provider: elevenlabs
@@ -329,12 +330,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_1.md,
-          line: 5,
+          line: 7,
           note: 相馬事務所外，清晨，細雨
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_1.md,
-          line: 8,
+          line: 12,
           note: 清晨的雨打在窗上，細而均勻
         }
   - id: bgs_law_office_quiet
@@ -352,7 +353,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_2.md,
-          line: 3,
+          line: 5,
           note: 早坂律師事務所，上午，雨後，室內安靜
         }
   - id: bgs_institutional_corridor
@@ -371,22 +372,17 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_0.md,
-          line: 30,
+          line: 32,
           note: 警署會面室外的走廊，日光燈下，空氣安靜
         }
       - {
           file: docs/stories_plan/chapter_1/scene_2.md,
-          line: 54,
+          line: 64,
           note: 審查會入口，狹長走道，金屬門盡頭
         }
       - {
-          file: docs/stories_plan/chapter_1/scene_2.md,
-          line: 99,
-          note: 審查會外走廊，長窗濕街，盡頭未開的門
-        }
-      - {
           file: docs/stories_plan/chapter_1/scene_5.md,
-          line: 125,
+          line: 145,
           note: 審查會場外走廊，日光燈泛白，鞋底水痕
         }
   - id: bgs_cafe_closed_night
@@ -405,13 +401,13 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-          line: 5,
+          line: 7,
           note: 雨鐘咖啡館外，雨夜，閉店後，玻璃門路燈映濕地
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-          line: 26,
-          note: 雨打門面比店裡所有聲音都大，洗杯機排氣，雨打後巷鐵門
+          line: 72,
+          note: 雨夜前場的咖啡渣味、洗杯機排氣與後巷雨氣
         }
   - id: bgs_cafe_backroom_corridor
     channel: bgs
@@ -428,17 +424,17 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
-          line: 38,
+          line: 28,
           note: 雨鐘後場走道，午後，牆上舊掛鐘，秒針走得有點慢
         }
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
-          line: 104,
+          line: 74,
           note: 雨鐘吧台後方，閉店流程白板，咖啡機低聲運轉
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-          line: 149,
+          line: 287,
           note: 腳步聲在窄牆間彈回，日光燈管嗡嗡作響，盡頭一盞閃了一下
         }
   - id: bgs_cafe_backroom_office
@@ -456,12 +452,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_8.md,
-          line: 5,
+          line: 7,
           note: 後場夜晚，店長辦公角落亮著暖燈，維護螢幕待機
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_8.md,
-          line: 26,
+          line: 44,
           note: 店長辦公角落，維護頁小螢幕，紙箱帳本，燈光偏暖
         }
   - id: bgs_police_station_late_night
@@ -480,23 +476,13 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
-          line: 5,
+          line: 7,
           note: 警署等待區深夜，日光燈偏白，販賣機嗡嗡作響
         }
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_4.md,
-          line: 95,
+          line: 52,
           note: 警署詢問室深夜，雨聲透過窗縫滲進來
-        }
-      - {
-          file: docs/stories_plan/chapter_1/analysis_scene_8_5.md,
-          line: 3,
-          note: 警署走廊深夜，販賣機燈光唯一光源，窗外雨聲未停
-        }
-      - {
-          file: docs/stories_plan/chapter_1/analysis_scene_8_5.md,
-          line: 7,
-          note: 相馬站在販賣機前，販賣機嗡嗡聲為走廊底噪
         }
   - id: bgs_review_board_room
     channel: bgs
@@ -513,17 +499,17 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_5.md,
-          line: 3,
+          line: 5,
           note: 審查會場，紙張與冷氣混合氣味，翻一頁紙都太響
         }
       - {
           file: docs/stories_plan/chapter_1/scene_5.md,
-          line: 8,
+          line: 10,
           note: 沒有怒吼拍桌，只有紙張翻動的聲音
         }
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
-          line: 5,
+          line: 7,
           note: KAGAMI 證據摘要審查會，長桌、證物推車、旁聽席
         }
   - id: bgs_shopping_street_rain_dusk
@@ -536,34 +522,29 @@ entries:
       steady awning-edge drip, passing umbrella footsteps on wet pavement, muted
       storefront hum, distant traffic, a few distant commuter voices, no music.
     reuseRationale: >-
-      Catalog is empty. Dusk awning with ambient street life and passing
-      commuters; the scene_8_5 late-night reprise is colder and emptier, so it
-      gets its own BGS.
+      Catalog is empty. Dusk station, arcade, and awning ambience is reused
+      across the P0 overture, the P1 shop approach, and Scene 6; the post-dusk
+      P0 billboard uses the colder `bgs_shopping_street_rain_night` instead.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 3,
+          line: 5,
           note: 吉祥寺車站月台傍晚細雨，通勤人潮撐傘
         }
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 34,
+          line: 18,
           note: 吉祥寺商店街騎樓下，傍晚，雨勢轉小
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_p1.md,
-          line: 3,
+          line: 7,
           note: 吉祥寺商店街，黃昏，細雨，騎樓邊緣滴著水
         }
       - {
           file: docs/stories_plan/chapter_1/scene_6.md,
-          line: 3,
+          line: 5,
           note: 商店街傍晚雨，屋簷邊雨水一條線落下，行人撐傘走過
-        }
-      - {
-          file: docs/stories_plan/chapter_1/scene_6.md,
-          line: 81,
-          note: 便利店門口傍晚雨漸小，片瀨美咲趕末班車路過
         }
   - id: bgs_shopping_street_rain_night
     channel: bgs
@@ -598,13 +579,18 @@ entries:
     reuseRationale: >-
       Catalog is empty. Copier-hum fluorescent interior distinct from the law
       office (no copier), the contractor office (glass partition, no copier),
-      and the interview room (hard reflective walls, no copier). Serves only the
-      prologue zero-case stationery-shop visit.
+      and the interview room (hard reflective walls, no copier). Serves the P1
+      counter and its P1.5 analysis board.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_p1.md,
-          line: 26,
-          note: 文具店店內，日光燈偏白，影印機靠牆嗡嗡作響
+          line: 35,
+          note: 文具店店內，日光燈偏白，紙張與碳粉氣味
+        }
+      - {
+          file: docs/stories_plan/chapter_1/analysis_scene_p1_5.md,
+          line: 7,
+          note: 文具店櫃台整理板與紙本資料
         }
   - id: bgs_contractor_office_day
     channel: bgs
@@ -621,7 +607,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_9.md,
-          line: 5,
+          line: 7,
           note: KAGAMI 外包資料審查辦公室，玻璃窗口，檔案櫃
         }
   - id: bgs_interview_room_fluorescent
@@ -639,12 +625,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_9.md,
-          line: 90,
+          line: 180,
           note: 訪談室白日，日光燈管照得毫無死角，四面白牆
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_9.md,
-          line: 92,
+          line: 182,
           note: 紙張滑過桌面的聲音在安靜房間裡格外清晰
         }
   - id: bgs_cafe_afternoon_after_rain
@@ -657,17 +643,18 @@ entries:
       counter, soft daylight through wet windows, faint latte and coffee aroma
       air, no voices, no music.
     reuseRationale: >-
-      Catalog is empty. Post-rain calm distinct from the rainy closed-night
-      cafe; carries the chapter wind-down.
+      Catalog is empty. Post-rain calm for the ordinary Rain Bell main hall is
+      distinct from the rainy closed-night cafe; it carries the pre-case cafe
+      day and the post-case return without covering the later chapter tail.
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
-          line: 3,
+          line: 5,
           note: 雨鐘咖啡館主廳，午後，雨剛停，店內暖黃光
         }
       - {
           file: docs/stories_plan/chapter_1/scene_p2.md,
-          line: 52,
+          line: 36,
           note: 雨鐘咖啡館主廳與店門口，午後，門外雨又細細地下起來
         }
       - {
@@ -677,12 +664,12 @@ entries:
         }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
-          line: 3,
+          line: 5,
           note: 雨鐘午後，雨剛停，店內靜悄悄，淡淡咖啡香
         }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
-          line: 68,
+          line: 72,
           note: 雨鐘店內空鏡，人聲漸遠，光線落在木桌上
         }
   - id: bgs_detective_office_night
@@ -700,12 +687,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
-          line: 87,
+          line: 104,
           note: 相馬事務所夜晚，街燈昏黃，檯燈與筆電
         }
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
-          line: 124,
+          line: 143,
           note: 事務所同一夜稍晚，警方移交清單，昏黃燈光
         }
 
@@ -746,7 +733,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-          line: 42,
+          line: 45,
           note: 相馬手機在口袋裡震了一下，匿名訊息到達
         }
   - id: sfx_rice_ball_bag_crinkle
@@ -764,11 +751,11 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_0.md,
-          line: 39,
+          line: 42,
           note: 塑膠袋被攥得發出輕響，皺成一團
         }
-      - { file: docs/stories_plan/chapter_1/scene_2.md, line: 8, note: 母親把飯糰袋放到桌上 }
-      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 16, note: 三宅母親緊抱飯糰袋 }
+      - { file: docs/stories_plan/chapter_1/scene_2.md, line: 12, note: 母親把飯糰袋放到桌上 }
+      - { file: docs/stories_plan/chapter_1/scene_5.md, line: 28, note: 三宅母親緊抱飯糰袋 }
       - {
           file: docs/stories_plan/chapter_1/interrogation_scene_10.md,
           line: 309,
@@ -789,17 +776,17 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-          line: 26,
+          line: 72,
           note: 洗杯機偶爾排一口氣
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-          line: 210,
+          line: 268,
           note: 那台洗杯機排氣的時候也常那樣
         }
       - {
           file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-          line: 212,
+          line: 270,
           note: 悶響被蓋過去了
         }
   - id: sfx_usb_insert_chime
@@ -816,7 +803,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_11.md,
-          line: 96,
+          line: 115,
           note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄
         }
 cues:
@@ -1039,6 +1026,7 @@ cues:
   - {
       file: docs/stories_plan/chapter_1/analysis_scene_8_5.md,
       visualUnit: tag_001,
+      bgm: none,
       bgs: bgs_cafe_backroom_office
     }
   - {
@@ -1150,7 +1138,7 @@ cues:
 rejected:
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
-      line: 3,
+      line: 5,
       sound: 遠處電車進站的低鳴,
       reason: incidental environmental texture,
       covered by shopping-street rain BGS
@@ -1161,13 +1149,6 @@ rejected:
       sound: 門鈴叮噹響了一聲,
       reason: incidental prop handling,
       not a repeated or emphasized action
-    }
-  - {
-      file: docs/stories_plan/chapter_1/investigation_scene_p1.md,
-      line: 26,
-      sound: 影印機靠牆嗡嗡作響,
-      reason: machine texture covered by stationery-shop BGS,
-      not an emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_p1.md,
@@ -1185,14 +1166,14 @@ rejected:
     }
   - {
       file: docs/stories_plan/chapter_1/scene_p2.md,
-      line: 70,
+      line: 50,
       sound: 增田手機螢幕亮了一下,
       reason: incidental notification glance,
       not a plot-emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/scene_p2.md,
-      line: 94,
+      line: 68,
       sound: 片瀨美咲手機震了一下末班車提醒,
       reason: incidental notification,
       not a plot-emphasized action
@@ -1206,88 +1187,75 @@ rejected:
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-      line: 26,
+      line: 72,
       sound: 收銀抽屜硬幣盤輕響,
       reason: incidental prop handling,
       covered by cafe BGS texture
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-      line: 149,
+      line: 287,
       sound: 腳步聲在窄牆間彈回,
       reason: incidental movement,
       covered by backroom corridor BGS
     }
   - {
-      file: docs/stories_plan/chapter_1/investigation_scene_3.md,
-      line: 223,
+      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
+      line: 141,
       sound: 感應燈延遲亮起,
       reason: incidental environmental transition,
       not an emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-      line: 110,
-      sound: 感應燈延遲亮起,
-      reason: incidental environmental transition,
-      not an emphasized action
-    }
-  - {
-      file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-      line: 124,
+      line: 139,
       sound: 舊掛鐘撞停,
       reason: clock is already stopped; no in-scene audible event to generate
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_7.md,
-      line: 65,
+      line: 35,
       sound: 濕傘套滴水,
       reason: rain texture covered by back-door BGS,
       not emphasized
     }
   - {
       file: docs/stories_plan/chapter_1/scene_6.md,
-      line: 3,
+      line: 5,
       sound: 屋簷邊雨水一條線落下,
       reason: rain texture covered by shopping-street BGS
     }
   - {
       file: docs/stories_plan/chapter_1/scene_5.md,
-      line: 8,
+      line: 10,
       sound: 紙張翻動聲音,
       reason: texture covered by review-board BGS,
       not an emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/investigation_scene_9.md,
-      line: 92,
+      line: 182,
       sound: 紙張滑過桌面,
       reason: texture covered by interview-room BGS,
       not an emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/scene_11.md,
-      line: 42,
+      line: 46,
       sound: 咖啡機低鳴奶泡浮起,
       reason: incidental machine texture,
       covered by afternoon cafe BGS
     }
   - {
       file: docs/stories_plan/chapter_1/scene_11.md,
-      line: 108,
+      line: 127,
       sound: 早坂來電手機亮起,
       reason: incidental communication transition,
       not a plot-emphasized action
     }
   - {
       file: docs/stories_plan/chapter_1/scene_0.md,
-      line: 5,
-      sound: KAGAMI 摘要介面 BGM,
-      reason: authored BGM:none; respect explicit silence
-    }
-  - {
-      file: docs/stories_plan/chapter_1/scene_0.md,
-      line: 6,
+      line: 8,
       sound: KAGAMI 摘要介面 BGS,
-      reason: authored BGS:none; respect explicit silence
+      reason: authored BGS:none; the city-summary BGM carries the machine state
     }

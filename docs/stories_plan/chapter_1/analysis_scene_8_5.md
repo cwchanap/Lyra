@@ -6,6 +6,7 @@
 
 [場景：雨鐘咖啡館後場的保全鏈固定區，深夜，窗外仍下著雨。鑑識離開後，打開的維護面板和紀錄桌留在工作燈下，右側貨架沉在暗處。]
 - **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, no readable text. Detective Kurose Toru baked into the center of the room standing beside the panel: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he supervises the forensic fixation, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard practical lamp with cool rain spill, not covering the open maintenance panel, evidence record table, or the fixed-record hotspot on the table.
+- **BGM:** none
 - **Background Asset ID:** background.chapter_1.investigation_scene_8.fixed_panel
 - **BGS:** bgs_cafe_backroom_office
 
