@@ -2,6 +2,8 @@
 
 > **Historical supersession note (HPA-265, 2026-08-13):** Findings below that cite `scene_8_5.md` and the frozen no-analysis manifest describe the pre-HPA-265 production state. HPA-265 supersedes that linear file with the manifest-listed `analysis_scene_8_5.md`; retain those findings as historical and do not treat them as current production state.
 
+> **Rhythm/audio/expression supersession note (Task 7, 2026-08-29):** The historical P1 tutorial/partner-share finding (`scene_p1.md:32`), Scene 6 breathing finding (`scene_6.md:37`), and Scene 8.5 duplicate-classification finding (`scene_8_5.md:51`) are superseded by the current 17-scene production corpus and its existing resolution ledger. Analysis 8.5 has three compact, non-duplicative board actions—`evidence_packages`, `local_event_sequence`, and `narrow_request_basis`—not two; classify retains three unique cards and local event ordering remains the single `event_1841`–`event_1844` action. The historical major-character expression-coverage gap is likewise superseded by the configured nine-slug vocabulary, authored runs, and generated portrait assets recorded in the Task 4/5 reports. Preserve every other historical or unrelated finding below unchanged.
+
 ## Frozen production manifest
 
 The Chapter 1 production manifest is frozen for this re-audit. Its exact ordered scene list is:
