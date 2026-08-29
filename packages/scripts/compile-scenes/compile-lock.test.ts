@@ -421,6 +421,40 @@ describe("isStaleLock", () => {
     }
   });
 
+  it("reaps an ambiguous-probe lock once mtime exceeds the short fallback, not the hard cap", async () => {
+    // Guards the P2 narrowing: an ambiguous liveness-probe failure (neither
+    // ESRCH nor EPERM) must fall back to STALE_LOCK_MS (5 min) — the same
+    // bound used when there is no usable owner record — NOT the MAX_LOCK_MS
+    // (30 min) hard cap reserved for a confirmed-live holder. Before this
+    // distinction, ambiguous probes were lumped with "alive" and an
+    // orphaned lock on a runtime where the probe fails ambiguously blocked
+    // compiles for 30 min instead of 5. Plant a mtime between the two
+    // bounds: this test reaps (ageMs > STALE_LOCK_MS), while the pre-fix
+    // code (ambiguous => alive => MAX_LOCK_MS) would not.
+    await writeFile(
+      resolve(lockDir, "owner.json"),
+      `${JSON.stringify({
+        pid: 424242,
+        createdAt: new Date(0).toISOString(),
+      })}\n`,
+    );
+    // 10 min old — past STALE_LOCK_MS (5 min) but under MAX_LOCK_MS (30 min).
+    const tenMinAgo = Math.floor(Date.now() / 1000) - 10 * 60;
+    utimesSync(lockDir, tenMinAgo, tenMinAgo);
+
+    const killSpy = vi.spyOn(process, "kill").mockImplementation(() => {
+      throw Object.assign(new Error("operation not permitted"), {
+        code: "EACCES",
+      });
+    });
+
+    try {
+      expect(await isStaleLock(lockDir)).toBe(true);
+    } finally {
+      killSpy.mockRestore();
+    }
+  });
+
   it("falls back to mtime when owner.json is missing", async () => {
     // No owner.json; old mtime. Should be considered stale by mtime fallback.
     utimesSync(lockDir, 1, 1);
