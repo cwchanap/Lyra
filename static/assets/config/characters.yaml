@@ -11,6 +11,12 @@ characters:
     expressions:
       standard:
         prompt: calm focused expression, restrained concern, eyes attentive
+      determined:
+        prompt: focused determined expression, jaw set slightly, eyes steady
+      shaken:
+        prompt: shaken unsettled expression, eyes briefly wide, restrained tension
+      relieved:
+        prompt: quiet relieved expression, shoulders easing, eyes warm
 
   - id: hayasaka_akane
     displayNames: ["早坂茜"]
@@ -27,6 +33,8 @@ characters:
         prompt: composed attentive expression, professional calm
       stern:
         prompt: firm serious expression, brows slightly set, controlled voice
+      softened:
+        prompt: softened expression, protective warmth, small reassuring smile
 
   - id: miyake_mother
     displayNames: ["三宅母親"]
@@ -98,6 +106,8 @@ characters:
         prompt: nervous restrained expression, looking down slightly, words held back
       strained:
         prompt: tense quiet expression, shoulders lowered, trying not to panic
+      relieved:
+        prompt: relieved expression, shoulders easing, tentative grateful smile
 
   - id: kamiya_mio
     displayNames: ["神谷澪"]
@@ -113,6 +123,10 @@ characters:
     expressions:
       standard:
         prompt: cool precise expression, calm procedural confidence
+      skeptical:
+        prompt: skeptical precise expression, brows slightly narrowed, controlled doubt
+      conceding:
+        prompt: conceding expression, guarded certainty easing, measured acknowledgment
 
   - id: kurose_toru
     displayNames: ["黑瀨徹"]
@@ -141,6 +155,10 @@ characters:
     expressions:
       standard:
         prompt: guarded anxious expression, trying to stay forgettable
+      defensive:
+        prompt: defensive anxious expression, shoulders drawn in, avoiding eye contact
+      cornered:
+        prompt: cornered strained expression, eyes darting, shoulders tightening
 
   - id: contractor_supervisor
     displayNames: ["承包商主管"]
