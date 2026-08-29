@@ -11,29 +11,19 @@
 
 [三宅蒼太把幾只空杯疊起來，收進托盤。]
 
-[他擦過桌面，把剩下的紙杯重新碼整齊。]
-
 [角落那塊蛋糕的邊，他沒有直接丟——他拿了一個紙袋，把邊角裝進去。]
 
 **三宅蒼太**：……這個，還能帶。
 
-[他把紙袋口折了一下，又折一下。]
-
 [店長高瀨從吧台後走出來，看了一眼他手裡的紙袋。]
 
-[她沒有立刻說話。]
-
 **店長高瀨**：先登記。
-
-**三宅蒼太**：……嗯。
 
 **店長高瀨**：剩下的可以帶。沒登記的，不行。
 
 **三宅蒼太**：我知道。我每次都有登記。
 
 [他點了一下頭，動作有點急。]
-
-[店長沒再追問，轉身走回吧台。]
 
 [場景：雨鐘咖啡館後場走道盡頭、內側倉庫入口，午後。入口內側牆上的一只舊掛鐘，秒針走得有點慢。]
 - **Background Prompt:** Eye-level medium-wide establishing view from the corridor mouth, camera pulled back to frame the narrow back corridor of a small Tokyo cafe leading to the inner-storage entrance at its end, focal area a round old analog cafe wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring, mounted on the entrance's inner wall above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text, keep the lower composition clear and uncluttered for dialogue UI.
@@ -58,8 +48,6 @@
 [三宅轉身去做飲料。增田在櫃檯邊等。]
 
 [他的手機螢幕亮了一下，是工作的訊息。他看了一眼，把通知滑掉。]
-
-**增田圭**：……老是這樣。
 
 [三宅把拿鐵遞過去，順手抽出一張集點卡。]
 

@@ -1,7 +1,7 @@
 /** Coupling point for chapter_1 production content. Update when authoring renames. */
 export const STORY_CLEARED_STORAGE_KEY = "lyra.storyClearedOnce.v1";
 
-// Measured N=169 mandatory advances (scene_p0 + investigation_scene_p1 first
+// Measured N=157 mandatory advances (scene_p0 + investigation_scene_p1 first
 // pass + analysis_scene_p1_5 result + scene_p2 + scene_0 queues +
 // investigation_scene_1 intro) via compiled JSON. Re-examination and optional
 // dialogue are excluded. Cap is higher because each step may spend one click
