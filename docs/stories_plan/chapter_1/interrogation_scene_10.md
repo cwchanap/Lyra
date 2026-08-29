@@ -88,29 +88,9 @@
 - **On Correct:** **相馬律**：蛋糕盒與母親通話都對得上閉店流程；是小謊，不是殺人。
 - **On Wrong Evidence:** **神谷澪**：人格不是證據。他孝不孝順，跟那一晚有沒有殺人，是兩回事。拿能對上那句謊話的東西來。
 
-## Phase: 死亡更早 {#p2}
-- **Kind:** inquiry
-- **Required:** true
-- **Status:** locked
-- **Unlock:** phase:p1 completed
-- **Background Prompt:** Review hearing table with time-related cafe evidence, forensic preliminary sheet and small record cards arranged under cold daylight, no readable document text.
-- **BGM:** bgm_review_board_victory
-- **BGS:** bgs_review_board_room
-
-[場景：KAGAMI 證據摘要審查會，白日，桌面換上現場帶回的時間相關紀錄與鑑識初判。]
-
-**神谷澪**：他沒有完全乾淨。可一個小謊，撐不起一條殺人的指控。這一條，我認。
-
-[神谷澪把摘要裡那行死亡時間，往三宅進後場之後的位置一指。]
-
-**神谷澪**：第二條，時間。
-
-### Subject: 神谷澪 {#kamiya}
-- **Role:** KAGAMI 證據摘要審查會主理
-- **Bio:** 主理審查會的把關者，理性而精確；她信任摘要，因為她比誰都清楚人的偏見有多危險。
-
 ### Question: 死亡時間 {#q_p2}
-- **Status:** unlocked
+- **Status:** locked
+- **Unlock:** question:q_p1 answered
 - **Required:** true
 
 #### Testimony
@@ -132,31 +112,9 @@
 - **On Correct:** **相馬律**：手機通知與後場紀錄顯示衝突早於摘要；摘要的主時間線不成立。
 - **On Wrong Evidence:** **神谷澪**：那杯咖啡只證明第二個人被等著、提早到了，證不到死亡的那一分鐘。別拿它當死亡時刻。
 
-## Phase: 第三者更早進入 {#p3}
-- **Kind:** inquiry
-- **Required:** true
-- **Status:** locked
-- **Unlock:** phase:p2 completed
-- **Background Prompt:** Review hearing table covered with an L-shaped backroom floor plan and floor-drying record cards, officials across the table, quiet pressure, no readable labels.
-- **BGM:** bgm_review_board_victory
-- **BGS:** bgs_review_board_room
-
-[場景：KAGAMI 證據摘要審查會，白日，桌上鋪開後場 L 型平面圖與地面乾燥分布的紀錄。]
-
-[神谷澪沉默了幾秒，拿起筆，在摘要上那行死亡時間旁劃了一道線。]
-
-**神谷澪**：衝突更早。這行，先擱著。
-
-[神谷澪看著平面圖，手指沿著後場那條轉角線移動。]
-
-**神谷澪**：第三條。就算更早，那也可能還是三宅。
-
-### Subject: 神谷澪 {#kamiya}
-- **Role:** KAGAMI 證據摘要審查會主理
-- **Bio:** 主理審查會的把關者，理性而精確；她信任摘要，因為她比誰都清楚人的偏見有多危險。
-
 ### Question: 更早進場的人 {#q_p3}
-- **Status:** unlocked
+- **Status:** locked
+- **Unlock:** question:q_p2 answered
 - **Required:** true
 
 #### Testimony
@@ -183,7 +141,7 @@
 - **Required:** true
 - **Status:** locked
 - **Represented Authority:** KAGAMI 證據摘要審查會主理
-- **Unlock:** phase:p3 completed and objective:prepare_narrow_lock_request completed
+- **Unlock:** phase:p1 completed and objective:prepare_narrow_lock_request completed
 - **Background Prompt:** KAGAMI review hearing room with a limited-record authorization form centered before the presiding official, formal stamp pad, no readable text.
 - **BGM:** bgm_review_board_victory
 - **BGS:** bgs_review_board_room
@@ -331,6 +289,12 @@
 **早坂茜**：這段的來路對得上，可以拿上桌。
 
 ## Outro
+
+[場景：KAGAMI 證據摘要審查會，白日；正式裁定後，長桌上的材料仍按證據鏈排列。]
+- **Background Prompt:** Final review hearing table with work order, credential card, memo, draft, and umbrella-sleeve comparison arranged as an evidence chain, no readable text.
+- **Background Asset ID:** background.chapter_1.interrogation_scene_10.p5
+- **BGM:** bgm_review_board_victory
+- **BGS:** bgs_review_board_room
 
 [神谷澪把摘要報告闔上，在主嫌方向那一欄畫了一道撤回的記號。]
 

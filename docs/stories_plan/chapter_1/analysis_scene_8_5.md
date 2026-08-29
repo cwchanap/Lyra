@@ -69,26 +69,6 @@
 - **Source:** evidence:external_maintenance_credential
 - **Summary:** 外部維護憑證事件排在三宅的員工憑證之前。
 
-### Card: 維護模式開啟 {#event_1841}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機順序的第一筆事件，維護模式開啟。
-
-### Card: 外包憑證開門 {#event_1842}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機順序的第二筆事件，外包憑證開啟後門。
-
-### Card: 員工憑證開門 {#event_1843}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機順序的第三筆事件，員工憑證開啟後走廊。
-
-### Card: 維護同步完成 {#event_1844}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機順序的最後一筆事件，維護同步完成。
-
 ### Group: 三宅的小謊 {#miyake_small_lies}
 
 - **Description:** 只解釋三宅因生活壓力而隱瞞的事情。
@@ -99,11 +79,6 @@
 - **Description:** 支持較早外部進入者存在，但不替他補上身分。
 - **Accepted Cards:** [miyake_pov_replay, external_credential_event]
 
-### Group: 門鎖時序 {#lock_chronology}
-
-- **Description:** 只整理本機門鎖事件的先後關係。
-- **Accepted Cards:** [event_1841, event_1842, event_1843, event_1844]
-
 ### Result Dialogue
 
 **相馬律**：我急著找兇手時，也差點把三宅的小謊塞進同一欄。
@@ -111,6 +86,10 @@
 **早坂茜**：你肯停手重排，就還來得及。
 
 **相馬律**：第三者還沒有名字。先留白。
+
+[場景：雨鐘咖啡館後場的保全鏈固定區，深夜；同一張紀錄桌與打開的維護面板留在工作燈下。]
+- **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, no readable text. Detective Kurose Toru baked into the center of the room standing beside the panel: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he supervises the forensic fixation, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard practical lamp with cool rain spill, not covering the open maintenance panel, evidence record table, or the fixed-record hotspot on the table.
+- **Background Asset ID:** background.chapter_1.investigation_scene_8.fixed_panel
 
 ## Board: 本機事件順序 {#local_event_sequence}
 
