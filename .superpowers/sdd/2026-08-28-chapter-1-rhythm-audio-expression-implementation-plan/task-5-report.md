@@ -5,12 +5,15 @@
 Complete. Exactly nine Chapter 1 expression portrait PNGs were generated with
 the built-in `image_gen` tool, normalized, visually inspected, and committed.
 
-Asset commit: `09ccf2ac7bf80a56f24b4f0834b104db18192e74`
+Generation asset commit: `09ccf2ac7bf80a56f24b4f0834b104db18192e74`
+
+Review fix asset commit: `f39b613f60eba3d690868fb188271a66413ca0c9`
 
 Baseline: `cce0b331aa797162e1f412912651ea78f29a4e5a`
 
-The asset commit contains only these nine PNGs. No story, runtime, audio,
-progress, compiler, or generated-resource files were changed.
+Both asset commits contain only these nine PNGs. No story, runtime, audio,
+progress, compiler, report, or generated-resource files were changed in the
+asset fix commit.
 
 ## Output files
 
@@ -25,6 +28,33 @@ progress, compiler, or generated-resource files were changed.
 | Kamiya / conceding | `static/assets/portraits/kamiya_mio/conceding.png` |
 | Kitami / defensive | `static/assets/portraits/kitami_shuichi/defensive.png` |
 | Kitami / cornered | `static/assets/portraits/kitami_shuichi/cornered.png` |
+
+## Review fix (round 1)
+
+Review found a shared edge defect in all nine finals: light/cyan-white
+one-pixel speckles and a faint matte halo remained on fine hair edges after
+the first checkerboard cleanup. The defect was most visible on Soma
+`shaken`, Miyake `relieved`, and both Kitami variants.
+
+No image was regenerated. The existing nine normalized RGBA files were
+processed in place with one one-off Python 3/Pillow invocation. The pass
+examined only partial-alpha edge candidates whose RGB matched a pale neutral
+or cyan/white checkerboard matte. For each candidate it searched Chebyshev
+shells of radius 1 through 12 for a nearby valid subject sample (alpha at
+least 96 and not another partial matte candidate), copied that sample's RGB,
+and preserved the candidate alpha. A candidate at alpha 24 or below with no
+valid sample in its two-pixel neighborhood was cleared as a detached speck;
+an unsourced candidate at alpha 32 or below was also cleared. Other unsourced
+edge candidates retained their alpha and received black RGB to remove the
+light matte contribution. Opaque pixels were not edited.
+
+This was an alpha/edge-RGB cleanup only: dimensions, crop, bottom alignment,
+opaque coverage, identity, outfit, props, lighting, palette, and expression
+composition were preserved. No helper, dependency, or temporary preview was
+added to the repository. Detached pixels cleared by asset were: Soma
+`determined` 73, Soma `shaken` 93, Soma `relieved` 172, Hayasaka `softened`
+113, Miyake `relieved` 48, Kamiya `skeptical` 0, Kamiya `conceding` 0,
+Kitami `defensive` 5, and Kitami `cornered` 55.
 
 ## Generation and reference mapping
 
@@ -98,7 +128,7 @@ Expression deltas supplied to the nine calls:
 The built-in responses were RGB files with a baked checkerboard matte despite
 the transparency request. The repository's flat-key `remove_chroma_key.py`
 utility was checked, but a checkerboard needs per-pixel matte handling rather
-than a single chroma color. The final cleanup used a one-off local
+than a single chroma color. The initial normalization used a one-off local
 Python/Pillow pass (no new repository helper or dependency):
 
 1. Estimate the two neutral checker colors from the generated image border and
@@ -107,6 +137,26 @@ Python/Pillow pass (no new repository helper or dependency):
    against the checker colors, and set RGB to zero wherever alpha is zero.
 3. Resize with premultiplied alpha using uniform scaling, bottom-align the
    visible subject, and save as exact 768 x 1024 RGBA PNG.
+
+The round-1 review found residual light/cyan-white one-pixel hair-edge matte
+speckles, so the v4 correction described above ran against those normalized
+RGBA outputs. It used a one-off Python 3/Pillow invocation and did not
+regenerate, resize, crop, reposition, or otherwise redraw any asset. The
+matte classifier used the following RGB tests (`mx`, `mn` are the channel
+maximum and minimum):
+
+```text
+(mx >= 180 and (mn >= 110 or mx - mn >= 70))
+or (max(g, b) >= 130 and (g - r >= 18 or b - r >= 18))
+or (mn >= 130 and mx - mn <= 28)
+```
+
+Only `0 < alpha < 255` candidates were eligible. The pass searched radius
+1-12 for the nearest high-alpha non-matte subject RGB sample, preserving
+alpha while replacing contaminated edge RGB. It cleared only detached
+low-alpha specks (or unsourced alpha <= 32 candidates); all other unsourced
+edge alpha was preserved with zero RGB. This is the explicit checkerboard-
+matte alpha/edge-RGB cleanup method used for the final files.
 
 This was image normalization/post-processing, not an alternate generation
 path. All nine final files report the exact same `file -b` output:
@@ -123,26 +173,39 @@ PNG image data, 768 x 1024, 8-bit/color RGBA, non-interlaced
 PNG image data, 768 x 1024, 8-bit/color RGBA, non-interlaced
 ```
 
-The alpha inspection found alpha zero at all four corners of every output.
-The following coverage evidence uses Pillow's `Image.getbbox()` convention
-(left, top, right-exclusive, bottom-exclusive); every visible subject reaches
-the bottom edge and none has an opaque full-frame background.
+The post-v4 alpha inspection found alpha zero at all four corners of every
+output. The following coverage evidence uses Pillow's `Image.getbbox()`
+convention (left, top, right-exclusive, bottom-exclusive); every visible
+subject reaches the bottom edge and none has an opaque full-frame background.
+The visible bboxes and opaque pixel counts were unchanged by v4; the alpha
+zero/partial-alpha differences below are only the detached edge speckles
+removed by the fix.
 
 | Output | Alpha=0 pixels | Partial-alpha pixels | Visible bbox |
 | --- | ---: | ---: | --- |
-| `soma_ritsu/determined.png` | 352,756 | 12,964 | `(102, 7, 724, 1024)` |
-| `soma_ritsu/shaken.png` | 334,740 | 13,797 | `(81, 3, 725, 1024)` |
-| `soma_ritsu/relieved.png` | 347,746 | 13,633 | `(82, 7, 710, 1024)` |
-| `hayasaka_akane/softened.png` | 344,076 | 12,227 | `(56, 15, 743, 1024)` |
-| `miyake_sota/relieved.png` | 376,317 | 11,161 | `(124, 0, 691, 1024)` |
+| `soma_ritsu/determined.png` | 352,829 | 12,891 | `(102, 7, 724, 1024)` |
+| `soma_ritsu/shaken.png` | 334,833 | 13,704 | `(81, 3, 725, 1024)` |
+| `soma_ritsu/relieved.png` | 347,918 | 13,461 | `(82, 7, 710, 1024)` |
+| `hayasaka_akane/softened.png` | 344,189 | 12,114 | `(56, 15, 743, 1024)` |
+| `miyake_sota/relieved.png` | 376,365 | 11,113 | `(124, 0, 691, 1024)` |
 | `kamiya_mio/skeptical.png` | 468,712 | 11,680 | `(169, 34, 653, 1024)` |
 | `kamiya_mio/conceding.png` | 470,370 | 11,769 | `(167, 24, 646, 1024)` |
-| `kitami_shuichi/defensive.png` | 402,144 | 9,746 | `(126, 47, 662, 1024)` |
-| `kitami_shuichi/cornered.png` | 402,319 | 9,919 | `(139, 44, 673, 1024)` |
+| `kitami_shuichi/defensive.png` | 402,149 | 9,741 | `(126, 47, 662, 1024)` |
+| `kitami_shuichi/cornered.png` | 402,374 | 9,864 | `(139, 44, 673, 1024)` |
 
 ## Visual QA
 
 All nine final outputs were inspected with `view_image` after normalization.
+For the round-1 fix, all nine were additionally composited over a dark solid
+background and viewed full-size, and each received a temporary 2x nearest-
+neighbor hair-edge crop for close inspection. The dark previews and crops
+were written outside the repository under
+`/private/tmp/lyra-task5-review-final/` and
+`view_image` inspection confirmed that the v4 pass removed the
+light/cyan-white speckles and halo, including on Soma `shaken`, Miyake
+`relieved`, and both Kitami variants. Fine hair strands remained present;
+there were no matte holes, crop shifts, or transparent-corner regressions.
+
 The identity anchors, outfit, props, framing, lighting, and palette remained
 stable while the requested expression delta was visible:
 
@@ -202,27 +265,31 @@ asset set without editing scene files:
 - `bun run --cwd apps/game check` — pass; `svelte-check found 0 errors and 0
   warnings`.
 - `git diff --check` — pass.
+- Before the asset fix commit, `git diff --cached --name-status` listed
+  exactly the nine portrait PNGs above (9 binary files only), and
+  `git diff --cached --check` — pass.
 
 ## SHA-256
 
 | Output | SHA-256 |
 | --- | --- |
-| `static/assets/portraits/soma_ritsu/determined.png` | `4403256d7200304ebded396592a9f4bf564291934886473cc50474e81e3d1031` |
-| `static/assets/portraits/soma_ritsu/shaken.png` | `c11ab2ca7920abd755d7ec0ff200fafa1217fd0de6bfcca4b115280a679573e4` |
-| `static/assets/portraits/soma_ritsu/relieved.png` | `48b4e98a2e8ac42a2f6df4f78f4e419dc98b200c035f88da4380e43896c90673` |
-| `static/assets/portraits/hayasaka_akane/softened.png` | `a8cabf409762c9170273d7ea7b0b7d9eaeb10df583574ee048523a892cf0a07a` |
-| `static/assets/portraits/miyake_sota/relieved.png` | `6487b83aea0910919c65e85200a70db43cc83ea1ac70b829255853265b680796` |
-| `static/assets/portraits/kamiya_mio/skeptical.png` | `d90cf417170aef752fc217d4ae3aa8c7407f3934b5a20c454a05e61ddad63065` |
-| `static/assets/portraits/kamiya_mio/conceding.png` | `37e5efa88a4557b5f7a4540a44390bb64a1aaba6e73117906927a111720b9e0a` |
-| `static/assets/portraits/kitami_shuichi/defensive.png` | `a2c67b037608c45add0beda6083f3f21228f49919317e9471217131be5d2ecb2` |
-| `static/assets/portraits/kitami_shuichi/cornered.png` | `a1070bb8de68c060fdf4de6bc6eab3314a587a80bcad50d6ce222bb1eb0af495` |
+| `static/assets/portraits/soma_ritsu/determined.png` | `18cb26ec7cc183942467259dc3813fa276baf1ea504305797eabda10c1ee3026` |
+| `static/assets/portraits/soma_ritsu/shaken.png` | `aac54770025a378c0ca42c85e6267c5b949c3ddb64433bf814c9cdb74b5557b9` |
+| `static/assets/portraits/soma_ritsu/relieved.png` | `81611185fb182e4b8c08401ff33b1bd8e8b990d2f0f7eea32c8936a3b342d5f3` |
+| `static/assets/portraits/hayasaka_akane/softened.png` | `c21b68cf2dcc9a7325b24415cb59fb0f7cd855e120c74ca7884f1bfd99b2ca14` |
+| `static/assets/portraits/miyake_sota/relieved.png` | `9bce071d30be756f67a1b692901d0d0ff97bc4d77c8d5b461a2053b2aedfac62` |
+| `static/assets/portraits/kamiya_mio/skeptical.png` | `cf4082098c51d7cef92990c9fd406e29626d282335f15878fc12f6a575fdebd3` |
+| `static/assets/portraits/kamiya_mio/conceding.png` | `92455486fb12d5e6e33885634baa832d90247d86c5b2fd15522df2c6eba5b49c` |
+| `static/assets/portraits/kitami_shuichi/defensive.png` | `b22c32fea88f09e9473b24a46ac50a8044c4330be4be71b20818fc14d2603649` |
+| `static/assets/portraits/kitami_shuichi/cornered.png` | `570c5497ea90384bd756962763ac2d4b17329620f4eae29cc2bf3d5201199791` |
 
 ## Concerns and limitations
 
 - The generator baked an RGB checkerboard into all nine responses even though
-  transparency was requested. The explicit Pillow matte cleanup removed the
-  checkerboard and the final alpha/file/visual checks passed; this remains the
-  only generation concern.
+  transparency was requested. The initial Pillow matte cleanup left a shared
+  one-pixel hair-edge speckle/halo defect; the explicit v4 edge-RGB/alpha
+  correction removed it without changing the silhouettes or expression
+  artwork, and the post-fix alpha/file/visual checks passed.
 - Transition verification was source/compiled-reference inspection plus
   static asset QA. No additional interactive packaged-Tauri playthrough was
   performed in this asset-only task.
