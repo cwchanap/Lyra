@@ -4,6 +4,8 @@ Date: 2026-08-29
 
 Implementation commit: `34135fce2dd35ee3678a67f1c6824042a0e358ab`
 
+Review fix commit: `a32f3bc4e7a8c50e5e8b1b292f2e2206be53cf33`
+
 ## Scope
 
 Task 6 revised the durable Chapter 1 sound plan, applied its catalog and authored-scene cues, generated exactly four approved 45-second loopable BGM assets, and verified the compiler/audio tooling path. No runtime code, portraits, or `progress.md` were changed.
@@ -61,7 +63,7 @@ The plan uses semantic IDs only; `audio:apply` owns catalog and scene writes. Om
 | `scene_5.md` | `tag_001` and `tag_002` = retained `bgm_review_board_loss`; `tag_003` = explicit `none`. |
 | `scene_6.md` | `tag_001` = explicit `none`; subsequent units remain silent. |
 | `investigation_scene_7.md` | `tag_001` = `bgm_breakthrough_pursuit`. |
-| `analysis_scene_8_5.md` | `tag_002` = `bgm_breakthrough_pursuit`; `tag_001` remains ambient-only. |
+| `analysis_scene_8_5.md` | `tag_001` = explicit `none`; `tag_002` starts `bgm_breakthrough_pursuit`. |
 | `interrogation_scene_10.md` | `tag_001`, `p1`, and `gate` = explicit `none`; `p4` and `p5` = `bgm_breakthrough_pursuit`; `tag_002` = retained `bgm_review_board_victory`. |
 | `scene_11.md` | tags 001–003 = `bgm_rain_bell_daily`; tags 004–007 = retained `bgm_chapter_close`. |
 
@@ -94,6 +96,14 @@ bun run audio:generate docs/audio_plans/chapter_1.sound-plan.yaml --only bgm_bre
 ```
 
 The first city request reached ElevenLabs and downloaded the 45.04-second MP3, but the local ffmpeg binary rejected the tooling's configured `libvorbis` encoder (`Unknown encoder 'libvorbis'`, exit 1). The cached MP3 was converted locally with the same existing generation pipeline using the available native `vorbis` encoder; no duplicate provider request was made. The remaining three commands completed successfully with the same native-encoder shim. All four provider calls completed without exit 3, HTTP 402, payment-method, billing, or quota errors; `--force` was never used.
+
+Exact city recovery provenance (no network call and no credit spend) was the cached provider file `packages/scripts/.audio-cache/bgm/bgm_city_summary_motif.mp3` (720,606 bytes, SHA-256 `38742da0366192bbaead16a8846eda91e839008a5b57867680bf06775f2c072a`) passed through the existing `runGenerateCommand` converter seam with this native-Vorbis invocation:
+
+```text
+/opt/homebrew/bin/ffmpeg -y -i packages/scripts/.audio-cache/bgm/bgm_city_summary_motif.mp3 -vn -c:a vorbis -strict experimental -f ogg static/assets/audio/bgm/bgm_city_summary_motif.ogg.tmp
+```
+
+The existing `writeGeneratedAudioFile` staging path atomically renamed that `.ogg.tmp` output to the final OGG, and `runGenerateCommand` wrote the existing provider/prompt/timestamp/output provenance back to the durable plan. The same native encoder was selected for the three subsequent one-at-a-time commands via the temporary local executable shim; no fallback framework or repository tooling was added.
 
 Generation timestamps recorded in the plan:
 
@@ -133,6 +143,17 @@ git diff --check                                                        PASS
 ```
 
 `scenes:compile` emitted 1 chapter / 17 scenes and 22 audio assets with zero asset warnings. It reported one pre-existing layout warning for singleton source group `victim_phone_device`; this is unrelated to Task 6.
+
+The review correction was applied through `audio:apply`, not by hand-editing the scene. Current cue proof is:
+
+```text
+docs/audio_plans/chapter_1.sound-plan.yaml:1029  bgm: none       (analysis_scene_8_5.md tag_001)
+docs/audio_plans/chapter_1.sound-plan.yaml:1035  bgm: bgm_breakthrough_pursuit (analysis_scene_8_5.md tag_002)
+docs/stories_plan/chapter_1/analysis_scene_8_5.md:9   - **BGM:** none
+docs/stories_plan/chapter_1/analysis_scene_8_5.md:93  - **BGM:** bgm_breakthrough_pursuit
+```
+
+The bounded evidence/rationale re-audit also removed the silent Scene 6 claim from `bgm_rain_bell_daily`, removed the police/vending claims from the Rain Bell fixed-panel scene from `bgs_police_station_late_night`, corrected P1/P1.5 ambience references to visual source lines, corrected the Scene 0 opening BGM rejection, and repaired stale summary/metadata/blank line references across BGM, BGS, SFX, and rejected entries.
 
 ## Limitations and concerns
 
