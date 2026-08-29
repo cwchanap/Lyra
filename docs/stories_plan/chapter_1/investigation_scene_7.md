@@ -6,6 +6,7 @@
 
 [場景：雨鐘咖啡館後場門口，深夜，雨勢轉大。門口燈光照著止滑墊，後巷一片濕黑。]
 - **Background Prompt:** Rain Bell cafe back door area at late rainy night before re-entering the back room, non-slip mat at the threshold, dark wet rear alley beyond, tense investigative mood, no readable text.
+- **BGM:** bgm_breakthrough_pursuit
 - **BGS:** bgs_cafe_closed_night
 
 [相馬律與早坂茜沿著後巷走回雨鐘的後場門口。雨勢比前一晚更大，兩人的外套肩頭都濕了一層。相馬律停在門檻前，沒有馬上進去。]

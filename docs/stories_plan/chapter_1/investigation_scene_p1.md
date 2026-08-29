@@ -7,7 +7,7 @@
 [場景：吉祥寺商店街，黃昏，下著細雨。濕亮的騎樓倒映著店家招牌，一家文具店兼影印店亮著暖光。]
 - **Background Prompt:** Rainy dusk on a small Tokyo shopping street, wet pavement reflecting warm storefront signs, awning-edge drip, a stationery-and-copy shop with warm interior light glowing through glass, no people, no readable text, cinematic visual-novel background, neo-noir mood.
 - **Background Asset ID:** background.chapter_1.scene_p1.tag_001
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_casework_day
 - **BGS:** bgs_shopping_street_rain_dusk
 
 **旁白**：雨從下午就開始下，一直沒停。

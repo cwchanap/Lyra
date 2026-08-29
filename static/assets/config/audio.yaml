@@ -1,9 +1,36 @@
 bgm:
+  bgm_breakthrough_pursuit:
+    prompt:
+      Focused forward-moving instrumental for late-night evidence pursuit and
+      a procedural breakthrough, taut low strings, dry ticking pulse, restrained
+      percussion, urgent but controlled, no vocals, no triumphant victory chord,
+      seamless 45-second loop with a tense open ending.
+    loop: true
+  bgm_casework_day:
+    prompt: Light focused instrumental motif for a young detective's daytime
+      casework and short tutorial, warm muted piano, brushed percussion, subtle
+      bass, paper-and-coffee momentum, curious but restrained, no vocals, no
+      dramatic climax, seamless 45-second loop.
+    loop: true
   bgm_chapter_close:
     prompt:
       Bittersweet unresolved chapter-close theme, gentle solo piano over soft
       rain-night pad, a single low string swell, quiet hope mixed with an
       unanswered question, no triumphant resolution, ends on a suspended note.
+    loop: true
+  bgm_city_summary_motif:
+    prompt: Cold restrained urban-institutional instrumental motif for a Tokyo
+      evidence-summary opening, low glassy piano pulses, muted synth and low
+      strings, distant train-like harmonic motion, clean machine-like
+      repetition, no vocals, no dramatic climax, seamless 45-second loop with an
+      open ending.
+    loop: true
+  bgm_rain_bell_daily:
+    prompt:
+      Warm gentle instrumental theme for an ordinary Rain Bell cafe afternoon
+      after rain, soft piano and mallet tones, brushed jazz pulse, mellow
+      upright bass, osmanthus-latte comfort, wistful but light, no vocals, no
+      dramatic climax, seamless 45-second loop.
     loop: true
   bgm_review_board_loss:
     prompt: Sparse restrained procedural tension for a Japanese evidence-review

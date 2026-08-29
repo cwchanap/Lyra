@@ -4,7 +4,7 @@
 
 [場景：吉祥寺・雨鐘咖啡館主廳，午後，雨剛停。窗外濕漉漉的，店內暖黃光，空氣裡飄著金木犀拿鐵的餘香。三宅蒼太在收桌面。]
 - **Background Prompt:** Small Tokyo cafe interior in the afternoon after rain, warm yellow light, wet street outside the window, paper cups and a loyalty card on the counter, osmanthus latte traces, quiet ordinary-day mood, no people, no readable text.
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_rain_bell_daily
 - **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：雨鐘咖啡館，某個普通的雨天。
@@ -93,7 +93,7 @@
 
 [場景：雨鐘咖啡館主廳與店門外，傍晚，雨變大了。店內暖光，店外濕冷的街，招牌「雨鐘」在雨裡發亮。]
 - **Background Prompt:** Cafe interior and rainy street exterior at dusk, rain heavier, the glowing shop sign "Rain Bell" reflected in wet pavement, warm interior light, a leftover latte cup on a window table, quiet wistful ordinary-day mood, no people, no readable text.
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_rain_bell_daily
 - **BGS:** bgs_cafe_afternoon_after_rain
 
 [三宅把那個登記過的蛋糕邊紙袋，放進自己的背包。]

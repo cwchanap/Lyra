@@ -6,6 +6,7 @@
 
 [場景：相馬事務所外，清晨，細雨。]
 - **Background Prompt:** Exterior of a small Tokyo private detective office in early morning drizzle, narrow quiet street, second-floor window softly lit behind rain-specked glass, muted gray daylight, no readable signage.
+- **BGM:** bgm_casework_day
 - **BGS:** bgs_detective_office_rain
 
 [清晨的雨打在窗上，細而均勻。相馬律拉開窗簾，光線落在一排排排好的文件上——他習慣把每樣東西擺到該在的位置。]

@@ -4,7 +4,7 @@
 
 [場景：吉祥寺雨鐘咖啡館，午後。雨剛停，窗外天色微亮。店內桌椅已收拾過半，吧台後靜悄悄的，空氣裡還留著淡淡咖啡香。]
 - **Background Prompt:** Rain Bell cafe after the rain in the afternoon, half-reset tables, quiet counter, soft daylight through wet windows, gentle aftermath, no readable signage.
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_rain_bell_daily
 - **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：案子結了。
@@ -71,7 +71,7 @@
 
 [場景：雨鐘咖啡館，午後，店內空鏡。人聲漸遠，只剩光線落在木桌上。]
 - **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the recurring round old analog cafe wall clock from the back-corridor inner-storage entrance now removed from the wall and resting naturally on the counter, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, a small scuff on the lower-right outer ring, and one sharp diagonal impact crack crossing the lower-left of the cream dial, distinct from the fine hairline crazing; its minute hand is nearly vertical at 12 and its hour hand is just before 11, no readable clock numerals or other text, quiet unresolved stillness.
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_rain_bell_daily
 - **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：他們陸續離開了。
@@ -92,7 +92,7 @@
 
 [場景：雨鐘咖啡館，午後。吧台上已不見掛鐘，角落放著一只封好的紙箱，門邊傘架在畫面邊緣。]
 - **Background Prompt:** Empty Rain Bell cafe interior in afternoon light, a latte cup on a wooden table, the old cafe wall clock no longer on the counter, a closed cardboard box resting on the floor in the corner, the umbrella stand standing quietly at the frame edge near the door, quiet unresolved stillness, no readable text.
-- **BGM:** bgm_chapter_close
+- **BGM:** bgm_rain_bell_daily
 - **BGS:** bgs_cafe_afternoon_after_rain
 
 **旁白**：案子結了。三宅的那杯太甜的拿鐵，也喝完了。
