@@ -2,6 +2,7 @@
   import { onDestroy } from "svelte";
   import EditorCanvas from "./lib/EditorCanvas.svelte";
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
+  import ReaderView from "./lib/ReaderView.svelte";
   import TargetList from "./lib/TargetList.svelte";
   import {
     editorState,
@@ -11,9 +12,17 @@
     setCharacterLayout,
     setHotspotLayout,
   } from "./lib/layout-store.svelte";
+  import { projectReaderScene } from "./lib/reader-projection";
   import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
-  import { loadWorkbenchIndex } from "./lib/workbench-api";
-  import type { SceneType, WorkbenchIndex } from "./lib/workbench-types";
+  import { filterReaderScene } from "./lib/reader-view";
+  import { loadSceneBundle, loadWorkbenchIndex } from "./lib/workbench-api";
+  import type {
+    ReaderGroup,
+    ReaderScene,
+    SceneType,
+    WorkbenchIndex,
+    WorkbenchSceneBundle,
+  } from "./lib/workbench-types";
 
   let requestedIndex = false;
   let workbenchIndex = $state<WorkbenchIndex | null>(null);
@@ -26,6 +35,23 @@
   let saveToastMessage = $state<string | null>(null);
   let saveToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // Reader state: Reader is the default mode now that it is functional.
+  let mode = $state<"reader" | "stage">("reader");
+  let currentBundle = $state<WorkbenchSceneBundle | null>(null);
+  let currentReaderScene = $state<ReaderScene | null>(null);
+  let readerError = $state<string | null>(null);
+  let readerLoading = $state(false);
+  let readerLoadGeneration = 0;
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- session cache is deliberately non-reactive; generation tokens own re-render
+  const bundleCache = new Map<string, WorkbenchSceneBundle>();
+
+  // The four Reader filters; scope control (current scene vs whole chapter)
+  // intentionally waits for the whole-chapter task.
+  let showCues = $state(true);
+  let speaker: string | null = $state(null);
+  let showBranches = $state(false);
+  let search = $state("");
+
   const selectedScene = $derived.by(() => {
     if (!workbenchIndex || !selectedChapterId || !selectedSceneId) return null;
     const chapter = workbenchIndex.chapters.find(
@@ -35,6 +61,31 @@
       chapter?.scenes.find((candidate) => candidate.id === selectedSceneId) ??
       null
     );
+  });
+
+  const filteredReaderScene = $derived(
+    currentReaderScene
+      ? filterReaderScene(currentReaderScene, {
+          showCues,
+          speaker,
+          showBranches,
+          search,
+        })
+      : null,
+  );
+
+  const availableSpeakers = $derived.by(() => {
+    if (!currentReaderScene) return [];
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local accumulator, never read reactively
+    const speakers = new Set<string>();
+    const visit = (group: ReaderGroup): void => {
+      for (const item of group.items) {
+        if (item.kind === "line") speakers.add(item.speaker);
+      }
+      for (const child of group.children) visit(child);
+    };
+    for (const group of currentReaderScene.groups) visit(group);
+    return [...speakers].sort((a, b) => a.localeCompare(b));
   });
 
   const selectedSceneTargetSummary = $derived(
@@ -100,12 +151,92 @@
     }, 2500);
   }
 
+  function toggleClass(active: boolean): string {
+    return [
+      "min-h-9 cursor-pointer rounded-md border px-3 text-sm font-bold text-[#26302e]",
+      active
+        ? "border-[#57776a] bg-[#edf4f0]"
+        : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
+    ].join(" ");
+  }
+
   function clearStage() {
     editorState.scene = null;
     editorState.layout = null;
     editorState.chapterId = null;
     editorState.sceneId = null;
     editorState.error = null;
+  }
+
+  async function loadCurrentReaderScene(): Promise<void> {
+    const chapterId = selectedChapterId;
+    const sceneId = selectedSceneId;
+    const sceneEntry = selectedScene;
+    if (!chapterId || !sceneId || !sceneEntry) {
+      currentReaderScene = null;
+      currentBundle = null;
+      return;
+    }
+    const generation = ++readerLoadGeneration;
+    readerError = null;
+    const cacheKey = `${chapterId}:${sceneId}`;
+    const cached = bundleCache.get(cacheKey);
+    if (cached) {
+      currentBundle = cached;
+      try {
+        currentReaderScene = projectReaderScene(
+          chapterId,
+          sceneEntry.sourcePath,
+          currentBundle.scene,
+        );
+      } catch (error) {
+        readerError = normalizeError(error);
+        currentReaderScene = null;
+      }
+      return;
+    }
+    readerLoading = true;
+    try {
+      const bundle = await loadSceneBundle(chapterId, sceneId);
+      if (generation !== readerLoadGeneration) return; // stale response
+      bundleCache.set(cacheKey, bundle);
+      currentBundle = bundle;
+      currentReaderScene = projectReaderScene(
+        chapterId,
+        sceneEntry.sourcePath,
+        currentBundle.scene,
+      );
+    } catch (error) {
+      if (generation !== readerLoadGeneration) return;
+      readerError = normalizeError(error);
+      currentReaderScene = null;
+      currentBundle = null;
+    } finally {
+      if (generation === readerLoadGeneration) readerLoading = false;
+    }
+  }
+
+  async function refreshReader(): Promise<void> {
+    if (!selectedChapterId || !selectedSceneId) return;
+    bundleCache.delete(`${selectedChapterId}:${selectedSceneId}`);
+    await loadCurrentReaderScene();
+  }
+
+  function setMode(next: "reader" | "stage"): void {
+    if (mode === next) return;
+    mode = next;
+    if (next !== "stage") return;
+    const scene = selectedScene;
+    if (
+      scene &&
+      scene.type === "investigation" &&
+      selectedChapterId &&
+      selectedSceneId
+    ) {
+      void loadInvestigationScene(selectedChapterId, selectedSceneId);
+    } else {
+      clearStage();
+    }
   }
 
   async function selectScene(
@@ -115,6 +246,10 @@
   ) {
     selectedChapterId = chapterId;
     selectedSceneId = sceneId;
+    if (mode === "reader") {
+      await loadCurrentReaderScene();
+      return;
+    }
     if (sceneType !== "investigation") {
       // Stage never loads a bundle for scenes it cannot lay out; the
       // placeholder below explains why instead.
@@ -223,7 +358,138 @@
     class="detail-panel min-w-0 rounded-lg border border-[#d7d2c8] bg-[#fffcf7] p-8 shadow-[0_16px_40px_rgb(39_35_29_/_10%)]"
     aria-live="polite"
   >
-    {#if editorState.scene}
+    <div class="mode-bar flex flex-wrap items-center gap-3">
+      <div
+        class="flex gap-1 rounded-md border border-[#bfc7bf] bg-white p-1"
+        role="group"
+        aria-label="Workbench mode"
+      >
+        <button
+          type="button"
+          class={toggleClass(mode === "reader")}
+          aria-pressed={mode === "reader"}
+          onclick={() => setMode("reader")}
+        >
+          Reader
+        </button>
+        <button
+          type="button"
+          class={toggleClass(mode === "stage")}
+          aria-pressed={mode === "stage"}
+          onclick={() => setMode("stage")}
+        >
+          Stage
+        </button>
+      </div>
+      {#if mode === "reader"}
+        <button
+          type="button"
+          class="min-h-9 cursor-pointer rounded-md border border-[#bfc7bf] bg-white px-4 text-sm font-bold text-[#26302e] hover:border-[#57776a] hover:bg-[#edf4f0] disabled:cursor-not-allowed disabled:opacity-60"
+          disabled={!selectedSceneId}
+          onclick={refreshReader}
+        >
+          Refresh
+        </button>
+      {/if}
+    </div>
+
+    {#if mode === "reader"}
+      <div class="reader-area mt-7 grid gap-5">
+        {#if readerError}
+          <p
+            class="error m-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
+          >
+            {readerError}
+          </p>
+        {/if}
+        {#if filteredReaderScene}
+          <div
+            class="reader-controls grid gap-3 rounded-md border border-[#e4ded3] bg-[#fffefb] p-4 sm:grid-cols-2"
+          >
+            <div
+              class="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label="Reader cue detail"
+            >
+              <button
+                type="button"
+                class={toggleClass(!showCues)}
+                aria-pressed={!showCues}
+                onclick={() => (showCues = false)}
+              >
+                Dialogue only
+              </button>
+              <button
+                type="button"
+                class={toggleClass(showCues)}
+                aria-pressed={showCues}
+                onclick={() => (showCues = true)}
+              >
+                Dialogue + cues
+              </button>
+            </div>
+            <select
+              class="min-h-9 cursor-pointer rounded-md border border-[#bfc7bf] bg-white px-3 text-sm font-bold text-[#26302e]"
+              aria-label="Speaker"
+              value={speaker ?? ""}
+              onchange={(event) =>
+                (speaker = event.currentTarget.value || null)}
+            >
+              <option value="">All speakers</option>
+              {#each availableSpeakers as candidate (candidate)}
+                <option value={candidate}>{candidate}</option>
+              {/each}
+            </select>
+            <div
+              class="flex flex-wrap items-center gap-2"
+              role="group"
+              aria-label="Reader branch detail"
+            >
+              <button
+                type="button"
+                class={toggleClass(!showBranches)}
+                aria-pressed={!showBranches}
+                onclick={() => (showBranches = false)}
+              >
+                Main flow
+              </button>
+              <button
+                type="button"
+                class={toggleClass(showBranches)}
+                aria-pressed={showBranches}
+                onclick={() => (showBranches = true)}
+              >
+                Expanded branches
+              </button>
+            </div>
+            <input
+              type="search"
+              class="min-h-9 rounded-md border border-[#bfc7bf] bg-white px-3 text-sm text-[#26302e]"
+              aria-label="Search loaded Reader text"
+              placeholder="Search loaded Reader text"
+              bind:value={search}
+            />
+          </div>
+          {#if readerLoading}
+            <p class="m-0 text-[0.85rem] text-[#60706b]">Reloading…</p>
+          {/if}
+          <ReaderView scene={filteredReaderScene} />
+        {:else}
+          <div
+            class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]"
+          >
+            <p
+              class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
+            >
+              Reader
+            </p>
+            <p class="m-0 text-xl text-[#4f5756]">
+              {readerLoading ? "Loading scene…" : "Select a scene to read."}
+            </p>
+          </div>
+        {/if}
+      </div>
+    {:else if editorState.scene}
       <header
         class="detail-header flex items-start justify-between gap-5 max-[800px]:grid"
       >
