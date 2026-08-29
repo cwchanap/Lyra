@@ -127,7 +127,7 @@ describe("GameplayAudioController", () => {
     expect(created).toHaveLength(2);
   });
 
-  it("restarts loops before the encoded tail can create an audible seam", async () => {
+  it("does not seek native loops before the media boundary", async () => {
     const audio = controller();
     await audio.updateLoopChannels(
       { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
@@ -138,7 +138,7 @@ describe("GameplayAudioController", () => {
     bgs.currentTime = bgs.duration - 0.2;
     bgs.emit("timeupdate");
 
-    expect(bgs.currentTime).toBe(0);
+    expect(bgs.currentTime).toBe(bgs.duration - 0.2);
     expect(bgs.play).toHaveBeenCalledTimes(1);
   });
 
@@ -163,7 +163,7 @@ describe("GameplayAudioController", () => {
     }
   });
 
-  it("schedules loop restarts ahead of the media boundary", async () => {
+  it("does not schedule timer restarts that cut native loops short", async () => {
     vi.useFakeTimers();
     try {
       const audio = controller();
@@ -174,11 +174,8 @@ describe("GameplayAudioController", () => {
       const bgs = created[0]!;
       bgs.currentTime = 12;
 
-      vi.advanceTimersByTime(29_499);
+      vi.advanceTimersByTime(30_000);
       expect(bgs.currentTime).toBe(12);
-
-      vi.advanceTimersByTime(1);
-      expect(bgs.currentTime).toBe(0);
     } finally {
       vi.useRealTimers();
     }
@@ -868,46 +865,6 @@ describe("GameplayAudioController", () => {
     sfx.emit("error");
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("media error 2"));
-  });
-
-  it("skips loop restart scheduling for non-finite durations", async () => {
-    vi.useFakeTimers();
-    try {
-      const audio = controller();
-      await audio.updateLoopChannels(
-        { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
-        preferences,
-      );
-      const bgs = created[0]!;
-      bgs.duration = Number.NaN;
-
-      bgs.emit("loadedmetadata");
-      vi.advanceTimersByTime(60_000);
-
-      expect(bgs.currentTime).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("skips loop restart scheduling for clips shorter than the restart margin", async () => {
-    vi.useFakeTimers();
-    try {
-      const audio = controller();
-      await audio.updateLoopChannels(
-        { bgm: null, bgs: { channel: "bgs", assetId: "audio.bgs.rain" } },
-        preferences,
-      );
-      const bgs = created[0]!;
-      bgs.duration = 0.2;
-
-      bgs.emit("loadedmetadata");
-      vi.advanceTimersByTime(60_000);
-
-      expect(bgs.currentTime).toBe(0);
-    } finally {
-      vi.useRealTimers();
-    }
   });
 
   it.each([
