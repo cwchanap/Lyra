@@ -900,7 +900,12 @@ For investigation/interrogation:
 const expected = deriveDialogueSegments({
   chapterId: "chapter_1",
   json: investigationScene,
-}).map((segment) => readerSegmentId(segment.origin));
+})
+  // Mirror the SegmentPool non-empty contract: empty compiler segments never
+  // become reader carrier groups, so collectDialogueCarrierIds(reader) omits
+  // them. Filter them out before comparing or the expected set is a superset.
+  .filter((segment) => segment.items.length > 0)
+  .map((segment) => readerSegmentId(segment.origin));
 
 const reader = projectReaderScene(
   "chapter_1",
@@ -1389,13 +1394,31 @@ Do not add current-scene/whole-chapter scope control until Task 6.
 
 ```ts
 async function refreshReader(): Promise<void> {
-  if (!selectedChapterId || !selectedSceneId) return;
-  bundleCache.delete(`${selectedChapterId}:${selectedSceneId}`);
-  await loadCurrentReaderScene({ force: true });
+  if (!selectedChapterId) return;
+  try {
+    if (readerScope === "chapter") {
+      const chapter = selectedChapter;
+      if (!chapter) return;
+      for (const scene of chapter.scenes) {
+        bundleCache.delete(`${chapter.id}:${scene.id}`);
+      }
+      await loadChapterReader(chapter.id, true);
+      return;
+    }
+    if (!selectedSceneId) return;
+    bundleCache.delete(`${selectedChapterId}:${selectedSceneId}`);
+    await loadCurrentReaderScene();
+  } catch (error) {
+    // Defensive: the underlying loaders already catch IPC / ReaderProjectionError
+    // failures and write the typed Workbench error state, so this should not
+    // normally throw. Guard anyway so a rejected promise never propagates to the
+    // Refresh button's onclick caller.
+    readerError = normalizeError(error);
+  }
 }
 ```
 
-Refresh uses same generation token so older loads cannot win. No watcher, mtime display, persistence, or polling.
+`refreshReader`, `loadCurrentReaderScene`, and `loadChapterReader` each use a try-catch path rather than propagating failures to their caller. Rejected IPC (`loadSceneBundle`) and `ReaderProjectionError` failures are caught, written to the typed Workbench error state (`readerError` / `chapterReaderError`), and the affected reader result is cleared to `null`. The generation token is still checked inside each catch so a stale response cannot overwrite a newer load's state. Refresh uses the same generation token so older loads cannot win. No watcher, mtime display, persistence, or polling.
 
 - [ ] **Step 8: Pin Refresh/stale-response tests**
 

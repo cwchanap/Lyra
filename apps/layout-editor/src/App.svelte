@@ -265,6 +265,7 @@
     );
     if (!chapter) return;
     const generation = ++chapterLoadGeneration;
+    chapterReaders = null;
     chapterReaderError = null;
     chapterLoading = true;
     try {
@@ -540,7 +541,7 @@
                 aria-pressed={!showCues}
                 onclick={() => (showCues = false)}
               >
-                Dialogue only
+                Hide cues
               </button>
               <button
                 type="button"
