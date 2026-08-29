@@ -9,23 +9,11 @@
 
 **旁白**：東京，下雨的傍晚。
 
-**旁白**：月台上，傘與傘之間，是無數張疲憊的臉。
-
 [站內螢幕亮起，顯示一份普通的運行摘要：延誤原因、影響路線、替代方案。這是城市裡隨處可見的資訊介面。]
-
-**旁白**：螢幕上的字一行行更新，沒有人多看一眼。
 
 [另一側的新聞螢幕切換，播出一則簡短快訊。]
 
-**旁白**：快訊寫著——
-
 **旁白**：KAGAMI Evidence Summary Pilot：證據摘要審查會擴大試行。
-
-[一名上班族經過，視線掃過標題。]
-
-**上班族**：又是那個證據摘要系統。
-
-[他沒有停下，傘尖滴水，走進人潮。]
 
 [場景：吉祥寺商店街的騎樓下，傍晚，雨勢轉小。幾名路人站在簷下避雨，遠處招牌的燈光映在濕地上。]
 - **Background Prompt:** Kichijoji shopping street arcade under an awning at rainy dusk, small group of anonymous commuters sheltering from drizzle, wet pavement reflecting neon storefront signs, stacked vending machines glowing softly, neo-noir visual novel background, no foreground faces, no readable signage text.
