@@ -2,6 +2,7 @@
 
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import type { CharacterLayout, RectLayout, SpriteLayout } from "./layout-types";
+import type { WorkbenchSceneBundle } from "./workbench-types";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -12,18 +13,34 @@ import {
   editorState,
   setHotspotLayout,
   setCharacterLayout,
-  loadChapters,
+  saveLayout,
   loadInvestigationScene,
 } from "./layout-store.svelte";
 
 const mockInvoke = vi.mocked(invoke);
 
+function investigationBundleScene(id: string, title = id) {
+  return {
+    type: "investigation",
+    id,
+    title,
+    summary: "",
+    intro: [],
+    assetRefs: [],
+    sublocations: [],
+    evidenceManifest: [],
+  };
+}
+
+function bundleWithScene(scene: Record<string, unknown>): WorkbenchSceneBundle {
+  return { scene: scene as unknown as WorkbenchSceneBundle["scene"] };
+}
+
 function resetState() {
-  editorState.chapters = null;
   editorState.scene = null;
   editorState.layout = null;
-  editorState.scenePath = null;
-  editorState.layoutPath = null;
+  editorState.chapterId = null;
+  editorState.sceneId = null;
   editorState.error = null;
 }
 
@@ -314,15 +331,6 @@ describe("layout-store", () => {
     });
 
     it("round-trips a sidecar with intentionalOverlaps through load + edit + save shape", async () => {
-      const sceneJson = {
-        type: "investigation",
-        id: "scene_overlap",
-        title: "Overlap Scene",
-        intro: [],
-        sublocations: [],
-        evidenceManifest: [],
-      };
-
       const existingLayout = {
         version: 1,
         sceneId: "scene_overlap",
@@ -339,17 +347,12 @@ describe("layout-store", () => {
       };
 
       mockInvoke
-        .mockResolvedValueOnce({
-          path: "scenes/scene_overlap.json",
-          contents: JSON.stringify(sceneJson),
-        })
-        .mockResolvedValueOnce("layouts/scene_overlap.layout.json")
-        .mockResolvedValueOnce({
-          path: "layouts/scene_overlap.layout.json",
-          contents: JSON.stringify(existingLayout),
-        });
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_overlap")),
+        )
+        .mockResolvedValueOnce(existingLayout);
 
-      await loadInvestigationScene("scenes/scene_overlap.json");
+      await loadInvestigationScene("chapter_1", "scene_overlap");
 
       expect(editorState.error).toBeNull();
       expect(
@@ -373,25 +376,41 @@ describe("layout-store", () => {
   });
 
   describe("loadInvestigationScene", () => {
-    it("synthesizes empty layout when sidecar file is not found", async () => {
-      const sceneJson = {
-        type: "investigation",
-        id: "scene_new",
-        title: "New Scene",
-        intro: [],
-        sublocations: [],
-        evidenceManifest: [],
-      };
-
+    it("loads bundle and layout by chapter/scene ids", async () => {
       mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("investigation_scene_3")),
+        )
         .mockResolvedValueOnce({
-          path: "scenes/scene_new.json",
-          contents: JSON.stringify(sceneJson),
-        })
-        .mockResolvedValueOnce("layouts/scene_new.layout.json")
-        .mockRejectedValueOnce({ code: "notFound", message: "Not found" });
+          version: 1,
+          sceneId: "investigation_scene_3",
+          sublocations: {},
+        });
 
-      await loadInvestigationScene("scenes/scene_new.json");
+      await loadInvestigationScene("chapter_1", "investigation_scene_3");
+
+      expect(invoke).toHaveBeenCalledWith("load_scene_bundle", {
+        chapterId: "chapter_1",
+        sceneId: "investigation_scene_3",
+      });
+      expect(invoke).toHaveBeenCalledWith("load_investigation_layout", {
+        chapterId: "chapter_1",
+        sceneId: "investigation_scene_3",
+      });
+      expect(editorState.error).toBeNull();
+      expect(editorState.chapterId).toBe("chapter_1");
+      expect(editorState.sceneId).toBe("investigation_scene_3");
+      expect(editorState.scene?.id).toBe("investigation_scene_3");
+    });
+
+    it("synthesizes empty layout when the sidecar is absent", async () => {
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_new", "New Scene")),
+        )
+        .mockResolvedValueOnce(null);
+
+      await loadInvestigationScene("chapter_1", "scene_new");
 
       expect(editorState.error).toBeNull();
       expect(editorState.scene?.id).toBe("scene_new");
@@ -402,16 +421,7 @@ describe("layout-store", () => {
       });
     });
 
-    it("loads existing layout from sidecar file", async () => {
-      const sceneJson = {
-        type: "investigation",
-        id: "scene_existing",
-        title: "Existing Scene",
-        intro: [],
-        sublocations: [],
-        evidenceManifest: [],
-      };
-
+    it("loads existing layout sidecar", async () => {
       const existingLayout = {
         version: 1,
         sceneId: "scene_existing",
@@ -426,62 +436,67 @@ describe("layout-store", () => {
       };
 
       mockInvoke
-        .mockResolvedValueOnce({
-          path: "scenes/scene_existing.json",
-          contents: JSON.stringify(sceneJson),
-        })
-        .mockResolvedValueOnce("layouts/scene_existing.layout.json")
-        .mockResolvedValueOnce({
-          path: "layouts/scene_existing.layout.json",
-          contents: JSON.stringify(existingLayout),
-        });
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_existing")),
+        )
+        .mockResolvedValueOnce(existingLayout);
 
-      await loadInvestigationScene("scenes/scene_existing.json");
+      await loadInvestigationScene("chapter_1", "scene_existing");
 
       expect(editorState.error).toBeNull();
       expect(editorState.layout).toEqual(existingLayout);
     });
 
-    it("surfaces non-notFound errors", async () => {
-      mockInvoke.mockRejectedValueOnce({
-        code: "permissionDenied",
-        message: "Access denied",
-      });
+    it("rejects a non-investigation bundle without loading a layout", async () => {
+      mockInvoke.mockResolvedValueOnce(
+        bundleWithScene({ type: "interrogation", id: "interrogation_scene_2" }),
+      );
 
-      await loadInvestigationScene("scenes/bad.json");
+      await loadInvestigationScene("chapter_1", "interrogation_scene_2");
+
+      expect(editorState.error).toContain(
+        "Stage is available for investigation scenes only.",
+      );
+      expect(editorState.scene).toBeNull();
+      expect(editorState.layout).toBeNull();
+      expect(editorState.chapterId).toBeNull();
+      expect(editorState.sceneId).toBeNull();
+      expect(invoke).not.toHaveBeenCalledWith("load_investigation_layout", {
+        chapterId: "chapter_1",
+        sceneId: "interrogation_scene_2",
+      });
+    });
+
+    it("surfaces layout load failures", async () => {
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_bad")),
+        )
+        .mockRejectedValueOnce({
+          code: "permissionDenied",
+          message: "Access denied",
+        });
+
+      await loadInvestigationScene("chapter_1", "scene_bad");
 
       expect(editorState.error).toBe("Access denied");
       expect(editorState.layout).toBeNull();
     });
 
-    it("clears stale scene state when outer read fails", async () => {
+    it("clears stale scene state when the bundle load fails", async () => {
       // First, populate state with a successful load
-      const sceneJson = {
-        type: "investigation",
-        id: "scene_ok",
-        title: "OK Scene",
-        intro: [],
-        sublocations: [],
-        evidenceManifest: [],
-      };
       mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("scene_ok")),
+        )
         .mockResolvedValueOnce({
-          path: "scenes/scene_ok.json",
-          contents: JSON.stringify(sceneJson),
-        })
-        .mockResolvedValueOnce("layouts/scene_ok.layout.json")
-        .mockResolvedValueOnce({
-          path: "layouts/scene_ok.layout.json",
-          contents: JSON.stringify({
-            version: 1,
-            sceneId: "scene_ok",
-            sublocations: {},
-          }),
+          version: 1,
+          sceneId: "scene_ok",
+          sublocations: {},
         });
 
-      await loadInvestigationScene("scenes/scene_ok.json");
+      await loadInvestigationScene("chapter_1", "scene_ok");
       expect(editorState.scene?.id).toBe("scene_ok");
-      expect(editorState.layoutPath).toBe("layouts/scene_ok.layout.json");
       expect(editorState.error).toBeNull();
 
       // Now fail a subsequent load — stale state must be cleared
@@ -490,40 +505,73 @@ describe("layout-store", () => {
         message: "Scene missing",
       });
 
-      await loadInvestigationScene("scenes/missing.json");
+      await loadInvestigationScene("chapter_1", "scene_missing");
 
       expect(editorState.error).toBe("Scene missing");
       expect(editorState.scene).toBeNull();
-      expect(editorState.scenePath).toBeNull();
+      expect(editorState.chapterId).toBeNull();
+      expect(editorState.sceneId).toBeNull();
       expect(editorState.layout).toBeNull();
-      expect(editorState.layoutPath).toBeNull();
     });
   });
 
-  describe("loadChapters", () => {
-    it("clears stale chapters on read failure", async () => {
-      // First, populate with a successful load
-      mockInvoke.mockResolvedValueOnce({
-        path: "chapters.json",
-        contents: JSON.stringify({
-          chapters: [{ id: "ch1", title: "Chapter 1", scenes: [] }],
-        }),
-      });
+  describe("saveLayout", () => {
+    it("saves the current layout by selected chapter/scene ids", async () => {
+      const layout = {
+        version: 1,
+        sceneId: "investigation_scene_3",
+        sublocations: {
+          office: {
+            hotspots: {
+              desk: { kind: "rect", x: 0.2, y: 0.3, w: 0.15, h: 0.1 },
+            },
+            characters: {},
+          },
+        },
+      };
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("investigation_scene_3")),
+        )
+        .mockResolvedValueOnce(layout);
 
-      await loadChapters();
-      expect(editorState.chapters).not.toBeNull();
+      await loadInvestigationScene("chapter_1", "investigation_scene_3");
+      await saveLayout();
+
+      expect(invoke).toHaveBeenCalledWith("save_investigation_layout", {
+        chapterId: "chapter_1",
+        sceneId: "investigation_scene_3",
+        layout,
+      });
       expect(editorState.error).toBeNull();
+    });
 
-      // Now fail a refresh — stale chapters must be cleared
-      mockInvoke.mockRejectedValueOnce({
-        code: "notFound",
-        message: "File gone",
-      });
+    it("surfaces save failures", async () => {
+      const layout = {
+        version: 1,
+        sceneId: "investigation_scene_3",
+        sublocations: {},
+      };
+      mockInvoke
+        .mockResolvedValueOnce(
+          bundleWithScene(investigationBundleScene("investigation_scene_3")),
+        )
+        .mockResolvedValueOnce(layout)
+        .mockRejectedValueOnce({ code: "writeFailed", message: "Disk full" });
 
-      await loadChapters();
+      await loadInvestigationScene("chapter_1", "investigation_scene_3");
+      await saveLayout();
 
-      expect(editorState.error).toBe("File gone");
-      expect(editorState.chapters).toBeNull();
+      expect(editorState.error).toBe("Disk full");
+    });
+
+    it("does nothing without a loaded scene", async () => {
+      await saveLayout();
+
+      expect(invoke).not.toHaveBeenCalledWith(
+        "save_investigation_layout",
+        expect.anything(),
+      );
     });
   });
 });

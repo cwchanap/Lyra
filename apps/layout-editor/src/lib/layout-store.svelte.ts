@@ -1,17 +1,15 @@
-import { invoke } from "@tauri-apps/api/core";
 import type {
   CharacterLayout,
   InvestigationLayoutSidecar,
   InvestigationSceneJson,
   RectLayout,
-  SceneIndex,
 } from "./layout-types";
 import { clampCharacterLayout, clampRectLayout } from "./layout-geometry";
-
-type ProjectFile = {
-  path: string;
-  contents: string;
-};
+import {
+  loadInvestigationLayout,
+  loadSceneBundle,
+  saveInvestigationLayout,
+} from "./workbench-api";
 
 type EditorCommandError = {
   code: string;
@@ -19,99 +17,82 @@ type EditorCommandError = {
 };
 
 export const editorState = $state<{
-  chapters: SceneIndex | null;
   scene: InvestigationSceneJson | null;
   layout: InvestigationLayoutSidecar | null;
-  scenePath: string | null;
-  layoutPath: string | null;
+  chapterId: string | null;
+  sceneId: string | null;
   error: string | null;
 }>({
-  chapters: null,
   scene: null,
   layout: null,
-  scenePath: null,
-  layoutPath: null,
+  chapterId: null,
+  sceneId: null,
   error: null,
 });
 
-let loadChaptersGeneration = 0;
-
-export async function loadChapters() {
-  const generation = ++loadChaptersGeneration;
-  editorState.error = null;
-  try {
-    const file = await invoke<ProjectFile>("read_project_file", {
-      path: "apps/game/src-tauri/resources/scenes/chapters.json",
-    });
-    if (generation !== loadChaptersGeneration) return;
-    editorState.chapters = JSON.parse(file.contents) as SceneIndex;
-  } catch (error) {
-    if (generation !== loadChaptersGeneration) return;
-    editorState.chapters = null;
-    editorState.error = normalizeError(error);
-  }
-}
-
 let loadSceneGeneration = 0;
 
-export async function loadInvestigationScene(scenePath: string) {
+export async function loadInvestigationScene(
+  chapterId: string,
+  sceneId: string,
+) {
   const generation = ++loadSceneGeneration;
   editorState.error = null;
 
   try {
-    const sceneFile = await invoke<ProjectFile>("read_project_file", {
-      path: scenePath,
-    });
+    const bundle = await loadSceneBundle(chapterId, sceneId);
     if (generation !== loadSceneGeneration) return;
-    const scene = JSON.parse(sceneFile.contents) as InvestigationSceneJson;
-    const layoutPath = await invoke<string>("resolve_layout_path", {
-      scenePath,
-    });
-    if (generation !== loadSceneGeneration) return;
-    editorState.scene = scene;
-    editorState.scenePath = scenePath;
-    editorState.layoutPath = layoutPath;
+    const scene = bundle.scene;
+    if (scene.type !== "investigation") {
+      editorState.scene = null;
+      editorState.layout = null;
+      editorState.chapterId = null;
+      editorState.sceneId = null;
+      editorState.error = `Stage is available for investigation scenes only. (scene "${sceneId}" is type "${scene.type}")`;
+      return;
+    }
+
+    // The compiled bundle is a superset of the editor's narrower rendering
+    // view (see layout-types.ts); the backend already validated that the
+    // payload matches the manifest's investigation scene.
+    editorState.scene = scene as InvestigationSceneJson;
+    editorState.chapterId = chapterId;
+    editorState.sceneId = sceneId;
 
     try {
-      const layoutFile = await invoke<ProjectFile>("read_project_file", {
-        path: layoutPath,
-      });
+      const layout = await loadInvestigationLayout(chapterId, sceneId);
       if (generation !== loadSceneGeneration) return;
-      editorState.layout = JSON.parse(
-        layoutFile.contents,
-      ) as InvestigationLayoutSidecar;
+      editorState.layout = layout ?? {
+        version: 1,
+        sceneId: scene.id,
+        sublocations: {},
+      };
     } catch (error) {
       if (generation !== loadSceneGeneration) return;
-      if (isEditorCommandError(error) && error.code === "notFound") {
-        editorState.layout = {
-          version: 1,
-          sceneId: scene.id,
-          sublocations: {},
-        };
-      } else {
-        editorState.layout = null;
-        editorState.error = normalizeError(error);
-      }
+      editorState.layout = null;
+      editorState.error = normalizeError(error);
     }
   } catch (error) {
     if (generation !== loadSceneGeneration) return;
     editorState.scene = null;
-    editorState.scenePath = null;
     editorState.layout = null;
-    editorState.layoutPath = null;
+    editorState.chapterId = null;
+    editorState.sceneId = null;
     editorState.error = normalizeError(error);
   }
 }
 
 export async function saveLayout() {
-  if (!editorState.layoutPath || !editorState.layout) return;
+  if (!editorState.chapterId || !editorState.sceneId || !editorState.layout)
+    return;
 
   editorState.error = null;
   try {
-    await invoke("write_project_file", {
-      path: editorState.layoutPath,
-      contents: `${JSON.stringify(editorState.layout, null, 2)}\n`,
-    });
+    await saveInvestigationLayout(
+      editorState.chapterId,
+      editorState.sceneId,
+      editorState.layout,
+    );
   } catch (error) {
     editorState.error = normalizeError(error);
   }
@@ -171,7 +152,7 @@ export function setCharacterLayout(
   };
 }
 
-function normalizeError(error: unknown): string {
+export function normalizeError(error: unknown): string {
   if (isEditorCommandError(error)) return error.message;
   if (error instanceof Error) return error.message;
   if (typeof error === "string") return error;

@@ -4,9 +4,8 @@ export function readableSceneLabel(file: string): string {
       .split("/")
       .at(-1)
       ?.replace(/\.json$/i, "") ?? file;
-  const sceneMatch = /^(?:(investigation|interrogation)_)?scene_(.+)$/.exec(
-    basename,
-  );
+  const sceneMatch =
+    /^(?:(investigation|interrogation|analysis)_)?scene_(.+)$/.exec(basename);
   if (sceneMatch) {
     const [, prefix, sceneNumber] = sceneMatch;
     const typeLabel = prefix ? `${titleCase(prefix)} Scene` : "Scene";

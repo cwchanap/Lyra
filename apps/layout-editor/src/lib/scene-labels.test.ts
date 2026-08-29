@@ -10,6 +10,9 @@ describe("scene labels", () => {
     expect(readableSceneLabel("chapter_1/interrogation_scene_2.json")).toBe(
       "Interrogation Scene 2",
     );
+    expect(readableSceneLabel("chapter_1/analysis_scene_8_5.json")).toBe(
+      "Analysis Scene 8.5",
+    );
   });
 
   it("does not match prefixes without the required underscore", () => {

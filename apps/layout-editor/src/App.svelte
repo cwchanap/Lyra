@@ -5,53 +5,37 @@
   import TargetList from "./lib/TargetList.svelte";
   import {
     editorState,
-    loadChapters,
     loadInvestigationScene,
+    normalizeError,
     saveLayout,
     setCharacterLayout,
     setHotspotLayout,
   } from "./lib/layout-store.svelte";
   import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
+  import { loadWorkbenchIndex } from "./lib/workbench-api";
+  import type { SceneType, WorkbenchIndex } from "./lib/workbench-types";
 
-  type InvestigationChapter = {
-    id: string;
-    label: string;
-    summary: string;
-    scenes: Array<{
-      file: string;
-      path: string;
-      label: string;
-      description: string;
-    }>;
-  };
-
-  let requestedChapters = false;
+  let requestedIndex = false;
+  let workbenchIndex = $state<WorkbenchIndex | null>(null);
+  let indexError = $state<string | null>(null);
+  let selectedChapterId = $state<string | null>(null);
+  let selectedSceneId = $state<string | null>(null);
   let currentSublocationId = $state<string | null>(null);
-  let currentSublocationScenePath = $state<string | null>(null);
+  let currentSublocationSceneId = $state<string | null>(null);
   let isSavingLayout = $state(false);
   let saveToastMessage = $state<string | null>(null);
   let saveToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  const investigationChapters = $derived(
-    editorState.chapters?.chapters
-      .map((chapter): InvestigationChapter => {
-        const chapterLabel = readableChapterLabel(chapter.id, chapter.title);
-        return {
-          id: chapter.id,
-          label: chapterLabel,
-          summary: chapter.summary,
-          scenes: chapter.scenes
-            .filter((scene) => scene.type === "investigation")
-            .map((scene) => ({
-              file: scene.file,
-              path: `apps/game/src-tauri/resources/scenes/${scene.file}`,
-              label: readableSceneLabel(scene.file),
-              description: `${chapterLabel} investigation layout`,
-            })),
-        };
-      })
-      .filter((chapter) => chapter.scenes.length > 0) ?? [],
-  );
+  const selectedScene = $derived.by(() => {
+    if (!workbenchIndex || !selectedChapterId || !selectedSceneId) return null;
+    const chapter = workbenchIndex.chapters.find(
+      (candidate) => candidate.id === selectedChapterId,
+    );
+    return (
+      chapter?.scenes.find((candidate) => candidate.id === selectedSceneId) ??
+      null
+    );
+  });
 
   const selectedSceneTargetSummary = $derived(
     editorState.scene
@@ -66,29 +50,34 @@
   );
 
   $effect(() => {
-    if (requestedChapters) return;
-    requestedChapters = true;
-    void loadChapters();
+    if (requestedIndex) return;
+    requestedIndex = true;
+    loadWorkbenchIndex()
+      .then((index) => {
+        workbenchIndex = index;
+      })
+      .catch((error) => {
+        indexError = normalizeError(error);
+      });
   });
 
   $effect(() => {
     const scene = editorState.scene;
-    const scenePath = editorState.scenePath;
     if (!scene) {
       currentSublocationId = null;
-      currentSublocationScenePath = null;
+      currentSublocationSceneId = null;
       return;
     }
 
     const firstSublocationId = scene.sublocations[0]?.id ?? null;
-    const sceneChanged = scenePath !== currentSublocationScenePath;
+    const sceneChanged = editorState.sceneId !== currentSublocationSceneId;
     const hasCurrentSublocation = scene.sublocations.some(
       (sublocation) => sublocation.id === currentSublocationId,
     );
 
     if (sceneChanged || !currentSublocationId || !hasCurrentSublocation) {
       currentSublocationId = firstSublocationId;
-      currentSublocationScenePath = scenePath;
+      currentSublocationSceneId = editorState.sceneId;
     }
   });
 
@@ -111,9 +100,32 @@
     }, 2500);
   }
 
-  async function handleSaveLayout() {
-    if (isSavingLayout || !editorState.layout || !editorState.layoutPath)
+  function clearStage() {
+    editorState.scene = null;
+    editorState.layout = null;
+    editorState.chapterId = null;
+    editorState.sceneId = null;
+    editorState.error = null;
+  }
+
+  async function selectScene(
+    chapterId: string,
+    sceneId: string,
+    sceneType: SceneType,
+  ) {
+    selectedChapterId = chapterId;
+    selectedSceneId = sceneId;
+    if (sceneType !== "investigation") {
+      // Stage never loads a bundle for scenes it cannot lay out; the
+      // placeholder below explains why instead.
+      clearStage();
       return;
+    }
+    await loadInvestigationScene(chapterId, sceneId);
+  }
+
+  async function handleSaveLayout() {
+    if (isSavingLayout || !editorState.layout) return;
 
     isSavingLayout = true;
     saveToastMessage = null;
@@ -141,47 +153,51 @@
       Developer Tool
     </p>
     <h1 id="editor-title" class="m-0 text-3xl leading-[1.1] tracking-normal">
-      Lyra Layout Editor
+      Lyra Story Workbench
     </h1>
 
-    {#if editorState.error}
+    {#if editorState.error || indexError}
       <p
         class="error mt-[18px] mb-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
       >
-        {editorState.error}
+        {editorState.error ?? indexError}
       </p>
     {/if}
 
-    <div class="scene-list mt-7 grid gap-2.5" aria-label="Investigation scenes">
-      {#each investigationChapters as chapter (chapter.id)}
+    <div
+      class="scene-list mt-7 grid gap-2.5"
+      aria-label="Story workbench scenes"
+    >
+      {#each workbenchIndex?.chapters ?? [] as chapter (chapter.id)}
         <details class="rounded-md border border-[#e4ded3] bg-[#fffefb]" open>
           <summary class="grid cursor-pointer gap-1 px-3 py-2.5">
             <span class="text-[0.78rem] text-[#60706b]">{chapter.id}</span>
             <strong class="[overflow-wrap:anywhere] text-sm font-bold"
-              >{chapter.label}</strong
+              >{readableChapterLabel(chapter.id, chapter.title)}</strong
             >
           </summary>
           <div class="chapter-scenes grid gap-2 px-2.5 pb-2.5">
-            {#each chapter.scenes as scene (scene.path)}
+            {#each chapter.scenes as scene (scene.id)}
               <div class="scene-entry grid gap-2">
                 <button
                   class={[
                     "grid min-h-11 w-full cursor-pointer gap-1 rounded-md border px-3 py-2.5 text-left text-[#26302e]",
-                    scene.path === editorState.scenePath
+                    scene.id === selectedSceneId &&
+                    chapter.id === selectedChapterId
                       ? "selected border-[#57776a] bg-[#edf4f0]"
                       : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
                   ].join(" ")}
                   type="button"
-                  onclick={() => loadInvestigationScene(scene.path)}
+                  onclick={() => selectScene(chapter.id, scene.id, scene.type)}
                 >
                   <strong class="break-words text-sm font-bold"
-                    >{scene.label}</strong
+                    >{readableSceneLabel(scene.id)}</strong
                   >
                   <small class="text-[0.78rem] text-[#60706b]"
-                    >{scene.description}</small
+                    >{readableChapterLabel(chapter.id, chapter.title)}</small
                   >
                 </button>
-                {#if scene.path === editorState.scenePath && editorState.scene}
+                {#if scene.id === selectedSceneId && chapter.id === selectedChapterId && editorState.scene}
                   <div
                     class="scene-sublocations ml-3 border-l-2 border-[#e4ded3] pl-2.5"
                   >
@@ -198,7 +214,7 @@
           </div>
         </details>
       {:else}
-        <p class="empty m-0 text-[#7d3c2f]">No investigation scenes loaded.</p>
+        <p class="empty m-0 text-[#7d3c2f]">No scenes loaded.</p>
       {/each}
     </div>
   </aside>
@@ -215,7 +231,7 @@
           <p
             class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
           >
-            Scene
+            Stage
           </p>
           <h2
             class="m-0 max-w-[28ch] text-[1.75rem] leading-[1.1] tracking-normal"
@@ -229,9 +245,7 @@
           <button
             type="button"
             class="save-button min-h-11 flex-none cursor-pointer rounded-md border border-[#bfc7bf] bg-white px-4 font-bold text-[#26302e] hover:border-[#57776a] hover:bg-[#edf4f0] disabled:cursor-not-allowed disabled:opacity-60 max-[800px]:w-full"
-            disabled={!editorState.layout ||
-              !editorState.layoutPath ||
-              isSavingLayout}
+            disabled={!editorState.layout || isSavingLayout}
             onclick={handleSaveLayout}
           >
             {isSavingLayout ? "Saving..." : "Save Layout"}
@@ -275,9 +289,17 @@
         <p
           class="eyebrow m-0 mb-3 text-[0.78rem] font-bold tracking-normal text-[#5f6b64] uppercase"
         >
-          Scene
+          Stage
         </p>
-        <p class="m-0 text-xl text-[#4f5756]">Select an investigation scene.</p>
+        {#if selectedScene && selectedScene.type !== "investigation"}
+          <p class="m-0 text-xl text-[#4f5756]">
+            Stage is available for investigation scenes only.
+          </p>
+        {:else}
+          <p class="m-0 text-xl text-[#4f5756]">
+            Select an investigation scene.
+          </p>
+        {/if}
       </div>
     {/if}
   </section>

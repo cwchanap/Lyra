@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Lyra Layout Editor",
+  "productName": "Lyra Story Workbench",
   "version": "0.1.0",
   "identifier": "com.lyra.layout-editor",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Lyra Layout Editor",
+        "title": "Lyra Story Workbench",
         "width": 1440,
         "height": 920
       }
