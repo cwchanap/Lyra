@@ -145,34 +145,45 @@
 - **BGM:** bgm_chapter_close
 - **BGS:** bgs_detective_office_night
 
-**旁白**：掛上電話前，他們又核對了一件事。
+**旁白**：警方移交清單最後一頁，附著匿名「雨宮」訊息的來源比對。
 
-**早坂茜**：那則匿名的「雨宮」訊息，來源查過了。
+**早坂茜**：北見的手機、電腦和承包帳號，都不是發訊來源。
 
-**相馬律**：結果呢？
+**相馬律**：……不是他。
 
-**早坂茜**：北見的手機、電腦、還有他的承包帳號——
+**早坂茜**：來源不明，先按移交紀錄留檔。
 
-**早坂茜**：都不是發訊的來源。
+[相馬闔上筆電，把隨身碟收回證物袋；螢幕上的檔名隨即消失。]
 
-**相馬律**：……所以不是他。
-
-**早坂茜**：對。不是他。
-
-[相馬沉默了一下，把清單放到一旁。]
-
-**相馬律**：那就先到這裡。
-
-[場景：雨鐘咖啡館外，深夜。雨已經停了，街面仍泛著水光，店招的燈滅了。]
-- **Background Prompt:** Exterior of Rain Bell cafe late at night after rain, dark storefront, wet street reflections, umbrella stand near the door holding a blue transparent umbrella, no readable sign.
+[場景：地方科技新聞／雨鐘咖啡館後續頁面，夜晚。合法拍攝的咖啡館入口在雨後街面上，傘架邊角掠過一把藍色透明傘。]
+- **Background Prompt:** Local technology news follow-up showing a legally filmed Rain Bell cafe entrance after rain at night, a blue transparent umbrella only briefly visible at the edge of the umbrella stand, restrained public-media framing, no readable text, no USB or private file.
+- **Background Asset ID:** background.chapter_1.scene_11.tag_006
 - **BGM:** bgm_chapter_close
 - **BGS:** none
 
-**旁白**：相馬走出事務所時，雨早就停了。
+**旁白**：地方科技新聞報導雨鐘案與 KAGAMI 外包資料外洩，後續調查已經開始。
 
-[他沿著熟悉的街道，走到雨鐘的門口。]
+[新聞畫面停在合法拍攝的雨鐘咖啡館入口；傘架邊角短暫露出藍色透明傘。]
 
-**旁白**：店裡漆黑，只有門邊那個傘架，還留著一點微光。
+**旁白**：節目接入如月真白的短預告。
+
+**旁白**：如月真白在預告裡說：「下一期，我想回看——2016 年青葉記憶研究所火災。」
+
+[畫面閃過一格未標示來源的低解析走廊與火場素材，隨即退回節目畫面。]
+
+**早坂茜**：要關掉嗎？
+
+[相馬律把聲音快速靜音，視線移開；桌上的加密檔視窗早已關閉。]
+
+**相馬律**：先靜一會。
+
+[場景：雨鐘咖啡館外，深夜。雨已經停了，街面仍泛著水光，店招的燈滅了。]
+- **Background Prompt:** Exterior of Rain Bell cafe late at night after rain, dark storefront, wet street reflections, umbrella stand near the door holding a blue transparent umbrella, no readable sign.
+- **Background Asset ID:** background.chapter_1.scene_11.tag_006
+- **BGM:** bgm_chapter_close
+- **BGS:** none
+
+**旁白**：事務所的燈熄了，雨鐘門邊的傘架還留著一點微光。
 
 [雨停了。]
 

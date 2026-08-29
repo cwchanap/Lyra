@@ -2470,11 +2470,7 @@ describe("compile (tracked production corpus compatibility)", () => {
             { kind: "assertFact", factId: "earlier_external_entry_exists" },
           ],
         },
-        groups: [
-          { id: "miyake_small_lies" },
-          { id: "earlier_third_party" },
-          { id: "lock_chronology" },
-        ],
+        groups: [{ id: "miyake_small_lies" }, { id: "earlier_third_party" }],
       });
       expect(
         analysis.boards[0].common.cards.map(
@@ -2499,31 +2495,11 @@ describe("compile (tracked production corpus compatibility)", () => {
           id: "external_credential_event",
           source: { kind: "evidence", id: "external_maintenance_credential" },
         },
-        {
-          id: "event_1841",
-          source: { kind: "evidence", id: "local_sequence_record" },
-        },
-        {
-          id: "event_1842",
-          source: { kind: "evidence", id: "local_sequence_record" },
-        },
-        {
-          id: "event_1843",
-          source: { kind: "evidence", id: "local_sequence_record" },
-        },
-        {
-          id: "event_1844",
-          source: { kind: "evidence", id: "local_sequence_record" },
-        },
       ]);
       expect(analysis.boards[0].acceptedGroupByCard).toEqual({
         miyake_call: "miyake_small_lies",
         miyake_pov_replay: "earlier_third_party",
         external_credential_event: "earlier_third_party",
-        event_1841: "lock_chronology",
-        event_1842: "lock_chronology",
-        event_1843: "lock_chronology",
-        event_1844: "lock_chronology",
       });
 
       expect(analysis.boards[1]).toMatchObject({
@@ -2637,13 +2613,15 @@ describe("compile (tracked production corpus compatibility)", () => {
       const p4 = interrogation.phases.find(
         (phase: { id: string }) => phase.id === "p4",
       );
-      const p2 = interrogation.phases.find(
-        (phase: { id: string }) => phase.id === "p2",
+      const p1 = interrogation.phases.find(
+        (phase: { id: string }) => phase.id === "p1",
       );
-      const p2CorrectLine = p2.questions[0].testimony.lines.find(
-        (line: { id: string }) => line.id === "summary_death_after_miyake",
-      );
-      expect(p2CorrectLine.onCorrect[0].text).toBe(
+      const p1CorrectLine = p1.questions
+        .find((question: { id: string }) => question.id === "q_p2")
+        .testimony.lines.find(
+          (line: { id: string }) => line.id === "summary_death_after_miyake",
+        );
+      expect(p1CorrectLine.onCorrect[0].text).toBe(
         "手機通知與後場紀錄顯示衝突早於摘要；摘要的主時間線不成立。",
       );
       expect(gate).toMatchObject({
@@ -2652,7 +2630,7 @@ describe("compile (tracked production corpus compatibility)", () => {
         representedAuthority: "KAGAMI 證據摘要審查會主理",
         unlock: {
           op: "and",
-          left: { predicate: "phase_completed", id: "p3" },
+          left: { predicate: "phase_completed", id: "p1" },
           right: {
             predicate: "objective_completed",
             id: "prepare_narrow_lock_request",
