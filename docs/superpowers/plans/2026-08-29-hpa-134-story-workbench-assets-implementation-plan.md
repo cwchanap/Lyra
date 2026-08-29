@@ -2,27 +2,28 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a read-only Assets mode to Lyra Story Workbench that projects current compiler scene cues, generated manifest data, canonical character/audio config, file presence, and cross-scene usage into an author-facing inspection workflow.
+**Goal:** Add a read-only Assets mode to Lyra Story Workbench that projects current compiler scene cues, generated manifest data, compiler-normalized character/audio config, file presence, and cross-scene usage into one author-facing inspection workflow.
 
-**Architecture:** Add one fixed-domain `load_asset_workspace` Tauri read command that reuses the current manifest scene resolver/public Analysis sanitizer and returns existing compiler outputs plus fixed canonical config sources. Keep cue ordering, prompt/source joins, usage aggregation, character grouping, and diagnostics in one pure TypeScript `asset-workspace.ts` projection. Render the projection in a single `AssetsView.svelte` and make `App.svelte` explicitly support `reader | assets | stage` without refactoring the working Reader cache or Stage store.
+**Architecture:** Add one fixed-domain `load_asset_workspace` Tauri read command that reuses the current Workbench manifest resolver/public Analysis sanitizer. Extract browser-safe character/audio normalization and portrait identity from the existing compiler owners rather than adding editor copies. Keep cue ordering, carrier completeness, prompt/source joins, usage aggregation, character grouping, and diagnostics in one pure TypeScript `asset-workspace.ts` projection, rendered by one `AssetsView.svelte` under an explicit `reader | assets | stage` mode.
 
-**Tech Stack:** Tauri 2/Rust, Svelte 5, TypeScript 5.6, existing `@lyra/scripts` compiler types, existing `@lyra/asset-paths`, existing `yaml` package, Vitest/Testing Library, Cargo tests.
+**Tech Stack:** Tauri 2/Rust, Svelte 5, TypeScript 5.6, existing `@lyra/scripts` compiler modules/types, existing `@lyra/asset-paths`, Vitest/Testing Library, Cargo tests.
 
 **Spec:** `docs/superpowers/specs/2026-08-29-hpa-134-story-workbench-assets-design.md`
 
 ## Global Constraints
 
-- [ ] Keep HPA-134 as **one ticket and one PR**. Continue implementation on `agent/hpa-134-story-workbench-assets-plan`; do not split backend/UI/projection into separate PRs.
-- [ ] Keep canonical Markdown, `characters.yaml`, `audio.yaml`, `policy.yaml`, layout sidecars, compiler outputs, and generated asset manifest/report as the only sources of truth.
-- [ ] Do not add a prompt DB, asset DB, checked-in Workbench manifest, generated `assets-workbench.json`, DAM framework, watcher, polling loop, or asset-generation provider.
-- [ ] Do not add arbitrary-path Tauri commands. `load_asset_workspace` takes no workspace path and resolves fixed roots through the current Workbench boundary.
-- [ ] Do not widen public Analysis data to hidden answers/progression metadata. Reuse `load_scene_bundle_at_root()`/the existing sanitizer when assembling the Assets scene snapshot.
-- [ ] Do not refactor the Reader cache/state architecture merely to share scene bundles with Assets. Assets owns a separate read-only snapshot.
-- [ ] Do not add an OS file-opener/shell plugin. HPA-134 copies prompt/source references; HPA-135 owns source-edit/navigation workflow.
-- [ ] Do not browse catalog-only SFX. Only referenced BGM/BGS belongs in this slice.
-- [ ] Do not infer new asset validity rules. Surface compiler `report.json`, explicit file presence, and failed manifest/config joins only.
-- [ ] Do not hard-code Chapter 1 asset IDs/expressions/BGM values; active content PRs must flow through the current manifest/YAML dynamically.
-- [ ] Preserve HPA-634 Reader/Stage behavior and all existing tests while adding the third mode.
+- [ ] Keep HPA-134 as **one ticket and one PR**. Continue implementation on `agent/hpa-134-story-workbench-assets-plan`.
+- [ ] Keep authored Markdown/YAML/layout sidecars plus existing compiler outputs as the only sources of truth.
+- [ ] Do not add a prompt DB, asset DB, checked-in Workbench manifest, generated `assets-workbench.json`, DAM, watcher, polling loop, or generation provider.
+- [ ] Do not add arbitrary-path Tauri commands. `load_asset_workspace` takes no workspace path.
+- [ ] Do not widen public Analysis data to hidden answers/progression metadata.
+- [ ] Do not refactor Reader cache/state merely to share scene bundles with Assets. Assets owns its own snapshot.
+- [ ] Do not add an OS file-opener/shell plugin. HPA-134 copies prompt/source references; HPA-135 owns write/navigation workflow.
+- [ ] Do not browse catalog-only SFX.
+- [ ] Do not infer new asset validity/approval rules.
+- [ ] Do not hard-code production Chapter 1 asset IDs, expression IDs, or audio IDs.
+- [ ] Do not add `yaml` to `apps/layout-editor`; reuse compiler-owned browser-safe parsing/normalization.
+- [ ] Preserve HPA-634 Reader/Stage behavior and current public Analysis sanitizer.
 
 ---
 
@@ -36,7 +37,7 @@
 
 **Interfaces:**
 
-Add the frontend contract:
+Add:
 
 ```ts
 export type WorkbenchTextSource = {
@@ -63,22 +64,22 @@ export type WorkbenchAssetWorkspacePayload = {
 };
 ```
 
-Use type-only imports for the existing compiler `AssetManifest` and `AssetReport` contracts. Do not duplicate their TypeScript shapes.
+Use type-only imports for compiler `AssetManifest` / `AssetReport`; do not duplicate those shapes.
 
-Add the frontend call:
+Frontend command:
 
 ```ts
 export const loadAssetWorkspace = () =>
   invoke<WorkbenchAssetWorkspacePayload>("load_asset_workspace");
 ```
 
-Add one Rust command:
+Rust command:
 
 ```text
 load_asset_workspace
 ```
 
-with fixed constants for:
+Fixed roots:
 
 ```text
 apps/game/src-tauri/resources/assets/manifest.json
@@ -90,20 +91,15 @@ static/assets
 
 **Steps:**
 
-- [ ] In the existing Rust test module, write a failing fixture test that creates a minimal Workbench repository with:
-  - chapter manifest + compiled linear scene;
-  - generated asset manifest/report JSON;
-  - characters/audio YAML;
-  - one present static asset file.
-- [ ] Assert the future snapshot preserves chapter/scene manifest order, source path, generated manifest/report values, config source path/content, and the present repo-relative static asset path.
-- [ ] Add a failing Rust test with an Analysis scene containing hidden accepted-answer fields. Assert the Assets scene snapshot contains exactly the same sanitized public Analysis shape as `load_scene_bundle_at_root()`.
-- [ ] Add failing tests for missing generated `manifest.json` and `report.json`; require stable domain error codes/messages that tell the developer the compiler output is missing rather than falling back to filesystem discovery.
-- [ ] Add a failing test that the file walker reports regular files only and never walks outside the fixed `static/assets` root.
-- [ ] Implement small JSON/source helpers in `lib.rs`; reuse existing `workspace_root`, `load_manifest_chapters`, and `load_scene_bundle_at_root` instead of resolving scene paths again.
-- [ ] Enumerate public scene payloads in chapter-manifest order. Do not deserialize/re-emit private Analysis JSON separately.
-- [ ] Recursively list only regular files beneath `static/assets`, normalize the returned paths to repo-relative forward-slash strings, and sort them deterministically.
-- [ ] Register `load_asset_workspace` in the existing Tauri invoke handler.
-- [ ] Add the TypeScript payload types and API wrapper.
+- [ ] Write `asset_workspace_snapshot_preserves_manifest_order_and_sources` in the existing Rust test module. Fixture: one chapter, one compiled linear scene, generated manifest/report, characters/audio YAML, one static asset. Expected: manifest order, scene source path, config text/path, and repo-relative present file survive exactly.
+- [ ] Run the focused Rust test and confirm it fails because the command/helper does not exist yet.
+- [ ] Write `asset_workspace_reuses_public_analysis_sanitizer`: fixture private Analysis JSON includes accepted answers/threshold/progression fields; expected snapshot equals `load_scene_bundle_at_root()` public shape and omits those fields.
+- [ ] Write `asset_workspace_requires_generated_manifest_and_report` for missing `manifest.json` and missing `report.json`; require stable domain errors that tell the developer to compile scenes rather than scanning loose files.
+- [ ] Write `asset_workspace_file_presence_stays_under_static_assets`: only regular files under fixed `static/assets` appear, normalized to forward-slash repo-relative paths.
+- [ ] Implement `load_asset_workspace_at_root(root)` using existing `load_manifest_chapters()` and `load_scene_bundle_at_root()`; do not re-resolve scene paths.
+- [ ] Add fixed-file JSON/text readers and deterministic regular-file enumeration under `static/assets`.
+- [ ] Register `load_asset_workspace` in the Tauri invoke handler.
+- [ ] Add frontend types/API wrapper.
 - [ ] Run:
 
 ```text
@@ -119,16 +115,65 @@ feat(editor): expose assets workspace snapshot
 
 ---
 
-## Task 2: Build the pure asset/config/usage projection
+## Task 2: Extract compiler-owned catalog/identity helpers and build base asset projection
 
 **Files:**
 
+- Create: `packages/scripts/compile-scenes/assets/config-catalog.ts`
+- Create: `packages/scripts/compile-scenes/assets/config-catalog.test.ts`
+- Create: `packages/scripts/compile-scenes/assets/identity.ts`
+- Modify: `packages/scripts/compile-scenes/assets/config.ts`
+- Modify: `packages/scripts/compile-scenes/assets/config.test.ts`
+- Modify: `packages/scripts/compile-scenes/assets/enrich.ts`
+- Modify: `packages/scripts/compile-scenes/assets/enrich.test.ts`
 - Create: `apps/layout-editor/src/lib/asset-workspace.ts`
 - Create: `apps/layout-editor/src/lib/asset-workspace.test.ts`
-- Modify: `apps/layout-editor/package.json`
-- Modify: `bun.lock`
 
-**Core API:**
+Do **not** modify `apps/layout-editor/package.json` or `bun.lock` for YAML parsing.
+
+**Compiler reuse interfaces:**
+
+The browser-safe compiler module must expose text readers equivalent to:
+
+```ts
+export function parseCharactersYamlText(
+  text: string,
+  sourceFile: string,
+): CatalogReadResult<CharacterCatalog>;
+
+export function parseAudioYamlText(
+  text: string,
+  sourceFile: string,
+): CatalogReadResult<AudioCatalog>;
+```
+
+The exact catalog collection shape can be chosen to minimize churn, but it must preserve compiler normalization used by the Workbench:
+
+```text
+displayNames trimming/flattening
+portraitMode default
+visualPrompt/referenceAssetId normalization
+expression ID + prompt map
+audio channel maps
+audio loop default true
+```
+
+Keep compiler validity policy in `loadAssetConfig()`/its compiler validation path. The Workbench must not independently enforce required `standard`, slug, duplicate-ID/display-name, or enabled-policy rules.
+
+Identity helper:
+
+```ts
+export function portraitAssetId(
+  characterId: string,
+  expression: string,
+): string;
+```
+
+Update compiler `registerPortraitRef()` to use that helper so the editor cannot drift from compiler identity spelling.
+
+Do not replace this with `packages/scripts/audio/audio-catalog.ts`; that parser has stricter `loop` semantics than compile-scenes.
+
+**Editor API:**
 
 ```ts
 export function projectAssetWorkspace(
@@ -136,140 +181,127 @@ export function projectAssetWorkspace(
 ): AssetWorkspace;
 ```
 
-Keep the author-facing model local to `asset-workspace.ts` unless another component truly consumes a type. Do not add a generic shared asset-schema package.
-
-**Projection responsibilities:**
-
-```text
-payload.manifest
-+ payload.report
-+ characters.yaml
-+ audio.yaml
-+ public compiler scene payloads
-+ existingAssetPaths
-        ↓
-AssetWorkspace {
-  assets
-  assetsById
-  sceneCuesByKey
-  characters
-  diagnostics
-}
-```
-
 **Steps:**
 
-- [ ] Add `yaml` to `apps/layout-editor` dependencies using the repository's existing major/version line. Update `bun.lock`; do not add a new YAML library.
-- [ ] Write a failing test for a tiny `characters.yaml` projection containing:
-  - one `portraitMode: portrait` character;
+- [ ] Write `shared_character_catalog_normalization_matches_compiler` using aliases in `displayNames`, `portraitMode: none`, multiple expressions, and nullable identity fields. It must fail before extraction and preserve current compiler behavior after extraction.
+- [ ] Write `shared_audio_catalog_defaults_missing_loop_to_true` with BGM/BGS/SFX. This pins compile-scenes behavior and prevents accidental adoption of the stricter sound-plan catalog parser.
+- [ ] Write `shared_catalog_reports_yaml_parse_failure_without_node_fs` against malformed text; the new module must import `yaml` but no `node:fs`/`node:path`.
+- [ ] Refactor `loadAssetConfig()` to read files as it does today and feed text into the extracted pure normalizers. Keep existing compiler diagnostics/tests green; do not move policy authority into the editor.
+- [ ] Write `portrait_asset_identity_has_one_owner`; update `enrich.ts` to call `portraitAssetId()` and preserve existing emitted IDs.
+- [ ] Run focused script tests plus strict script typecheck:
+
+```text
+bun run test:scripts -- config-catalog config enrich
+bun run check:scripts
+```
+
+- [ ] Write editor `configured_unused_expression_uses_compiler_identity_and_paths`:
+  - one portrait-bearing character;
   - two configured expressions;
-  - only one expression referenced by scenes;
-  - one matching portrait file present.
-  Assert both expressions are shown, the unused one has `0` usages, and file presence follows expected paths rather than manifest membership.
-- [ ] Write a failing audio-config test with BGM, BGS, and SFX. Assert only referenced BGM/BGS become HPA-134 library/audio config items and SFX is excluded.
-- [ ] Implement narrow YAML read projection helpers. Treat compiler validation as authoritative; if YAML cannot be read into the expected top-level projection, return a Workbench projection diagnostic/error instead of introducing validation policy.
-- [ ] Write failing manifest-join tests that assert:
-  - manifest prompt parts/final prompt are preserved byte-for-byte as data;
-  - expected/public paths are not recomputed for referenced manifest assets;
-  - manifest `source` metadata is preserved;
-  - file presence comes from `existingAssetPaths`;
-  - compiler `report.json` warnings remain visible.
-- [ ] Implement `WorkbenchAssetKind` mapping for `background`, `portrait`, `standee`, `evidence`, `bgm`, and `bgs`; explicitly filter SFX.
-- [ ] Implement part-specific canonical prompt-source references:
-  - global/type -> `static/assets/config/policy.yaml`;
-  - portrait/standee -> `static/assets/config/characters.yaml`;
-  - BGM/BGS -> `static/assets/config/audio.yaml`;
-  - scene background/evidence entry prompt -> scene `sourcePath` from manifest source chapter/scene;
-  - usage source -> that scene's `sourcePath` plus carrier label/ID.
-- [ ] Use `@lyra/asset-paths` only for configured portrait-expression expected paths that do not necessarily exist in the referenced manifest.
+  - one referenced expression;
+  - one file present.
+  Assert both expressions appear, unused expression has `0 usages`, `portraitAssetId()` owns its ID, and `expectedPath()` / `publicPath()` from compiler `manifest.ts` own its paths.
+- [ ] Write `referenced_manifest_fields_are_not_recomputed`: prompt parts, final prompt, expected path, public path, and source metadata remain exactly the generated manifest values.
+- [ ] Write `audio_library_joins_by_manifest_source_channel_and_id`: BGM/BGS config short IDs join through `manifest.source.channel` + `manifest.source.id`; SFX is excluded using `source.channel === "sfx"`; no `audio.${channel}.${id}` reconstruction exists in editor code.
+- [ ] Write `yaml_parse_failure_is_workbench_read_diagnostic`: malformed characters/audio text becomes an explicit read diagnostic, while compiler validity policy is not duplicated.
+- [ ] Implement the base `AssetWorkspace` projection and canonical prompt-source references.
+- [ ] Verify `apps/layout-editor/package.json` has no new `yaml` dependency.
 - [ ] Run:
 
 ```text
 bun run --cwd apps/layout-editor test -- asset-workspace.test.ts
 bun run --cwd apps/layout-editor check
+bun run check:scripts
 ```
 
 - [ ] Commit:
 
 ```text
-feat(editor): project asset catalog and config sources
+refactor(assets): share compiler catalog and identity owners
 ```
 
 ---
 
-## Task 3: Project ordered scene cues across all public scene types
+## Task 3: Project ordered cues with compiler/Reader carrier completeness
 
 **Files:**
 
 - Modify: `apps/layout-editor/src/lib/asset-workspace.ts`
 - Modify: `apps/layout-editor/src/lib/asset-workspace.test.ts`
+- Modify: `apps/layout-editor/src/lib/reader-projection.ts` only if a tiny exported carrier helper must move without behavior change
+- Modify: `apps/layout-editor/src/lib/reader-projection.test.ts` only if that helper moves
 
-**Cue contract:**
+**Reuse contracts:**
 
-Keep a narrow discriminated presentation model that can represent:
+```ts
+import { deriveDialogueSegments } from
+  "@lyra/scripts/compile-scenes/dialogue-segment-origins";
+import { readerSegmentId } from "./reader-projection";
+```
 
-- structural visual/background cue;
-- BGM/BGS `set | stop | inherit`;
-- portrait/expression occurrence;
-- evidence image occurrence;
-- investigation sprite/standee occurrence.
+For linear/investigation/interrogation, Assets must not invent dialogue carrier spellings.
 
-Do not add duration/timeline coordinates.
+Recommended local safety helper:
+
+```ts
+class AssetSegmentPool {
+  take(carrierId: string): JSONDialogueItem[];
+  assertAssetBearingFullyConsumed(): void;
+}
+```
+
+Seed it from `deriveDialogueSegments({ chapterId, json: scene })`; canonical keys come from `readerSegmentId(segment.origin)`. Track all derived segments, but the final completeness failure is required for any unconsumed segment containing a resolved portrait or `sceneTag.assetCue`.
+
+Public Analysis is intentionally different: walk only `intro`, `board:<id>:result`, `outro` using the same carrier spelling Reader exposes. Do not cast it to private `JSONAnalysisScene`.
 
 **Steps:**
 
-- [ ] Write a failing linear-scene test with multiple `sceneTag` cues and alternating line portraits. Assert visual cues and portrait occurrences preserve authored/compiled queue order.
-- [ ] Add a regression that consecutive identical portrait state may collapse in the **scene cue display** while the global usage index retains concrete dialogue occurrences/counts.
-- [ ] Write a failing audio-delta test proving all three compiler states:
+- [ ] Write `linear_asset_cues_follow_main_carrier_and_item_order` with multiple scene tags and portrait lines. Expect carrier `main` and exact item order.
+- [ ] Write `asset_usage_keeps_concrete_portrait_occurrences_when_display_collapses_state`: Scene-cue display may collapse consecutive identical portrait state; usage index keeps each concrete line occurrence.
+- [ ] Write `audio_delta_preserves_inherit_stop_set` for BGM and BGS:
 
 ```text
-null cue field          -> Inherit
-{ assetId: null }       -> Stop
-{ assetId: concrete }   -> Set
+null                  -> Inherit
+{ assetId: null }     -> Stop
+{ assetId: concrete } -> Set
 ```
 
-for both BGM and BGS.
-- [ ] Write a failing investigation test that orders:
-  - intro dialogue assets;
-  - sublocation structural background/BGM/BGS cue;
-  - transition/hotspot/topic dialogue assets;
-  - sprite/standee usage;
-  - evidence image;
-  - evidence/statement branch dialogue assets;
-  - outro assets.
-- [ ] Write a failing interrogation test that orders:
-  - intro;
-  - phase structural cue;
-  - subject portrait;
-  - entry/question/testimony dialogue assets;
-  - branch/evidence assets;
-  - outro.
-- [ ] Write a failing Analysis test using `PublicAnalysisScene`, not `JSONAnalysisScene`, and assert only intro/result/outro public dialogue is traversed. Do not cast in hidden accepted answers to make the test pass.
-- [ ] Implement one scene-type switch with exhaustive `assertNever` behavior, mirroring Reader's compiler-typed projection style.
-- [ ] Implement usage aggregation with a stable dedupe key containing chapter, scene, carrier, role, and item occurrence where meaningful.
-- [ ] Add a failing test where a scene usage references an asset ID absent from the generated manifest; assert the usage remains visible with an unresolved-manifest diagnostic rather than disappearing.
-- [ ] Run:
+- [ ] Write `investigation_assets_use_reader_carrier_ids` covering intro, sublocation transition, hotspot inspect/reexamine, topic dialogue/reexamine, evidence/statement branches, and outro. Expected carrier IDs must match `readerSegmentId(deriveDialogueSegments(...).origin)`.
+- [ ] Write `interrogation_assets_use_reader_carrier_ids` covering intro, phase entry, question-level testimony carriers, line content/challenge/correct/wrong carriers, inventory branches, and outro.
+- [ ] Write `new_asset_bearing_dialogue_carrier_cannot_be_silently_dropped`: leave one derived asset-bearing segment untaken in a fixture/helper test and require `assertAssetBearingFullyConsumed()` to throw a stable projection error. Then prove the real scene-type projection fully consumes every asset-bearing derived segment.
+- [ ] Write `non_asset_dialogue_segment_does_not_require_usage` so plain text-only dialogue does not manufacture empty asset rows merely to satisfy completeness.
+- [ ] Write explicit non-dialogue coverage tests:
+  - `investigation_structural_cues_are_projected` for sublocation background/BGM/BGS;
+  - `interrogation_structural_cues_and_subject_portrait_are_projected`;
+  - `evidence_image_usage_is_projected`;
+  - `sprite_layout_uses_manifest_asset_type` with standee, portrait, evidence, and background sprite IDs;
+  - `baked_layout_has_no_sprite_asset_usage`.
+- [ ] Write `public_analysis_assets_walk_only_intro_result_outro`: use `PublicAnalysisScene`; assert `intro`, `board:<id>:result`, `outro` and no hidden answer/progression dependency.
+- [ ] Write `unresolved_manifest_usage_remains_visible`: an asset occurrence absent from manifest remains in scene cues/usages with an unresolved diagnostic.
+- [ ] Implement the scene-type walk using the segment pool for dialogue and typed structural handling for non-dialogue asset fields.
+- [ ] Implement deterministic usage dedupe by chapter + scene + carrier + role + concrete item index where applicable.
+- [ ] Run the risk-owning tests, not just ordering examples:
 
 ```text
-bun run --cwd apps/layout-editor test -- asset-workspace.test.ts
+bun run --cwd apps/layout-editor test -- asset-workspace.test.ts reader-projection.test.ts
 bun run --cwd apps/layout-editor check
 ```
 
 - [ ] Commit:
 
 ```text
-feat(editor): project ordered scene asset cues
+feat(editor): project complete ordered asset cues
 ```
 
 ---
 
-## Task 4: Implement the Assets view — Scene cues and Library
+## Task 4: Implement AssetsView Scene cues + Library
 
 **Files:**
 
 - Create: `apps/layout-editor/src/lib/AssetsView.svelte`
 - Create: `apps/layout-editor/src/lib/AssetsView.test.ts`
-- Modify: `apps/layout-editor/src/lib/asset-workspace.ts` only if a presentation helper is genuinely shared/testable
+- Modify: `apps/layout-editor/src/lib/asset-workspace.ts` only for genuinely shared presentation helpers
 
 **Component API:**
 
@@ -285,56 +317,31 @@ let {
 } = $props();
 ```
 
-`AssetsView` owns its read-only snapshot load/Refresh state through `loadAssetWorkspace()` and `projectAssetWorkspace()`.
+`AssetsView` owns its snapshot load/Refresh state through `loadAssetWorkspace()` + `projectAssetWorkspace()`.
 
 **Steps:**
 
-- [ ] Mock `loadAssetWorkspace()` in a failing component test and assert the first mount renders a loading state then the selected scene's ordered cue rows.
-- [ ] Add a failing test for the three local tabs/sections:
-
-```text
-Scene cues | Library | Characters
-```
-
-The test only needs stable accessible labels; do not build a routing abstraction.
-- [ ] Implement **Scene cues** rows with:
-  - carrier label;
-  - background thumbnail when the referenced file is present;
-  - explicit missing state when absent;
-  - BGM/BGS `Set`, `Stop`, `Inherit` labels;
-  - portrait character/expression changes;
-  - evidence image refs;
-  - source reference;
-  - clickable asset IDs/thumbnails that switch to Library and select the asset.
-- [ ] Add a failing Library filter test for asset kind + search by ID/path.
-- [ ] Implement referenced-asset browser from projected manifest entries only. `existingAssetPaths` must never cause loose files to appear as browser assets.
-- [ ] Add a failing inspector test that asserts exact display of:
-  - asset ID/kind;
-  - expected/public path;
-  - manifest source metadata;
-  - four prompt parts;
-  - final prompt;
-  - present/missing state;
-  - grouped usage count/list;
-  - relevant existing diagnostics.
-- [ ] Implement image preview for background/portrait/standee/evidence using manifest `publicPath` only when `present` is true.
-- [ ] Implement BGM/BGS audition using native `<audio controls>` only when present; no new audio manager.
-- [ ] Add clipboard-boundary tests and implement:
-  - `Copy prompt` for `finalPrompt`;
-  - `Copy source` for canonical source path/reference.
-  Use `navigator.clipboard`; keep failures visible to the developer instead of silently claiming success.
-- [ ] Add a failing usage-navigation test; clicking a usage calls `onSelectScene(chapterId, sceneId)`. Do not implement deep source-line navigation.
+- [ ] Write mount/loading test and assert the selected scene's ordered cue rows render after the snapshot resolves.
+- [ ] Write accessible section-switch test for exactly `Scene cues | Library | Characters`; do not add routing.
+- [ ] Implement Scene cues with carrier label/ID, background preview/missing state, BGM/BGS Set/Stop/Inherit, portrait/expression, evidence refs, sprite usages, and source reference.
+- [ ] Make asset IDs/previews select the corresponding Library item.
+- [ ] Write Library kind/search filters. Library entries come from projected manifest entries only; `existingAssetPaths` never populates loose browser rows.
+- [ ] Write inspector test for exact asset ID/kind, manifest expected/public path, manifest source, four prompt parts, final prompt, presence, usages, and diagnostics.
+- [ ] Implement image preview using manifest `publicPath` only when present.
+- [ ] Implement referenced BGM/BGS audition with native `<audio controls>` only; no audio manager.
+- [ ] Write clipboard-boundary tests and implement `Copy prompt` / `Copy source` using `navigator.clipboard`, with visible failure state.
+- [ ] Write usage-navigation test; selecting usage calls `onSelectScene(chapterId, sceneId)` only.
 - [ ] Run:
 
 ```text
-bun run --cwd apps/layout-editor test -- AssetsView.test.ts
+bun run --cwd apps/layout-editor test -- AssetsView.test.ts asset-workspace.test.ts
 bun run --cwd apps/layout-editor check
 ```
 
 - [ ] Commit:
 
 ```text
-feat(editor): add scene asset browser and inspector
+feat(editor): add asset scene browser and inspector
 ```
 
 ---
@@ -350,20 +357,13 @@ feat(editor): add scene asset browser and inspector
 
 **Steps:**
 
-- [ ] Add a failing Characters-view test with one portrait-bearing character and one `portraitMode: none` character. Assert only the portrait-bearing character gets an expression grid.
-- [ ] Implement character identity display with:
-  - character ID/display names;
-  - `visualPrompt`;
-  - configured expression IDs/prompts;
-  - expected/public portrait path;
-  - present/missing state;
-  - usage count + grouped scene usages;
-  - related standee usages where present.
-- [ ] Add a regression proving an unused configured expression is neutral (`0 usages`), not a warning/error.
-- [ ] Add a failing diagnostics test that renders existing compiler report warnings and unresolved manifest joins without inventing an approval/status field.
-- [ ] Add a failing Refresh race test with two deferred `loadAssetWorkspace()` promises. Resolve the newer response first and the older response last; assert the older response cannot overwrite the newer projected workspace.
-- [ ] Implement one component-local load generation counter. Increment/invalidate it on each Refresh and on destroy. Do not add polling/watchers.
-- [ ] Ensure Refresh rereads the snapshot only; it never runs `scenes:compile`, `audio:validate`, or generators from the UI.
+- [ ] Write Characters test with one `portraitMode: portrait` and one `portraitMode: none`; only the portrait-bearing character gets an expression grid.
+- [ ] Implement character identity/displayNames/visualPrompt and each normalized expression with compiler-owned portrait ID/path, present/missing state, usage count, grouped scene usages, and related sprite usages where applicable.
+- [ ] Add regression: configured-but-unused expression is `0 usages`, never a warning/error.
+- [ ] Add diagnostics test for compiler report warnings, missing files, unresolved manifest joins, and shared YAML read failures; no approval/status model is introduced.
+- [ ] Add Refresh race test using two deferred `loadAssetWorkspace()` promises; resolve newer first and older last; older result must not overwrite current projected workspace.
+- [ ] Implement one component-local load generation counter invalidated on each Refresh and destroy. No watcher/polling.
+- [ ] Confirm Refresh rereads snapshot only; it never compiles scenes or runs audio/generation commands from UI.
 - [ ] Run:
 
 ```text
@@ -379,34 +379,30 @@ feat(editor): add character assets and diagnostics
 
 ---
 
-## Task 6: Integrate `Reader | Assets | Stage` without regressing HPA-634
+## Task 6: Integrate explicit Reader | Assets | Stage mode ownership
 
 **Files:**
 
 - Modify: `apps/layout-editor/src/App.svelte`
 - Modify: `apps/layout-editor/src/App.test.ts`
 
-**Required shell behavior:**
+**Required type:**
 
 ```ts
 type WorkbenchMode = "reader" | "assets" | "stage";
 ```
 
-Do not keep the current assumption that every non-Reader mode is Stage.
-
 **Steps:**
 
-- [ ] Write a failing App test asserting the mode bar exposes `Reader`, `Assets`, and `Stage`, with Reader still default.
-- [ ] Write a failing test that selecting a scene in Assets updates selection but does **not** call investigation Stage loading and does not call Reader scene loading from `App.svelte`.
-- [ ] Write a failing Reader race regression: start a Reader load, switch to Assets, load/select another scene there, then resolve the old Reader load. Assert the old Reader request cannot write the shared Reader bundle cache. Generalize the existing cache epoch rule from “leaving Reader for Stage” to “leaving Reader for any non-Reader mode.”
-- [ ] Write a failing Assets -> Stage test:
-  - if current selection is investigation, Stage loads that scene;
-  - if current selection is non-investigation, Stage clears and renders its existing placeholder.
-- [ ] Implement explicit `setMode()` and `selectScene()` branches for all three modes. Do not extract a new state machine/store.
-- [ ] Render `AssetsView` only when `mode === "assets"` and pass the current selection plus a callback that reuses the normal scene-selection path.
-- [ ] Preserve Reader current-scene/whole-chapter controls only in Reader and Save Layout only in Stage.
-- [ ] Keep sidebar sublocations gated on Stage exactly as HPA-634 fixed them.
-- [ ] Run the complete editor tests:
+- [ ] Write mode-bar test: Reader, Assets, Stage are exposed; Reader remains default.
+- [ ] Write Assets selection isolation test: selecting a scene in Assets changes selection but does not call Stage investigation loading and does not start a Reader load from `App.svelte`.
+- [ ] Write Reader race regression: start Reader load, switch to Assets, then resolve old Reader load. It must not write Reader shared cache after mode ownership changed. Generalize HPA-634's epoch rule from leaving Reader for Stage to leaving Reader for any non-Reader mode.
+- [ ] Write Assets -> Stage behavior test: investigation selection loads Stage; non-investigation selection clears Stage and keeps the existing placeholder behavior.
+- [ ] Implement explicit branches in `setMode()` and `selectScene()`; do not extract a state-machine/store framework.
+- [ ] Render `AssetsView` only for `mode === "assets"`.
+- [ ] Preserve Reader-only scope/filter/Refresh controls and Stage-only Save Layout controls.
+- [ ] Preserve sidebar sublocation gating exactly under Stage.
+- [ ] Run full editor suite:
 
 ```text
 bun run --cwd apps/layout-editor test
@@ -421,27 +417,29 @@ feat(editor): integrate Story Workbench assets mode
 
 ---
 
-## Task 7: Verify real compiler/config integration and finish the single PR
+## Task 7: Real-corpus verification and single-PR closeout
 
 **Files:**
 
-- Modify planning docs only if implementation reveals a factual mismatch that must be recorded:
-  - `docs/superpowers/specs/2026-08-29-hpa-134-story-workbench-assets-design.md`
-  - `docs/superpowers/plans/2026-08-29-hpa-134-story-workbench-assets-implementation-plan.md`
+- Modify the two HPA-134 planning docs only if implementation uncovers a factual mismatch that must be recorded.
+- Update the existing draft PR body with actual verification results.
 
-Do not add a new planning document or split the PR.
+**Required automated gates:**
 
-**Steps:**
-
-- [ ] Run the HPA-134 required compiler/content gates first so Assets mode is tested against fresh generated artifacts:
+- [ ] Generate fresh compiler outputs:
 
 ```text
 bun run scenes:compile
-bun run background-cues:audit
-bun run audio:validate
 ```
 
-- [ ] Run direct developer-tool suites:
+- [ ] Run compiler/script ownership checks because Task 2 modifies compiler modules:
+
+```text
+bun run check:scripts
+bun run test:scripts
+```
+
+- [ ] Run complete developer-tool tests:
 
 ```text
 bun run --cwd apps/layout-editor test
@@ -449,52 +447,59 @@ cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run editor:check
 ```
 
-- [ ] Build the actual Workbench app and confirm static `/assets/...` previews/audio are packaged through the existing `publicDir` path:
+- [ ] Build the Workbench app:
 
 ```text
 bun run editor:build
 ```
 
-- [ ] Run the broader repository gates required by the ticket:
+- [ ] Run repository formatting/lint/Rust gates:
 
 ```text
-bun run test:scripts
 bun run lint:all
 ```
 
-- [ ] Manually launch the developer Workbench against the freshly compiled current Chapter 1 corpus and verify:
-  - one linear scene;
-  - one investigation scene;
-  - one interrogation scene;
-  - one Analysis scene;
-  - at least one present background;
-  - at least one missing asset if current compiler report contains one;
-  - BGM or BGS `Set`, `Stop`, and `Inherit` states where current content exercises them;
-  - portrait expression grouping from `characters.yaml`;
-  - a cross-scene reused asset usage list.
-- [ ] If current content does not naturally exercise one presentation state, rely on the focused fixture test instead of changing story content merely for UI coverage.
-- [ ] Review `git diff main...HEAD` and confirm the PR contains HPA-134 only: no Plan mode, no source editing, no AI, no Chapter 2 framework, no prompt generator.
-- [ ] Update the existing draft PR body with the final verification results; keep the same PR rather than opening a separate implementation PR.
-- [ ] Final implementation commit, only if verification/doc corrections produced changes:
+`bun run audio:validate` is deliberately absent: it requires `<plan.yaml>` and HPA-134 does not modify sound plans.
 
-```text
-docs: finalize HPA-134 assets verification
-```
+`bun run background-cues:audit` is optional corpus smoke only. If run, record it separately; it is not an Assets acceptance gate and does not replace Task 3 completeness tests.
+
+**Manual real-corpus smoke:**
+
+- [ ] Launch the Workbench against freshly compiled current content.
+- [ ] Inspect one linear, one investigation, one interrogation, and one Analysis scene.
+- [ ] Verify at least one present visual asset and one present BGM/BGS when available.
+- [ ] Verify any current compiler-report missing asset renders as missing; if current corpus has none, rely on fixture coverage instead of modifying story content.
+- [ ] Verify Set/Stop/Inherit states that current corpus naturally exercises; fixture tests own absent variants.
+- [ ] Verify character grouping includes configured unused expressions as neutral 0-usage rows.
+- [ ] Verify one reused asset shows cross-scene usages when current corpus has one.
+
+**Scope review:**
+
+- [ ] Inspect `git diff main...HEAD` and confirm no Plan mode, source editing, AI, Chapter 2 framework, prompt generation, extra YAML parser, OS opener, DAM, or second manifest was added.
+- [ ] Confirm `apps/layout-editor/package.json` still has no direct `yaml` dependency.
+- [ ] Confirm `asset-workspace.ts` does not concatenate portrait IDs, audio IDs, or expected paths that have compiler owners.
+- [ ] Confirm every real asset-bearing derived dialogue segment is consumed by the projection tests.
+- [ ] Update PR #78 with actual command results and keep implementation in the same PR.
 
 ## Final self-review checklist
 
 Before marking HPA-134 ready for review:
 
-- [ ] The asset browser is driven by generated manifest entries, not a static-files scan.
-- [ ] Existing static-file enumeration is used only for present/missing checks.
-- [ ] The selected-scene cue list follows compiled/authored order.
-- [ ] BGM/BGS `inherit`, `stop`, and `set` are visibly distinct.
-- [ ] Usage counts come from public compiler scene payloads and dedupe deterministically.
-- [ ] Analysis remains public/sanitized.
-- [ ] Manifest prompt parts/final prompt are displayed, not recomposed.
-- [ ] `characters.yaml` configured expressions include unused expressions without warning them.
-- [ ] Audio browser scope excludes SFX.
-- [ ] Missing files and failed joins are explicit.
-- [ ] Reader Refresh/cache semantics and Stage layout behavior remain intact.
-- [ ] No new persistent state, DB, status workflow, source writer, generator, or generic DAM was introduced.
+- [ ] Library is manifest-driven, not static-file-scan driven.
+- [ ] Static-file enumeration is presence-only.
+- [ ] Character/audio YAML normalization is shared from compiler code; editor has no parser/dependency copy.
+- [ ] Compiler validity policy remains compiler-owned.
+- [ ] Referenced manifest prompt/path/source values are never recomposed.
+- [ ] Configured-unused portraits use compiler-owned portrait ID + `expectedPath()` / `publicPath()`.
+- [ ] Audio kind is joined through `manifest.source.channel` / `source.id`; SFX excluded.
+- [ ] Dialogue carrier IDs come from `deriveDialogueSegments()` + `readerSegmentId()`.
+- [ ] Every asset-bearing derived dialogue carrier has a completeness assertion.
+- [ ] Structural sublocation/phase/evidence/sprite/subject assets have explicit typed tests.
+- [ ] Only sprite layouts contribute layout asset usages; baked layouts do not.
+- [ ] BGM/BGS Inherit/Stop/Set are distinct.
+- [ ] Analysis stays public/sanitized.
+- [ ] Unused configured expressions are neutral 0-use rows.
+- [ ] Missing files and failed joins are explicit without new policy.
+- [ ] Reader cache semantics and Stage behavior remain intact.
+- [ ] No new persistent state, DB, source writer, generator, generic DAM, watcher, or OS opener exists.
 - [ ] All work remains on the single HPA-134 PR.
