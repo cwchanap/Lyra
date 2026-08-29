@@ -4,6 +4,7 @@
 
 [場景：吉祥寺商店街，傍晚，雨。一家便利店的屋簷下，相馬與早坂站著避雨。屋簷邊緣的雨水一條線地落下，街上行人撐著各色的傘走過。]
 - **Background Prompt:** Kichijoji shopping street at rainy dusk under a convenience-store awning, wet pavement, passing umbrellas, muted storefront light, no readable signage.
+- **BGM:** none
 - **BGS:** bgs_shopping_street_rain_dusk
 
 **旁白**：審查會結束後，雨又下起來了。

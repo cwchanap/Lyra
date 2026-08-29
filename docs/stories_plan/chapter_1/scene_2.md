@@ -4,6 +4,7 @@
 
 [場景：早坂律師事務所，上午，雨後。窗外的天還陰著，室內安靜。桌上一台壞掉的咖啡機，旁邊放著一份攤開的案件摘要。]
 - **Background Prompt:** Hayasaka law office on a rainy morning, quiet interior, case summary papers, thermos and rice-ball bag on table, restrained emotional tension, no readable document text.
+- **BGM:** bgm_casework_day
 - **BGS:** bgs_law_office_quiet
 
 **旁白**：三宅蒼太的母親，坐在相馬對面。

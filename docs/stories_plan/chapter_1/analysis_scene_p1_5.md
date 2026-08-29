@@ -6,6 +6,8 @@
 
 [場景：文具店櫃台。相馬把剛看過的四項資料並排，店主與學生隔著櫃台安靜等著。]
 - **Background Prompt:** Interior of a small Tokyo stationery and copy shop, pale white fluorescent light, a wooden counter with a small receipt on it, an old register and a compact security monitor against the back wall, a copier humming, stacked paper reams and stationery shelves, faint rain audible through the glass door, no people, no readable text, cinematic visual-novel background, neo-noir mood.
+- **BGM:** bgm_casework_day
+- **BGS:** bgs_stationery_copy_shop
 - **Background Asset ID:** background.chapter_1.scene_p1.tag_002
 
 **相馬律**：先不用猜誰說謊。
