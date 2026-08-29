@@ -75,7 +75,13 @@ entries:
           note: 神谷宣布本輪審查暫停，摘要維持原判
         }
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg libvorbis
+      reprocessed from the existing committed OGG
+      static/assets/audio/bgm/bgm_review_board_loss.ogg because the corresponding
+      cached provider MP3 is not present in this checkout: decoded to stereo
+      44.1 kHz PCM, locally loop-normalized from source 1.16-39.7157s with a
+      2.0s triangular circular crossfade from 37.7157-39.7157s into 1.16-3.16s,
+      then given a symmetric 10 ms triangular fade-in/out to zero and encoded
+      with installed oggenc libvorbis -q 5; nominal loop is 36.5557s.
     provider: elevenlabs
     endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
     promptHash: e05578e99d03
@@ -109,7 +115,14 @@ entries:
           note: 神谷撤回三宅主嫌方向，指認北見成立
         }
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg libvorbis
+      reprocessed from the existing committed OGG
+      static/assets/audio/bgm/bgm_review_board_victory.ogg because the
+      corresponding cached provider MP3 is not present in this checkout:
+      decoded to stereo 44.1 kHz PCM, locally loop-normalized from source
+      1.09-40.1337s with a 2.0s triangular circular crossfade from 38.1337-40.1337s
+      into 1.09-3.09s, then given a symmetric 10 ms triangular fade-in/out to
+      zero and encoded with installed oggenc libvorbis -q 5; nominal loop is
+      37.0437s.
     provider: elevenlabs
     endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
     promptHash: e56f9215b0a7
@@ -157,7 +170,13 @@ entries:
           note: 雨鐘外深夜，店招燈滅，藍傘仍無主人
         }
     normalizationNotes: >-
-      converted from mp3 to ogg via ffmpeg libvorbis
+      reprocessed from the existing committed OGG
+      static/assets/audio/bgm/bgm_chapter_close.ogg because the corresponding
+      cached provider MP3 is not present in this checkout: decoded to stereo
+      44.1 kHz PCM, locally loop-normalized from source 2.76-40.0056s with a
+      2.0s triangular circular crossfade from 38.0056-40.0056s into 2.76-4.76s,
+      then given a symmetric 10 ms triangular fade-in/out to zero and encoded
+      with installed oggenc libvorbis -q 5; nominal loop is 35.2456s.
     provider: elevenlabs
     endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
     promptHash: 90e33510b6f4

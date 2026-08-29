@@ -1,45 +1,76 @@
 # Task 7 follow-up report — seamless Chapter 1 BGM loops
 
-Date: 2026-08-29
-Starting HEAD: `0c625f2aa155e23f536f83a5ca7b3d6f3c721303`
+Date: 2026-08-29  
+Original task start HEAD: `0c625f2aa155e23f536f83a5ca7b3d6f3c721303`  
+Boundary follow-up start HEAD: `9bd0ec81`  
 Branch: `codex/ch1-rhythm-audio-expression`
+
+## Scope and chronology
+
+The original implementation plan still adds exactly four new BGM OGG assets:
+`bgm_city_summary_motif`, `bgm_casework_day`, `bgm_rain_bell_daily`, and
+`bgm_breakthrough_pursuit`. Manual acceptance then exposed the same loop
+problem in the three pre-existing catalog loops. This follow-up modifies those
+three existing files only; it does not add IDs, change cues, or restore the
+removed runtime early seek.
 
 ## Root cause
 
-The browser loop flag was already enabled, but `GameplayAudioController` also
-scheduled a restart 0.5 seconds before every media boundary and repeated that
-seek from `timeupdate`. That cut tracks before their actual end. More
-importantly, the four new OGGs contained provider fade-outs (and the Rain Bell
-track contained a long fade-in), so native looping still exposed an audible
-tail/gap:
+The browser loop flag was already enabled, but the first pass also removed a
+`GameplayAudioController` restart scheduled 0.5 seconds before every media
+boundary. Native `loop=true` now reaches the media boundary; the existing
+`ended` handler remains only as a fallback.
 
-| Asset | Original duration | Ending silence at −45 dB |
-| --- | ---: | ---: |
-| `bgm_city_summary_motif` | 45.035s | 1.117s |
-| `bgm_casework_day` | 45.035s | 4.096s |
-| `bgm_rain_bell_daily` | 44.983s | 5.760s |
-| `bgm_breakthrough_pursuit` | 45.035s | repeated outro pulses/fade |
+For the four new tracks, the cyclic `acrossfade` math was continuous in the
+pre-encode PCM, but native Vorbis encoding added a short trailing granule pad.
+The browser therefore looped from that near-zero pad into an active first
+frame. The earlier silence-only probe did not catch this: the pad was only
+20–46 stereo frames and was not a 100 ms interval.
 
-The cyclic `acrossfade` math was continuous in the pre-encode PCM, but the
-native Vorbis encoder adds a short trailing granule pad to the decoded stream.
-The browser therefore loops from that near-zero pad into the active first
-frame. The earlier silence-only probe did not catch this: the pad is only
-20–46 stereo frames and is not a 100 ms silence interval. The prior endpoint
-check also did not measure the decoded OGG boundary.
+The title-screen acceptance path uses `syncMainMenuAudio()` and
+`bgm_chapter_close`. The three retained loops also had long provider intro and
+outro silence. Their boundary jumps were tiny only because both sides of the
+boundary were silent, so a boundary-only check incorrectly passed while the
+music audibly stopped between cycles.
 
-The reproducible boundary check added in
-`packages/scripts/audio/audio-boundary.test.ts` decodes each file once and
-twice with `ffmpeg -v error [-stream_loop 1] -i <asset> -f f32le -ac 2
-pipe:1`, confirms that two-cycle decoding is exactly twice the single-cycle
-frame count, splits the two-cycle PCM at its midpoint, and measures
-`sqrt((Δleft² + Δright²) / 2)` between the last frame and first frame of the
-second cycle. The objective gate is `< 0.005` RMS (about −46 dBFS). Before the
-asset correction it failed for all four files:
+## Objective asset QA
 
-Because this probe invokes the external `ffmpeg` decoder, it is exposed as the
-explicit `audio:check-boundaries` asset-QA command rather than included in the
-ordinary `test:scripts` suite; the latter remains runnable without an installed
-ffmpeg binary, matching the existing audio-tool test contract.
+`packages/scripts/audio/audio-boundary.test.ts` now covers all seven `loop: true`
+BGM catalog entries. It decodes each OGG once and twice with:
+
+```text
+ffmpeg -v error [-stream_loop 1] -i <asset> -f f32le -ac 2 -ar 44100 pipe:1
+```
+
+The check confirms that two-cycle decoding is exactly twice the single-cycle
+frame count, then splits the two-cycle PCM at its midpoint and measures the
+stereo boundary jump as `sqrt((Δleft² + Δright²) / 2)`. The objective boundary
+gate is `< 0.005` RMS (about −46 dBFS).
+
+The same decoded PCM is checked for the longest contiguous run whose stereo
+frame RMS is at or below `10^(-45/20)` (−45 dBFS). Both the one-cycle and
+two-cycle runs must be shorter than 4,410 frames (100 ms). This catches long
+intro/outro silence even when a silent-to-silent loop boundary has a tiny
+sample jump.
+
+Because the probe invokes external `ffmpeg`, it is exposed as the explicit
+`audio:check-boundaries` asset-QA command with a dedicated Vitest config and
+is excluded from ordinary `test:scripts`; the latter remains runnable without
+an installed ffmpeg binary, matching the existing audio-tool test contract.
+
+Before the three retained assets were normalized, `silencedetect` reported:
+
+| Asset | Leading silence | Trailing silence | QA max silent run | Boundary RMS |
+| --- | ---: | ---: | ---: | ---: |
+| `bgm_chapter_close` | 2.528254s | 5.029478s | 226,795 frames / 5.142744s | 0.000004 |
+| `bgm_review_board_loss` | 1.155351s | 5.319433s | 243,815 frames / 5.528685s | 0.000001 |
+| `bgm_review_board_victory` | 1.087256s | 4.900816s* | 174,027 frames / 3.946190s | 0.000003 |
+
+\* The victory tail was split by a sub-millisecond above-threshold frame:
+`3.918821s + 0.981995s = 4.900816s`.
+
+The four new assets had independently failed the boundary metric before the
+first pass:
 
 | Asset | Decoded cycle / pad | Before boundary RMS | Before dBFS |
 | --- | ---: | ---: | ---: |
@@ -50,92 +81,89 @@ ffmpeg binary, matching the existing audio-tool test contract.
 
 ## Fix
 
-1. Removed the timer and `timeupdate` early-seek path. Native `loop=true` now
-   reaches the media boundary; the existing `ended` handler remains as a
-   fallback for engines that do not honor the native flag.
-2. Locally normalized the existing cached provider files; no ElevenLabs call
-   or new audio was generated. Each output uses the same reproducible ffmpeg
-   shape: trim an active source window, crossfade its final `c` seconds into
-   its initial `c` seconds with `acrossfade=d=c:c1=tri:c2=tri`, then apply a
-   symmetric 10 ms triangular (linear) fade-in/out to zero to the final PCM
-   before encoding stereo 44.1 kHz native Vorbis at `-strict experimental
-   -q:a 5`. The short edge fade absorbs the encoder's trailing granule pad
-   without introducing a silence interval.
+1. Kept the first-pass runtime correction: no timer or `timeupdate` early-seek
+   path; native `loop=true` reaches the actual media boundary.
+2. Kept the first-pass four new assets and their cached-provider-MP3
+   provenance unchanged.
+3. Reprocessed only the three existing retained OGGs. No corresponding cached
+   MP3s were present in this checkout, so each committed OGG was decoded to
+   stereo 44.1 kHz PCM, trimmed to its active musical window, circularly
+   crossfaded, and given a symmetric 10 ms triangular (linear) fade-in/out to
+   zero. The filtered PCM was encoded with the installed `oggenc` libvorbis
+   encoder at `-q 5`; no dependency, framework, ElevenLabs call, or credit was
+   added or used.
 
-| Asset | Source window | `c` | Final loop |
+| Asset | Source window | `c` | Nominal loop |
 | --- | ---: | ---: | ---: |
-| `bgm_city_summary_motif` | 8.0–42.5s | 2.0s | 32.5s |
-| `bgm_casework_day` | 0.0–39.8s | 2.0s | 37.8s |
-| `bgm_rain_bell_daily` | 9.03–37.67s | 1.0s | 27.64s |
-| `bgm_breakthrough_pursuit` | 12.0–42.5s | 2.0s | 28.5s |
+| `bgm_chapter_close` | 2.76–40.0056s | 2.0s | 35.2456s |
+| `bgm_review_board_loss` | 1.16–39.7157s | 2.0s | 36.5557s |
+| `bgm_review_board_victory` | 1.09–40.1337s | 2.0s | 37.0437s |
 
-The exact windows and derivation are also recorded in each entry's
-`normalizationNotes` in `docs/audio_plans/chapter_1.sound-plan.yaml`.
-
-The boundary check was written first and showed the expected red result:
-
-```text
-rtk bun run audio:check-boundaries
-  red — 4 tests failed; boundary RMS was 0.043542–0.067270, above 0.005.
-```
+The exact source, crossfade, edge-declick, encoder, and nominal-loop
+provenance is recorded in each retained entry's `normalizationNotes` in
+`docs/audio_plans/chapter_1.sound-plan.yaml`.
 
 ## TDD evidence
 
-The regression expectations were written before changing the controller:
-
-```text
-bun run --cwd apps/game test src/lib/audio/audio-controller.test.ts
-  red — 64 tests; 2 failed as expected:
-  currentTime was 0 instead of remaining at the media boundary.
-```
-
-After removing the early-restart path:
-
-```text
-bun run --cwd apps/game test src/lib/audio/audio-controller.test.ts
-  green — 1 file, 62/62 tests.
-```
-
-After reprocessing the four OGGs, the new objective boundary check passed:
+The first-pass boundary expectation was written before replacing the four new
+assets and showed the expected red result:
 
 ```text
 rtk bun run audio:check-boundaries
-  green — 1 file, 4/4 tests.
+  red — 4 boundary tests failed; RMS was 0.043542–0.067270, above 0.005.
+```
+
+After extending the probe to all seven loops, before changing the three older
+assets it showed the second red result:
+
+```text
+rtk bun run audio:check-boundaries
+  red — 7 tests; 3 failed the no-long-silence gate:
+  chapter_close 226,795 frames, review_board_loss 243,815 frames,
+  review_board_victory 174,027 frames; limit 4,410 frames.
+```
+
+After the three local reprocesses:
+
+```text
+rtk bun run audio:check-boundaries
+  green — 1 file, 7/7 tests.
 ```
 
 ## Fresh audio checks
 
-The four rewritten files all report Vorbis, stereo, 44.1 kHz, and no
-`silencedetect=noise=-45dB:d=0.1` interval in either a single decode or a
-two-cycle `ffmpeg -stream_loop 1` decode. Final durations were 32.501s,
-37.801s, 27.640s, and 28.501s respectively. The post-encode two-cycle
-boundary values are:
+All seven rewritten/current loop assets report Vorbis, stereo, 44.1 kHz. The
+single-cycle → two-cycle frame counts are exactly doubled, and both one-cycle
+and two-cycle decodes have no 100 ms silence interval at −45 dBFS:
 
-The single-cycle → two-cycle frame counts were exactly `1,433,280 → 2,866,560`,
-`1,667,008 → 3,334,016`, `1,218,944 → 2,437,888`, and
-`1,256,896 → 2,513,792`, so midpoint splitting is stable for each Vorbis
-granule stream.
+| Asset | Duration | Frames 1 → 2 cycles | After boundary RMS | After dBFS | Max silence |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `bgm_city_summary_motif` | 32.500680s | 1,433,280 → 2,866,560 | 0.000297 | −70.54 | 60 / 0.001361s |
+| `bgm_casework_day` | 37.800635s | 1,667,008 → 3,334,016 | 0.001962 | −54.15 | 245 / 0.005556s |
+| `bgm_rain_bell_daily` | 27.640454s | 1,218,944 → 2,437,888 | 0.002935 | −50.65 | 53 / 0.001202s |
+| `bgm_breakthrough_pursuit` | 28.501043s | 1,256,896 → 2,513,792 | 0.002374 | −52.49 | 71 / 0.001610s |
+| `bgm_chapter_close` | 35.245601s | 1,554,331 → 3,108,662 | 0.000557 | −65.08 | 215 / 0.004875s |
+| `bgm_review_board_loss` | 36.555692s | 1,612,106 → 3,224,212 | 0.000707 | −63.01 | 119 / 0.002698s |
+| `bgm_review_board_victory` | 37.043696s | 1,633,627 → 3,267,254 | 0.001696 | −55.41 | 108 / 0.002449s |
 
-| Asset | After boundary RMS | After dBFS | Result |
-| --- | ---: | ---: | --- |
-| `bgm_city_summary_motif` | 0.000297 | −70.54 | pass |
-| `bgm_casework_day` | 0.001962 | −54.15 | pass |
-| `bgm_rain_bell_daily` | 0.002935 | −50.65 | pass |
-| `bgm_breakthrough_pursuit` | 0.002374 | −52.49 | pass |
-
-The focused boundary test is now green (`4/4`). The short symmetric fades do
-not trigger the 100 ms silence gate in either cycle, so the encoded edge is
-de-clicked without an audible gap by the objective local probe.
+The short symmetric fades do not trigger the 100 ms silence gate, so the
+encoded edges are de-clicked without a long audible gap by the objective local
+probe. Physical audition on the target packaged app/device remains open because
+this host has no usable audio output.
 
 ```text
-bun run audio:validate docs/audio_plans/chapter_1.sound-plan.yaml
-  exit 0 — sound plan OK
-bun run audio:apply docs/audio_plans/chapter_1.sound-plan.yaml --check
-  exit 0 — apply check OK
-bun run check
-  exit 0 — svelte-check found 0 errors and 0 warnings
+rtk bun run test:scripts
+  green — 46 files, 959 tests
+rtk bunx vitest run --config vitest.scripts.config.ts packages/scripts/audio
+  green — 10 files, 149 tests
+rtk bun run --cwd apps/game test src/lib/audio/audio-controller.test.ts
+  green — 1 file, 62/62 tests
+rtk bun run check:scripts
+  green — exit 0
+rtk bun run check
+  green — svelte-check found 0 errors and 0 warnings
+rtk bun run audio:validate docs/audio_plans/chapter_1.sound-plan.yaml
+  green — sound plan OK
+rtk bun run audio:apply docs/audio_plans/chapter_1.sound-plan.yaml --check
+  green — apply check OK
 ```
-
-Physical listening remains open: this host still has no usable audio output,
-so a human must audition each cue in the packaged app and confirm the musical
-seam on the target device.
