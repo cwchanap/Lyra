@@ -6,11 +6,15 @@ import type {
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
+  JSONVisualAssetCue,
+  PortraitRef,
 } from "@lyra/scripts/compile-scenes/types";
 import type {
   PublicAnalysisScene,
   ReaderGroup,
+  ReaderPresentationFact,
   ReaderScene,
+  WorkbenchScenePayload,
 } from "./workbench-types";
 import { projectReaderScene, readerSegmentId } from "./reader-projection";
 
@@ -23,6 +27,56 @@ const line = (text: string): JSONDialogueItem => ({
   text,
   portrait: null,
 });
+
+const portraitLine = (
+  text: string,
+  portrait: PortraitRef,
+): JSONDialogueItem => ({
+  kind: "line",
+  speaker: SENTINEL_SPEAKER,
+  text,
+  portrait,
+});
+
+const sceneTagCue = (
+  text: string,
+  assetCue: JSONVisualAssetCue,
+): JSONDialogueItem => ({
+  kind: "sceneTag",
+  text,
+  assetCue,
+});
+
+const NPC1_STANDARD: PortraitRef = {
+  characterId: "npc1",
+  expression: "standard",
+  assetId: "portrait.npc1.standard",
+};
+const NPC1_CONCERNED: PortraitRef = {
+  characterId: "npc1",
+  expression: "concerned",
+  assetId: "portrait.npc1.concerned",
+};
+const SUSPECT_STANDARD: PortraitRef = {
+  characterId: "suspect",
+  expression: "standard",
+  assetId: "portrait.suspect.standard",
+};
+const INV_INTRO_CUE: JSONVisualAssetCue = {
+  backgroundAssetId: "background.chapter_1.inv_b_intro",
+  bgm: null,
+  bgs: null,
+};
+const INT_INTRO_CUE: JSONVisualAssetCue = {
+  backgroundAssetId: null,
+  bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+  bgs: null,
+};
+const ANA_INTRO_CUE: JSONVisualAssetCue = {
+  backgroundAssetId: null,
+  bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+  bgs: null,
+};
 
 const provenance = {
   sourceKind: "physical",
@@ -48,12 +102,42 @@ const linearScene = {
   assetRefs: [],
 } satisfies JSONLinearScene;
 
+const LINEAR_CUE: JSONVisualAssetCue = {
+  backgroundAssetId: "background.chapter_1.lin_b",
+  bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+  bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+};
+
+const presentationLinearScene = {
+  type: "linear",
+  id: "scene_p",
+  title: "Presentation",
+  summary: "Fixture",
+  queue: [
+    { kind: "sceneTag", text: "場景：雨の署", assetCue: LINEAR_CUE },
+    {
+      kind: "line",
+      speaker: SENTINEL_SPEAKER,
+      text: "first",
+      portrait: NPC1_STANDARD,
+    },
+    { kind: "action", text: "second" },
+    {
+      kind: "line",
+      speaker: SENTINEL_SPEAKER,
+      text: "third",
+      portrait: NPC1_STANDARD,
+    },
+  ],
+  assetRefs: [],
+} satisfies JSONLinearScene;
+
 const investigationScene = {
   type: "investigation",
   id: "investigation_scene_b",
   title: "Investigation",
   summary: "Fixture",
-  intro: [line("intro")],
+  intro: [sceneTagCue("場景：現場", INV_INTRO_CUE), line("intro")],
   assetRefs: [],
   sublocations: [
     {
@@ -63,10 +147,12 @@ const investigationScene = {
       unlock: null,
       reveals: [],
       sceneTag: "場景：大廳",
-      backgroundAssetId: null,
-      bgm: null,
-      bgs: null,
-      transitionDialogue: [line("sublocation:lobby:transition")],
+      backgroundAssetId: "background.chapter_1.inv_b_lobby",
+      bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+      bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+      transitionDialogue: [
+        portraitLine("sublocation:lobby:transition", NPC1_STANDARD),
+      ],
       hotspots: [
         {
           id: "door",
@@ -80,7 +166,9 @@ const investigationScene = {
           ],
           evidenceSource: null,
           sceneSourcePrompt: null,
-          inspectDialogue: [line("hotspot:door:inspect")],
+          inspectDialogue: [
+            portraitLine("hotspot:door:inspect", NPC1_CONCERNED),
+          ],
           onReexamine: [line("hotspot:door:reexamine")],
           layout: null,
         },
@@ -91,7 +179,15 @@ const investigationScene = {
           name: "Witness",
           role: "Witness",
           bio: "Saw something.",
-          layout: null,
+          layout: {
+            kind: "sprite",
+            assetId: "standee.npc1",
+            x: 0.1,
+            y: 0.2,
+            w: 0.3,
+            h: 0.4,
+            anchor: "bottomCenter",
+          },
           topics: [
             {
               id: "topic1",
@@ -99,8 +195,28 @@ const investigationScene = {
               status: "unlocked",
               unlock: null,
               reveals: [{ kind: "assertFact", factId: "fact_door" }],
-              topicDialogue: [line("topic:npc1:topic1:dialogue")],
+              topicDialogue: [
+                portraitLine("topic:npc1:topic1:dialogue", NPC1_CONCERNED),
+              ],
               onReexamine: [line("topic:npc1:topic1:reexamine")],
+            },
+          ],
+        },
+        {
+          id: "npc2",
+          name: "Baked Witness",
+          role: "Witness",
+          bio: "Painted into the background.",
+          layout: { kind: "baked", x: 0.5, y: 0.5, w: 0.1, h: 0.2 },
+          topics: [
+            {
+              id: "topic2",
+              label: "The rain",
+              status: "unlocked",
+              unlock: null,
+              reveals: [],
+              topicDialogue: [line("topic:npc2:topic2:dialogue")],
+              onReexamine: null,
             },
           ],
         },
@@ -113,10 +229,10 @@ const investigationScene = {
       name: "Door Log",
       description: "Access log.",
       details: "Detailed log.",
-      imageAssetId: null,
+      imageAssetId: "evidence.door_log",
       sourceSublocationId: "lobby",
       provenance,
-      onCollect: [line("evidence:door_log:onCollect")],
+      onCollect: [portraitLine("evidence:door_log:onCollect", NPC1_STANDARD)],
       onReexamine: [line("evidence:door_log:onReexamine")],
     },
   ],
@@ -126,11 +242,14 @@ const investigationScene = {
       speaker: "Witness",
       content: "I saw the door open.",
       provenance,
-      onAcquire: [line("statement:witness:onAcquire")],
+      onAcquire: [portraitLine("statement:witness:onAcquire", NPC1_STANDARD)],
       onReexamine: [line("statement:witness:onReexamine")],
     },
   ],
-  outro: { unlock: "auto", dialogue: [line("outro")] },
+  outro: {
+    unlock: "auto",
+    dialogue: [portraitLine("outro", NPC1_CONCERNED)],
+  },
 } satisfies JSONInvestigationScene;
 
 const interrogationScene = {
@@ -138,7 +257,7 @@ const interrogationScene = {
   id: "interrogation_scene_c",
   title: "Interrogation",
   summary: "Fixture",
-  intro: [line("intro")],
+  intro: [sceneTagCue("場景：偵訊室", INT_INTRO_CUE), line("intro")],
   assetRefs: [],
   phases: [
     {
@@ -150,17 +269,17 @@ const interrogationScene = {
         name: "Suspect",
         role: "Subject",
         bio: "Evasive.",
-        portrait: null,
+        portrait: SUSPECT_STANDARD,
       },
       required: true,
       status: "unlocked",
       unlock: null,
       reveals: [],
       sceneTag: "場景：偵訊室",
-      backgroundAssetId: null,
+      backgroundAssetId: "background.chapter_1.int_c_room",
       bgm: null,
-      bgs: null,
-      entryDialogue: [line("phase:phase1:entry")],
+      bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+      entryDialogue: [portraitLine("phase:phase1:entry", SUSPECT_STANDARD)],
       complete: "auto",
       questions: [
         {
@@ -180,10 +299,17 @@ const interrogationScene = {
               {
                 id: "l1",
                 label: "Wasn't there",
-                content: [line("question:q1:line:l1:content")],
+                content: [
+                  portraitLine("question:q1:line:l1:content", SUSPECT_STANDARD),
+                ],
                 contradiction: { kind: "evidence", id: "cctv" },
                 challenge: [line("question:q1:line:l1:challenge")],
-                onCorrect: [line("question:q1:line:l1:onCorrect")],
+                onCorrect: [
+                  portraitLine(
+                    "question:q1:line:l1:onCorrect",
+                    SUSPECT_STANDARD,
+                  ),
+                ],
                 onWrongEvidence: [line("question:q1:line:l1:onWrongEvidence")],
                 reveals: [{ kind: "statement", id: "witness" }],
               },
@@ -199,7 +325,7 @@ const interrogationScene = {
       name: "CCTV Footage",
       description: "Camera recording.",
       details: "Timestamped frames.",
-      imageAssetId: null,
+      imageAssetId: "evidence.cctv",
       provenance,
       onCollect: [line("evidence:cctv:onCollect")],
       onReexamine: [line("evidence:cctv:onReexamine")],
@@ -223,8 +349,11 @@ const analysisScene = {
   id: "analysis_scene_d",
   title: "Analysis",
   summary: "Fixture",
-  intro: [line("intro")],
-  outro: [line("outro")],
+  intro: [
+    sceneTagCue("場景：解析室", ANA_INTRO_CUE),
+    portraitLine("intro", NPC1_STANDARD),
+  ],
+  outro: [portraitLine("outro", NPC1_STANDARD)],
   boards: [
     {
       kind: "classify",
@@ -240,7 +369,9 @@ const analysisScene = {
             summary: "Card A summary.",
           },
         ],
-        resultDialogue: [line("board:classify_board:result")],
+        resultDialogue: [
+          portraitLine("board:classify_board:result", NPC1_STANDARD),
+        ],
         feedback: {
           incomplete: "Incomplete classify.",
           incorrect: "Incorrect classify.",
@@ -308,6 +439,13 @@ function findGroup(scene: ReaderScene, id: string): ReaderGroup | undefined {
     stack.push(...group.children);
   }
   return undefined;
+}
+
+function factsFor(
+  scene: ReaderScene,
+  carrierId: string,
+): ReaderPresentationFact[] {
+  return scene.presentation.filter((fact) => fact.carrierId === carrierId);
 }
 
 function collectDialogueCarrierIds(scene: ReaderScene): Set<string> {
@@ -680,5 +818,434 @@ describe("projectReaderScene scene envelope", () => {
     expect(
       findGroup(interrogationReader(), "question:q1:line:l1:content")?.flow,
     ).toBe("main");
+  });
+});
+
+// ----- Test-only presentation completeness oracle -----------------------------
+//
+// Modeled on collectBackgroundCues() in
+// packages/scripts/compile-scenes/background-cues-audit.ts: an independent
+// recursive scan of the compiled public values (no production projection
+// helpers), compared as multisets — duplicates counted — against
+// ReaderScene.presentation, so a newly added structural presentation field
+// cannot silently disappear and one repeated asset cannot mask a dropped
+// field.
+
+function scanPresentationOccurrences(value: unknown, out: string[]): void {
+  if (Array.isArray(value)) {
+    for (const item of value) scanPresentationOccurrences(item, out);
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+
+  if (Object.hasOwn(record, "backgroundAssetId")) {
+    out.push(`backgroundAssetId:${JSON.stringify(record.backgroundAssetId)}`);
+  }
+  if (Object.hasOwn(record, "bgm")) {
+    out.push(`bgm:${JSON.stringify(record.bgm)}`);
+  }
+  if (Object.hasOwn(record, "bgs")) {
+    out.push(`bgs:${JSON.stringify(record.bgs)}`);
+  }
+  if (typeof record.imageAssetId === "string") {
+    out.push(`imageAssetId:${record.imageAssetId}`);
+  }
+  if (record.portrait != null) {
+    out.push(`portrait:${JSON.stringify(record.portrait)}`);
+  }
+  if (record.kind === "sceneTag" && record.assetCue != null) {
+    // The cue's own inner keys are represented by the cue occurrence itself;
+    // do not descend into the cue value or its backgroundAssetId/bgm/bgs keys
+    // would double-count against the structural field occurrences.
+    out.push(`sceneTag.assetCue:${JSON.stringify(record.assetCue)}`);
+  } else if (record.kind === "sprite" && typeof record.assetId === "string") {
+    out.push(`sprite.assetId:${record.assetId}`);
+  }
+
+  for (const [key, child] of Object.entries(record)) {
+    if (key === "assetCue" && record.kind === "sceneTag") continue;
+    scanPresentationOccurrences(child, out);
+  }
+}
+
+function presentationFactOccurrences(
+  facts: ReaderPresentationFact[],
+): string[] {
+  const out: string[] = [];
+  for (const fact of facts) {
+    switch (fact.kind) {
+      case "dialogueAssetCue":
+        out.push(`sceneTag.assetCue:${JSON.stringify(fact.cue)}`);
+        break;
+      case "dialoguePortrait":
+      case "subjectPortrait":
+        out.push(`portrait:${JSON.stringify(fact.portrait)}`);
+        break;
+      case "structuralVisualCue":
+        out.push(`backgroundAssetId:${JSON.stringify(fact.backgroundAssetId)}`);
+        out.push(`bgm:${JSON.stringify(fact.bgm)}`);
+        out.push(`bgs:${JSON.stringify(fact.bgs)}`);
+        break;
+      case "evidenceImage":
+        out.push(`imageAssetId:${fact.imageAssetId}`);
+        break;
+      case "sprite":
+        out.push(`sprite.assetId:${fact.assetId}`);
+        break;
+    }
+  }
+  return out;
+}
+
+describe("projectReaderScene presentation facts", () => {
+  it("reader_projection_emits_dialogue_presentation_without_changing_reader_items", () => {
+    const reader = projectReaderScene(
+      "chapter_1",
+      "docs/stories_plan/chapter_1/scene_p.md",
+      presentationLinearScene,
+    );
+    expect(reader.presentation).toEqual([
+      {
+        kind: "dialogueAssetCue",
+        carrierId: "main",
+        itemIndex: 0,
+        cue: LINEAR_CUE,
+      },
+      {
+        kind: "dialoguePortrait",
+        carrierId: "main",
+        itemIndex: 1,
+        portrait: NPC1_STANDARD,
+      },
+      {
+        kind: "dialoguePortrait",
+        carrierId: "main",
+        itemIndex: 3,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    // Reader-visible items keep the exact HPA-634 text/cue shape — no
+    // presentation fields leak into the rendered tree.
+    expect(reader.groups[0]?.items).toEqual([
+      { kind: "sceneTag", text: "場景：雨の署" },
+      { kind: "line", speaker: SENTINEL_SPEAKER, text: "first" },
+      { kind: "action", text: "second" },
+      { kind: "line", speaker: SENTINEL_SPEAKER, text: "third" },
+    ]);
+  });
+
+  it("emits linear main facts in exact queue item order", () => {
+    const reader = projectReaderScene(
+      "chapter_1",
+      "docs/stories_plan/chapter_1/scene_p.md",
+      presentationLinearScene,
+    );
+    expect(
+      factsFor(reader, "main").map((fact) =>
+        fact.kind === "dialogueAssetCue" || fact.kind === "dialoguePortrait"
+          ? fact.itemIndex
+          : null,
+      ),
+    ).toEqual([0, 1, 3]);
+  });
+
+  it("emits investigation facts in walk order at the existing reader carrier IDs", () => {
+    const reader = investigationReader();
+    // Facts ride the single walk: carrier IDs are the existing Reader IDs.
+    expect(reader.presentation.map((fact) => fact.carrierId)).toEqual([
+      "intro",
+      "sublocation:lobby",
+      "sublocation:lobby:transition",
+      "hotspot:door:inspect",
+      "character:npc1",
+      "topic:npc1:topic1:dialogue",
+      "evidence:door_log",
+      "evidence:door_log:onCollect",
+      "statement:witness:onAcquire",
+      "outro",
+    ]);
+    expect(factsFor(reader, "intro")).toEqual([
+      {
+        kind: "dialogueAssetCue",
+        carrierId: "intro",
+        itemIndex: 0,
+        cue: INV_INTRO_CUE,
+      },
+    ]);
+    expect(factsFor(reader, "sublocation:lobby:transition")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "sublocation:lobby:transition",
+        itemIndex: 0,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "hotspot:door:inspect")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "hotspot:door:inspect",
+        itemIndex: 0,
+        portrait: NPC1_CONCERNED,
+      },
+    ]);
+    // Re-examine carrier stays plain: no facts, reader items unchanged.
+    expect(factsFor(reader, "hotspot:door:reexamine")).toEqual([]);
+    expect(factsFor(reader, "topic:npc1:topic1:dialogue")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "topic:npc1:topic1:dialogue",
+        itemIndex: 0,
+        portrait: NPC1_CONCERNED,
+      },
+    ]);
+    expect(factsFor(reader, "topic:npc1:topic1:reexamine")).toEqual([]);
+
+    // Structural facts emitted at the existing traversal sites.
+    expect(factsFor(reader, "sublocation:lobby")).toEqual([
+      {
+        kind: "structuralVisualCue",
+        carrierId: "sublocation:lobby",
+        backgroundAssetId: "background.chapter_1.inv_b_lobby",
+        bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+      },
+    ]);
+    expect(factsFor(reader, "character:npc1")).toEqual([
+      {
+        kind: "sprite",
+        carrierId: "character:npc1",
+        characterId: "npc1",
+        assetId: "standee.npc1",
+      },
+    ]);
+    // Baked layouts are explicitly non-asset-bearing: no sprite fact.
+    expect(
+      reader.presentation.some(
+        (fact) => fact.kind === "sprite" && fact.characterId === "npc2",
+      ),
+    ).toBe(false);
+    expect(factsFor(reader, "evidence:door_log")).toEqual([
+      {
+        kind: "evidenceImage",
+        carrierId: "evidence:door_log",
+        imageAssetId: "evidence.door_log",
+      },
+    ]);
+    expect(factsFor(reader, "evidence:door_log:onCollect")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "evidence:door_log:onCollect",
+        itemIndex: 0,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "statement:witness:onAcquire")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "statement:witness:onAcquire",
+        itemIndex: 0,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "outro")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "outro",
+        itemIndex: 0,
+        portrait: NPC1_CONCERNED,
+      },
+    ]);
+  });
+
+  it("emits interrogation facts in walk order across phases, questions, lines, and inventory", () => {
+    const reader = interrogationReader();
+    expect(reader.presentation.map((fact) => fact.carrierId)).toEqual([
+      "intro",
+      "phase:phase1",
+      "phase:phase1",
+      "phase:phase1:entry",
+      "question:q1:line:l1:content",
+      "question:q1:line:l1:onCorrect",
+      "evidence:cctv",
+    ]);
+    expect(factsFor(reader, "intro")).toEqual([
+      {
+        kind: "dialogueAssetCue",
+        carrierId: "intro",
+        itemIndex: 0,
+        cue: INT_INTRO_CUE,
+      },
+    ]);
+    // Phase entry: structural visual cue first, then the subject portrait.
+    expect(factsFor(reader, "phase:phase1")).toEqual([
+      {
+        kind: "structuralVisualCue",
+        carrierId: "phase:phase1",
+        backgroundAssetId: "background.chapter_1.int_c_room",
+        bgm: null,
+        bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+      },
+      {
+        kind: "subjectPortrait",
+        carrierId: "phase:phase1",
+        portrait: SUSPECT_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "phase:phase1:entry")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "phase:phase1:entry",
+        itemIndex: 0,
+        portrait: SUSPECT_STANDARD,
+      },
+    ]);
+    // Question-level carriers without assets contribute no facts.
+    expect(factsFor(reader, "question:q1:onLoop")).toEqual([]);
+    expect(factsFor(reader, "question:q1:loopPrompt")).toEqual([]);
+    expect(factsFor(reader, "question:q1:defaultChallenge")).toEqual([]);
+    expect(factsFor(reader, "question:q1:defaultWrong")).toEqual([]);
+    expect(factsFor(reader, "question:q1:wrongReply")).toEqual([]);
+    expect(factsFor(reader, "question:q1:line:l1:content")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "question:q1:line:l1:content",
+        itemIndex: 0,
+        portrait: SUSPECT_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "question:q1:line:l1:challenge")).toEqual([]);
+    expect(factsFor(reader, "question:q1:line:l1:onCorrect")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "question:q1:line:l1:onCorrect",
+        itemIndex: 0,
+        portrait: SUSPECT_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "question:q1:line:l1:onWrongEvidence")).toEqual([]);
+    expect(factsFor(reader, "evidence:cctv")).toEqual([
+      {
+        kind: "evidenceImage",
+        carrierId: "evidence:cctv",
+        imageAssetId: "evidence.cctv",
+      },
+    ]);
+    expect(factsFor(reader, "statement:witness:onAcquire")).toEqual([]);
+    expect(factsFor(reader, "outro")).toEqual([]);
+  });
+
+  it("text_only_carriers_project_completely_with_zero_presentation", () => {
+    // Plain text-only carriers keep the strict structural consumption: every
+    // compiler carrier is still taken, asserted, and rendered, while Assets
+    // later emits no usage for them.
+    const reader = projectReaderScene(
+      "chapter_1",
+      "docs/stories_plan/chapter_1/scene_a.md",
+      linearScene,
+    );
+    expect(reader.presentation).toEqual([]);
+    expect(reader.groups.map((group) => group.id)).toEqual(["main"]);
+    expect(reader.groups[0]?.items).toHaveLength(2);
+    const enriched = investigationReader();
+    for (const id of [
+      "hotspot:door:reexamine",
+      "topic:npc1:topic1:reexamine",
+    ]) {
+      const group = findGroup(enriched, id);
+      expect(
+        group?.items.some((item) => item.kind !== "notice"),
+        id,
+      ).toBe(true);
+    }
+  });
+
+  it("public analysis emits presentation only from sanitized public dialogue", () => {
+    const reader = analysisReader();
+    // Only public intro/result/outro dialogue facts — never board answer data.
+    // intro: cue + portrait, outro: portrait, classify result: portrait.
+    expect(reader.presentation).toHaveLength(4);
+    for (const fact of reader.presentation) {
+      expect(
+        fact.kind === "dialogueAssetCue" || fact.kind === "dialoguePortrait",
+      ).toBe(true);
+      expect(["intro", "outro", "board:classify_board:result"]).toContain(
+        fact.carrierId,
+      );
+    }
+    expect(factsFor(reader, "intro")).toEqual([
+      {
+        kind: "dialogueAssetCue",
+        carrierId: "intro",
+        itemIndex: 0,
+        cue: ANA_INTRO_CUE,
+      },
+      {
+        kind: "dialoguePortrait",
+        carrierId: "intro",
+        itemIndex: 1,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "board:classify_board:result")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "board:classify_board:result",
+        itemIndex: 0,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+    expect(factsFor(reader, "outro")).toEqual([
+      {
+        kind: "dialoguePortrait",
+        carrierId: "outro",
+        itemIndex: 0,
+        portrait: NPC1_STANDARD,
+      },
+    ]);
+  });
+
+  it("presentation multiset matches every raw presentation-bearing occurrence", () => {
+    const cases: Array<[string, WorkbenchScenePayload]> = [
+      ["scene_p", presentationLinearScene],
+      ["investigation_scene_b", investigationScene],
+      ["interrogation_scene_c", interrogationScene],
+      ["analysis_scene_d", analysisScene],
+    ];
+    for (const [id, scene] of cases) {
+      const reader = projectReaderScene(
+        "chapter_1",
+        `docs/stories_plan/chapter_1/${id}.md`,
+        scene,
+      );
+      const raw: string[] = [];
+      scanPresentationOccurrences(scene, raw);
+      const facts = presentationFactOccurrences(reader.presentation);
+      expect(
+        [...raw].sort(),
+        `${id}: raw occurrences vs presentation facts`,
+      ).toEqual([...facts].sort());
+    }
+  });
+
+  it("counts repeated identical occurrences instead of masking dropped fields", () => {
+    // NPC1 refs appear on six line items across the investigation fixture
+    // (transition, inspect, topic dialogue, onCollect, onAcquire, outro) —
+    // and SUSPECT_STANDARD four times in the interrogation fixture (subject
+    // portrait, entry, content, onCorrect). Each occurrence must be
+    // represented; none may be collapsed away.
+    const investigation = investigationReader().presentation.filter(
+      (fact) => fact.kind === "dialoguePortrait",
+    );
+    expect(investigation).toHaveLength(6);
+    const interrogation = interrogationReader().presentation;
+    expect(
+      interrogation.filter(
+        (fact) =>
+          (fact.kind === "dialoguePortrait" ||
+            fact.kind === "subjectPortrait") &&
+          fact.portrait.assetId === SUSPECT_STANDARD.assetId,
+      ),
+    ).toHaveLength(4);
   });
 });

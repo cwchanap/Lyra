@@ -12,6 +12,7 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
     "verify:reader-real-content": "bun run scripts/verify-reader-real-content.ts",
+    "verify:asset-real-content": "bun run scripts/verify-asset-real-content.ts",
     "tauri": "tauri",
     "rust:fmt": "cargo fmt --manifest-path src-tauri/Cargo.toml --all --check",
     "rust:fmt:fix": "cargo fmt --manifest-path src-tauri/Cargo.toml --all",

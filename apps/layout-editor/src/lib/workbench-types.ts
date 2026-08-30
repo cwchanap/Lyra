@@ -1,11 +1,14 @@
 import type { AssetManifest } from "@lyra/scripts/compile-scenes/assets/manifest";
 import type { AssetReport } from "@lyra/scripts/compile-scenes/orchestrator";
 import type {
+  AudioCue,
   JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
   JSONLinearScene,
+  JSONVisualAssetCue,
+  PortraitRef,
 } from "@lyra/scripts/compile-scenes/types";
 
 export type SceneType =
@@ -144,12 +147,59 @@ export type ReaderGroup = {
   children: ReaderGroup[];
 };
 
+/**
+ * Sibling presentation stream produced by the single `projectReaderScene()`
+ * walk. Reader-visible groups/items never carry this data; the Assets
+ * workbench consumes it instead of re-walking scenes. Values are raw compiler
+ * data (carrier IDs are the existing Reader carrier IDs).
+ */
+export type ReaderPresentationFact =
+  | {
+      kind: "dialogueAssetCue";
+      carrierId: string;
+      /** Index of the sceneTag item inside its carrier's item array. */
+      itemIndex: number;
+      cue: JSONVisualAssetCue;
+    }
+  | {
+      kind: "dialoguePortrait";
+      carrierId: string;
+      /** Index of the line item inside its carrier's item array. */
+      itemIndex: number;
+      portrait: PortraitRef;
+    }
+  | {
+      kind: "structuralVisualCue";
+      carrierId: string;
+      backgroundAssetId: string | null;
+      bgm: AudioCue | null;
+      bgs: AudioCue | null;
+    }
+  | {
+      kind: "subjectPortrait";
+      carrierId: string;
+      portrait: PortraitRef;
+    }
+  | {
+      kind: "evidenceImage";
+      carrierId: string;
+      imageAssetId: string;
+    }
+  | {
+      kind: "sprite";
+      carrierId: string;
+      characterId: string;
+      /** Raw sprite layout asset ID; asset kind resolves via manifest join. */
+      assetId: string;
+    };
+
 export type ReaderScene = {
   id: string;
   type: SceneType;
   title: string;
   sourcePath: string;
   groups: ReaderGroup[];
+  presentation: ReaderPresentationFact[];
 };
 
 export type CompilerDialogueItem = JSONDialogueItem;
