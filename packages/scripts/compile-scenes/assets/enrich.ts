@@ -9,11 +9,13 @@
 
 import { existsSync } from "node:fs";
 import { isAbsolute, resolve } from "node:path";
+import { parsePortraitAssetId, portraitAssetId } from "@lyra/asset-paths";
 import type { AssetConfig, AudioChannel } from "./config";
 import {
   buildAssetManifest,
   type AssetManifest,
   type AssetManifestEntry,
+  type ManifestEntryInput,
 } from "./manifest";
 import type {
   ASTAnalysisBoard,
@@ -36,13 +38,7 @@ import type {
 import type { AnalysisSceneRecord } from "../types";
 import type { SceneRecord } from "../validator";
 
-type ManifestDraft = {
-  assetId: string;
-  type: AssetManifestEntry["type"];
-  source: Record<string, string>;
-  prompt: string;
-  subjectPrompt?: string;
-};
+type ManifestDraft = ManifestEntryInput;
 
 export type AssetEnrichmentResult = {
   scenes: SceneRecord[];
@@ -528,7 +524,7 @@ function registerPortraitRef(input: {
   context: EnrichContext;
 }): PortraitRef {
   const { characterId, expression, prompt, subjectPrompt, context } = input;
-  const assetId = `portrait.${characterId}.${expression}`;
+  const assetId = portraitAssetId(characterId, expression);
   addRef(context.refs, { type: "portrait", assetId });
   putRequest(context.requests, {
     assetId,
@@ -761,8 +757,12 @@ function enrichCharacterSpriteLayout(
       subjectPrompt: charConfig?.visualPrompt ?? "",
     });
   } else if (assetId.startsWith("portrait.")) {
-    const parts = assetId.split(".");
-    if (parts.length !== 3) {
+    // Decomposition is owned by @lyra/asset-paths; translate its failure back
+    // into the compiler's domain error instead of leaking a generic throw.
+    let identity: { characterId: string; expression: string };
+    try {
+      identity = parsePortraitAssetId(assetId);
+    } catch {
       context.errors.push(
         compileError(
           character.sourceFile,
@@ -773,7 +773,7 @@ function enrichCharacterSpriteLayout(
       );
       return;
     }
-    const [, characterId, expression] = parts as [string, string, string];
+    const { characterId, expression } = identity;
 
     addRef(context.refs, { type: "portrait", assetId });
     const charConfig = context.config.characters.byId.get(characterId);
