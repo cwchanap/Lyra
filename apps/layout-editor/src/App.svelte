@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import AssetsView from "./lib/AssetsView.svelte";
   import EditorCanvas from "./lib/EditorCanvas.svelte";
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
   import ReaderView from "./lib/ReaderView.svelte";
@@ -25,6 +26,8 @@
     WorkbenchSceneBundle,
   } from "./lib/workbench-types";
 
+  type WorkbenchMode = "reader" | "assets" | "stage";
+
   let requestedIndex = false;
   let workbenchIndex = $state<WorkbenchIndex | null>(null);
   let indexError = $state<string | null>(null);
@@ -41,7 +44,7 @@
   let saveToastTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // Reader state: Reader is the default mode now that it is functional.
-  let mode = $state<"reader" | "stage">("reader");
+  let mode = $state<WorkbenchMode>("reader");
   let readerScope = $state<"scene" | "chapter">("scene");
   let currentBundle = $state<WorkbenchSceneBundle | null>(null);
   let currentReaderScene = $state<ReaderScene | null>(null);
@@ -53,7 +56,7 @@
   let chapterLoading = $state(false);
   let chapterLoadGeneration = 0;
   // Shared cache-write epoch: bumped whenever the active cache owner changes
-  // (Reader scope switch, or leaving Reader for Stage). Each load captures the
+  // (Reader scope switch, or leaving Reader for any non-Reader mode). Each load captures the
   // epoch at start and refuses to write `bundleCache` if a newer owner took
   // over, so a pending request from the scope being left cannot overwrite a
   // newer load's cache entry. The per-loader generations above still fence
@@ -365,20 +368,21 @@
     await loadCurrentReaderScene();
   }
 
-  function setMode(next: "reader" | "stage"): void {
+  function setMode(next: WorkbenchMode): void {
     if (mode === next) return;
-    // Leaving Reader for Stage invalidates any pending Reader cache writes so
-    // a late scene/chapter resolution cannot pollute the cache after Stage
-    // took over. Entering Reader starts a fresh load that captures the new
-    // epoch, so no bump is needed on that direction.
-    if (next === "stage") cacheWriteEpoch += 1;
+    // Leaving Reader for ANY non-Reader mode invalidates pending Reader cache
+    // writes so a late scene/chapter resolution cannot pollute the cache after
+    // Assets or Stage took over. Entering Reader starts a fresh load that
+    // captures the new epoch, so no bump is needed on that direction.
+    if (mode === "reader") cacheWriteEpoch += 1;
     mode = next;
-    if (next !== "stage") {
+    if (next === "reader") {
       // Entering Reader must reflect the current selection; the bundle cache
       // makes this cheap when nothing changed since the last load.
       if (readerScope === "scene") void loadCurrentReaderScene();
       return;
     }
+    if (next === "assets") return; // AssetsView owns its own snapshot loading
     const scene = selectedScene;
     if (
       scene &&
@@ -399,18 +403,32 @@
   ) {
     selectedChapterId = chapterId;
     selectedSceneId = sceneId;
-    if (mode !== "reader") {
-      if (sceneType !== "investigation") {
-        // Stage never loads a bundle for scenes it cannot lay out; the
-        // placeholder below explains why instead.
-        clearStage();
-        return;
-      }
-      await loadInvestigationScene(chapterId, sceneId);
+    if (mode === "reader") {
+      if (readerScope === "chapter") return; // the chapter effect owns loading
+      await loadCurrentReaderScene();
       return;
     }
-    if (readerScope === "chapter") return; // the chapter effect owns loading
-    await loadCurrentReaderScene();
+    if (mode === "assets") {
+      // Assets selection is navigation-only: the shared selection updates so
+      // Reader/Stage can act on it later, but AssetsView loads its own data
+      // and no Reader/Stage load may start from here.
+      return;
+    }
+    if (sceneType !== "investigation") {
+      // Stage never loads a bundle for scenes it cannot lay out; the
+      // placeholder below explains why instead.
+      clearStage();
+      return;
+    }
+    await loadInvestigationScene(chapterId, sceneId);
+  }
+
+  function selectSceneFromAssets(chapterId: string, sceneId: string): void {
+    // AssetsView usage links carry no scene type; Assets selection only ever
+    // updates the shared selection (same contract as sidebar clicks in
+    // Assets mode).
+    selectedChapterId = chapterId;
+    selectedSceneId = sceneId;
   }
 
   async function handleSaveLayout() {
@@ -525,6 +543,14 @@
           onclick={() => setMode("reader")}
         >
           Reader
+        </button>
+        <button
+          type="button"
+          class={toggleClass(mode === "assets")}
+          aria-pressed={mode === "assets"}
+          onclick={() => setMode("assets")}
+        >
+          Assets
         </button>
         <button
           type="button"
@@ -718,6 +744,12 @@
           {/if}
         {/if}
       </div>
+    {:else if mode === "assets"}
+      <AssetsView
+        {selectedChapterId}
+        {selectedSceneId}
+        onSelectScene={selectSceneFromAssets}
+      />
     {:else if editorState.scene}
       <header
         class="detail-header flex items-start justify-between gap-5 max-[800px]:grid"
