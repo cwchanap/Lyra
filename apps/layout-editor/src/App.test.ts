@@ -10,6 +10,7 @@ import { editorState } from "./lib/layout-store.svelte";
 import type { CaseRecordProvenance } from "@lyra/scripts/compile-scenes/types";
 import type {
   PublicAnalysisScene,
+  WorkbenchAssetWorkspacePayload,
   WorkbenchIndex,
   WorkbenchSceneBundle,
 } from "./lib/workbench-types";
@@ -476,6 +477,48 @@ const existingLayout = {
   sublocations: {},
 };
 
+// Minimal Assets workspace snapshot: empty manifest/config and one cue-less
+// snapshot scene so the Assets cue header can follow the shared selection.
+function assetsWorkspacePayload(): WorkbenchAssetWorkspacePayload {
+  return {
+    manifest: { enabled: true, entries: [] },
+    report: {
+      enabled: true,
+      requested: {
+        background: 0,
+        portrait: 0,
+        standee: 0,
+        evidence: 0,
+        audio: 0,
+      },
+      warnings: [],
+    },
+    configSources: {
+      characters: {
+        path: "static/assets/config/characters.yaml",
+        content: "",
+      },
+      audio: { path: "static/assets/config/audio.yaml", content: "" },
+    },
+    scenes: [
+      {
+        chapterId: "chapter_1",
+        sceneId: "investigation_scene_3",
+        sourcePath: "docs/stories_plan/chapter_1/investigation_scene_3.md",
+        scene: {
+          type: "linear",
+          id: "investigation_scene_3",
+          title: "Rainy Office",
+          summary: "Fixture",
+          queue: [],
+          assetRefs: [],
+        },
+      },
+    ],
+    existingAssetPaths: [],
+  };
+}
+
 function mockBackend() {
   mockInvoke.mockImplementation(async (command: string, args?: InvokeArgs) => {
     switch (command) {
@@ -490,6 +533,8 @@ function mockBackend() {
         }
         return bundle;
       }
+      case "load_asset_workspace":
+        return assetsWorkspacePayload();
       case "load_investigation_layout":
         return existingLayout;
       case "save_investigation_layout":
@@ -540,6 +585,125 @@ describe("Lyra Story Workbench shell", () => {
     expect(screen.getByRole("button", { name: "Reader" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stage" })).toBeInTheDocument();
     expect(screen.getByText("Select a scene to read.")).toBeInTheDocument();
+  });
+
+  it("exposes Reader, Assets, and Stage in the mode bar with Reader as the default", async () => {
+    render(App);
+
+    const modeBar = screen.getByRole("group", { name: "Workbench mode" });
+    expect(
+      within(modeBar).getByRole("button", { name: "Reader" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      within(modeBar).getByRole("button", { name: "Assets" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(
+      within(modeBar).getByRole("button", { name: "Stage" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("Select a scene to read.")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Assets" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("selecting a scene under Assets changes the selection without Reader or Stage loading", async () => {
+    const user = userEvent.setup();
+    render(App);
+
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    expect(
+      await screen.findByRole("region", { name: "Assets" }),
+    ).toBeInTheDocument();
+    expect(invokedCommands()).not.toContain("load_scene_bundle");
+    expect(invokedCommands()).not.toContain("load_investigation_layout");
+
+    await selectSceneByLabel("Investigation Scene 3");
+
+    // Selection changed: the Assets cue header follows the shared selection…
+    expect(
+      await screen.findByText("chapter_1 / investigation_scene_3"),
+    ).toBeInTheDocument();
+    // …but App.svelte started neither a Reader nor a Stage load.
+    expect(invokedCommands()).not.toContain("load_scene_bundle");
+    expect(invokedCommands()).not.toContain("load_investigation_layout");
+  });
+
+  it("a Reader load resolved after leaving for Assets cannot write the Reader cache", async () => {
+    const deferred: Array<{
+      sceneId: string;
+      resolve: (bundle: WorkbenchSceneBundle) => void;
+    }> = [];
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return workbenchIndex;
+          case "load_asset_workspace":
+            return assetsWorkspacePayload();
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            return new Promise<WorkbenchSceneBundle>((resolve) => {
+              deferred.push({ sceneId, resolve });
+            });
+          }
+          default:
+            throw new Error(`unexpected invoke: ${command}`);
+        }
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    expect(deferred).toHaveLength(1);
+
+    // Leave Reader for Assets while scene_1's load is still pending…
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    deferred[0]?.resolve(linearBundle("stale text"));
+
+    // …then return to Reader: the stale payload must not be served from the
+    // shared cache, so the scene reloads.
+    await user.click(screen.getByRole("button", { name: "Reader" }));
+    expect(deferred).toHaveLength(2);
+    deferred[1]?.resolve(linearBundle("fresh text"));
+
+    expect(await screen.findByText("相馬律: fresh text")).toBeInTheDocument();
+    expect(screen.queryByText("相馬律: stale text")).not.toBeInTheDocument();
+  });
+
+  it("Assets to Stage loads an investigation selection and keeps the non-investigation placeholder", async () => {
+    const user = userEvent.setup();
+    render(App);
+
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+
+    // Investigation selection staged from Assets loads Stage.
+    await selectSceneByLabel("Investigation Scene 3");
+    await user.click(screen.getByRole("button", { name: "Stage" }));
+    expect(invoke).toHaveBeenCalledWith("load_investigation_layout", {
+      chapterId: "chapter_1",
+      sceneId: "investigation_scene_3",
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Rainy Office" }),
+    ).toBeInTheDocument();
+
+    // Non-investigation selection staged from Assets clears Stage and shows
+    // the existing placeholder without another layout load.
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await selectSceneByLabel("Interrogation Scene 2");
+    await user.click(screen.getByRole("button", { name: "Stage" }));
+
+    expect(
+      screen.getByText("Stage is available for investigation scenes only."),
+    ).toBeInTheDocument();
+    expect(
+      invokedCommands().filter(
+        (command) => command === "load_investigation_layout",
+      ),
+    ).toHaveLength(1);
   });
 
   it("lists one scene of every type in exact manifest order", async () => {
