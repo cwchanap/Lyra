@@ -19,6 +19,7 @@ import type {
   ReaderGroup,
   ReaderGroupKind,
   ReaderItem,
+  ReaderPresentationFact,
   ReaderScene,
   WorkbenchScenePayload,
 } from "./workbench-types";
@@ -119,6 +120,7 @@ class SegmentPool {
 // ----- Group helpers -----------------------------------------------------------
 
 function carrierGroup(
+  presentation: ReaderPresentationFact[],
   id: string,
   kind: ReaderGroupKind,
   label: string,
@@ -127,6 +129,26 @@ function carrierGroup(
 ): ReaderGroup | null {
   // Mirror the compiler walker: empty carriers never become reader groups.
   if (items.length === 0) return null;
+  // Collect presentation from the raw compiler items before projectDialogue()
+  // strips it for Reader display. Facts carry the carrier ID and the index of
+  // the item inside this carrier's item array.
+  items.forEach((item, itemIndex) => {
+    if (item.kind === "sceneTag" && item.assetCue) {
+      presentation.push({
+        kind: "dialogueAssetCue",
+        carrierId: id,
+        itemIndex,
+        cue: item.assetCue,
+      });
+    } else if (item.kind === "line" && item.portrait) {
+      presentation.push({
+        kind: "dialoguePortrait",
+        carrierId: id,
+        itemIndex,
+        portrait: item.portrait,
+      });
+    }
+  });
   return {
     id,
     kind,
@@ -139,6 +161,7 @@ function carrierGroup(
 }
 
 function pooledCarrierGroup(
+  presentation: ReaderPresentationFact[],
   pool: SegmentPool,
   id: string,
   kind: ReaderGroupKind,
@@ -147,7 +170,7 @@ function pooledCarrierGroup(
   flow: ReaderFlow = "main",
 ): ReaderGroup | null {
   if (items.length === 0) return null;
-  return carrierGroup(id, kind, label, pool.take(id), flow);
+  return carrierGroup(presentation, id, kind, label, pool.take(id), flow);
 }
 
 function structuralGroup(
@@ -324,9 +347,10 @@ function projectLinear(
     deriveDialogueSegments({ chapterId, json: scene }),
   );
   const groups: ReaderGroup[] = [];
+  const presentation: ReaderPresentationFact[] = [];
   pushGroup(
     groups,
-    pooledCarrierGroup(pool, "main", "line", "Main", scene.queue),
+    pooledCarrierGroup(presentation, pool, "main", "line", "Main", scene.queue),
   );
   pool.assertFullyConsumed();
   return {
@@ -335,6 +359,7 @@ function projectLinear(
     title: scene.title,
     sourcePath,
     groups,
+    presentation,
   };
 }
 
@@ -370,12 +395,14 @@ function statementMetadataNotices(statement: {
 }
 
 function appendInventoryCarrierGroups(
+  presentation: ReaderPresentationFact[],
   pool: SegmentPool,
   groups: ReaderGroup[],
   evidenceManifest: Array<{
     id: string;
     name: string;
     description: string;
+    imageAssetId: string | null;
     onCollect: JSONDialogueItem[];
     onReexamine: JSONDialogueItem[] | null;
   }>,
@@ -389,11 +416,19 @@ function appendInventoryCarrierGroups(
   withMetadata: boolean,
 ): void {
   for (const evidence of evidenceManifest) {
+    if (evidence.imageAssetId !== null) {
+      presentation.push({
+        kind: "evidenceImage",
+        carrierId: `evidence:${evidence.id}`,
+        imageAssetId: evidence.imageAssetId,
+      });
+    }
     const notices = withMetadata ? evidenceMetadataNotices(evidence) : [];
     pushGroup(
       groups,
       withPrependedNotices(
         pooledCarrierGroup(
+          presentation,
           pool,
           `evidence:${evidence.id}:onCollect`,
           "evidence",
@@ -408,6 +443,7 @@ function appendInventoryCarrierGroups(
       groups,
       withPrependedNotices(
         pooledCarrierGroup(
+          presentation,
           pool,
           `evidence:${evidence.id}:onReexamine`,
           "evidence",
@@ -425,6 +461,7 @@ function appendInventoryCarrierGroups(
       groups,
       withPrependedNotices(
         pooledCarrierGroup(
+          presentation,
           pool,
           `statement:${statement.id}:onAcquire`,
           "statement",
@@ -439,6 +476,7 @@ function appendInventoryCarrierGroups(
       groups,
       withPrependedNotices(
         pooledCarrierGroup(
+          presentation,
           pool,
           `statement:${statement.id}:onReexamine`,
           "statement",
@@ -461,15 +499,32 @@ function projectInvestigation(
     deriveDialogueSegments({ chapterId, json: scene }),
   );
   const groups: ReaderGroup[] = [];
+  const presentation: ReaderPresentationFact[] = [];
   pushGroup(
     groups,
-    pooledCarrierGroup(pool, "intro", "intro", "Intro", scene.intro),
+    pooledCarrierGroup(
+      presentation,
+      pool,
+      "intro",
+      "intro",
+      "Intro",
+      scene.intro,
+    ),
   );
   for (const sublocation of scene.sublocations) {
     const children: ReaderGroup[] = [];
+    // Structural visual cue at the existing sublocation traversal site.
+    presentation.push({
+      kind: "structuralVisualCue",
+      carrierId: `sublocation:${sublocation.id}`,
+      backgroundAssetId: sublocation.backgroundAssetId,
+      bgm: sublocation.bgm,
+      bgs: sublocation.bgs,
+    });
     pushGroup(
       children,
       pooledCarrierGroup(
+        presentation,
         pool,
         `sublocation:${sublocation.id}:transition`,
         "sublocation",
@@ -482,6 +537,7 @@ function projectInvestigation(
       pushGroup(
         hotspotChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `hotspot:${hotspot.id}:inspect`,
           "hotspot",
@@ -492,6 +548,7 @@ function projectInvestigation(
       pushGroup(
         hotspotChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `hotspot:${hotspot.id}:reexamine`,
           "hotspot",
@@ -512,11 +569,23 @@ function projectInvestigation(
       );
     }
     for (const character of sublocation.characters) {
+      // Sprite layouts carry a raw asset ID at the existing character site;
+      // baked layouts are non-asset-bearing. Asset kind resolves via the
+      // manifest join downstream.
+      if (character.layout?.kind === "sprite") {
+        presentation.push({
+          kind: "sprite",
+          carrierId: `character:${character.id}`,
+          characterId: character.id,
+          assetId: character.layout.assetId,
+        });
+      }
       for (const topic of character.topics) {
         const topicChildren: ReaderGroup[] = [];
         pushGroup(
           topicChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `topic:${character.id}:${topic.id}:dialogue`,
             "topic",
@@ -527,6 +596,7 @@ function projectInvestigation(
         pushGroup(
           topicChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `topic:${character.id}:${topic.id}:reexamine`,
             "topic",
@@ -559,6 +629,7 @@ function projectInvestigation(
     );
   }
   appendInventoryCarrierGroups(
+    presentation,
     pool,
     groups,
     scene.evidenceManifest,
@@ -567,7 +638,14 @@ function projectInvestigation(
   );
   pushGroup(
     groups,
-    pooledCarrierGroup(pool, "outro", "outro", "Outro", scene.outro.dialogue),
+    pooledCarrierGroup(
+      presentation,
+      pool,
+      "outro",
+      "outro",
+      "Outro",
+      scene.outro.dialogue,
+    ),
   );
   pool.assertFullyConsumed();
   return {
@@ -576,6 +654,7 @@ function projectInvestigation(
     title: scene.title,
     sourcePath,
     groups,
+    presentation,
   };
 }
 
@@ -588,15 +667,39 @@ function projectInterrogation(
     deriveDialogueSegments({ chapterId, json: scene }),
   );
   const groups: ReaderGroup[] = [];
+  const presentation: ReaderPresentationFact[] = [];
   pushGroup(
     groups,
-    pooledCarrierGroup(pool, "intro", "intro", "Intro", scene.intro),
+    pooledCarrierGroup(
+      presentation,
+      pool,
+      "intro",
+      "intro",
+      "Intro",
+      scene.intro,
+    ),
   );
   for (const phase of scene.phases) {
     const phaseChildren: ReaderGroup[] = [];
+    // Structural visual cue + subject portrait at the existing phase site.
+    presentation.push({
+      kind: "structuralVisualCue",
+      carrierId: `phase:${phase.id}`,
+      backgroundAssetId: phase.backgroundAssetId,
+      bgm: phase.bgm,
+      bgs: phase.bgs,
+    });
+    if (phase.subject.portrait !== null) {
+      presentation.push({
+        kind: "subjectPortrait",
+        carrierId: `phase:${phase.id}`,
+        portrait: phase.subject.portrait,
+      });
+    }
     pushGroup(
       phaseChildren,
       pooledCarrierGroup(
+        presentation,
         pool,
         `phase:${phase.id}:entry`,
         "phase",
@@ -610,6 +713,7 @@ function projectInterrogation(
       pushGroup(
         questionChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `question:${question.id}:onLoop`,
           "question",
@@ -621,6 +725,7 @@ function projectInterrogation(
       pushGroup(
         questionChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `question:${question.id}:loopPrompt`,
           "question",
@@ -632,6 +737,7 @@ function projectInterrogation(
       pushGroup(
         questionChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `question:${question.id}:defaultChallenge`,
           "question",
@@ -643,6 +749,7 @@ function projectInterrogation(
       pushGroup(
         questionChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `question:${question.id}:defaultWrong`,
           "question",
@@ -654,6 +761,7 @@ function projectInterrogation(
       pushGroup(
         questionChildren,
         pooledCarrierGroup(
+          presentation,
           pool,
           `question:${question.id}:wrongReply`,
           "question",
@@ -667,6 +775,7 @@ function projectInterrogation(
         pushGroup(
           lineChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `question:${question.id}:line:${testimonyLine.id}:content`,
             "line",
@@ -677,6 +786,7 @@ function projectInterrogation(
         pushGroup(
           lineChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `question:${question.id}:line:${testimonyLine.id}:challenge`,
             "line",
@@ -688,6 +798,7 @@ function projectInterrogation(
         pushGroup(
           lineChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `question:${question.id}:line:${testimonyLine.id}:onCorrect`,
             "line",
@@ -699,6 +810,7 @@ function projectInterrogation(
         pushGroup(
           lineChildren,
           pooledCarrierGroup(
+            presentation,
             pool,
             `question:${question.id}:line:${testimonyLine.id}:onWrongEvidence`,
             "line",
@@ -745,6 +857,7 @@ function projectInterrogation(
     );
   }
   appendInventoryCarrierGroups(
+    presentation,
     pool,
     groups,
     scene.evidenceManifest,
@@ -753,7 +866,14 @@ function projectInterrogation(
   );
   pushGroup(
     groups,
-    pooledCarrierGroup(pool, "outro", "outro", "Outro", scene.outro.dialogue),
+    pooledCarrierGroup(
+      presentation,
+      pool,
+      "outro",
+      "outro",
+      "Outro",
+      scene.outro.dialogue,
+    ),
   );
   pool.assertFullyConsumed();
   return {
@@ -762,6 +882,7 @@ function projectInterrogation(
     title: scene.title,
     sourcePath,
     groups,
+    presentation,
   };
 }
 
@@ -770,7 +891,13 @@ function projectPublicAnalysis(
   scene: PublicAnalysisScene,
 ): ReaderScene {
   const groups: ReaderGroup[] = [];
-  pushGroup(groups, carrierGroup("intro", "intro", "Intro", scene.intro));
+  // Public Analysis exposes a sanitized scene: presentation comes only from
+  // the public intro/result/outro dialogue — never from private board data.
+  const presentation: ReaderPresentationFact[] = [];
+  pushGroup(
+    groups,
+    carrierGroup(presentation, "intro", "intro", "Intro", scene.intro),
+  );
   for (const board of scene.boards) {
     const boardItems: ReaderItem[] = [
       { kind: "notice", noticeKind: "prompt", text: board.common.prompt },
@@ -820,6 +947,7 @@ function projectPublicAnalysis(
     pushGroup(
       children,
       carrierGroup(
+        presentation,
         `board:${board.common.id}:result`,
         "result",
         "Result",
@@ -837,12 +965,16 @@ function projectPublicAnalysis(
       ),
     );
   }
-  pushGroup(groups, carrierGroup("outro", "outro", "Outro", scene.outro));
+  pushGroup(
+    groups,
+    carrierGroup(presentation, "outro", "outro", "Outro", scene.outro),
+  );
   return {
     id: scene.id,
     type: "analysis",
     title: scene.title,
     sourcePath,
     groups,
+    presentation,
   };
 }

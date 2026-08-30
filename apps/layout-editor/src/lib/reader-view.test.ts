@@ -43,6 +43,7 @@ function fixtureScene(): ReaderScene {
     type: "interrogation",
     title: "Fixture Scene",
     sourcePath: "docs/stories_plan/chapter_1/scene_x.md",
+    presentation: [],
     groups: [
       group("intro", [
         sceneTag("場景：偵訊室"),

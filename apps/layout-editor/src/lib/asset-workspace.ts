@@ -30,8 +30,15 @@ import {
   type ParsedCharacterCatalog,
 } from "@lyra/scripts/compile-scenes/assets/config-catalog";
 import type { AssetReport } from "@lyra/scripts/compile-scenes/orchestrator";
-import type { CompileError } from "@lyra/scripts/compile-scenes/types";
-import type { WorkbenchAssetWorkspacePayload } from "./workbench-types";
+import type {
+  AudioCue,
+  CompileError,
+} from "@lyra/scripts/compile-scenes/types";
+import { projectReaderScene, ReaderProjectionError } from "./reader-projection";
+import type {
+  ReaderPresentationFact,
+  WorkbenchAssetWorkspacePayload,
+} from "./workbench-types";
 
 export type AssetCharacterExpressionRow = {
   characterId: string;
@@ -71,6 +78,36 @@ export type AssetAudioRow = {
 /** Read diagnostics from parsing the authored config sources. */
 export type AssetWorkspaceDiagnostic = CompileError;
 
+/**
+ * One concrete asset reference projected from Reader presentation facts.
+ * `type` is the manifest entry type after the assetId join; `null` means the
+ * generated manifest has no entry (surfaced as an unresolved diagnostic).
+ */
+export type AssetSceneUsage = {
+  chapterId: string;
+  sceneId: string;
+  carrierId: string;
+  role: "background" | "portrait" | "evidence" | "sprite";
+  /** Item index inside the carrier for dialogue facts; null otherwise. */
+  itemIndex: number | null;
+  assetId: string;
+  type: AssetManifestEntry["type"] | null;
+};
+
+/**
+ * Per-cue BGM/BGS delta preserving the compiler's tri-state cue semantics:
+ * null cue = inherit, `{ assetId: null }` = stop, concrete id = set.
+ */
+export type AssetSceneAudioDelta = {
+  chapterId: string;
+  sceneId: string;
+  carrierId: string;
+  itemIndex: number | null;
+  channel: "bgm" | "bgs";
+  state: "inherit" | "stop" | "set";
+  assetId: string | null;
+};
+
 export type AssetWorkspace = {
   manifest: AssetManifest;
   report: AssetReport;
@@ -79,6 +116,10 @@ export type AssetWorkspace = {
   characters: AssetCharacterRow[];
   audio: { bgm: AssetAudioRow[]; bgs: AssetAudioRow[]; sfx: AssetAudioRow[] };
   diagnostics: AssetWorkspaceDiagnostic[];
+  /** Concrete per-scene asset usages joined against the manifest. */
+  sceneUsages: AssetSceneUsage[];
+  /** Per-cue BGM/BGS deltas with inherit/stop/set semantics preserved. */
+  sceneAudioDeltas: AssetSceneAudioDelta[];
   scenes: WorkbenchAssetWorkspacePayload["scenes"];
   /** Presence-only list of asset files under static/assets. */
   existingAssetPaths: WorkbenchAssetWorkspacePayload["existingAssetPaths"];
@@ -97,6 +138,7 @@ export function projectAssetWorkspace(
   );
   const portraitUsages = countPortraitUsages(payload.manifest);
   const audioUsages = countAudioUsages(payload.manifest);
+  const sceneProjection = projectSceneUsages(payload);
   return {
     manifest: payload.manifest,
     report: payload.report,
@@ -106,10 +148,173 @@ export function projectAssetWorkspace(
     diagnostics: [
       ...catalogDiagnostics(characters),
       ...catalogDiagnostics(audio),
+      ...sceneProjection.diagnostics,
     ],
+    sceneUsages: sceneProjection.usages,
+    sceneAudioDeltas: sceneProjection.audioDeltas,
     scenes: payload.scenes,
     existingAssetPaths: payload.existingAssetPaths,
   };
+}
+
+// ---- scene usage projection (Reader presentation facts only) ----------------
+
+/**
+ * Projects per-scene asset usages from `projectReaderScene().presentation`
+ * for every snapshot scene. The Reader walk is the only scene walker: this
+ * never switches on the scene shape and never derives carrier IDs itself —
+ * facts already carry the existing Reader carrier IDs and item indexes.
+ */
+function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
+  usages: AssetSceneUsage[];
+  audioDeltas: AssetSceneAudioDelta[];
+  diagnostics: AssetWorkspaceDiagnostic[];
+} {
+  const manifestTypeByAssetId = new Map<string, AssetManifestEntry["type"]>();
+  for (const entry of payload.manifest.entries) {
+    if (!manifestTypeByAssetId.has(entry.assetId)) {
+      manifestTypeByAssetId.set(entry.assetId, entry.type);
+    }
+  }
+
+  const usages = new Map<string, AssetSceneUsage>();
+  const audioDeltas: AssetSceneAudioDelta[] = [];
+  const diagnostics: AssetWorkspaceDiagnostic[] = [];
+
+  for (const snapshot of payload.scenes) {
+    let facts: ReaderPresentationFact[];
+    try {
+      facts = projectReaderScene(
+        snapshot.chapterId,
+        snapshot.sourcePath,
+        snapshot.scene,
+      ).presentation;
+    } catch (error) {
+      // A strict Reader completeness failure is a read diagnostic here, not a
+      // workbench crash — the snapshot is compiler output, so this indicates
+      // compiler/editor drift that the workbench should display.
+      if (!(error instanceof ReaderProjectionError)) throw error;
+      diagnostics.push({
+        code: error.code,
+        message: `${snapshot.sceneId}: ${error.message}`,
+        sourceFile: snapshot.sourcePath,
+        line: 0,
+      });
+      continue;
+    }
+
+    const resolveType = (assetId: string): AssetManifestEntry["type"] | null =>
+      manifestTypeByAssetId.get(assetId) ?? null;
+    const noteUnresolved = (description: string, assetId: string): void => {
+      diagnostics.push({
+        code: "assetUsageUnresolved",
+        message: `${snapshot.chapterId}/${snapshot.sceneId} ${description} references "${assetId}" but the generated asset manifest has no entry for it.`,
+        sourceFile: snapshot.sourcePath,
+        line: 0,
+      });
+    };
+    const addUsage = (
+      fact: ReaderPresentationFact,
+      role: AssetSceneUsage["role"],
+      itemIndex: number | null,
+      assetId: string,
+    ): void => {
+      // Deterministic dedupe: one row per (chapter, scene, carrier, role,
+      // item index, asset). Different item indexes keep distinct rows so
+      // repeated identical occurrences never collapse.
+      const key = [
+        snapshot.chapterId,
+        snapshot.sceneId,
+        fact.carrierId,
+        role,
+        itemIndex === null ? "" : String(itemIndex),
+        assetId,
+      ].join("\u0000");
+      if (usages.has(key)) return;
+      const type = resolveType(assetId);
+      usages.set(key, {
+        chapterId: snapshot.chapterId,
+        sceneId: snapshot.sceneId,
+        carrierId: fact.carrierId,
+        role,
+        itemIndex,
+        assetId,
+        type,
+      });
+      if (type === null) {
+        noteUnresolved(`${role} usage at carrier "${fact.carrierId}"`, assetId);
+      }
+    };
+    const addAudioDelta = (
+      fact: ReaderPresentationFact,
+      itemIndex: number | null,
+      channel: "bgm" | "bgs",
+      cue: AudioCue | null,
+    ): void => {
+      const state: AssetSceneAudioDelta["state"] =
+        cue === null ? "inherit" : cue.assetId === null ? "stop" : "set";
+      audioDeltas.push({
+        chapterId: snapshot.chapterId,
+        sceneId: snapshot.sceneId,
+        carrierId: fact.carrierId,
+        itemIndex,
+        channel,
+        state,
+        assetId: cue?.assetId ?? null,
+      });
+      if (
+        cue !== null &&
+        cue.assetId !== null &&
+        resolveType(cue.assetId) === null
+      ) {
+        noteUnresolved(
+          `${channel} cue at carrier "${fact.carrierId}"`,
+          cue.assetId,
+        );
+      }
+    };
+
+    for (const fact of facts) {
+      switch (fact.kind) {
+        case "dialogueAssetCue":
+          if (fact.cue.backgroundAssetId !== null) {
+            addUsage(
+              fact,
+              "background",
+              fact.itemIndex,
+              fact.cue.backgroundAssetId,
+            );
+          }
+          addAudioDelta(fact, fact.itemIndex, "bgm", fact.cue.bgm);
+          addAudioDelta(fact, fact.itemIndex, "bgs", fact.cue.bgs);
+          break;
+        case "dialoguePortrait":
+          addUsage(fact, "portrait", fact.itemIndex, fact.portrait.assetId);
+          break;
+        case "structuralVisualCue":
+          if (fact.backgroundAssetId !== null) {
+            addUsage(fact, "background", null, fact.backgroundAssetId);
+          }
+          addAudioDelta(fact, null, "bgm", fact.bgm);
+          addAudioDelta(fact, null, "bgs", fact.bgs);
+          break;
+        case "subjectPortrait":
+          addUsage(fact, "portrait", null, fact.portrait.assetId);
+          break;
+        case "evidenceImage":
+          addUsage(fact, "evidence", null, fact.imageAssetId);
+          break;
+        case "sprite":
+          // Raw sprite asset ID; the manifest join above resolves the asset
+          // kind (standee/portrait/evidence/background all work).
+          addUsage(fact, "sprite", null, fact.assetId);
+          break;
+      }
+    }
+  }
+
+  // Map iteration preserves insertion order — deterministic output.
+  return { usages: [...usages.values()], audioDeltas, diagnostics };
 }
 
 // ---- usage joins (typed manifest sources only) ------------------------------
