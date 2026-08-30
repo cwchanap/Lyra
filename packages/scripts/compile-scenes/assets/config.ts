@@ -354,14 +354,29 @@ function buildTypePolicies(
 /**
  * Reads characters.yaml through the shared pure parser. Filesystem I/O stays
  * here; a missing file normalizes to an empty catalog exactly like the
- * previous inline `{ characters: [] }` default.
+ * previous inline `{ characters: [] }` default, and an unreadable file
+ * (permission/EMFILE/EISDIR) yields the same `assetConfigUnreadable` failure
+ * shape the parser produces for parse failures — never a raw throw.
  */
 function readCharactersCatalog(configRoot: string): ParsedCharacterCatalog {
   const path = resolve(configRoot, "characters.yaml");
   if (!existsSync(path)) {
     return { ok: true, characters: [], errors: [], warnings: [] };
   }
-  return parseCharactersYamlText(readFileSync(path, "utf-8"), path);
+  try {
+    return parseCharactersYamlText(readFileSync(path, "utf-8"), path);
+  } catch (e) {
+    return {
+      ok: false,
+      errors: [
+        error(
+          path,
+          "assetConfigUnreadable",
+          `${path}: ${(e as Error).message}`,
+        ),
+      ],
+    };
+  }
 }
 
 /** See readCharactersCatalog(); missing audio.yaml normalizes to empty maps. */
@@ -370,7 +385,20 @@ function readAudioCatalog(configRoot: string): ParsedAudioCatalog {
   if (!existsSync(path)) {
     return { ok: true, audio: emptyAudioMaps(), errors: [], warnings: [] };
   }
-  return parseAudioYamlText(readFileSync(path, "utf-8"), path);
+  try {
+    return parseAudioYamlText(readFileSync(path, "utf-8"), path);
+  } catch (e) {
+    return {
+      ok: false,
+      errors: [
+        error(
+          path,
+          "assetConfigUnreadable",
+          `${path}: ${(e as Error).message}`,
+        ),
+      ],
+    };
+  }
 }
 
 function toCharacterConfig(entry: ParsedCharacterEntry): CharacterConfig {
