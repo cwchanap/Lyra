@@ -162,7 +162,9 @@ function payload(
       audio: { path: "static/assets/config/audio.yaml", content: AUDIO_YAML },
     },
     scenes: [],
-    existingAssetPaths: ["/assets/portraits/hayasaka_akane/standard.png"],
+    // Rust `load_asset_workspace` shape: repo-relative paths, never public
+    // URL paths (publicPath-shaped entries masked F1).
+    existingAssetPaths: ["static/assets/portraits/hayasaka_akane/standard.png"],
     ...overrides,
   };
 }
@@ -190,6 +192,44 @@ function scenePayload<
     scene,
   };
 }
+
+const standardOnlyScene: JSONLinearScene = {
+  type: "linear",
+  id: "scene_s",
+  title: "Standard",
+  summary: "",
+  queue: [{ kind: "line", speaker: "S", text: "a", portrait: AKANE_STANDARD }],
+  assetRefs: [],
+};
+
+/** Two sceneTags: bgm.rain+bgs.street_rain set at item 0, bgm.step set at item 1. */
+const audioCueScene: JSONLinearScene = {
+  type: "linear",
+  id: "scene_a",
+  title: "Audio",
+  summary: "",
+  queue: [
+    {
+      kind: "sceneTag",
+      text: "Scene:",
+      assetCue: {
+        backgroundAssetId: null,
+        bgm: { channel: "bgm", assetId: "audio.bgm.rain" },
+        bgs: { channel: "bgs", assetId: "audio.bgs.street_rain" },
+      },
+    },
+    {
+      kind: "sceneTag",
+      text: "Scene:",
+      assetCue: {
+        backgroundAssetId: null,
+        bgm: { channel: "bgm", assetId: "audio.bgm.step" },
+        bgs: null,
+      },
+    },
+  ],
+  assetRefs: [],
+};
 
 const cueLinearScene: JSONLinearScene = {
   type: "linear",
@@ -425,7 +465,11 @@ function spriteManifest(): AssetManifest {
 
 describe("projectAssetWorkspace", () => {
   it("configured_unused_expression_uses_shared_identity_and_paths", () => {
-    const workspace = projectAssetWorkspace(payload());
+    // One concrete line occurrence makes `standard` referenced; the manifest
+    // entry alone is never a usage-count source (F4).
+    const workspace = projectAssetWorkspace(
+      payload({ scenes: [scenePayload("scene_s", standardOnlyScene)] }),
+    );
 
     expect(workspace.characters).toHaveLength(1);
     const character = workspace.characters[0]!;
@@ -456,7 +500,9 @@ describe("projectAssetWorkspace", () => {
   });
 
   it("unused_expressions_are_neutral_not_warnings", () => {
-    const workspace = projectAssetWorkspace(payload());
+    const workspace = projectAssetWorkspace(
+      payload({ scenes: [scenePayload("scene_s", standardOnlyScene)] }),
+    );
 
     const concerned = workspace.characters[0]!.expressions.find(
       (expression) => expression.expressionId === "concerned",
@@ -478,7 +524,7 @@ describe("projectAssetWorkspace", () => {
     expect(workspace.report).toBe(report);
     expect(workspace.scenes).toEqual([]);
     expect(workspace.existingAssetPaths).toEqual([
-      "/assets/portraits/hayasaka_akane/standard.png",
+      "static/assets/portraits/hayasaka_akane/standard.png",
     ]);
 
     const row = workspace.library[0]!;
@@ -517,19 +563,25 @@ describe("projectAssetWorkspace", () => {
   });
 
   it("audio_library_joins_by_typed_manifest_source", () => {
-    const workspace = projectAssetWorkspace(payload());
+    // Two scenes with the same audioCueScene body: repeated set cues stay
+    // concrete occurrences (F2/F4), and each channel's rows count only its
+    // own channel's set cues — never manifest entry counts.
+    const workspace = projectAssetWorkspace(
+      payload({
+        scenes: [
+          scenePayload("scene_a", audioCueScene),
+          scenePayload("scene_b", audioCueScene),
+        ],
+      }),
+    );
 
-    // Join happens on the typed manifest source fields (entry.type ===
-    // "audio" + source.channel/source.id) — never on a reconstructed
-    // `audio.<channel>.<id>` string. The colliding "step" id proves channel
-    // filtering: each channel's row counts only its own manifest entries.
     expect(workspace.audio.bgm).toEqual([
       {
         channel: "bgm",
         id: "rain",
         prompt: "soft tension",
         loop: true,
-        usages: 1,
+        usages: 2,
         referenced: true,
       },
       {
@@ -537,7 +589,7 @@ describe("projectAssetWorkspace", () => {
         id: "step",
         prompt: "bgm step",
         loop: true,
-        usages: 1,
+        usages: 2,
         referenced: true,
       },
     ]);
@@ -547,20 +599,94 @@ describe("projectAssetWorkspace", () => {
         id: "street_rain",
         prompt: "rain",
         loop: true,
-        usages: 1,
+        usages: 2,
         referenced: true,
       },
     ]);
+    // SFX has no cue channel in scene payloads: catalog-only SFX rows stay
+    // at zero usages even though the manifest holds an sfx entry.
     expect(workspace.audio.sfx).toEqual([
       {
         channel: "sfx",
         id: "step",
         prompt: "footstep",
         loop: true,
-        usages: 1,
-        referenced: true,
+        usages: 0,
+        referenced: false,
       },
     ]);
+  });
+
+  it("bgm_bgs_set_cues_produce_concrete_usages", () => {
+    const workspace = projectAssetWorkspace(
+      payload({ scenes: [scenePayload("scene_a", audioCueScene)] }),
+    );
+
+    // Set cues become usage rows (role bgm/bgs, manifest join by assetId)
+    // with the scene source path and the Reader-owned carrier label; stop
+    // cues (assetId null) stay deltas only.
+    expect(workspace.sceneUsages).toEqual([
+      {
+        chapterId: "chapter_1",
+        sceneId: "scene_a",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_a.md",
+        carrierId: "main",
+        carrierLabel: "Main",
+        role: "bgm",
+        itemIndex: 0,
+        assetId: "audio.bgm.rain",
+        type: "audio",
+      },
+      {
+        chapterId: "chapter_1",
+        sceneId: "scene_a",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_a.md",
+        carrierId: "main",
+        carrierLabel: "Main",
+        role: "bgs",
+        itemIndex: 0,
+        assetId: "audio.bgs.street_rain",
+        type: "audio",
+      },
+      {
+        chapterId: "chapter_1",
+        sceneId: "scene_a",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_a.md",
+        carrierId: "main",
+        carrierLabel: "Main",
+        role: "bgm",
+        itemIndex: 1,
+        assetId: "audio.bgm.step",
+        type: "audio",
+      },
+    ]);
+  });
+
+  it("portrait_usage_counts_come_from_concrete_occurrences", () => {
+    const workspace = projectAssetWorkspace(
+      payload({
+        manifest: spriteManifest(),
+        scenes: [
+          scenePayload("scene_u", portraitOccurrencesScene),
+          scenePayload("investigation_s", spriteScene),
+        ],
+      }),
+    );
+
+    const character = workspace.characters[0]!;
+    const standard = character.expressions.find(
+      (expression) => expression.expressionId === "standard",
+    )!;
+    const concerned = character.expressions.find(
+      (expression) => expression.expressionId === "concerned",
+    )!;
+    // 2 dialogue occurrences + 1 sprite layout occurrence = 3 concrete rows,
+    // even though the manifest holds a single deduped portrait entry.
+    expect(standard.usages).toBe(3);
+    expect(standard.referenced).toBe(true);
+    // 1 dialogue occurrence; the manifest has no concerned entry at all.
+    expect(concerned.usages).toBe(1);
+    expect(concerned.referenced).toBe(true);
   });
 });
 
@@ -598,7 +724,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
     expect(workspace.sceneUsages).toContainEqual({
       chapterId: "chapter_1",
       sceneId: "interrogation_u",
+      sceneSourcePath: "docs/stories_plan/chapter_1/interrogation_u.md",
       carrierId: "phase:phase_u",
+      carrierLabel: "Phase",
       role: "portrait",
       itemIndex: null,
       assetId: "portrait.hayasaka_akane.standard",
@@ -622,7 +750,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_cue",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_cue.md",
         carrierId: "main",
+        carrierLabel: "Main",
         itemIndex: 0,
         channel: "bgm",
         state: "stop",
@@ -631,7 +761,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_cue",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_cue.md",
         carrierId: "main",
+        carrierLabel: "Main",
         itemIndex: 0,
         channel: "bgs",
         state: "set",
@@ -640,7 +772,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "investigation_u",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_u.md",
         carrierId: "sublocation:hall",
+        carrierLabel: "Hall",
         itemIndex: null,
         channel: "bgm",
         state: "inherit",
@@ -649,7 +783,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "investigation_u",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_u.md",
         carrierId: "sublocation:hall",
+        carrierLabel: "Hall",
         itemIndex: null,
         channel: "bgs",
         state: "stop",
@@ -672,7 +808,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_u",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_u.md",
         carrierId: "main",
+        carrierLabel: "Main",
         role: "portrait",
         itemIndex: 1,
         assetId: "portrait.hayasaka_akane.standard",
@@ -681,7 +819,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_u",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_u.md",
         carrierId: "main",
+        carrierLabel: "Main",
         role: "portrait",
         itemIndex: 2,
         assetId: "portrait.hayasaka_akane.standard",
@@ -690,7 +830,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_u",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_u.md",
         carrierId: "main",
+        carrierLabel: "Main",
         role: "portrait",
         itemIndex: 3,
         assetId: "portrait.hayasaka_akane.concerned",
@@ -707,12 +849,16 @@ describe("projectAssetWorkspace scene usage projection", () => {
       }),
     );
     // The raw sprite asset IDs resolve their asset kind from the manifest
-    // join — standee, portrait, evidence, and background all work.
+    // join — standee, portrait, evidence, and background all work. Sprite
+    // carriers have no Reader group, so the label falls back to the carrier
+    // id (no second carrier-ID grammar).
     expect(workspace.sceneUsages).toEqual([
       {
         chapterId: "chapter_1",
         sceneId: "investigation_s",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_s.md",
         carrierId: "character:npc0",
+        carrierLabel: "character:npc0",
         role: "sprite",
         itemIndex: null,
         assetId: "standee.npc1.default",
@@ -721,7 +867,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "investigation_s",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_s.md",
         carrierId: "character:npc1",
+        carrierLabel: "character:npc1",
         role: "sprite",
         itemIndex: null,
         assetId: "portrait.hayasaka_akane.standard",
@@ -730,7 +878,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "investigation_s",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_s.md",
         carrierId: "character:npc2",
+        carrierLabel: "character:npc2",
         role: "sprite",
         itemIndex: null,
         assetId: "evidence.door_log",
@@ -739,7 +889,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "investigation_s",
+        sceneSourcePath: "docs/stories_plan/chapter_1/investigation_s.md",
         carrierId: "character:npc3",
+        carrierLabel: "character:npc3",
         role: "sprite",
         itemIndex: null,
         assetId: "background.chapter_1.investigation_s.wall",
@@ -760,7 +912,9 @@ describe("projectAssetWorkspace scene usage projection", () => {
       {
         chapterId: "chapter_1",
         sceneId: "scene_x",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_x.md",
         carrierId: "main",
+        carrierLabel: "Main",
         role: "portrait",
         itemIndex: 0,
         assetId: "portrait.hayasaka_akane.concerned",
@@ -825,7 +979,9 @@ describe("assetUsageGroups", () => {
         {
           chapterId: "chapter_1",
           sceneId: "investigation_s",
+          sceneSourcePath: "docs/stories_plan/chapter_1/investigation_s.md",
           carrierId: "character:npc1",
+          carrierLabel: "character:npc1",
           role: "sprite",
           itemIndex: null,
           assetId: "portrait.hayasaka_akane.standard",

@@ -561,6 +561,37 @@ types:
     );
   });
 
+  it("turns unreadable catalog reads into assetConfigUnreadable diagnostics", () => {
+    withConfig(
+      {
+        "policy.yaml": "assets:\n  enabled: false\n",
+        "characters.yaml": "characters: []\n",
+        "audio.yaml": "bgm: {}\nbgs: {}\n",
+      },
+      (root) => {
+        // A directory at the catalog path defeats the existsSync guard and
+        // makes readFileSync throw (EISDIR) — the same failure class as a
+        // permission/EMFILE error. Compilation must surface the read
+        // diagnostic, never a raw exception.
+        rmSync(resolve(root, "characters.yaml"));
+        mkdirSync(resolve(root, "characters.yaml"));
+        rmSync(resolve(root, "audio.yaml"));
+        mkdirSync(resolve(root, "audio.yaml"));
+
+        const result = loadAssetConfig(root);
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        const unreadable = result.errors.filter(
+          (e) => e.code === "assetConfigUnreadable",
+        );
+        expect(unreadable.map((e) => e.message)).toEqual([
+          expect.stringContaining("characters.yaml"),
+          expect.stringContaining("audio.yaml"),
+        ]);
+      },
+    );
+  });
+
   it("warns when policy.yaml is absent but sibling catalog files exist", () => {
     withConfig(
       {

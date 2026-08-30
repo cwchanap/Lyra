@@ -378,17 +378,22 @@ function payloadFixture(): WorkbenchAssetWorkspacePayload {
         scene: deltaInvestigationScene,
       },
     ],
-    // Presence-only: portrait.standard and audio.bgm.step are missing from
-    // disk; "unlisted.ogg" exists on disk but has no manifest row.
+    // Presence-only, Rust `load_asset_workspace` shape (repo-relative
+    // `static/assets/...` — publicPath-shaped entries masked F1):
+    // portrait.standard and audio.bgm.step are missing from disk;
+    // "unlisted.ogg" exists on disk but has no manifest row.
     existingAssetPaths: [
-      publicPath("background.chapter_1.scene_cues.hall", "background"),
-      publicPath("background.chapter_1.investigation_delta.hall", "background"),
-      publicPath("audio.bgm.rain", "audio"),
-      publicPath("audio.bgs.street_rain", "audio"),
-      publicPath("audio.sfx.step", "audio"),
-      publicPath("standee.npc1.default", "standee"),
-      publicPath("evidence.receipt", "evidence"),
-      "/assets/audio/bgm/unlisted.ogg",
+      expectedPath("background.chapter_1.scene_cues.hall", "background"),
+      expectedPath(
+        "background.chapter_1.investigation_delta.hall",
+        "background",
+      ),
+      expectedPath("audio.bgm.rain", "audio"),
+      expectedPath("audio.bgs.street_rain", "audio"),
+      expectedPath("audio.sfx.step", "audio"),
+      expectedPath("standee.npc1.default", "standee"),
+      expectedPath("evidence.receipt", "evidence"),
+      "static/assets/audio/bgm/unlisted.ogg",
     ],
   };
 }
@@ -681,13 +686,13 @@ describe("AssetsView", () => {
       "noir style\n\nneutral",
     );
 
-    const preview = within(inspector).getByRole("img", {
+    const preview = within(inspector).queryByRole("img", {
       name: "portrait.hayasaka_akane.standard",
     });
-    expect(preview).toHaveAttribute(
-      "src",
-      "/assets/portraits/hayasaka_akane/standard.png",
-    );
+    // F3: previews render only when the file is present; this fixture keeps
+    // portrait.standard absent from disk, so the inspector shows no image.
+    expect(preview).not.toBeInTheDocument();
+    expect(within(inspector).queryByRole("img")).not.toBeInTheDocument();
 
     expect(within(inspector).getByText("Usages: 1")).toBeInTheDocument();
     expect(
@@ -695,6 +700,46 @@ describe("AssetsView", () => {
         name: "chapter_1 / scene_cues · main · portrait",
       }),
     ).toBeInTheDocument();
+  });
+
+  it("shows BGM/BGS set cues as library usages and previews only present files", async () => {
+    const user = userEvent.setup();
+    renderAssets();
+    await openLibrary();
+
+    // F2: the scene_cues bgm Set cue is a concrete usage row with its role.
+    await user.click(screen.getByRole("button", { name: "audio.bgm.rain" }));
+    const inspector = screen.getByLabelText("Asset inspector");
+    expect(within(inspector).getByText("Usages: 1")).toBeInTheDocument();
+    expect(
+      within(inspector).getByRole("button", {
+        name: "chapter_1 / scene_cues · main · bgm",
+      }),
+    ).toBeInTheDocument();
+    // Present BGM keeps its audition control.
+    expect(inspector.querySelector("audio")).not.toBeNull();
+    expect(within(inspector).queryByRole("img")).not.toBeInTheDocument();
+
+    // F3: a present background previews; missing assets preview nothing.
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    expect(
+      within(screen.getByLabelText("Asset inspector")).getByRole("img", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    ).toHaveAttribute(
+      "src",
+      "/assets/backgrounds/chapter_1/scene_cues/hall.png",
+    );
+
+    await user.click(screen.getByRole("button", { name: "audio.bgm.step" }));
+    const missing = screen.getByLabelText("Asset inspector");
+    expect(within(missing).getByText("Missing")).toBeInTheDocument();
+    expect(within(missing).queryByRole("img")).not.toBeInTheDocument();
+    expect(missing.querySelector("audio")).toBeNull();
   });
 
   it("shows asset-relevant diagnostics only for the inspected asset", async () => {
@@ -825,10 +870,11 @@ describe("AssetsView", () => {
       standard.getByRole("button", { name: "chapter_1 / scene_cues" }),
     ).toBeInTheDocument();
 
-    // Configured-but-unused expression: a neutral 0-usage fact, never a
+    // One concrete occurrence in scene_x makes `concerned` referenced: a
+
     // warning or error.
     const concerned = within(rows[1]!);
-    expect(concerned.getByText("Usages: 0")).toBeInTheDocument();
+    expect(concerned.getByText("Usages: 1")).toBeInTheDocument();
     expect(concerned.getByText("worried")).toBeInTheDocument();
     expect(concerned.queryByText(/warning/i)).not.toBeInTheDocument();
 

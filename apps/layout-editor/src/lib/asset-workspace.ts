@@ -13,7 +13,7 @@
 // strings like `audio.<channel>.<id>`.
 // =============================================================================
 
-import { portraitAssetId } from "@lyra/asset-paths";
+import { parsePortraitAssetId, portraitAssetId } from "@lyra/asset-paths";
 import {
   expectedPath,
   publicPath,
@@ -36,6 +36,7 @@ import type {
 } from "@lyra/scripts/compile-scenes/types";
 import { projectReaderScene, ReaderProjectionError } from "./reader-projection";
 import type {
+  ReaderGroup,
   ReaderPresentationFact,
   WorkbenchAssetWorkspacePayload,
 } from "./workbench-types";
@@ -82,12 +83,20 @@ export type AssetWorkspaceDiagnostic = CompileError;
  * One concrete asset reference projected from Reader presentation facts.
  * `type` is the manifest entry type after the assetId join; `null` means the
  * generated manifest has no entry (surfaced as an unresolved diagnostic).
+ * `role` is the fact-derived usage kind: dialogue/structural visuals, audio
+ * Set cues (bgm/bgs), and sprite layouts. Sprite asset kinds resolve through
+ * `type` — the role stays "sprite" so related-sprite grouping can keep
+ * concrete occurrences distinct.
  */
 export type AssetSceneUsage = {
   chapterId: string;
   sceneId: string;
+  /** Repo-relative authored source path of the referencing scene. */
+  sceneSourcePath: string;
   carrierId: string;
-  role: "background" | "portrait" | "evidence" | "sprite";
+  /** Reader-owned human label for the carrier; falls back to carrierId. */
+  carrierLabel: string;
+  role: "background" | "bgm" | "bgs" | "portrait" | "evidence" | "sprite";
   /** Item index inside the carrier for dialogue facts; null otherwise. */
   itemIndex: number | null;
   assetId: string;
@@ -96,12 +105,15 @@ export type AssetSceneUsage = {
 
 /**
  * Per-cue BGM/BGS delta preserving the compiler's tri-state cue semantics:
- * null cue = inherit, `{ assetId: null }` = stop, concrete id = set.
+ * null cue = inherit, `{ assetId: null }` = stop, concrete id = set. Set
+ * cues additionally project a concrete `AssetSceneUsage` row (role bgm/bgs).
  */
 export type AssetSceneAudioDelta = {
   chapterId: string;
   sceneId: string;
+  sceneSourcePath: string;
   carrierId: string;
+  carrierLabel: string;
   itemIndex: number | null;
   channel: "bgm" | "bgs";
   state: "inherit" | "stop" | "set";
@@ -136,9 +148,11 @@ export function projectAssetWorkspace(
     payload.configSources.audio.content,
     payload.configSources.audio.path,
   );
-  const portraitUsages = countPortraitUsages(payload.manifest);
-  const audioUsages = countAudioUsages(payload.manifest);
   const sceneProjection = projectSceneUsages(payload);
+  // Usage counts come from the concrete scene-usages projection only — the
+  // manifest is assetId-deduped, so its entries never count occurrences (F4).
+  const portraitUsages = countPortraitUsages(sceneProjection.usages);
+  const audioUsages = countAudioUsages(sceneProjection.usages);
   return {
     manifest: payload.manifest,
     report: payload.report,
@@ -183,12 +197,17 @@ function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
 
   for (const snapshot of payload.scenes) {
     let facts: ReaderPresentationFact[];
+    let labelByCarrier: Map<string, string>;
     try {
-      facts = projectReaderScene(
+      const reader = projectReaderScene(
         snapshot.chapterId,
         snapshot.sourcePath,
         snapshot.scene,
-      ).presentation;
+      );
+      facts = reader.presentation;
+      // Reader-owned group labels keyed by the exact existing carrier ids —
+      // never a second carrier-ID grammar parsed in the editor.
+      labelByCarrier = collectCarrierLabels(reader.groups);
     } catch (error) {
       // A strict Reader completeness failure is a read diagnostic here, not a
       // workbench crash — the snapshot is compiler output, so this indicates
@@ -235,7 +254,9 @@ function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
       usages.set(key, {
         chapterId: snapshot.chapterId,
         sceneId: snapshot.sceneId,
+        sceneSourcePath: snapshot.sourcePath,
         carrierId: fact.carrierId,
+        carrierLabel: labelByCarrier.get(fact.carrierId) ?? fact.carrierId,
         role,
         itemIndex,
         assetId,
@@ -256,21 +277,19 @@ function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
       audioDeltas.push({
         chapterId: snapshot.chapterId,
         sceneId: snapshot.sceneId,
+        sceneSourcePath: snapshot.sourcePath,
         carrierId: fact.carrierId,
+        carrierLabel: labelByCarrier.get(fact.carrierId) ?? fact.carrierId,
         itemIndex,
         channel,
         state,
         assetId: cue?.assetId ?? null,
       });
-      if (
-        cue !== null &&
-        cue.assetId !== null &&
-        resolveType(cue.assetId) === null
-      ) {
-        noteUnresolved(
-          `${channel} cue at carrier "${fact.carrierId}"`,
-          cue.assetId,
-        );
+      // Set cues are concrete occurrences: they join the manifest as usage
+      // rows (role = channel) exactly like every other fact. addUsage owns
+      // the unresolved diagnostic, so the delta never duplicates it.
+      if (cue !== null && cue.assetId !== null) {
+        addUsage(fact, channel, itemIndex, cue.assetId);
       }
     };
 
@@ -315,6 +334,17 @@ function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
 
   // Map iteration preserves insertion order — deterministic output.
   return { usages: [...usages.values()], audioDeltas, diagnostics };
+}
+
+/** Reader group labels keyed by group id, depth-first over the whole tree. */
+function collectCarrierLabels(groups: ReaderGroup[]): Map<string, string> {
+  const labels = new Map<string, string>();
+  const walk = (group: ReaderGroup): void => {
+    if (!labels.has(group.id)) labels.set(group.id, group.label);
+    for (const child of group.children) walk(child);
+  };
+  for (const group of groups) walk(group);
+  return labels;
 }
 
 // ---- scene cue display rows (shared presentation helper) -------------------
@@ -506,30 +536,53 @@ export function assetUsageGroups(
   return { scenes: [...scenes.values()], sprites };
 }
 
-function countPortraitUsages(manifest: AssetManifest): Map<string, number> {
-  const usages = new Map<string, number>();
-  for (const entry of manifest.entries) {
-    if (entry.type !== "portrait") continue;
-    const key = `${entry.source.characterId}\u0000${entry.source.expression}`;
-    usages.set(key, (usages.get(key) ?? 0) + 1);
+/**
+ * Counts concrete portrait-expression occurrences from the scene-usages
+ * projection: portrait-role rows (dialogue/subject) plus sprite-role rows
+ * whose raw asset id parses to a portrait identity. The manifest is
+ * assetId-deduped and never counts occurrences.
+ */
+function countPortraitUsages(usages: AssetSceneUsage[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const usage of usages) {
+    if (usage.role !== "portrait" && usage.role !== "sprite") continue;
+    if (!usage.assetId.startsWith("portrait.")) continue;
+    let identity: { characterId: string; expression: string };
+    try {
+      identity = parsePortraitAssetId(usage.assetId);
+    } catch {
+      // Malformed portrait id: the manifest join already surfaced it.
+      continue;
+    }
+    const key = `${identity.characterId}\u0000${identity.expression}`;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
   }
-  return usages;
+  return counts;
 }
 
+/**
+ * Counts concrete BGM/BGS Set-cue occurrences from the usage projection,
+ * keyed by (channel, catalog id). The role carries the channel; the catalog
+ * id is the compiler-owned `audio.<channel>.<id>` suffix. SFX has no cue
+ * channel, so catalog-only SFX rows stay at zero.
+ */
 function countAudioUsages(
-  manifest: AssetManifest,
+  usages: AssetSceneUsage[],
 ): Map<AudioChannel, Map<string, number>> {
-  const usages = new Map<AudioChannel, Map<string, number>>();
-  for (const entry of manifest.entries) {
-    if (entry.type !== "audio") continue;
-    let byId = usages.get(entry.source.channel);
+  const counts = new Map<AudioChannel, Map<string, number>>();
+  for (const usage of usages) {
+    if (usage.role !== "bgm" && usage.role !== "bgs") continue;
+    const prefix = `audio.${usage.role}.`;
+    if (!usage.assetId.startsWith(prefix)) continue;
+    const id = usage.assetId.slice(prefix.length);
+    let byId = counts.get(usage.role);
     if (!byId) {
       byId = new Map();
-      usages.set(entry.source.channel, byId);
+      counts.set(usage.role, byId);
     }
-    byId.set(entry.source.id, (byId.get(entry.source.id) ?? 0) + 1);
+    byId.set(id, (byId.get(id) ?? 0) + 1);
   }
-  return usages;
+  return counts;
 }
 
 // ---- projections -------------------------------------------------------------

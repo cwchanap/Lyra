@@ -147,12 +147,16 @@
     return entry.type === "audio" ? entry.source.channel : entry.type;
   }
 
-  function isPathPresent(publicPath: string): boolean {
-    return workspace?.existingAssetPaths.includes(publicPath) ?? false;
+  // Presence joins on the repo-relative path family (`static/assets/...`):
+  // `existingAssetPaths` comes from Rust in that shape, and manifest/model
+  // `expectedPath` is its matching pair. publicPath (`/assets/...`) is the
+  // URL form and never compares equal (F1).
+  function isPathPresent(repoRelativePath: string): boolean {
+    return workspace?.existingAssetPaths.includes(repoRelativePath) ?? false;
   }
 
   function isPresent(entry: LibraryEntry): boolean {
-    return isPathPresent(entry.publicPath);
+    return isPathPresent(entry.expectedPath);
   }
 
   function audioLabel(
@@ -210,7 +214,7 @@
       <span class="text-[0.75rem] text-[#60706b]"
         >{isPresent(entry) ? "Present" : "Missing"}</span
       >
-      {#if type === "background" && entry.publicPath}
+      {#if type === "background" && entry.publicPath && isPresent(entry)}
         <img
           class="h-12 w-20 rounded object-cover"
           src={entry.publicPath}
@@ -266,14 +270,14 @@
         class="m-0 overflow-x-auto rounded bg-[#f6f4ee] p-2 text-[0.8rem] whitespace-pre-wrap"
         data-final-prompt>{entry.finalPrompt}</pre>
     </div>
-    {#if entry.type !== "audio" && entry.publicPath}
+    {#if entry.type !== "audio" && entry.publicPath && isPresent(entry)}
       <img
         class="max-h-40 w-fit rounded"
         src={entry.publicPath}
         alt={entry.assetId}
       />
     {/if}
-    {#if kindOf(entry) === "bgm" || kindOf(entry) === "bgs"}
+    {#if (kindOf(entry) === "bgm" || kindOf(entry) === "bgs") && isPresent(entry)}
       <audio controls src={entry.publicPath}></audio>
     {/if}
     <div class="flex gap-2">
@@ -590,7 +594,7 @@
                         {expression.assetId}
                       </button>
                       <span class="text-[0.75rem] text-[#60706b]">
-                        {isPathPresent(expression.publicPath)
+                        {isPathPresent(expression.expectedPath)
                           ? "Present"
                           : "Missing"}
                       </span>
