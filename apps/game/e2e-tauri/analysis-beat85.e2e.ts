@@ -780,131 +780,152 @@ async function drainToAnalysisBoard(boardId: string): Promise<GameStateView> {
   return waitForAnalysisBoard(boardId);
 }
 
-async function challengePhase(
+async function runChallengeIteration(
   phaseId: string,
-  challenges: Array<{ questionId: string; evidenceId: string }>,
-  nextPhaseId: string,
-): Promise<GameStateView> {
-  for (const [index, challenge] of challenges.entries()) {
-    const before = await waitForPackagedGameState(
-      (state) =>
-        state.scene.kind === "interrogation" &&
-        state.scene.currentPhaseId === phaseId &&
-        state.mode.type === "interrogation",
-      30000,
-      `${phaseId} did not become the active interrogation phase`,
+  index: number,
+  challenge: { questionId: string; evidenceId: string },
+  isLast: boolean,
+): Promise<void> {
+  const before = await waitForPackagedGameState(
+    (state) =>
+      state.scene.kind === "interrogation" &&
+      state.scene.currentPhaseId === phaseId &&
+      state.mode.type === "interrogation",
+    30000,
+    `${phaseId} did not become the active interrogation phase`,
+  );
+  if (before.scene.kind !== "interrogation") {
+    throw new Error(`${phaseId} state was not interrogation`);
+  }
+  const phase = before.scene.visiblePhases.find(
+    (candidate) => candidate.id === phaseId,
+  );
+  if (!phase) throw new Error(`phase ${phaseId} is not visible`);
+  const question = phase.questions.find(
+    (candidate) => candidate.id === challenge.questionId,
+  );
+  if (!question) {
+    throw new Error(
+      `${phaseId} question ${challenge.questionId} is not visible`,
     );
-    if (before.scene.kind !== "interrogation") {
-      throw new Error(`${phaseId} state was not interrogation`);
-    }
-    const phase = before.scene.visiblePhases.find(
-      (candidate) => candidate.id === phaseId,
-    );
-    if (!phase) throw new Error(`phase ${phaseId} is not visible`);
-    const question = phase.questions.find(
-      (candidate) => candidate.id === challenge.questionId,
-    );
-    if (!question) {
-      throw new Error(
-        `${phaseId} question ${challenge.questionId} is not visible`,
-      );
-    }
+  }
 
-    await clickButton(question.label);
-    await waitForPackagedGameState(
-      (state) =>
-        state.mode.type === "dialogue" && state.mode.crossExamLineId !== null,
-      30000,
-      `${phaseId} ${challenge.questionId} testimony did not start`,
-    );
-    await advanceDialogueUntil(
-      async () =>
-        browser.execute(
-          () =>
-            document.querySelector("button.xexam-challenge:not(:disabled)") !==
-            null,
-        ),
-      80,
-    );
-    if (phaseId === "p1" && index === 0) {
-      await snapshotTestimonyGeometry();
-      await assertInterrogationTestimonySemantics();
-      await captureMockupViewport({
-        name: "interrogation-testimony-rebut",
-        requested: MOCKUP_VIEWPORT,
-        outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
-      });
+  await clickButton(question.label);
+  await waitForPackagedGameState(
+    (state) =>
+      state.mode.type === "dialogue" && state.mode.crossExamLineId !== null,
+    30000,
+    `${phaseId} ${challenge.questionId} testimony did not start`,
+  );
+  await advanceDialogueUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.querySelector("button.xexam-challenge:not(:disabled)") !==
+          null,
+      ),
+    80,
+  );
+  if (phaseId === "p1" && index === 0) {
+    await snapshotTestimonyGeometry();
+    await assertInterrogationTestimonySemantics();
+    await captureMockupViewport({
+      name: "interrogation-testimony-rebut",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
+  }
+  await clickButton("反駁");
+  await advanceDialogueUntil(async () => {
+    try {
+      const state = await getPackagedGameState();
+      return (
+        state.mode.type === "interrogation" &&
+        state.scene.kind === "interrogation" &&
+        state.scene.visiblePhases.some(
+          (candidate) =>
+            candidate.id === phaseId && candidate.crossExam?.presenting,
+        )
+      );
+    } catch {
+      return false;
     }
-    await clickButton("反駁");
+  }, 80);
+  const presenting = await waitForPackagedGameState(
+    (state) =>
+      state.mode.type === "interrogation" &&
+      state.scene.kind === "interrogation" &&
+      state.scene.visiblePhases.some(
+        (candidate) =>
+          candidate.id === phaseId && candidate.crossExam?.presenting,
+      ),
+    30000,
+    `${phaseId} ${challenge.questionId} did not open the evidence tray`,
+  );
+  if (phaseId === "p1" && index === 0) {
+    await snapshotPresentGeometry();
+    await assertInterrogationPresentSemantics();
+    await captureMockupViewport({
+      name: "interrogation-present",
+      requested: MOCKUP_VIEWPORT,
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
+  }
+  const evidence = presenting.inventory.evidence.find(
+    (candidate) => candidate.id === challenge.evidenceId,
+  );
+  if (!evidence) {
+    throw new Error(
+      `${phaseId} evidence ${challenge.evidenceId} was not seeded`,
+    );
+  }
+  await clickPresentRecordWithPointer(evidence.name);
+  if (phaseId === "p1" && index === 0) {
+    // The correct response changes the current speaker/expression. This is a
+    // nullable observation only; the functional journey must continue even if
+    // the art hook is temporarily absent during the crossfade.
+    await browser.pause(100);
+    await refreshTestimonyArtGeometry();
+  }
+
+  if (!isLast) {
     await advanceDialogueUntil(async () => {
       try {
         const state = await getPackagedGameState();
         return (
           state.mode.type === "interrogation" &&
           state.scene.kind === "interrogation" &&
+          state.scene.currentPhaseId === phaseId &&
           state.scene.visiblePhases.some(
             (candidate) =>
-              candidate.id === phaseId && candidate.crossExam?.presenting,
+              candidate.id === phaseId && candidate.crossExam === null,
           )
         );
       } catch {
         return false;
       }
-    }, 80);
-    const presenting = await waitForPackagedGameState(
-      (state) =>
-        state.mode.type === "interrogation" &&
-        state.scene.kind === "interrogation" &&
-        state.scene.visiblePhases.some(
-          (candidate) =>
-            candidate.id === phaseId && candidate.crossExam?.presenting,
-        ),
-      30000,
-      `${phaseId} ${challenge.questionId} did not open the evidence tray`,
-    );
-    if (phaseId === "p1" && index === 0) {
-      await snapshotPresentGeometry();
-      await assertInterrogationPresentSemantics();
-      await captureMockupViewport({
-        name: "interrogation-present",
-        requested: MOCKUP_VIEWPORT,
-        outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
-      });
-    }
-    const evidence = presenting.inventory.evidence.find(
-      (candidate) => candidate.id === challenge.evidenceId,
-    );
-    if (!evidence) {
-      throw new Error(
-        `${phaseId} evidence ${challenge.evidenceId} was not seeded`,
-      );
-    }
-    await clickPresentRecordWithPointer(evidence.name);
-    if (phaseId === "p1" && index === 0) {
-      // The correct response changes the current speaker/expression. This is a
-      // nullable observation only; the functional journey must continue even if
-      // the art hook is temporarily absent during the crossfade.
-      await browser.pause(100);
-      await refreshTestimonyArtGeometry();
-    }
+    }, 160);
+  }
+}
 
-    if (index < challenges.length - 1) {
-      await advanceDialogueUntil(async () => {
-        try {
-          const state = await getPackagedGameState();
-          return (
-            state.mode.type === "interrogation" &&
-            state.scene.kind === "interrogation" &&
-            state.scene.currentPhaseId === phaseId &&
-            state.scene.visiblePhases.some(
-              (candidate) =>
-                candidate.id === phaseId && candidate.crossExam === null,
-            )
-          );
-        } catch {
-          return false;
-        }
-      }, 160);
+async function challengePhase(
+  phaseId: string,
+  challenges: Array<{ questionId: string; evidenceId: string }>,
+  nextPhaseId: string,
+): Promise<GameStateView> {
+  for (const [index, challenge] of challenges.entries()) {
+    try {
+      await runChallengeIteration(
+        phaseId,
+        index,
+        challenge,
+        index === challenges.length - 1,
+      );
+    } catch (error) {
+      throw new Error(
+        `challengePhase ${phaseId} failed at question ${challenge.questionId} (evidence ${challenge.evidenceId}, index ${index})`,
+        { cause: error },
+      );
     }
   }
 
