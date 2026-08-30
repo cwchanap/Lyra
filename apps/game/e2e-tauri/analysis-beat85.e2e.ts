@@ -834,6 +834,13 @@ async function runChallengeIteration(
       requested: MOCKUP_VIEWPORT,
       outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
     });
+  } else if (phaseId === "p1" && index === 1) {
+    await assertInterrogationTestimonySemantics();
+    await captureMockupViewport({
+      name: "interrogation-testimony-tall",
+      requested: { width: 1280, height: 800 },
+      outputDirectory: MOCKUP_CAPTURE_OUTPUT_DIRECTORY,
+    });
   }
   await clickButton("反駁");
   await advanceDialogueUntil(async () => {
