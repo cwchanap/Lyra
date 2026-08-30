@@ -1418,12 +1418,15 @@ mod tests {
 
     fn temp_workbench_root() -> PathBuf {
         let mut root = std::env::temp_dir();
+        // Counter suffix: parallel tests can land on the same nanosecond and
+        // would otherwise share (and mutate) one fixture root.
         root.push(format!(
-            "lyra-layout-editor-workbench-test-{}",
+            "lyra-layout-editor-workbench-test-{}-{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            LAYOUT_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join("apps/game/src-tauri/resources/scenes")).unwrap();
         fs::create_dir_all(root.join("docs/stories_plan/chapter_1")).unwrap();
