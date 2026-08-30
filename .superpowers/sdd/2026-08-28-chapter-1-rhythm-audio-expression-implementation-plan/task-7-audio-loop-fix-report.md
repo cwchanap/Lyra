@@ -1,8 +1,10 @@
 # Task 7 follow-up report — seamless Chapter 1 BGM loops
 
 Date: 2026-08-29  
-Original task start HEAD: `0c625f2aa155e23f536f83a5ca7b3d6f3c721303`  
-Boundary follow-up start HEAD: `9bd0ec81`  
+Manual audio follow-up start HEAD: `25d62bf8f85c37e993ea95696d4056f89202220b`  
+First fix commit: `0c625f2aa155e23f536f83a5ca7b3d6f3c721303`  
+Boundary-fix baseline: `9bd0ec813a9c95e33ac24923af4b4a7a5726edc7`  
+Retained-track fix: `3ab07e4770a86534804d09029cd0fd1d7aee6fda`  
 Branch: `codex/ch1-rhythm-audio-expression`
 
 ## Scope and chronology
@@ -85,19 +87,20 @@ first pass:
    path; native `loop=true` reaches the actual media boundary.
 2. Kept the first-pass four new assets and their cached-provider-MP3
    provenance unchanged.
-3. Reprocessed only the three existing retained OGGs. No corresponding cached
-   MP3s were present in this checkout, so each committed OGG was decoded to
-   stereo 44.1 kHz PCM, trimmed to its active musical window, circularly
-   crossfaded, and given a symmetric 10 ms triangular (linear) fade-in/out to
-   zero. The filtered PCM was encoded with the installed `oggenc` libvorbis
-   encoder at `-q 5`; no dependency, framework, ElevenLabs call, or credit was
-   added or used.
+3. Reprocessed only the three existing retained OGGs. Each immutable source is
+   identified below by its `9bd0ec81:<path>` ref and full blob SHA; no
+   corresponding cached MP3s were present in this checkout. Each source was
+   decoded to stereo 44.1 kHz PCM, trimmed to its active musical window,
+   circularly crossfaded, and given a symmetric 10 ms triangular (linear)
+   fade-in/out to zero. The filtered PCM was encoded with the installed
+   `oggenc` libvorbis encoder at `-q 5`; no dependency, framework, ElevenLabs
+   call, or credit was added or used.
 
-| Asset | Source window | `c` | Nominal loop |
-| --- | ---: | ---: | ---: |
-| `bgm_chapter_close` | 2.76–40.0056s | 2.0s | 35.2456s |
-| `bgm_review_board_loss` | 1.16–39.7157s | 2.0s | 36.5557s |
-| `bgm_review_board_victory` | 1.09–40.1337s | 2.0s | 37.0437s |
+| Asset | Immutable source | Source window | `c` | Nominal loop |
+| --- | --- | ---: | ---: | ---: |
+| `bgm_chapter_close` | `9bd0ec81:static/assets/audio/bgm/bgm_chapter_close.ogg` (`4e068d12ef8dd670da4e56fd24a441754d8204d5`) | 2.76–40.0056s | 2.0s | 35.2456s |
+| `bgm_review_board_loss` | `9bd0ec81:static/assets/audio/bgm/bgm_review_board_loss.ogg` (`22349bf082a8f88245440265f8e90b7ea55095e4`) | 1.16–39.7157s | 2.0s | 36.5557s |
+| `bgm_review_board_victory` | `9bd0ec81:static/assets/audio/bgm/bgm_review_board_victory.ogg` (`3699d89318ea3964ba78f89f0215309a9aae97b3`) | 1.09–40.1337s | 2.0s | 37.0437s |
 
 The exact source, crossfade, edge-declick, encoder, and nominal-loop
 provenance is recorded in each retained entry's `normalizationNotes` in
