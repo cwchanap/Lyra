@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { validateSaveContentReferences } from "./save-content-references";
 import type { AssetConfig } from "./assets/config";
-import type { AssetManifest } from "./assets/manifest";
+import type { AssetManifest, AssetManifestEntry } from "./assets/manifest";
 import type { SceneRecord } from "./validator";
 
 const sourceFile = "chapter_1/investigation_scene_1.md";
@@ -45,29 +45,68 @@ function config(): AssetConfig {
   };
 }
 
+function entryFor(assetId: string): AssetManifestEntry {
+  const base = {
+    assetId,
+    expectedPath: "different-physical-path",
+    publicPath: "/different-public-path",
+    promptParts: {
+      globalStyle: "",
+      typePrompt: "",
+      subjectPrompt: "",
+      entryPrompt: "",
+    },
+    finalPrompt: "",
+  };
+  const chapterId = "chapter_1";
+  const sceneId = "investigation_scene_1";
+  if (assetId.startsWith("audio.")) {
+    const [, channel, id] = assetId.split(".");
+    return {
+      ...base,
+      type: "audio",
+      source: {
+        chapterId,
+        sceneId,
+        channel: channel === "bgs" || channel === "sfx" ? channel : "bgm",
+        id: id ?? "",
+      },
+    };
+  }
+  if (assetId.startsWith("portrait.")) {
+    return {
+      ...base,
+      type: "portrait",
+      source: {
+        chapterId,
+        sceneId,
+        characterId: "detective",
+        expression: "standard",
+      },
+    };
+  }
+  if (assetId.startsWith("evidence.")) {
+    return {
+      ...base,
+      type: "evidence",
+      source: {
+        chapterId,
+        sceneId,
+        evidenceId: assetId.slice("evidence.".length),
+      },
+    };
+  }
+  return {
+    ...base,
+    type: "background",
+    source: { chapterId, sceneId, unitId: "tag_001" },
+  };
+}
+
 function manifest(ids = refs.map(([, id]) => id)): AssetManifest {
   return {
     enabled: true,
-    entries: ids.map((assetId) => ({
-      assetId,
-      type: assetId.startsWith("audio.")
-        ? "audio"
-        : assetId.startsWith("portrait.")
-          ? "portrait"
-          : assetId.startsWith("evidence.")
-            ? "evidence"
-            : "background",
-      source: {},
-      expectedPath: "different-physical-path",
-      publicPath: "/different-public-path",
-      promptParts: {
-        globalStyle: "",
-        typePrompt: "",
-        subjectPrompt: "",
-        entryPrompt: "",
-      },
-      finalPrompt: "",
-    })),
+    entries: ids.map(entryFor),
   };
 }
 

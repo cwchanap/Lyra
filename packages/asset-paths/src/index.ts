@@ -49,6 +49,37 @@ type AudioChannel = (typeof SUPPORTED_AUDIO_CHANNELS)[number];
 const AUDIO_CHANNELS = new Set<string>(SUPPORTED_AUDIO_CHANNELS);
 const AUDIO_CHANNEL_LABEL = formatList(SUPPORTED_AUDIO_CHANNELS);
 
+/**
+ * Builds the canonical portrait assetId from identity parts. Single owner of
+ * portrait ID construction; inverse of parsePortraitAssetId().
+ */
+export function portraitAssetId(
+  characterId: string,
+  expression: string,
+): string {
+  return `portrait.${characterId}.${expression}`;
+}
+
+/**
+ * Decomposes a portrait assetId into identity parts. Single owner of portrait
+ * ID parsing; throws (like requireSegments) for malformed IDs — callers at
+ * trust boundaries translate the failure into their own domain error.
+ */
+export function parsePortraitAssetId(assetId: string): {
+  characterId: string;
+  expression: string;
+} {
+  const segments = requireSegments(assetId, "portrait", 3, true);
+  const characterId = segments[1];
+  const expression = segments[2];
+  if (characterId === undefined || expression === undefined) {
+    throw new Error(
+      `Invalid portrait assetId "${assetId}": expected exactly 3 dot-separated segments, got ${segments.length}.`,
+    );
+  }
+  return { characterId, expression };
+}
+
 function requireAudioChannel(channel: string, assetId: string): AudioChannel {
   if (!AUDIO_CHANNELS.has(channel)) {
     throw new Error(
@@ -78,12 +109,7 @@ export function publicPathForAssetId(
   type: AssetPathType,
 ): string {
   if (type === "portrait") {
-    const [, characterId, expression] = requireSegments(
-      assetId,
-      "portrait",
-      3,
-      true,
-    );
+    const { characterId, expression } = parsePortraitAssetId(assetId);
     return `/assets/portraits/${characterId}/${expression}.png`;
   }
   if (type === "standee") {

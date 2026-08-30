@@ -10,6 +10,29 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import YAML from "yaml";
 import type { CompileError } from "../types";
+import {
+  asOptionalRecord,
+  asRecord,
+  compileError as error,
+  emptyAudioMaps,
+  isRecord,
+  parseAudioYamlText,
+  parseCharactersYamlText,
+  SAFE_ASSET_SLUG,
+  textWithWarn,
+  type AudioConfigEntry,
+  type CharacterConfig,
+  type ParsedAudioCatalog,
+  type ParsedCharacterCatalog,
+  type ParsedCharacterEntry,
+} from "./config-catalog";
+
+export type {
+  AudioChannel,
+  AudioConfigEntry,
+  CharacterConfig,
+  CharacterExpressionConfig,
+} from "./config-catalog";
 
 export type AssetTypeName =
   | "background"
@@ -22,9 +45,6 @@ export type ImageAssetTypeName =
   | "portrait"
   | "standee"
   | "evidence";
-const AUDIO_CHANNELS = ["bgm", "bgs", "sfx"] as const;
-export type AudioChannel = (typeof AUDIO_CHANNELS)[number];
-const AUDIO_CHANNEL_SET = new Set<string>(AUDIO_CHANNELS);
 
 /** Policy for image asset types (background, portrait, evidence). */
 export type ImageAssetPolicy = {
@@ -51,26 +71,6 @@ export type AssetTypePolicies = {
   audio: AudioAssetPolicy;
 };
 
-export type CharacterExpressionConfig = {
-  id: string;
-  prompt: string;
-};
-
-export type CharacterConfig = {
-  id: string;
-  displayNames: string[];
-  portraitMode: "portrait" | "none";
-  visualPrompt: string | null;
-  referenceAssetId: string | null;
-  expressions: Map<string, CharacterExpressionConfig>;
-};
-
-export type AudioConfigEntry = {
-  id: string;
-  prompt: string;
-  loop: boolean;
-};
-
 export type AssetConfig = {
   enabled: boolean;
   globalStylePrompt: string;
@@ -89,8 +89,6 @@ export type AssetConfig = {
 export type AssetConfigResult =
   | { ok: true; value: AssetConfig; warnings: CompileError[] }
   | { ok: false; errors: CompileError[] };
-
-const SAFE_ASSET_SLUG = /^[a-z0-9_]+$/;
 
 function defaultTypes(): AssetTypePolicies {
   return {
@@ -159,24 +157,13 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
     "assetPolicyMalformed",
     errors,
   );
-  const charactersYaml = asRecord(
-    readOptionalYaml(resolve(configRoot, "characters.yaml"), errors) ?? {
-      characters: [],
-    },
-    "characters.yaml",
-    "assetCharactersFileMalformed",
-    errors,
-  );
-  const audioYaml = asRecord(
-    readOptionalYaml(resolve(configRoot, "audio.yaml"), errors) ?? {
-      bgm: {},
-      bgs: {},
-      sfx: {},
-    },
-    "audio.yaml",
-    "assetAudioFileMalformed",
-    errors,
-  );
+  const charactersCatalog = readCharactersCatalog(configRoot);
+  const audioCatalog = readAudioCatalog(configRoot);
+  if (!charactersCatalog.ok || !audioCatalog.ok) {
+    if (!charactersCatalog.ok) errors.push(...charactersCatalog.errors);
+    if (!audioCatalog.ok) errors.push(...audioCatalog.errors);
+    return { ok: false, errors };
+  }
   if (errors.length > 0) return { ok: false, errors };
 
   // Narrow policy sub-objects through isRecord rather than optional-chaining
@@ -193,17 +180,12 @@ export function loadAssetConfig(configRoot: string): AssetConfigResult {
   );
   const types = buildTypePolicies(policy?.types, enabled, errors, warnings);
   const characters = buildCharacters(
-    arrayOrEmpty(
-      charactersYaml?.characters,
-      "characters.yaml",
-      "assetCharactersMalformed",
-      errors,
-    ),
+    charactersCatalog,
     enabled,
     errors,
     warnings,
   );
-  const audio = buildAudio(audioYaml ?? {}, errors);
+  const audio = adoptAudioCatalog(audioCatalog, errors, warnings);
 
   if (enabled && !globalStylePrompt) {
     errors.push(
@@ -369,138 +351,128 @@ function buildTypePolicies(
   return out;
 }
 
+/**
+ * Reads characters.yaml through the shared pure parser. Filesystem I/O stays
+ * here; a missing file normalizes to an empty catalog exactly like the
+ * previous inline `{ characters: [] }` default.
+ */
+function readCharactersCatalog(configRoot: string): ParsedCharacterCatalog {
+  const path = resolve(configRoot, "characters.yaml");
+  if (!existsSync(path)) {
+    return { ok: true, characters: [], errors: [], warnings: [] };
+  }
+  return parseCharactersYamlText(readFileSync(path, "utf-8"), path);
+}
+
+/** See readCharactersCatalog(); missing audio.yaml normalizes to empty maps. */
+function readAudioCatalog(configRoot: string): ParsedAudioCatalog {
+  const path = resolve(configRoot, "audio.yaml");
+  if (!existsSync(path)) {
+    return { ok: true, audio: emptyAudioMaps(), errors: [], warnings: [] };
+  }
+  return parseAudioYamlText(readFileSync(path, "utf-8"), path);
+}
+
+function toCharacterConfig(entry: ParsedCharacterEntry): CharacterConfig {
+  const {
+    id,
+    displayNames,
+    portraitMode,
+    visualPrompt,
+    referenceAssetId,
+    expressions,
+  } = entry;
+  return {
+    id,
+    displayNames,
+    portraitMode,
+    visualPrompt,
+    referenceAssetId,
+    expressions,
+  };
+}
+
+/**
+ * Compiler-only validity policy over the shared parser's normalized output:
+ * id wrong type / missing / slug, missing displayNames, duplicate ids,
+ * required `standard` expression (enabled), ambiguous display names, and the
+ * enabled non-empty-characters requirement.
+ */
 function buildCharacters(
-  raw: unknown[],
+  catalog: Extract<ParsedCharacterCatalog, { ok: true }>,
   enabled: boolean,
   errors: CompileError[],
   warnings: CompileError[],
 ) {
   const byId = new Map<string, CharacterConfig>();
   const byDisplayName = new Map<string, CharacterConfig>();
-  for (const item of raw) {
-    const c = asRecord(
-      item,
-      "characters.yaml",
-      "assetCharacterMalformed",
-      errors,
-    );
-    if (!c) continue;
-    const idRaw = c.id;
-    const id = textWithWarn(idRaw, "id", "characters.yaml", warnings);
-    const idIsSafe = !id || SAFE_ASSET_SLUG.test(id);
-    const idPresentButWrongType =
-      idRaw !== undefined && idRaw !== null && typeof idRaw !== "string";
-    const displayNames = Array.isArray(c.displayNames)
-      ? c.displayNames.flatMap((v) => {
-          if (typeof v !== "string") {
-            warnings.push(
-              error(
-                "characters.yaml",
-                "assetConfigWrongType",
-                `Field "displayNames" entry expected string, got ${typeof v}.`,
-              ),
-            );
-            return [];
-          }
-          const trimmed = v.trim();
-          return trimmed ? [trimmed] : [];
-        })
-      : [];
-    const portraitMode = c.portraitMode === "none" ? "none" : "portrait";
-    const expressions = new Map<string, CharacterExpressionConfig>();
-    const rawExpressions =
-      asOptionalRecord(
-        c.expressions,
-        "characters.yaml",
-        "assetCharacterExpressionsMalformed",
-        errors,
-      ) ?? {};
-    for (const [exprId, exprRaw] of Object.entries(rawExpressions)) {
-      const exprIdIsSafe = SAFE_ASSET_SLUG.test(exprId);
-      if (!exprIdIsSafe) {
+  errors.push(...catalog.errors);
+  warnings.push(...catalog.warnings);
+  for (const entry of catalog.characters) {
+    errors.push(...entry.errors);
+    warnings.push(...entry.warnings);
+    const { id, displayNames, portraitMode, expressions } = entry;
+    if (!entry.malformed) {
+      if (entry.idWrongTypeKind !== null) {
         errors.push(
           error(
             "characters.yaml",
-            "assetCharacterExpressionIdMalformed",
-            `Character ${id || "(missing id)"} expression ${exprId} must be a snake_case slug.`,
+            "assetCharacterIdWrongType",
+            `Character id must be a string, got ${entry.idWrongTypeKind}.`,
+          ),
+        );
+      } else if (!id) {
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterMissingId",
+            "Each character requires id.",
           ),
         );
       }
-      const expr = asRecord(
-        exprRaw,
-        "characters.yaml",
-        "assetCharacterExpressionMalformed",
-        errors,
-      );
-      if (!expr) continue;
-      const prompt = text(expr.prompt);
-      if (exprIdIsSafe) expressions.set(exprId, { id: exprId, prompt });
+      if (id && !SAFE_ASSET_SLUG.test(id)) {
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterIdMalformed",
+            `Character id ${id} must be a snake_case slug.`,
+          ),
+        );
+      }
+      if (displayNames.length === 0)
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterMissingDisplayNames",
+            `Character ${id || "(missing id)"} requires displayNames.`,
+          ),
+        );
+      if (id && byId.has(id)) {
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterDuplicateId",
+            `Character id ${id} is defined multiple times.`,
+          ),
+        );
+      }
+      if (
+        enabled &&
+        portraitMode === "portrait" &&
+        !expressions.has("standard")
+      ) {
+        errors.push(
+          error(
+            "characters.yaml",
+            "assetCharacterMissingStandardExpression",
+            `Character ${id} requires expressions.standard.`,
+          ),
+        );
+      }
     }
-    const config: CharacterConfig = {
-      id,
-      displayNames,
-      portraitMode,
-      visualPrompt: text(c.visualPrompt) || null,
-      referenceAssetId: text(c.referenceAssetId) || null,
-      expressions,
-    };
-    if (idPresentButWrongType) {
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterIdWrongType",
-          `Character id must be a string, got ${typeof idRaw}.`,
-        ),
-      );
-    } else if (!id) {
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterMissingId",
-          "Each character requires id.",
-        ),
-      );
+    if (id && SAFE_ASSET_SLUG.test(id) && !byId.has(id)) {
+      byId.set(id, toCharacterConfig(entry));
     }
-    if (id && !idIsSafe) {
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterIdMalformed",
-          `Character id ${id} must be a snake_case slug.`,
-        ),
-      );
-    }
-    if (displayNames.length === 0)
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterMissingDisplayNames",
-          `Character ${id || "(missing id)"} requires displayNames.`,
-        ),
-      );
-    if (id && byId.has(id)) {
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterDuplicateId",
-          `Character id ${id} is defined multiple times.`,
-        ),
-      );
-    }
-    if (
-      enabled &&
-      portraitMode === "portrait" &&
-      !expressions.has("standard")
-    ) {
-      errors.push(
-        error(
-          "characters.yaml",
-          "assetCharacterMissingStandardExpression",
-          `Character ${id} requires expressions.standard.`,
-        ),
-      );
-    }
-    if (id && idIsSafe && !byId.has(id)) byId.set(id, config);
     for (const name of displayNames) {
       if (byDisplayName.has(name))
         errors.push(
@@ -510,10 +482,10 @@ function buildCharacters(
             `Display name ${name} maps to multiple characters.`,
           ),
         );
-      byDisplayName.set(name, config);
+      byDisplayName.set(name, toCharacterConfig(entry));
     }
   }
-  if (enabled && raw.length === 0) {
+  if (enabled && catalog.characters.length === 0) {
     errors.push(
       error(
         "characters.yaml",
@@ -525,57 +497,14 @@ function buildCharacters(
   return { byId, byDisplayName };
 }
 
-function buildAudio(raw: Record<string, unknown>, errors: CompileError[]) {
-  for (const channel of Object.keys(raw)) {
-    if (!AUDIO_CHANNEL_SET.has(channel)) {
-      errors.push(
-        error(
-          "audio.yaml",
-          "assetAudioChannelUnsupported",
-          `Unsupported audio channel "${channel}" in audio.yaml. Expected one of ${AUDIO_CHANNELS.join(", ")}.`,
-        ),
-      );
-    }
-  }
-  return {
-    bgm: buildAudioMap(raw.bgm, "bgm", errors),
-    bgs: buildAudioMap(raw.bgs, "bgs", errors),
-    sfx: buildAudioMap(raw.sfx, "sfx", errors),
-  };
-}
-
-function buildAudioMap(
-  raw: unknown,
-  channel: AudioChannel,
+function adoptAudioCatalog(
+  catalog: Extract<ParsedAudioCatalog, { ok: true }>,
   errors: CompileError[],
-) {
-  const out = new Map<string, AudioConfigEntry>();
-  const entries =
-    asOptionalRecord(raw, "audio.yaml", "assetAudioChannelMalformed", errors) ??
-    {};
-  for (const [id, value] of Object.entries(entries)) {
-    if (!/^[a-z0-9_]+$/.test(id))
-      errors.push(
-        error(
-          "audio.yaml",
-          "assetAudioIdMalformed",
-          `${channel}.${id} must be a snake_case slug.`,
-        ),
-      );
-    const record = asRecord(
-      value,
-      "audio.yaml",
-      "assetAudioEntryMalformed",
-      errors,
-    );
-    if (!record) continue;
-    out.set(id, {
-      id,
-      prompt: text(record.prompt),
-      loop: typeof record.loop === "boolean" ? record.loop : true,
-    });
-  }
-  return out;
+  warnings: CompileError[],
+): AssetConfig["audio"] {
+  errors.push(...catalog.errors);
+  warnings.push(...catalog.warnings);
+  return catalog.audio;
 }
 
 function readYaml(path: string, errors: CompileError[]) {
@@ -587,34 +516,6 @@ function readYaml(path: string, errors: CompileError[]) {
     );
     return null;
   }
-}
-
-function readOptionalYaml(path: string, errors: CompileError[]) {
-  if (!existsSync(path)) return null;
-  return readYaml(path, errors);
-}
-
-function text(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-/** Like text(), but emits a warning when the value is present but not a string. */
-function textWithWarn(
-  value: unknown,
-  fieldName: string,
-  sourceFile: string,
-  warnings: CompileError[],
-): string {
-  if (value === undefined || value === null) return "";
-  if (typeof value === "string") return value.trim();
-  warnings.push(
-    error(
-      sourceFile,
-      "assetConfigWrongType",
-      `Field "${fieldName}" expected string, got ${typeof value}.`,
-    ),
-  );
-  return "";
 }
 
 /** Like tuple(), but emits a warning when the value is present but malformed. */
@@ -638,47 +539,6 @@ function tupleWithWarn(
   return result;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function asRecord(
-  value: unknown,
-  sourceFile: string,
-  code: string,
-  errors: CompileError[],
-): Record<string, unknown> | null {
-  if (isRecord(value)) return value;
-  errors.push(
-    error(sourceFile, code, `${sourceFile} contains an invalid object shape.`),
-  );
-  return null;
-}
-
-function asOptionalRecord(
-  value: unknown,
-  sourceFile: string,
-  code: string,
-  errors: CompileError[],
-): Record<string, unknown> | null {
-  if (value === undefined) return null;
-  return asRecord(value, sourceFile, code, errors);
-}
-
-function arrayOrEmpty(
-  value: unknown,
-  sourceFile: string,
-  code: string,
-  errors: CompileError[],
-): unknown[] {
-  if (value === undefined) return [];
-  if (Array.isArray(value)) return value;
-  errors.push(
-    error(sourceFile, code, `${sourceFile} contains an invalid array shape.`),
-  );
-  return [];
-}
-
 function tuple(value: unknown): [number, number] | undefined {
   if (!Array.isArray(value) || value.length !== 2) return undefined;
   const a = Number(value[0]);
@@ -687,12 +547,4 @@ function tuple(value: unknown): [number, number] | undefined {
   if (!Number.isInteger(a) || !Number.isInteger(b)) return undefined;
   if (a <= 0 || b <= 0) return undefined;
   return [a, b];
-}
-
-function error(
-  sourceFile: string,
-  code: string,
-  message: string,
-): CompileError {
-  return { sourceFile, line: 1, code, message };
 }

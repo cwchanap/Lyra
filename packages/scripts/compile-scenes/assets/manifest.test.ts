@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { expectedPath, publicPath } from "./manifest";
-import { publicPathForAssetId, type AssetPathType } from "@lyra/asset-paths";
+import {
+  buildAssetManifest,
+  expectedPath,
+  publicPath,
+  type AssetManifestEntry,
+  type ManifestEntryInput,
+} from "./manifest";
+import type { AssetConfig } from "./config";
+import {
+  parsePortraitAssetId,
+  portraitAssetId,
+  publicPathForAssetId,
+  type AssetPathType,
+} from "@lyra/asset-paths";
 
 // Cross-check: these test cases MUST produce the same output as
 // publicPathForStoryAsset() in apps/game/src/lib/assets/story-assets.ts
@@ -126,5 +138,161 @@ describe("story asset manifest paths", () => {
     expect(() => publicPath("audio.voice.line_001", "audio")).toThrow(
       /expected channel bgm, bgs, or sfx, got "voice"/,
     );
+  });
+
+  it("builds and parses portrait asset ids through one owner", () => {
+    expect(portraitAssetId("hayasaka_akane", "concerned")).toBe(
+      "portrait.hayasaka_akane.concerned",
+    );
+    expect(parsePortraitAssetId("portrait.hayasaka_akane.concerned")).toEqual({
+      characterId: "hayasaka_akane",
+      expression: "concerned",
+    });
+    expect(() => parsePortraitAssetId("portrait.hayasaka_akane")).toThrow(
+      /expected exactly 3/,
+    );
+    expect(() =>
+      parsePortraitAssetId("portrait.hayasaka_akane.concerned.extra"),
+    ).toThrow(/expected exactly 3/);
+  });
+
+  it("serializes typed manifest sources with the legacy key order", () => {
+    const config: AssetConfig = {
+      enabled: true,
+      globalStylePrompt: "style",
+      types: {
+        background: {
+          dimensions: [1920, 1080],
+          format: "png",
+          transparency: false,
+          prompt: "",
+        },
+        portrait: {
+          dimensions: [768, 1024],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
+        standee: {
+          dimensions: [1024, 1536],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
+        evidence: {
+          dimensions: [512, 512],
+          format: "png",
+          transparency: true,
+          prompt: "",
+        },
+        audio: { format: "ogg", loop: true, prompt: "" },
+      },
+      characters: { byId: new Map(), byDisplayName: new Map() },
+      audio: { bgm: new Map(), bgs: new Map(), sfx: new Map() },
+    };
+    const entries: ManifestEntryInput[] = [
+      {
+        assetId: "background.chapter_1.scene_p0.tag_001",
+        type: "background",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          unitId: "tag_001",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "background.chapter_1.scene_p0.standee_char",
+        type: "background",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          characterId: "char",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "portrait.soma_ritsu.standard",
+        type: "portrait",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          characterId: "soma_ritsu",
+          expression: "standard",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "standee.hayasaka_akane.standard",
+        type: "standee",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          characterId: "char",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "evidence.coffee_receipt",
+        type: "evidence",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          evidenceId: "coffee_receipt",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "evidence.knife",
+        type: "evidence",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          characterId: "char",
+        },
+        prompt: "p",
+      },
+      {
+        assetId: "audio.bgm.rain_mystery_low",
+        type: "audio",
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_p0",
+          channel: "bgm",
+          id: "rain_mystery_low",
+        },
+        prompt: "p",
+      },
+    ];
+
+    const manifest = buildAssetManifest({ entries, config });
+
+    // No new discriminator (e.g. source.kind) is serialized, and the JSON key
+    // order matches the pre-union manifest exactly.
+    for (const entry of manifest.entries) {
+      expect(JSON.stringify(entry)).toBe(
+        JSON.stringify({
+          assetId: entry.assetId,
+          type: entry.type,
+          source: entry.source,
+          expectedPath: entry.expectedPath,
+          publicPath: entry.publicPath,
+          promptParts: entry.promptParts,
+          finalPrompt: entry.finalPrompt,
+        }),
+      );
+      expect(JSON.stringify(entry)).not.toContain("kind");
+      expect(Object.keys(entry.source)).not.toContain("kind");
+    }
+
+    // The parent `type` discriminator narrows `source` for consumers.
+    const audio: AssetManifestEntry | undefined = manifest.entries.find(
+      (candidate) => candidate.assetId === "audio.bgm.rain_mystery_low",
+    );
+    if (audio?.type !== "audio") throw new Error("expected audio entry");
+    const channel: string = audio.source.channel;
+    expect(channel).toBe("bgm");
+    const audioId: string = audio.source.id;
+    expect(audioId).toBe("rain_mystery_low");
   });
 });
