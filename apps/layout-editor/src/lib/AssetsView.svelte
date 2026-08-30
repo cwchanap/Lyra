@@ -1,5 +1,7 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import {
+    assetUsageGroups,
     projectAssetWorkspace,
     sceneCueRows,
     type AssetWorkspace,
@@ -41,7 +43,6 @@
   } as const;
 
   let workspace = $state<AssetWorkspace | null>(null);
-  let loadPending = $state(false);
   let loadError = $state<string | null>(null);
   let section = $state<Section>("cues");
   let selectedAssetId = $state<string | null>(null);
@@ -49,17 +50,27 @@
   let assetSearch = $state("");
   let copyStatus = $state<string | null>(null);
 
+  // One component-local load generation counter: every Refresh (or destroy)
+  // invalidates all older in-flight loads, so a slower older snapshot can
+  // never overwrite a newer one. No watcher/polling — Refresh only rereads
+  // the snapshot.
+  let loadGeneration = 0;
+
   async function refresh(): Promise<void> {
-    loadPending = true;
+    const generation = ++loadGeneration;
     loadError = null;
     try {
-      workspace = projectAssetWorkspace(await loadAssetWorkspace());
+      const payload = await loadAssetWorkspace();
+      if (generation !== loadGeneration) return;
+      workspace = projectAssetWorkspace(payload);
     } catch (error) {
+      if (generation !== loadGeneration) return;
       loadError = error instanceof Error ? error.message : String(error);
-    } finally {
-      loadPending = false;
     }
   }
+  onDestroy(() => {
+    ++loadGeneration;
+  });
   void refresh();
 
   const selectedScene = $derived.by(() => {
@@ -123,12 +134,25 @@
     );
   });
 
+  // Workspace-wide facts only: compiler report warnings (including missing
+  // expected files), unresolved joins, and shared config-read failures. No
+  // approval/status model is derived on top.
+  const workspaceDiagnostics = $derived(
+    workspace === null
+      ? []
+      : [...workspace.report.warnings, ...workspace.diagnostics],
+  );
+
   function kindOf(entry: LibraryEntry): string {
     return entry.type === "audio" ? entry.source.channel : entry.type;
   }
 
+  function isPathPresent(publicPath: string): boolean {
+    return workspace?.existingAssetPaths.includes(publicPath) ?? false;
+  }
+
   function isPresent(entry: LibraryEntry): boolean {
-    return workspace?.existingAssetPaths.includes(entry.publicPath) ?? false;
+    return isPathPresent(entry.publicPath);
   }
 
   function audioLabel(
@@ -358,7 +382,6 @@
     <button
       type="button"
       class="cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 hover:border-[#57776a]"
-      disabled={loadPending}
       onclick={() => void refresh()}
     >
       Refresh
@@ -525,8 +548,136 @@
           </p>
         {/if}
       </section>
-    {:else}
-      <p class="m-0">Characters asset grouping is not implemented yet.</p>
+    {:else if section === "characters"}
+      <section class="grid gap-3" aria-label="Characters">
+        {#each workspace.characters as character (character.id)}
+          <article
+            class="grid gap-2 rounded border border-[#e4ded3] p-3"
+            aria-label={character.id}
+          >
+            <header class="grid gap-1">
+              <h3 class="m-0 break-all">{character.id}</h3>
+              <p class="m-0">{character.displayNames.join("、")}</p>
+              {#if character.visualPrompt}
+                <p class="m-0 text-[0.85rem] text-[#60706b]">
+                  {character.visualPrompt}
+                </p>
+              {/if}
+            </header>
+            {#if character.portraitMode === "portrait"}
+              <ul class="m-0 grid list-none gap-2 p-0" aria-label="Expressions">
+                {#each character.expressions as expression (expression.assetId)}
+                  {@const groups = assetUsageGroups(
+                    workspace,
+                    expression.assetId,
+                  )}
+                  <li
+                    class="grid gap-1.5 rounded border border-[#e4ded3] p-2"
+                    data-expression-row
+                    data-expression-id={expression.expressionId}
+                  >
+                    <p class="m-0 flex flex-wrap items-center gap-2">
+                      <span
+                        class="inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
+                        >{expression.expressionId}</span
+                      >
+                      <button
+                        type="button"
+                        class="cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 hover:border-[#57776a]"
+                        data-asset-id={expression.assetId}
+                        onclick={() => selectAsset(expression.assetId)}
+                      >
+                        {expression.assetId}
+                      </button>
+                      <span class="text-[0.75rem] text-[#60706b]">
+                        {isPathPresent(expression.publicPath)
+                          ? "Present"
+                          : "Missing"}
+                      </span>
+                      <span class="text-[0.75rem] text-[#60706b]">
+                        Usages: {expression.usages}
+                      </span>
+                    </p>
+                    <p class="m-0 text-[0.85rem]">{expression.prompt}</p>
+                    <p class="m-0 text-[0.75rem] text-[#60706b]">
+                      <code>{expression.expectedPath}</code> ·
+                      <code>{expression.publicPath}</code>
+                    </p>
+                    {#if groups.scenes.length > 0}
+                      <div class="grid gap-1">
+                        <h4
+                          class="m-0 text-[0.8rem] tracking-wide text-[#5f6b64] uppercase"
+                        >
+                          Scenes
+                        </h4>
+                        <ul class="m-0 grid list-none gap-1 p-0">
+                          {#each groups.scenes as group (`${group.chapterId}\u0000${group.sceneId}`)}
+                            <li>
+                              <button
+                                type="button"
+                                class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-0.5 text-left text-[0.85rem] hover:border-[#57776a]"
+                                title="Select this usage's scene"
+                                onclick={() =>
+                                  onSelectScene(group.chapterId, group.sceneId)}
+                              >
+                                {`${group.chapterId} / ${group.sceneId}`}
+                              </button>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
+                    {#if groups.sprites.length > 0}
+                      <div class="grid gap-1">
+                        <h4
+                          class="m-0 text-[0.8rem] tracking-wide text-[#5f6b64] uppercase"
+                        >
+                          Sprite usages
+                        </h4>
+                        <ul class="m-0 grid list-none gap-1 p-0">
+                          {#each groups.sprites as usage ([usage.chapterId, usage.sceneId, usage.carrierId].join("\u0000"))}
+                            <li>
+                              <button
+                                type="button"
+                                class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-0.5 text-left text-[0.85rem] hover:border-[#57776a]"
+                                title="Select this usage's scene"
+                                onclick={() =>
+                                  onSelectScene(usage.chapterId, usage.sceneId)}
+                              >
+                                {`${usage.chapterId} / ${usage.sceneId} · ${usage.carrierId} · ${usage.role}`}
+                              </button>
+                            </li>
+                          {/each}
+                        </ul>
+                      </div>
+                    {/if}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </article>
+        {/each}
+      </section>
     {/if}
   </div>
+
+  {#if workspace !== null}
+    <section class="grid gap-2" aria-label="Asset diagnostics">
+      <h3 class="m-0">Diagnostics</h3>
+      {#if workspaceDiagnostics.length === 0}
+        <p class="m-0">No asset diagnostics.</p>
+      {:else}
+        <ul class="m-0 grid list-none gap-1 p-0">
+          {#each workspaceDiagnostics as diagnostic, index (index)}
+            <li
+              class="text-[0.85rem] text-[#b3543e]"
+              data-diagnostic-code={diagnostic.code}
+            >
+              {diagnostic.code}: {diagnostic.message}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+    </section>
+  {/if}
 </section>

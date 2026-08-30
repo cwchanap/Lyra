@@ -474,6 +474,38 @@ export function sceneCueRows(
 
 // ---- usage joins (typed manifest sources only) ------------------------------
 
+/**
+ * Scene-grouped usage summary for one asset id, consumed by the Characters
+ * expression grid: non-sprite usages collapse to their scene (deduped in
+ * authored walk order), sprite-role usages stay concrete — a sprite layout
+ * matches by raw asset id, so a parsed portrait identity picks up its
+ * related sprite usages here.
+ */
+export type AssetUsageGroups = {
+  scenes: Array<{ chapterId: string; sceneId: string }>;
+  sprites: AssetSceneUsage[];
+};
+
+export function assetUsageGroups(
+  workspace: AssetWorkspace,
+  assetId: string,
+): AssetUsageGroups {
+  const scenes = new Map<string, { chapterId: string; sceneId: string }>();
+  const sprites: AssetSceneUsage[] = [];
+  for (const usage of workspace.sceneUsages) {
+    if (usage.assetId !== assetId) continue;
+    if (usage.role === "sprite") {
+      sprites.push(usage);
+      continue;
+    }
+    const key = `${usage.chapterId}\u0000${usage.sceneId}`;
+    if (!scenes.has(key)) {
+      scenes.set(key, { chapterId: usage.chapterId, sceneId: usage.sceneId });
+    }
+  }
+  return { scenes: [...scenes.values()], sprites };
+}
+
 function countPortraitUsages(manifest: AssetManifest): Map<string, number> {
   const usages = new Map<string, number>();
   for (const entry of manifest.entries) {

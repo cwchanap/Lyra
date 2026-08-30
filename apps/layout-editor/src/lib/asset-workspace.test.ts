@@ -15,7 +15,7 @@ import type {
   JSONLinearScene,
   PortraitRef,
 } from "@lyra/scripts/compile-scenes/types";
-import { projectAssetWorkspace } from "./asset-workspace";
+import { assetUsageGroups, projectAssetWorkspace } from "./asset-workspace";
 import type { WorkbenchAssetWorkspacePayload } from "./workbench-types";
 
 const CHARACTERS_YAML = `
@@ -455,6 +455,20 @@ describe("projectAssetWorkspace", () => {
     expect(concerned.prompt).toBe("worried");
   });
 
+  it("unused_expressions_are_neutral_not_warnings", () => {
+    const workspace = projectAssetWorkspace(payload());
+
+    const concerned = workspace.characters[0]!.expressions.find(
+      (expression) => expression.expressionId === "concerned",
+    )!;
+    expect(concerned.usages).toBe(0);
+    expect(concerned.referenced).toBe(false);
+    // Neutral fact: 0 usages never becomes a warning, an error, or an
+    // approval/status entry.
+    expect(workspace.diagnostics).toEqual([]);
+    expect(workspace.report.warnings).toEqual([]);
+  });
+
   it("referenced_manifest_fields_are_not_recomputed", () => {
     const workspace = projectAssetWorkspace(payload());
 
@@ -763,5 +777,61 @@ describe("projectAssetWorkspace scene usage projection", () => {
     expect(unresolved[0]?.sourceFile).toBe(
       "docs/stories_plan/chapter_1/scene_x.md",
     );
+  });
+});
+
+describe("assetUsageGroups", () => {
+  it("groups_portrait_usages_by_scene_and_keeps_cross_scene_order", () => {
+    const workspace = projectAssetWorkspace(
+      payload({
+        scenes: [
+          scenePayload("scene_u", portraitOccurrencesScene),
+          scenePayload("scene_x", unresolvedScene),
+        ],
+      }),
+    );
+
+    // Two same-scene occurrences collapse to one scene group; a second
+    // scene appends its own group in authored walk order.
+    expect(
+      assetUsageGroups(workspace, "portrait.hayasaka_akane.standard").scenes,
+    ).toEqual([{ chapterId: "chapter_1", sceneId: "scene_u" }]);
+    expect(
+      assetUsageGroups(workspace, "portrait.hayasaka_akane.concerned").scenes,
+    ).toEqual([
+      { chapterId: "chapter_1", sceneId: "scene_u" },
+      { chapterId: "chapter_1", sceneId: "scene_x" },
+    ]);
+    expect(
+      assetUsageGroups(workspace, "portrait.hayasaka_akane.standard").sprites,
+    ).toEqual([]);
+  });
+
+  it("sprite_usages_match_parsed_portrait_identity", () => {
+    const workspace = projectAssetWorkspace(
+      payload({
+        manifest: spriteManifest(),
+        scenes: [scenePayload("investigation_s", spriteScene)],
+      }),
+    );
+
+    // The raw sprite layout references the portrait asset id; the related
+    // sprite usage stays concrete while the non-sprite group stays empty.
+    expect(
+      assetUsageGroups(workspace, "portrait.hayasaka_akane.standard"),
+    ).toEqual({
+      scenes: [],
+      sprites: [
+        {
+          chapterId: "chapter_1",
+          sceneId: "investigation_s",
+          carrierId: "character:npc1",
+          role: "sprite",
+          itemIndex: null,
+          assetId: "portrait.hayasaka_akane.standard",
+          type: "portrait",
+        },
+      ],
+    });
   });
 });

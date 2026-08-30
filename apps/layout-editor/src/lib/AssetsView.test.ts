@@ -50,6 +50,11 @@ characters:
         prompt: neutral
       concerned:
         prompt: worried
+  - id: receptionist
+    displayNames:
+      - 受付
+    portraitMode: none
+    visualPrompt: hotel front desk
 `;
 
 const AUDIO_YAML = `
@@ -410,6 +415,50 @@ async function openLibrary(): Promise<HTMLElement> {
   return screen.getByLabelText("Asset library");
 }
 
+/**
+ * Payload variant whose investigation scene adds one sprite-layout character
+ * referencing the existing portrait manifest entry, proving related sprite
+ * usages join by parsed portrait identity without new diagnostics.
+ */
+function payloadWithPortraitSprite(): WorkbenchAssetWorkspacePayload {
+  const base = payloadFixture();
+  const scene = base.scenes[2]!.scene;
+  if (scene.type !== "investigation") throw new Error("fixture drift");
+  const withSprite: JSONInvestigationScene = {
+    ...scene,
+    sublocations: scene.sublocations.map((sub) => ({
+      ...sub,
+      characters: [
+        ...sub.characters,
+        {
+          id: "npc2",
+          name: "N2",
+          role: "R",
+          bio: "",
+          layout: {
+            kind: "sprite",
+            assetId: "portrait.hayasaka_akane.standard",
+            x: 0.1,
+            y: 0.1,
+            w: 0.2,
+            h: 0.3,
+            anchor: "bottomCenter",
+          },
+          topics: [],
+        },
+      ],
+    })),
+  };
+  return {
+    ...base,
+    scenes: base.scenes.map((candidate, index) =>
+      index === 2 && candidate.scene.type === "investigation"
+        ? { ...candidate, scene: withSprite }
+        : candidate,
+    ),
+  };
+}
+
 describe("AssetsView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -528,7 +577,7 @@ describe("AssetsView", () => {
 
     await user.click(screen.getByRole("tab", { name: "Characters" }));
     expect(
-      screen.getByText("Characters asset grouping is not implemented yet."),
+      screen.getByRole("region", { name: "Characters" }),
     ).toBeInTheDocument();
     expect(screen.queryByLabelText("Asset library")).not.toBeInTheDocument();
   });
@@ -665,7 +714,11 @@ describe("AssetsView", () => {
     ).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "audio.bgm.rain" }));
-    expect(screen.queryByText(/assetFileMissing/u)).not.toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Asset inspector")).queryByText(
+        /assetFileMissing/u,
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("copies the prompt and source reference, showing a visible failure state", async () => {
@@ -734,5 +787,171 @@ describe("AssetsView", () => {
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(mockInvoke).toHaveBeenCalledTimes(2));
     expect(screen.getByLabelText("Scene cue rows")).toBeInTheDocument();
+  });
+
+  it("renders character identity and expression grids only for portraitMode characters", async () => {
+    const user = userEvent.setup();
+    renderAssets();
+    await screen.findByLabelText("Scene cue rows");
+
+    await user.click(screen.getByRole("tab", { name: "Characters" }));
+    const region = screen.getByRole("region", { name: "Characters" });
+
+    const portrait = within(region).getByRole("article", {
+      name: "hayasaka_akane",
+    });
+    expect(within(portrait).getByText("早坂茜")).toBeInTheDocument();
+    expect(
+      within(portrait).getByText("attorney in dark suit"),
+    ).toBeInTheDocument();
+
+    const grid = within(portrait).getByLabelText("Expressions");
+    const rows = [
+      ...grid.querySelectorAll<HTMLElement>("[data-expression-row]"),
+    ];
+    expect(rows.map((row) => row.dataset.expressionId)).toEqual([
+      "standard",
+      "concerned",
+    ]);
+
+    const standard = within(rows[0]!);
+    expect(standard.getByText("Missing")).toBeInTheDocument();
+    expect(standard.getByText("Usages: 1")).toBeInTheDocument();
+    expect(standard.getByText("neutral")).toBeInTheDocument();
+    expect(
+      standard.getByText("static/assets/portraits/hayasaka_akane/standard.png"),
+    ).toBeInTheDocument();
+    expect(
+      standard.getByRole("button", { name: "chapter_1 / scene_cues" }),
+    ).toBeInTheDocument();
+
+    // Configured-but-unused expression: a neutral 0-usage fact, never a
+    // warning or error.
+    const concerned = within(rows[1]!);
+    expect(concerned.getByText("Usages: 0")).toBeInTheDocument();
+    expect(concerned.getByText("worried")).toBeInTheDocument();
+    expect(concerned.queryByText(/warning/i)).not.toBeInTheDocument();
+
+    const none = within(region).getByRole("article", { name: "receptionist" });
+    expect(within(none).getByText("受付")).toBeInTheDocument();
+    expect(within(none).getByText("hotel front desk")).toBeInTheDocument();
+    expect(
+      within(none).queryByLabelText("Expressions"),
+    ).not.toBeInTheDocument();
+    expect(within(none).queryByText(/usages/i)).not.toBeInTheDocument();
+  });
+
+  it("lists grouped scenes and related sprite usages per expression", async () => {
+    const onSelectScene = vi.fn();
+    const user = userEvent.setup();
+    mockInvoke.mockImplementation(async () => payloadWithPortraitSprite());
+    renderAssets({ onSelectScene });
+    await screen.findByLabelText("Scene cue rows");
+
+    await user.click(screen.getByRole("tab", { name: "Characters" }));
+    const portrait = screen.getByRole("article", { name: "hayasaka_akane" });
+    const rows = [
+      ...within(portrait)
+        .getByLabelText("Expressions")
+        .querySelectorAll<HTMLElement>("[data-expression-row]"),
+    ];
+    const standard = within(rows[0]!);
+    expect(
+      standard.getByRole("button", { name: "chapter_1 / scene_cues" }),
+    ).toBeInTheDocument();
+
+    await user.click(
+      standard.getByRole("button", {
+        name: "chapter_1 / investigation_delta · character:npc2 · sprite",
+      }),
+    );
+    expect(onSelectScene).toHaveBeenCalledExactlyOnceWith(
+      "chapter_1",
+      "investigation_delta",
+    );
+  });
+
+  it("surfaces existing workspace diagnostics without approval status", async () => {
+    const broken = payloadFixture();
+    broken.configSources = {
+      characters: {
+        path: "static/assets/config/characters.yaml",
+        content: "characters: [unclosed\n",
+      },
+      audio: broken.configSources.audio,
+    };
+    mockInvoke.mockImplementation(async () => broken);
+
+    renderAssets();
+    await screen.findByLabelText("Scene cue rows");
+
+    const panel = screen.getByLabelText("Asset diagnostics");
+    const codes = [
+      ...panel.querySelectorAll<HTMLElement>("[data-diagnostic-code]"),
+    ].map((item) => item.dataset.diagnosticCode);
+    // Exactly the existing facts: compiler report warning (missing file),
+    // shared config-read failure, unresolved manifest join. Nothing else.
+    expect(codes).toEqual([
+      "assetFileMissing",
+      "assetConfigUnreadable",
+      "assetUsageUnresolved",
+    ]);
+    expect(
+      within(panel).getByText(
+        /Expected file for "audio\.bgm\.step" is missing/u,
+      ),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText(/approv/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps the newer workspace when an older load resolves last", async () => {
+    const user = userEvent.setup();
+    const pending: Array<(payload: WorkbenchAssetWorkspacePayload) => void> =
+      [];
+    mockInvoke.mockImplementation(
+      async () =>
+        new Promise<WorkbenchAssetWorkspacePayload>((resolve) => {
+          pending.push(resolve);
+        }),
+    );
+
+    renderAssets();
+    await screen.findByText("Loading asset workspace…");
+
+    // Refresh stays clickable during a pending load; each load gets its own
+    // deferred snapshot promise.
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(pending).toHaveLength(2);
+
+    const newer = payloadFixture();
+    newer.manifest = {
+      ...newer.manifest,
+      entries: [
+        ...newer.manifest.entries,
+        {
+          ...entryBase({
+            assetId: "audio.bgm.later",
+            type: "audio",
+            entryPrompt: "later",
+          }),
+          type: "audio",
+          source: {
+            chapterId: "chapter_1",
+            sceneId: "scene_cues",
+            channel: "bgm",
+            id: "later",
+          },
+        },
+      ],
+    };
+    pending[1]!(newer); // newer generation resolves first
+    pending[0]!(payloadFixture()); // older generation resolves last
+
+    // The older response must not overwrite the newer workspace.
+    const library = await openLibrary();
+    expect(
+      await within(library).findByRole("button", { name: "audio.bgm.later" }),
+    ).toBeInTheDocument();
+    expect(within(library).getAllByRole("listitem")).toHaveLength(10);
   });
 });
