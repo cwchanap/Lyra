@@ -1,3 +1,5 @@
+import type { AssetManifest } from "@lyra/scripts/compile-scenes/assets/manifest";
+import type { AssetReport } from "@lyra/scripts/compile-scenes/orchestrator";
 import type {
   JSONAnalysisScene,
   JSONDialogueItem,
@@ -70,6 +72,29 @@ export type WorkbenchScenePayload =
   | PublicAnalysisScene;
 
 export type WorkbenchSceneBundle = { scene: WorkbenchScenePayload };
+
+export type WorkbenchTextSource = {
+  path: string;
+  content: string;
+};
+
+export type WorkbenchAssetScenePayload = {
+  chapterId: string;
+  sceneId: string;
+  sourcePath: string;
+  scene: WorkbenchScenePayload;
+};
+
+export type WorkbenchAssetWorkspacePayload = {
+  manifest: AssetManifest;
+  report: AssetReport;
+  configSources: {
+    characters: WorkbenchTextSource;
+    audio: WorkbenchTextSource;
+  };
+  scenes: WorkbenchAssetScenePayload[];
+  existingAssetPaths: string[];
+};
 
 export type ReaderGroupKind =
   | "intro"
