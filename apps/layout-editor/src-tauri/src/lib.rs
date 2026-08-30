@@ -791,6 +791,200 @@ fn canonicalize_source_under_story_root(
     Ok(canonical)
 }
 
+const ASSET_MANIFEST_RELATIVE_PATH: &str = "apps/game/src-tauri/resources/assets/manifest.json";
+const ASSET_REPORT_RELATIVE_PATH: &str = "apps/game/src-tauri/resources/assets/report.json";
+const ASSET_CONFIG_CHARACTERS_RELATIVE_PATH: &str = "static/assets/config/characters.yaml";
+const ASSET_CONFIG_AUDIO_RELATIVE_PATH: &str = "static/assets/config/audio.yaml";
+const STATIC_ASSETS_RELATIVE_ROOT: &str = "static/assets";
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetWorkspaceTextSource {
+    path: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetWorkspaceConfigSources {
+    characters: AssetWorkspaceTextSource,
+    audio: AssetWorkspaceTextSource,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetWorkspaceScene {
+    chapter_id: String,
+    scene_id: String,
+    source_path: String,
+    scene: serde_json::Value,
+}
+
+/// Fixed-domain snapshot of everything the Assets workbench mode edits:
+/// compiler-generated manifest/report, authored config text, every manifest
+/// scene through the public bundle path, and present asset files. Takes no
+/// caller-supplied paths or asset ids — every file and root below is fixed.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AssetWorkspace {
+    manifest: serde_json::Value,
+    report: serde_json::Value,
+    config_sources: AssetWorkspaceConfigSources,
+    scenes: Vec<AssetWorkspaceScene>,
+    existing_asset_paths: Vec<String>,
+}
+
+#[tauri::command]
+fn load_asset_workspace() -> Result<AssetWorkspace, EditorError> {
+    let root = workspace_root()?;
+    load_asset_workspace_at_root(&root)
+}
+
+fn load_asset_workspace_at_root(root: &Path) -> Result<AssetWorkspace, EditorError> {
+    let canonical_root = normalize_existing_root(root)?;
+    let manifest = read_generated_asset_json(
+        &canonical_root,
+        ASSET_MANIFEST_RELATIVE_PATH,
+        "assetManifestNotFound",
+        "assetManifestInvalid",
+        "generated asset manifest",
+    )?;
+    let report = read_generated_asset_json(
+        &canonical_root,
+        ASSET_REPORT_RELATIVE_PATH,
+        "assetReportNotFound",
+        "assetReportInvalid",
+        "generated asset report",
+    )?;
+    let chapters = load_manifest_chapters(root)?;
+    let mut scenes = Vec::new();
+    for chapter in &chapters {
+        for scene in &chapter.scenes {
+            let bundle = load_scene_bundle_at_root(root, &chapter.id, &scene.id)?;
+            scenes.push(AssetWorkspaceScene {
+                chapter_id: chapter.id.clone(),
+                scene_id: scene.id.clone(),
+                source_path: scene.source_path.clone(),
+                scene: bundle.scene,
+            });
+        }
+    }
+    Ok(AssetWorkspace {
+        manifest,
+        report,
+        config_sources: AssetWorkspaceConfigSources {
+            characters: read_text_source(&canonical_root, ASSET_CONFIG_CHARACTERS_RELATIVE_PATH)?,
+            audio: read_text_source(&canonical_root, ASSET_CONFIG_AUDIO_RELATIVE_PATH)?,
+        },
+        existing_asset_paths: list_static_asset_files(&canonical_root)?,
+        scenes,
+    })
+}
+
+/// Reads a compiler-generated asset JSON file. These files exist only after
+/// `bun run scenes:compile`, so a missing file is a loud, stable domain error
+/// telling the developer to compile — never a loose-file fallback.
+fn read_generated_asset_json(
+    canonical_root: &Path,
+    relative_path: &str,
+    not_found_code: &'static str,
+    invalid_code: &'static str,
+    label: &str,
+) -> Result<serde_json::Value, EditorError> {
+    let path = canonical_root.join(relative_path);
+    let text = fs::read_to_string(&path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::new(
+                not_found_code,
+                format!(
+                    "{label} not found at {}: run `bun run scenes:compile` to generate it",
+                    path.display()
+                ),
+            )
+        } else {
+            EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", path.display()),
+            )
+        }
+    })?;
+    serde_json::from_str(&text).map_err(|error| {
+        EditorError::new(
+            invalid_code,
+            format!("failed to parse {label} {}: {error}", path.display()),
+        )
+    })
+}
+
+fn read_text_source(
+    canonical_root: &Path,
+    relative_path: &str,
+) -> Result<AssetWorkspaceTextSource, EditorError> {
+    let path = canonical_root.join(relative_path);
+    let content = fs::read_to_string(&path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::not_found(&path)
+        } else {
+            EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", path.display()),
+            )
+        }
+    })?;
+    Ok(AssetWorkspaceTextSource {
+        path: relative_path.to_string(),
+        content,
+    })
+}
+
+/// Recursively enumerates regular files beneath the fixed `static/assets`
+/// root as repo-relative forward-slash paths, sorted. Symlinks (even to
+/// regular files) and directories are never listed.
+fn list_static_asset_files(canonical_root: &Path) -> Result<Vec<String>, EditorError> {
+    let assets_root = canonical_root.join(STATIC_ASSETS_RELATIVE_ROOT);
+    let mut paths = Vec::new();
+    collect_regular_files(&assets_root, canonical_root, &mut paths)?;
+    paths.sort();
+    Ok(paths)
+}
+
+fn collect_regular_files(
+    dir: &Path,
+    canonical_root: &Path,
+    out: &mut Vec<String>,
+) -> Result<(), EditorError> {
+    let entries = fs::read_dir(dir).map_err(|error| {
+        EditorError::new(
+            "readFailed",
+            format!("failed to read {}: {error}", dir.display()),
+        )
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", dir.display()),
+            )
+        })?;
+        // DirEntry::file_type does not follow symlinks, so a symlink is
+        // neither listed as a file nor descended into as a directory.
+        let file_type = entry.file_type().map_err(|error| {
+            EditorError::new(
+                "readFailed",
+                format!("failed to stat {}: {error}", entry.path().display()),
+            )
+        })?;
+        if file_type.is_dir() {
+            collect_regular_files(&entry.path(), canonical_root, out)?;
+        } else if file_type.is_file() {
+            let entry_path = entry.path();
+            let relative = entry_path.strip_prefix(canonical_root).unwrap();
+            out.push(relative.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -798,7 +992,8 @@ pub fn run() {
             load_workbench_index,
             load_scene_bundle,
             load_investigation_layout,
-            save_investigation_layout
+            save_investigation_layout,
+            load_asset_workspace
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -993,6 +1188,153 @@ mod tests {
         );
     }
 
+    #[test]
+    fn asset_workspace_snapshot_preserves_manifest_order_and_sources() {
+        let root = temp_asset_workspace_root();
+        let snapshot = load_asset_workspace_at_root(&root).unwrap();
+
+        assert_eq!(snapshot.manifest["enabled"], true);
+        assert_eq!(
+            snapshot.manifest["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["assetId"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            vec![
+                "background.fixture_rain_street",
+                "portrait.fixture_akane.concerned"
+            ]
+        );
+        assert_eq!(snapshot.report["requested"]["background"], 1);
+        assert_eq!(snapshot.report["requested"]["audio"], 0);
+        assert_eq!(snapshot.report["warnings"].as_array().unwrap().len(), 0);
+
+        let scenes = &snapshot.scenes;
+        assert_eq!(scenes.len(), 4);
+        assert_eq!(
+            scenes
+                .iter()
+                .map(|scene| scene.scene_id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "scene_a",
+                "investigation_scene_b",
+                "interrogation_scene_c",
+                "analysis_scene_d"
+            ]
+        );
+        assert_eq!(scenes[0].chapter_id, "chapter_1");
+        assert_eq!(
+            scenes[0].source_path,
+            "docs/stories_plan/chapter_1/scene_a.md"
+        );
+        assert_eq!(scenes[0].scene["id"], "scene_a");
+
+        assert_eq!(
+            snapshot.config_sources.characters.path,
+            "static/assets/config/characters.yaml"
+        );
+        assert_eq!(
+            snapshot.config_sources.characters.content,
+            "characters: []\n"
+        );
+        assert_eq!(
+            snapshot.config_sources.audio.path,
+            "static/assets/config/audio.yaml"
+        );
+        assert_eq!(snapshot.config_sources.audio.content, "audio: {}\n");
+
+        assert_eq!(
+            snapshot.existing_asset_paths,
+            vec![
+                "static/assets/backgrounds/fixture_rain_street.png",
+                "static/assets/config/audio.yaml",
+                "static/assets/config/characters.yaml",
+            ]
+        );
+    }
+
+    #[test]
+    fn asset_workspace_reuses_public_analysis_sanitizer() {
+        let root = temp_asset_workspace_root();
+        let snapshot = load_asset_workspace_at_root(&root).unwrap();
+
+        let analysis = snapshot
+            .scenes
+            .iter()
+            .find(|scene| scene.scene_id == "analysis_scene_d")
+            .unwrap();
+        // The snapshot scene must exactly match what load_scene_bundle_at_root
+        // returns for the same scene — the sanitizer is shared, not re-derived.
+        let direct = load_scene_bundle_at_root(&root, "chapter_1", "analysis_scene_d").unwrap();
+        assert_eq!(analysis.scene, direct.scene);
+        assert_eq!(
+            analysis.scene["boards"][0]["common"]["prompt"],
+            "public prompt"
+        );
+
+        let serialized = serde_json::to_string(&snapshot).unwrap();
+        for forbidden in [
+            "acceptedGroupByCard",
+            "secret_progression",
+            "minimumSelected",
+        ] {
+            assert!(
+                !serialized.contains(forbidden),
+                "leaked forbidden field/value {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn asset_workspace_requires_generated_manifest_and_report() {
+        let root = temp_asset_workspace_root();
+        fs::remove_file(root.join(ASSET_MANIFEST_RELATIVE_PATH)).unwrap();
+        let manifest_error = load_asset_workspace_at_root(&root).unwrap_err();
+        assert_eq!(manifest_error.code, "assetManifestNotFound");
+        assert!(manifest_error.message.contains("bun run scenes:compile"));
+
+        fs::write(
+            root.join(ASSET_MANIFEST_RELATIVE_PATH),
+            r#"{"enabled":true,"entries":[]}"#,
+        )
+        .unwrap();
+        fs::remove_file(root.join(ASSET_REPORT_RELATIVE_PATH)).unwrap();
+        let report_error = load_asset_workspace_at_root(&root).unwrap_err();
+        assert_eq!(report_error.code, "assetReportNotFound");
+        assert!(report_error.message.contains("bun run scenes:compile"));
+    }
+
+    #[test]
+    fn asset_workspace_file_presence_stays_under_static_assets() {
+        let root = temp_asset_workspace_root();
+        fs::create_dir_all(root.join("static/assets/evidence/nested")).unwrap();
+        fs::write(root.join("static/assets/evidence/top.png"), "png").unwrap();
+        fs::write(root.join("static/assets/evidence/nested/letter.png"), "png").unwrap();
+        // Symlinks (even to regular files) and the static/ sibling tree are
+        // never listed.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            root.join("static/assets/evidence/top.png"),
+            root.join("static/assets/evidence/link.png"),
+        )
+        .unwrap();
+        fs::write(root.join("static/outside.txt"), "nope").unwrap();
+
+        let snapshot = load_asset_workspace_at_root(&root).unwrap();
+        assert_eq!(
+            snapshot.existing_asset_paths,
+            vec![
+                "static/assets/backgrounds/fixture_rain_street.png",
+                "static/assets/config/audio.yaml",
+                "static/assets/config/characters.yaml",
+                "static/assets/evidence/nested/letter.png",
+                "static/assets/evidence/top.png",
+            ]
+        );
+    }
+
     fn overwrite_compiled_scene_field(root: &Path, scene: &str, field: &str, value: &str) {
         let path = root
             .join(COMPILED_SCENES_RELATIVE_ROOT)
@@ -1037,6 +1379,41 @@ mod tests {
                 },
             )]),
         }
+    }
+
+    /// Extends `temp_workbench_root` with the fixed asset-workspace files:
+    /// compiler-generated manifest/report, authored config text, and one
+    /// present static asset file.
+    fn temp_asset_workspace_root() -> PathBuf {
+        let root = temp_workbench_root();
+        fs::create_dir_all(root.join("apps/game/src-tauri/resources/assets")).unwrap();
+        fs::write(
+            root.join("apps/game/src-tauri/resources/assets/manifest.json"),
+            r#"{"enabled":true,"entries":[
+{"assetId":"background.fixture_rain_street","type":"background","source":{},"expectedPath":"static/assets/backgrounds/fixture_rain_street.png","publicPath":"/backgrounds/fixture_rain_street.png","promptParts":{"globalStyle":"g","typePrompt":"t","subjectPrompt":"s","entryPrompt":"e"},"finalPrompt":"g"},
+{"assetId":"portrait.fixture_akane.concerned","type":"portrait","source":{},"expectedPath":"static/assets/portraits/fixture_akane_concerned.png","publicPath":"/portraits/fixture_akane_concerned.png","promptParts":{"globalStyle":"g","typePrompt":"t","subjectPrompt":"s","entryPrompt":"e"},"finalPrompt":"g"}
+]}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("apps/game/src-tauri/resources/assets/report.json"),
+            r#"{"enabled":true,"requested":{"background":1,"portrait":1,"standee":0,"evidence":0,"audio":0},"warnings":[]}"#,
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("static/assets/config")).unwrap();
+        fs::create_dir_all(root.join("static/assets/backgrounds")).unwrap();
+        fs::write(
+            root.join("static/assets/config/characters.yaml"),
+            "characters: []\n",
+        )
+        .unwrap();
+        fs::write(root.join("static/assets/config/audio.yaml"), "audio: {}\n").unwrap();
+        fs::write(
+            root.join("static/assets/backgrounds/fixture_rain_street.png"),
+            "png",
+        )
+        .unwrap();
+        root
     }
 
     fn temp_workbench_root() -> PathBuf {
