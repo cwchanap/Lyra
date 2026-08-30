@@ -317,6 +317,161 @@ function projectSceneUsages(payload: WorkbenchAssetWorkspacePayload): {
   return { usages: [...usages.values()], audioDeltas, diagnostics };
 }
 
+// ---- scene cue display rows (shared presentation helper) -------------------
+
+/**
+ * One authored-order presentation row for the Assets Scene cues panel: a
+ * `ReaderPresentationFact` reshaped for display, with the manifest join
+ * applied (`type: null` = unresolved, surfaced as a read diagnostic elsewhere).
+ */
+export type AssetSceneCueRow =
+  | {
+      kind: "visualCue";
+      carrierId: string;
+      /** Dialogue-item index inside the carrier; null for structural carriers. */
+      itemIndex: number | null;
+      background: {
+        assetId: string;
+        type: AssetManifestEntry["type"] | null;
+      } | null;
+      bgm: { state: AssetSceneAudioDelta["state"]; assetId: string | null };
+      bgs: { state: AssetSceneAudioDelta["state"]; assetId: string | null };
+    }
+  | {
+      kind: "portrait";
+      carrierId: string;
+      itemIndex: number | null;
+      assetId: string;
+      type: AssetManifestEntry["type"] | null;
+    }
+  | {
+      kind: "evidence";
+      carrierId: string;
+      itemIndex: null;
+      assetId: string;
+      type: AssetManifestEntry["type"] | null;
+    }
+  | {
+      kind: "sprite";
+      carrierId: string;
+      itemIndex: null;
+      assetId: string;
+      type: AssetManifestEntry["type"] | null;
+    };
+
+/**
+ * Ordered Scene-cues rows for one snapshot scene: the single Reader walk's
+ * presentation facts in authored order with the manifest join applied. A
+ * strict Reader completeness failure returns no rows — the workspace
+ * diagnostics already surface it as a read diagnostic.
+ */
+export function sceneCueRows(
+  workspace: AssetWorkspace,
+  chapterId: string,
+  sceneId: string,
+): AssetSceneCueRow[] {
+  const snapshot = workspace.scenes.find(
+    (scene) => scene.chapterId === chapterId && scene.sceneId === sceneId,
+  );
+  if (!snapshot) return [];
+  let facts: ReaderPresentationFact[];
+  try {
+    facts = projectReaderScene(
+      snapshot.chapterId,
+      snapshot.sourcePath,
+      snapshot.scene,
+    ).presentation;
+  } catch (error) {
+    if (!(error instanceof ReaderProjectionError)) throw error;
+    return [];
+  }
+
+  const typeByAssetId = new Map<string, AssetManifestEntry["type"]>();
+  for (const entry of workspace.manifest.entries) {
+    if (!typeByAssetId.has(entry.assetId)) {
+      typeByAssetId.set(entry.assetId, entry.type);
+    }
+  }
+  const resolveType = (assetId: string): AssetManifestEntry["type"] | null =>
+    typeByAssetId.get(assetId) ?? null;
+  const audioState = (cue: AudioCue | null) => ({
+    state:
+      cue === null
+        ? ("inherit" as const)
+        : cue.assetId === null
+          ? ("stop" as const)
+          : ("set" as const),
+    assetId: cue?.assetId ?? null,
+  });
+
+  return facts.map((fact): AssetSceneCueRow => {
+    switch (fact.kind) {
+      case "dialogueAssetCue":
+        return {
+          kind: "visualCue",
+          carrierId: fact.carrierId,
+          itemIndex: fact.itemIndex,
+          background:
+            fact.cue.backgroundAssetId === null
+              ? null
+              : {
+                  assetId: fact.cue.backgroundAssetId,
+                  type: resolveType(fact.cue.backgroundAssetId),
+                },
+          bgm: audioState(fact.cue.bgm),
+          bgs: audioState(fact.cue.bgs),
+        };
+      case "structuralVisualCue":
+        return {
+          kind: "visualCue",
+          carrierId: fact.carrierId,
+          itemIndex: null,
+          background:
+            fact.backgroundAssetId === null
+              ? null
+              : {
+                  assetId: fact.backgroundAssetId,
+                  type: resolveType(fact.backgroundAssetId),
+                },
+          bgm: audioState(fact.bgm),
+          bgs: audioState(fact.bgs),
+        };
+      case "dialoguePortrait":
+        return {
+          kind: "portrait",
+          carrierId: fact.carrierId,
+          itemIndex: fact.itemIndex,
+          assetId: fact.portrait.assetId,
+          type: resolveType(fact.portrait.assetId),
+        };
+      case "subjectPortrait":
+        return {
+          kind: "portrait",
+          carrierId: fact.carrierId,
+          itemIndex: null,
+          assetId: fact.portrait.assetId,
+          type: resolveType(fact.portrait.assetId),
+        };
+      case "evidenceImage":
+        return {
+          kind: "evidence",
+          carrierId: fact.carrierId,
+          itemIndex: null,
+          assetId: fact.imageAssetId,
+          type: resolveType(fact.imageAssetId),
+        };
+      case "sprite":
+        return {
+          kind: "sprite",
+          carrierId: fact.carrierId,
+          itemIndex: null,
+          assetId: fact.assetId,
+          type: resolveType(fact.assetId),
+        };
+    }
+  });
+}
+
 // ---- usage joins (typed manifest sources only) ------------------------------
 
 function countPortraitUsages(manifest: AssetManifest): Map<string, number> {
