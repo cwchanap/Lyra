@@ -558,6 +558,68 @@ characters:
     ).toBe(false);
   });
 
+  it("skips_non_slug_character_id_and_surfaces_read_diagnostic", () => {
+    // Character-id slug validation is compiler-only, so `id: foo.bar` is
+    // non-empty and `malformed === false` here. `expressionRow` would build
+    // `portrait.foo.bar.standard` (four segments), and `expectedPath`/
+    // `publicPath` reject it because portrait ids require exactly three —
+    // throwing would abort the whole Assets projection. The bad row is
+    // skipped and surfaced as a read diagnostic; the rest stays usable.
+    const nonSlugYaml = `
+characters:
+  - id: foo.bar
+    displayNames:
+      - バッド
+    expressions:
+      standard:
+        prompt: neutral
+  - id: hayasaka_akane
+    expressions:
+      standard:
+        prompt: neutral
+`;
+    const workspace = projectAssetWorkspace(
+      payload({
+        configSources: {
+          characters: {
+            path: "static/assets/config/characters.yaml",
+            content: nonSlugYaml,
+          },
+          audio: {
+            path: "static/assets/config/audio.yaml",
+            content: AUDIO_YAML,
+          },
+        },
+        scenes: [scenePayload("scene_s", standardOnlyScene)],
+      }),
+    );
+
+    // The bad row is dropped; the valid character still projects.
+    expect(workspace.characters.map((row) => row.id)).toEqual([
+      "hayasaka_akane",
+    ]);
+    // No `portrait.foo.bar.standard` asset id leaks through.
+    expect(
+      workspace.characters.some((row) =>
+        row.expressions.some((expr) =>
+          expr.assetId.startsWith("portrait.foo.bar"),
+        ),
+      ),
+    ).toBe(false);
+    // A read diagnostic explains the skipped row.
+    const diagnostic = workspace.diagnostics.find(
+      (d) => d.code === "assetCharacterIdNotPortraitSafe",
+    );
+    expect(diagnostic).toBeDefined();
+    expect(diagnostic!.sourceFile).toBe("static/assets/config/characters.yaml");
+    expect(diagnostic!.message).toContain("foo.bar");
+    // The rest of the workspace stays usable: the valid character's standard
+    // expression counts the one concrete occurrence, and audio still projects.
+    const standard = workspace.characters[0]!.expressions[0]!;
+    expect(standard.usages).toBe(1);
+    expect(workspace.audio.bgm.map((row) => row.id)).toEqual(["rain", "step"]);
+  });
+
   it("referenced_manifest_fields_are_not_recomputed", () => {
     const workspace = projectAssetWorkspace(payload());
 
@@ -658,6 +720,17 @@ characters:
         referenced: false,
       },
     ]);
+
+    // Structural guard: the audio (channel, id) pair must come from the typed
+    // manifest `source` on `entry.type === "audio"` entries, never by peeling
+    // the `audio.<channel>.<id>` grammar off the usage asset id. A revert to
+    // string parsing re-introduces an `audio.${...}` template and fails here.
+    const source = readFileSync(
+      resolve(process.cwd(), "src/lib/asset-workspace.ts"),
+      "utf8",
+    );
+    expect(source).not.toMatch(/audio\.\$\{/);
+    expect(source).toContain('entry.type === "audio"');
   });
 
   it("bgm_bgs_set_cues_produce_concrete_usages", () => {
