@@ -155,6 +155,12 @@
       : [...workspace.report.warnings, ...workspace.diagnostics],
   );
 
+  // Snapshot-scoped presence set: rebuilt only when the workspace snapshot
+  // changes, so per-entry presence checks stay O(1) instead of O(n) scans.
+  const existingAssetPathSet = $derived(
+    new Set(workspace?.existingAssetPaths ?? []),
+  );
+
   function kindOf(entry: LibraryEntry): string {
     return entry.type === "audio" ? entry.source.channel : entry.type;
   }
@@ -164,7 +170,7 @@
   // `expectedPath` is its matching pair. publicPath (`/assets/...`) is the
   // URL form and never compares equal (F1).
   function isPathPresent(repoRelativePath: string): boolean {
-    return workspace?.existingAssetPaths.includes(repoRelativePath) ?? false;
+    return existingAssetPathSet.has(repoRelativePath);
   }
 
   function isPresent(entry: LibraryEntry): boolean {

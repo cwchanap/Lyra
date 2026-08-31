@@ -806,7 +806,7 @@ describe("AssetsView", () => {
         },
       ],
     };
-    mockInvoke.mockImplementation(async () => payload);
+    mockInvoke.mockImplementation(() => Promise.resolve(payload));
     renderAssets();
     await openLibrary();
 

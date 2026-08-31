@@ -333,7 +333,24 @@ fn load_scene_bundle_at_root(
     scene_id: &str,
 ) -> Result<WorkbenchSceneBundle, EditorError> {
     let resolved = resolve_manifest_scene_at_root(root, chapter_id, scene_id)?;
-    let compiled_path = &resolved.compiled_path;
+    load_compiled_scene_bundle(
+        &resolved.compiled_path,
+        &resolved.scene_id,
+        resolved.scene_type,
+    )
+}
+
+/// Reads and validates the compiled scene JSON for an already-resolved manifest
+/// scene. The caller supplies the compiled path, scene id, and type, so this
+/// performs no manifest re-resolution or root re-canonicalization — the asset
+/// workspace snapshot loop reuses already-resolved `ManifestScene` entries and
+/// calls this directly, avoiding a full `load_manifest_chapters` reload per
+/// scene.
+fn load_compiled_scene_bundle(
+    compiled_path: &Path,
+    scene_id: &str,
+    scene_type: SceneType,
+) -> Result<WorkbenchSceneBundle, EditorError> {
     let text = fs::read_to_string(compiled_path).map_err(|error| {
         if error.kind() == io::ErrorKind::NotFound {
             EditorError::not_found(compiled_path)
@@ -351,21 +368,21 @@ fn load_scene_bundle_at_root(
         )
     })?;
 
-    let expected_type = manifest_scene_type_tag(resolved.scene_type);
+    let expected_type = manifest_scene_type_tag(scene_type);
     let compiled_id = value.get("id").and_then(|id| id.as_str());
     let compiled_type = value.get("type").and_then(|scene_type| scene_type.as_str());
-    if compiled_id != Some(resolved.scene_id.as_str()) || compiled_type != Some(expected_type) {
+    if compiled_id != Some(scene_id) || compiled_type != Some(expected_type) {
         return Err(EditorError::new(
             "sceneManifestMismatch",
             format!(
                 "compiled scene {} does not match the manifest: expected id \"{}\" type \"{expected_type}\", found id {compiled_id:?} type {compiled_type:?}",
                 compiled_path.display(),
-                resolved.scene_id,
+                scene_id,
             ),
         ));
     }
 
-    let scene = if resolved.scene_type == SceneType::Analysis {
+    let scene = if scene_type == SceneType::Analysis {
         public_analysis_value(&value)?
     } else {
         value
@@ -860,7 +877,13 @@ fn load_asset_workspace_at_root(root: &Path) -> Result<AssetWorkspace, EditorErr
     let mut scenes = Vec::new();
     for chapter in &chapters {
         for scene in &chapter.scenes {
-            let bundle = load_scene_bundle_at_root(root, &chapter.id, &scene.id)?;
+            // Reuse the already-resolved manifest entry instead of calling
+            // `load_scene_bundle_at_root`, which would re-resolve (and
+            // re-read/re-parse) the whole chapter manifest per scene.
+            let compiled_path = canonical_root
+                .join(COMPILED_SCENES_RELATIVE_ROOT)
+                .join(&scene.file);
+            let bundle = load_compiled_scene_bundle(&compiled_path, &scene.id, scene.scene_type)?;
             scenes.push(AssetWorkspaceScene {
                 chapter_id: chapter.id.clone(),
                 scene_id: scene.id.clone(),
