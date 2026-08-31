@@ -766,6 +766,69 @@ describe("AssetsView", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not prefix-match a longer asset id sharing the selected id's prefix", async () => {
+    // `audio.bgm.step` is a prefix of `audio.bgm.step_alt`. A plain
+    // `message.includes(id)` would surface the `step_alt` diagnostic under
+    // `step`. The real `assetFileMissing` producer emits
+    // `(assetId: <id>, type: <type>)` (unquoted, comma-delimited); the
+    // `assetUsageUnresolved` producer emits `references "<id>"` (quoted).
+    const user = userEvent.setup();
+    const payload = payloadFixture();
+    payload.manifest = {
+      ...payload.manifest,
+      entries: [
+        ...payload.manifest.entries,
+        {
+          ...entryBase({
+            assetId: "audio.bgm.step_alt",
+            type: "audio",
+            entryPrompt: "alt step",
+          }),
+          type: "audio",
+          source: {
+            chapterId: "chapter_1",
+            sceneId: "scene_cues",
+            channel: "bgm",
+            id: "step_alt",
+          },
+        },
+      ],
+    };
+    payload.report = {
+      ...payload.report,
+      warnings: [
+        {
+          code: "assetFileMissing",
+          message:
+            "Expected asset file not found: static/assets/audio/bgm/step_alt.ogg (assetId: audio.bgm.step_alt, type: audio)",
+          sourceFile: "static/assets/audio/bgm/step_alt.ogg",
+          line: 1,
+        },
+      ],
+    };
+    mockInvoke.mockImplementation(async () => payload);
+    renderAssets();
+    await openLibrary();
+
+    // Inspecting the prefix id must NOT surface the longer id's diagnostic.
+    await user.click(screen.getByRole("button", { name: "audio.bgm.step" }));
+    expect(
+      within(screen.getByLabelText("Asset inspector")).queryByText(
+        /assetId: audio\.bgm\.step_alt/u,
+      ),
+    ).not.toBeInTheDocument();
+
+    // Inspecting the longer id DOES surface its own diagnostic.
+    await user.click(
+      screen.getByRole("button", { name: "audio.bgm.step_alt" }),
+    );
+    expect(
+      within(screen.getByLabelText("Asset inspector")).getByText(
+        /assetId: audio\.bgm\.step_alt/u,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("copies the prompt and source reference, showing a visible failure state", async () => {
     const user = userEvent.setup();
     renderAssets();

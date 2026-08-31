@@ -432,10 +432,15 @@ type AssetUsage = {
   carrierLabel: string;
   role: "background" | "bgm" | "bgs" | "portrait" | "standee" | "evidence";
   itemIndex: number | null;
+  assetId: string;
 };
 ```
 
-Deduplicate only exact duplicate occurrence keys. Dialogue usages retain item identity; UI may group counts by scene later.
+Deduplicate only exact duplicate occurrence keys, keyed by
+`chapter + scene + carrier + role + item index + assetId`. `assetId` is part
+of the key so two distinct assets referenced by the same carrier/role/item
+stay separate rows. Dialogue usages retain item identity; UI may group counts
+by scene later.
 
 ## Cue ordering
 

@@ -126,11 +126,23 @@
     );
   });
 
+  // Asset ids are dot-joined slugs (`portrait.akane.standard`), so a plain
+  // `message.includes(id)` prefix-collides: `portrait.akane.standard` would
+  // also match a diagnostic for `portrait.akane.standard_alt`. The producers
+  // emit two formats — `references "${id}"` (quoted) and
+  // `(assetId: ${id}, type:` (unquoted, comma-delimited) — so match the id
+  // only when bounded by non-id characters on both sides, which handles both
+  // formats and prevents longer-id prefix matches.
+  function assetIdMentionedIn(message: string, id: string): boolean {
+    const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(?<![a-z0-9_.])${escaped}(?![a-z0-9_.])`).test(message);
+  }
+
   const assetDiagnostics = $derived.by(() => {
     if (!workspace || selectedAssetId === null) return [];
     const id = selectedAssetId;
     return [...workspace.report.warnings, ...workspace.diagnostics].filter(
-      (diagnostic) => diagnostic.message.includes(id),
+      (diagnostic) => assetIdMentionedIn(diagnostic.message, id),
     );
   });
 

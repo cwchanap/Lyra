@@ -592,18 +592,24 @@ function characterRows(
   usages: Map<string, number>,
 ): AssetCharacterRow[] {
   if (!parsed.ok) return [];
-  return parsed.characters
-    .filter((entry) => !entry.malformed)
-    .map((entry) => ({
-      id: entry.id,
-      displayNames: entry.displayNames,
-      portraitMode: entry.portraitMode,
-      visualPrompt: entry.visualPrompt,
-      referenceAssetId: entry.referenceAssetId,
-      expressions: [...entry.expressions.values()].map((expression) =>
-        expressionRow(entry.id, expression, usages),
-      ),
-    }));
+  return (
+    parsed.characters
+      // `parseCharacterEntry` returns `id: ""` for entries that omit `id` (a
+      // compiler-only validity check, not run here). Dropping them avoids empty
+      // Characters headings and `portrait..standard` asset ids/paths with no
+      // diagnostic explaining them.
+      .filter((entry) => !entry.malformed && entry.id !== "")
+      .map((entry) => ({
+        id: entry.id,
+        displayNames: entry.displayNames,
+        portraitMode: entry.portraitMode,
+        visualPrompt: entry.visualPrompt,
+        referenceAssetId: entry.referenceAssetId,
+        expressions: [...entry.expressions.values()].map((expression) =>
+          expressionRow(entry.id, expression, usages),
+        ),
+      }))
+  );
 }
 
 function expressionRow(
