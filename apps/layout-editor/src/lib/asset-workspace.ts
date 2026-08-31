@@ -152,15 +152,24 @@ export function projectAssetWorkspace(
   // Usage counts come from the concrete scene-usages projection only — the
   // manifest is assetId-deduped, so its entries never count occurrences (F4).
   const portraitUsages = countPortraitUsages(sceneProjection.usages);
-  const audioUsages = countAudioUsages(sceneProjection.usages);
+  const audioUsages = countAudioUsages(
+    sceneProjection.usages,
+    payload.manifest.entries,
+  );
+  const characterProjection = characterRows(
+    characters,
+    portraitUsages,
+    payload.configSources.characters.path,
+  );
   return {
     manifest: payload.manifest,
     report: payload.report,
     library: payload.manifest.entries,
-    characters: characterRows(characters, portraitUsages),
+    characters: characterProjection.rows,
     audio: audioRows(audio, audioUsages),
     diagnostics: [
       ...catalogDiagnostics(characters),
+      ...characterProjection.diagnostics,
       ...catalogDiagnostics(audio),
       ...sceneProjection.diagnostics,
     ],
@@ -562,54 +571,100 @@ function countPortraitUsages(usages: AssetSceneUsage[]): Map<string, number> {
 
 /**
  * Counts concrete BGM/BGS Set-cue occurrences from the usage projection,
- * keyed by (channel, catalog id). The role carries the channel; the catalog
- * id is the compiler-owned `audio.<channel>.<id>` suffix. SFX has no cue
- * channel, so catalog-only SFX rows stay at zero.
+ * keyed by the typed manifest audio source `(channel, id)`. The pair is read
+ * from `entry.source` on `entry.type === "audio"` manifest entries — never by
+ * peeling the `audio.<channel>.<id>` grammar off the usage asset id, so a
+ * future canonical-id spelling change cannot make catalog usage counts
+ * silently drift while the manifest join stays valid. SFX has no cue channel,
+ * so catalog-only SFX rows stay at zero.
  */
 function countAudioUsages(
   usages: AssetSceneUsage[],
+  manifest: AssetManifestEntry[],
 ): Map<AudioChannel, Map<string, number>> {
+  const audioSourceByAssetId = new Map<
+    string,
+    { channel: AudioChannel; id: string }
+  >();
+  for (const entry of manifest) {
+    if (entry.type === "audio") {
+      audioSourceByAssetId.set(entry.assetId, {
+        channel: entry.source.channel,
+        id: entry.source.id,
+      });
+    }
+  }
   const counts = new Map<AudioChannel, Map<string, number>>();
   for (const usage of usages) {
     if (usage.role !== "bgm" && usage.role !== "bgs") continue;
-    const prefix = `audio.${usage.role}.`;
-    if (!usage.assetId.startsWith(prefix)) continue;
-    const id = usage.assetId.slice(prefix.length);
-    let byId = counts.get(usage.role);
+    const source = audioSourceByAssetId.get(usage.assetId);
+    if (!source) continue;
+    let byId = counts.get(source.channel);
     if (!byId) {
       byId = new Map();
-      counts.set(usage.role, byId);
+      counts.set(source.channel, byId);
     }
-    byId.set(id, (byId.get(id) ?? 0) + 1);
+    byId.set(source.id, (byId.get(source.id) ?? 0) + 1);
   }
   return counts;
 }
 
 // ---- projections -------------------------------------------------------------
 
+/**
+ * A character id is portrait-safe when `portraitAssetId(id, <expression>)`
+ * stays exactly three dot-separated segments — i.e. the id itself contains no
+ * dot. Expression ids are slug-validated by the shared config parser, so a
+ * dot-bearing character id is the only way `expressionRow`'s
+ * `expectedPath`/`publicPath` calls (which parse the portrait id strictly)
+ * would throw and abort the whole Assets projection. Character-id slug
+ * validity itself stays compiler-only policy; this is a defensive read guard.
+ */
+function isPortraitSafeCharacterId(characterId: string): boolean {
+  return !characterId.includes(".");
+}
+
 function characterRows(
   parsed: ParsedCharacterCatalog,
   usages: Map<string, number>,
-): AssetCharacterRow[] {
-  if (!parsed.ok) return [];
-  return (
-    parsed.characters
-      // `parseCharacterEntry` returns `id: ""` for entries that omit `id` (a
-      // compiler-only validity check, not run here). Dropping them avoids empty
-      // Characters headings and `portrait..standard` asset ids/paths with no
-      // diagnostic explaining them.
-      .filter((entry) => !entry.malformed && entry.id !== "")
-      .map((entry) => ({
-        id: entry.id,
-        displayNames: entry.displayNames,
-        portraitMode: entry.portraitMode,
-        visualPrompt: entry.visualPrompt,
-        referenceAssetId: entry.referenceAssetId,
-        expressions: [...entry.expressions.values()].map((expression) =>
-          expressionRow(entry.id, expression, usages),
-        ),
-      }))
-  );
+  sourceFile: string,
+): { rows: AssetCharacterRow[]; diagnostics: CompileError[] } {
+  if (!parsed.ok) return { rows: [], diagnostics: [] };
+  const rows: AssetCharacterRow[] = [];
+  const diagnostics: CompileError[] = [];
+  for (const entry of parsed.characters) {
+    // `parseCharacterEntry` returns `id: ""` for entries that omit `id` (a
+    // compiler-only validity check, not run here). Dropping them avoids empty
+    // Characters headings and `portrait..standard` asset ids/paths with no
+    // diagnostic explaining them.
+    if (entry.malformed || entry.id === "") continue;
+    // A non-slug character id (e.g. `foo.bar`) is compiler-invalid but
+    // parseable, so it reaches here with `malformed === false`. `expressionRow`
+    // would build `portrait.foo.bar.standard` (four segments), and
+    // `expectedPath`/`publicPath` reject it because portrait ids require
+    // exactly three — throwing aborts the whole projection. Skip the row and
+    // surface a read diagnostic so the rest of the workspace stays usable.
+    if (!isPortraitSafeCharacterId(entry.id)) {
+      diagnostics.push({
+        code: "assetCharacterIdNotPortraitSafe",
+        message: `Character "${entry.id}" is skipped from the Assets Characters tab: its id contains a dot, so portrait asset ids built from it (portrait.${entry.id}.<expression>) would not parse. Fix the id in ${sourceFile}.`,
+        sourceFile,
+        line: 0,
+      });
+      continue;
+    }
+    rows.push({
+      id: entry.id,
+      displayNames: entry.displayNames,
+      portraitMode: entry.portraitMode,
+      visualPrompt: entry.visualPrompt,
+      referenceAssetId: entry.referenceAssetId,
+      expressions: [...entry.expressions.values()].map((expression) =>
+        expressionRow(entry.id, expression, usages),
+      ),
+    });
+  }
+  return { rows, diagnostics };
 }
 
 function expressionRow(
