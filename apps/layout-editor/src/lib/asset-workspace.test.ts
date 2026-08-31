@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { portraitAssetId } from "@lyra/asset-paths";
 import {
@@ -914,7 +915,7 @@ describe("projectAssetWorkspace scene usage projection", () => {
     // Reader walk's presentation facts — no scene-type switch and no
     // per-type carrier walk duplicated in the workspace projection.
     const source = readFileSync(
-      resolve(process.cwd(), "src/lib/asset-workspace.ts"),
+      resolve(dirname(fileURLToPath(import.meta.url)), "asset-workspace.ts"),
       "utf8",
     );
     expect(source).toContain("projectReaderScene");
