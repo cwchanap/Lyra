@@ -148,6 +148,47 @@ const report: AssetReport = {
   warnings: [],
 };
 
+// Manifest whose audio entry's assetId suffix intentionally differs from its
+// typed `source.id`. Used by the behavioral lock on the typed-manifest
+// ownership contract: a Set cue on `audio.bgm.rain_alias` must credit the
+// `rain` catalog row (via `source.id`), not a `rain_alias` row (via the
+// assetId grammar). Any implementation that derives the catalog key by
+// peeling `audio.<channel>.<id>` off the assetId fails regardless of how the
+// string parsing is spelled.
+const divergentSourceManifest: AssetManifest = {
+  enabled: true,
+  entries: [
+    {
+      ...entryBase({
+        assetId: "portrait.hayasaka_akane.standard",
+        type: "portrait",
+        entryPrompt: "neutral",
+      }),
+      type: "portrait",
+      source: {
+        chapterId: "chapter_1",
+        sceneId: "scene_1",
+        characterId: "hayasaka_akane",
+        expression: "standard",
+      },
+    },
+    {
+      ...entryBase({
+        assetId: "audio.bgm.rain_alias",
+        type: "audio",
+        entryPrompt: "soft tension",
+      }),
+      type: "audio",
+      source: {
+        chapterId: "chapter_1",
+        sceneId: "scene_1",
+        channel: "bgm",
+        id: "rain",
+      },
+    },
+  ],
+};
+
 function payload(
   overrides: Partial<WorkbenchAssetWorkspacePayload> = {},
 ): WorkbenchAssetWorkspacePayload {
@@ -224,6 +265,28 @@ const audioCueScene: JSONLinearScene = {
       assetCue: {
         backgroundAssetId: null,
         bgm: { channel: "bgm", assetId: "audio.bgm.step" },
+        bgs: null,
+      },
+    },
+  ],
+  assetRefs: [],
+};
+
+/** One bgm Set cue on an assetId whose suffix differs from the manifest
+ * `source.id` — the behavioral probe for the typed-manifest ownership
+ * contract (see `divergentSourceManifest`). */
+const divergentAudioCueScene: JSONLinearScene = {
+  type: "linear",
+  id: "scene_divergent",
+  title: "Divergent",
+  summary: "",
+  queue: [
+    {
+      kind: "sceneTag",
+      text: "Scene:",
+      assetCue: {
+        backgroundAssetId: null,
+        bgm: { channel: "bgm", assetId: "audio.bgm.rain_alias" },
         bgs: null,
       },
     },
@@ -720,17 +783,56 @@ characters:
         referenced: false,
       },
     ]);
+  });
 
-    // Structural guard: the audio (channel, id) pair must come from the typed
-    // manifest `source` on `entry.type === "audio"` entries, never by peeling
-    // the `audio.<channel>.<id>` grammar off the usage asset id. A revert to
-    // string parsing re-introduces an `audio.${...}` template and fails here.
-    const source = readFileSync(
-      resolve(process.cwd(), "src/lib/asset-workspace.ts"),
-      "utf8",
+  it("audio_usage_count_keys_off_typed_manifest_source_not_assetid", () => {
+    // Behavioral lock on the typed-manifest ownership contract: the catalog
+    // row that receives a Set-cue usage is selected by the manifest entry's
+    // typed `source.{channel,id}`, never by peeling `audio.<channel>.<id>`
+    // off the usage assetId. The scene references an assetId whose suffix
+    // (`rain_alias`) intentionally differs from the manifest source id
+    // (`rain`); only a typed-source join credits the `rain` catalog row. Any
+    // implementation that derives the catalog key from the assetId grammar
+    // fails here regardless of how the string parsing is spelled
+    // (`audio.${...}`, `startsWith`/`slice`, `split`, etc.).
+    const workspace = projectAssetWorkspace(
+      payload({
+        manifest: divergentSourceManifest,
+        scenes: [scenePayload("scene_divergent", divergentAudioCueScene)],
+      }),
     );
-    expect(source).not.toMatch(/audio\.\$\{/);
-    expect(source).toContain('entry.type === "audio"');
+
+    // The Set cue on `audio.bgm.rain_alias` becomes a concrete usage row.
+    expect(workspace.sceneUsages).toEqual([
+      {
+        chapterId: "chapter_1",
+        sceneId: "scene_divergent",
+        sceneSourcePath: "docs/stories_plan/chapter_1/scene_divergent.md",
+        carrierId: "main",
+        carrierLabel: "Main",
+        role: "bgm",
+        itemIndex: 0,
+        assetId: "audio.bgm.rain_alias",
+        type: "audio",
+      },
+    ]);
+    // The `rain` catalog row (from AUDIO_YAML) gets the usage because the
+    // manifest entry's typed source is `{ channel: "bgm", id: "rain" }`.
+    // A string-parsing revert would key on `rain_alias` and leave `rain` at 0.
+    expect(workspace.audio.bgm.find((row) => row.id === "rain")).toEqual({
+      channel: "bgm",
+      id: "rain",
+      prompt: "soft tension",
+      loop: true,
+      usages: 1,
+      referenced: true,
+    });
+    // No `rain_alias` catalog row exists (AUDIO_YAML has no such id), so a
+    // string-parsing revert has no row to credit — the `rain` row above is
+    // the only behavioral signal that the join used the typed source.
+    expect(workspace.audio.bgm.map((row) => row.id)).not.toContain(
+      "rain_alias",
+    );
   });
 
   it("bgm_bgs_set_cues_produce_concrete_usages", () => {
