@@ -327,7 +327,7 @@ This replaces hand-written “five structural fields happened to be covered” a
 - [ ] Write `asset_usage_keeps_concrete_portrait_occurrences_when_display_collapses_state`: usage keeps each item occurrence even if Scene-cue UI later collapses consecutive identical portrait state.
 - [ ] Write `sprite_usage_uses_manifest_asset_type` for standee/portrait/evidence/background IDs.
 - [ ] Write `unresolved_manifest_usage_remains_visible`: fact without manifest entry remains visible with unresolved diagnostic.
-- [ ] Implement deterministic dedupe by chapter + scene + carrier + role + item index where meaningful.
+- [ ] Implement deterministic dedupe by chapter + scene + carrier + role + item index + assetId where meaningful.
 
 ### Early real-corpus verifier
 

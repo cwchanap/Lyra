@@ -515,6 +515,49 @@ describe("projectAssetWorkspace", () => {
     expect(workspace.report.warnings).toEqual([]);
   });
 
+  it("drops_character_entries_that_omit_id", () => {
+    // `parseCharacterEntry` returns `id: ""` (no error) for entries missing
+    // `id`; the compiler-only missing-id check is not run here. Such entries
+    // must not reach expressionRow, which would build `portrait..standard`
+    // asset ids and empty headings with no diagnostic explaining them.
+    const idLessYaml = `
+characters:
+  - displayNames:
+      - 名無し
+    expressions:
+      standard:
+        prompt: neutral
+  - id: hayasaka_akane
+    expressions:
+      standard:
+        prompt: neutral
+`;
+    const workspace = projectAssetWorkspace(
+      payload({
+        configSources: {
+          characters: {
+            path: "static/assets/config/characters.yaml",
+            content: idLessYaml,
+          },
+          audio: {
+            path: "static/assets/config/audio.yaml",
+            content: AUDIO_YAML,
+          },
+        },
+      }),
+    );
+
+    expect(workspace.characters.map((row) => row.id)).toEqual([
+      "hayasaka_akane",
+    ]);
+    // No `portrait..standard` asset id leaks through.
+    expect(
+      workspace.characters.some((row) =>
+        row.expressions.some((expr) => expr.assetId.startsWith("portrait..")),
+      ),
+    ).toBe(false);
+  });
+
   it("referenced_manifest_fields_are_not_recomputed", () => {
     const workspace = projectAssetWorkspace(payload());
 
