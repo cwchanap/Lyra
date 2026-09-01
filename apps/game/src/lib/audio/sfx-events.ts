@@ -122,7 +122,9 @@ export const STORY_BEAT_SFX_TRIGGERS: readonly StoryBeatSfxTrigger[] = [
     event: "story:usb-insert",
     chapterId: "chapter_1",
     sceneKind: "linear",
-    sceneId: "scene_11",
+    // HPA-601 Scene 11 split: the USB-insert action beat now lives in the
+    // second half (scene_11_2.md), so the trigger follows the scene id.
+    sceneId: "scene_11_2",
     dialogueKind: "action",
     substring: "隨身碟插上筆電",
   },
