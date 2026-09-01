@@ -615,6 +615,26 @@ pub struct LinearSceneJson {
     pub queue: Vec<DialogueItem>,
 }
 
+/// Compiler-emitted city-map projection for a mapped investigation scene
+/// (HPA-601 §4). Mirrors `JSONInvestigationMap` byte-for-byte: topology
+/// coordinates joined by `sublocationId`; labels stay canonical in the
+/// sublocation list. This is scene wire data only — never persisted to saves.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapJson {
+    pub id: String,
+    pub background_asset_id: Option<String>,
+    pub nodes: Vec<InvestigationMapNodeJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapNodeJson {
+    pub sublocation_id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvestigationSceneJson {
@@ -623,6 +643,8 @@ pub struct InvestigationSceneJson {
     pub summary: String,
     #[serde(default)]
     pub asset_refs: Vec<AssetRefJson>,
+    #[serde(default)]
+    pub map: Option<InvestigationMapJson>,
     pub intro: Vec<DialogueItem>,
     pub sublocations: Vec<SublocationJson>,
     pub evidence_manifest: Vec<EvidenceJson>,
@@ -1854,6 +1876,74 @@ mod tests {
         }"#;
         let parsed: CharacterLayoutJson = serde_json::from_str(json).unwrap();
         assert!(matches!(parsed, CharacterLayoutJson::Baked { .. }));
+    }
+
+    fn investigation_scene_fixture_json(map: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "type": "investigation",
+            "id": "wrapper",
+            "title": "Wrapper",
+            "summary": "Fixture scene summary.",
+            "map": map,
+            "intro": [],
+            "sublocations": [],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        })
+    }
+
+    fn parse_investigation_scene(value: serde_json::Value) -> InvestigationSceneJson {
+        match serde_json::from_value(value).unwrap() {
+            SceneJson::Investigation(scene) => scene,
+            other => panic!("expected investigation scene, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn investigation_scene_map_null_deserializes_to_none() {
+        let scene =
+            parse_investigation_scene(investigation_scene_fixture_json(serde_json::Value::Null));
+        assert!(scene.map.is_none());
+    }
+
+    #[test]
+    fn investigation_scene_map_one_node_with_background_deserializes() {
+        let scene =
+            parse_investigation_scene(investigation_scene_fixture_json(serde_json::json!({
+                "id": "tokyo",
+                "backgroundAssetId": "background.city_map.tokyo",
+                "nodes": [{ "sublocationId": "rain_bell_cafe", "x": 0.42, "y": 0.55 }]
+            })));
+        let map = scene.map.unwrap();
+        assert_eq!(map.id, "tokyo");
+        assert_eq!(
+            map.background_asset_id.as_deref(),
+            Some("background.city_map.tokyo")
+        );
+        assert_eq!(map.nodes.len(), 1);
+        assert_eq!(map.nodes[0].sublocation_id, "rain_bell_cafe");
+        assert_eq!(map.nodes[0].x, 0.42);
+        assert_eq!(map.nodes[0].y, 0.55);
+    }
+
+    #[test]
+    fn investigation_scene_map_two_nodes_with_null_background_deserializes() {
+        let scene =
+            parse_investigation_scene(investigation_scene_fixture_json(serde_json::json!({
+                "id": "tokyo",
+                "backgroundAssetId": null,
+                "nodes": [
+                    { "sublocationId": "rain_bell_cafe", "x": 0.42, "y": 0.55 },
+                    { "sublocationId": "soma_detective_office", "x": 0.61, "y": 0.38 }
+                ]
+            })));
+        let map = scene.map.unwrap();
+        assert_eq!(map.id, "tokyo");
+        assert_eq!(map.background_asset_id, None);
+        assert_eq!(map.nodes.len(), 2);
+        assert_eq!(map.nodes[0].sublocation_id, "rain_bell_cafe");
+        assert_eq!(map.nodes[1].sublocation_id, "soma_detective_office");
     }
 
     #[test]

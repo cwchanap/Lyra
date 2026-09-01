@@ -59,7 +59,8 @@ use view::{
     AnalysisBoardView, AnalysisCardSourceView, AnalysisCardView, AnalysisFeedbackView,
     AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView, ChapterView, CharacterView,
     CrossExamView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
-    PendingAcquisitionView, SceneView, SubjectView, SublocationView, TopicView,
+    InvestigationMapNodeView, InvestigationMapView, PendingAcquisitionView, SceneView, SubjectView,
+    SublocationView, TopicView,
 };
 
 pub struct GameEngine {
@@ -641,6 +642,13 @@ impl GameEngine {
                 _ => return Ok(false),
             };
             inv.pending_queue = None;
+            // Pending-map law (HPA-601 §7): a mapped scene with no current
+            // sublocation is awaiting player destination selection. Neither
+            // first-sublocation auto-entry nor outro evaluation may run; the
+            // scene remains in Explore until enter_sublocation chooses.
+            if inv.current_sublocation_id.is_none() && inv.def.map.is_some() {
+                return Ok(false);
+            }
             let ctx = SceneAndInventoryCtx {
                 scene: inv,
                 inventory: &self.inventory,
@@ -2393,7 +2401,17 @@ impl GameEngine {
             _ => match &self.scene {
                 SceneRuntime::Investigation(inv) => match &inv.current_sublocation_id {
                     Some(sub_id) => ModeView::Explore {
-                        sublocation_id: sub_id.clone(),
+                        sublocation_id: Some(sub_id.clone()),
+                        background_asset_id: self.last_visual_cue.background_asset_id.clone(),
+                        bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
+                        bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
+                    },
+                    // Pending map state (HPA-601 §7): a mapped scene with no
+                    // current sublocation is awaiting destination selection
+                    // and stays in Explore with no destination. A map-less
+                    // None keeps the old GameComplete fallback.
+                    None if inv.def.map.is_some() => ModeView::Explore {
+                        sublocation_id: None,
                         background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                         bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                         bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
@@ -2697,6 +2715,27 @@ impl GameEngine {
                     })
                     .collect();
 
+                // Map projection (HPA-601 §7): only currently
+                // visible/unlocked sublocations become map nodes; a map-less
+                // scene projects `None` and never synthesizes a map.
+                let map_view = inv.def.map.as_ref().map(|map| InvestigationMapView {
+                    id: map.id.clone(),
+                    background_asset_id: map.background_asset_id.clone(),
+                    nodes: map
+                        .nodes
+                        .iter()
+                        .filter(|node| {
+                            visible_sublocations
+                                .iter()
+                                .any(|sub| sub.id == node.sublocation_id)
+                        })
+                        .map(|node| InvestigationMapNodeView {
+                            sublocation_id: node.sublocation_id.clone(),
+                            x: node.x,
+                            y: node.y,
+                        })
+                        .collect(),
+                });
                 SceneView::Investigation {
                     id: inv.def.id.clone(),
                     title: inv.def.title.clone(),
@@ -2704,6 +2743,7 @@ impl GameEngine {
                     index: self.current_scene_idx,
                     total,
                     current_sublocation_id: inv.current_sublocation_id.clone(),
+                    map: map_view,
                     visible_sublocations,
                 }
             }
@@ -3192,6 +3232,7 @@ mod tests {
                 }],
                 on_reexamine: None,
             }],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Auto(AutoMarker::Auto),
                 dialogue: vec![],
@@ -3445,6 +3486,7 @@ mod tests {
             }],
             evidence_manifest: vec![],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 // Never satisfied, so inspecting cannot end the scene and the
                 // installed queue stays the focused dialogue.
@@ -4227,7 +4269,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 bgm,
                 bgs,
             } => {
-                assert_eq!(sublocation_id, "cafe");
+                assert_eq!(sublocation_id.as_deref(), Some("cafe"));
                 assert_eq!(
                     background_asset_id.as_deref(),
                     Some("background.chapter_1.cafe")
@@ -4471,6 +4513,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             }],
             evidence_manifest: vec![],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Auto(AutoMarker::Auto),
                 dialogue: vec![],
@@ -5565,6 +5608,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 on_reexamine: None,
             }],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
@@ -5626,6 +5670,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 on_acquire: vec![],
                 on_reexamine: None,
             }],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::StatementAcquired {
                     _predicate: crate::game::schema::PredicateStatementAcquired::X,
@@ -5663,6 +5708,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             }],
             evidence_manifest: vec![],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
                 dialogue: vec![],
@@ -5734,6 +5780,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             }],
             evidence_manifest: vec![],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
                 dialogue: vec![],
@@ -5803,6 +5850,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 on_reexamine: None,
             }],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
@@ -5855,6 +5903,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 on_reexamine: None,
             }],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
