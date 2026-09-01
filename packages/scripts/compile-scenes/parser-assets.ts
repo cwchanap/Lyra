@@ -45,6 +45,21 @@ export function parseAudioCue(
   return { channel, assetId: raw };
 }
 
+/**
+ * True only when every visual/audio field of the cue is absent. An authored
+ * `BGM: none` (a present cue with a null assetId) counts as present — the
+ * author wrote the field, so the cue is not all-empty.
+ */
+export function isEmptyVisualAssetCue(cue: VisualAssetCue | null): boolean {
+  if (!cue) return true;
+  return (
+    cue.backgroundPrompt === null &&
+    cue.backgroundAssetId === null &&
+    cue.bgm === null &&
+    cue.bgs === null
+  );
+}
+
 export function metadataWithoutAssetKeys(
   meta: Record<string, string>,
 ): Record<string, string> {

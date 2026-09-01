@@ -120,6 +120,7 @@ function scene(): SceneRecord {
       title: "調查",
       summary: "調查",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       assetRefs: [{ type: "audio", assetId: "audio.sfx.click" }],
       sourceFile,

@@ -24,6 +24,7 @@ import type {
   JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
+  JSONInvestigationMap,
   JSONInvestigationScene,
   JSONLinearScene,
   JSONTestimony,
@@ -152,12 +153,14 @@ export function emitLinearScene(ast: ASTLinearScene): JSONLinearScene {
 export function emitInvestigationScene(
   ast: ASTInvestigationScene,
   caseRecords: CompiledCaseRecordCorpus,
+  map: JSONInvestigationMap | null = null,
 ): JSONInvestigationScene {
   return {
     type: "investigation",
     id: ast.id,
     title: ast.title,
     summary: ast.summary,
+    map,
     intro: emitDialogueItems(ast.intro),
     assetRefs: emitAssetRefs(ast.assetRefs),
     sublocations: ast.sublocations.map((sub) => ({

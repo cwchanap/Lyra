@@ -1309,11 +1309,16 @@ function guaranteedInventoryFromInvestigation(
     // The runtime automatically enters the first unlocked sub-location
     // (advance_into_first_sublocation uses .find on Unlocked status),
     // firing its entry reveals even if it has no interactive content.
-    // Mirror this by marking the first unlocked sub-location as mandatory.
-    const firstUnlocked = scene.sublocations.find(
-      (s) => s.status === "unlocked",
-    );
-    if (firstUnlocked) subMandatory.add(firstUnlocked.id);
+    // Mirror this by marking the first unlocked sub-location as mandatory —
+    // but only for map-less scenes (HPA-601): a mapped investigation parks
+    // the player on the map, so its first unlocked sub-location is merely
+    // available, never auto-entered.
+    if (scene.mapId === null) {
+      const firstUnlocked = scene.sublocations.find(
+        (s) => s.status === "unlocked",
+      );
+      if (firstUnlocked) subMandatory.add(firstUnlocked.id);
+    }
 
     // Fixed-point for sub-location reachability, mandatoriness, and inventory.
     let changed = true;
@@ -1432,9 +1437,15 @@ function guaranteedInventoryFromInvestigation(
 
   // The runtime always auto-enters the first unlocked sub-location
   // (advance_into_first_sublocation), regardless of outro type, so its
-  // entry reveals are guaranteed even for explicit-outro investigations.
-  const firstUnlocked = scene.sublocations.find((s) => s.status === "unlocked");
-  if (firstUnlocked) addInventoryReveals(guaranteed, firstUnlocked.reveals);
+  // entry reveals are guaranteed even for explicit-outro investigations —
+  // except for mapped scenes (HPA-601), where the player first must pick a
+  // destination on the map, so nothing is auto-entered.
+  if (scene.mapId === null) {
+    const firstUnlocked = scene.sublocations.find(
+      (s) => s.status === "unlocked",
+    );
+    if (firstUnlocked) addInventoryReveals(guaranteed, firstUnlocked.reveals);
+  }
 
   return guaranteed;
 }

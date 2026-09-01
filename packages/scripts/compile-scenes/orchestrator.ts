@@ -27,13 +27,14 @@ import {
   writeFileSync,
   existsSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { parseChapter } from "./parser-chapter";
 import { parseLinearScene } from "./parser-linear";
 import { parseInvestigationScene } from "./parser-investigation";
 import { parseInterrogationScene } from "./parser-interrogation";
 import { parseAnalysisScene } from "./parser-analysis";
 import { emptyStoryCatalog, parseStoryCatalog } from "./parser-story-catalog";
+import { CITY_MAP_ID, parseCityMapJson, type ASTCityMap } from "./city-map";
 import {
   applyInvestigationLayout,
   detectLayoutOverlaps,
@@ -78,9 +79,11 @@ import { validateSaveContentReferences } from "./save-content-references";
 import type {
   ASTChapter,
   AnalysisSceneRecord,
+  ASTInvestigationScene,
   ASTStoryCatalog,
   CompileError,
   CompiledCaseRecordCorpus,
+  JSONInvestigationMap,
 } from "./types";
 import { loadAssetConfig } from "./assets/config";
 import {
@@ -144,6 +147,8 @@ export function compile(opts: CompileOptions): CompileResult {
   const failedParseFiles = new Set<string>();
   let storyCatalog: ASTStoryCatalog = emptyStoryCatalog("story_catalog.md");
   let storyCatalogPath: string | null = null;
+  let cityMap: ASTCityMap | null = null;
+  let cityMapPath: string | null = null;
 
   const sourceRoots = Array.isArray(opts.sourceRoot)
     ? opts.sourceRoot
@@ -169,6 +174,20 @@ export function compile(opts: CompileOptions): CompileResult {
           code: "duplicateStoryCatalog",
           message: `Story catalog found in multiple source roots (${storyCatalogPath} and ${candidateCatalogPath}); exactly one global catalog may be authored.`,
           sourceFile: candidateCatalogPath,
+          line: 1,
+        });
+      }
+    }
+
+    const candidateCityMapPath = resolve(root, "city_map.json");
+    if (existsSync(candidateCityMapPath)) {
+      if (cityMapPath === null) {
+        cityMapPath = candidateCityMapPath;
+      } else {
+        errors.push({
+          code: "duplicateCityMap",
+          message: `City map found in multiple source roots (${cityMapPath} and ${candidateCityMapPath}); exactly one global city map may be authored.`,
+          sourceFile: candidateCityMapPath,
           line: 1,
         });
       }
@@ -222,6 +241,33 @@ export function compile(opts: CompileOptions): CompileResult {
         code: "storyCatalogUnreadable",
         message: `${storyCatalogPath}: ${(e as Error).message}`,
         sourceFile: storyCatalogPath,
+        line: 1,
+      });
+    }
+  }
+
+  if (cityMapPath !== null) {
+    try {
+      const parsedCityMap = parseCityMapJson(
+        readFileSync(cityMapPath, "utf-8"),
+        cityMapPath,
+      );
+      if (parsedCityMap.ok) {
+        // Keep the authored-relative path (e.g. docs/stories_plan/city_map.json)
+        // as the topology's sourceFile so the asset manifest's globalFile
+        // source stays stable regardless of the invocation cwd.
+        cityMap = {
+          ...parsedCityMap.value,
+          sourceFile: normalizeCityMapSourcePath(cityMapPath, opts.repoRoot),
+        };
+      } else {
+        errors.push(...parsedCityMap.errors);
+      }
+    } catch (e) {
+      errors.push({
+        code: "cityMapUnreadable",
+        message: `${cityMapPath}: ${(e as Error).message}`,
+        sourceFile: cityMapPath,
         line: 1,
       });
     }
@@ -367,6 +413,79 @@ export function compile(opts: CompileOptions): CompileResult {
     errors.push(...assetConfig.errors);
   }
 
+  // HPA-601: bind every mapped scene's authored metadata to the single
+  // parsed topology before enrichment/emission. mapId !== topology id,
+  // unknown topology locations, and label drift are hard errors. Map-less
+  // scenes and map-less corpora without a city_map.json are untouched.
+  for (const rec of scenes) {
+    if (rec.ast.kind !== "investigationScene" || rec.ast.mapId === null)
+      continue;
+    const scene = rec.ast;
+    if (!cityMap) {
+      errors.push({
+        code: "cityMapTopologyMissing",
+        message: `Scene "${scene.id}" declares Map "${scene.mapId}" but no root-level city_map.json was found under: ${sourceRoots.join(", ")}.`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      });
+      continue;
+    }
+    if (scene.mapId !== cityMap.id) {
+      errors.push({
+        code: "cityMapIdMismatch",
+        message: `Scene "${scene.id}" declares Map "${scene.mapId}" but the topology id is "${cityMap.id}".`,
+        sourceFile: scene.sourceFile,
+        line: scene.line,
+      });
+      continue;
+    }
+    for (const sublocation of scene.sublocations) {
+      const location = cityMap.locations.find((l) => l.id === sublocation.id);
+      if (!location) {
+        errors.push({
+          code: "cityMapUnknownLocation",
+          message: `Mapped scene "${scene.id}" sub-location "${sublocation.id}" is not declared in the city map topology.`,
+          sourceFile: sublocation.sourceFile,
+          line: sublocation.line,
+        });
+        continue;
+      }
+      if (location.label !== sublocation.label) {
+        errors.push({
+          code: "cityMapLabelMismatch",
+          message: `Mapped scene "${scene.id}" sub-location "${sublocation.id}" label "${sublocation.label}" does not match topology label "${location.label}".`,
+          sourceFile: sublocation.sourceFile,
+          line: sublocation.line,
+        });
+      }
+    }
+  }
+
+  const assetsEnabled = assetConfig.ok && assetConfig.value.enabled;
+  const cityMapJsonForScene = (
+    ast: ASTInvestigationScene,
+  ): JSONInvestigationMap | null => {
+    if (ast.mapId === null || !cityMap) return null;
+    return {
+      id: "tokyo",
+      backgroundAssetId: assetsEnabled
+        ? `background.city_map.${CITY_MAP_ID}`
+        : null,
+      nodes: ast.sublocations.flatMap((sublocation) => {
+        const location = cityMap.locations.find((l) => l.id === sublocation.id);
+        return location
+          ? [
+              {
+                sublocationId: sublocation.id,
+                x: location.x,
+                y: location.y,
+              },
+            ]
+          : [];
+      }),
+    };
+  };
+
   let assetReport: AssetReport = {
     enabled: false,
     requested: {
@@ -414,6 +533,7 @@ export function compile(opts: CompileOptions): CompileResult {
       analysisScenes,
       orderedScenes,
       config: assetConfig.value,
+      cityMap,
       ...(opts.repoRoot === undefined ? {} : { repoRoot: opts.repoRoot }),
     });
     scenes.splice(0, scenes.length, ...enriched.scenes);
@@ -503,7 +623,11 @@ export function compile(opts: CompileOptions): CompileResult {
       const emittedForOriginValidation: EmittedSceneRecordV1[] = scenes.map(
         (rec) => ({
           chapterId: rec.chapterId,
-          json: emitSceneRecord(rec, caseRecordResult.value),
+          json: emitSceneRecord(
+            rec,
+            caseRecordResult.value,
+            cityMapJsonForScene,
+          ),
           sourceAst: rec.ast,
         }),
       );
@@ -602,7 +726,7 @@ export function compile(opts: CompileOptions): CompileResult {
       const key = `${chapter.dirName}/${file}`;
       const rec = sceneRecordsByManifestKey.get(key);
       const json = rec
-        ? emitSceneRecord(rec, caseRecords)
+        ? emitSceneRecord(rec, caseRecords, cityMapJsonForScene)
         : emittedAnalysisByManifestKey.get(key);
       if (!json) continue;
       const outFile = resolve(
@@ -674,11 +798,18 @@ export function compile(opts: CompileOptions): CompileResult {
 function emitSceneRecord(
   rec: SceneRecord,
   caseRecords: CompiledCaseRecordCorpus,
+  cityMapJsonForScene: (
+    ast: ASTInvestigationScene,
+  ) => JSONInvestigationMap | null,
 ): EmittedSceneJsonV1 {
   return rec.ast.kind === "linearScene"
     ? emitLinearScene(rec.ast)
     : rec.ast.kind === "investigationScene"
-      ? emitInvestigationScene(rec.ast, caseRecords)
+      ? emitInvestigationScene(
+          rec.ast,
+          caseRecords,
+          cityMapJsonForScene(rec.ast),
+        )
       : emitInterrogationScene(rec.ast, caseRecords);
 }
 
@@ -703,6 +834,17 @@ function byChapterNumber(a: string, b: string): number {
   const an = Number(a.replace("chapter_", ""));
   const bn = Number(b.replace("chapter_", ""));
   return an - bn;
+}
+
+function normalizeCityMapSourcePath(
+  absolutePath: string,
+  repoRoot?: string,
+): string {
+  const rel = relative(repoRoot ?? process.cwd(), absolutePath);
+  if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) {
+    return absolutePath;
+  }
+  return rel.split(sep).join("/");
 }
 
 function sortReachabilityDiagnostics(

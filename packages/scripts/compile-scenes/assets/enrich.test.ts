@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { enrichScenesWithAssets } from "./enrich";
+import { parseInvestigationScene } from "../parser-investigation";
 import { emitLinearScene } from "../emitter";
 import type { AssetConfig } from "./config";
 import type {
@@ -417,6 +418,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [],
           evidenceManifest: [
@@ -1081,6 +1083,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [
             {
               kind: "sceneTag",
@@ -1209,6 +1212,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1275,6 +1279,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1341,6 +1346,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1407,6 +1413,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1480,6 +1487,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1546,6 +1554,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1612,6 +1621,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1675,6 +1685,7 @@ describe("enrichScenesWithAssets", () => {
           title: "調查",
           summary: "調查",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [
             {
@@ -1764,6 +1775,7 @@ function investigationScene(input: {
       title: "調查",
       summary: "調查",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [],
       evidenceManifest: [
@@ -1802,6 +1814,7 @@ function investigationSceneWithEvidenceSources(): SceneRecord {
       title: "調查",
       summary: "調查",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [
         {
@@ -2649,3 +2662,150 @@ function interrogationScene(): SceneRecord {
     },
   };
 }
+
+describe("mapped travel-only visual cue normalization", () => {
+  const WRAPPER_MD = `
+# Scene 2.1: 前往雨鐘咖啡館
+
+- **Summary:** 調查增田圭死亡現場。
+- **Map:** tokyo
+
+## Sub-location: 雨鐘咖啡館 {#rain_bell_cafe}
+- **Status:** unlocked
+
+[場景：東京調查地圖／雨鐘咖啡館]
+
+## Outro
+`.trim();
+
+  const MAPPED_WITH_CONTENT_MD = `
+# Scene 9.9: 調查現場
+
+- **Summary:** 調查增田圭死亡現場。
+- **Map:** tokyo
+
+## Sub-location: 雨鐘咖啡館 {#rain_bell_cafe}
+- **Status:** unlocked
+
+[場景：東京調查地圖／雨鐘咖啡館]
+
+### Hotspot: 吧檯 {#counter}
+- **Description:** 一座木製吧檯。
+- **Status:** unlocked
+
+**早坂茜**：看看吧檯。
+
+## Outro
+`.trim();
+
+  function parseWrapper(source: string, id: string): SceneRecord {
+    const parsed = parseInvestigationScene(source, `chapter_1/${id}.md`, id);
+    if (!parsed.ok) throw new Error(parsed.error.message);
+    return { chapterId: "chapter_1", file: `${id}.md`, ast: parsed.value };
+  }
+
+  function errorCodes(result: { errors: { code: string }[] }): string[] {
+    return result.errors.map((error) => error.code);
+  }
+
+  function cityMapFixture() {
+    return {
+      version: 1 as const,
+      id: "tokyo" as const,
+      backgroundPrompt: "Stylized illustrated Tokyo map at night.",
+      locations: [
+        { id: "rain_bell_cafe", label: "雨鐘咖啡館", x: 0.16, y: 0.45 },
+      ],
+      sourceFile: "docs/stories_plan/city_map.json",
+    };
+  }
+
+  function backgroundIds(entries: { type: string; assetId: string }[]) {
+    return entries
+      .filter((entry) => entry.type === "background")
+      .map((entry) => entry.assetId);
+  }
+
+  it("normalizes a corpus-first mapped travel-only wrapper without visual metadata", () => {
+    const wrapper = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const follower = linearSceneWithCue("scene_2", visualCue("Hallway."));
+    const result = enrichScenesWithAssets({
+      scenes: [wrapper, follower],
+      config: config(),
+      cityMap: cityMapFixture(),
+    });
+
+    const codes = errorCodes(result);
+    expect(codes).not.toContain("assetMissingBackgroundPrompt");
+    expect(codes).not.toContain("assetFirstCueMissingBgm");
+    expect(codes).not.toContain("assetFirstCueMissingBgs");
+    // No scene-local wrapper background; the map raster is global.
+    expect(backgroundIds(result.manifest.entries)).toEqual([
+      "background.city_map.tokyo",
+      "background.chapter_1.scene_2.tag_001",
+    ]);
+    const globalEntry = result.manifest.entries[0];
+    expect(globalEntry?.source).toEqual({
+      globalFile: "docs/stories_plan/city_map.json",
+    });
+  });
+
+  it("registers exactly one global map request regardless of mapped-scene count", () => {
+    const wrapperA = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const wrapperB = parseWrapper(
+      WRAPPER_MD.replace("Scene 2.1", "Scene 6.1"),
+      "investigation_scene_map_05",
+    );
+    const result = enrichScenesWithAssets({
+      scenes: [wrapperA, wrapperB],
+      config: config(),
+      cityMap: cityMapFixture(),
+    });
+    expect(
+      backgroundIds(result.manifest.entries).filter((id) =>
+        id.startsWith("background.city_map."),
+      ),
+    ).toEqual(["background.city_map.tokyo"]);
+  });
+
+  it("registers no map request when assets are disabled", () => {
+    const wrapper = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const result = enrichScenesWithAssets({
+      scenes: [wrapper],
+      config: { ...config(), enabled: false },
+      cityMap: cityMapFixture(),
+    });
+    expect(result.manifest.entries).toHaveLength(0);
+  });
+
+  it("still fails a map-less playable sublocation without required background metadata", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+## Outro
+`.trim();
+    const mapless = parseWrapper(source, "investigation_scene_9");
+    const result = enrichScenesWithAssets({
+      scenes: [mapless],
+      config: config(),
+    });
+    expect(errorCodes(result)).toContain("assetMissingBackgroundPrompt");
+  });
+
+  it("still fails a mapped sublocation with real content and no visual metadata", () => {
+    const mapped = parseWrapper(
+      MAPPED_WITH_CONTENT_MD,
+      "investigation_scene_map_09",
+    );
+    const result = enrichScenesWithAssets({
+      scenes: [mapped],
+      config: config(),
+    });
+    expect(errorCodes(result)).toContain("assetMissingBackgroundPrompt");
+  });
+});

@@ -340,6 +340,11 @@ export type ASTInvestigationScene = Located<{
   title: string;
   summary: string;
   summaryAuthored: boolean;
+  /**
+   * Authored `- **Map:** <id>` scene field (immediately after Summary).
+   * Null when the scene is a normal map-less investigation.
+   */
+  mapId: string | null;
   intro: DialogueItem[];
   sublocations: ASTSublocation[];
   evidenceManifest: ASTEvidence[];
@@ -605,11 +610,28 @@ export type JSONLinearScene = {
 export type JSONHotspotLayout = RectLayout;
 export type JSONCharacterLayout = CharacterLayout;
 
+/**
+ * Map projection emitted for a mapped investigation scene (HPA-601 §4).
+ * Always present on JSONInvestigationScene and nullable; nodes carry only
+ * topology coordinates joined by sublocationId — labels stay canonical in
+ * the sublocation list.
+ */
+export type JSONInvestigationMap = {
+  id: "tokyo";
+  backgroundAssetId: string | null;
+  nodes: Array<{
+    sublocationId: string;
+    x: number;
+    y: number;
+  }>;
+};
+
 export type JSONInvestigationScene = {
   type: "investigation";
   id: string;
   title: string;
   summary: string;
+  map: JSONInvestigationMap | null;
   intro: JSONDialogueItem[];
   assetRefs: AssetRef[];
   sublocations: Array<{

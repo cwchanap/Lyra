@@ -314,6 +314,7 @@ function caseRecordScene(
       title: "Investigation",
       summary: "Investigation",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [],
       evidenceManifest,

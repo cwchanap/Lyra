@@ -2482,9 +2482,16 @@ function buildInvestigationNodes(input: {
   const { scene, scope } = input;
   const nodes: NodeDraft[] = [];
   const entryKey = `${scope.prefix}/entry`;
-  const entrySublocation = scene.sublocations.find(
-    (sublocation) => sublocation.status === "unlocked",
-  );
+  // HPA-601: only map-less scenes auto-enter their first unlocked
+  // sublocation. For mapped scenes the first unlocked sublocation is merely
+  // available — it is projected as a normal sublocation node and its entry
+  // reveals fire only when the player actually enters it.
+  const entrySublocation =
+    scene.mapId === null
+      ? scene.sublocations.find(
+          (sublocation) => sublocation.status === "unlocked",
+        )
+      : undefined;
   const mandatoryAtoms = investigationMandatoryAtoms(scene, scope);
   const entryReveals = entrySublocation?.reveals ?? [];
 

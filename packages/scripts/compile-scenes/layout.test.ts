@@ -19,6 +19,7 @@ function minimalScene(): ASTInvestigationScene {
     title: "Test Investigation",
     summary: "Test Investigation",
     summaryAuthored: false,
+    mapId: null,
     intro: [],
     sublocations: [
       {
