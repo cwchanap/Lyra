@@ -8,10 +8,15 @@ import {
   currentPackagedDocumentIdentity,
   dialogueFingerprint,
   elementExists,
+  enabledMapDestinationIds,
   getPackagedGameState,
+  jsClick,
+  jumpToProductionScene,
   loadTitleSlot,
   returnToTitle,
   saveManualSlot,
+  seedStoryCleared,
+  startFromMenu,
   waitForAcquisitionOrdinal,
   waitForButton,
   waitForPackagedGameState,
@@ -28,6 +33,18 @@ import {
   type SeedControl,
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
+import type { GameStateView } from "$lib/state/types";
+
+/** Explore parked on investigation_scene_map_01's city map (HPA-601 §7). */
+function isPendingFirstMapGate(state: GameStateView): boolean {
+  return (
+    state.mode.type === "explore" &&
+    state.scene.kind === "investigation" &&
+    state.scene.id === anchors.firstMapWrapper &&
+    state.scene.currentSublocationId === null &&
+    state.scene.map !== null
+  );
+}
 
 type ResumeSeedControl = SeedControl & {
   acknowledgedCheckpointSaveId?: string;
@@ -359,5 +376,73 @@ describe("save resume", () => {
       acknowledgedCheckpointSaveId: acknowledgedAutosaveSaveId,
     });
     expect(await elementExists('[aria-label="主選單"]')).toBe(true);
+  });
+
+  it("restores a pending city map without selecting, then crosses it exactly once", async () => {
+    // The seeded resume case above left the app at the title screen.
+    await seedStoryCleared();
+    await startFromMenu();
+    await jumpToProductionScene(anchors.firstMapWrapper);
+    await waitForPackagedGameState(
+      isPendingFirstMapGate,
+      30000,
+      "first map wrapper did not park on the pending city map",
+    );
+
+    // Save the untouched pending map through the ordinary manual-save UI.
+    await saveManualSlot(3, "待選地圖存檔", true);
+    await closePersistenceBrowserToGameplay();
+    await waitForPersistenceIdle();
+    await waitForPackagedGameState(
+      isPendingFirstMapGate,
+      15000,
+      "saving did not preserve the pending city map in play",
+    );
+
+    await returnToTitle();
+    await loadTitleSlot("manual", 3);
+
+    // The exact pending map returns: same wrapper, no sublocation, no entry.
+    await waitForPackagedGameState(
+      isPendingFirstMapGate,
+      30000,
+      "manual load did not restore the pending city map",
+    );
+    expect(await enabledMapDestinationIds()).toEqual([
+      anchors.firstMapDestination,
+    ]);
+
+    // Prove the restore never auto-selects the sole destination on its own.
+    await browser.pause(1500);
+    expect(isPendingFirstMapGate(await getPackagedGameState())).toBe(true);
+
+    const before = await getPackagedGameState();
+    await jsClick(`[data-map-destination="${anchors.firstMapDestination}"]`);
+    await waitForPackagedGameState(
+      (state) =>
+        state.scene.kind === "investigation" &&
+        state.scene.id === anchors.firstGateSuccessor,
+      30000,
+      "selecting Rain Bell did not start the next scene",
+    );
+    const crossed = await getPackagedGameState();
+    expect(crossed.mode.type).toBe("dialogue");
+    expect(await elementExists(anchors.cityMapSelector)).toBe(false);
+
+    // Crossing replays no acquisition/reveal: inventory is unchanged and
+    // every restored record still exists exactly once.
+    expect(crossed.pendingAcquisition).toBeNull();
+    const evidenceIds = crossed.inventory.evidence.map((record) => record.id);
+    const statementIds = crossed.inventory.statements.map(
+      (record) => record.id,
+    );
+    expect(evidenceIds).toEqual(
+      before.inventory.evidence.map((record) => record.id),
+    );
+    expect(statementIds).toEqual(
+      before.inventory.statements.map((record) => record.id),
+    );
+    expect(new Set(evidenceIds).size).toBe(evidenceIds.length);
+    expect(new Set(statementIds).size).toBe(statementIds.length);
   });
 });

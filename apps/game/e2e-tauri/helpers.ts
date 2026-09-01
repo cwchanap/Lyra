@@ -14,7 +14,10 @@ import {
 } from "../src/lib/e2e/case-file-viewport";
 import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
-import { drainPendingAcquisitionsWithinCap } from "$lib/e2e/pending-acquisition-drain";
+import {
+  drainPendingAcquisitionsWithinCap,
+  soleMapDestinationId,
+} from "$lib/e2e/pending-acquisition-drain";
 
 type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
@@ -1964,6 +1967,12 @@ export async function advanceDialogueUntil(
         await browser.waitUntil(
           async () => {
             if (await predicate()) return true;
+            // Pending city-map gate (HPA-601 §11): a mapped wrapper parks
+            // Explore on the city map with no advance control. The sole
+            // enabled destination is the only way forward; click it once and
+            // let the loop drain the entered dialogue. Several enabled
+            // destinations fail deterministically via the pure helper.
+            if (await clickSoleMapDestination()) return true;
             return browser.execute((sel: string) => {
               return document.querySelector(sel) !== null;
             }, advanceDialogueSelector);
@@ -2003,6 +2012,56 @@ export async function elementExists(selector: string): Promise<boolean> {
   return browser.execute((sel: string) => {
     return document.querySelector(sel) !== null;
   }, selector);
+}
+
+/**
+ * HPA-601 §11: IDs of currently enabled city-map destination buttons. The
+ * sole-destination decision itself stays in the pure helper
+ * (`soleMapDestinationId`); this seam only queries the DOM.
+ */
+export async function enabledMapDestinationIds(): Promise<string[]> {
+  return browser.execute((selector: string) => {
+    return Array.from(document.querySelectorAll<HTMLButtonElement>(selector))
+      .filter((button) => !button.disabled)
+      .map((button) => button.getAttribute("data-map-destination"))
+      .filter((id): id is string => id !== null);
+  }, anchors.mapDestinationSelector);
+}
+
+/**
+ * Generic production drain support for the pending city map: when Explore has
+ * no current sublocation, the wrapper renders only `[data-map-destination]`
+ * pins and no advance control. Query the enabled pins, decide through the
+ * pure helper (several enabled pins fail deterministically instead of
+ * guessing), and click the sole one. Returns false when no map decision is
+ * pending; wrapper scene IDs are never consulted.
+ */
+export async function clickSoleMapDestination(): Promise<boolean> {
+  const ids = await enabledMapDestinationIds();
+  const sole = soleMapDestinationId(ids);
+  if (sole === null) return false;
+  const clicked = await browser.execute(
+    (selector: string, destinationId: string) => {
+      const button = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(selector),
+      ).find(
+        (candidate) =>
+          !candidate.disabled &&
+          candidate.getAttribute("data-map-destination") === destinationId,
+      );
+      if (!button) return false;
+      button.click();
+      return true;
+    },
+    anchors.mapDestinationSelector,
+    sole,
+  );
+  if (!clicked) {
+    throw new Error(
+      `sole map destination ${sole} disappeared before the drain could click it`,
+    );
+  }
+  return true;
 }
 
 export async function elementTextIncludes(

@@ -69,6 +69,76 @@ export const anchors = {
     // InvestigationSceneSurface: aria-label={`詢問：${character.name}`}
     label: "詢問：早坂茜",
   },
+  // investigation_scene_1 plain hotspots besides kagami_summary_hotspot,
+  // exercised before the outro; the outro itself only needs the KAGAMI
+  // evidence collected and the commission topic discussed.
+  firstInvestigationHotspots: [
+    "調查：桌上舊委託單",
+    "調查：壞掉的咖啡機",
+    "調查：便利店罐咖啡",
+  ],
+  // The commission topic whose discussion (after the KAGAMI evidence) fires
+  // investigation_scene_1's auto outro.
+  firstTopic: "委託內容",
+
+  // HPA-601 city-map surface (InvestigationMapView a11y/DOM contract).
+  cityMap: "城市地圖",
+  cityMapSelector: '[aria-label="城市地圖"]',
+  mapBackgroundSelector: "img.map-background",
+  mapDestinationSelector: "[data-map-destination]",
+  firstMapWrapper: "investigation_scene_map_01",
+  firstMapDestination: "rain_bell_cafe",
+  firstGateSuccessor: "investigation_scene_3",
+  // Chapter 1 travel wrappers in authored order: each exposes exactly one
+  // destination and advances into `next` in the same enter_sublocation
+  // transaction (HPA-601 §9). Coupling point when authoring renames.
+  mapGates: [
+    {
+      wrapper: "investigation_scene_map_01",
+      destination: "rain_bell_cafe",
+      next: "investigation_scene_3",
+    },
+    {
+      wrapper: "investigation_scene_map_02",
+      destination: "police_meeting_room",
+      next: "interrogation_scene_4",
+    },
+    {
+      wrapper: "investigation_scene_map_03",
+      destination: "kagami_review_room",
+      next: "scene_5",
+    },
+    {
+      wrapper: "investigation_scene_map_04",
+      destination: "kichijoji_shopping_street",
+      next: "scene_6",
+    },
+    {
+      wrapper: "investigation_scene_map_05",
+      destination: "rain_bell_cafe",
+      next: "investigation_scene_7",
+    },
+    {
+      wrapper: "investigation_scene_map_06",
+      destination: "outsourced_review_office",
+      next: "investigation_scene_9",
+    },
+    {
+      wrapper: "investigation_scene_map_07",
+      destination: "kagami_review_room",
+      next: "interrogation_scene_10",
+    },
+    {
+      wrapper: "investigation_scene_map_08",
+      destination: "rain_bell_cafe",
+      next: "scene_11",
+    },
+    {
+      wrapper: "investigation_scene_map_09",
+      destination: "soma_detective_office",
+      next: "scene_11_2",
+    },
+  ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
