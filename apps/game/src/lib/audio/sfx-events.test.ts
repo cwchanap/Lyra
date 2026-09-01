@@ -327,7 +327,7 @@ describe("inferGameplaySfxEvents", () => {
     const previous = state({
       scene: {
         kind: "linear",
-        id: "scene_11",
+        id: "scene_11_2",
         title: "",
         summary: "",
         index: 0,
@@ -337,7 +337,7 @@ describe("inferGameplaySfxEvents", () => {
     const next = state({
       scene: {
         kind: "linear",
-        id: "scene_11",
+        id: "scene_11_2",
         title: "",
         summary: "",
         index: 0,
@@ -352,10 +352,10 @@ describe("inferGameplaySfxEvents", () => {
         },
         queueRemaining: 0,
         sceneTag: "相馬事務所，夜晚。",
-        backgroundAssetId: "background.chapter_1.scene_11.office_night",
+        backgroundAssetId: "background.chapter_1.scene_11_2.tag_001",
         bgm: null,
         bgs: null,
-        queueToken: { sceneId: "scene_11", queueGen: 2, cursor: 4 },
+        queueToken: { sceneId: "scene_11_2", queueGen: 2, cursor: 4 },
       },
     });
     expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual([
@@ -367,7 +367,7 @@ describe("inferGameplaySfxEvents", () => {
     const previous = state({
       scene: {
         kind: "linear",
-        id: "scene_11",
+        id: "scene_11_2",
         title: "",
         summary: "",
         index: 0,
@@ -382,16 +382,16 @@ describe("inferGameplaySfxEvents", () => {
         },
         queueRemaining: 4,
         sceneTag: "相馬事務所，夜晚。",
-        backgroundAssetId: "background.chapter_1.scene_11.office_night",
+        backgroundAssetId: "background.chapter_1.scene_11_2.tag_001",
         bgm: null,
         bgs: null,
-        queueToken: { sceneId: "scene_11", queueGen: 2, cursor: 4 },
+        queueToken: { sceneId: "scene_11_2", queueGen: 2, cursor: 4 },
       },
     });
     const next = state({
       scene: {
         kind: "linear",
-        id: "scene_11",
+        id: "scene_11_2",
         title: "",
         summary: "",
         index: 0,
@@ -403,10 +403,10 @@ describe("inferGameplaySfxEvents", () => {
         current: { kind: "line", speaker: "旁白", text: "裡頭只有一個檔案。" },
         queueRemaining: 3,
         sceneTag: "相馬事務所，夜晚。",
-        backgroundAssetId: "background.chapter_1.scene_11.office_night",
+        backgroundAssetId: "background.chapter_1.scene_11_2.tag_001",
         bgm: null,
         bgs: null,
-        queueToken: { sceneId: "scene_11", queueGen: 2, cursor: 5 },
+        queueToken: { sceneId: "scene_11_2", queueGen: 2, cursor: 5 },
       },
     });
     expect(inferGameplaySfxEvents(previous, next, "advance_dialogue")).toEqual(
