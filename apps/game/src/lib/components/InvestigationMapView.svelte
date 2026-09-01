@@ -78,20 +78,23 @@
 </script>
 
 <section class="city-map" aria-label="城市地圖">
-  <CrossfadeImage
-    src={background?.url ?? null}
-    imageClass="map-background"
-    alt=""
-    ariaHidden={true}
-    onImageError={handleBackgroundError}
-  />
-
   <header class="map-objective">
     <span class="eyebrow">目的地 · DESTINATION</span>
     <p>{summary}</p>
   </header>
 
+  <!-- Spec §8: the plane is the single 16:9 coordinate plane; the background
+       lives inside it so the raster and the normalized --x/--y pins scale
+       together instead of tracking the section's arbitrary box. -->
   <div class="map-plane">
+    <CrossfadeImage
+      src={background?.url ?? null}
+      imageClass="map-background"
+      alt=""
+      ariaHidden={true}
+      onImageError={handleBackgroundError}
+    />
+
     {#each destinations as destination (destination.id)}
       <button
         class="map-pin"
@@ -118,7 +121,7 @@
     padding: clamp(16px, 4vh, 48px) clamp(20px, 3vw, 40px);
   }
 
-  .city-map :global(img.map-background) {
+  .map-plane :global(img.map-background) {
     position: absolute;
     inset: 0;
     z-index: 0;

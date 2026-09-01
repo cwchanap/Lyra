@@ -64,10 +64,23 @@ function renderMap(overrides: Partial<{ disabled: boolean }> = {}) {
 }
 
 describe("InvestigationMapView", () => {
-  it("renders a responsive 16:9 map plane", () => {
+  it("renders a responsive 16:9 map plane that owns its background", async () => {
     renderMap();
     const planeRule = cssRule(mapSource(), ".map-plane");
     expect(planeRule).toContain("aspect-ratio: 16 / 9");
+
+    // One coordinate plane: the background fills the plane box exactly, so
+    // normalized pin coordinates cannot drift off the raster on resize.
+    const backgroundRule = cssRule(
+      mapSource(),
+      ".map-plane :global(img.map-background)",
+    );
+    expect(backgroundRule).toContain("position: absolute");
+    expect(backgroundRule).toContain("inset: 0");
+    await waitFor(() => {
+      const plane = document.querySelector(".map-plane");
+      expect(plane?.querySelector("img.map-background")).not.toBeNull();
+    });
   });
 
   it("resolves the city-map background through the story-asset resolver", async () => {
