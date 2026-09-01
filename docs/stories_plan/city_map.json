@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "id": "tokyo",
+  "backgroundPrompt": "Stylized illustrated investigation map of modern Tokyo at night after rain, restrained dark navy, charcoal and muted teal, subtle district silhouettes and rail or road traces, generous clean negative space around navigation nodes, no readable text, no labels, no icons, no pins, no characters, 16:9 composition.",
+  "locations": [
+    { "id": "rain_bell_cafe", "label": "雨鐘咖啡館", "x": 0.16, "y": 0.45 },
+    { "id": "kichijoji_shopping_street", "label": "吉祥寺商店街", "x": 0.21, "y": 0.34 },
+    { "id": "police_meeting_room", "label": "警署臨時會面室", "x": 0.29, "y": 0.50 },
+    { "id": "outsourced_review_office", "label": "外包資料審查分室", "x": 0.34, "y": 0.29 },
+    { "id": "soma_detective_office", "label": "相馬偵探事務所", "x": 0.54, "y": 0.38 },
+    { "id": "kagami_review_room", "label": "KAGAMI 證據摘要審查室", "x": 0.72, "y": 0.45 },
+    { "id": "shibuya", "label": "澀谷", "x": 0.50, "y": 0.68 }
+  ]
+}
