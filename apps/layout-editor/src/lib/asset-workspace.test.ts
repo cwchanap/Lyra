@@ -350,6 +350,7 @@ const deltaInvestigationScene: JSONInvestigationScene = {
   id: "investigation_u",
   title: "Delta",
   summary: "",
+  map: null,
   intro: [],
   assetRefs: [],
   sublocations: [
@@ -378,6 +379,7 @@ const spriteScene: JSONInvestigationScene = {
   id: "investigation_s",
   title: "Sprites",
   summary: "",
+  map: null,
   intro: [],
   assetRefs: [],
   sublocations: [
@@ -476,6 +478,43 @@ const deltaInterrogationScene: JSONInterrogationScene = {
 };
 
 const spriteManifestEntryBase = { entryPrompt: "prompt" };
+
+// ---- global map usage fixtures ----------------------------------------------
+
+function mappedScene(id: string): JSONInvestigationScene {
+  return {
+    type: "investigation",
+    id,
+    title: "Mapped",
+    summary: "",
+    map: {
+      id: "tokyo",
+      backgroundAssetId: "background.city_map.tokyo",
+      nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+    },
+    intro: [],
+    assetRefs: [],
+    sublocations: [],
+    evidenceManifest: [],
+    statementManifest: [],
+    outro: { unlock: "auto", dialogue: [] },
+  };
+}
+
+const mapManifest: AssetManifest = {
+  enabled: true,
+  entries: [
+    {
+      ...entryBase({
+        assetId: "background.city_map.tokyo",
+        type: "background",
+        entryPrompt: "tokyo city map",
+      }),
+      type: "background",
+      source: { globalFile: "docs/stories_plan/city_map.json" },
+    },
+  ],
+};
 
 function spriteManifest(): AssetManifest {
   return {
@@ -910,6 +949,71 @@ characters:
 });
 
 describe("projectAssetWorkspace scene usage projection", () => {
+  it("global_map_background_joins_via_reader_map_cue_without_unresolved_diagnostics", () => {
+    const workspace = projectAssetWorkspace(
+      payload({
+        manifest: mapManifest,
+        scenes: [
+          {
+            chapterId: "chapter_1",
+            sceneId: "investigation_m1",
+            sourcePath: "docs/stories_plan/chapter_1/investigation_m1.md",
+            scene: mappedScene("investigation_m1"),
+          },
+          {
+            chapterId: "chapter_2",
+            sceneId: "investigation_m2",
+            sourcePath: "docs/stories_plan/chapter_2/investigation_m2.md",
+            scene: mappedScene("investigation_m2"),
+          },
+        ],
+      }),
+    );
+
+    // Library carries the single global manifest entry verbatim.
+    expect(
+      workspace.library.filter(
+        (entry) => entry.assetId === "background.city_map.tokyo",
+      ),
+    ).toHaveLength(1);
+
+    // One map:tokyo background usage per mapped scene — two total.
+    const mapUsages = workspace.sceneUsages.filter(
+      (usage) => usage.assetId === "background.city_map.tokyo",
+    );
+    expect(
+      mapUsages.map((usage) => [
+        usage.chapterId,
+        usage.sceneId,
+        usage.carrierId,
+        usage.role,
+        usage.type,
+      ]),
+    ).toEqual([
+      [
+        "chapter_1",
+        "investigation_m1",
+        "map:tokyo",
+        "background",
+        "background",
+      ],
+      [
+        "chapter_2",
+        "investigation_m2",
+        "map:tokyo",
+        "background",
+        "background",
+      ],
+    ]);
+
+    // The global manifest entry resolves every map usage.
+    expect(
+      workspace.diagnostics.filter(
+        (diagnostic) => diagnostic.code === "assetUsageUnresolved",
+      ),
+    ).toEqual([]);
+  });
+
   it("asset_projection_has_no_scene_specific_carrier_walk", () => {
     // Structural proof: every scene cue/usage input flows from the single
     // Reader walk's presentation facts — no scene-type switch and no

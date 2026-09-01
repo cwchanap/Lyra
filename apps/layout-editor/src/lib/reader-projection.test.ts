@@ -137,6 +137,7 @@ const investigationScene = {
   id: "investigation_scene_b",
   title: "Investigation",
   summary: "Fixture",
+  map: null,
   intro: [sceneTagCue("場景：現場", INV_INTRO_CUE), line("intro")],
   assetRefs: [],
   sublocations: [
@@ -250,6 +251,39 @@ const investigationScene = {
     unlock: "auto",
     dialogue: [portraitLine("outro", NPC1_CONCERNED)],
   },
+} satisfies JSONInvestigationScene;
+
+const mappedInvestigationScene = {
+  type: "investigation",
+  id: "investigation_scene_m",
+  title: "City Map",
+  summary: "Fixture",
+  map: {
+    id: "tokyo",
+    backgroundAssetId: "background.city_map.tokyo",
+    nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+  },
+  intro: [],
+  assetRefs: [],
+  sublocations: [
+    {
+      id: "rain_bell_cafe",
+      label: "Rain Bell Cafe",
+      status: "unlocked",
+      unlock: null,
+      reveals: [],
+      sceneTag: "場景：雨鐘咖啡",
+      backgroundAssetId: "background.chapter_1.inv_m_cafe",
+      bgm: null,
+      bgs: null,
+      transitionDialogue: [],
+      hotspots: [],
+      characters: [],
+    },
+  ],
+  evidenceManifest: [],
+  statementManifest: [],
+  outro: { unlock: "auto", dialogue: [] },
 } satisfies JSONInvestigationScene;
 
 const interrogationScene = {
@@ -1056,6 +1090,34 @@ describe("projectReaderScene presentation facts", () => {
         portrait: NPC1_CONCERNED,
       },
     ]);
+  });
+
+  it("projects a mapped scene as exactly one map structural cue before sublocation cues", () => {
+    const reader = projectReaderScene(
+      "chapter_1",
+      "docs/stories_plan/chapter_1/investigation_scene_m.md",
+      mappedInvestigationScene,
+    );
+    // One map fact, emitted before the ordinary sublocation structural cues.
+    expect(reader.presentation.map((fact) => fact.carrierId)).toEqual([
+      "map:tokyo",
+      "sublocation:rain_bell_cafe",
+    ]);
+    expect(factsFor(reader, "map:tokyo")).toEqual([
+      {
+        kind: "structuralVisualCue",
+        carrierId: "map:tokyo",
+        backgroundAssetId: "background.city_map.tokyo",
+        bgm: null,
+        bgs: null,
+      },
+    ]);
+    // Map-less scenes never emit a map fact.
+    expect(
+      investigationReader().presentation.some((fact) =>
+        fact.carrierId.startsWith("map:"),
+      ),
+    ).toBe(false);
   });
 
   it("emits interrogation facts in walk order across phases, questions, lines, and inventory", () => {

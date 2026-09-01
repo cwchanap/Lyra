@@ -109,6 +109,7 @@ const investigationBundle: WorkbenchSceneBundle = {
     id: "investigation_scene_3",
     title: "Rainy Office",
     summary: "Fixture",
+    map: null,
     intro: [line("intro")],
     assetRefs: [],
     sublocations: [
@@ -414,6 +415,7 @@ function chapterBundle(
           id: sceneId,
           title,
           summary: "Fixture",
+          map: null,
           intro: [line("intro")],
           assetRefs: [],
           sublocations: [],
@@ -1433,6 +1435,7 @@ describe("Lyra Story Workbench shell", () => {
           id: sharedSceneId,
           title: `Shared ${chapterId}`,
           summary: "Fixture",
+          map: null,
           intro: [line("intro")],
           assetRefs: [],
           sublocations: [

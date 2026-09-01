@@ -511,6 +511,18 @@ function projectInvestigation(
       scene.intro,
     ),
   );
+  if (scene.map !== null) {
+    // Global map surface: one structural fact at the existing traversal,
+    // before sublocation cues. No map reader group exists, so Assets falls
+    // back to the carrier ID for its label.
+    presentation.push({
+      kind: "structuralVisualCue",
+      carrierId: `map:${scene.map.id}`,
+      backgroundAssetId: scene.map.backgroundAssetId,
+      bgm: null,
+      bgs: null,
+    });
+  }
   for (const sublocation of scene.sublocations) {
     const children: ReaderGroup[] = [];
     // Structural visual cue at the existing sublocation traversal site.
