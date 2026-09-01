@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { drainPendingAcquisitionsWithinCap } from "./pending-acquisition-drain";
+import {
+  drainPendingAcquisitionsWithinCap,
+  soleMapDestinationId,
+} from "./pending-acquisition-drain";
 
 type Acquisition = { id: string };
 
@@ -37,5 +40,23 @@ describe("pending acquisition drain cap", () => {
       }),
     ).rejects.toThrow("pending acquisitions did not drain within the cap of 1");
     expect(pending).toEqual([{ id: "remaining_record" }]);
+  });
+});
+
+describe("sole map destination decision", () => {
+  it("returns null when no enabled destination exists", () => {
+    expect(soleMapDestinationId([])).toBeNull();
+  });
+
+  it("returns the single destination id", () => {
+    expect(soleMapDestinationId(["rain_bell_cafe"])).toBe("rain_bell_cafe");
+  });
+
+  it("fails deterministically instead of guessing among several", () => {
+    expect(() =>
+      soleMapDestinationId(["rain_bell_cafe", "police_meeting_room"]),
+    ).toThrow(
+      /expected at most one enabled map destination.*rain_bell_cafe, police_meeting_room/s,
+    );
   });
 });

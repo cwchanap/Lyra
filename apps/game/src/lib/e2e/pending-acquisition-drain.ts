@@ -1,3 +1,19 @@
+/**
+ * HPA-601 §11: deterministic sole-destination decision for the Chapter 1
+ * city-map drain. Zero enabled destinations => no map decision (null); one
+ * => its id; several => fail rather than guess. Pure: callers keep all DOM
+ * querying on their side of the seam.
+ */
+export function soleMapDestinationId(ids: readonly string[]): string | null {
+  if (ids.length === 0) return null;
+  if (ids.length === 1) return ids[0];
+  throw new Error(
+    `expected at most one enabled map destination, got ${ids.length}: ${ids.join(
+      ", ",
+    )}`,
+  );
+}
+
 export async function drainPendingAcquisitionsWithinCap<Acquisition>(options: {
   cap: number;
   readCurrent: () => Promise<Acquisition | null>;
