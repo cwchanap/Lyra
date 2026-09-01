@@ -1011,3 +1011,109 @@ A：bad line missing the bold markup
     expect(result.error.code).toBe("unlockOnNonLockedBlock");
   });
 });
+
+describe("scene-level Map metadata", () => {
+  const MAPPED_SCENE = `
+# Scene 2.1: 前往雨鐘咖啡館
+
+- **Summary:** 調查增田圭死亡現場。
+- **Map:** tokyo
+
+## Sub-location: 雨鐘咖啡館 {#rain_bell_cafe}
+- **Status:** unlocked
+
+[場景：東京調查地圖／雨鐘咖啡館]
+
+## Outro
+`.trim();
+
+  it("accepts Map directly after Summary", () => {
+    const result = parseInvestigationScene(MAPPED_SCENE, "map_01.md", "map_01");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.mapId).toBe("tokyo");
+  });
+
+  it("defaults to mapId null when no Map is declared", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+
+[場景：a room]
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "i.md", "i");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.mapId).toBeNull();
+  });
+
+  it("leaves a normal investigation unchanged", () => {
+    const source = readFileSync(
+      "packages/scripts/__fixtures__/valid/chapter_1/investigation_scene_1.md",
+      "utf-8",
+    );
+    const result = parseInvestigationScene(
+      source,
+      "chapter_1/investigation_scene_1.md",
+      "investigation_scene_1",
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.mapId).toBeNull();
+  });
+
+  it("rejects a blank Map value", () => {
+    const result = parseInvestigationScene(
+      MAPPED_SCENE.replace("- **Map:** tokyo", "- **Map:** "),
+      "map_blank.md",
+      "map_blank",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sceneMapBlank");
+  });
+
+  it("rejects a duplicate Map declaration", () => {
+    const source = MAPPED_SCENE.replace(
+      "- **Map:** tokyo",
+      "- **Map:** tokyo\n- **Map:** tokyo",
+    );
+    const result = parseInvestigationScene(source, "map_dup.md", "map_dup");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sceneMapMisplaced");
+  });
+
+  it("rejects a misplaced Map declaration after the first H2", () => {
+    const source = `
+# Scene 1: x
+
+## Sub-location: room {#room}
+- **Status:** unlocked
+- **Map:** tokyo
+
+[場景：a room]
+
+## Outro
+`.trim();
+    const result = parseInvestigationScene(source, "map_stray.md", "map_stray");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sceneMapMisplaced");
+  });
+
+  it("rejects a Map Location field", () => {
+    const result = parseInvestigationScene(
+      MAPPED_SCENE.replace("- **Map:** tokyo", "- **Map Location:** tokyo"),
+      "map_location.md",
+      "map_location",
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("sceneMapLocationRejected");
+  });
+});

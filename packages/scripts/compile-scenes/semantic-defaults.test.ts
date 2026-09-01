@@ -30,6 +30,7 @@ function scene(
       title: "調查",
       summary: "調查",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [
         {

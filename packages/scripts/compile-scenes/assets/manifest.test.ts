@@ -296,3 +296,64 @@ describe("story asset manifest paths", () => {
     expect(audioId).toBe("rain_mystery_low");
   });
 });
+
+describe("global city-map background source (HPA-601)", () => {
+  const config: AssetConfig = {
+    enabled: true,
+    globalStylePrompt: "style",
+    types: {
+      background: {
+        dimensions: [1920, 1080],
+        format: "png",
+        transparency: false,
+        prompt: "wide bg",
+      },
+      portrait: {
+        dimensions: [768, 1024],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
+      standee: {
+        dimensions: [1024, 1536],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
+      evidence: {
+        dimensions: [512, 512],
+        format: "png",
+        transparency: true,
+        prompt: "",
+      },
+      audio: { format: "ogg", loop: true, prompt: "" },
+    },
+    characters: { byId: new Map(), byDisplayName: new Map() },
+    audio: { bgm: new Map(), bgs: new Map(), sfx: new Map() },
+  };
+
+  it("keeps a background entry's global-file source and city_map paths", () => {
+    const entries: ManifestEntryInput[] = [
+      {
+        assetId: "background.city_map.tokyo",
+        type: "background",
+        source: { globalFile: "docs/stories_plan/city_map.json" },
+        prompt: "Tokyo map prompt",
+      },
+    ];
+
+    const manifest = buildAssetManifest({ entries, config });
+    expect(manifest.entries).toHaveLength(1);
+    const entry = manifest.entries[0]!;
+    expect(entry.source).toEqual({
+      globalFile: "docs/stories_plan/city_map.json",
+    });
+    expect(entry.expectedPath).toBe(
+      "static/assets/backgrounds/city_map/tokyo.png",
+    );
+    expect(entry.publicPath).toBe("/assets/backgrounds/city_map/tokyo.png");
+    // No fake chapter/scene source fields leak into the serialized form.
+    expect(JSON.stringify(entry)).not.toContain("chapterId");
+    expect(JSON.stringify(entry)).not.toContain("sceneId");
+  });
+});

@@ -37,6 +37,7 @@ import type {
 } from "../types";
 import type { AnalysisSceneRecord } from "../types";
 import type { SceneRecord } from "../validator";
+import type { ASTCityMap } from "../city-map";
 
 type ManifestDraft = ManifestEntryInput;
 
@@ -57,6 +58,12 @@ export function enrichScenesWithAssets(input: {
   analysisScenes?: AnalysisSceneRecord[];
   orderedScenes?: readonly OrderedAssetScene[];
   config: AssetConfig;
+  /**
+   * Parsed global city-map topology. When present (and assets are enabled),
+   * exactly one `background.city_map.<id>` request is registered regardless
+   * of mapped-scene count; it never affects first-visual-cue state.
+   */
+  cityMap?: ASTCityMap | null;
   /**
    * Repository root that manifest `expectedPath` values are relative to.
    * When omitted, paths are checked relative to `process.cwd()`. The
@@ -81,6 +88,18 @@ export function enrichScenesWithAssets(input: {
   const errors: CompileError[] = [];
   const requests = new Map<string, ManifestDraft>();
   const corpusState = { hadVisualCue: false };
+  if (input.cityMap) {
+    // HPA-601 §5: exactly one global map-raster request regardless of
+    // mapped-scene count, sourced from the authored topology file — never a
+    // pseudo chapter/scene owner. Registered before the scene walk so it
+    // neither consumes nor affects first-visual-cue state.
+    putRequest(requests, {
+      assetId: `background.city_map.${input.cityMap.id}`,
+      type: "background",
+      source: { globalFile: input.cityMap.sourceFile },
+      prompt: input.cityMap.backgroundPrompt,
+    });
+  }
   const orderedScenes = input.orderedScenes ?? [
     ...input.scenes.map((record) => ({ kind: "scene" as const, record })),
     ...analysisScenes.map((record) => ({ kind: "analysis" as const, record })),

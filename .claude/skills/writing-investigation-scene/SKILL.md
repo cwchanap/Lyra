@@ -61,6 +61,33 @@ Every `investigation_scene_<N>.md` follows this top-to-bottom order:
 The `- **Summary:**` line appears directly after the H1. It is one sentence of
 player-facing recap copy, not a beat list or authoring notes.
 
+### Scene-level `Map` field (mapped investigations)
+
+A scene that opens the Tokyo city map adds exactly one field, **directly after
+the Summary** (or directly after the H1 when no Summary is authored):
+
+```
+- **Map:** tokyo
+```
+
+- `tokyo` is currently the only valid map ID. There is **no `Map Location`
+  field** — a `- **Map Location:**` line is a compile error.
+- The field may appear only once, only at that position. A duplicate or
+  misplaced `Map` line is a compile error.
+- Each `## Sub-location:` anchor `{#id}` must be a location ID that exists in
+  the global topology `docs/stories_plan/city_map.json`, and the authored
+  heading label must **exactly equal** the topology label for that ID
+  (e.g. `## Sub-location: 雨鐘咖啡館 {#rain_bell_cafe}`).
+- Every scene still follows normal H1 grammar: `# Scene N: <title>` or
+  `# Scene N.M: <title>` (decimal travel wrappers, e.g. `# Scene 2.1:`).
+  Filenames determine scene IDs; H1 labels do not.
+- A **travel-only wrapper** — a mapped scene whose sublocation has no
+  hotspots, characters, entry reveals, or transition dialogue — must omit all
+  visual metadata (`Background Prompt`, `Background Asset ID`, `BGM`, `BGS`):
+  the compiler normalizes its cue to null and only the single global map
+  raster `background.city_map.tokyo` is requested. A mapped sublocation with
+  real hotspot/character content still requires its normal visual metadata.
+
 ## Heading hierarchy reference
 
 | Level | Block |
@@ -79,7 +106,7 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Sub-location (H2)
 - **Required:** `Status` (`locked` or `unlocked`)
-- **Required when assets are enabled:** `Background Prompt`
+- **Required when assets are enabled:** `Background Prompt` (omitted only for a mapped travel-only wrapper — see the scene-level `Map` field section above)
 - **Optional:** `Unlock`, `Reveals` (list)
 - **Optional after first visual unit:** `BGM`, `BGS` (IDs from `static/assets/config/audio.yaml`, or `none`)
 - **Body:** `[場景：...]` tag (mandatory, immediately after metadata), then transition dialogue, then nested H3 Hotspot / Character blocks.

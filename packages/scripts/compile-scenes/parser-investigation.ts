@@ -17,6 +17,7 @@
 import { tokenize, type Token } from "./tokenizer";
 import { parseSceneHeader } from "./parser-scene-header";
 import {
+  isEmptyVisualAssetCue,
   parseVisualAssetCue,
   rejectReservedAssetMetadata,
   VISUAL_ASSET_METADATA_KEYS,
@@ -83,6 +84,9 @@ export function parseInvestigationScene(
   });
   if (!header.ok) return header;
   cur.i = header.value.nextTokenIndex;
+
+  const mapField = parseMapField(cur, tokens);
+  if (!mapField.ok) return mapField;
 
   let intro: DialogueItem[] = [];
   const sublocations: ASTSublocation[] = [];
@@ -160,6 +164,8 @@ export function parseInvestigationScene(
     );
   }
 
+  normalizeTravelOnlyCues(mapField.mapId, sublocations);
+
   return {
     ok: true,
     value: {
@@ -168,6 +174,7 @@ export function parseInvestigationScene(
       title: header.value.title,
       summary: header.value.summary,
       summaryAuthored: header.value.summaryAuthored,
+      mapId: mapField.mapId,
       intro,
       sublocations,
       evidenceManifest,
@@ -178,6 +185,96 @@ export function parseInvestigationScene(
       line: header.value.line,
     },
   };
+}
+
+/**
+ * HPA-601 §3: in a mapped scene, a travel-only sublocation — no hotspots,
+ * characters, entry reveals, or transition dialogue — with an all-empty
+ * visual cue is normalized to `null` after parsing. This keeps the wrapper
+ * from becoming the corpus's first visual unit (no assetFirstCueMissingBgm/
+ * Bgs errors) and from requesting a scene-local background. Ordinary
+ * (map-less) investigations keep their normal authored visual-cue
+ * requirements, and mapped sublocations with real content are untouched.
+ */
+function normalizeTravelOnlyCues(
+  mapId: string | null,
+  sublocations: ASTSublocation[],
+): void {
+  if (mapId === null) return;
+  for (let i = 0; i < sublocations.length; i++) {
+    const sub = sublocations[i];
+    if (!sub) continue;
+    // Transition dialogue never holds sceneTag items (the tag is captured
+    // separately), so an empty list means no non-scene-tag dialogue.
+    const travelOnly =
+      sub.hotspots.length === 0 &&
+      sub.characters.length === 0 &&
+      sub.reveals.length === 0 &&
+      sub.transitionDialogue.length === 0;
+    if (travelOnly && isEmptyVisualAssetCue(sub.assetCue)) {
+      sublocations[i] = { ...sub, assetCue: null };
+    }
+  }
+}
+
+function parseMapField(
+  cur: Cursor,
+  tokens: Token[],
+): { ok: true; mapId: string | null } | { ok: false; error: CompileError } {
+  // Optional scene-level field: exactly `- **Map:** <id>` directly after the
+  // Summary (or H1 when no Summary is authored). No `Map Location` field
+  // exists.
+  let mapId: string | null = null;
+  const first = cur.peek();
+  if (first?.kind === "metadata" && first.key === "Map") {
+    cur.next();
+    const value = first.value.trim();
+    if (!value) {
+      return fail(
+        cur.sourceFile,
+        first.line,
+        "sceneMapBlank",
+        "Scene Map must name a map ID (e.g. tokyo).",
+      );
+    }
+    mapId = value;
+  } else if (
+    first?.kind === "unknown" &&
+    /^-\s+\*\*Map:\*\*\s*$/.test(first.text)
+  ) {
+    // The tokenizer cannot produce an empty metadata value, so a blank
+    // `- **Map:**` arrives as an unknown token (same as blank Summary).
+    return fail(
+      cur.sourceFile,
+      first.line,
+      "sceneMapBlank",
+      "Scene Map must name a map ID (e.g. tokyo).",
+    );
+  }
+  // Any other Map/Map Location metadata anywhere else in the file is a
+  // duplicate (just consumed above) or misplaced — reject it before block
+  // parsing turns it into a generic stray-metadata error.
+  for (let i = cur.i; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok || tok.kind !== "metadata") continue;
+    if (tok.key === "Map") {
+      return fail(
+        cur.sourceFile,
+        tok.line,
+        "sceneMapMisplaced",
+        "Scene Map may be declared only once, directly after the Summary.",
+      );
+    }
+    if (tok.key === "Map Location") {
+      return fail(
+        cur.sourceFile,
+        tok.line,
+        "sceneMapLocationRejected",
+        'Unknown scene field "Map Location"; use `- **Map:** <mapId>` directly after the Summary.',
+      );
+    }
+  }
+  return { ok: true, mapId };
 }
 
 function parseSublocation(

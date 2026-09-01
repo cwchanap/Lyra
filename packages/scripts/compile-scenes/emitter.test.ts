@@ -68,6 +68,7 @@ function mismatchScene(chapterId: string): ASTInvestigationScene {
     title: "Mismatch",
     summary: "Mismatch",
     summaryAuthored: false,
+    mapId: null,
     intro: [],
     sublocations: [],
     evidenceManifest: [
@@ -364,6 +365,7 @@ describe("emitter", () => {
           title: "Investigation",
           summary: "Investigation",
           summaryAuthored: false,
+          mapId: null,
           intro: [],
           sublocations: [],
           evidenceManifest: [
@@ -495,6 +497,7 @@ describe("emitter", () => {
       title: "Provenance",
       summary: "Provenance",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [],
       evidenceManifest: [
@@ -936,6 +939,7 @@ describe("emitter", () => {
       title: "t",
       summary: "t",
       summaryAuthored: false,
+      mapId: null,
       intro: [],
       sublocations: [
         {
@@ -1238,6 +1242,105 @@ describe("emitter", () => {
           ],
         },
       ],
+    });
+  });
+});
+
+describe("investigation map emission (HPA-601)", () => {
+  const emptyCorpus: CompiledCaseRecordCorpus = {
+    recordsByKey: new Map(),
+    evidenceIndex: [],
+    statementsIndex: [],
+    sourceGroups: [],
+    warnings: [],
+  };
+
+  function mappedAst(): ASTInvestigationScene {
+    return {
+      kind: "investigationScene",
+      id: "investigation_scene_map_01",
+      title: "前往雨鐘咖啡館",
+      summary: "調查增田圭死亡現場。",
+      summaryAuthored: true,
+      mapId: "tokyo",
+      intro: [],
+      sublocations: [
+        {
+          id: "rain_bell_cafe",
+          label: "雨鐘咖啡館",
+          status: "unlocked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "東京調查地圖",
+          assetCue: null,
+          transitionDialogue: [],
+          hotspots: [],
+          characters: [],
+          sourceFile: "i.md",
+          line: 6,
+        },
+        {
+          id: "shibuya",
+          label: "澀谷",
+          status: "locked",
+          unlock: null,
+          reveals: [],
+          sceneTag: "澀谷",
+          assetCue: null,
+          transitionDialogue: [],
+          hotspots: [],
+          characters: [],
+          sourceFile: "i.md",
+          line: 14,
+        },
+      ],
+      evidenceManifest: [],
+      statementManifest: [],
+      assetRefs: [],
+      outro: { unlock: "auto", dialogue: [] },
+      sourceFile: "i.md",
+      line: 1,
+    };
+  }
+
+  it("emits a mapped scene's map with authored-order nodes", () => {
+    const json = emitInvestigationScene(mappedAst(), emptyCorpus, {
+      id: "tokyo",
+      backgroundAssetId: "background.city_map.tokyo",
+      nodes: [
+        { sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 },
+        { sublocationId: "shibuya", x: 0.5, y: 0.68 },
+      ],
+    });
+    expect(json.map).toEqual({
+      id: "tokyo",
+      backgroundAssetId: "background.city_map.tokyo",
+      nodes: [
+        { sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 },
+        { sublocationId: "shibuya", x: 0.5, y: 0.68 },
+      ],
+    });
+  });
+
+  it("emits map null for a normal map-less investigation", () => {
+    const ast = mappedAst();
+    ast.mapId = null;
+    const json = emitInvestigationScene(ast, emptyCorpus);
+    expect(json.map).toBeNull();
+    // The field is always present in serialized output.
+    expect(JSON.stringify(json)).toContain('"map":null');
+  });
+
+  it("keeps map geometry when assets are disabled (backgroundAssetId null)", () => {
+    const json = emitInvestigationScene(mappedAst(), emptyCorpus, {
+      id: "tokyo",
+      backgroundAssetId: null,
+      nodes: [{ sublocationId: "shibuya", x: 0.5, y: 0.68 }],
+    });
+    expect(json.map).toEqual({
+      id: "tokyo",
+      backgroundAssetId: null,
+      nodes: [{ sublocationId: "shibuya", x: 0.5, y: 0.68 }],
     });
   });
 });

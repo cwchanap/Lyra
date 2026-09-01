@@ -12,6 +12,7 @@ import {
 } from "./validator";
 import type {
   ASTChapter,
+  CompileError,
   ASTAnalysisScene,
   ASTEvidence,
   ASTInquiryPhase,
@@ -64,6 +65,7 @@ const mkInvestigationScene = (
   title: overrides.title ?? "i",
   summary: overrides.summary ?? overrides.title ?? "i",
   summaryAuthored: overrides.summaryAuthored ?? false,
+  mapId: null,
   intro: [],
   sublocations: [
     {
@@ -4086,5 +4088,81 @@ describe("validator", () => {
       mutate(scene);
       expect(contextErrors(validateWith(scene)), name).toHaveLength(1);
     }
+  });
+});
+
+describe("mapped first-unlocked entry guarantee (HPA-601)", () => {
+  // A prior investigation whose first unlocked sublocation carries an entry
+  // reveal and no interactive content: the ONLY reason its reveal would be
+  // guaranteed is the runtime's first-unlocked auto-entry. A following
+  // interrogation scene challenges `entry_ev` to observe the guarantee.
+  const mkEntryRevealPrior = (
+    mapId: string | null,
+    outro: "auto" | "explicit",
+  ): { file: string; ast: ASTInvestigationScene } => {
+    const ast = mkInvestigationScene({
+      id: "investigation_scene_0",
+      sourceFile: "investigation_scene_0.md",
+      mapId,
+    });
+    ast.sublocations[0]!.reveals = [{ kind: "evidence", id: "entry_ev" }];
+    ast.sublocations[0]!.hotspots = [];
+    ast.evidenceManifest = [mkEvidence("entry_ev", "room")];
+    if (outro === "explicit") {
+      ast.outro = {
+        unlock: { predicate: "evidence_collected", id: "seed" },
+        dialogue: [],
+      };
+      ast.evidenceManifest.push(mkEvidence("seed", "room"));
+    }
+    return { file: "investigation_scene_0.md", ast };
+  };
+
+  const mkChallengingInterrogation = () =>
+    mkInterrogationScene({
+      phases: [
+        mkInquiryPhase({
+          id: "p",
+          questions: [
+            mkQuestion({
+              id: "q",
+              testimony: mkTestimony([
+                mkContradictionLine("l", { kind: "evidence", id: "entry_ev" }),
+              ]),
+            }),
+          ],
+        }),
+      ],
+    });
+
+  const crossSceneError = (errors: CompileError[]) =>
+    errors.find(
+      (e) =>
+        e.code === "crossSceneInventoryNotGuaranteed" &&
+        e.message.includes("entry_ev"),
+    );
+
+  it("keeps the first entry reveal guaranteed for map-less auto-outro scenes", () => {
+    const prior = mkEntryRevealPrior(null, "auto");
+    const errors = validateInterrogation(mkChallengingInterrogation(), [prior]);
+    expect(crossSceneError(errors)).toBeUndefined();
+  });
+
+  it("keeps the first entry reveal guaranteed for map-less explicit-outro scenes", () => {
+    const prior = mkEntryRevealPrior(null, "explicit");
+    const errors = validateInterrogation(mkChallengingInterrogation(), [prior]);
+    expect(crossSceneError(errors)).toBeUndefined();
+  });
+
+  it("drops the first entry guarantee for mapped auto-outro scenes", () => {
+    const prior = mkEntryRevealPrior("tokyo", "auto");
+    const errors = validateInterrogation(mkChallengingInterrogation(), [prior]);
+    expect(crossSceneError(errors)).toBeDefined();
+  });
+
+  it("drops the first entry guarantee for mapped explicit-outro scenes", () => {
+    const prior = mkEntryRevealPrior("tokyo", "explicit");
+    const errors = validateInterrogation(mkChallengingInterrogation(), [prior]);
+    expect(crossSceneError(errors)).toBeDefined();
   });
 });

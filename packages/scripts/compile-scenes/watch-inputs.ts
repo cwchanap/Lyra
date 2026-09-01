@@ -51,7 +51,10 @@ export function isCompileScenesWatchPath(
   for (const root of sourceRoots) {
     const segments = relativeSegments(root, path);
     if (!segments) continue;
-    if (segments.length === 1 && segments[0] === "story_catalog.md") {
+    if (
+      segments.length === 1 &&
+      (segments[0] === "story_catalog.md" || segments[0] === "city_map.json")
+    ) {
       return true;
     }
     if (

@@ -148,6 +148,8 @@ describe("isCompileScenesWatchPath", () => {
   it.each([
     "/repo/static/stories_plan/story_catalog.md",
     "/repo/docs/stories_plan/story_catalog.md",
+    "/repo/static/stories_plan/city_map.json",
+    "/repo/docs/stories_plan/city_map.json",
     "/repo/static/stories_plan/chapter_1/scene_0.md",
     "/repo/docs/stories_plan/chapter_20/interrogation_scene_3.md",
     "/repo/static/stories_plan/chapter_1/investigation_scene_2.layout.json",
@@ -160,6 +162,8 @@ describe("isCompileScenesWatchPath", () => {
   });
 
   it.each([
+    "/repo/static/stories_plan/city_map/extra.json",
+    "/repo/static/stories_plan/chapter_1/city_map.json",
     "/repo/static/stories_plan/notes.md",
     "/repo/static/stories_plan/chapter_notes/scene_0.md",
     "/repo/static/stories_plan/chapter_1/nested/scene_0.md",
@@ -294,6 +298,14 @@ describe("compile scene watch integration", () => {
         },
         {
           path: resolve(sourceRoots[1]!, "story_catalog.md"),
+          watchRoot: sourceRoots[1]!,
+        },
+        {
+          path: resolve(sourceRoots[0]!, "city_map.json"),
+          watchRoot: sourceRoots[0]!,
+        },
+        {
+          path: resolve(sourceRoots[1]!, "city_map.json"),
           watchRoot: sourceRoots[1]!,
         },
         {

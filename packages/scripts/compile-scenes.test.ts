@@ -3028,3 +3028,394 @@ describe("compile (layout warning wiring)", () => {
     }
   });
 });
+
+describe("compile (city map topology)", () => {
+  const CITY_MAP = {
+    version: 1,
+    id: "tokyo",
+    backgroundPrompt: "Stylized illustrated Tokyo map at night.",
+    locations: [
+      { id: "rain_bell_cafe", label: "雨鐘咖啡館", x: 0.16, y: 0.45 },
+      {
+        id: "kagami_review_room",
+        label: "KAGAMI 證據摘要審查室",
+        x: 0.72,
+        y: 0.45,
+      },
+      { id: "shibuya", label: "澀谷", x: 0.5, y: 0.68 },
+    ],
+  };
+
+  function wrapperMd(h1: string, anchor: string, label: string): string {
+    return [
+      `# ${h1}`,
+      "",
+      "- **Summary:** 調查增田圭死亡現場。",
+      "- **Map:** tokyo",
+      "",
+      `## Sub-location: ${label} {#${anchor}}`,
+      "- **Status:** unlocked",
+      "",
+      "[場景：東京調查地圖]",
+      "",
+      "## Outro",
+      "",
+    ].join("\n");
+  }
+
+  function setupMappedCorpus(
+    sourceRoot: string,
+    options: {
+      cityMap?: object | null;
+      scenes?: Array<{ h1: string; anchor: string; label: string }>;
+      sceneMapField?: string;
+    } = {},
+  ): void {
+    const chapterDir = resolve(sourceRoot, "chapter_1");
+    mkdirSync(chapterDir, { recursive: true });
+    const scenes = options.scenes ?? [
+      {
+        h1: "Scene 2.1: 前往雨鐘咖啡館",
+        anchor: "rain_bell_cafe",
+        label: "雨鐘咖啡館",
+      },
+    ];
+    writeFileSync(
+      resolve(chapterDir, "chapter.md"),
+      [
+        "# Chapter 1: 地圖章節",
+        "",
+        "**Summary:** 線性地圖導航測試。",
+        "",
+        "## Scenes",
+        "",
+        ...scenes.map(
+          (_, i) =>
+            `${i + 1}. investigation_scene_map_${String(i + 1).padStart(2, "0")}.md`,
+        ),
+        "",
+      ].join("\n"),
+    );
+    for (const [i, scene] of scenes.entries()) {
+      const md = wrapperMd(scene.h1, scene.anchor, scene.label).replace(
+        "- **Map:** tokyo",
+        `- **Map:** ${options.sceneMapField ?? "tokyo"}`,
+      );
+      writeFileSync(
+        resolve(
+          chapterDir,
+          `investigation_scene_map_${String(i + 1).padStart(2, "0")}.md`,
+        ),
+        md,
+      );
+    }
+    if (options.cityMap !== null) {
+      writeFileSync(
+        resolve(sourceRoot, "city_map.json"),
+        JSON.stringify(options.cityMap ?? CITY_MAP, null, 2) + "\n",
+      );
+    }
+  }
+
+  function readEmittedMap(outRoot: string, file: string): unknown {
+    const json = JSON.parse(
+      readFileSync(resolve(outRoot, "chapter_1", file), "utf-8"),
+    ) as { map?: unknown };
+    return json.map;
+  }
+
+  it("compiles a mapped scene against one root-level city_map.json", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-ok-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-ok-out-"));
+    try {
+      setupMappedCorpus(sourceRoot);
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      expect(
+        readEmittedMap(outRoot, "investigation_scene_map_01.json"),
+      ).toEqual({
+        id: "tokyo",
+        backgroundAssetId: null,
+        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+      });
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reports both paths for duplicate global map files", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-dup-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-dup-out-"));
+    try {
+      setupMappedCorpus(sourceRoot);
+      const secondRoot = resolve(sourceRoot, "../city-map-dup-second-root");
+      mkdirSync(resolve(secondRoot, "chapter_1"), { recursive: true });
+      writeFileSync(
+        resolve(secondRoot, "city_map.json"),
+        JSON.stringify(CITY_MAP, null, 2),
+      );
+      const result = compile({
+        sourceRoot: [sourceRoot, secondRoot],
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      const dup = result.errors.find((e) => e.code === "duplicateCityMap");
+      expect(dup).toBeDefined();
+      expect(dup?.message).toContain("city_map.json");
+      expect(dup?.message).toContain("city_map.json");
+      rmSync(secondRoot, { recursive: true, force: true });
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a mapped scene when no topology exists", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-missing-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-missing-out-"));
+    try {
+      setupMappedCorpus(sourceRoot, { cityMap: null });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(
+        result.errors.some((e) => e.code === "cityMapTopologyMissing"),
+      ).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a scene map ID that mismatches the topology", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-mismatch-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-mismatch-out-"));
+    try {
+      setupMappedCorpus(sourceRoot, { sceneMapField: "osaka" });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "cityMapIdMismatch")).toBe(
+        true,
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a sublocation anchor unknown to the topology", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-unknown-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-unknown-out-"));
+    try {
+      setupMappedCorpus(sourceRoot, {
+        scenes: [
+          {
+            h1: "Scene 2.1: 前往未知地點",
+            anchor: "nowhere",
+            label: "未知地點",
+          },
+        ],
+      });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(
+        result.errors.some((e) => e.code === "cityMapUnknownLocation"),
+      ).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a sublocation label that mismatches the topology", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-label-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-label-out-"));
+    try {
+      setupMappedCorpus(sourceRoot, {
+        scenes: [
+          {
+            h1: "Scene 2.1: 前往雨鐘咖啡館",
+            anchor: "rain_bell_cafe",
+            label: "雨鐘咖啡店",
+          },
+        ],
+      });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      expect(result.errors.some((e) => e.code === "cityMapLabelMismatch")).toBe(
+        true,
+      );
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("compiles a map-less corpus without topology and emits map null", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-mapless-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-mapless-out-"));
+    try {
+      cpSync("packages/scripts/__fixtures__/valid", sourceRoot, {
+        recursive: true,
+      });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      expect(readEmittedMap(outRoot, "investigation_scene_1.json")).toBeNull();
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("allows unused topology locations", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-unused-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-unused-out-"));
+    try {
+      // CITY_MAP declares kagami_review_room and shibuya; only rain_bell_cafe
+      // is used by the single mapped scene.
+      setupMappedCorpus(sourceRoot);
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("reuses canonical coordinates for repeated locations", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-repeat-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-repeat-out-"));
+    try {
+      setupMappedCorpus(sourceRoot, {
+        scenes: [
+          {
+            h1: "Scene 2.1: 前往雨鐘咖啡館",
+            anchor: "rain_bell_cafe",
+            label: "雨鐘咖啡館",
+          },
+          {
+            h1: "Scene 3.1: 前往 KAGAMI 證據摘要審查室",
+            anchor: "kagami_review_room",
+            label: "KAGAMI 證據摘要審查室",
+          },
+          {
+            h1: "Scene 6.1: 返回雨鐘咖啡館",
+            anchor: "rain_bell_cafe",
+            label: "雨鐘咖啡館",
+          },
+        ],
+      });
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      expect(
+        readEmittedMap(outRoot, "investigation_scene_map_01.json"),
+      ).toEqual({
+        id: "tokyo",
+        backgroundAssetId: null,
+        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+      });
+      expect(
+        readEmittedMap(outRoot, "investigation_scene_map_02.json"),
+      ).toEqual({
+        id: "tokyo",
+        backgroundAssetId: null,
+        nodes: [{ sublocationId: "kagami_review_room", x: 0.72, y: 0.45 }],
+      });
+      expect(
+        readEmittedMap(outRoot, "investigation_scene_map_03.json"),
+      ).toEqual({
+        id: "tokyo",
+        backgroundAssetId: null,
+        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+      });
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("registers the global map background once when assets are enabled", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-assets-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-assets-out-"));
+    const assetOutRoot = mkdtempSync(resolve(tmpdir(), "city-map-assets-m-"));
+    try {
+      setupMappedCorpus(sourceRoot, {
+        scenes: [
+          {
+            h1: "Scene 2.1: 前往雨鐘咖啡館",
+            anchor: "rain_bell_cafe",
+            label: "雨鐘咖啡館",
+          },
+          {
+            h1: "Scene 3.1: 前往 KAGAMI 證據摘要審查室",
+            anchor: "kagami_review_room",
+            label: "KAGAMI 證據摘要審查室",
+          },
+        ],
+      });
+      const result = compile({
+        sourceRoot,
+        outputRoot: outRoot,
+        assetConfigRoot:
+          "packages/scripts/__fixtures__/asset_enabled/assets/config",
+        assetOutputRoot: assetOutRoot,
+      });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      // Assets are enabled, so the map geometry binds the global raster.
+      expect(
+        readEmittedMap(outRoot, "investigation_scene_map_01.json"),
+      ).toMatchObject({ backgroundAssetId: "background.city_map.tokyo" });
+      // Exactly one global manifest entry with the authored file source.
+      const manifest = JSON.parse(
+        readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"),
+      ) as { entries: Array<{ assetId: string; source: unknown }> };
+      const mapEntries = manifest.entries.filter((entry) =>
+        entry.assetId.startsWith("background.city_map."),
+      );
+      expect(mapEntries).toHaveLength(1);
+      expect(mapEntries[0]?.source).toEqual({
+        globalFile: expect.stringContaining("city_map.json"),
+      });
+      expect(result.assetReport.requested.background).toBeGreaterThanOrEqual(1);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+      rmSync(assetOutRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("emits only sublocations authored in the scene", () => {
+    const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-nodes-"));
+    const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-nodes-out-"));
+    try {
+      setupMappedCorpus(sourceRoot);
+      const result = compile({ sourceRoot, outputRoot: outRoot });
+      if (!result.ok) {
+        throw new Error("Compile failed:\n" + formatErrors(result.errors));
+      }
+      const map = readEmittedMap(
+        outRoot,
+        "investigation_scene_map_01.json",
+      ) as { nodes: unknown[] };
+      expect(map.nodes).toHaveLength(1);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
+});

@@ -15,7 +15,10 @@ import { publicPathForAssetId } from "@lyra/asset-paths";
 
 export type BackgroundManifestSource =
   | { chapterId: string; sceneId: string; unitId: string }
-  | { chapterId: string; sceneId: string; characterId: string };
+  | { chapterId: string; sceneId: string; characterId: string }
+  /** A global authored file (e.g. docs/stories_plan/city_map.json) — no
+   * chapter/scene owner exists, so the source names the file directly. */
+  | { globalFile: string };
 
 export type PortraitManifestSource = {
   chapterId: string;

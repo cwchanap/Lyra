@@ -34,6 +34,65 @@ import type {
 import type { SceneRecord } from "./validator";
 
 describe("buildReachabilityNodes", () => {
+  // HPA-601: a mapped scene's first unlocked sublocation is *available*, not
+  // auto-entered, so the entry node must not carry its reveal effects.
+  it("keeps mapped scene entry free of first-unlocked entry reveal effects", () => {
+    const scene = investigationScene({
+      mapId: "tokyo",
+      sublocations: [
+        sublocation("main", [], {
+          reveals: [{ kind: "assertFact", factId: "entry_fact" }],
+        }),
+      ],
+    });
+
+    const nodesByKey = new Map(
+      buildNodes(
+        [chapter("chapter_1", ["investigation_scene_1.md"])],
+        [record("chapter_1", "investigation_scene_1.md", scene)],
+      ).map((node) => [node.key, node]),
+    );
+
+    expect(
+      nodesByKey.get("chapter_1/investigation_scene_1/entry")?.effects,
+    ).toEqual([]);
+    // The first unlocked sublocation is projected as its own node whose
+    // reveals fire only when the player enters it.
+    expect(
+      nodesByKey.get("chapter_1/investigation_scene_1/sublocation:main"),
+    ).toMatchObject({
+      initiallyReachable: true,
+      strictPredecessorKeys: ["chapter_1/investigation_scene_1/entry"],
+    });
+  });
+
+  it("keeps normal first-unlocked auto-entry reveal effects unchanged", () => {
+    const scene = investigationScene({
+      sublocations: [
+        sublocation("main", [], {
+          reveals: [{ kind: "assertFact", factId: "entry_fact" }],
+        }),
+      ],
+    });
+
+    const nodesByKey = new Map(
+      buildNodes(
+        [chapter("chapter_1", ["investigation_scene_1.md"])],
+        [record("chapter_1", "investigation_scene_1.md", scene)],
+      ).map((node) => [node.key, node]),
+    );
+
+    expect(
+      nodesByKey.get("chapter_1/investigation_scene_1/entry")?.effects,
+    ).toEqual([
+      {
+        kind: "story",
+        target: { kind: "assertFact", factId: "entry_fact" },
+        targetIndex: 0,
+      },
+    ]);
+  });
+
   it("normalizes initially available investigation peers as a complete free-order region", () => {
     const scene = investigationScene({
       sublocations: [
@@ -3252,6 +3311,7 @@ function investigationScene(
     title: "Investigation",
     summary: "summary",
     summaryAuthored: true,
+    mapId: null,
     intro: [],
     sublocations: [sublocation("main", [hotspot("a")])],
     evidenceManifest: [],
@@ -3395,7 +3455,7 @@ function testimonyLine(
 function sublocation(
   id: string,
   hotspots: ASTHotspot[],
-  overrides: Pick<Partial<ASTSublocation>, "status"> = {},
+  overrides: Pick<Partial<ASTSublocation>, "status" | "reveals"> = {},
 ): ASTSublocation {
   return {
     id,
