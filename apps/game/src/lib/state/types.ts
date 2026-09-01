@@ -61,7 +61,7 @@ export type Mode =
        * the line the inline `反駁` challenge targets; null otherwise. */
       crossExamLineId: string | null;
     } & VisualAssetCue)
-  | ({ type: "explore"; sublocationId: string } & VisualAssetCue)
+  | ({ type: "explore"; sublocationId: string | null } & VisualAssetCue)
   | ({ type: "interrogation"; phaseId: string } & VisualAssetCue)
   | ({
       type: "analysis";
@@ -127,6 +127,16 @@ export type CharacterView = {
   bio: string;
   topics: TopicView[];
   layout: CharacterLayout | null;
+};
+export type InvestigationMapNodeView = {
+  sublocationId: string;
+  x: number;
+  y: number;
+};
+export type InvestigationMapView = {
+  id: string;
+  backgroundAssetId: string | null;
+  nodes: InvestigationMapNodeView[];
 };
 export type SublocationView = {
   id: string;
@@ -258,6 +268,8 @@ export type SceneView =
       index: number;
       total: number;
       currentSublocationId: string | null;
+      /** City-map projection for mapped investigations; null for map-less scenes. */
+      map: InvestigationMapView | null;
       visibleSublocations: SublocationView[];
     }
   | {

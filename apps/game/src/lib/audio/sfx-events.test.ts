@@ -132,6 +132,7 @@ function state(overrides: Partial<GameStateView> = {}): GameStateView {
       index: 0,
       total: 1,
       currentSublocationId: "back_door",
+      map: null,
       visibleSublocations: [],
     },
     mode: {
@@ -490,6 +491,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "inner",
+        map: null,
         visibleSublocations: [],
       },
       mode: {
@@ -520,6 +522,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "inner",
+        map: null,
         visibleSublocations: [],
       },
       mode: {
@@ -557,6 +560,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "inner",
+        map: null,
         visibleSublocations: [],
       },
       mode: {
@@ -576,6 +580,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "inner",
+        map: null,
         visibleSublocations: [],
       },
       mode: {
@@ -694,6 +699,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "main",
+        map: null,
         visibleSublocations: [],
       },
     });
@@ -712,6 +718,7 @@ describe("inferGameplaySfxEvents", () => {
         index: 0,
         total: 1,
         currentSublocationId: "main",
+        map: null,
         visibleSublocations: [],
       },
     });

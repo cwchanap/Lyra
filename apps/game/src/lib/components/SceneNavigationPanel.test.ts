@@ -53,6 +53,7 @@ function currentState(): GameStateView {
       index: 1,
       total: 2,
       currentSublocationId: "main",
+      map: null,
       visibleSublocations: [],
     },
     mode: {

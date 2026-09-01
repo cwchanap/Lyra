@@ -3063,6 +3063,7 @@ describe("+page active primary objective HUD", () => {
       index: 0,
       total: 1,
       currentSublocationId: "coffee_shop",
+      map: null,
       visibleSublocations: [
         {
           id: "coffee_shop",
