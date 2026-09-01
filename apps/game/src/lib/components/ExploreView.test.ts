@@ -3,7 +3,17 @@ import { userEvent } from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
 import ExploreView from "./ExploreView.svelte";
-import type { SceneView, SublocationView } from "../state/types";
+import type {
+  InvestigationMapView,
+  SceneView,
+  SublocationView,
+} from "../state/types";
+
+const cityMap: InvestigationMapView = {
+  id: "city_map.tokyo",
+  backgroundAssetId: "background.city_map.tokyo",
+  nodes: [{ sublocationId: "coffee_shop", x: 0.5, y: 0.5 }],
+};
 
 const sublocation: SublocationView = {
   id: "coffee_shop",
@@ -23,16 +33,18 @@ const sublocation: SublocationView = {
 
 function investigationScene(
   currentId: string | null = "coffee_shop",
+  map: InvestigationMapView | null = null,
 ): SceneView & { kind: "investigation" } {
   return {
     kind: "investigation",
     id: "inv_scene",
     title: "調査開始",
-    summary: "",
+    summary: "調查增田圭死亡現場。",
     index: 0,
     total: 1,
     currentSublocationId: currentId,
-    visibleSublocations: currentId ? [sublocation] : [],
+    map,
+    visibleSublocations: [sublocation],
   };
 }
 
@@ -54,22 +66,65 @@ describe("ExploreView", () => {
 
   it("renders muted message when investigation has no current sublocation", () => {
     render(ExploreView, {
-      scene: {
-        kind: "investigation",
-        id: "inv_scene",
-        title: "調査開始",
-        summary: "",
-        index: 0,
-        total: 1,
-        currentSublocationId: null,
-        visibleSublocations: [sublocation],
-      },
+      scene: investigationScene(null),
       onInspect: vi.fn(),
       onInterview: vi.fn(),
       onEnterSublocation: vi.fn(),
     });
 
     expect(screen.getByText("尚未進入任何地點。")).toBeInTheDocument();
+  });
+
+  it("renders the city map when the scene is mapped and no sublocation is entered", () => {
+    render(ExploreView, {
+      scene: investigationScene(null, cityMap),
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole("button", {
+        name: /前往：喫茶店 — 調查增田圭死亡現場。/,
+      }),
+    ).toHaveAttribute("data-map-destination", "coffee_shop");
+    expect(screen.queryByText("尚未進入任何地點。")).not.toBeInTheDocument();
+  });
+
+  it("never renders SublocationNav for a mapped scene, even after entering", () => {
+    render(ExploreView, {
+      scene: investigationScene("coffee_shop", cityMap),
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+    expect(screen.queryByText("地點 · LOCATIONS")).not.toBeInTheDocument();
+  });
+
+  it("renders the city map without SublocationNav while pending destination selection", () => {
+    render(ExploreView, {
+      scene: investigationScene(null, cityMap),
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    expect(screen.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+
+  it("renders InvestigationSceneSurface with SublocationNav for a mapless entered scene", () => {
+    render(ExploreView, {
+      scene: investigationScene("coffee_shop"),
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole("navigation", { name: "地點導航" }),
+    ).toBeInTheDocument();
   });
 
   it("renders nothing for a non-investigation scene", () => {
@@ -198,6 +253,7 @@ describe("ExploreView", () => {
       index: 0,
       total: 1,
       currentSublocationId: "loc_0",
+      map: null,
       visibleSublocations: manySublocations,
     };
     const hud = createRawSnippet(() => ({

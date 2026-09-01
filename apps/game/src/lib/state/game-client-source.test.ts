@@ -87,6 +87,7 @@ function state(id: string): GameStateView {
       index: 0,
       total: 1,
       currentSublocationId: "main",
+      map: null,
       visibleSublocations: [],
     },
     mode: {

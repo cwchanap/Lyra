@@ -33,6 +33,7 @@ const investigationScene: SceneView = {
   index: 0,
   total: 1,
   currentSublocationId: null,
+  map: null,
   visibleSublocations: [],
 };
 

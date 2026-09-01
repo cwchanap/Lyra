@@ -3,6 +3,7 @@
   import type { SceneView } from "../state/types";
   import SublocationNav from "./SublocationNav.svelte";
   import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
+  import InvestigationMapView from "./InvestigationMapView.svelte";
 
   let {
     scene,
@@ -32,13 +33,17 @@
 {#if inv && currentSub}
   {#snippet sceneHud()}
     <div class="explore-hud">
-      <SublocationNav
-        sublocations={inv.visibleSublocations}
-        currentId={inv.currentSublocationId}
-        onEnter={onEnterSublocation}
-        {disabled}
-        placement="scene"
-      />
+      <!-- HPA-601 §8: when the scene is mapped, the city map is the only
+           travel surface — SublocationNav is suppressed completely. -->
+      {#if !inv.map}
+        <SublocationNav
+          sublocations={inv.visibleSublocations}
+          currentId={inv.currentSublocationId}
+          onEnter={onEnterSublocation}
+          {disabled}
+          placement="scene"
+        />
+      {/if}
       {#if hud}
         {@render hud()}
       {/if}
@@ -52,6 +57,14 @@
     {onInterview}
     {disabled}
     hud={sceneHud}
+  />
+{:else if inv && inv.map && inv.currentSublocationId === null}
+  <InvestigationMapView
+    map={inv.map}
+    sublocations={inv.visibleSublocations}
+    summary={inv.summary}
+    onTravel={onEnterSublocation}
+    {disabled}
   />
 {:else if inv}
   <p class="muted">尚未進入任何地點。</p>

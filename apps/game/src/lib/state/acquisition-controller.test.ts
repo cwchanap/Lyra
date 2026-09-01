@@ -35,6 +35,7 @@ function state(
       index: 0,
       total: 1,
       currentSublocationId: "main",
+      map: null,
       visibleSublocations: [],
     },
     mode: {
