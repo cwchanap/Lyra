@@ -421,6 +421,7 @@ pub(crate) fn investigation_scene_with_intro(
         }],
         evidence_manifest: vec![],
         statement_manifest: vec![],
+        map: None,
         outro: OutroJson {
             unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
             dialogue: vec![],

@@ -1153,6 +1153,7 @@ mod tests {
                 on_reexamine: None,
             }],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
@@ -1309,6 +1310,7 @@ mod tests {
                 on_reexamine: None,
             }],
             statement_manifest: vec![],
+            map: None,
             outro: OutroJson {
                 unlock: OutroUnlock::Expr(UnlockExpr::EvidenceCollected {
                     _predicate: crate::game::schema::PredicateEvidenceCollected::X,
@@ -1385,9 +1387,10 @@ mod tests {
         assert!(!inv.outro_played);
 
         let view = engine.view().unwrap();
-        assert!(
-            matches!(view.mode, ModeView::Explore { sublocation_id, .. } if sublocation_id == "room")
-        );
+        assert!(matches!(
+            view.mode,
+            ModeView::Explore { sublocation_id: Some(ref id), .. } if id == "room"
+        ));
         match view.scene {
             SceneView::Investigation {
                 id, index, total, ..

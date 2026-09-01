@@ -275,6 +275,12 @@ impl GameEngine {
                     .map(|segment| (vec![segment], inv.intro_queue_gen));
                     inv.intro_played = true;
                     false
+                } else if inv.def.map.is_some() {
+                    // Pending-map law (HPA-601 §7): an empty intro is consumed
+                    // but a mapped scene must not auto-enter its first
+                    // sublocation; destination selection stays with the player.
+                    inv.intro_played = true;
+                    false
                 } else {
                     true
                 }
@@ -725,6 +731,11 @@ fn scene_type_label(scene_type: SceneType) -> &'static str {
 // first #[cfg(test)] line.
 #[cfg(test)]
 mod tests {
+    use super::super::save::capture::capture_checkpoint;
+    use super::super::save::restore::{build_restore_candidate, load_current_definitions};
+    use super::super::save::schema::{
+        SaveEnvelope, SaveType, ThumbnailDescriptorV1, SAVE_SCHEMA_VERSION,
+    };
     use super::*;
     use crate::game::analysis::{AnalysisDraft, AnalysisFeedbackState};
     use crate::game::state::{EvidenceRecord, SceneRef};
@@ -1063,6 +1074,98 @@ mod tests {
             "outro": { "unlock": outro_unlock, "dialogue": [] }
         })
         .to_string()
+    }
+
+    /// Mapped city-map investigation fixture (HPA-601 §7). Every listed
+    /// sublocation is unlocked and carries empty transition dialogue; the map
+    /// exposes one node per sublocation. `outro_unlock` chooses the outro.
+    fn mapped_scene_json(
+        id: &str,
+        sublocation_ids: &[&str],
+        intro_text: Option<&str>,
+        outro_unlock: serde_json::Value,
+        blocker_hotspot: bool,
+    ) -> String {
+        let sublocations = sublocation_ids
+            .iter()
+            .map(|sub_id| {
+                serde_json::json!({
+                    "id": sub_id,
+                    "label": sub_id,
+                    "status": "unlocked",
+                    "unlock": null,
+                    "reveals": [],
+                    "sceneTag": sub_id,
+                    "transitionDialogue": [],
+                    "hotspots": if blocker_hotspot {
+                        vec![serde_json::json!({
+                            "id": "unsatisfied_check",
+                        "label": "Check",
+                        "description": "Check",
+                        "status": "unlocked",
+                        "unlock": null,
+                        "reveals": [],
+                        "inspectDialogue": [],
+                        "onReexamine": null
+                        })]
+                    } else {
+                        vec![]
+                    },
+                    "characters": []
+                })
+            })
+            .collect::<Vec<_>>();
+        let nodes = sublocation_ids
+            .iter()
+            .enumerate()
+            .map(|(i, sub_id)| {
+                serde_json::json!({
+                    "sublocationId": sub_id,
+                    "x": 0.2 + 0.1 * i as f64,
+                    "y": 0.5
+                })
+            })
+            .collect::<Vec<_>>();
+        let intro = intro_text
+            .map(|text| vec![serde_json::json!({ "kind": "line", "speaker": "B", "text": text })])
+            .unwrap_or_default();
+        serde_json::json!({
+            "type": "investigation",
+            "id": id,
+            "title": id,
+            "summary": format!("Travel goal for {id}."),
+            "map": { "id": "tokyo", "backgroundAssetId": null, "nodes": nodes },
+            "intro": intro,
+            "sublocations": sublocations,
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": outro_unlock, "dialogue": [] }
+        })
+        .to_string()
+    }
+
+    fn mapped_pending_wrapper_resources(label: &str, wrapper: String) -> std::path::PathBuf {
+        acquisition_navigation_resources(
+            label,
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" },
+                        { "type": "linear", "file": "chapter_1/scene_1.json" }
+                    ]
+                }]
+            }"#,
+            &[
+                ("investigation_scene_1.json", wrapper),
+                (
+                    "scene_1.json",
+                    linear_scene_json("scene_1", "after the wrapper"),
+                ),
+            ],
+        )
     }
 
     fn investigation_scene_with_practice_json(id: &str, practice_id: &str) -> String {
@@ -3954,5 +4057,380 @@ mod tests {
         assert!(matches!(view.scene, SceneView::Linear { id, .. } if id == "scene_2"));
 
         let _ = fs::remove_dir_all(d);
+    }
+
+    // HPA-601 §7 pending-map law: a mapped scene with no current sublocation
+    // is awaiting destination selection. Intro exhaustion must neither
+    // auto-enter the first unlocked sublocation nor satisfy the (empty
+    // auto) outro to advance; the scene stays in Explore with no destination.
+    #[test]
+    fn mapped_pending_scene_does_not_auto_enter_or_advance_after_intro() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-pending-no-auto-entry",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["room"],
+                Some("打開地圖，選擇目的地。"),
+                serde_json::json!("auto"),
+                true,
+            ),
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        // Intro line is playing; one advance exhausts it into scene advancement.
+        let view = engine.view().unwrap();
+        assert!(matches!(view.mode, ModeView::Dialogue { .. }));
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        let view = engine.view().unwrap();
+        let SceneView::Investigation {
+            id,
+            index,
+            current_sublocation_id,
+            ..
+        } = &view.scene
+        else {
+            panic!(
+                "expected the mapped wrapper to stay active, got {:?}",
+                view.scene
+            )
+        };
+        assert_eq!(id, "investigation_scene_1");
+        assert_eq!(*index, 0, "same scene index");
+        assert_eq!(current_sublocation_id, &None, "no current sublocation");
+
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation runtime")
+        };
+        assert!(inv.current_sublocation_id.is_none());
+        assert!(inv.entered_sublocations.is_empty());
+        assert!(!inv.outro_played, "auto-outro must not run while pending");
+
+        match view.mode {
+            ModeView::Explore {
+                sublocation_id: None,
+                ..
+            } => {}
+            other => panic!("expected pending Explore with no destination, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §7: an empty-intro mapped wrapper must stay pending at scene
+    // entry (prime path), not auto-enter its first sublocation.
+    #[test]
+    fn mapped_empty_intro_wrapper_stays_pending_at_scene_entry() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-empty-intro-pending",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["room"],
+                None,
+                serde_json::json!("auto"),
+                true,
+            ),
+        );
+        let engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let view = engine.view().unwrap();
+        match view.mode {
+            ModeView::Explore {
+                sublocation_id: None,
+                ..
+            } => {}
+            other => panic!("expected pending Explore at scene entry, got {other:?}"),
+        }
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation runtime")
+        };
+        assert!(inv.current_sublocation_id.is_none());
+        assert!(inv.entered_sublocations.is_empty());
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §10: a save taken before destination selection must restore to
+    // the exact pending state — same mapped scene, current None, no entered
+    // destination, no auto-outro, no replayed reveals.
+    #[test]
+    fn save_restore_preserves_pending_map_state_without_auto_entry() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-pending-save-restore",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["room"],
+                Some("打開地圖，選擇目的地。"),
+                serde_json::json!("auto"),
+                true,
+            ),
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.view().unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        let checkpoint = capture_checkpoint(&engine).unwrap();
+        let expected_snapshot = checkpoint.snapshot.clone();
+        let envelope = SaveEnvelope {
+            schema_version: SAVE_SCHEMA_VERSION,
+            content_revision: engine.content_manifest.content_revision().into(),
+            save_id: "550e8400-e29b-41d4-a716-446655440261".into(),
+            save_type: SaveType::Manual,
+            slot: 1,
+            saved_at: "2026-08-30T12:00:00Z".into(),
+            display_name: "Pending map".into(),
+            thumbnail: ThumbnailDescriptorV1::Unavailable,
+            summary: checkpoint.summary,
+            snapshot: checkpoint.snapshot,
+        };
+        let definitions = load_current_definitions(&resources).unwrap();
+        let restored = build_restore_candidate(resources.clone(), &definitions, envelope)
+            .unwrap()
+            .engine;
+
+        // Recapturing the restored engine must yield the identical snapshot.
+        assert_eq!(
+            capture_checkpoint(&restored).unwrap().snapshot,
+            expected_snapshot,
+            "restored engine must recapture the exact pending-map snapshot"
+        );
+
+        let view = restored.view().unwrap();
+        let SceneView::Investigation {
+            id,
+            index,
+            current_sublocation_id,
+            ..
+        } = &view.scene
+        else {
+            panic!(
+                "expected the mapped wrapper after restore, got {:?}",
+                view.scene
+            )
+        };
+        assert_eq!(id, "investigation_scene_1");
+        assert_eq!(*index, 0);
+        assert_eq!(current_sublocation_id, &None);
+
+        let SceneRuntime::Investigation(inv) = &restored.scene else {
+            panic!("expected investigation runtime")
+        };
+        assert!(inv.current_sublocation_id.is_none());
+        assert!(inv.entered_sublocations.is_empty());
+        assert!(!inv.outro_played, "restore must not auto-outro the wrapper");
+
+        match view.mode {
+            ModeView::Explore {
+                sublocation_id: None,
+                ..
+            } => {}
+            other => panic!("expected restored pending Explore, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §7: one-node wrapper. enter_sublocation records entry and the
+    // empty auto-outro wrapper advances exactly one scene in the same command
+    // transaction.
+    #[test]
+    fn mapped_single_node_selection_advances_exactly_one_scene() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-single-node-select",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["room"],
+                Some("打開地圖，選擇目的地。"),
+                serde_json::json!("auto"),
+                false,
+            ),
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.view().unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        engine.enter_sublocation("room").unwrap();
+
+        let view = engine.view().unwrap();
+        assert!(
+            matches!(&view.scene, SceneView::Linear { id, index, .. } if id == "scene_1" && *index == 1),
+            "empty wrapper must advance exactly one scene in the same transaction, got {:?}",
+            view.scene
+        );
+        assert!(
+            !matches!(view.mode, ModeView::Explore { .. }),
+            "no Explore may linger after the wrapper advanced"
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §7: selecting a destination records entry exactly once and keeps
+    // the scene active when the outro cannot yet satisfy.
+    #[test]
+    fn mapped_selection_records_entry_once_and_keeps_scene_active() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-select-records-entry",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["room"],
+                Some("打開地圖，選擇目的地。"),
+                serde_json::json!("auto"),
+                true,
+            ),
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.view().unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        engine.enter_sublocation("room").unwrap();
+
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation runtime")
+        };
+        assert_eq!(inv.current_sublocation_id.as_deref(), Some("room"));
+        assert_eq!(
+            inv.entered_sublocations.iter().collect::<Vec<_>>(),
+            vec!["room"],
+            "entry recorded exactly once"
+        );
+        assert!(!inv.outro_played);
+
+        let view = engine.view().unwrap();
+        assert!(matches!(
+            &view.scene,
+            SceneView::Investigation { id, index, .. } if id == "investigation_scene_1" && *index == 0
+        ));
+        match view.mode {
+            ModeView::Explore {
+                sublocation_id: Some(sub),
+                ..
+            } => assert_eq!(sub, "room"),
+            other => panic!("expected Explore inside room, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §7: two unlocked real nodes. The pending map exposes both;
+    // selecting B keeps the scene active in B; A was never auto-entered.
+    #[test]
+    fn mapped_multi_node_pending_exposes_both_and_selection_stays_in_scene() {
+        let resources = mapped_pending_wrapper_resources(
+            "map-multi-node-select",
+            mapped_scene_json(
+                "investigation_scene_1",
+                &["cafe_a", "office_b"],
+                Some("打開地圖，選擇目的地。"),
+                serde_json::json!("auto"),
+                true,
+            ),
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.view().unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        // Pending map exposes both unlocked nodes with topology coordinates.
+        let view = engine.view().unwrap();
+        let SceneView::Investigation { map, .. } = &view.scene else {
+            panic!("expected investigation scene")
+        };
+        let map = map.as_ref().expect("mapped scene must project map data");
+        let node_ids = map
+            .nodes
+            .iter()
+            .map(|node| node.sublocation_id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(node_ids, vec!["cafe_a", "office_b"]);
+
+        engine.enter_sublocation("office_b").unwrap();
+
+        let SceneRuntime::Investigation(inv) = &engine.scene else {
+            panic!("expected investigation runtime")
+        };
+        assert_eq!(inv.current_sublocation_id.as_deref(), Some("office_b"));
+        assert!(
+            !inv.entered_sublocations.contains("cafe_a"),
+            "A must never be auto-entered"
+        );
+        let view = engine.view().unwrap();
+        assert!(matches!(
+            &view.scene,
+            SceneView::Investigation { id, .. } if id == "investigation_scene_1"
+        ));
+        match view.mode {
+            ModeView::Explore {
+                sublocation_id: Some(sub),
+                ..
+            } => assert_eq!(sub, "office_b"),
+            other => panic!("expected Explore inside office_b, got {other:?}"),
+        }
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // HPA-601 §7: a map-less scene projects `map: None` (never synthesized);
+    // a mapped scene projects only currently visible/unlocked sublocations.
+    #[test]
+    fn map_projection_filters_locked_nodes_and_map_less_scenes_project_none() {
+        let mut mapped = serde_json::from_str::<serde_json::Value>(&mapped_scene_json(
+            "investigation_scene_1",
+            &["cafe_a", "locked_b"],
+            Some("打開地圖，選擇目的地。"),
+            serde_json::json!("auto"),
+            true,
+        ))
+        .unwrap();
+        mapped["sublocations"][1]["status"] = serde_json::json!("locked");
+        let resources =
+            mapped_pending_wrapper_resources("map-projection-filter", mapped.to_string());
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.view().unwrap();
+        engine.advance_dialogue(token_from(&view)).unwrap();
+
+        let view = engine.view().unwrap();
+        let SceneView::Investigation { map, .. } = &view.scene else {
+            panic!("expected investigation scene")
+        };
+        let map = map.as_ref().expect("mapped scene must project map data");
+        assert_eq!(map.id, "tokyo");
+        assert_eq!(map.background_asset_id, None);
+        assert_eq!(map.nodes.len(), 1, "locked node must not project");
+        assert_eq!(map.nodes[0].sublocation_id, "cafe_a");
+
+        // Map-less scene: no synthesized map.
+        let map_less_resources = acquisition_navigation_resources(
+            "map-projection-map-less",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+            &[],
+        );
+        std::fs::write(
+            map_less_resources.join("chapter_1/investigation_scene_1.json"),
+            investigation_scene_json(
+                "investigation_scene_1",
+                None,
+                None,
+                serde_json::json!({ "predicate": "hotspot_investigated", "id": "never" }),
+            ),
+        )
+        .unwrap();
+        let map_less_engine = GameEngine::new_started(map_less_resources.clone()).unwrap();
+        let map_less_view = map_less_engine.view().unwrap();
+        let SceneView::Investigation { map, .. } = &map_less_view.scene else {
+            panic!("expected investigation scene")
+        };
+        assert!(map.is_none(), "map-less scenes must not synthesize a map");
+
+        let _ = std::fs::remove_dir_all(resources);
+        let _ = std::fs::remove_dir_all(map_less_resources);
     }
 }

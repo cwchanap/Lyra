@@ -194,6 +194,7 @@ mod tests {
                 sublocations: vec![],
                 evidence_manifest: vec![],
                 statement_manifest: vec![],
+                map: None,
                 outro: crate::game::schema::OutroJson {
                     unlock: OutroUnlock::Auto(crate::game::schema::AutoMarker::Auto),
                     dialogue: vec![],

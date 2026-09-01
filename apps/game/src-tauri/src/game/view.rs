@@ -261,7 +261,11 @@ pub enum ModeView {
         cross_exam_line_id: Option<String>,
     },
     Explore {
-        sublocation_id: String,
+        /// `None` is valid only for a mapped investigation awaiting player
+        /// destination selection on the city map (HPA-601 §7 pending-map
+        /// law); map-less investigations keep the old invariant that Explore
+        /// implies an entered sublocation.
+        sublocation_id: Option<String>,
         background_asset_id: Option<String>,
         bgm: Option<AudioCueView>,
         bgs: Option<AudioCueView>,
@@ -332,6 +336,10 @@ pub enum SceneView {
         index: usize,
         total: usize,
         current_sublocation_id: Option<String>,
+        /// City-map projection for mapped investigations; `None` for map-less
+        /// scenes (never synthesized). Nodes carry only currently
+        /// visible/unlocked sublocations (HPA-601 §7).
+        map: Option<InvestigationMapView>,
         visible_sublocations: Vec<SublocationView>,
     },
     Interrogation {
@@ -489,6 +497,22 @@ pub struct SceneNavigationScene {
     #[serde(rename = "type")]
     pub scene_type: SceneType,
     pub index: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapNodeView {
+    pub sublocation_id: String,
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapView {
+    pub id: String,
+    pub background_asset_id: Option<String>,
+    pub nodes: Vec<InvestigationMapNodeView>,
 }
 
 #[derive(Debug, Clone, Serialize)]

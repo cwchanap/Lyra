@@ -217,7 +217,7 @@ fn replay_to_investigation_explore(
             (
                 SceneView::Investigation { id, .. },
                 ModeView::Explore { sublocation_id, .. }
-            ) if id == "investigation_scene_1" && sublocation_id == "office"
+            ) if id == "investigation_scene_1" && sublocation_id.as_deref() == Some("office")
         );
         if at_target {
             return Ok(view);
@@ -266,6 +266,11 @@ fn advance_dialogue_bounded(
                 ..
             } = &view.scene
             else {
+                return Err(GameError::e2e_checkpoint_unreachable());
+            };
+            let Some(sublocation_id) = sublocation_id.as_deref() else {
+                // Only a mapped pending state has no current sublocation; the
+                // checkpoint driver has no destination to act on there.
                 return Err(GameError::e2e_checkpoint_unreachable());
             };
             let hotspot_id = visible_sublocations
@@ -368,7 +373,7 @@ fn project(
             (CheckpointMode::Dialogue, Some(identity), None)
         }
         ModeView::Explore { sublocation_id, .. } => {
-            (CheckpointMode::Explore, None, Some(sublocation_id.clone()))
+            (CheckpointMode::Explore, None, sublocation_id.clone())
         }
         ModeView::Interrogation { .. } => (CheckpointMode::Interrogation, None, None),
         ModeView::Analysis { .. } => (CheckpointMode::Analysis, None, None),
