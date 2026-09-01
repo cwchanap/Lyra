@@ -292,6 +292,7 @@ const deltaInvestigationScene: JSONInvestigationScene = {
   id: "investigation_delta",
   title: "Delta",
   summary: "",
+  map: null,
   intro: [],
   assetRefs: [],
   sublocations: [
@@ -862,6 +863,55 @@ describe("AssetsView", () => {
       within(inspector).getByRole("button", { name: "Copy prompt" }),
     );
     expect(await screen.findByText("Copy failed")).toBeInTheDocument();
+  });
+
+  it("displays the authored global file for a global background source", async () => {
+    // A global manifest entry has no chapter/scene owner: the source
+    // reference must be the authored file itself, never a fabricated
+    // chapter/scene path.
+    const user = userEvent.setup();
+    const payload = payloadFixture();
+    payload.manifest = {
+      ...payload.manifest,
+      entries: [
+        ...payload.manifest.entries,
+        {
+          ...entryBase({
+            assetId: "background.city_map.tokyo",
+            type: "background",
+            entryPrompt: "tokyo city map",
+          }),
+          type: "background",
+          source: { globalFile: "docs/stories_plan/city_map.json" },
+        },
+      ],
+    };
+    mockInvoke.mockImplementation(async () => payload);
+    renderAssets();
+    await openLibrary();
+    await user.click(
+      screen.getByRole("button", { name: "background.city_map.tokyo" }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    expect(
+      within(inspector).getByText(
+        "globalFile: docs/stories_plan/city_map.json",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(inspector).queryByText(/^chapterId:/u),
+    ).not.toBeInTheDocument();
+
+    // All userEvent.setup() calls have run; reclaim the clipboard from the
+    // user-event stub so writes land on our spy.
+    stubClipboardWrite();
+    await user.click(
+      within(inspector).getByRole("button", { name: "Copy source" }),
+    );
+    expect(await screen.findByText("Copied source")).toBeInTheDocument();
+    expect(clipboardWriteText).toHaveBeenLastCalledWith(
+      "docs/stories_plan/city_map.json",
+    );
   });
 
   it("selecting a usage navigates by chapter and scene ids only", async () => {

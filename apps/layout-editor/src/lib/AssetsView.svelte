@@ -191,14 +191,16 @@
   }
 
   function assetSourceReference(entry: LibraryEntry): string {
+    // Global sources have no chapter/scene owner: the authored file is the
+    // reference. Scene-owned sources keep the existing scene lookup.
+    if ("globalFile" in entry.source) return entry.source.globalFile;
+    const source = entry.source;
     const scene = workspace?.scenes.find(
       (candidate) =>
-        candidate.chapterId === entry.source.chapterId &&
-        candidate.sceneId === entry.source.sceneId,
+        candidate.chapterId === source.chapterId &&
+        candidate.sceneId === source.sceneId,
     );
-    return scene
-      ? scene.sourcePath
-      : `${entry.source.chapterId}/${entry.source.sceneId}`;
+    return scene ? scene.sourcePath : `${source.chapterId}/${source.sceneId}`;
   }
 
   async function copyText(text: string, okMessage: string): Promise<void> {
