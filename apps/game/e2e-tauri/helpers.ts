@@ -1941,6 +1941,94 @@ export async function advanceDialogueOnce(): Promise<boolean> {
 }
 
 /**
+ * Fast dialogue drain for the organic production route: advances dialogue
+ * using DOM-only checks per step (no IPC round-trip per advance) and only
+ * calls the predicate (IPC) when the advance control disappears (mode
+ * transition) or switches to the testimony label (cross-exam). This cuts
+ * per-advance overhead from ~5 browser.execute calls to ~1, which is the
+ * difference between fitting and not fitting the gameplay chain budget.
+ *
+ * Returns when the predicate becomes true, the advance control switches to
+ * the testimony label (cross-exam), or the cap is hit. The caller
+ * (drainOrganicRoute) re-checks the full game state at the top of its next
+ * iteration, so overshooting a mode transition by one advance is harmless.
+ */
+export async function drainDialogueFast(
+  predicate: () => Promise<boolean>,
+  cap: number = DIALOGUE_DRAIN_CAP,
+): Promise<void> {
+  for (let i = 0; i < cap; i++) {
+    // Single DOM execute: check the advance button, detect cross-exam, and
+    // click if it's a regular advance. Returns:
+    //   "advanced"  — clicked the regular advance button, continue
+    //   "testimony" — advance button is the testimony label (cross-exam)
+    //   "disabled"  — button present but aria-disabled (command in flight)
+    //   "none"      — no advance button (mode transition)
+    const result = await browser.execute(
+      (sel: string, testimonyLabel: string) => {
+        const el = document.querySelector(sel) as HTMLElement | null;
+        if (!el) return "none";
+        if (el.getAttribute("aria-disabled") === "true") return "disabled";
+        const label = el.getAttribute("aria-label");
+        if (label === testimonyLabel) return "testimony";
+        el.click();
+        return "advanced";
+      },
+      advanceDialogueSelector,
+      anchors.advanceTestimony,
+    );
+    if (result === "advanced") continue;
+    if (result === "testimony") {
+      // Cross-exam entered — let the caller handle 反駁. Check the predicate
+      // once so the caller's stop condition is evaluated at this transition.
+      if (await predicate()) return;
+      return;
+    }
+    if (result === "disabled") {
+      // Command still in flight; wait briefly for the button to re-enable.
+      // Under reduced-motion this is just the IPC round-trip, so 50ms is
+      // enough. The outer cap prevents an infinite loop.
+      await browser.pause(50);
+      continue;
+    }
+    // result === "none": advance control gone — mode transition. Check the
+    // predicate (IPC) and handle the transition grace, same as
+    // advanceDialogueUntil.
+    if (await predicate()) return;
+    try {
+      await browser.waitUntil(
+        async () => {
+          if (await predicate()) return true;
+          // Pending city-map gate: click the sole destination pin.
+          if (await clickSoleMapDestination()) return true;
+          return browser.execute((sel: string) => {
+            return document.querySelector(sel) !== null;
+          }, advanceDialogueSelector);
+        },
+        {
+          timeout: 5000,
+          interval: 100,
+          timeoutMsg:
+            "drainDialogueFast: advance control did not return and predicate did not become true",
+        },
+      );
+    } catch (error) {
+      const lastText = await lastVisibleDialogueText();
+      throw new Error(
+        `drainDialogueFast: advance control unavailable at step ${i}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
+        { cause: error },
+      );
+    }
+    if (await predicate()) return;
+    // Advance control reappeared — continue draining from the next step.
+  }
+  const lastText = await lastVisibleDialogueText();
+  throw new Error(
+    `drainDialogueFast: exceeded cap ${cap}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,
+  );
+}
+
+/**
  * Read the currently visible dialogue line/narration/scene text so capped
  * drain failures report what was on screen (see flake policy in the design
  * spec). Returns "" when no dialogue text element is present.

@@ -5,6 +5,7 @@ import {
   clickSoleMapDestination,
   collectKagamiSummaryEvidence,
   completeP1PracticeTutorial,
+  drainDialogueFast,
   elementExists,
   enabledMapDestinationIds,
   ensureCaseFileViewport,
@@ -633,7 +634,11 @@ async function drainOrganicRoute(
           await clickButton("反駁");
           break;
         }
-        await advanceDialogueUntil(async () => {
+        // drainDialogueFast uses DOM-only checks per advance (no IPC
+        // round-trip) and only calls the predicate at mode transitions or
+        // cross-exam entry, cutting per-advance overhead from ~5
+        // browser.execute calls to ~1.
+        await drainDialogueFast(async () => {
           const next = await getPackagedGameState();
           return (
             next.mode.type !== "dialogue" ||
