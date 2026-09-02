@@ -2056,11 +2056,11 @@ export async function clickSoleMapDestination(): Promise<boolean> {
     anchors.mapDestinationSelector,
     sole,
   );
-  if (!clicked) {
-    throw new Error(
-      `sole map destination ${sole} disappeared before the drain could click it`,
-    );
-  }
+  // Transient disappearance (button found by enabledMapDestinationIds but
+  // gone by the time this execute runs) is a race during DOM transitions.
+  // Return false so advanceDialogueUntil's browser.waitUntil polling retries
+  // instead of aborting; the surrounding timeout handles persistent failure.
+  if (!clicked) return false;
   return true;
 }
 

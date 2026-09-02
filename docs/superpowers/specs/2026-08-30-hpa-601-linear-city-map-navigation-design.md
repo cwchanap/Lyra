@@ -31,7 +31,7 @@ Chapter 1 map scenes are **linear travel wrappers**. They reuse the same topolog
 | Global authored-file discovery | `story_catalog.md` handling in compiler orchestrator |
 | Global authored-file watch | `story_catalog.md` handling in `watch-inputs.ts` |
 | JSON sidecar parsing style | `parseInvestigationLayoutJson()` in `layout.ts` |
-| Nullable visual cue path | `ASTSublocation.assetCue: VisualAssetCue | null` + `enrichVisualCue(!cue)` + Rust `apply_asset_cue(None)` |
+| Nullable visual cue path | `ASTSublocation.assetCue: VisualAssetCue \| null` + `enrichVisualCue(!cue)` + Rust `apply_asset_cue(None)` |
 | Asset path construction | `@lyra/asset-paths::publicPathForAssetId()` |
 | Typed asset manifest | `packages/scripts/compile-scenes/assets/manifest.ts` |
 | Asset library/source display | `apps/layout-editor/src/lib/AssetsView.svelte` |
