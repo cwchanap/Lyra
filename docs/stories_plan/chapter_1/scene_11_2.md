@@ -80,7 +80,7 @@
 
 [場景：雨鐘咖啡館外，深夜。雨已經停了，街面仍泛著水光，店招的燈滅了。]
 - **Background Prompt:** Exterior of Rain Bell cafe late at night after rain, dark storefront, wet street reflections, umbrella stand near the door holding a blue transparent umbrella, no readable sign.
-- **Background Asset ID:** background.chapter_1.scene_11.tag_006
+- **Background Asset ID:** background.chapter_1.scene_11.tag_007
 - **BGM:** bgm_chapter_close
 - **BGS:** none
 

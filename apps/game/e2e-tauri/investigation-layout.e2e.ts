@@ -202,7 +202,13 @@ describe("investigation layout surface", () => {
       anchors.firstMapDestination,
     ]);
 
-    await jsClick(`[data-map-destination="${anchors.firstMapDestination}"]`);
+    // Native WDIO click (not jsClick) so pointer hit-testing detects any
+    // blocking overlay or pointer-events:none on the map pin — jsClick's
+    // synthetic el.click() bypasses both.
+    const mapPin = await $(
+      `[data-map-destination="${anchors.firstMapDestination}"]`,
+    );
+    await mapPin.click();
     await expectCrossedToRainBellInvestigation();
   });
 

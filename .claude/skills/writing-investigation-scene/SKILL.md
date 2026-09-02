@@ -66,7 +66,7 @@ player-facing recap copy, not a beat list or authoring notes.
 A scene that opens the Tokyo city map adds exactly one field, **directly after
 the Summary** (or directly after the H1 when no Summary is authored):
 
-```
+```markdown
 - **Map:** tokyo
 ```
 
