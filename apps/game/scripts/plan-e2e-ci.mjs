@@ -15,7 +15,12 @@ import { selectE2eSuites } from "./select-e2e-suites.mjs";
 export const E2E_CI_PLANNER_SCHEMA_VERSION = 1;
 
 const CHAIN_EXECUTION = Object.freeze({
-  gameplay: Object.freeze({ timeoutMinutes: 15 }),
+  // The gameplay chain bundles smoke (~1.5m) + ordinary gameplay (~3m) +
+  // production-journey (~10-11m, full Chapter 1 organic route across all
+  // nine city-map gates) + analysis-beat85 (~1m). CI runner variance can
+  // add ~2m to the earlier phases, so 20 minutes gives comfortable margin
+  // without risking the 30-minute job-level safety net.
+  gameplay: Object.freeze({ timeoutMinutes: 20 }),
   persistence: Object.freeze({ timeoutMinutes: 15 }),
   exit: Object.freeze({ timeoutMinutes: 8 }),
 });
