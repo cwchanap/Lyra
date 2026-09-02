@@ -69,7 +69,7 @@ test("writes persistence-heavy routing as three isolated canonical chains", () =
           suiteIds: ["smoke"],
           suiteFile: "chains/gameplay-suites.json",
           cacheKey: "tauri-e2e-gameplay-v1",
-          timeoutMinutes: 15,
+          timeoutMinutes: 20,
           artifactName: "tauri-e2e-gameplay",
         },
         {
@@ -142,7 +142,7 @@ test("smoke-only routing emits only the gameplay chain", () => {
         suiteIds: ["smoke"],
         suiteFile: "chains/gameplay-suites.json",
         cacheKey: "tauri-e2e-gameplay-v1",
-        timeoutMinutes: 15,
+        timeoutMinutes: 20,
         artifactName: "tauri-e2e-gameplay",
       },
     ]);
