@@ -68,11 +68,17 @@ async function crossGate(
   );
   expect(await enabledMapDestinationIds()).toEqual([gate.destination]);
   crossedWrappers.push(gate.wrapper);
+  console.log(
+    `[ProductionJourney] crossing gate ${gate.wrapper} -> ${gate.next} (destination ${gate.destination})`,
+  );
   await advanceDialogueUntil(
     async () => (await getPackagedGameState()).scene.id === gate.next,
     DIALOGUE_DRAIN_CAP,
   );
   await expectCrossedToSuccessor(gate.next);
+  console.log(
+    `[ProductionJourney] crossed gate ${gate.wrapper} (${crossedWrappers.length}/${anchors.mapGates.length})`,
+  );
 }
 
 /**
@@ -592,9 +598,25 @@ async function drainOrganicRoute(
   stop: (state: GameStateView) => boolean,
   stopLabel: string,
 ): Promise<void> {
+  let lastLoggedScene = "";
   for (let step = 0; step < ORGANIC_ROUTE_CAP; step += 1) {
     const state = await getPackagedGameState();
     if (stop(state)) return;
+    // Surface drain progress in CI: log scene transitions and every 25 steps
+    // so a timeout shows exactly where the route stalled instead of a silent
+    // 15-minute gap. console.log reaches the WDIO job log (see [CaseFileE2E]
+    // viewport log).
+    const sceneTag = `${state.scene.id}/${state.mode.type}`;
+    if (sceneTag !== lastLoggedScene) {
+      console.log(
+        `[ProductionJourney] drain step ${step}: ${sceneTag} (-> ${stopLabel})`,
+      );
+      lastLoggedScene = sceneTag;
+    } else if (step % 25 === 0 && step > 0) {
+      console.log(
+        `[ProductionJourney] drain step ${step}: still ${sceneTag} (-> ${stopLabel})`,
+      );
+    }
     if (state.pendingAcquisition) {
       // Evidence popups overlay the scene; plain and JS clicks punch through,
       // but pointer-simulated drops (analysis boards) hit-test through the
@@ -654,6 +676,7 @@ describe("fresh production journey", () => {
 
     await startFromMenu();
     expect(await lastVisibleDialogueText()).not.toBe("");
+    console.log("[ProductionJourney] started from menu, draining P1 tutorial");
 
     const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
     await completeP1PracticeTutorial();
@@ -663,6 +686,7 @@ describe("fresh production journey", () => {
     );
     await waitForButton(anchors.hotspotEvidence.label, 90000);
     await collectKagamiSummaryEvidence();
+    console.log("[ProductionJourney] collected kagami summary evidence");
 
     expect(await elementExists(hotspot)).toBe(true);
     expect(

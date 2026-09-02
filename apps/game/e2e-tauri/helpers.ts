@@ -1904,19 +1904,38 @@ export async function waitTypewriterIdle(): Promise<void> {
       { cause: error },
     );
   }
-  // Typewriter can take up to ~1.5s after enable; settle briefly.
-  await browser.pause(150);
+  // Typewriter can take up to ~1.5s after enable; settle briefly. Under
+  // prefers-reduced-motion (always forced in e2e via forceReducedMotion) the
+  // JS typewriter is skipped and the full line is rendered when the advance
+  // button re-enables, so the settle is pure overhead on every advance.
+  // Skipping it keeps full-chapter organic drains within the gameplay chain
+  // budget; the non-reduced-motion path still settles as before.
+  const reducedMotion = await browser.execute(
+    () =>
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
+  if (!reducedMotion) {
+    await browser.pause(150);
+  }
 }
 
 export async function advanceDialogueOnce(): Promise<boolean> {
   await waitTypewriterIdle();
-  // Click twice: first may only complete a typewriter reveal; second advances.
-  // With reduced-motion both are cheap no-ops/advances as appropriate.
+  // Under prefers-reduced-motion (always forced in e2e) the JS typewriter is
+  // skipped, so a single click advances immediately; a second synchronous
+  // click would carry a stale queueToken and be rejected as Unchanged by
+  // advance_dialogue (a wasted IPC round-trip). Without reduced-motion the
+  // first click may only complete the typewriter reveal, so a second click is
+  // still needed to advance.
   return browser.execute((sel: string) => {
     const el = document.querySelector(sel) as HTMLElement | null;
     if (!el) return false;
+    const reducedMotion =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     el.click();
-    el.click();
+    if (!reducedMotion) el.click();
     return true;
   }, advanceDialogueSelector);
 }
