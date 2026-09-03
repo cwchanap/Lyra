@@ -46,8 +46,8 @@ export const config: WebdriverIO.Config = {
     // so they cannot raise the deadline — the global value here is the only
     // effective per-test cap. The production-journey spec plays the full
     // Chapter 1 organic route across all nine city-map gates (~10-12m plus
-    // CI runner variance), so 20m accommodates it while staying at/under the
-    // gameplay chain's 20m step-level timeout (the outer hang guard).
+    // CI runner variance), so 20m accommodates it while staying under the
+    // gameplay chain's 25m step-level timeout (the outer hang guard).
     timeout: 1200000,
   },
   services: [
