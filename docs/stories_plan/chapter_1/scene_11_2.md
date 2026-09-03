@@ -1,6 +1,6 @@
 # Scene 11.2: 相馬事務所與章間媒體橋
 
-- **Summary:** 深夜的相馬事務所裡，增田遺留的隨身碟只剩無法解開的 ZW_A16.lock；電視橋段把視線引向 2016 年青葉記憶研究所火災，而雨鐘門邊那把藍色透明傘，依然沒有主人。
+- **Summary:** 深夜的相馬事務所裡，增田遺留的隨身碟只剩無法解開的 ZW_A16.lock；雨鐘門邊那把藍色透明傘，依然沒有主人。
 
 [場景：相馬事務所，夜晚。窗外街燈昏黃，桌上只有一盞檯燈和一台筆電。]
 - **Background Prompt:** Small private detective office at night, desk lamp glow, laptop and sealed USB drive on worn desk, city streetlight outside rainy window, no readable screen text.
