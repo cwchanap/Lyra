@@ -39,8 +39,16 @@ export const config: WebdriverIO.Config = {
   reporters: ["spec"],
   mochaOpts: {
     ui: "bdd",
-    // Full intro drain is ~273 advances; allow headroom for typewriter + IPC.
-    timeout: 600000,
+    // WDIO v9's executeAsync (see @wdio/utils testFnWrapper) reads
+    // `this._runnable._timeout` BEFORE the user's test function runs, then
+    // arms a setTimeout race that rejects with `Error: Timeout`. Per-test
+    // `this.timeout(...)` calls inside it() bodies execute after that read,
+    // so they cannot raise the deadline — the global value here is the only
+    // effective per-test cap. The production-journey spec plays the full
+    // Chapter 1 organic route across all nine city-map gates (~10-12m plus
+    // CI runner variance), so 20m accommodates it while staying at/under the
+    // gameplay chain's 20m step-level timeout (the outer hang guard).
+    timeout: 1200000,
   },
   services: [
     [
