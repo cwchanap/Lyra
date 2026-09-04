@@ -52,6 +52,8 @@ This exact table is the v1 chapter-matrix source. Do **not** join §3 theme data
 
 `# 18. Canon Addendum：第一幕青葉提問契約（2026-08-23）` explicitly says it overrides conflicting older sections.
 
+The **first blockquote after that H1 and before `## 18.1`** is the v1 override notice. Do not collect later blockquotes in the addendum.
+
 `## 18.5 第一幕 reveal ladder` contains:
 
 ```text
@@ -96,17 +98,19 @@ Add a no-argument Tauri command:
 load_plan_workspace
 ```
 
-It returns:
+Reuse the existing `read_text_source()` filesystem boundary rather than adding Plan-specific file reading. Its `{ path, content }` wire shape is already represented in TypeScript as `WorkbenchTextSource`.
+
+If needed, rename the Rust-only `AssetWorkspaceTextSource` struct to `WorkbenchTextSource`; preserve the serialized `{ path, content }` shape used by Assets.
+
+Frontend wire shape:
 
 ```ts
 type PlanDocumentKind = "storyBible" | "chapterPlan";
 
-type WorkbenchPlanDocument = {
+type WorkbenchPlanDocument = WorkbenchTextSource & {
   id: string;                  // story-bible | chapter-<N>-plan
   kind: PlanDocumentKind;
   chapterNumber: number | null;
-  path: string;                // repo-relative canonical path
-  content: string;             // raw Markdown
 };
 
 type WorkbenchPlanWorkspacePayload = {
@@ -125,50 +129,116 @@ Rules:
 
 Errors:
 
-- missing Story Bible → `planStoryBibleNotFound`;
-- read failure → `planDocumentReadFailed`;
+- missing required Story Bible → map the existing `notFound` read to `planStoryBibleNotFound`;
+- other file I/O keeps existing `notFound` / `readFailed` behavior from `read_text_source()`;
 - absent chapter plans are valid.
+
+Do not add a parallel `planDocumentReadFailed` family.
 
 ### 2. TypeScript: one pure Plan projection
 
 Create `apps/layout-editor/src/lib/plan-workspace.ts`.
 
-Use one lightweight Markdown dependency (`marked`) for the existing GFM-like documents. Raw HTML is disabled/escaped. This module owns all Markdown structure used by Plan mode; Svelte components never parse source themselves.
+Use one lightweight Markdown dependency (`marked`) for the existing GFM-like planning files. The compiler tokenizer is deliberately not reused: it is a scene dialect and does not own GFM tables or HTML rendering.
 
-Core output:
+Use a per-document `Marked` renderer/token pass; do not add a heading-ID plugin or a sanitizer framework.
+
+Repository planning Markdown is trusted author input, but raw HTML is still disabled explicitly: override Marked's `renderer.html` to return escaped text instead of verbatim HTML before `{@html}` rendering.
+
+#### Heading anchors: one pinned algorithm
+
+Anchor behavior is a Plan-owned stable contract, not a Marked/plugin default.
+
+Expose one pure helper:
+
+```ts
+export function planAnchor(text: string, seen: Map<string, number>): string;
+```
+
+Rules:
+
+1. trim and lowercase ASCII/Latin text;
+2. keep Unicode letters/numbers including CJK plus `_` and `-`;
+3. strip other punctuation;
+4. convert each whitespace run to one `-`;
+5. first occurrence is unsuffixed; duplicates become `-1`, `-2`, ... .
+
+Example:
+
+```text
+10. 章節總覽  →  10-章節總覽
+重複          →  重複, 重複-1, 重複-2
+```
+
+The same helper feeds both rendered heading IDs and heading extraction. A future Marked major or plugin choice therefore cannot silently change copied Plan anchors.
+
+#### Source-reference composition: one helper
+
+Keep path and anchor separate in the public projection, matching Reader's existing `sourcePath + sourceAnchor` ownership.
+
+```ts
+export function planSourceRef(path: string, anchor: string | null): string {
+  return anchor ? `${path}#${anchor}` : path;
+}
+```
+
+Do not store fused `sourceRef` strings on headings, tables, or every derived row.
+
+#### Public projection shape
 
 ```ts
 type PlanHeading = {
   level: number;
   text: string;
   anchor: string;
-  sourceRef: string;
+  line: number;
 };
 
-type PlanTable = {
-  headers: string[];
-  rows: string[][];
-  sourceRef: string;           // containing heading
-};
-
-type ParsedPlanDocument = {
-  id: string;
-  kind: PlanDocumentKind;
-  chapterNumber: number | null;
-  path: string;
+type ParsedPlanDocument = WorkbenchPlanDocument & {
   renderedHtml: string;
   headings: PlanHeading[];
-  tables: PlanTable[];
+};
+
+type ChapterOverviewRow = {
+  chapter: string;
+  title: string;
+  caseType: string;
+  variant: string;
+  mainMisdirection: string;
+};
+
+type AobaRevealStage = {
+  chapterLabel: string;
+  mustEstablish: string;
+  mustNotEstablish: string;
+};
+
+type PlanDiagnostic = {
+  code:
+    | "chapterOverviewMissing"
+    | "chapterOverviewInvalid"
+    | "chapterOverviewUnexpectedRows"
+    | "aobaRevealLadderMissing"
+    | "aobaRevealLadderInvalid";
+  message: string;
+  sourceFile: string;
+  line: number;
+};
+
+type PlanWorkspace = {
+  documents: ParsedPlanDocument[];
+  chapterOverview: { anchor: string; rows: ChapterOverviewRow[] } | null;
+  aobaReveal: { anchor: string; stages: AobaRevealStage[] } | null;
+  aobaOverrideNotice: { anchor: string; text: string } | null;
+  diagnostics: PlanDiagnostic[];
 };
 ```
 
-Heading anchors are deterministic per document; duplicate headings receive `-1`, `-2`, ... suffixes. Rendering and copied source references use the same slugger.
+`PlanDiagnostic` deliberately reuses the repository's existing `{ code, message, sourceFile, line }` diagnostic field shape while keeping Plan's code union independent from compiler validation policy.
 
-Source references are always:
+Line numbers come from the same top-level Marked token walk: accumulate each token's `raw` newline count and record the starting line for headings/tables. Missing-section diagnostics use line 1; malformed-section diagnostics use the owning heading/table line.
 
-```text
-<repo-relative path>#<heading anchor>
-```
+Do **not** expose `PlanTable[]` on `ParsedPlanDocument`. Tables are local extraction input for the two derived views; the Document view already owns rendered Markdown.
 
 ### 3. Strict derived views
 
@@ -180,7 +250,7 @@ Find exact heading `10. 章節總覽` and exact table headers:
 章節 | 標題 | 案件類型 | 變體 | 主線誤導
 ```
 
-Project only those five columns. Current valid output is eight rows, chapters 1→8.
+Project only those five columns. Current valid output is eight rows, chapters 1→8. Store the heading anchor once on `chapterOverview`, not on every row.
 
 #### Aoba reveal ladder
 
@@ -190,9 +260,17 @@ Find exact heading `18.5 第一幕 reveal ladder` and exact headers:
 章節 | 必須建立 | 絕對不能建立
 ```
 
-Project the authored row values directly. Do not invent `known`, `unknown`, or other generic knowledge states.
+Project the authored row values directly. Do not invent `known`, `unknown`, or other generic knowledge states. Store the heading anchor once on `aobaReveal`.
 
-Also surface the authored blockquote immediately below Story Bible §18 as the **canon override note**. This is a fixed source callout for this Aoba slice, not a generic conflict-resolution engine.
+#### Aoba override notice
+
+Find exact H1:
+
+```text
+18. Canon Addendum：第一幕青葉提問契約（2026-08-23）
+```
+
+Take only the **first blockquote token after that H1 and before exact `18.1 為什麼需要這個更新`**. The current contract is expected to contain `以本節為準`; later addendum blockquotes are not part of this callout.
 
 If either expected table changes:
 
@@ -200,16 +278,6 @@ If either expected table changes:
 - the affected derived view is omitted;
 - a visible diagnostic explains the mismatch;
 - no nearby table or prose is used as fallback.
-
-Initial diagnostics:
-
-```text
-chapterOverviewMissing
-chapterOverviewInvalid
-chapterOverviewUnexpectedRows
-aobaRevealLadderMissing
-aobaRevealLadderInvalid
-```
 
 ## Product UX
 
@@ -249,9 +317,9 @@ Two surfaces are enough.
 - canonical source path;
 - rendered Markdown;
 - selected heading scroll/highlight;
-- Copy source reference.
+- Copy source reference composed with `planSourceRef(document.path, anchor)`.
 
-`Open source` from Overview selects the Story Bible and scrolls to the source heading.
+`Open source` from Overview selects the Story Bible and scrolls to the derived view's stored heading anchor.
 
 ### Refresh
 
@@ -261,12 +329,25 @@ One explicit Refresh rereads the fixed Plan snapshot. No watcher, polling, persi
 
 Add `apps/layout-editor/scripts/verify-plan-real-content.ts`, mirroring the existing Reader/Assets projection verifiers.
 
-Against the current repository it checks:
+The verifier intentionally does **not** duplicate Rust directory discovery. Construct the payload from the explicit current canonical files:
 
-- Story Bible loads;
-- Chapter 1 and Chapter 2 plans are discovered;
+```text
+docs/stories_plan/final_story_bible.md
+docs/stories_plan/chapter_1_plan.md
+docs/stories_plan/chapter_2_plan.md
+```
+
+Rust fixture tests own numeric discovery and nested-file exclusion.
+
+Against the current repository the verifier checks:
+
+- Story Bible + Chapter 1/2 plan payloads project;
+- Story Bible heading `10. 章節總覽` anchors to `10-章節總覽`;
 - chapter overview is exactly 1→8;
 - Aoba stages are exactly `第 1 章`, `第 2 章`, `第 3 章`, `第 4 章`, `第 5～7 章`, `第 8 章`;
+- the override notice contains `以本節為準` and not the later `青葉火災已經結案` blockquote;
+- Story Bible `renderedHtml` contains a `<table>...</table>` containing `雨鐘咖啡館殺人事件`;
+- Story Bible `renderedHtml` contains a `<table>...</table>` containing the §18.5 Chapter 1 text `「2016 年青葉記憶研究所火災」名稱`;
 - no required projection diagnostic is emitted.
 
 Run it in the existing `lint-frontend` CI job after the Reader/Assets real-content checks. Do not create another CI job.
@@ -295,11 +376,11 @@ Do not extract a shared planning package; no second consumer exists.
 
 ## Testing
 
-- Rust: fixed-domain discovery/order, nested-scene exclusion, required Bible error, optional chapter plans.
-- Projection: headings/duplicate anchors, GFM table extraction, exact chapter/Aoba contracts, no fallback, diagnostics.
+- Rust: reuse `read_text_source`; fixed-domain discovery/order, nested-scene exclusion, required Bible error, optional chapter plans.
+- Projection: pinned `planAnchor`, `planSourceRef`, duplicate anchors, GFM table extraction, exact chapter/Aoba contracts, exact first §18 blockquote, no fallback, existing-shape diagnostics.
 - Components: Plan navigation, matrix/timeline/boundary rendering, source navigation/copy, diagnostics + document readability.
 - App: fourth mode, Plan-specific sidebar, Refresh stale-response fencing, scene selection preserved across Plan.
-- Real content: current Story Bible and chapter plans pass the strict projection.
+- Real content: explicit Bible + Chapter 1/2 files, exact rows/anchors, and rendered GFM-table smoke.
 
 ## Non-goals
 
@@ -320,9 +401,10 @@ HPA-273 is complete when:
 - Story Bible/current chapter plans are readable with heading navigation and source references;
 - chapter matrix comes only from Story Bible §10;
 - Aoba timeline/boundaries come only from Story Bible §18.5;
-- the authored §18 override note is visible;
-- source drift produces diagnostics instead of inferred replacements;
-- Chapter 1 evidence-package/proof-order headings are easy to reach in the document reader;
+- the first authored §18 override blockquote is visible;
+- source drift produces existing-shape diagnostics instead of inferred replacements;
+- Chapter 1 outline can navigate directly to `1. 全章前台證據包`;
+- Chapter 2 outline can navigate directly to `12. 最終審查會 Proof Order`;
 - Reader, Assets, and Stage remain unchanged;
 - the current real-corpus Plan verifier passes;
 - all implementation remains in this one PR.
