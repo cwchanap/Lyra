@@ -62,6 +62,9 @@ jobs:
       - name: Verify Asset real-content projection
         run: bun run --cwd apps/layout-editor verify:asset-real-content
 
+      - name: Verify Plan real-content projection
+        run: bun run --cwd apps/layout-editor verify:plan-real-content
+
       - name: Evidence source audit
         run: bun run evidence-sources:audit
 
