@@ -81,6 +81,18 @@ export type WorkbenchTextSource = {
   content: string;
 };
 
+export type PlanDocumentKind = "storyBible" | "chapterPlan";
+
+export type WorkbenchPlanDocument = WorkbenchTextSource & {
+  id: string;
+  kind: PlanDocumentKind;
+  chapterNumber: number | null;
+};
+
+export type WorkbenchPlanWorkspacePayload = {
+  documents: WorkbenchPlanDocument[];
+};
+
 export type WorkbenchAssetScenePayload = {
   chapterId: string;
   sceneId: string;
