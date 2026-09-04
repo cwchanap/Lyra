@@ -4,192 +4,109 @@
 
 Planning design for **HPA-273 — [Story Workbench] Visualize the Story Bible and reveal progression**.
 
-This remains one ticket and one PR. Planning lands first; implementation continues on this same branch/PR after review.
+One ticket, one PR. This PR starts with planning; implementation continues on the same branch after review.
 
 ## Goal
 
-Add one read-only **Plan** mode to Lyra Story Workbench so an author can answer four questions without opening several Markdown files manually:
+Add one read-only **Plan** mode so an author can:
 
-1. What planning documents currently define the story?
-2. What is the explicit eight-chapter structure in the Story Bible?
-3. How does the authored Aoba/青葉 question progress across chapters?
-4. At each authored stage, what is explicitly established and what is explicitly forbidden from early confirmation?
+1. browse the canonical Story Bible and existing chapter plans;
+2. see the authored eight-chapter overview at a glance;
+3. follow the authored Aoba/青葉 reveal progression;
+4. see what each Aoba stage must establish and must not establish yet.
 
-Do this without a second story database, relationship sidecar, generic graph editor, AI inference, or Chapter 2 map/board authoring framework.
+Do not create a second story model merely to visualize information already written in Markdown.
 
-## Why HPA-273 is next
+## Why this is next
 
-The Story Workbench program explicitly sequences read-only author workflows before source editing:
+HPA-639 defines the Story Workbench order as:
 
 ```text
-HPA-634  Reader + Stage        DONE
-   ├─> HPA-134  Assets        DONE
-   └─> HPA-273  Plan          NEXT
-
-HPA-634 + HPA-134
-   └─> HPA-135  focused edits
-
-HPA-634 + HPA-134 + HPA-273 + HPA-135
-   └─> HPA-136  AI review
+Reader + Stage  →  Assets  →  Plan  →  Focused edits  →  AI review
+HPA-634            HPA-134    HPA-273   HPA-135          HPA-136
 ```
 
-HPA-273 is blocked only by HPA-634, which is complete. Chapter 2 implementation remains explicitly deferred. HPA-135 is also technically unblocked now, but HPA-639 deliberately puts Plan before write paths, and HPA-273 is one of HPA-136's remaining prerequisites.
+HPA-634 and HPA-134 are complete. HPA-273 is blocked only by HPA-634, while Chapter 2 implementation remains deferred. Finishing Plan also removes one of HPA-136's remaining blockers.
 
-## Current source reality
+## Current source contracts
 
-The implementation should use the repository as it exists rather than create a cleaner parallel canon model.
+Canonical planning files are root-level Markdown under `docs/stories_plan/`:
 
-Canonical planning sources are root-level files under `docs/stories_plan/`:
+- required: `final_story_bible.md`;
+- optional/current: files matching `chapter_<N>_plan.md`;
+- playable `chapter_<N>/` scene directories stay outside Plan mode.
 
-- `final_story_bible.md` — story-level canon;
-- existing `chapter_<N>_plan.md` files — chapter construction plans;
-- playable `chapter_<N>/` scene directories remain compiler input and are not Plan documents.
+The current Story Bible already contains the two structures HPA-273 needs.
 
-The current Story Bible is intentionally not fully normalized. It contains older base sections plus explicit later override/addendum sections. That is useful evidence for the product requirement: Plan mode must **surface authored overrides and missing structures rather than silently reconcile them**.
+### Eight-chapter matrix
 
-Two current Story Bible structures are already sufficient to prove the product without inference:
-
-### Eight-chapter overview source
-
-`# 10. 章節總覽` contains one explicit table:
+`# 10. 章節總覽` contains:
 
 ```text
 章節 | 標題 | 案件類型 | 變體 | 主線誤導
 ```
 
-This table alone is the v1 chapter matrix source. Do not join it to the separate theme matrix, duration section, or per-chapter prose merely to fill more columns.
+This exact table is the v1 chapter-matrix source. Do **not** join §3 theme data, §14 duration data, or per-chapter prose just to create more columns.
 
-### Aoba reveal/boundary source
+### Aoba reveal/boundary view
 
-`# 18. Canon Addendum：第一幕青葉提問契約（2026-08-23）` explicitly declares that it overrides conflicting older sections.
+`# 18. Canon Addendum：第一幕青葉提問契約（2026-08-23）` explicitly says it overrides conflicting older sections.
 
-Within it, `## 18.5 第一幕 reveal ladder` contains one explicit table:
+`## 18.5 第一幕 reveal ladder` contains:
 
 ```text
 章節 | 必須建立 | 絕對不能建立
 ```
 
-Its rows already cover:
+Rows cover Chapter 1, 2, 3, 4, 5–7, and 8. The same authored rows are enough for both the reveal timeline and the player-knowledge boundary view.
 
-- 第 1 章;
-- 第 2 章;
-- 第 3 章;
-- 第 4 章;
-- 第 5～7 章;
-- 第 8 章.
-
-That one table is both the v1 Aoba timeline and the v1 player-knowledge boundary source. The UI does not need to invent a reveal ontology.
-
-Chapter 1 also has `附錄 E：第一幕青葉提問契約`; Chapter 2 has its own detailed Aoba public-record construction rules. They remain readable in the document browser, but v1 does not merge their prose into a second derived truth model.
+Chapter 1/2 plans remain readable as detailed source documents, but v1 does not merge their prose into another truth model.
 
 ## Approaches considered
 
-### A. Fixed planning snapshot + exact source-backed projection — selected
+### A. Fixed Plan snapshot + strict TypeScript projection — selected
 
 ```text
-fixed planning Markdown files
-        ↓
-load_plan_workspace           # Rust: fixed-domain file read only
-        ↓
-projectPlanWorkspace          # TypeScript: headings/tables/source refs
-        ↓
-Plan sidebar + Plan view
+planning Markdown
+    ↓
+load_plan_workspace          # Rust: fixed-domain read
+    ↓
+projectPlanWorkspace         # TS: Markdown + exact table projection
+    ↓
+Plan sidebar / Plan view
 ```
 
-Advantages:
+This keeps Markdown authoritative, keeps playable scenes separate, and turns source drift into diagnostics rather than guesses.
 
-- preserves Markdown as source of truth;
-- does not contaminate the playable-scene index;
-- uses current explicit tables directly;
-- missing/changed source structures can become diagnostics instead of guesses;
-- small enough for one PR and easy for HPA-136 to read later.
+### B. Add planning nodes to `WorkbenchIndex`
 
-Cost: Plan has its own small read-only snapshot, analogous to Assets.
+Rejected. `WorkbenchIndex` is the existing playable-scene navigation contract used by Reader/Assets/Stage. Mixing uncompiled planning docs into it creates unnecessary unions and coupling.
 
-### B. Add planning documents to `WorkbenchIndex`
+### C. Add `story-links.yaml` / generic graph data
 
-This would mix two different domains in one tree: compiled playable scenes and uncompiled planning Markdown. It would force every existing Reader/Assets/Stage consumer to understand non-scene nodes or introduce a union whose only purpose is navigation.
+Rejected for v1. It duplicates canon and adds synchronization work before the current Markdown proves insufficient.
 
-Rejected: more coupling for no product benefit.
+## Architecture
 
-### C. Introduce `story-links.yaml` / a generic story graph
+### 1. Rust: fixed-domain read snapshot
 
-This could model arbitrary foreshadowing, facts, objectives, and relationships cleanly, but it immediately creates a second maintained canon representation and asks authors to keep Markdown and graph data synchronized.
-
-Rejected for v1: the current Story Bible already contains the required explicit chapter and Aoba structures. Add a relationship sidecar only if later real content proves the authored Markdown cannot represent the needed view.
-
-## Selected architecture
-
-```text
-docs/stories_plan/final_story_bible.md
-existing docs/stories_plan/chapter_<N>_plan.md
-        │
-        ▼
-Rust load_plan_workspace()
-  - fixed paths / numeric chapter-plan discovery
-  - no caller-supplied path
-  - raw UTF-8 content only
-        │
-        ▼
-WorkbenchPlanWorkspacePayload
-        │
-        ▼
-TypeScript projectPlanWorkspace()
-  ├─ parsed documents + heading outline
-  ├─ explicit #10 chapter overview table
-  ├─ explicit #18.5 Aoba reveal ladder
-  └─ diagnostics; never prose inference
-        │
-        ├──────────────┐
-        ▼              ▼
-PlanSidebar        PlanView
-(documents +       (Overview / Document)
- headings)
-```
-
-Rust remains the filesystem/domain boundary. TypeScript owns author-facing projection. Story Markdown remains canonical.
-
-## 1. Fixed-domain Plan snapshot
-
-Add one command:
+Add a no-argument Tauri command:
 
 ```text
 load_plan_workspace
 ```
 
-It takes **no path argument**.
-
-### Files included
-
-Required:
-
-- `docs/stories_plan/final_story_bible.md`.
-
-Discovered, optional:
-
-- root-level files matching exactly `chapter_<positive integer>_plan.md`.
-
-Sort chapter plans by numeric chapter number, not lexicographic filename order.
-
-Do not include:
-
-- playable `chapter_<N>/` directories;
-- historical/versioned planning files elsewhere;
-- `docs/superpowers/**`;
-- arbitrary `.md` files;
-- `characters.md` in this first slice. HPA-273 only names it as optional when useful, and none of the acceptance criteria require character navigation.
-
-### Wire shape
+It returns:
 
 ```ts
 type PlanDocumentKind = "storyBible" | "chapterPlan";
 
 type WorkbenchPlanDocument = {
-  id: string;                 // "story-bible" or "chapter-<N>-plan"
+  id: string;                  // story-bible | chapter-<N>-plan
   kind: PlanDocumentKind;
   chapterNumber: number | null;
-  path: string;               // repo-relative canonical source path
-  content: string;            // raw UTF-8 Markdown
+  path: string;                // repo-relative canonical path
+  content: string;             // raw Markdown
 };
 
 type WorkbenchPlanWorkspacePayload = {
@@ -197,42 +114,41 @@ type WorkbenchPlanWorkspacePayload = {
 };
 ```
 
-The backend constructs IDs and paths. The frontend never supplies an arbitrary filesystem path.
+Rules:
 
-### Backend errors
+- Story Bible is required and returned first.
+- Discover only root-level exact `chapter_<positive integer>_plan.md` matches.
+- Sort chapter plans numerically.
+- Do not descend into playable chapter directories.
+- No caller-supplied path.
+- `characters.md` is intentionally out of v1; HPA-273 only lists it as optional when useful.
 
-- missing required Story Bible: `planStoryBibleNotFound` with the expected repo-relative path;
-- unreadable required or discovered file: `planDocumentReadFailed` with the canonical repo-relative path;
-- malformed discovered filename is simply not a Plan document; discovery only recognizes the exact numeric pattern.
+Errors:
 
-A missing `chapter_3_plan.md` is not an error. Only currently existing chapter plans appear.
+- missing Story Bible → `planStoryBibleNotFound`;
+- read failure → `planDocumentReadFailed`;
+- absent chapter plans are valid.
 
-## 2. Markdown parsing and source anchors
+### 2. TypeScript: one pure Plan projection
 
-Plan mode is a planning reader, not a Markdown authoring framework.
+Create `apps/layout-editor/src/lib/plan-workspace.ts`.
 
-Use one established Markdown parser (`marked`) inside `@lyra/layout-editor` for the current GFM-like documents. Configure rendering so raw HTML is escaped/disabled; Plan only needs repository-authored Markdown presentation.
+Use one lightweight Markdown dependency (`marked`) for the existing GFM-like documents. Raw HTML is disabled/escaped. This module owns all Markdown structure used by Plan mode; Svelte components never parse source themselves.
 
-A pure TypeScript module owns Plan parsing/projection:
-
-```text
-apps/layout-editor/src/lib/plan-workspace.ts
-```
-
-It produces:
+Core output:
 
 ```ts
 type PlanHeading = {
   level: number;
   text: string;
   anchor: string;
-  sourceRef: string;          // "docs/stories_plan/...md#anchor"
+  sourceRef: string;
 };
 
 type PlanTable = {
   headers: string[];
   rows: string[][];
-  sourceRef: string;          // containing heading
+  sourceRef: string;           // containing heading
 };
 
 type ParsedPlanDocument = {
@@ -246,9 +162,7 @@ type ParsedPlanDocument = {
 };
 ```
 
-### Anchor rules
-
-Generate heading anchors deterministically from heading text and preserve duplicate headings with `-1`, `-2`, ... suffixes. Rendering and extraction must use the same slugger so copied references scroll to the exact rendered heading.
+Heading anchors are deterministic per document; duplicate headings receive `-1`, `-2`, ... suffixes. Rendering and copied source references use the same slugger.
 
 Source references are always:
 
@@ -256,159 +170,38 @@ Source references are always:
 <repo-relative path>#<heading anchor>
 ```
 
-A table row does not invent a pseudo-line or row anchor; it links to its containing authored heading.
+### 3. Strict derived views
 
-## 3. Strict chapter-matrix projection
+#### Chapter overview
 
-The eight-chapter overview is an explicit source projection, not an aggregate query.
-
-Find the Story Bible heading whose normalized text is exactly:
-
-```text
-10. 章節總覽
-```
-
-Under that heading, require a table with this exact header family:
+Find exact heading `10. 章節總覽` and exact table headers:
 
 ```text
 章節 | 標題 | 案件類型 | 變體 | 主線誤導
 ```
 
-Project it to:
+Project only those five columns. Current valid output is eight rows, chapters 1→8.
 
-```ts
-type ChapterOverviewRow = {
-  chapter: string;
-  title: string;
-  caseType: string;
-  variant: string;
-  mainMisdirection: string;
-  sourceRef: string;
-};
-```
+#### Aoba reveal ladder
 
-Do not pull duration from §14, evidence-misread text from §3, or later chapter prose into the same row. Those remain readable in the source document.
-
-### Validation
-
-The current expected product is eight rows numbered 1 through 8. If the heading/table/header/row shape changes:
-
-- keep the document browser functional;
-- omit the invalid derived matrix;
-- emit a visible diagnostic explaining the missing/changed authored structure;
-- do not search other tables for a “close enough” substitute.
-
-## 4. Strict Aoba reveal/boundary projection
-
-Use the current authoritative addendum instead of reconciling older Aoba sections.
-
-Find:
-
-```text
-18. Canon Addendum：第一幕青葉提問契約（2026-08-23）
-  → 18.5 第一幕 reveal ladder
-```
-
-Require:
+Find exact heading `18.5 第一幕 reveal ladder` and exact headers:
 
 ```text
 章節 | 必須建立 | 絕對不能建立
 ```
 
-Project each authored row to:
+Project the authored row values directly. Do not invent `known`, `unknown`, or other generic knowledge states.
 
-```ts
-type AobaRevealStage = {
-  chapterLabel: string;
-  mustEstablish: string;
-  mustNotEstablish: string;
-  sourceRef: string;
-};
-```
+Also surface the authored blockquote immediately below Story Bible §18 as the **canon override note**. This is a fixed source callout for this Aoba slice, not a generic conflict-resolution engine.
 
-The same rows power two presentations:
+If either expected table changes:
 
-1. **Reveal timeline** — chapter/stage order + `mustEstablish` as the authored progression.
-2. **Boundary view** — `mustEstablish` beside `mustNotEstablish`.
+- raw documents still render;
+- the affected derived view is omitted;
+- a visible diagnostic explains the mismatch;
+- no nearby table or prose is used as fallback.
 
-Do not classify phrases into a generic `known/unresolved/prohibited/payoff` ontology. The authored column names already carry the useful distinction.
-
-For the Chapter 8 em dash (`—`) in `絕對不能建立`, render “No additional early-reveal prohibition authored” rather than inventing one.
-
-### Explicit override notice
-
-The Overview should also surface the blockquote directly below Story Bible `# 18`, which explicitly says that this addendum overrides conflicting older sections. This is a source callout, not a conflict-resolution algorithm.
-
-The product therefore communicates:
-
-> an override exists and this projection uses it
-
-rather than pretending the source corpus has no historical contradictions.
-
-## 5. Plan document browser UX
-
-Add `plan` to the explicit Workbench mode union and mode bar:
-
-```text
-Reader | Assets | Plan | Stage
-```
-
-Do not add a router, docking system, generic tab registry, or placeholder modes.
-
-### Sidebar ownership
-
-When `mode === "plan"`, the existing left Workbench sidebar switches from scene navigation to Plan navigation:
-
-- Story Bible;
-- existing chapter plans in numeric order;
-- heading outline for the selected planning document.
-
-Reader/Assets/Stage keep the current scene tree exactly as today.
-
-Scene selection is preserved while Plan is open, so returning to Reader/Assets/Stage resumes the prior scene context.
-
-Plan selection is separate local state:
-
-- selected Plan document ID;
-- selected heading anchor;
-- default document: Story Bible.
-
-### Main Plan view
-
-Two small views are enough:
-
-#### Overview
-
-- eight-chapter matrix;
-- Aoba reveal timeline;
-- Aoba reveal-boundary table;
-- explicit canon override callout;
-- projection diagnostics.
-
-#### Document
-
-- rendered Markdown document;
-- canonical source path;
-- selected heading highlighted/scrolled into view;
-- “Copy source reference” for the current document/heading.
-
-A source link from Overview switches to Document and scrolls to the referenced heading.
-
-No file editing or OS-open action is added.
-
-### Refresh
-
-Provide one explicit Plan Refresh action. It rereads the fixed snapshot and reprojects it.
-
-No watcher, polling, persistence, or background sync.
-
-Use the same generation-fencing pattern already used by Reader/Assets so an older slow refresh cannot replace a newer snapshot.
-
-## 6. Diagnostics and source drift
-
-Derived visualizations are conveniences over canonical Markdown. Source drift must fail visibly, not silently.
-
-Initial diagnostic codes:
+Initial diagnostics:
 
 ```text
 chapterOverviewMissing
@@ -418,161 +211,127 @@ aobaRevealLadderMissing
 aobaRevealLadderInvalid
 ```
 
-Each diagnostic contains:
+## Product UX
 
-- message;
-- relevant document path;
-- sourceRef when a containing heading is available.
-
-Rules:
-
-- required Story Bible file missing → backend command error;
-- optional chapter-plan file missing → simply absent;
-- Story Bible readable but expected derived table changed → Plan document still renders + diagnostic;
-- no AI/prose fallback;
-- no cross-table heuristic reconciliation;
-- no mutation of authored source.
-
-## 7. Real-content contract
-
-Because this feature intentionally depends on exact authored structures, add a real-content verifier analogous to the existing Reader and Assets verifiers:
+Add one explicit mode:
 
 ```text
-apps/layout-editor/scripts/verify-plan-real-content.ts
+Reader | Assets | Plan | Stage
 ```
 
-It reads the current planning files, constructs the same payload as the Rust command, and runs `projectPlanWorkspace()` headlessly.
+No generic mode registry or router.
 
-Required assertions on the current corpus:
+### Sidebar
 
-- Story Bible is present;
-- current Chapter 1 and Chapter 2 plan documents are discovered;
-- chapter overview projects exactly eight rows in 1→8 order;
-- Aoba ladder projects the authored stages `第 1 章`, `第 2 章`, `第 3 章`, `第 4 章`, `第 5～7 章`, `第 8 章` in order;
-- the required projections emit no structural diagnostic.
+When Plan is active, the existing left sidebar shows:
 
-Wire it into the existing `lint-frontend` CI job after scene compilation and the Reader/Assets real-content checks. It does not need scene compiler output, but keeping the three Workbench projection gates together makes drift visible in one place.
+- Overview;
+- Story Bible;
+- existing chapter plans in numeric order;
+- heading outline for the selected Plan document.
 
-## 8. Testing strategy
+Reader/Assets/Stage retain their current scene tree. Entering Plan does not clear scene selection.
 
-### Rust
+### Main Plan view
 
-Test fixed-domain snapshot ownership:
+Two surfaces are enough.
 
-- required Story Bible is returned first;
-- chapter plans are numeric and ordered;
-- nested playable Markdown is never included;
-- missing required Bible fails with `planStoryBibleNotFound`;
-- missing optional chapter plans are valid.
+**Overview**
 
-### Pure TypeScript projection
+- Story Bible §18 override callout;
+- projection diagnostics;
+- eight-chapter matrix;
+- Aoba reveal timeline;
+- Aoba `必須建立 / 絕對不能建立` boundary table.
 
-Test:
+**Document**
 
-- heading extraction and duplicate-anchor stability;
-- GFM table extraction and containing source references;
-- chapter overview exact projection;
-- no heuristic fallback when overview changes;
-- Aoba ladder order and authored boundary text;
-- explicit Chapter 8 em-dash presentation rule;
-- diagnostics when required derived sections are absent or malformed.
+- canonical source path;
+- rendered Markdown;
+- selected heading scroll/highlight;
+- Copy source reference.
 
-### Svelte components
+`Open source` from Overview selects the Story Bible and scrolls to the source heading.
 
-Test:
+### Refresh
 
-- document and heading navigation;
-- Overview matrix/timeline/boundary rendering;
-- source-link → document/anchor navigation;
-- copied source reference;
-- diagnostics stay visible while raw document remains readable;
-- Refresh generation fencing.
+One explicit Refresh rereads the fixed Plan snapshot. No watcher, polling, persistence, or background sync. Fence overlapping loads with the same generation-counter pattern already used by Reader/Assets.
 
-### App integration
+## Real-content contract
 
-Test:
+Add `apps/layout-editor/scripts/verify-plan-real-content.ts`, mirroring the existing Reader/Assets projection verifiers.
 
-- mode bar becomes `Reader | Assets | Plan | Stage`;
-- Plan uses planning navigation, not the scene tree;
-- switching through Plan does not clear Reader/Assets scene selection or Stage selection behavior;
-- existing Reader/Assets/Stage tests remain unchanged except for the new fourth mode control.
+Against the current repository it checks:
 
-## 9. Files and ownership
+- Story Bible loads;
+- Chapter 1 and Chapter 2 plans are discovered;
+- chapter overview is exactly 1→8;
+- Aoba stages are exactly `第 1 章`, `第 2 章`, `第 3 章`, `第 4 章`, `第 5～7 章`, `第 8 章`;
+- no required projection diagnostic is emitted.
 
-Expected implementation surface:
+Run it in the existing `lint-frontend` CI job after the Reader/Assets real-content checks. Do not create another CI job.
+
+## Implementation surface
 
 ```text
 apps/layout-editor/src-tauri/src/lib.rs
-  fixed-domain load_plan_workspace + tests
-
 apps/layout-editor/src/lib/workbench-types.ts
 apps/layout-editor/src/lib/workbench-api.ts
-  wire types + one Tauri call
-
 apps/layout-editor/src/lib/plan-workspace.ts
 apps/layout-editor/src/lib/plan-workspace.test.ts
-  pure parse/projection/diagnostics
-
 apps/layout-editor/src/lib/PlanSidebar.svelte
 apps/layout-editor/src/lib/PlanSidebar.test.ts
-  planning document + heading navigation
-
 apps/layout-editor/src/lib/PlanView.svelte
 apps/layout-editor/src/lib/PlanView.test.ts
-  Overview + Document rendering
-
 apps/layout-editor/src/App.svelte
 apps/layout-editor/src/App.test.ts
-  fourth functional mode + mode-specific sidebar ownership
-
 apps/layout-editor/scripts/verify-plan-real-content.ts
 apps/layout-editor/package.json
 bun.lock
 .github/workflows/ci.yml
-  one Markdown dependency + real-content gate
 ```
 
-Do not introduce a shared `planning` package unless another app actually needs this projection later.
+Do not extract a shared planning package; no second consumer exists.
 
-## 10. Non-goals
+## Testing
 
-- No source editing.
-- No AI calls or AI-derived canon.
-- No proposal queue.
-- No `story-links.yaml`.
-- No relationship database.
-- No generic mystery/fact/knowledge ontology.
-- No node/whiteboard graph framework.
-- No Facts/Objectives/Authorizations graph.
-- No public Analysis answer-key preview.
-- No Chapter 2 staged map/evidence-board visualization.
-- No character browser in Plan v1.
-- No automatic source reconciliation.
-- No file watcher/polling.
-- No arbitrary path read command.
-- No automatic Git commit/branch/PR behavior from the Workbench.
+- Rust: fixed-domain discovery/order, nested-scene exclusion, required Bible error, optional chapter plans.
+- Projection: headings/duplicate anchors, GFM table extraction, exact chapter/Aoba contracts, no fallback, diagnostics.
+- Components: Plan navigation, matrix/timeline/boundary rendering, source navigation/copy, diagnostics + document readability.
+- App: fourth mode, Plan-specific sidebar, Refresh stale-response fencing, scene selection preserved across Plan.
+- Real content: current Story Bible and chapter plans pass the strict projection.
 
-## 11. Acceptance criteria
+## Non-goals
 
-HPA-273 is done when:
+- Source editing or AI calls.
+- `story-links.yaml` or another canon database.
+- Generic story/fact/knowledge graph.
+- Chapter 2 map/evidence-board visualization.
+- Analysis answer-key preview.
+- Character browser.
+- Automatic canon reconciliation.
+- File watchers/polling.
+- Arbitrary path reads.
 
-- Story Bible and existing chapter plans are readable/navigable in Plan mode with heading outlines and copyable source references;
-- the eight-chapter matrix comes only from the explicit `# 10. 章節總覽` table;
-- the Aoba timeline and boundary view come only from the explicit `# 18.5 第一幕 reveal ladder` table;
-- the explicit Story Bible §18 override note is visible;
-- missing or changed derived structures produce diagnostics without disabling the source document reader;
-- Chapter 1 evidence-package/proof-order sections remain easy to reach through the heading outline rather than a new case-logic model;
-- Reader, Assets, and Stage behavior remain unchanged;
-- the real current planning corpus passes the Plan projection verifier;
-- the implementation remains in this single HPA-273 PR.
+## Acceptance
 
-## 12. Required verification
+HPA-273 is complete when:
 
-Implementation closeout should run:
+- Story Bible/current chapter plans are readable with heading navigation and source references;
+- chapter matrix comes only from Story Bible §10;
+- Aoba timeline/boundaries come only from Story Bible §18.5;
+- the authored §18 override note is visible;
+- source drift produces diagnostics instead of inferred replacements;
+- Chapter 1 evidence-package/proof-order headings are easy to reach in the document reader;
+- Reader, Assets, and Stage remain unchanged;
+- the current real-corpus Plan verifier passes;
+- all implementation remains in this one PR.
+
+## Required checks
 
 ```text
-bun run --cwd apps/layout-editor test
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
+bun run --cwd apps/layout-editor test
 bun run --cwd apps/layout-editor verify:plan-real-content
 bun run scenes:compile
 bun run check:scripts
@@ -580,5 +339,3 @@ bun run editor:check
 bun run editor:build
 bun run lint:all
 ```
-
-The existing Reader and Assets real-content checks remain part of CI and should also stay green.
