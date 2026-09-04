@@ -121,7 +121,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each workspace.chapterOverview.rows as row (row.chapter)}
+              {#each workspace.chapterOverview.rows as row, index (index)}
                 <tr>
                   <td class="border border-[#e4ded3] px-2 py-1">
                     {row.chapter}
@@ -147,9 +147,9 @@
         <section class="grid gap-1" aria-label="Aoba reveal timeline">
           <h3 class="m-0">18.5 第一幕 reveal ladder</h3>
           <ol class="m-0 grid list-decimal gap-1 pl-5">
-            {#each workspace.aobaReveal.stages as stage (stage.chapter)}
+            {#each workspace.aobaReveal.stages as stage, index (index)}
               <li>
-                <strong>{stage.chapter}</strong> — {stage.mustEstablish}
+                <strong>{stage.chapterLabel}</strong> — {stage.mustEstablish}
               </li>
             {/each}
           </ol>
@@ -174,10 +174,10 @@
               </tr>
             </thead>
             <tbody>
-              {#each workspace.aobaReveal.stages as stage (stage.chapter)}
+              {#each workspace.aobaReveal.stages as stage, index (index)}
                 <tr>
                   <td class="border border-[#e4ded3] px-2 py-1">
-                    {stage.chapter}
+                    {stage.chapterLabel}
                   </td>
                   <td class="border border-[#e4ded3] px-2 py-1">
                     {stage.mustEstablish}
@@ -234,3 +234,13 @@
     </section>
   {/if}
 </section>
+
+<style>
+  /* Selected-heading highlight: headings come from {@html}, so the rule
+     must be :global but stays scoped to this component's document body. */
+  .plan-document-body :global(.plan-heading-selected) {
+    background: #edf4f0;
+    box-shadow: 0 0 0 2px #57776a;
+    border-radius: 4px;
+  }
+</style>

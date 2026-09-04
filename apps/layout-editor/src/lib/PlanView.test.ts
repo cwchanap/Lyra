@@ -139,6 +139,56 @@ describe("PlanView", () => {
     ).toBeInTheDocument();
   });
 
+  it("duplicate chapter labels render every row instead of throwing", () => {
+    // Authored drift: repeated chapter labels keep rows visible via
+    // chapterOverviewUnexpectedRows, so the keyed loops must tolerate them.
+    const duplicateBible = [
+      "## 10. 章節總覽",
+      "",
+      table(CHAPTER_HEADERS, [
+        ["1", "標題一", "密室", "變體", "誤導"],
+        ["1", "標題一（重複）", "密室", "變體", "誤導"],
+        ["2", "標題二", "密室", "變體", "誤導"],
+      ]),
+      "",
+      "## 18.5 第一幕 reveal ladder",
+      "",
+      table(AOBA_HEADERS, [
+        ["第 1 章", "甲", "乙"],
+        ["第 1 章", "丙", "丁"],
+      ]),
+      "",
+    ].join("\n");
+    const workspace = projectPlanWorkspace({
+      documents: [
+        {
+          id: "story-bible",
+          kind: "storyBible",
+          path: BIBLE_PATH,
+          content: duplicateBible,
+          chapterNumber: null,
+        },
+      ],
+    });
+
+    render(PlanView, planViewProps({ workspace }));
+
+    expect(
+      screen.getByText(/chapterOverviewUnexpectedRows/u),
+    ).toBeInTheDocument();
+    const matrix = screen.getByLabelText("Chapter overview matrix");
+    expect(within(matrix).getAllByRole("row")).toHaveLength(4); // header + 3
+    expect(within(matrix).getByText("標題一")).toBeInTheDocument();
+    expect(within(matrix).getByText("標題一（重複）")).toBeInTheDocument();
+
+    const timeline = screen.getByLabelText("Aoba reveal timeline");
+    expect(within(timeline).getByText(/— 甲$/u)).toBeInTheDocument();
+    expect(within(timeline).getByText(/— 丙$/u)).toBeInTheDocument();
+    const boundaries = screen.getByLabelText("Aoba boundary table");
+    expect(within(boundaries).getByText("乙")).toBeInTheDocument();
+    expect(within(boundaries).getByText("丁")).toBeInTheDocument();
+  });
+
   it("every Aoba row can emit Open source -> (story-bible, aobaReveal.anchor)", async () => {
     const user = userEvent.setup();
     const props = planViewProps();

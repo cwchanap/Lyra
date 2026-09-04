@@ -48,7 +48,7 @@ export type PlanChapterOverviewRow = {
 };
 
 export type PlanAobaRevealStage = {
-  chapter: string;
+  chapterLabel: string;
   mustEstablish: string;
   mustNotEstablish: string;
 };
@@ -320,8 +320,8 @@ function extractAobaReveal(
     return null;
   }
   const stages = rowCells(table).map(
-    ([chapter, mustEstablish, mustNotEstablish]) => ({
-      chapter,
+    ([chapterLabel, mustEstablish, mustNotEstablish]) => ({
+      chapterLabel,
       mustEstablish,
       mustNotEstablish,
     }),
@@ -407,18 +407,16 @@ export function projectPlanWorkspace(
   const projections = payload.documents.map(projectDocument);
   const diagnostics: PlanDiagnostic[] = [];
 
-  const locate = (
-    heading: string,
-  ): { blocks: BlockHit[]; path: string } | null => {
-    const projection = projections.find(
-      (candidate) => findExactHeading(candidate.blocks, heading) !== null,
-    );
-    return projection
-      ? { blocks: projection.blocks, path: projection.parsed.path }
-      : null;
-  };
+  // The derived views are bound to the Story Bible document only: a matching
+  // heading inside a chapter plan must never satisfy or produce them.
+  const bible = projections.find(
+    (projection) => projection.parsed.kind === "storyBible",
+  );
 
-  const chapterSource = locate(CHAPTER_HEADING);
+  const chapterSource =
+    bible && findExactHeading(bible.blocks, CHAPTER_HEADING)
+      ? { blocks: bible.blocks, path: bible.parsed.path }
+      : null;
   const chapterOverview = chapterSource
     ? extractChapterOverview(
         chapterSource.blocks,
@@ -435,7 +433,10 @@ export function projectPlanWorkspace(
     });
   }
 
-  const aobaSource = locate(AOBA_HEADING);
+  const aobaSource =
+    bible && findExactHeading(bible.blocks, AOBA_HEADING)
+      ? { blocks: bible.blocks, path: bible.parsed.path }
+      : null;
   const aobaReveal = aobaSource
     ? extractAobaReveal(aobaSource.blocks, aobaSource.path, diagnostics)
     : null;
@@ -448,10 +449,7 @@ export function projectPlanWorkspace(
     });
   }
 
-  const aobaOverrideNotice =
-    projections
-      .map((projection) => extractOverrideNotice(projection.blocks))
-      .find((notice) => notice !== null) ?? null;
+  const aobaOverrideNotice = bible ? extractOverrideNotice(bible.blocks) : null;
 
   return {
     documents: projections.map((projection) => projection.parsed),
