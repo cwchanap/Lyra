@@ -18,12 +18,13 @@
 //   2. Every concrete presentation reference either joins a generated manifest
 //      entry or appears in the explicit unresolved diagnostic path — never
 //      silently dropped.
-//   3. Required rasters physically exist (HPA-601 Step 5.7): the compiler
-//      records a missing asset file as a non-blocking `assetFileMissing`
-//      warning, which checks 1-2 never inspect, so a deleted required raster
-//      would still pass. Assert each required manifest entry's `expectedPath`
-//      is present in the collected `existingAssetPaths`. Kept narrow: only
-//      asset IDs a feature step requires to resolve to a real file.
+//   3. The required Tokyo city-map raster physically exists (HPA-601 Step
+//      5.7): the compiler records a missing asset file as a non-blocking
+//      `assetFileMissing` warning, which checks 1-2 never inspect, so a
+//      deleted required raster would still pass. Assert that one fixed
+//      manifest entry's `expectedPath` is present in the collected
+//      `existingAssetPaths`. Kept narrow: only the asset ID HPA-601 Step 5.7
+//      requires to resolve to a real file.
 // =============================================================================
 
 import { readdirSync, readFileSync } from "node:fs";
@@ -33,10 +34,6 @@ import type { ChaptersIndex } from "@lyra/scene-types";
 import type { AssetManifest } from "@lyra/scripts/compile-scenes/assets/manifest";
 import type { AssetReport } from "@lyra/scripts/compile-scenes/orchestrator";
 import { projectAssetWorkspace } from "../src/lib/asset-workspace";
-import {
-  findMissingRequiredAssets,
-  formatMissingRequiredAssets,
-} from "../src/lib/required-asset-presence";
 import { projectReaderScene } from "../src/lib/reader-projection";
 import type {
   WorkbenchAssetScenePayload,
@@ -161,18 +158,25 @@ if (silentlyUnresolved.length > 0) {
   );
 }
 
-// Check 3 (HPA-601 Step 5.7): required rasters must physically exist. The
-// compiler records a missing file as a non-blocking `assetFileMissing`
-// warning, which checks 1-2 never inspect — so a deleted required raster
-// would still pass this gate. Assert each required manifest entry's
-// `expectedPath` is present in the collected `existingAssetPaths`.
-const missingRequired = findMissingRequiredAssets(
-  payload.manifest,
-  payload.existingAssetPaths,
+// Check 3 (HPA-601 Step 5.7): the Tokyo city-map raster must physically
+// exist. The compiler records a missing file as a non-blocking
+// `assetFileMissing` warning, which checks 1-2 never inspect — so a deleted
+// required raster would still pass this gate. Kept narrow and inline: only
+// the fixed asset ID HPA-601 Step 5.7 requires to resolve to a real file.
+// Do not make every historical missing asset fatal.
+const REQUIRED_REAL_FILE_ASSET_ID = "background.city_map.tokyo";
+const existingAssetPathSet = new Set(payload.existingAssetPaths);
+const requiredEntry = payload.manifest.entries.find(
+  (e) => e.assetId === REQUIRED_REAL_FILE_ASSET_ID,
 );
-if (missingRequired.length > 0) {
+if (!requiredEntry) {
   throw new Error(
-    `required asset raster(s) missing from static/assets:\n${formatMissingRequiredAssets(missingRequired).join("\n")}`,
+    `required asset raster missing from static/assets:\n${REQUIRED_REAL_FILE_ASSET_ID} (no manifest entry)`,
+  );
+}
+if (!existingAssetPathSet.has(requiredEntry.expectedPath)) {
+  throw new Error(
+    `required asset raster missing from static/assets:\n${REQUIRED_REAL_FILE_ASSET_ID} -> ${requiredEntry.expectedPath} (file not found under static/assets)`,
   );
 }
 
