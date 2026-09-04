@@ -4,7 +4,10 @@ import {
   planSourceRef,
   projectPlanWorkspace,
 } from "./plan-workspace";
-import type { WorkbenchPlanWorkspacePayload } from "./workbench-types";
+import type {
+  WorkbenchPlanDocument,
+  WorkbenchPlanWorkspacePayload,
+} from "./workbench-types";
 
 const BIBLE_PATH = "docs/stories_plan/final_story_bible.md";
 
@@ -43,6 +46,16 @@ function chapterRows(chapters: string[]): string[][] {
     "變體",
     "誤導",
   ]);
+}
+
+function chapterPlan(content: string): WorkbenchPlanDocument {
+  return {
+    id: "chapter-1-plan",
+    kind: "chapterPlan",
+    path: "docs/stories_plan/chapter_1_plan.md",
+    content,
+    chapterNumber: 1,
+  };
 }
 
 describe("projectPlanWorkspace", () => {
@@ -184,12 +197,12 @@ describe("projectPlanWorkspace", () => {
 
     expect(workspace.aobaReveal?.stages).toEqual([
       {
-        chapter: "第 1 章",
+        chapterLabel: "第 1 章",
         mustEstablish: "青葉火災名稱",
         mustNotEstablish: "不說知名畫面是重演",
       },
       {
-        chapter: "第 8 章",
+        chapterLabel: "第 8 章",
         mustEstablish: "左側逃生鏈 + A-90 雙鑰鏈推翻官方故事",
         mustNotEstablish: "—",
       },
@@ -237,6 +250,96 @@ describe("projectPlanWorkspace", () => {
       anchor: addendumAnchor,
       text: "第一則 override。",
     });
+  });
+
+  it("extracts §10 from the Story Bible even when a chapter plan owns the same heading", () => {
+    const workspace = projectPlanWorkspace({
+      documents: [
+        chapterPlan(
+          `# 10. 章節總覽\n\n${table(
+            CHAPTER_HEADERS,
+            chapterRows(["9", "9"]),
+          )}\n`,
+        ),
+        {
+          id: "bible",
+          kind: "storyBible",
+          path: BIBLE_PATH,
+          content: `# 10. 章節總覽\n\n${table(
+            CHAPTER_HEADERS,
+            chapterRows(["1", "2", "3", "4", "5", "6", "7", "8"]),
+          )}\n`,
+          chapterNumber: null,
+        },
+      ],
+    });
+
+    expect(workspace.chapterOverview?.rows.map((row) => row.chapter)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+    ]);
+    expect(
+      workspace.diagnostics
+        .map((d) => d.code)
+        .filter((code) => code.startsWith("chapterOverview")),
+    ).toEqual([]);
+  });
+
+  it("a chapter plan's exact §10 table never satisfies the overview", () => {
+    const workspace = projectPlanWorkspace({
+      documents: [
+        {
+          id: "bible",
+          kind: "storyBible",
+          path: BIBLE_PATH,
+          content: "# 其他\n",
+          chapterNumber: null,
+        },
+        chapterPlan(
+          `# 10. 章節總覽\n\n${table(
+            CHAPTER_HEADERS,
+            chapterRows(["1", "2", "3", "4", "5", "6", "7", "8"]),
+          )}\n`,
+        ),
+      ],
+    });
+
+    expect(workspace.chapterOverview).toBeNull();
+    expect(workspace.diagnostics.map((d) => d.code)).toContain(
+      "chapterOverviewMissing",
+    );
+  });
+
+  it("a chapter plan's §18 addendum never produces the override notice", () => {
+    const workspace = projectPlanWorkspace({
+      documents: [
+        {
+          id: "bible",
+          kind: "storyBible",
+          path: BIBLE_PATH,
+          content: "# 其他\n",
+          chapterNumber: null,
+        },
+        chapterPlan(
+          [
+            `# ${AOBA_ADDENDUM_HEADING}`,
+            "",
+            "> 計畫中的 override 不算。",
+            "",
+            "## 18.1 為什麼需要這個更新",
+            "",
+          ].join("\n"),
+        ),
+      ],
+    });
+
+    expect(workspace.aobaOverrideNotice).toBeNull();
   });
 
   it("reports the corresponding Missing diagnostics for absent exact headings", () => {

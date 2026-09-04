@@ -20,6 +20,7 @@
     ensurePlanLoaded,
     navigatePlanSource,
     planState,
+    refreshPlan,
     selectPlanDocument,
     selectPlanHeading,
     showPlanOverview,
@@ -494,6 +495,7 @@
           surface={planState.surface}
           selectedDocumentId={planState.selectedDocumentId}
           selectedAnchor={planState.selectedAnchor}
+          onRefresh={refreshPlan}
           onShowOverview={showPlanOverview}
           onSelectDocument={selectPlanDocument}
           onSelectHeading={selectPlanHeading}

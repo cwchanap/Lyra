@@ -32,6 +32,7 @@ type SidebarProps = {
   surface: "overview" | "document";
   selectedDocumentId: string;
   selectedAnchor: string | null;
+  onRefresh: () => void;
   onShowOverview: () => void;
   onSelectDocument: (id: string) => void;
   onSelectHeading: (id: string, anchor: string) => void;
@@ -85,6 +86,7 @@ function sidebarProps(overrides: Partial<SidebarProps> = {}): SidebarProps {
     surface: "document",
     selectedDocumentId: "story-bible",
     selectedAnchor: null,
+    onRefresh: vi.fn(),
     onShowOverview: vi.fn(),
     onSelectDocument: vi.fn(),
     onSelectHeading: vi.fn(),
@@ -93,6 +95,16 @@ function sidebarProps(overrides: Partial<SidebarProps> = {}): SidebarProps {
 }
 
 describe("PlanSidebar", () => {
+  it("Refresh plan invokes the store refresh callback once", async () => {
+    const user = userEvent.setup();
+    const props = sidebarProps();
+    render(PlanSidebar, props);
+
+    await user.click(screen.getByRole("button", { name: "Refresh plan" }));
+
+    expect(props.onRefresh).toHaveBeenCalledTimes(1);
+  });
+
   it("selected document defaults to H1/H2 outline", () => {
     render(PlanSidebar, sidebarProps());
 

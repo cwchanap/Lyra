@@ -7,6 +7,7 @@
     surface,
     selectedDocumentId,
     selectedAnchor = null,
+    onRefresh,
     onShowOverview,
     onSelectDocument,
     onSelectHeading,
@@ -15,6 +16,7 @@
     surface: PlanSurface;
     selectedDocumentId: string;
     selectedAnchor?: string | null;
+    onRefresh: () => void;
     onShowOverview: () => void;
     onSelectDocument: (id: string) => void;
     onSelectHeading: (id: string, anchor: string) => void;
@@ -57,6 +59,13 @@
     onclick={onShowOverview}
   >
     Overview
+  </button>
+  <button
+    type="button"
+    class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-0.5 text-[0.8rem] hover:border-[#57776a]"
+    onclick={onRefresh}
+  >
+    Refresh plan
   </button>
   {#each workspace?.documents ?? [] as doc (doc.id)}
     <button

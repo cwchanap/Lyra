@@ -8,7 +8,8 @@
 // projectPlanWorkspace() keeps the current canon intact.
 //
 // Checks (canonical content this gate pins):
-//   1. Document source paths stay the exact repo-relative constants.
+//   1. Document source paths stay the exact repo-relative constants, and each
+//      document keeps the Rust loader's identity triple (id/kind/chapterNumber).
 //   2. Story Bible §10「章節總覽」anchors to `10-章節總覽` with chapter rows
 //      exactly 1..8.
 //   3. §18.5 reveal-ladder stages stay 第 1, 2, 3, 4, 5～7, 8 章.
@@ -77,6 +78,34 @@ assert(
   `document source paths changed: ${workspace.documents.map(({ path }) => path).join(", ")}`,
 );
 
+// Real-corpus gate: each projected document must keep the Rust loader's
+// identity triple (apps/layout-editor/src-tauri/src/lib.rs).
+function assertDocumentIdentity(
+  path: string,
+  id: string,
+  kind: WorkbenchPlanDocument["kind"],
+  chapterNumber: number | null,
+): void {
+  const document = workspace.documents.find(
+    (candidate) => candidate.path === path,
+  );
+  assert(
+    document !== undefined &&
+      document.id === id &&
+      document.kind === kind &&
+      document.chapterNumber === chapterNumber,
+    `document identity drifted for ${path}: ${JSON.stringify({
+      id: document?.id,
+      kind: document?.kind,
+      chapterNumber: document?.chapterNumber,
+    })}`,
+  );
+}
+
+assertDocumentIdentity(BIBLE_PATH, "story-bible", "storyBible", null);
+assertDocumentIdentity(CH1_PATH, "chapter-1-plan", "chapterPlan", 1);
+assertDocumentIdentity(CH2_PATH, "chapter-2-plan", "chapterPlan", 2);
+
 const bible = workspace.documents.find(({ path }) => path === BIBLE_PATH);
 assert(bible !== undefined, "Story Bible document missing from projection");
 const overviewHeading = bible.headings.find(
@@ -98,9 +127,9 @@ assert(
 const aobaReveal = workspace.aobaReveal;
 assert(aobaReveal !== null, "§18.5 reveal ladder not projected");
 assert(
-  aobaReveal.stages.map(({ chapter }) => chapter).join(",") ===
+  aobaReveal.stages.map(({ chapterLabel }) => chapterLabel).join(",") ===
     "第 1 章,第 2 章,第 3 章,第 4 章,第 5～7 章,第 8 章",
-  `Aoba stages drifted: ${aobaReveal.stages.map(({ chapter }) => chapter).join(", ")}`,
+  `Aoba stages drifted: ${aobaReveal.stages.map(({ chapterLabel }) => chapterLabel).join(", ")}`,
 );
 
 const override = workspace.aobaOverrideNotice;
