@@ -62,6 +62,24 @@ describe("projectPlanWorkspace", () => {
     expect(document.renderedHtml).toContain('id="after"');
   });
 
+  it("anchors headings nested inside list items instead of throwing", () => {
+    const workspace = projectPlanWorkspace(
+      bible(
+        "Intro\n\n- # Heading in list\n\n- item\n  - ## Deep nested\n\n## After\n",
+      ),
+    );
+    const document = workspace.documents[0]!;
+
+    expect(document.headings.map((heading) => heading.text)).toEqual([
+      "Heading in list",
+      "Deep nested",
+      "After",
+    ]);
+    expect(document.renderedHtml).toContain('id="heading-in-list"');
+    expect(document.renderedHtml).toContain('id="deep-nested"');
+    expect(document.renderedHtml).toContain('id="after"');
+  });
+
   it("pins duplicate anchors and source-ref composition", () => {
     const seen = new Map<string, number>();
     expect(planAnchor("10. 章節總覽", seen)).toBe("10-章節總覽");

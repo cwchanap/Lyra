@@ -110,7 +110,7 @@ function escapeHtml(value: string): string {
 
 // ----- Token walk ---------------------------------------------------------------
 
-/** Flattened document-order block sequence (spaces skipped, blockquotes inlined). */
+/** Flattened document-order block sequence (spaces skipped; blockquote and list-item children inlined). */
 type BlockHit =
   | {
       kind: "heading";
@@ -181,6 +181,16 @@ function walkDocumentBlocks(
         offset >= 0 ? offset + 1 : 0,
         walk,
       );
+    } else if (token.type === "list") {
+      walk.blocks.push({ kind: "block", line });
+      for (const item of (token as Tokens.List).items) {
+        walkDocumentBlocks(
+          item.tokens,
+          content,
+          offset >= 0 ? offset + 1 : 0,
+          walk,
+        );
+      }
     } else {
       walk.blocks.push({ kind: "block", line });
     }
