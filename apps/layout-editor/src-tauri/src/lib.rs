@@ -1009,10 +1009,16 @@ impl WorkbenchPlanDocument {
 }
 
 /// Accepts only root-level `chapter_<N>_plan.md` with a positive numeric N.
+/// Rejects non-canonical numeric forms (e.g. leading zeros like
+/// `chapter_01_plan.md`) so they cannot collide with `chapter_1_plan.md` and
+/// produce a duplicate `chapter-1-plan` document identity.
 fn chapter_plan_number(name: &str) -> Option<u32> {
     let raw = name.strip_prefix("chapter_")?.strip_suffix("_plan.md")?;
     let number = raw.parse::<u32>().ok()?;
-    (number > 0).then_some(number)
+    if number == 0 || raw != number.to_string().as_str() {
+        return None;
+    }
+    Some(number)
 }
 
 #[tauri::command]
@@ -1521,6 +1527,34 @@ mod tests {
             load_plan_workspace_at_root(&root).unwrap().documents.len(),
             1
         );
+    }
+
+    #[test]
+    fn plan_workspace_rejects_leading_zero_chapter_plan_names() {
+        // `chapter_01_plan.md` must not be accepted: it would parse to 1 and
+        // collide with `chapter_1_plan.md`'s `chapter-1-plan` identity.
+        let root = temp_workbench_root();
+        fs::write(
+            root.join("docs/stories_plan/final_story_bible.md"),
+            "# Bible\n",
+        )
+        .unwrap();
+        fs::write(root.join("docs/stories_plan/chapter_1_plan.md"), "# One\n").unwrap();
+        fs::write(
+            root.join("docs/stories_plan/chapter_01_plan.md"),
+            "# Leading zero\n",
+        )
+        .unwrap();
+
+        let snapshot = load_plan_workspace_at_root(&root).unwrap();
+        let ids: Vec<&str> = snapshot
+            .documents
+            .iter()
+            .map(|document| document.id.as_str())
+            .collect();
+        assert_eq!(ids, vec!["story-bible", "chapter-1-plan"]);
+        // No duplicate identity from the leading-zero filename.
+        assert_eq!(ids.iter().filter(|id| **id == "chapter-1-plan").count(), 1);
     }
 
     #[test]

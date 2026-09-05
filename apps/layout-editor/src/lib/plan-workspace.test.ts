@@ -109,6 +109,69 @@ describe("projectPlanWorkspace", () => {
     expect(workspace.documents[0]!.renderedHtml).toContain("&lt;script&gt;");
   });
 
+  it("renders safe http/https/mailto/relative/anchor links verbatim", () => {
+    const workspace = projectPlanWorkspace(
+      bible(
+        [
+          "[site](https://example.com)",
+          "[local](http://example.com/x)",
+          "[mail](mailto:a@b.com)",
+          "[rel](docs/stories_plan/final_story_bible.md)",
+          "[anchor](#10-章節總覽)",
+        ].join("\n\n"),
+      ),
+    );
+    const html = workspace.documents[0]!.renderedHtml;
+    expect(html).toContain('<a href="https://example.com">site</a>');
+    expect(html).toContain('<a href="http://example.com/x">local</a>');
+    expect(html).toContain('<a href="mailto:a@b.com">mail</a>');
+    expect(html).toContain('href="docs/stories_plan/final_story_bible.md"');
+    // Anchors are percent-encoded by encodeURI (mirrors marked's cleaner);
+    // browsers decode the fragment against the raw-id heading.
+    expect(html).toContain('href="#10-%E7%AB%A0%E7%AF%80%E7%B8%BD%E8%A6%BD"');
+  });
+
+  it("collapses unsafe-scheme links to plain text without an anchor tag", () => {
+    const workspace = projectPlanWorkspace(
+      bible(
+        [
+          "[click](javascript:alert(1))",
+          "[data](data:text/html,<b>)",
+          "[vb](vbscript:msgbox(1))",
+          "[file](file:///etc/passwd)",
+        ].join("\n\n"),
+      ),
+    );
+    const html = workspace.documents[0]!.renderedHtml;
+    expect(html).toContain(">click<");
+    expect(html).toContain(">data<");
+    expect(html).toContain(">vb<");
+    expect(html).toContain(">file<");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("data:text/html");
+    expect(html).not.toContain("vbscript:");
+    expect(html).not.toContain("file:");
+    expect(html).not.toContain("<a ");
+  });
+
+  it("collapses unsafe-scheme images to alt text without an img tag", () => {
+    const workspace = projectPlanWorkspace(
+      bible("![alt](javascript:alert(1))"),
+    );
+    const html = workspace.documents[0]!.renderedHtml;
+    expect(html).toContain("alt");
+    expect(html).not.toContain("javascript:");
+    expect(html).not.toContain("<img");
+  });
+
+  it("renders safe image src and rejects unsafe image schemes", () => {
+    const workspace = projectPlanWorkspace(
+      bible("![pic](https://example.com/a.png)"),
+    );
+    const html = workspace.documents[0]!.renderedHtml;
+    expect(html).toContain('<img src="https://example.com/a.png" alt="pic"');
+  });
+
   it("projects the exact §10 overview into chapters 1..8", () => {
     const content = `# 10. 章節總覽\n\n${table(
       CHAPTER_HEADERS,
