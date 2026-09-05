@@ -33,6 +33,11 @@ export const E2E_RISK_RULES = Object.freeze([
     forceFull: true,
   }),
   freezeRule({
+    id: "layout-editor",
+    patterns: ["apps/layout-editor/**"],
+    suiteIds: [],
+  }),
+  freezeRule({
     id: "story-and-compiler",
     patterns: [
       "docs/stories_plan/chapter_*/**",

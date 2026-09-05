@@ -50,6 +50,62 @@ test("routes unrelated general UI changes to smoke", () => {
   );
 });
 
+test("treats layout-editor changes as explicitly outside game E2E ownership", () => {
+  for (const changedPath of [
+    "apps/layout-editor/src/App.svelte",
+    "apps/layout-editor/src-tauri/src/lib.rs",
+  ]) {
+    const plan = selectE2eSuites({ changedPaths: [changedPath] });
+
+    assert.deepEqual(plan.suiteIds, [], changedPath);
+    assert.equal(plan.skip, true, changedPath);
+    assert.equal(plan.forcedFull, false, changedPath);
+    assert.deepEqual(plan.unmatchedPaths, [], changedPath);
+    assert.deepEqual(
+      plan.matchedRules,
+      [{ id: "layout-editor", paths: [changedPath] }],
+      changedPath,
+    );
+  }
+});
+
+test("keeps layout-editor plus documentation outside game E2E", () => {
+  const plan = selectE2eSuites({
+    changedPaths: [
+      "docs/superpowers/specs/layout-editor-notes.md",
+      "apps/layout-editor/src/App.svelte",
+    ],
+  });
+
+  assert.deepEqual(plan.suiteIds, []);
+  assert.equal(plan.skip, true);
+  assert.equal(plan.forcedFull, false);
+  assert.deepEqual(plan.unmatchedPaths, []);
+  assert.deepEqual(plan.matchedRules, [
+    { id: "layout-editor", paths: ["apps/layout-editor/src/App.svelte"] },
+  ]);
+});
+
+test("unions layout-editor ownership with real game risk", () => {
+  const plan = selectE2eSuites({
+    changedPaths: [
+      "apps/layout-editor/src/App.svelte",
+      "apps/game/src/lib/components/MainMenu.svelte",
+    ],
+  });
+
+  assert.deepEqual(plan.suiteIds, ["smoke"]);
+  assert.equal(plan.forcedFull, false);
+  assert.deepEqual(plan.unmatchedPaths, []);
+  assert.deepEqual(plan.matchedRules, [
+    {
+      id: "general-ui",
+      paths: ["apps/game/src/lib/components/MainMenu.svelte"],
+    },
+    { id: "layout-editor", paths: ["apps/layout-editor/src/App.svelte"] },
+  ]);
+});
+
 test("routes each acquisition acknowledgement surface to its direct lifecycle coverage", () => {
   for (const changedPath of [
     "apps/game/src/lib/components/AcquisitionPopup.svelte",
