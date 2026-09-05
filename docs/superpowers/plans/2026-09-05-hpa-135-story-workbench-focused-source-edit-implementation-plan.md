@@ -27,6 +27,19 @@
 
 ---
 
+## Review Resolution
+
+The external design review is accepted in full. The implementation must preserve these corrections:
+
+1. Do **not** zip authored tokens against raw `deriveDialogueSegments()` array order. Reader traversal owns final carrier/item identity; investigation/interrogation outro ordering makes the raw segment array unsuitable for direct pairing.
+2. Do **not** reparse Background/Image Prompt block ownership. Validate through existing scene parsers and use their AST identities; tokenizer ranges are only for exact accepted source slices.
+3. Do **not** build a YAML scalar renderer. Reuse the existing `YAML.parseDocument()` / `node.set()` / `doc.toString()` writeback pattern and reject unrelated serialization churn before Apply.
+4. Tokenizer ranges must refer to raw untrimmed source and expose separate editable value ranges while preserving all current normalized token semantics.
+5. Rust receives reviewed `nextContent`; it does not convert JS UTF-16 ranges or perform a second source-target slice operation.
+6. `ReaderView.test.ts` is a new file; process spawning receives real cwd/argv/non-zero-stop coverage; the real apply → validation path gets a live smoke; audio plan ownership is derived from typed `(channel,id)` plus exactly one concrete usage chapter.
+
+---
+
 ## File Map
 
 ### New files
