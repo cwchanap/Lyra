@@ -366,7 +366,7 @@ export type WorkbenchSourceTarget = {
   semanticRef: string;
   kind: WorkbenchSourceTargetKind;
   currentText: string;
-  sourceRange: SourceRange | null; // useful for Markdown/context UI; not IPC
+  sourceRange: SourceRange | null; // local source/diff context only; not IPC
 };
 
 export type RenderSourceReplacementResult =
@@ -374,7 +374,7 @@ export type RenderSourceReplacementResult =
   | { ok: false; diagnostic: CompileError };
 ```
 
-Scene prompt and Reader targets may carry a source range. YAML targets may be re-resolved by semantic identity during Document mutation; Rust never consumes either form.
+Markdown targets use tokenizer `valueRange`. YAML targets may retain the selected YAML node range only as a localization hint for diff/churn checking; mutation still happens through `node.set(...)` + `doc.toString()`. Rust never consumes any source range.
 
 ## Focused edit model
 
@@ -408,9 +408,9 @@ No draft database ID, timestamps, history, status workflow, or persistent queue.
 
 No diff dependency.
 
-Generate a deterministic unified-style **single focused hunk** from `document.content` and `draft.nextContent` using common-prefix/common-suffix line comparison plus up to three unchanged context lines.
+Generate a deterministic unified-style **single focused hunk** from `document.content` and `draft.nextContent`, with up to three unchanged context lines.
 
-If the candidate content changes multiple unrelated regions or the changed region expands beyond the selected source target's expected local block, return `focusedEditSourceChurn` and disable Apply. This catches accidental YAML reserialization churn before Rust sees the candidate document.
+The selected target's source range/owner block is the locality guard. All changed lines must stay within that target's local source block (for YAML, the selected scalar/node block); otherwise return `focusedEditSourceChurn` and disable Apply. This catches accidental full-document YAML reformatting before Rust sees the candidate document without building a second YAML renderer.
 
 The diff is presentation-only; Rust receives the already-reviewed `nextContent`.
 
@@ -694,7 +694,7 @@ Cover one-entry prompt sync, loop unchanged, missing/duplicate/non-approved plan
 
 ### Live apply smoke
 
-Typecheck/build do not prove the write/validation process boundary. Before marking the PR ready, make one throwaway Chapter 1 source edit through the packaged/dev Workbench, observe automatic `scenes:compile`, then revert the source with Git. Do not treat `editor:build` as evidence for this path.
+Typecheck/build do not prove the write/validation process boundary. Before marking the PR ready, make one throwaway Chapter 1 source edit through the real Workbench, observe automatic `scenes:compile`, then revert the source with Git. Do not treat `editor:build` as evidence for this path.
 
 ## Required checks
 
