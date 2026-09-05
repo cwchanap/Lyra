@@ -30,6 +30,8 @@ The product cut remains unchanged. The implementation shape is revised to reuse 
 6. **Validation process execution gets a real test seam.** The first `std::process::Command` use in the layout editor must have argv/cwd/non-zero-stop coverage.
 7. **Audio plan ownership is explicit.** `(channel,id)` comes from the typed manifest source; the owning chapter comes from current concrete usage and must resolve to exactly one chapter for v1.
 
+These changes directly address the review findings around investigation dialogue ordering, parser duplication, YAML writeback reuse, tokenizer raw/source ranges, Rust slicing complexity, command-dispatch coverage, missing ReaderView test ownership, live validation proof, and audio-plan joining.
+
 This removes more machinery than it adds and keeps the HPA-135 product scope intact.
 
 ## Goal
@@ -732,6 +734,21 @@ bun run lint:all
 - [ ] No queue, undo/history, generic editor, arbitrary path write, AI provider, auto Git workflow, or media generation is added.
 - [ ] HPA-136 can reuse the same focused review/apply boundary.
 - [ ] Implementation lands in this same PR.
+
+## Non-goals
+
+- AI review/provider calls — HPA-136.
+- Story Bible/Chapter Plan editing.
+- General Markdown/YAML editor.
+- Multi-file/multi-hunk authoring UI.
+- Proposal/history database.
+- Autosave/background mutation.
+- Git commit/branch/PR automation.
+- Source merge/rebase on stale edits.
+- Workbench Undo.
+- New assets/media generation.
+- Audio cue assignment or sound-plan redesign.
+- Game runtime scene schema changes.
 
 ## Design summary
 
