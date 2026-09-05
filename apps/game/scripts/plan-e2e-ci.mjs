@@ -15,12 +15,12 @@ import { selectE2eSuites } from "./select-e2e-suites.mjs";
 export const E2E_CI_PLANNER_SCHEMA_VERSION = 1;
 
 const CHAIN_EXECUTION = Object.freeze({
-  // The gameplay chain bundles smoke (~1.6m) + ordinary gameplay (~7m,
+  // The full gameplay chain bundles smoke (~1.6m) + ordinary gameplay (~7m,
   // five specs including investigation-layout at ~3m47s) + production-journey
   // (~10-12m, full Chapter 1 organic route across all nine city-map gates) +
-  // analysis-beat85 (~1m). CI runner variance can add ~2m to the earlier
-  // phases, so 25 minutes gives comfortable margin without risking the
-  // 30-minute job-level safety net.
+  // analysis-beat85 (~1m). Focused PR matrices can omit the journey but reuse
+  // this same chain and ceiling. CI runner variance can add ~2m to the earlier
+  // phases, so 25 minutes remains the full-chain safety budget.
   gameplay: Object.freeze({ timeoutMinutes: 25 }),
   persistence: Object.freeze({ timeoutMinutes: 15 }),
   exit: Object.freeze({ timeoutMinutes: 8 }),
