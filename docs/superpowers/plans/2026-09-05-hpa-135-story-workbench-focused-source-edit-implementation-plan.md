@@ -277,14 +277,20 @@ expect(promptRefs).toContain("asset:evidence:summary_copy:imagePrompt");
 
 ### Step 5: Implement scene source discovery with parser-owned association
 
-- [ ] In `indexSceneSourceTargets()`, parse using the current parser:
+- [ ] Parse through the current scene parser and keep the parsed AST as the authority:
 
 ```ts
-switch (sceneType) {
-  case "linear": return parseLinearScene(...);
-  case "investigation": return parseInvestigationScene(...);
-  case "interrogation": return parseInterrogationScene(...);
-  case "analysis": return parseAnalysisScene(...);
+const parsed =
+  sceneType === "linear"
+    ? parseLinearScene(source, sourcePath, sceneId)
+    : sceneType === "investigation"
+      ? parseInvestigationScene(source, sourcePath, sceneId)
+      : sceneType === "interrogation"
+        ? parseInterrogationScene(source, sourcePath, sceneId)
+        : parseAnalysisScene(source, sourcePath, sceneId);
+
+if (!parsed.ok) {
+  return { textTokens: [], promptTargets: [], diagnostics: [parsed.error] };
 }
 ```
 
