@@ -47,7 +47,7 @@ export const E2E_RISK_RULES = Object.freeze([
       "packages/scene-types/**",
       "static/assets/config/**",
     ],
-    suiteIds: ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    suiteIds: ["smoke", "gameplay", "analysis-beat85"],
   }),
   freezeRule({
     id: "capture",
@@ -100,7 +100,7 @@ export const E2E_RISK_RULES = Object.freeze([
       "apps/game/src-tauri/src/game/story/**",
       "apps/game/src-tauri/src/game/unlock.rs",
     ],
-    suiteIds: ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    suiteIds: ["smoke", "gameplay", "analysis-beat85"],
   }),
   // These acknowledgement surfaces bridge gameplay progress and persistence
   // without being exercised by the capture-proof or manual-save suites.
@@ -110,16 +110,11 @@ export const E2E_RISK_RULES = Object.freeze([
       "apps/game/src/lib/components/AcquisitionPopup.svelte",
       "apps/game/src/lib/state/acquisition-controller.svelte.ts",
     ],
-    suiteIds: [
-      "smoke",
-      "gameplay",
-      "production-journey",
-      "save-core",
-      "exit-lifecycle",
-    ],
+    suiteIds: ["smoke", "gameplay", "save-core", "exit-lifecycle"],
   }),
   // The dialogue root and its crossfade are both capture-proven persistence
-  // carriers and the common progression surface for every packaged suite.
+  // carriers and a cross-cutting progression surface. Ordinary PR routing keeps
+  // canonical suite ownership here except for the policy-deferred journey.
   freezeRule({
     id: "dialogue-capture-surface",
     patterns: [
@@ -127,7 +122,7 @@ export const E2E_RISK_RULES = Object.freeze([
       "apps/game/src/lib/components/CrossfadeImage.svelte",
       "apps/game/src/routes/+page.svelte",
     ],
-    suiteIds: E2E_SUITE_IDS,
+    suiteIds: E2E_SUITE_IDS.filter((id) => id !== "production-journey"),
   }),
   // +layout.svelte installs window.__lyraE2e and renders the checkpoint-
   // generation marker that loadPackagedCheckpoint() waits on. Every gameplay
