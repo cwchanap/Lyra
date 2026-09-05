@@ -328,12 +328,16 @@ jobs:
     needs: e2e-plan
     if: ${{ needs.e2e-plan.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
-    # Job-level safety net: setup (system deps, Rust toolchain, cache, build)
-    # alone can take 5-8+ minutes on a cold/slow runner, so the per-chain
-    # timeoutMinutes budget is applied to the test step only (see "Run selected
-    # Tauri E2E chain"). This fixed ceiling prevents a runaway job from
-    # hanging CI without eating into the test execution budget.
-    timeout-minutes: 30
+    # Job-level safety net. The per-chain timeoutMinutes budget is applied to
+    # the test step only (see "Run selected Tauri E2E chain"); this ceiling
+    # guards the whole job against a hang. It must comfortably exceed
+    # cold-setup + the largest test budget so a slow/cold runner (where the
+    # separate target-e2e cargo build alone can take ~20+ minutes on a cache
+    # miss) never has the job ceiling eat into the test budget. Gameplay's
+    # test budget is 25 min and cold setup+build has been observed at ~24 min,
+    # so 60 min leaves ample margin for every chain while still bounding a
+    # genuinely hung job.
+    timeout-minutes: 60
     permissions:
       contents: read
     strategy:

@@ -103,7 +103,7 @@ test("execution is a non-fail-fast isolated chain matrix", () => {
     execution.strategy.matrix,
     "${{ fromJSON(needs.e2e-plan.outputs.matrix) }}",
   );
-  assert.equal(execution["timeout-minutes"], 30);
+  assert.equal(execution["timeout-minutes"], 60);
   assert.equal(execution.name, "Tauri E2E execution (${{ matrix.chainId }})");
 
   const initialize = namedStep(execution, "Initialize chain metrics");
