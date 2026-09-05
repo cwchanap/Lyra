@@ -842,6 +842,7 @@ export function focusedEditDiff(input: {
   originalContent: string;
   nextContent: string;
   sourcePath: string;
+  allowedRange: SourceRange | null;
 }):
   | { ok: true; diff: string }
   | { ok: false; code: "focusedEditSourceChurn" };
@@ -861,16 +862,18 @@ export function focusedEditDiff(input: {
 
 - [ ] YAML test must show actual changed scalar syntax while keeping a nearby comment and unrelated entry outside the hunk.
 - [ ] Add a synthetic candidate that changes two separated regions; expect `focusedEditSourceChurn` and no Apply request.
+- [ ] Add a YAML candidate whose serializer changes a line outside the selected scalar/node `allowedRange`; expect `focusedEditSourceChurn` even if the overall diff could otherwise be represented as one broad hunk.
 
-### Step 2: Implement deterministic focused diff
+### Step 2: Implement deterministic focused diff and locality guard
 
-- [ ] Find common unchanged prefix/suffix at line level.
-- [ ] Require one contiguous changed region.
-- [ ] Include up to three context lines before/after.
+- [ ] Find changed line/character regions between `originalContent` and `nextContent`.
+- [ ] Require every changed source position to remain within the selected target's local `allowedRange` (or the selected YAML node block resolved during target discovery).
+- [ ] If any unrelated position changed, return `focusedEditSourceChurn`.
+- [ ] Render the remaining localized edit as one unified-style hunk with up to three context lines.
 - [ ] Do not parse/apply the diff later.
 - [ ] `nextContent === originalContent` returns `focusedEditNoChange` before diff.
 
-This is the guard that makes full-document YAML Document serialization safe for the focused-edit product contract.
+This is the guard that allows YAML Document serialization without silently accepting whole-file formatting churn.
 
 ### Step 3: Write RED impact tests
 
@@ -912,8 +915,8 @@ Do not rely on the manifest entry's first scene `chapterId` when an audio asset 
 ### Step 5: Implement draft construction
 
 - [ ] Call Task 1 `renderSourceReplacement()` to get `nextContent`.
-- [ ] Run focused diff/churn validation immediately.
-- [ ] Build draft only when one localized diff is valid.
+- [ ] Pass the target's source/node locality range to `focusedEditDiff()` and run churn validation immediately.
+- [ ] Build draft only when the candidate changes only the selected local source block.
 - [ ] Draft contains no source range or byte offsets for IPC.
 
 ### Step 6: Run Task 4 gates
