@@ -292,6 +292,28 @@ describe("projectPlanWorkspace", () => {
     ).toEqual([]);
   });
 
+  it("strips Markdown inline syntax from §18.5 table cells", () => {
+    const rows = [["第 1 章", "`RUI-K` 逃生鏈", "`ZW_A16.lock` 雙鑰"]];
+    const content = `## 18.5 第一幕 reveal ladder\n\n${table(
+      AOBA_HEADERS,
+      rows,
+    )}\n`;
+    const workspace = projectPlanWorkspace(bible(content));
+
+    expect(workspace.aobaReveal?.stages).toEqual([
+      {
+        chapterLabel: "第 1 章",
+        mustEstablish: "RUI-K 逃生鏈",
+        mustNotEstablish: "ZW_A16.lock 雙鑰",
+      },
+    ]);
+    expect(
+      workspace.diagnostics
+        .map((d) => d.code)
+        .filter((code) => code.startsWith("aobaRevealLadder")),
+    ).toEqual([]);
+  });
+
   it("reports aobaRevealLadderInvalid for malformed §18.5", () => {
     const content = `## 18.5 第一幕 reveal ladder\n\n${table(
       ["章節", "必須建立"],
