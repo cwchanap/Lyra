@@ -46,7 +46,8 @@
 2. `dialogue-capture-surface` currently uses `E2E_SUITE_IDS`; replacing it must remove only `production-journey`, not persistence/capture/exit coverage.
 3. A normal gameplay planner result and a forced-full planner result use the same `gameplay` chain ID. The suite file contents, not the chain topology, are the contract that changes.
 4. Unknown non-documentation paths must remain conservative full runs. Do not solve the Layout Editor problem by weakening the global unmatched fallback.
-5. The implementation PR itself must full-run because selector scripts are E2E infrastructure; do not add a special exemption for this change.
+5. `selectE2eSuites()` sorts changed paths before processing them, so tests asserting `matchedRules` order must follow normalized path order rather than input order.
+6. The implementation PR itself must full-run because selector scripts are E2E infrastructure; do not add a special exemption for this change.
 
 ---
 
@@ -86,6 +87,23 @@ test("treats layout-editor changes as explicitly outside game E2E ownership", ()
   }
 });
 
+test("keeps layout-editor plus documentation changes outside game E2E", () => {
+  const plan = selectE2eSuites({
+    changedPaths: [
+      "docs/superpowers/specs/layout-editor-notes.md",
+      "apps/layout-editor/src/App.svelte",
+    ],
+  });
+
+  assert.deepEqual(plan.suiteIds, []);
+  assert.equal(plan.skip, true);
+  assert.equal(plan.forcedFull, false);
+  assert.deepEqual(plan.unmatchedPaths, []);
+  assert.deepEqual(plan.matchedRules, [
+    { id: "layout-editor", paths: ["apps/layout-editor/src/App.svelte"] },
+  ]);
+});
+
 test("unions layout-editor ownership with real game risk without forcing full", () => {
   const plan = selectE2eSuites({
     changedPaths: [
@@ -98,11 +116,13 @@ test("unions layout-editor ownership with real game risk without forcing full", 
   assert.equal(plan.forcedFull, false);
   assert.deepEqual(plan.unmatchedPaths, []);
   assert.deepEqual(plan.matchedRules, [
-    { id: "layout-editor", paths: ["apps/layout-editor/src/App.svelte"] },
     { id: "general-ui", paths: ["apps/game/src/lib/components/MainMenu.svelte"] },
+    { id: "layout-editor", paths: ["apps/layout-editor/src/App.svelte"] },
   ]);
 });
 ```
+
+The last assertion deliberately follows normalized changed-path order: `apps/game/...` sorts before `apps/layout-editor/...`.
 
 Do not modify the existing unknown-path test; it is the negative control proving the global conservative fallback remains intact.
 
@@ -116,8 +136,8 @@ node --test apps/game/scripts/select-e2e-suites.test.mjs
 
 Expected before implementation:
 
-- both new Layout Editor cases fail because the path is unmatched;
-- `forcedFullReason` is `unmatched-non-documentation-path`;
+- the new Layout Editor cases fail because the editor path is unmatched;
+- `forcedFullReason` becomes `unmatched-non-documentation-path` whenever an editor path is present;
 - the existing unknown `infra/new-runner.nix` case still passes.
 
 - [ ] **Step 1.3: Add the minimal Layout Editor ownership rule**
@@ -144,8 +164,8 @@ node --test apps/game/scripts/select-e2e-suites.test.mjs
 
 Require:
 
-- the new Layout Editor-only cases return `skip: true`, `forcedFull: false`, and no unmatched paths;
-- the mixed Layout Editor + Main Menu case selects only `smoke`;
+- Layout Editor-only and Layout Editor + docs return `skip: true`, `forcedFull: false`, and no unmatched paths;
+- Layout Editor + Main Menu selects only `smoke`;
 - the existing unknown non-documentation path still selects the complete registry with `forcedFullReason === "unmatched-non-documentation-path"`;
 - the existing E2E-infrastructure force-full test remains green.
 
@@ -397,12 +417,13 @@ bun run --cwd apps/game check:e2e
 bun run lint:all
 ```
 
-Then perform three planner spot-checks using the real CLI contract:
+Then perform three planner spot-checks using the real CLI contract.
+
+### Layout Editor-only
 
 ```bash
 tmpdir="$(mktemp -d)"
 mkdir -p "$tmpdir/plan/chains"
-
 printf '%s\n' 'apps/layout-editor/src/App.svelte' > "$tmpdir/changed.txt"
 node apps/game/scripts/plan-e2e-ci.mjs \
   --changed-paths-file "$tmpdir/changed.txt" \
@@ -415,14 +436,9 @@ cat "$tmpdir/plan/e2e-suites.json"
 cat "$tmpdir/plan/e2e-matrix.json"
 ```
 
-Require:
+Require suite file `[]` and matrix `{ "include": [] }`.
 
-```text
-suite file: []
-matrix: { "include": [] }
-```
-
-Reset the plan directory, then check ordinary gameplay:
+### Normal gameplay
 
 ```bash
 rm -rf "$tmpdir/plan"
@@ -444,7 +460,7 @@ Require exactly:
 ["smoke","gameplay","analysis-beat85"]
 ```
 
-Finally force full with the same gameplay path:
+### Forced full
 
 ```bash
 rm -rf "$tmpdir/plan"
@@ -471,6 +487,6 @@ Push the implementation branch and require GitHub CI to run the complete registr
 
 ## Self-Review Notes
 
-- **Spec coverage:** Layout Editor ownership is Task 1; journey demotion and focused-suite preservation are Task 2; full-registry retention is covered by existing selector/planner controls plus final CI verification. No workflow, registry, retry, runner, or production journey implementation work is required.
-- **Placeholder scan:** The plan contains exact file paths, exact expected arrays, exact test bodies for new contracts, exact selector edits, and exact verification commands; there are no deferred implementation decisions.
+- **Spec coverage:** Layout Editor-only, Layout Editor + docs, and Layout Editor + game union behavior are Task 1; journey demotion and focused-suite preservation are Task 2; full-registry retention is covered by existing selector/planner controls plus final CI verification. No workflow, registry, retry, runner, or production journey implementation work is required.
+- **Placeholder scan:** The plan contains exact file paths, exact expected arrays, exact new test bodies, exact selector edits, and exact verification commands; there are no deferred implementation decisions.
 - **Interface consistency:** `layout-editor`, `production-journey`, canonical suite IDs, chain ID `gameplay`, cache key `tauri-e2e-gameplay-v1`, artifact `tauri-e2e-gameplay`, and timeout `25` match current `main` contracts.
