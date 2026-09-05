@@ -2,7 +2,7 @@
 
 ## Status
 
-Approved design, revalidated against `main` at `ec0425b371b987b5134bd6150de466f4ecff398f` on 2026-09-05.
+Approved design, review-amended and revalidated against `main` at `ec0425b371b987b5134bd6150de466f4ecff398f` on 2026-09-05.
 
 This change is intentionally narrow: keep the existing packaged E2E registry, chain partitioning, runner, retry, artifacts, and full-registry triggers; only change which suites a normal pull request selects from changed paths.
 
@@ -12,9 +12,9 @@ The packaged Tauri E2E system currently has two sources of avoidable pull-reques
 
 First, `select-e2e-suites.mjs` fails closed for every unmatched non-documentation path. That is a good safety property for unknown game/shared-runtime changes, but it also means an unrelated `apps/layout-editor/**` change has no matching game-E2E owner and therefore forces the complete game E2E registry.
 
-Second, several normal PR risk rules include `production-journey`. That suite intentionally plays the organic Chapter 1 route from the menu through the full chapter. The current planner comment budgets roughly 10-12 minutes for that suite alone, on top of smoke, ordinary gameplay, and analysis coverage. It is valuable integration coverage but too expensive to remain a default iteration gate when focused packaged suites already exercise the touched gameplay surfaces.
+Second, several normal PR risk rules include `production-journey`. That suite intentionally plays the organic Chapter 1 route from the menu through the full chapter. The current planner comment budgets roughly 10-12 minutes for that suite alone, on top of smoke, ordinary gameplay, and analysis coverage. It is valuable integration coverage precisely because the focused suites do **not** reproduce the same route: ordinary gameplay is checkpoint-oriented, `investigation-layout.e2e.ts` crosses the first city-map gate rather than all nine, and `analysis-beat85.e2e.ts` covers the late hearing around `interrogation_scene_10` rather than the complete Chapter 1 traversal. Demoting `production-journey` is therefore an explicit pre-1.0 latency-versus-coverage tradeoff, not a claim that focused suites provide equivalent coverage.
 
-The target is to reduce normal PR blocking time without weakening the full integration signal.
+The target is to reduce normal PR blocking time while preserving the full integration signal on deliberate full-registry runs.
 
 ## Goals
 
@@ -24,6 +24,7 @@ The target is to reduce normal PR blocking time without weakening the full integ
 - Preserve `production-journey` unchanged in the canonical E2E registry and gameplay chain.
 - Preserve full-registry execution for E2E infrastructure changes, `ci:full-e2e`, `main`, tags, nightly schedule, and manual dispatch.
 - Preserve all existing smoke, ordinary gameplay, analysis, persistence, capture, and exit suite routing otherwise.
+- Treat the journey demotion as an accepted pre-1.0 coverage tradeoff; do not describe checkpointed/focused suites as equivalent substitutes for the organic route.
 - Avoid CI topology changes unless the selector policy alone proves insufficient.
 
 ## Non-goals
@@ -83,7 +84,7 @@ Required behavior:
 
 ### 2. Demote `production-journey` from normal PR risk selection
 
-For non-force-full path rules, remove `production-journey` while preserving every focused suite currently selected for the same surface.
+For non-force-full path rules, remove `production-journey` while preserving every other suite currently selected for the same surface.
 
 The intended normal-PR routing is:
 
@@ -98,6 +99,20 @@ The intended normal-PR routing is:
 | persistence/capture/exit rules | unchanged |
 
 `dialogue-capture-surface` must use an explicit suite list excluding only `production-journey`; do not remove persistence/capture/exit coverage from that cross-cutting surface.
+
+The policy is table-wide, not sample-path-specific: every `E2E_RISK_RULES` entry with `forceFull !== true` must exclude `production-journey`. The selector contract should walk the exported rule table directly so a future risk rule cannot silently reintroduce the journey into ordinary PR selection.
+
+#### Coverage retained and deferred
+
+The focused suites remain useful, but they are not substitutes for the organic route:
+
+- ordinary `gameplay` remains the checkpoint-oriented five-spec suite;
+- `investigation-layout.e2e.ts` still exercises investigation UI plus the **first** city-map gate;
+- Interrogation component PRs still select `analysis-beat85`, which exercises the late `interrogation_scene_10` hearing/interrogation surface;
+- `capture-proof` separately exercises an `interrogation_scene_4` question/testimony/challenge/Present path for capture semantics, but that suite is not selected by the normal `story-and-compiler`, `gameplay`, or Interrogation-component routing discussed here;
+- the organic traversal across all nine Chapter 1 map gates, and the route-level sequencing between those scenes, stays in `production-journey` and therefore moves to full-registry triggers.
+
+That lost ordinary-PR route proof is accepted for the current pre-1.0 iteration phase. Re-promoting the journey later remains a small `suiteIds` policy change rather than a test rewrite.
 
 ### 3. Preserve full-registry behavior unchanged
 
@@ -146,6 +161,14 @@ dialogue root/crossfade/page shell
 => [smoke, gameplay, analysis-beat85, capture-proof, save-core, save-management, exit-lifecycle]
 ```
 
+Rule-table invariant:
+
+```text
+for every rule in E2E_RISK_RULES:
+  if rule.forceFull !== true:
+    production-journey ∉ rule.suiteIds
+```
+
 Full triggers:
 
 ```text
@@ -177,7 +200,9 @@ No new chain ID, artifact name, cache key, or timeout is introduced.
 
 ## Expected effect
 
-Using the current planner's documented timing envelope, a normal gameplay PR should stop paying the roughly 10-12 minute full organic Chapter 1 journey and retain smoke + ordinary gameplay + analysis coverage. The expected blocking gameplay-chain test time moves from roughly 20-22 minutes toward roughly 9-10 minutes, subject to runner variance and setup/build time.
+Using the current planner's documented timing envelope, a normal gameplay PR should stop paying the roughly 10-12 minute full organic Chapter 1 journey and retain smoke + checkpointed gameplay + Beat 8.5 analysis/interrogation coverage. The expected blocking gameplay-chain test time moves from roughly 20-22 minutes toward roughly 9-10 minutes, subject to runner variance and setup/build time.
+
+This intentionally means a normal story/gameplay PR no longer proves the complete nine-gate Chapter 1 route. That proof moves to E2E infrastructure changes, `ci:full-e2e`, `main`, nightly, tags, and manual dispatch.
 
 A Layout Editor-only PR should select no packaged game E2E at all instead of conservatively forcing the full registry.
 
@@ -186,16 +211,17 @@ These are optimization targets, not new timing assertions in tests. CI correctne
 ## Risks and mitigations
 
 1. **Shared workspace changes get skipped accidentally.** Mitigation: do not relax the unmatched-path fallback globally; only add explicit Layout Editor ownership.
-2. **The organic route silently disappears from CI.** Mitigation: keep `production-journey` in the canonical registry/chain and assert it remains present for forced-full/main/nightly/tag/manual paths.
-3. **A cross-cutting dialogue change loses persistence coverage while removing the journey.** Mitigation: replace `E2E_SUITE_IDS` on `dialogue-capture-surface` with the explicit complete list minus only `production-journey`.
-4. **The planner or workflow needs structural changes.** Mitigation: selector output already drives partial chain suite files; add planner regression coverage and leave workflow/registry untouched.
-5. **The implementation PR under-tests its own selector change.** Mitigation: selector scripts are already E2E infrastructure and therefore force the complete registry on that PR.
+2. **The organic route silently disappears from CI.** Mitigation: keep `production-journey` in the canonical registry/chain, assert it remains present for forced-full/main/nightly/tag/manual paths, and assert directly that every non-force-full risk rule excludes it.
+3. **The coverage tradeoff is later mistaken for focused-suite parity.** Mitigation: document the retained/deferred coverage above; normal Interrogation component PRs still pay `analysis-beat85`, while all-nine-gate route proof remains a full-registry responsibility.
+4. **A cross-cutting dialogue change loses persistence coverage while removing the journey.** Mitigation: replace `E2E_SUITE_IDS` on `dialogue-capture-surface` with the explicit complete list minus only `production-journey`.
+5. **The planner or workflow needs structural changes.** Mitigation: selector output already drives partial chain suite files; add planner regression coverage and leave workflow/registry untouched.
+6. **The implementation PR under-tests its own selector change.** Mitigation: selector scripts are already E2E infrastructure and therefore force the complete registry on that PR.
 
 ## Verification boundary
 
 Implementation is complete when:
 
-- selector unit contracts pass;
+- selector unit contracts pass, including the table-wide non-force-full `production-journey` invariant;
 - planner contract tests prove focused vs full gameplay matrix contents;
 - the complete `test:e2e:ci-contracts` suite passes;
 - E2E TypeScript checks and repository lint pass;
