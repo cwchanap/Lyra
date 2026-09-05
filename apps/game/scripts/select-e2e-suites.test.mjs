@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { selectE2eSuites } from "./select-e2e-suites.mjs";
+import { E2E_SUITE_IDS } from "./e2e-suite-registry.mjs";
+import { E2E_RISK_RULES, selectE2eSuites } from "./select-e2e-suites.mjs";
 
 test("skips packaged E2E for documentation-only planning changes", () => {
   const plan = selectE2eSuites({
@@ -116,7 +117,6 @@ test("routes each acquisition acknowledgement surface to its direct lifecycle co
     assert.deepEqual(plan.riskSelectedSuites, [
       "smoke",
       "gameplay",
-      "production-journey",
       "save-core",
       "exit-lifecycle",
     ]);
@@ -137,7 +137,6 @@ test("routes dialogue, crossfade, and page shells through every dependent suite"
     assert.deepEqual(plan.riskSelectedSuites, [
       "smoke",
       "gameplay",
-      "production-journey",
       "analysis-beat85",
       "capture-proof",
       "save-core",
@@ -148,7 +147,7 @@ test("routes dialogue, crossfade, and page shells through every dependent suite"
   }
 });
 
-test("routes gameplay changes through the focused and fresh-journey suites", () => {
+test("routes gameplay changes through focused PR suites", () => {
   // The gameplay chain (E2E_CHAIN_DEFINITIONS) owns analysis-beat85, and
   // navigation.rs carries the Beat 8.5 pre-hearing grant helper, so gameplay
   // surfaces route to the deep Beat 8.5 runtime suite as well.
@@ -156,11 +155,11 @@ test("routes gameplay changes through the focused and fresh-journey suites", () 
     selectE2eSuites({
       changedPaths: ["apps/game/src-tauri/src/game/dialogue.rs"],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    ["smoke", "gameplay", "analysis-beat85"],
   );
 });
 
-test("routes every Interrogation component surface through gameplay coverage", () => {
+test("routes every Interrogation component surface through focused interrogation coverage", () => {
   for (const changedPath of [
     "apps/game/src/lib/components/InterrogationStage.svelte",
     "apps/game/src/lib/components/InterrogationView.svelte",
@@ -169,7 +168,7 @@ test("routes every Interrogation component surface through gameplay coverage", (
   ]) {
     assert.deepEqual(
       selectE2eSuites({ changedPaths: [changedPath] }).suiteIds,
-      ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+      ["smoke", "gameplay", "analysis-beat85"],
       changedPath,
     );
   }
@@ -182,7 +181,7 @@ test("routes Analysis component changes through the gameplay chain", () => {
         "apps/game/src/lib/components/analysis/AnalysisWorkbench.svelte",
       ],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    ["smoke", "gameplay", "analysis-beat85"],
   );
 });
 
@@ -287,7 +286,7 @@ test("mid-pattern globstar does not match a basename that merely ends with the s
   }
 });
 
-test("treats playable story and compiler inputs as production-journey risks", () => {
+test("routes playable story and compiler inputs through focused PR coverage", () => {
   assert.deepEqual(
     selectE2eSuites({
       changedPaths: [
@@ -295,7 +294,7 @@ test("treats playable story and compiler inputs as production-journey risks", ()
         "packages/scripts/compile-scenes/parser-investigation.ts",
       ],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    ["smoke", "gameplay", "analysis-beat85"],
   );
 });
 
@@ -313,12 +312,7 @@ test("preserves the risky source when a rename moves it onto a documentation pat
     ],
   });
 
-  assert.deepEqual(plan.suiteIds, [
-    "smoke",
-    "gameplay",
-    "production-journey",
-    "analysis-beat85",
-  ]);
+  assert.deepEqual(plan.suiteIds, ["smoke", "gameplay", "analysis-beat85"]);
   assert.equal(plan.skip, false);
   assert.equal(plan.forcedFull, false);
 });
@@ -339,8 +333,29 @@ test("routes the live scene compiler entrypoint as a story risk", () => {
     selectE2eSuites({
       changedPaths: ["packages/scripts/compile-scenes.ts"],
     }).suiteIds,
-    ["smoke", "gameplay", "production-journey", "analysis-beat85"],
+    ["smoke", "gameplay", "analysis-beat85"],
   );
+});
+
+test("keeps production-journey out of every ordinary PR risk rule", () => {
+  for (const rule of E2E_RISK_RULES) {
+    if (rule.forceFull) continue;
+    assert.equal(rule.suiteIds.includes("production-journey"), false, rule.id);
+  }
+});
+
+test("keeps every non-deferred canonical suite owned by an ordinary PR rule", () => {
+  const ordinaryOwnedSuites = new Set(
+    E2E_RISK_RULES.filter((rule) => !rule.forceFull).flatMap(
+      (rule) => rule.suiteIds,
+    ),
+  );
+
+  assert.equal(ordinaryOwnedSuites.has("production-journey"), false);
+  for (const suiteId of E2E_SUITE_IDS) {
+    if (suiteId === "production-journey") continue;
+    assert.equal(ordinaryOwnedSuites.has(suiteId), true, suiteId);
+  }
 });
 
 test("forces the complete registry for E2E infrastructure", () => {
