@@ -4,19 +4,33 @@
 
 Planning design for **HPA-135 — [Story Workbench] Edit one story or prompt source through a reviewed diff**.
 
-One ticket, one PR. This PR starts planning-only and is the same PR that should carry implementation after review. Do not split HPA-135 into separate planning and implementation PRs.
+One ticket, one PR. This PR starts planning-only and carries implementation after review. Do not split HPA-135 into separate planning and implementation PRs.
 
 ## Why HPA-135 is next
 
-The current Story Workbench has completed its read-only foundation:
+The Story Workbench read-only foundation is complete:
 
-- HPA-634 Reader is done and owns continuous scene/carrier projection.
-- HPA-134 Assets is done and owns canonical prompt layers and usage impact.
-- HPA-273 Plan is done and remains read-only context for the later AI slice.
-- HPA-136 AI review is explicitly blocked by HPA-135 and must reuse this exact reviewed edit/apply boundary.
-- Chapter 2 / later-chapter implementation remains deferred by the Lyra roadmap.
+- HPA-634 Reader owns continuous scene/carrier projection.
+- HPA-134 Assets owns canonical prompt layers and usage impact.
+- HPA-273 Plan owns read-only Story Bible / reveal context.
+- HPA-136 AI review is blocked by HPA-135 and must reuse this exact reviewed edit/apply boundary.
+- Chapter 2 / later-chapter platform work remains deferred.
 
-HPA-135 is therefore the smallest next step: add one controlled human-authored write seam without broadening Story Workbench into a general editor.
+HPA-135 is therefore the smallest next step: add one controlled human-authored write seam without turning the Workbench into an editor platform.
+
+## Review disposition
+
+The product cut remains unchanged. The implementation shape is revised to reuse current owners more directly:
+
+1. **Reader owns dialogue/action identity and traversal.** Do not flatten `deriveDialogueSegments()` in scripts order. Investigation and interrogation segment arrays place outro before their body segments, while Reader consumes outro last.
+2. **Existing scene parsers own prompt association.** Source indexing validates through the real scene parser first, then uses parser-owned AST identity plus tokenizer ranges only to slice the already-validated metadata token.
+3. **YAML writes use the existing `yaml` Document mutation pattern.** Do not build a second scalar renderer around YAML node ranges.
+4. **Tokenizer ranges describe raw source, not normalized token text.** Add separate editable value ranges for dialogue/action/metadata while preserving parser semantics.
+5. **Rust writes the reviewed `nextContent`.** No Rust UTF-16 walker and no source range in IPC. The closed document ID + expected SHA-256 guard protects against stale writes; frontend tests prove the reviewed edit changes only the intended source target.
+6. **Validation process execution gets a real test seam.** The first `std::process::Command` use in the layout editor must have argv/cwd/non-zero-stop coverage.
+7. **Audio plan ownership is explicit.** `(channel,id)` comes from the typed manifest source; the owning chapter comes from current concrete usage and must resolve to exactly one chapter for v1.
+
+This removes more machinery than it adds and keeps the HPA-135 product scope intact.
 
 ## Goal
 
@@ -27,16 +41,16 @@ select one supported value
 → type replacement
 → review exact diff + impact
 → Apply or Cancel
-→ guarded source write
+→ stale-safe known-document write
 → authoritative validation
-→ refresh the existing Reader / Assets projection
+→ refresh existing Reader / Assets projection
 ```
 
 Git remains durable history. HPA-135 adds no proposal database, revision timeline, autosave queue, branch/commit automation, or Workbench-owned undo history.
 
 ## Supported edit targets
 
-HPA-135 supports exactly seven semantic target kinds.
+Exactly seven semantic target kinds are editable.
 
 | Surface | Target | Canonical authored source |
 |---|---|---|
@@ -48,27 +62,15 @@ HPA-135 supports exactly seven semantic target kinds.
 | Assets → Characters | one existing character expression `prompt` | `static/assets/config/characters.yaml` |
 | Assets → Audio | one existing audio prompt | owning `docs/audio_plans/chapter_<N>.sound-plan.yaml` |
 
-### Explicit exclusions
+Do not add edit affordances for titles, summaries, IDs, statuses, unlocks, reveals, evidence descriptions, statement content, BGM/BGS assignment, audio loop/status/provider metadata, Plan-mode documents, city-map JSON, global style/type prompts, arbitrary manifest fields, or missing fields.
 
-Do not add edit affordances for:
-
-- scene tags;
-- scene/chapter titles, summaries, IDs, statuses, unlocks, reveals, evidence descriptions, statement content, or arbitrary metadata;
-- BGM/BGS cue assignment;
-- audio `loop`, status, evidence, provider, generated metadata, output path, or new entries;
-- Plan-mode Story Bible / chapter-plan Markdown;
-- global city-map prompt JSON;
-- global style/type policy prompts;
-- arbitrary asset-manifest fields;
-- multiple selected values or multi-file edits.
-
-Unsupported selections simply have no Edit action. There is no hidden generic field/path editor underneath.
+Unsupported selections simply have no Edit action. There is no generic field/path editor underneath.
 
 ## Product contract
 
 ### One active edit
 
-Only one `FocusedEditDraft` exists at a time. There is no proposal queue/history.
+Only one `FocusedEditDraft` exists at a time. No queue, history, autosave, or multi-edit batching.
 
 ### Review before apply
 
@@ -80,73 +82,74 @@ Before Apply is enabled, one shared review surface shows:
 4. replacement logical value;
 5. exact one-file source diff;
 6. affected scenes/assets/usages;
-7. an explicit shared-source warning when applicable;
-8. for audio, the owning sound plan plus derived catalog synchronization note;
+7. shared-source warning when applicable;
+8. for audio, owning sound plan plus derived catalog synchronization note;
 9. Apply and Cancel.
 
-Changing the replacement only recomputes the local draft/diff. It does not touch disk.
+Changing the replacement recomputes `nextContent` and the diff locally. It does not write.
 
 ### Apply semantics
 
 On Apply, the backend:
 
-1. resolves a known `sourceDocumentId` to a canonical repository-owned document;
-2. rereads the source;
+1. resolves a closed `sourceDocumentId` to a canonical repository-owned file;
+2. rereads the current source;
 3. rejects a stale `expectedHash`;
 4. validates source-document category, target kind, and semantic-ref family;
-5. converts the reviewed frontend range from UTF-16 code-unit offsets to Rust byte offsets;
-6. rejects a range that is not an exact Unicode scalar boundary in the current source;
-7. rejects if the exact current source slice differs from `originalSourceText`;
-8. replaces only that slice;
-9. writes atomically inside the resolved workspace path;
-10. runs fixed target-specific authoritative validation;
-11. returns the new hash plus validation result.
+5. rejects `nextContent` when it is byte-for-byte identical to current content;
+6. atomically writes the reviewed `nextContent` to the already-resolved path;
+7. runs the fixed target-specific authoritative validation;
+8. returns the new hash plus validation result.
 
-No frontend-supplied filesystem path or shell command is accepted.
+There is no frontend-supplied filesystem path or shell command.
+
+The backend deliberately does **not** reimplement Markdown/YAML target slicing. The frontend source-target tests prove `nextContent` is the one focused mutation shown in the reviewed diff. This matches the existing layout-editor write style: domain IDs resolve a file, then the backend writes a fully serialized document.
 
 ## Architecture
 
 ```text
-Existing Reader / Assets selection
-             │
-             ▼
-load_workbench_source_document(sourceDocumentId)
-             │ known document + SHA-256 source snapshot
-             ▼
+Reader / Assets selection
+        │
+        ├── Reader traversal owns carrierId + itemIndex
+        └── Assets owns typed prompt source + usage impact
+        │
+        ▼
+load_workbench_source_document(SourceDocumentId)
+        │ known source + SHA-256
+        ▼
 @lyra/scripts/workbench/source-edit-targets.ts
-             │ dev-only semantic target index
-             ▼
-focused-edit.ts
-             │ one FocusedEditDraft + exact diff + impact
-             ▼
-FocusedEditReview.svelte
-             │ explicit human Apply
-             ▼
+        │ compiler-owned source discovery / YAML Document mutation
+        │
+        ├── scene lexical line/action slices ──┐
+        │                                      │
+        └── prompt semantic targets            │
+                                               ▼
+                                  Reader binds lexical slices
+                                  to its existing traversal refs
+                                               │
+                                               ▼
+focused-edit.ts → one FocusedEditDraft + nextContent + exact diff + impact
+                                               │
+                                               ▼
+FocusedEditReview.svelte → explicit human Apply
+                                               │
+                                               ▼
 apply_workbench_source_edit
-     Rust fixed-domain resolver + stale/range/slice guard + atomic write
-             │
-             ├── scene/character target → scenes:compile
-             │
-             └── audio target → audio-owned prompt sync
-                                      → audio:validate
-                                      → audio:apply --check
-                                      → scenes:compile
-             ▼
-validation result → refresh existing Reader / Assets projection
+Rust: known doc + hash guard + atomic full-document write + fixed validation
+        │
+        ├── story/character → scenes:compile
+        │
+        └── audio → audio:revise-prompt
+                    → audio:validate
+                    → audio:apply --check
+                    → scenes:compile
 ```
 
-### Why this shape
-
-- Reader and Assets remain selection/impact owners; HPA-135 does not create a parallel scene or asset model.
-- Compiler/tooling owns authored syntax discovery. The Workbench does not implement a second scene Markdown or YAML grammar.
-- Production scene JSON stays unchanged; edit location metadata is dev-tool-only.
-- Rust remains the filesystem trust boundary.
-- One `FocusedEditDraft` is also the later HPA-136 handoff seam.
-- Audio remains owned by the durable sound-plan workflow instead of treating generated/catalog state as an arbitrary text field.
+Production scene JSON stays unchanged.
 
 ## Source document identity
 
-Use a closed `SourceDocumentId` vocabulary:
+Use a closed vocabulary:
 
 ```ts
 export type SourceDocumentId =
@@ -157,21 +160,13 @@ export type SourceDocumentId =
 
 The interpolated values are IDs, never paths.
 
-### Scene document
+### Scene documents
 
-```text
-scene:<chapterId>:<sceneId>
-```
-
-Resolve through the existing compiler-generated chapter manifest and the same canonical authored-scene resolver used by `load_scene_bundle_at_root()`.
+`scene:<chapterId>:<sceneId>` resolves through the existing compiler-generated chapter manifest and authored-scene containment path used by the Workbench scene loader.
 
 ### Character config
 
-```text
-asset-config:characters
-```
-
-Resolve to the existing fixed path:
+`asset-config:characters` resolves to the fixed path:
 
 ```text
 static/assets/config/characters.yaml
@@ -179,21 +174,17 @@ static/assets/config/characters.yaml
 
 ### Audio plan
 
-```text
-audio-plan:<chapterId>
-```
-
-Resolve only after proving `<chapterId>` exists in the current manifest, then construct:
+`audio-plan:<chapterId>` resolves only after proving the chapter exists, then maps to:
 
 ```text
 docs/audio_plans/<chapterId>.sound-plan.yaml
 ```
 
-Reject separators/traversal/malformed IDs. The audio catalog is intentionally not a Workbench source document for this ticket.
+Reject malformed IDs, separators, traversal, unknown chapters/scenes, and unsupported prefixes.
 
 ## Source snapshot contract
 
-Add one no-arbitrary-path Tauri read command:
+Add one fixed-domain read command:
 
 ```text
 load_workbench_source_document(sourceDocumentId)
@@ -210,13 +201,11 @@ export type WorkbenchSourceDocument = {
 };
 ```
 
-`hash` is lowercase SHA-256 over exact UTF-8 source bytes. It is a stale-edit version token, not a security signature.
+`hash` is lowercase SHA-256 over exact UTF-8 bytes. It is a stale-edit version token, not a signature.
 
-Add `sha2 = "0.10"` only to the layout-editor Rust crate. Source loading stays lazy; Reader/Assets snapshots do not embed all authored Markdown/sound-plan text.
+Source loading stays lazy. Reader/Assets snapshots do not embed every source document.
 
 ## Semantic references
-
-Semantic refs are human-readable, closed by prefix, and never contain paths or source offsets:
 
 ```text
 reader:dialogue:<carrierId>:<itemIndex>
@@ -228,7 +217,9 @@ asset:character:<characterId>:expression:<expressionId>:prompt
 asset:audio:<channel>:<audioId>:prompt
 ```
 
-## Dev-only source target index
+Refs are human-readable domain identity only. They never contain paths or offsets.
+
+## Compiler-owned source discovery
 
 Create:
 
@@ -236,127 +227,158 @@ Create:
 packages/scripts/workbench/source-edit-targets.ts
 ```
 
-It is filesystem-free and browser-safe. It can reuse the scripts package's `yaml` dependency; the layout editor must not add/directly own a separate YAML parser.
+It stays filesystem-free and browser-safe. Compiler/tooling owns authored syntax discovery; the layout editor does not implement another Markdown or YAML grammar.
 
-Public model:
+### Tokenizer ranges
+
+Extend current tokenizer tokens with **raw source ranges** without changing normalized parser values.
 
 ```ts
-export type WorkbenchSourceRange = {
-  // JavaScript String.prototype.slice() semantics: UTF-16 code-unit offsets.
-  start: number;
+export type SourceRange = {
+  start: number;     // JavaScript UTF-16 string index
   end: number;
   startLine: number;
   endLine: number;
 };
+```
 
-export type WorkbenchSourceTarget = {
-  semanticRef: string;
-  kind:
-    | "readerDialogue"
-    | "readerAction"
-    | "backgroundPrompt"
-    | "evidenceImagePrompt"
-    | "characterVisualPrompt"
-    | "characterExpressionPrompt"
-    | "audioPrompt";
-  currentText: string;
-  sourceRange: WorkbenchSourceRange;
-  sourceText: string;
+Every token gets `range`, covering the exact raw token text in the original source, including indentation and CRLF spelling.
+
+Editable token kinds additionally expose an exact logical-value range:
+
+```ts
+valueRange: SourceRange
+```
+
+For HPA-135:
+
+- dialogue `valueRange` is only text after `：`;
+- action `valueRange` is only bracket contents;
+- metadata `valueRange` is only the metadata value.
+
+Tokenizer normalization remains exactly as today: trimmed lines stay normalized, multi-line action token text still normalizes internal newlines to spaces, and parser behavior does not change.
+
+Existing whole-token tests must be updated because adding range fields changes `toEqual()` results. Add explicit indentation, CRLF, CJK, and multi-line action slice tests.
+
+### Reader dialogue/action binding
+
+**Reader, not scripts segment-array order, owns semantic identity.**
+
+Current `deriveInvestigationSegments()` and `deriveInterrogationSegments()` construct intro + outro before body segments, while Reader consumes intro → body → inventory → outro. Therefore HPA-135 must not zip `deriveDialogueSegments()` array order directly to source tokens.
+
+`carrierGroup()` already owns the exact `carrierId` and compiler item index. Extend projected line/action items with:
+
+```ts
+export type ReaderEditableRef = {
+  carrierId: string;
+  itemIndex: number;
 };
 ```
 
-The range contract is deliberately UTF-16 because it is produced and consumed by JavaScript string indices. Rust must explicitly translate those offsets by walking Unicode scalar values and accumulating `char::len_utf16()`. Never use these numbers directly as Rust UTF-8 byte indices. Add CJK and emoji tests so this cannot regress.
+Then:
 
-Expose narrow entrypoints:
+1. scripts tokenizes source and exposes only lexical dialogue/action source slices in source order;
+2. Reader flattens its existing projected groups in the same display/authored order and skips notices/scene tags;
+3. bind line/action items to lexical source slices in order;
+4. require kind + normalized text + speaker (for dialogue) to match;
+5. produce final `reader:<kind>:<carrierId>:<itemIndex>` source targets;
+6. on mismatch, disable Reader editing for the scene and surface `workbenchSourceDialogueMismatch`.
 
-```ts
-indexSceneSourceEditTargets(input)
-indexCharacterSourceEditTargets(input)
-indexAudioPlanSourceEditTargets(input)
-renderSourceReplacement(target, replacementText)
-```
+Do not copy `readerSegmentId()` or create a second scene traversal in scripts.
 
-Do not expose a generic `find(path, field)` API.
+Required fixture: one investigation scene covering at least intro, `hotspot:<id>:inspect`, `topic:<character>:<topic>:dialogue`, evidence/on-collect where present, and outro after sublocations. This is the regression that prevents the original array-order bug.
 
-### Scene dialogue/action indexing
+### Scene prompt association
 
-Reuse both existing compiler-owned seams:
+Prompt indexing must reuse parser ownership rather than reconstruct block grammar.
 
-- `tokenize()` for authored line/source positions;
-- `deriveDialogueSegments()` for exact Reader/compiler carrier traversal and IDs.
+For a selected source:
 
-Do not write another investigation/interrogation/analysis block parser.
+1. parse it through the existing parser for its actual scene type;
+2. if parsing fails, expose no edit target;
+3. use the validated AST owner identity/line plus tokenizer ranges to select the metadata token the parser already accepted;
+4. only slice that token's `valueRange`.
 
-Algorithm:
+#### `Background Prompt`
 
-1. tokenize the loaded authored scene source;
-2. derive Reader/compiler dialogue segments from the already-loaded compiled scene;
-3. flatten compiler segments in authored traversal order with `carrierId` + item index;
-4. flatten authored sceneTag/action/dialogue tokens in source order;
-5. pair in order and assert kind + authored text/speaker match;
-6. emit targets only for paired `line` and `action` items;
-7. if completeness/matching fails, emit an edit-specific diagnostic and disable scene text editing rather than guessing.
+- Structural units use parser-owned sublocation / interrogation phase IDs.
+- Scene-tag units use one shared browser-safe helper `sceneTagUnitId(index)` extracted from the current enrichment convention; enrichment and HPA-135 both call it.
+- Count **every** scene tag in authored order, including tags without a prompt.
+- Only existing authored `Background Prompt` metadata is editable.
 
-Extend tokenizer tokens with raw token start/end offsets and end line without changing parser semantics.
+No reverse parsing of `finalPrompt`, generated asset IDs, or manifest prose.
 
-For dialogue, the target range is only text after the full-width colon; speaker/expression markup stays outside the range. Dialogue replacement is single-line only.
+#### Evidence `Image Prompt`
 
-For action, the target range is bracket contents; `[` / `]` stay outside. Multi-line action replacement is allowed because the existing tokenizer already supports multi-line bracket actions.
+The existing evidence parser owns `evidence:<id>` heading/anchor validation and binds `Image Prompt` into the evidence entry. HPA-135 uses that parsed evidence ID/owner line, then slices the accepted `Image Prompt` metadata token. It does not independently parse evidence block headings.
 
-The compiler remains final authority after apply.
+## YAML source mutation
 
-### Scene `Background Prompt` indexing
+Do not hand-roll block scalar / quoting / chomping rendering.
 
-Use existing scene tokens and compiler asset identity conventions, never reverse-parse `finalPrompt`.
+Use the same `YAML.parseDocument()` → locate identified map/entry → `node.set(...)` → `doc.toString()` pattern already used by `packages/scripts/audio/plan-writeback.ts`.
 
-Supported scene-owned sources:
+### Characters
 
-- structural visual unit metadata with its authored unit/anchor ID;
-- scene-tag visual metadata, using the existing enrichment convention `tag_001`, `tag_002`, ... in authored scene-tag order.
+Identity/normalization still comes from `parseCharactersYamlText()`.
 
-Associate only an existing authored `Background Prompt` metadata value.
-
-Do not show HPA-135 Background Prompt editing for global-file-owned or character-owned background manifest entries.
-
-### Evidence `Image Prompt` indexing
-
-Find the compiler-tokenized evidence manifest heading for the selected `evidenceId`, then that block's existing `Image Prompt` metadata value. Do not synthesize a missing field.
-
-### Character YAML indexing
-
-Use `YAML.parseDocument()` and YAML node ranges to find only:
+Editable paths are only:
 
 ```text
-characters[character.id].visualPrompt
-characters[character.id].expressions[expressionId].prompt
+character <id> → visualPrompt
+character <id> → expressions.<expressionId>.prompt
 ```
 
-Lookup is by parsed IDs, not frontend array positions.
+Use the Document API only after the canonical parser confirms the character/expression identity exists.
 
-Only replace the selected scalar source span. Preserve unrelated comments/order/formatting. Preserve the selected scalar style where practical: block scalar stays block-style; quoted scalar stays quoted; plain scalar stays plain when YAML-safe, otherwise quote only the edited scalar.
+### Sound plan
 
-Do not stringify the whole YAML document.
+Identity/status comes from `parseSoundPlanText()`.
 
-### Audio sound-plan indexing
+Editable path is exactly one `entries[]` map matching `(channel,id)` with status `approved` or `generated`. Use Document mutation to set only its `prompt`.
 
-Use `YAML.parseDocument()` to find exactly one `entries[]` item matching `(channel,id)` and expose only its prompt scalar.
+### Serialization contract
 
-Reject editing when:
+`renderSourceReplacement()` returns the full candidate `nextContent`, not a hand-rendered scalar slice.
 
-- no owning sound-plan entry exists;
-- more than one matching entry exists;
-- the entry is not an existing `approved` or `generated` entry;
-- an owning chapter plan cannot be resolved from typed audio source/usage context.
+Tests must prove:
 
-Workbench edits the sound-plan prompt, not `static/assets/config/audio.yaml` directly.
+- the mutated document reparses with the existing canonical parser;
+- comments survive;
+- unrelated entries remain semantically unchanged;
+- the resulting diff is one localized focused change rather than whole-file formatting churn.
+
+If Document serialization produces broad unrelated churn, HPA-135 fails the focused-edit contract; do not silently add a second YAML serializer.
+
+## Source-target public model
+
+```ts
+export type WorkbenchSourceTargetKind =
+  | "readerDialogue"
+  | "readerAction"
+  | "backgroundPrompt"
+  | "evidenceImagePrompt"
+  | "characterVisualPrompt"
+  | "characterExpressionPrompt"
+  | "audioPrompt";
+
+export type WorkbenchSourceTarget = {
+  semanticRef: string;
+  kind: WorkbenchSourceTargetKind;
+  currentText: string;
+  sourceRange: SourceRange | null; // useful for Markdown/context UI; not IPC
+};
+
+export type RenderSourceReplacementResult =
+  | { ok: true; nextContent: string }
+  | { ok: false; diagnostic: CompileError };
+```
+
+Scene prompt and Reader targets may carry a source range. YAML targets may be re-resolved by semantic identity during Document mutation; Rust never consumes either form.
 
 ## Focused edit model
 
-Create:
-
-```text
-apps/layout-editor/src/lib/focused-edit.ts
-```
+Create `apps/layout-editor/src/lib/focused-edit.ts`.
 
 ```ts
 export type FocusedEditImpact = {
@@ -372,68 +394,61 @@ export type FocusedEditDraft = {
   sourcePath: string;
   expectedHash: string;
   semanticRef: string;
-  kind: WorkbenchSourceTarget["kind"];
-  sourceRange: WorkbenchSourceRange;
+  kind: WorkbenchSourceTargetKind;
   originalText: string;
-  originalSourceText: string;
   replacementText: string;
-  replacementSourceText: string;
+  nextContent: string;
   impact: FocusedEditImpact;
 };
 ```
 
-There is no draft database ID, author/status workflow, timestamps, or history.
-
-`renderSourceReplacement(target, replacementText)` is owned by the scripts source-target module, so Rust does not need to understand Markdown/YAML rendering. Rust applies exactly the already-reviewed replacement source slice after all guards pass.
+No draft database ID, timestamps, history, status workflow, or persistent queue.
 
 ### Diff generation
 
-Do not add a diff dependency for one focused edit.
+No diff dependency.
 
-Generate a deterministic unified-style single hunk from the immutable source snapshot, target range, and replacement source text, with up to three unchanged context lines on either side.
+Generate a deterministic unified-style **single focused hunk** from `document.content` and `draft.nextContent` using common-prefix/common-suffix line comparison plus up to three unchanged context lines.
 
-Show exact authored syntax. The diff is presentation-only; apply uses range + exact source-slice guards, never a diff parser.
+If the candidate content changes multiple unrelated regions or the changed region expands beyond the selected source target's expected local block, return `focusedEditSourceChurn` and disable Apply. This catches accidental YAML reserialization churn before Rust sees the candidate document.
+
+The diff is presentation-only; Rust receives the already-reviewed `nextContent`.
 
 ## Impact projection
 
-Reuse existing Reader/Assets data instead of rescanning the repository.
+Reuse existing Reader/Assets data.
 
 ### Reader text/action
 
-Selected scene only:
+Selected scene only: `usageCount = 1`, `shared = false`.
 
-```text
-usageCount = 1
-shared = false
-```
+### Background / evidence prompt
 
-### Scene background/evidence prompt
+Reuse `workspace.sceneUsages` for the selected manifest asset ID. Show total occurrences, distinct scenes, and shared usage.
 
-Reuse `workspace.sceneUsages` for the selected manifest asset ID. Show total occurrences, distinct scenes, and asset ID. Mark `shared` when the same generated asset is reused by multiple occurrences.
+### Character expression
 
-### Character expression prompt
-
-Reuse existing expression usage counts and `assetUsageGroups()` scene grouping.
+Reuse existing expression usage count and `assetUsageGroups()`.
 
 ### Character `visualPrompt`
 
-This is a shared identity layer. Collect typed manifest entries whose `source.characterId` matches, then join those asset IDs to existing `sceneUsages`. Show affected portrait/standee asset IDs and scenes.
+Collect typed manifest entries whose source character ID matches, then join those asset IDs to existing scene usages.
 
-### Audio prompt
+### Audio prompt and owning plan
 
-Join by typed audio source `(channel,id)`, never by parsing the asset ID string. Show all current scene usages and shared warning as applicable.
+- `(channel,id)` comes from the selected typed audio manifest source; never parse the asset ID string.
+- derive distinct chapter IDs from concrete `workspace.sceneUsages` for the selected audio asset;
+- v1 exposes Edit only when usages resolve to **exactly one chapter**;
+- load `audio-plan:<thatChapterId>` and require exactly one matching approved/generated sound-plan entry;
+- if zero or multiple chapter owners exist, hide Edit and surface `focusedEditAudioPlanAmbiguous` rather than guessing.
+
+This makes the sound-plan join explicit and prevents a shared future audio asset from silently editing the wrong chapter plan.
 
 ## Shared review surface
 
-Create:
+Create `FocusedEditReview.svelte` and render it once from `App.svelte`.
 
-```text
-apps/layout-editor/src/lib/FocusedEditReview.svelte
-```
-
-Render it once from `App.svelte`. ReaderView and AssetsView emit only a narrow edit-selection callback; they do not own source loading/writing or parallel review state.
-
-This becomes the HPA-136 reuse seam: AI can later supply an initial replacement for an already-resolved target, but it cannot bypass this human review or create another write command.
+ReaderView and AssetsView emit only narrow edit-selection callbacks. They do not load/write source or own parallel review state.
 
 Minimal states:
 
@@ -449,9 +464,11 @@ error
 
 Do not introduce a generic state-machine framework.
 
-## Backend guarded write
+This is the HPA-136 reuse seam: AI may later supply an initial replacement for a resolved target, but it cannot bypass human review or create another source write command.
 
-Add one Tauri mutation command:
+## Backend write boundary
+
+Add one mutation command:
 
 ```text
 apply_workbench_source_edit
@@ -464,62 +481,38 @@ export type ApplyWorkbenchSourceEditRequest = {
   sourceDocumentId: SourceDocumentId;
   expectedHash: string;
   semanticRef: string;
-  kind: WorkbenchSourceTarget["kind"];
-  range: { start: number; end: number }; // UTF-16 code-unit offsets
-  originalSourceText: string;
-  replacementSourceText: string;
+  kind: WorkbenchSourceTargetKind;
+  nextContent: string;
 };
 ```
+
+No path, source range, byte offset, or shell command crosses IPC.
 
 Response:
 
 ```ts
-export type WorkbenchValidationDiagnostic = {
-  stream: "stdout" | "stderr";
-  line: string;
-};
-
 export type ApplyWorkbenchSourceEditResult = {
   sourceDocumentId: SourceDocumentId;
   sourcePath: string;
   newHash: string;
-  changedRange: { start: number; end: number }; // new UTF-16 range
   validation: {
     ok: boolean;
     commands: string[];
-    diagnostics: WorkbenchValidationDiagnostic[];
+    diagnostics: Array<{ stream: "stdout" | "stderr"; line: string }>;
   };
 };
 ```
-
-### Range conversion
-
-Add a private Rust helper conceptually equivalent to:
-
-```rust
-fn utf16_range_to_byte_range(source: &str, start: usize, end: usize) -> Result<Range<usize>, EditorError>
-```
-
-Walk `source.char_indices()`, accumulate each char's `len_utf16()`, and map only exact code-unit boundaries to byte offsets. Reject ranges that split a surrogate pair/code point, are reversed, or exceed source length.
-
-Tests must include:
-
-- Japanese text before/inside the edit range;
-- an emoji before the edit target (two UTF-16 code units, four UTF-8 bytes);
-- an invalid midpoint inside the emoji UTF-16 pair.
 
 ### Backend checks
 
 Reject before writing when:
 
-- `sourceDocumentId` is malformed/unsupported;
+- document ID is malformed/unsupported;
 - semantic-ref prefix is not one of the seven families;
-- target kind and semantic-ref prefix disagree;
-- document category and target kind disagree;
-- hash differs from `expectedHash`;
-- range is invalid under the UTF-16 contract;
-- current source slice differs from `originalSourceText`;
-- replacement source slice is identical.
+- kind/ref family disagree;
+- document category/kind disagree;
+- source hash differs from `expectedHash`;
+- `nextContent` equals current content.
 
 Stable errors:
 
@@ -528,55 +521,39 @@ sourceDocumentUnsupported
 sourceEditKindUnsupported
 sourceEditSemanticRefInvalid
 sourceEditStale
-sourceEditRangeInvalid
-sourceEditOriginalMismatch
 sourceEditNoChange
 sourceEditWriteFailed
-sourceEditValidationFailed
 ```
 
-`sourceEditValidationFailed` must not imply rollback. UI says **Applied, validation failed**, shows diagnostics, and leaves changed source on disk for another edit or Git revert.
+No UTF-16/UTF-8 conversion exists in Rust.
 
-### Atomic source write
+### Atomic write reuse
 
-Generalize the existing same-directory temp-file + rename helper narrowly so it can write an already-resolved canonical source path without following a target symlink. Reuse it for layout sidecars and HPA-135; do not create a generic filesystem service.
+Generalize the existing same-directory temp-file + rename helper so it accepts an already-resolved canonical path and complete contents. Reuse it for layout sidecars and HPA-135. Do not create a generic filesystem service.
 
 ## Authoritative validation
 
-Frontend never supplies a command. Rust selects a fixed command sequence and invokes `std::process::Command` with `current_dir(workspace_root)`; no shell string is evaluated.
+Frontend never supplies a command. Rust selects a fixed `ValidationCommand` sequence and executes without a shell string.
 
-### Scene / character targets
-
-For Reader dialogue/action, Background Prompt, evidence Image Prompt, character visualPrompt, and character expression prompt:
+### Story / character target
 
 ```text
 bun run scenes:compile
 ```
 
-This is the authoritative parser/enrichment/corpus validator and refreshes generated resources consumed by Reader/Assets.
-
 ### Audio target
 
-Current `audio:apply` intentionally rejects an approved/generated entry whose prompt conflicts with an existing catalog entry. Do not weaken that guard.
+Do not weaken normal `mergeApprovedEntriesIntoCatalog()` conflict behavior.
 
-Add one narrow audio-owned command:
+Add a separate audio-owned command:
 
 ```text
 audio:revise-prompt <plan.yaml> <channel> <id>
 ```
 
-It must:
+It reads the already-edited sound-plan prompt and updates only the matching existing catalog prompt while preserving `loop`.
 
-1. load and validate the sound plan;
-2. find exactly one existing `approved`/`generated` entry matching `(channel,id)`;
-3. read its already-edited prompt;
-4. parse `static/assets/config/audio.yaml` through existing audio-catalog ownership;
-5. require the catalog entry to exist;
-6. replace only that catalog prompt and preserve `loop`;
-7. serialize/format via existing audio-catalog helpers;
-8. never touch cue assignments, media files, provider metadata, or other entries.
-
-Then backend validation runs:
+Backend sequence:
 
 ```text
 bun run audio:revise-prompt <plan.yaml> <channel> <id>
@@ -585,184 +562,139 @@ bun run audio:apply <plan.yaml> --check
 bun run scenes:compile
 ```
 
-Source-of-truth direction:
+`channel`/`id` come from validated semantic ref; plan path comes from the resolved `SourceDocumentId`.
 
-```text
-sound-plan prompt (authored edit)
-      ↓
-audio-owned revise-prompt
-      ↓
-audio catalog derived synchronization
-      ↓
-normal validate/apply --check
+### Process execution test seam
+
+This crate currently has no `std::process::Command` workflow. Keep the seam private and small:
+
+```rust
+fn execute_validation_plan_with<F>(
+    root: &Path,
+    plan: &[ValidationCommand],
+    run: F,
+) -> ValidationResult
+where
+    F: FnMut(&Path, &ValidationCommand) -> CommandOutcome;
 ```
 
-Capture bounded stdout/stderr (last 200 lines per command is sufficient). No terminal emulator/log database.
+Production adapter builds `std::process::Command`, sets `current_dir(root)`, and captures stdout/stderr. Tests inject outcomes to prove:
 
-## Stale-edit behavior
+- exact executable/argv;
+- canonical workspace cwd;
+- commands execute in order;
+- first non-zero result stops later commands;
+- diagnostics are bounded.
 
-Expected-hash guard is mandatory:
+No public command-runner abstraction is added.
+
+## Validation failure semantics
+
+A successful source write is not rolled back when validation fails.
+
+UI says **Applied, validation failed**, shows diagnostics, and leaves source on disk for another edit or Git revert. Do not refresh generated Reader/Assets projection as if compile succeeded.
+
+## Audio prompt revision owner
+
+`audio:revise-prompt` is a separate command because normal `audio:apply` correctly treats a changed approved/generated prompt as a conflict.
+
+The revision command:
+
+1. loads/validates the sound plan;
+2. requires exactly one approved/generated `(channel,id)` entry;
+3. reads its prompt;
+4. parses the existing catalog;
+5. requires the catalog entry to exist;
+6. updates only its prompt, preserving `loop`;
+7. serializes/formats through existing audio-catalog helpers;
+8. never changes cues, media files, provider metadata, or other entries.
+
+Source direction:
 
 ```text
-open edit at hash A
-→ external change produces hash B
-→ Apply
-→ sourceEditStale, no write
-→ Reload source
-→ discard stale draft and resolve target again from B
+sound plan prompt
+→ audio:revise-prompt
+→ derived audio.yaml prompt synchronization
+→ normal validate + apply --check
 ```
-
-Do not auto-merge/rebase replacement text in v1. Keep the exact original-slice check even after the hash guard.
-
-## Undo decision
-
-**Do not implement Workbench Undo in HPA-135.**
-
-The ticket makes undo optional. Git already owns durable history, and audio prompt edits deliberately synchronize a derived catalog source after applying the sound-plan edit. A one-file inverse patch would be misleading and would add state immediately before HPA-136 needs one simple forward mutation boundary.
 
 ## UX integration
 
 ### Reader
 
-Preserve projection-only edit identity on line/action items:
+Only line/action items show Edit. `ReaderEditableRef` comes from the existing `carrierGroup()` walk; no source span enters runtime JSON.
 
-```ts
-export type ReaderEditableRef = {
-  carrierId: string;
-  itemIndex: number;
-};
-```
+### Assets — background/evidence
 
-Only line/action items show Edit. No source spans enter runtime JSON.
-
-### Assets — Library background/evidence
-
-In the existing inspector:
-
-- scene-owned background source with `unitId` → **Edit source prompt**;
-- scene-owned evidence source with `evidenceId` → **Edit source prompt**;
-- global/character-owned background/evidence source → no HPA-135 edit action.
-
-Resolve raw current prompt lazily from the source target. Do not edit `finalPrompt` or enriched manifest text.
+Scene-owned source with `unitId` or `evidenceId` can Edit its authored prompt. Global/character-owned sources do not gain this action.
 
 ### Assets — Characters
 
-Add Edit beside existing non-null `visualPrompt` and each existing expression prompt. Do not create a missing visualPrompt in v1.
+Add Edit beside existing non-null `visualPrompt` and each existing expression prompt. Do not create missing fields.
 
 ### Assets — Audio
 
-Show Edit only when one owning sound-plan entry can be resolved. Review shows:
+Edit appears only after the typed `(channel,id)` + exactly-one-owning-chapter join succeeds. Review shows both authored sound plan and derived catalog sync.
+
+## Stale behavior
 
 ```text
-Authored source: docs/audio_plans/chapter_1.sound-plan.yaml
-Derived sync: static/assets/config/audio.yaml
+open at hash A
+→ external edit creates hash B
+→ Apply
+→ sourceEditStale, no write
+→ reload source and resolve target again
 ```
 
-The reviewed diff is the sound-plan diff.
+No automatic merge/rebase in v1.
 
-## HPA-136 seam
+## Undo decision
 
-HPA-136 may reuse only the resolved target + focused draft/review flow, conceptually:
-
-```ts
-openFocusedEdit(target, initialReplacement?)
-```
-
-AI is not allowed to invent a source path/range or call `apply_workbench_source_edit` without the human review.
-
-## Error/drift behavior
-
-Source target indexing is strict. If source tokens/YAML nodes cannot be matched exactly:
-
-- Reader/Assets remain readable;
-- show an edit-specific diagnostic;
-- hide/disable Apply;
-- never fall back to text search-and-replace.
-
-If validation fails after a successful write:
-
-- show **Applied, validation failed**;
-- show fixed command + bounded diagnostics;
-- leave changed source on disk;
-- do not refresh stale generated projections as if compile succeeded.
+Do not implement Workbench Undo in HPA-135. Git already owns history, and audio edits may synchronize the derived catalog after apply.
 
 ## Testing strategy
 
-### Scripts
-
-`source-edit-targets.test.ts` covers:
-
-- dialogue text-only range while preserving speaker/expression markup;
-- action range and multi-line action;
-- strict carrier/source-token mismatch diagnostic;
-- `tag_001`, `tag_002` Background Prompt identity;
-- structural unit Background Prompt;
-- evidence Image Prompt by evidence ID;
-- character visualPrompt block scalar;
-- character expression scalar;
-- audio prompt by `(channel,id)`;
-- missing/duplicate/non-approved audio target rejection;
-- replacement rendering rules.
-
-Tokenizer tests prove raw source ranges and continue to pass parser regressions.
-
-### Frontend pure/component tests
+### Scripts / parser ownership
 
 Cover:
 
-- draft construction + exact one-hunk diff;
-- no-change rejection;
-- Reader selected-scene impact;
-- background/evidence shared usages;
-- character identity/expression impact;
-- typed audio impact;
-- Reader Edit only on line/action;
-- Assets Edit only on supported prompt sources;
-- shared warnings;
-- review editing/applying/applied-valid/applied-invalid/stale states;
-- one shared review path with no queue/history/undo.
+- tokenizer raw ranges for LF/CRLF, indentation, CJK, and multi-line actions;
+- dialogue/action editable `valueRange` while normalized token text remains unchanged;
+- existing whole-token tokenizer fixtures updated for range fields;
+- scene source validated by the actual scene parser before prompt target extraction;
+- `sceneTagUnitId()` shared by enrichment + edit indexing and counts tags without prompts;
+- structural Background Prompt via parsed unit identity;
+- evidence Image Prompt via parsed evidence identity;
+- character visual/expression prompt via canonical character parser + YAML Document mutation;
+- sound-plan prompt via canonical sound-plan parser + YAML Document mutation;
+- comments/unrelated semantics preserved;
+- broad YAML formatting churn rejected by focused diff construction.
+
+### Reader binding
+
+Cover a real-shaped investigation fixture with intro, hotspot inspect, topic dialogue, evidence/on-collect and outro after sublocations. Assert final refs are owned by Reader carrier IDs/item indexes and no `deriveDialogueSegments()` array-order zipper exists.
+
+### Frontend
+
+Cover draft/diff/no-change, impact joins, Reader/Assets edit affordances, shared warnings, one shared review surface, stale state, applied-valid, and applied-invalid.
+
+Create `apps/layout-editor/src/lib/ReaderView.test.ts`; it does not exist on current main.
 
 ### Rust
 
-Temporary-workspace tests cover:
-
-- allowed SourceDocumentId resolution;
-- path/traversal rejection;
-- SHA-256 changes;
-- stale hash no write;
-- ref/kind/document mismatch;
-- original-slice mismatch;
-- UTF-16 → UTF-8 range conversion with Japanese + emoji;
-- invalid surrogate-pair midpoint rejection;
-- one-slice write preserving unrelated bytes;
-- fixed validation dispatch;
-- applied-but-invalid validation result.
+Temporary-workspace tests cover closed document resolution, traversal rejection, SHA change, stale hash/no write, kind/ref/document mismatch, no-change, atomic complete-document write, validation dispatch, command execution seam, and applied-but-invalid result.
 
 ### Audio
 
-Cover:
+Cover one-entry prompt sync, loop unchanged, missing/duplicate/non-approved plan entries, missing catalog entry, unchanged normal apply conflict behavior, and successful `audio:apply <plan> --check` after revision.
 
-- one approved/generated sound-plan entry updates only matching catalog prompt;
-- `loop` unchanged;
-- unrelated catalog entry semantically unchanged after canonical formatting;
-- missing/duplicate/non-approved plan entry rejection;
-- missing catalog entry rejection;
-- normal `audio:apply` duplicate conflict unchanged;
-- `audio:apply <plan> --check` succeeds after revision synchronization.
+### Real Chapter 1 read-only verifier
 
-### Real Chapter 1 read-only gate
+`verify-focused-edit-real-content.ts` must discover at least one real target from each of the seven families and must include an investigation Reader binding. It remains read-only.
 
-Add `apps/layout-editor/scripts/verify-focused-edit-real-content.ts` using repository-owned read/index helpers. It must discover at least one real target from each family:
+### Live apply smoke
 
-- Reader dialogue;
-- Reader action;
-- Background Prompt;
-- evidence Image Prompt;
-- `soma_ritsu` visualPrompt;
-- `soma_ritsu` standard expression prompt;
-- one existing generated Chapter 1 audio prompt.
-
-The verifier is read-only. Backend mutation behavior stays in temp-workspace tests.
+Typecheck/build do not prove the write/validation process boundary. Before marking the PR ready, make one throwaway Chapter 1 source edit through the packaged/dev Workbench, observe automatic `scenes:compile`, then revert the source with Git. Do not treat `editor:build` as evidence for this path.
 
 ## Required checks
 
@@ -770,56 +702,46 @@ The verifier is read-only. Backend mutation behavior stays in temp-workspace tes
 bun run scenes:compile
 bun run audio:validate docs/audio_plans/chapter_1.sound-plan.yaml
 bun run audio:apply docs/audio_plans/chapter_1.sound-plan.yaml --check
+bun run check:scripts
+bun run test:scripts
+bun run --cwd apps/layout-editor test
+bun run --cwd apps/layout-editor verify:reader-real-content
+bun run --cwd apps/layout-editor verify:asset-real-content
+bun run --cwd apps/layout-editor verify:plan-real-content
+bun run --cwd apps/layout-editor verify:focused-edit-real-content
+cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run editor:check
 bun run editor:build
-bun run test:scripts
 bun run lint:all
 ```
 
-The Linear ticket abbreviates `bun run audio:validate`, but the current CLI requires `<plan.yaml>`. Use the concrete Chapter 1 command above.
-
 ## Acceptance criteria
 
-- [ ] Reader edits one selected dialogue line through the shared reviewed-diff flow.
-- [ ] Reader edits one selected action/stage direction through the same flow.
-- [ ] Assets edits one supported scene-owned Background Prompt and one evidence Image Prompt.
-- [ ] Assets Characters edits one existing visualPrompt and one existing expression prompt.
-- [ ] Assets audio edits one existing prompt through its owning sound plan and audio-domain synchronization, never direct UI catalog mutation.
-- [ ] Every review shows exact authored-source diff, semantic ref, path, and affected usage impact.
-- [ ] Shared character/audio/asset prompts show explicit impact warning.
-- [ ] Backend accepts only known SourceDocumentId values and the seven supported target families.
-- [ ] UTF-16 source offsets are explicitly converted/validated before Rust byte slicing; Japanese/emoji tests pass.
-- [ ] Stale hash, original-slice mismatch, invalid range, unsupported target, and malformed semantic ref fail without source mutation.
-- [ ] Successful apply replaces only the reviewed source slice.
-- [ ] Authoritative validation runs automatically and success/failure is visible.
-- [ ] Validation failure is represented as applied-but-invalid, not false success/no-op.
+- [ ] Reader edits one dialogue line and one action through the same reviewed-diff flow.
+- [ ] Real investigation Reader items bind to source using Reader traversal identity, including hotspot/topic/outro ordering.
+- [ ] Assets edits supported scene Background Prompt and evidence Image Prompt using parser-owned source association.
+- [ ] Characters edits existing visualPrompt/expression prompt using YAML Document mutation.
+- [ ] Audio edits one existing prompt through exactly one owning sound plan and audio-domain synchronization.
+- [ ] Every review shows exact authored-source diff, semantic ref, path, and impact.
+- [ ] Candidate YAML mutation cannot Apply when serialization causes unrelated source churn.
+- [ ] Backend accepts only known SourceDocumentId values and seven target families.
+- [ ] Backend stale guard uses SHA-256 and writes reviewed `nextContent`; no Rust UTF-16 mapper exists.
+- [ ] Validation command execution has argv/cwd/non-zero-stop tests.
+- [ ] Successful write followed by failed validation is shown as applied-but-invalid.
 - [ ] Production scene JSON/schema is unchanged.
-- [ ] No proposal queue, undo/history model, general editor, arbitrary path write, AI provider, auto commit/branch/PR, or media generation is added.
-- [ ] HPA-136 can reuse the same focused review/apply boundary with no second mutation path.
-- [ ] Implementation lands in this same single PR.
-
-## Non-goals
-
-- AI review/provider calls — HPA-136.
-- Story Bible/Chapter Plan editing.
-- General Markdown/YAML editor.
-- Multi-file/multi-hunk authoring UI.
-- Proposal/history database.
-- Autosave/background mutation.
-- Git commit/branch/PR automation.
-- Source merge/rebase on stale edits.
-- Workbench Undo.
-- New assets/media generation.
-- Audio cue assignment or sound-plan redesign.
-- Game runtime scene schema changes.
+- [ ] No queue, undo/history, generic editor, arbitrary path write, AI provider, auto Git workflow, or media generation is added.
+- [ ] HPA-136 can reuse the same focused review/apply boundary.
+- [ ] Implementation lands in this same PR.
 
 ## Design summary
 
-HPA-135 is a **small write seam, not an editor platform**:
+HPA-135 remains a **small write seam, not an editor platform**:
 
-- Reader/Assets identify what the author selected;
-- compiler/audio tooling resolves the exact authored source target;
-- one local `FocusedEditDraft` renders exact diff + impact;
-- Rust resolves known documents, converts/guards source ranges, writes one reviewed replacement, and runs fixed validation;
-- audio prompt revision stays under sound-plan/audio ownership;
-- HPA-136 later supplies suggestions into the same human review rather than creating another source mutation path.
+- Reader owns dialogue/action semantic identity;
+- compiler parsers/tokenizer own authored source discovery;
+- Assets owns prompt identity and impact;
+- YAML uses the existing Document mutation approach;
+- one local draft owns `nextContent` + exact diff;
+- Rust resolves a closed document, hash-guards it, atomically writes the reviewed full content, and runs fixed validation;
+- audio revision stays under sound-plan/audio ownership;
+- HPA-136 later supplies suggestions into the same human review path.
