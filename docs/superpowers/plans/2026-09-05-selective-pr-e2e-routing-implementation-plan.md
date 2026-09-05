@@ -21,6 +21,8 @@
 - Explicitly own only `apps/layout-editor/**` as irrelevant to game packaged E2E; do not infer irrelevance from broad repository prefixes.
 - Remove `production-journey` from every normal-PR risk rule that currently selects it, including the cross-cutting `dialogue-capture-surface` rule.
 - Preserve every non-`production-journey` suite currently selected by each risk rule.
+- Lock journey demotion at the exported rule-table level; do not rely only on a sample of changed paths.
+- Do not describe checkpointed/focused suites as equivalent substitutes for the organic Chapter 1 route. This is an explicit pre-1.0 latency-versus-coverage tradeoff.
 - Keep the 25-minute gameplay chain budget unchanged; it remains the full-chain capacity ceiling.
 - Do not add a new chain, artifact, cache key, dependency graph, shared binary artifact, retry mode, or timing assertion.
 - The implementation PR must remain subject to the existing complete-registry E2E gate because changing `select-e2e-suites.mjs` is E2E infrastructure.
@@ -30,7 +32,7 @@
 **Modify:**
 
 - `apps/game/scripts/select-e2e-suites.mjs` — path ownership and normal-PR risk-to-suite policy.
-- `apps/game/scripts/select-e2e-suites.test.mjs` — selector contract for Layout Editor ownership, focused PR routing, unknown-path fail-closed behavior, and full-registry triggers.
+- `apps/game/scripts/select-e2e-suites.test.mjs` — selector contract for Layout Editor ownership, focused PR routing, the table-wide no-journey invariant, unknown-path fail-closed behavior, and full-registry triggers.
 - `apps/game/scripts/plan-e2e-ci.test.mjs` — dynamic matrix contract proving normal gameplay excludes the organic journey while forced-full keeps it.
 
 **Intentionally unchanged:**
@@ -47,7 +49,8 @@
 3. A normal gameplay planner result and a forced-full planner result use the same `gameplay` chain ID. The suite file contents, not the chain topology, are the contract that changes.
 4. Unknown non-documentation paths must remain conservative full runs. Do not solve the Layout Editor problem by weakening the global unmatched fallback.
 5. `selectE2eSuites()` sorts changed paths before processing them, so tests asserting `matchedRules` order must follow normalized path order rather than input order.
-6. The implementation PR itself must full-run because selector scripts are E2E infrastructure; do not add a special exemption for this change.
+6. Focused suites do not reproduce the organic journey. Ordinary gameplay is checkpoint-oriented; `investigation-layout` crosses only the first map gate; `analysis-beat85` covers the late `interrogation_scene_10` hearing. `capture-proof` separately exercises an `interrogation_scene_4` challenge/Present path, but it is not selected by normal story/gameplay/Interrogation-component routing. The all-nine-gate traversal remains a full-registry responsibility.
+7. The implementation PR itself must full-run because selector scripts are E2E infrastructure; do not add a special exemption for this change.
 
 ---
 
@@ -188,7 +191,7 @@ git commit -m "ci: exclude layout editor from game e2e routing"
 
 **Interfaces:**
 
-- Consumes: existing risk rules and `writeE2eCiPlan()` chain partitioning.
+- Consumes: existing exported `E2E_RISK_RULES` and `writeE2eCiPlan()` chain partitioning.
 - Produces for ordinary PR risk selection:
 
 ```text
@@ -201,10 +204,21 @@ dialogue-capture-surface -> smoke, gameplay, analysis-beat85,
                             exit-lifecycle
 ```
 
+- Produces a table-wide invariant: every risk rule with `forceFull !== true` excludes `production-journey` from `suiteIds`.
 - Preserves for any forced-full selection: the complete canonical `E2E_SUITE_IDS`, including `production-journey`.
 - Preserves chain identity: focused and full selections both use `chainId: "gameplay"`; only `suiteIds` differ.
+- Does **not** promise coverage parity with `production-journey`: normal story/gameplay/Interrogation-component PRs intentionally stop proving the all-nine-gate organic route.
 
-- [ ] **Step 2.1: Change selector expectations to the approved focused PR contract**
+- [ ] **Step 2.1: Change selector expectations and lock the rule-table invariant**
+
+Change the test import to expose the existing rule table:
+
+```js
+import {
+  E2E_RISK_RULES,
+  selectE2eSuites,
+} from "./select-e2e-suites.mjs";
+```
 
 Update the existing exact-array assertions as follows.
 
@@ -239,30 +253,35 @@ assert.deepEqual(plan.riskSelectedSuites, [
 ]);
 ```
 
-Add one explicit invariant test so future rule additions do not accidentally make the organic journey a normal risk-selected suite again:
+Rename stale test descriptions so they no longer encode the removed journey or overstate which focused suite owns interrogation coverage:
+
+```text
+routes gameplay changes through the focused and fresh-journey suites
+-> routes gameplay changes through focused PR suites
+
+routes every Interrogation component surface through gameplay coverage
+-> routes every Interrogation component surface through focused interrogation coverage
+
+treats playable story and compiler inputs as production-journey risks
+-> routes playable story and compiler inputs through focused PR coverage
+```
+
+Keep the existing path contracts; they prove the intended suites for representative surfaces. Add a separate structural invariant that walks every non-force-full rule rather than sampling paths:
 
 ```js
-test("keeps production-journey out of ordinary PR risk selection", () => {
-  for (const changedPath of [
-    "docs/stories_plan/chapter_1/investigation_scene_1.md",
-    "apps/game/src-tauri/src/game/dialogue.rs",
-    "apps/game/src/lib/components/AcquisitionPopup.svelte",
-    "apps/game/src/lib/components/DialogueBox.svelte",
-  ]) {
-    const plan = selectE2eSuites({ changedPaths: [changedPath] });
-
-    assert.equal(plan.forcedFull, false, changedPath);
+test("keeps production-journey out of every ordinary PR risk rule", () => {
+  for (const rule of E2E_RISK_RULES) {
+    if (rule.forceFull) continue;
     assert.equal(
-      plan.riskSelectedSuites.includes("production-journey"),
+      rule.suiteIds.includes("production-journey"),
       false,
-      changedPath,
+      rule.id,
     );
-    assert.equal(plan.suiteIds.includes("production-journey"), false, changedPath);
   }
 });
 ```
 
-Keep the existing force-full tests unchanged: E2E infrastructure, manual override, main, nightly, tag, and manual dispatch must still expect the complete registry including `production-journey`.
+This is deliberately stronger than a four-path sample: any future `E2E_RISK_RULES` entry is covered automatically. Keep the existing force-full tests unchanged: E2E infrastructure, manual override, main, nightly, tag, and manual dispatch must still expect the complete registry including `production-journey`.
 
 - [ ] **Step 2.2: Add a RED planner matrix contract for a normal gameplay PR**
 
@@ -324,6 +343,7 @@ node --test \
 Expected before the selector implementation:
 
 - focused selector assertions fail because current risk rules still include `production-journey`;
+- the new table-wide invariant fails for `story-and-compiler`, `gameplay`, `acquisition-acknowledgement`, and `dialogue-capture-surface`;
 - the new normal gameplay planner matrix test fails for the same reason;
 - full-registry assertions remain green.
 
@@ -377,8 +397,10 @@ node --test \
 
 Require:
 
+- the table-wide invariant proves every non-force-full rule excludes `production-journey`;
 - normal gameplay/story/compiler routes omit `production-journey`;
 - acquisition and dialogue surfaces preserve their non-journey lifecycle suites;
+- renamed test descriptions accurately describe focused coverage without claiming fresh-journey or gameplay-only interrogation ownership;
 - the planner emits one gameplay chain with `smoke`, `gameplay`, `analysis-beat85` for a normal gameplay path;
 - manual/full scenarios still include `production-journey`.
 
@@ -487,6 +509,6 @@ Push the implementation branch and require GitHub CI to run the complete registr
 
 ## Self-Review Notes
 
-- **Spec coverage:** Layout Editor-only, Layout Editor + docs, and Layout Editor + game union behavior are Task 1; journey demotion and focused-suite preservation are Task 2; full-registry retention is covered by existing selector/planner controls plus final CI verification. No workflow, registry, retry, runner, or production journey implementation work is required.
+- **Spec coverage:** Layout Editor-only, Layout Editor + docs, and Layout Editor + game union behavior are Task 1; journey demotion, focused-suite preservation, stale test-name cleanup, and the table-wide no-journey invariant are Task 2; full-registry retention is covered by existing selector/planner controls plus final CI verification. The documented coverage boundary explicitly distinguishes checkpointed/late-hearing proof from the organic nine-gate route. No workflow, registry, retry, runner, or production journey implementation work is required.
 - **Placeholder scan:** The plan contains exact file paths, exact expected arrays, exact new test bodies, exact selector edits, and exact verification commands; there are no deferred implementation decisions.
 - **Interface consistency:** `layout-editor`, `production-journey`, canonical suite IDs, chain ID `gameplay`, cache key `tauri-e2e-gameplay-v1`, artifact `tauri-e2e-gameplay`, and timeout `25` match current `main` contracts.
