@@ -62,7 +62,7 @@ const documents: WorkbenchPlanDocument[] = [
   },
 ];
 
-function assert(condition: boolean, message: string): void {
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
