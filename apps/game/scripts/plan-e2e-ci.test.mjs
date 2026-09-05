@@ -151,6 +151,36 @@ test("smoke-only routing emits only the gameplay chain", () => {
   }
 });
 
+test("normal gameplay routing omits the organic journey from the gameplay chain", () => {
+  const fixture = withPlan(["apps/game/src-tauri/src/game/dialogue.rs"]);
+  try {
+    assert.deepEqual(fixture.plan.suiteIds, [
+      "smoke",
+      "gameplay",
+      "analysis-beat85",
+    ]);
+    assert.deepEqual(fixture.plan.expectedChainIds, ["gameplay"]);
+    assert.deepEqual(fixture.readJson(fixture.paths.matrixFile).include, [
+      {
+        chainId: "gameplay",
+        suiteIds: ["smoke", "gameplay", "analysis-beat85"],
+        suiteFile: "chains/gameplay-suites.json",
+        cacheKey: "tauri-e2e-gameplay-v1",
+        timeoutMinutes: 25,
+        artifactName: "tauri-e2e-gameplay",
+      },
+    ]);
+    assert.deepEqual(
+      fixture.readJson(
+        path.join(fixture.paths.chainDirectory, "gameplay-suites.json"),
+      ),
+      ["smoke", "gameplay", "analysis-beat85"],
+    );
+  } finally {
+    fixture.dispose();
+  }
+});
+
 test("forced full routing emits every chain while retaining the risk selection", () => {
   const fixture = withPlan(["apps/game/src/lib/components/MainMenu.svelte"], {
     forceFull: true,
