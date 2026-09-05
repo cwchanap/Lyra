@@ -374,7 +374,7 @@ export type RenderSourceReplacementResult =
   | { ok: false; diagnostic: CompileError };
 ```
 
-Markdown targets use tokenizer `valueRange`. YAML targets may retain the selected YAML node range only as a localization hint for diff/churn checking; mutation still happens through `node.set(...)` + `doc.toString()`. Rust never consumes any source range.
+Markdown targets use tokenizer `valueRange`. YAML targets may retain the selected YAML node range only as a local diff/locality hint; mutation still happens through `node.set(...)` + `doc.toString()`. Rust never consumes any source range.
 
 ## Focused edit model
 
