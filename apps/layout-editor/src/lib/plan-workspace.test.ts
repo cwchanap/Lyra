@@ -172,6 +172,21 @@ describe("projectPlanWorkspace", () => {
     expect(html).toContain('<img src="https://example.com/a.png" alt="pic"');
   });
 
+  it("escapes raw html in rejected-image alt fallback (P1 regression)", () => {
+    // The textRenderer returns inline HTML tokens verbatim; when cleanHref
+    // rejects the scheme, the alt fallback must be escaped before re-entering
+    // renderedHtml (which the workbench injects via {@html}). The raw tag
+    // delimiter `<` must be escaped so no DOM element is created.
+    const workspace = projectPlanWorkspace(
+      bible("![<svg onload=alert(1)>](javascript:alert(1))"),
+    );
+    const html = workspace.documents[0]!.renderedHtml;
+    expect(html).not.toContain("<svg");
+    expect(html).toContain("&lt;svg");
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("javascript:");
+  });
+
   it("projects the exact §10 overview into chapters 1..8", () => {
     const content = `# 10. 章節總覽\n\n${table(
       CHAPTER_HEADERS,

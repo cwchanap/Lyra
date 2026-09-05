@@ -106,6 +106,28 @@ assertDocumentIdentity(BIBLE_PATH, "story-bible", "storyBible", null);
 assertDocumentIdentity(CH1_PATH, "chapter-1-plan", "chapterPlan", 1);
 assertDocumentIdentity(CH2_PATH, "chapter-2-plan", "chapterPlan", 2);
 
+// Real-corpus navigation acceptance: the ticket requires these headings to be
+// directly reachable in compact mode (H1/H2). If either is renamed or demoted
+// below H2, the component test's manufactured fixtures would still pass but
+// the real acceptance contract breaks. Pin them here.
+function assertDocumentHasHeading(path: string, expectedText: string): void {
+  const document = workspace.documents.find(
+    (candidate) => candidate.path === path,
+  );
+  assert(document !== undefined, `document missing from projection: ${path}`);
+  const heading = document.headings.find(
+    (candidate) => candidate.text === expectedText,
+  );
+  assert(
+    heading !== undefined && heading.level <= 2,
+    `heading「${expectedText}」missing or demoted below H2 in ${path}: ` +
+      `${JSON.stringify(heading ?? { missing: true })}`,
+  );
+}
+
+assertDocumentHasHeading(CH1_PATH, "1. 全章前台證據包");
+assertDocumentHasHeading(CH2_PATH, "12. 最終審查會 Proof Order");
+
 const bible = workspace.documents.find(({ path }) => path === BIBLE_PATH);
 assert(bible !== undefined, "Story Bible document missing from projection");
 const overviewHeading = bible.headings.find(
