@@ -110,8 +110,8 @@ export type SourceRange = {
 export type SceneTextSourceToken = {
   kind: "line" | "action";
   speaker: string | null;
-  currentText: string;       // normalized tokenizer/parser text
-  sourceRange: SourceRange;  // exact editable value in raw source
+  currentText: string;
+  sourceRange: SourceRange;
 };
 
 export type WorkbenchSourceTargetKind =
@@ -129,37 +129,6 @@ export type WorkbenchSourceTarget = {
   currentText: string;
   sourceRange: SourceRange | null;
 };
-
-export type SceneSourceIndex = {
-  textTokens: SceneTextSourceToken[];
-  promptTargets: WorkbenchSourceTarget[];
-  diagnostics: CompileError[];
-};
-
-export function indexSceneSourceTargets(input: {
-  sceneType: "linear" | "investigation" | "interrogation" | "analysis";
-  sceneId: string;
-  sourcePath: string;
-  source: string;
-}): SceneSourceIndex;
-
-export function indexCharacterSourceTargets(input: {
-  sourcePath: string;
-  source: string;
-}): { targets: WorkbenchSourceTarget[]; diagnostics: CompileError[] };
-
-export function indexAudioPlanSourceTargets(input: {
-  sourcePath: string;
-  source: string;
-}): { targets: WorkbenchSourceTarget[]; diagnostics: CompileError[] };
-
-export function renderSourceReplacement(input: {
-  source: string;
-  target: WorkbenchSourceTarget;
-  replacementText: string;
-}):
-  | { ok: true; nextContent: string }
-  | { ok: false; diagnostic: CompileError };
 ```
 
 Reader owns semantic refs:
@@ -169,229 +138,24 @@ export type ReaderEditableRef = {
   carrierId: string;
   itemIndex: number;
 };
-
-export function bindReaderSourceTargets(
-  reader: ReaderScene,
-  sourceTokens: SceneTextSourceToken[],
-): { targets: WorkbenchSourceTarget[]; diagnostics: CompileError[] };
 ```
 
-### Step 1: Write RED tokenizer raw/value range tests
+### Required Task 1 behavior
 
-- [ ] Add range fields to expected token fixtures only in the new tests first so the file is RED.
+- [ ] Add raw token `range` to every tokenizer token and editable `valueRange` to metadata/dialogue/action.
+- [ ] Preserve indentation/CRLF source spelling in ranges while leaving normalized token semantics unchanged.
+- [ ] Update all existing whole-token `tokenizer.test.ts` fixtures for new fields; add indented, CRLF, CJK, and multiline-action tests.
+- [ ] Extract `sceneTagUnitId(oneBasedIndex)` and reuse it from enrichment + edit discovery; count all tags including prompt-less tags.
+- [ ] Parse through the existing parser for the actual scene type before exposing any prompt target.
+- [ ] Use parsed AST owner IDs/lines for structural Background Prompt/evidence Image Prompt association; tokenizer only supplies the accepted metadata value range.
+- [ ] Add `ReaderEditableRef` from existing `carrierGroup()` carrier ID + item index.
+- [ ] Bind lexical line/action source tokens by flattening the existing Reader group tree in rendered order, not `deriveDialogueSegments()` array order.
+- [ ] Add a real-shaped investigation fixture covering intro, hotspot inspect, topic dialogue, evidence onCollect, and outro last; mismatch returns `workbenchSourceDialogueMismatch` and no guessed target.
+- [ ] Character identity uses `parseCharactersYamlText()`, sound-plan identity/status uses `parseSoundPlanText()`.
+- [ ] YAML mutation uses `YAML.parseDocument()` + semantic re-resolution + `node.set()` + `doc.toString()`; no custom scalar renderer.
+- [ ] Mutation tests prove canonical reparsing succeeds, comments survive, unrelated semantic entries are unchanged.
 
-Use all of these spellings:
-
-```ts
-const lf = `# Scene 1: Test
-
-  **相馬律**[determined]：原本台詞  
-  [第一行動作
-    第二行動作]
-`;
-
-const crlf = "# Scene 1: Test\r\n\r\n**相馬律**：CRLF台詞\r\n";
-```
-
-Required assertions:
-
-```ts
-const line = tokenize(lf, "scene_1.md").find((t) => t.kind === "dialogue")!;
-expect(lf.slice(line.range.start, line.range.end)).toBe(
-  "**相馬律**[determined]：原本台詞",
-);
-expect(lf.slice(line.valueRange.start, line.valueRange.end)).toBe("原本台詞");
-
-const action = tokenize(lf, "scene_1.md").find((t) => t.kind === "action")!;
-expect(lf.slice(action.valueRange.start, action.valueRange.end)).toContain("第一行動作");
-expect(lf.slice(action.valueRange.start, action.valueRange.end)).toContain("第二行動作");
-expect(action.text).toBe("第一行動作 第二行動作");
-```
-
-Also assert CRLF token/value slices preserve the source spelling and line numbers.
-
-- [ ] Run:
-
-```bash
-bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/tokenizer.test.ts
-```
-
-Expected: FAIL because `range` / `valueRange` do not exist.
-
-### Step 2: Implement tokenizer ranges without changing parse semantics
-
-- [ ] Add `SourceRange` to every token as `range`.
-- [ ] Add `valueRange` to `metadata`, `dialogue`, and `action` tokens.
-- [ ] Track raw line-start UTF-16 offsets from the original source, not offsets from `trimmed` strings.
-- [ ] For CRLF, include the exact raw source line boundaries but exclude line terminators from token/value ranges.
-- [ ] For a multi-line bracket action, raw `range` spans `[` through `]`; `valueRange` spans only the interior source.
-- [ ] Keep `token.text`, speaker/expression parsing, trimmed metadata values, and multi-line action newline-to-space normalization unchanged.
-
-Existing `tokenizer.test.ts` uses whole-object `toEqual()`. Update every affected expected token with the new range fields; do not weaken the old assertions to partial matches merely to avoid fixture work.
-
-- [ ] Run:
-
-```bash
-bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/tokenizer.test.ts
-bun run check:scripts
-```
-
-Expected: PASS.
-
-### Step 3: Extract the existing scene-tag asset unit spelling once
-
-- [ ] Add a browser-safe helper in `parser-assets.ts`:
-
-```ts
-export function sceneTagUnitId(oneBasedIndex: number): string {
-  return `tag_${String(oneBasedIndex).padStart(3, "0")}`;
-}
-```
-
-- [ ] Change `assets/enrich.ts` to call `sceneTagUnitId(++context.tagIndex)` instead of constructing `tag_${...}` inline.
-- [ ] Add a focused scripts test proving tags 1, 2, 10 produce `tag_001`, `tag_002`, `tag_010`.
-
-This makes enrichment and HPA-135 share the same identity owner.
-
-### Step 4: Write RED scene source discovery tests that reuse the real parser
-
-- [ ] Create one valid linear fixture and one valid investigation fixture. The investigation fixture must contain, in real source order:
-
-```text
-Intro line/action
-Sub-location transition
-Hotspot inspect
-Character topic dialogue
-Evidence On Collect
-Outro
-```
-
-It must also contain:
-
-- one scene tag without `Background Prompt` before a later tag with a prompt;
-- one structural sublocation `Background Prompt`;
-- one evidence `Image Prompt`.
-
-- [ ] Assert `indexSceneSourceTargets()` first validates through the actual scene parser selected by `sceneType`; malformed source produces the parser diagnostic and no edit targets.
-- [ ] Assert scene tags are numbered across **every** tag, including the prompt-less one:
-
-```ts
-expect(promptRefs).toContain("asset:background:tag_002");
-```
-
-- [ ] Assert structural/background/evidence refs use parsed owner identity:
-
-```ts
-expect(promptRefs).toContain("asset:background:back_corridor");
-expect(promptRefs).toContain("asset:evidence:summary_copy:imagePrompt");
-```
-
-- [ ] Assert `textTokens` contain normalized line/action values plus exact raw editable `valueRange` slices, but contain no Reader carrier IDs.
-
-### Step 5: Implement scene source discovery with parser-owned association
-
-- [ ] Parse through the current scene parser and keep the parsed AST as the authority:
-
-```ts
-const parsed =
-  sceneType === "linear"
-    ? parseLinearScene(source, sourcePath, sceneId)
-    : sceneType === "investigation"
-      ? parseInvestigationScene(source, sourcePath, sceneId)
-      : sceneType === "interrogation"
-        ? parseInterrogationScene(source, sourcePath, sceneId)
-        : parseAnalysisScene(source, sourcePath, sceneId);
-
-if (!parsed.ok) {
-  return { textTokens: [], promptTargets: [], diagnostics: [parsed.error] };
-}
-```
-
-Do not create a second scene block parser.
-
-- [ ] After successful parse, use AST owner IDs/lines to identify structural units/evidence entries. Use tokenizer only to slice the metadata token that the parser has already accepted.
-- [ ] For scene tags, walk sceneTag tokens in source order, call shared `sceneTagUnitId(index)`, and inspect only immediately-attached metadata tokens. Increment the index whether or not the tag has a prompt.
-- [ ] Emit only existing `Background Prompt` and `Image Prompt` fields. Never synthesize a missing field.
-- [ ] Emit lexical `SceneTextSourceToken` rows in source order for dialogue/action only.
-
-### Step 6: Write RED Reader binding tests for the investigation ordering bug
-
-- [ ] Extend `workbench-types.ts` so projected line/action items can carry:
-
-```ts
-editableRef: ReaderEditableRef | null;
-```
-
-Notices and scene tags have no edit ref.
-
-- [ ] Add a `reader-projection.test.ts` fixture whose underlying investigation source order is:
-
-```text
-intro → hotspot inspect → topic dialogue → evidence onCollect → outro
-```
-
-The compiled scene goes through normal `projectReaderScene()`.
-
-Assert final semantic refs are exactly the Reader carriers:
-
-```ts
-expect(refs).toContain("reader:dialogue:intro:0");
-expect(refs).toContain("reader:dialogue:hotspot:counter:inspect:0");
-expect(refs).toContain("reader:dialogue:topic:manager:closing:dialogue:0");
-expect(refs).toContain("reader:dialogue:evidence:summary_copy:onCollect:0");
-expect(refs.at(-1)).toMatch(/reader:dialogue:outro:/);
-```
-
-The test must fail if source tokens are zipped against raw `deriveDialogueSegments()` array order, because that array places investigation outro before sublocations.
-
-### Step 7: Implement Reader-owned semantic binding
-
-- [ ] Change `carrierGroup()` to map raw compiler items with their existing `id` + `itemIndex`:
-
-```ts
-items: items.map((item, itemIndex) =>
-  projectDialogue(item, { carrierId: id, itemIndex }),
-)
-```
-
-- [ ] `projectDialogue()` adds `editableRef` only for `line` and `action`.
-- [ ] Implement `bindReaderSourceTargets(reader, sourceTokens)` by recursively flattening the **existing Reader group tree in rendered order**, filtering to line/action items, then zipping with lexical source tokens.
-- [ ] Match kind + normalized text; for dialogue also match speaker.
-- [ ] Produce final refs from `editableRef`; never copy `readerSegmentId()` into scripts.
-- [ ] On mismatch, return `workbenchSourceDialogueMismatch` and no guessed Reader source target.
-
-### Step 8: Write RED character/sound-plan Document mutation tests
-
-Character fixture must include comments, block `visualPrompt`, and a plain expression prompt. Sound-plan fixture must include two entries and comments.
-
-- [ ] Character identity is first checked with `parseCharactersYamlText()`.
-- [ ] Sound-plan identity/status is first checked with `parseSoundPlanText()`.
-- [ ] For replacement, use `YAML.parseDocument()`, locate the identified map/entry, `node.set(...)`, and `doc.toString()`.
-
-Required assertions:
-
-```text
-reparsed canonical parser succeeds
-edited logical value changed
-comments survive
-other character/audio entries are semantically unchanged
-no missing/duplicate/non-approved audio target is exposed
-```
-
-Do not implement a scalar quoting/block-style renderer.
-
-### Step 9: Implement YAML source targets and replacement rendering
-
-- [ ] `indexCharacterSourceTargets()` exposes only existing `visualPrompt` and existing expression prompts.
-- [ ] `indexAudioPlanSourceTargets()` exposes exactly one approved/generated `(channel,id)` prompt target per matching entry.
-- [ ] `renderSourceReplacement()`:
-  - Markdown Reader/prompt target: `String.prototype.slice()` around the target source range to produce full `nextContent`.
-  - Character/sound-plan YAML: reparse Document, re-resolve semantic target, `node.set(...)`, return `doc.toString()` as `nextContent`.
-- [ ] Reject dialogue replacement containing a newline; allow multiline action; reject newlines for current one-line Markdown metadata values.
-
-### Step 10: Run Task 1 gates
-
-- [ ] Run:
+### Task 1 gates
 
 ```bash
 bunx vitest run --config vitest.scripts.config.ts packages/scripts/compile-scenes/tokenizer.test.ts
@@ -399,26 +163,6 @@ bunx vitest run --config vitest.scripts.config.ts packages/scripts/workbench/sou
 bun run --cwd apps/layout-editor test src/lib/reader-projection.test.ts
 bun run check:scripts
 bun run test:scripts
-```
-
-Expected: PASS.
-
-### Step 11: Commit Task 1
-
-- [ ] Commit:
-
-```bash
-git add \
-  packages/scripts/compile-scenes/tokenizer.ts \
-  packages/scripts/compile-scenes/tokenizer.test.ts \
-  packages/scripts/compile-scenes/parser-assets.ts \
-  packages/scripts/compile-scenes/assets/enrich.ts \
-  packages/scripts/workbench/source-edit-targets.ts \
-  packages/scripts/workbench/source-edit-targets.test.ts \
-  apps/layout-editor/src/lib/workbench-types.ts \
-  apps/layout-editor/src/lib/reader-projection.ts \
-  apps/layout-editor/src/lib/reader-projection.test.ts
-git commit -m "feat(workbench): resolve focused source targets"
 ```
 
 ---
@@ -433,7 +177,7 @@ git commit -m "feat(workbench): resolve focused source targets"
 - Modify: `packages/scripts/package.json`
 - Modify: `package.json`
 
-**Interfaces:**
+**Interface:**
 
 ```ts
 export function reviseExistingAudioCatalogPrompt(input: {
@@ -450,117 +194,20 @@ CLI:
 audio:revise-prompt <plan.yaml> <bgm|bgs|sfx> <id>
 ```
 
-### Step 1: Write RED catalog revision tests
+### Required Task 2 behavior
 
-- [ ] Add:
+- [ ] Require existing catalog entry; replace prompt only; preserve `loop` exactly.
+- [ ] Keep regression proving normal `mergeApprovedEntriesIntoCatalog()` still conflicts on changed prompts.
+- [ ] `revise-prompt` loads/validates the sound plan, requires exactly one approved/generated matching entry, reads that plan prompt, revises only the existing catalog prompt, serializes through existing audio catalog formatter, and never applies scene cues.
+- [ ] Reject invalid channel, missing/duplicate/non-approved plan entries, and missing catalog entry.
+- [ ] Add root/package forwarding scripts.
 
-```ts
-const result = reviseExistingAudioCatalogPrompt({
-  catalog,
-  channel: "bgm",
-  id: "bgm_chapter_close",
-  prompt: "revised prompt",
-});
-
-expect(result.diagnostics).toEqual([]);
-expect(result.catalog.bgm.bgm_chapter_close).toEqual({
-  prompt: "revised prompt",
-  loop: true,
-});
-expect(result.catalog.bgs).toEqual(catalog.bgs);
-```
-
-Also assert missing catalog entry is rejected.
-
-- [ ] Keep a regression proving existing `mergeApprovedEntriesIntoCatalog()` still reports a duplicate conflict when normal `audio:apply` sees a changed prompt.
-
-- [ ] Run:
-
-```bash
-bunx vitest run --config vitest.scripts.config.ts packages/scripts/audio/audio-catalog.test.ts
-```
-
-Expected: FAIL because the revision helper does not exist.
-
-### Step 2: Implement the pure one-entry catalog revision
-
-- [ ] Clone current catalog maps.
-- [ ] Require existing `(channel,id)`.
-- [ ] Replace only `prompt`.
-- [ ] Preserve the existing entry's `loop` exactly.
-- [ ] Do not route through normal merge semantics.
-
-- [ ] Re-run the focused catalog test; expect PASS.
-
-### Step 3: Write RED `revise-prompt` CLI tests
-
-- [ ] Build a temp repo with one sound plan and matching audio catalog.
-- [ ] Run:
-
-```ts
-const code = await runAudioCli(
-  ["revise-prompt", planPath, "bgm", "bgm_chapter_close"],
-  options,
-);
-expect(code).toBe(0);
-```
-
-Assert:
-
-```text
-catalog matching prompt == sound-plan prompt
-loop unchanged
-other catalog entries semantically unchanged
-scene Markdown untouched
-```
-
-Add rejection tests for invalid channel, missing plan entry, duplicate matching plan entry, non-approved/generated entry, and missing catalog entry.
-
-### Step 4: Implement `revise-prompt`
-
-- [ ] Parse exactly plan path + channel + id.
-- [ ] Load/validate plan through existing `parseSoundPlanText()` / `validateSoundPlan()` path.
-- [ ] Require exactly one approved/generated matching entry.
-- [ ] Read that already-edited plan prompt.
-- [ ] Parse existing audio catalog.
-- [ ] Call `reviseExistingAudioCatalogPrompt()`.
-- [ ] Serialize/Prettier-format through current audio-catalog helpers.
-- [ ] Write catalog only when changed.
-- [ ] Never call `applyAudioCuesToMarkdown()`.
-
-### Step 5: Add forwarding scripts
-
-- [ ] `packages/scripts/package.json`:
-
-```json
-"audio:revise-prompt": "bun run audio/cli.ts revise-prompt"
-```
-
-- [ ] root `package.json`:
-
-```json
-"audio:revise-prompt": "bun run --cwd packages/scripts audio:revise-prompt"
-```
-
-### Step 6: Run Task 2 gates
-
-- [ ] Run:
+### Task 2 gates
 
 ```bash
 bunx vitest run --config vitest.scripts.config.ts packages/scripts/audio/audio-catalog.test.ts packages/scripts/audio/cli.test.ts
 bun run audio:validate docs/audio_plans/chapter_1.sound-plan.yaml
 bun run audio:apply docs/audio_plans/chapter_1.sound-plan.yaml --check
-```
-
-Expected: PASS.
-
-### Step 7: Commit Task 2
-
-- [ ] Commit:
-
-```bash
-git add packages/scripts/audio package.json packages/scripts/package.json
-git commit -m "feat(audio): support focused prompt revisions"
 ```
 
 ---
@@ -573,21 +220,9 @@ git commit -m "feat(audio): support focused prompt revisions"
 - Modify: `apps/layout-editor/src/lib/workbench-types.ts`
 - Modify: `apps/layout-editor/src/lib/workbench-api.ts`
 
-**Interfaces:**
+**Wire contract:**
 
 ```ts
-export type SourceDocumentId =
-  | `scene:${string}:${string}`
-  | "asset-config:characters"
-  | `audio-plan:${string}`;
-
-export type WorkbenchSourceDocument = {
-  id: SourceDocumentId;
-  path: string;
-  content: string;
-  hash: string;
-};
-
 export type ApplyWorkbenchSourceEditRequest = {
   sourceDocumentId: SourceDocumentId;
   expectedHash: string;
@@ -595,204 +230,24 @@ export type ApplyWorkbenchSourceEditRequest = {
   kind: WorkbenchSourceTargetKind;
   nextContent: string;
 };
-
-export type ApplyWorkbenchSourceEditResult = {
-  sourceDocumentId: SourceDocumentId;
-  sourcePath: string;
-  newHash: string;
-  validation: {
-    ok: boolean;
-    commands: string[];
-    diagnostics: Array<{ stream: "stdout" | "stderr"; line: string }>;
-  };
-};
 ```
 
 No source range crosses IPC.
 
-### Step 1: Add wire types and frontend API wrappers
+### Required Task 3 behavior
 
-- [ ] Add the types above to `workbench-types.ts`.
-- [ ] Add:
+- [ ] Closed resolver supports `scene:<chapter>:<scene>`, `asset-config:characters`, `audio-plan:<chapter>` only.
+- [ ] Hash exact UTF-8 source bytes using SHA-256.
+- [ ] Stale hash, kind/ref/document mismatch, and no-change all reject before write.
+- [ ] Generalize existing same-directory temp + `create_new` + `sync_all` + rename writer and reuse it for layout sidecars plus full reviewed source documents.
+- [ ] Story/character validation plan is `bun run scenes:compile`.
+- [ ] Audio validation plan is `audio:revise-prompt` → `audio:validate` → `audio:apply --check` → `scenes:compile`.
+- [ ] Add private `execute_validation_plan_with` fake-runner seam proving exact argv/cwd/order, bounded diagnostics, and first non-zero stop.
+- [ ] Add one real `std::process::Command` test using `bun -e 'process.stdout.write(process.cwd())'` in a temp workspace to prove production cwd/spawn behavior.
+- [ ] Register only `load_workbench_source_document` and `apply_workbench_source_edit`; no generic read/write/run IPC.
+- [ ] No Rust UTF-16 mapper or range slicing exists.
 
-```ts
-export const loadWorkbenchSourceDocument = (sourceDocumentId: SourceDocumentId) =>
-  invoke<WorkbenchSourceDocument>("load_workbench_source_document", {
-    sourceDocumentId,
-  });
-
-export const applyWorkbenchSourceEdit = (request: ApplyWorkbenchSourceEditRequest) =>
-  invoke<ApplyWorkbenchSourceEditResult>("apply_workbench_source_edit", {
-    request,
-  });
-```
-
-### Step 2: Write RED Rust source resolver/hash tests
-
-- [ ] Prefix tests `focused_source_`.
-- [ ] Cover:
-
-```rust
-asset-config:characters
-scene:chapter_1:scene_0
-audio-plan:chapter_1
-```
-
-Also malformed `/`, `..`, unsupported prefix, unknown chapter/scene, and hash changing with source bytes.
-
-- [ ] Add `sha2 = "0.10"` to the layout-editor Rust crate.
-
-### Step 3: Implement fixed-domain source resolution/read
-
-- [ ] Private enum:
-
-```rust
-enum SourceDocumentKind {
-    Scene { chapter_id: String, scene_id: String },
-    Characters,
-    AudioPlan { chapter_id: String },
-}
-```
-
-- [ ] Scene uses existing manifest/authored-source resolver.
-- [ ] Characters uses fixed `static/assets/config/characters.yaml`.
-- [ ] Audio plan first proves chapter membership, then constructs `docs/audio_plans/<chapter>.sound-plan.yaml` and applies root containment.
-- [ ] Hash exact UTF-8 bytes to lowercase SHA-256.
-
-- [ ] Run:
-
-```bash
-cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml focused_source
-```
-
-Expected: resolver/hash tests PASS.
-
-### Step 4: Write RED full-document apply tests
-
-- [ ] Use temp workspace/source fixtures.
-- [ ] Assert:
-
-```text
-stale expectedHash → sourceEditStale + no write
-kind/ref mismatch → sourceEditSemanticRefInvalid + no write
-document/kind mismatch → sourceEditKindUnsupported + no write
-nextContent identical → sourceEditNoChange + no write
-valid nextContent → complete file equals reviewed candidate
-unrelated sibling files unchanged
-```
-
-No UTF-16 or byte-range test belongs in Rust.
-
-### Step 5: Generalize the existing atomic writer
-
-- [ ] Rename/refactor `write_layout_sidecar_no_follow` into a private complete-document helper accepting an already-resolved canonical path + `&str` contents.
-- [ ] Keep same-directory unique temp file, `create_new`, `sync_all`, and `rename` behavior.
-- [ ] Reuse the helper from layout-sidecar save and HPA-135 apply.
-- [ ] Do not create a generic filesystem service or public arbitrary-path command.
-
-Apply order:
-
-```text
-resolve document
-→ read current contents
-→ hash compare
-→ ref/kind/document-family checks
-→ no-change check
-→ atomic write nextContent
-→ fixed validation
-```
-
-### Step 6: Write RED validation-plan tests
-
-- [ ] Add:
-
-```rust
-fn validation_plan(
-    source: &ResolvedSourceDocument,
-    kind: SourceEditKind,
-    semantic_ref: &str,
-) -> Result<Vec<ValidationCommand>, EditorError>;
-```
-
-Story/character target:
-
-```text
-bun run scenes:compile
-```
-
-Audio target, in order:
-
-```text
-bun run audio:revise-prompt <resolved-plan-path> <channel> <id>
-bun run audio:validate <resolved-plan-path>
-bun run audio:apply <resolved-plan-path> --check
-bun run scenes:compile
-```
-
-`channel`/`id` come from validated semantic ref; plan path comes from resolved document, never the frontend.
-
-### Step 7: Add a private command-execution seam and tests
-
-- [ ] Define:
-
-```rust
-struct CommandOutcome {
-    success: bool,
-    stdout: String,
-    stderr: String,
-}
-
-fn execute_validation_plan_with<F>(
-    root: &Path,
-    plan: &[ValidationCommand],
-    mut run: F,
-) -> ValidationResult
-where
-    F: FnMut(&Path, &ValidationCommand) -> CommandOutcome;
-```
-
-- [ ] Inject a fake runner in unit tests and assert:
-  - exact program/argv sequence;
-  - every call receives canonical workspace root;
-  - first `success = false` stops subsequent commands;
-  - stdout/stderr are retained in order and truncated to the last 200 lines per command.
-
-- [ ] Add one actual process-spawn test using the repository-required Bun executable:
-
-```rust
-ValidationCommand {
-    program: "bun".into(),
-    args: vec![
-        "-e".into(),
-        "process.stdout.write(process.cwd())".into(),
-    ],
-}
-```
-
-Run it through the production `std::process::Command` adapter in a temp workspace and assert stdout equals that workspace path. This proves the first process-spawn boundary and `current_dir()` behavior rather than testing only the pure plan.
-
-### Step 8: Implement production validation execution
-
-- [ ] Build `std::process::Command` directly from program + args; no shell string.
-- [ ] Set `current_dir(canonical_root)`.
-- [ ] Capture output.
-- [ ] Stop on first non-zero exit.
-- [ ] Return `validation.ok = false`; never imply the source write rolled back.
-
-### Step 9: Register only the two domain commands
-
-- [ ] Register:
-
-```text
-load_workbench_source_document
-apply_workbench_source_edit
-```
-
-Do not add `read_file`, `write_file`, `run_command`, or similar generic IPC.
-
-### Step 10: Run Task 3 gates
-
-- [ ] Run:
+### Task 3 gates
 
 ```bash
 cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml focused_source
@@ -800,20 +255,9 @@ cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
 bun run editor:check
 ```
 
-Expected: PASS.
-
-### Step 11: Commit Task 3
-
-- [ ] Commit:
-
-```bash
-git add apps/layout-editor/src-tauri apps/layout-editor/src/lib/workbench-types.ts apps/layout-editor/src/lib/workbench-api.ts
-git commit -m "feat(workbench): add guarded focused source writes"
-```
-
 ---
 
-## Task 4: Build the focused draft, exact diff, source-churn guard, and impact joins
+## Task 4: Build the focused draft, exact diff, locality guard, and impact joins
 
 **Files:**
 - Create/Test: `apps/layout-editor/src/lib/focused-edit.ts`
@@ -821,135 +265,21 @@ git commit -m "feat(workbench): add guarded focused source writes"
 - Modify/Test: `apps/layout-editor/src/lib/asset-workspace.ts`
 - Modify/Test: `apps/layout-editor/src/lib/asset-workspace.test.ts`
 
-**Interfaces:**
+### Required Task 4 behavior
 
-```ts
-export type FocusedEditImpact = {
-  affectedScenes: Array<{ chapterId: string; sceneId: string }>;
-  affectedAssetIds: string[];
-  usageCount: number;
-  shared: boolean;
-  note: string | null;
-};
+- [ ] `FocusedEditDraft` stores `sourceDocumentId`, path, expected hash, semantic ref/kind, logical old/new text, full reviewed `nextContent`, and impact; no IPC range.
+- [ ] Produce one unified-style focused hunk with up to three context lines and no diff dependency.
+- [ ] The selected source range/YAML node block is the locality guard: if `nextContent` changes any unrelated position, return `focusedEditSourceChurn` and disable Apply.
+- [ ] Reader impact = one selected scene.
+- [ ] Background/evidence/character impacts reuse current `sceneUsages`, typed manifest source, expression counts, and `assetUsageGroups()`.
+- [ ] Audio `(channel,id)` comes from typed manifest source. Collect concrete scene usage chapter IDs; Edit only when exactly one distinct chapter owns current usages. Zero/multiple chapters → `focusedEditAudioPlanAmbiguous`, no guessed plan.
+- [ ] Build draft only after `renderSourceReplacement()` yields `nextContent` and focused locality validation succeeds.
 
-export type FocusedEditDraft = {
-  sourceDocumentId: SourceDocumentId;
-  sourcePath: string;
-  expectedHash: string;
-  semanticRef: string;
-  kind: WorkbenchSourceTargetKind;
-  originalText: string;
-  replacementText: string;
-  nextContent: string;
-  impact: FocusedEditImpact;
-};
-
-export function buildFocusedEditDraft(input: {
-  document: WorkbenchSourceDocument;
-  target: WorkbenchSourceTarget;
-  replacementText: string;
-  impact: FocusedEditImpact;
-}): FocusedEditDraftResult;
-
-export function focusedEditDiff(input: {
-  originalContent: string;
-  nextContent: string;
-  sourcePath: string;
-  allowedRange: SourceRange | null;
-}):
-  | { ok: true; diff: string }
-  | { ok: false; code: "focusedEditSourceChurn" };
-```
-
-### Step 1: Write RED draft and one-hunk diff tests
-
-- [ ] Markdown dialogue test:
-
-```text
---- a/docs/stories_plan/chapter_1/scene_0.md
-+++ b/docs/stories_plan/chapter_1/scene_0.md
-@@
--**相馬律**：舊台詞
-+**相馬律**：新台詞
-```
-
-- [ ] YAML test must show actual changed scalar syntax while keeping a nearby comment and unrelated entry outside the hunk.
-- [ ] Add a synthetic candidate that changes two separated regions; expect `focusedEditSourceChurn` and no Apply request.
-- [ ] Add a YAML candidate whose serializer changes a line outside the selected scalar/node `allowedRange`; expect `focusedEditSourceChurn` even if the overall diff could otherwise be represented as one broad hunk.
-
-### Step 2: Implement deterministic focused diff and locality guard
-
-- [ ] Find changed line/character regions between `originalContent` and `nextContent`.
-- [ ] Require every changed source position to remain within the selected target's local `allowedRange` (or the selected YAML node block resolved during target discovery).
-- [ ] If any unrelated position changed, return `focusedEditSourceChurn`.
-- [ ] Render the remaining localized edit as one unified-style hunk with up to three context lines.
-- [ ] Do not parse/apply the diff later.
-- [ ] `nextContent === originalContent` returns `focusedEditNoChange` before diff.
-
-This is the guard that allows YAML Document serialization without silently accepting whole-file formatting churn.
-
-### Step 3: Write RED impact tests
-
-- [ ] Cover:
-
-```text
-Reader line/action → selected scene only
-background used twice across two scenes → usageCount 2, shared true
-evidence used once → shared false
-character expression → existing assetUsageGroups data
-character visualPrompt → typed manifest characterId join
-audio prompt → typed channel/id + exactly one owning chapter
-```
-
-### Step 4: Implement narrow impact helpers
-
-- [ ] Reuse `workspace.sceneUsages`, typed manifest sources, and `assetUsageGroups()`.
-- [ ] Never parse asset IDs to infer source identity.
-
-Audio ownership is explicit:
-
-```ts
-function audioEditOwner(
-  workspace: AssetWorkspace,
-  entry: Extract<AssetManifestEntry, { type: "audio" }>,
-): { chapterId: string; channel: AudioChannel; id: string } | null
-```
-
-Rules:
-
-1. `channel/id` come from `entry.source.channel/id`.
-2. Collect all `workspace.sceneUsages` for `entry.assetId`.
-3. Collect distinct usage `chapterId`s.
-4. Exactly one distinct chapter → owner.
-5. Zero/multiple chapters → no Edit; emit/display `focusedEditAudioPlanAmbiguous`.
-
-Do not rely on the manifest entry's first scene `chapterId` when an audio asset is reused across chapters.
-
-### Step 5: Implement draft construction
-
-- [ ] Call Task 1 `renderSourceReplacement()` to get `nextContent`.
-- [ ] Pass the target's source/node locality range to `focusedEditDiff()` and run churn validation immediately.
-- [ ] Build draft only when the candidate changes only the selected local source block.
-- [ ] Draft contains no source range or byte offsets for IPC.
-
-### Step 6: Run Task 4 gates
-
-- [ ] Run:
+### Task 4 gates
 
 ```bash
 bun run --cwd apps/layout-editor test src/lib/focused-edit.test.ts src/lib/asset-workspace.test.ts
 bun run editor:check
-```
-
-Expected: PASS.
-
-### Step 7: Commit Task 4
-
-- [ ] Commit:
-
-```bash
-git add apps/layout-editor/src/lib/focused-edit.ts apps/layout-editor/src/lib/focused-edit.test.ts apps/layout-editor/src/lib/asset-workspace.ts apps/layout-editor/src/lib/asset-workspace.test.ts
-git commit -m "feat(workbench): build focused edit reviews"
 ```
 
 ---
@@ -966,263 +296,40 @@ git commit -m "feat(workbench): build focused edit reviews"
 - Modify/Test: `apps/layout-editor/src/App.svelte`
 - Modify/Test: `apps/layout-editor/src/App.test.ts`
 
-### Step 1: Write RED ReaderView affordance tests
+### Required Task 5 behavior
 
-- [ ] Create `ReaderView.test.ts`; do not list it as an existing file.
-- [ ] Render one Reader scene with line, action, sceneTag, and notice.
-- [ ] Assert Edit appears only for line/action.
-- [ ] Clicking Edit calls:
+- [ ] Create `ReaderView.test.ts`; it is not an existing file.
+- [ ] Reader Edit appears only for line/action and emits semantic selection; ReaderView does not load/write source.
+- [ ] Assets Edit appears only for supported scene prompts, existing character prompts, and unambiguous one-chapter audio owner.
+- [ ] One `FocusedEditReview` shows replacement, exact diff, impact/shared warning, Apply/Cancel, stale, applied-valid, and **Applied, validation failed** states.
+- [ ] Apply request contains only `SourceDocumentId + expectedHash + kind + semanticRef + nextContent`.
+- [ ] `App.svelte` owns one active edit flow; Reader and Assets share it; Plan stays read-only.
+- [ ] HPA-136 can supply `initialReplacement` into the same draft/review seam without a second writer.
 
-```ts
-onEdit({
-  semanticRef: "reader:dialogue:hotspot:counter:inspect:0",
-  kind: "readerDialogue",
-});
-```
-
-No source loading occurs inside ReaderView.
-
-### Step 2: Add Reader callback
-
-- [ ] Extend ReaderView props with one narrow `onEdit` callback.
-- [ ] Use `ReaderItem.editableRef` to construct the semantic ref.
-- [ ] Keep copy-source and read-only rendering otherwise unchanged.
-
-### Step 3: Write RED Assets edit-action tests
-
-- [ ] Scene-owned background/evidence entries show **Edit source prompt**.
-- [ ] Global-file/character-owned background/evidence do not.
-- [ ] Character non-null `visualPrompt` and every existing expression prompt show Edit.
-- [ ] Audio Edit appears only when Task 4 resolves exactly one chapter owner.
-- [ ] Ambiguous cross-chapter audio fixture shows no Edit and the ambiguity message/diagnostic.
-
-AssetsView emits semantic selection only; it does not write source.
-
-### Step 4: Implement Assets callbacks
-
-- [ ] Add one `onEdit` prop.
-- [ ] Reuse Task 4 owner/impact helpers.
-- [ ] Do not add a second asset-source map in the component.
-
-### Step 5: Write RED FocusedEditReview tests
-
-- [ ] Cover:
-
-```text
-loading-source
-editing replacement
-exact diff visible
-shared impact warning
-Apply disabled on no-change/source-churn
-Apply request contains SourceDocumentId + expectedHash + kind + semanticRef + nextContent only
-stale error stays editable after reload path
-applied-valid
-applied-invalid with diagnostics
-Cancel clears draft
-```
-
-No queue/history/undo control exists.
-
-### Step 6: Implement FocusedEditReview
-
-- [ ] Textarea/input edits logical replacement.
-- [ ] Recompute draft/diff locally on replacement change.
-- [ ] Apply calls `applyWorkbenchSourceEdit()` only after a valid focused draft.
-- [ ] Applied-invalid copy is explicitly **Applied, validation failed**.
-
-### Step 7: Wire App as the single owner
-
-- [ ] `App.svelte` owns only one active edit selection/draft state.
-- [ ] Selection flow:
-
-```text
-Reader/Assets semantic selection
-→ resolve SourceDocumentId
-→ loadWorkbenchSourceDocument
-→ Task 1 target discovery/binding
-→ buildFocusedEditDraft
-→ FocusedEditReview
-```
-
-- [ ] On valid apply, refresh existing Reader/Assets stores/snapshots.
-- [ ] On invalid validation, do not refresh generated projections as if compile succeeded.
-- [ ] Plan mode remains read-only.
-
-### Step 8: Add App integration tests
-
-- [ ] Reader selection opens the same review surface as Assets selection.
-- [ ] Source load is lazy.
-- [ ] Only one edit can be active.
-- [ ] HPA-136-shaped `initialReplacement` can be passed into the same draft/review constructor without a second writer.
-
-### Step 9: Run Task 5 gates
-
-- [ ] Run:
+### Task 5 gates
 
 ```bash
 bun run --cwd apps/layout-editor test src/lib/ReaderView.test.ts src/lib/AssetsView.test.ts src/lib/FocusedEditReview.test.ts src/App.test.ts
 bun run editor:check
 ```
 
-Expected: PASS.
-
-### Step 10: Commit Task 5
-
-- [ ] Commit:
-
-```bash
-git add apps/layout-editor/src/lib/ReaderView.svelte apps/layout-editor/src/lib/ReaderView.test.ts apps/layout-editor/src/lib/AssetsView.svelte apps/layout-editor/src/lib/AssetsView.test.ts apps/layout-editor/src/lib/FocusedEditReview.svelte apps/layout-editor/src/lib/FocusedEditReview.test.ts apps/layout-editor/src/App.svelte apps/layout-editor/src/App.test.ts
-git commit -m "feat(workbench): review and apply focused source edits"
-```
-
 ---
 
-## Task 6: Prove real Chapter 1 target discovery, the live write/validation path, and full repository gates
+## Task 6: Prove real Chapter 1 target discovery, live write/validation, and full repository gates
 
 **Files:**
 - Create: `apps/layout-editor/scripts/verify-focused-edit-real-content.ts`
 - Modify: `apps/layout-editor/package.json`
-- Modify: PR #84 description/checklist after evidence is available
+- Update: PR #84 / Linear evidence after verification
 
-### Step 1: Add the read-only real-content verifier
+### Required Task 6 behavior
 
-- [ ] Add script:
-
-```json
-"verify:focused-edit-real-content": "bun run scripts/verify-focused-edit-real-content.ts"
-```
-
-- [ ] The verifier loads current compiled/source Chapter 1 content and must find at least one valid target for each family:
-
-```text
-Reader dialogue
-Reader action
-Background Prompt
-evidence Image Prompt
-soma_ritsu visualPrompt
-soma_ritsu standard expression prompt
-one approved/generated Chapter 1 audio prompt
-```
-
-- [ ] The Reader proof must include an investigation scene and assert at least hotspot/topic/outro refs bind successfully. Do not let a linear-only scene satisfy the Reader gate.
-- [ ] The verifier must be read-only.
-
-### Step 2: Run compiler/scripts/source verifiers
-
-- [ ] Run:
-
-```bash
-bun run scenes:compile
-bun run check:scripts
-bun run test:scripts
-bun run --cwd apps/layout-editor verify:reader-real-content
-bun run --cwd apps/layout-editor verify:asset-real-content
-bun run --cwd apps/layout-editor verify:plan-real-content
-bun run --cwd apps/layout-editor verify:focused-edit-real-content
-```
-
-Expected: all PASS.
-
-### Step 3: Run layout-editor/Rust gates
-
-- [ ] Run:
-
-```bash
-bun run --cwd apps/layout-editor test
-cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml
-bun run editor:check
-bun run editor:build
-```
-
-Expected: all PASS.
-
-### Step 4: Run authoritative audio checks
-
-- [ ] Run:
-
-```bash
-bun run audio:validate docs/audio_plans/chapter_1.sound-plan.yaml
-bun run audio:apply docs/audio_plans/chapter_1.sound-plan.yaml --check
-```
-
-Expected: PASS.
-
-### Step 5: Run final repo hygiene
-
-- [ ] Run:
-
-```bash
-bun run lint:all
-```
-
-Expected: PASS.
-
-### Step 6: Perform the live apply → validation smoke
-
-`editor:build` proves packaging, not the new process boundary. Exercise it explicitly.
-
-- [ ] Record clean Git status for source/config/audio-plan files.
-- [ ] Start the real Workbench against the current repo.
-- [ ] Choose a harmless Chapter 1 dialogue or action target.
-- [ ] Change one word through the HPA-135 review UI.
-- [ ] Confirm the diff shows exactly that one source change.
-- [ ] Apply.
-- [ ] Confirm UI reports validation success and `bun run scenes:compile` was executed by the backend path.
-- [ ] Confirm generated Reader/Assets refresh reflects the edit.
-- [ ] Revert the throwaway source change with Git.
-- [ ] Re-run `bun run scenes:compile` and confirm clean source diff.
-
-Do not substitute `editor:check`/`editor:build` for this acceptance proof.
-
-### Step 7: Perform one audio prompt smoke without generating media
-
-- [ ] Select a Chapter 1 audio prompt whose usages resolve to exactly one chapter.
-- [ ] Change prompt text in the reviewed sound-plan diff.
-- [ ] Apply and confirm backend runs:
-
-```text
-audio:revise-prompt
-audio:validate
-audio:apply --check
-scenes:compile
-```
-
-- [ ] Confirm both sound plan and derived `audio.yaml` prompt reflect the temporary edit.
-- [ ] Git-revert both temporary source changes; do not generate audio.
-- [ ] Re-run audio validate/apply-check.
-
-### Step 8: Self-review implementation scope before ready-for-review
-
-- [ ] Confirm:
-
-```text
-no source ranges in apply IPC
-no utf16_range_to_byte_range in Rust
-no copied readerSegmentId() / Reader traversal in scripts
-no custom YAML scalar renderer
-no generic read/write/run-command IPC
-no queue/history/undo
-no Plan editing
-no direct Workbench audio.yaml edit
-no production scene JSON schema change
-```
-
-### Step 9: Update PR #84 and Linear evidence
-
-- [ ] Record final command results and manual smoke evidence in PR #84.
-- [ ] Keep HPA-135 as the same single PR.
-- [ ] Move Linear to review only after all required gates and the live apply smoke are complete.
-
-### Step 10: Final implementation commit / ready-for-review transition
-
-- [ ] Commit verifier/package changes:
-
-```bash
-git add apps/layout-editor/scripts/verify-focused-edit-real-content.ts apps/layout-editor/package.json
-git commit -m "test(workbench): verify focused source edits on real content"
-```
-
-Then run the complete final gate once more on the final head before marking the PR ready.
+- [ ] Read-only verifier finds at least one real target for all seven families.
+- [ ] Reader verifier coverage must include a real investigation and assert hotspot/topic/outro binding; a linear-only success is insufficient.
+- [ ] Run compiler/scripts/layout-editor/Rust/audio/lint gates below.
+- [ ] Live Workbench smoke: make a harmless Chapter 1 dialogue/action edit, inspect one focused diff, Apply, observe backend `scenes:compile`, confirm refreshed projection, Git-revert source, compile clean again. `editor:build` is not a substitute.
+- [ ] Audio smoke: edit an unambiguous Chapter 1 sound-plan prompt, confirm backend runs `revise-prompt` → validate → apply-check → compile, confirm temporary sound plan + derived catalog change, then Git-revert both and revalidate. Do not generate media.
+- [ ] Scope self-review confirms no source range in IPC, no Rust UTF-16 mapper, no copied Reader traversal in scripts, no custom YAML scalar renderer, no generic IPC, no queue/history/undo, no Plan edit, no direct Workbench audio.yaml write, and no runtime scene schema change.
 
 ---
 
