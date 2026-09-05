@@ -108,6 +108,42 @@ function escapeHtml(value: string): string {
     .replaceAll("'", "&#39;");
 }
 
+// ----- URL sanitization ---------------------------------------------------------
+
+/** Schemes permitted in authored Plan Markdown links/images. */
+const SAFE_URL_SCHEMES = new Set(["http", "https", "mailto"]);
+
+/**
+ * Accepts http/https/mailto, anchors (`#…`), relative paths, and
+ * protocol-relative (`//host`) URLs. Rejects `javascript:`, `data:`,
+ * `vbscript:`, `file:`, and any other scheme — authored Markdown is untrusted
+ * content rendered via `{@html}` in the workbench UI.
+ */
+function isSafeUrl(href: string): boolean {
+  const trimmed = href.trim();
+  if (trimmed === "") return true;
+  const schemeMatch = /^([a-z][a-z0-9+.-]*):/i.exec(trimmed);
+  if (schemeMatch) {
+    return SAFE_URL_SCHEMES.has(schemeMatch[1]!.toLowerCase());
+  }
+  return true;
+}
+
+/**
+ * Encodes (mirroring marked's `encodeURI` cleaner) then HTML-escapes a href for
+ * safe attribute embedding. Returns `null` when the scheme is unsafe or the URI
+ * is malformed, so the caller falls back to plain text.
+ */
+function cleanHref(href: string): string | null {
+  if (!isSafeUrl(href)) return null;
+  try {
+    const encoded = encodeURI(href).replace(/%25/g, "%");
+    return escapeHtml(encoded);
+  } catch {
+    return null;
+  }
+}
+
 // ----- Token walk ---------------------------------------------------------------
 
 /** Flattened document-order block sequence (spaces skipped; blockquote and list-item children inlined). */
@@ -213,6 +249,27 @@ function renderDocument(
   };
   // Authored raw HTML is untrusted content for the workbench UI: escape it.
   renderer.html = ({ text }: Tokens.HTML | Tokens.Tag) => escapeHtml(text);
+  // Links/images carry authored hrefs: validate the scheme before emitting any
+  // URL attribute. Unsafe schemes (javascript:, data:, …) collapse to plain
+  // text/alt, mirroring marked's own null-href fallback.
+  renderer.link = function (this: Renderer, token: Tokens.Link): string {
+    const text = this.parser.parseInline(token.tokens);
+    const href = cleanHref(token.href);
+    if (href === null) return text;
+    let tag = `<a href="${href}"`;
+    if (token.title) tag += ` title="${escapeHtml(token.title)}"`;
+    return `${tag}>${text}</a>`;
+  };
+  renderer.image = function (this: Renderer, token: Tokens.Image): string {
+    const alt = token.tokens
+      ? this.parser.parseInline(token.tokens, this.parser.textRenderer)
+      : escapeHtml(token.text);
+    const href = cleanHref(token.href);
+    if (href === null) return alt;
+    let tag = `<img src="${href}" alt="${escapeHtml(token.text)}"`;
+    if (token.title) tag += ` title="${escapeHtml(token.title)}"`;
+    return `${tag}>`;
+  };
   return Parser.parse(tokens, { renderer });
 }
 
@@ -417,6 +474,12 @@ export function projectPlanWorkspace(
     bible && findExactHeading(bible.blocks, CHAPTER_HEADING)
       ? { blocks: bible.blocks, path: bible.parsed.path }
       : null;
+  // Both Missing diagnostics are Story-Bible-bound: point them at the Bible
+  // path when available, falling back to the first document only when no Bible
+  // is present at all.
+  const missingSourceFile =
+    bible?.parsed.path ?? payload.documents[0]?.path ?? "";
+
   const chapterOverview = chapterSource
     ? extractChapterOverview(
         chapterSource.blocks,
@@ -428,7 +491,7 @@ export function projectPlanWorkspace(
     diagnostics.push({
       code: "chapterOverviewMissing",
       message: `找不到「${CHAPTER_HEADING}」標題。`,
-      sourceFile: payload.documents[0]?.path ?? "",
+      sourceFile: missingSourceFile,
       line: 1,
     });
   }
@@ -444,7 +507,7 @@ export function projectPlanWorkspace(
     diagnostics.push({
       code: "aobaRevealLadderMissing",
       message: `找不到「${AOBA_HEADING}」標題。`,
-      sourceFile: payload.documents[0]?.path ?? "",
+      sourceFile: missingSourceFile,
       line: 1,
     });
   }
