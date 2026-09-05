@@ -261,11 +261,14 @@ function renderDocument(
     return `${tag}>${text}</a>`;
   };
   renderer.image = function (this: Renderer, token: Tokens.Image): string {
-    const alt = token.tokens
+    // The textRenderer returns inline HTML tokens verbatim (e.g. alt text
+    // containing `<svg onload=...>`), so the fallback must be escaped before
+    // it re-enters renderedHtml and the workbench UI injects it via `{@html}`.
+    const altText = token.tokens
       ? this.parser.parseInline(token.tokens, this.parser.textRenderer)
-      : escapeHtml(token.text);
+      : token.text;
     const href = cleanHref(token.href);
-    if (href === null) return alt;
+    if (href === null) return escapeHtml(altText);
     let tag = `<img src="${href}" alt="${escapeHtml(token.text)}"`;
     if (token.title) tag += ` title="${escapeHtml(token.title)}"`;
     return `${tag}>`;
@@ -297,12 +300,20 @@ function tableAfterHeading(
   return next?.kind === "table" ? next.table : null;
 }
 
+// Marked keeps TableCell.text as the raw source cell text (with Markdown
+// syntax intact, e.g. backticks around `ZW_A16.lock`). Project from the
+// inline tokens instead so the overview/timeline/boundary UI shows clean
+// display text while preserving the strict authored value.
+function cellText(cell: Tokens.TableCell): string {
+  return plainInlineText(cell.tokens);
+}
+
 function headerRow(table: Tokens.Table): string[] {
-  return table.header.map((cell) => cell.text);
+  return table.header.map(cellText);
 }
 
 function rowCells(table: Tokens.Table): string[][] {
-  return table.rows.map((row) => row.map((cell) => cell.text));
+  return table.rows.map((row) => row.map(cellText));
 }
 
 function headersMatch(table: Tokens.Table | null, expected: string[]): boolean {

@@ -156,6 +156,17 @@ describe("PlanSidebar", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not render the document outline when surface is overview", () => {
+    // showPlanOverview() leaves selectedDocumentId unchanged; the outline
+    // must be gated on surface === "document" so it does not linger.
+    render(PlanSidebar, sidebarProps({ surface: "overview" }));
+
+    expect(screen.queryByLabelText("Document outline")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Show all levels" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("Chapter 1 `1. 全章前台證據包` and Chapter 2 `12. 最終審查會 Proof Order` are reachable in compact mode", async () => {
     const user = userEvent.setup();
 

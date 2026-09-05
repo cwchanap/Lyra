@@ -81,7 +81,7 @@
     >
       {documentLabel(doc)}
     </button>
-    {#if doc.id === selectedDocumentId}
+    {#if surface === "document" && doc.id === selectedDocumentId}
       {#if hasDeepHeadings}
         <button
           type="button"
