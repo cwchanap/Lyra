@@ -1,8 +1,8 @@
 import {
   deriveDialogueSegments,
+  dialogueSegmentCarrierId,
   type DerivedDialogueSegment,
 } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
-import type { DialogueSegmentOriginV1 } from "@lyra/scripts/compile-scenes/save-content-manifest";
 import type {
   InterrogationRevealTarget,
   InventoryTarget,
@@ -56,41 +56,14 @@ export function projectDialogue(item: JSONDialogueItem): ReaderItem {
   }
 }
 
-// ----- Compiler segment normalization ------------------------------------------
+// ----- Compiler segment normalization ----------------------------------------
 
-export function readerSegmentId(origin: DialogueSegmentOriginV1): string {
-  switch (origin.type) {
-    case "linearScene":
-      return "main";
-    case "investigationIntro":
-    case "interrogationIntro":
-    case "analysisIntro":
-      return "intro";
-    case "investigationOutro":
-    case "interrogationOutro":
-    case "analysisOutro":
-      return "outro";
-    case "investigationInteraction":
-    case "interrogationPhase":
-      return origin.segmentId;
-    case "analysisResult":
-      return `board:${origin.boardId}:result`;
-    default:
-      return assertNever(origin);
-  }
-}
-
-/**
- * Consumable view over `deriveDialogueSegments()`: projection must `take()`
- * every non-empty compiler segment exactly once, with the compiler's own
- * carrier spelling, or `assertFullyConsumed()` / `take()` throw.
- */
 class SegmentPool {
   readonly #segments = new Map<string, DerivedDialogueSegment>();
 
   constructor(segments: DerivedDialogueSegment[]) {
     for (const segment of segments) {
-      this.#segments.set(readerSegmentId(segment.origin), segment);
+      this.#segments.set(dialogueSegmentCarrierId(segment.origin), segment);
     }
   }
 

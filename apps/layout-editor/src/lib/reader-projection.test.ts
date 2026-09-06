@@ -16,7 +16,8 @@ import type {
   ReaderScene,
   WorkbenchScenePayload,
 } from "./workbench-types";
-import { projectReaderScene, readerSegmentId } from "./reader-projection";
+import { projectReaderScene } from "./reader-projection";
+import { dialogueSegmentCarrierId } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
 
 // Every dialogue carrier fixture renders exactly one line whose text equals
 // the compiler carrier ID, so sentinel == carrier ID everywhere.
@@ -523,7 +524,7 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
         deriveDialogueSegments({
           chapterId: "chapter_1",
           json: linearScene,
-        }).map((segment) => readerSegmentId(segment.origin)),
+        }).map((segment) => dialogueSegmentCarrierId(segment.origin)),
       ),
     );
     expect(reader.groups.map((group) => group.id)).toEqual(["main"]);
@@ -538,7 +539,7 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
     const expected = deriveDialogueSegments({
       chapterId: "chapter_1",
       json: investigationScene,
-    }).map((segment) => readerSegmentId(segment.origin));
+    }).map((segment) => dialogueSegmentCarrierId(segment.origin));
 
     expect(collectDialogueCarrierIds(reader)).toEqual(new Set(expected));
     for (const id of expected) {
@@ -557,7 +558,7 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
     const expected = deriveDialogueSegments({
       chapterId: "chapter_1",
       json: interrogationScene,
-    }).map((segment) => readerSegmentId(segment.origin));
+    }).map((segment) => dialogueSegmentCarrierId(segment.origin));
 
     expect(collectDialogueCarrierIds(reader)).toEqual(new Set(expected));
     for (const id of expected) {
