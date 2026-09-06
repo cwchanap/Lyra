@@ -27,12 +27,18 @@ export const EVIDENCE_IMAGE_METADATA_KEYS = ["Image Prompt"];
 
 export function parseVisualAssetCue(
   meta: Record<string, string>,
+  metaLines: Record<string, number> = {},
 ): VisualAssetCue {
   return {
     backgroundPrompt: meta["Background Prompt"] ?? null,
     backgroundAssetId: meta["Background Asset ID"] ?? null,
     bgm: parseAudioCue("bgm", meta.BGM),
     bgs: parseAudioCue("bgs", meta.BGS),
+    // Compiler-only: omit when no Background Prompt was authored so existing
+    // cue shapes stay byte-identical.
+    ...(meta["Background Prompt"] === undefined
+      ? {}
+      : { backgroundPromptLine: metaLines["Background Prompt"] ?? null }),
   };
 }
 

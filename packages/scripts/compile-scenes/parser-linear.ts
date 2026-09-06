@@ -77,7 +77,7 @@ export function parseLinearScene(
         queue.push({
           kind: "sceneTag",
           text: tok.text,
-          assetCue: parseVisualAssetCue(meta),
+          assetCue: parseVisualAssetCue(meta, metadataLines),
           sourceLine: tok.line,
         });
         break;

@@ -14,7 +14,15 @@ import type { AssetConfig, AudioChannel } from "./config";
 import { publicPathForAssetId } from "@lyra/asset-paths";
 
 export type BackgroundManifestSource =
-  | { chapterId: string; sceneId: string; unitId: string }
+  | {
+      chapterId: string;
+      sceneId: string;
+      unitId: string;
+      /** Authored physical line of the Background Prompt metadata value. */
+      promptLine: number;
+      /** Literal authored Background Prompt metadata value (never enriched). */
+      authoredPrompt: string;
+    }
   | { chapterId: string; sceneId: string; characterId: string }
   /** A global authored file (e.g. docs/stories_plan/city_map.json) — no
    * chapter/scene owner exists, so the source names the file directly. */
@@ -34,7 +42,15 @@ export type StandeeManifestSource = {
 };
 
 export type EvidenceManifestSource =
-  | { chapterId: string; sceneId: string; evidenceId: string }
+  | {
+      chapterId: string;
+      sceneId: string;
+      evidenceId: string;
+      /** Authored physical line of the Image Prompt metadata value. */
+      promptLine: number;
+      /** Literal authored Image Prompt metadata value (never enriched). */
+      authoredPrompt: string;
+    }
   | { chapterId: string; sceneId: string; characterId: string };
 
 export type AudioManifestSource = {

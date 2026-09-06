@@ -98,7 +98,7 @@ function parseEvidenceEntry(
   const name = meta.value.get("Name")?.value;
   const description = meta.value.get("Description")?.value;
   const details = meta.value.get("Details")?.value;
-  const imagePrompt = meta.value.get("Image Prompt")?.value ?? null;
+  const imagePrompt = meta.value.get("Image Prompt") ?? null;
   const sourceSublocationId =
     meta.value.get("Source Sublocation")?.value ?? null;
   if (!name || !description || !details)
@@ -162,8 +162,9 @@ function parseEvidenceEntry(
       description,
       details,
       imageCue: {
-        imagePrompt,
+        imagePrompt: imagePrompt?.value ?? null,
         imageAssetId: null,
+        ...(imagePrompt ? { imagePromptLine: imagePrompt.line } : {}),
       },
       sourceSublocationId,
       provenance: provenance.value,

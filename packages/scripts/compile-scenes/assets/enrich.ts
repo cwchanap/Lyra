@@ -417,7 +417,8 @@ function enrichDialogue(
           item.assetCue ?? null,
           unit,
           context.scene.ast.sourceFile,
-          context.scene.ast.line,
+          // Prefer the scene tag's own authored line as the owner fallback.
+          item.sourceLine ?? context.scene.ast.line,
           context,
         ),
       };
@@ -894,6 +895,10 @@ function enrichVisualCue(
       chapterId: context.scene.chapterId,
       sceneId: context.scene.ast.id,
       unitId,
+      // HPA-135: the Workbench consumes the actual enrichment unitId plus
+      // the authored prompt line/value for compiler-owned source identity.
+      promptLine: cue.backgroundPromptLine ?? line,
+      authoredPrompt: cue.backgroundPrompt,
     },
     prompt: [cue.backgroundPrompt, promptSuffix].filter(Boolean).join("\n\n"),
   });
@@ -1047,6 +1052,9 @@ function enrichEvidenceImageCue(
       chapterId: context.scene.chapterId,
       sceneId: context.scene.ast.id,
       evidenceId: id,
+      // HPA-135: authored prompt line/value for compiler-owned identity.
+      promptLine: cue.imagePromptLine ?? line,
+      authoredPrompt: cue.imagePrompt,
     },
     prompt: cue.imagePrompt,
   });

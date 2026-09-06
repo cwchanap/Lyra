@@ -77,7 +77,9 @@ export function consumeDialogueUntilHeading(
         kind: "sceneTag",
         text: next.text,
         assetCue:
-          Object.keys(meta).length > 0 ? parseVisualAssetCue(meta) : null,
+          Object.keys(meta).length > 0
+            ? parseVisualAssetCue(meta, metadataLines)
+            : null,
         sourceLine: next.line,
       });
     } else if (next.kind === "action")
