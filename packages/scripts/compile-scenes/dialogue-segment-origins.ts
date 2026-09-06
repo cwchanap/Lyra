@@ -4,6 +4,7 @@ import type {
   ASTInvestigationScene,
   ASTLinearScene,
   CompileError,
+  DialogueItem,
   JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
@@ -41,7 +42,107 @@ export type DerivedDialogueSegment = {
     sourceFile: string;
     line: number;
   };
+  /**
+   * Compiler-only per-item authored source lines (HPA-135), parallel to
+   * `items` by emitted index. Present only when the scene was derived with
+   * `sourceAst`; an entry is null when that item has no resolvable source
+   * (compiler-only metadata missing, or source/compiled mismatch).
+   */
+  itemSources?: Array<{ sourceFile: string; line: number } | null>;
 };
+
+/**
+ * Single owner of the Reader carrier spelling (HPA-135). The Reader
+ * projection imports this instead of keeping a duplicate mapping.
+ */
+export function dialogueSegmentCarrierId(
+  origin: DialogueSegmentOriginV1,
+): string {
+  switch (origin.type) {
+    case "linearScene":
+      return "main";
+    case "investigationIntro":
+    case "interrogationIntro":
+    case "analysisIntro":
+      return "intro";
+    case "investigationOutro":
+    case "interrogationOutro":
+    case "analysisOutro":
+      return "outro";
+    case "investigationInteraction":
+    case "interrogationPhase":
+      return origin.segmentId;
+    case "analysisResult":
+      return `board:${origin.boardId}:result`;
+  }
+}
+
+export type DialogueItemSourceResolution =
+  | { ok: true; sourceFile: string; line: number }
+  | { ok: false; error: CompileError };
+
+/**
+ * Resolves one emitted item's authored source location. The join is
+ * carrier-local (by carrier id) plus per-item (by emitted index); any
+ * mismatch resolves to `workbenchSourceCarrierStale` for that carrier only —
+ * never whole-scene disablement, never text-search relocation.
+ */
+export function resolveDialogueItemSource(
+  segments: readonly DerivedDialogueSegment[],
+  carrierId: string,
+  itemIndex: number,
+): DialogueItemSourceResolution {
+  const segment = segments.find(
+    (candidate) => dialogueSegmentCarrierId(candidate.origin) === carrierId,
+  );
+  const source = segment?.itemSources?.[itemIndex];
+  if (segment && source) {
+    return { ok: true, sourceFile: source.sourceFile, line: source.line };
+  }
+  return {
+    ok: false,
+    error: {
+      code: "workbenchSourceCarrierStale",
+      message: segment
+        ? `Dialogue carrier "${carrierId}" item ${itemIndex} does not match the compiled source; run \`bun run scenes:compile\` to refresh.`
+        : `Dialogue carrier "${carrierId}" has no compiled source identity; run \`bun run scenes:compile\` to refresh.`,
+      sourceFile: segment?.source?.sourceFile ?? "",
+      line: segment?.source?.line ?? itemIndex + 1,
+    },
+  };
+}
+
+function emittedMatchesSource(
+  item: JSONDialogueItem,
+  ast: DialogueItem,
+): boolean {
+  if (item.kind === "line" && ast.kind === "line") {
+    return item.speaker === ast.speaker && item.text === ast.text;
+  }
+  if (
+    (item.kind === "action" || item.kind === "sceneTag") &&
+    ast.kind === item.kind
+  ) {
+    return item.text === ast.text;
+  }
+  return false;
+}
+
+function itemSourceFields(
+  owner: { sourceFile: string } | undefined,
+  items: readonly JSONDialogueItem[],
+  sourceItems: readonly DialogueItem[] | null | undefined,
+): Pick<DerivedDialogueSegment, "itemSources"> | Record<string, never> {
+  if (!owner || !sourceItems) return {};
+  return {
+    itemSources: items.map((item, index) => {
+      const ast = sourceItems[index];
+      if (!ast || ast.sourceLine === undefined) return null;
+      if (!emittedMatchesSource(item, ast)) return null;
+      return { sourceFile: owner.sourceFile, line: ast.sourceLine };
+    }),
+  };
+}
 
 export function investigationInteractionOrigin(
   chapterId: string,
@@ -111,6 +212,7 @@ function deriveAnalysisSegments(
   scene: JSONAnalysisScene,
   sourceAst?: ASTAnalysisScene,
 ): DerivedDialogueSegment[] {
+  // Source owners join by semantic board id — never by array position.
   const authoredBoardsById = sourceAst
     ? new Map(sourceAst.boards.map((board) => [board.id, board] as const))
     : null;
@@ -119,21 +221,31 @@ function deriveAnalysisSegments(
       origin: { type: "analysisIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(sourceAst, scene.intro, sourceAst?.intro),
     },
-    ...scene.boards.map((board) => ({
-      origin: {
-        type: "analysisResult" as const,
-        chapterId,
-        sceneId: scene.id,
-        boardId: board.common.id,
-      },
-      items: board.common.resultDialogue,
-      ...sourceFields(authoredBoardsById?.get(board.common.id)),
-    })),
+    ...scene.boards.map((board) => {
+      const authored = authoredBoardsById?.get(board.common.id);
+      return {
+        origin: {
+          type: "analysisResult" as const,
+          chapterId,
+          sceneId: scene.id,
+          boardId: board.common.id,
+        },
+        items: board.common.resultDialogue,
+        ...sourceFields(authored),
+        ...itemSourceFields(
+          authored,
+          board.common.resultDialogue,
+          authored?.resultDialogue,
+        ),
+      };
+    }),
     {
       origin: { type: "analysisOutro", chapterId, sceneId: scene.id },
       items: scene.outro,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(sourceAst, scene.outro, sourceAst?.outro),
     },
   ];
   return nonEmptySegments(segments);
@@ -153,6 +265,7 @@ function deriveLinearSegments(
       },
       items: scene.queue,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(sourceAst, scene.queue, sourceAst?.queue),
     },
   ]);
 }
@@ -162,21 +275,53 @@ function deriveInvestigationSegments(
   scene: JSONInvestigationScene,
   sourceAst?: ASTInvestigationScene,
 ): DerivedDialogueSegment[] {
+  // Source owners join by the same semantic ids that define the carriers —
+  // never by raw segment/scene array order.
+  const subById = sourceAst
+    ? new Map(sourceAst.sublocations.map((sub) => [sub.id, sub] as const))
+    : null;
+  const evidenceById = sourceAst
+    ? new Map(sourceAst.evidenceManifest.map((e) => [e.id, e] as const))
+    : null;
+  const statementById = sourceAst
+    ? new Map(sourceAst.statementManifest.map((s) => [s.id, s] as const))
+    : null;
+
   const segments: DerivedDialogueSegment[] = [
     {
       origin: { type: "investigationIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(sourceAst, scene.intro, sourceAst?.intro),
     },
     {
       origin: { type: "investigationOutro", chapterId, sceneId: scene.id },
       items: scene.outro.dialogue,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(
+        sourceAst,
+        scene.outro.dialogue,
+        sourceAst?.outro.dialogue,
+      ),
     },
   ];
 
-  for (const [sublocationIndex, sublocation] of scene.sublocations.entries()) {
-    const sourceSublocation = sourceAst?.sublocations[sublocationIndex];
+  for (const sublocation of scene.sublocations) {
+    const sourceSublocation = subById?.get(sublocation.id);
+    const hotspotsById = sourceSublocation
+      ? new Map(
+          sourceSublocation.hotspots.map(
+            (hotspot) => [hotspot.id, hotspot] as const,
+          ),
+        )
+      : null;
+    const charactersById = sourceSublocation
+      ? new Map(
+          sourceSublocation.characters.map(
+            (character) => [character.id, character] as const,
+          ),
+        )
+      : null;
     segments.push({
       origin: investigationInteractionOrigin(
         chapterId,
@@ -185,9 +330,14 @@ function deriveInvestigationSegments(
       ),
       items: sublocation.transitionDialogue,
       ...sourceFields(sourceSublocation),
+      ...itemSourceFields(
+        sourceSublocation,
+        sublocation.transitionDialogue,
+        sourceSublocation?.transitionDialogue,
+      ),
     });
-    for (const [hotspotIndex, hotspot] of sublocation.hotspots.entries()) {
-      const sourceHotspot = sourceSublocation?.hotspots[hotspotIndex];
+    for (const hotspot of sublocation.hotspots) {
+      const sourceHotspot = hotspotsById?.get(hotspot.id);
       segments.push(
         {
           origin: investigationInteractionOrigin(
@@ -197,6 +347,11 @@ function deriveInvestigationSegments(
           ),
           items: hotspot.inspectDialogue,
           ...sourceFields(sourceHotspot),
+          ...itemSourceFields(
+            sourceHotspot,
+            hotspot.inspectDialogue,
+            sourceHotspot?.inspectDialogue,
+          ),
         },
         {
           origin: investigationInteractionOrigin(
@@ -206,16 +361,20 @@ function deriveInvestigationSegments(
           ),
           items: hotspot.onReexamine ?? [],
           ...sourceFields(sourceHotspot),
+          ...itemSourceFields(
+            sourceHotspot,
+            hotspot.onReexamine ?? [],
+            sourceHotspot?.onReexamine,
+          ),
         },
       );
     }
-    for (const [
-      characterIndex,
-      character,
-    ] of sublocation.characters.entries()) {
-      const sourceCharacter = sourceSublocation?.characters[characterIndex];
-      for (const [topicIndex, topic] of character.topics.entries()) {
-        const sourceTopic = sourceCharacter?.topics[topicIndex];
+    for (const character of sublocation.characters) {
+      const sourceCharacter = charactersById?.get(character.id);
+      for (const topic of character.topics) {
+        const sourceTopic = sourceCharacter?.topics.find(
+          (candidate) => candidate.id === topic.id,
+        );
         segments.push(
           {
             origin: investigationInteractionOrigin(
@@ -225,6 +384,11 @@ function deriveInvestigationSegments(
             ),
             items: topic.topicDialogue,
             ...sourceFields(sourceTopic),
+            ...itemSourceFields(
+              sourceTopic,
+              topic.topicDialogue,
+              sourceTopic?.topicDialogue,
+            ),
           },
           {
             origin: investigationInteractionOrigin(
@@ -234,13 +398,18 @@ function deriveInvestigationSegments(
             ),
             items: topic.onReexamine ?? [],
             ...sourceFields(sourceTopic),
+            ...itemSourceFields(
+              sourceTopic,
+              topic.onReexamine ?? [],
+              sourceTopic?.onReexamine,
+            ),
           },
         );
       }
     }
   }
-  for (const [evidenceIndex, evidence] of scene.evidenceManifest.entries()) {
-    const sourceEvidence = sourceAst?.evidenceManifest[evidenceIndex];
+  for (const evidence of scene.evidenceManifest) {
+    const sourceEvidence = evidenceById?.get(evidence.id);
     segments.push(
       {
         origin: investigationInteractionOrigin(
@@ -250,6 +419,11 @@ function deriveInvestigationSegments(
         ),
         items: evidence.onCollect,
         ...sourceFields(sourceEvidence),
+        ...itemSourceFields(
+          sourceEvidence,
+          evidence.onCollect,
+          sourceEvidence?.onCollect,
+        ),
       },
       {
         origin: investigationInteractionOrigin(
@@ -259,11 +433,16 @@ function deriveInvestigationSegments(
         ),
         items: evidence.onReexamine ?? [],
         ...sourceFields(sourceEvidence),
+        ...itemSourceFields(
+          sourceEvidence,
+          evidence.onReexamine ?? [],
+          sourceEvidence?.onReexamine,
+        ),
       },
     );
   }
-  for (const [statementIndex, statement] of scene.statementManifest.entries()) {
-    const sourceStatement = sourceAst?.statementManifest[statementIndex];
+  for (const statement of scene.statementManifest) {
+    const sourceStatement = statementById?.get(statement.id);
     segments.push(
       {
         origin: investigationInteractionOrigin(
@@ -273,6 +452,11 @@ function deriveInvestigationSegments(
         ),
         items: statement.onAcquire,
         ...sourceFields(sourceStatement),
+        ...itemSourceFields(
+          sourceStatement,
+          statement.onAcquire,
+          sourceStatement?.onAcquire,
+        ),
       },
       {
         origin: investigationInteractionOrigin(
@@ -282,6 +466,11 @@ function deriveInvestigationSegments(
         ),
         items: statement.onReexamine ?? [],
         ...sourceFields(sourceStatement),
+        ...itemSourceFields(
+          sourceStatement,
+          statement.onReexamine ?? [],
+          sourceStatement?.onReexamine,
+        ),
       },
     );
   }
@@ -293,21 +482,42 @@ function deriveInterrogationSegments(
   scene: JSONInterrogationScene,
   sourceAst?: ASTInterrogationScene,
 ): DerivedDialogueSegment[] {
+  // Source owners join by semantic phase/question/line ids — never by array
+  // position.
+  const phaseById = sourceAst
+    ? new Map(sourceAst.phases.map((phase) => [phase.id, phase] as const))
+    : null;
+  const evidenceById = sourceAst
+    ? new Map(sourceAst.evidenceManifest.map((e) => [e.id, e] as const))
+    : null;
+  const statementById = sourceAst
+    ? new Map(sourceAst.statementManifest.map((s) => [s.id, s] as const))
+    : null;
+
   const segments: DerivedDialogueSegment[] = [
     {
       origin: { type: "interrogationIntro", chapterId, sceneId: scene.id },
       items: scene.intro,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(sourceAst, scene.intro, sourceAst?.intro),
     },
     {
       origin: { type: "interrogationOutro", chapterId, sceneId: scene.id },
       items: scene.outro.dialogue,
       ...sourceFields(sourceAst),
+      ...itemSourceFields(
+        sourceAst,
+        scene.outro.dialogue,
+        sourceAst?.outro.dialogue,
+      ),
     },
   ];
 
-  for (const [phaseIndex, phase] of scene.phases.entries()) {
-    const sourcePhase = sourceAst?.phases[phaseIndex];
+  for (const phase of scene.phases) {
+    const sourcePhase = phaseById?.get(phase.id);
+    const questionsById = sourcePhase
+      ? new Map(sourcePhase.questions.map((q) => [q.id, q] as const))
+      : null;
     segments.push({
       origin: interrogationPhaseOrigin(
         chapterId,
@@ -317,16 +527,26 @@ function deriveInterrogationSegments(
       ),
       items: phase.entryDialogue,
       ...sourceFields(sourcePhase),
+      ...itemSourceFields(
+        sourcePhase,
+        phase.entryDialogue,
+        sourcePhase?.entryDialogue,
+      ),
     });
-    for (const [questionIndex, question] of phase.questions.entries()) {
-      const sourceQuestion = sourcePhase?.questions[questionIndex];
+    for (const question of phase.questions) {
+      const sourceQuestion = questionsById?.get(question.id);
+      const sourceTestimony = sourceQuestion?.testimony;
       const testimony = question.testimony;
-      for (const [role, items] of [
-        ["onLoop", testimony.onLoop],
-        ["loopPrompt", testimony.loopPrompt],
-        ["defaultChallenge", testimony.defaultChallenge],
-        ["defaultWrong", testimony.defaultWrong],
-        ["wrongReply", testimony.wrongReply],
+      for (const [role, items, sourceItems] of [
+        ["onLoop", testimony.onLoop, sourceTestimony?.onLoop],
+        ["loopPrompt", testimony.loopPrompt, sourceTestimony?.loopPrompt],
+        [
+          "defaultChallenge",
+          testimony.defaultChallenge,
+          sourceTestimony?.defaultChallenge,
+        ],
+        ["defaultWrong", testimony.defaultWrong, sourceTestimony?.defaultWrong],
+        ["wrongReply", testimony.wrongReply, sourceTestimony?.wrongReply],
       ] as const) {
         segments.push({
           origin: interrogationPhaseOrigin(
@@ -336,16 +556,24 @@ function deriveInterrogationSegments(
             `question:${question.id}:${role}`,
           ),
           items,
-          ...sourceFields(sourceQuestion?.testimony),
+          ...sourceFields(sourceTestimony),
+          ...itemSourceFields(sourceTestimony, items, sourceItems),
         });
       }
-      for (const [lineIndex, line] of testimony.lines.entries()) {
-        const sourceLine = sourceQuestion?.testimony.lines[lineIndex];
-        for (const [role, items] of [
-          ["content", line.content],
-          ["challenge", line.challenge],
-          ["onCorrect", line.onCorrect],
-          ["onWrongEvidence", line.onWrongEvidence],
+      const linesById = sourceTestimony
+        ? new Map(sourceTestimony.lines.map((line) => [line.id, line] as const))
+        : null;
+      for (const line of testimony.lines) {
+        const sourceLine = linesById?.get(line.id);
+        for (const [role, items, sourceItems] of [
+          ["content", line.content, sourceLine?.content],
+          ["challenge", line.challenge, sourceLine?.challenge],
+          ["onCorrect", line.onCorrect, sourceLine?.onCorrect],
+          [
+            "onWrongEvidence",
+            line.onWrongEvidence,
+            sourceLine?.onWrongEvidence,
+          ],
         ] as const) {
           segments.push({
             origin: interrogationPhaseOrigin(
@@ -356,13 +584,14 @@ function deriveInterrogationSegments(
             ),
             items,
             ...sourceFields(sourceLine),
+            ...itemSourceFields(sourceLine, items, sourceItems),
           });
         }
       }
     }
   }
-  for (const [evidenceIndex, evidence] of scene.evidenceManifest.entries()) {
-    const sourceEvidence = sourceAst?.evidenceManifest[evidenceIndex];
+  for (const evidence of scene.evidenceManifest) {
+    const sourceEvidence = evidenceById?.get(evidence.id);
     const phaseId = INVENTORY_PHASE_ID;
     segments.push(
       {
@@ -374,6 +603,11 @@ function deriveInterrogationSegments(
         ),
         items: evidence.onCollect,
         ...sourceFields(sourceEvidence),
+        ...itemSourceFields(
+          sourceEvidence,
+          evidence.onCollect,
+          sourceEvidence?.onCollect,
+        ),
       },
       {
         origin: interrogationPhaseOrigin(
@@ -384,11 +618,16 @@ function deriveInterrogationSegments(
         ),
         items: evidence.onReexamine ?? [],
         ...sourceFields(sourceEvidence),
+        ...itemSourceFields(
+          sourceEvidence,
+          evidence.onReexamine ?? [],
+          sourceEvidence?.onReexamine,
+        ),
       },
     );
   }
-  for (const [statementIndex, statement] of scene.statementManifest.entries()) {
-    const sourceStatement = sourceAst?.statementManifest[statementIndex];
+  for (const statement of scene.statementManifest) {
+    const sourceStatement = statementById?.get(statement.id);
     const phaseId = INVENTORY_PHASE_ID;
     segments.push(
       {
@@ -400,6 +639,11 @@ function deriveInterrogationSegments(
         ),
         items: statement.onAcquire,
         ...sourceFields(sourceStatement),
+        ...itemSourceFields(
+          sourceStatement,
+          statement.onAcquire,
+          sourceStatement?.onAcquire,
+        ),
       },
       {
         origin: interrogationPhaseOrigin(
@@ -410,6 +654,11 @@ function deriveInterrogationSegments(
         ),
         items: statement.onReexamine ?? [],
         ...sourceFields(sourceStatement),
+        ...itemSourceFields(
+          sourceStatement,
+          statement.onReexamine ?? [],
+          sourceStatement?.onReexamine,
+        ),
       },
     );
   }
