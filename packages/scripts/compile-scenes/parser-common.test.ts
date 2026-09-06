@@ -68,6 +68,7 @@ describe("parser-common", () => {
             backgroundAssetId: null,
             bgm: { channel: "bgm", assetId: null },
             bgs: null,
+            backgroundPromptLine: 2,
           },
           sourceLine: 1,
         },

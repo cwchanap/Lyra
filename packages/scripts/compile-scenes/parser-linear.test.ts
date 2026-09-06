@@ -103,6 +103,7 @@ describe("parseLinearScene", () => {
         backgroundAssetId: null,
         bgm: { channel: "bgm", assetId: "rain_mystery_low" },
         bgs: { channel: "bgs", assetId: "street_rain" },
+        backgroundPromptLine: 4,
       },
       sourceLine: 3,
     });

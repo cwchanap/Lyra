@@ -252,6 +252,7 @@ function parsePhase(
       id: head.anchorId,
       label,
       meta: meta.value,
+      metaLines: meta.lines,
     });
   return fail(
     cur.sourceFile,
@@ -266,6 +267,8 @@ type PhaseMeta = {
   id: string;
   label: string;
   meta: Meta;
+  /** Key → authored physical line (HPA-135 prompt source identity). */
+  metaLines: Record<string, number>;
 };
 
 function parseSubject(
@@ -1016,7 +1019,7 @@ function parseCommonPhaseMeta(phaseMeta: PhaseMeta):
       representedAuthority: phaseMeta.meta["Represented Authority"] ?? null,
       unlock,
       reveals: reveals.value,
-      assetCue: parseVisualAssetCue(phaseMeta.meta),
+      assetCue: parseVisualAssetCue(phaseMeta.meta, phaseMeta.metaLines),
     },
   };
 }

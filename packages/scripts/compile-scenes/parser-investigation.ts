@@ -315,7 +315,7 @@ function parseSublocation(
     head.line,
   );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
-  const assetCue = parseVisualAssetCue(meta.value);
+  const assetCue = parseVisualAssetCue(meta.value, meta.lines);
   if (meta.value.Status === undefined) {
     return fail(
       cur.sourceFile,

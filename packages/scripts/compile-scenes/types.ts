@@ -59,11 +59,15 @@ export type VisualAssetCue = {
   backgroundAssetId: string | null;
   bgm: AudioCue | null;
   bgs: AudioCue | null;
+  /** Compiler-only authored line of the Background Prompt metadata value. */
+  backgroundPromptLine?: number | null;
 };
 
 export type EvidenceImageCue = {
   imagePrompt: string | null;
   imageAssetId: string | null;
+  /** Compiler-only authored line of the Image Prompt metadata value. */
+  imagePromptLine?: number | null;
 };
 
 export type JSONVisualAssetCue = {

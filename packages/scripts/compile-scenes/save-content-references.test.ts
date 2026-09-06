@@ -93,13 +93,21 @@ function entryFor(assetId: string): AssetManifestEntry {
         chapterId,
         sceneId,
         evidenceId: assetId.slice("evidence.".length),
+        promptLine: 1,
+        authoredPrompt: "prompt",
       },
     };
   }
   return {
     ...base,
     type: "background",
-    source: { chapterId, sceneId, unitId: "tag_001" },
+    source: {
+      chapterId,
+      sceneId,
+      unitId: "tag_001",
+      promptLine: 1,
+      authoredPrompt: "prompt",
+    },
   };
 }
 

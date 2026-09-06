@@ -1371,3 +1371,36 @@ describe("compiler-only source metadata strip (HPA-135)", () => {
     expect(JSON.stringify(json)).not.toContain("sourceLine");
   });
 });
+
+describe("prompt-line compiler metadata strip (HPA-135)", () => {
+  it("never emits cue prompt-line metadata into production scene JSON", () => {
+    const ast: ASTLinearScene = {
+      kind: "linearScene",
+      id: "scene_prompt_lines",
+      title: "Prompt",
+      summary: "Prompt",
+      summaryAuthored: false,
+      queue: [
+        {
+          kind: "sceneTag",
+          text: "街道",
+          assetCue: {
+            backgroundPrompt: "Rainy street.",
+            backgroundPromptLine: 3,
+            backgroundAssetId: null,
+            bgm: null,
+            bgs: null,
+          },
+        },
+      ],
+      assetRefs: [],
+      sourceFile: "scene_prompt_lines.md",
+      line: 1,
+    };
+    const json = emitLinearScene(ast);
+    const serialized = JSON.stringify(json);
+    expect(serialized).not.toContain("backgroundPromptLine");
+    expect(serialized).not.toContain("imagePromptLine");
+    expect(serialized).not.toContain("backgroundPrompt");
+  });
+});
