@@ -119,6 +119,8 @@ const manifest: AssetManifest = {
         chapterId: "chapter_1",
         sceneId: "scene_cues",
         unitId: "hall",
+        promptLine: 3,
+        authoredPrompt: "rainy hall",
       },
     },
     {
@@ -132,6 +134,8 @@ const manifest: AssetManifest = {
         chapterId: "chapter_1",
         sceneId: "investigation_delta",
         unitId: "hall",
+        promptLine: 3,
+        authoredPrompt: "delta hall",
       },
     },
     {
@@ -214,6 +218,8 @@ const manifest: AssetManifest = {
         chapterId: "chapter_1",
         sceneId: "investigation_delta",
         evidenceId: "receipt",
+        promptLine: 3,
+        authoredPrompt: "torn receipt",
       },
     },
   ],
