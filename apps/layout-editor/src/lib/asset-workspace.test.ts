@@ -547,6 +547,8 @@ function spriteManifest(): AssetManifest {
           chapterId: "chapter_1",
           sceneId: "investigation_s",
           evidenceId: "door_log",
+          promptLine: 3,
+          authoredPrompt: "door log",
         },
       },
       {
@@ -560,6 +562,8 @@ function spriteManifest(): AssetManifest {
           chapterId: "chapter_1",
           sceneId: "investigation_s",
           unitId: "wall",
+          promptLine: 3,
+          authoredPrompt: "wall",
         },
       },
     ],
