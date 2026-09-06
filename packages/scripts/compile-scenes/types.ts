@@ -72,19 +72,27 @@ export type JSONVisualAssetCue = {
   bgs: AudioCue | null;
 };
 
+/**
+ * Compiler-only authored source line (HPA-135). Set by the parsers from the
+ * tokenizer token's physical line; never emitted into JSONDialogueItem.
+ * Metadata-wrapped interrogation dialogue carries the OUTER metadata token's
+ * line, not the line produced by re-tokenizing the metadata value.
+ */
 export type DialogueItem =
   | {
       kind: "sceneTag";
       text: string;
       assetCue?: VisualAssetCue | null;
+      sourceLine?: number;
     }
-  | { kind: "action"; text: string }
+  | { kind: "action"; text: string; sourceLine?: number }
   | {
       kind: "line";
       speaker: string;
       text: string;
       expression?: string | null;
       portrait?: PortraitRef | null;
+      sourceLine?: number;
     };
 
 export type JSONDialogueItem =

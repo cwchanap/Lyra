@@ -27,14 +27,16 @@ describe("parseLinearScene", () => {
           bgm: null,
           bgs: null,
         },
+        sourceLine: 3,
       },
-      { kind: "action", text: "相馬律收起傘。" },
+      { kind: "action", text: "相馬律收起傘。", sourceLine: 5 },
       {
         kind: "line",
         speaker: "早坂茜",
         text: "你來得比我想的快。",
         expression: null,
         portrait: null,
+        sourceLine: 7,
       },
     ]);
   });
@@ -102,6 +104,7 @@ describe("parseLinearScene", () => {
         bgm: { channel: "bgm", assetId: "rain_mystery_low" },
         bgs: { channel: "bgs", assetId: "street_rain" },
       },
+      sourceLine: 3,
     });
   });
 
@@ -189,6 +192,7 @@ describe("parseLinearScene", () => {
         text: "你不舒服？",
         expression: "concerned",
         portrait: null,
+        sourceLine: 3,
       },
     ]);
   });

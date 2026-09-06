@@ -1344,3 +1344,30 @@ describe("investigation map emission (HPA-601)", () => {
     });
   });
 });
+
+describe("compiler-only source metadata strip (HPA-135)", () => {
+  it("never emits DialogueItem sourceLine into production scene JSON", () => {
+    const ast: ASTLinearScene = {
+      kind: "linearScene",
+      id: "scene_source_lines",
+      title: "Source",
+      summary: "Source",
+      summaryAuthored: false,
+      queue: [
+        { kind: "sceneTag", text: "街道", assetCue: null, sourceLine: 3 },
+        { kind: "action", text: "相馬律走進場景。", sourceLine: 5 },
+        { kind: "line", speaker: "相馬律", text: "測試開始。", sourceLine: 7 },
+      ],
+      assetRefs: [],
+      sourceFile: "scene_source_lines.md",
+      line: 1,
+    };
+    const json = emitLinearScene(ast);
+    expect(json.queue).toEqual([
+      { kind: "sceneTag", text: "街道", assetCue: null },
+      { kind: "action", text: "相馬律走進場景。" },
+      { kind: "line", speaker: "相馬律", text: "測試開始。", portrait: null },
+    ]);
+    expect(JSON.stringify(json)).not.toContain("sourceLine");
+  });
+});

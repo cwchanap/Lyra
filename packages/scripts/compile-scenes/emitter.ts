@@ -526,15 +526,20 @@ function emitNullableDialogueItems(
 }
 
 function emitDialogueItem(item: DialogueItem): JSONDialogueItem {
+  // Explicit construction, never spread/by-reference: compiler-only fields
+  // (e.g. sourceLine) must not leak into production scene JSON.
   if (item.kind === "sceneTag") {
     return {
-      ...item,
+      kind: "sceneTag",
+      text: item.text,
       assetCue: emitVisualAssetCue(item.assetCue ?? null),
     };
   }
-  if (item.kind !== "line") return item;
+  if (item.kind === "action") {
+    return { kind: "action", text: item.text };
+  }
   return {
-    kind: item.kind,
+    kind: "line",
     speaker: item.speaker,
     text: item.text,
     portrait: item.portrait ?? null,

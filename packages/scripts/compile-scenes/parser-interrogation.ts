@@ -599,7 +599,11 @@ function parseTestimony(
       "interrogationMissingOnLoop",
       `Question ${questionId}'s #### Testimony requires On Loop dialogue.`,
     );
-  const onLoop = parseDialogueFieldValue(onLoopRaw, cur.sourceFile, head.line);
+  const onLoop = parseDialogueFieldValue(
+    onLoopRaw,
+    cur.sourceFile,
+    meta.lines["On Loop"] ?? head.line,
+  );
   if (!onLoop.ok) return onLoop;
 
   let defaultChallenge: DialogueItem[] | null = null;
@@ -607,7 +611,7 @@ function parseTestimony(
     const r = parseDialogueFieldValue(
       meta.value["Default Challenge"],
       cur.sourceFile,
-      head.line,
+      meta.lines["Default Challenge"] ?? head.line,
     );
     if (!r.ok) return r;
     defaultChallenge = r.value;
@@ -617,7 +621,7 @@ function parseTestimony(
     const r = parseDialogueFieldValue(
       meta.value["Default Wrong"],
       cur.sourceFile,
-      head.line,
+      meta.lines["Default Wrong"] ?? head.line,
     );
     if (!r.ok) return r;
     defaultWrong = r.value;
@@ -627,7 +631,7 @@ function parseTestimony(
     const r = parseDialogueFieldValue(
       meta.value["Loop Prompt"],
       cur.sourceFile,
-      head.line,
+      meta.lines["Loop Prompt"] ?? head.line,
     );
     if (!r.ok) return r;
     loopPrompt = r.value;
@@ -637,7 +641,7 @@ function parseTestimony(
     const r = parseDialogueFieldValue(
       meta.value["Wrong Reply"],
       cur.sourceFile,
-      head.line,
+      meta.lines["Wrong Reply"] ?? head.line,
     );
     if (!r.ok) return r;
     wrongReply = r.value;
@@ -798,7 +802,7 @@ function parseTestimonyLine(
     const r = parseDialogueFieldValue(
       meta.value.Challenge,
       cur.sourceFile,
-      head.line,
+      meta.lines.Challenge ?? head.line,
     );
     if (!r.ok) return r;
     challenge = r.value;
@@ -808,7 +812,7 @@ function parseTestimonyLine(
     const r = parseDialogueFieldValue(
       meta.value["On Correct"],
       cur.sourceFile,
-      head.line,
+      meta.lines["On Correct"] ?? head.line,
     );
     if (!r.ok) return r;
     onCorrect = r.value;
@@ -818,7 +822,7 @@ function parseTestimonyLine(
     const r = parseDialogueFieldValue(
       meta.value["On Wrong Evidence"],
       cur.sourceFile,
-      head.line,
+      meta.lines["On Wrong Evidence"] ?? head.line,
     );
     if (!r.ok) return r;
     onWrongEvidence = r.value;
@@ -1038,7 +1042,11 @@ function consumePhaseBodyToken(
     return { ok: true, value: { sceneTag: next.text } };
   }
   if (next.kind === "action") {
-    entryDialogue.push({ kind: "action", text: next.text });
+    entryDialogue.push({
+      kind: "action",
+      text: next.text,
+      sourceLine: next.line,
+    });
     return { ok: true, value: { sceneTag } };
   }
   if (next.kind === "dialogue") {
@@ -1048,6 +1056,7 @@ function consumePhaseBodyToken(
       text: next.text,
       expression: next.expression,
       portrait: null,
+      sourceLine: next.line,
     });
     return { ok: true, value: { sceneTag } };
   }
@@ -1091,9 +1100,14 @@ function readLeadingDialogue(cur: Cursor): DialogueResult {
     if (next.kind === "heading" || next.kind === "metadata") break;
     cur.next();
     if (next.kind === "sceneTag")
-      out.push({ kind: "sceneTag", text: next.text, assetCue: null });
+      out.push({
+        kind: "sceneTag",
+        text: next.text,
+        assetCue: null,
+        sourceLine: next.line,
+      });
     else if (next.kind === "action")
-      out.push({ kind: "action", text: next.text });
+      out.push({ kind: "action", text: next.text, sourceLine: next.line });
     else if (next.kind === "dialogue") {
       out.push({
         kind: "line",
@@ -1101,6 +1115,7 @@ function readLeadingDialogue(cur: Cursor): DialogueResult {
         text: next.text,
         expression: next.expression,
         portrait: null,
+        sourceLine: next.line,
       });
     } else if (next.kind === "unknown") {
       return fail(
@@ -1136,9 +1151,12 @@ function parseDialogueFieldValue(
         text: t.text,
         expression: t.expression,
         portrait: null,
+        // The re-tokenized inner token starts at line 1; the authored
+        // location is the OUTER metadata token's line threaded by callers.
+        sourceLine: line,
       });
     } else if (t.kind === "action") {
-      items.push({ kind: "action", text: t.text });
+      items.push({ kind: "action", text: t.text, sourceLine: line });
     } else {
       return fail(
         sourceFile,

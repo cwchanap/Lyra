@@ -16,17 +16,23 @@ type DialogueResult =
   | { ok: true; value: DialogueItem[] }
   | { ok: false; error: CompileError };
 
-export function consumeMetadata(
-  cur: CursorLike,
-):
-  | { ok: true; value: Record<string, string> }
+export function consumeMetadata(cur: CursorLike):
+  | {
+      ok: true;
+      value: Record<string, string>;
+      /** Key → authored physical line of the metadata token. */
+      lines: Record<string, number>;
+    }
   | { ok: false; error: CompileError } {
   const out: Record<string, string> = {};
+  const lines: Record<string, number> = {};
   while (true) {
     const next = cur.peek();
-    if (!next || next.kind !== "metadata") return { ok: true, value: out };
+    if (!next || next.kind !== "metadata")
+      return { ok: true, value: out, lines };
     cur.next();
     out[next.key] = next.value;
+    lines[next.key] = next.line;
   }
 }
 
@@ -72,9 +78,10 @@ export function consumeDialogueUntilHeading(
         text: next.text,
         assetCue:
           Object.keys(meta).length > 0 ? parseVisualAssetCue(meta) : null,
+        sourceLine: next.line,
       });
     } else if (next.kind === "action")
-      out.push({ kind: "action", text: next.text });
+      out.push({ kind: "action", text: next.text, sourceLine: next.line });
     else if (next.kind === "dialogue") {
       out.push({
         kind: "line",
@@ -82,6 +89,7 @@ export function consumeDialogueUntilHeading(
         text: next.text,
         expression: next.expression,
         portrait: null,
+        sourceLine: next.line,
       });
     } else if (next.kind === "metadata") {
       return parseFailure(
