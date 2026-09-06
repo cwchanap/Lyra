@@ -395,7 +395,11 @@ function parseSublocation(
         );
       sceneTag = next.text;
     } else if (next.kind === "action") {
-      transitionDialogue.push({ kind: "action", text: next.text });
+      transitionDialogue.push({
+        kind: "action",
+        text: next.text,
+        sourceLine: next.line,
+      });
     } else if (next.kind === "dialogue") {
       transitionDialogue.push({
         kind: "line",
@@ -403,6 +407,7 @@ function parseSublocation(
         text: next.text,
         expression: next.expression,
         portrait: null,
+        sourceLine: next.line,
       });
     } else if (next.kind === "metadata") {
       return fail(

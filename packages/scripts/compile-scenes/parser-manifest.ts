@@ -370,9 +370,9 @@ function consumeDialogueUntilHeading(
     if (next.kind === "heading") break;
     cur.next();
     if (next.kind === "sceneTag")
-      out.push({ kind: "sceneTag", text: next.text });
+      out.push({ kind: "sceneTag", text: next.text, sourceLine: next.line });
     else if (next.kind === "action")
-      out.push({ kind: "action", text: next.text });
+      out.push({ kind: "action", text: next.text, sourceLine: next.line });
     else if (next.kind === "dialogue") {
       out.push({
         kind: "line",
@@ -380,6 +380,7 @@ function consumeDialogueUntilHeading(
         text: next.text,
         expression: next.expression,
         portrait: null,
+        sourceLine: next.line,
       });
     } else if (next.kind === "metadata") {
       return fail(

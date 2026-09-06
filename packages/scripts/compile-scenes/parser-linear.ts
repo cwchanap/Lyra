@@ -78,11 +78,12 @@ export function parseLinearScene(
           kind: "sceneTag",
           text: tok.text,
           assetCue: parseVisualAssetCue(meta),
+          sourceLine: tok.line,
         });
         break;
       }
       case "action":
-        queue.push({ kind: "action", text: tok.text });
+        queue.push({ kind: "action", text: tok.text, sourceLine: tok.line });
         break;
       case "dialogue":
         queue.push({
@@ -91,6 +92,7 @@ export function parseLinearScene(
           text: tok.text,
           expression: tok.expression,
           portrait: null,
+          sourceLine: tok.line,
         });
         break;
       case "unknown":

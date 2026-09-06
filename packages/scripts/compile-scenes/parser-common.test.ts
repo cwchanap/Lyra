@@ -36,6 +36,7 @@ describe("parser-common", () => {
     expect(consumeMetadata(cur)).toEqual({
       ok: true,
       value: { Kind: "inquiry", Status: "unlocked" },
+      lines: { Kind: 1, Status: 2 },
     });
     expect(cur.peek()).toMatchObject({
       kind: "dialogue",
@@ -68,6 +69,7 @@ describe("parser-common", () => {
             bgm: { channel: "bgm", assetId: null },
             bgs: null,
           },
+          sourceLine: 1,
         },
         {
           kind: "line",
@@ -75,6 +77,7 @@ describe("parser-common", () => {
           text: "先確認現場。",
           expression: null,
           portrait: null,
+          sourceLine: 4,
         },
       ],
     });
