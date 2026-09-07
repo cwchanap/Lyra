@@ -574,6 +574,11 @@
   let reviewError = $state<string | null>(null);
   let reviewValidation = $state<WorkbenchValidationReport | null>(null);
   let reviewReplacement = $state("");
+  // Monotonic token for async focused-edit work: every begin/apply bumps it
+  // and stamps its own operation; results from stale generations are
+  // discarded so a late-arriving earlier load/apply can never overwrite
+  // newer review state.
+  let focusedEditGeneration = 0;
   // Bumped so AssetsView (which owns its own snapshot) reloads after an
   // applied source edit.
   let assetsRefreshEpoch = $state(0);
@@ -661,16 +666,23 @@
   async function beginFocusedEditReview(
     selection: PendingFocusedEditSelection,
   ): Promise<void> {
+    // An apply/compile is in flight: starting another edit could interleave
+    // writes and compiles, so the new selection is refused at this single
+    // choke point while the review surface still shows the apply.
+    if (reviewState === "applying") return;
+    const generation = ++focusedEditGeneration;
     reviewState = "loading-source";
     resetReviewTransientState();
     try {
       const document = await loadWorkbenchSourceDocument(
         sourceDocumentIdFor(selection),
       );
+      if (generation !== focusedEditGeneration) return; // superseded
       activeSelection = { ...selection, document };
       rebuildDraft();
       reviewState = "editing";
     } catch (error) {
+      if (generation !== focusedEditGeneration) return; // superseded
       reviewState = "error";
       reviewError = normalizeError(error);
     }
@@ -702,6 +714,8 @@
   }
 
   function cancelFocusedEditReview(): void {
+    // Fence any in-flight focused-edit work against this cancellation.
+    focusedEditGeneration += 1;
     resetReviewTransientState();
     reviewState = "idle";
   }
@@ -709,6 +723,9 @@
   async function applyFocusedEditDraft(): Promise<void> {
     const draft = activeDraft;
     if (!draft || reviewState !== "editing") return;
+    // Supersedes any still-in-flight begin: no two focused-edit async
+    // operations may own the review surface at once.
+    const generation = ++focusedEditGeneration;
     reviewState = "applying";
     reviewError = null;
     try {
@@ -722,6 +739,7 @@
         nextContent: draft.nextContent,
       };
       const result = await applyWorkbenchSourceEdit(request);
+      if (generation !== focusedEditGeneration) return; // superseded
       if (result.validation.ok) {
         reviewState = "applied-valid";
         void refreshProjectionsAfterApply();
@@ -732,6 +750,7 @@
         reviewState = "applied-invalid";
       }
     } catch (error) {
+      if (generation !== focusedEditGeneration) return; // superseded
       reviewState = "error";
       reviewError = normalizeError(error);
     }
