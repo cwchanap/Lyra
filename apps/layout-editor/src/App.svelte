@@ -1,8 +1,25 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import type { CompileError } from "@lyra/scripts/compile-scenes/types";
   import AssetsView from "./lib/AssetsView.svelte";
+  import type {
+    AssetPromptEditSource,
+    AssetSceneUsage,
+  } from "./lib/asset-workspace";
   import EditorCanvas from "./lib/EditorCanvas.svelte";
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
+  import {
+    focusedEditDiff,
+    openFocusedEdit,
+    type ApplyWorkbenchSourceEditRequest,
+    type FocusedEditDiffHunk,
+    type FocusedEditDraft,
+    type FocusedEditSelection,
+    type ReaderFocusedEditItem,
+    type SourceDocumentId,
+    type WorkbenchValidationReport,
+  } from "./lib/focused-edit";
+  import FocusedEditReview from "./lib/FocusedEditReview.svelte";
   import PlanSidebar from "./lib/PlanSidebar.svelte";
   import PlanView from "./lib/PlanView.svelte";
   import ReaderView from "./lib/ReaderView.svelte";
@@ -28,13 +45,26 @@
   import { projectReaderScene } from "./lib/reader-projection";
   import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
   import { filterReaderScene } from "./lib/reader-view";
-  import { loadSceneBundle, loadWorkbenchIndex } from "./lib/workbench-api";
+  import {
+    applyWorkbenchSourceEdit,
+    loadSceneBundle,
+    loadWorkbenchIndex,
+    loadWorkbenchSourceDocument,
+  } from "./lib/workbench-api";
   import type {
+    JSONInterrogationScene,
+    JSONInvestigationScene,
+    JSONLinearScene,
+  } from "@lyra/scripts/compile-scenes/types";
+  import type {
+    ReaderEditableRef,
     ReaderGroup,
+    ReaderItem,
     ReaderScene,
     SceneType,
     WorkbenchIndex,
     WorkbenchSceneBundle,
+    WorkbenchScenePayload,
   } from "./lib/workbench-types";
 
   type WorkbenchMode = "reader" | "assets" | "plan" | "stage";
@@ -462,6 +492,225 @@
       isSavingLayout = false;
     }
   }
+
+  // ---- Focused edit review (HPA-135): App owns the ONE active draft. -------
+
+  type FocusedEditReviewState =
+    | "idle"
+    | "loading-source"
+    | "editing"
+    | "applying"
+    | "applied-valid"
+    | "applied-invalid"
+    | "error";
+
+  /** Selection before its source document is loaded. Analysis scenes are
+   * never selectable: the seam excludes their sanitized public view. */
+  type PendingFocusedEditSelection =
+    | {
+        surface: "reader";
+        chapterId: string;
+        sceneId: string;
+        compiledScene:
+          | JSONLinearScene
+          | JSONInvestigationScene
+          | JSONInterrogationScene;
+        carrierId: string;
+        itemIndex: number;
+        item: ReaderFocusedEditItem;
+      }
+    | {
+        surface: "asset";
+        assetId: string;
+        prompt: AssetPromptEditSource;
+        sceneUsages: AssetSceneUsage[];
+      };
+
+  let reviewState = $state<FocusedEditReviewState>("idle");
+  let activeSelection = $state<FocusedEditSelection | null>(null);
+  let activeDraft = $state<FocusedEditDraft | null>(null);
+  let reviewHunk = $state<FocusedEditDiffHunk | null>(null);
+  let reviewDiagnostic = $state<CompileError | null>(null);
+  let reviewError = $state<string | null>(null);
+  let reviewValidation = $state<WorkbenchValidationReport | null>(null);
+  let reviewReplacement = $state("");
+  // Bumped so AssetsView (which owns its own snapshot) reloads after an
+  // applied source edit.
+  let assetsRefreshEpoch = $state(0);
+
+  function sourceDocumentIdFor(
+    selection: PendingFocusedEditSelection,
+  ): SourceDocumentId {
+    return selection.surface === "reader"
+      ? `scene:${selection.chapterId}:${selection.sceneId}`
+      : `scene:${selection.prompt.chapterId}:${selection.prompt.sceneId}`;
+  }
+
+  function readerBundleFor(
+    chapterId: string,
+    sceneId: string,
+  ): WorkbenchScenePayload | null {
+    if (
+      currentBundle &&
+      selectedChapterId === chapterId &&
+      selectedSceneId === sceneId
+    ) {
+      return currentBundle.scene;
+    }
+    return bundleCache.get(`${chapterId}:${sceneId}`)?.scene ?? null;
+  }
+
+  function selectReaderItem(item: ReaderItem): ReaderFocusedEditItem | null {
+    if (item.kind === "line") {
+      return { kind: "line", speaker: item.speaker, text: item.text };
+    }
+    if (item.kind === "action") return { kind: "action", text: item.text };
+    return null;
+  }
+
+  function openReaderEdit(
+    chapterId: string,
+    sceneId: string,
+    ref: ReaderEditableRef,
+    item: ReaderItem,
+  ): void {
+    const selectable = selectReaderItem(item);
+    if (!selectable) return;
+    const compiled = readerBundleFor(chapterId, sceneId);
+    if (!compiled) {
+      beginReviewError(
+        `The compiled projection of "${sceneId}" is not loaded; refresh the Reader and retry.`,
+      );
+      return;
+    }
+    if (compiled.type === "analysis") {
+      beginReviewError(
+        "Analysis scenes are read-only: the editor holds only their sanitized public view.",
+      );
+      return;
+    }
+    void beginFocusedEditReview({
+      surface: "reader",
+      chapterId,
+      sceneId,
+      compiledScene: compiled,
+      carrierId: ref.carrierId,
+      itemIndex: ref.itemIndex,
+      item: selectable,
+    });
+  }
+
+  function openAssetPromptEdit(selection: {
+    assetId: string;
+    prompt: AssetPromptEditSource;
+    sceneUsages: AssetSceneUsage[];
+  }): void {
+    void beginFocusedEditReview({ surface: "asset", ...selection });
+  }
+
+  function resetReviewTransientState(): void {
+    activeSelection = null;
+    activeDraft = null;
+    reviewHunk = null;
+    reviewDiagnostic = null;
+    reviewValidation = null;
+    reviewError = null;
+    reviewReplacement = "";
+  }
+
+  function beginReviewError(message: string): void {
+    resetReviewTransientState();
+    reviewState = "error";
+    reviewError = message;
+  }
+
+  async function beginFocusedEditReview(
+    selection: PendingFocusedEditSelection,
+  ): Promise<void> {
+    reviewState = "loading-source";
+    resetReviewTransientState();
+    try {
+      const document = await loadWorkbenchSourceDocument(
+        sourceDocumentIdFor(selection),
+      );
+      activeSelection = { ...selection, document };
+      rebuildDraft();
+      reviewState = "editing";
+    } catch (error) {
+      reviewState = "error";
+      reviewError = normalizeError(error);
+    }
+  }
+
+  function rebuildDraft(): void {
+    if (!activeSelection) return;
+    const result = openFocusedEdit(activeSelection, reviewReplacement);
+    if (result.ok) {
+      activeDraft = result.draft;
+      // The draft is already locality-asserted, so this cannot fail.
+      const diff = focusedEditDiff(
+        activeSelection.document.content,
+        result.draft.nextContent,
+        result.draft.expectedLine,
+      );
+      reviewHunk = diff.ok ? diff.hunk : null;
+      reviewDiagnostic = null;
+    } else {
+      activeDraft = null;
+      reviewHunk = null;
+      reviewDiagnostic = result.diagnostic;
+    }
+  }
+
+  function handleReplacementChange(text: string): void {
+    reviewReplacement = text;
+    if (reviewState === "editing") rebuildDraft();
+  }
+
+  function cancelFocusedEditReview(): void {
+    resetReviewTransientState();
+    reviewState = "idle";
+  }
+
+  async function applyFocusedEditDraft(): Promise<void> {
+    const draft = activeDraft;
+    if (!draft || reviewState !== "editing") return;
+    reviewState = "applying";
+    reviewError = null;
+    try {
+      // Exactly the six backend-guarded fields — no paths, diff, or impact.
+      const request: ApplyWorkbenchSourceEditRequest = {
+        sourceDocumentId: draft.sourceDocumentId,
+        expectedHash: draft.expectedHash,
+        semanticRef: draft.semanticRef,
+        kind: draft.kind,
+        expectedLine: draft.expectedLine,
+        nextContent: draft.nextContent,
+      };
+      const result = await applyWorkbenchSourceEdit(request);
+      if (result.validation.ok) {
+        reviewState = "applied-valid";
+        void refreshProjectionsAfterApply();
+      } else {
+        // Written-but-invalid: keep the stale projections on screen and show
+        // the diagnostics. Refreshing here would pretend fresh projections.
+        reviewValidation = result.validation;
+        reviewState = "applied-invalid";
+      }
+    } catch (error) {
+      reviewState = "error";
+      reviewError = normalizeError(error);
+    }
+  }
+
+  async function refreshProjectionsAfterApply(): Promise<void> {
+    // Invalidate every cached bundle: after a successful write + compile, no
+    // stale projection may ever be served from cache again.
+    cacheWriteEpoch += 1;
+    bundleCache.clear();
+    assetsRefreshEpoch += 1;
+    await refreshReader();
+  }
 </script>
 
 <main
@@ -735,7 +984,19 @@
                   >
                 </summary>
                 <div class="mt-3">
-                  <ReaderView scene={chapterScene} />
+                  <ReaderView
+                    scene={chapterScene}
+                    onEditItem={(ref, item) => {
+                      if (selectedChapterId) {
+                        openReaderEdit(
+                          selectedChapterId,
+                          chapterScene.id,
+                          ref,
+                          item,
+                        );
+                      }
+                    }}
+                  />
                 </div>
               </details>
             {/each}
@@ -768,7 +1029,14 @@
             {#if readerLoading}
               <p class="m-0 text-[0.85rem] text-[#60706b]">Reloading…</p>
             {/if}
-            <ReaderView scene={filteredReaderScene} />
+            <ReaderView
+              scene={filteredReaderScene}
+              onEditItem={(ref, item) => {
+                if (selectedChapterId && selectedSceneId) {
+                  openReaderEdit(selectedChapterId, selectedSceneId, ref, item);
+                }
+              }}
+            />
           {:else}
             <div
               class="placeholder grid min-h-[280px] content-center text-[#7d3c2f]"
@@ -790,6 +1058,8 @@
         {selectedChapterId}
         {selectedSceneId}
         onSelectScene={selectSceneFromAssets}
+        onEditPrompt={openAssetPromptEdit}
+        refreshEpoch={assetsRefreshEpoch}
       />
     {:else if mode === "plan"}
       <PlanView
@@ -881,6 +1151,24 @@
       </div>
     {/if}
   </section>
+
+  {#if reviewState !== "idle"}
+    <div class="col-span-full">
+      <FocusedEditReview
+        state={reviewState}
+        sourcePath={activeSelection?.document.path ?? null}
+        draft={activeDraft}
+        hunk={reviewHunk}
+        diagnostic={reviewDiagnostic}
+        error={reviewError}
+        validation={reviewValidation}
+        replacement={reviewReplacement}
+        onReplacementChange={handleReplacementChange}
+        onApply={() => void applyFocusedEditDraft()}
+        onCancel={cancelFocusedEditReview}
+      />
+    </div>
+  {/if}
 
   {#if saveToastMessage}
     <div

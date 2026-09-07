@@ -19,6 +19,7 @@ import type {
   PortraitRef,
 } from "@lyra/scripts/compile-scenes/types";
 import AssetsView from "./AssetsView.svelte";
+import type { ComponentProps } from "svelte";
 import type { WorkbenchAssetWorkspacePayload } from "./workbench-types";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -406,11 +407,7 @@ function payloadFixture(): WorkbenchAssetWorkspacePayload {
 }
 
 function renderAssets(
-  overrides: {
-    selectedChapterId?: string | null;
-    selectedSceneId?: string | null;
-    onSelectScene?: (chapterId: string, sceneId: string) => void;
-  } = {},
+  overrides: Partial<ComponentProps<typeof AssetsView>> = {},
 ) {
   return render(AssetsView, {
     selectedChapterId: "chapter_1",
@@ -1118,5 +1115,166 @@ describe("AssetsView", () => {
       await within(library).findByRole("button", { name: "audio.bgm.later" }),
     ).toBeInTheDocument();
     expect(within(library).getAllByRole("listitem")).toHaveLength(10);
+  });
+});
+
+// ---- HPA-135 focused edit affordances ----------------------------------------
+
+describe("AssetsView focused edit affordances", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInvoke.mockImplementation(
+      async (command: string, _args?: InvokeArgs) => {
+        if (command === "load_asset_workspace") return payloadFixture();
+        throw new Error(`unexpected invoke: ${command}`);
+      },
+    );
+  });
+
+  async function openLibraryView(): Promise<void> {
+    renderAssets();
+    const user = userEvent.setup();
+    await screen.findByLabelText("Scene cue rows");
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+  }
+
+  it("offers Edit prompt for scene-owned background and evidence prompts", async () => {
+    const user = userEvent.setup();
+    await openLibraryView();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const background = screen.getByLabelText("Asset inspector");
+    expect(
+      within(background).getByRole("button", { name: "Edit prompt" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "evidence.receipt" }));
+    const evidence = screen.getByLabelText("Asset inspector");
+    expect(
+      within(evidence).getByRole("button", { name: "Edit prompt" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps portrait, audio, standee, and global background rows read-only", async () => {
+    const payload = payloadFixture();
+    payload.manifest = {
+      ...payload.manifest,
+      entries: [
+        ...payload.manifest.entries,
+        {
+          ...entryBase({
+            assetId: "background.city_map.tokyo",
+            type: "background",
+            entryPrompt: "tokyo city map",
+          }),
+          type: "background",
+          source: { globalFile: "docs/stories_plan/city_map.json" },
+        },
+      ],
+    };
+    mockInvoke.mockImplementation(async () => payload);
+    const user = userEvent.setup();
+    await openLibraryView();
+
+    for (const assetId of [
+      "portrait.hayasaka_akane.standard",
+      "audio.bgm.rain",
+      "standee.npc1.default",
+      "background.city_map.tokyo",
+    ]) {
+      await user.click(screen.getByRole("button", { name: assetId }));
+      const inspector = screen.getByLabelText("Asset inspector");
+      expect(
+        within(inspector).queryByRole("button", { name: "Edit prompt" }),
+      ).toBeNull();
+    }
+  });
+
+  it("emits the manifest prompt selection without any source I/O", async () => {
+    const onEditPrompt = vi.fn();
+    const user = userEvent.setup();
+    renderAssets({ onEditPrompt });
+    await openLibrary();
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Edit prompt" }),
+    );
+
+    expect(onEditPrompt).toHaveBeenCalledExactlyOnceWith({
+      assetId: "background.chapter_1.scene_cues.hall",
+      prompt: {
+        kind: "backgroundPrompt",
+        chapterId: "chapter_1",
+        sceneId: "scene_cues",
+        unitId: "hall",
+        promptLine: 3,
+        authoredPrompt: "rainy hall",
+      },
+      sceneUsages: expect.any(Array),
+    });
+    // Selection only: nothing but the workspace snapshot was ever requested.
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command !== "load_asset_workspace",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("emits an evidence Image Prompt selection with its typed source", async () => {
+    const onEditPrompt = vi.fn();
+    const user = userEvent.setup();
+    renderAssets({ onEditPrompt });
+    await openLibrary();
+    await user.click(screen.getByRole("button", { name: "evidence.receipt" }));
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Edit prompt" }),
+    );
+
+    expect(onEditPrompt).toHaveBeenCalledExactlyOnceWith({
+      assetId: "evidence.receipt",
+      prompt: {
+        kind: "evidenceImagePrompt",
+        chapterId: "chapter_1",
+        sceneId: "investigation_delta",
+        evidenceId: "receipt",
+        promptLine: 3,
+        authoredPrompt: "torn receipt",
+      },
+      sceneUsages: expect.any(Array),
+    });
+  });
+
+  it("reloads the workspace snapshot when the refresh epoch is bumped", async () => {
+    const { rerender } = renderAssets();
+    await screen.findByLabelText("Scene cue rows");
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "load_asset_workspace",
+      ),
+    ).toHaveLength(1);
+
+    await rerender({
+      selectedChapterId: "chapter_1",
+      selectedSceneId: "scene_cues",
+      onSelectScene: vi.fn(),
+      refreshEpoch: 1,
+    });
+    await waitFor(() =>
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "load_asset_workspace",
+        ),
+      ).toHaveLength(2),
+    );
   });
 });

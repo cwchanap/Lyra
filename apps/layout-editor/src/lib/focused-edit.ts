@@ -38,6 +38,29 @@ import type { AssetPromptEditSource, AssetSceneUsage } from "./asset-workspace";
 /** HPA-135 v1 document identity: one authored scene Markdown file. */
 export type SourceDocumentId = `scene:${string}:${string}`;
 
+/** Exact request body of the Rust `apply_workbench_source_edit` command.
+ * Carries only the six backend-guarded fields — no paths, no diff, no impact. */
+export type ApplyWorkbenchSourceEditRequest = {
+  sourceDocumentId: SourceDocumentId;
+  expectedHash: string;
+  semanticRef: string;
+  kind: WorkbenchSourceTargetKind;
+  expectedLine: number;
+  nextContent: string;
+};
+
+export type WorkbenchValidationDiagnostic = { code: string; message: string };
+
+/** Post-apply compile outcome: `ok: false` means written-but-invalid (no rollback). */
+export type WorkbenchValidationReport = {
+  ok: boolean;
+  diagnostics: WorkbenchValidationDiagnostic[];
+};
+
+export type ApplyWorkbenchSourceEditResult = {
+  validation: WorkbenchValidationReport;
+};
+
 /** Source document snapshot the draft is built from (hash echoed into Apply). */
 export type FocusedEditSourceDocument = {
   id: SourceDocumentId;
@@ -282,8 +305,14 @@ function parseEditableSceneSource(
  * it; those items have no authored source line. Like the Task-1 real-content
  * verifier, they are "not editable" — recompiling would never make them
  * resolvable, so reporting compiled/source staleness would mislead.
+ *
+ * Exported so the Reader view can consult the same signal BEFORE rendering an
+ * Edit affordance on items that could never open a draft (HPA-135 Task-2
+ * review carry-over).
  */
-function isSynthesizedDefaultDialogue(item: ReaderFocusedEditItem): boolean {
+export function isSynthesizedDefaultDialogue(
+  item: ReaderFocusedEditItem,
+): boolean {
   return (
     item.kind === "action" && item.text === NO_NEW_FINDINGS_DIALOGUE[0]!.text
   );
@@ -347,11 +376,14 @@ function buildDraft(
 /**
  * Opens the single focused-edit draft for one supported selection. No draft
  * exists on any failure — staleness, no-change, unsupported, unfocused.
+ * `initialReplacement` prefills the reviewed replacement (HPA-136 reuse seam);
+ * it defaults to an empty replacement.
  */
 export function openFocusedEdit(
   selection: FocusedEditSelection,
-  replacementText: string,
+  initialReplacement?: string,
 ): OpenFocusedEditResult {
+  const replacementText = initialReplacement ?? "";
   if (selection.surface === "reader") {
     const { document, compiledScene, carrierId, itemIndex, item } = selection;
     const parsed = parseEditableSceneSource(document, compiledScene);

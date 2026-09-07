@@ -1,7 +1,32 @@
 <script lang="ts">
-  import type { ReaderGroup, ReaderItem, ReaderScene } from "./workbench-types";
+  import { isSynthesizedDefaultDialogue } from "./focused-edit";
+  import type {
+    ReaderEditableRef,
+    ReaderGroup,
+    ReaderItem,
+    ReaderScene,
+  } from "./workbench-types";
 
-  let { scene }: { scene: ReaderScene } = $props();
+  let {
+    scene,
+    onEditItem,
+  }: {
+    scene: ReaderScene;
+    /** Selection-only callback: the view never loads source or opens drafts. */
+    onEditItem?: (ref: ReaderEditableRef, item: ReaderItem) => void;
+  } = $props();
+
+  /** Line/action items get an Edit affordance; everything else is display
+   * only. Compiler-synthesized defaults (e.g. evidence re-examination
+   * fallbacks) have no authored source line, and Analysis scenes are outside
+   * the focused-edit seam (the editor holds only their sanitized public
+   * view), so neither may render Edit. */
+  function isEditableItem(item: ReaderItem): boolean {
+    if (scene.type === "analysis") return false;
+    if (item.kind === "line") return true;
+    if (item.kind === "action") return !isSynthesizedDefaultDialogue(item);
+    return false;
+  }
 
   const NOTICE_LABELS: Record<
     Extract<ReaderItem, { kind: "notice" }>["noticeKind"],
@@ -45,30 +70,42 @@
     <ul class="m-0 grid list-none gap-1.5 p-0">
       {#each group.items as item, index (index)}
         <li class="text-[0.95rem] leading-relaxed">
-          {#if item.kind === "line"}
-            <p class="m-0">{item.speaker}: {item.text}</p>
-          {:else if item.kind === "action"}
-            <p class="m-0">
-              <span
-                class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
-                >Action</span
-              ><span>{item.text}</span>
-            </p>
-          {:else if item.kind === "sceneTag"}
-            <p class="m-0">
-              <span
-                class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
-                >Scene tag</span
-              ><span>{item.text}</span>
-            </p>
-          {:else}
-            <p class="m-0">
-              <span
-                class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
-                >{NOTICE_LABELS[item.noticeKind]}</span
-              ><span>{item.text}</span>
-            </p>
-          {/if}
+          <div class="flex items-start justify-between gap-2">
+            {#if item.kind === "line"}
+              <p class="m-0">{item.speaker}: {item.text}</p>
+            {:else if item.kind === "action"}
+              <p class="m-0">
+                <span
+                  class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
+                  >Action</span
+                ><span>{item.text}</span>
+              </p>
+            {:else if item.kind === "sceneTag"}
+              <p class="m-0">
+                <span
+                  class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
+                  >Scene tag</span
+                ><span>{item.text}</span>
+              </p>
+            {:else}
+              <p class="m-0">
+                <span
+                  class="mr-1.5 inline-block rounded bg-[#eef2ee] px-1.5 py-0.5 align-middle text-[0.7rem] font-bold tracking-wide text-[#5f6b64] uppercase"
+                  >{NOTICE_LABELS[item.noticeKind]}</span
+                ><span>{item.text}</span>
+              </p>
+            {/if}
+            {#if (item.kind === "line" || item.kind === "action") && isEditableItem(item)}
+              <button
+                type="button"
+                class="flex-none cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
+                data-edit-item
+                onclick={() => onEditItem?.(item.editable, item)}
+              >
+                Edit
+              </button>
+            {/if}
+          </div>
         </li>
       {/each}
     </ul>
