@@ -8,10 +8,10 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 
-/// Monotonic counter for unique layout sidecar temp-file names so concurrent
-/// or rapid saves never collide on the temp path (see
-/// `write_layout_sidecar_no_follow`).
-static LAYOUT_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+/// Monotonic counter for unique atomic-write temp-file names so concurrent or
+/// rapid saves never collide on the temp path (see
+/// `write_text_atomic_no_follow`).
+static ATOMIC_WRITE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -593,30 +593,35 @@ fn save_investigation_layout_at_root(
             ),
         )
     })?;
-    write_layout_sidecar_no_follow(&layout_path, &format!("{serialized}\n"))
+    write_text_atomic_no_follow(&layout_path, &format!("{serialized}\n"), "writeFailed")
 }
 
-/// Writes the layout sidecar without following an existing symlink at the
-/// target path. `fs::write` opens with `O_CREAT|O_TRUNC` which follows
-/// symlinks, so a planted `*.layout.json` symlink could redirect the write
-/// outside the containment root even though the sidecar path itself was
-/// validated. Instead, serialize into a uniquely-named temp file in the same
-/// directory (so `rename` is atomic on a single filesystem) and rename it
-/// over the target: `rename` replaces the directory entry itself rather than
-/// writing through a symlink. The temp file lives next to the validated
-/// sidecar path, so it stays within the containment root.
-fn write_layout_sidecar_no_follow(layout_path: &Path, contents: &str) -> Result<(), EditorError> {
-    let parent = layout_path.parent().ok_or_else(|| {
+/// Writes an already-resolved text file without following an existing symlink
+/// at the target path. `fs::write` opens with `O_CREAT|O_TRUNC` which follows
+/// symlinks, so a planted file symlink could redirect the write outside the
+/// containment root even though the path itself was validated. Instead, write
+/// into a uniquely-named temp file in the same directory (so `rename` is
+/// atomic on a single filesystem) and rename it over the target: `rename`
+/// replaces the directory entry itself rather than writing through a symlink.
+/// The temp file lives next to the validated path, so it stays within the
+/// containment root. Shared by layout sidecars and Workbench source edits;
+/// `error_code` keeps each domain's wire error stable.
+fn write_text_atomic_no_follow(
+    path: &Path,
+    contents: &str,
+    error_code: &'static str,
+) -> Result<(), EditorError> {
+    let parent = path.parent().ok_or_else(|| {
         EditorError::new(
-            "writeFailed",
-            format!("layout path has no parent: {}", layout_path.display()),
+            error_code,
+            format!("path has no parent: {}", path.display()),
         )
     })?;
-    let file_name = layout_path
+    let file_name = path
         .file_name()
         .and_then(|name| name.to_str())
-        .unwrap_or("layout.json");
-    let unique = LAYOUT_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        .unwrap_or("file");
+    let unique = ATOMIC_WRITE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let temp_path = parent.join(format!(".{file_name}.{}.{unique}.tmp", std::process::id()));
 
     {
@@ -626,33 +631,30 @@ fn write_layout_sidecar_no_follow(layout_path: &Path, contents: &str) -> Result<
             .open(&temp_path)
             .map_err(|error| {
                 EditorError::new(
-                    "writeFailed",
+                    error_code,
                     format!("failed to open temp {}: {error}", temp_path.display()),
                 )
             })?;
         file.write_all(contents.as_bytes()).map_err(|error| {
             EditorError::new(
-                "writeFailed",
+                error_code,
                 format!("failed to write temp {}: {error}", temp_path.display()),
             )
         })?;
         file.sync_all().map_err(|error| {
             EditorError::new(
-                "writeFailed",
+                error_code,
                 format!("failed to sync temp {}: {error}", temp_path.display()),
             )
         })?;
     }
 
-    fs::rename(&temp_path, layout_path).map_err(|error| {
+    fs::rename(&temp_path, path).map_err(|error| {
         // Best-effort cleanup so a failed rename does not leave a stale temp.
         let _ = fs::remove_file(&temp_path);
         EditorError::new(
-            "writeFailed",
-            format!(
-                "failed to rename temp to {}: {error}",
-                layout_path.display()
-            ),
+            error_code,
+            format!("failed to rename temp to {}: {error}", path.display()),
         )
     })
 }
@@ -777,6 +779,370 @@ fn load_workbench_source_document_at_root(
         hash: sha256_hex(&content),
         content,
     })
+}
+
+/// Apply request for `apply_workbench_source_edit`. `kind` stays a raw string
+/// so unsupported values come back as the typed `sourceEditKindUnsupported`
+/// error instead of failing IPC argument deserialization.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyWorkbenchSourceEditRequest {
+    source_document_id: String,
+    expected_hash: String,
+    semantic_ref: String,
+    kind: String,
+    expected_line: usize,
+    next_content: String,
+}
+
+/// The four supported one-line edit targets; serde spellings match the TS
+/// `WorkbenchSourceTargetKind` union verbatim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum WorkbenchSourceTargetKind {
+    ReaderDialogue,
+    ReaderAction,
+    BackgroundPrompt,
+    EvidenceImagePrompt,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchValidationDiagnostic {
+    code: String,
+    message: String,
+}
+
+/// Post-apply compile outcome. `ok` stays false on compiler failure/timeout
+/// while the written source intentionally remains written (no rollback).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchValidationReport {
+    ok: bool,
+    diagnostics: Vec<WorkbenchValidationDiagnostic>,
+}
+
+impl WorkbenchValidationReport {
+    fn ok() -> Self {
+        Self {
+            ok: true,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn failed(code: &str, message: impl Into<String>) -> Self {
+        Self {
+            ok: false,
+            diagnostics: vec![WorkbenchValidationDiagnostic {
+                code: code.to_string(),
+                message: message.into(),
+            }],
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ApplyWorkbenchSourceEditResult {
+    validation: WorkbenchValidationReport,
+}
+
+fn parse_workbench_source_target_kind(raw: &str) -> Result<WorkbenchSourceTargetKind, EditorError> {
+    serde_json::from_value(serde_json::Value::from(raw)).map_err(|_| {
+        EditorError::new(
+            "sourceEditKindUnsupported",
+            format!("unsupported workbench source edit kind: \"{raw}\""),
+        )
+    })
+}
+
+/// Closed `semanticRef` shape per kind. The backend cannot (and must not)
+/// re-derive compiler carriers; it only enforces the identity format so a
+/// malformed ref never reaches the write path.
+fn validate_workbench_semantic_ref(
+    kind: WorkbenchSourceTargetKind,
+    semantic_ref: &str,
+) -> Result<(), EditorError> {
+    let invalid = |detail: String| {
+        EditorError::new(
+            "sourceEditSemanticRefInvalid",
+            format!("semantic ref \"{semantic_ref}\" is invalid: {detail}"),
+        )
+    };
+    match kind {
+        WorkbenchSourceTargetKind::ReaderDialogue | WorkbenchSourceTargetKind::ReaderAction => {
+            let prefix = match kind {
+                WorkbenchSourceTargetKind::ReaderDialogue => "reader:dialogue:",
+                _ => "reader:action:",
+            };
+            let tail = semantic_ref
+                .strip_prefix(prefix)
+                .ok_or_else(|| invalid(format!("must start with {prefix}")))?;
+            // Carrier ids may themselves contain ':', so the item index is
+            // everything after the LAST colon.
+            let (carrier, item_index) = tail
+                .rsplit_once(':')
+                .ok_or_else(|| invalid("missing :<itemIndex> suffix".to_string()))?;
+            if carrier.is_empty() || item_index.parse::<usize>().is_err() {
+                return Err(invalid(format!("must be {prefix}<carrierId>:<itemIndex>")));
+            }
+        }
+        WorkbenchSourceTargetKind::BackgroundPrompt => {
+            let unit_id = semantic_ref
+                .strip_prefix("asset:background:")
+                .ok_or_else(|| invalid("must start with asset:background:".to_string()))?;
+            if unit_id.is_empty() {
+                return Err(invalid("unit id must not be empty".to_string()));
+            }
+        }
+        WorkbenchSourceTargetKind::EvidenceImagePrompt => {
+            let rest = semantic_ref
+                .strip_prefix("asset:evidence:")
+                .ok_or_else(|| invalid("must start with asset:evidence:".to_string()))?;
+            let evidence_id = rest
+                .strip_suffix(":imagePrompt")
+                .ok_or_else(|| invalid("must end with :imagePrompt".to_string()))?;
+            if evidence_id.is_empty() {
+                return Err(invalid("evidence id must not be empty".to_string()));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn apply_workbench_source_edit(
+    request: ApplyWorkbenchSourceEditRequest,
+) -> Result<ApplyWorkbenchSourceEditResult, EditorError> {
+    let root = workspace_root()?;
+    apply_workbench_source_edit_with_validation(&root, &request, &|command| {
+        run_bounded_validation(command, WORKBENCH_VALIDATION_TIMEOUT)
+    })
+}
+
+/// Apply pipeline: resolve → read → hash → ref/kind validation →
+/// one-expected-line document check → atomic write → validation. `validate`
+/// is injected so tests can assert the exact compile command and stub
+/// compiler outcomes without spawning Bun.
+fn apply_workbench_source_edit_with_validation(
+    root: &Path,
+    request: &ApplyWorkbenchSourceEditRequest,
+    validate: &dyn Fn(&WorkbenchValidationCommand) -> WorkbenchValidationReport,
+) -> Result<ApplyWorkbenchSourceEditResult, EditorError> {
+    let resolved = resolve_workbench_source_document(root, &request.source_document_id)?;
+    let content = read_source_text(&resolved.source_path)?;
+
+    if sha256_hex(&content) != request.expected_hash {
+        return Err(EditorError::new(
+            "sourceEditStale",
+            format!(
+                "source {} changed since it was loaded; refresh and retry",
+                resolved.source_relative
+            ),
+        ));
+    }
+
+    let kind = parse_workbench_source_target_kind(&request.kind)?;
+    validate_workbench_semantic_ref(kind, &request.semantic_ref)?;
+
+    if request.next_content == content {
+        return Err(EditorError::new(
+            "sourceEditNoChange",
+            format!(
+                "replacement for \"{}\" equals the current document",
+                request.semantic_ref
+            ),
+        ));
+    }
+    let before: Vec<&str> = content.split('\n').collect();
+    let after: Vec<&str> = request.next_content.split('\n').collect();
+    let not_focused = |reason: String| {
+        EditorError::new(
+            "sourceEditNotFocused",
+            format!(
+                "edit for \"{}\" must change exactly the expected line: {reason}",
+                request.semantic_ref
+            ),
+        )
+    };
+    if before.len() != after.len() {
+        return Err(not_focused(format!(
+            "physical line count changed from {} to {}",
+            before.len(),
+            after.len()
+        )));
+    }
+    let changed: Vec<usize> = before
+        .iter()
+        .zip(after.iter())
+        .enumerate()
+        .filter_map(|(index, (old, new))| (old != new).then_some(index))
+        .collect();
+    match changed.as_slice() {
+        [index] if *index + 1 == request.expected_line => {}
+        [index] => {
+            return Err(EditorError::new(
+                "sourceEditLineMismatch",
+                format!(
+                    "edit for \"{}\" changed line {} but expected line {}",
+                    request.semantic_ref,
+                    *index + 1,
+                    request.expected_line
+                ),
+            ));
+        }
+        _ => {
+            return Err(not_focused(format!(
+                "{} physical lines changed",
+                changed.len()
+            )));
+        }
+    }
+
+    write_text_atomic_no_follow(
+        &resolved.source_path,
+        &request.next_content,
+        "sourceEditWriteFailed",
+    )?;
+
+    // Committed whether or not validation passes: applied + failed/timeout
+    // validation is a distinct, explicit outcome with no automatic rollback.
+    let validation = validate(&scenes_compile_validation_command(root));
+    Ok(ApplyWorkbenchSourceEditResult { validation })
+}
+
+/// Post-apply compile validation target timeout.
+const WORKBENCH_VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+const WORKBENCH_VALIDATION_POLL_INTERVAL: std::time::Duration =
+    std::time::Duration::from_millis(100);
+/// Per-stream cap on compile output kept for failure diagnostics; the full
+/// stream is still drained concurrently so the child never blocks on full
+/// pipes.
+const WORKBENCH_VALIDATION_OUTPUT_LIMIT: usize = 8 * 1024;
+
+/// Exact `bun run scenes:compile` invocation for post-apply validation.
+#[derive(Debug, Clone, PartialEq)]
+struct WorkbenchValidationCommand {
+    program: String,
+    args: Vec<String>,
+    cwd: PathBuf,
+}
+
+fn scenes_compile_validation_command(cwd: &Path) -> WorkbenchValidationCommand {
+    WorkbenchValidationCommand {
+        program: "bun".to_string(),
+        args: vec!["run".to_string(), "scenes:compile".to_string()],
+        cwd: cwd.to_path_buf(),
+    }
+}
+
+enum ValidationOutcome {
+    Exited(std::process::ExitStatus),
+    TimedOut,
+    Lost(String),
+}
+
+/// Spawns the validation command, drains stdout/stderr on separate threads
+/// (keeping only the tail within the output limit), polls for completion, and
+/// kills the child at the deadline.
+///
+/// ponytail: kill() does not chase grandchildren that inherited the pipes, so
+/// a surviving orphan could extend the drain join past the deadline; if real
+/// compiles ever orphan children, switch to a process-group kill.
+fn run_bounded_validation(
+    command: &WorkbenchValidationCommand,
+    timeout: std::time::Duration,
+) -> WorkbenchValidationReport {
+    use std::process::{Command, Stdio};
+
+    let mut child = match Command::new(&command.program)
+        .args(&command.args)
+        .current_dir(&command.cwd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(error) => {
+            return WorkbenchValidationReport::failed(
+                "sourceEditValidationFailed",
+                format!("failed to spawn {}: {error}", command.program),
+            );
+        }
+    };
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let stderr = child.stderr.take().expect("stderr was piped");
+    let stdout_handle =
+        std::thread::spawn(move || drain_bounded_tail(stdout, WORKBENCH_VALIDATION_OUTPUT_LIMIT));
+    let stderr_handle =
+        std::thread::spawn(move || drain_bounded_tail(stderr, WORKBENCH_VALIDATION_OUTPUT_LIMIT));
+
+    let deadline = std::time::Instant::now() + timeout;
+    let outcome = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break ValidationOutcome::Exited(status),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break ValidationOutcome::TimedOut;
+                }
+                std::thread::sleep(WORKBENCH_VALIDATION_POLL_INTERVAL);
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break ValidationOutcome::Lost(error.to_string());
+            }
+        }
+    };
+
+    let stdout_tail =
+        String::from_utf8_lossy(&stdout_handle.join().unwrap_or_default()).into_owned();
+    let stderr_tail =
+        String::from_utf8_lossy(&stderr_handle.join().unwrap_or_default()).into_owned();
+    match outcome {
+        ValidationOutcome::Exited(status) if status.success() => WorkbenchValidationReport::ok(),
+        ValidationOutcome::Exited(status) => WorkbenchValidationReport::failed(
+            "sourceEditValidationFailed",
+            format!(
+                "`bun run scenes:compile` failed with {status}\n\
+                 --- stdout (tail) ---\n{stdout_tail}\n\
+                 --- stderr (tail) ---\n{stderr_tail}"
+            ),
+        ),
+        ValidationOutcome::TimedOut => WorkbenchValidationReport::failed(
+            "sourceEditValidationTimeout",
+            format!(
+                "`bun run scenes:compile` exceeded {}s and was killed\n\
+                 --- stdout (tail) ---\n{stdout_tail}\n\
+                 --- stderr (tail) ---\n{stderr_tail}",
+                timeout.as_secs()
+            ),
+        ),
+        ValidationOutcome::Lost(error) => WorkbenchValidationReport::failed(
+            "sourceEditValidationFailed",
+            format!("failed to wait for the compile process: {error}"),
+        ),
+    }
+}
+
+fn drain_bounded_tail<R: std::io::Read>(mut reader: R, limit: usize) -> Vec<u8> {
+    let mut tail = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(read) => {
+                tail.extend_from_slice(&chunk[..read]);
+                if tail.len() > limit {
+                    let excess = tail.len() - limit;
+                    tail.drain(..excess);
+                }
+            }
+        }
+    }
+    tail
 }
 
 fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
@@ -1235,7 +1601,8 @@ pub fn run() {
             save_investigation_layout,
             load_asset_workspace,
             load_plan_workspace,
-            load_workbench_source_document
+            load_workbench_source_document,
+            apply_workbench_source_edit
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -1813,6 +2180,358 @@ mod tests {
             assert_ne!(first, crlf);
             assert_eq!(load_document(&root).hash, first);
         }
+
+        fn scene_a_path(root: &Path) -> PathBuf {
+            root.join("docs/stories_plan/chapter_1/scene_a.md")
+        }
+
+        fn source_edit_request(
+            document: &WorkbenchSourceDocument,
+            kind: &str,
+            semantic_ref: &str,
+            expected_line: usize,
+            next_content: &str,
+        ) -> ApplyWorkbenchSourceEditRequest {
+            ApplyWorkbenchSourceEditRequest {
+                source_document_id: document.id.clone(),
+                expected_hash: document.hash.clone(),
+                semantic_ref: semantic_ref.to_string(),
+                kind: kind.to_string(),
+                expected_line,
+                next_content: next_content.to_string(),
+            }
+        }
+
+        fn never_validate(_: &WorkbenchValidationCommand) -> WorkbenchValidationReport {
+            panic!("validation must not run before the write")
+        }
+
+        fn apply_error(root: &Path, request: &ApplyWorkbenchSourceEditRequest) -> EditorError {
+            apply_workbench_source_edit_with_validation(root, request, &never_validate).unwrap_err()
+        }
+
+        const INVALID_SEMANTIC_REFS: &[(&str, &str)] = &[
+            ("readerDialogue", "reader:action:main:0"), // kind/ref mismatch
+            ("readerDialogue", "reader:dialogue:main"), // missing :<itemIndex>
+            ("readerDialogue", "reader:dialogue:main:zero"), // non-numeric index
+            ("readerDialogue", "reader:dialogue::0"),   // empty carrier
+            ("readerDialogue", "asset:background:unit"), // wrong prefix
+            ("readerAction", "reader:dialogue:main:0"), // kind/ref mismatch
+            ("readerAction", "reader:action:main"),     // missing :<itemIndex>
+            ("backgroundPrompt", "asset:background:"),  // empty unit id
+            ("backgroundPrompt", "reader:dialogue:main:0"), // wrong prefix
+            ("evidenceImagePrompt", "asset:evidence:evidence_a"), // missing :imagePrompt
+            ("evidenceImagePrompt", "asset:evidence::imagePrompt"), // empty evidence id
+            ("evidenceImagePrompt", "asset:background:unit"), // wrong prefix
+        ];
+
+        #[test]
+        fn focused_source_apply_rejects_stale_expected_hash_without_writing() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\n");
+            let mut request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:0",
+                1,
+                "ONE\n",
+            );
+            request.expected_hash = "0".repeat(64);
+
+            let error = apply_error(&root, &request);
+
+            assert_eq!(error.code, "sourceEditStale");
+            assert_eq!(fs::read_to_string(scene_a_path(&root)).unwrap(), "one\n");
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_unsupported_kind() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\n");
+            for kind in ["characterPrompt", "readerdialogue", "", "reader_dialogue"] {
+                let request = source_edit_request(
+                    &load_document(&root),
+                    kind,
+                    "reader:dialogue:main:0",
+                    1,
+                    "ONE\n",
+                );
+                let error = apply_error(&root, &request);
+                assert_eq!(error.code, "sourceEditKindUnsupported", "kind: {kind}");
+            }
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_invalid_semantic_refs() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\n");
+            for (kind, reference) in INVALID_SEMANTIC_REFS {
+                let request =
+                    source_edit_request(&load_document(&root), kind, reference, 1, "ONE\n");
+                let error = apply_error(&root, &request);
+                assert_eq!(
+                    error.code, "sourceEditSemanticRefInvalid",
+                    "kind {kind} ref {reference}"
+                );
+            }
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_no_change() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\n");
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:0",
+                1,
+                "one\ntwo\n",
+            );
+            assert_eq!(apply_error(&root, &request).code, "sourceEditNoChange");
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_line_count_change() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\nthree\n");
+            // Dropping the trailing newline removes one physical line.
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:1",
+                2,
+                "one\ntwo",
+            );
+            assert_eq!(apply_error(&root, &request).code, "sourceEditNotFocused");
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_multiple_changed_lines() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\nthree\n");
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:1",
+                2,
+                "ONE\nTWO\nthree\n",
+            );
+            assert_eq!(apply_error(&root, &request).code, "sourceEditNotFocused");
+        }
+
+        #[test]
+        fn focused_source_apply_rejects_changed_line_other_than_expected() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\nthree\n");
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:2",
+                3,
+                "one\nTWO\nthree\n",
+            );
+            assert_eq!(apply_error(&root, &request).code, "sourceEditLineMismatch");
+        }
+
+        #[test]
+        fn focused_source_apply_writes_expected_line_and_runs_scenes_compile_in_workspace() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\nthree\n");
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:1",
+                2,
+                "one\nTWO-edited\nthree\n",
+            );
+            // The command wrapper passes workspace_root() (already
+            // canonicalized); mirror that here so the validation cwd
+            // assertion matches production.
+            let root = root.canonicalize().unwrap();
+
+            let recorded = std::cell::RefCell::new(None);
+            let result = apply_workbench_source_edit_with_validation(&root, &request, &|command| {
+                *recorded.borrow_mut() = Some(command.clone());
+                WorkbenchValidationReport::ok()
+            })
+            .unwrap();
+
+            // Injected runner saw the exact executable/argv/cwd.
+            let command = recorded.into_inner().unwrap();
+            assert_eq!(command.program, "bun");
+            assert_eq!(command.args, vec!["run", "scenes:compile"]);
+            assert_eq!(command.cwd, root.canonicalize().unwrap());
+            assert_eq!(
+                WORKBENCH_VALIDATION_TIMEOUT,
+                std::time::Duration::from_secs(120)
+            );
+            assert!(result.validation.ok);
+
+            // The write is byte-for-byte the reviewed nextContent.
+            assert_eq!(
+                fs::read_to_string(scene_a_path(&root)).unwrap(),
+                "one\nTWO-edited\nthree\n"
+            );
+            // Atomic temp files never leak next to the source.
+            for entry in fs::read_dir(root.join("docs/stories_plan/chapter_1")).unwrap() {
+                let name = entry.unwrap().file_name();
+                assert!(
+                    !name.to_string_lossy().starts_with('.'),
+                    "leftover temp file: {name:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn focused_source_apply_keeps_written_source_when_validation_fails() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "one\ntwo\n");
+            let request = source_edit_request(
+                &load_document(&root),
+                "readerDialogue",
+                "reader:dialogue:main:1",
+                2,
+                "one\nTWO\n",
+            );
+
+            let result = apply_workbench_source_edit_with_validation(&root, &request, &|_| {
+                WorkbenchValidationReport::failed("sourceEditValidationFailed", "boom")
+            })
+            .unwrap();
+
+            // Applied + failed validation: written stays written, no rollback.
+            assert!(!result.validation.ok);
+            assert_eq!(
+                result.validation.diagnostics[0].code,
+                "sourceEditValidationFailed"
+            );
+            assert_eq!(
+                fs::read_to_string(scene_a_path(&root)).unwrap(),
+                "one\nTWO\n"
+            );
+        }
+
+        fn sh_command(script: &str, cwd: &Path) -> WorkbenchValidationCommand {
+            WorkbenchValidationCommand {
+                program: "sh".to_string(),
+                args: vec!["-c".to_string(), script.to_string()],
+                cwd: cwd.to_path_buf(),
+            }
+        }
+
+        #[test]
+        fn focused_source_validation_reports_first_non_zero_exit_with_diagnostics() {
+            let report = run_bounded_validation(
+                &sh_command(
+                    "echo out-marker; echo err-marker >&2; exit 3",
+                    &std::env::temp_dir(),
+                ),
+                std::time::Duration::from_secs(30),
+            );
+
+            assert!(!report.ok);
+            assert_eq!(report.diagnostics.len(), 1);
+            assert_eq!(report.diagnostics[0].code, "sourceEditValidationFailed");
+            let message = &report.diagnostics[0].message;
+            assert!(message.contains("out-marker"), "missing stdout: {message}");
+            assert!(message.contains("err-marker"), "missing stderr: {message}");
+            assert!(
+                message.contains("exit status: 3"),
+                "missing status: {message}"
+            );
+        }
+
+        #[test]
+        fn focused_source_validation_bounds_captured_output_to_the_tail() {
+            let report = run_bounded_validation(
+                &sh_command(
+                    "printf head-marker-stdout; \
+                     head -c 9000000 /dev/zero | tr '\\0' 'o'; \
+                     printf tail-marker-stdout; \
+                     printf head-marker-stderr >&2; \
+                     head -c 9000000 /dev/zero | tr '\\0' 'e' >&2; \
+                     printf tail-marker-stderr >&2; exit 9",
+                    &std::env::temp_dir(),
+                ),
+                std::time::Duration::from_secs(60),
+            );
+
+            assert!(!report.ok);
+            let message = &report.diagnostics[0].message;
+            // Only the bounded tail of each stream survives.
+            assert!(message.contains("tail-marker-stdout"), "{message}");
+            assert!(message.contains("tail-marker-stderr"), "{message}");
+            assert!(!message.contains("head-marker-stdout"));
+            assert!(!message.contains("head-marker-stderr"));
+            assert!(
+                message.len() < 2 * WORKBENCH_VALIDATION_OUTPUT_LIMIT + 4096,
+                "unbounded diagnostics: {} bytes",
+                message.len()
+            );
+        }
+
+        #[test]
+        fn focused_source_validation_kills_child_on_deadline_and_reports_timeout() {
+            let started = std::time::Instant::now();
+            let report = run_bounded_validation(
+                &sh_command("exec sleep 30", &std::env::temp_dir()),
+                std::time::Duration::from_millis(300),
+            );
+            let elapsed = started.elapsed();
+
+            assert!(!report.ok);
+            assert_eq!(report.diagnostics[0].code, "sourceEditValidationTimeout");
+            assert!(
+                elapsed < std::time::Duration::from_secs(10),
+                "kill on deadline failed after {elapsed:?}"
+            );
+        }
+
+        fn bun_on_path() -> bool {
+            let exe = if cfg!(windows) { "bun.exe" } else { "bun" };
+            std::env::var_os("PATH")
+                .map(|paths| std::env::split_paths(&paths).any(|dir| dir.join(exe).is_file()))
+                .unwrap_or(false)
+        }
+
+        fn temp_validation_workspace() -> PathBuf {
+            let mut dir = std::env::temp_dir();
+            dir.push(format!(
+                "lyra-focused-source-validation-{}-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos(),
+                ATOMIC_WRITE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&dir).unwrap();
+            dir
+        }
+
+        #[test]
+        fn focused_source_validation_runs_real_bun_scenes_compile_in_workspace_cwd() {
+            if !bun_on_path() {
+                eprintln!("skipping: bun is not on PATH in this environment");
+                return;
+            }
+            let workspace = temp_validation_workspace();
+            fs::write(
+                workspace.join("package.json"),
+                r#"{"name":"lyra-focused-source-validation-test","private":true,"scripts":{"scenes:compile":"echo compiled > validation-cwd-marker.txt"}}"#,
+            )
+            .unwrap();
+
+            let report = run_bounded_validation(
+                &scenes_compile_validation_command(&workspace),
+                std::time::Duration::from_secs(60),
+            );
+
+            assert!(report.ok, "real bun run failed: {:?}", report.diagnostics);
+            assert!(
+                workspace.join("validation-cwd-marker.txt").exists(),
+                "bun did not run with the workspace as cwd"
+            );
+        }
     }
 
     fn temp_workbench_root() -> PathBuf {
@@ -1825,7 +2544,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos(),
-            LAYOUT_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
+            ATOMIC_WRITE_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(root.join("apps/game/src-tauri/resources/scenes")).unwrap();
         fs::create_dir_all(root.join("docs/stories_plan/chapter_1")).unwrap();
