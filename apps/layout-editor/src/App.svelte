@@ -44,7 +44,9 @@
     showPlanOverview,
   } from "./lib/plan-store.svelte";
   import {
+    markAllActionsMultiline,
     markMultilineActions,
+    projectionHasAction,
     projectReaderScene,
   } from "./lib/reader-projection";
   import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
@@ -278,8 +280,11 @@
    * Projects the Reader view and marks multiline authored actions read-only
    * (plan lock: no Edit affordance). The compiled projection carries no
    * multiline signal, so this consults the authored source document once per
-   * projection; a failed document load leaves items editable and the
-   * draft-open seam still refuses multiline actions loudly.
+   * projection — but only when the projection actually contains an action
+   * item; scenes without actions skip the source IPC entirely. Fail-closed:
+   * a failed document load marks every action read-only, since no action may
+   * render Edit without a proven single-line authored source. The draft-open
+   * seam remains the loud backstop.
    */
   async function projectMarkedReaderScene(
     chapterId: string,
@@ -288,6 +293,8 @@
   ): Promise<ReaderScene> {
     const projected = projectReaderScene(chapterId, sourcePath, scene);
     if (scene.type === "analysis") return projected;
+    if (!projectionHasAction(projected)) return projected;
+    // ponytail: uncached per-load source fetch for multiline gating; cache per scene hash if Reader load latency matters
     try {
       const documentId: SourceDocumentId = `scene:${chapterId}:${scene.id}`;
       const document = await loadWorkbenchSourceDocument(documentId);
@@ -300,7 +307,7 @@
         }),
       );
     } catch {
-      return projected;
+      return markAllActionsMultiline(projected);
     }
   }
 
