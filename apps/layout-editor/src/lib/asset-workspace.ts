@@ -511,6 +511,58 @@ export function sceneCueRows(
   });
 }
 
+// ---- HPA-135 scene-owned prompt edit sources --------------------------------
+
+/**
+ * The scene-owned prompt source of one manifest entry, shaped for the
+ * focused-edit draft seam (HPA-135). `null` for every non-editable variant:
+ * character-owned background/evidence sources, global files, and all
+ * non-prompt entry types — character/expression/audio stay read-only.
+ */
+export type AssetPromptEditSource =
+  | {
+      kind: "backgroundPrompt";
+      chapterId: string;
+      sceneId: string;
+      unitId: string;
+      promptLine: number;
+      authoredPrompt: string;
+    }
+  | {
+      kind: "evidenceImagePrompt";
+      chapterId: string;
+      sceneId: string;
+      evidenceId: string;
+      promptLine: number;
+      authoredPrompt: string;
+    };
+
+export function assetPromptEditSource(
+  entry: AssetManifestEntry,
+): AssetPromptEditSource | null {
+  if (entry.type === "background" && "unitId" in entry.source) {
+    return {
+      kind: "backgroundPrompt",
+      chapterId: entry.source.chapterId,
+      sceneId: entry.source.sceneId,
+      unitId: entry.source.unitId,
+      promptLine: entry.source.promptLine,
+      authoredPrompt: entry.source.authoredPrompt,
+    };
+  }
+  if (entry.type === "evidence" && "evidenceId" in entry.source) {
+    return {
+      kind: "evidenceImagePrompt",
+      chapterId: entry.source.chapterId,
+      sceneId: entry.source.sceneId,
+      evidenceId: entry.source.evidenceId,
+      promptLine: entry.source.promptLine,
+      authoredPrompt: entry.source.authoredPrompt,
+    };
+  }
+  return null;
+}
+
 // ---- usage joins (typed manifest sources only) ------------------------------
 
 /**
