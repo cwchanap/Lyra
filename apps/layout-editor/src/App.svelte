@@ -58,11 +58,6 @@
     loadWorkbenchSourceDocument,
   } from "./lib/workbench-api";
   import type {
-    JSONInterrogationScene,
-    JSONInvestigationScene,
-    JSONLinearScene,
-  } from "@lyra/scripts/compile-scenes/types";
-  import type {
     ReaderEditableRef,
     ReaderGroup,
     ReaderItem,
@@ -292,7 +287,6 @@
     scene: WorkbenchScenePayload,
   ): Promise<ReaderScene> {
     const projected = projectReaderScene(chapterId, sourcePath, scene);
-    if (scene.type === "analysis") return projected;
     if (!projectionHasAction(projected)) return projected;
     // ponytail: uncached per-load source fetch for multiline gating; cache per scene hash if Reader load latency matters
     try {
@@ -554,17 +548,13 @@
     | "applied-invalid"
     | "error";
 
-  /** Selection before its source document is loaded. Analysis scenes are
-   * never selectable: the seam excludes their sanitized public view. */
+  /** Selection before its source document is loaded. */
   type PendingFocusedEditSelection =
     | {
         surface: "reader";
         chapterId: string;
         sceneId: string;
-        compiledScene:
-          | JSONLinearScene
-          | JSONInvestigationScene
-          | JSONInterrogationScene;
+        compiledScene: WorkbenchScenePayload;
         carrierId: string;
         itemIndex: number;
         item: ReaderFocusedEditItem;
@@ -630,12 +620,6 @@
     if (!compiled) {
       beginReviewError(
         `The compiled projection of "${sceneId}" is not loaded; refresh the Reader and retry.`,
-      );
-      return;
-    }
-    if (compiled.type === "analysis") {
-      beginReviewError(
-        "Analysis scenes are read-only: the editor holds only their sanitized public view.",
       );
       return;
     }

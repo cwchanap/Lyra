@@ -193,8 +193,9 @@ describe("ReaderView edit affordances", () => {
     ).toBeNull();
   });
 
-  it("renders no Edit at all in Analysis scenes (outside the edit seam)", () => {
+  it("renders Edit for analysis dialogue like every other scene kind", async () => {
     const onEditItem = vi.fn();
+    const user = userEvent.setup();
     render(ReaderView, {
       scene: fixtureScene({
         id: "analysis_scene_8_5",
@@ -204,6 +205,13 @@ describe("ReaderView edit affordances", () => {
       onEditItem,
     });
 
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    // Analysis dialogue joins the same compiler-owned source identity as
+    // every other scene kind, so its line renders Edit and emits the ref.
+    const row = screen.getByText("相馬律: intro line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(onEditItem).toHaveBeenCalledExactlyOnceWith(
+      { carrierId: "intro", itemIndex: 1 },
+      expect.objectContaining({ kind: "line" }),
+    );
   });
 });

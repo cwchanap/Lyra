@@ -5,7 +5,6 @@ import type {
   ASTLinearScene,
   CompileError,
   DialogueItem,
-  JSONAnalysisScene,
   JSONDialogueItem,
   JSONInterrogationScene,
   JSONInvestigationScene,
@@ -21,13 +20,31 @@ import type { DialogueSegmentOriginV1 } from "./save-content-manifest";
  */
 export const INVENTORY_PHASE_ID = "inventory";
 
+/**
+ * Structural subset of an emitted Analysis scene that dialogue-segment
+ * derivation reads. The full compiler JSON satisfies it, and so does the
+ * layout editor's sanitized public Analysis view (which keeps intro/outro/
+ * resultDialogue verbatim while stripping private board data), so both reuse
+ * the same authored-source join. Never a parallel identity system: the
+ * carriers and item sources are the compiler's own.
+ */
+export type AnalysisDialogueSceneSource = {
+  type: "analysis";
+  id: string;
+  intro: JSONDialogueItem[];
+  outro: JSONDialogueItem[];
+  boards: ReadonlyArray<{
+    common: { id: string; resultDialogue: JSONDialogueItem[] };
+  }>;
+};
+
 export type EmittedSceneRecordV1 = {
   chapterId: string;
   json:
     | JSONLinearScene
     | JSONInvestigationScene
     | JSONInterrogationScene
-    | JSONAnalysisScene;
+    | AnalysisDialogueSceneSource;
   sourceAst?:
     | ASTLinearScene
     | ASTInvestigationScene
@@ -209,7 +226,7 @@ export function deriveDialogueSegments(
 
 function deriveAnalysisSegments(
   chapterId: string,
-  scene: JSONAnalysisScene,
+  scene: AnalysisDialogueSceneSource,
   sourceAst?: ASTAnalysisScene,
 ): DerivedDialogueSegment[] {
   // Source owners join by semantic board id — never by array position.
