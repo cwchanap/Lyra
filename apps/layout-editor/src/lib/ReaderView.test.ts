@@ -92,8 +92,11 @@ function fixtureScene(overrides: Partial<ReaderScene> = {}): ReaderScene {
             action("slams the folder", ref("question:q1:defaultChallenge", 0)),
           ]),
           group("evidence:cctv:onReexamine", [
-            // Compiler-synthesized default re-examination fallback.
-            action(
+            // Compiler-synthesized default re-examination fallback. The
+            // projection marks it `multiline` (read-only) because
+            // multilineReaderActionRefs finds no authored source line; the
+            // view does NOT infer read-only from the rendered text.
+            multilineAction(
               NO_NEW_FINDINGS_DIALOGUE[0]!.text,
               ref("evidence:cctv:onReexamine", 0),
             ),
@@ -179,6 +182,34 @@ describe("ReaderView edit affordances", () => {
       .getByText(NO_NEW_FINDINGS_DIALOGUE[0]!.text)
       .closest("li")!;
     expect(within(row).queryByRole("button", { name: "Edit" })).toBeNull();
+  });
+
+  it("renders Edit for an authored action whose text matches the synthesized fallback", async () => {
+    // An author may legitimately write the canonical fallback text with a
+    // real source line. The projection does NOT mark it read-only (it has a
+    // resolvable source identity), so the view must render Edit — deriving
+    // editability from source identity, not from the rendered text.
+    const onEditItem = vi.fn();
+    const user = userEvent.setup();
+    render(ReaderView, {
+      scene: fixtureScene({
+        groups: [
+          group("main", [
+            action(NO_NEW_FINDINGS_DIALOGUE[0]!.text, ref("main", 0)),
+          ]),
+        ],
+      }),
+      onEditItem,
+    });
+
+    const row = screen
+      .getByText(NO_NEW_FINDINGS_DIALOGUE[0]!.text)
+      .closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(onEditItem).toHaveBeenCalledExactlyOnceWith(
+      { carrierId: "main", itemIndex: 0 },
+      expect.objectContaining({ kind: "action" }),
+    );
   });
 
   it("renders no Edit for sceneTag and notice items", () => {
