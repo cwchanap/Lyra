@@ -15,6 +15,7 @@ import type {
 } from "@lyra/scripts/compile-scenes/types";
 import type {
   PublicAnalysisScene,
+  ReaderEditableRef,
   ReaderFlow,
   ReaderGroup,
   ReaderGroupKind,
@@ -43,14 +44,17 @@ function assertNever(value: never): never {
 
 // ----- Dialogue conversion ---------------------------------------------------
 
-export function projectDialogue(item: JSONDialogueItem): ReaderItem {
+export function projectDialogue(
+  item: JSONDialogueItem,
+  editable: ReaderEditableRef,
+): ReaderItem {
   switch (item.kind) {
     case "sceneTag":
       return { kind: "sceneTag", text: item.text };
     case "action":
-      return { kind: "action", text: item.text };
+      return { kind: "action", text: item.text, editable };
     case "line":
-      return { kind: "line", speaker: item.speaker, text: item.text };
+      return { kind: "line", speaker: item.speaker, text: item.text, editable };
     default:
       return assertNever(item);
   }
@@ -128,7 +132,11 @@ function carrierGroup(
     label,
     flow,
     sourceAnchor: null,
-    items: items.map(projectDialogue),
+    // Editable refs use the raw compiler item index, computed here before
+    // withPrependedNotices() can prepend notices and shift display indexes.
+    items: items.map((item, itemIndex) =>
+      projectDialogue(item, { carrierId: id, itemIndex }),
+    ),
     children: [],
   };
 }
