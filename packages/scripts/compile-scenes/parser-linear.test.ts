@@ -21,12 +21,7 @@ describe("parseLinearScene", () => {
       {
         kind: "sceneTag",
         text: "吉祥寺街道，深夜。",
-        assetCue: {
-          backgroundPrompt: null,
-          backgroundAssetId: null,
-          bgm: null,
-          bgs: null,
-        },
+        assetCue: null,
         sourceLine: 3,
       },
       { kind: "action", text: "相馬律收起傘。", sourceLine: 5 },
