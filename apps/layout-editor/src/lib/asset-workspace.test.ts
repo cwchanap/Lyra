@@ -16,7 +16,11 @@ import type {
   JSONLinearScene,
   PortraitRef,
 } from "@lyra/scripts/compile-scenes/types";
-import { assetUsageGroups, projectAssetWorkspace } from "./asset-workspace";
+import {
+  assetPromptEditSource,
+  assetUsageGroups,
+  projectAssetWorkspace,
+} from "./asset-workspace";
 import type { WorkbenchAssetWorkspacePayload } from "./workbench-types";
 
 const CHARACTERS_YAML = `
@@ -1316,5 +1320,101 @@ describe("assetUsageGroups", () => {
         },
       ],
     });
+  });
+});
+
+// ---- HPA-135: scene-owned prompt edit sources --------------------------------
+
+describe("assetPromptEditSource", () => {
+  const sceneOwnedBackground: AssetManifestEntry = {
+    ...entryBase({
+      assetId: "background.chapter_1.tag_001",
+      type: "background",
+      entryPrompt: "Old rainy exterior.",
+    }),
+    type: "background",
+    source: {
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      unitId: "tag_001",
+      promptLine: 12,
+      authoredPrompt: "Old rainy exterior.",
+    },
+  };
+
+  const sceneOwnedEvidence: AssetManifestEntry = {
+    ...entryBase({
+      assetId: "evidence.receipt",
+      type: "evidence",
+      entryPrompt: "Old receipt icon.",
+    }),
+    type: "evidence",
+    source: {
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      evidenceId: "receipt",
+      promptLine: 7,
+      authoredPrompt: "Old receipt icon.",
+    },
+  };
+
+  it("exposes the scene-owned background prompt source verbatim", () => {
+    expect(assetPromptEditSource(sceneOwnedBackground)).toEqual({
+      kind: "backgroundPrompt",
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      unitId: "tag_001",
+      promptLine: 12,
+      authoredPrompt: "Old rainy exterior.",
+    });
+  });
+
+  it("exposes the scene-owned evidence image prompt source verbatim", () => {
+    expect(assetPromptEditSource(sceneOwnedEvidence)).toEqual({
+      kind: "evidenceImagePrompt",
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      evidenceId: "receipt",
+      promptLine: 7,
+      authoredPrompt: "Old receipt icon.",
+    });
+  });
+
+  it("returns null for character-owned and global background sources", () => {
+    expect(
+      assetPromptEditSource({
+        ...sceneOwnedBackground,
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_1",
+          characterId: "hayasaka_akane",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      assetPromptEditSource({
+        ...sceneOwnedBackground,
+        source: { globalFile: "docs/stories_plan/city_map.json" },
+      }),
+    ).toBeNull();
+  });
+
+  it("returns null for character-owned evidence and non-prompt entry types", () => {
+    expect(
+      assetPromptEditSource({
+        ...sceneOwnedEvidence,
+        source: {
+          chapterId: "chapter_1",
+          sceneId: "scene_1",
+          characterId: "hayasaka_akane",
+        },
+      }),
+    ).toBeNull();
+    expect(
+      assetPromptEditSource(manifest.entries[0] as AssetManifestEntry),
+    ).toBeNull();
+    expect(
+      assetPromptEditSource(manifest.entries[1] as AssetManifestEntry),
+    ).toBeNull();
   });
 });
