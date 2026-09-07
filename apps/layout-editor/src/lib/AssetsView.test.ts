@@ -1277,4 +1277,31 @@ describe("AssetsView focused edit affordances", () => {
       ).toHaveLength(2),
     );
   });
+
+  it("loads once when mounted with an already-bumped refresh epoch", async () => {
+    const { rerender } = renderAssets({ refreshEpoch: 1 });
+    await screen.findByLabelText("Scene cue rows");
+    // The mounted epoch is covered by the mount refresh alone — no double
+    // load when Assets first mounts after an applied edit.
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "load_asset_workspace",
+      ),
+    ).toHaveLength(1);
+
+    // A strictly newer epoch still triggers exactly one reload.
+    await rerender({
+      selectedChapterId: "chapter_1",
+      selectedSceneId: "scene_cues",
+      onSelectScene: vi.fn(),
+      refreshEpoch: 2,
+    });
+    await waitFor(() =>
+      expect(
+        mockInvoke.mock.calls.filter(
+          ([command]) => command === "load_asset_workspace",
+        ),
+      ).toHaveLength(2),
+    );
+  });
 });

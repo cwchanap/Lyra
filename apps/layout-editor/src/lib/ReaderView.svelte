@@ -18,13 +18,15 @@
 
   /** Line/action items get an Edit affordance; everything else is display
    * only. Compiler-synthesized defaults (e.g. evidence re-examination
-   * fallbacks) have no authored source line, and Analysis scenes are outside
-   * the focused-edit seam (the editor holds only their sanitized public
-   * view), so neither may render Edit. */
+   * fallbacks) have no authored source line, multiline actions are read-only
+   * in v1 (their source line does not contain the complete action), and
+   * Analysis scenes are outside the focused-edit seam (the editor holds only
+   * their sanitized public view), so none of those may render Edit. */
   function isEditableItem(item: ReaderItem): boolean {
     if (scene.type === "analysis") return false;
     if (item.kind === "line") return true;
-    if (item.kind === "action") return !isSynthesizedDefaultDialogue(item);
+    if (item.kind === "action")
+      return !item.multiline && !isSynthesizedDefaultDialogue(item);
     return false;
   }
 

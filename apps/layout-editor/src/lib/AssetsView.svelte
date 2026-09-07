@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, untrack } from "svelte";
   import {
     assetPromptEditSource,
     assetUsageGroups,
@@ -72,7 +72,7 @@
   // External refresh signal (App bumps it after an applied source edit).
   // The epoch seen at mount needs no reload — the mount refresh below covers
   // it — so only strictly newer epochs trigger a reload here.
-  let seenRefreshEpoch = 0;
+  let seenRefreshEpoch = untrack(() => refreshEpoch);
   $effect(() => {
     if (refreshEpoch > seenRefreshEpoch) {
       seenRefreshEpoch = refreshEpoch;

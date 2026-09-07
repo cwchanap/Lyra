@@ -40,6 +40,11 @@ const action = (text: string, itemRef: ReaderEditableRef): ReaderItem => ({
   editable: itemRef,
 });
 
+const multilineAction = (
+  text: string,
+  itemRef: ReaderEditableRef,
+): ReaderItem => ({ kind: "action", text, editable: itemRef, multiline: true });
+
 const sceneTag = (text: string): ReaderItem => ({ kind: "sceneTag", text });
 
 const notice = (text: string): ReaderItem => ({
@@ -137,6 +142,32 @@ describe("ReaderView edit affordances", () => {
     expect(onEditItem).toHaveBeenCalledExactlyOnceWith(
       { carrierId: "question:q1:defaultChallenge", itemIndex: 0 },
       expect.objectContaining({ kind: "action", text: "slams the folder" }),
+    );
+  });
+
+  it("renders no Edit for multiline actions (read-only in v1)", async () => {
+    const onEditItem = vi.fn();
+    const user = userEvent.setup();
+    render(ReaderView, {
+      scene: fixtureScene({
+        groups: [
+          group("main", [
+            multilineAction("雨聲漸強， 打濕了窗台。", ref("main", 0)),
+            action("slams the folder", ref("main", 1)),
+          ]),
+        ],
+      }),
+      onEditItem,
+    });
+
+    const row = screen.getByText("雨聲漸強， 打濕了窗台。").closest("li")!;
+    expect(within(row).queryByRole("button", { name: "Edit" })).toBeNull();
+    // The single-line action beside it stays editable.
+    const sibling = screen.getByText("slams the folder").closest("li")!;
+    await user.click(within(sibling).getByRole("button", { name: "Edit" }));
+    expect(onEditItem).toHaveBeenCalledExactlyOnceWith(
+      { carrierId: "main", itemIndex: 1 },
+      expect.objectContaining({ kind: "action" }),
     );
   });
 

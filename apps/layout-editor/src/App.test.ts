@@ -2088,10 +2088,15 @@ describe("focused edit review", () => {
       screen.queryByRole("region", { name: "Focused edit review" }),
     ).not.toBeInTheDocument();
 
+    const docCallsBeforeEdit = sourceDocumentCalls("scene:chapter_1:scene_1");
     const review = await editReaderLine("相馬律: first linear line");
 
-    // The closed scene-document id was requested; review shows identity.
-    expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(1);
+    // The edit open itself requests the closed scene-document id exactly
+    // once (reader projection may already have loaded it for multiline
+    // marking); review shows identity.
+    expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(
+      docCallsBeforeEdit + 1,
+    );
     expect(
       await within(review).findByText("docs/stories_plan/chapter_1/scene_1.md"),
     ).toBeInTheDocument();
@@ -2203,23 +2208,16 @@ describe("focused edit review", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("refuses multiline actions loudly at draft-open with no Apply", async () => {
+  it("renders no Edit affordance on multiline actions (read-only in v1)", async () => {
     render(App);
     await selectSceneByLabel("Scene 9");
+    const row = (await screen.findByText("雨聲漸強， 打濕了窗台。")).closest(
+      "li",
+    )!;
+    expect(within(row).queryByRole("button", { name: "Edit" })).toBeNull();
     expect(
-      await screen.findByText("雨聲漸強， 打濕了窗台。"),
-    ).toBeInTheDocument();
-
-    const review = await editReaderLine("雨聲漸強， 打濕了窗台。");
-
-    expect(
-      await within(review).findByText(
-        /workbenchSourceMultilineActionUnsupported/,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      within(review).getByRole("button", { name: "Apply" }),
-    ).toBeDisabled();
+      screen.queryByRole("region", { name: "Focused edit review" }),
+    ).not.toBeInTheDocument();
     expect(
       mockInvoke.mock.calls.filter(
         ([command]) => command === "apply_workbench_source_edit",

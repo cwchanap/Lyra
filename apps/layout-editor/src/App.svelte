@@ -10,6 +10,7 @@
   import EvidenceAssignmentPanel from "./lib/EvidenceAssignmentPanel.svelte";
   import {
     focusedEditDiff,
+    multilineReaderActionRefs,
     openFocusedEdit,
     type ApplyWorkbenchSourceEditRequest,
     type FocusedEditDiffHunk,
@@ -42,7 +43,10 @@
     selectPlanHeading,
     showPlanOverview,
   } from "./lib/plan-store.svelte";
-  import { projectReaderScene } from "./lib/reader-projection";
+  import {
+    markMultilineActions,
+    projectReaderScene,
+  } from "./lib/reader-projection";
   import { readableChapterLabel, readableSceneLabel } from "./lib/scene-labels";
   import { filterReaderScene } from "./lib/reader-view";
   import {
@@ -270,6 +274,36 @@
     ].join(" ");
   }
 
+  /**
+   * Projects the Reader view and marks multiline authored actions read-only
+   * (plan lock: no Edit affordance). The compiled projection carries no
+   * multiline signal, so this consults the authored source document once per
+   * projection; a failed document load leaves items editable and the
+   * draft-open seam still refuses multiline actions loudly.
+   */
+  async function projectMarkedReaderScene(
+    chapterId: string,
+    sourcePath: string,
+    scene: WorkbenchScenePayload,
+  ): Promise<ReaderScene> {
+    const projected = projectReaderScene(chapterId, sourcePath, scene);
+    if (scene.type === "analysis") return projected;
+    try {
+      const documentId: SourceDocumentId = `scene:${chapterId}:${scene.id}`;
+      const document = await loadWorkbenchSourceDocument(documentId);
+      return markMultilineActions(
+        projected,
+        multilineReaderActionRefs({
+          chapterId,
+          document,
+          compiledScene: scene,
+        }),
+      );
+    } catch {
+      return projected;
+    }
+  }
+
   async function loadCurrentReaderScene(): Promise<void> {
     const chapterId = selectedChapterId;
     const sceneId = selectedSceneId;
@@ -299,13 +333,18 @@
       readerLoading = false;
       currentBundle = cached;
       try {
-        currentReaderScene = projectReaderScene(
+        const marked = await projectMarkedReaderScene(
           chapterId,
           sceneEntry.sourcePath,
           currentBundle.scene,
         );
+        // Multiline marking awaits a source-document load, so the cached
+        // path needs the same stale-response guard as the network path.
+        if (generation !== readerLoadGeneration) return;
+        currentReaderScene = marked;
         displayedReaderKey = cacheKey;
       } catch (error) {
+        if (generation !== readerLoadGeneration) return;
         readerError = normalizeError(error);
         currentReaderScene = null;
       }
@@ -320,11 +359,15 @@
       if (epoch !== cacheWriteEpoch) return;
       bundleCache.set(cacheKey, bundle);
       currentBundle = bundle;
-      currentReaderScene = projectReaderScene(
+      const marked = await projectMarkedReaderScene(
         chapterId,
         sceneEntry.sourcePath,
-        currentBundle.scene,
+        bundle.scene,
       );
+      // The marking await re-opens the stale-response window; a newer load
+      // owns the projection if the generation moved.
+      if (generation !== readerLoadGeneration) return;
+      currentReaderScene = marked;
       displayedReaderKey = cacheKey;
     } catch (error) {
       if (generation !== readerLoadGeneration) return;
@@ -358,7 +401,7 @@
             const cacheKey = `${chapterId}:${scene.id}`;
             const cached = force ? undefined : bundleCache.get(cacheKey);
             if (cached) {
-              return projectReaderScene(
+              return projectMarkedReaderScene(
                 chapterId,
                 scene.sourcePath,
                 cached.scene,
@@ -374,7 +417,7 @@
             )
               return null;
             bundleCache.set(cacheKey, bundle);
-            return projectReaderScene(
+            return projectMarkedReaderScene(
               chapterId,
               scene.sourcePath,
               bundle.scene,
