@@ -439,8 +439,15 @@ describe("deriveDialogueSegments itemSources", () => {
     );
     expect(stale).toMatchObject({
       ok: false,
+      reason: "stale",
       error: { code: "workbenchSourceCarrierStale" },
     });
+    // The mismatched entry is tagged `{ stale: true }` so callers can
+    // distinguish a stale join from a synthesized item by source identity.
+    const inspectSegment = segmentsByCarrier(segments).get(
+      "hotspot:table:inspect",
+    );
+    expect(inspectSegment?.itemSources?.[0]).toEqual({ stale: true });
 
     // A healthy carrier in the same scene still resolves.
     expect(resolveDialogueItemSource(segments, "intro", 1)).toEqual({
@@ -458,6 +465,7 @@ describe("deriveDialogueSegments itemSources", () => {
     });
     expect(resolveDialogueItemSource(segments, "intro", 0)).toMatchObject({
       ok: false,
+      reason: "stale",
       error: { code: "workbenchSourceCarrierStale" },
     });
   });
@@ -471,7 +479,54 @@ describe("deriveDialogueSegments itemSources", () => {
     });
     expect(resolveDialogueItemSource(segments, "intro", 99)).toMatchObject({
       ok: false,
+      reason: "stale",
       error: { code: "workbenchSourceCarrierStale" },
+    });
+  });
+
+  it("tags compiler-synthesized carriers as synthesized, not stale", () => {
+    // An evidence with no authored On Re-examine section: the real compile
+    // pipeline materializes the default fallback via materializeSemanticDefaults
+    // so the JSON carries it while the source AST still has no authored
+    // counterpart. The source identity (null, not { stale: true }) marks it
+    // synthesized — it will never be editable, unlike a stale join that
+    // recompiling may fix.
+    const ast = investigationAst();
+    const rawJson = emitInvestigationScene(ast, corpusForAst(ast));
+    const synthesizedEvidence = ast.evidenceManifest.find(
+      (evidence) =>
+        evidence.onReexamine === null ||
+        evidence.onReexamine === undefined ||
+        evidence.onReexamine.length === 0,
+    );
+    expect(synthesizedEvidence).toBeDefined();
+    const carrierId = `evidence:${synthesizedEvidence!.id}:onReexamine`;
+    // Materialize the synthesized default into the JSON, as the real
+    // compile pipeline does (materializeSemanticDefaults).
+    const json = structuredClone(rawJson);
+    const evidenceInJson = json.evidenceManifest.find(
+      (evidence) => evidence.id === synthesizedEvidence!.id,
+    )!;
+    evidenceInJson.onReexamine = [
+      { kind: "action" as const, text: "（沒有新發現。）" },
+    ];
+
+    const segments = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json,
+      sourceAst: ast,
+    });
+    const byCarrier = segmentsByCarrier(segments);
+    // The synthesized carrier has itemSources entries (all null), not an
+    // absent itemSources array — that is what distinguishes "synthesized"
+    // from "no source document supplied".
+    expect(byCarrier.get(carrierId)?.itemSources).toEqual([null]);
+
+    const resolution = resolveDialogueItemSource(segments, carrierId, 0);
+    expect(resolution).toMatchObject({
+      ok: false,
+      reason: "synthesized",
+      error: { code: "workbenchSourceItemSynthesized" },
     });
   });
 });

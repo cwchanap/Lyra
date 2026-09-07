@@ -16,7 +16,6 @@ import {
   dialogueSegmentCarrierId,
   resolveDialogueItemSource,
 } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
-import { NO_NEW_FINDINGS_DIALOGUE } from "@lyra/scripts/compile-scenes/semantic-defaults";
 import { parseAnalysisScene } from "@lyra/scripts/compile-scenes/parser-analysis";
 import { parseInterrogationScene } from "@lyra/scripts/compile-scenes/parser-interrogation";
 import { parseInvestigationScene } from "@lyra/scripts/compile-scenes/parser-investigation";
@@ -314,24 +313,6 @@ function parseEditableSceneSource(
 }
 
 /**
- * The compiler synthesizes default re-examination dialogue when authors omit
- * it; those items have no authored source line. Like the Task-1 real-content
- * verifier, they are "not editable" — recompiling would never make them
- * resolvable, so reporting compiled/source staleness would mislead.
- *
- * Exported so the Reader view can consult the same signal BEFORE rendering an
- * Edit affordance on items that could never open a draft (HPA-135 Task-2
- * review carry-over).
- */
-export function isSynthesizedDefaultDialogue(
-  item: ReaderFocusedEditItem,
-): boolean {
-  return (
-    item.kind === "action" && item.text === NO_NEW_FINDINGS_DIALOGUE[0]!.text
-  );
-}
-
-/**
  * Every action ref in the compiled scene: the fail-closed answer when the
  * document cannot be parsed against it — no action may render Edit when its
  * authored source line cannot be consulted.
@@ -389,10 +370,17 @@ export function multilineReaderActionRefs(selection: {
     segment.items.forEach((item, itemIndex) => {
       if (item.kind !== "action") return;
       const source = segment.itemSources?.[itemIndex];
-      const trimmed = source ? (lines[source.line - 1] ?? "").trim() : "";
+      // Only a resolved entry (`{ sourceFile, line }`) points at an authored
+      // line; `{ stale: true }` and `null`/`undefined` (synthesized or no
+      // source document) are all read-only — the action has no consultable
+      // authored source line.
+      const resolvedLine =
+        source && "sourceFile" in source ? source.line : null;
+      const trimmed =
+        resolvedLine !== null ? (lines[resolvedLine - 1] ?? "").trim() : "";
       const token = tokenize(trimmed, "")[0];
       if (
-        !source ||
+        resolvedLine === null ||
         trimmed === "" ||
         (token?.kind === "unknown" && trimmed.startsWith("["))
       ) {
@@ -488,11 +476,11 @@ export function openFocusedEdit(
       itemIndex,
     );
     if (!resolution.ok) {
-      if (isSynthesizedDefaultDialogue(item)) {
-        return fail(
-          "focusedEditTargetNotEditable",
-          `Dialogue carrier "${carrierId}" item ${itemIndex} is compiler-synthesized and has no authored source line to edit.`,
-        );
+      // Source identity — not rendered text — decides the diagnostic: a
+      // synthesized item has no authored counterpart and will never be
+      // editable, while a stale join may resolve after recompiling.
+      if (resolution.reason === "synthesized") {
+        return fail("focusedEditTargetNotEditable", resolution.error.message);
       }
       return compiledSourceStale(resolution.error.message);
     }

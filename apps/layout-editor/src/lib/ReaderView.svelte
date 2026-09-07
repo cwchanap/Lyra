@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { isSynthesizedDefaultDialogue } from "./focused-edit";
   import type {
     ReaderEditableRef,
     ReaderGroup,
@@ -17,15 +16,18 @@
   } = $props();
 
   /** Line/action items get an Edit affordance; everything else is display
-   * only. Compiler-synthesized defaults (e.g. evidence re-examination
-   * fallbacks) have no authored source line, and multiline actions are
-   * read-only in v1 (their source line does not contain the complete
-   * action), so none of those may render Edit. Analysis dialogue joins the
-   * same compiler-owned source identity as every other scene kind. */
+   * only. The `multiline` flag is the projection's read-only signal: it is
+   * set by `markMultilineActions` from `multilineReaderActionRefs`, which
+   * marks every action whose authored source line cannot be consulted —
+   * multiline bracket blocks AND compiler-synthesized defaults with no
+   * authored counterpart. Editability is therefore derived from source
+   * identity, not from matching the rendered text (an author may legitimately
+   * write the canonical fallback text with a real source line). Analysis
+   * dialogue joins the same compiler-owned source identity as every other
+   * scene kind. */
   function isEditableItem(item: ReaderItem): boolean {
     if (item.kind === "line") return true;
-    if (item.kind === "action")
-      return !item.multiline && !isSynthesizedDefaultDialogue(item);
+    if (item.kind === "action") return !item.multiline;
     return false;
   }
 

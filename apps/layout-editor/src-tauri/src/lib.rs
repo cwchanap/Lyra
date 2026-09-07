@@ -1132,11 +1132,19 @@ fn run_bounded_validation(
     // path the remaining budget is ~DRAIN_FLOOR (reserved above); on the
     // Exited path the process already closed the pipes so the drain threads
     // finish immediately regardless of the budget.
-    let drain_budget = deadline.saturating_duration_since(std::time::Instant::now());
-    let stdout_tail =
-        String::from_utf8_lossy(&drain_tail_within(stdout_receiver, drain_budget)).into_owned();
-    let stderr_tail =
-        String::from_utf8_lossy(&drain_tail_within(stderr_receiver, drain_budget)).into_owned();
+    //
+    // The budget is recomputed before each receive against the same absolute
+    // deadline, so a stdout drain that blocks for the full remaining budget
+    // leaves stderr nothing — the two sequential waits cannot each consume
+    // the full budget and extend validation past the bound.
+    let stdout_tail = {
+        let budget = deadline.saturating_duration_since(std::time::Instant::now());
+        String::from_utf8_lossy(&drain_tail_within(stdout_receiver, budget)).into_owned()
+    };
+    let stderr_tail = {
+        let budget = deadline.saturating_duration_since(std::time::Instant::now());
+        String::from_utf8_lossy(&drain_tail_within(stderr_receiver, budget)).into_owned()
+    };
     match outcome {
         ValidationOutcome::Exited(status) if status.success() => WorkbenchValidationReport::ok(),
         ValidationOutcome::Exited(status) => WorkbenchValidationReport::failed(
@@ -2600,6 +2608,48 @@ mod tests {
             assert!(
                 elapsed < std::time::Duration::from_secs(5),
                 "a descendant holding the pipes extended validation past the deadline: {elapsed:?}"
+            );
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn focused_source_validation_bounds_sequential_drain_against_one_deadline() {
+            // Both pipes stay open past the kill via a double-forked descendant
+            // that escapes the process-group kill (setsid). The two sequential
+            // drain waits must share one absolute deadline: if stdout consumes
+            // the full remaining budget, stderr gets nothing, so total drain
+            // stays within the deadline instead of doubling it.
+            if std::process::Command::new("perl")
+                .arg("-e")
+                .arg("1")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_err()
+            {
+                eprintln!("skipping: perl is not on PATH");
+                return;
+            }
+            let started = std::time::Instant::now();
+            let report = run_bounded_validation(
+                &sh_command(
+                    "perl -e 'use POSIX; fork and exit; POSIX::setsid(); sleep 10' & exec sleep 30",
+                    &std::env::temp_dir(),
+                ),
+                std::time::Duration::from_secs(4),
+            );
+            let elapsed = started.elapsed();
+
+            assert!(!report.ok);
+            assert_eq!(report.diagnostics[0].code, "sourceEditValidationTimeout");
+            // With the fix, total elapsed is bounded by the timeout (4 s) plus
+            // a small polling tolerance: the kill happens at ~2 s (deadline minus
+            // the 2 s drain floor), then the single shared deadline bounds both
+            // drains to ~2 s total. The old code gave each drain the full 2 s
+            // budget, so elapsed approached 6 s.
+            assert!(
+                elapsed < std::time::Duration::from_secs(5),
+                "sequential drain extended past the single deadline: {elapsed:?}"
             );
         }
 

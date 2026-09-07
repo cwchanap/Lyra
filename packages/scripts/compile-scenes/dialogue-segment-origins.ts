@@ -62,10 +62,18 @@ export type DerivedDialogueSegment = {
   /**
    * Compiler-only per-item authored source lines (HPA-135), parallel to
    * `items` by emitted index. Present only when the scene was derived with
-   * `sourceAst`; an entry is null when that item has no resolvable source
-   * (compiler-only metadata missing, or source/compiled mismatch).
+   * `sourceAst`. Each entry is one of:
+   *   - `{ sourceFile, line }`: the item resolves to an authored source line.
+   *   - `{ stale: true }`: an authored counterpart exists with a source line
+   *     but the emitted text no longer matches it (recompile to refresh).
+   *   - `null`: the item is compiler-synthesized — no authored counterpart
+   *     exists, so it will never be editable.
+   * Absent (`undefined`) only when no source document was supplied at all;
+   * `resolveDialogueItemSource` treats that as stale (refresh the source).
    */
-  itemSources?: Array<{ sourceFile: string; line: number } | null>;
+  itemSources?: Array<
+    { sourceFile: string; line: number } | { stale: true } | null
+  >;
 };
 
 /**
@@ -96,13 +104,22 @@ export function dialogueSegmentCarrierId(
 
 export type DialogueItemSourceResolution =
   | { ok: true; sourceFile: string; line: number }
-  | { ok: false; error: CompileError };
+  | { ok: false; reason: "synthesized"; error: CompileError }
+  | { ok: false; reason: "stale"; error: CompileError };
 
 /**
  * Resolves one emitted item's authored source location. The join is
  * carrier-local (by carrier id) plus per-item (by emitted index); any
  * mismatch resolves to `workbenchSourceCarrierStale` for that carrier only —
  * never whole-scene disablement, never text-search relocation.
+ *
+ * The failure `reason` distinguishes the two non-editable cases so callers
+ * can report the right diagnostic without inspecting rendered text:
+ *   - `"synthesized"`: no authored counterpart exists (compiler-synthesized
+ *     default); recompiling will not make it editable.
+ *   - `"stale"`: an authored counterpart exists but the emitted text no
+ *     longer matches it, or no source document was supplied; recompiling
+ *     or refreshing the source may resolve it.
  */
 export function resolveDialogueItemSource(
   segments: readonly DerivedDialogueSegment[],
@@ -113,16 +130,24 @@ export function resolveDialogueItemSource(
     (candidate) => dialogueSegmentCarrierId(candidate.origin) === carrierId,
   );
   const source = segment?.itemSources?.[itemIndex];
-  if (segment && source) {
+  if (source && "sourceFile" in source) {
     return { ok: true, sourceFile: source.sourceFile, line: source.line };
   }
+  // `null` = compiler-synthesized (no authored counterpart); `undefined` =
+  // no source document supplied or index out of range, both stale.
+  const synthesized = source === null;
   return {
     ok: false,
+    reason: synthesized ? "synthesized" : "stale",
     error: {
-      code: "workbenchSourceCarrierStale",
-      message: segment
-        ? `Dialogue carrier "${carrierId}" item ${itemIndex} does not match the compiled source; run \`bun run scenes:compile\` to refresh.`
-        : `Dialogue carrier "${carrierId}" has no compiled source identity; run \`bun run scenes:compile\` to refresh.`,
+      code: synthesized
+        ? "workbenchSourceItemSynthesized"
+        : "workbenchSourceCarrierStale",
+      message: synthesized
+        ? `Dialogue carrier "${carrierId}" item ${itemIndex} is compiler-synthesized and has no authored source line to edit.`
+        : segment
+          ? `Dialogue carrier "${carrierId}" item ${itemIndex} does not match the compiled source; run \`bun run scenes:compile\` to refresh.`
+          : `Dialogue carrier "${carrierId}" has no compiled source identity; run \`bun run scenes:compile\` to refresh.`,
       sourceFile: segment?.source?.sourceFile ?? "",
       line: segment?.source?.line ?? itemIndex + 1,
     },
@@ -150,12 +175,18 @@ function itemSourceFields(
   items: readonly JSONDialogueItem[],
   sourceItems: readonly DialogueItem[] | null | undefined,
 ): Pick<DerivedDialogueSegment, "itemSources"> | Record<string, never> {
-  if (!owner || !sourceItems) return {};
+  // No source document at all: leave itemSources absent so resolution
+  // reports stale (refresh the source) rather than synthesized.
+  if (!owner) return {};
+  // Source document exists but this carrier has no authored items: every
+  // emitted item is compiler-synthesized. Tag each as null so the editor can
+  // distinguish "synthesized" (never editable) from "stale" (recompile).
+  if (!sourceItems) return { itemSources: items.map(() => null) };
   return {
     itemSources: items.map((item, index) => {
       const ast = sourceItems[index];
       if (!ast || ast.sourceLine === undefined) return null;
-      if (!emittedMatchesSource(item, ast)) return null;
+      if (!emittedMatchesSource(item, ast)) return { stale: true };
       return { sourceFile: owner.sourceFile, line: ast.sourceLine };
     }),
   };
