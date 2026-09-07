@@ -22,6 +22,13 @@ import { dialogueSegmentCarrierId } from "@lyra/scripts/compile-scenes/dialogue-
 // Every dialogue carrier fixture renders exactly one line whose text equals
 // the compiler carrier ID, so sentinel == carrier ID everywhere.
 const SENTINEL_SPEAKER = "證人";
+
+/** Expected ReaderEditableRef for one projected line/action item. */
+const ref = (carrierId: string, itemIndex: number) => ({
+  carrierId,
+  itemIndex,
+});
+
 const line = (text: string): JSONDialogueItem => ({
   kind: "line",
   speaker: SENTINEL_SPEAKER,
@@ -529,45 +536,68 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
     );
     expect(reader.groups.map((group) => group.id)).toEqual(["main"]);
     expect(reader.groups[0]?.items).toEqual([
-      { kind: "line", speaker: "相馬律", text: "first" },
-      { kind: "action", text: "second" },
+      {
+        kind: "line",
+        speaker: "相馬律",
+        text: "first",
+        editable: ref("main", 0),
+      },
+      { kind: "action", text: "second", editable: ref("main", 1) },
     ]);
   });
 
   it("projects every non-empty investigation compiler carrier exactly once", () => {
     const reader = investigationReader();
-    const expected = deriveDialogueSegments({
+    const segments = deriveDialogueSegments({
       chapterId: "chapter_1",
       json: investigationScene,
-    }).map((segment) => dialogueSegmentCarrierId(segment.origin));
+    });
 
-    expect(collectDialogueCarrierIds(reader)).toEqual(new Set(expected));
-    for (const id of expected) {
-      const group = findGroup(reader, id);
-      expect(group, id).toBeDefined();
-      expect(group?.items, id).toContainEqual({
-        kind: "line",
-        speaker: SENTINEL_SPEAKER,
-        text: id,
+    expect(collectDialogueCarrierIds(reader)).toEqual(
+      new Set(
+        segments.map((segment) => dialogueSegmentCarrierId(segment.origin)),
+      ),
+    );
+    for (const segment of segments) {
+      const carrierId = dialogueSegmentCarrierId(segment.origin);
+      const group = findGroup(reader, carrierId);
+      expect(group, carrierId).toBeDefined();
+      segment.items.forEach((item, itemIndex) => {
+        if (item.kind !== "line") return;
+        expect(group?.items, carrierId).toContainEqual({
+          kind: "line",
+          speaker: SENTINEL_SPEAKER,
+          text: item.text,
+          editable: ref(carrierId, itemIndex),
+        });
       });
     }
   });
 
   it("projects every non-empty interrogation compiler carrier exactly once", () => {
     const reader = interrogationReader();
-    const expected = deriveDialogueSegments({
+    const segments = deriveDialogueSegments({
       chapterId: "chapter_1",
       json: interrogationScene,
-    }).map((segment) => dialogueSegmentCarrierId(segment.origin));
+    });
 
-    expect(collectDialogueCarrierIds(reader)).toEqual(new Set(expected));
-    for (const id of expected) {
-      const group = findGroup(reader, id);
-      expect(group, id).toBeDefined();
-      expect(group?.items, id).toContainEqual({
-        kind: "line",
-        speaker: SENTINEL_SPEAKER,
-        text: id,
+    expect(collectDialogueCarrierIds(reader)).toEqual(
+      new Set(
+        segments.map((segment) => dialogueSegmentCarrierId(segment.origin)),
+      ),
+    );
+    for (const segment of segments) {
+      const carrierId = dialogueSegmentCarrierId(segment.origin);
+      const group = findGroup(reader, carrierId);
+      expect(group, carrierId).toBeDefined();
+      segment.items.forEach((item, itemIndex) => {
+        if (item.kind !== "line") return;
+        expect(group?.items, carrierId).toContainEqual({
+          kind: "line",
+          speaker: SENTINEL_SPEAKER,
+          text: item.text,
+          editable: ref(carrierId, itemIndex),
+        });
       });
     }
   });
@@ -677,6 +707,87 @@ describe("projectReaderScene dialogue-carrier completeness", () => {
   });
 });
 
+describe("projectReaderScene editable refs", () => {
+  it("stamps investigation branch items with their carrier ID and raw item index", () => {
+    const reader = investigationReader();
+    const collect = findGroup(reader, "evidence:door_log:onCollect");
+    expect(collect?.flow).toBe("branch");
+    expect(collect?.items).toEqual([
+      {
+        kind: "line",
+        speaker: SENTINEL_SPEAKER,
+        text: "evidence:door_log:onCollect",
+        editable: ref("evidence:door_log:onCollect", 0),
+      },
+    ]);
+    const reexamine = findGroup(reader, "hotspot:door:reexamine");
+    expect(reexamine?.flow).toBe("branch");
+    expect(reexamine?.items).toEqual([
+      {
+        kind: "line",
+        speaker: SENTINEL_SPEAKER,
+        text: "hotspot:door:reexamine",
+        editable: ref("hotspot:door:reexamine", 0),
+      },
+    ]);
+  });
+
+  it("stamps interrogation branch items across testimony metadata carriers", () => {
+    const reader = interrogationReader();
+    for (const carrierId of [
+      "question:q1:onLoop",
+      "question:q1:loopPrompt",
+      "question:q1:defaultChallenge",
+      "question:q1:defaultWrong",
+      "question:q1:wrongReply",
+      "question:q1:line:l1:challenge",
+      "question:q1:line:l1:onWrongEvidence",
+    ]) {
+      const group = findGroup(reader, carrierId);
+      expect(group?.flow, carrierId).toBe("branch");
+      expect(group?.items, carrierId).toEqual([
+        {
+          kind: "line",
+          speaker: SENTINEL_SPEAKER,
+          text: carrierId,
+          editable: ref(carrierId, 0),
+        },
+      ]);
+    }
+  });
+
+  it("keeps editable item indexes stable when notices are prepended", () => {
+    // Interrogation inventory carriers prepend metadata notices before the
+    // dialogue items; the editable ref must keep the RAW carrier item index.
+    const collect = findGroup(interrogationReader(), "evidence:cctv:onCollect");
+    expect(collect?.items).toHaveLength(3);
+    expect(collect?.items[0]?.kind).toBe("notice");
+    expect(collect?.items[1]?.kind).toBe("notice");
+    expect(collect?.items[2]).toEqual({
+      kind: "line",
+      speaker: SENTINEL_SPEAKER,
+      text: "evidence:cctv:onCollect",
+      editable: ref("evidence:cctv:onCollect", 0),
+    });
+  });
+
+  it("never stamps sceneTag or notice items with editable refs", () => {
+    const reader = projectReaderScene(
+      "chapter_1",
+      "docs/stories_plan/chapter_1/scene_p.md",
+      presentationLinearScene,
+    );
+    const items = reader.groups[0]?.items ?? [];
+    expect(items[0]?.kind).toBe("sceneTag");
+    expect("editable" in items[0]!).toBe(false);
+    const hotspot = findGroup(investigationReader(), "hotspot:door");
+    for (const item of hotspot?.items ?? []) {
+      expect(item.kind).toBe("notice");
+      expect("editable" in item).toBe(false);
+    }
+  });
+});
+
 describe("projectReaderScene non-dialogue notices", () => {
   it("projects hotspot reveals as inventory notice items", () => {
     const hotspot = findGroup(investigationReader(), "hotspot:door");
@@ -755,6 +866,7 @@ describe("projectReaderScene non-dialogue notices", () => {
         kind: "line",
         speaker: SENTINEL_SPEAKER,
         text: "evidence:door_log:onCollect",
+        editable: ref("evidence:door_log:onCollect", 0),
       },
     ]);
   });
@@ -813,6 +925,7 @@ describe("projectReaderScene non-dialogue notices", () => {
       kind: "line",
       speaker: SENTINEL_SPEAKER,
       text: "board:classify_board:result",
+      editable: ref("board:classify_board:result", 0),
     });
     expect(collectDialogueCarrierIds(reader)).toEqual(
       new Set([
@@ -961,12 +1074,23 @@ describe("projectReaderScene presentation facts", () => {
       },
     ]);
     // Reader-visible items keep the exact HPA-634 text/cue shape — no
-    // presentation fields leak into the rendered tree.
+    // presentation fields leak into the rendered tree. Line/action items
+    // carry HPA-135 editable refs at their raw carrier item indexes.
     expect(reader.groups[0]?.items).toEqual([
       { kind: "sceneTag", text: "場景：雨の署" },
-      { kind: "line", speaker: SENTINEL_SPEAKER, text: "first" },
-      { kind: "action", text: "second" },
-      { kind: "line", speaker: SENTINEL_SPEAKER, text: "third" },
+      {
+        kind: "line",
+        speaker: SENTINEL_SPEAKER,
+        text: "first",
+        editable: ref("main", 1),
+      },
+      { kind: "action", text: "second", editable: ref("main", 2) },
+      {
+        kind: "line",
+        speaker: SENTINEL_SPEAKER,
+        text: "third",
+        editable: ref("main", 3),
+      },
     ]);
   });
 

@@ -130,10 +130,27 @@ export type ReaderGroupKind =
 
 export type ReaderFlow = "main" | "branch";
 
+/**
+ * Stable focused-edit reference carried by projected line/action items
+ * (HPA-135). `itemIndex` is the item's index inside its carrier's raw
+ * compiler item array — computed before any notice decoration can shift
+ * display indexes — so the compiler source resolver can join it to the
+ * authored source line by (carrierId, itemIndex).
+ */
+export type ReaderEditableRef = {
+  carrierId: string;
+  itemIndex: number;
+};
+
 export type ReaderItem =
   | { kind: "sceneTag"; text: string }
-  | { kind: "action"; text: string }
-  | { kind: "line"; speaker: string; text: string }
+  | { kind: "action"; text: string; editable: ReaderEditableRef }
+  | {
+      kind: "line";
+      speaker: string;
+      text: string;
+      editable: ReaderEditableRef;
+    }
   | {
       kind: "notice";
       noticeKind:

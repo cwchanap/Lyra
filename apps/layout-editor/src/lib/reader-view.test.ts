@@ -11,8 +11,13 @@ const line = (speaker: string, text: string): ReaderItem => ({
   kind: "line",
   speaker,
   text,
+  editable: { carrierId: "main", itemIndex: 0 },
 });
-const action = (text: string): ReaderItem => ({ kind: "action", text });
+const action = (text: string): ReaderItem => ({
+  kind: "action",
+  text,
+  editable: { carrierId: "main", itemIndex: 0 },
+});
 const sceneTag = (text: string): ReaderItem => ({ kind: "sceneTag", text });
 const notice = (text: string): ReaderItem => ({
   kind: "notice",
