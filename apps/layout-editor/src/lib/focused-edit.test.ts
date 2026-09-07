@@ -15,7 +15,11 @@ import type {
 import type { CaseRecordProvenance } from "@lyra/scripts/compile-scenes/types";
 import type { AssetSceneUsage } from "./asset-workspace";
 import type { SourceDocumentId } from "./focused-edit";
-import { focusedEditDiff, openFocusedEdit } from "./focused-edit";
+import {
+  focusedEditDiff,
+  multilineReaderActionRefs,
+  openFocusedEdit,
+} from "./focused-edit";
 
 // ---- fixtures ----------------------------------------------------------------
 
@@ -45,6 +49,30 @@ const linearScene = {
     { kind: "line", speaker: "相馬律", text: "原文台詞。", portrait: null },
     { kind: "action", text: "相馬律走進場景。" },
     { kind: "line", speaker: "早坂茜", text: "了解。", portrait: null },
+  ],
+  assetRefs: [],
+} satisfies JSONLinearScene;
+
+// Multiline bracket block: the tokenizer flattens it into ONE compiled
+// action whose text cannot be distinguished from a single-line action, so
+// multilineReaderActionRefs must re-consult the authored source lines.
+const multilineActionSource = [
+  "# Scene 0: 接案",
+  "",
+  "[雨聲漸強，",
+  "打濕了窗台。]",
+  "",
+  "[相馬律走進場景。]",
+].join("\n");
+
+const multilineActionScene = {
+  type: "linear",
+  id: "scene_t",
+  title: "接案",
+  summary: "Fixture",
+  queue: [
+    { kind: "action", text: "雨聲漸強， 打濕了窗台。" },
+    { kind: "action", text: "相馬律走進場景。" },
   ],
   assetRefs: [],
 } satisfies JSONLinearScene;
@@ -304,6 +332,49 @@ describe("openFocusedEdit reader direct items", () => {
   });
 });
 
+// ---- multiline Reader action refs (Task 4 fix: no Edit on multiline actions)
+
+describe("multilineReaderActionRefs", () => {
+  it("marks actions whose authored bracket block spans multiple lines", () => {
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: document(
+        "scene:chapter_1:scene_t",
+        "docs/stories_plan/chapter_1/scene_t.md",
+        multilineActionSource,
+      ),
+      compiledScene: multilineActionScene,
+    });
+    expect([...refs]).toEqual(["main#0"]);
+  });
+
+  it("leaves single-line actions unmarked", () => {
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: document(
+        "scene:chapter_1:scene_t",
+        "docs/stories_plan/chapter_1/scene_t.md",
+        linearSource,
+      ),
+      compiledScene: linearScene,
+    });
+    expect(refs.size).toBe(0);
+  });
+
+  it("yields no refs when the document no longer parses against the compiled scene", () => {
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: document(
+        "scene:chapter_1:scene_t",
+        "docs/stories_plan/chapter_1/scene_t.md",
+        "not a scene",
+      ),
+      compiledScene: linearScene,
+    });
+    expect(refs.size).toBe(0);
+  });
+});
+
 // ---- reader: metadata-wrapped interrogation items ----------------------------
 
 describe("openFocusedEdit metadata-wrapped interrogation items", () => {
@@ -447,6 +518,31 @@ describe("openFocusedEdit staleness and guards", () => {
       ok: false,
       diagnostic: { code: "focusedEditNoChange" },
     });
+  });
+
+  it("passes through the multiline-target rejection for a multiline action", () => {
+    // Backstop for the Reader affordance gate: even if a multiline action
+    // somehow gets clicked, no draft exists and the diagnostic is loud.
+    const result = openFocusedEdit({
+      surface: "reader",
+      document: document(
+        "scene:chapter_1:scene_t",
+        "docs/stories_plan/chapter_1/scene_t.md",
+        multilineActionSource,
+      ),
+      chapterId: "chapter_1",
+      sceneId: "scene_t",
+      compiledScene: multilineActionScene,
+      carrierId: "main",
+      itemIndex: 0,
+      item: { kind: "action", text: "雨聲漸強， 打濕了窗台。" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostic.code).toBe(
+        "workbenchSourceMultilineActionUnsupported",
+      );
+    }
   });
 
   it("passes through the multiline-replacement rejection", () => {

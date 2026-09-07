@@ -144,7 +144,13 @@ export type ReaderEditableRef = {
 
 export type ReaderItem =
   | { kind: "sceneTag"; text: string }
-  | { kind: "action"; text: string; editable: ReaderEditableRef }
+  | {
+      kind: "action";
+      text: string;
+      editable: ReaderEditableRef;
+      /** Authored source spans multiple physical lines: read-only in v1. */
+      multiline?: boolean;
+    }
   | {
       kind: "line";
       speaker: string;

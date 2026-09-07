@@ -35,6 +35,30 @@ export class ReaderProjectionError extends Error {
   }
 }
 
+/**
+ * Marks projected action items whose authored source spans multiple physical
+ * lines (HPA-135 read-only actions) using `carrierId#itemIndex` refs derived
+ * from the scene's source document. The Reader then renders no Edit
+ * affordance for them; the draft-open seam stays the loud backstop.
+ */
+export function markMultilineActions(
+  scene: ReaderScene,
+  refs: ReadonlySet<string>,
+): ReaderScene {
+  if (refs.size === 0) return scene;
+  const markGroup = (group: ReaderGroup): ReaderGroup => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.kind === "action" &&
+      refs.has(`${item.editable.carrierId}#${item.editable.itemIndex}`)
+        ? { ...item, multiline: true }
+        : item,
+    ),
+    children: group.children.map(markGroup),
+  });
+  return { ...scene, groups: scene.groups.map(markGroup) };
+}
+
 function assertNever(value: never): never {
   throw new ReaderProjectionError(
     "unhandledRuntimeVariant",

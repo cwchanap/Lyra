@@ -12,11 +12,12 @@ import type {
 import type {
   PublicAnalysisScene,
   ReaderGroup,
+  ReaderItem,
   ReaderPresentationFact,
   ReaderScene,
   WorkbenchScenePayload,
 } from "./workbench-types";
-import { projectReaderScene } from "./reader-projection";
+import { markMultilineActions, projectReaderScene } from "./reader-projection";
 import { dialogueSegmentCarrierId } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
 
 // Every dialogue carrier fixture renders exactly one line whose text equals
@@ -1434,5 +1435,66 @@ describe("projectReaderScene presentation facts", () => {
           fact.portrait.assetId === SUSPECT_STANDARD.assetId,
       ),
     ).toHaveLength(4);
+  });
+});
+
+// ----- markMultilineActions (Task 4 fix: no Edit affordance on multiline actions)
+
+describe("markMultilineActions", () => {
+  const action = (carrierId: string, itemIndex: number): ReaderItem => ({
+    kind: "action",
+    text: "text",
+    editable: { carrierId, itemIndex },
+  });
+  const line = (): ReaderItem => ({
+    kind: "line",
+    speaker: "相馬律",
+    text: "text",
+    editable: { carrierId: "main", itemIndex: 9 },
+  });
+  const group = (
+    id: string,
+    items: ReaderItem[],
+    children: ReaderGroup[] = [],
+  ): ReaderGroup => ({
+    id,
+    kind: "topic",
+    label: id,
+    flow: "main",
+    sourceAnchor: null,
+    items,
+    children,
+  });
+  const sceneWith = (groups: ReaderGroup[]): ReaderScene => ({
+    id: "scene_t",
+    type: "linear",
+    title: "t",
+    sourcePath: "docs/stories_plan/chapter_1/scene_t.md",
+    presentation: [],
+    groups,
+  });
+
+  it("marks matching actions recursively; every other item stays unmarked", () => {
+    const scene = sceneWith([
+      group(
+        "outer",
+        [action("main", 0), line()],
+        [group("inner", [action("question:q:onLoop", 2)])],
+      ),
+    ]);
+    const marked = markMultilineActions(
+      scene,
+      new Set(["main#0", "question:q:onLoop#2"]),
+    );
+    const outer = marked.groups[0]!;
+    expect(outer.items[0]).toMatchObject({ multiline: true });
+    expect(outer.items[1]).not.toHaveProperty("multiline");
+    expect(outer.children[0]!.items[0]).toMatchObject({ multiline: true });
+  });
+
+  it("marks nothing when there are no multiline refs", () => {
+    const scene = sceneWith([group("outer", [action("main", 0)])]);
+    const marked = markMultilineActions(scene, new Set());
+    expect(marked.groups[0]!.items[0]).not.toHaveProperty("multiline");
   });
 });

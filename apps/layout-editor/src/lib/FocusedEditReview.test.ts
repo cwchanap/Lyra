@@ -118,6 +118,12 @@ describe("FocusedEditReview", () => {
     expect(review.querySelectorAll('[data-diff-kind="context"]')).toHaveLength(
       2,
     );
+    // Line separation: the header and every hunk row render on their own
+    // visual line (real newlines inside the pre) — exact textContent fails
+    // if the rows ever render contiguously.
+    expect(review.querySelector("[data-diff]")!.textContent).toBe(
+      "@@ -3,3 +3,3 @@\n  前一行\n- **相馬律**：原文台詞。\n+ **相馬律**：替換台詞。\n  後一行\n",
+    );
   });
 
   it("shows scene impact and shared-asset impact with a warning", () => {

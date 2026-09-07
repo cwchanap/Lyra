@@ -48,6 +48,11 @@
       state === "applied-invalid" ||
       state === "error",
   );
+
+  /** Real newline between hunk rows: the pre renders an exact
+   * line-oriented unified diff. Named constant because string-literal
+   * mustaches are a lint error. */
+  const DIFF_LINE_BREAK = "\n";
 </script>
 
 <section
@@ -157,11 +162,13 @@
       </div>
     </dl>
     {#if hunk}
+      <!-- Each hunk line is separated by a real newline so the exact
+           line-oriented unified diff renders as distinct visual lines. -->
       <pre
         class="m-0 overflow-x-auto rounded bg-[#f6f4ee] p-2 text-[0.8rem] leading-relaxed whitespace-pre-wrap"
         data-diff><span class="text-[#60706b]"
           >@@ -{hunk.oldStart},{hunk.oldLines} +{hunk.newStart},{hunk.newLines} @@</span
-        >{#each hunk.lines as line, index (index)}<span
+        >{DIFF_LINE_BREAK}{#each hunk.lines as line, index (index)}<span
             data-diff-kind={line.kind}
             class:text-[#7d3c2f]={line.kind === "del"}
             class:text-[#2e5340]={line.kind === "add"}
@@ -171,7 +178,7 @@
               : line.kind === "del"
                 ? "- "
                 : "  "}{line.text}</span
-          >{/each}</pre>
+          >{DIFF_LINE_BREAK}{/each}</pre>
     {/if}
   {/if}
 
