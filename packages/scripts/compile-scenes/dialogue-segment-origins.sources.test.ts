@@ -529,4 +529,86 @@ describe("deriveDialogueSegments itemSources", () => {
       error: { code: "workbenchSourceItemSynthesized" },
     });
   });
+
+  it("tags a removed optional testimony field as stale, not synthesized", () => {
+    // Regression for the optional interrogation carriers (loopPrompt,
+    // defaultChallenge, defaultWrong, wrongReply, and the optional testimony-
+    // line branches challenge/onCorrect/onWrongEvidence). These emit `[]`
+    // when unauthored — the compiler does NOT synthesize a default for them,
+    // unlike the re-examination onReexamine carriers. If an author removes
+    // such a field without recompiling, the compiled JSON still carries the
+    // old items while the current AST has the field absent. That is a stale
+    // compiled/source mismatch (recompile to refresh), NOT a permanently
+    // non-editable synthesized item.
+    const ast = interrogationAst();
+    const json = emitInterrogationScene(ast, corpusForAst(ast));
+    const question = ast.phases[0]!.questions[0]!;
+    const carrierId = `question:${question.id}:loopPrompt`;
+    // Sanity: the fixture authors a loopPrompt, so the compiled JSON carries
+    // it and the carrier is present.
+    expect(
+      segmentsByCarrier(
+        deriveDialogueSegments({
+          chapterId: "chapter_1",
+          json,
+          sourceAst: ast,
+        }),
+      ).get(carrierId),
+    ).toBeDefined();
+
+    // Simulate the author deleting the Loop Prompt section without
+    // recompiling: the source AST no longer has it, but the compiled JSON
+    // still carries the old items.
+    const editedAst: ASTInterrogationScene = structuredClone(ast);
+    editedAst.phases[0]!.questions[0]!.testimony.loopPrompt = null;
+
+    const segments = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json,
+      sourceAst: editedAst,
+    });
+    const byCarrier = segmentsByCarrier(segments);
+    // The carrier still has emitted items (stale JSON), but each is tagged
+    // { stale: true } — not null (synthesized) — because loopPrompt emits []
+    // when unauthored rather than materializing a canonical default.
+    expect(byCarrier.get(carrierId)?.itemSources).toEqual([{ stale: true }]);
+
+    const resolution = resolveDialogueItemSource(segments, carrierId, 0);
+    expect(resolution).toMatchObject({
+      ok: false,
+      reason: "stale",
+      error: { code: "workbenchSourceCarrierStale" },
+    });
+  });
+
+  it("tags a removed optional testimony-line branch as stale, not synthesized", () => {
+    // Same regression as above for the per-line optional branches
+    // (challenge/onCorrect/onWrongEvidence), which also emit [] when unauthored.
+    const ast = interrogationAst();
+    const json = emitInterrogationScene(ast, corpusForAst(ast));
+    const question = ast.phases[0]!.questions[0]!;
+    const line = question.testimony.lines.find((l) => l.challenge !== null);
+    expect(line).toBeDefined();
+    const carrierId = `question:${question.id}:line:${line!.id}:challenge`;
+
+    const editedAst: ASTInterrogationScene = structuredClone(ast);
+    const editedLine = editedAst.phases[0]!.questions[0]!.testimony.lines.find(
+      (l) => l.id === line!.id,
+    )!;
+    editedLine.challenge = null;
+
+    const segments = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json,
+      sourceAst: editedAst,
+    });
+    expect(segmentsByCarrier(segments).get(carrierId)?.itemSources).toEqual([
+      { stale: true },
+    ]);
+    expect(resolveDialogueItemSource(segments, carrierId, 0)).toMatchObject({
+      ok: false,
+      reason: "stale",
+      error: { code: "workbenchSourceCarrierStale" },
+    });
+  });
 });

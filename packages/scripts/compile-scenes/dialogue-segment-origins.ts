@@ -65,9 +65,14 @@ export type DerivedDialogueSegment = {
    * `sourceAst`. Each entry is one of:
    *   - `{ sourceFile, line }`: the item resolves to an authored source line.
    *   - `{ stale: true }`: an authored counterpart exists with a source line
-   *     but the emitted text no longer matches it (recompile to refresh).
+   *     but the emitted text no longer matches it (recompile to refresh), OR
+   *     the carrier is not a compiler-synthesized default family and the
+   *     authored field is absent while emitted items remain (the author
+   *     removed the field without recompiling — recompile to refresh).
    *   - `null`: the item is compiler-synthesized — no authored counterpart
-   *     exists, so it will never be editable.
+   *     exists, so it will never be editable. Only the re-examination
+   *     `onReexamine` carriers materialize a canonical default when unauthored,
+   *     so only they tag absent source items as `null`.
    * Absent (`undefined`) only when no source document was supplied at all;
    * `resolveDialogueItemSource` treats that as stale (refresh the source).
    */
@@ -174,14 +179,33 @@ function itemSourceFields(
   owner: { sourceFile: string } | undefined,
   items: readonly JSONDialogueItem[],
   sourceItems: readonly DialogueItem[] | null | undefined,
+  // Only carriers whose unauthored state the compiler materializes into a
+  // canonical default (the re-examination `onReexamine` fallbacks) may tag
+  // absent source items as `null` (synthesized — never editable). Every other
+  // optional carrier (`loopPrompt`, `defaultChallenge`, `defaultWrong`,
+  // `wrongReply`, and the optional testimony-line branches `challenge` /
+  // `onCorrect` / `onWrongEvidence`) emits `[]` when unauthored, so emitted
+  // items with no authored counterpart mean the compiled JSON is stale (the
+  // author removed the field without recompiling), not synthesized — tag
+  // those `{ stale: true }` so the editor reports `workbenchSourceCarrierStale`
+  // (recompile to refresh) instead of permanently non-editable.
+  synthesizesDefault = false,
 ): Pick<DerivedDialogueSegment, "itemSources"> | Record<string, never> {
   // No source document at all: leave itemSources absent so resolution
   // reports stale (refresh the source) rather than synthesized.
   if (!owner) return {};
-  // Source document exists but this carrier has no authored items: every
-  // emitted item is compiler-synthesized. Tag each as null so the editor can
-  // distinguish "synthesized" (never editable) from "stale" (recompile).
-  if (!sourceItems) return { itemSources: items.map(() => null) };
+  // Source document exists but this carrier has no authored items. For the
+  // re-examination carriers the compiler synthesizes a canonical default, so
+  // every emitted item is synthesized (null — never editable). For every
+  // other carrier, unauthored means the field was removed after compiling;
+  // any emitted items are stale (recompile to refresh), not synthesized.
+  if (!sourceItems) {
+    return {
+      itemSources: items.map(() =>
+        synthesizesDefault ? null : { stale: true },
+      ),
+    };
+  }
   return {
     itemSources: items.map((item, index) => {
       const ast = sourceItems[index];
@@ -413,6 +437,7 @@ function deriveInvestigationSegments(
             sourceHotspot,
             hotspot.onReexamine ?? [],
             sourceHotspot?.onReexamine,
+            true,
           ),
         },
       );
@@ -450,6 +475,7 @@ function deriveInvestigationSegments(
               sourceTopic,
               topic.onReexamine ?? [],
               sourceTopic?.onReexamine,
+              true,
             ),
           },
         );
@@ -485,6 +511,7 @@ function deriveInvestigationSegments(
           sourceEvidence,
           evidence.onReexamine ?? [],
           sourceEvidence?.onReexamine,
+          true,
         ),
       },
     );
@@ -518,6 +545,7 @@ function deriveInvestigationSegments(
           sourceStatement,
           statement.onReexamine ?? [],
           sourceStatement?.onReexamine,
+          true,
         ),
       },
     );
@@ -670,6 +698,7 @@ function deriveInterrogationSegments(
           sourceEvidence,
           evidence.onReexamine ?? [],
           sourceEvidence?.onReexamine,
+          true,
         ),
       },
     );
@@ -706,6 +735,7 @@ function deriveInterrogationSegments(
           sourceStatement,
           statement.onReexamine ?? [],
           sourceStatement?.onReexamine,
+          true,
         ),
       },
     );
