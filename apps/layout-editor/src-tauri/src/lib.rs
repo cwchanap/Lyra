@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -190,6 +191,9 @@ struct ResolvedScene {
     scene_type: SceneType,
     compiled_path: PathBuf,
     source_path: PathBuf,
+    /// Repo-relative authored source path (`docs/stories_plan/…`) as spelled
+    /// by the compiler manifest, for wire payloads.
+    source_relative: String,
 }
 
 // Private mirror of the compiler-emitted chapters.json (the @lyra/scene-types
@@ -290,6 +294,7 @@ fn resolve_manifest_scene_at_root(
             .join(COMPILED_SCENES_RELATIVE_ROOT)
             .join(&scene.file),
         source_path: scene.canonical_source,
+        source_relative: scene.source_path,
     })
 }
 
@@ -686,6 +691,92 @@ fn investigation_layout_path_at_root(
         ));
     }
     Ok(layout_path)
+}
+
+// === HPA-135 focused source edit: closed scene-document read/write ==========
+
+/// Wire view of one authored scene Markdown document. `hash` is the lowercase
+/// SHA-256 of the exact UTF-8 bytes and doubles as the stale-write token on
+/// apply.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WorkbenchSourceDocument {
+    id: String,
+    path: String,
+    content: String,
+    hash: String,
+}
+
+/// HPA-135 v1 identity: `scene:<chapterId>:<sceneId>` with non-empty parts.
+/// Anything else (plan/asset documents, traversal, blank parts) is unsupported.
+fn parse_source_document_id(source_document_id: &str) -> Option<(String, String)> {
+    let rest = source_document_id.strip_prefix("scene:")?;
+    let (chapter_id, scene_id) = rest.split_once(':')?;
+    if chapter_id.is_empty() || scene_id.is_empty() {
+        return None;
+    }
+    Some((chapter_id.to_string(), scene_id.to_string()))
+}
+
+fn source_document_unsupported(detail: impl std::fmt::Display) -> EditorError {
+    EditorError::new(
+        "sourceDocumentUnsupported",
+        format!("source document is not supported: {detail}"),
+    )
+}
+
+/// Resolves a closed source-document id through the existing manifest +
+/// canonical-source containment helpers. No caller-supplied path ever reaches
+/// the filesystem.
+fn resolve_workbench_source_document(
+    root: &Path,
+    source_document_id: &str,
+) -> Result<ResolvedScene, EditorError> {
+    let (chapter_id, scene_id) = parse_source_document_id(source_document_id).ok_or_else(|| {
+        source_document_unsupported("id must look like scene:<chapterId>:<sceneId>")
+    })?;
+    resolve_manifest_scene_at_root(root, &chapter_id, &scene_id)
+        .map_err(|error| source_document_unsupported(error.message))
+}
+
+fn read_source_text(path: &Path) -> Result<String, EditorError> {
+    fs::read_to_string(path).map_err(|error| {
+        if error.kind() == io::ErrorKind::NotFound {
+            EditorError::not_found(path)
+        } else {
+            EditorError::new(
+                "readFailed",
+                format!("failed to read {}: {error}", path.display()),
+            )
+        }
+    })
+}
+
+/// Lowercase hex SHA-256 of the exact UTF-8 bytes.
+fn sha256_hex(content: &str) -> String {
+    format!("{:x}", Sha256::digest(content.as_bytes()))
+}
+
+#[tauri::command]
+fn load_workbench_source_document(
+    source_document_id: String,
+) -> Result<WorkbenchSourceDocument, EditorError> {
+    let root = workspace_root()?;
+    load_workbench_source_document_at_root(&root, &source_document_id)
+}
+
+fn load_workbench_source_document_at_root(
+    root: &Path,
+    source_document_id: &str,
+) -> Result<WorkbenchSourceDocument, EditorError> {
+    let resolved = resolve_workbench_source_document(root, source_document_id)?;
+    let content = read_source_text(&resolved.source_path)?;
+    Ok(WorkbenchSourceDocument {
+        id: source_document_id.to_string(),
+        path: resolved.source_relative,
+        hash: sha256_hex(&content),
+        content,
+    })
 }
 
 fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
@@ -1143,7 +1234,8 @@ pub fn run() {
             load_investigation_layout,
             save_investigation_layout,
             load_asset_workspace,
-            load_plan_workspace
+            load_plan_workspace,
+            load_workbench_source_document
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");
@@ -1655,6 +1747,72 @@ mod tests {
         )
         .unwrap();
         root
+    }
+
+    // == HPA-135 Task 3: closed SHA-guarded one-line source write ============
+    mod focused_source {
+        use super::*;
+
+        fn write_scene_source(root: &Path, content: &str) {
+            fs::write(root.join("docs/stories_plan/chapter_1/scene_a.md"), content).unwrap();
+        }
+
+        fn load_document(root: &Path) -> WorkbenchSourceDocument {
+            load_workbench_source_document_at_root(root, "scene:chapter_1:scene_a").unwrap()
+        }
+
+        #[test]
+        fn focused_source_load_resolves_known_manifest_scene_to_canonical_markdown() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "Hello workbench source.\nSecond line.\n");
+
+            let document = load_document(&root);
+
+            assert_eq!(document.id, "scene:chapter_1:scene_a");
+            assert_eq!(document.path, "docs/stories_plan/chapter_1/scene_a.md");
+            assert_eq!(document.content, "Hello workbench source.\nSecond line.\n");
+            // Independent SHA-256 vector proves the hash is really lowercase
+            // SHA-256 of the exact UTF-8 bytes.
+            assert_eq!(
+                document.hash,
+                "eef7aba77a63f7c498f9d5006266cca16a9c3fe6438a77bcc84a6ff6c5fa5b49"
+            );
+        }
+
+        #[test]
+        fn focused_source_load_rejects_malformed_traversal_and_unknown_ids() {
+            let root = temp_workbench_root();
+            for id in [
+                "plan:story-bible",
+                "asset:background:unit_a",
+                "scene:chapter_1",
+                "scene:",
+                "scene::scene_a",
+                "scene:chapter_1:",
+                "scene:missing_chapter:scene_a",
+                "scene:chapter_1:missing_scene",
+                "scene:../../etc:passwd",
+            ] {
+                let error = load_workbench_source_document_at_root(&root, id).unwrap_err();
+                assert_eq!(error.code, "sourceDocumentUnsupported", "id: {id}");
+            }
+        }
+
+        #[test]
+        fn focused_source_document_hash_tracks_exact_source_bytes() {
+            let root = temp_workbench_root();
+            write_scene_source(&root, "alpha\n");
+            let first = load_document(&root).hash;
+
+            // Same visible text, different exact bytes → different hash.
+            write_scene_source(&root, "alpha\r\n");
+            let crlf = load_document(&root).hash;
+
+            write_scene_source(&root, "alpha\n");
+            assert_eq!(first.len(), 64);
+            assert_ne!(first, crlf);
+            assert_eq!(load_document(&root).hash, first);
+        }
     }
 
     fn temp_workbench_root() -> PathBuf {
