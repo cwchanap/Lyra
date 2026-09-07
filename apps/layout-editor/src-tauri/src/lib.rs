@@ -1042,26 +1042,33 @@ enum ValidationOutcome {
     Lost(String),
 }
 
-/// Spawns the validation command, drains stdout/stderr on separate threads
-/// (keeping only the tail within the output limit), polls for completion, and
-/// kills the child at the deadline.
-///
-/// ponytail: kill() does not chase grandchildren that inherited the pipes, so
-/// a surviving orphan could extend the drain join past the deadline; if real
-/// compiles ever orphan children, switch to a process-group kill.
+/// Spawns the validation command in its own process group, drains
+/// stdout/stderr on separate threads (keeping only the tail within the output
+/// limit), polls for completion, and kills the whole group at the deadline.
+/// Drain tails are collected within the remaining budget, so a descendant
+/// that somehow survives the group kill cannot extend validation past the
+/// bound either.
 fn run_bounded_validation(
     command: &WorkbenchValidationCommand,
     timeout: std::time::Duration,
 ) -> WorkbenchValidationReport {
     use std::process::{Command, Stdio};
 
-    let mut child = match Command::new(&command.program)
+    let mut spawn = Command::new(&command.program);
+    spawn
         .args(&command.args)
         .current_dir(&command.cwd)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
     {
+        // Own process group: the deadline kill must reach nested `bun run`
+        // descendants too, or their inherited pipes extend the drain joins
+        // past the mandatory bound.
+        use std::os::unix::process::CommandExt;
+        spawn.process_group(0);
+    }
+    let mut child = match spawn.spawn() {
         Ok(child) => child,
         Err(error) => {
             return WorkbenchValidationReport::failed(
@@ -1072,10 +1079,20 @@ fn run_bounded_validation(
     };
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
-    let stdout_handle =
-        std::thread::spawn(move || drain_bounded_tail(stdout, WORKBENCH_VALIDATION_OUTPUT_LIMIT));
-    let stderr_handle =
-        std::thread::spawn(move || drain_bounded_tail(stderr, WORKBENCH_VALIDATION_OUTPUT_LIMIT));
+    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel();
+    let (stderr_sender, stderr_receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = stdout_sender.send(drain_bounded_tail(
+            stdout,
+            WORKBENCH_VALIDATION_OUTPUT_LIMIT,
+        ));
+    });
+    std::thread::spawn(move || {
+        let _ = stderr_sender.send(drain_bounded_tail(
+            stderr,
+            WORKBENCH_VALIDATION_OUTPUT_LIMIT,
+        ));
+    });
 
     let deadline = std::time::Instant::now() + timeout;
     let outcome = loop {
@@ -1083,24 +1100,27 @@ fn run_bounded_validation(
             Ok(Some(status)) => break ValidationOutcome::Exited(status),
             Ok(None) => {
                 if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
+                    kill_validation_process(&mut child);
                     break ValidationOutcome::TimedOut;
                 }
                 std::thread::sleep(WORKBENCH_VALIDATION_POLL_INTERVAL);
             }
             Err(error) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                kill_validation_process(&mut child);
                 break ValidationOutcome::Lost(error.to_string());
             }
         }
     };
 
+    // A pipe held open by a descendant that escaped the kill (e.g. a
+    // double-forked grandchild, or a non-unix platform where only the direct
+    // child died) must not extend validation past the deadline: collect the
+    // tails within the remaining budget and give up beyond it.
+    let drain_budget = deadline.saturating_duration_since(std::time::Instant::now());
     let stdout_tail =
-        String::from_utf8_lossy(&stdout_handle.join().unwrap_or_default()).into_owned();
+        String::from_utf8_lossy(&drain_tail_within(stdout_receiver, drain_budget)).into_owned();
     let stderr_tail =
-        String::from_utf8_lossy(&stderr_handle.join().unwrap_or_default()).into_owned();
+        String::from_utf8_lossy(&drain_tail_within(stderr_receiver, drain_budget)).into_owned();
     match outcome {
         ValidationOutcome::Exited(status) if status.success() => WorkbenchValidationReport::ok(),
         ValidationOutcome::Exited(status) => WorkbenchValidationReport::failed(
@@ -1143,6 +1163,31 @@ fn drain_bounded_tail<R: std::io::Read>(mut reader: R, limit: usize) -> Vec<u8> 
         }
     }
     tail
+}
+
+/// Kills the validation child. On unix the child leads its own process group
+/// (`process_group(0)` at spawn), so the kill reaches descendants that
+/// inherited the pipes; elsewhere only the direct child can be killed and the
+/// bounded drain wait covers any survivor.
+fn kill_validation_process(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    unsafe {
+        let _ = libc::killpg(child.id() as libc::pid_t, libc::SIGKILL);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = child.kill();
+    }
+    let _ = child.wait();
+}
+
+/// Collects a drain thread's tail, giving up at `budget` (empty tail) so a
+/// pipe held open past the deadline cannot extend validation beyond the bound.
+fn drain_tail_within(
+    receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+    budget: std::time::Duration,
+) -> Vec<u8> {
+    receiver.recv_timeout(budget).unwrap_or_default()
 }
 
 fn load_manifest_chapters(root: &Path) -> Result<Vec<ManifestChapter>, EditorError> {
@@ -2484,6 +2529,29 @@ mod tests {
             assert!(
                 elapsed < std::time::Duration::from_secs(10),
                 "kill on deadline failed after {elapsed:?}"
+            );
+        }
+
+        #[test]
+        #[cfg(unix)]
+        fn focused_source_validation_group_kills_descendants_holding_pipes() {
+            let started = std::time::Instant::now();
+            // `sh` execs `sleep 30` (same pid, past the 300 ms deadline) while
+            // a same-group descendant `sleep 10` keeps stdout/stderr open for
+            // 10 s after the deadline. Killing only the direct child would
+            // hang the drain collection until the descendant exits; the
+            // process-group kill must end the whole group at the deadline.
+            let report = run_bounded_validation(
+                &sh_command("sleep 10 & exec sleep 30", &std::env::temp_dir()),
+                std::time::Duration::from_millis(300),
+            );
+            let elapsed = started.elapsed();
+
+            assert!(!report.ok);
+            assert_eq!(report.diagnostics[0].code, "sourceEditValidationTimeout");
+            assert!(
+                elapsed < std::time::Duration::from_secs(5),
+                "a descendant holding the pipes extended validation past the deadline: {elapsed:?}"
             );
         }
 
