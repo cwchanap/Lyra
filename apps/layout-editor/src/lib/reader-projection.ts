@@ -35,6 +35,22 @@ export class ReaderProjectionError extends Error {
   }
 }
 
+function markActions(
+  scene: ReaderScene,
+  shouldMark: (item: Extract<ReaderItem, { kind: "action" }>) => boolean,
+): ReaderScene {
+  const markGroup = (group: ReaderGroup): ReaderGroup => ({
+    ...group,
+    items: group.items.map((item) =>
+      item.kind === "action" && shouldMark(item)
+        ? { ...item, multiline: true }
+        : item,
+    ),
+    children: group.children.map(markGroup),
+  });
+  return { ...scene, groups: scene.groups.map(markGroup) };
+}
+
 /**
  * Marks projected action items whose authored source spans multiple physical
  * lines (HPA-135 read-only actions) using `carrierId#itemIndex` refs derived
@@ -46,17 +62,22 @@ export function markMultilineActions(
   refs: ReadonlySet<string>,
 ): ReaderScene {
   if (refs.size === 0) return scene;
-  const markGroup = (group: ReaderGroup): ReaderGroup => ({
-    ...group,
-    items: group.items.map((item) =>
-      item.kind === "action" &&
-      refs.has(`${item.editable.carrierId}#${item.editable.itemIndex}`)
-        ? { ...item, multiline: true }
-        : item,
-    ),
-    children: group.children.map(markGroup),
-  });
-  return { ...scene, groups: scene.groups.map(markGroup) };
+  return markActions(scene, (item) =>
+    refs.has(`${item.editable.carrierId}#${item.editable.itemIndex}`),
+  );
+}
+
+/** Fail-closed fallback: without a source document no action is editable. */
+export function markAllActionsMultiline(scene: ReaderScene): ReaderScene {
+  return markActions(scene, () => true);
+}
+
+/** Whether the projection renders at least one action item. */
+export function projectionHasAction(scene: ReaderScene): boolean {
+  const hasAction = (group: ReaderGroup): boolean =>
+    group.items.some((item) => item.kind === "action") ||
+    group.children.some(hasAction);
+  return scene.groups.some(hasAction);
 }
 
 function assertNever(value: never): never {

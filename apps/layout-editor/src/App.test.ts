@@ -868,6 +868,17 @@ describe("Lyra Story Workbench shell", () => {
     expect(invokedCommands()).not.toContain("load_investigation_layout");
   });
 
+  it("skips the source-document fetch for projections without action items", async () => {
+    render(App);
+    await selectSceneByLabel("Investigation Scene 3");
+    expect(
+      await screen.findByRole("heading", { name: "Rainy Office" }),
+    ).toBeInTheDocument();
+    // No projected action item → multiline gating needs no source document,
+    // so the Reader load issues no source IPC at all.
+    expect(invokedCommands()).not.toContain("load_workbench_source_document");
+  });
+
   it("renders interrogation labels through the Reader after expanding branches", async () => {
     const user = userEvent.setup();
     render(App);
@@ -2223,6 +2234,49 @@ describe("focused edit review", () => {
         ([command]) => command === "apply_workbench_source_edit",
       ),
     ).toHaveLength(0);
+  });
+
+  it("fails closed when the source document cannot load: actions lose Edit, dialogue keeps it", async () => {
+    // Every source-document request fails, including the multiline-marking
+    // fetch during the Reader load itself.
+    mockInvoke.mockImplementation(
+      async (command: string, args?: InvokeArgs) => {
+        switch (command) {
+          case "load_workbench_index":
+            return focusedIndex;
+          case "load_scene_bundle": {
+            const sceneId =
+              (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+            const bundle = focusedBundles[sceneId];
+            if (!bundle) {
+              throw new Error(`unexpected scene bundle request: ${sceneId}`);
+            }
+            return bundle;
+          }
+          default:
+            throw new Error("source documents unavailable");
+        }
+      },
+    );
+
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    // Fail-closed: with no source document the action cannot be proven
+    // single-line, so it renders no Edit affordance…
+    const actionRow = (
+      await screen.findByText("rain hits the blinds.")
+    ).closest("li")!;
+    expect(
+      within(actionRow).queryByRole("button", { name: "Edit" }),
+    ).toBeNull();
+    // …while dialogue lines stay editable (the multiline restriction is
+    // action-specific).
+    const dialogueRow = screen
+      .getByText("相馬律: first linear line")
+      .closest("li")!;
+    expect(
+      within(dialogueRow).getByRole("button", { name: "Edit" }),
+    ).toBeInTheDocument();
   });
 
   it("names compiled-source staleness before a draft exists and refuses to apply", async () => {

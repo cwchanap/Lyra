@@ -321,14 +321,38 @@ export function isSynthesizedDefaultDialogue(
 }
 
 /**
+ * Every action ref in the compiled scene: the fail-closed answer when the
+ * document cannot be parsed against it — no action may render Edit when its
+ * authored source line cannot be consulted.
+ */
+function allCompiledActionRefs(
+  chapterId: string,
+  compiledScene: EditableCompiledScene,
+): ReadonlySet<string> {
+  const refs = new Set<string>();
+  for (const segment of deriveDialogueSegments({
+    chapterId,
+    json: compiledScene,
+  })) {
+    const carrierId = dialogueSegmentCarrierId(segment.origin);
+    segment.items.forEach((item, itemIndex) => {
+      if (item.kind === "action") refs.add(`${carrierId}#${itemIndex}`);
+    });
+  }
+  return refs;
+}
+
+/**
  * Reader actions whose authored source line does not contain the complete
  * action — multiline bracket blocks, read-only in v1 (plan lock). Uses the
  * same incomplete-bracket predicate as the replacement renderer's
  * `workbenchSourceMultilineActionUnsupported` rejection, so the Reader can
  * refuse to render an Edit affordance for them at all instead of failing
  * only at draft-open. Returns `carrierId#itemIndex` keys for the projection.
- * Best-effort by design: any parse/resolve disagreement yields no refs, and
- * the draft-open seam still rejects loudly.
+ * Fail-closed by design: a source join or line disagreement marks that
+ * action, and a document that no longer parses marks every action — an
+ * unverifiable action never renders Edit. The draft-open seam stays the
+ * loud backstop.
  */
 export function multilineReaderActionRefs(selection: {
   chapterId: string;
@@ -339,7 +363,9 @@ export function multilineReaderActionRefs(selection: {
     selection.document,
     selection.compiledScene,
   );
-  if (!parsed.ok) return new Set();
+  if (!parsed.ok) {
+    return allCompiledActionRefs(selection.chapterId, selection.compiledScene);
+  }
   const segments = deriveDialogueSegments({
     chapterId: selection.chapterId,
     json: selection.compiledScene,
@@ -352,10 +378,13 @@ export function multilineReaderActionRefs(selection: {
     segment.items.forEach((item, itemIndex) => {
       if (item.kind !== "action") return;
       const source = segment.itemSources?.[itemIndex];
-      if (!source) return;
-      const trimmed = (lines[source.line - 1] ?? "").trim();
+      const trimmed = source ? (lines[source.line - 1] ?? "").trim() : "";
       const token = tokenize(trimmed, "")[0];
-      if (token?.kind === "unknown" && trimmed.startsWith("[")) {
+      if (
+        !source ||
+        trimmed === "" ||
+        (token?.kind === "unknown" && trimmed.startsWith("["))
+      ) {
         refs.add(`${carrierId}#${itemIndex}`);
       }
     });

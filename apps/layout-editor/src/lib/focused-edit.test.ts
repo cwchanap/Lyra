@@ -361,7 +361,7 @@ describe("multilineReaderActionRefs", () => {
     expect(refs.size).toBe(0);
   });
 
-  it("yields no refs when the document no longer parses against the compiled scene", () => {
+  it("marks every action when the document no longer parses against the compiled scene", () => {
     const refs = multilineReaderActionRefs({
       chapterId: "chapter_1",
       document: document(
@@ -371,7 +371,24 @@ describe("multilineReaderActionRefs", () => {
       ),
       compiledScene: linearScene,
     });
-    expect(refs.size).toBe(0);
+    // Fail-closed: an unparseable document cannot vouch for any action.
+    expect([...refs]).toEqual(["main#1"]);
+  });
+
+  it("marks an action whose source line disagrees with the compiled projection", () => {
+    // The document parses, but the compiled action no longer matches its
+    // authored line, so the per-item source join fails — that action must be
+    // treated as not-editable rather than failed open.
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: document(
+        "scene:chapter_1:scene_t",
+        "docs/stories_plan/chapter_1/scene_t.md",
+        linearSource.replace("[相馬律走進場景。]", "[他走了進來。]"),
+      ),
+      compiledScene: linearScene,
+    });
+    expect([...refs]).toEqual(["main#1"]);
   });
 });
 
