@@ -17,11 +17,13 @@ import {
   resolveDialogueItemSource,
 } from "@lyra/scripts/compile-scenes/dialogue-segment-origins";
 import { NO_NEW_FINDINGS_DIALOGUE } from "@lyra/scripts/compile-scenes/semantic-defaults";
+import { parseAnalysisScene } from "@lyra/scripts/compile-scenes/parser-analysis";
 import { parseInterrogationScene } from "@lyra/scripts/compile-scenes/parser-interrogation";
 import { parseInvestigationScene } from "@lyra/scripts/compile-scenes/parser-investigation";
 import { parseLinearScene } from "@lyra/scripts/compile-scenes/parser-linear";
 import { tokenize } from "@lyra/scripts/compile-scenes/tokenizer";
 import type {
+  ASTAnalysisScene,
   ASTInterrogationScene,
   ASTInvestigationScene,
   ASTLinearScene,
@@ -36,6 +38,7 @@ import {
   type WorkbenchSourceTargetKind,
 } from "@lyra/scripts/workbench/source-edit-targets";
 import type { AssetPromptEditSource, AssetSceneUsage } from "./asset-workspace";
+import type { PublicAnalysisScene } from "./workbench-types";
 
 /** HPA-135 v1 document identity: one authored scene Markdown file. */
 export type SourceDocumentId = `scene:${string}:${string}`;
@@ -109,10 +112,7 @@ export type FocusedEditSelection =
       document: FocusedEditSourceDocument;
       chapterId: string;
       sceneId: string;
-      compiledScene:
-        | JSONLinearScene
-        | JSONInvestigationScene
-        | JSONInterrogationScene;
+      compiledScene: EditableCompiledScene;
       carrierId: string;
       itemIndex: number;
       item: ReaderFocusedEditItem;
@@ -257,18 +257,21 @@ function assetImpact(
 type EditableCompiledScene =
   | JSONLinearScene
   | JSONInvestigationScene
-  | JSONInterrogationScene;
+  | JSONInterrogationScene
+  | PublicAnalysisScene;
 
 type EditableSourceAst =
   | ASTLinearScene
   | ASTInvestigationScene
-  | ASTInterrogationScene;
+  | ASTInterrogationScene
+  | ASTAnalysisScene;
 
 /**
  * Parses the CURRENT document content with the compiler's own parser so the
  * source-line join proves the document still agrees with the compiled scene.
- * Analysis scenes are excluded: the editor only holds the sanitized public
- * view, so their full compiled scene cannot validate a source join.
+ * Analysis scenes join through the same resolver: their public view keeps the
+ * intro/outro/resultDialogue carriers verbatim, which is exactly what the
+ * compiler's `AnalysisDialogueSceneSource` derivation reads.
  */
 function parseEditableSceneSource(
   document: FocusedEditSourceDocument,
@@ -293,6 +296,14 @@ function parseEditableSceneSource(
     }
     case "interrogation": {
       const parsed = parseInterrogationScene(
+        document.content,
+        document.path,
+        compiled.id,
+      );
+      return parsed.ok ? { ok: true, ast: parsed.value } : parsed;
+    }
+    case "analysis": {
+      const parsed = parseAnalysisScene(
         document.content,
         document.path,
         compiled.id,

@@ -1888,15 +1888,91 @@ const focusedIndex: WorkbenchIndex = {
           sourcePath: "docs/stories_plan/chapter_1/scene_9.md",
           stageCapable: false,
         },
+        {
+          id: "analysis_scene_9",
+          type: "analysis",
+          sourcePath: "docs/stories_plan/chapter_1/analysis_scene_9.md",
+          stageCapable: false,
+        },
       ],
     },
   ],
 };
 
+// Analysis public-view pair: intro dialogue + a multiline action, so the App
+// test exercises both the shared edit path and the multiline gate at once.
+const analysisEditSource = [
+  "# Scene 9: 分析測試",
+  "",
+  "- **Summary:** Fixture。",
+  "",
+  "## Intro",
+  "",
+  "**相馬律**：分析開場。",
+  "",
+  "[雨聲漸強，",
+  "打濕了窗台。]",
+  "",
+  "## Board: 板一 {#board_a}",
+  "",
+  "- **Kind:** classify",
+  "- **Prompt:** 分類。",
+  "- **Reveals:** [assert_fact:f1]",
+  "- **Incomplete Feedback:** 未完成。",
+  "- **Incorrect Feedback:** 錯誤。",
+  "",
+  "### Card: 卡一 {#card_a}",
+  "",
+  "- **Source:** evidence:e1",
+  "- **Summary:** 卡一摘要。",
+  "",
+  "### Result Dialogue",
+  "",
+  "**相馬律**：板一結果。",
+  "",
+  "## Outro",
+  "",
+  "**相馬律**：分析結束。",
+].join("\n");
+
+const analysisLine = (text: string) => ({
+  kind: "line" as const,
+  speaker: "相馬律",
+  text,
+  portrait: null,
+});
+
+const analysisEditScene = {
+  type: "analysis",
+  id: "analysis_scene_9",
+  title: "分析測試",
+  summary: "Fixture。",
+  intro: [
+    analysisLine("分析開場。"),
+    { kind: "action" as const, text: "雨聲漸強， 打濕了窗台。" },
+  ],
+  boards: [
+    {
+      kind: "classify" as const,
+      common: {
+        id: "board_a",
+        label: "板一",
+        prompt: "分類。",
+        cards: [],
+        resultDialogue: [analysisLine("板一結果。")],
+        feedback: { incomplete: "未完成。", incorrect: "錯誤。", hint: null },
+      },
+      groups: [],
+    },
+  ],
+  outro: [analysisLine("分析結束。")],
+} satisfies PublicAnalysisScene;
+
 const focusedBundles: Record<string, WorkbenchSceneBundle> = {
   scene_1: linearBundle("first linear line"),
   interrogation_scene_2: { scene: interrogationEditScene },
   scene_9: multilineBundle,
+  analysis_scene_9: { scene: analysisEditScene },
 };
 
 const sceneCuesSource = [
@@ -1925,6 +2001,11 @@ const sourceDocuments: Record<
     path: "docs/stories_plan/chapter_1/scene_9.md",
     content: multilineSource,
     hash: "hash-scene-9",
+  },
+  "scene:chapter_1:analysis_scene_9": {
+    path: "docs/stories_plan/chapter_1/analysis_scene_9.md",
+    content: analysisEditSource,
+    hash: "hash-analysis",
   },
   "scene:chapter_1:scene_cues": {
     path: "docs/stories_plan/chapter_1/scene_cues.md",

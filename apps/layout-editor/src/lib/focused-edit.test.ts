@@ -20,6 +20,7 @@ import {
   multilineReaderActionRefs,
   openFocusedEdit,
 } from "./focused-edit";
+import type { PublicAnalysisScene } from "./workbench-types";
 
 // ---- fixtures ----------------------------------------------------------------
 
@@ -76,6 +77,113 @@ const multilineActionScene = {
   ],
   assetRefs: [],
 } satisfies JSONLinearScene;
+
+// Analysis public-view pair: the editor's sanitized analysis scene keeps
+// intro/outro/resultDialogue verbatim, which is exactly what the compiler's
+// AnalysisDialogueSceneSource derivation reads — no parallel identity system.
+const analysisSource = [
+  "# Scene 9: 分析測試",
+  "",
+  "- **Summary:** Fixture。",
+  "",
+  "## Intro",
+  "",
+  "**相馬律**：分析開場。",
+  "",
+  "[雨聲漸強，",
+  "打濕了窗台。]",
+  "",
+  "## Board: 板一 {#board_a}",
+  "",
+  "- **Kind:** classify",
+  "- **Prompt:** 分類。",
+  "- **Reveals:** [assert_fact:f1]",
+  "- **Incomplete Feedback:** 未完成。",
+  "- **Incorrect Feedback:** 錯誤。",
+  "",
+  "### Card: 卡一 {#card_a}",
+  "",
+  "- **Source:** evidence:e1",
+  "- **Summary:** 卡一摘要。",
+  "",
+  "### Result Dialogue",
+  "",
+  "**相馬律**：板一結果。",
+  "",
+  "[相馬律收起卡片。]",
+  "",
+  "## Outro",
+  "",
+  "**相馬律**：分析結束。",
+].join("\n");
+
+const analysisLine = (text: string) => ({
+  kind: "line" as const,
+  speaker: "相馬律",
+  text,
+  portrait: null,
+});
+
+const analysisScene = {
+  type: "analysis",
+  id: "analysis_scene_9",
+  title: "分析測試",
+  summary: "Fixture。",
+  intro: [
+    analysisLine("分析開場。"),
+    { kind: "action" as const, text: "雨聲漸強， 打濕了窗台。" },
+  ],
+  boards: [
+    {
+      kind: "classify" as const,
+      common: {
+        id: "board_a",
+        label: "板一",
+        prompt: "分類。",
+        cards: [
+          {
+            id: "card_a",
+            label: "卡一",
+            source: { kind: "evidence" as const, id: "e1" },
+            summary: "卡一摘要。",
+          },
+        ],
+        resultDialogue: [
+          analysisLine("板一結果。"),
+          { kind: "action" as const, text: "相馬律收起卡片。" },
+        ],
+        feedback: { incomplete: "未完成。", incorrect: "錯誤。", hint: null },
+      },
+      groups: [],
+    },
+  ],
+  outro: [analysisLine("分析結束。")],
+} satisfies PublicAnalysisScene;
+
+const analysisDocument = () =>
+  document(
+    "scene:chapter_1:analysis_scene_9",
+    "docs/stories_plan/chapter_1/analysis_scene_9.md",
+    analysisSource,
+  );
+
+function analysisSelection(
+  overrides: Partial<
+    Parameters<typeof openFocusedEdit>[0] & { surface: "reader" }
+  > = {},
+): Parameters<typeof openFocusedEdit>[0] {
+  return {
+    surface: "reader",
+    document: analysisDocument(),
+    chapterId: "chapter_1",
+    sceneId: "analysis_scene_9",
+    compiledScene: analysisScene,
+    carrierId: "intro",
+    itemIndex: 0,
+    item: { kind: "line", speaker: "相馬律", text: "分析開場。" },
+    ...overrides,
+  };
+}
 
 // Metadata-wrapped interrogation pair: the compiled items must match the
 // authored tokens exactly (same construction the emitter produces).
@@ -329,6 +437,104 @@ describe("openFocusedEdit reader direct items", () => {
     expect(result.draft.nextContent).toBe(
       linearSource.replace("[相馬律走進場景。]", "[相馬律停在門口。]"),
     );
+  });
+});
+
+// ---- reader: analysis items through the public view -------------------------
+
+describe("openFocusedEdit analysis items (public view)", () => {
+  it("drafts an analysis intro dialogue edit through the shared resolver", () => {
+    const result = openFocusedEdit(analysisSelection(), "改寫的開場。");
+    if (!result.ok) throw new Error(result.diagnostic.message);
+    expect(result.draft.semanticRef).toBe("reader:dialogue:intro:0");
+    expect(result.draft.kind).toBe("readerDialogue");
+    expect(result.draft.expectedLine).toBe(
+      lineOf(analysisSource, "**相馬律**：分析開場。"),
+    );
+    expect(result.draft.nextContent).toBe(
+      analysisSource.replace(
+        "**相馬律**：分析開場。",
+        "**相馬律**：改寫的開場。",
+      ),
+    );
+    expect(result.draft.impact).toEqual({
+      scope: "scene",
+      chapterId: "chapter_1",
+      sceneId: "analysis_scene_9",
+    });
+  });
+
+  it("drafts a board result dialogue edit resolved by board id", () => {
+    const result = openFocusedEdit(
+      analysisSelection({
+        carrierId: "board:board_a:result",
+        itemIndex: 0,
+        item: { kind: "line", speaker: "相馬律", text: "板一結果。" },
+      }),
+      "板一改寫。",
+    );
+    if (!result.ok) throw new Error(result.diagnostic.message);
+    expect(result.draft.semanticRef).toBe(
+      "reader:dialogue:board:board_a:result:0",
+    );
+    expect(result.draft.expectedLine).toBe(
+      lineOf(analysisSource, "**相馬律**：板一結果。"),
+    );
+  });
+
+  it("rejects a drifted analysis document with compiled-source staleness", () => {
+    const result = openFocusedEdit(
+      analysisSelection({
+        document: document(
+          "scene:chapter_1:analysis_scene_9",
+          "docs/stories_plan/chapter_1/analysis_scene_9.md",
+          analysisSource.replace("分析開場。", "改過的開場。"),
+        ),
+      }),
+      "改寫的開場。",
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      diagnostic: { code: "focusedEditCompiledSourceStale" },
+    });
+  });
+
+  it("passes through the multiline rejection for an analysis multiline action", () => {
+    const result = openFocusedEdit(
+      analysisSelection({
+        itemIndex: 1,
+        item: { kind: "action", text: "雨聲漸強， 打濕了窗台。" },
+      }),
+      "單行化。",
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.diagnostic.code).toBe(
+        "workbenchSourceMultilineActionUnsupported",
+      );
+    }
+  });
+
+  it("marks analysis multiline actions and leaves single-line ones unmarked", () => {
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: analysisDocument(),
+      compiledScene: analysisScene,
+    });
+    expect([...refs]).toEqual(["intro#1"]);
+  });
+
+  it("marks every analysis action when the document no longer parses (fail-closed)", () => {
+    const refs = multilineReaderActionRefs({
+      chapterId: "chapter_1",
+      document: document(
+        "scene:chapter_1:analysis_scene_9",
+        "docs/stories_plan/chapter_1/analysis_scene_9.md",
+        "完全不是場景檔的文字",
+      ),
+      compiledScene: analysisScene,
+    });
+    expect([...refs]).toEqual(["intro#1", "board:board_a:result#1"]);
   });
 });
 
