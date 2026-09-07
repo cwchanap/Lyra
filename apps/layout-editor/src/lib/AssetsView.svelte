@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import {
+    assetPromptEditSource,
     assetUsageGroups,
     projectAssetWorkspace,
     sceneCueRows,
+    type AssetPromptEditSource,
+    type AssetSceneUsage,
     type AssetWorkspace,
   } from "./asset-workspace";
   import { loadAssetWorkspace } from "./workbench-api";
@@ -12,10 +15,20 @@
     selectedChapterId,
     selectedSceneId,
     onSelectScene,
+    onEditPrompt,
+    refreshEpoch = 0,
   }: {
     selectedChapterId: string | null;
     selectedSceneId: string | null;
     onSelectScene: (chapterId: string, sceneId: string) => void;
+    /** Selection-only callback for scene-owned prompt edits: no I/O here. */
+    onEditPrompt?: (selection: {
+      assetId: string;
+      prompt: AssetPromptEditSource;
+      sceneUsages: AssetSceneUsage[];
+    }) => void;
+    /** Bump to force a snapshot reload (e.g. after an applied source edit). */
+    refreshEpoch?: number;
   } = $props();
 
   type LibraryEntry = AssetWorkspace["library"][number];
@@ -55,6 +68,17 @@
   // never overwrite a newer one. No watcher/polling — Refresh only rereads
   // the snapshot.
   let loadGeneration = 0;
+
+  // External refresh signal (App bumps it after an applied source edit).
+  // The epoch seen at mount needs no reload — the mount refresh below covers
+  // it — so only strictly newer epochs trigger a reload here.
+  let seenRefreshEpoch = 0;
+  $effect(() => {
+    if (refreshEpoch > seenRefreshEpoch) {
+      seenRefreshEpoch = refreshEpoch;
+      void refresh();
+    }
+  });
 
   async function refresh(): Promise<void> {
     const generation = ++loadGeneration;
@@ -316,6 +340,28 @@
       >
         Copy source
       </button>
+      {#if assetPromptEditSource(entry) !== null}
+        <!-- Scene-owned background/evidence prompts only; character,
+             expression, audio, global, and character-owned rows stay
+             read-only because assetPromptEditSource is null for them. -->
+        <button
+          type="button"
+          class="cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 hover:border-[#57776a]"
+          data-edit-prompt
+          onclick={() => {
+            const prompt = assetPromptEditSource(entry);
+            if (prompt) {
+              onEditPrompt?.({
+                assetId: entry.assetId,
+                prompt,
+                sceneUsages: workspace?.sceneUsages ?? [],
+              });
+            }
+          }}
+        >
+          Edit prompt
+        </button>
+      {/if}
     </div>
     {#if copyStatus}
       <p class="m-0 text-[0.85rem]" role="status">{copyStatus}</p>

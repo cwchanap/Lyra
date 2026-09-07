@@ -8,7 +8,14 @@ import type { InvokeArgs } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
 import { editorState } from "./lib/layout-store.svelte";
 import { planState } from "./lib/plan-store.svelte";
-import type { CaseRecordProvenance } from "@lyra/scripts/compile-scenes/types";
+import type {
+  CaseRecordProvenance,
+  JSONInterrogationScene,
+} from "@lyra/scripts/compile-scenes/types";
+import {
+  expectedPath,
+  publicPath,
+} from "@lyra/scripts/compile-scenes/assets/manifest";
 import type {
   PublicAnalysisScene,
   WorkbenchAssetWorkspacePayload,
@@ -1672,5 +1679,736 @@ describe("Lyra Story Workbench shell", () => {
       await screen.findByRole("heading", { name: "Shared chapter_2" }),
     ).toBeInTheDocument();
     await waitFor(() => expect(activeSublocationLabel()).toBe("Lobby"));
+  });
+});
+
+// ---- HPA-135 focused edit review (shared review path through App) -----------
+
+const scene1Source = [
+  "# Scene 1: First Rain",
+  "",
+  "[場景：雨中辦公室]",
+  "",
+  "**相馬律**：first linear line",
+  "",
+  "[rain hits the blinds.]",
+  "",
+  "**九条玲子**：second speaker line",
+].join("\n");
+
+const multilineSource = [
+  "# Scene 9: Multiline",
+  "",
+  "[雨聲漸強，",
+  "打濕了窗台。]",
+].join("\n");
+
+const multilineBundle: WorkbenchSceneBundle = {
+  scene: {
+    type: "linear",
+    id: "scene_9",
+    title: "Multiline",
+    summary: "Fixture",
+    queue: [{ kind: "action", text: "雨聲漸強， 打濕了窗台。" }],
+    assetRefs: [],
+  },
+};
+
+// Known-good metadata-wrapped interrogation pair (same shape as the
+// focused-edit seam tests): compiled items exactly match the authored tokens.
+const interrogationEditSource = [
+  "# Scene 1: 測試詢問",
+  "",
+  "## Intro",
+  "",
+  "**相馬律**：開始詢問。",
+  "",
+  "## Phase: 初步 {#phase_a}",
+  "",
+  "- **Kind:** inquiry",
+  "",
+  "[場景：詢問室。]",
+  "",
+  "[相馬律坐下。]",
+  "",
+  "### Subject: 若槻蓮 {#wakatsuki_ren}",
+  "",
+  "- **Role:** 嫌疑人",
+  "- **Bio:** 店員。",
+  "",
+  "### Question: 動線 {#route}",
+  "",
+  "- **Status:** unlocked",
+  "",
+  "#### Testimony",
+  "",
+  "- **On Loop:** **相馬律**：再說一次。",
+  "- **Loop Prompt:** **相馬律**：從頭再聽。",
+  "- **Default Challenge:** [相馬律盯著紀錄。]",
+  "- **Default Wrong:** **相馬律**：這裡不對。",
+  "- **Wrong Reply:** **相馬律**：不是這件。",
+  "",
+  "##### Line: 說詞 {#l_claim}",
+  "",
+  "**若槻蓮**：我一直在店裡。",
+  "",
+  "- **Contradiction:** evidence:log",
+  "- **Challenge:** **相馬律**：紀錄顯示你出去了。",
+  "- **On Correct:** **若槻蓮**：好吧。",
+  "- **On Wrong Evidence:** **若槻蓮**：證明不了。",
+  "",
+  "## Evidence Manifest",
+  "",
+  "### evidence:log {#log}",
+  "",
+  "- **Name:** 紀錄",
+  "- **Description:** 出入紀錄。",
+  "- **Details:** 23:10。",
+  "",
+  "#### On Collect",
+  "",
+  "**相馬律**：拿到紀錄。",
+  "",
+  "## Outro",
+  "",
+  "**相馬律**：結束。",
+].join("\n");
+
+const interrogationEditLine = (speaker: string, text: string) => ({
+  kind: "line" as const,
+  speaker,
+  text,
+  portrait: null,
+});
+
+const interrogationEditScene: JSONInterrogationScene = {
+  type: "interrogation",
+  id: "interrogation_scene_2",
+  title: "測試詢問",
+  summary: "Fixture",
+  intro: [interrogationEditLine("相馬律", "開始詢問。")],
+  assetRefs: [],
+  phases: [
+    {
+      kind: "inquiry",
+      id: "phase_a",
+      label: "初步",
+      subject: {
+        id: "wakatsuki_ren",
+        name: "若槻蓮",
+        role: "嫌疑人",
+        bio: "店員。",
+        portrait: null,
+      },
+      required: true,
+      status: "unlocked",
+      unlock: null,
+      reveals: [],
+      sceneTag: "場景：詢問室。",
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      entryDialogue: [{ kind: "action" as const, text: "相馬律坐下。" }],
+      complete: "auto",
+      questions: [
+        {
+          id: "route",
+          label: "動線",
+          status: "unlocked",
+          required: true,
+          unlock: null,
+          reveals: [],
+          testimony: {
+            onLoop: [interrogationEditLine("相馬律", "再說一次。")],
+            loopPrompt: [interrogationEditLine("相馬律", "從頭再聽。")],
+            defaultChallenge: [
+              { kind: "action" as const, text: "相馬律盯著紀錄。" },
+            ],
+            defaultWrong: [interrogationEditLine("相馬律", "這裡不對。")],
+            wrongReply: [interrogationEditLine("相馬律", "不是這件。")],
+            lines: [],
+          },
+        },
+      ],
+    },
+  ],
+  evidenceManifest: [
+    {
+      id: "log",
+      name: "紀錄",
+      description: "出入紀錄。",
+      details: "23:10。",
+      imageAssetId: null,
+      provenance,
+      onCollect: [interrogationEditLine("相馬律", "拿到紀錄。")],
+      // Compiler-synthesized default re-examination: never editable.
+      onReexamine: [{ kind: "action" as const, text: "（沒有新發現。）" }],
+    },
+  ],
+  statementManifest: [],
+  outro: {
+    unlock: "auto",
+    dialogue: [interrogationEditLine("相馬律", "結束。")],
+  },
+} satisfies JSONInterrogationScene;
+
+const focusedIndex: WorkbenchIndex = {
+  chapters: [
+    {
+      id: "chapter_1",
+      title: "Focused",
+      summary: "Focused edit fixtures",
+      scenes: [
+        {
+          id: "scene_1",
+          type: "linear",
+          sourcePath: "docs/stories_plan/chapter_1/scene_1.md",
+          stageCapable: false,
+        },
+        {
+          id: "interrogation_scene_2",
+          type: "interrogation",
+          sourcePath: "docs/stories_plan/chapter_1/interrogation_scene_2.md",
+          stageCapable: false,
+        },
+        {
+          id: "scene_9",
+          type: "linear",
+          sourcePath: "docs/stories_plan/chapter_1/scene_9.md",
+          stageCapable: false,
+        },
+      ],
+    },
+  ],
+};
+
+const focusedBundles: Record<string, WorkbenchSceneBundle> = {
+  scene_1: linearBundle("first linear line"),
+  interrogation_scene_2: { scene: interrogationEditScene },
+  scene_9: multilineBundle,
+};
+
+const sceneCuesSource = [
+  "# Scene 3: Cues",
+  "",
+  "- **Background Prompt:** rainy hall",
+  "",
+  "[場景：現場]",
+].join("\n");
+
+const sourceDocuments: Record<
+  string,
+  { path: string; content: string; hash: string }
+> = {
+  "scene:chapter_1:scene_1": {
+    path: "docs/stories_plan/chapter_1/scene_1.md",
+    content: scene1Source,
+    hash: "hash-scene-1",
+  },
+  "scene:chapter_1:interrogation_scene_2": {
+    path: "docs/stories_plan/chapter_1/interrogation_scene_2.md",
+    content: interrogationEditSource,
+    hash: "hash-interrogation",
+  },
+  "scene:chapter_1:scene_9": {
+    path: "docs/stories_plan/chapter_1/scene_9.md",
+    content: multilineSource,
+    hash: "hash-scene-9",
+  },
+  "scene:chapter_1:scene_cues": {
+    path: "docs/stories_plan/chapter_1/scene_cues.md",
+    content: sceneCuesSource,
+    hash: "hash-scene-cues",
+  },
+};
+
+function focusedAssetsPayload(): WorkbenchAssetWorkspacePayload {
+  return {
+    manifest: {
+      enabled: true,
+      entries: [
+        {
+          assetId: "background.chapter_1.scene_cues.hall",
+          expectedPath: expectedPath(
+            "background.chapter_1.scene_cues.hall",
+            "background",
+          ),
+          publicPath: publicPath(
+            "background.chapter_1.scene_cues.hall",
+            "background",
+          ),
+          promptParts: {
+            globalStyle: "",
+            typePrompt: "",
+            subjectPrompt: "",
+            entryPrompt: "rainy hall",
+          },
+          finalPrompt: "rainy hall",
+          type: "background",
+          source: {
+            chapterId: "chapter_1",
+            sceneId: "scene_cues",
+            unitId: "hall",
+            promptLine: 3,
+            authoredPrompt: "rainy hall",
+          },
+        },
+      ],
+    },
+    report: {
+      enabled: true,
+      requested: {
+        background: 1,
+        portrait: 0,
+        standee: 0,
+        evidence: 0,
+        audio: 0,
+      },
+      warnings: [],
+    },
+    configSources: {
+      characters: {
+        path: "static/assets/config/characters.yaml",
+        content: "",
+      },
+      audio: { path: "static/assets/config/audio.yaml", content: "" },
+    },
+    scenes: [],
+    existingAssetPaths: [],
+  };
+}
+
+type ApplyBehavior =
+  | {
+      validation: {
+        ok: boolean;
+        diagnostics: Array<{ code: string; message: string }>;
+      };
+    }
+  | { error: { code: string; message: string } };
+
+function mockFocusedBackend(
+  applyBehavior: ApplyBehavior = {
+    validation: { ok: true, diagnostics: [] },
+  },
+) {
+  mockInvoke.mockImplementation(async (command: string, args?: InvokeArgs) => {
+    switch (command) {
+      case "load_workbench_index":
+        return focusedIndex;
+      case "load_scene_bundle": {
+        const sceneId =
+          (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+        const bundle = focusedBundles[sceneId];
+        if (!bundle) {
+          throw new Error(`unexpected scene bundle request: ${sceneId}`);
+        }
+        return bundle;
+      }
+      case "load_workbench_source_document": {
+        const id =
+          (args as { sourceDocumentId?: string } | undefined)
+            ?.sourceDocumentId ?? "";
+        const doc = sourceDocuments[id];
+        if (!doc) {
+          throw new Error(`unexpected source document request: ${id}`);
+        }
+        return { id, path: doc.path, content: doc.content, hash: doc.hash };
+      }
+      case "load_asset_workspace":
+        return focusedAssetsPayload();
+      case "apply_workbench_source_edit":
+        if ("error" in applyBehavior) throw applyBehavior.error;
+        return applyBehavior;
+      default:
+        throw new Error(`unexpected invoke: ${command}`);
+    }
+  });
+}
+
+function sourceDocumentCalls(id: string): number {
+  return mockInvoke.mock.calls.filter(
+    ([command, args]) =>
+      command === "load_workbench_source_document" &&
+      (args as { sourceDocumentId?: string } | undefined)?.sourceDocumentId ===
+        id,
+  ).length;
+}
+
+function bundleCallCount(): number {
+  return mockInvoke.mock.calls.filter(
+    ([command]) => command === "load_scene_bundle",
+  ).length;
+}
+
+function lineOf(source: string, needle: string): number {
+  const index = source.split("\n").findIndex((line) => line.includes(needle));
+  if (index < 0) throw new Error(`needle not found in source: ${needle}`);
+  return index + 1;
+}
+
+async function editReaderLine(lineText: string): Promise<HTMLElement> {
+  const user = userEvent.setup();
+  const row = screen.getByText(lineText).closest("li")!;
+  await user.click(within(row).getByRole("button", { name: "Edit" }));
+  return await screen.findByRole("region", { name: "Focused edit review" });
+}
+
+describe("focused edit review", () => {
+  beforeEach(() => {
+    editorState.scene = null;
+    editorState.layout = null;
+    editorState.chapterId = null;
+    editorState.sceneId = null;
+    editorState.error = null;
+    planState.workspace = null;
+    planState.error = null;
+    planState.loading = false;
+    planState.surface = "overview";
+    planState.selectedDocumentId = "story-bible";
+    planState.selectedAnchor = null;
+    vi.clearAllMocks();
+    // The staleness test mutates this record; keep every test pristine.
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source,
+      hash: "hash-scene-1",
+    };
+    mockFocusedBackend();
+  });
+
+  it("opens the shared review from a resolved Reader line and applies the six-field request", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    expect(
+      await screen.findByText("相馬律: first linear line"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Focused edit review" }),
+    ).not.toBeInTheDocument();
+
+    const review = await editReaderLine("相馬律: first linear line");
+
+    // The closed scene-document id was requested; review shows identity.
+    expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(1);
+    expect(
+      await within(review).findByText("docs/stories_plan/chapter_1/scene_1.md"),
+    ).toBeInTheDocument();
+    expect(
+      within(review).getByText("reader:dialogue:main:1"),
+    ).toBeInTheDocument();
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+
+    // Exact unified hunk over the authored Markdown.
+    expect(within(review).getByText("@@ -2,7 +2,7 @@")).toBeInTheDocument();
+    expect(review.querySelector('[data-diff-kind="del"]')).toHaveTextContent(
+      "**相馬律**：first linear line",
+    );
+    expect(review.querySelector('[data-diff-kind="add"]')).toHaveTextContent(
+      "**相馬律**：替換台詞。",
+    );
+
+    // Apply carries ONLY the six backend-guarded fields.
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    expect(mockInvoke).toHaveBeenCalledWith("apply_workbench_source_edit", {
+      request: {
+        sourceDocumentId: "scene:chapter_1:scene_1",
+        expectedHash: "hash-scene-1",
+        semanticRef: "reader:dialogue:main:1",
+        kind: "readerDialogue",
+        expectedLine: lineOf(scene1Source, "**相馬律**：first linear line"),
+        nextContent: scene1Source.replace(
+          "**相馬律**：first linear line",
+          "**相馬律**：替換台詞。",
+        ),
+      },
+    });
+
+    // Applied-valid: projections refresh (bundle reloaded), review confirms.
+    expect(
+      await within(review).findByText(/Applied — scenes:compile passed/),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(bundleCallCount()).toBe(2));
+
+    // Close dismisses the single review surface.
+    await user.click(within(review).getByRole("button", { name: "Close" }));
+    expect(
+      screen.queryByRole("region", { name: "Focused edit review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the same review for a metadata-wrapped interrogation line", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Interrogation Scene 2");
+    expect(await screen.findByText("相馬律坐下。")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Expanded branches" }));
+
+    // The On Loop branch group renders collapsed; open it, then edit.
+    await user.click(screen.getByText("On Loop"));
+    const review = await editReaderLine("相馬律: 再說一次。");
+
+    expect(
+      await within(review).findByText(
+        "docs/stories_plan/chapter_1/interrogation_scene_2.md",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(review).getByText("reader:dialogue:question:route:onLoop:0"),
+    ).toBeInTheDocument();
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "就說一次就好。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    expect(mockInvoke).toHaveBeenCalledWith("apply_workbench_source_edit", {
+      request: {
+        sourceDocumentId: "scene:chapter_1:interrogation_scene_2",
+        expectedHash: "hash-interrogation",
+        semanticRef: "reader:dialogue:question:route:onLoop:0",
+        kind: "readerDialogue",
+        expectedLine: lineOf(
+          interrogationEditSource,
+          "- **On Loop:** **相馬律**：再說一次。",
+        ),
+        nextContent: interrogationEditSource.replace(
+          "- **On Loop:** **相馬律**：再說一次。",
+          "- **On Loop:** **相馬律**：就說一次就好。",
+        ),
+      },
+    });
+    expect(
+      await within(review).findByText(/Applied — scenes:compile passed/),
+    ).toBeInTheDocument();
+  });
+
+  it("renders no Edit affordance on compiler-synthesized re-examination defaults", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Interrogation Scene 2");
+    await screen.findByText("相馬律坐下。");
+    await user.click(screen.getByRole("button", { name: "Expanded branches" }));
+    await user.click(screen.getByText("On Re-examine"));
+
+    const row = screen.getByText("（沒有新發現。）").closest("li")!;
+    expect(within(row).queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Focused edit review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refuses multiline actions loudly at draft-open with no Apply", async () => {
+    render(App);
+    await selectSceneByLabel("Scene 9");
+    expect(
+      await screen.findByText("雨聲漸強， 打濕了窗台。"),
+    ).toBeInTheDocument();
+
+    const review = await editReaderLine("雨聲漸強， 打濕了窗台。");
+
+    expect(
+      await within(review).findByText(
+        /workbenchSourceMultilineActionUnsupported/,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(review).getByRole("button", { name: "Apply" }),
+    ).toBeDisabled();
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("names compiled-source staleness before a draft exists and refuses to apply", async () => {
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source.replace("first linear line", "改過的台詞。"),
+      hash: "hash-scene-1",
+    };
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    const review = await editReaderLine("相馬律: first linear line");
+
+    const stale = await waitFor(() => {
+      const node = review.querySelector(
+        '[data-diagnostic-code="focusedEditCompiledSourceStale"]',
+      );
+      if (!node) throw new Error("stale diagnostic not rendered yet");
+      return node;
+    });
+    expect(stale).toBeInTheDocument();
+    expect(
+      within(review).getByRole("button", { name: "Apply" }),
+    ).toBeDisabled();
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("surfaces a backend stale-hash rejection as a review error without refreshing", async () => {
+    mockFocusedBackend({
+      error: {
+        code: "sourceEditStale",
+        message:
+          "source scene_1.md changed since it was loaded; refresh and retry",
+      },
+    });
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+    const review = await editReaderLine("相馬律: first linear line");
+    await within(review).findByText("docs/stories_plan/chapter_1/scene_1.md");
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+
+    expect(
+      await within(review).findByText(
+        /source scene_1\.md changed since it was loaded/,
+      ),
+    ).toBeInTheDocument();
+    // Rejected before write: projections stay as they were.
+    expect(bundleCallCount()).toBe(1);
+  });
+
+  it("shows applied-invalid validation diagnostics and does not pretend fresh projections", async () => {
+    mockFocusedBackend({
+      validation: {
+        ok: false,
+        diagnostics: [
+          {
+            code: "sourceEditValidationFailed",
+            message: "scenes:compile failed on scene_1.md",
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+    const review = await editReaderLine("相馬律: first linear line");
+    await within(review).findByText("docs/stories_plan/chapter_1/scene_1.md");
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+
+    expect(
+      await within(review).findByText(/Applied, but scenes:compile failed/),
+    ).toBeInTheDocument();
+    expect(review.getAttribute("data-state")).toBe("applied-invalid");
+    expect(
+      review.querySelector(
+        '[data-validation-code="sourceEditValidationFailed"]',
+      ),
+    ).toHaveTextContent("scenes:compile failed on scene_1.md");
+    // Written-but-invalid keeps the STALE projections on screen: no reload.
+    expect(bundleCallCount()).toBe(1);
+  });
+
+  it("treats a validation timeout as applied-invalid with the timeout diagnostic", async () => {
+    mockFocusedBackend({
+      validation: {
+        ok: false,
+        diagnostics: [
+          {
+            code: "sourceEditValidationTimeout",
+            message: "`bun run scenes:compile` exceeded 120s and was killed",
+          },
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+    const review = await editReaderLine("相馬律: first linear line");
+    await within(review).findByText("docs/stories_plan/chapter_1/scene_1.md");
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+
+    expect(review.getAttribute("data-state")).toBe("applied-invalid");
+    expect(
+      await within(review).findByText(/exceeded 120s and was killed/),
+    ).toBeInTheDocument();
+    expect(bundleCallCount()).toBe(1);
+  });
+
+  it("reuses the same review surface for a scene-owned Background Prompt and refreshes Assets on success", async () => {
+    mockFocusedBackend();
+    const assetWorkspaceLoads = () =>
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "load_asset_workspace",
+      ).length;
+    const user = userEvent.setup();
+    render(App);
+
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Edit prompt" }),
+    );
+
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    expect(sourceDocumentCalls("scene:chapter_1:scene_cues")).toBe(1);
+    expect(
+      await within(review).findByText("asset:background:hall"),
+    ).toBeInTheDocument();
+
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "stormy hall",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    expect(mockInvoke).toHaveBeenCalledWith("apply_workbench_source_edit", {
+      request: {
+        sourceDocumentId: "scene:chapter_1:scene_cues",
+        expectedHash: "hash-scene-cues",
+        semanticRef: "asset:background:hall",
+        kind: "backgroundPrompt",
+        expectedLine: 3,
+        nextContent: sceneCuesSource.replace(
+          "- **Background Prompt:** rainy hall",
+          "- **Background Prompt:** stormy hall",
+        ),
+      },
+    });
+    expect(
+      await within(review).findByText(/Applied — scenes:compile passed/),
+    ).toBeInTheDocument();
+    // Assets snapshot is reloaded through its refresh epoch.
+    await waitFor(() => expect(assetWorkspaceLoads()).toBe(2));
   });
 });

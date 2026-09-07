@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { InvestigationLayoutSidecar } from "@lyra/scene-types";
 import type {
+  ApplyWorkbenchSourceEditRequest,
+  ApplyWorkbenchSourceEditResult,
+  FocusedEditSourceDocument,
+  SourceDocumentId,
+} from "./focused-edit";
+import type {
   WorkbenchAssetWorkspacePayload,
   WorkbenchIndex,
   WorkbenchPlanWorkspacePayload,
@@ -30,3 +36,17 @@ export const saveInvestigationLayout = (
   sceneId: string,
   layout: InvestigationLayoutSidecar,
 ) => invoke<void>("save_investigation_layout", { chapterId, sceneId, layout });
+
+export const loadWorkbenchSourceDocument = (
+  sourceDocumentId: SourceDocumentId,
+) =>
+  invoke<FocusedEditSourceDocument>("load_workbench_source_document", {
+    sourceDocumentId,
+  });
+
+export const applyWorkbenchSourceEdit = (
+  request: ApplyWorkbenchSourceEditRequest,
+) =>
+  invoke<ApplyWorkbenchSourceEditResult>("apply_workbench_source_edit", {
+    request,
+  });
