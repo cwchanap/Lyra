@@ -435,11 +435,7 @@ exports[`snapshot: valid fixture JSON output > matches the linear scene snapshot
   "id": "scene_0",
   "queue": [
     {
-      "assetCue": {
-        "backgroundAssetId": null,
-        "bgm": null,
-        "bgs": null,
-      },
+      "assetCue": null,
       "kind": "sceneTag",
       "text": "測試場景前廳，深夜。",
     },
@@ -460,11 +456,7 @@ exports[`snapshot: valid fixture JSON output > matches the linear scene snapshot
       "text": "好。",
     },
     {
-      "assetCue": {
-        "backgroundAssetId": null,
-        "bgm": null,
-        "bgs": null,
-      },
+      "assetCue": null,
       "kind": "sceneTag",
       "text": "測試場景內室。",
     },

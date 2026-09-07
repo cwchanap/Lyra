@@ -1015,6 +1015,12 @@ fn apply_workbench_source_edit_with_validation(
 const WORKBENCH_VALIDATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 const WORKBENCH_VALIDATION_POLL_INTERVAL: std::time::Duration =
     std::time::Duration::from_millis(100);
+/// Drain budget reserved *within* the timeout deadline so the TimedOut path
+/// can still collect stdout/stderr tails after the kill. The process is killed
+/// at `deadline - DRAIN_FLOOR`; the remaining `DRAIN_FLOOR` is spent draining.
+/// This keeps total validation within `WORKBENCH_VALIDATION_TIMEOUT` while
+/// ensuring the timeout diagnostic is not silently empty.
+const WORKBENCH_VALIDATION_DRAIN_FLOOR: std::time::Duration = std::time::Duration::from_secs(2);
 /// Per-stream cap on compile output kept for failure diagnostics; the full
 /// stream is still drained concurrently so the child never blocks on full
 /// pipes.
@@ -1095,11 +1101,18 @@ fn run_bounded_validation(
     });
 
     let deadline = std::time::Instant::now() + timeout;
+    // Kill at `kill_deadline` so the remaining budget up to `deadline` is
+    // available for draining stdout/stderr tails after the kill. If the
+    // timeout is shorter than the drain floor, kill immediately and use the
+    // full timeout for draining.
+    let kill_deadline = deadline
+        .checked_sub(WORKBENCH_VALIDATION_DRAIN_FLOOR)
+        .unwrap_or_else(std::time::Instant::now);
     let outcome = loop {
         match child.try_wait() {
             Ok(Some(status)) => break ValidationOutcome::Exited(status),
             Ok(None) => {
-                if std::time::Instant::now() >= deadline {
+                if std::time::Instant::now() >= kill_deadline {
                     kill_validation_process(&mut child);
                     break ValidationOutcome::TimedOut;
                 }
@@ -1115,7 +1128,10 @@ fn run_bounded_validation(
     // A pipe held open by a descendant that escaped the kill (e.g. a
     // double-forked grandchild, or a non-unix platform where only the direct
     // child died) must not extend validation past the deadline: collect the
-    // tails within the remaining budget and give up beyond it.
+    // tails within the remaining budget and give up beyond it. On the TimedOut
+    // path the remaining budget is ~DRAIN_FLOOR (reserved above); on the
+    // Exited path the process already closed the pipes so the drain threads
+    // finish immediately regardless of the budget.
     let drain_budget = deadline.saturating_duration_since(std::time::Instant::now());
     let stdout_tail =
         String::from_utf8_lossy(&drain_tail_within(stdout_receiver, drain_budget)).into_owned();
@@ -2529,6 +2545,38 @@ mod tests {
             assert!(
                 elapsed < std::time::Duration::from_secs(10),
                 "kill on deadline failed after {elapsed:?}"
+            );
+        }
+
+        #[test]
+        fn focused_source_validation_captures_tails_on_timeout() {
+            // The process emits markers immediately, then holds the pipes open
+            // past the kill deadline. The reserved drain floor must collect
+            // both tails so the timeout diagnostic is not silently empty.
+            let started = std::time::Instant::now();
+            let report = run_bounded_validation(
+                &sh_command(
+                    "echo timeout-stdout-marker; echo timeout-stderr-marker >&2; exec sleep 30",
+                    &std::env::temp_dir(),
+                ),
+                std::time::Duration::from_secs(3),
+            );
+            let elapsed = started.elapsed();
+
+            assert!(!report.ok);
+            assert_eq!(report.diagnostics[0].code, "sourceEditValidationTimeout");
+            let message = &report.diagnostics[0].message;
+            assert!(
+                message.contains("timeout-stdout-marker"),
+                "missing stdout tail on timeout: {message}"
+            );
+            assert!(
+                message.contains("timeout-stderr-marker"),
+                "missing stderr tail on timeout: {message}"
+            );
+            assert!(
+                elapsed < std::time::Duration::from_secs(10),
+                "timeout path extended past the deadline: {elapsed:?}"
             );
         }
 

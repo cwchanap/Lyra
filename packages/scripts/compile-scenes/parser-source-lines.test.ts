@@ -296,6 +296,7 @@ describe("interrogation scene source lines", () => {
     for (const [needle, items] of cases) {
       const expected = lineOf(source, needle);
       expect(expected).toBeGreaterThan(1); // a real authored metadata line
+      expect(items.length).toBeGreaterThan(0); // guard against silent skip on empty list
       for (const item of items) {
         expect(item).toMatchObject({ sourceLine: expected });
       }
@@ -313,6 +314,7 @@ describe("interrogation scene source lines", () => {
     for (const [needle, items] of cases) {
       const expected = lineOf(source, needle);
       expect(expected).toBeGreaterThan(1);
+      expect(items.length).toBeGreaterThan(0); // guard against silent skip on empty list
       for (const item of items) {
         expect(item).toMatchObject({ sourceLine: expected });
       }
