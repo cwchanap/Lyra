@@ -2543,5 +2543,198 @@ describe("focused edit review", () => {
     ).toBeInTheDocument();
     // Assets snapshot is reloaded through its refresh epoch.
     await waitFor(() => expect(assetWorkspaceLoads()).toBe(2));
+
+    it("opens the shared review for analysis dialogue and keeps multiline analysis actions read-only", async () => {
+      const user = userEvent.setup();
+      render(App);
+      await selectSceneByLabel("Analysis Scene 9");
+
+      // The multiline intro action is marked read-only from its authored
+      // source; the dialogue beside it stays editable through the SAME flow.
+      const actionRow = (
+        await screen.findByText("雨聲漸強， 打濕了窗台。")
+      ).closest("li")!;
+      expect(
+        within(actionRow).queryByRole("button", { name: "Edit" }),
+      ).toBeNull();
+
+      const review = await editReaderLine("相馬律: 分析開場。");
+      expect(
+        await within(review).findByText(
+          "docs/stories_plan/chapter_1/analysis_scene_9.md",
+        ),
+      ).toBeInTheDocument();
+      expect(
+        within(review).getByText("reader:dialogue:intro:0"),
+      ).toBeInTheDocument();
+
+      await user.type(
+        within(review).getByLabelText("Replacement text"),
+        "改寫的開場。",
+      );
+      await user.click(within(review).getByRole("button", { name: "Apply" }));
+      expect(mockInvoke).toHaveBeenCalledWith("apply_workbench_source_edit", {
+        request: {
+          sourceDocumentId: "scene:chapter_1:analysis_scene_9",
+          expectedHash: "hash-analysis",
+          semanticRef: "reader:dialogue:intro:0",
+          kind: "readerDialogue",
+          expectedLine: lineOf(analysisEditSource, "**相馬律**：分析開場。"),
+          nextContent: analysisEditSource.replace(
+            "**相馬律**：分析開場。",
+            "**相馬律**：改寫的開場。",
+          ),
+        },
+      });
+      expect(
+        await within(review).findByText(/Applied — scenes:compile passed/),
+      ).toBeInTheDocument();
+    });
+
+    it("discards a superseded source load so a late result cannot overwrite a newer edit", async () => {
+      const pendingDocs: Array<{
+        id: string;
+        resolve: (doc: unknown) => void;
+      }> = [];
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) => {
+          switch (command) {
+            case "load_workbench_index":
+              return focusedIndex;
+            case "load_scene_bundle": {
+              const sceneId =
+                (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+              const bundle = focusedBundles[sceneId];
+              if (!bundle) {
+                throw new Error(`unexpected scene bundle request: ${sceneId}`);
+              }
+              return bundle;
+            }
+            case "load_workbench_source_document": {
+              const id =
+                (args as { sourceDocumentId?: string } | undefined)
+                  ?.sourceDocumentId ?? "";
+              return new Promise((resolve) => {
+                pendingDocs.push({ id, resolve });
+              });
+            }
+            default:
+              throw new Error(`unexpected invoke: ${command}`);
+          }
+        },
+      );
+
+      const user = userEvent.setup();
+      render(App);
+      await selectSceneByLabel("Scene 1");
+
+      // Request 0: the Reader projection's multiline-marking fetch. Resolve it
+      // so the article renders.
+      await waitFor(() => expect(pendingDocs.length).toBe(1));
+      pendingDocs[0]?.resolve({ ...sourceDocuments[pendingDocs[0]!.id] });
+      expect(
+        await screen.findByText("相馬律: first linear line"),
+      ).toBeInTheDocument();
+
+      // Edit A, then Edit B while A's document load is still in flight.
+      const rowA = screen.getByText("相馬律: first linear line").closest("li")!;
+      await user.click(within(rowA).getByRole("button", { name: "Edit" }));
+      const rowB = screen
+        .getByText("九条玲子: second speaker line")
+        .closest("li")!;
+      await user.click(within(rowB).getByRole("button", { name: "Edit" }));
+      await waitFor(() => expect(pendingDocs.length).toBe(3));
+
+      // A's load resolves LATE: it must not overwrite B's review state.
+      pendingDocs[1]?.resolve({ ...sourceDocuments[pendingDocs[1]!.id] });
+      const review = screen.getByRole("region", {
+        name: "Focused edit review",
+      });
+      await waitFor(() =>
+        expect(review.getAttribute("data-state")).toBe("loading-source"),
+      );
+
+      // B's load resolves: the review shows B's draft.
+      pendingDocs[2]?.resolve({ ...sourceDocuments[pendingDocs[2]!.id] });
+      await waitFor(() =>
+        expect(review.getAttribute("data-state")).toBe("editing"),
+      );
+      // 九条玲子's line sits at raw carrier index 3 (sceneTag, line, action, line).
+      expect(
+        within(review).getByText("reader:dialogue:main:3"),
+      ).toBeInTheDocument();
+    });
+
+    it("blocks starting a second edit while an apply is in flight", async () => {
+      let resolveApply!: (result: unknown) => void;
+      mockInvoke.mockImplementation(
+        async (command: string, args?: InvokeArgs) => {
+          switch (command) {
+            case "load_workbench_index":
+              return focusedIndex;
+            case "load_scene_bundle": {
+              const sceneId =
+                (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+              const bundle = focusedBundles[sceneId];
+              if (!bundle) {
+                throw new Error(`unexpected scene bundle request: ${sceneId}`);
+              }
+              return bundle;
+            }
+            case "load_workbench_source_document": {
+              const id =
+                (args as { sourceDocumentId?: string } | undefined)
+                  ?.sourceDocumentId ?? "";
+              const doc = sourceDocuments[id];
+              if (!doc) {
+                throw new Error(`unexpected source document request: ${id}`);
+              }
+              return {
+                id,
+                path: doc.path,
+                content: doc.content,
+                hash: doc.hash,
+              };
+            }
+            case "apply_workbench_source_edit":
+              return new Promise((resolve) => {
+                resolveApply = resolve;
+              });
+            default:
+              throw new Error(`unexpected invoke: ${command}`);
+          }
+        },
+      );
+
+      const user = userEvent.setup();
+      render(App);
+      await selectSceneByLabel("Scene 1");
+      const review = await editReaderLine("相馬律: first linear line");
+      await user.type(
+        within(review).getByLabelText("Replacement text"),
+        "替換台詞。",
+      );
+      await user.click(within(review).getByRole("button", { name: "Apply" }));
+      await waitFor(() =>
+        expect(review.getAttribute("data-state")).toBe("applying"),
+      );
+
+      // A second Edit while the apply/compile is in flight is refused at the
+      // single choke point: no new source load, review stays on the apply.
+      const docCallsBefore = sourceDocumentCalls("scene:chapter_1:scene_1");
+      const rowB = screen
+        .getByText("九条玲子: second speaker line")
+        .closest("li")!;
+      await user.click(within(rowB).getByRole("button", { name: "Edit" }));
+      expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(
+        docCallsBefore,
+      );
+      expect(review.getAttribute("data-state")).toBe("applying");
+
+      resolveApply({ validation: { ok: true, diagnostics: [] } });
+      expect(
+        await within(review).findByText(/Applied — scenes:compile passed/),
+      ).toBeInTheDocument();
+    });
   });
 });
