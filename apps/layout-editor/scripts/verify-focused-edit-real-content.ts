@@ -36,6 +36,7 @@ import { NO_NEW_FINDINGS_DIALOGUE } from "@lyra/scripts/compile-scenes/semantic-
 import { parseInterrogationScene } from "@lyra/scripts/compile-scenes/parser-interrogation";
 import { parseInvestigationScene } from "@lyra/scripts/compile-scenes/parser-investigation";
 import { parseLinearScene } from "@lyra/scripts/compile-scenes/parser-linear";
+import { tokenize } from "@lyra/scripts/compile-scenes/tokenizer";
 import type {
   ASTInterrogationScene,
   ASTInvestigationScene,
@@ -172,6 +173,18 @@ function segmentTargets(
       }
       if (resolution.ok) {
         const raw = lineAt(context.source, resolution.line);
+        // Multiline bracket-block actions are intentionally read-only in v1
+        // (the focused-edit seam rejects them), so sampling must not probe
+        // them as editable targets. Same predicate as multilineReaderActionRefs.
+        const trimmed = raw.trim();
+        const token = tokenize(trimmed, "")[0];
+        if (
+          item.kind === "action" &&
+          token?.kind === "unknown" &&
+          trimmed.startsWith("[")
+        ) {
+          continue;
+        }
         const wrapped = /^\s*-\s+\*\*[A-Za-z][A-Za-z0-9 ]*:\*\*/.test(raw);
         if (options.metadataWrappedOnly && !wrapped) continue;
         targets.push({
