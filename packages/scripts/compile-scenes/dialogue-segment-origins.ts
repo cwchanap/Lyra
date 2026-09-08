@@ -209,7 +209,10 @@ function itemSourceFields(
   return {
     itemSources: items.map((item, index) => {
       const ast = sourceItems[index];
-      if (!ast || ast.sourceLine === undefined) return null;
+      // A present carrier with a missing per-item counterpart is a stale
+      // compiled/source join, not a synthesized item: only the whole-carrier
+      // `!sourceItems` branch above may emit `null`.
+      if (!ast || ast.sourceLine === undefined) return { stale: true };
       if (!emittedMatchesSource(item, ast)) return { stale: true };
       return { sourceFile: owner.sourceFile, line: ast.sourceLine };
     }),

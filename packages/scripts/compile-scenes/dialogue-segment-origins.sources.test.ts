@@ -611,4 +611,69 @@ describe("deriveDialogueSegments itemSources", () => {
       error: { code: "workbenchSourceCarrierStale" },
     });
   });
+
+  it("tags a removed per-item entry in a present carrier as stale, not synthesized", () => {
+    // Regression for the per-item missing branch: an authored carrier holds
+    // two items, the author deletes one line without recompiling. The
+    // compiled JSON still carries two emitted items while the source AST
+    // now has one, so emitted index 1 has no authored counterpart. That is
+    // a stale compiled/source join (recompile to refresh), NOT a
+    // permanently non-editable synthesized item — only the whole-carrier-
+    // absent path may emit `null`.
+    const ast = investigationAst();
+    const json = emitInvestigationScene(ast, corpusForAst(ast));
+    const carrierId = "hotspot:table:inspect";
+    // Sanity: the fixture authors two inspect lines, so the compiled JSON
+    // carries two emitted items and the carrier is present.
+    const healthy = segmentsByCarrier(
+      deriveDialogueSegments({
+        chapterId: "chapter_1",
+        json,
+        sourceAst: ast,
+      }),
+    ).get(carrierId);
+    expect(healthy?.items.length).toBe(2);
+    expect(healthy?.itemSources).toEqual([
+      { sourceFile: INVESTIGATION_PATH, line: 24 },
+      { sourceFile: INVESTIGATION_PATH, line: 26 },
+    ]);
+
+    // Simulate the author deleting the second inspect line without
+    // recompiling: the source AST now has one item, but the compiled JSON
+    // still carries two.
+    const editedAst: ASTInvestigationScene = structuredClone(ast);
+    const inspect = editedAst.sublocations[0]!.hotspots[0]!.inspectDialogue;
+    editedAst.sublocations[0]!.hotspots[0]!.inspectDialogue = inspect.slice(
+      0,
+      1,
+    );
+
+    const segments = deriveDialogueSegments({
+      chapterId: "chapter_1",
+      json,
+      sourceAst: editedAst,
+    });
+    const byCarrier = segmentsByCarrier(segments);
+    // The carrier is still present (sourceItems truthy, length 1), so the
+    // per-item branch handles emitted index 1. It must tag the missing
+    // counterpart `{ stale: true }` — not `null` (synthesized) — because a
+    // present carrier with a missing per-item entry is a stale join.
+    expect(byCarrier.get(carrierId)?.itemSources).toEqual([
+      { sourceFile: INVESTIGATION_PATH, line: 24 },
+      { stale: true },
+    ]);
+
+    // Index 0 still resolves to its authored line.
+    expect(resolveDialogueItemSource(segments, carrierId, 0)).toEqual({
+      ok: true,
+      sourceFile: INVESTIGATION_PATH,
+      line: 24,
+    });
+    // Index 1 resolves to stale (recompile to refresh), not synthesized.
+    expect(resolveDialogueItemSource(segments, carrierId, 1)).toMatchObject({
+      ok: false,
+      reason: "stale",
+      error: { code: "workbenchSourceCarrierStale" },
+    });
+  });
 });
