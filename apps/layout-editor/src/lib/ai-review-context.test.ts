@@ -430,6 +430,123 @@ describe("buildAiReviewContext — Aoba reveal boundary", () => {
   });
 });
 
+type ReaderItemGroup = Extract<
+  AiReviewSelection,
+  { kind: "readerItem" }
+>["group"];
+
+describe("buildAiReviewContext — Reader projection context", () => {
+  it("scene selections carry a required sceneProjection chip with the public projection text", () => {
+    const scene: ReaderScene = {
+      id: "scene_2",
+      type: "linear",
+      title: "雨中現場",
+      sourcePath: "docs/stories_plan/chapter_1/scene_2.md",
+      groups: [
+        {
+          id: "main",
+          kind: "intro",
+          label: "Main",
+          flow: "main",
+          sourceAnchor: "#main",
+          items: [
+            { kind: "sceneTag", text: "場景：雨中辦公室" },
+            {
+              kind: "line",
+              speaker: "相馬律",
+              text: "先不要急著判斷。",
+              editable: { carrierId: "main", itemIndex: 1 },
+            },
+          ],
+          children: [
+            {
+              id: "child",
+              kind: "topic",
+              label: "Child",
+              flow: "main",
+              sourceAnchor: null,
+              items: [
+                {
+                  kind: "action",
+                  text: "雨聲漸強。",
+                  editable: { carrierId: "child", itemIndex: 0 },
+                },
+              ],
+              children: [],
+            },
+          ],
+        },
+      ],
+      presentation: [],
+    };
+    const bundle = buildAiReviewContext(
+      {
+        kind: "readerScene",
+        chapterId: "chapter_1",
+        sceneId: "scene_2",
+        scene,
+      },
+      "storyConsistency",
+      workspace,
+    );
+    const projection = bundle.context.find(
+      (item) => item.kind === "sceneProjection",
+    );
+    expect(projection).toBeDefined();
+    expect(projection!.required).toBe(true);
+    expect(projection!.sourceRef).toBe(scene.sourcePath);
+    // The projection text is the whole public walk: nested groups included.
+    expect(projection!.content).toContain("雨中現場");
+    expect(projection!.content).toContain("相馬律: 先不要急著判斷。");
+    expect(projection!.content).toContain("雨聲漸強。");
+  });
+
+  it("dialogue reviews attach the containing Reader group as a removable chip", () => {
+    const group: ReaderItemGroup = {
+      id: "question:q1:onLoop",
+      kind: "question",
+      label: "On Loop",
+      flow: "branch",
+      sourceAnchor: "#question-q1",
+      items: [
+        {
+          kind: "line",
+          speaker: "相馬律",
+          text: "再說一次。",
+          editable: { carrierId: "question:q1:onLoop", itemIndex: 0 },
+        },
+      ],
+      children: [],
+    };
+    const bundle = buildAiReviewContext(
+      readerItemSelection({ group }),
+      "dialogue",
+      workspace,
+    );
+    const groupChip = bundle.context.find(
+      (item) => item.ref === "readerGroup:question:q1:onLoop",
+    );
+    expect(groupChip).toBeDefined();
+    expect(groupChip!.kind).toBe("sceneProjection");
+    expect(groupChip!.required).toBe(false);
+    expect(groupChip!.sourceRef).toBe(
+      "docs/stories_plan/chapter_1/scene_2.md#question-q1",
+    );
+    expect(groupChip!.content).toContain("相馬律: 再說一次。");
+  });
+
+  it("story-consistency item reviews do not add the containing group chip", () => {
+    const bundle = buildAiReviewContext(
+      readerItemSelection(),
+      "storyConsistency",
+      workspace,
+    );
+    expect(
+      bundle.context.some((item) => item.ref.startsWith("readerGroup:")),
+    ).toBe(false);
+  });
+});
+
 describe("buildAiReviewContext — Plan selections", () => {
   it("Plan-on-Aoba skips the supporting chip whose sourceRef equals the selected source", () => {
     const bundle = buildAiReviewContext(

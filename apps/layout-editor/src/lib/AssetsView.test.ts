@@ -1120,6 +1120,89 @@ describe("AssetsView", () => {
 
 // ---- HPA-135 focused edit affordances ----------------------------------------
 
+// ---- HPA-136 Task 3: selection-only AI review entry points -------------------
+
+describe("AssetsView review affordances", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInvoke.mockImplementation(
+      async (command: string, _args?: InvokeArgs) => {
+        if (command === "load_asset_workspace") return payloadFixture();
+        throw new Error(`unexpected invoke: ${command}`);
+      },
+    );
+  });
+
+  it("offers Review prompt for scene-owned prompts with the same identity as Edit", async () => {
+    const onReviewPrompt = vi.fn();
+    const user = userEvent.setup();
+    renderAssets({ onReviewPrompt });
+    await openLibrary();
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+
+    expect(onReviewPrompt).toHaveBeenCalledExactlyOnceWith({
+      assetId: "background.chapter_1.scene_cues.hall",
+      entry: expect.objectContaining({
+        assetId: "background.chapter_1.scene_cues.hall",
+      }),
+      usages: expect.any(Array),
+      editSelection: {
+        kind: "backgroundPrompt",
+        chapterId: "chapter_1",
+        sceneId: "scene_cues",
+        unitId: "hall",
+        promptLine: 3,
+        authoredPrompt: "rainy hall",
+      },
+    });
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command !== "load_asset_workspace",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("offers Review prompt for portrait findings-only selections with no edit selection", async () => {
+    const onReviewPrompt = vi.fn();
+    const user = userEvent.setup();
+    renderAssets({ onReviewPrompt });
+    await openLibrary();
+    await user.click(
+      screen.getByRole("button", { name: "portrait.hayasaka_akane.standard" }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+
+    expect(onReviewPrompt).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        assetId: "portrait.hayasaka_akane.standard",
+        editSelection: null,
+      }),
+    );
+  });
+
+  it("keeps audio outside HPA-136 with no Review prompt", async () => {
+    const user = userEvent.setup();
+    renderAssets();
+    await openLibrary();
+    await user.click(screen.getByRole("button", { name: "audio.bgm.rain" }));
+    const inspector = screen.getByLabelText("Asset inspector");
+    expect(
+      within(inspector).queryByRole("button", { name: "Review prompt" }),
+    ).toBeNull();
+  });
+});
+
 describe("AssetsView focused edit affordances", () => {
   beforeEach(() => {
     vi.clearAllMocks();

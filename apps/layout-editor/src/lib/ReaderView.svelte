@@ -9,10 +9,20 @@
   let {
     scene,
     onEditItem,
+    onReviewItem,
+    onReviewScene,
   }: {
     scene: ReaderScene;
     /** Selection-only callback: the view never loads source or opens drafts. */
     onEditItem?: (ref: ReaderEditableRef, item: ReaderItem) => void;
+    /** Selection-only AI review callback (HPA-136): line/action items only. */
+    onReviewItem?: (
+      group: ReaderGroup,
+      ref: ReaderEditableRef,
+      item: Extract<ReaderItem, { kind: "line" | "action" }>,
+    ) => void;
+    /** Selection-only AI review callback for the whole scene. */
+    onReviewScene?: () => void;
   } = $props();
 
   /** Line/action items get an Edit affordance; everything else is display
@@ -99,14 +109,24 @@
               </p>
             {/if}
             {#if (item.kind === "line" || item.kind === "action") && isEditableItem(item)}
-              <button
-                type="button"
-                class="flex-none cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
-                data-edit-item
-                onclick={() => onEditItem?.(item.editable, item)}
-              >
-                Edit
-              </button>
+              <span class="flex flex-none gap-1">
+                <button
+                  type="button"
+                  class="cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
+                  data-edit-item
+                  onclick={() => onEditItem?.(item.editable, item)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  class="cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
+                  data-review-item
+                  onclick={() => onReviewItem?.(group, item.editable, item)}
+                >
+                  Review
+                </button>
+              </span>
             {/if}
           </div>
         </li>
@@ -151,14 +171,24 @@
       {scene.title}
     </h2>
     <p class="m-0 text-[0.85rem] text-[#60706b]">{scene.type} scene</p>
-    <button
-      type="button"
-      class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 text-left hover:border-[#57776a]"
-      title="Copy source reference"
-      onclick={() => copySourceReference(scene.sourcePath)}
-    >
-      <code class="text-[0.8rem]">{scene.sourcePath}</code>
-    </button>
+    <div class="flex gap-2">
+      <button
+        type="button"
+        class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 text-left hover:border-[#57776a]"
+        title="Copy source reference"
+        onclick={() => copySourceReference(scene.sourcePath)}
+      >
+        <code class="text-[0.8rem]">{scene.sourcePath}</code>
+      </button>
+      <button
+        type="button"
+        class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 text-left hover:border-[#57776a]"
+        data-review-scene
+        onclick={() => onReviewScene?.()}
+      >
+        Review scene
+      </button>
+    </div>
   </header>
 
   {#each scene.groups as group (group.id)}

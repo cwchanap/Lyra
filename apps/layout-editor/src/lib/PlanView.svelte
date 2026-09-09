@@ -10,6 +10,7 @@
     selectedDocumentId,
     selectedAnchor = null,
     onNavigateSource,
+    onReviewSection,
   }: {
     workspace: PlanWorkspace | null;
     error?: string | null;
@@ -18,6 +19,8 @@
     selectedDocumentId: string;
     selectedAnchor?: string | null;
     onNavigateSource: (documentId: string, anchor: string | null) => void;
+    /** Selection-only AI review callback (HPA-136): needs a selected heading. */
+    onReviewSection?: (documentId: string, anchor: string) => void;
   } = $props();
 
   let documentBody = $state<HTMLElement | null>(null);
@@ -219,6 +222,17 @@
           >
             Copy source reference
           </button>
+          {#if selectedAnchor && onReviewSection}
+            <button
+              type="button"
+              class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 hover:border-[#57776a]"
+              data-review-section
+              onclick={() =>
+                onReviewSection(selectedDocumentId, selectedAnchor)}
+            >
+              Review section
+            </button>
+          {/if}
           {#if copyStatus}
             <p class="m-0 text-[0.85rem]" role="status">{copyStatus}</p>
           {/if}
