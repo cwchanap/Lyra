@@ -3259,6 +3259,12 @@ describe("App AI review context", () => {
     ).toHaveLength(1);
     expect(context.some((item) => item.kind === "revealBoundary")).toBe(false);
     expect(context[0]!.kind).toBe("selection");
+
+    // Findings-only Plan reviews never offer the replacement handoff.
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use replacement" }),
+    ).not.toBeInTheDocument();
   });
 
   it("a scene-owned background prompt is eligible for replacement", async () => {
@@ -3309,6 +3315,12 @@ describe("App AI review context", () => {
     const request = aiReviewRequests()[0]!;
     expect(request.lens).toBe("promptRefinement");
     expect(request.replacementTargetRef).toBeNull();
+
+    // Findings-only portrait reviews never offer the replacement handoff.
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use replacement" }),
+    ).not.toBeInTheDocument();
   });
 
   it("a validated replacement hands off to the focused edit prefilled", async () => {
@@ -3343,6 +3355,78 @@ describe("App AI review context", () => {
       "Replacement text",
     ) as HTMLTextAreaElement;
     expect(replacement.value).toBe("stormy hall");
+  });
+
+  it("Review replacement hands the Reader dialogue AI text through the focused edit, never writing directly", async () => {
+    mockAiBackend({ replacementText: "先別急著下結論。" });
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const docCallsBeforeHandoff = sourceDocumentCalls(
+      "scene:chapter_1:scene_1",
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Use replacement" }),
+    );
+
+    // The handoff fences the AI panel and opens the focused edit prefilled…
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    const replacement =
+      await within(review).findByLabelText("Replacement text");
+    expect((replacement as HTMLTextAreaElement).value).toBe("先別急著下結論。");
+    // …the diff carries exactly the AI replacement, not the reset ""…
+    expect(review.querySelector('[data-diff-kind="add"]')).toHaveTextContent(
+      "**相馬律**：先別急著下結論。",
+    );
+    // …the reviewed source is loaded through HPA-135's own begin path…
+    expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(
+      docCallsBeforeHandoff + 1,
+    );
+    // …and the handoff itself never writes.
+    expect(
+      invokedCommands().filter(
+        (command) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(0);
+    expect(
+      invokedCommands().some((command) => command.startsWith("apply_ai_")),
+    ).toBe(false);
+
+    // Only the Apply button writes, carrying exactly HPA-135's guarded fields.
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    const applyCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === "apply_workbench_source_edit",
+    );
+    expect(applyCalls).toHaveLength(1);
+    expect(applyCalls[0]).toEqual([
+      "apply_workbench_source_edit",
+      {
+        request: {
+          sourceDocumentId: "scene:chapter_1:scene_1",
+          expectedHash: "hash-scene-1",
+          semanticRef: "reader:dialogue:main:1",
+          kind: "readerDialogue",
+          expectedLine: lineOf(scene1Source, "**相馬律**：first linear line"),
+          nextContent: scene1Source.replace(
+            "**相馬律**：first linear line",
+            "**相馬律**：先別急著下結論。",
+          ),
+        },
+      },
+    ]);
+    expect(
+      await within(review).findByText(/Applied — scenes:compile passed/u),
+    ).toBeInTheDocument();
   });
 });
 
@@ -3536,5 +3620,77 @@ describe("App AI review mutual exclusion and fencing", () => {
       screen.queryByRole("region", { name: "AI review" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("測試發現")).not.toBeInTheDocument();
+  });
+
+  it("stale-after-review wins: the AI handoff never retries, relocates, or merges", async () => {
+    mockAiBackend(
+      { replacementText: "先別急著下結論。" },
+      {
+        // The backend itself decides staleness: the request hash must match
+        // the CURRENT mocked document, exactly like the Rust guard.
+        apply_workbench_source_edit: async (args) => {
+          const request = (
+            args as {
+              request: { sourceDocumentId: string; expectedHash: string };
+            }
+          ).request;
+          const doc = sourceDocuments[request.sourceDocumentId];
+          if (!doc || doc.hash !== request.expectedHash) {
+            throw {
+              code: "sourceEditStale",
+              message:
+                "source scene_1.md changed since it was loaded; refresh and retry",
+            };
+          }
+          return { validation: { ok: true, diagnostics: [] } };
+        },
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+    await user.click(
+      await screen.findByRole("button", { name: "Use replacement" }),
+    );
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    await within(review).findByLabelText("Replacement text");
+
+    // The reviewed source changes after the AI result, before Apply.
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source.replace(
+        "first linear line",
+        "changed underneath the review",
+      ),
+      hash: "hash-scene-1-changed",
+    };
+
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    expect(
+      await within(review).findByText(
+        /source scene_1\.md changed since it was loaded/u,
+      ),
+    ).toBeInTheDocument();
+
+    // Existing HPA-135 stale handling wins: exactly one apply attempt, and
+    // the AI neither retries the review nor relocates/merges the result.
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(1);
+    expect(
+      mockInvoke.mock.calls.filter(([command]) => command === "run_ai_review"),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
   });
 });
