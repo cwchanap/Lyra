@@ -543,6 +543,10 @@ function planWorkspacePayload(): WorkbenchPlanWorkspacePayload {
         content: "# Story Bible\n\n## §10 蒐證規則\n\nprose\n",
       },
     ],
+    storyCharactersMd: {
+      path: "docs/stories_plan/characters.md",
+      content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+    },
   };
 }
 

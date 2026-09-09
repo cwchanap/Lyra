@@ -70,7 +70,26 @@ function renderedTables(html: string): string[] {
   return html.match(/<table>[\s\S]*?<\/table>/g) ?? [];
 }
 
-const workspace = projectPlanWorkspace({ documents });
+const workspace = projectPlanWorkspace({
+  documents,
+  storyCharactersMd: {
+    path: "docs/stories_plan/characters.md",
+    content: readSource("docs/stories_plan/characters.md"),
+  },
+});
+
+// The sibling characters.md source rides through the projection unchanged.
+assert(
+  workspace.storyCharactersMd.path === "docs/stories_plan/characters.md" &&
+    workspace.storyCharactersMd.content.length > 0,
+  "storyCharactersMd sibling source did not survive the projection",
+);
+assert(
+  !workspace.documents.some((document) =>
+    document.path.endsWith("characters.md"),
+  ),
+  "characters.md must never appear as a Plan document",
+);
 
 assert(
   workspace.documents.map(({ path }) => path).join("\n") ===

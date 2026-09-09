@@ -91,6 +91,8 @@ export type WorkbenchPlanDocument = WorkbenchTextSource & {
 
 export type WorkbenchPlanWorkspacePayload = {
   documents: WorkbenchPlanDocument[];
+  /** Sibling source (never a `documents` entry): the fixed characters.md voice reference. */
+  storyCharactersMd: WorkbenchTextSource;
 };
 
 export type WorkbenchAssetScenePayload = {

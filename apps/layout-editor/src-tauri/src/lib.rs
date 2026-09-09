@@ -74,6 +74,7 @@ const CHAPTERS_INDEX_RELATIVE_PATH: &str = "apps/game/src-tauri/resources/scenes
 const COMPILED_SCENES_RELATIVE_ROOT: &str = "apps/game/src-tauri/resources/scenes";
 const STORY_SOURCE_RELATIVE_ROOT: &str = "docs/stories_plan";
 const PLAN_STORY_BIBLE_RELATIVE_PATH: &str = "docs/stories_plan/final_story_bible.md";
+const STORY_CHARACTERS_RELATIVE_PATH: &str = "docs/stories_plan/characters.md";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1489,10 +1490,13 @@ fn read_text_source(
 
 /// Read-only snapshot of the fixed planning documents: the story bible plus
 /// every root-level `chapter_<N>_plan.md`, sorted numerically, bible first.
+/// `story_characters_md` is a sibling source (never a `documents` entry) read
+/// from the fixed characters.md path for AI-review voice context.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WorkbenchPlanWorkspace {
     documents: Vec<WorkbenchPlanDocument>,
+    story_characters_md: AssetWorkspaceTextSource,
 }
 
 #[derive(Debug, Serialize)]
@@ -1603,13 +1607,18 @@ fn load_plan_workspace_at_root(root: &Path) -> Result<WorkbenchPlanWorkspace, Ed
     }
     chapter_plans.sort_by_key(|(chapter_number, _)| *chapter_number);
 
+    let story_characters_md = read_text_source(root, STORY_CHARACTERS_RELATIVE_PATH)?;
+
     let mut documents = vec![WorkbenchPlanDocument::story_bible(bible)];
     for (chapter_number, name) in chapter_plans {
         let relative_path = format!("{STORY_SOURCE_RELATIVE_ROOT}/{name}");
         let source = read_text_source(root, &relative_path)?;
         documents.push(WorkbenchPlanDocument::chapter_plan(source, chapter_number));
     }
-    Ok(WorkbenchPlanWorkspace { documents })
+    Ok(WorkbenchPlanWorkspace {
+        documents,
+        story_characters_md,
+    })
 }
 
 /// Recursively enumerates regular files beneath the fixed `static/assets`
@@ -2023,6 +2032,11 @@ mod tests {
         .unwrap();
         fs::write(root.join("docs/stories_plan/chapter_10_plan.md"), "# Ten\n").unwrap();
         fs::write(root.join("docs/stories_plan/chapter_2_plan.md"), "# Two\n").unwrap();
+        fs::write(
+            root.join("docs/stories_plan/characters.md"),
+            "# 角色設定總表\n### 相馬律（主角）\n",
+        )
+        .unwrap();
 
         let snapshot = load_plan_workspace_at_root(&root).unwrap();
         assert_eq!(
@@ -2032,6 +2046,47 @@ mod tests {
                 .map(|document| document.id.as_str())
                 .collect::<Vec<_>>(),
             vec!["story-bible", "chapter-2-plan", "chapter-10-plan"]
+        );
+        // Sibling field with the exact fixed path and content — never a
+        // `documents` entry.
+        assert_eq!(
+            snapshot.story_characters_md.path,
+            "docs/stories_plan/characters.md"
+        );
+        assert_eq!(
+            snapshot.story_characters_md.content,
+            "# 角色設定總表\n### 相馬律（主角）\n"
+        );
+        assert!(serde_json::to_value(&snapshot)
+            .unwrap()
+            .get("storyCharactersMd")
+            .is_some());
+    }
+
+    #[test]
+    fn plan_workspace_requires_the_fixed_characters_md_source() {
+        let root = temp_workbench_root();
+        fs::write(
+            root.join("docs/stories_plan/final_story_bible.md"),
+            "# Bible\n",
+        )
+        .unwrap();
+
+        // Missing characters.md is a stable read error, even though the bible
+        // and every chapter plan are present.
+        let error = load_plan_workspace_at_root(&root).unwrap_err();
+        assert_eq!(error.code, "notFound");
+        assert!(error.message.contains("characters.md"));
+
+        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
+        let snapshot = load_plan_workspace_at_root(&root).unwrap();
+        assert_eq!(
+            snapshot
+                .documents
+                .iter()
+                .map(|document| document.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["story-bible"]
         );
     }
 
@@ -2043,6 +2098,7 @@ mod tests {
             "# Bible\n",
         )
         .unwrap();
+        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
         fs::write(root.join("docs/stories_plan/chapter_0_plan.md"), "# Zero\n").unwrap();
         fs::write(root.join("docs/stories_plan/chapter_x_plan.md"), "# X\n").unwrap();
         fs::write(
@@ -2067,6 +2123,7 @@ mod tests {
             "# Bible\n",
         )
         .unwrap();
+        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
         fs::write(root.join("docs/stories_plan/chapter_1_plan.md"), "# One\n").unwrap();
         fs::write(
             root.join("docs/stories_plan/chapter_01_plan.md"),
@@ -2098,6 +2155,7 @@ mod tests {
             "# Bible\n",
         )
         .unwrap();
+        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
         assert_eq!(
             load_plan_workspace_at_root(&root).unwrap().documents.len(),
             1

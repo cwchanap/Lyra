@@ -16,6 +16,7 @@
     type FocusedEditDiffHunk,
     type FocusedEditDraft,
     type FocusedEditSelection,
+    type PendingFocusedEditSelection,
     type ReaderFocusedEditItem,
     type SourceDocumentId,
     type WorkbenchValidationReport,
@@ -547,24 +548,6 @@
     | "applied-valid"
     | "applied-invalid"
     | "error";
-
-  /** Selection before its source document is loaded. */
-  type PendingFocusedEditSelection =
-    | {
-        surface: "reader";
-        chapterId: string;
-        sceneId: string;
-        compiledScene: WorkbenchScenePayload;
-        carrierId: string;
-        itemIndex: number;
-        item: ReaderFocusedEditItem;
-      }
-    | {
-        surface: "asset";
-        assetId: string;
-        prompt: AssetPromptEditSource;
-        sceneUsages: AssetSceneUsage[];
-      };
 
   let reviewState = $state<FocusedEditReviewState>("idle");
   let activeSelection = $state<FocusedEditSelection | null>(null);
