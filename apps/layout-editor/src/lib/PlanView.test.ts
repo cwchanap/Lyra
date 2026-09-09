@@ -104,6 +104,7 @@ type PlanViewProps = {
   selectedDocumentId: string;
   selectedAnchor: string | null;
   onNavigateSource: (documentId: string, anchor: string | null) => void;
+  onReviewSection?: (documentId: string, anchor: string) => void;
 };
 
 function planViewProps(overrides: Partial<PlanViewProps> = {}): PlanViewProps {
@@ -267,5 +268,36 @@ describe("PlanView", () => {
     expect(
       screen.getByRole("button", { name: "Copy source reference" }),
     ).toBeInTheDocument();
+  });
+
+  it("a selected document heading emits Review section with document id + anchor", async () => {
+    const onReviewSection = vi.fn();
+    const user = userEvent.setup();
+    render(
+      PlanView,
+      planViewProps({
+        surface: "document",
+        selectedAnchor: "10-章節總覽",
+        onReviewSection,
+      }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Review section" }));
+    expect(onReviewSection).toHaveBeenCalledExactlyOnceWith(
+      "story-bible",
+      "10-章節總覽",
+    );
+  });
+
+  it("document surface without a selected heading and the overview invent no review target", () => {
+    const onReviewSection = vi.fn();
+    // No anchor selected: no review target exists.
+    render(PlanView, planViewProps({ surface: "document", onReviewSection }));
+    expect(screen.queryByRole("button", { name: "Review section" })).toBeNull();
+
+    // Overview surface: no review target exists.
+    render(PlanView, planViewProps({ surface: "overview", onReviewSection }));
+    expect(screen.queryByRole("button", { name: "Review section" })).toBeNull();
+    expect(onReviewSection).not.toHaveBeenCalled();
   });
 });

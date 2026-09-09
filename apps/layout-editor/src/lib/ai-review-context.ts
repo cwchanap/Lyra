@@ -138,6 +138,23 @@ type ContextAccumulator = {
   missing: AiReviewMissingContext[];
 };
 
+function readerItemText(item: ReaderItem): string {
+  return item.kind === "line" ? `${item.speaker}: ${item.text}` : item.text;
+}
+
+function appendProjectionText(lines: string[], group: ReaderGroup): void {
+  lines.push(group.label);
+  for (const item of group.items) lines.push(readerItemText(item));
+  for (const child of group.children) appendProjectionText(lines, child);
+}
+
+/** Deterministic public Reader projection text for one scene. */
+function readerProjectionText(scene: ReaderScene): string {
+  const lines: string[] = [scene.title];
+  for (const group of scene.groups) appendProjectionText(lines, group);
+  return lines.join("\n");
+}
+
 function contextItem(
   ref: string,
   kind: AiReviewContextKind,
@@ -283,6 +300,31 @@ function addCharacterVoice(
       `角色聲音 ${speaker}`,
       `${workspace.storyCharactersMd.path}#${section.anchor}`,
       section.content,
+    ),
+  );
+}
+
+/**
+ * The containing Reader group of a dialogue selection (spec §Context-by-lens,
+ * Dialogue item 2): one removable sceneProjection chip anchored at the
+ * group's source anchor. Groups without rendered items add no chip.
+ */
+function addContainingGroup(
+  accumulator: ContextAccumulator,
+  selection: Extract<AiReviewSelection, { kind: "readerItem" }>,
+): void {
+  const { group, scene } = selection;
+  const content = group.items.map(readerItemText).join("\n");
+  if (content === "") return;
+  accumulator.items.push(
+    contextItem(
+      `readerGroup:${group.id}`,
+      "sceneProjection",
+      `Reader 群組 ${group.label}`,
+      group.sourceAnchor
+        ? `${scene.sourcePath}${group.sourceAnchor}`
+        : scene.sourcePath,
+      content,
     ),
   );
 }
@@ -532,6 +574,18 @@ function supportingContext(
   const accumulator: ContextAccumulator = { items: [], missing: [] };
   switch (selection.kind) {
     case "readerScene":
+      // Story consistency reviews the current public Reader projection, not
+      // just the title: the required projection chip carries the whole walk.
+      accumulator.items.push(
+        contextItem(
+          "sceneProjection",
+          "sceneProjection",
+          "Reader 場景投影",
+          selection.scene.sourcePath,
+          readerProjectionText(selection.scene),
+          true,
+        ),
+      );
       addChapterCanon(
         accumulator,
         chapterNumberFor(selection.chapterId),
@@ -541,6 +595,7 @@ function supportingContext(
       return accumulator;
     case "readerItem":
       if (lens === "dialogue") {
+        addContainingGroup(accumulator, selection);
         addChapterCanon(
           accumulator,
           chapterNumberFor(selection.chapterId),
