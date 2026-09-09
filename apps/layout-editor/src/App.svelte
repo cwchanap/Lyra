@@ -723,14 +723,15 @@
     const generation = ++focusedEditGeneration;
     reviewState = "loading-source";
     resetReviewTransientState();
-    // An AI replacement handoff prefills the draft (HPA-136 reuse seam).
-    reviewReplacement = initialReplacement;
     try {
       const document = await loadWorkbenchSourceDocument(
         sourceDocumentIdFor(selection),
       );
       if (generation !== focusedEditGeneration) return; // superseded
       activeSelection = { ...selection, document };
+      // Prefill only after the transient reset and the source load, so the
+      // reset can never wipe the AI replacement (HPA-136 reuse seam).
+      reviewReplacement = initialReplacement;
       rebuildDraft();
       reviewState = "editing";
     } catch (error) {
@@ -794,6 +795,9 @@
       if (generation !== focusedEditGeneration) return; // superseded
       if (result.validation.ok) {
         reviewState = "applied-valid";
+        // The reviewed source just changed: fence any retained AI state
+        // together with the projection refresh (HPA-136 handoff contract).
+        closeAiReview();
         void refreshProjectionsAfterApply();
       } else {
         // Written-but-invalid: keep the stale projections on screen and show
