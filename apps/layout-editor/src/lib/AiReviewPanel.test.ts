@@ -153,6 +153,23 @@ describe("AiReviewPanel lifecycle", () => {
     ).toBeInTheDocument();
   });
 
+  it("a supporting chip exposes its full outgoing content; removal hides it", async () => {
+    const user = userEvent.setup();
+    render(AiReviewPanel, { props: panelProps() });
+
+    // The exact outgoing text is rendered inside the chip's expandable block.
+    const chips = chipList();
+    const voiceChip = within(chips)
+      .getAllByRole("listitem")
+      .find((item) => item.textContent?.includes("角色聲音"))!;
+    expect(
+      within(voiceChip).getByText("台詞風格：結論偏短。"),
+    ).toBeInTheDocument();
+
+    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
+    expect(screen.queryByText("台詞風格：結論偏短。")).not.toBeInTheDocument();
+  });
+
   it("supporting chip removal changes the provider request", async () => {
     const provider = okProvider();
     const user = userEvent.setup();

@@ -209,6 +209,16 @@
           <code class="break-all text-[0.7rem] text-[#60706b]"
             >{chip.sourceRef}</code
           >
+          <details class="min-w-0">
+            <summary
+              class="w-fit cursor-pointer text-[0.72rem] font-bold text-[#5f6b64] hover:text-[#26302e]"
+            >
+              Outgoing content
+            </summary>
+            <pre
+              class="m-0 max-h-40 overflow-auto rounded bg-[#f7f4ee] p-2 text-[0.72rem] break-words whitespace-pre-wrap"
+              data-chip-content>{chip.content}</pre>
+          </details>
         </div>
         {#if !chip.required}
           <button
