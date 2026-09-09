@@ -37,7 +37,10 @@ import {
   type WorkbenchSourceTargetKind,
 } from "@lyra/scripts/workbench/source-edit-targets";
 import type { AssetPromptEditSource, AssetSceneUsage } from "./asset-workspace";
-import type { PublicAnalysisScene } from "./workbench-types";
+import type {
+  PublicAnalysisScene,
+  WorkbenchScenePayload,
+} from "./workbench-types";
 
 /** HPA-135 v1 document identity: one authored scene Markdown file. */
 export type SourceDocumentId = `scene:${string}:${string}`;
@@ -104,6 +107,28 @@ export type FocusedEditDraft = {
 export type ReaderFocusedEditItem =
   | { kind: "line"; speaker: string; text: string }
   | { kind: "action"; text: string };
+
+/**
+ * Selection before its source document is loaded. Lives here (moved from
+ * App.svelte in HPA-136) so a normal Edit and the AI-review replacement
+ * handoff carry exactly the same pre-source-load identity.
+ */
+export type PendingFocusedEditSelection =
+  | {
+      surface: "reader";
+      chapterId: string;
+      sceneId: string;
+      compiledScene: WorkbenchScenePayload;
+      carrierId: string;
+      itemIndex: number;
+      item: ReaderFocusedEditItem;
+    }
+  | {
+      surface: "asset";
+      assetId: string;
+      prompt: AssetPromptEditSource;
+      sceneUsages: AssetSceneUsage[];
+    };
 
 export type FocusedEditSelection =
   | {

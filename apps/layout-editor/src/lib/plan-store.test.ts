@@ -42,6 +42,17 @@ function chapterPlan(chapter: number, content: string): WorkbenchPlanDocument {
   };
 }
 
+const CHARACTERS_MD = {
+  path: "docs/stories_plan/characters.md",
+  content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+};
+
+function planPayload(
+  documents: WorkbenchPlanDocument[],
+): WorkbenchPlanWorkspacePayload {
+  return { documents, storyCharactersMd: CHARACTERS_MD };
+}
+
 function resetPlanState(): void {
   planState.workspace = null;
   planState.error = null;
@@ -71,9 +82,9 @@ describe("plan-store", () => {
     const second = refreshPlan();
 
     // Newer generation resolves first; the older one must not overwrite it.
-    resolvers[1]!({ documents: [storyBible("## newer marker\n")] });
+    resolvers[1]!(planPayload([storyBible("## newer marker\n")]));
     await second;
-    resolvers[0]!({ documents: [storyBible("## older marker\n")] });
+    resolvers[0]!(planPayload([storyBible("## older marker\n")]));
     await first;
 
     expect(planState.loading).toBe(false);
@@ -86,12 +97,12 @@ describe("plan-store", () => {
   });
 
   it("valid selected document/anchor survives refresh, invalid selection falls back to story-bible/no anchor", async () => {
-    mockInvoke.mockResolvedValueOnce({
-      documents: [
+    mockInvoke.mockResolvedValueOnce(
+      planPayload([
         storyBible("## shared heading\n"),
         chapterPlan(1, "## chapter heading\n"),
-      ],
-    });
+      ]),
+    );
     await refreshPlan();
 
     selectPlanDocument("chapter-1-plan");
@@ -99,31 +110,31 @@ describe("plan-store", () => {
     expect(planState.surface).toBe("document");
 
     // Selection still exists in the refreshed workspace -> preserved.
-    mockInvoke.mockResolvedValueOnce({
-      documents: [
+    mockInvoke.mockResolvedValueOnce(
+      planPayload([
         storyBible("## shared heading\n\nmore prose\n"),
         chapterPlan(1, "## chapter heading\n\nmore prose\n"),
-      ],
-    });
+      ]),
+    );
     await refreshPlan();
     expect(planState.selectedDocumentId).toBe("chapter-1-plan");
     expect(planState.selectedAnchor).toBe("chapter-heading");
 
     // The anchor no longer exists (document does) -> anchor dropped only.
-    mockInvoke.mockResolvedValueOnce({
-      documents: [
+    mockInvoke.mockResolvedValueOnce(
+      planPayload([
         storyBible("## shared heading\n"),
         chapterPlan(1, "## renamed heading\n"),
-      ],
-    });
+      ]),
+    );
     await refreshPlan();
     expect(planState.selectedDocumentId).toBe("chapter-1-plan");
     expect(planState.selectedAnchor).toBeNull();
 
     // The selected document no longer exists -> story-bible / no anchor.
-    mockInvoke.mockResolvedValueOnce({
-      documents: [storyBible("## shared heading\n")],
-    });
+    mockInvoke.mockResolvedValueOnce(
+      planPayload([storyBible("## shared heading\n")]),
+    );
     await refreshPlan();
     expect(planState.selectedDocumentId).toBe("story-bible");
     expect(planState.selectedAnchor).toBeNull();
