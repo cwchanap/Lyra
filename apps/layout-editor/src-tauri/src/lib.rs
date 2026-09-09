@@ -1,3 +1,5 @@
+mod ai_review;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -15,13 +17,13 @@ static ATOMIC_WRITE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct EditorError {
+pub(crate) struct EditorError {
     code: &'static str,
     message: String,
 }
 
 impl EditorError {
-    fn new(code: &'static str, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
         Self {
             code,
             message: message.into(),
@@ -1680,7 +1682,8 @@ pub fn run() {
             load_asset_workspace,
             load_plan_workspace,
             load_workbench_source_document,
-            apply_workbench_source_edit
+            apply_workbench_source_edit,
+            ai_review::run_ai_review
         ])
         .run(tauri::generate_context!())
         .expect("error while running Lyra Layout Editor");

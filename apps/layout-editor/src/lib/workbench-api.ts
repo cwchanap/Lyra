@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AiReviewTransportPayload } from "./ai-review";
 import type { InvestigationLayoutSidecar } from "@lyra/scene-types";
 import type {
   ApplyWorkbenchSourceEditRequest,
@@ -50,3 +51,11 @@ export const applyWorkbenchSourceEdit = (
   invoke<ApplyWorkbenchSourceEditResult>("apply_workbench_source_edit", {
     request,
   });
+
+/**
+ * Native secret-bearing AI review transport. The OpenAI key never crosses
+ * this boundary: the webview sends only the TS-built model-semantic payload
+ * and receives only the parsed provider result/error data.
+ */
+export const runAiReview = (payload: AiReviewTransportPayload) =>
+  invoke<unknown>("run_ai_review", { payload });
