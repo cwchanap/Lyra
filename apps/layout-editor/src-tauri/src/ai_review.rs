@@ -1,8 +1,9 @@
-//! HPA-136 native OpenAI Responses transport. Transport only: Rust never
-//! contains lens instructions, the result schema, or review semantics —
-//! TypeScript owns every model-semantic byte and Rust forwards them unchanged,
-//! adding only transport-owned fields. The API key is read from the native
-//! process environment only and is never exposed to the webview.
+//! HPA-136 native agent-CLI transport. Transport only: Rust never contains
+//! lens instructions, the result schema, or review semantics — TypeScript
+//! owns every model-semantic byte and Rust forwards them unchanged. Rust
+//! renders the agent prompt and shells out to the configured review agent
+//! CLI (default `claude`); no provider key, API call, or model name exists
+//! anywhere in Lyra.
 
 use serde::Deserialize;
 
@@ -17,150 +18,160 @@ pub(crate) struct AiReviewTransportPayload {
     text: serde_json::Value,
 }
 
-const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
-const DEFAULT_OPENAI_MODEL: &str = "gpt-5.6-luna";
-const MAX_OUTPUT_TOKENS: i64 = 4000;
-const CLIENT_TIMEOUT_SECS: u64 = 60;
-/// Upper bound on provider detail kept in error messages so a huge/hostile
-/// response body cannot flood the editor error channel.
+/// Review agent CLI used when `LYRA_AI_REVIEW_AGENT` is unset or empty.
+const DEFAULT_AGENT_BINARY: &str = "claude";
+/// Fixed one-shot wait for the agent; there is no retry.
+const AGENT_WAIT_SECS: u64 = 180;
+const AGENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
+/// Budget reserved after the deadline kill to drain in-flight output, so the
+/// timeout diagnostic is not silently empty (mirrors the lib.rs validation
+/// runner's drain floor).
+const AGENT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(2);
+/// Upper bound on agent detail kept in error messages so a huge/hostile
+/// stderr cannot flood the editor error channel.
 const PROVIDER_DETAIL_LIMIT: usize = 300;
 
-/// Builds the final request body: forwards the received model-semantic bytes
-/// (`instructions`/`input`/`text`) unchanged and adds only transport-owned
-/// fields (`model`, `store: false`, `max_output_tokens`).
-fn build_final_envelope(payload: &AiReviewTransportPayload, model: &str) -> serde_json::Value {
-    serde_json::json!({
-        "instructions": payload.instructions,
-        "input": payload.input,
-        "text": payload.text,
-        "model": model,
-        "store": false,
-        "max_output_tokens": MAX_OUTPUT_TOKENS,
-    })
+/// Renders the full agent prompt: the TS-owned lens `instructions` verbatim,
+/// a return-only-JSON directive, the serialized `text.format.schema`, and the
+/// TS-built `input` verbatim. `text.verbosity` is ignored by this transport
+/// (shape retained as the stable wire contract).
+pub(crate) fn agent_prompt(payload: &AiReviewTransportPayload) -> String {
+    let schema = payload
+        .text
+        .pointer("/format/schema")
+        .map(ToString::to_string)
+        .unwrap_or_else(|| "null".to_string());
+    format!(
+        "{}\n\nRespond with ONLY a single JSON value that validates against \
+         this JSON Schema. No prose, no code fences, no explanation:\n{}\n\n\
+         ---\n\n{}",
+        payload.instructions, schema, payload.input
+    )
 }
 
-/// Validates the provider response envelope and returns the single usable
-/// `output_text`, parsed as the candidate JSON. Truncation is detected before
-/// any JSON parsing so a partial candidate can never be reported as merely
-/// invalid. Enforces: completed status, exactly one usable output text, and
-/// JSON-parseable text.
-fn provider_candidate(envelope: &serde_json::Value) -> Result<serde_json::Value, EditorError> {
-    let status = envelope
-        .get("status")
-        .and_then(|status| status.as_str())
-        .unwrap_or("");
-    if status == "incomplete" {
-        let reason = envelope
-            .pointer("/incomplete_details/reason")
-            .and_then(|reason| reason.as_str())
-            .unwrap_or("");
-        if reason == "max_output_tokens" {
+/// One-shot agent-CLI transport: spawn `<agent> -p --tools ""`, write the
+/// full prompt to stdin (the variadic `--tools ""` swallows a trailing argv
+/// argument, so stdin is the only reliable channel), capture stdout/stderr,
+/// wait a fixed 180 seconds (poll `try_wait`, kill at the deadline — std
+/// has no wait timeout and no new dependency is allowed), and parse stdout
+/// as the candidate JSON. Spawn failure of a missing binary maps to
+/// `aiProviderConfigMissing`; other spawn failures, non-zero exits, and the
+/// timeout map to `aiProviderRequestFailed`; empty or unparseable stdout
+/// maps to `aiProviderInvalidResponse`. No env access here, so tests inject
+/// the binary directly.
+pub(crate) fn run_agent_review(
+    payload: &AiReviewTransportPayload,
+    agent_binary: &str,
+) -> Result<serde_json::Value, EditorError> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let mut spawn = Command::new(agent_binary);
+    spawn
+        .arg("-p")
+        .arg("--tools")
+        .arg("")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = match spawn.spawn() {
+        Ok(child) => child,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Err(EditorError::new(
-                "aiProviderResponseTruncated",
-                "provider response hit max_output_tokens before completing",
+                "aiProviderConfigMissing",
+                format!("AI review agent CLI not found: {agent_binary}"),
             ));
         }
-        return Err(invalid_response(format!(
-            "provider response ended incomplete for an unsupported reason: \"{reason}\""
-        )));
-    }
-    if status != "completed" {
-        return Err(invalid_response(format!(
-            "provider response status is not completed: \"{status}\""
-        )));
-    }
-
-    let mut usable_text: Option<&str> = None;
-    let mut usable_count = 0usize;
-    if let Some(output) = envelope.get("output").and_then(|output| output.as_array()) {
-        for item in output {
-            let Some(content) = item.get("content").and_then(|content| content.as_array()) else {
-                continue;
-            };
-            for part in content {
-                if part.get("type").and_then(|part_type| part_type.as_str()) != Some("output_text")
-                {
-                    continue;
-                }
-                let Some(text) = part.get("text").and_then(|text| text.as_str()) else {
-                    continue;
-                };
-                if text.is_empty() {
-                    continue;
-                }
-                usable_count += 1;
-                usable_text = Some(text);
-            }
-        }
-    }
-    let text = match (usable_count, usable_text) {
-        (1, Some(text)) => text,
-        (0, _) => {
-            return Err(invalid_response(
-                "provider response contains no usable output_text",
-            ))
-        }
-        (_, _) => {
-            return Err(invalid_response(format!(
-                "provider response contains {usable_count} competing output_text entries"
-            )))
+        Err(error) => {
+            return Err(request_failed(format!(
+                "failed to spawn agent CLI \"{agent_binary}\": {error}"
+            )));
         }
     };
-    serde_json::from_str(text).map_err(|error| {
-        invalid_response(format!("provider output_text is not valid JSON: {error}"))
-    })
+
+    // A full stdin pipe must never block the polling loop: write the prompt
+    // on its own thread, then reuse the drain channels for stdout/stderr.
+    let mut stdin = child.stdin.take().expect("stdin was piped");
+    let prompt = agent_prompt(payload);
+    let writer = std::thread::spawn(move || {
+        let _ = stdin.write_all(prompt.as_bytes());
+    });
+
+    let stdout = child.stdout.take().expect("stdout was piped");
+    let stderr = child.stderr.take().expect("stderr was piped");
+    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel();
+    let (stderr_sender, stderr_receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = stdout_sender.send(read_to_end(stdout));
+    });
+    std::thread::spawn(move || {
+        let _ = stderr_sender.send(read_to_end(stderr));
+    });
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(AGENT_WAIT_SECS);
+    let (status, timed_out) = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break (Some(status), false),
+            Ok(None) => {
+                if std::time::Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    break (None, true);
+                }
+                std::thread::sleep(AGENT_POLL_INTERVAL);
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(request_failed(format!(
+                    "failed to wait for agent CLI \"{agent_binary}\": {error}"
+                )));
+            }
+        }
+    };
+    let _ = writer.join();
+
+    let stdout_bytes = drain_within(stdout_receiver);
+    let stderr_bytes = drain_within(stderr_receiver);
+    let stderr_text = String::from_utf8_lossy(&stderr_bytes);
+
+    if timed_out {
+        return Err(request_failed(format!(
+            "agent CLI \"{agent_binary}\" exceeded {AGENT_WAIT_SECS}s and was killed: {}",
+            bounded(stderr_text.into_owned())
+        )));
+    }
+    let status = status.expect("non-timeout exit carries a status");
+    if !status.success() {
+        return Err(request_failed(format!(
+            "agent CLI \"{agent_binary}\" exited with {status}: {}",
+            bounded(stderr_text.into_owned())
+        )));
+    }
+    let stdout_text = String::from_utf8_lossy(&stdout_bytes);
+    let text = stdout_text.trim();
+    if text.is_empty() {
+        return Err(invalid_response("agent CLI produced no output on stdout"));
+    }
+    serde_json::from_str(text)
+        .map_err(|error| invalid_response(format!("agent CLI output is not valid JSON: {error}")))
 }
 
-/// One-shot native OpenAI Responses call: read the key from the native process
-/// environment, forward the TS-built payload unchanged plus transport-owned
-/// fields, POST once with a fixed 60-second timeout, and return the parsed
-/// candidate JSON. No automatic retry.
+/// Tauri command: resolves the review agent binary from the native process
+/// environment (`LYRA_AI_REVIEW_AGENT`, default `claude`) and delegates to
+/// the transport. The blocking spawn/wait runs on the async runtime's
+/// blocking pool; there is no retry.
 #[tauri::command]
 pub(crate) async fn run_ai_review(
     payload: AiReviewTransportPayload,
 ) -> Result<serde_json::Value, EditorError> {
-    let api_key = match std::env::var("OPENAI_API_KEY") {
-        Ok(key) if !key.trim().is_empty() => key,
-        _ => {
-            return Err(EditorError::new(
-                "aiProviderConfigMissing",
-                "OPENAI_API_KEY is not set in the editor process environment",
-            ))
-        }
-    };
-    let model = std::env::var("LYRA_OPENAI_MODEL")
+    let agent_binary = std::env::var("LYRA_AI_REVIEW_AGENT")
         .ok()
-        .filter(|model| !model.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_OPENAI_MODEL.to_string());
-
-    let body = build_final_envelope(&payload, &model);
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(CLIENT_TIMEOUT_SECS))
-        .build()
-        .map_err(|error| request_failed(format!("failed to build HTTP client: {error}")))?;
-    let response = client
-        .post(OPENAI_RESPONSES_URL)
-        .bearer_auth(api_key)
-        .json(&body)
-        .send()
+        .filter(|agent| !agent.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_AGENT_BINARY.to_string());
+    tauri::async_runtime::spawn_blocking(move || run_agent_review(&payload, &agent_binary))
         .await
-        .map_err(|error| request_failed(bounded(format!("provider request failed: {error}"))))?;
-    let status = response.status();
-    let response_text = response.text().await.map_err(|error| {
-        request_failed(bounded(format!(
-            "failed to read provider response: {error}"
-        )))
-    })?;
-    if !status.is_success() {
-        return Err(request_failed(format!(
-            "provider returned HTTP {status}: {}",
-            bounded(response_text)
-        )));
-    }
-    let envelope: serde_json::Value = serde_json::from_str(&response_text).map_err(|error| {
-        invalid_response(format!("provider response is not valid JSON: {error}"))
-    })?;
-    provider_candidate(&envelope)
+        .map_err(|error| request_failed(format!("agent review task failed to complete: {error}")))?
 }
 
 fn request_failed(message: impl Into<String>) -> EditorError {
@@ -171,15 +182,33 @@ fn invalid_response(message: impl Into<String>) -> EditorError {
     EditorError::new("aiProviderInvalidResponse", message)
 }
 
-/// Truncates provider detail to `PROVIDER_DETAIL_LIMIT` chars.
+/// Truncates agent detail to `PROVIDER_DETAIL_LIMIT` chars.
 fn bounded(detail: String) -> String {
     detail.chars().take(PROVIDER_DETAIL_LIMIT).collect()
+}
+
+fn read_to_end<R: std::io::Read>(mut reader: R) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    let _ = reader.read_to_end(&mut buffer);
+    buffer
+}
+
+/// Collects a drain channel with a small post-kill budget so a descendant
+/// that somehow survived the kill cannot extend the wait past the bound.
+fn drain_within(receiver: std::sync::mpsc::Receiver<Vec<u8>>) -> Vec<u8> {
+    receiver
+        .recv_timeout(AGENT_DRAIN_BUDGET)
+        .unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Unique suffix for stub dirs so concurrent/rapid tests never collide.
+    static STUB_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     /// Sentinel payload from the task brief. Deliberately NOT the real
     /// HPA-136 schema or lens instructions.
@@ -205,144 +234,120 @@ mod tests {
         .expect("sentinel payload fixture deserializes")
     }
 
-    fn completed_envelope(text: &str) -> serde_json::Value {
-        json!({
-            "status": "completed",
-            "incomplete_details": null,
-            "output": [
-                {
-                    "type": "message",
-                    "content": [{"type": "output_text", "text": text}]
-                }
-            ]
-        })
+    /// Writes a stub review-agent shell script to a unique temp dir and
+    /// returns its path. Tests inject this path as the agent binary, so the
+    /// transport is exercised with no network and no real agent.
+    fn stub_agent(script_body: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "lyra-ai-review-stub-{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock is after the epoch")
+                .as_nanos(),
+            STUB_DIR_COUNTER.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir_all(&dir).expect("stub dir is created");
+        let path = dir.join("stub-agent.sh");
+        std::fs::write(&path, format!("#!/bin/sh\n{script_body}\n"))
+            .expect("stub script is written");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+            .expect("stub script is made executable");
+        path
     }
 
-    fn rejected_code(envelope: &serde_json::Value) -> &'static str {
-        provider_candidate(envelope)
-            .expect_err("envelope must be rejected")
-            .code
+    fn run_with_stub(script_body: &str) -> Result<serde_json::Value, EditorError> {
+        let payload = sentinel_payload();
+        run_agent_review(&payload, &stub_agent(script_body).to_string_lossy())
     }
 
-    // ---- final envelope builder ------------------------------------------
+    // ---- prompt composition (pure) ----------------------------------------
 
     #[test]
-    fn final_envelope_forwards_model_semantic_bytes_unchanged() {
+    fn agent_prompt_composes_instructions_directive_schema_and_input() {
         let payload = sentinel_payload();
-        let envelope = build_final_envelope(&payload, "sentinel-model");
-        assert_eq!(envelope["instructions"], "sentinel-lens-instructions");
-        assert_eq!(envelope["input"], "{\"lens\":\"dialogue\"}");
-        assert_eq!(envelope["text"], payload.text);
-        assert_eq!(envelope["text"]["verbosity"], "low");
-        assert_eq!(envelope["text"]["format"]["name"], "lyra_story_review");
-        assert_eq!(
-            envelope["text"]["format"]["schema"]["properties"]["sentinel"],
-            json!({"type": "string"})
+        let prompt = agent_prompt(&payload);
+        assert!(prompt.starts_with("sentinel-lens-instructions"));
+        assert!(
+            prompt.ends_with("{\"lens\":\"dialogue\"}"),
+            "input must be verbatim at the end"
+        );
+        assert!(
+            prompt.contains("JSON"),
+            "prompt must carry a JSON-only directive"
+        );
+        let schema = payload.text["format"]["schema"].to_string();
+        assert!(
+            prompt.contains(&schema),
+            "serialized schema must be embedded"
         );
     }
 
-    #[test]
-    fn final_envelope_adds_only_transport_owned_fields() {
-        let payload = sentinel_payload();
-        let envelope = build_final_envelope(&payload, "sentinel-model");
-        assert_eq!(envelope["model"], "sentinel-model");
-        assert_eq!(envelope["store"], false);
-        assert_eq!(envelope["max_output_tokens"], 4000);
-        for forbidden in [
-            "tools",
-            "conversation",
-            "previous_response_id",
-            "stream",
-            "background",
-        ] {
-            assert!(
-                envelope.get(forbidden).is_none(),
-                "envelope must not add {forbidden}"
-            );
-        }
-    }
-
-    // ---- response status / output extraction -----------------------------
+    // ---- stub-CLI transport -----------------------------------------------
 
     #[test]
-    fn completed_single_output_text_parses_to_candidate_json() {
-        let candidate = provider_candidate(&completed_envelope("{\"noChange\":true}"))
-            .expect("one usable output text must parse to JSON");
+    fn successful_agent_json_stdout_parses_to_candidate() {
+        let candidate = run_with_stub("cat >/dev/null\nprintf '{\"noChange\":true}'")
+            .expect("stub success must return the parsed candidate");
         assert_eq!(candidate, json!({"noChange": true}));
     }
 
     #[test]
-    fn max_output_truncation_wins_before_json_parsing() {
-        let envelope = json!({
-            "status": "incomplete",
-            "incomplete_details": {"reason": "max_output_tokens"},
-            "output": [
-                {
-                    "type": "message",
-                    "content": [{"type": "output_text", "text": "{\"partial\":"}]
-                }
-            ]
-        });
-        let error = provider_candidate(&envelope).expect_err("truncated response must fail");
-        assert_eq!(error.code, "aiProviderResponseTruncated");
+    fn prompt_reaches_agent_via_stdin() {
+        let candidate = run_with_stub(
+            "if grep -q sentinel-lens-instructions; then printf '{\"onStdin\":true}'; \
+             else echo 'prompt missing from stdin' >&2; exit 1; fi",
+        )
+        .expect("stub must find the prompt on stdin");
+        assert_eq!(candidate, json!({"onStdin": true}));
     }
 
     #[test]
-    fn completed_envelope_without_output_text_is_invalid() {
-        let envelope = json!({
-            "status": "completed",
-            "incomplete_details": null,
-            "output": []
-        });
-        assert_eq!(rejected_code(&envelope), "aiProviderInvalidResponse");
+    fn nonzero_exit_with_stderr_maps_to_request_failed() {
+        let error = run_with_stub("cat >/dev/null\necho 'agent exploded' >&2\nexit 1")
+            .expect_err("non-zero exit must fail");
+        assert_eq!(error.code, "aiProviderRequestFailed");
+        assert!(error.message.contains("agent exploded"));
     }
 
     #[test]
-    fn refusal_only_completed_output_is_invalid() {
-        let envelope = json!({
-            "status": "completed",
-            "incomplete_details": null,
-            "output": [
-                {
-                    "type": "message",
-                    "content": [{"type": "refusal", "refusal": "cannot comply"}]
-                }
-            ]
-        });
-        assert_eq!(rejected_code(&envelope), "aiProviderInvalidResponse");
-    }
-
-    #[test]
-    fn multiple_competing_output_texts_are_invalid() {
-        let mut envelope = completed_envelope("{\"noChange\":true}");
-        envelope["output"][0]["content"]
-            .as_array_mut()
-            .expect("content is an array")
-            .push(json!({"type": "output_text", "text": "{\"noChange\":false}"}));
-        assert_eq!(rejected_code(&envelope), "aiProviderInvalidResponse");
-    }
-
-    #[test]
-    fn completed_non_json_output_text_is_invalid() {
+    fn stderr_detail_is_bounded() {
+        let path = stub_agent("cat >/dev/null\nhead -c 1000 </dev/zero | tr '\\0' 'q' >&2\nexit 1");
+        let error = run_agent_review(&sentinel_payload(), &path.to_string_lossy())
+            .expect_err("non-zero exit must fail");
+        assert_eq!(error.code, "aiProviderRequestFailed");
+        // Exact bound: fixed prefix (with the binary path) + detail limited to
+        // PROVIDER_DETAIL_LIMIT of the 1000-char stderr.
+        let prefix = format!(
+            "agent CLI \"{}\" exited with exit status: 1: ",
+            path.display()
+        );
         assert_eq!(
-            rejected_code(&completed_envelope("not json")),
-            "aiProviderInvalidResponse"
+            error.message.chars().count(),
+            prefix.chars().count() + PROVIDER_DETAIL_LIMIT
         );
     }
 
     #[test]
-    fn incomplete_for_non_max_output_reason_is_invalid() {
-        let envelope = json!({
-            "status": "incomplete",
-            "incomplete_details": {"reason": "content_filter"},
-            "output": []
-        });
-        assert_eq!(rejected_code(&envelope), "aiProviderInvalidResponse");
+    fn garbage_stdout_maps_to_invalid_response() {
+        let error = run_with_stub("cat >/dev/null\nprintf 'not json'")
+            .expect_err("garbage stdout must fail");
+        assert_eq!(error.code, "aiProviderInvalidResponse");
     }
 
     #[test]
-    fn non_completed_non_incomplete_status_is_invalid() {
-        let envelope = json!({ "status": "failed", "output": [] });
-        assert_eq!(rejected_code(&envelope), "aiProviderInvalidResponse");
+    fn empty_stdout_maps_to_invalid_response() {
+        let error = run_with_stub("cat >/dev/null").expect_err("empty stdout must fail");
+        assert_eq!(error.code, "aiProviderInvalidResponse");
+    }
+
+    #[test]
+    fn missing_agent_binary_maps_to_config_missing() {
+        let payload = sentinel_payload();
+        let error = run_agent_review(&payload, "/nonexistent/lyra-review-agent")
+            .expect_err("missing binary must fail");
+        assert_eq!(error.code, "aiProviderConfigMissing");
+        assert!(error.message.contains("AI review agent CLI not found"));
     }
 }

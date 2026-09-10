@@ -48,7 +48,7 @@ describe("tauriAiReviewProvider", () => {
   it("propagates native provider errors untouched", async () => {
     mockInvoke.mockRejectedValueOnce({
       code: "aiProviderConfigMissing",
-      message: "OPENAI_API_KEY is not set in the editor process environment",
+      message: "AI review agent CLI not found: claude",
     });
     await expect(tauriAiReviewProvider(request)).rejects.toMatchObject({
       code: "aiProviderConfigMissing",
