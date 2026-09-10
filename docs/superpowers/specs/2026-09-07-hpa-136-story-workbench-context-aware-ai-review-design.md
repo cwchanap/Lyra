@@ -47,6 +47,10 @@ Normative changes (these override any conflicting text below):
 - Everything else — lenses, deterministic context, exact matching, local
   validation, panel lifecycle, XOR with HPA-135, replacement handoff,
   verifiers, offline gates — is unchanged.
+- The preamble gained two agent-era lines stating the citation mechanics
+  (cite `sourceRef` strings, never context `ref` ids) and the `noChange`
+  invariants — required because, unlike the OpenAI variant, the agent path
+  has no runtime schema enforcement; the local validator remains the gate.
 
 The sections "Deliberate pushback: keep the Rust transport boundary" (URL
 list), "One provider only: OpenAI Responses API" material, "Native
@@ -488,6 +492,8 @@ Portrait/character/shared/global/type prompt review is findings-only. HPA-136 do
 The original generic five-line instruction was insufficient: a bare `lens` enum does not define review behavior.
 
 Keep one shared preamble plus one closed table:
+
+*(amended 2026-09-09: the agent pivot appends the citation/noChange mechanics lines below — see the Amendment section; the five original lines are unchanged)*
 
 ```ts
 export const AI_REVIEW_PREAMBLE = `Use only the selected source and supplied context.
