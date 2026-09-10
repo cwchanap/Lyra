@@ -860,10 +860,15 @@
     const generation = ++aiReviewGeneration;
     aiReview = null;
     aiReviewError = null;
-    await ensurePlanLoaded();
-    if (generation !== aiReviewGeneration) return; // superseded
+    // Prompt refinement builds context from the Assets projection alone, so
+    // only Reader/Plan selections wait on the Plan snapshot.
+    const needsPlanWorkspace = selection.kind !== "assetPrompt";
+    if (needsPlanWorkspace) {
+      await ensurePlanLoaded();
+      if (generation !== aiReviewGeneration) return; // superseded
+    }
     const workspace = planState.workspace;
-    if (!workspace) {
+    if (needsPlanWorkspace && !workspace) {
       aiReviewError =
         planState.error ??
         "Plan data could not be loaded; AI review needs the Plan snapshot.";
