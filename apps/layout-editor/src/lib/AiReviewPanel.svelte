@@ -76,7 +76,7 @@
     if (typeof error === "object" && error !== null && "code" in error) {
       const { code, message } = error as { code: string; message?: string };
       if (code === "aiProviderConfigMissing") {
-        return "AI review is not configured: the native provider key is missing.";
+        return "AI review is not configured: the review agent CLI is missing.";
       }
       if (code === "aiProviderResponseTruncated") {
         return "The provider response was truncated before completing; retry the review.";
