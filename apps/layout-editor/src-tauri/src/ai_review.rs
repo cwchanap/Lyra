@@ -129,7 +129,11 @@ pub(crate) fn run_agent_review(
             }
         }
     };
-    let _ = writer.join();
+    // Detach instead of joining: if a descendant of the agent inherited the
+    // stdin pipe and survived the deadline kill, joining could block forever
+    // once the prompt exceeds the pipe buffer. The thread terminates on its
+    // own when the pipe closes — same survivor rationale as AGENT_DRAIN_BUDGET.
+    drop(writer);
 
     let stdout_bytes = drain_within(stdout_receiver);
     let stderr_bytes = drain_within(stderr_receiver);
