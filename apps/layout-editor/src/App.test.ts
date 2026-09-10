@@ -3234,6 +3234,34 @@ describe("App AI review context", () => {
     expect(request.replacementTargetRef).toBe("reader:dialogue:main:1");
   });
 
+  it("a dialogue review under an active speaker filter still sends the full containing group", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await user.selectOptions(screen.getByLabelText("Speaker"), "九条玲子");
+    // The filter drops the sibling 相馬律 line from the rendered group.
+    expect(
+      screen.queryByText("相馬律: first linear line"),
+    ).not.toBeInTheDocument();
+    const row = screen
+      .getByText("九条玲子: second speaker line")
+      .closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("dialogue");
+    const context = request.context as Array<Record<string, string>>;
+    const groupChip = context.find((item) =>
+      item.ref.startsWith("readerGroup:"),
+    )!;
+    // The group chip serializes the unfiltered projection, including the
+    // sibling line the speaker filter hid from the view.
+    expect(groupChip.content).toContain("相馬律: first linear line");
+    expect(groupChip.content).toContain("九条玲子: second speaker line");
+  });
+
   it("a Plan Aoba section review does not duplicate its own sourceRef as support", async () => {
     const user = userEvent.setup();
     render(App);

@@ -596,7 +596,7 @@ function supportingContext(
     case "readerItem":
       if (lens === "dialogue") {
         addContainingGroup(accumulator, selection);
-        addChapterCanon(
+        addChapterPlanSection(
           accumulator,
           chapterNumberFor(selection.chapterId),
           selection.sceneId,
