@@ -2,11 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add one explicit, context-aware AI review surface to the Lyra Story Workbench with deterministic local context, distinct review-lens behavior, one TypeScript-owned structured-output contract, a native secret-bearing OpenAI transport, and at most one human-reviewed HPA-135 replacement handoff.
+**Goal:** Add one explicit, context-aware AI review surface to the Lyra Story Workbench with deterministic local context, distinct review-lens behavior, one TypeScript-owned structured-output contract, a native agent-CLI transport, and at most one human-reviewed HPA-135 replacement handoff.
 
-**Architecture:** Reader / Assets / Plan stay canonical. TypeScript owns review semantics, per-lens instructions, the JSON Schema, deterministic context, and local validation. Existing `load_plan_workspace` gains `storyCharactersMd` as a sibling payload field. Rust owns only the API secret/network hop and forwards the TypeScript-built model payload unchanged. `App.svelte` permits one author action at a time: AI Review XOR HPA-135 Focused Edit.
+**Architecture:** Reader / Assets / Plan stay canonical. TypeScript owns review semantics, per-lens instructions, the JSON Schema, deterministic context, and local validation. Existing `load_plan_workspace` gains `storyCharactersMd` as a sibling payload field. Rust owns only the agent-CLI process hop — it renders the TypeScript-built payload into one stdin prompt and shells out to the configured review agent (`claude` by default, `LYRA_AI_REVIEW_AGENT` override); no provider key, API call, or model name exists anywhere in Lyra. `App.svelte` permits one author action at a time: AI Review XOR HPA-135 Focused Edit.
 
-**Tech Stack:** Svelte 5, TypeScript/Vitest, existing Marked Plan projection, Tauri 2/Rust, serde/serde_json, reqwest with rustls, OpenAI Responses API Structured Outputs.
+**Tech Stack:** Svelte 5, TypeScript/Vitest, existing Marked Plan projection, Tauri 2/Rust, serde/serde_json, `std::process` agent-CLI spawn (no HTTP stack), TypeScript-owned JSON Schema for the result contract.
+
+> **2026-09-09 transport amendment:** the review engine pivoted from a native
+> OpenAI/reqwest transport to a coding-agent CLI transport. The header, File
+> Map, risks, and Task 5 smoke below describe the agent-CLI contract; Task 2's
+> OpenAI steps are retained as historical record and superseded by Task 6.
 
 **Spec:** `docs/superpowers/specs/2026-09-07-hpa-136-story-workbench-context-aware-ai-review-design.md`
 
@@ -14,7 +19,7 @@
 
 - One Linear ticket = one PR. All HPA-136 work stays in PR #85.
 - No top-level AI Workbench mode and no blank chatbot.
-- Every provider call requires an explicit Run action.
+- Every review run requires an explicit Run action.
 - No embeddings, vector storage, RAG/file search, background indexing, tools, conversation state, or persistent review history.
 - Missing deterministic context stays visible and missing; never fuzzy-match a canon relationship.
 - The three lenses are exactly `storyConsistency | dialogue | promptRefinement`.
@@ -51,7 +56,7 @@
 | `apps/layout-editor/src/lib/plan-workspace.ts` | Existing Marked walk extended with heading ranges + shared `headingSectionText()`; carries `storyCharactersMd`. |
 | `apps/layout-editor/src/lib/focused-edit.ts` | Export existing pending edit selection type; no write semantic change. |
 | `apps/layout-editor/src/lib/AiReviewPanel.svelte` | Context chips, lens, Run/Cancel, result display, replacement transition callback. |
-| `apps/layout-editor/src-tauri/src/ai_review.rs` | Native secret-bearing Responses transport; no model semantics. |
+| `apps/layout-editor/src-tauri/src/ai_review.rs` | Native agent-CLI transport (spawn/stdin/stdout, 180s bound); no model semantics. |
 | `apps/layout-editor/src-tauri/src/lib.rs` | Existing Plan workspace reads `characters.md`; registers `run_ai_review`. |
 | `apps/layout-editor/src/lib/workbench-types.ts` | Adds `storyCharactersMd` to `WorkbenchPlanWorkspacePayload`. |
 | `apps/layout-editor/src/lib/workbench-api.ts` | Existing Plan loader plus `runAiReview(payload)` invoke. |
@@ -67,17 +72,17 @@
 1. **Lens names with identical behavior:** a bare enum does not define a review. Fix: shared preamble + closed per-lens instruction table, tested pairwise.
 2. **Prologue loses parent-plan context:** `scene_p0`, `investigation_scene_p1`, and `scene_p2` have exact authored Prologue sections. Fix: closed Beat/Prologue target parser + Task-1 corpus gate.
 3. **Schema/prompt drift across TS/Rust:** Rust must not reconstruct review semantics. Fix: TS builds `instructions/input/text`; Rust forwards them unchanged.
-4. **Renderer API-key exposure:** direct webview fetch would require moving a long-lived key into client-side code. Fix: keep the secret-bearing request native-only; never add a key-returning command.
+4. **Provider-key exposure:** *(amended 2026-09-09)* moot under the agent-CLI transport — no provider key exists anywhere in Lyra; the agent CLI's own auth handles access, and no key-returning command or renderer-side provider fetch may be added.
 5. **Markdown drift:** a second `###` regex for `characters.md` diverges from HPA-273. Fix: one `headingSectionText()` over the existing Marked walk.
 6. **Duplicate story-reference loader:** Plan workspace already owns planning-source reads. Fix: add `storyCharactersMd` as a sibling field, not a second command/document.
 7. **Wrong Story Bible section:** Chapter 1 has multiple `第 1 章...` headings. Fix: exact `第 N 章：<overview.title>` H2.
 8. **Aoba fuzzy/range inference:** real labels include `第 5～7 章`. Fix: exact `第 N 章` only; ranges stay missing in v1.
-9. **Truncated Structured Output looks like malformed JSON:** `max_output_tokens` covers visible + reasoning tokens. Fix: inspect response status first, distinct truncation error, 4000-token bound, no automatic retry.
+9. **Truncated output looks like malformed JSON:** *(amended 2026-09-09)* the agent transport bounds retained stdout/stderr at 1 MiB and maps truncation to `aiProviderInvalidResponse`. `aiProviderResponseTruncated` stays in the TS contract as an unreachable case; no automatic retry.
 10. **Replacement reset:** existing `resetReviewTransientState()` clears `reviewReplacement`. Fix: assign `initialReplacement` after reset/source load and before `rebuildDraft()`.
 11. **Overlay contention:** focused edit already owns the author-action slot. Fix: AI Review XOR Focused Edit.
 12. **Batch-review concepts drift into Workbench:** explicitly keep `reviewing-story-scenes` as whole-file nine-axis remediation; HPA-136 stays three-lens selection review.
 13. **Synthetic-only proof misses corpus identities:** core real-content verifier must be green at Task 1, not only during closeout.
-14. **Live provider envelope rejection:** offline tests cannot prove live API acceptance. Fix: one required opt-in smoke before leaving Draft.
+14. **Real-agent behavior is unproven offline:** stub-CLI tests cannot prove the installed agent accepts the rendered prompt and returns clean JSON. Fix: one required real-agent smoke through the production path before leaving Draft.
 
 ---
 
@@ -468,6 +473,16 @@ git commit -m "feat: define grounded Story Workbench AI review context"
 ---
 
 ### Task 2: Add one native secret-bearing OpenAI transport
+
+> **Superseded 2026-09-09 — historical record only.** The OpenAI/reqwest
+> transport specified below was replaced in place by the agent-CLI transport
+> in Task 6; do not implement the steps in this task as written. What remains
+> binding from Task 2: the `run_ai_review` command name, the
+> `AiReviewTransportPayload` wire shape, the four `aiProvider*` error codes,
+> the "TS owns all model semantics" boundary, the `workbench-api.ts` /
+> `ai-review-provider.ts` adapters (Steps 7–8), and the prohibition on any
+> key-returning command or renderer-side provider fetch (Step 6 — now
+> satisfied trivially because no provider key exists).
 
 **Files:**
 - Create: `apps/layout-editor/src-tauri/src/ai_review.rs`
@@ -995,7 +1010,7 @@ git commit -m "feat: hand AI replacements to focused review"
 
 ---
 
-### Task 5: Extend the real-corpus verifier, run full gates, and prove the live provider path
+### Task 5: Extend the real-corpus verifier, run full gates, and prove the live agent path
 
 **Files:**
 - Modify: `apps/layout-editor/scripts/verify-ai-review-real-content.ts`
@@ -1046,13 +1061,13 @@ bun run test:scripts
 bun run lint:all
 ```
 
-Expected: all PASS; none call OpenAI.
+Expected: all PASS; none touch the network or a provider API.
 
-- [ ] **Step 4: Perform one intentional real-provider smoke**
+- [ ] **Step 4: Perform one intentional real-agent smoke** *(amended 2026-09-09)*
 
 ```bash
-export OPENAI_API_KEY='<developer-local-key>'
-export LYRA_OPENAI_MODEL='gpt-5.6-luna'
+# Optional: defaults to `claude`; set only to point at a different agent CLI.
+export LYRA_AI_REVIEW_AGENT='<agent-cli-binary>'
 bun run dev:editor
 ```
 
@@ -1065,24 +1080,22 @@ Use the Workbench UI:
 5. confirm exact selected source + Beat/Prologue + Bible/Aoba or character-voice chips are visible as appropriate;
 6. remove one supporting chip and run once with the reduced context;
 7. run **Prompt refinement** on one scene-owned background/evidence prompt and confirm findings stay within prompt-layer/visual/usage concerns;
-8. verify Structured Output parses and local validation succeeds;
-9. verify `store: false`, TS-owned `text.format`, and `text.verbosity` are accepted by the selected live model;
+8. verify the agent's stdout parses as one JSON candidate and local validation succeeds;
+9. verify the agent completes or is killed inside the fixed 180-second wait, and that a missing binary surfaces `aiProviderConfigMissing` while non-zero exit/timeout surfaces `aiProviderRequestFailed`;
 10. if a replacement is returned, click `Review replacement` and verify HPA-135 opens with the replacement still present after reset;
-11. if a response hits the max-output bound, verify the UI surfaces the distinct truncation error instead of a generic invalid-result/schema error;
+11. if the agent emits unusable stdout, verify the UI surfaces `aiProviderInvalidResponse` instead of a generic failure;
 12. do not Apply real story content unless deliberately doing a throwaway edit followed by Git revert + `scenes:compile`.
 
 Record in PR evidence:
 
-- model id;
+- agent binary id (and `LYRA_AI_REVIEW_AGENT` override if used);
 - reviewed source refs;
 - the three lens paths exercised;
-- provider success/failure;
-- Structured Output/local-validation result;
+- agent run success/failure (including the reduced-context run);
+- JSON-parse/local-validation result;
 - whether replacement handoff preserved text;
-- whether truncation was observed;
-- confirmation that no API key appeared in renderer-visible state/log output.
-
-Never record the API key.
+- timeout/error-path behavior observed;
+- confirmation that no provider key exists anywhere and agent auth stayed with the CLI.
 
 - [ ] **Step 5: Run scope/ownership self-review**
 
@@ -1102,7 +1115,7 @@ zero load_story_review_references command
 AI Review XOR Focused Edit
 one run_ai_review transport command
 zero API-key-returning commands
-zero renderer-side OpenAI fetch
+zero renderer-side provider fetch
 aiProviderResponseTruncated exists
 zero AI write commands
 zero RAG/vector/chat persistence/YAML writer

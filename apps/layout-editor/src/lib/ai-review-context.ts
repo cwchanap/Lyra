@@ -221,7 +221,7 @@ function assetPromptSemanticRef(
 
 function selectionBase(
   selection: AiReviewSelection,
-  workspace: PlanWorkspace,
+  workspace: PlanWorkspace | null,
 ): {
   selectedSourceRef: string;
   selectedText: string;
@@ -243,7 +243,7 @@ function selectionBase(
       };
     }
     case "planSection": {
-      const document = workspace.documents.find(
+      const document = workspace?.documents.find(
         (candidate) => candidate.id === selection.documentId,
       );
       return {
@@ -569,9 +569,27 @@ function addPromptContext(
 function supportingContext(
   selection: AiReviewSelection,
   lens: AiReviewLens,
-  workspace: PlanWorkspace,
+  workspace: PlanWorkspace | null,
 ): ContextAccumulator {
   const accumulator: ContextAccumulator = { items: [], missing: [] };
+  if (selection.kind === "assetPrompt") {
+    // Prompt refinement context is manifest-derived only; the Plan snapshot
+    // is intentionally not required to open this review.
+    addPromptContext(accumulator, selection);
+    return accumulator;
+  }
+  if (workspace === null) {
+    // openAiReview loads the Plan snapshot before opening Reader/Plan
+    // selections; if a caller skipped that gate, keep the gap visible rather
+    // than emitting a context-free review.
+    accumulator.missing.push({
+      kind: "chapterPlan",
+      label: "Plan 快照",
+      reason:
+        "Plan 工作區快照未載入；章節計畫、故事聖經與角色聲音等背景資料無法附加。",
+    });
+    return accumulator;
+  }
   switch (selection.kind) {
     case "readerScene":
       // Story consistency reviews the current public Reader projection, not
@@ -630,9 +648,6 @@ function supportingContext(
       }
       return accumulator;
     }
-    case "assetPrompt":
-      addPromptContext(accumulator, selection);
-      return accumulator;
   }
 }
 
@@ -641,11 +656,16 @@ function supportingContext(
  * selected source is a required chip; supporting chips are removable; a
  * supporting item whose `sourceRef` equals the selected source's `sourceRef`
  * is skipped so Plan-on-Aoba never attaches the same source twice.
+ *
+ * `workspace` may be null only for `assetPrompt` selections: prompt
+ * refinement builds context from the Assets projection alone, so it must not
+ * depend on Plan loading. Every other selection kind requires a loaded Plan
+ * snapshot (openAiReview gates on it).
  */
 export function buildAiReviewContext(
   selection: AiReviewSelection,
   lens: AiReviewLens,
-  workspace: PlanWorkspace,
+  workspace: PlanWorkspace | null,
   options?: { removeContextRefs?: ReadonlyArray<string> },
 ): AiReviewContextBundle {
   const base = selectionBase(selection, workspace);

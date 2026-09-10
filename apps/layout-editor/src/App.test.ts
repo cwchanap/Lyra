@@ -3324,6 +3324,50 @@ describe("App AI review context", () => {
     expect(request.missingContext).toEqual([]);
   });
 
+  it("an asset Prompt refinement review still opens when the Plan snapshot fails to load", async () => {
+    mockAiBackend(
+      {},
+      {
+        load_plan_workspace: async () => {
+          throw new Error("characters.md missing");
+        },
+      },
+    );
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    // Prompt refinement never consults the Plan loader.
+    expect(
+      mockInvoke.mock.calls.some(
+        ([command]) => command === "load_plan_workspace",
+      ),
+    ).toBe(false);
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("promptRefinement");
+    const kinds = (request.context as Array<{ kind: string }>).map(
+      (item) => item.kind,
+    );
+    expect(kinds).toContain("promptLayer");
+    expect(kinds).toContain("usageImpact");
+    expect(request.replacementTargetRef).toBe("asset:background:hall");
+    expect(request.missingContext).toEqual([]);
+  });
+
   it("a portrait prompt reviews findings-only without a replacement target", async () => {
     const user = userEvent.setup();
     render(App);
