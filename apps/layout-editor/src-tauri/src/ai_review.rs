@@ -30,6 +30,10 @@ const AGENT_DRAIN_BUDGET: std::time::Duration = std::time::Duration::from_secs(2
 /// Upper bound on agent detail kept in error messages so a huge/hostile
 /// stderr cannot flood the editor error channel.
 const PROVIDER_DETAIL_LIMIT: usize = 300;
+/// Upper bound on agent stdout/stderr retained in memory. A legitimate
+/// review JSON is a few KB; 1 MiB is generous while preventing a hostile
+/// or broken agent from exhausting editor memory.
+const OUTPUT_BYTE_LIMIT: usize = 1 << 20;
 
 /// Renders the full agent prompt: the TS-owned lens `instructions` verbatim,
 /// a return-only-JSON directive, the serialized `text.format.schema`, and the
@@ -99,13 +103,13 @@ pub(crate) fn run_agent_review(
 
     let stdout = child.stdout.take().expect("stdout was piped");
     let stderr = child.stderr.take().expect("stderr was piped");
-    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel();
-    let (stderr_sender, stderr_receiver) = std::sync::mpsc::channel();
+    let (stdout_sender, stdout_receiver) = std::sync::mpsc::channel::<(Vec<u8>, bool)>();
+    let (stderr_sender, stderr_receiver) = std::sync::mpsc::channel::<(Vec<u8>, bool)>();
     std::thread::spawn(move || {
-        let _ = stdout_sender.send(read_to_end(stdout));
+        let _ = stdout_sender.send(read_bounded(stdout, OUTPUT_BYTE_LIMIT));
     });
     std::thread::spawn(move || {
-        let _ = stderr_sender.send(read_to_end(stderr));
+        let _ = stderr_sender.send(read_bounded(stderr, OUTPUT_BYTE_LIMIT));
     });
 
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(AGENT_WAIT_SECS);
@@ -135,8 +139,8 @@ pub(crate) fn run_agent_review(
     // own when the pipe closes — same survivor rationale as AGENT_DRAIN_BUDGET.
     drop(writer);
 
-    let stdout_bytes = drain_within(stdout_receiver);
-    let stderr_bytes = drain_within(stderr_receiver);
+    let (stdout_bytes, stdout_truncated) = drain_within(stdout_receiver);
+    let (stderr_bytes, _) = drain_within(stderr_receiver);
     let stderr_text = String::from_utf8_lossy(&stderr_bytes);
 
     if timed_out {
@@ -150,6 +154,11 @@ pub(crate) fn run_agent_review(
         return Err(request_failed(format!(
             "agent CLI \"{agent_binary}\" exited with {status}: {}",
             bounded(stderr_text.into_owned())
+        )));
+    }
+    if stdout_truncated {
+        return Err(invalid_response(format!(
+            "agent CLI stdout exceeded {OUTPUT_BYTE_LIMIT} bytes and was truncated"
         )));
     }
     let stdout_text = String::from_utf8_lossy(&stdout_bytes);
@@ -191,15 +200,40 @@ fn bounded(detail: String) -> String {
     detail.chars().take(PROVIDER_DETAIL_LIMIT).collect()
 }
 
-fn read_to_end<R: std::io::Read>(mut reader: R) -> Vec<u8> {
-    let mut buffer = Vec::new();
-    let _ = reader.read_to_end(&mut buffer);
-    buffer
+/// Reads up to `limit` bytes, then drains the rest without retaining so the
+/// child cannot block on a full pipe. Returns `(bytes, truncated)` where
+/// `truncated` is true when the stream exceeded the limit.
+fn read_bounded<R: std::io::Read>(mut reader: R, limit: usize) -> (Vec<u8>, bool) {
+    let mut buffer = Vec::with_capacity(limit.min(8192));
+    let mut chunk = [0u8; 8192];
+    loop {
+        match reader.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                if buffer.len() + n > limit {
+                    let remaining = limit - buffer.len();
+                    buffer.extend_from_slice(&chunk[..remaining]);
+                    // Drain the rest so the child's pipe does not block;
+                    // the data is discarded to bound memory.
+                    loop {
+                        match reader.read(&mut chunk) {
+                            Ok(0) | Err(_) => break,
+                            Ok(_) => {}
+                        }
+                    }
+                    return (buffer, true);
+                }
+                buffer.extend_from_slice(&chunk[..n]);
+            }
+            Err(_) => break,
+        }
+    }
+    (buffer, false)
 }
 
 /// Collects a drain channel with a small post-kill budget so a descendant
 /// that somehow survived the kill cannot extend the wait past the bound.
-fn drain_within(receiver: std::sync::mpsc::Receiver<Vec<u8>>) -> Vec<u8> {
+fn drain_within(receiver: std::sync::mpsc::Receiver<(Vec<u8>, bool)>) -> (Vec<u8>, bool) {
     receiver
         .recv_timeout(AGENT_DRAIN_BUDGET)
         .unwrap_or_default()
@@ -344,6 +378,31 @@ mod tests {
     fn empty_stdout_maps_to_invalid_response() {
         let error = run_with_stub("cat >/dev/null").expect_err("empty stdout must fail");
         assert_eq!(error.code, "aiProviderInvalidResponse");
+    }
+
+    #[test]
+    fn truncated_stdout_maps_to_invalid_response() {
+        // Produce just over OUTPUT_BYTE_LIMIT so read_bounded truncates and
+        // the transport rejects the candidate as an invalid response.
+        let script = format!(
+            "cat >/dev/null\nhead -c {} /dev/zero | tr '\\0' 'x'",
+            OUTPUT_BYTE_LIMIT + 1,
+        );
+        let error = run_with_stub(&script).expect_err("truncated stdout must fail");
+        assert_eq!(error.code, "aiProviderInvalidResponse");
+        assert!(error.message.contains("truncated"));
+    }
+
+    #[test]
+    fn read_bounded_returns_truncation_flag() {
+        let input = [b'x'; 100];
+        let (bytes, truncated) = read_bounded(&input[..], 50);
+        assert_eq!(bytes.len(), 50);
+        assert!(truncated);
+
+        let (bytes, truncated) = read_bounded(&input[..], 200);
+        assert_eq!(bytes.len(), 100);
+        assert!(!truncated);
     }
 
     #[test]

@@ -559,4 +559,28 @@ describe("projected heading ranges and shared section extraction", () => {
       headingSectionText("### 早坂茜（法律搭檔）\nx\n", predicate),
     ).toBeNull();
   });
+
+  it("resolves repeated headings in different list items to their own content", () => {
+    const content = [
+      "- # 共同標題",
+      "  第一項內容",
+      "- # 共同標題",
+      "  第二項內容",
+      "",
+    ].join("\n");
+    const workspace = projectPlanWorkspace(bible(content));
+    const document = workspace.documents[0]!;
+    const headings = document.headings.filter((h) => h.text === "共同標題");
+    expect(headings.length).toBe(2);
+    // The second heading must land on its own source line, not the first
+    // item's line (the pre-fix bug reset every item's search cursor to the
+    // same list offset, collapsing both headings to the first match).
+    expect(headings[1]!.line).toBeGreaterThan(headings[0]!.line);
+    const firstSection = planSectionText(document, headings[0]!.anchor);
+    const secondSection = planSectionText(document, headings[1]!.anchor);
+    expect(firstSection).toContain("第一項內容");
+    expect(firstSection).not.toContain("第二項內容");
+    expect(secondSection).toContain("第二項內容");
+    expect(secondSection).not.toContain("第一項內容");
+  });
 });

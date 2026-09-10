@@ -310,6 +310,14 @@ export function validateAiReviewResult(
   if (!isStringArray(reviewedSourceRefs)) {
     return fail("reviewedSourceRefs 必須是字串陣列。");
   }
+  if (reviewedSourceRefs.length === 0) {
+    return fail("reviewedSourceRefs 不得為空，必須包含選取來源的 sourceRef。");
+  }
+  if (!reviewedSourceRefs.includes(request.selectedSourceRef)) {
+    return fail(
+      `reviewedSourceRefs 必須包含選取來源的 sourceRef：${request.selectedSourceRef}`,
+    );
+  }
   if (!Array.isArray(findings) || findings.length > 6) {
     return fail("findings 必須是不超過六則的陣列。");
   }

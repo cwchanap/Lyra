@@ -190,6 +190,22 @@ describe("ReaderView review affordances", () => {
       within(noticeRow).queryByRole("button", { name: "Review" }),
     ).toBeNull();
   });
+
+  it("hides Review item button when onReviewItem is absent", () => {
+    render(ReaderView, { scene: fixtureScene() });
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
+  });
+
+  it("hides Review scene button when onReviewScene is absent", () => {
+    render(ReaderView, { scene: fixtureScene() });
+    expect(screen.queryByRole("button", { name: "Review scene" })).toBeNull();
+  });
+
+  it("hides Review scene button when only onReviewItem is provided", () => {
+    const onReviewItem = vi.fn();
+    render(ReaderView, { scene: fixtureScene(), onReviewItem });
+    expect(screen.queryByRole("button", { name: "Review scene" })).toBeNull();
+  });
 });
 
 describe("ReaderView edit affordances", () => {

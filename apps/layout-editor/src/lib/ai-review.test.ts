@@ -184,7 +184,27 @@ describe("validateAiReviewResult", () => {
     expect(
       validateAiReviewResult(
         request,
-        result({ reviewedSourceRefs: ["docs/stories_plan/elsewhere.md#x"] }),
+        result({
+          reviewedSourceRefs: [
+            SELECTED_REF,
+            "docs/stories_plan/elsewhere.md#x",
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("rejects empty reviewedSourceRefs", () => {
+    expect(
+      validateAiReviewResult(request, result({ reviewedSourceRefs: [] })).ok,
+    ).toBe(false);
+  });
+
+  it("rejects reviewedSourceRefs missing the selected source ref", () => {
+    expect(
+      validateAiReviewResult(
+        request,
+        result({ reviewedSourceRefs: [VOICE_REF] }),
       ).ok,
     ).toBe(false);
   });
