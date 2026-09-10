@@ -2,8 +2,9 @@
 // apps/layout-editor/src/lib/ai-review-provider.ts
 //
 // HPA-136 production adapter: routes AiReviewProviderRequest through the
-// native secret-bearing Tauri transport. This adapter owns no schema or
-// instruction copies — everything model-semantic is built in ai-review.ts.
+// native agent-CLI Tauri transport; no provider secret crosses IPC. This
+// adapter owns no schema or instruction copies — everything model-semantic
+// is built in ai-review.ts.
 // =============================================================================
 
 import {

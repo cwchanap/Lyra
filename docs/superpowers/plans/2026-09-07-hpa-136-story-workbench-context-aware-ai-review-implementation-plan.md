@@ -30,11 +30,11 @@
 - AI Review and Focused Edit overlays are mutually exclusive.
 - Reuse the severity labels `Blocker | Important | Minor`; `.claude/skills/reviewing-story-scenes/SKILL.md` remains the separate nine-axis whole-file batch/remediation workflow.
 - Do not add a shared package solely to centralize those three strings in HPA-136.
-- Default model is `gpt-5.6-luna`; `LYRA_OPENAI_MODEL` may override locally without UI.
-- `OPENAI_API_KEY` remains native-process-only. Do not return it to the renderer and do not use a Vite client environment variable for it.
-- Rust sets `store: false` and `max_output_tokens: 4000`; no provider tools/background/streaming/conversation state.
-- `status: incomplete` + `incomplete_details.reason: max_output_tokens` maps to `aiProviderResponseTruncated`, not `aiProviderInvalidResponse`.
-- Tests/builds remain network-free. One real-provider smoke is required before leaving Draft.
+- *(amended 2026-09-09)* The review engine is a coding-agent CLI — default `claude`, `LYRA_AI_REVIEW_AGENT` may override locally without UI; agent auth/model belong to the CLI, Lyra holds no provider key.
+- *(amended)* No provider API key exists anywhere in Lyra; no key-returning command, no Vite client secret, no renderer-side provider fetch.
+- *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one attempt, fixed 180-second wait, no retry; no OpenAI URL, envelope, `store`, or `max_output_tokens` anywhere.
+- *(amended)* Agent CLI missing → `aiProviderConfigMissing`; spawn failure/non-zero exit/timeout → `aiProviderRequestFailed`; empty/unparseable stdout → `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
+- *(amended)* Tests/builds remain network-free. One real agent review through the production Rust path (three lens paths + one reduced-context run) is required before leaving Draft — no OpenAI API involved.
 - No production game runtime or authored story-content changes.
 
 ---
@@ -1210,7 +1210,7 @@ spec's Amendment 2026-09-09 section for the binding contract.
 - [ ] Supporting context is removable; selected source is required.
 - [ ] Missing context is visible and never guessed.
 - [ ] Exactly one TS result schema, one preamble, and one lens table own model semantics.
-- [ ] Rust forwards TS `instructions/input/text` unchanged and adds only native transport fields.
+- [ ] *(amended)* Rust renders the agent prompt from `instructions` + serialized `text.format.schema` + `input` verbatim (`text.verbosity` ignored); no model semantics live in Rust.
 - [ ] *(amended)* No provider API key exists anywhere in Lyra; the review agent CLI's own auth handles access; no key-returning command and no renderer-side provider fetch.
 - [ ] *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one attempt, fixed 180-second wait, no retry.
 - [ ] *(amended)* Spawn failure/non-zero exit/timeout map to `aiProviderRequestFailed`; empty/unparseable stdout maps to `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
