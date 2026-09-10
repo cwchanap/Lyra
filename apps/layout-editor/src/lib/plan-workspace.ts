@@ -228,11 +228,17 @@ function walkDocumentBlocks(
       );
     } else if (token.type === "list") {
       walk.blocks.push({ kind: "block", line });
+      // Each list item must search from its own absolute source offset,
+      // not a shared `offset + 1`: repeated headings in different items
+      // would otherwise resolve to the first item's match.
+      let itemFrom = offset >= 0 ? offset : 0;
       for (const item of (token as Tokens.List).items) {
+        const itemOffset = content.indexOf(item.raw, itemFrom);
+        if (itemOffset >= 0) itemFrom = itemOffset + item.raw.length;
         walkDocumentBlocks(
           item.tokens,
           content,
-          offset >= 0 ? offset + 1 : 0,
+          itemOffset >= 0 ? itemOffset : offset >= 0 ? offset + 1 : 0,
           walk,
         );
       }

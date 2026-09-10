@@ -495,9 +495,13 @@ assert(
   ),
   "promptRefinement context must expose concrete usage impact",
 );
+const expectedSceneOwnedTargetRef =
+  sceneOwnedEditSource.kind === "backgroundPrompt"
+    ? `asset:background:${sceneOwnedEditSource.unitId}`
+    : `asset:evidence:${sceneOwnedEditSource.evidenceId}:imagePrompt`;
 assert(
-  sceneOwnedBundle.replacementTargetRef !== null,
-  "scene-owned prompt with an HPA-135 edit identity must expose a replacement target",
+  sceneOwnedBundle.replacementTargetRef === expectedSceneOwnedTargetRef,
+  `scene-owned prompt replacement target drifted: expected ${expectedSceneOwnedTargetRef}, got ${sceneOwnedBundle.replacementTargetRef}`,
 );
 assert(
   sceneOwnedBundle.selectedText === sceneOwnedParts.entryPrompt,

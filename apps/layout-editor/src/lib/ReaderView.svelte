@@ -118,14 +118,16 @@
                 >
                   Edit
                 </button>
-                <button
-                  type="button"
-                  class="cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
-                  data-review-item
-                  onclick={() => onReviewItem?.(group, item.editable, item)}
-                >
-                  Review
-                </button>
+                {#if onReviewItem}
+                  <button
+                    type="button"
+                    class="cursor-pointer rounded border border-[#e4ded3] bg-white px-1.5 py-0.5 text-[0.75rem] hover:border-[#57776a]"
+                    data-review-item
+                    onclick={() => onReviewItem?.(group, item.editable, item)}
+                  >
+                    Review
+                  </button>
+                {/if}
               </span>
             {/if}
           </div>
@@ -180,14 +182,16 @@
       >
         <code class="text-[0.8rem]">{scene.sourcePath}</code>
       </button>
-      <button
-        type="button"
-        class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 text-left hover:border-[#57776a]"
-        data-review-scene
-        onclick={() => onReviewScene?.()}
-      >
-        Review scene
-      </button>
+      {#if onReviewScene}
+        <button
+          type="button"
+          class="w-fit cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 text-left hover:border-[#57776a]"
+          data-review-scene
+          onclick={() => onReviewScene?.()}
+        >
+          Review scene
+        </button>
+      {/if}
     </div>
   </header>
 

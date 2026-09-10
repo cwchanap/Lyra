@@ -52,11 +52,11 @@ Normative changes (these override any conflicting text below):
   invariants — required because, unlike the OpenAI variant, the agent path
   has no runtime schema enforcement; the local validator remains the gate.
 
-The sections "Deliberate pushback: keep the Rust transport boundary" (URL
-list), "One provider only: OpenAI Responses API" material, "Native
-secret-bearing transport", "Native transport tests", and "Real-provider
-smoke" below remain as historical design record for the OpenAI variant and
-are superseded by this amendment where they conflict.
+The amendment supersedes the OpenAI variant. The body sections
+("Deliberate pushback", "Native agent-CLI transport", "Native transport
+tests", "Real-agent smoke", "Risks and pinned mitigations", and "Acceptance
+criteria") have been reconciled with the agent-CLI contract; any remaining
+OpenAI-specific wording elsewhere is historical design record only.
 
 ## Latest review resolution
 
@@ -67,28 +67,27 @@ The latest reuse review produced seven findings. Six are adopted directly; one i
 1. **Lens behavior must be explicit.** The three lenses need per-lens model instructions, not only different context chips.
 2. **Prologue context is real canon context.** `scene_p0`, `investigation_scene_p1`, and `scene_p2` have exact `Prologue 0/1/2：...` H1 sections and must resolve to them.
 3. **Reuse the existing Plan workspace for `characters.md`.** Add a sibling `storyCharactersMd` field instead of a second Tauri loader/command.
-4. **Distinguish output-budget truncation from malformed provider output.** An incomplete response caused by `max_output_tokens` gets its own error code.
+4. **Distinguish output-budget truncation from malformed provider output.** The TypeScript contract retains `aiProviderResponseTruncated` for forward compatibility; through the agent-CLI transport, stdout exceeding `OUTPUT_BYTE_LIMIT` is reported as `aiProviderInvalidResponse` with a truncation message.
 5. **Name the existing batch-review sibling.** `.claude/skills/reviewing-story-scenes/SKILL.md` is the agent-driven whole-file counterpart; HPA-136 is selection-anchored and human-gated.
 6. **Run core real-corpus matching proof in Task 1.** Beat/Prologue/Bible/Aoba/speaker rules must be proven before transport/UI work, not only at final verification.
 
 ### Deliberate pushback: keep the Rust transport boundary
 
-The review proposed moving the OpenAI `fetch` into the webview and exposing the key through a Tauri key-reading command or Vite environment variable. HPA-136 will **not** do that.
+The review proposed moving the provider call into the webview. HPA-136 will
+**not** do that.
 
 Reasons:
 
-- OpenAI's API authentication guidance treats the API key as a secret and says not to expose it in client-side code.
-- A Tauri webview is still client-side JavaScript. `csp: null` means a request may be technically possible; it is not a reason to copy a long-lived API secret into the renderer.
-- A `get_openai_api_key` command would defeat the existing requirement that `OPENAI_API_KEY` remain native-process-only.
-- `packages/scripts/audio/elevenlabs-client.ts` is useful precedent for a bounded TypeScript provider client, but it runs as local script/Node tooling where the key is already server/process-side. It is not precedent for exposing a provider key to a browser renderer.
-
-Keeping Rust transport costs one focused module plus `reqwest`, but that cost is deliberate: **TypeScript owns every model-semantic byte; Rust owns the secret-bearing network hop.** The previous schema/prompt drift risk remains removed because Rust forwards the TS-built `instructions`, `input`, and `text` objects unchanged.
-
-Official provider references checked for this revision:
-
-- `https://platform.openai.com/docs/api-reference` — API keys are secrets and must not be exposed in client-side code.
-- `https://developers.openai.com/api/reference/cli/resources/responses/methods/create` — Responses status, `incomplete_details`, `max_output_tokens`, `store`, and `text` envelope.
-- `https://developers.openai.com/api/docs/guides/structured-outputs` — strict JSON Schema output through `text.format`.
+- The review agent CLI runs as a native process; Rust owns the spawn, the
+  180-second wait, the kill, and the stdout/stderr drain. A Tauri webview
+  cannot reliably manage a child process's lifecycle or enforce a timeout.
+- `LYRA_AI_REVIEW_AGENT` is a native-process environment variable; the
+  renderer never reads it. Agent auth/model belong to the CLI and its own
+  configuration; Lyra never holds a provider key.
+- **TypeScript owns every model-semantic byte; Rust owns the process
+  spawn and output capture.** The schema/prompt drift risk remains removed
+  because Rust forwards the TS-built `instructions`, `input`, and `text`
+  objects unchanged.
 
 ## Goal
 
@@ -661,7 +660,7 @@ Accept a result only when:
 
 Provider `impact` is explanatory only. HPA-135's locally-derived impact remains authoritative.
 
-## Native secret-bearing transport
+## Native agent-CLI transport
 
 Create one focused native module:
 
@@ -673,35 +672,28 @@ Rust receives `AiReviewTransportPayload`; it does **not** receive the domain req
 
 Responsibilities:
 
-1. read `OPENAI_API_KEY`, else `aiProviderConfigMissing`;
-2. read `LYRA_OPENAI_MODEL`, default `gpt-5.6-luna`;
-3. add only transport-owned envelope fields:
-   - `model`;
-   - `store: false`;
-   - `max_output_tokens: 4000`;
-4. POST exactly once to `https://api.openai.com/v1/responses` with a 60-second timeout;
-5. do not add tools, conversation state, previous-response state, streaming, or background mode;
+1. resolve the agent binary from `LYRA_AI_REVIEW_AGENT`, default `claude`; if missing, `aiProviderConfigMissing`;
+2. invoke `<agent> -p --tools ""`;
+3. write the full prompt through stdin (TS `instructions`, JSON-only directive, serialized `text.format.schema`, TS `input` verbatim);
+4. wait exactly 180 seconds, then kill the child;
+5. drain stdout/stderr concurrently while the process runs, bounded to `OUTPUT_BYTE_LIMIT` (1 MiB); truncated stdout is treated as an invalid response;
 6. forward TS `instructions`, `input`, and full `text` unchanged;
-7. require successful HTTP status;
-8. inspect Responses `status` / `incomplete_details` before output parsing;
-9. when `status === "incomplete"` and `incomplete_details.reason === "max_output_tokens"`, return `aiProviderResponseTruncated` and never trust partial JSON;
-10. require a completed response with exactly one usable `output_text`;
-11. parse that output text as JSON and return the candidate value.
+7. require a successful exit status;
+8. parse stdout as JSON and return the candidate value.
 
 Normalized native errors:
 
 ```text
 aiProviderConfigMissing
 aiProviderRequestFailed
-aiProviderResponseTruncated
 aiProviderInvalidResponse
 ```
 
-`max_output_tokens = 4000` remains bounded but gives six structured findings plus reasoning more headroom than 1800. The official Responses reference notes that `max_output_tokens` includes visible output and reasoning tokens.
+`aiProviderResponseTruncated` remains in the TypeScript contract for forward compatibility but is unreachable through this transport: a stdout stream that exceeds the bound is reported as `aiProviderInvalidResponse` with a truncation message.
 
-There is no automatic retry in v1. A truncated review shows the distinct error and the author may rerun after removing optional context; this keeps cost/control explicit.
+There is no automatic retry in v1. A failed/truncated review shows the distinct error and the author may rerun after removing optional context; this keeps cost/control explicit.
 
-Use `reqwest` with rustls + JSON and no default TLS features. No OpenAI SDK, provider trait, provider registry, key-returning Tauri command, or renderer-visible API secret.
+No OpenAI SDK, provider trait, provider registry, key-returning Tauri command, or renderer-visible API secret. The agent CLI owns its own authentication and model selection.
 
 ## Native transport tests
 
@@ -710,9 +702,12 @@ Rust tests use a sentinel transport payload and prove:
 - `instructions`, `input`, and the full `text` object including sentinel schema are forwarded unchanged;
 - Rust adds only the fixed transport fields above;
 - no tools/conversation/previous-response/stream/background fields appear;
-- completed one-`output_text` fixture extracts successfully;
-- `status: incomplete` + `reason: max_output_tokens` maps to `aiProviderResponseTruncated` even if partial output text exists;
-- refusal/no-output/multiple-output/non-JSON completed fixtures map to `aiProviderInvalidResponse`;
+- a stub agent emitting valid JSON on stdout extracts successfully;
+- a stub agent emitting garbage maps to `aiProviderInvalidResponse`;
+- a stub agent producing no stdout maps to `aiProviderInvalidResponse`;
+- a stub agent exceeding `OUTPUT_BYTE_LIMIT` on stdout maps to `aiProviderInvalidResponse` with a truncation message;
+- a missing agent binary maps to `aiProviderConfigMissing`;
+- a stub agent that does not exit within the wait budget is killed and maps to `aiProviderRequestFailed`.
 - tests do not issue network traffic.
 
 Do not hard-code a second HPA-136 schema in Rust tests.
@@ -840,22 +835,22 @@ At final verification, extend the same script to prove:
 11. one real scene-owned background/evidence manifest entry yields compiler-owned prompt layers + concrete usage impact + non-null HPA-135 edit target;
 12. one real portrait/character prompt yields prompt context but a null HPA-135 replacement target.
 
-The verifier performs only local repo reads/projections and never calls OpenAI.
+The verifier performs only local repo reads/projections and never invokes the agent CLI.
 
-## Real-provider smoke
+## Real-agent smoke
 
-One intentional manual smoke is required before PR #85 leaves Draft because offline tests cannot prove current live envelope acceptance.
+One intentional manual smoke is required before PR #85 leaves Draft because offline tests cannot prove the real agent CLI path end-to-end.
 
 Smoke requirements:
 
+- `LYRA_AI_REVIEW_AGENT` is set (or defaults to `claude`) and the binary resolves on `PATH`;
 - compare **Story consistency vs Dialogue** on the same eligible Reader line and verify the rendered findings/wording reflect the two different review purposes;
 - run Prompt refinement on one scene-owned background/evidence prompt;
 - Structured Output parses and local validation passes;
 - no-change or findings render normally;
-- `store: false` succeeds;
-- `text.format` + `text.verbosity` are accepted by the selected model;
-- if a replacement is returned, HPA-135 opens with the replacement preserved after reset;
-- if the model hits the output bound, UI shows `aiProviderResponseTruncated` rather than a generic invalid-schema error.
+- the 180-second wait is observed (a hung agent is killed and reported as `aiProviderRequestFailed`);
+- if the agent emits more than `OUTPUT_BYTE_LIMIT` on stdout, the UI shows `aiProviderInvalidResponse` with a truncation message (the `aiProviderResponseTruncated` contract code remains unreachable through this transport);
+- if a replacement is returned, HPA-135 opens with the replacement preserved after reset.
 
 Do not Apply real story content unless intentionally doing a throwaway HPA-135 smoke followed by Git revert + recompile.
 
@@ -866,17 +861,18 @@ Do not Apply real story content unless intentionally doing a throwaway HPA-135 s
 | Three lens names produce identical model behavior | Shared preamble + closed `LENS_INSTRUCTIONS` table; pairwise instruction tests and live Story-vs-Dialogue smoke. |
 | Real Prologue loses primary plan context | Closed Beat/Prologue target parser + Task-1 real-corpus proof for P0/P1/P2. |
 | TS/Rust model-contract drift | Schema + lens instructions exist only in TS; Rust forwards `instructions/input/text` unchanged. |
-| API key leaks into renderer | Native Rust performs the secret-bearing request; no key-returning Tauri command or Vite client secret. |
+| Agent binary missing or misconfigured | Rust resolves `LYRA_AI_REVIEW_AGENT` (default `claude`); missing binary maps to `aiProviderConfigMissing`. |
 | Second Markdown extractor drifts from Plan | `headingSectionText()` lives in `plan-workspace.ts` and reuses the Marked walk. |
 | Extra `characters.md` loader duplicates Plan workspace | Existing `load_plan_workspace` returns `storyCharactersMd` as sibling field, not a second command/document. |
 | Story Bible prefix selects wrong Chapter 1 section | Exact `第 N 章：<overview title>` H2 match only. |
 | Aoba range parsing invents semantics | Exact `第 N 章` label only; range rows stay missing in v1. |
-| Response is truncated and misdiagnosed as schema failure | Inspect `status/incomplete_details`; map max-output incomplete to `aiProviderResponseTruncated`; 4000-token cap. |
+| Agent stdout exhausts editor memory | Concurrent drain bounded to `OUTPUT_BYTE_LIMIT`; truncation maps to `aiProviderInvalidResponse`. |
+| Agent hangs past the wait budget | 180-second deadline kills the child; maps to `aiProviderRequestFailed`. |
 | AI replacement becomes empty during HPA-135 reset | Assign `initialReplacement` after reset and before `rebuildDraft()`. |
 | Two overlays contend for author action | AI Review XOR Focused Edit in App. |
 | Batch-review and Workbench concepts blur together | Spec explicitly names `reviewing-story-scenes` as batch/remediation sibling; HPA-136 stays selection/human-gated. |
 | Synthetic fixtures hide corpus mismatch | Core verifier runs in Task 1; prompt/edit-target proof extends it at final verification. |
-| Live Responses envelope gets a 400 | Offline owner tests + required real-provider smoke before leaving Draft. |
+| Live agent envelope behaves unexpectedly | Offline owner tests + required real-agent smoke before leaving Draft. |
 
 ## File structure
 
@@ -924,9 +920,10 @@ HPA-136 is complete when:
 - `characters.md` arrives through `load_plan_workspace`, not a second loader/Plan document;
 - Prompt context comes from existing compiler/Assets layering and usage;
 - one TS JSON Schema + one shared preamble + one lens table own model semantics;
-- Rust retains the API key/network secret boundary and never reconstructs review schema/instructions;
+- Rust owns the agent CLI spawn/wait/kill and bounded stdout/stderr drain, and never reconstructs review schema/instructions;
 - completed output is strict-schema + locally source-reference validated;
-- max-output incomplete response is surfaced as `aiProviderResponseTruncated`;
+- stdout exceeding `OUTPUT_BYTE_LIMIT` is surfaced as `aiProviderInvalidResponse` with a truncation message (`aiProviderResponseTruncated` remains an unreachable contract case);
+- a hung agent is killed at the 180-second deadline and surfaced as `aiProviderRequestFailed`;
 - malformed/ungrounded output cannot enter edit review;
 - AI and focused edit overlays are mutually exclusive;
 - at most one eligible replacement opens the existing HPA-135 diff with replacement text preserved;
@@ -934,7 +931,7 @@ HPA-136 is complete when:
 - human Apply + HPA-135 hash/source/locality + `scenes:compile` remain mandatory;
 - automated tests/builds remain network-free;
 - core `verify:ai-review-real-content` matcher proof passes at the end of Task 1 and final prompt/edit-target assertions pass before merge;
-- one manual live-provider smoke passes before leaving Draft;
+- one manual real-agent smoke passes before leaving Draft;
 - `.claude/skills/reviewing-story-scenes/SKILL.md` remains the separate whole-file batch/remediation workflow;
 - no RAG/vector DB/chat loop/provider framework/YAML writer/AI write command is added;
 - all implementation stays in PR #85.

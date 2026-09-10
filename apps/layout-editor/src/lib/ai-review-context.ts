@@ -238,7 +238,7 @@ function selectionBase(
       const semanticRef = readerSemanticRef(selection.item, selection.ref);
       return {
         selectedSourceRef: `${selection.scene.sourcePath}#${semanticRef}`,
-        selectedText: selection.item.text,
+        selectedText: readerItemText(selection.item),
         replacementTargetRef: semanticRef,
       };
     }

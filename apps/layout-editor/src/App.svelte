@@ -1459,12 +1459,18 @@
   {/if}
 
   {#if aiReview}
+    {@const activeReview = aiReview}
     <div class="col-span-full">
       <AiReviewPanel
-        selectionLabel={aiReview.selectionLabel}
-        lenses={aiReview.lenses}
-        initialLens={aiReview.initialLens}
-        context={aiReview.context}
+        selectionLabel={activeReview.selectionLabel}
+        lenses={activeReview.lenses}
+        initialLens={activeReview.initialLens}
+        context={activeReview.context}
+        rebuildContext={(lens) => {
+          const workspace = planState.workspace;
+          if (!workspace) return activeReview.context;
+          return buildAiReviewContext(activeReview.selection, lens, workspace);
+        }}
         provider={tauriAiReviewProvider}
         onReviewReplacement={applyAiReplacement}
         onClose={closeAiReview}

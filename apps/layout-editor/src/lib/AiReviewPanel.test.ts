@@ -106,10 +106,22 @@ type PanelProps = {
   lenses: AiReviewLens[];
   initialLens: AiReviewLens;
   context: AiReviewContextBundle;
+  rebuildContext: (lens: AiReviewLens) => AiReviewContextBundle;
   provider: (request: AiReviewProviderRequest) => Promise<unknown>;
   onReviewReplacement?: (replacementText: string) => void;
   onClose: () => void;
 };
+
+/** Story-consistency lens omits the dialogue-only voice chip. */
+function rebuildForLens(lens: AiReviewLens): AiReviewContextBundle {
+  if (lens === "storyConsistency") {
+    return {
+      ...BUNDLE,
+      context: BUNDLE.context.filter((item) => item.ref !== "characterVoice"),
+    };
+  }
+  return BUNDLE;
+}
 
 function panelProps(
   overrides: Partial<PanelProps> = {},
@@ -119,6 +131,7 @@ function panelProps(
     lenses: ["storyConsistency", "dialogue"],
     initialLens: "dialogue",
     context: BUNDLE,
+    rebuildContext: rebuildForLens,
     provider: okProvider(),
     onClose: vi.fn(),
     ...overrides,
@@ -264,7 +277,6 @@ describe("AiReviewPanel lifecycle", () => {
     const provider = okProvider({
       findings: [],
       noChange: true,
-      reviewedSourceRefs: [],
     });
     render(AiReviewPanel, { props: panelProps({ provider }) });
     await runReview();
@@ -415,7 +427,7 @@ describe("AiReviewPanel lifecycle", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Canceled");
   });
 
-  it("changing lens rebuilds the default context and clears the old result", async () => {
+  it("changing lens rebuilds lens-appropriate context and clears the old result", async () => {
     const provider = okProvider();
     const user = userEvent.setup();
     render(AiReviewPanel, { props: panelProps({ provider }) });
@@ -424,8 +436,7 @@ describe("AiReviewPanel lifecycle", () => {
       await screen.findByLabelText("AI review findings"),
     ).toBeInTheDocument();
 
-    // Remove a supporting chip, then change lens: the default context is
-    // rebuilt (chip restored) and the stale result is gone.
+    // The dialogue lens carries the voice chip; storyConsistency does not.
     const chips = chipList();
     const voiceChip = within(chips)
       .getAllByRole("listitem")
@@ -442,21 +453,24 @@ describe("AiReviewPanel lifecycle", () => {
       within(group).getByRole("button", { name: "Story consistency" }),
     );
 
+    // Story-consistency context omits the dialogue-only voice chip.
     expect(
       within(chipList())
         .getAllByRole("listitem")
         .filter((item) => item.textContent?.includes("角色聲音")),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
     expect(
       screen.queryByLabelText("AI review findings"),
     ).not.toBeInTheDocument();
 
-    // The next Run carries the new lens and the rebuilt (full) context.
+    // The next Run carries the new lens and the lens-appropriate context.
     await runReview();
     expect(provider).toHaveBeenCalledTimes(2);
     const request = provider.mock.calls[1]![0] as AiReviewProviderRequest;
     expect(request.lens).toBe("storyConsistency");
-    expect(request.context.map((item) => item.ref)).toContain("characterVoice");
+    expect(request.context.map((item) => item.ref)).not.toContain(
+      "characterVoice",
+    );
   });
 
   it("Close calls onClose; the panel never performs Tauri or store I/O", async () => {

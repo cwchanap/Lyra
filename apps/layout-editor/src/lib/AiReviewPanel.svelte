@@ -17,6 +17,7 @@
     lenses,
     initialLens,
     context,
+    rebuildContext,
     provider,
     onReviewReplacement,
     onClose,
@@ -25,6 +26,9 @@
     lenses: AiReviewLens[];
     initialLens: AiReviewLens;
     context: AiReviewContextBundle;
+    /** Rebuilds the context bundle for a new lens; the panel calls this on
+     * lens switch so buildRequest uses lens-appropriate supporting chips. */
+    rebuildContext: (lens: AiReviewLens) => AiReviewContextBundle;
     provider: AiReviewProvider;
     /** Called with a validated replacement text; the owner opens the edit. */
     onReviewReplacement?: (replacementText: string) => void;
@@ -43,6 +47,10 @@
   // The initial lens is intentionally captured once at mount; lens changes
   // are panel-local (selectLens).
   let currentLens = $state<AiReviewLens>(untrack(() => initialLens));
+  // The context bundle is rebuilt on lens switch so buildRequest always
+  // uses lens-appropriate supporting chips. Initialized from the prebuilt
+  // prop; the panel never touches workspace/selection directly.
+  let contextBundle = $state<AiReviewContextBundle>(untrack(() => context));
   let removedRefs = $state<ReadonlyArray<string>>([]);
   let result = $state<AiReviewResult | null>(null);
   let failure = $state<string | null>(null);
@@ -50,7 +58,7 @@
   let runGeneration = 0;
 
   const activeChips = $derived(
-    context.context.filter(
+    contextBundle.context.filter(
       (chip) => chip.required || !removedRefs.includes(chip.ref),
     ),
   );
@@ -58,16 +66,16 @@
   function buildRequest(): AiReviewProviderRequest {
     return {
       lens: currentLens,
-      selectedSourceRef: context.selectedSourceRef,
-      selectedText: context.selectedText,
+      selectedSourceRef: contextBundle.selectedSourceRef,
+      selectedText: contextBundle.selectedText,
       context: activeChips.map((chip) => ({
         ref: chip.ref,
         sourceRef: chip.sourceRef,
         kind: chip.kind,
         content: chip.content,
       })),
-      missingContext: context.missingContext,
-      replacementTargetRef: context.replacementTargetRef,
+      missingContext: contextBundle.missingContext,
+      replacementTargetRef: contextBundle.replacementTargetRef,
     };
   }
 
@@ -127,7 +135,9 @@
   function selectLens(lens: AiReviewLens): void {
     if (lens === currentLens) return;
     currentLens = lens;
-    // Changing lens rebuilds the default context and clears the old result.
+    // Rebuild the context bundle for the new lens so supporting chips match
+    // (e.g. dialogue adds voice/group chips that storyConsistency omits).
+    contextBundle = rebuildContext(lens);
     removedRefs = [];
     result = null;
     failure = null;
@@ -159,7 +169,7 @@
     <h2 class="m-0 break-words text-lg">{selectionLabel}</h2>
     <p class="m-0">
       <code class="text-[0.8rem]" data-selected-source-ref
-        >{context.selectedSourceRef}</code
+        >{contextBundle.selectedSourceRef}</code
       >
     </p>
   </header>
@@ -234,7 +244,7 @@
     {/each}
   </ul>
 
-  {#if context.missingContext.length > 0}
+  {#if contextBundle.missingContext.length > 0}
     <div
       class="grid gap-1 rounded-md border border-[#d9c9a3] bg-[#fdf6e3] p-3"
       aria-label="Missing context"
@@ -244,7 +254,7 @@
         Missing context
       </p>
       <ul class="m-0 grid list-none gap-1 p-0">
-        {#each context.missingContext as missing, index (index)}
+        {#each contextBundle.missingContext as missing, index (index)}
           <li
             class="text-[0.85rem] text-[#7a6535]"
             data-missing-kind={missing.kind}
