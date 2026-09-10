@@ -8,6 +8,52 @@ One Linear ticket, one PR. PR #85 remains the planning + implementation PR.
 
 Baseline: current `main` after HPA-135 / PR #84, with HPA-634 Reader, HPA-134 Assets, HPA-273 Plan, and HPA-135 focused reviewed source editing already landed.
 
+## Amendment 2026-09-09: agent-CLI transport supersedes the OpenAI provider path
+
+**Owner decision (product pivot, after Task 5):** the review engine is a
+coding-agent CLI, not the OpenAI Responses API. Lyra must not require any
+OpenAI API call, key, or model. The landed Tasks 1–5 stay; the native
+transport is replaced in place.
+
+Normative changes (these override any conflicting text below):
+
+- `run_ai_review` keeps its command name, TS wire shape
+  (`AiReviewTransportPayload { instructions, input, text }`), and four error
+  codes. Rust renders the agent prompt from the payload and shells out to a
+  review agent CLI — default `claude`, override via `LYRA_AI_REVIEW_AGENT`
+  (binary name or path).
+- Invocation: `<agent> -p --tools ""` with the full prompt on **stdin**,
+  stdout captured, a fixed 180-second wait, one attempt, no retry. The agent
+  runs with **all tools disabled** — text in, text out, no filesystem, no
+  network tools. Agent auth/model belong to the CLI and its own
+  configuration; Lyra never holds a provider key.
+- Prompt composition (Rust-owned, mechanical): `instructions` + a
+  JSON-only directive + `text.format.schema` (serialized) + `input`
+  verbatim. `text.verbosity` is ignored by this transport (shape retained as
+  the stable wire contract; zero TS churn).
+- Error mapping: agent CLI not found → `aiProviderConfigMissing`; spawn
+  failure / non-zero exit / timeout → `aiProviderRequestFailed` (bounded
+  stderr detail); empty or unparseable stdout → `aiProviderInvalidResponse`.
+  `aiProviderResponseTruncated` stays in the TS contract but is unreachable
+  through this transport (no token cap).
+- Removed: `reqwest` dependency, `OPENAI_API_KEY`, `LYRA_OPENAI_MODEL`, the
+  Responses URL/envelope, `store: false` / `max_output_tokens` injection, and
+  the envelope/status/output_text parsing.
+- Native tests drive a stub CLI script through the transport seam (no
+  network, no real agent); the prompt-composition test is a pure function.
+- The mandatory pre-Dry-exit smoke becomes **one real agent review through
+  the production Rust path** (three lens paths + one reduced-context run) —
+  executable by the development agent; no API key is involved.
+- Everything else — lenses, deterministic context, exact matching, local
+  validation, panel lifecycle, XOR with HPA-135, replacement handoff,
+  verifiers, offline gates — is unchanged.
+
+The sections "Deliberate pushback: keep the Rust transport boundary" (URL
+list), "One provider only: OpenAI Responses API" material, "Native
+secret-bearing transport", "Native transport tests", and "Real-provider
+smoke" below remain as historical design record for the OpenAI variant and
+are superseded by this amendment where they conflict.
+
 ## Latest review resolution
 
 The latest reuse review produced seven findings. Six are adopted directly; one is deliberately not adopted as proposed.

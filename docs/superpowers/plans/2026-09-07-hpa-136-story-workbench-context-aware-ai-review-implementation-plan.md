@@ -1134,7 +1134,65 @@ Include other HPA-136-scoped files only if the verification steps exposed and fi
 
 ---
 
+### Task 6 (2026-09-09 amendment): Replace the OpenAI HTTP transport with the agent-CLI transport
+
+**Context:** owner pivot — Lyra must not require any OpenAI API call, key, or
+model; the review engine is a coding-agent CLI. Tasks 1–5 landed with the
+OpenAI transport; this task swaps the native transport in place. See the
+spec's Amendment 2026-09-09 section for the binding contract.
+
+**Files:**
+- Modify: `apps/layout-editor/src-tauri/src/ai_review.rs`
+- Modify: `apps/layout-editor/src-tauri/Cargo.toml` + `Cargo.lock` (drop `reqwest`)
+- Modify: `apps/layout-editor/src/lib/AiReviewPanel.svelte` (one error string)
+- Modify: `apps/layout-editor/src/lib/workbench-api.ts` (one comment)
+- Modify: `apps/layout-editor/src/lib/ai-review-provider.test.ts` (one fixture message)
+- Modify: `docs/superpowers/specs/2026-09-07-hpa-136-story-workbench-context-aware-ai-review-design.md` (already amended by controller — no further edit needed unless implementation drifts)
+
+**Interfaces (binding):**
+- `run_ai_review(payload)` keeps its Tauri command name, the
+  `AiReviewTransportPayload { instructions, input, text }` wire shape, and
+  the four `aiProvider*` error codes.
+- New pure fn `agent_prompt(payload) -> String`: instructions verbatim + a
+  return-only-JSON directive + serialized `text.format.schema` + input
+  verbatim. `text.verbosity` is ignored.
+- Transport fn takes the agent binary as a parameter; the Tauri command
+  resolves `LYRA_AI_REVIEW_AGENT` env override (default `claude`) — env
+  access stays out of the testable core so tests never race on `set_var`.
+- Spawn `<agent> -p --tools ""`, full prompt on **stdin**, stdout/stderr
+  captured, fixed 180-second wait, one attempt. No network, no envelope,
+  no key handling anywhere in the crate.
+
+**Steps:**
+1. Red: rewrite `ai_review.rs` tests for the new seam — prompt composition
+   (pure), stub-CLI success (`{"noChange":true}` → Ok), non-zero exit with
+   stderr → `aiProviderRequestFailed` (detail bounded), missing binary →
+   `aiProviderConfigMissing`, garbage stdout → `aiProviderInvalidResponse`.
+   Stub CLI = tiny shell script written to a temp dir at test time; tests
+   inject it as the binary parameter. No network, no real agent.
+2. Green: implement the transport; delete the Responses URL, envelope
+   builder, `OPENAI_API_KEY`/`LYRA_OPENAI_MODEL` reads, and all envelope/
+   status/output_text parsing. Remove the old envelope tests.
+3. `Cargo.toml`: delete the `reqwest` line; regenerate `Cargo.lock` via
+   Cargo. Verify nothing else in the editor crate used reqwest.
+4. TS strings: panel `aiProviderConfigMissing` text → agent-CLI wording
+   ("AI review is not configured: the review agent CLI is missing.");
+   `workbench-api.ts` comment → agent-CLI transport wording;
+   provider-test fixture message → `AI review agent CLI not found: claude`.
+   No other TS changes.
+5. Gates: `cargo test --manifest-path apps/layout-editor/src-tauri/Cargo.toml`,
+   `bun run --cwd apps/layout-editor test`, `bun run --cwd apps/layout-editor
+   check`, `bun run rust:lint`, `bun run lint:all`, `bun run editor:build`,
+   `bun run test:scripts` — all green, network-free.
+6. Commit: `feat: power AI review through the agent CLI transport`
+
+---
+
 ## Final Acceptance Checklist
+
+> **2026-09-09 amendment:** the provider path pivoted to an agent-CLI transport
+> (see the spec's Amendment section and Task 6 below). Checklist lines marked
+> *(amended)* below reflect the new contract; all other lines stand.
 
 - [ ] Three lenses remain Story consistency / Dialogue review / Prompt refinement only.
 - [ ] All three lenses have pairwise-distinct TS-owned composed instructions.
@@ -1153,9 +1211,9 @@ Include other HPA-136-scoped files only if the verification steps exposed and fi
 - [ ] Missing context is visible and never guessed.
 - [ ] Exactly one TS result schema, one preamble, and one lens table own model semantics.
 - [ ] Rust forwards TS `instructions/input/text` unchanged and adds only native transport fields.
-- [ ] `OPENAI_API_KEY` never enters renderer state, a Vite client env value, or a key-returning command.
-- [ ] `store: false`; no tools/background/streaming/conversation state.
-- [ ] `max_output_tokens: 4000` is bounded and max-output incomplete maps to `aiProviderResponseTruncated`.
+- [ ] *(amended)* No provider API key exists anywhere in Lyra; the review agent CLI's own auth handles access; no key-returning command and no renderer-side provider fetch.
+- [ ] *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one attempt, fixed 180-second wait, no retry.
+- [ ] *(amended)* Spawn failure/non-zero exit/timeout map to `aiProviderRequestFailed`; empty/unparseable stdout maps to `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
 - [ ] Completed output is strict-schema + locally source-ref validated.
 - [ ] Unknown/malformed/unsupported output cannot enter edit flow.
 - [ ] AI Review and HPA-135 Focused Edit are never simultaneously active.
@@ -1166,7 +1224,7 @@ Include other HPA-136-scoped files only if the verification steps exposed and fi
 - [ ] Core `verify:ai-review-real-content` proof is green from Task 1 onward.
 - [ ] Final verifier also proves real prompt-layer/edit-target ownership.
 - [ ] Automated tests/builds are network-free.
-- [ ] One live OpenAI smoke passes before PR leaves Draft.
+- [ ] *(amended)* One real agent review through the production Rust path (three lens paths + one reduced-context run) passes before PR leaves Draft — no OpenAI API involved.
 - [ ] `.claude/skills/reviewing-story-scenes/SKILL.md` remains the separate whole-file batch/remediation counterpart.
 - [ ] No RAG/vector DB/chat loop/provider framework/YAML writeback/persistent feedback store is added.
 - [ ] Entire implementation remains one HPA-136 PR.
