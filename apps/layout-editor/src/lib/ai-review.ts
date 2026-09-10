@@ -156,8 +156,10 @@ export const AI_REVIEW_RESULT_SCHEMA = {
 } as const;
 
 /**
- * Everything the provider call needs that TS owns. Rust adds only
- * `model`/`store`/`max_output_tokens` and forwards these bytes unchanged.
+ * Everything the provider call needs that TS owns. Rust renders the agent
+ * prompt from `instructions` + serialized `text.format.schema` + `input`
+ * and shells out to the review agent CLI (`text.verbosity` is ignored by
+ * this transport); these bytes cross IPC unchanged.
  */
 export type AiReviewTransportPayload = {
   instructions: string;
