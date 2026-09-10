@@ -640,6 +640,22 @@
     );
   }
 
+  /**
+   * Recursive group lookup by id. Reader group ids are the carrier ids, unique
+   * within a scene projection.
+   */
+  function findReaderGroup(
+    groups: ReaderGroup[],
+    id: string,
+  ): ReaderGroup | null {
+    for (const group of groups) {
+      if (group.id === id) return group;
+      const child = findReaderGroup(group.children, id);
+      if (child) return child;
+    }
+    return null;
+  }
+
   function selectReaderItem(item: ReaderItem): ReaderFocusedEditItem | null {
     if (item.kind === "line") {
       return { kind: "line", speaker: item.speaker, text: item.text };
@@ -892,7 +908,13 @@
     if (item.kind !== "line" && item.kind !== "action") return;
     const editSelection = readerPendingSelection(chapterId, sceneId, ref, item);
     const scene = unfilteredReaderScene(chapterId, sceneId);
-    if (!editSelection || !scene) {
+    // ReaderView renders filtered clones: the passed group can be missing
+    // sibling lines, so the review context must re-resolve it by id from the
+    // unfiltered projection.
+    const unfilteredGroup = scene
+      ? findReaderGroup(scene.groups, group.id)
+      : null;
+    if (!editSelection || !scene || !unfilteredGroup) {
       closeAiReview();
       aiReviewError = `The projection of "${sceneId}" is not loaded; refresh the Reader and retry.`;
       return;
@@ -903,7 +925,7 @@
         chapterId,
         sceneId,
         scene,
-        group,
+        group: unfilteredGroup,
         ref,
         item,
         editSelection,

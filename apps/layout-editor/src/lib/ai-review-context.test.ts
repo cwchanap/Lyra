@@ -617,6 +617,30 @@ describe("buildAiReviewContext — dialogue voice", () => {
     ).toBeDefined();
   });
 
+  it("keeps Story Bible and Aoba canon chips out of the Dialogue lens", () => {
+    const bundle = buildAiReviewContext(
+      readerItemSelection(),
+      "dialogue",
+      workspace,
+    );
+    const kinds = bundle.context.map((item) => item.kind);
+    expect(kinds).toContain("chapterPlan");
+    expect(kinds).not.toContain("storyBible");
+    expect(kinds).not.toContain("revealBoundary");
+    expect(bundle.missingContext).toEqual([]);
+
+    // The same selection still gets full canon under story consistency.
+    const consistency = buildAiReviewContext(
+      readerItemSelection(),
+      "storyConsistency",
+      workspace,
+    );
+    const consistencyKinds = consistency.context.map((item) => item.kind);
+    expect(consistencyKinds).toContain("chapterPlan");
+    expect(consistencyKinds).toContain("storyBible");
+    expect(consistencyKinds).toContain("revealBoundary");
+  });
+
   it("reports missing voice context for unknown or duplicate speakers", () => {
     const unknown = buildAiReviewContext(
       readerItemSelection({
