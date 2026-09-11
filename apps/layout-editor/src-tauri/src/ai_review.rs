@@ -59,10 +59,11 @@ pub(crate) fn agent_prompt(payload: &AiReviewTransportPayload) -> String {
 /// wait a fixed 180 seconds (poll `try_wait`, kill at the deadline — std
 /// has no wait timeout and no new dependency is allowed), and parse stdout
 /// as the candidate JSON. Spawn failure of a missing binary maps to
-/// `aiProviderConfigMissing`; other spawn failures, non-zero exits, and the
-/// timeout map to `aiProviderRequestFailed`; empty or unparseable stdout
-/// maps to `aiProviderInvalidResponse`. No env access here, so tests inject
-/// the binary directly.
+/// `aiProviderConfigMissing`; transient resource failures (process/descriptor/
+/// memory pressure, interrupted spawn) retry briefly, then persistent spawn
+/// failures, non-zero exits, and the timeout map to `aiProviderRequestFailed`;
+/// empty or unparseable stdout maps to `aiProviderInvalidResponse`. No env
+/// access here, so tests inject the binary directly.
 pub(crate) fn run_agent_review(
     payload: &AiReviewTransportPayload,
     agent_binary: &str,
@@ -78,18 +79,30 @@ pub(crate) fn run_agent_review(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = match spawn.spawn() {
-        Ok(child) => child,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return Err(EditorError::new(
-                "aiProviderConfigMissing",
-                format!("AI review agent CLI not found: {agent_binary}"),
-            ));
-        }
-        Err(error) => {
-            return Err(request_failed(format!(
-                "failed to spawn agent CLI \"{agent_binary}\": {error}"
-            )));
+    // Fork/exec can fail transiently under load (EAGAIN on process/thread
+    // limits, EMFILE/ENFILE on descriptor exhaustion, ENOMEM): give the
+    // one-shot action a bounded retry before surfacing request_failed.
+    const SPAWN_ATTEMPTS: u32 = 3;
+    const SPAWN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(50);
+    let mut attempts = 0;
+    let mut child = loop {
+        match spawn.spawn() {
+            Ok(child) => break child,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(EditorError::new(
+                    "aiProviderConfigMissing",
+                    format!("AI review agent CLI not found: {agent_binary}"),
+                ));
+            }
+            Err(error) => {
+                attempts += 1;
+                if attempts >= SPAWN_ATTEMPTS || !transient_spawn_error(&error) {
+                    return Err(request_failed(format!(
+                        "failed to spawn agent CLI \"{agent_binary}\": {error}"
+                    )));
+                }
+                std::thread::sleep(SPAWN_RETRY_DELAY);
+            }
         }
     };
 
@@ -116,14 +129,10 @@ pub(crate) fn run_agent_review(
     let (status, timed_out) = loop {
         match child.try_wait() {
             Ok(Some(status)) => break (Some(status), false),
-            Ok(None) => {
-                if std::time::Instant::now() >= deadline {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    break (None, true);
-                }
-                std::thread::sleep(AGENT_POLL_INTERVAL);
-            }
+            // A still-running child and an interrupted wait are the same to
+            // the caller: keep polling until the deadline.
+            Ok(None) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(error) => {
                 let _ = child.kill();
                 let _ = child.wait();
@@ -132,6 +141,12 @@ pub(crate) fn run_agent_review(
                 )));
             }
         }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break (None, true);
+        }
+        std::thread::sleep(AGENT_POLL_INTERVAL);
     };
     // Detach instead of joining: if a descendant of the agent inherited the
     // stdin pipe and survived the deadline kill, joining could block forever
@@ -187,6 +202,17 @@ pub(crate) async fn run_ai_review(
         .map_err(|error| request_failed(format!("agent review task failed to complete: {error}")))?
 }
 
+/// True for spawn failures that are environmental and worth retrying:
+/// process/descriptor/memory pressure or an interrupted spawn. Errors like
+/// NotFound (missing binary) and PermissionDenied (not executable) are
+/// configuration faults, not transients.
+fn transient_spawn_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(libc::EAGAIN | libc::EMFILE | libc::ENFILE | libc::ENOMEM | libc::EINTR)
+    )
+}
+
 fn request_failed(message: impl Into<String>) -> EditorError {
     EditorError::new("aiProviderRequestFailed", message)
 }
@@ -225,6 +251,10 @@ fn read_bounded<R: std::io::Read>(mut reader: R, limit: usize) -> (Vec<u8>, bool
                 }
                 buffer.extend_from_slice(&chunk[..n]);
             }
+            // An interrupted read is not EOF: bailing here would drop the
+            // read end while the child still writes and SIGPIPE it into a
+            // request_failed instead of the correct outcome.
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => break,
         }
     }
@@ -345,7 +375,7 @@ mod tests {
     fn nonzero_exit_with_stderr_maps_to_request_failed() {
         let error = run_with_stub("cat >/dev/null\necho 'agent exploded' >&2\nexit 1")
             .expect_err("non-zero exit must fail");
-        assert_eq!(error.code, "aiProviderRequestFailed");
+        assert_eq!(error.code, "aiProviderRequestFailed", "{error:?}");
         assert!(error.message.contains("agent exploded"));
     }
 
@@ -354,7 +384,7 @@ mod tests {
         let path = stub_agent("cat >/dev/null\nhead -c 1000 </dev/zero | tr '\\0' 'q' >&2\nexit 1");
         let error = run_agent_review(&sentinel_payload(), &path.to_string_lossy())
             .expect_err("non-zero exit must fail");
-        assert_eq!(error.code, "aiProviderRequestFailed");
+        assert_eq!(error.code, "aiProviderRequestFailed", "{error:?}");
         // Exact bound: fixed prefix (with the binary path) + detail limited to
         // PROVIDER_DETAIL_LIMIT of the 1000-char stderr.
         let prefix = format!(
@@ -371,13 +401,13 @@ mod tests {
     fn garbage_stdout_maps_to_invalid_response() {
         let error = run_with_stub("cat >/dev/null\nprintf 'not json'")
             .expect_err("garbage stdout must fail");
-        assert_eq!(error.code, "aiProviderInvalidResponse");
+        assert_eq!(error.code, "aiProviderInvalidResponse", "{error:?}");
     }
 
     #[test]
     fn empty_stdout_maps_to_invalid_response() {
         let error = run_with_stub("cat >/dev/null").expect_err("empty stdout must fail");
-        assert_eq!(error.code, "aiProviderInvalidResponse");
+        assert_eq!(error.code, "aiProviderInvalidResponse", "{error:?}");
     }
 
     #[test]
@@ -389,7 +419,7 @@ mod tests {
             OUTPUT_BYTE_LIMIT + 1,
         );
         let error = run_with_stub(&script).expect_err("truncated stdout must fail");
-        assert_eq!(error.code, "aiProviderInvalidResponse");
+        assert_eq!(error.code, "aiProviderInvalidResponse", "{error:?}");
         assert!(error.message.contains("truncated"));
     }
 
@@ -410,7 +440,7 @@ mod tests {
         let payload = sentinel_payload();
         let error = run_agent_review(&payload, "/nonexistent/lyra-review-agent")
             .expect_err("missing binary must fail");
-        assert_eq!(error.code, "aiProviderConfigMissing");
+        assert_eq!(error.code, "aiProviderConfigMissing", "{error:?}");
         assert!(error.message.contains("AI review agent CLI not found"));
     }
 }
