@@ -37,8 +37,8 @@
 - Do not add a shared package solely to centralize those three strings in HPA-136.
 - *(amended 2026-09-09)* The review engine is a coding-agent CLI — default `claude`, `LYRA_AI_REVIEW_AGENT` may override locally without UI; agent auth/model belong to the CLI, Lyra holds no provider key.
 - *(amended)* No provider API key exists anywhere in Lyra; no key-returning command, no Vite client secret, no renderer-side provider fetch.
-- *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one attempt, fixed 180-second wait, no retry; no OpenAI URL, envelope, `store`, or `max_output_tokens` anywhere.
-- *(amended)* Agent CLI missing → `aiProviderConfigMissing`; spawn failure/non-zero exit/timeout → `aiProviderRequestFailed`; empty/unparseable stdout → `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
+- *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one agent execution per run with a fixed 180-second wait and no review retry — only transient pre-execution `spawn()` failures (process/descriptor/memory pressure, interrupted spawn) retry briefly; no OpenAI URL, envelope, `store`, or `max_output_tokens` anywhere.
+- *(amended)* Agent CLI missing or non-executable → `aiProviderConfigMissing`; spawn failure/non-zero exit/timeout → `aiProviderRequestFailed`; empty/unparseable stdout → `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
 - *(amended)* Tests/builds remain network-free. One real agent review through the production Rust path (three lens paths + one reduced-context run) is required before leaving Draft — no OpenAI API involved.
 - No production game runtime or authored story-content changes.
 
@@ -1173,8 +1173,9 @@ spec's Amendment 2026-09-09 section for the binding contract.
   resolves `LYRA_AI_REVIEW_AGENT` env override (default `claude`) — env
   access stays out of the testable core so tests never race on `set_var`.
 - Spawn `<agent> -p --tools ""`, full prompt on **stdin**, stdout/stderr
-  captured, fixed 180-second wait, one attempt. No network, no envelope,
-  no key handling anywhere in the crate.
+  captured, fixed 180-second wait, one agent execution — transient
+  `spawn()` failures may retry briefly before execution. No network, no
+  envelope, no key handling anywhere in the crate.
 
 **Steps:**
 1. Red: rewrite `ai_review.rs` tests for the new seam — prompt composition
@@ -1225,7 +1226,7 @@ spec's Amendment 2026-09-09 section for the binding contract.
 - [ ] Exactly one TS result schema, one preamble, and one lens table own model semantics.
 - [ ] *(amended)* Rust renders the agent prompt from `instructions` + serialized `text.format.schema` + `input` verbatim (`text.verbosity` ignored); no model semantics live in Rust.
 - [ ] *(amended)* No provider API key exists anywhere in Lyra; the review agent CLI's own auth handles access; no key-returning command and no renderer-side provider fetch.
-- [ ] *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one attempt, fixed 180-second wait, no retry.
+- [ ] *(amended)* The agent runs with all tools disabled (`--tools ""`), prompt on stdin, one agent execution per run, fixed 180-second wait, no review retry (only transient pre-execution `spawn()` failures retry briefly).
 - [ ] *(amended)* Spawn failure/non-zero exit/timeout map to `aiProviderRequestFailed`; empty/unparseable stdout maps to `aiProviderInvalidResponse`; `aiProviderResponseTruncated` stays in the TS contract, unreachable via this transport.
 - [ ] Completed output is strict-schema + locally source-ref validated.
 - [ ] Unknown/malformed/unsupported output cannot enter edit flow.
