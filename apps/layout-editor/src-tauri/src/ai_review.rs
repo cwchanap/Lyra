@@ -20,7 +20,8 @@ pub(crate) struct AiReviewTransportPayload {
 
 /// Review agent CLI used when `LYRA_AI_REVIEW_AGENT` is unset or empty.
 const DEFAULT_AGENT_BINARY: &str = "claude";
-/// Fixed one-shot wait for the agent; there is no retry.
+/// Fixed one-shot wait for one agent execution; the wait itself is never
+/// retried — only transient pre-execution spawn failures retry briefly.
 const AGENT_WAIT_SECS: u64 = 180;
 const AGENT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
 /// Budget reserved after the deadline kill to drain in-flight output, so the
@@ -58,10 +59,11 @@ pub(crate) fn agent_prompt(payload: &AiReviewTransportPayload) -> String {
 /// argument, so stdin is the only reliable channel), capture stdout/stderr,
 /// wait a fixed 180 seconds (poll `try_wait`, kill at the deadline — std
 /// has no wait timeout and no new dependency is allowed), and parse stdout
-/// as the candidate JSON. Spawn failure of a missing binary maps to
-/// `aiProviderConfigMissing`; transient resource failures (process/descriptor/
-/// memory pressure, interrupted spawn) retry briefly, then persistent spawn
-/// failures, non-zero exits, and the timeout map to `aiProviderRequestFailed`;
+/// as the candidate JSON. Spawn failure of a missing or non-executable
+/// binary maps to `aiProviderConfigMissing`; transient resource failures
+/// (process/descriptor/memory pressure, interrupted spawn) retry briefly,
+/// then persistent spawn failures, non-zero exits, and the timeout map to
+/// `aiProviderRequestFailed`;
 /// empty or unparseable stdout maps to `aiProviderInvalidResponse`. No env
 /// access here, so tests inject the binary directly.
 pub(crate) fn run_agent_review(
@@ -92,6 +94,12 @@ pub(crate) fn run_agent_review(
                 return Err(EditorError::new(
                     "aiProviderConfigMissing",
                     format!("AI review agent CLI not found: {agent_binary}"),
+                ));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied => {
+                return Err(EditorError::new(
+                    "aiProviderConfigMissing",
+                    format!("AI review agent CLI is not executable: {agent_binary}"),
                 ));
             }
             Err(error) => {
@@ -188,7 +196,8 @@ pub(crate) fn run_agent_review(
 /// Tauri command: resolves the review agent binary from the native process
 /// environment (`LYRA_AI_REVIEW_AGENT`, default `claude`) and delegates to
 /// the transport. The blocking spawn/wait runs on the async runtime's
-/// blocking pool; there is no retry.
+/// blocking pool; each invocation is a single agent execution with no
+/// review retry (only transient pre-execution spawn failures retry).
 #[tauri::command]
 pub(crate) async fn run_ai_review(
     payload: AiReviewTransportPayload,
@@ -205,12 +214,29 @@ pub(crate) async fn run_ai_review(
 /// True for spawn failures that are environmental and worth retrying:
 /// process/descriptor/memory pressure or an interrupted spawn. Errors like
 /// NotFound (missing binary) and PermissionDenied (not executable) are
-/// configuration faults, not transients.
+/// configuration faults, not transients. `Interrupted` is checked portably
+/// through `ErrorKind`; only the raw errno matching is Unix-specific.
 fn transient_spawn_error(error: &std::io::Error) -> bool {
+    if error.kind() == std::io::ErrorKind::Interrupted {
+        return true;
+    }
+    transient_spawn_errno(error)
+}
+
+/// Raw-errno classification of resource-pressure spawn failures. `libc` is a
+/// `cfg(unix)`-only dependency, so other platforms treat every non-`Interrupted`
+/// spawn error as non-transient.
+#[cfg(unix)]
+fn transient_spawn_errno(error: &std::io::Error) -> bool {
     matches!(
         error.raw_os_error(),
-        Some(libc::EAGAIN | libc::EMFILE | libc::ENFILE | libc::ENOMEM | libc::EINTR)
+        Some(libc::EAGAIN | libc::EMFILE | libc::ENFILE | libc::ENOMEM)
     )
+}
+
+#[cfg(not(unix))]
+fn transient_spawn_errno(_error: &std::io::Error) -> bool {
+    false
 }
 
 fn request_failed(message: impl Into<String>) -> EditorError {
@@ -240,11 +266,14 @@ fn read_bounded<R: std::io::Read>(mut reader: R, limit: usize) -> (Vec<u8>, bool
                     let remaining = limit - buffer.len();
                     buffer.extend_from_slice(&chunk[..remaining]);
                     // Drain the rest so the child's pipe does not block;
-                    // the data is discarded to bound memory.
+                    // the data is discarded to bound memory. Same rule as
+                    // the outer loop: an interrupted read is not EOF.
                     loop {
                         match reader.read(&mut chunk) {
-                            Ok(0) | Err(_) => break,
+                            Ok(0) => break,
                             Ok(_) => {}
+                            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                            Err(_) => break,
                         }
                     }
                     return (buffer, true);
@@ -328,6 +357,50 @@ mod tests {
     fn run_with_stub(script_body: &str) -> Result<serde_json::Value, EditorError> {
         let payload = sentinel_payload();
         run_agent_review(&payload, &stub_agent(script_body).to_string_lossy())
+    }
+
+    // ---- spawn-error classification ----------------------------------------
+
+    #[test]
+    fn interrupted_spawn_error_is_transient() {
+        // ErrorKind::Interrupted is the portable path: a kind-only error
+        // carrying no raw OS code must still classify as transient.
+        let error = std::io::Error::from(std::io::ErrorKind::Interrupted);
+        assert!(transient_spawn_error(&error));
+    }
+
+    #[test]
+    fn configuration_spawn_errors_are_not_transient() {
+        for kind in [
+            std::io::ErrorKind::NotFound,
+            std::io::ErrorKind::PermissionDenied,
+        ] {
+            let error = std::io::Error::from(kind);
+            assert!(!transient_spawn_error(&error), "{kind:?}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resource_pressure_spawn_errnos_are_transient() {
+        for errno in [
+            libc::EAGAIN,
+            libc::EMFILE,
+            libc::ENFILE,
+            libc::ENOMEM,
+            libc::EINTR,
+        ] {
+            let error = std::io::Error::from_raw_os_error(errno);
+            assert!(transient_spawn_error(&error), "errno {errno}");
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ordinary_io_spawn_failure_is_not_transient() {
+        // EIO is a plain I/O failure, not resource pressure.
+        let error = std::io::Error::from_raw_os_error(libc::EIO);
+        assert!(!transient_spawn_error(&error));
     }
 
     // ---- prompt composition (pure) ----------------------------------------
@@ -433,6 +506,77 @@ mod tests {
         let (bytes, truncated) = read_bounded(&input[..], 200);
         assert_eq!(bytes.len(), 100);
         assert!(!truncated);
+    }
+
+    /// `Read` scripted from queued results; records whether any read was
+    /// issued after an error so tests can prove the post-limit drain kept
+    /// going instead of treating the error as EOF.
+    struct ScriptedRead {
+        steps: std::collections::VecDeque<std::io::Result<Vec<u8>>>,
+        saw_error: bool,
+        read_after_error: bool,
+    }
+
+    impl std::io::Read for ScriptedRead {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            if self.saw_error {
+                self.read_after_error = true;
+            }
+            match self.steps.pop_front() {
+                None => Ok(0),
+                Some(Err(error)) => {
+                    self.saw_error = true;
+                    Err(error)
+                }
+                Some(Ok(bytes)) => {
+                    let n = bytes.len().min(out.len());
+                    out[..n].copy_from_slice(&bytes[..n]);
+                    if n < bytes.len() {
+                        self.steps.push_front(Ok(bytes[n..].to_vec()));
+                    }
+                    Ok(n)
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn read_bounded_drain_continues_after_interruption() {
+        // Once the retained limit is hit, the drain must keep reading through
+        // an Interrupted error; treating it as EOF drops the pipe while the
+        // child may still write, SIGPIPE-ing it into the wrong error code.
+        let mut reader = ScriptedRead {
+            steps: [
+                Ok(vec![b'x'; 16]),
+                Err(std::io::ErrorKind::Interrupted.into()),
+                Ok(vec![b'y'; 4]),
+            ]
+            .into_iter()
+            .collect(),
+            saw_error: false,
+            read_after_error: false,
+        };
+        let (bytes, truncated) = read_bounded(&mut reader, 8);
+        assert_eq!(bytes.len(), 8);
+        assert!(truncated);
+        assert!(
+            reader.read_after_error,
+            "drain must keep reading after an interrupted read"
+        );
+    }
+
+    #[test]
+    fn non_executable_agent_binary_maps_to_config_missing() {
+        // An existing-but-not-executable CLI is a configuration fault like
+        // a missing binary, not a request failure.
+        use std::os::unix::fs::PermissionsExt;
+        let path = stub_agent("cat >/dev/null\nprintf '{}'");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644))
+            .expect("stub script is made non-executable");
+        let error = run_agent_review(&sentinel_payload(), &path.to_string_lossy())
+            .expect_err("non-executable binary must fail");
+        assert_eq!(error.code, "aiProviderConfigMissing", "{error:?}");
+        assert!(error.message.contains("not executable"), "{error:?}");
     }
 
     #[test]

@@ -23,17 +23,19 @@ Normative changes (these override any conflicting text below):
   review agent CLI — default `claude`, override via `LYRA_AI_REVIEW_AGENT`
   (binary name or path).
 - Invocation: `<agent> -p --tools ""` with the full prompt on **stdin**,
-  stdout captured, a fixed 180-second wait, one attempt, no retry. The agent
-  runs with **all tools disabled** — text in, text out, no filesystem, no
-  network tools. Agent auth/model belong to the CLI and its own
-  configuration; Lyra never holds a provider key.
+  stdout captured, a fixed 180-second wait, one agent execution per run —
+  no review retry; only transient pre-execution `spawn()` failures retry
+  briefly. The agent runs with **all tools disabled** — text in, text out,
+  no filesystem, no network tools. Agent auth/model belong to the CLI and
+  its own configuration; Lyra never holds a provider key.
 - Prompt composition (Rust-owned, mechanical): `instructions` + a
   JSON-only directive + `text.format.schema` (serialized) + `input`
   verbatim. `text.verbosity` is ignored by this transport (shape retained as
   the stable wire contract; zero TS churn).
-- Error mapping: agent CLI not found → `aiProviderConfigMissing`; spawn
-  failure / non-zero exit / timeout → `aiProviderRequestFailed` (bounded
-  stderr detail); empty or unparseable stdout → `aiProviderInvalidResponse`.
+- Error mapping: agent CLI not found or not executable →
+  `aiProviderConfigMissing`; spawn failure / non-zero exit / timeout →
+  `aiProviderRequestFailed` (bounded stderr detail); empty or unparseable
+  stdout → `aiProviderInvalidResponse`.
   `aiProviderResponseTruncated` stays in the TS contract but is unreachable
   through this transport (no token cap).
 - Removed: `reqwest` dependency, `OPENAI_API_KEY`, `LYRA_OPENAI_MODEL`, the

@@ -328,6 +328,18 @@ describe("AiReviewPanel lifecycle", () => {
       /AI review is not configured/u,
     );
 
+    // Config missing surfaces the native message (e.g. non-executable CLI
+    // is not "missing").
+    await runAndAssert(
+      vi.fn(async () => {
+        throw {
+          code: "aiProviderConfigMissing",
+          message: "AI review agent CLI is not executable: claude",
+        };
+      }),
+      /not executable: claude/u,
+    );
+
     // Truncation.
     await runAndAssert(
       vi.fn(async () => {
