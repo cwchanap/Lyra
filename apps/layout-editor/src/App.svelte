@@ -1488,20 +1488,29 @@
   {#if aiReview}
     {@const activeReview = aiReview}
     <div class="col-span-full">
-      <AiReviewPanel
-        selectionLabel={activeReview.selectionLabel}
-        lenses={activeReview.lenses}
-        initialLens={activeReview.initialLens}
-        context={activeReview.context}
-        rebuildContext={(lens) => {
-          const workspace = planState.workspace;
-          if (!workspace) return activeReview.context;
-          return buildAiReviewContext(activeReview.selection, lens, workspace);
-        }}
-        provider={tauriAiReviewProvider}
-        onReviewReplacement={applyAiReplacement}
-        onClose={closeAiReview}
-      />
+      <!-- Keyed remount per review: the assetPrompt path swaps aiReview
+           null→new in one tick, so without a key the mounted panel would
+           keep the prior selection's context/result/in-flight run. -->
+      {#key activeReview}
+        <AiReviewPanel
+          selectionLabel={activeReview.selectionLabel}
+          lenses={activeReview.lenses}
+          initialLens={activeReview.initialLens}
+          context={activeReview.context}
+          rebuildContext={(lens) => {
+            const workspace = planState.workspace;
+            if (!workspace) return activeReview.context;
+            return buildAiReviewContext(
+              activeReview.selection,
+              lens,
+              workspace,
+            );
+          }}
+          provider={tauriAiReviewProvider}
+          onReviewReplacement={applyAiReplacement}
+          onClose={closeAiReview}
+        />
+      {/key}
     </div>
   {/if}
 
