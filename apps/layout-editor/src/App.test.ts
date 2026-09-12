@@ -2,6 +2,7 @@
 
 import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
+import { tick } from "svelte";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import App from "./App.svelte";
 import type { InvokeArgs } from "@tauri-apps/api/core";
@@ -543,6 +544,10 @@ function planWorkspacePayload(): WorkbenchPlanWorkspacePayload {
         content: "# Story Bible\n\n## §10 蒐證規則\n\nprose\n",
       },
     ],
+    storyCharactersMd: {
+      path: "docs/stories_plan/characters.md",
+      content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+    },
   };
 }
 
@@ -2734,5 +2739,1134 @@ describe("focused edit review", () => {
     expect(
       await within(review).findByText(/Applied — scenes:compile passed/),
     ).toBeInTheDocument();
+  });
+});
+
+// ---- HPA-136 Task 3: contextual AI review (context + mutual exclusion) -------
+
+function mdTable(headers: string[], rows: string[][]): string {
+  return [
+    `| ${headers.join(" | ")} |`,
+    `| ${headers.map(() => "---").join(" | ")} |`,
+    ...rows.map((row) => `| ${row.join(" | ")} |`),
+  ].join("\n");
+}
+
+const AI_CHAPTER_HEADERS = ["章節", "標題", "案件類型", "變體", "主線誤導"];
+const AI_AOBA_HEADERS = ["章節", "必須建立", "絕對不能建立"];
+
+const aiChapterPlanContent = [
+  "# Chapter 1 Plan",
+  "",
+  "# Beat 1：第一章的開始",
+  "beat1 內容",
+  "",
+  "# Prologue 0：雨中的東京",
+  "prologue0 內容",
+  "",
+  "# Prologue 1：零號小委託",
+  "prologue1 內容",
+  "",
+  "# Prologue 2：雨鐘咖啡館的普通日",
+  "prologue2 內容",
+  "",
+  "# Beat 2：委託與程序入口",
+  "beat2 內容",
+  "",
+].join("\n");
+
+const aiBibleContent = [
+  "## 10. 章節總覽",
+  "",
+  mdTable(
+    AI_CHAPTER_HEADERS,
+    Array.from({ length: 8 }, (_, index) => [
+      String(index + 1),
+      index === 0 ? "雨鐘咖啡館殺人事件" : `標題${index + 1}`,
+      "密室",
+      "變體",
+      "誤導",
+    ]),
+  ),
+  "",
+  "## 第 1 章：雨鐘咖啡館殺人事件",
+  "",
+  "第一章主案內容",
+  "",
+  "## 18.5 第一幕 reveal ladder",
+  "",
+  mdTable(AI_AOBA_HEADERS, [["第 1 章", "火災名稱", "不說重演"]]),
+  "",
+].join("\n");
+
+function aiPlanPayload(): WorkbenchPlanWorkspacePayload {
+  return {
+    documents: [
+      {
+        id: "story-bible",
+        kind: "storyBible",
+        path: "docs/stories_plan/final_story_bible.md",
+        chapterNumber: null,
+        content: aiBibleContent,
+      },
+      {
+        id: "chapter-1-plan",
+        kind: "chapterPlan",
+        path: "docs/stories_plan/chapter_1_plan.md",
+        chapterNumber: 1,
+        content: aiChapterPlanContent,
+      },
+    ],
+    storyCharactersMd: {
+      path: "docs/stories_plan/characters.md",
+      content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+    },
+  };
+}
+
+const aiIndex: WorkbenchIndex = {
+  chapters: [
+    {
+      id: "chapter_1",
+      title: "AI Review",
+      summary: "AI review fixtures",
+      scenes: [
+        {
+          id: "scene_1",
+          type: "linear",
+          sourcePath: "docs/stories_plan/chapter_1/scene_1.md",
+          stageCapable: false,
+        },
+        {
+          id: "scene_p0",
+          type: "linear",
+          sourcePath: "docs/stories_plan/chapter_1/scene_p0.md",
+          stageCapable: false,
+        },
+        {
+          id: "investigation_scene_p1",
+          type: "investigation",
+          sourcePath: "docs/stories_plan/chapter_1/investigation_scene_p1.md",
+          stageCapable: false,
+        },
+        {
+          id: "scene_p2",
+          type: "linear",
+          sourcePath: "docs/stories_plan/chapter_1/scene_p2.md",
+          stageCapable: false,
+        },
+        {
+          id: "analysis_scene_p1_5",
+          type: "analysis",
+          sourcePath: "docs/stories_plan/chapter_1/analysis_scene_p1_5.md",
+          stageCapable: false,
+        },
+        {
+          id: "investigation_scene_map_01",
+          type: "investigation",
+          sourcePath:
+            "docs/stories_plan/chapter_1/investigation_scene_map_01.md",
+          stageCapable: false,
+        },
+      ],
+    },
+  ],
+};
+
+function aiBundle(sceneId: string): WorkbenchSceneBundle {
+  return {
+    scene: {
+      type: "linear",
+      id: sceneId,
+      title: sceneId,
+      summary: "Fixture",
+      queue: [
+        {
+          kind: "line",
+          speaker: "相馬律",
+          text: `${sceneId} line`,
+          portrait: null,
+        },
+      ],
+      assetRefs: [],
+    },
+  };
+}
+
+const aiBundles: Record<string, WorkbenchSceneBundle> = {
+  ...focusedBundles,
+  scene_p0: aiBundle("scene_p0"),
+  investigation_scene_p1: aiBundle("investigation_scene_p1"),
+  scene_p2: aiBundle("scene_p2"),
+  analysis_scene_p1_5: aiBundle("analysis_scene_p1_5"),
+  investigation_scene_map_01: aiBundle("investigation_scene_map_01"),
+};
+
+function aiAssetsPayload(): WorkbenchAssetWorkspacePayload {
+  return {
+    manifest: {
+      enabled: true,
+      entries: [
+        {
+          assetId: "background.chapter_1.scene_cues.hall",
+          expectedPath: expectedPath(
+            "background.chapter_1.scene_cues.hall",
+            "background",
+          ),
+          publicPath: publicPath(
+            "background.chapter_1.scene_cues.hall",
+            "background",
+          ),
+          promptParts: {
+            globalStyle: "noir style",
+            typePrompt: "",
+            subjectPrompt: "",
+            entryPrompt: "rainy hall",
+          },
+          finalPrompt: "noir style\n\nrainy hall",
+          type: "background",
+          source: {
+            chapterId: "chapter_1",
+            sceneId: "scene_cues",
+            unitId: "hall",
+            promptLine: 3,
+            authoredPrompt: "rainy hall",
+          },
+        },
+        {
+          assetId: "portrait.hayasaka_akane.standard",
+          expectedPath: expectedPath(
+            "portrait.hayasaka_akane.standard",
+            "portrait",
+          ),
+          publicPath: publicPath(
+            "portrait.hayasaka_akane.standard",
+            "portrait",
+          ),
+          promptParts: {
+            globalStyle: "noir style",
+            typePrompt: "",
+            subjectPrompt: "",
+            entryPrompt: "neutral",
+          },
+          finalPrompt: "noir style\n\nneutral",
+          type: "portrait",
+          source: {
+            chapterId: "chapter_1",
+            sceneId: "scene_cues",
+            characterId: "hayasaka_akane",
+            expression: "standard",
+          },
+        },
+      ],
+    },
+    report: {
+      enabled: true,
+      requested: {
+        background: 1,
+        portrait: 1,
+        standee: 0,
+        evidence: 0,
+        audio: 0,
+      },
+      warnings: [],
+    },
+    configSources: {
+      characters: {
+        path: "static/assets/config/characters.yaml",
+        content: "",
+      },
+      audio: { path: "static/assets/config/audio.yaml", content: "" },
+    },
+    scenes: [
+      {
+        chapterId: "chapter_1",
+        sceneId: "scene_cues",
+        sourcePath: "docs/stories_plan/chapter_1/scene_cues.md",
+        scene: {
+          type: "linear",
+          id: "scene_cues",
+          title: "Cues",
+          summary: "Fixture",
+          queue: [
+            {
+              kind: "sceneTag",
+              text: "場景：現場",
+              assetCue: {
+                backgroundAssetId: "background.chapter_1.scene_cues.hall",
+                bgm: { channel: "bgm", assetId: null },
+                bgs: { channel: "bgs", assetId: null },
+              },
+            },
+          ],
+          assetRefs: [],
+        },
+      },
+    ],
+    existingAssetPaths: [],
+  };
+}
+
+type AiReviewCandidateOptions = {
+  replacementText?: string;
+};
+
+function validCandidateFromRequest(
+  request: Record<string, unknown>,
+  options: AiReviewCandidateOptions = {},
+): Record<string, unknown> {
+  return {
+    lens: request.lens,
+    reviewedSourceRefs: [request.selectedSourceRef],
+    findings: [
+      {
+        severity: "Minor",
+        summary: "測試發現",
+        explanation: "測試說明。",
+        supportingSourceRefs: [request.selectedSourceRef],
+      },
+    ],
+    uncertainty: [],
+    impact: null,
+    replacement:
+      options.replacementText !== undefined &&
+      typeof request.replacementTargetRef === "string"
+        ? {
+            targetRef: request.replacementTargetRef,
+            replacementText: options.replacementText,
+            rationale: "測試理由。",
+          }
+        : null,
+    noChange: false,
+  };
+}
+
+function mockAiBackend(
+  options: AiReviewCandidateOptions = {},
+  overrides: Record<string, (args?: InvokeArgs) => Promise<unknown>> = {},
+): void {
+  mockInvoke.mockImplementation(async (command: string, args?: InvokeArgs) => {
+    const override = overrides[command];
+    if (override) return override(args);
+    switch (command) {
+      case "load_workbench_index":
+        return aiIndex;
+      case "load_scene_bundle": {
+        const sceneId =
+          (args as { sceneId?: string } | undefined)?.sceneId ?? "";
+        const bundle = aiBundles[sceneId];
+        if (!bundle) {
+          throw new Error(`unexpected scene bundle request: ${sceneId}`);
+        }
+        return bundle;
+      }
+      case "load_plan_workspace":
+        return aiPlanPayload();
+      case "load_asset_workspace":
+        return aiAssetsPayload();
+      case "load_workbench_source_document": {
+        const id =
+          (args as { sourceDocumentId?: string } | undefined)
+            ?.sourceDocumentId ?? "";
+        const doc = sourceDocuments[id];
+        if (!doc) {
+          throw new Error(`unexpected source document request: ${id}`);
+        }
+        return { id, path: doc.path, content: doc.content, hash: doc.hash };
+      }
+      case "apply_workbench_source_edit":
+        return { validation: { ok: true, diagnostics: [] } };
+      case "run_ai_review": {
+        const payload = (args as { payload: { input: string } }).payload;
+        return validCandidateFromRequest(
+          JSON.parse(payload.input) as Record<string, unknown>,
+          options,
+        );
+      }
+      default:
+        throw new Error(`unexpected invoke: ${command}`);
+    }
+  });
+}
+
+function aiReviewRequests(): Record<string, unknown>[] {
+  return mockInvoke.mock.calls
+    .filter(([command]) => command === "run_ai_review")
+    .map(
+      ([, args]) =>
+        JSON.parse(
+          (args as { payload: { input: string } }).payload.input,
+        ) as Record<string, unknown>,
+    );
+}
+
+function aiReviewPanel(): HTMLElement {
+  return screen.getByRole("region", { name: "AI review" });
+}
+
+async function openAiSceneReview(label: string): Promise<HTMLElement> {
+  const user = userEvent.setup();
+  render(App);
+  await selectSceneByLabel(label);
+  await user.click(screen.getByRole("button", { name: "Review scene" }));
+  return await screen.findByRole("region", { name: "AI review" });
+}
+
+async function runPanelReview(): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Run review" }));
+}
+
+describe("App AI review context", () => {
+  beforeEach(() => {
+    editorState.scene = null;
+    editorState.layout = null;
+    editorState.chapterId = null;
+    editorState.sceneId = null;
+    editorState.error = null;
+    planState.workspace = null;
+    planState.error = null;
+    planState.loading = false;
+    planState.surface = "overview";
+    planState.selectedDocumentId = "story-bible";
+    planState.selectedAnchor = null;
+    vi.clearAllMocks();
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source,
+      hash: "hash-scene-1",
+    };
+    mockAiBackend();
+  });
+
+  it("a numeric Reader scene reviews as Story consistency with Beat/Bible/Aoba context", async () => {
+    await openAiSceneReview("Scene 1");
+    expect(
+      within(aiReviewPanel()).getByLabelText("Context chips"),
+    ).toBeInTheDocument();
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("storyConsistency");
+    const kinds = (request.context as Array<{ kind: string }>).map(
+      (item) => item.kind,
+    );
+    expect(kinds).toContain("sceneProjection");
+    expect(kinds).toContain("chapterPlan");
+    expect(kinds).toContain("storyBible");
+    expect(kinds).toContain("revealBoundary");
+    expect(request.missingContext).toEqual([]);
+    const plan = (request.context as Array<Record<string, string>>).find(
+      (item) => item.kind === "chapterPlan",
+    )!;
+    expect(plan.sourceRef).toBe(
+      "docs/stories_plan/chapter_1_plan.md#beat-1第一章的開始",
+    );
+  });
+
+  it.each([
+    ["Scene p0", "Prologue 0：雨中的東京"],
+    ["Investigation Scene p1", "Prologue 1：零號小委託"],
+    ["Scene p2", "Prologue 2：雨鐘咖啡館的普通日"],
+  ])(
+    "%s resolves its Prologue plan section instead of missing context",
+    async (label, heading) => {
+      await openAiSceneReview(label);
+      await runPanelReview();
+
+      const request = aiReviewRequests()[0]!;
+      expect(request.lens).toBe("storyConsistency");
+      expect(request.missingContext).toEqual([]);
+      const plan = (request.context as Array<Record<string, string>>).find(
+        (item) => item.kind === "chapterPlan",
+      )!;
+      expect(plan.sourceRef).toContain("docs/stories_plan/chapter_1_plan.md#");
+      expect(plan.content).toContain(heading);
+    },
+  );
+
+  it.each(["Analysis Scene p1.5", "Investigation Scene map.01"])(
+    "%s keeps the missing parent-plan context visible",
+    async (label) => {
+      const panel = await openAiSceneReview(label);
+
+      // Visible before Run, never guessed.
+      const missing = within(panel).getByLabelText("Missing context");
+      expect(
+        missing.querySelector('[data-missing-kind="chapterPlan"]'),
+      ).not.toBeNull();
+      await runPanelReview();
+
+      const request = aiReviewRequests()[0]!;
+      expect(
+        (request.missingContext as Array<{ kind: string }>).some(
+          (item) => item.kind === "chapterPlan",
+        ),
+      ).toBe(true);
+      expect(
+        (request.context as Array<{ kind: string }>).some(
+          (item) => item.kind === "chapterPlan",
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("Reader dialogue reviews as Dialogue with the exact voice section and Beat plan", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("dialogue");
+    const context = request.context as Array<Record<string, string>>;
+    const voice = context.find((item) => item.kind === "characterVoice")!;
+    expect(voice.sourceRef).toContain("docs/stories_plan/characters.md#");
+    expect(voice.content).toContain("台詞風格：結論偏短。");
+    const plan = context.find((item) => item.kind === "chapterPlan")!;
+    expect(plan.content).toContain("# Beat 1：第一章的開始");
+    // Containing Reader group chip (spec Dialogue context).
+    expect(context.some((item) => item.ref.startsWith("readerGroup:"))).toBe(
+      true,
+    );
+    expect(request.replacementTargetRef).toBe("reader:dialogue:main:1");
+  });
+
+  it("a dialogue review under an active speaker filter still sends the full containing group", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await user.selectOptions(screen.getByLabelText("Speaker"), "九条玲子");
+    // The filter drops the sibling 相馬律 line from the rendered group.
+    expect(
+      screen.queryByText("相馬律: first linear line"),
+    ).not.toBeInTheDocument();
+    const row = screen
+      .getByText("九条玲子: second speaker line")
+      .closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("dialogue");
+    const context = request.context as Array<Record<string, string>>;
+    const groupChip = context.find((item) =>
+      item.ref.startsWith("readerGroup:"),
+    )!;
+    // The group chip serializes the unfiltered projection, including the
+    // sibling line the speaker filter hid from the view.
+    expect(groupChip.content).toContain("相馬律: first linear line");
+    expect(groupChip.content).toContain("九条玲子: second speaker line");
+  });
+
+  it("a Plan Aoba section review does not duplicate its own sourceRef as support", async () => {
+    const user = userEvent.setup();
+    render(App);
+
+    await user.click(screen.getByRole("button", { name: "Plan" }));
+    await screen.findByRole("navigation", { name: "Plan documents" });
+    await user.click(screen.getByRole("button", { name: "Story Bible" }));
+    await user.click(
+      within(screen.getByLabelText("Document outline")).getByRole("button", {
+        name: "18.5 第一幕 reveal ladder",
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Review section" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("storyConsistency");
+    const context = request.context as Array<Record<string, string>>;
+    // The required selection chip is the ONLY item carrying its sourceRef.
+    expect(
+      context.filter((item) => item.sourceRef === request.selectedSourceRef),
+    ).toHaveLength(1);
+    expect(context.some((item) => item.kind === "revealBoundary")).toBe(false);
+    expect(context[0]!.kind).toBe("selection");
+
+    // Findings-only Plan reviews never offer the replacement handoff.
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use replacement" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a scene-owned background prompt is eligible for replacement", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("promptRefinement");
+    const kinds = (request.context as Array<{ kind: string }>).map(
+      (item) => item.kind,
+    );
+    expect(kinds).toContain("promptLayer");
+    expect(kinds).toContain("usageImpact");
+    expect(request.replacementTargetRef).toBe("asset:background:hall");
+    expect(request.missingContext).toEqual([]);
+  });
+
+  it("an asset Prompt refinement review still opens when the Plan snapshot fails to load", async () => {
+    mockAiBackend(
+      {},
+      {
+        load_plan_workspace: async () => {
+          throw new Error("characters.md missing");
+        },
+      },
+    );
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    // Prompt refinement never consults the Plan loader.
+    expect(
+      mockInvoke.mock.calls.some(
+        ([command]) => command === "load_plan_workspace",
+      ),
+    ).toBe(false);
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("promptRefinement");
+    const kinds = (request.context as Array<{ kind: string }>).map(
+      (item) => item.kind,
+    );
+    expect(kinds).toContain("promptLayer");
+    expect(kinds).toContain("usageImpact");
+    expect(request.replacementTargetRef).toBe("asset:background:hall");
+    expect(request.missingContext).toEqual([]);
+  });
+
+  it("a portrait prompt reviews findings-only without a replacement target", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", { name: "portrait.hayasaka_akane.standard" }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const request = aiReviewRequests()[0]!;
+    expect(request.lens).toBe("promptRefinement");
+    expect(request.replacementTargetRef).toBeNull();
+
+    // Findings-only portrait reviews never offer the replacement handoff.
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Use replacement" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a validated replacement hands off to the focused edit prefilled", async () => {
+    mockAiBackend({ replacementText: "stormy hall" });
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    const inspector = screen.getByLabelText("Asset inspector");
+    await user.click(
+      within(inspector).getByRole("button", { name: "Review prompt" }),
+    );
+    await runPanelReview();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Use replacement" }),
+    );
+    // The AI panel is fenced closed and the focused edit opens prefilled.
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    const replacement = within(review).getByLabelText(
+      "Replacement text",
+    ) as HTMLTextAreaElement;
+    expect(replacement.value).toBe("stormy hall");
+  });
+
+  it("Review replacement hands the Reader dialogue AI text through the focused edit, never writing directly", async () => {
+    mockAiBackend({ replacementText: "先別急著下結論。" });
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+
+    const docCallsBeforeHandoff = sourceDocumentCalls(
+      "scene:chapter_1:scene_1",
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Use replacement" }),
+    );
+
+    // The handoff fences the AI panel and opens the focused edit prefilled…
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    const replacement =
+      await within(review).findByLabelText("Replacement text");
+    expect((replacement as HTMLTextAreaElement).value).toBe("先別急著下結論。");
+    // …the diff carries exactly the AI replacement, not the reset ""…
+    expect(review.querySelector('[data-diff-kind="add"]')).toHaveTextContent(
+      "**相馬律**：先別急著下結論。",
+    );
+    // …the reviewed source is loaded through HPA-135's own begin path…
+    expect(sourceDocumentCalls("scene:chapter_1:scene_1")).toBe(
+      docCallsBeforeHandoff + 1,
+    );
+    // …and the handoff itself never writes.
+    expect(
+      invokedCommands().filter(
+        (command) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(0);
+    expect(
+      invokedCommands().some((command) => command.startsWith("apply_ai_")),
+    ).toBe(false);
+
+    // Only the Apply button writes, carrying exactly HPA-135's guarded fields.
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    const applyCalls = mockInvoke.mock.calls.filter(
+      ([command]) => command === "apply_workbench_source_edit",
+    );
+    expect(applyCalls).toHaveLength(1);
+    expect(applyCalls[0]).toEqual([
+      "apply_workbench_source_edit",
+      {
+        request: {
+          sourceDocumentId: "scene:chapter_1:scene_1",
+          expectedHash: "hash-scene-1",
+          semanticRef: "reader:dialogue:main:1",
+          kind: "readerDialogue",
+          expectedLine: lineOf(scene1Source, "**相馬律**：first linear line"),
+          nextContent: scene1Source.replace(
+            "**相馬律**：first linear line",
+            "**相馬律**：先別急著下結論。",
+          ),
+        },
+      },
+    ]);
+    expect(
+      await within(review).findByText(/Applied — scenes:compile passed/u),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("App AI review mutual exclusion and fencing", () => {
+  beforeEach(() => {
+    editorState.scene = null;
+    editorState.layout = null;
+    editorState.chapterId = null;
+    editorState.sceneId = null;
+    editorState.error = null;
+    planState.workspace = null;
+    planState.error = null;
+    planState.loading = false;
+    planState.surface = "overview";
+    planState.selectedDocumentId = "story-bible";
+    planState.selectedAnchor = null;
+    vi.clearAllMocks();
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source,
+      hash: "hash-scene-1",
+    };
+    mockAiBackend();
+  });
+
+  it("opening AI review while a focused edit is open closes the focused edit first", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    // Focused edit first…
+    const actionRow = screen.getByText("rain hits the blinds.").closest("li")!;
+    await user.click(within(actionRow).getByRole("button", { name: "Edit" }));
+    expect(
+      await screen.findByRole("region", { name: "Focused edit review" }),
+    ).toBeInTheDocument();
+
+    // …then AI review on the dialogue line: the focused edit is closed.
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    expect(
+      await screen.findByRole("region", { name: "AI review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Focused edit review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opening normal Edit while AI review is open fences the AI review first", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+
+    // Opening Edit closes the AI panel and its result state.
+    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(
+      await screen.findByRole("region", { name: "Focused edit review" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("測試發現")).not.toBeInTheDocument();
+  });
+
+  it("Review entry is refused while a focused edit apply is in flight", async () => {
+    let resolveApply!: (result: unknown) => void;
+    mockAiBackend(
+      {},
+      {
+        apply_workbench_source_edit: () =>
+          new Promise((resolve) => {
+            resolveApply = resolve;
+          }),
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    const actionRow = screen.getByText("rain hits the blinds.").closest("li")!;
+    await user.click(within(actionRow).getByRole("button", { name: "Edit" }));
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    await waitFor(() =>
+      expect(review.getAttribute("data-state")).toBe("applying"),
+    );
+
+    // Review while applying is refused: no AI panel, review stays applying.
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    expect(review.getAttribute("data-state")).toBe("applying");
+
+    resolveApply({ validation: { ok: true, diagnostics: [] } });
+    await within(review).findByText(/Applied — scenes:compile passed/u);
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("selecting a new review fences stale context and provider results", async () => {
+    let resolveStale!: () => void;
+    let staleResult!: Promise<unknown>;
+    let firstReview = true;
+    mockAiBackend(
+      {},
+      {
+        run_ai_review: (args) => {
+          const payload = (args as { payload: { input: string } }).payload;
+          const request = JSON.parse(payload.input) as Record<string, unknown>;
+          if (firstReview) {
+            firstReview = false;
+            // Resolve with a candidate VALID for A's own request — anything
+            // else would fail local validation instead of proving the stale
+            // result cannot land under the new review.
+            const deferred = new Promise<unknown>((resolve) => {
+              resolveStale = () => resolve(validCandidateFromRequest(request));
+            });
+            staleResult = deferred;
+            return deferred;
+          }
+          return Promise.resolve(validCandidateFromRequest(request));
+        },
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    // Review the scene, Run stays pending…
+    await user.click(screen.getByRole("button", { name: "Review scene" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await user.click(screen.getByRole("button", { name: "Run review" }));
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("Reviewing…"),
+    );
+
+    // …then start a NEW review on the dialogue line. The old panel is fenced.
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+
+    // The stale scene-level result lands: it must not render anywhere. Await
+    // the deferred provider result and a Svelte flush first, otherwise the
+    // negative check can pass before the stale result is even processed.
+    resolveStale();
+    await staleResult;
+    await tick();
+    await waitFor(() =>
+      expect(screen.queryByText("測試發現")).not.toBeInTheDocument(),
+    );
+
+    // The new review runs and carries its own context (dialogue lens).
+    await runPanelReview();
+    const request = aiReviewRequests().at(-1)!;
+    expect(request.lens).toBe("dialogue");
+  });
+
+  it("selecting a new asset review remounts the panel and fences stale results", async () => {
+    let resolveStale!: () => void;
+    let staleResult!: Promise<unknown>;
+    let firstReview = true;
+    mockAiBackend(
+      {},
+      {
+        run_ai_review: (args) => {
+          const payload = (args as { payload: { input: string } }).payload;
+          const request = JSON.parse(payload.input) as Record<string, unknown>;
+          if (firstReview) {
+            firstReview = false;
+            // Resolve with a candidate VALID for A's own request — anything
+            // else would fail local validation instead of proving the stale
+            // result cannot land under B.
+            const deferred = new Promise<unknown>((resolve) => {
+              resolveStale = () => resolve(validCandidateFromRequest(request));
+            });
+            staleResult = deferred;
+            return deferred;
+          }
+          return Promise.resolve(validCandidateFromRequest(request));
+        },
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+
+    // Asset A: open the review and leave its Run pending. assetPrompt never
+    // awaits a load, so the aiReview null→new swap happens in one tick —
+    // only the keyed remount guarantees a fresh panel for asset B.
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    await user.click(
+      within(screen.getByLabelText("Asset inspector")).getByRole("button", {
+        name: "Review prompt",
+      }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await user.click(screen.getByRole("button", { name: "Run review" }));
+    await waitFor(() =>
+      expect(aiReviewPanel().getAttribute("data-state")).toBe("running"),
+    );
+
+    // Asset B: the panel must remount — B's label, B's context, ready phase.
+    await user.click(
+      screen.getByRole("button", { name: "portrait.hayasaka_akane.standard" }),
+    );
+    await user.click(
+      within(screen.getByLabelText("Asset inspector")).getByRole("button", {
+        name: "Review prompt",
+      }),
+    );
+    const panel = await screen.findByRole("region", { name: "AI review" });
+    await waitFor(() => expect(panel.getAttribute("data-state")).toBe("ready"));
+    expect(
+      within(panel).getByRole("heading", {
+        name: "portrait.hayasaka_akane.standard",
+      }),
+    ).toBeInTheDocument();
+    expect(panel.querySelector("[data-selected-source-ref]")).toHaveTextContent(
+      "asset:portrait:portrait.hayasaka_akane.standard",
+    );
+    expect(screen.queryByText("Reviewing…")).not.toBeInTheDocument();
+
+    // A's late response must not land under B's review. Await the deferred
+    // provider result and a Svelte flush first, otherwise the negative check
+    // can pass before the stale result is even processed.
+    resolveStale();
+    await staleResult;
+    await tick();
+    await waitFor(() =>
+      expect(screen.queryByText("測試發現")).not.toBeInTheDocument(),
+    );
+
+    // B's own review runs fresh with B's context.
+    await runPanelReview();
+    const request = aiReviewRequests().at(-1)!;
+    expect(request.selectedSourceRef).toBe(
+      "asset:portrait:portrait.hayasaka_akane.standard",
+    );
+  });
+
+  it("a successful focused Apply leaves no stale AI result state", async () => {
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    await screen.findByText("相馬律: first linear line");
+
+    // AI review produces a result…
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+    expect(await screen.findByText("測試發現")).toBeInTheDocument();
+
+    // …then a normal edit + successful apply completes with no AI panel.
+    await user.click(within(row).getByRole("button", { name: "Edit" }));
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    await user.type(
+      within(review).getByLabelText("Replacement text"),
+      "替換台詞。",
+    );
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    await within(review).findByText(/Applied — scenes:compile passed/u);
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("測試發現")).not.toBeInTheDocument();
+  });
+
+  it("stale-after-review wins: the AI handoff never retries, relocates, or merges", async () => {
+    mockAiBackend(
+      { replacementText: "先別急著下結論。" },
+      {
+        // The backend itself decides staleness: the request hash must match
+        // the CURRENT mocked document, exactly like the Rust guard.
+        apply_workbench_source_edit: async (args) => {
+          const request = (
+            args as {
+              request: { sourceDocumentId: string; expectedHash: string };
+            }
+          ).request;
+          const doc = sourceDocuments[request.sourceDocumentId];
+          if (!doc || doc.hash !== request.expectedHash) {
+            throw {
+              code: "sourceEditStale",
+              message:
+                "source scene_1.md changed since it was loaded; refresh and retry",
+            };
+          }
+          return { validation: { ok: true, diagnostics: [] } };
+        },
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await selectSceneByLabel("Scene 1");
+    const row = screen.getByText("相馬律: first linear line").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    await screen.findByRole("region", { name: "AI review" });
+    await runPanelReview();
+    await user.click(
+      await screen.findByRole("button", { name: "Use replacement" }),
+    );
+    const review = await screen.findByRole("region", {
+      name: "Focused edit review",
+    });
+    await within(review).findByLabelText("Replacement text");
+
+    // The reviewed source changes after the AI result, before Apply.
+    sourceDocuments["scene:chapter_1:scene_1"] = {
+      path: "docs/stories_plan/chapter_1/scene_1.md",
+      content: scene1Source.replace(
+        "first linear line",
+        "changed underneath the review",
+      ),
+      hash: "hash-scene-1-changed",
+    };
+
+    await user.click(within(review).getByRole("button", { name: "Apply" }));
+    expect(
+      await within(review).findByText(
+        /source scene_1\.md changed since it was loaded/u,
+      ),
+    ).toBeInTheDocument();
+
+    // Existing HPA-135 stale handling wins: exactly one apply attempt, and
+    // the AI neither retries the review nor relocates/merges the result.
+    expect(
+      mockInvoke.mock.calls.filter(
+        ([command]) => command === "apply_workbench_source_edit",
+      ),
+    ).toHaveLength(1);
+    expect(
+      mockInvoke.mock.calls.filter(([command]) => command === "run_ai_review"),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole("region", { name: "AI review" }),
+    ).not.toBeInTheDocument();
   });
 });

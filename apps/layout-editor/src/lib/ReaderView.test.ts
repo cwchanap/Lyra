@@ -108,6 +108,106 @@ function fixtureScene(overrides: Partial<ReaderScene> = {}): ReaderScene {
   };
 }
 
+// ---- HPA-136 Task 3: selection-only review entry points ----------------------
+
+describe("ReaderView review affordances", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("exposes Review scene in the scene header and emits selection only", async () => {
+    const onReviewScene = vi.fn();
+    const user = userEvent.setup();
+    render(ReaderView, { scene: fixtureScene(), onReviewScene });
+
+    await user.click(screen.getByRole("button", { name: "Review scene" }));
+    expect(onReviewScene).toHaveBeenCalledTimes(1);
+    // Selection only: no source/provider I/O from the view itself.
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("exposes Review beside Edit for eligible lines and carries exact identity", async () => {
+    const onReviewItem = vi.fn();
+    const user = userEvent.setup();
+    render(ReaderView, { scene: fixtureScene(), onReviewItem });
+
+    const intro = screen.getByText("相馬律: intro line").closest("li")!;
+    await user.click(within(intro).getByRole("button", { name: "Review" }));
+
+    const introGroup = fixtureScene().groups[0]!;
+    expect(onReviewItem).toHaveBeenCalledExactlyOnceWith(
+      introGroup,
+      { carrierId: "intro", itemIndex: 1 },
+      {
+        kind: "line",
+        speaker: "相馬律",
+        text: "intro line",
+        editable: { carrierId: "intro", itemIndex: 1 },
+      },
+    );
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("exposes Review for single-line actions but not multiline actions", async () => {
+    const onReviewItem = vi.fn();
+    const user = userEvent.setup();
+    render(ReaderView, {
+      scene: fixtureScene({
+        groups: [
+          group("main", [
+            multilineAction("雨聲漸強， 打濕了窗台。", ref("main", 0)),
+            action("slams the folder", ref("main", 1)),
+          ]),
+        ],
+      }),
+      onReviewItem,
+    });
+
+    const multilineRow = screen
+      .getByText("雨聲漸強， 打濕了窗台。")
+      .closest("li")!;
+    expect(
+      within(multilineRow).queryByRole("button", { name: "Review" }),
+    ).toBeNull();
+
+    const row = screen.getByText("slams the folder").closest("li")!;
+    await user.click(within(row).getByRole("button", { name: "Review" }));
+    expect(onReviewItem).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: "main" }),
+      { carrierId: "main", itemIndex: 1 },
+      expect.objectContaining({ kind: "action", text: "slams the folder" }),
+    );
+  });
+
+  it("renders no Review for sceneTag and notice items", () => {
+    const onReviewItem = vi.fn();
+    render(ReaderView, { scene: fixtureScene(), onReviewItem });
+
+    const tagRow = screen.getByText("場景：偵訊室").closest("li")!;
+    expect(within(tagRow).queryByRole("button", { name: "Review" })).toBeNull();
+    const noticeRow = screen.getByText("Reveals question: q2").closest("li")!;
+    expect(
+      within(noticeRow).queryByRole("button", { name: "Review" }),
+    ).toBeNull();
+  });
+
+  it("hides Review item button when onReviewItem is absent", () => {
+    render(ReaderView, { scene: fixtureScene() });
+    expect(screen.queryByRole("button", { name: "Review" })).toBeNull();
+  });
+
+  it("hides Review scene button when onReviewScene is absent", () => {
+    render(ReaderView, { scene: fixtureScene() });
+    expect(screen.queryByRole("button", { name: "Review scene" })).toBeNull();
+  });
+
+  it("hides Review scene button when only onReviewItem is provided", () => {
+    const onReviewItem = vi.fn();
+    render(ReaderView, { scene: fixtureScene(), onReviewItem });
+    expect(screen.queryByRole("button", { name: "Review scene" })).toBeNull();
+  });
+});
+
 describe("ReaderView edit affordances", () => {
   beforeEach(() => {
     vi.clearAllMocks();

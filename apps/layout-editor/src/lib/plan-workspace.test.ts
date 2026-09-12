@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  headingSectionText,
   planAnchor,
+  planSectionText,
   planSourceRef,
   projectPlanWorkspace,
 } from "./plan-workspace";
@@ -10,6 +12,11 @@ import type {
 } from "./workbench-types";
 
 const BIBLE_PATH = "docs/stories_plan/final_story_bible.md";
+
+const CHARACTERS_MD = {
+  path: "docs/stories_plan/characters.md",
+  content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+};
 
 function bible(content: string): WorkbenchPlanWorkspacePayload {
   return {
@@ -22,6 +29,7 @@ function bible(content: string): WorkbenchPlanWorkspacePayload {
         chapterNumber: null,
       },
     ],
+    storyCharactersMd: CHARACTERS_MD,
   };
 }
 
@@ -59,6 +67,14 @@ function chapterPlan(content: string): WorkbenchPlanDocument {
 }
 
 describe("projectPlanWorkspace", () => {
+  it("carries storyCharactersMd through as a sibling field, never a document", () => {
+    const workspace = projectPlanWorkspace(bible("# 其他\n"));
+    expect(workspace.storyCharactersMd).toEqual(CHARACTERS_MD);
+    expect(workspace.documents.map((document) => document.kind)).toEqual([
+      "storyBible",
+    ]);
+  });
+
   it("owns heading text/anchors and binds rendered ids to heading token identity", () => {
     const workspace = projectPlanWorkspace(
       bible("## 18.6 `ZW_A16.lock` 與青葉\n\n> ## Nested\n\n## After\n"),
@@ -372,6 +388,7 @@ describe("projectPlanWorkspace", () => {
           chapterNumber: null,
         },
       ],
+      storyCharactersMd: CHARACTERS_MD,
     });
 
     expect(workspace.chapterOverview?.rows.map((row) => row.chapter)).toEqual([
@@ -408,6 +425,7 @@ describe("projectPlanWorkspace", () => {
           )}\n`,
         ),
       ],
+      storyCharactersMd: CHARACTERS_MD,
     });
 
     expect(workspace.chapterOverview).toBeNull();
@@ -437,6 +455,7 @@ describe("projectPlanWorkspace", () => {
           ].join("\n"),
         ),
       ],
+      storyCharactersMd: CHARACTERS_MD,
     });
 
     expect(workspace.aobaOverrideNotice).toBeNull();
@@ -462,5 +481,106 @@ describe("projectPlanWorkspace", () => {
     expect(missing.message).toEqual(expect.any(String));
     expect(missing.sourceFile).toBe(BIBLE_PATH);
     expect(missing.line).toEqual(expect.any(Number));
+  });
+});
+
+describe("projected heading ranges and shared section extraction", () => {
+  it("projects each heading's line/endLine across nested sections", () => {
+    const workspace = projectPlanWorkspace(
+      bible(
+        "# Beat 2：委託與程序入口\nintro\n## 子節\nchild\n# Beat 3：第一次現場調查\nnext\n",
+      ),
+    );
+    const headings = workspace.documents[0]!.headings;
+    const beat2 = headings.find(
+      (heading) => heading.text === "Beat 2：委託與程序入口",
+    )!;
+    // Beat 2's range owns the nested H2 section and stops before Beat 3.
+    expect(beat2.level).toBe(1);
+    expect(beat2.line).toBe(1);
+    expect(beat2.endLine).toBe(4);
+    const beat3 = headings.find(
+      (heading) => heading.text === "Beat 3：第一次現場調查",
+    )!;
+    expect(beat3.line).toBe(5);
+  });
+
+  it("planSectionText projects section text over the heading ranges", () => {
+    const workspace = projectPlanWorkspace(
+      bible(
+        "# Beat 2：委託與程序入口\nintro\n## 子節\nchild\n# Beat 3：next\n",
+      ),
+    );
+    const document = workspace.documents[0]!;
+    const beat2 = document.headings[0]!;
+    expect(planSectionText(document, beat2.anchor)).toBe(
+      "# Beat 2：委託與程序入口\nintro\n## 子節\nchild",
+    );
+    expect(planSectionText(document, "missing-anchor")).toBeNull();
+  });
+
+  it("headingSectionText returns the one matching section with its nested content", () => {
+    const content = [
+      "## Other",
+      "x",
+      "### 相馬律（主角）",
+      "voice",
+      "#### Nested",
+      "more",
+      "### 早坂茜（法律搭檔）",
+      "other",
+      "",
+    ].join("\n");
+    const section = headingSectionText(
+      content,
+      (heading) =>
+        heading.level === 3 &&
+        (heading.text === "相馬律" ||
+          (heading.text.startsWith("相馬律（") && heading.text.endsWith("）"))),
+    );
+    expect(section).not.toBeNull();
+    expect(section!.level).toBe(3);
+    expect(section!.text).toBe("相馬律（主角）");
+    expect(section!.line).toBe(3);
+    expect(section!.endLine).toBe(6);
+    expect(section!.content).toBe(
+      "### 相馬律（主角）\nvoice\n#### Nested\nmore",
+    );
+    expect(section!.content).toContain("Nested");
+    expect(section!.content).not.toContain("早坂");
+  });
+
+  it("headingSectionText returns null for duplicate or missing matches", () => {
+    const duplicate = "### 相馬律（主角）\na\n### 相馬律（回憶）\nb\n";
+    const predicate = (heading: { level: number; text: string }) =>
+      heading.text.startsWith("相馬律（");
+    expect(headingSectionText(duplicate, predicate)).toBeNull();
+    expect(
+      headingSectionText("### 早坂茜（法律搭檔）\nx\n", predicate),
+    ).toBeNull();
+  });
+
+  it("resolves repeated headings in different list items to their own content", () => {
+    const content = [
+      "- # 共同標題",
+      "  第一項內容",
+      "- # 共同標題",
+      "  第二項內容",
+      "",
+    ].join("\n");
+    const workspace = projectPlanWorkspace(bible(content));
+    const document = workspace.documents[0]!;
+    const headings = document.headings.filter((h) => h.text === "共同標題");
+    expect(headings.length).toBe(2);
+    // The second heading must land on its own source line, not the first
+    // item's line (the pre-fix bug reset every item's search cursor to the
+    // same list offset, collapsing both headings to the first match).
+    expect(headings[1]!.line).toBeGreaterThan(headings[0]!.line);
+    const firstSection = planSectionText(document, headings[0]!.anchor);
+    const secondSection = planSectionText(document, headings[1]!.anchor);
+    expect(firstSection).toContain("第一項內容");
+    expect(firstSection).not.toContain("第二項內容");
+    expect(secondSection).toContain("第二項內容");
+    expect(secondSection).not.toContain("第一項內容");
   });
 });

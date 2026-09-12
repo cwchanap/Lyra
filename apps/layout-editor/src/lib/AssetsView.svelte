@@ -16,6 +16,7 @@
     selectedSceneId,
     onSelectScene,
     onEditPrompt,
+    onReviewPrompt,
     refreshEpoch = 0,
   }: {
     selectedChapterId: string | null;
@@ -26,6 +27,13 @@
       assetId: string;
       prompt: AssetPromptEditSource;
       sceneUsages: AssetSceneUsage[];
+    }) => void;
+    /** Selection-only AI review callback (HPA-136): non-audio prompts only. */
+    onReviewPrompt?: (selection: {
+      assetId: string;
+      entry: LibraryEntry;
+      usages: AssetSceneUsage[];
+      editSelection: AssetPromptEditSource | null;
     }) => void;
     /** Bump to force a snapshot reload (e.g. after an applied source edit). */
     refreshEpoch?: number;
@@ -360,6 +368,27 @@
           }}
         >
           Edit prompt
+        </button>
+      {/if}
+      {#if entry.type !== "audio" && onReviewPrompt}
+        <!-- HPA-136: reviewable prompts are every non-audio manifest entry;
+             scene-owned entries carry their existing HPA-135 edit identity,
+             everything else reviews findings-only (editSelection null). -->
+        <button
+          type="button"
+          class="cursor-pointer rounded border border-[#e4ded3] bg-white px-2 py-1 hover:border-[#57776a]"
+          data-review-prompt
+          onclick={() =>
+            onReviewPrompt?.({
+              assetId: entry.assetId,
+              entry,
+              usages: (workspace?.sceneUsages ?? []).filter(
+                (usage) => usage.assetId === entry.assetId,
+              ),
+              editSelection: assetPromptEditSource(entry),
+            })}
+        >
+          Review prompt
         </button>
       {/if}
     </div>

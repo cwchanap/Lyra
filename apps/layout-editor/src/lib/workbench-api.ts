@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { AiReviewTransportPayload } from "./ai-review";
 import type { InvestigationLayoutSidecar } from "@lyra/scene-types";
 import type {
   ApplyWorkbenchSourceEditRequest,
@@ -50,3 +51,12 @@ export const applyWorkbenchSourceEdit = (
   invoke<ApplyWorkbenchSourceEditResult>("apply_workbench_source_edit", {
     request,
   });
+
+/**
+ * Native AI review transport. No provider key exists anywhere in Lyra: the
+ * webview sends only the TS-built model-semantic payload, the native side
+ * shells out to the configured review agent CLI (default `claude`, no key
+ * crosses IPC), and the webview receives only the parsed result/error data.
+ */
+export const runAiReview = (payload: AiReviewTransportPayload) =>
+  invoke<unknown>("run_ai_review", { payload });

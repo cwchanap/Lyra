@@ -4,6 +4,7 @@ import type { Token, Tokens, TokensList } from "marked";
 import type {
   WorkbenchPlanDocument,
   WorkbenchPlanWorkspacePayload,
+  WorkbenchTextSource,
 } from "./workbench-types";
 
 // ----- Exact source constants (no fallback search) -----------------------------
@@ -32,7 +33,13 @@ export type PlanHeading = {
   level: number;
   text: string;
   anchor: string;
+  /** 1-based line of the heading itself. */
+  line: number;
+  /** 1-based last line of the section: stops before the next heading of <= level. */
+  endLine: number;
 };
+
+export type MarkdownHeadingSection = PlanHeading & { content: string };
 
 export type ParsedPlanDocument = WorkbenchPlanDocument & {
   renderedHtml: string;
@@ -70,6 +77,8 @@ export type PlanOverrideNotice = {
 
 export type PlanWorkspace = {
   documents: ParsedPlanDocument[];
+  /** Sibling payload field: the fixed characters.md voice reference source. */
+  storyCharactersMd: WorkbenchTextSource;
   chapterOverview: PlanChapterOverview;
   aobaReveal: PlanAobaReveal;
   aobaOverrideNotice: PlanOverrideNotice;
@@ -219,11 +228,17 @@ function walkDocumentBlocks(
       );
     } else if (token.type === "list") {
       walk.blocks.push({ kind: "block", line });
+      // Each list item must search from its own absolute source offset,
+      // not a shared `offset + 1`: repeated headings in different items
+      // would otherwise resolve to the first item's match.
+      let itemFrom = offset >= 0 ? offset : 0;
       for (const item of (token as Tokens.List).items) {
+        const itemOffset = content.indexOf(item.raw, itemFrom);
+        if (itemOffset >= 0) itemFrom = itemOffset + item.raw.length;
         walkDocumentBlocks(
           item.tokens,
           content,
-          offset >= 0 ? offset + 1 : 0,
+          itemOffset >= 0 ? itemOffset : offset >= 0 ? offset + 1 : 0,
           walk,
         );
       }
@@ -231,6 +246,93 @@ function walkDocumentBlocks(
       walk.blocks.push({ kind: "block", line });
     }
   }
+}
+
+/**
+ * Projects headings with their section ranges over the walk's document-order
+ * blocks. A heading's section ends just before the next heading of <= depth,
+ * so nested subsections stay inside the parent's range.
+ */
+function headingsWithRanges(
+  blocks: BlockHit[],
+  content: string,
+): PlanHeading[] {
+  const totalLines = content.split("\n").length;
+  const headingHits = blocks.filter(
+    (block): block is Extract<BlockHit, { kind: "heading" }> =>
+      block.kind === "heading",
+  );
+  return headingHits.map((hit, index) => {
+    let endLine = totalLines;
+    for (let next = index + 1; next < headingHits.length; next++) {
+      const candidate = headingHits[next]!;
+      if (candidate.heading.depth <= hit.heading.depth) {
+        endLine = candidate.line - 1;
+        break;
+      }
+    }
+    return {
+      level: hit.heading.depth,
+      text: hit.text,
+      anchor: hit.anchor,
+      line: hit.line,
+      endLine,
+    };
+  });
+}
+
+function lexAndWalk(content: string): {
+  tokens: TokensList;
+  walk: DocumentWalk;
+} {
+  const tokens = lexer(content);
+  const walk: DocumentWalk = {
+    seen: new Map(),
+    anchorByToken: new WeakMap(),
+    blocks: [],
+  };
+  walkDocumentBlocks(tokens, content, 0, walk);
+  return { tokens, walk };
+}
+
+/**
+ * The shared heading-section extractor over the single Marked walk: lexes the
+ * document, matches headings by predicate, and requires exactly one match.
+ * Zero or duplicate matches return `null` — callers report missing context
+ * instead of guessing.
+ */
+export function headingSectionText(
+  content: string,
+  match: (heading: Pick<PlanHeading, "level" | "text" | "anchor">) => boolean,
+): MarkdownHeadingSection | null {
+  const matches = headingsWithRanges(
+    lexAndWalk(content).walk.blocks,
+    content,
+  ).filter(match);
+  if (matches.length !== 1) return null;
+  const heading = matches[0]!;
+  return {
+    ...heading,
+    content: content
+      .split("\n")
+      .slice(heading.line - 1, heading.endLine)
+      .join("\n"),
+  };
+}
+
+/** Section text for an already-projected document, joined over its range. */
+export function planSectionText(
+  document: ParsedPlanDocument,
+  anchor: string,
+): string | null {
+  const heading = document.headings.find(
+    (candidate) => candidate.anchor === anchor,
+  );
+  if (!heading) return null;
+  return document.content
+    .split("\n")
+    .slice(heading.line - 1, heading.endLine)
+    .join("\n");
 }
 
 // ----- Rendering ------------------------------------------------------------------
@@ -443,27 +545,12 @@ type DocumentProjection = {
 function projectDocument(document: WorkbenchPlanDocument): DocumentProjection {
   const content = document.content;
   // Lex exactly once; anchors, extraction, and rendering share this token tree.
-  const tokens = lexer(content);
-  const walk: DocumentWalk = {
-    seen: new Map(),
-    anchorByToken: new WeakMap(),
-    blocks: [],
-  };
-  walkDocumentBlocks(tokens, content, 0, walk);
+  const { tokens, walk } = lexAndWalk(content);
   return {
     parsed: {
       ...document,
       renderedHtml: renderDocument(tokens, walk.anchorByToken),
-      headings: walk.blocks
-        .filter(
-          (block): block is Extract<BlockHit, { kind: "heading" }> =>
-            block.kind === "heading",
-        )
-        .map((block) => ({
-          level: block.heading.depth,
-          text: block.text,
-          anchor: block.anchor,
-        })),
+      headings: headingsWithRanges(walk.blocks, content),
     },
     blocks: walk.blocks,
   };
@@ -527,6 +614,7 @@ export function projectPlanWorkspace(
 
   return {
     documents: projections.map((projection) => projection.parsed),
+    storyCharactersMd: payload.storyCharactersMd,
     chapterOverview,
     aobaReveal,
     aobaOverrideNotice,

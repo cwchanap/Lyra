@@ -1,7 +1,17 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
+  import type { AssetManifestEntry } from "@lyra/scripts/compile-scenes/assets/manifest";
   import type { CompileError } from "@lyra/scripts/compile-scenes/types";
+  import {
+    allowedLensesForSelection,
+    buildAiReviewContext,
+    type AiReviewContextBundle,
+    type AiReviewSelection,
+  } from "./lib/ai-review-context";
+  import type { AiReviewLens } from "./lib/ai-review";
+  import { tauriAiReviewProvider } from "./lib/ai-review-provider";
   import AssetsView from "./lib/AssetsView.svelte";
+  import AiReviewPanel from "./lib/AiReviewPanel.svelte";
   import type {
     AssetPromptEditSource,
     AssetSceneUsage,
@@ -16,6 +26,7 @@
     type FocusedEditDiffHunk,
     type FocusedEditDraft,
     type FocusedEditSelection,
+    type PendingFocusedEditSelection,
     type ReaderFocusedEditItem,
     type SourceDocumentId,
     type WorkbenchValidationReport,
@@ -548,24 +559,6 @@
     | "applied-invalid"
     | "error";
 
-  /** Selection before its source document is loaded. */
-  type PendingFocusedEditSelection =
-    | {
-        surface: "reader";
-        chapterId: string;
-        sceneId: string;
-        compiledScene: WorkbenchScenePayload;
-        carrierId: string;
-        itemIndex: number;
-        item: ReaderFocusedEditItem;
-      }
-    | {
-        surface: "asset";
-        assetId: string;
-        prompt: AssetPromptEditSource;
-        sceneUsages: AssetSceneUsage[];
-      };
-
   let reviewState = $state<FocusedEditReviewState>("idle");
   let activeSelection = $state<FocusedEditSelection | null>(null);
   let activeDraft = $state<FocusedEditDraft | null>(null);
@@ -582,6 +575,24 @@
   // Bumped so AssetsView (which owns its own snapshot) reloads after an
   // applied source edit.
   let assetsRefreshEpoch = $state(0);
+
+  // ---- AI review (HPA-136): App owns the ONE panel + generation fence. ------
+
+  type AiReviewPanelState = {
+    selection: AiReviewSelection;
+    selectionLabel: string;
+    lenses: AiReviewLens[];
+    initialLens: AiReviewLens;
+    context: AiReviewContextBundle;
+    /** PendingFocusedEditSelection for the replacement handoff; null = none. */
+    editSelection: PendingFocusedEditSelection | null;
+  };
+
+  let aiReview = $state<AiReviewPanelState | null>(null);
+  let aiReviewError = $state<string | null>(null);
+  // Fences async context/provider work: opening a newer review (or closing
+  // the panel) discards every older in-flight result.
+  let aiReviewGeneration = 0;
 
   function sourceDocumentIdFor(
     selection: PendingFocusedEditSelection,
@@ -605,6 +616,46 @@
     return bundleCache.get(`${chapterId}:${sceneId}`)?.scene ?? null;
   }
 
+  /**
+   * The unfiltered Reader projection for one scene. The views render
+   * filtered clones, so the AI scene-projection context must come from here
+   * (currentReaderScene in scene scope, chapterReaders in chapter scope).
+   */
+  function unfilteredReaderScene(
+    chapterId: string,
+    sceneId: string,
+  ): ReaderScene | null {
+    if (
+      currentReaderScene &&
+      currentReaderScene.id === sceneId &&
+      selectedChapterId === chapterId
+    ) {
+      return currentReaderScene;
+    }
+    return (
+      chapterReaders?.find(
+        (candidate) =>
+          candidate.id === sceneId && selectedChapterId === chapterId,
+      ) ?? null
+    );
+  }
+
+  /**
+   * Recursive group lookup by id. Reader group ids are the carrier ids, unique
+   * within a scene projection.
+   */
+  function findReaderGroup(
+    groups: ReaderGroup[],
+    id: string,
+  ): ReaderGroup | null {
+    for (const group of groups) {
+      if (group.id === id) return group;
+      const child = findReaderGroup(group.children, id);
+      if (child) return child;
+    }
+    return null;
+  }
+
   function selectReaderItem(item: ReaderItem): ReaderFocusedEditItem | null {
     if (item.kind === "line") {
       return { kind: "line", speaker: item.speaker, text: item.text };
@@ -619,16 +670,28 @@
     ref: ReaderEditableRef,
     item: ReaderItem,
   ): void {
-    const selectable = selectReaderItem(item);
-    if (!selectable) return;
-    const compiled = readerBundleFor(chapterId, sceneId);
-    if (!compiled) {
+    if (item.kind !== "line" && item.kind !== "action") return;
+    const selection = readerPendingSelection(chapterId, sceneId, ref, item);
+    if (!selection) {
       beginReviewError(
         `The compiled projection of "${sceneId}" is not loaded; refresh the Reader and retry.`,
       );
       return;
     }
-    void beginFocusedEditReview({
+    void beginFocusedEditReview(selection);
+  }
+
+  /** Shared pre-source-load identity for a normal Edit and the AI handoff. */
+  function readerPendingSelection(
+    chapterId: string,
+    sceneId: string,
+    ref: ReaderEditableRef,
+    item: ReaderItem,
+  ): PendingFocusedEditSelection | null {
+    const selectable = selectReaderItem(item);
+    const compiled = readerBundleFor(chapterId, sceneId);
+    if (!selectable || !compiled) return null;
+    return {
       surface: "reader",
       chapterId,
       sceneId,
@@ -636,7 +699,7 @@
       carrierId: ref.carrierId,
       itemIndex: ref.itemIndex,
       item: selectable,
-    });
+    };
   }
 
   function openAssetPromptEdit(selection: {
@@ -665,11 +728,14 @@
 
   async function beginFocusedEditReview(
     selection: PendingFocusedEditSelection,
+    initialReplacement = "",
   ): Promise<void> {
     // An apply/compile is in flight: starting another edit could interleave
     // writes and compiles, so the new selection is refused at this single
     // choke point while the review surface still shows the apply.
     if (reviewState === "applying") return;
+    // AI Review XOR Focused Edit: a normal edit fences/closes the AI panel.
+    closeAiReview();
     const generation = ++focusedEditGeneration;
     reviewState = "loading-source";
     resetReviewTransientState();
@@ -679,6 +745,9 @@
       );
       if (generation !== focusedEditGeneration) return; // superseded
       activeSelection = { ...selection, document };
+      // Prefill only after the transient reset and the source load, so the
+      // reset can never wipe the AI replacement (HPA-136 reuse seam).
+      reviewReplacement = initialReplacement;
       rebuildDraft();
       reviewState = "editing";
     } catch (error) {
@@ -742,6 +811,9 @@
       if (generation !== focusedEditGeneration) return; // superseded
       if (result.validation.ok) {
         reviewState = "applied-valid";
+        // The reviewed source just changed: fence any retained AI state
+        // together with the projection refresh (HPA-136 handoff contract).
+        closeAiReview();
         void refreshProjectionsAfterApply();
       } else {
         // Written-but-invalid: keep the stale projections on screen and show
@@ -763,6 +835,155 @@
     bundleCache.clear();
     assetsRefreshEpoch += 1;
     await refreshReader();
+  }
+
+  // ---- AI review orchestration (HPA-136) -------------------------------------
+
+  function closeAiReview(): void {
+    aiReviewGeneration += 1;
+    aiReview = null;
+    aiReviewError = null;
+  }
+
+  /**
+   * Entry behavior (plan lock): refuse while a focused apply is in flight,
+   * cancel a non-applying focused edit first, then fence/clear prior AI
+   * state before building deterministic context.
+   */
+  async function openAiReview(
+    selection: AiReviewSelection,
+    selectionLabel: string,
+    editSelection: PendingFocusedEditSelection | null,
+  ): Promise<void> {
+    if (reviewState === "applying") return;
+    if (reviewState !== "idle") cancelFocusedEditReview();
+    const generation = ++aiReviewGeneration;
+    aiReview = null;
+    aiReviewError = null;
+    // Prompt refinement builds context from the Assets projection alone, so
+    // only Reader/Plan selections wait on the Plan snapshot.
+    const needsPlanWorkspace = selection.kind !== "assetPrompt";
+    if (needsPlanWorkspace) {
+      await ensurePlanLoaded();
+      if (generation !== aiReviewGeneration) return; // superseded
+    }
+    const workspace = planState.workspace;
+    if (needsPlanWorkspace && !workspace) {
+      aiReviewError =
+        planState.error ??
+        "Plan data could not be loaded; AI review needs the Plan snapshot.";
+      return;
+    }
+    const lenses = allowedLensesForSelection(selection);
+    // Dialogue reviews default to the Dialogue lens; every other selection
+    // kind offers a single lens.
+    const initialLens: AiReviewLens =
+      selection.kind === "readerItem" ? "dialogue" : lenses[0]!;
+    aiReview = {
+      selection,
+      selectionLabel,
+      lenses,
+      initialLens,
+      context: buildAiReviewContext(selection, initialLens, workspace),
+      editSelection,
+    };
+  }
+
+  function openReaderSceneReview(chapterId: string, sceneId: string): void {
+    const scene = unfilteredReaderScene(chapterId, sceneId);
+    if (!scene) {
+      closeAiReview();
+      aiReviewError = `The Reader projection of "${sceneId}" is not loaded; refresh and retry.`;
+      return;
+    }
+    void openAiReview(
+      { kind: "readerScene", chapterId, sceneId, scene },
+      scene.title,
+      null,
+    );
+  }
+
+  function openReaderItemReview(
+    chapterId: string,
+    sceneId: string,
+    group: ReaderGroup,
+    ref: ReaderEditableRef,
+    item: ReaderItem,
+  ): void {
+    if (item.kind !== "line" && item.kind !== "action") return;
+    const editSelection = readerPendingSelection(chapterId, sceneId, ref, item);
+    const scene = unfilteredReaderScene(chapterId, sceneId);
+    // ReaderView renders filtered clones: the passed group can be missing
+    // sibling lines, so the review context must re-resolve it by id from the
+    // unfiltered projection.
+    const unfilteredGroup = scene
+      ? findReaderGroup(scene.groups, group.id)
+      : null;
+    if (!editSelection || !scene || !unfilteredGroup) {
+      closeAiReview();
+      aiReviewError = `The projection of "${sceneId}" is not loaded; refresh the Reader and retry.`;
+      return;
+    }
+    void openAiReview(
+      {
+        kind: "readerItem",
+        chapterId,
+        sceneId,
+        scene,
+        group: unfilteredGroup,
+        ref,
+        item,
+        editSelection,
+      },
+      item.text,
+      editSelection,
+    );
+  }
+
+  function openAssetPromptReview(selection: {
+    assetId: string;
+    entry: AssetManifestEntry;
+    usages: AssetSceneUsage[];
+    editSelection: AssetPromptEditSource | null;
+  }): void {
+    // The selection's editSelection is exactly the HPA-135 pending identity:
+    // it drives replacement eligibility and the replacement handoff.
+    const pending = selection.editSelection
+      ? {
+          surface: "asset" as const,
+          assetId: selection.assetId,
+          prompt: selection.editSelection,
+          sceneUsages: selection.usages,
+        }
+      : null;
+    void openAiReview(
+      {
+        kind: "assetPrompt",
+        assetId: selection.assetId,
+        entry: selection.entry,
+        usages: selection.usages,
+        editSelection: pending,
+      },
+      selection.assetId,
+      pending,
+    );
+  }
+
+  function openPlanSectionReview(documentId: string, anchor: string): void {
+    void openAiReview(
+      { kind: "planSection", documentId, anchor },
+      `${documentId}#${anchor}`,
+      null,
+    );
+  }
+
+  /** Replacement handoff: fence the AI panel, open the edit prefilled. */
+  function applyAiReplacement(replacementText: string): void {
+    const editSelection = aiReview?.editSelection;
+    closeAiReview();
+    if (editSelection) {
+      void beginFocusedEditReview(editSelection, replacementText);
+    }
   }
 </script>
 
@@ -1049,6 +1270,25 @@
                         );
                       }
                     }}
+                    onReviewItem={(group, ref, item) => {
+                      if (selectedChapterId) {
+                        void openReaderItemReview(
+                          selectedChapterId,
+                          chapterScene.id,
+                          group,
+                          ref,
+                          item,
+                        );
+                      }
+                    }}
+                    onReviewScene={() => {
+                      if (selectedChapterId) {
+                        void openReaderSceneReview(
+                          selectedChapterId,
+                          chapterScene.id,
+                        );
+                      }
+                    }}
                   />
                 </div>
               </details>
@@ -1089,6 +1329,25 @@
                   openReaderEdit(selectedChapterId, selectedSceneId, ref, item);
                 }
               }}
+              onReviewItem={(group, ref, item) => {
+                if (selectedChapterId && selectedSceneId) {
+                  void openReaderItemReview(
+                    selectedChapterId,
+                    selectedSceneId,
+                    group,
+                    ref,
+                    item,
+                  );
+                }
+              }}
+              onReviewScene={() => {
+                if (selectedChapterId && selectedSceneId) {
+                  void openReaderSceneReview(
+                    selectedChapterId,
+                    selectedSceneId,
+                  );
+                }
+              }}
             />
           {:else}
             <div
@@ -1112,6 +1371,7 @@
         {selectedSceneId}
         onSelectScene={selectSceneFromAssets}
         onEditPrompt={openAssetPromptEdit}
+        onReviewPrompt={openAssetPromptReview}
         refreshEpoch={assetsRefreshEpoch}
       />
     {:else if mode === "plan"}
@@ -1123,6 +1383,8 @@
         selectedDocumentId={planState.selectedDocumentId}
         selectedAnchor={planState.selectedAnchor}
         onNavigateSource={navigatePlanSource}
+        onReviewSection={(documentId, anchor) =>
+          void openPlanSectionReview(documentId, anchor)}
       />
     {:else if editorState.scene}
       <header
@@ -1220,6 +1482,46 @@
         onApply={() => void applyFocusedEditDraft()}
         onCancel={cancelFocusedEditReview}
       />
+    </div>
+  {/if}
+
+  {#if aiReview}
+    {@const activeReview = aiReview}
+    <div class="col-span-full">
+      <!-- Keyed remount per review: the assetPrompt path swaps aiReview
+           null→new in one tick, so without a key the mounted panel would
+           keep the prior selection's context/result/in-flight run. -->
+      {#key activeReview}
+        <AiReviewPanel
+          selectionLabel={activeReview.selectionLabel}
+          lenses={activeReview.lenses}
+          initialLens={activeReview.initialLens}
+          context={activeReview.context}
+          rebuildContext={(lens) => {
+            const workspace = planState.workspace;
+            if (!workspace) return activeReview.context;
+            return buildAiReviewContext(
+              activeReview.selection,
+              lens,
+              workspace,
+            );
+          }}
+          provider={tauriAiReviewProvider}
+          onReviewReplacement={applyAiReplacement}
+          onClose={closeAiReview}
+        />
+      {/key}
+    </div>
+  {/if}
+
+  {#if aiReviewError}
+    <div class="col-span-full">
+      <p
+        class="m-0 rounded-md border border-[#d9a99e] bg-[#fff4f1] p-3 text-[#7d3c2f]"
+        role="alert"
+      >
+        {aiReviewError}
+      </p>
     </div>
   {/if}
 

@@ -38,6 +38,11 @@ type SidebarProps = {
   onSelectHeading: (id: string, anchor: string) => void;
 };
 
+const CHARACTERS_MD = {
+  path: "docs/stories_plan/characters.md",
+  content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
+};
+
 function workspaceFixture(): PlanWorkspace {
   const payload: WorkbenchPlanWorkspacePayload = {
     documents: [
@@ -63,6 +68,7 @@ function workspaceFixture(): PlanWorkspace {
         chapterNumber: 2,
       },
     ],
+    storyCharactersMd: CHARACTERS_MD,
   };
   return projectPlanWorkspace(payload);
 }
