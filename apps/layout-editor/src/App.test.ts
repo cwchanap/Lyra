@@ -3619,17 +3619,27 @@ describe("App AI review mutual exclusion and fencing", () => {
   });
 
   it("selecting a new review fences stale context and provider results", async () => {
-    let resolveStale!: (candidate: unknown) => void;
+    let resolveStale!: () => void;
     let staleResult!: Promise<unknown>;
+    let firstReview = true;
     mockAiBackend(
       {},
       {
-        run_ai_review: () => {
-          const deferred = new Promise<unknown>((resolve) => {
-            resolveStale = resolve;
-          });
-          staleResult = deferred;
-          return deferred;
+        run_ai_review: (args) => {
+          const payload = (args as { payload: { input: string } }).payload;
+          const request = JSON.parse(payload.input) as Record<string, unknown>;
+          if (firstReview) {
+            firstReview = false;
+            // Resolve with a candidate VALID for A's own request — anything
+            // else would fail local validation instead of proving the stale
+            // result cannot land under the new review.
+            const deferred = new Promise<unknown>((resolve) => {
+              resolveStale = () => resolve(validCandidateFromRequest(request));
+            });
+            staleResult = deferred;
+            return deferred;
+          }
+          return Promise.resolve(validCandidateFromRequest(request));
         },
       },
     );
@@ -3655,12 +3665,7 @@ describe("App AI review mutual exclusion and fencing", () => {
     // The stale scene-level result lands: it must not render anywhere. Await
     // the deferred provider result and a Svelte flush first, otherwise the
     // negative check can pass before the stale result is even processed.
-    resolveStale(
-      validCandidateFromRequest({
-        lens: "storyConsistency",
-        selectedSourceRef: "stale",
-      }),
-    );
+    resolveStale();
     await staleResult;
     await tick();
     await waitFor(() =>
