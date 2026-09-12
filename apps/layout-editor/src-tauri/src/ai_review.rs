@@ -60,8 +60,9 @@ pub(crate) fn agent_prompt(payload: &AiReviewTransportPayload) -> String {
 /// wait a fixed 180 seconds (poll `try_wait`, kill at the deadline — std
 /// has no wait timeout and no new dependency is allowed), and parse stdout
 /// as the candidate JSON. Spawn failure of a missing or non-executable
-/// binary maps to `aiProviderConfigMissing`; transient resource failures
-/// (process/descriptor/memory pressure, interrupted spawn) retry briefly,
+/// binary maps to `aiProviderConfigMissing`; transient spawn failures
+/// (process/descriptor/memory pressure, interrupted spawn, or exec of a
+/// binary whose writer has not finished) retry briefly,
 /// then persistent spawn failures, non-zero exits, and the timeout map to
 /// `aiProviderRequestFailed`;
 /// empty or unparseable stdout maps to `aiProviderInvalidResponse`. No env
@@ -82,8 +83,10 @@ pub(crate) fn run_agent_review(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     // Fork/exec can fail transiently under load (EAGAIN on process/thread
-    // limits, EMFILE/ENFILE on descriptor exhaustion, ENOMEM): give the
-    // one-shot action a bounded retry before surfacing request_failed.
+    // limits, EMFILE/ENFILE on descriptor exhaustion, ENOMEM) or race a
+    // writer of the binary itself (ETXTBSY on a just-written or mid-upgrade
+    // executable): give the one-shot action a bounded retry before
+    // surfacing request_failed.
     const SPAWN_ATTEMPTS: u32 = 3;
     const SPAWN_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(50);
     let mut attempts = 0;
@@ -212,20 +215,26 @@ pub(crate) async fn run_ai_review(
 }
 
 /// True for spawn failures that are environmental and worth retrying:
-/// process/descriptor/memory pressure or an interrupted spawn. Errors like
-/// NotFound (missing binary) and PermissionDenied (not executable) are
-/// configuration faults, not transients. `Interrupted` is checked portably
-/// through `ErrorKind`; only the raw errno matching is Unix-specific.
+/// process/descriptor/memory pressure, an interrupted spawn, or exec of a
+/// binary still open for writing (ETXTBSY — a just-written script or an
+/// in-flight package-manager update; it clears once the writer closes).
+/// Errors like NotFound (missing binary) and PermissionDenied (not
+/// executable) are configuration faults, not transients. `Interrupted` and
+/// `ExecutableFileBusy` are checked portably through `ErrorKind`; only the
+/// raw errno matching is Unix-specific.
 fn transient_spawn_error(error: &std::io::Error) -> bool {
-    if error.kind() == std::io::ErrorKind::Interrupted {
+    if matches!(
+        error.kind(),
+        std::io::ErrorKind::Interrupted | std::io::ErrorKind::ExecutableFileBusy
+    ) {
         return true;
     }
     transient_spawn_errno(error)
 }
 
 /// Raw-errno classification of resource-pressure spawn failures. `libc` is a
-/// `cfg(unix)`-only dependency, so other platforms treat every non-`Interrupted`
-/// spawn error as non-transient.
+/// `cfg(unix)`-only dependency, so other platforms only classify the
+/// `ErrorKind`-level transients (`Interrupted`, `ExecutableFileBusy`).
 #[cfg(unix)]
 fn transient_spawn_errno(error: &std::io::Error) -> bool {
     matches!(
@@ -370,6 +379,24 @@ mod tests {
         // ErrorKind::Interrupted is the portable path: a kind-only error
         // carrying no raw OS code must still classify as transient.
         let error = std::io::Error::from(std::io::ErrorKind::Interrupted);
+        assert!(transient_spawn_error(&error));
+    }
+
+    #[test]
+    fn executable_busy_spawn_error_is_transient() {
+        // Exec'ing a binary whose writer has not fully closed fails with
+        // ETXTBSY until the write count drops; std surfaces it portably as
+        // ErrorKind::ExecutableFileBusy, so a kind-only error classifies.
+        let error = std::io::Error::from(std::io::ErrorKind::ExecutableFileBusy);
+        assert!(transient_spawn_error(&error));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn text_file_busy_spawn_errno_is_transient() {
+        // The CI flake's exact shape: spawn returns raw ETXTBSY (26) when a
+        // just-written script is exec'd before its writer fully detaches.
+        let error = std::io::Error::from_raw_os_error(libc::ETXTBSY);
         assert!(transient_spawn_error(&error));
     }
 
