@@ -3664,6 +3664,89 @@ describe("App AI review mutual exclusion and fencing", () => {
     expect(request.lens).toBe("dialogue");
   });
 
+  it("selecting a new asset review remounts the panel and fences stale results", async () => {
+    let resolveStale!: () => void;
+    let firstReview = true;
+    mockAiBackend(
+      {},
+      {
+        run_ai_review: (args) => {
+          const payload = (args as { payload: { input: string } }).payload;
+          const request = JSON.parse(payload.input) as Record<string, unknown>;
+          if (firstReview) {
+            firstReview = false;
+            // Resolve with a candidate VALID for A's own request — anything
+            // else would fail local validation instead of proving the stale
+            // result cannot land under B.
+            return new Promise((resolve) => {
+              resolveStale = () => resolve(validCandidateFromRequest(request));
+            });
+          }
+          return Promise.resolve(validCandidateFromRequest(request));
+        },
+      },
+    );
+
+    const user = userEvent.setup();
+    render(App);
+    await user.click(screen.getByRole("button", { name: "Assets" }));
+    await screen.findByRole("region", { name: "Assets" });
+    await user.click(screen.getByRole("tab", { name: "Library" }));
+
+    // Asset A: open the review and leave its Run pending. assetPrompt never
+    // awaits a load, so the aiReview null→new swap happens in one tick —
+    // only the keyed remount guarantees a fresh panel for asset B.
+    await user.click(
+      screen.getByRole("button", {
+        name: "background.chapter_1.scene_cues.hall",
+      }),
+    );
+    await user.click(
+      within(screen.getByLabelText("Asset inspector")).getByRole("button", {
+        name: "Review prompt",
+      }),
+    );
+    await screen.findByRole("region", { name: "AI review" });
+    await user.click(screen.getByRole("button", { name: "Run review" }));
+    await waitFor(() =>
+      expect(aiReviewPanel().getAttribute("data-state")).toBe("running"),
+    );
+
+    // Asset B: the panel must remount — B's label, B's context, ready phase.
+    await user.click(
+      screen.getByRole("button", { name: "portrait.hayasaka_akane.standard" }),
+    );
+    await user.click(
+      within(screen.getByLabelText("Asset inspector")).getByRole("button", {
+        name: "Review prompt",
+      }),
+    );
+    const panel = await screen.findByRole("region", { name: "AI review" });
+    await waitFor(() => expect(panel.getAttribute("data-state")).toBe("ready"));
+    expect(
+      within(panel).getByRole("heading", {
+        name: "portrait.hayasaka_akane.standard",
+      }),
+    ).toBeInTheDocument();
+    expect(panel.querySelector("[data-selected-source-ref]")).toHaveTextContent(
+      "asset:portrait:portrait.hayasaka_akane.standard",
+    );
+    expect(screen.queryByText("Reviewing…")).not.toBeInTheDocument();
+
+    // A's late response must not land under B's review.
+    resolveStale();
+    await waitFor(() =>
+      expect(screen.queryByText("測試發現")).not.toBeInTheDocument(),
+    );
+
+    // B's own review runs fresh with B's context.
+    await runPanelReview();
+    const request = aiReviewRequests().at(-1)!;
+    expect(request.selectedSourceRef).toBe(
+      "asset:portrait:portrait.hayasaka_akane.standard",
+    );
+  });
+
   it("a successful focused Apply leaves no stale AI result state", async () => {
     const user = userEvent.setup();
     render(App);
