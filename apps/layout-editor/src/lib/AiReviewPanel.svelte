@@ -146,6 +146,12 @@
 
   function removeChip(ref: string): void {
     removedRefs = [...removedRefs, ref];
+    // Chip removal changes the request context: any displayed result or
+    // failure was produced for the previous chip set, so reset to ready —
+    // same invalidation as selectLens.
+    result = null;
+    failure = null;
+    phase = "ready";
   }
 
   function applyReplacement(): void {

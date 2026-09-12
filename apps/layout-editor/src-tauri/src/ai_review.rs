@@ -302,9 +302,11 @@ fn drain_within(receiver: std::sync::mpsc::Receiver<(Vec<u8>, bool)>) -> (Vec<u8
 mod tests {
     use super::*;
     use serde_json::json;
+    #[cfg(unix)]
     use std::sync::atomic::{AtomicU64, Ordering};
 
     /// Unique suffix for stub dirs so concurrent/rapid tests never collide.
+    #[cfg(unix)]
     static STUB_DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     /// Sentinel payload from the task brief. Deliberately NOT the real
@@ -334,6 +336,7 @@ mod tests {
     /// Writes a stub review-agent shell script to a unique temp dir and
     /// returns its path. Tests inject this path as the agent binary, so the
     /// transport is exercised with no network and no real agent.
+    #[cfg(unix)]
     fn stub_agent(script_body: &str) -> std::path::PathBuf {
         use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!(
@@ -354,6 +357,7 @@ mod tests {
         path
     }
 
+    #[cfg(unix)]
     fn run_with_stub(script_body: &str) -> Result<serde_json::Value, EditorError> {
         let payload = sentinel_payload();
         run_agent_review(&payload, &stub_agent(script_body).to_string_lossy())
@@ -427,6 +431,7 @@ mod tests {
 
     // ---- stub-CLI transport -----------------------------------------------
 
+    #[cfg(unix)]
     #[test]
     fn successful_agent_json_stdout_parses_to_candidate() {
         let candidate = run_with_stub("cat >/dev/null\nprintf '{\"noChange\":true}'")
@@ -434,6 +439,7 @@ mod tests {
         assert_eq!(candidate, json!({"noChange": true}));
     }
 
+    #[cfg(unix)]
     #[test]
     fn prompt_reaches_agent_via_stdin() {
         let candidate = run_with_stub(
@@ -444,6 +450,7 @@ mod tests {
         assert_eq!(candidate, json!({"onStdin": true}));
     }
 
+    #[cfg(unix)]
     #[test]
     fn nonzero_exit_with_stderr_maps_to_request_failed() {
         let error = run_with_stub("cat >/dev/null\necho 'agent exploded' >&2\nexit 1")
@@ -452,6 +459,7 @@ mod tests {
         assert!(error.message.contains("agent exploded"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn stderr_detail_is_bounded() {
         let path = stub_agent("cat >/dev/null\nhead -c 1000 </dev/zero | tr '\\0' 'q' >&2\nexit 1");
@@ -470,6 +478,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn garbage_stdout_maps_to_invalid_response() {
         let error = run_with_stub("cat >/dev/null\nprintf 'not json'")
@@ -477,12 +486,14 @@ mod tests {
         assert_eq!(error.code, "aiProviderInvalidResponse", "{error:?}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn empty_stdout_maps_to_invalid_response() {
         let error = run_with_stub("cat >/dev/null").expect_err("empty stdout must fail");
         assert_eq!(error.code, "aiProviderInvalidResponse", "{error:?}");
     }
 
+    #[cfg(unix)]
     #[test]
     fn truncated_stdout_maps_to_invalid_response() {
         // Produce just over OUTPUT_BYTE_LIMIT so read_bounded truncates and
@@ -565,6 +576,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn non_executable_agent_binary_maps_to_config_missing() {
         // An existing-but-not-executable CLI is a configuration fault like
