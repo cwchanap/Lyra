@@ -439,6 +439,32 @@ describe("AiReviewPanel lifecycle", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Canceled");
   });
 
+  it("removing a chip after a review clears the stale result", async () => {
+    const provider = okProvider();
+    const user = userEvent.setup();
+    render(AiReviewPanel, { props: panelProps({ provider }) });
+    await runReview();
+    expect(
+      await screen.findByLabelText("AI review findings"),
+    ).toBeInTheDocument();
+
+    const chips = chipList();
+    const voiceChip = within(chips)
+      .getAllByRole("listitem")
+      .find((item) => item.textContent?.includes("角色聲音"))!;
+    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
+
+    // The displayed result was produced with the removed chip's content, so
+    // it must not remain actionable.
+    expect(
+      screen.queryByLabelText("AI review findings"),
+    ).not.toBeInTheDocument();
+    expect(document.querySelector(".ai-review-panel")).toHaveAttribute(
+      "data-state",
+      "ready",
+    );
+  });
+
   it("changing lens rebuilds lens-appropriate context and clears the old result", async () => {
     const provider = okProvider();
     const user = userEvent.setup();
