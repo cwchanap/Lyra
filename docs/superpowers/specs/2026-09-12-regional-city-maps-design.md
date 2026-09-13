@@ -1,98 +1,140 @@
 # 區域式 Anime City Map 設計規格
 
-> 狀態：Draft；本次先交付設計、分區美術規格與實作計畫，尚未實作 runtime。
-> 基準：`main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`，2026-09-12。
-> 本功能的程式、測試及正式資產匯入都在同一支 draft PR 續作；不另拆一張 ticket 對多支 PR。
+> 狀態：Draft；設計與實作交接文件，尚未實作 runtime 或匯入五張正式區域 PNG。
+> 已重新核對 `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`；續作於 Draft PR #89。
+> 同一功能的資產、程式及測試在本 PR 完成；不先合併文件再另開 implementation PR。
 
-相關文件：[實作計畫](../plans/2026-09-12-regional-city-maps-implementation-plan.md)、[五區美術與節點規格](../../art/maps/README.md)、[既有 HPA-601 設計](2026-08-30-hpa-601-linear-city-map-navigation-design.md)。
+相關文件：[實作計畫](../plans/2026-09-12-regional-city-maps-implementation-plan.md)、[五區美術交接](../../art/maps/README.md)、[既有 HPA-601 設計](2026-08-30-hpa-601-linear-city-map-navigation-design.md)。
 
 ## 1. 目標與本次範圍
 
-把「一張城市背景加上零散圓點」改成 **東京總覽 + 區域子地圖**。建築、街道、廣場形成可記憶的空間；文字及互動狀態仍由程式呈現。不是新增開放世界。
+把「城市背景加零散圓點」改成 **東京總覽 + 區域子地圖**。玩家先記住建築、街道與廣場，再把目的地名稱對到實際畫面位置。不是新增開放世界，也不是把概念展示板直接當作遊戲 UI。
 
-| 層級 | 回答的問題 | 範圍 |
+| 層級 | 回答的問題 | 本次責任 |
 | --- | --- | --- |
-| 東京總覽 | 這些區域彼此在哪裡？ | 同一張穩定的城市示意；只顯示當下合法的目的地入口 |
-| 區域地圖 | 到這區後，可以去哪裡？ | 吉祥寺、澀谷、新宿、歌舞伎町、銀座／港區，各一張獨立底圖 |
-| 案件空間圖 | 誰看見什麼、如何通行？ | 沿用案件證物／調查場景；不是第三層通用導航系統 |
+| 東京總覽 | 各區彼此在哪裡？ | 穩定城市輪廓、合法區域入口及既有直接目的地 |
+| 區域地圖 | 到這區後可以去哪裡？ | 吉祥寺、澀谷、新宿、歌舞伎町、銀座／港區，各一張獨立背景 |
+| 案件空間圖 | 誰看見什麼、如何通行？ | 沿用案件證物／調查場景，不新增第三層通用導航 |
 
-本 PR 的實作目標是：完成二層呈現與資產鏈、把 Chapter 1 的既有九個 travel wrappers 接上新畫面，並用非 production fixture 驗證多目的地情況。**不撰寫 Chapter 2～8 的可玩場景、不實作 Chapter 2 Phase／支線／證據板。** 五區美術可先備妥，不代表五區同時開放。
+本 PR 的實作目標是二層呈現、資產鏈、Chapter 1 九個既有 travel wrappers，以及非 production 的多地點往返測試。**不撰寫 Chapter 2～8 可玩 scenes，不實作 Chapter 2 Phase、支線、證據板或地點排程。** 美術準備好不代表那些區域已開放。
 
-不包含 GIS、3D、WebGL、自由鏡頭、路徑搜尋、移動費用、時刻表、地圖專用存檔、獨立地圖 editor、天氣系統、白天／夜晚多套資產或新的 travel scene type。
+不包含 GIS、3D、WebGL、自由鏡頭、路徑搜尋、移動費用、時刻表、地圖存檔、地圖 editor、天氣系統、日夜多套資產或新 travel scene type。沿用既有 SvelteKit SPA／Tauri、investigation 及 `enter_sublocation`。
 
-## 2. 已查證的基礎與來源邊界
+## 2. 已查證的接點與來源邊界
 
-- `docs/stories_plan/city_map.json` 現有根 ID 是 `tokyo`、`version: 1`，包含六個 Chapter 1 地點及保留的 `shibuya` 點；目前沒有 region membership。
-- `packages/scripts/compile-scenes/city-map.ts` 只接受單一 Tokyo topology。`orchestrator.ts` 與 `emitter.ts` 產出 investigation map。
-- `InvestigationMapView.svelte` 已使用同一個 16:9 座標平面；`ExploreView.svelte` 在 mapped investigation 尚無 current sublocation 時顯示地圖。
-- Rust 的 pending-map law 阻止自動進入及空 outro 偷跑；旅行仍由 `enter_sublocation` 完成。這些規則不改。
-- 全域底圖經 `assets/enrich.ts` 登記為 `background.city_map.tokyo`，來源是 `globalFile`；Reader／Assets 已有 structural visual cue 路徑。
-- 資產政策要求背景為 1920 × 1080、不透明 PNG、grounded anime neo-noir、無可讀文字及 UI。
+| 關注點 | 現有來源 | 本次處理 |
+| --- | --- | --- |
+| 全域地點 | `docs/stories_plan/city_map.json` | 單一 topology，由 v1 一次切換 v2 |
+| Compiler | `city-map.ts`、`orchestrator.ts`、`types.ts`、`emitter.ts` | 加 region membership 及 scene map metadata |
+| 遊戲狀態 | Rust `game/schema.rs`、`view.rs`、`mod.rs` | 擴充 wire／投影，不增加 durable state |
+| 地圖呈現 | `InvestigationMapView.svelte`、`ExploreView.svelte` | 二層 plane 與可取消的地圖瀏覽 |
+| Session／輸入阻擋 | `apps/game/src/routes/+page.svelte` | 沿用 `presentationState.sessionEpoch`、`gameplayInteractionBlocked` 與既有 shell inert |
+| 全域資產 | `assets/enrich.ts`、`@lyra/asset-paths` | 六個背景各登記一次，仍用 `globalFile` |
+| Workbench | `reader-projection.ts`、`asset-workspace.ts`、`AssetsView.svelte` | 沿既有 structural visual cue／library source |
+| E2E 選點 | `pending-acquisition-drain.ts` 的 `soleMapDestinationId` | 保留唯一 leaf 判定，不把 region 當成 travel |
 
-故事來源為 repo 的 `final_story_bible.md`、`chapter_1_plan.md`、`chapter_2_plan.md` 及 manifest-listed Chapter 1 scenes；對話所附 V6.7／V3.8／V0.8 提供額外規劃背景。本次**不把附件全文覆蓋 repo，也不暗中同步版本差異**。美術構圖是提案，不是新增故事 canon。
+上表 compiler 檔案位於 `packages/scripts/compile-scenes/`；遊戲元件位於 `apps/game/src/lib/components/`；Workbench 檔案位於 `apps/layout-editor/src/lib/`。
 
-對話概念板只核定美術方向與分區想法，並未核定其自動生成的文字、章號、地理或室內配置。概念板上銀座章號、咖啡館英文拼法、巨型玻璃展館等，不可反向改寫故事。
+目前 MapView 已有 16:9 共用座標平面，但窄窗會隱藏地點名稱；ExploreView 只在 mapped scene 尚無 current sublocation 時顯示地圖。Rust pending-map law 已阻止 auto-entry／空 outro 偷跑。上述是現況，不應重造。
+
+故事依 repo 的 `final_story_bible.md`、`chapter_1_plan.md`、`chapter_2_plan.md` 與 Chapter 1 scenes；附件 V6.7／V3.8／V0.8 是額外背景，本次不覆蓋 repo 或暗中合併版本差異。構圖提案不是故事 canon。概念圖自動產生的章號、名稱、地理、玻璃展館尺度及室內配置均不是核定資料。
+
+### 2.1 本輪補強
+
+補齊原草稿缺少的 `+page.svelte` 接線、同場景讀檔 reset、取消／失敗 travel 行為、背景與 marker 原子切換、compiler 與 runtime 不同的 region 過濾責任，以及 artwork／implementation／驗收的獨立狀態。
 
 ## 3. 分區與既有地點處理
 
-| Region ID | 顯示名稱 | 角色 | 本次 production 啟用 |
+| Region ID | 名稱 | 視覺身份 | 本次 production 使用 |
 | --- | --- | --- | --- |
-| `kichijoji` | 吉祥寺 | 低層商店街、咖啡館、車站與綠地 | `rain_bell_cafe`、`kichijoji_shopping_street` |
-| `shibuya` | 澀谷 | 廣場、大螢幕、玻璃箱與外側街道 | 無；保留 Chapter 2 構圖與 fixture |
+| `kichijoji` | 吉祥寺 | 暖窗低層商店街、咖啡館、車站與綠地 | `rain_bell_cafe`、`kichijoji_shopping_street` |
+| `shibuya` | 澀谷 | 大螢幕、廣場、人尺度玻璃箱、外侧街道 | 無；Chapter 2 美術準備及測試 |
 | `shinjuku` | 新宿 | 都市高樓中的安靜診所街區 | 無；Chapter 4 美術準備 |
-| `kabukicho` | 歌舞伎町 | 新宿內的劇場街區，獨立可讀的子圖 | 無；Chapter 5 美術準備 |
-| `ginza_minato` | 銀座／港區 | 兩種街區由主要道路連接的示意 | 無；Chapter 3 美術準備 |
+| `kabukicho` | 歌舞伎町 | 劇場立面、窄街、克制紅紫霓虹 | 無；Chapter 5 美術準備 |
+| `ginza_minato` | 銀座／港區 | 商業大道與現代高樓的壓縮示意 | 無；Chapter 3 美術準備 |
 
-歌舞伎町是新宿內的區域視圖，不是另一座遠離新宿的城市；兩者保持同一城市錨點的鄰近關係。銀座／港區是合併顯示範圍，不宣称所有地點都在步行距離。
+歌舞伎町是新宿內的街區視圖，不是遠離新宿的另一座城市。銀座／港區合併呈現不表示所有地點可步行抵達。兩者只是顯示範圍，不需要通用多層地理樹。
 
-`police_meeting_room`、`outsourced_review_office`、`soma_detective_office`、`kagami_review_room` 的行政區域沒有由目前 topology 證實。**保留現有 ID、label 與總覽位置，作 `regionId: null` 的直接目的地**；不能因概念圖漂亮就搬到新宿或吉祥寺。這是明確的過渡呈現規則，不是聲稱已核定真實地址。
+保留 `police_meeting_room`、`outsourced_review_office`、`soma_detective_office`、`kagami_review_room` 為 `regionId: null` 的 **overview-direct 呈現例外**。保留 ID、label 與既有總覽座標，不用生成美術搬動地點。
 
-保留 `shibuya` 舊 location entry 為非 production 保留點亦可，但它不能與 region 按鈕重複出現。實作時採最簡單的單一表示：確認沒有 authored sublocation 引用後，將它改為 region 定義；遇到實際引用先報出，不臆造目的地。
+來源更正：`chapter_1/scene_5.md` 已明寫首輪審查位於「吉祥寺地方分署審查會場」。所以不能聲稱四個地點的故事區位全都未知；上述 direct 分組是本 PR 暫不重畫／重分配這四個既有 anchor 的呈現決策，不是修改其故事地址。總覽也不得標出與已知場景相反的地理說明。
 
-## 4. 玩家流程
+舊 `shibuya` location 是保留點。確認沒有 authored sublocation 引用後，將它改為 region 定義，不保留重複入口；有實際引用時先明確處理該引用，不默默刪除或猜測替代點。
 
-### 4.1 地圖初始畫面
+## 4. 玩家流程與狀態所有權
 
-在合法 pending-map 狀態：若所有 projected destinations 都屬同一非空 region，直接開該子圖；否則開東京總覽。上方永遠有 `東京總覽 / 區域名稱` 的明確回溯入口，避免每次去咖啡館都被迫多點一次總覽。
+### 4.1 進入地圖
 
-Chapter 1 第一個地圖的提示只說明：可以查看東京總覽，目前只有一個目的地可前往。它不是新劇情、不加導覽對話。
+在 pending-map 狀態，若所有合法 destinations 都屬同一非空 region，直接開該子圖；其他情況開總覽。唯一 region 直接進子圖可避免每次去咖啡館都多點一次，但仍必須點 leaf 才能繼續。
 
-總覽上的 region 按鈕只切換顯示，**不呼叫 IPC、不標記到訪、不觸發 entry reveal、不推进場景**。只有真正目的地按鈕呼叫現有 `onEnterSublocation(id)`。不新增確認對話框。
+Header 只保留 `東京總覽 / 區域名稱`、現有 scene Summary 與簡短的 `區域示意圖` 說明；不要帶入概念板的章節清單、進度統計或新選單。第一次地圖用非劇情提示說明目前只有一個目的地，不新增導覽對話。
 
-### 4.2 Chapter 1 不變條件
+總覽顯示合法 region 按鈕及 `regionId: null` 的直接目的地；子圖只顯示該區合法 leaves。兩層不能同時渲染同一個 leaf 的第二個可點副本。
 
-九個 `investigation_scene_map_01`～`09` 沿用原順序、anchor 與唯一 unlocked destination。每次只有一個可前往的 leaf destination；查看總覽不是另一條故事路線。當唯一目的地在總覽直達時，保留一次點擊進場。
+### 4.2 操作契約
 
-不增加車站、便利店、公園等可玩節點。它們可以是底圖背景，但不能產生假按鈕、支線或新證物。
+| 操作 | 畫面結果 | 遊戲狀態／IPC |
+| --- | --- | --- |
+| 點 region／返回總覽 | 切換 plane | 無 IPC、無到訪／證物／history 變更 |
+| 點非目前 leaf | 交給既有 `onEnterSublocation(id)` | 只執行原有 travel mutation |
+| 在 interior 開地圖 | 顯示目前地點所屬子圖；direct 則總覽 | current sublocation 保持不變 |
+| 取消瀏覽／點目前 leaf | 回原 interior | 無 IPC，不重播 entry reveal |
+| Travel 失敗 | 保留可重試的地圖與既有錯誤顯示 | 不預先關圖、不標記已到達 |
+| Travel 成功 | 使用回傳 scene／mode／current sublocation | 不額外發第二個 advance 或確認指令 |
 
-### 4.3 多目的地及返回地圖
+只有 Explore 且沒有阻擋輸入時可開啟／操作地圖。維持 `SublocationNav` 在 mapped scenes 隱藏。`區域地圖`／`返回現場` 是同一 travel surface 的入口與取消，不是第二套 navigator。
 
-既有 mapped interior 現在會隱藏 `SublocationNav`；因此本次要補齊一個小型、presentation-only 的 `區域地圖` 按鈕，不能只驗證進去而無法再選地點。
+Pending map 沒有可取消回去的 interior，不能顯示會繞過唯一目的地的「返回現場」。只有 current sublocation 非 null 才顯示取消。
 
-只有 Explore 且無阻擋中的 gameplay command／acquisition 時可開啟。`ExploreView` 以短暫 `mapOpen` 顯示地圖，**不清空 Rust 的 current sublocation**。關閉後回到同一室內狀態；點目前地點只關閉畫面，不再次呼叫 enter；點其他合法地點仍用既有 mutation。
+沿既有 GameShell 處理 Escape 與較高層對話框，不新增全域 key listener 搶走 acquisition／save／menu 的鍵盤控制；地圖提供原生返回按鈕。
 
-`mapOpen`、`activeRegionId`、hover／focus 都是 UI 狀態，不存檔。scene ID／載入的 game session 改變時重設；底圖換頁不重設遊戲進度。讀檔時有 current sublocation 就恢復 interior，沒有就依初始規則顯示地圖。
+### 4.3 Transient reset
 
-這只驗證導航容器，不宣稱 Chapter 2 自由調查 lifecycle 已完成。
+`mapOpen` 只由 ExploreView 持有；`activeRegionId` 只由 MapView 持有，null 表示總覽。hover／focus／載圖狀態亦只在呈現層，不加 store、save 欄位或 travel IPC。
 
-## 5. 互動與視覺規格
+`+page.svelte` 用既有 session epoch、chapter ID、scene ID 作 ExploreView 的 reset 身分（keyed subtree 或等效明確 reset prop）。**成功讀入同一 scene ID 的存檔也必須重設**；單靠 scene ID 不足。不得以每次 state object 或 durable revision 更新作 key，否則一般操作也會把畫面重置。
 
-- 使用既有 Lyra 色彩／字體 tokens；底圖是冷藍雨夜與少量暖窗光，UI 是清楚的骨白文字、cyan focus、既有 crimson objective accent。
-- 背景的亮燈只是美術，不表示 unlocked。**可去狀態必須同時有文字、按鈕形狀及 focus affordance**，不能只靠顏色或亮度。
-- 一個建築錨點對應一個 native button；短引線或標籤可偏移，但實際地點不漂移。hover/focus 強調標籤，不假裝整棟 raster 建築能獨立發光。
-- 不把標籤、章號、未解問號、鎖頭、導航路線、對话人物或主線符號畫進底圖。
-- 閱讀順序固定：目前目的／區域 → 可去地點 → 地標與背景。持續顯示目的地名稱，不重現目前窄螢幕 `.pin-label { display: none; }` 的失讀問題。
-- 延續 16:9 單一 map plane，letterbox 而非裁掉地圖；PNG、錨點與短引線使用同一 normalized coordinate plane。
-- 主要按鈕至少 44px 命中區。較窄視窗把長標籤收進旁邊／下方的簡單地點清單，清單與圖上錨點同源同 callback，不成為第二套 navigation state。
-- 同一可見版面只設一組鍵盤 tab stops；圖面與清單同時可見時，不重複宣讀兩個相同 destination。
-- 靜態底圖配最多短 crossfade；不加入循環粒子、鏡頭漂移或每次 hover pan。`prefers-reduced-motion` 下直接切換。
-- 背景載入及載入失敗使用現有 resolver／placeholder。切換 region 時遮蔽舊圖，不能把新座標短暫畫在上一區的底圖上；失敗時文字目的地仍可用。
+ExploreView 在 current sublocation 確實改變時關閉 `mapOpen`；失敗指令不改 current，因此保留畫面。離開 Explore／切 scene／換 session 亦清除 transient browsing。若投影更新使 active region 不再有合法 destinations，退回上述初始 plane 規則，不留死頁。
 
-## 6. 資料設計：只擴充原本一份 topology
+讀檔結果：current 非 null 恢復 interior；current 為 null 恢復 pending map，依目的地集合選初始 plane。套用既有 session replacement 與 game-state application 路徑，不另造 load event bus。
 
-保留 `docs/stories_plan/city_map.json`，不要另造 `maps.json`、assets workspace 設定或第二套 location registry。
+`+page.svelte` 繼續保有 shell inert，並把 `gameState.inFlight || gameplayInteractionBlocked` 傳為地圖相關 disabled；地圖事件處理也檢查 disabled。沒有新 modal，也不複製 acquisition／persistence 的狀態機。
 
-目標為一次性的 `version: 2` cutover。只支援新形狀、重編譯現有 corpus；無 version-1 parser fallback、無 migration converter。
+### 4.4 Chapter 1 不變條件
+
+`investigation_scene_map_01`～`09` 保留原順序、Summary、anchor 及唯一 unlocked leaf。不新增車站、便利店、公園、支線或證物；查看總覽不是第二條故事路線。
+
+Rust current 為 None 的 mapped scene 不 auto-enter／auto-outro。點唯一目的地後由原 command transaction 前進一次。多地點 fixture 驗證來回導航，不宣稱已完成 Chapter 2 自由調查內容。
+
+## 5. 視覺、座標與載圖契約
+
+每張底圖為獨立 1920 × 1080 RGB PNG；依 `static/assets/config/policy.yaml`，無文字、UI、章號、pin、前景對話角色或路線答案。沿用 Lyra 字體與色彩 tokens；背景暖窗只是美術，不代表 unlocked。
+
+位置取自實際建築入口／地標；生成 brief 的百分比只是構圖區域，不能未量測就當正式座標。標籤與簡短引線不改 anchor。不要假裝 raster 中的建築可以獨立發光，也不為此加 segmentation／3D。
+
+Plane、圖片及 anchor 共用 16:9 normalized 座標，完整顯示、letterbox、不按視窗比例 object-cover 裁切。背景與最主要入口保留低干擾空間；每次換圖都要重驗其 anchor，不保留與新建築無關的舊圓點。
+
+| 情境 | 呈現要求 |
+| --- | --- |
+| 一般桌面 | 原生具名按鈕、至少 44px 命中區、可見 keyboard focus |
+| 窄窗或標籤密集 | 同一 destinations 資料投影為簡單文字清單，圖上錨點作非互動位置提示 |
+| 圖面／清單切換 | 只保留一組 interactive destinations／tab stops，不重複宣讀 |
+| Region 切換 | focus 移至地圖標題／首個可用入口；返回則優先回原 region 按鈕 |
+| 圖片載入失敗 | 現有 placeholder 加具名目的地仍可操作，不以 placeholder 當美術驗收成功 |
+
+名稱不能像目前窄窗規則一樣直接消失。測試 1920 × 1080、1280 × 720 及 720px 以下視窗的長中文名稱、按鈕邊界與 UI 遮擋；不新增全域 label collision engine。
+
+### 5.1 Plane 原子切換
+
+每個 plane 有獨立身分：`tokyo:overview` 或 `tokyo:<regionId>`。不要用 nullable backgroundAssetId 當唯一身分，assets-off 時各圖的 assetId 都是 null。
+
+Raster 與 markers 必須屬同一個 active plane。最小實作採 keyed plane／圖片子樹：換區立即移除舊 raster，載好新圖前顯示 neutral／placeholder 與新區目的地。不要讓 CrossfadeImage 保留的舊圖承載新區 markers。
+
+延用取消舊 resolver 的模式；late resolve、reject、image-error 都不能覆蓋新區。A→B→A 的競態也要測。無需無縫 zoom、hover pan 或循環粒子；首版換 plane 可直接切換，任何短淡入都遵守 reduced-motion。
+
+## 6. 資料設計：同一份 topology
+
+保留 `docs/stories_plan/city_map.json`。只支援一次性 v2 cutover，更新現有 fixtures 並重編譯；不增加 v1 fallback 或 migration converter。
 
 ```ts
 type CityMap = {
@@ -102,7 +144,7 @@ type CityMap = {
   regions: Array<{
     id: string;
     label: string;
-    x: number; // 在東京總覽的錨點
+    x: number; // 東京總覽的區域入口
     y: number;
     backgroundPrompt: string;
   }>;
@@ -110,17 +152,17 @@ type CityMap = {
     id: string; // 既有 sublocation anchor
     label: string;
     regionId: string | null;
-    x: number; // regionId 非 null 時為該子圖座標；否則為總覽座標
+    x: number; // 有 region 時屬子圖，否則屬總覽
     y: number;
   }>;
 };
 ```
 
-拓撲只管 ID、label、region membership、prompt、座標；不管章節、解鎖、訪問紀錄、完成度或交通。
+Topology 只管 ID、label、membership、prompt、座標，不管 chapter、phase、unlocks、visited／completed 或交通。區域瀏覽不新增 persisted flags。
 
-必要 validation：region/location ID 唯一、非空字串、所有座標為 `[0,1]` 有限數、region 引用有效、mapped authored anchors／labels 對得上。保留不用到的 region 是合法美術準備；空 region 不產生玩家可點入口。
+Validation：沿用非空 snake_case ID、非空 label／prompt、finite `[0,1]` 座標；各集合 ID 唯一、region 引用存在。Region ID 不得為根 ID `tokyo`，以免覆蓋總覽 assetId。Region／location 是不同用途，但不得保留舊 `shibuya` 的重複入口。Unused regions 合法。
 
-Authored scene 維持 `- **Map:** tokyo`，不要為第一章複製九份底圖 prompt，也不改 sublocation anchor。Compiler 在每個 mapped scene 附帶它所引用的 region 定義：
+保留 authored `- **Map:** tokyo`、既有 anchor／label 一致性及 travel-only null visual cue；不更動 first-cue BGM/BGS、validator／reachability 的 pending-map 分析或單一檔案 watcher。
 
 ```ts
 type JSONInvestigationMap = {
@@ -142,41 +184,44 @@ type JSONInvestigationMap = {
 };
 ```
 
-region buttons 由 Rust 過濾後的 nodes 推導：至少有一個 visible/unlocked destination 才投影 region；不直接把全域 registry 送成互動 UI。未知／鎖定地點的 label、tooltip、ARIA、DOM button 皆不出現。現存的普通建築仍可在 raster 裡。
+**Compiler** 附帶 scene 全部 mapped sublocations 引用的 regions，包括當下尚未 unlocked、之後可能解鎖者；不能在 compile 時把它們永久刪掉。**Rust view** 每次依現有 visible／unlocked 判定過濾 nodes，再只保留有合法 node 的 regions。不要在前端以 chapter number 重算解鎖。
 
-不新增「visited」等含糊狀態：在未核實原有 progress 欄位前，本版只顯示可去、目前位置及暫忙。不能把「已到訪」畫成「已搜查完畢」。
+UI 只從過濾後的 nodes 取得 labels／callbacks；不可藉 tooltip、ARIA、DOM 或 overview 入口展示隱藏目的地。Region metadata 不授權 travel；`enter_sublocation` 仍作最終合法性判定。Map-less scenes 仍為 map=null。
+
+Rust schema、view、compiler JSON 與 frontend types 一起更新 camelCase wire；不複製一套平行 registry 到 `@lyra/scene-types`。沒有新增 save 欄位不代表舊 corpus 的 saves 必然相容；沿既有 pre-release save policy，不寫遷移器，存讀檔驗收使用同一重編譯 corpus。
 
 ## 7. 資產與 Workbench
 
-目標 asset IDs 為 `background.city_map.tokyo`、`background.city_map.kichijoji`、`background.city_map.shibuya`、`background.city_map.shinjuku`、`background.city_map.kabukicho`、`background.city_map.ginza_minato`。路徑仍由 `@lyra/asset-paths` 解析到 `static/assets/backgrounds/city_map/<id>.png`，不另加 path mapping。
+六個 asset IDs 為 `background.city_map.tokyo` 及 `background.city_map.<regionId>`，路徑仍經 `@lyra/asset-paths` 到 `static/assets/backgrounds/city_map/<id>.png`。不得新增 resolver 或每個 wrapper 複製一份 prompt。
 
-`assets/enrich.ts` 為總覽及各 region 各登記一次全域 prompt，沿用 `source: { globalFile: cityMap.sourceFile }`，不消耗 corpus first visual cue，不捏造 chapter owner。assets-disabled 編譯時各層 backgroundAssetId 均為 null，manifest 無這些項目。
+`assets/enrich.ts` 為總覽及五區各登記一次 request，保留 `source: { globalFile: cityMap.sourceFile }`，不捏造 chapter owner、不消耗 corpus first visual cue。Assets-disabled 時所有層的 backgroundAssetId=null、沒有 map manifest entries，但地點與分區仍可操作。
 
-Reader 對每個 mapped scene 發出總覽及 scene-referenced regions 的既有 `structuralVisualCue`：`map:tokyo`、`map:tokyo:<regionId>`。Assets usage 表示「此 scene 可使用的背景」，不是玩家實際到訪紀錄。新宿等未被 production scene 引用的資產，usage 為零才是正確結果。
+Reader 對每個 mapped scene 的總覽及 compile-time referenced regions 發出既有 `structuralVisualCue`，carrier 為 `map:tokyo`／`map:tokyo:<regionId>`。這表示可使用的資產，不是到訪紀錄；未被 production scene 引用的區域 usage=0 才正確。
 
-不新增第二個 cue walker。確認現有 globalFile 顯示與 prompt review／編輯流程能處理不同 assetId 都來自同一 topology；沿 assetId 找 region，不能把修改澀谷 prompt 誤套在總覽 prompt。若既有寫回不支援 global map，保持 read-only 並清楚顯示，不擴建地圖編輯器。
-
-本次 draft 的美術交接狀態記在 [art index](../../art/maps/README.md)。在獨立 PNG 匯入、尺寸及 anchor 檢查完成前，不切換 production topology，也不把概念板當作正式底圖。
+只由既有 asset-workspace 消費 Reader facts，不新增第二個 scene walker。沿既有 `globalFile` source 顯示；本 PR 不增加 map prompt writer。若既有 review／apply 不支援 global source，維持明確 read-only，不讓可按的 Apply 寫錯總覽 prompt；若已支援，必須以 assetId 區分 root 與 region，測試修改目標不串位。
 
 ## 8. 故事與美術防洩漏
 
-東京與街區圖都是明示的「區域示意圖」，不提供比例尺、分鐘估算或可直接用來定罪的視線／路線結論。調查證物中的精確配置另有來源與揭露時點。
+城市圖是示意，不提供比例尺、分鐘或可定罪的視線／行車結論。精確配置仍由案件證物及其揭露時點負責。
 
-澀谷保留廣場左側大螢幕、中央偏左的人尺度透明直播箱、右後方商業建築及外侧工作區的可讀關係。先前概念圖把玻璃箱畫成裝得下群眾的建築，必須調整；這不是改寫案件尺度。
+澀谷延續左側大螢幕、中央偏左廣場、右後商業樓的識別；玻璃箱改成人尺度直播 booth，群眾在箱外。只畫外部街道／普通服務入口，不透視 M-03、服務梯井或空置樓層。Phase A／B／C 仍由 Chapter 2 plan 控制，不由全知地圖先給答案。
 
-底圖不能透視 M-03、服務梯井或空置樓層殺害空間。樓宇外側可見，不等於已證明內部連通。Chapter 2 後勤配置板仍按原定調查階段取得，不能由全知地圖預先取代。
+新宿不把接待區、病房及資料室畫成獨立建築；歌舞伎町不畫舞台機關、屍體、藍傘或倒數；銀座／港區不畫犯人改道路線。第 6 章可重用總覽交通輪廓；第 7～8 章不自創區位、青葉入口或終章地圖。
 
-新宿只畫診所外觀與街區，不能加青葉標記、病房手環、左／右逃生路線；歌舞伎町只畫劇場外觀、公共街巷及服務入口，不畫升降台夾層、屍體或倒數。銀座／港區道路只是美術連接，不畫已知「犯人改道」箭頭或即時車輛軌跡。
+## 9. 驗收與交付邊界
 
-第 6 章可沿用總覽交通骨架；第 7～8 章拘留設施、檔案室、青葉舊址的精確區位尚未由此工作核定，**不自創第六區或把終章真相塞入底圖**。
+文件審閱、PNG 美術驗收及程式驗收分開記錄。**本輪可完成設計文件；五張 PNG 尚未合格，不得標示已匯入或阻止文件審閱。** 缺圖期間可用既有測試資料完成 compiler／UI 測試，但 production topology 切換必須等實際圖檔與 anchor 通過。
 
-## 9. 可驗收條件
+| 驗收 | 通過條件 |
+| --- | --- |
+| 美術 | 五張獨立區域 PNG、總覽校圖、尺寸／RGB／無 UI／無劇透、實際 anchor 對齊 |
+| Chapter 1 | 九個 wrapper、順序與唯一 leaf 不变；沒有自動跳轉或額外劇情 |
+| 瀏覽 | Region／overview／取消不改 revision、history、inventory、entry reveal |
+| 多地點 | 進入、返回、取消、目前地點不重播、其他地點可切换；失敗仍可重試 |
+| Reset | 同 ID 讀檔、跨章重複 scene ID、切 scene 均無舊瀏覽狀態 |
+| 載圖 | A→B→A 慢回應／失敗不錯配 raster 與 nodes；assets-off 仍可操作 |
+| 可用性 | 三組視窗、中文長名、44px hits、單一 tab order、focus、reduced-motion |
+| 資產链 | 六個唯一 global entries、正確 Reader usage、unused region 零使用 |
+| 回歸 | 同 corpus 存讀檔、現有案件順序、map-less auto-entry 與 Tauri journey 不退化 |
 
-1. 每張 region 為獨立無 UI 的 1920 × 1080 RGB PNG；角色、文字、章號及推理標記未烘焙。總覽不是把五張子圖拼成遊戲畫面。
-2. Chapter 1 九個 wrapper 的順序及唯一 leaf destination 完全不变；overview／region 切換不產生 durable mutation。
-3. region/location 顯示與 Rust 合法目的地集合一致；不能由總覽繞過鎖定條件。
-4. pending map 不 auto-enter／auto-outro；真正點目的地只前進一次；存檔與讀檔不新增 map schema。
-5. 多地點 fixture 可進入、返回地圖、取消及切換地點；目前地點不重播 entry reveal。
-6. 1280 × 720、1920 × 1080、720px 以下窄視窗：名稱可讀、命中區不重疊、圖點不漂移；鍵盤及 reduced-motion 可操作。
-7. 六個背景 manifest entry 不重複；Reader／Assets 能區分總覽與子圖 usage；assets-off、missing-art 也有可讀目的地。
-8. 實作與美術審查均完成後才標 ready。Draft 文件通過不等於 gameplay、畫面 fidelity 或 E2E 通過。
+維持 Draft。完成資產匯入、程式與指定測試後才可標 ready；不能拿對話概念板、placeholder 或文件審阅冒充 runtime fidelity 驗收。
