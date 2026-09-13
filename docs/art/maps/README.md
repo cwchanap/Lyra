@@ -42,23 +42,27 @@ Do **not** bake any of the following into runtime rasters:
 
 ## 3. Generated art included in this PR
 
-The render-safe GitHub review preview is:
+GitHub-renderable standalone previews are committed as native SVG image files:
 
-- [`docs/art/maps/generated/contact_sheet.svg`](generated/contact_sheet.svg)
+- [Tokyo overview](generated/tokyo.svg)
+- [Kichijoji](generated/kichijoji.svg)
+- [Shibuya](generated/shibuya.svg)
+- [Shinjuku](generated/shinjuku.svg)
+- [Kabukicho](generated/kabukicho.svg)
+- [Ginza / Minato](generated/ginza_minato.svg)
+- [Contact sheet](generated/contact_sheet.svg)
 
-It is a native SVG mosaic, with no embedded `data:` URI or base64 raster payload, so GitHub can render it directly. The contact sheet shows the generated visual direction for the Tokyo overview plus Kichijoji, Shibuya, Shinjuku, Kabukicho, and Ginza / Minato.
+These are **review previews, not runtime backgrounds**. They contain no embedded `data:` URI or base64 raster payload, so GitHub can render them directly. The earlier broken wrappers were removed.
 
-This file is **review material, not a runtime background**. The full-resolution generated source images remain subject to individual art review and runtime import in Task 0. The earlier per-district SVG wrappers were removed because they embedded raster data and rendered unreliably on GitHub.
-
-Why keep the distinction explicit:
+Why keep the review/runtime distinction explicit:
 
 - production policy requires six opaque 1920×1080 RGB PNG backgrounds;
-- district anchors must be measured against the final approved raster, not a contact sheet;
-- generated signage or composition mistakes may require regeneration;
+- district anchors must be measured against the final approved raster, not the preview artwork;
+- generated/compositional mistakes may require regeneration;
 - Shibuya in particular must be checked for livestream-booth scale and spoiler-safe exterior geometry;
 - generated art must not silently establish new story geography.
 
-Do **not** point `city_map.json` at `docs/art/maps/generated/contact_sheet.svg`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
+Do **not** point `city_map.json` at `docs/art/maps/generated/*.svg`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
 
 ## 4. District composition contracts
 
@@ -121,7 +125,8 @@ Do not copy marker coordinates from generated concept boards or review previews.
 
 Before Draft PR #89 can become ready:
 
-- [x] commit a render-safe contact sheet covering Tokyo + all five district directions;
+- [x] commit standalone render-safe previews for Tokyo and all five districts;
+- [x] commit a render-safe contact sheet;
 - [ ] open the selected full-resolution source for all six images individually;
 - [ ] approve or regenerate any source with weak district identity, readable generated signage, wrong scale, or spoiler geometry;
 - [ ] normalize approved sources to RGB / opaque 1920×1080 PNGs under `static/assets/backgrounds/city_map/`;
@@ -136,4 +141,4 @@ Before Draft PR #89 can become ready:
 - [ ] perform marker-alignment review in the actual Tauri game;
 - [ ] replace any failed candidate without introducing an asset-versioning subsystem.
 
-The committed contact sheet makes the generated art direction reviewable in GitHub. It deliberately remains outside the runtime asset path until each full-resolution map passes this checklist.
+The standalone previews make each regional direction individually reviewable in GitHub. They deliberately remain outside the runtime asset path until each full-resolution map passes this checklist.
