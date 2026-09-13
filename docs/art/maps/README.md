@@ -42,39 +42,23 @@ Do **not** bake any of the following into runtime rasters:
 
 ## 3. Generated art included in this PR
 
-`docs/art/maps/generated/` contains the complete first-pass visual review set:
+The render-safe GitHub review preview is:
 
-- `tokyo.svg`
-- `kichijoji.svg`
-- `shibuya.svg`
-- `shinjuku.svg`
-- `kabukicho.svg`
-- `ginza_minato.svg`
+- [`docs/art/maps/generated/contact_sheet.svg`](generated/contact_sheet.svg)
 
-These SVGs are **review previews**, not runtime assets. Each file wraps an embedded generated JPEG frame at 480×270 so the art direction is visible directly in the PR without pretending the preview is the final asset pipeline.
+It is a native SVG mosaic, with no embedded `data:` URI or base64 raster payload, so GitHub can render it directly. The contact sheet shows the generated visual direction for the Tokyo overview plus Kichijoji, Shibuya, Shinjuku, Kabukicho, and Ginza / Minato.
+
+This file is **review material, not a runtime background**. The full-resolution generated source images remain subject to individual art review and runtime import in Task 0. The earlier per-district SVG wrappers were removed because they embedded raster data and rendered unreliably on GitHub.
 
 Why keep the distinction explicit:
 
-- the production policy requires 1920×1080 opaque PNG backgrounds;
-- district anchors must be measured against the final approved raster, not a preview;
+- production policy requires six opaque 1920×1080 RGB PNG backgrounds;
+- district anchors must be measured against the final approved raster, not a contact sheet;
 - generated signage or composition mistakes may require regeneration;
 - Shibuya in particular must be checked for livestream-booth scale and spoiler-safe exterior geometry;
 - generated art must not silently establish new story geography.
 
-Do **not** point `city_map.json` at `docs/art/maps/generated/*.svg`. After review, approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
-
-### Review-state table
-
-| Preview | Current purpose | Runtime-approved? |
-| --- | --- | --- |
-| `tokyo.svg` | overall visual family / city silhouette | No |
-| `kichijoji.svg` | Chapter 1 district identity and anchor spacing | No |
-| `shibuya.svg` | Chapter 2 district identity / event-area composition | No |
-| `shinjuku.svg` | medical-district mood / skyline contrast | No |
-| `kabukicho.svg` | theater-nightlife identity | No |
-| `ginza_minato.svg` | commercial / waterfront transport identity | No |
-
-The PR may stay Draft while a preview is being replaced. “Generated and committed” means the direction is reviewable; it does **not** mean release art has passed the runtime contract.
+Do **not** point `city_map.json` at `docs/art/maps/generated/contact_sheet.svg`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
 
 ## 4. District composition contracts
 
@@ -137,9 +121,9 @@ Do not copy marker coordinates from generated concept boards or review previews.
 
 Before Draft PR #89 can become ready:
 
-- [x] commit one review preview for Tokyo + each of the five districts;
+- [x] commit a render-safe contact sheet covering Tokyo + all five district directions;
 - [ ] open the selected full-resolution source for all six images individually;
-- [ ] approve or regenerate any preview with weak district identity, readable generated signage, wrong scale, or spoiler geometry;
+- [ ] approve or regenerate any source with weak district identity, readable generated signage, wrong scale, or spoiler geometry;
 - [ ] normalize approved sources to RGB / opaque 1920×1080 PNGs under `static/assets/backgrounds/city_map/`;
 - [ ] verify no readable text or UI leaked into runtime art;
 - [ ] verify no spoiler routes / interiors are visible;
@@ -152,4 +136,4 @@ Before Draft PR #89 can become ready:
 - [ ] perform marker-alignment review in the actual Tauri game;
 - [ ] replace any failed candidate without introducing an asset-versioning subsystem.
 
-The committed SVG previews make the complete generated art direction reviewable in GitHub. They deliberately remain outside the runtime asset path until the full-resolution art passes this checklist.
+The committed contact sheet makes the generated art direction reviewable in GitHub. It deliberately remains outside the runtime asset path until each full-resolution map passes this checklist.
