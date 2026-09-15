@@ -1,175 +1,193 @@
 # Regional Anime City Map Design Specification
 
-> **Status:** Draft design and implementation handoff for Draft PR #89. The six runtime map PNGs are committed; topology/compiler/Rust/UI wiring has not started yet.
+> **Status:** Draft design and implementation handoff for Draft PR #89. The six canonical runtime PNGs are committed; topology/compiler/Rust/UI wiring has not started yet.
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
-> **Delivery rule:** artwork, implementation, and tests for this feature stay in this single PR. Do not merge the documents and open a second implementation PR.
+> **Delivery rule:** design, runtime art, implementation, and verification stay in this single PR.
 
 Related documents: [implementation plan](../plans/2026-09-12-regional-city-maps-implementation-plan.md) and the existing [HPA-601 linear city-map design](2026-08-30-hpa-601-linear-city-map-navigation-design.md).
 
 ## 1. Goal and scope
 
-Replace the current “one city background plus scattered pins” presentation with a two-level map:
+Replace the current “one Tokyo background plus scattered pins” presentation with a two-level map:
 
-1. **Tokyo overview** — gives the player a stable mental model of where major districts sit relative to each other.
-2. **District submap** — gives the player a readable illustrated neighborhood in which the current investigation destinations are spatially meaningful.
+1. **Tokyo overview** — establishes the city shape and the relative position of major districts.
+2. **District submap** — gives the current investigation a readable illustrated neighborhood with spatially meaningful destinations.
 
-This is a presentation and navigation improvement, not an open-world system.
+This is a presentation/navigation improvement on the existing investigation flow, not an open-world or travel-engine project.
 
-| Layer | Question it answers | Responsibility in this PR |
+| Layer | Question | Responsibility in this PR |
 | --- | --- | --- |
-| Tokyo overview | Where are the districts relative to each other? | Stable city silhouette, legal district entries, and existing direct destinations |
-| District map | Where can I go inside this district? | One illustrated map for Kichijoji, Shibuya, Shinjuku, Kabukicho, and Ginza/Minato |
-| Case spatial evidence | Who saw what and how could someone move? | Remains case-specific evidence/investigation content; not a third generic navigation layer |
+| Tokyo overview | Where are the districts relative to each other? | Stable city silhouette, legal district entries, overview-direct destinations |
+| District map | Where can I go inside this district? | Kichijoji, Shibuya, Shinjuku, Kabukicho, Ginza/Minato |
+| Case spatial evidence | Who saw what and how could someone move? | Remains case-specific evidence; not a third generic map layer |
 
-The implementation target for this PR is the two-level presentation, its asset pipeline, the existing nine Chapter 1 travel wrappers, and a non-production multi-destination fixture. The PR does **not** author Chapters 2–8, implement Chapter 2 phases/side quests/evidence boards, or add a general city-simulation layer.
-
-Out of scope: GIS, 3D/WebGL, free camera movement, pathfinding, travel cost, timetable simulation, map-specific save data, a map editor, weather simulation, day/night variants, or a new travel scene type.
+Out of scope: GIS, 3D/WebGL, free camera, pathfinding, travel cost, timetable simulation, map-specific save state, visited semantics, map editor, weather/day-night variants, or new travel IPC.
 
 ## 2. Existing seams to reuse
 
-The design is intentionally built on the seams already shipped by HPA-601.
-
 | Concern | Existing source | This PR |
 | --- | --- | --- |
-| Global topology | `docs/stories_plan/city_map.json` | One v2 cutover adding regions and region membership |
-| Compiler | `city-map.ts`, `orchestrator.ts`, `types.ts`, `emitter.ts` | Emit district metadata alongside existing destination nodes |
-| Durable runtime state | Rust `schema.rs`, `view.rs`, `mod.rs` | Extend scene/view wire only; no new save state |
-| Map UI | `InvestigationMapView.svelte`, `ExploreView.svelte` | Add overview/district planes and a minimal return-to-map flow |
-| Session/input lifecycle | `apps/game/src/routes/+page.svelte` | Reuse `presentationState.sessionEpoch`, current scene identity, and existing gameplay blocking |
-| Asset pipeline | `assets/enrich.ts`, `@lyra/asset-paths` | Register the committed overview + district art through the existing global-file path |
-| Workbench | `reader-projection.ts`, `asset-workspace.ts`, `AssetsView.svelte` | Reuse `structuralVisualCue` and global source display |
-| E2E destination drain | `soleMapDestinationId()` | Keep leaf travel deterministic; region buttons are never travel destinations |
+| Topology | `docs/stories_plan/city_map.json` | One-time v2 cutover with regions + `regionId` |
+| Parser/compiler | `city-map.ts`, `orchestrator.ts`, `types.ts`, `emitter.ts` | Extend existing map wire |
+| Global art manifest | `assets/enrich.ts`, `@lyra/asset-paths` | Register overview + five district assets once |
+| Rust projection | `schema.rs`, `view.rs`, `mod.rs`, `navigation.rs` | Project only legal regions/destinations |
+| Map UI | `InvestigationMapView.svelte`, `ExploreView.svelte` | Add overview/district plane projection and return-to-map |
+| Image transition | `CrossfadeImage.svelte` | Reuse existing transition/cancellation behavior |
+| Session reset | `presentationState.sessionEpoch` in `+page.svelte` | Reset only the Explore subtree for scene/session identity |
+| E2E helpers | `soleMapDestinationId()`, existing WDIO suites | Keep region controls out of leaf travel helpers |
 
-Current behavior that must be preserved:
+Existing laws that stay unchanged:
 
-- mapped investigations wait with `current_sublocation_id == None` until the player chooses a destination;
-- Rust does not auto-enter or auto-outro while a mapped scene is waiting;
-- actual travel still uses the existing `enter_sublocation` command;
-- Chapter 1 wrappers remain one-destination linear travel wrappers;
+- mapped investigations wait with `current_sublocation_id == None` until a leaf is selected;
+- pending mapped scenes do not auto-enter or auto-outro;
+- actual travel remains `enter_sublocation`;
+- Chapter 1 remains nine one-destination wrappers;
 - mapped scenes continue to suppress `SublocationNav`.
 
-## 3. District model
+## 3. District model and shared ID namespace
 
 The first map set contains five districts.
 
-| Region ID | Display name | Visual identity | Production usage in this PR |
+| Region ID | Display name | Visual identity | Production use in this PR |
 | --- | --- | --- | --- |
-| `kichijoji` | Kichijoji | Low-rise shopping streets, cafe warmth, station/rail, green space | `rain_bell_cafe`, `kichijoji_shopping_street` |
-| `shibuya` | Shibuya | Large screens, event plaza, glass-box area, dense commercial blocks | Art preparation + non-production fixture |
-| `shinjuku` | Shinjuku | Quiet clinic block against a dense tower skyline | Art preparation only |
-| `kabukicho` | Kabukicho | Theater frontage, narrow nightlife streets, restrained red/violet neon | Art preparation only |
-| `ginza_minato` | Ginza / Minato | Ordered commercial avenues transitioning toward modern high-rises | Art preparation only |
+| `kichijoji` | Kichijoji | Low-rise streets, cafe warmth, rail/station, green space | `rain_bell_cafe`, `kichijoji_shopping_street` |
+| `shibuya` | Shibuya | Large screens, event plaza, glass-box area, dense commercial blocks | Art + non-production test coverage |
+| `shinjuku` | Shinjuku | Quiet clinic block against dense skyline | Art preparation |
+| `kabukicho` | Kabukicho | Theater frontage, nightlife streets, restrained red/violet neon | Art preparation |
+| `ginza_minato` | Ginza / Minato | Ordered commercial avenue to towers/waterfront | Art preparation |
 
-Kabukicho remains a neighborhood view within greater Shinjuku; it is not treated as a separate distant city. Ginza/Minato is a compressed presentation region and does not imply that every point shown is walkable.
+Kabukicho remains a neighborhood view within greater Shinjuku. Ginza/Minato is an intentionally compressed presentation region, not a claim that every point shown is walkable.
 
-Existing Chapter 1 destinations `police_meeting_room`, `outsourced_review_office`, `soma_detective_office`, and `kagami_review_room` remain `regionId: null` **overview-direct destinations** for this slice. Their existing IDs, labels, and overview coordinates remain stable. This is a presentation boundary, not a claim that their story addresses are unknown.
+### 3.1 Region and location IDs share one slug namespace
 
-The old reserved `shibuya` location must not coexist with a `shibuya` region as a duplicate interactive entry. Before the v2 cutover, verify that no authored sublocation references that reserved location ID; if a real reference exists, resolve it explicitly rather than silently deleting it.
+`regions[].id` and `locations[].id` must be unique across the whole `city_map.json` document, not merely within their own arrays.
 
-## 4. Player flow
+- v2 removes the old reserved `shibuya` location; the `shibuya` region replaces that slug.
+- `parseCityMapJson` rejects any region/location collision with the existing duplicate-ID failure family.
+- future topology edits cannot reintroduce a location whose ID matches any region.
 
-### 4.1 Pending-map entry
+Existing Chapter 1 destinations `police_meeting_room`, `outsourced_review_office`, `soma_detective_office`, and `kagami_review_room` stay `regionId: null` overview-direct destinations for this slice.
 
-When a mapped scene is waiting for destination selection:
+## 4. Compiler and runtime projection contract
 
-- if every currently legal destination belongs to the same non-null region, open directly on that district map;
-- otherwise open the Tokyo overview;
-- direct overview destinations remain clickable from the overview;
-- a region button only changes the displayed plane and does not invoke gameplay mutation;
-- only a leaf destination calls `onEnterSublocation(id)`.
+Three layers have distinct ownership and must not compensate for each other.
 
-This prevents an unnecessary extra “Tokyo overview → Kichijoji” click in Chapter 1 while still letting the player back out to the overview for orientation.
+### 4.1 Asset manifest: all topology art
 
-The header remains intentionally small: `Tokyo Overview / <District>`, the current scene Summary, and a short map-context label. Do not import the concept-board chapter list, progress counters, decorative statistics, or new menu hierarchy into the runtime UI.
+`assets/enrich.ts` registers the Tokyo overview and all five district backgrounds once through the existing `globalFile` ownership path. Unused future district art is allowed to exist with zero production-scene usage.
 
-### 4.2 Interaction contract
+### 4.2 Scene wire: referenced regions only
 
-| Player action | Presentation result | Durable game effect |
-| --- | --- | --- |
-| Select region | Switch overview/district plane | None |
-| Return to overview | Switch plane | None |
-| Select a different legal leaf | Invoke existing travel callback | Existing `enter_sublocation` mutation only |
-| Open map from an interior | Show the current district, or overview for a direct node | Keep current sublocation unchanged |
-| Cancel map browsing | Return to the same interior | None |
-| Select the current leaf | Close map and remain in the same interior | No IPC; no replay of entry reveals |
-| Travel command fails | Keep the map open and preserve the existing error path | No optimistic state mutation |
-| Travel succeeds | Render returned scene/mode/current sublocation | No second advance/confirm command |
+`cityMapJsonForScene` **must emit only regions referenced by that scene’s emitted nodes**. It must not serialize every topology region into every mapped scene.
 
-Pending-map state has no interior to cancel back to; therefore “Return to scene” is only available when `currentSublocationId != null`.
+For a scene with only Kichijoji nodes, its scene JSON contains Kichijoji only. A future Shinjuku/Kabukicho/Ginza region must not appear in that scene JSON or DOM merely because the global topology knows it exists.
 
-### 4.3 Return-to-map scope
+### 4.3 Rust view: legal regions only
 
-HPA-601 deliberately did not implement returning from a mapped interior. This PR adds the minimum presentation-only version required for future multi-destination investigations:
+Rust already filters map nodes to currently visible/unlocked leaves. It must project a region only when at least one currently visible/unlocked node has that `regionId`.
 
-- `ExploreView` owns a transient `mapOpen` flag;
-- opening the map does not clear Rust `current_sublocation_id`;
-- closing returns to the same interior state;
-- the current destination is not re-entered;
-- a different legal destination still travels through the existing command.
+A region referenced only by locked/hidden leaves is absent from the view entirely. The frontend renders the projected `map.regions` as given and never unions them with global topology data.
 
-This is not a second navigation state machine and does not claim the full Chapter 2 free-investigation lifecycle is implemented.
+This is the spoiler boundary.
 
-### 4.4 Transient reset rules
+## 5. Pure plane projection
 
-Presentation-only state must never leak across loads or scenes.
+Overview-versus-district is a small pure projection, not logic buried in Svelte markup.
+
+Add one tiny module next to `InvestigationMapView` with:
+
+```ts
+initialActiveRegionId(nodes)
+projectMapPlane(map, activeRegionId)
+```
+
+Contracts:
+
+- `initialActiveRegionId(nodes)` returns the shared non-null `regionId` only when every currently legal leaf belongs to that same region; otherwise it returns `null` for overview.
+- `projectMapPlane(map, null)` returns `map.regions` plus overview-direct nodes (`regionId == null`).
+- `projectMapPlane(map, regionId)` returns only that region and only nodes whose `regionId` matches it.
+- overview-direct nodes never render on a district raster;
+- district nodes never render on the Tokyo raster;
+- invalid/unavailable region IDs fall back to overview rather than inventing content.
+
+Vitest this module directly. `InvestigationMapView.svelte` should only bind the resulting buttons/markers.
+
+## 6. Player flow and controls
+
+### 6.1 Pending-map entry
+
+- one legal non-null region → open that district directly;
+- mixed regions or any overview-direct leaf → open Tokyo overview;
+- region selection changes presentation only;
+- only a leaf destination can travel.
+
+### 6.2 Return-to-map stays in this PR
+
+This PR keeps the minimum return-to-map behavior needed by Chapter 2 instead of deferring it into a second navigation design.
+
+- When `inv.map && currentSublocationId != null`, the mapped interior HUD exposes one native button: `data-map-open`, copy `地圖`.
+- Opening it sets local `mapOpen = true`; it does not clear `currentSublocationId`.
+- While `mapOpen && currentSublocationId != null`, expose one `data-map-close` control.
+- Close/cancel returns to the same interior without IPC.
+- Selecting the **current** leaf closes the map locally and does **not** call `enter_sublocation`.
+- Selecting a different legal leaf calls the existing travel callback exactly once.
+- Failed travel keeps the map open; successful travel renders the returned state and closes/resets local map state.
+- Pending-map state (`currentSublocationId == null`) has no “return to scene” control.
+
+Region controls must use `data-map-region`; they must never use `data-map-destination`.
+
+## 7. Transient state and reset rules
 
 - `mapOpen` belongs to `ExploreView` only.
-- `activeRegionId` belongs to `InvestigationMapView` only; `null` means overview.
-- hover/focus/loading state stays local to the map surface.
-- `+page.svelte` resets the Explore subtree using the existing session epoch plus chapter/scene identity (a keyed subtree or an explicit reset identity are both acceptable).
-- a successful load of the same scene ID must still reset presentation state; scene ID alone is insufficient.
-- do **not** key on every game-state object or durable revision, because ordinary interactions must not collapse the map.
-- when current sublocation changes successfully, close `mapOpen`.
-- failed travel does not change current sublocation, so the map remains open.
-- leaving Explore, changing scene, or changing session clears map browsing state.
+- `activeRegionId` and raster-loading presentation state belong to `InvestigationMapView` only.
+- `GameShell` stays keyed by `presentationState.sessionEpoch` only; do not add scene identity to the GameShell key.
+- Reset/remount **ExploreView only** on `${sessionEpoch}:${scene.id}` (or use an equivalent local effect).
+- Do not key/reset on `currentSublocationId`, durable revision, or every game-state object.
+- same-scene load is already covered because load bumps `sessionEpoch`.
+- reuse existing `GameShell` inert behavior and existing `disabled={gameState.inFlight}` plumbing; do not create a second blocker path for map UI.
 
-The page continues to own higher-level input blocking. Pass `gameState.inFlight || gameplayInteractionBlocked` to map interactions; do not duplicate acquisition/save/menu state machines inside the map components.
+## 8. Visual and responsive contract
 
-## 5. Visual and interaction design
+### 8.1 Art
 
-### 5.1 Art direction
-
-The map art follows the selected Lyra visual direction:
+The committed raster remains pure environment art:
 
 - grounded anime neo-noir Tokyo;
-- elevated three-quarter city illustration rather than realistic GIS;
-- cool blue-gray rainy atmosphere;
-- wet-road reflections and restrained neon;
-- small amounts of warm window/street light;
-- recognizable district silhouettes;
-- no readable signage, UI, labels, pins, routes, chapter numbers, characters, bodies, or spoiler clues baked into the raster.
+- elevated three-quarter view;
+- rainy blue-gray atmosphere, wet reflections, restrained neon, warm lights;
+- no baked labels, pins, route arrows, characters, bodies, or spoiler clues.
 
-The map should help the player remember a place before asking them to read its label.
+### 8.2 Labels and controls
 
-### 5.2 Runtime overlays
+This PR uses **one navigation surface only**: map pins/buttons.
 
-- The raster is art only. Destination names, states, focus treatment, and accessibility text are code-native.
-- A destination corresponds to one physical landmark anchor and one native `<button>`.
-- Do not imply that an entire raster building can independently glow; hover/focus highlights the marker/label layer.
-- Legal travel state must be communicated with shape/text/focus affordance, not color alone.
-- Destination names remain readable on narrow windows; do not repeat the current behavior that simply hides `.pin-label` below 720 px.
-- Minimum target size is 44 px.
-- If the narrow layout needs a textual destination list, it must be a projection of the same destination data and callback, not a parallel navigation model.
-- Avoid duplicate tab stops when the map and list are both visible.
-- Respect `prefers-reduced-motion`; the only motion required is a short optional crossfade between planes.
+- keep destination labels visible on narrow windows; remove the current “hide labels below 720px” behavior;
+- labels may wrap/reposition as needed;
+- targets are at least 44 px;
+- if overlap occurs, adjust measured coordinates/layout; do **not** add a second textual destination list in this PR;
+- one native button/tab stop per destination;
+- region/leaf state is communicated with shape/text/focus treatment, not color alone.
 
-### 5.3 Coordinate plane and loading identity
+## 9. Raster loading identity
 
-Each background and its markers share one 16:9 normalized coordinate plane. The component should letterbox instead of cropping the map art to an arbitrary parent aspect ratio.
+Do not add a second image loader/request registry.
 
-Treat `{mapId, planeKind, regionId, backgroundAssetId}` as one presentation identity. During region switching:
+Reuse `CrossfadeImage` and the existing cancelled `resolveStoryAsset` flow.
 
-- never display new-region markers over the previous region's raster;
-- cancel or ignore stale asset-resolution responses;
-- A → B → A switching must settle on the final A identity;
-- if art is missing, labels and native travel controls still remain usable;
-- assets-disabled builds remain navigable with `backgroundAssetId == null`.
+- transition identity is `${activeRegionId ?? "overview"}:${backgroundAssetId}`;
+- markers render only for the raster identity that has finished loading;
+- during a region switch, hide/freeze the new plane’s markers until its raster is the loaded identity;
+- A → B → A must settle on the final A identity;
+- reduced-motion behavior comes from existing `CrossfadeImage` support;
+- if art is missing/fails to resolve, named destination controls remain usable on the existing placeholder/fallback path.
 
-## 6. Topology and compiler contract
+`planeKind` is not a separate state dimension; `activeRegionId == null` already means overview.
+
+## 10. Topology schema
 
 Keep one authored topology file: `docs/stories_plan/city_map.json`.
 
-Use a one-time `version: 2` cutover. This pre-release project does not need a v1 compatibility parser or migration converter.
+Use a one-time `version: 2` cutover; there is no v1 parser or migration converter.
 
 ```ts
 type CityMap = {
@@ -179,34 +197,32 @@ type CityMap = {
   regions: Array<{
     id: string;
     label: string;
-    x: number; // anchor on Tokyo overview
+    x: number; // Tokyo overview anchor
     y: number;
     backgroundPrompt: string;
   }>;
   locations: Array<{
-    id: string; // existing sublocation anchor
+    id: string;
     label: string;
     regionId: string | null;
-    x: number; // district coordinates when regionId != null, overview otherwise
+    x: number; // district coordinates when regionId != null; overview otherwise
     y: number;
   }>;
 };
 ```
 
-Topology owns IDs, labels, region membership, prompts, and normalized coordinates only. It does not own chapter progression, routes, travel cost, completion, or NPC schedules.
-
 Validation requirements:
 
-- unique non-empty region and location IDs;
+- one shared unique slug namespace across regions + locations;
 - finite normalized coordinates in `[0,1]`;
 - every non-null `regionId` references an existing region;
 - authored sublocation anchors/labels continue to match topology entries;
-- unused regions are allowed as future art preparation;
-- an empty region never becomes an interactive UI entry.
+- unused regions are legal;
+- empty/locked-only regions never become runtime UI entries.
 
-Authored scenes continue to use `- **Map:** tokyo`; do not duplicate prompts into individual scene Markdown.
+Authored scenes continue to use `- **Map:** tokyo`.
 
-Compiler-emitted investigation map shape:
+Compiler-emitted scene shape remains:
 
 ```ts
 type JSONInvestigationMap = {
@@ -228,20 +244,13 @@ type JSONInvestigationMap = {
 };
 ```
 
-Compiler ownership and runtime ownership remain separate:
+Do not add map types to `@lyra/scene-types`; HPA-601 intentionally keeps this wire in `compile-scenes/types.ts`.
 
-- the compiler may carry metadata for regions referenced by the scene definition;
-- Rust derives the **currently visible/available** region set from the already-authorized visible/unlocked nodes;
-- the frontend must not reconstruct chapter unlock rules;
-- hidden/locked location names must not appear in labels, tooltips, ARIA text, or DOM buttons.
+## 11. Canonical runtime art and Workbench
 
-No new “visited” semantic is introduced in this slice. “Visited,” “searched,” and “completed” have different meanings; do not invent one until an existing durable field is verified as the source of truth.
+The following are the only canonical copies for this feature:
 
-## 7. Asset and Workbench contract
-
-The committed files below are the **canonical runtime art** for this feature. Do not maintain a second copy under `docs/`.
-
-| Asset ID | Canonical path |
+| Asset ID | Path |
 | --- | --- |
 | `background.city_map.tokyo` | `static/assets/backgrounds/city_map/tokyo.png` |
 | `background.city_map.kichijoji` | `static/assets/backgrounds/city_map/kichijoji.png` |
@@ -250,68 +259,70 @@ The committed files below are the **canonical runtime art** for this feature. Do
 | `background.city_map.kabukicho` | `static/assets/backgrounds/city_map/kabukicho.png` |
 | `background.city_map.ginza_minato` | `static/assets/backgrounds/city_map/ginza_minato.png` |
 
-All six runtime files must remain opaque RGB 1920×1080 PNGs. If art is replaced after an overlay review, replace the file at the same path and re-measure its normalized anchors.
+All six must remain opaque RGB 1920×1080 PNGs. Replacing one after overlay review means replacing that same path and re-measuring that map’s anchors; do not introduce image versioning/copy pipelines.
 
-Path construction remains in `@lyra/asset-paths`.
+Reader uses existing `structuralVisualCue` carriers:
 
-`assets/enrich.ts` registers the overview and each region exactly once, with `source: { globalFile: cityMap.sourceFile }`. Registering global map art must not consume the corpus first-visual-cue state. In assets-disabled compilation, all map background asset IDs are null and no map manifest entries are emitted.
+- `map:tokyo`;
+- `map:tokyo:<regionId>`.
 
-Reader uses the existing `structuralVisualCue` mechanism:
+Do not add a second scene walker or map editor. Keep multi-prompt Workbench authoring read-only if the existing write-back seam cannot safely edit the global topology source.
 
-- overview carrier: `map:tokyo`;
-- region carrier: `map:tokyo:<regionId>`.
+## 12. Story/spoiler boundaries
 
-Scene usage means “this scene can present this map plane,” not “the player definitely visited it.” Unused future district art may correctly have zero production-scene usage.
+- **Shibuya:** public plaza, giant screen, human-scale glass booth, surrounding streets, ordinary commercial exterior are allowed. Do not reveal M-03, service-elevator internals, vacant-floor murder space, sight cones, or final transfer route.
+- **Shinjuku:** exterior clinic/neighborhood only; no ward layout, Aoba labels, memory-tech internals, or left/right clues.
+- **Kabukicho:** public theater frontage and ordinary service street only; no stage machinery, lift compartments, body positions, 90-second mechanism, or blue-umbrella reveal.
+- **Ginza/Minato:** roads are illustrative; no suspect route, live vehicle path, timing arrow, or evidentiary distance claim.
 
-Do not add a second scene walker, a dedicated map editor, an image-copy step, or a map-specific asset registry. If current Workbench write-back cannot safely edit several prompts inside one global topology source, keep those map prompt entries read-only rather than widening this PR into a map-authoring product.
+## 13. Chapter 1 invariants
 
-## 8. Story and spoiler boundaries
+All nine existing wrappers retain their story order and one legal leaf each.
 
-The map is a district illustration, not omniscient evidence.
-
-- Shibuya may show the public event plaza, giant screen, human-scale glass booth, surrounding streets, and an ordinary commercial-building exterior. It must not reveal M-03, service-elevator internals, the vacant-floor murder space, sight cones, or the final transfer route.
-- Shinjuku may show the clinic exterior and neighborhood. It must not expose ward interiors, Aoba labels, memory-tech clues, or left/right escape-route information.
-- Kabukicho may show the theater exterior, public streets, and an ordinary service entrance. It must not reveal stage machinery, lift compartments, body positions, the 90-second device, or the blue-umbrella reveal.
-- Ginza/Minato roads are illustrative connections only. Do not draw a suspect route, live vehicle path, timing arrow, or precise evidentiary travel time.
-- Chapter 6 can reuse the overview transportation skeleton later, but this PR does not invent a sixth district for Chapters 7–8 or place final-chapter truth on the map.
-
-## 9. Chapter 1 invariants
-
-All nine existing map wrappers remain in the same story order with the same leaf destination.
-
-| Wrapper | Destination | Map presentation |
+| Wrapper | Destination | Presentation |
 | --- | --- | --- |
-| `investigation_scene_map_01` | `rain_bell_cafe` | Open Kichijoji directly; overview remains available |
+| `investigation_scene_map_01` | `rain_bell_cafe` | Kichijoji direct |
 | `investigation_scene_map_02` | `police_meeting_room` | Overview direct |
 | `investigation_scene_map_03` | `kagami_review_room` | Overview direct |
-| `investigation_scene_map_04` | `kichijoji_shopping_street` | Open Kichijoji directly; overview remains available |
-| `investigation_scene_map_05` | `rain_bell_cafe` | Open Kichijoji directly |
+| `investigation_scene_map_04` | `kichijoji_shopping_street` | Kichijoji direct |
+| `investigation_scene_map_05` | `rain_bell_cafe` | Kichijoji direct |
 | `investigation_scene_map_06` | `outsourced_review_office` | Overview direct |
 | `investigation_scene_map_07` | `kagami_review_room` | Overview direct |
-| `investigation_scene_map_08` | `rain_bell_cafe` | Open Kichijoji directly |
+| `investigation_scene_map_08` | `rain_bell_cafe` | Kichijoji direct |
 | `investigation_scene_map_09` | `soma_detective_office` | Overview direct |
 
-No station, convenience store, park, or decorative landmark becomes a Chapter 1 gameplay node.
+Decorative landmarks never become Chapter 1 gameplay nodes merely because they are visible in the art.
 
-## 10. Acceptance criteria
+## 14. Verification ownership
 
-1. The six canonical runtime map PNGs are committed directly under `static/assets/backgrounds/city_map/`; no duplicate review-art directory is required.
-2. All six committed runtime maps are verified as opaque RGB 1920×1080 PNGs before Ready for Review.
-3. The nine Chapter 1 wrappers retain their order and one legal travel leaf each.
-4. Region browsing produces no durable revision, history, evidence, entry reveal, or save-state change.
-5. Only a leaf destination invokes existing travel mutation.
-6. Pending mapped scenes still do not auto-enter or auto-outro.
-7. A mapped multi-node test fixture can enter a location, reopen the map, cancel, select the current location without replay, and move to another legal location.
-8. Hidden/locked nodes cannot be exposed by region browsing.
-9. Same-scene save load resets transient map UI via session identity.
-10. Rapid region switching never combines one plane's markers with another plane's raster.
-11. 1920×1080, 1280×720, and narrow-window layouts retain readable destination names and non-overlapping 44 px targets.
-12. Keyboard and reduced-motion behavior are covered.
-13. Six unique map background manifest entries use the existing global source contract; Reader/Assets distinguish overview and district usage.
-14. Assets-off and missing-art cases remain navigable.
-15. Tokyo's five region choices remain readable at 1280×720, and Shibuya's physical glass booth remains identifiable without exposing the hidden route.
-16. The PR stays Draft until runtime, Tauri E2E, and visual-fidelity review are complete.
+The multi-node/return-to-map behavior is proven in existing test homes, not by adding a fake production scene.
 
-## 11. Design review conclusion
+- pure plane helpers: focused Vitest module tests;
+- `InvestigationMapView.test.ts`: region/leaf projection, loaded-raster marker gating, narrow labels, reduced motion integration;
+- `ExploreView.test.ts`: `data-map-open`, `data-map-close`, cancel, current-leaf local close, different-leaf travel;
+- Rust `navigation.rs`: extend the existing mapped multi-node helper and locked-node projection tests, including “locked-only region is absent”;
+- packaged WDIO/Tauri: keep the existing HPA-601 homes (`investigation-layout.e2e.ts`, `save-resume.e2e.ts`, `production-journey.e2e.ts`). Do not add a fixture catalog or fake production scene.
 
-The two-level system is intentionally small: one topology, one existing investigation lifecycle, one existing travel command, one canonical runtime copy of each map image, and transient presentation state only. It improves spatial readability without turning the VN into a map engine. Future chapter content can opt into the prepared district art when authored, without requiring a new travel architecture.
+Tokyo/Shibuya overlay checks are manual visual gates in the wired Tauri UI, not screenshot-E2E assertions.
+
+## 15. Acceptance criteria
+
+1. Six canonical runtime PNGs remain at `static/assets/backgrounds/city_map/` and pass opaque RGB 1920×1080 metadata validation.
+2. `city_map.json` v2 uses one shared region/location slug namespace; old reserved location `shibuya` is removed and collisions are rejected.
+3. Global manifest registers all six map backgrounds once.
+4. Scene JSON emits only regions referenced by that scene’s nodes.
+5. Rust projects only regions containing at least one currently visible/unlocked leaf; locked-only regions are absent.
+6. `initialActiveRegionId` and `projectMapPlane` are pure, focused-tested helpers; overview/direct and district nodes never mix planes.
+7. Only `data-map-destination` leaves can travel; `data-map-region` is presentation-only.
+8. Mapped interiors expose `data-map-open`; open maps expose `data-map-close` when an interior exists; current-leaf selection closes locally with no IPC.
+9. GameShell remains keyed by session epoch only; Explore map state resets on session epoch + scene identity, never on revision/current sublocation.
+10. Narrow layouts keep labels visible and >=44 px targets; no second textual destination list is added.
+11. Region changes reuse `CrossfadeImage`; markers are gated to the loaded raster identity, including A → B → A and missing-art cases.
+12. Chapter 1’s nine wrappers retain order and exactly one legal leaf each.
+13. Return-to-map/multi-node behavior is covered in component/Rust tests without a fake production scene.
+14. `bun run test:e2e` remains a Draft-exit gate and `production-journey.e2e.ts` is run explicitly as part of verification.
+15. Tokyo/Shibuya visual gates are inspected in the actual Tauri UI; a failed map is replaced in place without new image infrastructure.
+
+## 16. Design review conclusion
+
+The feature remains deliberately small: one topology, one investigation lifecycle, one travel command, one map component family, two pure projection helpers, and transient presentation state only. Future chapters can opt into the prepared district art without requiring a second navigation architecture.
