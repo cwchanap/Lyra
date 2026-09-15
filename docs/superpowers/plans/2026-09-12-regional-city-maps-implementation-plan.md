@@ -102,9 +102,7 @@ Primary files:
 - IDs remain `background.city_map.tokyo` and `background.city_map.<region>`;
 - existing `@lyra/asset-paths` resolves the committed runtime files;
 - registering global art must not consume first-visual-cue state;
-- Reader uses:
-  - `map:tokyo`
-  - `map:tokyo:<regionId>`
+- Reader uses `map:tokyo` and `map:tokyo:<regionId>` structural carriers;
 - scene usage reflects planes that scene JSON can present; do not fabricate usage for every future district;
 - future unused district art may correctly have zero production-scene usage;
 - assets-disabled compile emits no map manifest entries;
@@ -162,12 +160,7 @@ Primary files:
 
 ### 4A. Pure projection helpers
 
-Implement/test:
-
-```ts
-initialActiveRegionId(nodes)
-projectMapPlane(map, activeRegionId)
-```
+Implement/test `initialActiveRegionId(nodes)` and `projectMapPlane(map, activeRegionId)`.
 
 Required cases:
 
@@ -176,53 +169,51 @@ Required cases:
 - overview plane = regions + `regionId == null` leaves only;
 - district plane = matching region leaves only;
 - invalid active region falls back to overview;
-- no district pin can render on overview and no overview-direct pin can render on district art.
+- district and overview-direct pins never mix.
 
 ### 4B. Return-to-map controls
 
-Keep return-to-map in this PR and make the contract explicit:
-
 - `data-map-open`, copy `地圖`, only when `inv.map && currentSublocationId != null`;
 - `data-map-close` only while `mapOpen && currentSublocationId != null`;
-- opening/closing is local presentation state only;
+- open/close is local presentation state only;
 - selecting current leaf closes locally and sends **no** `enter_sublocation` IPC;
 - selecting another leaf calls existing travel exactly once;
 - failed travel keeps map open;
 - successful travel closes/resets through returned state;
 - pending map has no close-to-interior control.
 
-`data-map-region` is presentation-only. `data-map-destination` remains leaf-only, so existing `soleMapDestinationId()` / `enabledMapDestinationIds()` behavior does not need to understand region buttons.
+`data-map-region` is presentation-only. `data-map-destination` remains leaf-only.
 
 ### 4C. Narrow layout
 
 Do not build a second destination list.
 
-- keep map labels visible below 720 px;
+- keep labels visible below 720 px;
 - allow wrapping/repositioning;
 - keep >=44 px targets;
-- resolve overlap by measured coordinates/layout, not by adding another navigation surface;
+- resolve overlap with measured coordinates/layout;
 - one destination = one native button/tab stop.
 
 ### 4D. Session reset and input blocking
 
-- keep the existing GameShell key as `presentationState.sessionEpoch` only;
-- reset/key only the Explore subtree on `${sessionEpoch}:${scene.id}` (or equivalent local effect);
+- keep GameShell keyed by `presentationState.sessionEpoch` only;
+- reset/key only Explore on `${sessionEpoch}:${scene.id}` (or equivalent local effect);
 - do not key on current sublocation or revision;
 - same-scene load resets because load increments session epoch;
-- reuse GameShell inert + existing `disabled={gameState.inFlight}` path; do not add a second blocker state machine.
+- reuse GameShell inert + existing `disabled={gameState.inFlight}` path; no second blocker state machine.
 
 ### 4E. Raster transition / marker gating
 
 Reuse `CrossfadeImage`; do not add another request registry.
 
 - transition key: `${activeRegionId ?? "overview"}:${backgroundAssetId}`;
-- marker projection may update immediately internally, but markers are rendered only when that exact raster identity has loaded;
+- markers render only when that exact raster identity has loaded;
 - A → B → A must finish on A with A markers;
-- cancelled/stale asset resolution cannot expose stale raster + new markers;
+- stale asset resolution cannot expose stale raster + new markers;
 - missing-art fallback still shows named native controls;
-- use existing reduced-motion handling from `CrossfadeImage`.
+- use existing reduced-motion handling.
 
-**Gate:** browsing regions and opening/closing the map changes no revision/history/inventory/reveal/save state. Only a different leaf travels.
+**Gate:** browsing regions/opening/closing changes no gameplay state. Only a different leaf travels.
 
 ---
 
@@ -244,45 +235,40 @@ Reuse `CrossfadeImage`; do not add another request registry.
 
 ### Test ownership
 
-Do **not** add a fake production scene or Tauri-only fixture catalog to make return-to-map reachable.
+Do **not** add a fake production scene or Tauri-only fixture catalog.
 
 Use:
 
 - pure helper Vitest for plane logic;
 - `InvestigationMapView.test.ts` for plane buttons, labels, loaded-raster marker gating, fallback behavior;
 - `ExploreView.test.ts` for open/close/current-leaf/different-leaf behavior;
-- existing Rust `navigation.rs` multi-node mapped helper for legal leaves and locked-only region absence;
-- existing packaged WDIO homes:
-  - `investigation-layout.e2e.ts`
-  - `save-resume.e2e.ts`
-  - `production-journey.e2e.ts`
+- existing Rust `navigation.rs` mapped multi-node helper for legal leaves and locked-only region absence;
+- existing packaged WDIO homes: `investigation-layout.e2e.ts`, `save-resume.e2e.ts`, `production-journey.e2e.ts`.
 
-The visual Tokyo/Shibuya gates are manual inspection in the wired Tauri UI, not screenshot assertions.
+Tokyo/Shibuya visual gates are manual Tauri inspection, not screenshot assertions.
 
 ### Regression matrix
 
 | Scenario | Required result | Test home |
 | --- | --- | --- |
-| Nine Chapter 1 maps | IDs/order unchanged; one travel leaf each | compiler + production journey |
-| Future region absent from Ch1 | no region metadata/DOM leakage | compiler + Rust projection |
-| Plane projection | overview and district pins never mix | pure Vitest |
-| Browse overview/district | no gameplay mutation | component tests |
+| Nine Chapter 1 maps | IDs/order unchanged; one leaf each | compiler + production journey |
+| Future region absent from Ch1 | no region metadata/DOM leakage | compiler + Rust |
+| Plane projection | overview/district pins never mix | pure Vitest |
+| Browse overview/district | no gameplay mutation | component |
 | Open map from interior then close | same interior; no IPC | `ExploreView.test.ts` |
-| Select current leaf | close locally; no IPC/reveal replay | `ExploreView.test.ts` |
-| Select different leaf | one existing travel mutation | component + Rust helper |
+| Select current leaf | local close; no IPC/replay | `ExploreView.test.ts` |
+| Select different leaf | one travel mutation | component + Rust |
 | Locked-only region | absent | `navigation.rs` |
-| Same-scene load | old map state cleared | component/save-resume coverage |
-| A → B → A slow load | final raster + markers are A | `InvestigationMapView.test.ts` |
-| Missing art | named controls remain usable | component test |
-| Narrow width | labels visible, >=44 px, no second list | component/layout test |
-| Tokyo overview gate | five anchors readable at 1280×720 | manual Tauri inspection |
-| Shibuya gate | glass booth readable, route not spoiled | manual Tauri inspection |
+| Same-scene load | stale browsing cleared | component/save-resume |
+| A → B → A | final raster/markers both A | `InvestigationMapView.test.ts` |
+| Missing art | named controls usable | component |
+| Narrow width | labels visible, >=44 px, no list | component/layout |
+| Tokyo gate | five anchors readable at 1280×720 | manual Tauri |
+| Shibuya gate | booth readable, route unspoiled | manual Tauri |
 
 ---
 
 ## Verification commands
-
-Run focused tests first, then repository gates:
 
 ```sh
 bun install --frozen-lockfile
@@ -298,9 +284,9 @@ bun run lint:all
 bun run test:e2e
 ```
 
-`production-journey.e2e.ts` is an explicit Draft-exit verification home; run it directly as well if `bun run test:e2e` / the chosen suite does not include that file.
+`production-journey.e2e.ts` is an explicit Draft-exit verification home; run it directly too if the selected suite does not include it.
 
-Validate art metadata directly:
+Validate art metadata:
 
 ```sh
 file -b static/assets/backgrounds/city_map/*.png
@@ -315,35 +301,23 @@ Expected: opaque RGB 1920×1080 PNG for all six.
 | Risk | Lock |
 | --- | --- |
 | Five districts become five engines | one topology, one map component family, one travel command |
-| Future districts leak onto Chapter 1 | scene wire only referenced regions + Rust legal-leaf filter |
-| Overview/district coordinates mix | pure `projectMapPlane` helper |
-| Return-to-map becomes a second machine | local `mapOpen`, one open/close pair, no new IPC |
-| Current leaf replays reveals | local close; no command call |
+| Future districts leak onto Ch1 | scene wire only referenced regions + Rust legal-leaf filter |
+| Coordinate planes mix | pure `projectMapPlane` helper |
+| Return-to-map becomes second machine | local `mapOpen`, one open/close pair, no new IPC |
+| Current leaf replays reveals | local close; no command |
 | Narrow UI forks navigation | labels stay on pins; no destination list |
-| Scene change remounts whole shell | GameShell stays sessionEpoch-only; reset Explore only |
-| Stale raster pairs with new markers | existing CrossfadeImage identity + loaded-key marker gate |
-| Slug collisions return later | one namespace across regions + locations |
+| Scene change remounts shell | GameShell sessionEpoch-only; reset Explore only |
+| Stale raster + new markers | CrossfadeImage identity + loaded-key gate |
+| Slug collision returns | shared region/location namespace |
 | Save format expands | no durable map field |
-| Fake E2E fixture becomes content | use component/Rust tests + existing production E2E homes |
-| Visual verification grows screenshot infra | manual Tauri gate only |
-| Work fragments across PRs | complete this ticket in Draft PR #89 |
+| Fake E2E fixture becomes content | component/Rust + existing production E2E homes |
+| Visual gate grows screenshot infra | manual Tauri only |
+| Work fragments | complete in Draft PR #89 |
 
 ## Current status
 
-Completed:
+Completed: English spec/plan, six canonical runtime PNGs, district/spoiler review, and explicit review locks.
 
-- English design spec + implementation plan;
-- six canonical runtime PNGs at final paths;
-- district identity/spoiler review;
-- review feedback converted into explicit compiler/projection/UI/test locks.
-
-Pending:
-
-- Task 0 metadata + final coordinate measurement;
-- v2 topology/parser/compiler;
-- manifest/Reader changes;
-- Rust projection;
-- pure plane helpers + Svelte return-to-map UI;
-- component/Rust/packaged E2E and manual visual gates.
+Pending: Task 0 metadata/coordinates, v2 topology/compiler, manifest/Reader, Rust projection, pure plane helpers + Svelte return-to-map UI, component/Rust/packaged E2E, and manual visual gates.
 
 A skipped workflow is not passing evidence. Keep PR #89 Draft until implementation and runtime verification are complete.
