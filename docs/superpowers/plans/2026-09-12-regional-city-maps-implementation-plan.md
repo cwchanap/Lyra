@@ -40,7 +40,7 @@ The art no longer has a separate review-source/import step. The canonical files 
 - [x] Commit all six PNGs directly to `static/assets/backgrounds/city_map/`.
 - [x] Remove the duplicate `docs/art/maps/generated/` review-source layer from the feature branch.
 - [x] Keep text, labels, markers, route arrows, and UI outside the raster.
-- [ ] Verify all six files are opaque RGB 1920×1080 PNGs from the checked-out branch.
+- [ ] Verify all six checked-in files report opaque RGB 1920×1080 PNG metadata.
 - [ ] Verify Tokyo can carry five readable region anchors at 1280×720.
 - [ ] Verify Shibuya's physical glass booth remains recognizable beneath the real marker layer.
 - [ ] Measure all region/destination coordinates against these exact committed runtime PNGs.
