@@ -2,141 +2,121 @@
 
 Companion docs: [design spec](../../superpowers/specs/2026-09-12-regional-city-maps-design.md) and [implementation plan](../../superpowers/plans/2026-09-12-regional-city-maps-implementation-plan.md).
 
-This file owns the visual requirements, generated-art review state, and runtime import checklist for the Tokyo overview and five district backgrounds. It is **not** a story bible and **not** a second runtime location registry.
+This file owns the art review state and runtime import contract for the Tokyo overview and five district maps. It is not a second story/location registry.
 
 ## 1. Runtime asset set
 
-| Map | Asset ID | Runtime path | Planned story use |
+| Map | Asset ID | Runtime path | Planned use |
 | --- | --- | --- | --- |
-| Tokyo overview | `background.city_map.tokyo` | `static/assets/backgrounds/city_map/tokyo.png` | Cross-district orientation + existing overview-direct destinations |
-| Kichijoji | `background.city_map.kichijoji` | `static/assets/backgrounds/city_map/kichijoji.png` | Chapter 1 map presentation |
-| Shibuya | `background.city_map.shibuya` | `static/assets/backgrounds/city_map/shibuya.png` | Chapter 2 design preparation / fixture |
-| Shinjuku | `background.city_map.shinjuku` | `static/assets/backgrounds/city_map/shinjuku.png` | Chapter 4 exterior district preparation |
-| Kabukicho | `background.city_map.kabukicho` | `static/assets/backgrounds/city_map/kabukicho.png` | Chapter 5 exterior district preparation |
-| Ginza / Minato | `background.city_map.ginza_minato` | `static/assets/backgrounds/city_map/ginza_minato.png` | Chapter 3 compressed transport-area preparation |
+| Tokyo overview | `background.city_map.tokyo` | `static/assets/backgrounds/city_map/tokyo.png` | Cross-district orientation |
+| Kichijoji | `background.city_map.kichijoji` | `static/assets/backgrounds/city_map/kichijoji.png` | Chapter 1 |
+| Shibuya | `background.city_map.shibuya` | `static/assets/backgrounds/city_map/shibuya.png` | Chapter 2 preparation |
+| Shinjuku | `background.city_map.shinjuku` | `static/assets/backgrounds/city_map/shinjuku.png` | Chapter 4 preparation |
+| Kabukicho | `background.city_map.kabukicho` | `static/assets/backgrounds/city_map/kabukicho.png` | Chapter 5 preparation |
+| Ginza / Minato | `background.city_map.ginza_minato` | `static/assets/backgrounds/city_map/ginza_minato.png` | Chapter 3 preparation |
 
-The six **runtime** targets remain opaque 1920×1080 RGB PNGs. Runtime text, markers, status, and controls stay outside the raster.
+Runtime backgrounds are exact 1920×1080 opaque RGB PNGs. Labels, pins, state, and interaction remain native UI overlays.
 
-## 2. Shared art direction
+## 2. Art direction
 
-The approved direction is grounded anime neo-noir Tokyo at rainy blue hour:
+The approved family is grounded anime neo-noir Tokyo at rainy blue hour:
 
 - elevated three-quarter city illustration;
-- readable continuous streets / blocks rather than floating islands;
-- cool slate / navy rain atmosphere;
+- cool slate/navy rain atmosphere;
 - wet-road reflections;
-- restrained cyan / violet neon;
-- warm windows and street lamps used sparingly;
-- enough Tokyo character to make districts distinct without becoming GIS;
-- edited composition so interactive landmarks remain readable under UI overlays.
+- restrained cyan/violet neon with selective warm windows;
+- recognizable district silhouettes;
+- continuous streets/blocks rather than floating islands;
+- no readable labels, map UI, characters, bodies, spoiler routes, or interior cutaways baked into the art.
 
-Do **not** bake any of the following into runtime rasters:
+The art should establish place and mood. Gameplay meaning stays in the UI/data model.
 
-- readable place names or shop text;
-- chapter numbers;
-- map pins, focus rings, route arrows, scale bars, or compass UI;
-- evidence labels or mystery annotations;
-- foreground dialogue characters;
-- bodies or spoiler props;
-- hidden-room cutaways or omniscient internal routes.
+## 3. Full-resolution review sources in this PR
 
-## 3. Generated art included in this PR
+The PR now contains six real raster PNG sources:
 
-The full-resolution generated rasters are committed for review:
+| Map | Review source | Source size | Review verdict |
+| --- | --- | ---: | --- |
+| Tokyo overview | [`generated/tokyo.png`](generated/tokyo.png) | 1672×941 | **Accept** — strong city-wide identity; verify region-anchor readability in the real UI |
+| Kichijoji | [`generated/kichijoji.png`](generated/kichijoji.png) | 1672×941 | **Accept** — café, shopping street, greenery, and rail/station read clearly |
+| Shibuya | [`generated/shibuya.png`](generated/shibuya.png) | 1672×941 | **Accept with runtime gate** — screens/crossing/event plaza read well; verify the physical glass booth still reads at gameplay scale |
+| Shinjuku | [`generated/shinjuku.png`](generated/shinjuku.png) | 1920×1080 | **Accept** — visually distinct medical/business district; anchor the clinic to the institutional block, not a tower |
+| Kabukicho | [`generated/kabukicho.png`](generated/kabukicho.png) | 1672×941 | **Accept** — theater/nightlife identity is clear and distinct from Shibuya |
+| Ginza / Minato | [`generated/ginza_minato.png`](generated/ginza_minato.png) | 1672×941 | **Accept** — commercial-to-waterfront transition reads without implying a case route |
 
-- [Tokyo overview](generated/tokyo.png)
-- [Kichijoji](generated/kichijoji.png)
-- [Shibuya](generated/shibuya.png)
-- [Shinjuku](generated/shinjuku.png)
-- [Kabukicho](generated/kabukicho.png)
-- [Ginza / Minato](generated/ginza_minato.png)
+These exact files were reviewed as the sources currently committed to Draft PR #89. Five generated sources are near-16:9 at 1672×941; Shinjuku is already 1920×1080. Do not claim that all review sources are already runtime-sized.
 
-These are **review sources, not runtime backgrounds**. The earlier placeholder previews were removed.
+The review sources remain under `docs/art/maps/generated/` for design provenance. During implementation, copy/normalize the approved images to the runtime paths in Section 1. Do not point `city_map.json` directly at the documentation folder.
 
-Why keep the review/runtime distinction explicit:
+## 4. Image-specific constraints
 
-- production policy requires six opaque 1920×1080 RGB PNG backgrounds;
-- district anchors must be measured against the final approved raster, not the preview artwork;
-- generated/compositional mistakes may require regeneration;
-- Shibuya in particular must be checked for livestream-booth scale and spoiler-safe exterior geometry;
-- generated art must not silently establish new story geography.
+### Tokyo overview
 
-Do **not** point `city_map.json` at `docs/art/maps/generated/*.png`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
+The overview is intentionally an illustrated city, not GIS. Its job is to let the player understand the relative city shape after UI region anchors are added.
 
-## 4. District composition contracts
+Runtime gate:
 
-### 4.1 Kichijoji
+- place all five region anchors on visibly distinct clusters;
+- test at 1280×720, not only 1920×1080;
+- if labels/anchors make the city unreadable, adjust overlay placement first; regenerate art only if the image itself cannot support the hierarchy.
 
-Visual identity: warm low-rise neighborhood, tree cover, shopping-street scale, station / rail presence. It should feel quieter and more lived-in than the other districts.
+### Kichijoji
 
-Production anchors in this PR:
+Use the warm corner storefront as the `rain_bell_cafe` landmark and a separated commercial street segment for `kichijoji_shopping_street`.
 
-- `rain_bell_cafe` — place on a readable modest storefront / building cluster, not a giant landmark palace;
-- `kichijoji_shopping_street` — place on a coherent pedestrian / commercial street separated enough from the cafe that the two buttons do not visually collapse.
+Decorative station, park, convenience stores, alleys, and homes do not become Chapter 1 gameplay nodes merely because they are visible.
 
-Decorative station, park, convenience stores, alleys, and houses must **not** become Chapter 1 gameplay destinations merely because they are visible.
+### Shibuya
 
-### 4.2 Shibuya
+The region may show the public event plaza, giant screens, crossing, and the physical glass booth. It must not reveal M-03, service-elevator internals, the vacant-floor murder space, sight cones, or the final transfer route.
 
-Visual identity: dense commercial city, huge screen / light presence, event plaza, surrounding work / commercial blocks.
+The current candidate has the correct district mood and keeps the giant screens separate from the small physical plaza structure. Before runtime approval, render the map with the actual marker layer and confirm the booth is still recognizable. If it reads only as a decorative glass sculpture, replace/edit **Shibuya only** rather than reopening the whole art set.
 
-Story boundary:
+### Shinjuku
 
-- the district map may communicate that the event occupies a real public area;
-- it must not prove the hidden service route, M-03 connection, elevator path, vacant-floor murder space, or any sight-line conclusion;
-- the livestream glass box must be human-scale, with the audience outside it;
-- the giant screen and the physical booth must remain visibly distinct objects.
+Exterior context only. Use the quieter institutional/medical cluster for the clinic anchor. Do not imply ward, reception, records-room, Aoba, or memory-treatment interior geography.
 
-If the final art overstates booth scale or exposes the service route, regenerate / replace it in this same PR before marking the PR ready.
+### Kabukicho
 
-### 4.3 Shinjuku
+The public theater frontage and nightlife streets are safe. Do not expose stage machinery, lift compartments, prop-room truth, body positions, the 90-second mechanism, or blue-umbrella evidence.
 
-Visual identity: cooler, calmer urban-medical district set against a large Shinjuku skyline.
+### Ginza / Minato
 
-The district art is exterior context only. Do not infer or expose ward / reception / records-room positions, Aoba material, memory-treatment internals, or left / right route clues.
+The commercial avenue → towers → waterfront/highway composition is illustrative city compression. It does not define the Chapter 3 suspect route or evidentiary travel time.
 
-### 4.4 Kabukicho
+## 5. Runtime normalization and coordinates
 
-Visual identity: theater / nightlife block with more red-violet accent than Shibuya, but still grounded rather than full-saturation cyberpunk.
+Task 0 implementation steps:
 
-The region may show a theater-like public frontage and ordinary back / service streets. It must not expose stage machinery, lift compartments, prop-room truth, body positions, the 90-second mechanism, or blue-umbrella evidence.
+1. copy each approved review source into `static/assets/backgrounds/city_map/`;
+2. normalize to exact 1920×1080 RGB/opaque PNG while preserving composition;
+3. do not bake labels or markers into the image;
+4. render each image in the actual 16:9 map surface;
+5. measure destination coordinates against the final runtime PNG, not the generated source;
+6. verify letterboxing/resizing keeps marker alignment stable;
+7. test 1920×1080, 1280×720, and narrow-window layouts.
 
-### 4.5 Ginza / Minato
+The source-resolution mismatch is not a reason to add an asset-versioning or image-processing subsystem. This is a one-time import step.
 
-Visual identity: ordered commercial avenue transitioning toward denser modern towers and waterfront / highway infrastructure.
+## 6. Acceptance checklist
 
-The connection is an artistic city-compression device, not a canonical route. Do not add suspect arrows, timing labels, live vehicle positions, or evidentiary distance claims.
+Source-art review:
 
-## 5. Coordinate and UI handoff
+- [x] six real PNG review sources are committed;
+- [x] all six sources were reviewed individually;
+- [x] no source exposes a hidden case route or interior solution;
+- [x] Kichijoji, Shinjuku, Kabukicho, and Ginza / Minato have distinct identities;
+- [x] Shinjuku is visually distinct from Kabukicho;
+- [x] the set shares a consistent rainy-night visual family;
+- [ ] confirm Shibuya glass-booth legibility with the actual gameplay overlay;
+- [ ] confirm Tokyo overview supports five readable region anchors at 1280×720.
 
-Do not copy marker coordinates from generated concept boards or review previews. After the v2 topology is implemented:
+Runtime-art gate:
 
-1. open the final approved 1920×1080 raster;
-2. render it in the real 16:9 map plane;
-3. place destinations against actual entrances / landmarks;
-4. measure normalized coordinates from the final image;
-5. test long labels at 1920×1080, 1280×720, and narrow width;
-6. ensure markers do not overlap the objective / header area;
-7. verify the same coordinates align after letterboxing / resizing;
-8. keep every interactive point outside baked art.
+- [ ] normalize/copy all six approved sources to exact 1920×1080 runtime PNGs;
+- [ ] verify no readable generated signage becomes distracting at full runtime size;
+- [ ] measure final anchors only after runtime normalization;
+- [ ] run marker-alignment review in the Tauri game;
+- [ ] replace only the failed candidate if a runtime visual check fails.
 
-## 6. Runtime-art acceptance checklist
-
-Before Draft PR #89 can become ready:
-
-- [x] commit the full-resolution generated sources for Tokyo and all five districts;
-- [ ] open the selected full-resolution source for all six images individually;
-- [ ] approve or regenerate any source with weak district identity, readable generated signage, wrong scale, or spoiler geometry;
-- [ ] normalize approved sources to RGB / opaque 1920×1080 PNGs under `static/assets/backgrounds/city_map/`;
-- [ ] verify no readable text or UI leaked into runtime art;
-- [ ] verify no spoiler routes / interiors are visible;
-- [ ] verify Kichijoji has enough separation for cafe + shopping-street anchors;
-- [ ] verify Shibuya glass-box scale against the Chapter 2 case contract;
-- [ ] verify Shinjuku / Kabukicho read as different districts;
-- [ ] verify Ginza / Minato does not imply a canonical evidentiary route;
-- [ ] verify Tokyo overview and district maps feel like the same visual family;
-- [ ] measure final anchors only after runtime art is approved;
-- [ ] perform marker-alignment review in the actual Tauri game;
-- [ ] replace any failed candidate without introducing an asset-versioning subsystem.
-
-The committed rasters make each regional direction individually reviewable in GitHub. They deliberately remain outside the runtime asset path until each map passes this checklist.
+The current art set is good enough to proceed with implementation. Art should no longer block Tasks 1–4; the two remaining art checks happen when the real overlay exists.
