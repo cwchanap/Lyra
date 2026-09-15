@@ -298,7 +298,7 @@ bun run lint:all
 bun run test:e2e
 ```
 
-Also run the production journey explicitly if it is not included by the selected gameplay suite invocation.
+`production-journey.e2e.ts` is an explicit Draft-exit verification home; run it directly as well if `bun run test:e2e` / the chosen suite does not include that file.
 
 Validate art metadata directly:
 
