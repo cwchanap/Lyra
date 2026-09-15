@@ -42,17 +42,16 @@ Do **not** bake any of the following into runtime rasters:
 
 ## 3. Generated art included in this PR
 
-GitHub-renderable standalone previews are committed as native SVG image files:
+The full-resolution generated rasters are committed for review:
 
-- [Tokyo overview](generated/tokyo.svg)
-- [Kichijoji](generated/kichijoji.svg)
-- [Shibuya](generated/shibuya.svg)
-- [Shinjuku](generated/shinjuku.svg)
-- [Kabukicho](generated/kabukicho.svg)
-- [Ginza / Minato](generated/ginza_minato.svg)
-- [Contact sheet](generated/contact_sheet.svg)
+- [Tokyo overview](generated/tokyo.png)
+- [Kichijoji](generated/kichijoji.png)
+- [Shibuya](generated/shibuya.png)
+- [Shinjuku](generated/shinjuku.png)
+- [Kabukicho](generated/kabukicho.png)
+- [Ginza / Minato](generated/ginza_minato.png)
 
-These are **review previews, not runtime backgrounds**. They contain no embedded `data:` URI or base64 raster payload, so GitHub can render them directly. The earlier broken wrappers were removed.
+These are **review sources, not runtime backgrounds**. The earlier placeholder previews were removed.
 
 Why keep the review/runtime distinction explicit:
 
@@ -62,7 +61,7 @@ Why keep the review/runtime distinction explicit:
 - Shibuya in particular must be checked for livestream-booth scale and spoiler-safe exterior geometry;
 - generated art must not silently establish new story geography.
 
-Do **not** point `city_map.json` at `docs/art/maps/generated/*.svg`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
+Do **not** point `city_map.json` at `docs/art/maps/generated/*.png`. Approved or regenerated source art is normalized into the runtime paths in Section 1 and verified there.
 
 ## 4. District composition contracts
 
@@ -125,8 +124,7 @@ Do not copy marker coordinates from generated concept boards or review previews.
 
 Before Draft PR #89 can become ready:
 
-- [x] commit standalone render-safe previews for Tokyo and all five districts;
-- [x] commit a render-safe contact sheet;
+- [x] commit the full-resolution generated sources for Tokyo and all five districts;
 - [ ] open the selected full-resolution source for all six images individually;
 - [ ] approve or regenerate any source with weak district identity, readable generated signage, wrong scale, or spoiler geometry;
 - [ ] normalize approved sources to RGB / opaque 1920×1080 PNGs under `static/assets/backgrounds/city_map/`;
@@ -141,4 +139,4 @@ Before Draft PR #89 can become ready:
 - [ ] perform marker-alignment review in the actual Tauri game;
 - [ ] replace any failed candidate without introducing an asset-versioning subsystem.
 
-The standalone previews make each regional direction individually reviewable in GitHub. They deliberately remain outside the runtime asset path until each full-resolution map passes this checklist.
+The committed rasters make each regional direction individually reviewable in GitHub. They deliberately remain outside the runtime asset path until each map passes this checklist.
