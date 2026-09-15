@@ -1,10 +1,10 @@
 # Regional Anime City Map Design Specification
 
-> **Status:** Draft design and implementation handoff for Draft PR #89. Runtime work has not started yet.
+> **Status:** Draft design and implementation handoff for Draft PR #89. The six runtime map PNGs are committed; topology/compiler/Rust/UI wiring has not started yet.
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
 > **Delivery rule:** artwork, implementation, and tests for this feature stay in this single PR. Do not merge the documents and open a second implementation PR.
 
-Related documents: [implementation plan](../plans/2026-09-12-regional-city-maps-implementation-plan.md), [map art handoff](../../art/maps/README.md), and the existing [HPA-601 linear city-map design](2026-08-30-hpa-601-linear-city-map-navigation-design.md).
+Related documents: [implementation plan](../plans/2026-09-12-regional-city-maps-implementation-plan.md) and the existing [HPA-601 linear city-map design](2026-08-30-hpa-601-linear-city-map-navigation-design.md).
 
 ## 1. Goal and scope
 
@@ -36,7 +36,7 @@ The design is intentionally built on the seams already shipped by HPA-601.
 | Durable runtime state | Rust `schema.rs`, `view.rs`, `mod.rs` | Extend scene/view wire only; no new save state |
 | Map UI | `InvestigationMapView.svelte`, `ExploreView.svelte` | Add overview/district planes and a minimal return-to-map flow |
 | Session/input lifecycle | `apps/game/src/routes/+page.svelte` | Reuse `presentationState.sessionEpoch`, current scene identity, and existing gameplay blocking |
-| Asset pipeline | `assets/enrich.ts`, `@lyra/asset-paths` | Register overview + district art through the existing global-file path |
+| Asset pipeline | `assets/enrich.ts`, `@lyra/asset-paths` | Register the committed overview + district art through the existing global-file path |
 | Workbench | `reader-projection.ts`, `asset-workspace.ts`, `AssetsView.svelte` | Reuse `structuralVisualCue` and global source display |
 | E2E destination drain | `soleMapDestinationId()` | Keep leaf travel deterministic; region buttons are never travel destinations |
 
@@ -239,9 +239,9 @@ No new “visited” semantic is introduced in this slice. “Visited,” “sea
 
 ## 7. Asset and Workbench contract
 
-Expected background IDs and paths:
+The committed files below are the **canonical runtime art** for this feature. Do not maintain a second copy under `docs/`.
 
-| Asset ID | Path |
+| Asset ID | Canonical path |
 | --- | --- |
 | `background.city_map.tokyo` | `static/assets/backgrounds/city_map/tokyo.png` |
 | `background.city_map.kichijoji` | `static/assets/backgrounds/city_map/kichijoji.png` |
@@ -249,6 +249,8 @@ Expected background IDs and paths:
 | `background.city_map.shinjuku` | `static/assets/backgrounds/city_map/shinjuku.png` |
 | `background.city_map.kabukicho` | `static/assets/backgrounds/city_map/kabukicho.png` |
 | `background.city_map.ginza_minato` | `static/assets/backgrounds/city_map/ginza_minato.png` |
+
+All six runtime files must remain opaque RGB 1920×1080 PNGs. If art is replaced after an overlay review, replace the file at the same path and re-measure its normalized anchors.
 
 Path construction remains in `@lyra/asset-paths`.
 
@@ -261,7 +263,7 @@ Reader uses the existing `structuralVisualCue` mechanism:
 
 Scene usage means “this scene can present this map plane,” not “the player definitely visited it.” Unused future district art may correctly have zero production-scene usage.
 
-Do not add a second scene walker or a dedicated map editor. If current Workbench write-back cannot safely edit several prompts inside one global topology source, keep those map prompt entries read-only rather than widening this PR into a map-authoring product.
+Do not add a second scene walker, a dedicated map editor, an image-copy step, or a map-specific asset registry. If current Workbench write-back cannot safely edit several prompts inside one global topology source, keep those map prompt entries read-only rather than widening this PR into a map-authoring product.
 
 ## 8. Story and spoiler boundaries
 
@@ -293,21 +295,23 @@ No station, convenience store, park, or decorative landmark becomes a Chapter 1 
 
 ## 10. Acceptance criteria
 
-1. One generated Tokyo overview candidate and five generated district candidates are included in the PR under `docs/art/maps/generated/` for review. Final runtime PNG normalization and import into `static/assets/backgrounds/city_map/` remains a Task 0 implementation gate.
-2. The nine Chapter 1 wrappers retain their order and one legal travel leaf each.
-3. Region browsing produces no durable revision, history, evidence, entry reveal, or save-state change.
-4. Only a leaf destination invokes existing travel mutation.
-5. Pending mapped scenes still do not auto-enter or auto-outro.
-6. A mapped multi-node test fixture can enter a location, reopen the map, cancel, select the current location without replay, and move to another legal location.
-7. Hidden/locked nodes cannot be exposed by region browsing.
-8. Same-scene save load resets transient map UI via session identity.
-9. Rapid region switching never combines one plane's markers with another plane's raster.
-10. 1920×1080, 1280×720, and narrow-window layouts retain readable destination names and non-overlapping 44 px targets.
-11. Keyboard and reduced-motion behavior are covered.
-12. Six unique map background manifest entries use the existing global source contract; Reader/Assets distinguish overview and district usage.
-13. Assets-off and missing-art cases remain navigable.
-14. The PR stays Draft until runtime, Tauri E2E, and visual-fidelity review are complete.
+1. The six canonical runtime map PNGs are committed directly under `static/assets/backgrounds/city_map/`; no duplicate review-art directory is required.
+2. All six committed runtime maps are verified as opaque RGB 1920×1080 PNGs before Ready for Review.
+3. The nine Chapter 1 wrappers retain their order and one legal travel leaf each.
+4. Region browsing produces no durable revision, history, evidence, entry reveal, or save-state change.
+5. Only a leaf destination invokes existing travel mutation.
+6. Pending mapped scenes still do not auto-enter or auto-outro.
+7. A mapped multi-node test fixture can enter a location, reopen the map, cancel, select the current location without replay, and move to another legal location.
+8. Hidden/locked nodes cannot be exposed by region browsing.
+9. Same-scene save load resets transient map UI via session identity.
+10. Rapid region switching never combines one plane's markers with another plane's raster.
+11. 1920×1080, 1280×720, and narrow-window layouts retain readable destination names and non-overlapping 44 px targets.
+12. Keyboard and reduced-motion behavior are covered.
+13. Six unique map background manifest entries use the existing global source contract; Reader/Assets distinguish overview and district usage.
+14. Assets-off and missing-art cases remain navigable.
+15. Tokyo's five region choices remain readable at 1280×720, and Shibuya's physical glass booth remains identifiable without exposing the hidden route.
+16. The PR stays Draft until runtime, Tauri E2E, and visual-fidelity review are complete.
 
 ## 11. Design review conclusion
 
-The two-level system is intentionally small: one topology, one existing investigation lifecycle, one existing travel command, and transient presentation state only. It improves spatial readability without turning the VN into a map engine. Future chapter content can opt into the prepared district art when authored, without requiring a new travel architecture.
+The two-level system is intentionally small: one topology, one existing investigation lifecycle, one existing travel command, one canonical runtime copy of each map image, and transient presentation state only. It improves spatial readability without turning the VN into a map engine. Future chapter content can opt into the prepared district art when authored, without requiring a new travel architecture.
