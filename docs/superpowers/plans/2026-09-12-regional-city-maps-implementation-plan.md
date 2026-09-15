@@ -1,9 +1,9 @@
 # Regional City Maps — Single-PR Implementation Plan
 
-> **Status:** Draft. Art sources are reviewed; runtime/compiler/UI implementation has not started.
+> **Status:** Draft. The six runtime map PNGs are already committed under `static/assets/backgrounds/city_map/`; topology/compiler/Rust/UI wiring has not started.
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
-> The [design spec](../specs/2026-09-12-regional-city-maps-design.md) is the product/data contract. The [map art handoff](../../art/maps/README.md) owns visual constraints and art-review status.
-> Keep design, art import, implementation, and verification in Draft PR #89 as one PR.
+> The [design spec](../specs/2026-09-12-regional-city-maps-design.md) is the product/data contract.
+> Keep design, runtime art, implementation, and verification in Draft PR #89 as one PR.
 
 ## Definition of done
 
@@ -21,39 +21,31 @@ This PR does **not** author playable Chapters 2–8.
 
 ---
 
-## Task 0 — Import the reviewed raster art
+## Task 0 — Validate the committed runtime art and measure anchors
 
-### Review sources already committed
+The art no longer has a separate review-source/import step. The canonical files are already at their final runtime paths:
 
-| Map | Review source | Current source size | Status |
-| --- | --- | ---: | --- |
-| Tokyo | `docs/art/maps/generated/tokyo.png` | 1672×941 | Accepted; overlay-readability gate remains |
-| Kichijoji | `docs/art/maps/generated/kichijoji.png` | 1672×941 | Accepted |
-| Shibuya | `docs/art/maps/generated/shibuya.png` | 1672×941 | Accepted; glass-booth runtime legibility gate remains |
-| Shinjuku | `docs/art/maps/generated/shinjuku.png` | 1920×1080 | Accepted |
-| Kabukicho | `docs/art/maps/generated/kabukicho.png` | 1672×941 | Accepted |
-| Ginza / Minato | `docs/art/maps/generated/ginza_minato.png` | 1672×941 | Accepted |
-
-### Runtime targets
-
-- `static/assets/backgrounds/city_map/tokyo.png`
-- `static/assets/backgrounds/city_map/kichijoji.png`
-- `static/assets/backgrounds/city_map/shibuya.png`
-- `static/assets/backgrounds/city_map/shinjuku.png`
-- `static/assets/backgrounds/city_map/kabukicho.png`
-- `static/assets/backgrounds/city_map/ginza_minato.png`
+| Map | Canonical runtime file | Placement status | Remaining visual gate |
+| --- | --- | --- | --- |
+| Tokyo | `static/assets/backgrounds/city_map/tokyo.png` | Committed | Five region anchors remain readable at 1280×720 |
+| Kichijoji | `static/assets/backgrounds/city_map/kichijoji.png` | Committed | Cafe + shopping-street anchors remain distinct |
+| Shibuya | `static/assets/backgrounds/city_map/shibuya.png` | Committed | Glass booth remains recognizable without exposing hidden route |
+| Shinjuku | `static/assets/backgrounds/city_map/shinjuku.png` | Committed | Clinic hotspot reads against the skyline |
+| Kabukicho | `static/assets/backgrounds/city_map/kabukicho.png` | Committed | Theater frontage remains the clear public landmark |
+| Ginza / Minato | `static/assets/backgrounds/city_map/ginza_minato.png` | Committed | Art does not imply a canonical evidentiary route |
 
 ### Work
 
-- [x] Generate and commit six real raster review sources.
-- [x] Review all six for district identity and spoiler safety.
-- [ ] Copy/normalize the approved sources to exact 1920×1080 opaque RGB PNG runtime paths.
-- [ ] Preserve composition; do not bake labels, markers, route arrows, or UI into the raster.
+- [x] Generate/select the Tokyo overview and five district maps.
+- [x] Commit all six PNGs directly to `static/assets/backgrounds/city_map/`.
+- [x] Remove the duplicate `docs/art/maps/generated/` review-source layer from the feature branch.
+- [x] Keep text, labels, markers, route arrows, and UI outside the raster.
+- [ ] Verify all six files are opaque RGB 1920×1080 PNGs from the checked-out branch.
 - [ ] Verify Tokyo can carry five readable region anchors at 1280×720.
 - [ ] Verify Shibuya's physical glass booth remains recognizable beneath the real marker layer.
-- [ ] Measure destination coordinates only against the final runtime PNGs.
+- [ ] Measure all region/destination coordinates against these exact committed runtime PNGs.
 
-**Gate:** source-art review is complete enough to unblock implementation. Runtime overlay checks may replace only the failing map; they do not reopen the whole art set.
+**Gate:** do not add another image-copy, conversion, versioning, or provenance subsystem. If an overlay check fails, replace only the failing PNG at the same runtime path and re-measure its anchors.
 
 ---
 
@@ -89,7 +81,7 @@ Implementation locks:
 
 ---
 
-## Task 2 — Register map assets and keep Reader/Assets single-source
+## Task 2 — Register the existing runtime assets and keep Reader/Assets single-source
 
 Primary files:
 
@@ -101,17 +93,18 @@ Primary files:
 
 Requirements:
 
-- register six unique backgrounds through the existing `globalFile` ownership path;
+- register the six already-committed runtime files through the existing `globalFile` ownership path;
 - use `background.city_map.tokyo` and `background.city_map.<region>` IDs;
+- resolve those IDs to `static/assets/backgrounds/city_map/*.png` through the existing asset-path helper;
 - do not invent chapter/scene owners for global art;
-- do not add a map-specific asset registry or second scene walker;
+- do not add a map-specific asset registry, image copy step, or second scene walker;
 - Reader uses existing `structuralVisualCue` carriers:
   - `map:tokyo`
   - `map:tokyo:<regionId>`;
 - future unused region art may have zero production-scene usage;
 - assets-disabled compile emits no map manifest entries.
 
-**Gate:** repeated Kichijoji wrappers do not create duplicate manifest entries.
+**Gate:** repeated Kichijoji wrappers do not create duplicate manifest entries, and the compiler never duplicates or rewrites the committed PNG bytes.
 
 ---
 
@@ -254,7 +247,13 @@ bun run lint:all
 bun run test:e2e
 ```
 
-Also inspect final runtime PNG metadata and visually check every map in the actual Tauri UI.
+Also verify the committed asset metadata directly:
+
+```sh
+file -b static/assets/backgrounds/city_map/*.png
+```
+
+Expected result: every file is an opaque RGB 1920×1080 PNG. Then inspect all six maps in the actual Tauri UI before marking the PR ready.
 
 ---
 
@@ -269,7 +268,7 @@ Also inspect final runtime PNG metadata and visually check every map in the actu
 | Save format expands | No durable map fields |
 | Future art accidentally becomes playable | Art can exist with zero production usage |
 | Generated art dictates story geography | Coordinates come from story topology; art is presentation only |
-| Source sizes trigger architecture work | One-time normalization; no asset-versioning/image pipeline subsystem |
+| Art exists twice under docs and runtime paths | Keep only the canonical runtime copy under `static/assets/backgrounds/city_map/` |
 | Chapter 1 becomes free-roam | Nine-wrapper regression matrix remains the gate |
 | Work fragments across PRs | Complete this ticket in Draft PR #89 |
 
@@ -279,13 +278,14 @@ Completed:
 
 - English design spec;
 - English implementation plan;
-- English art handoff;
-- six real PNG review sources committed and individually reviewed;
-- source-level spoiler/district-identity review.
+- six real PNG runtime assets committed at their final `static/assets/backgrounds/city_map/` paths;
+- source-level district identity and spoiler review;
+- duplicate generated-art review directory removed from this PR.
 
 Pending:
 
-- runtime normalization/import of the six backgrounds;
+- verify checked-in PNG metadata and opacity;
+- measure final region/destination coordinates against the committed images;
 - Tokyo/Shibuya overlay-specific visual checks;
 - topology/compiler/Rust/Svelte/Workbench implementation;
 - functional, responsive, accessibility, Tauri E2E, and final visual-fidelity verification.
