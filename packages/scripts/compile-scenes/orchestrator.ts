@@ -466,23 +466,42 @@ export function compile(opts: CompileOptions): CompileResult {
     ast: ASTInvestigationScene,
   ): JSONInvestigationMap | null => {
     if (ast.mapId === null || !cityMap) return null;
+    const nodes = ast.sublocations.flatMap((sublocation) => {
+      const location = cityMap.locations.find((l) => l.id === sublocation.id);
+      return location
+        ? [
+            {
+              sublocationId: sublocation.id,
+              regionId: location.regionId,
+              x: location.x,
+              y: location.y,
+            },
+          ]
+        : [];
+    });
+    // Regional city maps v2: emit ONLY the regions referenced by this
+    // scene's emitted nodes — never the full global topology. Future
+    // districts stay out of scene JSON until a node uses them.
+    const referencedRegionIds = new Set(
+      nodes.flatMap((node) => (node.regionId ? [node.regionId] : [])),
+    );
     return {
       id: "tokyo",
       backgroundAssetId: assetsEnabled
         ? `background.city_map.${CITY_MAP_ID}`
         : null,
-      nodes: ast.sublocations.flatMap((sublocation) => {
-        const location = cityMap.locations.find((l) => l.id === sublocation.id);
-        return location
-          ? [
-              {
-                sublocationId: sublocation.id,
-                x: location.x,
-                y: location.y,
-              },
-            ]
-          : [];
-      }),
+      regions: cityMap.regions
+        .filter((region) => referencedRegionIds.has(region.id))
+        .map((region) => ({
+          id: region.id,
+          label: region.label,
+          x: region.x,
+          y: region.y,
+          backgroundAssetId: assetsEnabled
+            ? `background.city_map.${region.id}`
+            : null,
+        })),
+      nodes,
     };
   };
 

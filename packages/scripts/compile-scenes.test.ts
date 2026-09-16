@@ -3031,18 +3031,33 @@ describe("compile (layout warning wiring)", () => {
 
 describe("compile (city map topology)", () => {
   const CITY_MAP = {
-    version: 1,
+    version: 2,
     id: "tokyo",
     backgroundPrompt: "Stylized illustrated Tokyo map at night.",
+    regions: [
+      {
+        id: "kichijoji",
+        label: "吉祥寺",
+        x: 0.09,
+        y: 0.42,
+        backgroundPrompt: "Stylized illustrated Kichijoji district at night.",
+      },
+    ],
     locations: [
-      { id: "rain_bell_cafe", label: "雨鐘咖啡館", x: 0.16, y: 0.45 },
+      {
+        id: "rain_bell_cafe",
+        label: "雨鐘咖啡館",
+        regionId: "kichijoji",
+        x: 0.16,
+        y: 0.45,
+      },
       {
         id: "kagami_review_room",
         label: "KAGAMI 證據摘要審查室",
+        regionId: null,
         x: 0.72,
         y: 0.45,
       },
-      { id: "shibuya", label: "澀谷", x: 0.5, y: 0.68 },
     ],
   };
 
@@ -3138,7 +3153,23 @@ describe("compile (city map topology)", () => {
       ).toEqual({
         id: "tokyo",
         backgroundAssetId: null,
-        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+        regions: [
+          {
+            id: "kichijoji",
+            label: "吉祥寺",
+            x: 0.09,
+            y: 0.42,
+            backgroundAssetId: null,
+          },
+        ],
+        nodes: [
+          {
+            sublocationId: "rain_bell_cafe",
+            regionId: "kichijoji",
+            x: 0.16,
+            y: 0.45,
+          },
+        ],
       });
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
@@ -3280,7 +3311,7 @@ describe("compile (city map topology)", () => {
     const sourceRoot = mkdtempSync(resolve(tmpdir(), "city-map-unused-"));
     const outRoot = mkdtempSync(resolve(tmpdir(), "city-map-unused-out-"));
     try {
-      // CITY_MAP declares kagami_review_room and shibuya; only rain_bell_cafe
+      // CITY_MAP declares kagami_review_room; only rain_bell_cafe
       // is used by the single mapped scene.
       setupMappedCorpus(sourceRoot);
       const result = compile({ sourceRoot, outputRoot: outRoot });
@@ -3325,21 +3356,61 @@ describe("compile (city map topology)", () => {
       ).toEqual({
         id: "tokyo",
         backgroundAssetId: null,
-        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+        regions: [
+          {
+            id: "kichijoji",
+            label: "吉祥寺",
+            x: 0.09,
+            y: 0.42,
+            backgroundAssetId: null,
+          },
+        ],
+        nodes: [
+          {
+            sublocationId: "rain_bell_cafe",
+            regionId: "kichijoji",
+            x: 0.16,
+            y: 0.45,
+          },
+        ],
       });
       expect(
         readEmittedMap(outRoot, "investigation_scene_map_02.json"),
       ).toEqual({
         id: "tokyo",
         backgroundAssetId: null,
-        nodes: [{ sublocationId: "kagami_review_room", x: 0.72, y: 0.45 }],
+        regions: [],
+        nodes: [
+          {
+            sublocationId: "kagami_review_room",
+            regionId: null,
+            x: 0.72,
+            y: 0.45,
+          },
+        ],
       });
       expect(
         readEmittedMap(outRoot, "investigation_scene_map_03.json"),
       ).toEqual({
         id: "tokyo",
         backgroundAssetId: null,
-        nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+        regions: [
+          {
+            id: "kichijoji",
+            label: "吉祥寺",
+            x: 0.09,
+            y: 0.42,
+            backgroundAssetId: null,
+          },
+        ],
+        nodes: [
+          {
+            sublocationId: "rain_bell_cafe",
+            regionId: "kichijoji",
+            x: 0.16,
+            y: 0.45,
+          },
+        ],
       });
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });

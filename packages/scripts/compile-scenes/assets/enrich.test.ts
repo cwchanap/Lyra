@@ -2710,11 +2710,18 @@ describe("mapped travel-only visual cue normalization", () => {
 
   function cityMapFixture() {
     return {
-      version: 1 as const,
+      version: 2 as const,
       id: "tokyo" as const,
       backgroundPrompt: "Stylized illustrated Tokyo map at night.",
+      regions: [],
       locations: [
-        { id: "rain_bell_cafe", label: "雨鐘咖啡館", x: 0.16, y: 0.45 },
+        {
+          id: "rain_bell_cafe",
+          label: "雨鐘咖啡館",
+          regionId: null,
+          x: 0.16,
+          y: 0.45,
+        },
       ],
       sourceFile: "docs/stories_plan/city_map.json",
     };

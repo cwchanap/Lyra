@@ -1,0 +1,42 @@
+characters:
+  - id: soma_ritsu
+    displayNames: ["相馬律"]
+    portraitMode: portrait
+    visualPrompt: Japanese defense attorney, tired sharp eyes, dark suit, restrained posture.
+    expressions:
+      standard:
+        prompt: neutral analytical expression
+      thinking:
+        prompt: focused thinking expression
+  - id: hayasaka_akane
+    displayNames: ["早坂茜"]
+    portraitMode: portrait
+    visualPrompt: young Japanese defense attorney, practical suit, alert warm eyes.
+    expressions:
+      standard:
+        prompt: attentive neutral expression
+      concerned:
+        prompt: worried expression
+  - id: kamiya_mio
+    displayNames: ["神谷澪"]
+    portraitMode: portrait
+    visualPrompt: precise Japanese prosecutor, severe composure, formal suit.
+    expressions:
+      standard:
+        prompt: neutral controlled expression
+      stern:
+        prompt: stern prosecutorial expression
+  - id: wakatsuki_ren
+    displayNames: ["若槻蓮"]
+    portraitMode: portrait
+    visualPrompt: nervous young cafe worker, tired face, simple clothes.
+    expressions:
+      standard:
+        prompt: anxious neutral expression
+  - id: kuruse_toru
+    displayNames: ["黑瀨徹"]
+    portraitMode: portrait
+    visualPrompt: middle-aged Tokyo police detective, rumpled coat, skeptical eyes.
+    expressions:
+      standard:
+        prompt: calm skeptical expression

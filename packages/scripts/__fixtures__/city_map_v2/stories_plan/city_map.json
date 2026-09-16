@@ -1,0 +1,37 @@
+{
+  "version": 2,
+  "id": "tokyo",
+  "backgroundPrompt": "Stylized illustrated investigation map of modern Tokyo at night after rain.",
+  "regions": [
+    {
+      "id": "kichijoji",
+      "label": "吉祥寺",
+      "x": 0.09,
+      "y": 0.42,
+      "backgroundPrompt": "Stylized illustrated Kichijoji district at night."
+    },
+    {
+      "id": "shibuya",
+      "label": "澀谷",
+      "x": 0.324,
+      "y": 0.588,
+      "backgroundPrompt": "Stylized illustrated Shibuya district at night."
+    }
+  ],
+  "locations": [
+    {
+      "id": "rain_bell_cafe",
+      "label": "雨鐘咖啡館",
+      "regionId": "kichijoji",
+      "x": 0.37,
+      "y": 0.72
+    },
+    {
+      "id": "police_meeting_room",
+      "label": "警署臨時會面室",
+      "regionId": null,
+      "x": 0.29,
+      "y": 0.5
+    }
+  ]
+}
