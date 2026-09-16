@@ -172,7 +172,10 @@ describe("investigation layout surface", () => {
   it("renders the first city map and crosses it with mouse activation", async () => {
     await setupAtFirstMapGate();
 
-    // Map background renders through the story-asset resolver.
+    // Map background renders through the story-asset resolver. The v2 map
+    // opens directly on the Kichijoji district plane (its sole legal leaf is
+    // kichijoji-direct), so the rendered raster is the district's own — the
+    // Tokyo overview raster appears only via 返回全景地圖.
     await browser.waitUntil(
       async () =>
         browser.execute(
@@ -188,7 +191,7 @@ describe("investigation layout surface", () => {
           },
           anchors.cityMapSelector,
           anchors.mapBackgroundSelector,
-          "/assets/backgrounds/city_map/tokyo.png",
+          "/assets/backgrounds/city_map/kichijoji.png",
         ),
       {
         timeout: 30000,
