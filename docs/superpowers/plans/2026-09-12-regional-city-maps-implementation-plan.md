@@ -1,6 +1,6 @@
 # Regional City Maps — Single-PR Implementation Plan
 
-> **Status:** Draft. Six canonical runtime PNGs are committed and validated; topology/compiler/Rust/UI wiring has not started.
+> **Status:** Implementation complete through Task 5 on `design/regional-anime-city-maps` (Draft PR #89): compiler, Rust, and UI wiring done; component/packaged E2E green; real-Tauri Tokyo/Kichijoji visual gate passed; Shibuya booth check deferred (no legal shibuya leaves exist in Chapter 1 — by design).
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
 > The [design spec](../specs/2026-09-12-regional-city-maps-design.md) is the product/data contract.
 > Keep design, runtime art, implementation, and verification in Draft PR #89 as one PR.
@@ -305,8 +305,8 @@ Run `production-journey.e2e.ts` explicitly too if the selected E2E suite exclude
 
 ## Current status
 
-Completed: English spec/plan, six canonical 1920×1080 runtime PNGs, district/spoiler review, and PNG metadata validation.
+Implementation complete through Task 5: six canonical runtime PNGs (district/spoiler review + metadata validation), Task 0 coordinate review, v2 topology/compiler cut, global manifest + Reader usage, Rust legal-region projection, `map-plane.ts` + pending-map UI (including the final-review rapid A→B→A marker-gating fix: `loadedPlaneKey` resets on plane change), production anchors, and component/Rust/packaged E2E green on this branch.
 
-Pending: Task 0 overlay/coordinate review, v2 topology/compiler, manifest/Reader, Rust projection, `map-plane.ts` + pending-map Svelte UI, production-anchor update, component/Rust/packaged E2E, and manual visual gates.
+Real-Tauri visual gates (spec §10/§15 criterion 14; one-off recorded check, 2026-09-16, no committed screenshot infra): Tokyo overview and Kichijoji district planes captured from the packaged e2e binary at 1280×720 CSS — pins/labels readable, no overlap; PASS (screenshots under `/tmp/lyra-map-gate/`, not committed). Shibuya: unreachable in Chapter 1 production (no legal shibuya leaves, by design); art-level booth identification verified in Task 0; full check deferred until a chapter grants shibuya legal leaves.
 
 A skipped workflow is not passing evidence. Keep PR #89 Draft until implementation and runtime verification are complete.
