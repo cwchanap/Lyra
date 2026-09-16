@@ -270,7 +270,23 @@ const mappedInvestigationScene = {
   map: {
     id: "tokyo",
     backgroundAssetId: "background.city_map.tokyo",
-    nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+    regions: [
+      {
+        id: "kichijoji",
+        label: "吉祥寺",
+        x: 0.09,
+        y: 0.42,
+        backgroundAssetId: "background.city_map.kichijoji",
+      },
+    ],
+    nodes: [
+      {
+        sublocationId: "rain_bell_cafe",
+        regionId: "kichijoji",
+        x: 0.16,
+        y: 0.45,
+      },
+    ],
   },
   intro: [],
   assetRefs: [],
@@ -1218,15 +1234,18 @@ describe("projectReaderScene presentation facts", () => {
     ]);
   });
 
-  it("projects a mapped scene as exactly one map structural cue before sublocation cues", () => {
+  it("projects a mapped scene as one map structural cue per referenced region before sublocation cues", () => {
     const reader = projectReaderScene(
       "chapter_1",
       "docs/stories_plan/chapter_1/investigation_scene_m.md",
       mappedInvestigationScene,
     );
-    // One map fact, emitted before the ordinary sublocation structural cues.
+    // One map fact per referenced region, emitted before the ordinary
+    // sublocation structural cues. Regions absent from scene.map.regions are
+    // never fabricated as usage.
     expect(reader.presentation.map((fact) => fact.carrierId)).toEqual([
       "map:tokyo",
+      "map:tokyo:kichijoji",
       "sublocation:rain_bell_cafe",
     ]);
     expect(factsFor(reader, "map:tokyo")).toEqual([
@@ -1234,6 +1253,15 @@ describe("projectReaderScene presentation facts", () => {
         kind: "structuralVisualCue",
         carrierId: "map:tokyo",
         backgroundAssetId: "background.city_map.tokyo",
+        bgm: null,
+        bgs: null,
+      },
+    ]);
+    expect(factsFor(reader, "map:tokyo:kichijoji")).toEqual([
+      {
+        kind: "structuralVisualCue",
+        carrierId: "map:tokyo:kichijoji",
+        backgroundAssetId: "background.city_map.kichijoji",
         bgm: null,
         bgs: null,
       },

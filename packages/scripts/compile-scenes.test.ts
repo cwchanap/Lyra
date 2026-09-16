@@ -3447,21 +3447,41 @@ describe("compile (city map topology)", () => {
       if (!result.ok) {
         throw new Error("Compile failed:\n" + formatErrors(result.errors));
       }
-      // Assets are enabled, so the map geometry binds the global raster.
-      expect(
-        readEmittedMap(outRoot, "investigation_scene_map_01.json"),
-      ).toMatchObject({ backgroundAssetId: "background.city_map.tokyo" });
-      // Exactly one global manifest entry with the authored file source.
+      // Assets are enabled, so the map geometry binds the global rasters.
+      const emittedMap = readEmittedMap(
+        outRoot,
+        "investigation_scene_map_01.json",
+      ) as {
+        backgroundAssetId: string;
+        regions: Array<{ id: string; backgroundAssetId: string }>;
+      };
+      expect(emittedMap.backgroundAssetId).toBe("background.city_map.tokyo");
+      expect(emittedMap.regions).toEqual([
+        {
+          id: "kichijoji",
+          label: "吉祥寺",
+          x: 0.09,
+          y: 0.42,
+          backgroundAssetId: "background.city_map.kichijoji",
+        },
+      ]);
+      // Global ownership: one deduped manifest entry per map raster (map +
+      // referenced regions), each sourced from the authored topology file.
       const manifest = JSON.parse(
         readFileSync(resolve(assetOutRoot, "manifest.json"), "utf-8"),
       ) as { entries: Array<{ assetId: string; source: unknown }> };
       const mapEntries = manifest.entries.filter((entry) =>
         entry.assetId.startsWith("background.city_map."),
       );
-      expect(mapEntries).toHaveLength(1);
-      expect(mapEntries[0]?.source).toEqual({
-        globalFile: expect.stringContaining("city_map.json"),
-      });
+      expect(mapEntries.map((entry) => entry.assetId)).toEqual([
+        "background.city_map.tokyo",
+        "background.city_map.kichijoji",
+      ]);
+      for (const entry of mapEntries) {
+        expect(entry.source).toEqual({
+          globalFile: expect.stringContaining("city_map.json"),
+        });
+      }
       expect(result.assetReport.requested.background).toBeGreaterThanOrEqual(1);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });

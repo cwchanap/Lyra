@@ -2727,6 +2727,37 @@ describe("mapped travel-only visual cue normalization", () => {
     };
   }
 
+  function regionalCityMapFixture() {
+    return {
+      ...cityMapFixture(),
+      regions: [
+        {
+          id: "kichijoji",
+          label: "吉祥寺",
+          x: 0.09,
+          y: 0.42,
+          backgroundPrompt: "Stylized illustrated Kichijoji district at night.",
+        },
+        {
+          id: "shibuya",
+          label: "澀谷",
+          x: 0.324,
+          y: 0.588,
+          backgroundPrompt: "Stylized illustrated Shibuya district at night.",
+        },
+      ],
+      locations: [
+        {
+          id: "rain_bell_cafe",
+          label: "雨鐘咖啡館",
+          regionId: "kichijoji",
+          x: 0.16,
+          y: 0.45,
+        },
+      ],
+    };
+  }
+
   function backgroundIds(entries: { type: string; assetId: string }[]) {
     return entries
       .filter((entry) => entry.type === "background")
@@ -2775,12 +2806,74 @@ describe("mapped travel-only visual cue normalization", () => {
     ).toEqual(["background.city_map.tokyo"]);
   });
 
+  it("registers the map and every topology region exactly once via globalFile ownership", () => {
+    const wrapper = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const result = enrichScenesWithAssets({
+      scenes: [wrapper],
+      config: config(),
+      cityMap: regionalCityMapFixture(),
+    });
+    const cityMapEntries = result.manifest.entries.filter((entry) =>
+      entry.assetId.startsWith("background.city_map."),
+    );
+    expect(cityMapEntries.map((entry) => entry.assetId)).toEqual([
+      "background.city_map.tokyo",
+      "background.city_map.kichijoji",
+      "background.city_map.shibuya",
+    ]);
+    for (const entry of cityMapEntries) {
+      expect(entry.source).toEqual({
+        globalFile: "docs/stories_plan/city_map.json",
+      });
+    }
+    // Region entries carry the region's authored background prompt.
+    const kichijoji = cityMapEntries.find(
+      (entry) => entry.assetId === "background.city_map.kichijoji",
+    );
+    expect(kichijoji?.promptParts.entryPrompt).toBe(
+      "Stylized illustrated Kichijoji district at night.",
+    );
+  });
+
+  it("repeated Kichijoji wrappers do not create duplicate manifest entries", () => {
+    // map_01 and map_04 both map the kichijoji sublocation; the regional
+    // requests are topology-scoped, so scene count never multiplies entries.
+    const wrapperA = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const wrapperB = parseWrapper(
+      WRAPPER_MD.replace("Scene 2.1", "Scene 4.1"),
+      "investigation_scene_map_04",
+    );
+    const result = enrichScenesWithAssets({
+      scenes: [wrapperA, wrapperB],
+      config: config(),
+      cityMap: regionalCityMapFixture(),
+    });
+    const cityMapIds = backgroundIds(result.manifest.entries).filter((id) =>
+      id.startsWith("background.city_map."),
+    );
+    expect(cityMapIds).toEqual([
+      "background.city_map.tokyo",
+      "background.city_map.kichijoji",
+      "background.city_map.shibuya",
+    ]);
+  });
+
   it("registers no map request when assets are disabled", () => {
     const wrapper = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
     const result = enrichScenesWithAssets({
       scenes: [wrapper],
       config: { ...config(), enabled: false },
       cityMap: cityMapFixture(),
+    });
+    expect(result.manifest.entries).toHaveLength(0);
+  });
+
+  it("registers no regional map requests when assets are disabled", () => {
+    const wrapper = parseWrapper(WRAPPER_MD, "investigation_scene_map_01");
+    const result = enrichScenesWithAssets({
+      scenes: [wrapper],
+      config: { ...config(), enabled: false },
+      cityMap: regionalCityMapFixture(),
     });
     expect(result.manifest.entries).toHaveLength(0);
   });

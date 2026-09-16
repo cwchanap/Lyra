@@ -60,8 +60,9 @@ export function enrichScenesWithAssets(input: {
   config: AssetConfig;
   /**
    * Parsed global city-map topology. When present (and assets are enabled),
-   * exactly one `background.city_map.<id>` request is registered regardless
-   * of mapped-scene count; it never affects first-visual-cue state.
+   * one `background.city_map.<id>` request per map raster — the map itself
+   * plus every declared region — is registered regardless of mapped-scene
+   * count; it never affects first-visual-cue state.
    */
   cityMap?: ASTCityMap | null;
   /**
@@ -89,16 +90,28 @@ export function enrichScenesWithAssets(input: {
   const requests = new Map<string, ManifestDraft>();
   const corpusState = { hadVisualCue: false };
   if (input.cityMap) {
-    // HPA-601 §5: exactly one global map-raster request regardless of
-    // mapped-scene count, sourced from the authored topology file — never a
-    // pseudo chapter/scene owner. Registered before the scene walk so it
-    // neither consumes nor affects first-visual-cue state.
+    // HPA-601 §5 + regional city maps v2: one global map-raster request per
+    // raster — the map itself plus every declared region — sourced from the
+    // authored topology file, never a pseudo chapter/scene owner. Scene wire
+    // region projections reference `background.city_map.<regionId>`; global
+    // registration here is what keeps those references resolvable. Registered
+    // before the scene walk so it neither consumes nor affects
+    // first-visual-cue state. putRequest dedupes by assetId, so repeated
+    // mapped scenes never multiply entries.
     putRequest(requests, {
       assetId: `background.city_map.${input.cityMap.id}`,
       type: "background",
       source: { globalFile: input.cityMap.sourceFile },
       prompt: input.cityMap.backgroundPrompt,
     });
+    for (const region of input.cityMap.regions) {
+      putRequest(requests, {
+        assetId: `background.city_map.${region.id}`,
+        type: "background",
+        source: { globalFile: input.cityMap.sourceFile },
+        prompt: region.backgroundPrompt,
+      });
+    }
   }
   const orderedScenes = input.orderedScenes ?? [
     ...input.scenes.map((record) => ({ kind: "scene" as const, record })),
