@@ -1,14 +1,20 @@
 {
-  "version": 1,
+  "version": 2,
   "id": "tokyo",
   "backgroundPrompt": "Stylized illustrated investigation map of modern Tokyo at night after rain, restrained dark navy, charcoal and muted teal, subtle district silhouettes and rail or road traces, generous clean negative space around navigation nodes, no readable text, no labels, no icons, no pins, no characters, 16:9 composition.",
+  "regions": [
+    { "id": "kichijoji", "label": "吉祥寺", "x": 0.09, "y": 0.42, "backgroundPrompt": "Stylized illustrated night view of Kichijoji after rain, low-rise shopping streets with warm cafe lighting beside the station and a lakeside park, muted teal shadows with warm amber storefronts, no readable text, no labels, no characters, 16:9 composition." },
+    { "id": "shibuya", "label": "澀谷", "x": 0.324, "y": 0.588, "backgroundPrompt": "Stylized illustrated night view of Shibuya after rain, glowing screens around a public event plaza with a small human-scale glass booth, cool palette with restrained scattered neon, no readable text, no labels, no characters, 16:9 composition." },
+    { "id": "shinjuku", "label": "新宿", "x": 0.445, "y": 0.167, "backgroundPrompt": "Stylized illustrated night view of Shinjuku after rain, a medical and business high-rise block standing against the city skyline, cool blue tower lighting over wet streets, no readable text, no labels, no characters, 16:9 composition." },
+    { "id": "kabukicho", "label": "歌舞伎町", "x": 0.574, "y": 0.255, "backgroundPrompt": "Stylized illustrated night view of Kabukicho after rain, a grand public theater facade along a service street with restrained red-violet neon signage, no readable text, no labels, no characters, 16:9 composition." },
+    { "id": "ginza_minato", "label": "銀座・港區", "x": 0.688, "y": 0.556, "backgroundPrompt": "Stylized illustrated night view of the Ginza and Minato waterfront after rain, a commercial avenue of upscale storefronts leading toward towers and an illuminated bay bridge, no readable text, no labels, no characters, 16:9 composition." }
+  ],
   "locations": [
-    { "id": "rain_bell_cafe", "label": "雨鐘咖啡館", "x": 0.16, "y": 0.45 },
-    { "id": "kichijoji_shopping_street", "label": "吉祥寺商店街", "x": 0.21, "y": 0.34 },
-    { "id": "police_meeting_room", "label": "警署臨時會面室", "x": 0.29, "y": 0.50 },
-    { "id": "outsourced_review_office", "label": "外包資料審查分室", "x": 0.34, "y": 0.29 },
-    { "id": "soma_detective_office", "label": "相馬偵探事務所", "x": 0.54, "y": 0.38 },
-    { "id": "kagami_review_room", "label": "KAGAMI 證據摘要審查室", "x": 0.72, "y": 0.45 },
-    { "id": "shibuya", "label": "澀谷", "x": 0.50, "y": 0.68 }
+    { "id": "rain_bell_cafe", "label": "雨鐘咖啡館", "regionId": "kichijoji", "x": 0.37, "y": 0.72 },
+    { "id": "kichijoji_shopping_street", "label": "吉祥寺商店街", "regionId": "kichijoji", "x": 0.672, "y": 0.514 },
+    { "id": "police_meeting_room", "label": "警署臨時會面室", "regionId": null, "x": 0.29, "y": 0.5 },
+    { "id": "outsourced_review_office", "label": "外包資料審查分室", "regionId": null, "x": 0.34, "y": 0.29 },
+    { "id": "soma_detective_office", "label": "相馬偵探事務所", "regionId": null, "x": 0.54, "y": 0.38 },
+    { "id": "kagami_review_room", "label": "KAGAMI 證據摘要審查室", "regionId": null, "x": 0.72, "y": 0.45 }
   ]
 }
