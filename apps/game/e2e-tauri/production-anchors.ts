@@ -86,6 +86,14 @@ export const anchors = {
   cityMapSelector: '[aria-label="城市地圖"]',
   mapBackgroundSelector: "img.map-background",
   mapDestinationSelector: "[data-map-destination]",
+  // Regional v2 planes (presentation-only plane switching; neither control
+  // invokes a gameplay command — data-map-destination stays leaf-only):
+  // data-map-region opens a legal district from the overview, per region id
+  // (e.g. `[data-map-region="kichijoji"]`); data-map-overview returns to the
+  // overview plane from a district (a11y name 返回全景地圖).
+  mapRegionSelector: "[data-map-region]",
+  mapOverviewSelector: "[data-map-overview]",
+  mapOverviewControl: "返回全景地圖",
   firstMapWrapper: "investigation_scene_map_01",
   firstMapDestination: "rain_bell_cafe",
   firstGateSuccessor: "investigation_scene_3",
