@@ -1307,17 +1307,35 @@ describe("investigation map emission (HPA-601)", () => {
     const json = emitInvestigationScene(mappedAst(), emptyCorpus, {
       id: "tokyo",
       backgroundAssetId: "background.city_map.tokyo",
+      regions: [
+        {
+          id: "shibuya",
+          label: "澀谷",
+          x: 0.324,
+          y: 0.588,
+          backgroundAssetId: "background.city_map.shibuya",
+        },
+      ],
       nodes: [
-        { sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 },
-        { sublocationId: "shibuya", x: 0.5, y: 0.68 },
+        { sublocationId: "rain_bell_cafe", regionId: null, x: 0.16, y: 0.45 },
+        { sublocationId: "shibuya", regionId: "shibuya", x: 0.5, y: 0.68 },
       ],
     });
     expect(json.map).toEqual({
       id: "tokyo",
       backgroundAssetId: "background.city_map.tokyo",
+      regions: [
+        {
+          id: "shibuya",
+          label: "澀谷",
+          x: 0.324,
+          y: 0.588,
+          backgroundAssetId: "background.city_map.shibuya",
+        },
+      ],
       nodes: [
-        { sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 },
-        { sublocationId: "shibuya", x: 0.5, y: 0.68 },
+        { sublocationId: "rain_bell_cafe", regionId: null, x: 0.16, y: 0.45 },
+        { sublocationId: "shibuya", regionId: "shibuya", x: 0.5, y: 0.68 },
       ],
     });
   });
@@ -1335,12 +1353,34 @@ describe("investigation map emission (HPA-601)", () => {
     const json = emitInvestigationScene(mappedAst(), emptyCorpus, {
       id: "tokyo",
       backgroundAssetId: null,
-      nodes: [{ sublocationId: "shibuya", x: 0.5, y: 0.68 }],
+      regions: [
+        {
+          id: "shibuya",
+          label: "澀谷",
+          x: 0.324,
+          y: 0.588,
+          backgroundAssetId: null,
+        },
+      ],
+      nodes: [
+        { sublocationId: "shibuya", regionId: "shibuya", x: 0.5, y: 0.68 },
+      ],
     });
     expect(json.map).toEqual({
       id: "tokyo",
       backgroundAssetId: null,
-      nodes: [{ sublocationId: "shibuya", x: 0.5, y: 0.68 }],
+      regions: [
+        {
+          id: "shibuya",
+          label: "澀谷",
+          x: 0.324,
+          y: 0.588,
+          backgroundAssetId: null,
+        },
+      ],
+      nodes: [
+        { sublocationId: "shibuya", regionId: "shibuya", x: 0.5, y: 0.68 },
+      ],
     });
   });
 });

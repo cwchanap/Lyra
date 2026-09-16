@@ -623,16 +623,26 @@ export type JSONHotspotLayout = RectLayout;
 export type JSONCharacterLayout = CharacterLayout;
 
 /**
- * Map projection emitted for a mapped investigation scene (HPA-601 §4).
- * Always present on JSONInvestigationScene and nullable; nodes carry only
- * topology coordinates joined by sublocationId — labels stay canonical in
- * the sublocation list.
+ * Map projection emitted for a mapped investigation scene (HPA-601 §4,
+ * regional city maps v2). Always present on JSONInvestigationScene and
+ * nullable; nodes carry topology coordinates plus their owning `regionId`
+ * (null = overview-direct) joined by sublocationId — labels stay canonical
+ * in the sublocation list. `regions` carries ONLY the regions referenced by
+ * this scene's emitted nodes, never the full global topology.
  */
 export type JSONInvestigationMap = {
   id: "tokyo";
   backgroundAssetId: string | null;
+  regions: Array<{
+    id: string;
+    label: string;
+    x: number;
+    y: number;
+    backgroundAssetId: string | null;
+  }>;
   nodes: Array<{
     sublocationId: string;
+    regionId: string | null;
     x: number;
     y: number;
   }>;
