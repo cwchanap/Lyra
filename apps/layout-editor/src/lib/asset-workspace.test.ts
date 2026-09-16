@@ -494,7 +494,23 @@ function mappedScene(id: string): JSONInvestigationScene {
     map: {
       id: "tokyo",
       backgroundAssetId: "background.city_map.tokyo",
-      nodes: [{ sublocationId: "rain_bell_cafe", x: 0.16, y: 0.45 }],
+      regions: [
+        {
+          id: "kichijoji",
+          label: "吉祥寺",
+          x: 0.09,
+          y: 0.42,
+          backgroundAssetId: "background.city_map.kichijoji",
+        },
+      ],
+      nodes: [
+        {
+          sublocationId: "rain_bell_cafe",
+          regionId: "kichijoji",
+          x: 0.16,
+          y: 0.45,
+        },
+      ],
     },
     intro: [],
     assetRefs: [],
@@ -513,6 +529,15 @@ const mapManifest: AssetManifest = {
         assetId: "background.city_map.tokyo",
         type: "background",
         entryPrompt: "tokyo city map",
+      }),
+      type: "background",
+      source: { globalFile: "docs/stories_plan/city_map.json" },
+    },
+    {
+      ...entryBase({
+        assetId: "background.city_map.kichijoji",
+        type: "background",
+        entryPrompt: "kichijoji district map",
       }),
       type: "background",
       source: { globalFile: "docs/stories_plan/city_map.json" },
@@ -978,10 +1003,15 @@ describe("projectAssetWorkspace scene usage projection", () => {
       }),
     );
 
-    // Library carries the single global manifest entry verbatim.
+    // Library carries each global manifest entry verbatim, exactly once.
     expect(
       workspace.library.filter(
         (entry) => entry.assetId === "background.city_map.tokyo",
+      ),
+    ).toHaveLength(1);
+    expect(
+      workspace.library.filter(
+        (entry) => entry.assetId === "background.city_map.kichijoji",
       ),
     ).toHaveLength(1);
 
@@ -1009,6 +1039,36 @@ describe("projectAssetWorkspace scene usage projection", () => {
         "chapter_2",
         "investigation_m2",
         "map:tokyo",
+        "background",
+        "background",
+      ],
+    ]);
+
+    // One map:tokyo:<regionId> usage per mapped scene for each region the
+    // scene's map projection references — two total, same join behavior.
+    const regionUsages = workspace.sceneUsages.filter(
+      (usage) => usage.assetId === "background.city_map.kichijoji",
+    );
+    expect(
+      regionUsages.map((usage) => [
+        usage.chapterId,
+        usage.sceneId,
+        usage.carrierId,
+        usage.role,
+        usage.type,
+      ]),
+    ).toEqual([
+      [
+        "chapter_1",
+        "investigation_m1",
+        "map:tokyo:kichijoji",
+        "background",
+        "background",
+      ],
+      [
+        "chapter_2",
+        "investigation_m2",
+        "map:tokyo:kichijoji",
         "background",
         "background",
       ],

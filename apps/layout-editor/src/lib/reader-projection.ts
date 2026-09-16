@@ -538,9 +538,12 @@ function projectInvestigation(
     ),
   );
   if (scene.map !== null) {
-    // Global map surface: one structural fact at the existing traversal,
-    // before sublocation cues. No map reader group exists, so Assets falls
-    // back to the carrier ID for its label.
+    // Global map surface: one structural fact for the map itself plus one per
+    // region the scene's map projection references, at the existing traversal
+    // site, before sublocation cues. `regions` already carries only referenced
+    // regions, so no usage is fabricated for unreferenced districts. No map
+    // reader group exists, so Assets falls back to the carrier ID for its
+    // label.
     presentation.push({
       kind: "structuralVisualCue",
       carrierId: `map:${scene.map.id}`,
@@ -548,6 +551,15 @@ function projectInvestigation(
       bgm: null,
       bgs: null,
     });
+    for (const region of scene.map.regions) {
+      presentation.push({
+        kind: "structuralVisualCue",
+        carrierId: `map:${scene.map.id}:${region.id}`,
+        backgroundAssetId: region.backgroundAssetId,
+        bgm: null,
+        bgs: null,
+      });
+    }
   }
   for (const sublocation of scene.sublocations) {
     const children: ReaderGroup[] = [];
