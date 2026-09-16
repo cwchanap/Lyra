@@ -73,19 +73,21 @@
         const existingIndex = layers.findIndex(
           (layer) => layer.key === desiredKey && !layer.leaving,
         );
-        if (existingIndex === -1) {
+        if (existingIndex !== -1) {
+          const existing = layers[existingIndex];
+          if (hasSamePresentation(existing.presentation, presentation)) {
+            return;
+          }
+
+          layers = layers.map((layer, index) =>
+            index === existingIndex ? { ...layer, presentation } : layer,
+          );
           return;
         }
 
-        const existing = layers[existingIndex];
-        if (hasSamePresentation(existing.presentation, presentation)) {
-          return;
-        }
-
-        layers = layers.map((layer, index) =>
-          index === existingIndex ? { ...layer, presentation } : layer,
-        );
-        return;
+        // The requested key has no live layer (it was removed after an error
+        // or a stale rejection). Fall through and create a fresh layer from
+        // the current src instead of leaving the key permanently blank.
       }
 
       lastRequestedKey = desiredKey;

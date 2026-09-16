@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
@@ -76,13 +76,21 @@ describe("ExploreView", () => {
     expect(screen.getByText("尚未進入任何地點。")).toBeInTheDocument();
   });
 
-  it("renders the city map when the scene is mapped and no sublocation is entered", () => {
+  it("renders the city map when the scene is mapped and no sublocation is entered", async () => {
     render(ExploreView, {
       scene: investigationScene(null, cityMap),
       onInspect: vi.fn(),
       onInterview: vi.fn(),
       onEnterSublocation: vi.fn(),
     });
+
+    // jsdom fires no real image load events; the map gate needs one.
+    await waitFor(() => {
+      expect(document.querySelector("img.map-background")).not.toBeNull();
+    });
+    await fireEvent.load(
+      document.querySelector("img.map-background") as HTMLImageElement,
+    );
 
     expect(
       screen.getByRole("button", {

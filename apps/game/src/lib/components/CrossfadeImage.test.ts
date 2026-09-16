@@ -1028,6 +1028,37 @@ describe("CrossfadeImage", () => {
     expect(imageSources(container)).toEqual(["/a.png"]);
   });
 
+  it("creates a replacement layer when src changes after the requested key's layer was removed", async () => {
+    const { container, rerender } = render(CrossfadeImage, {
+      src: "/a.png",
+      transitionKey: "plane",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    // The errored layer is removed, but the requested key stays the same.
+    await fireEvent.error(firstImage(container));
+    expect(container.querySelector("img")).toBeNull();
+
+    // A new src for the same key must still render — the key having no live
+    // layer may not leave the caller permanently blank.
+    await rerender({
+      src: "/replacement.png",
+      transitionKey: "plane",
+      imageClass: "background-image",
+      alt: "",
+      ariaHidden: true,
+    });
+
+    await waitFor(() => {
+      const images = Array.from(container.querySelectorAll("img"));
+      expect(images).toHaveLength(1);
+      expect(images[0]).toHaveAttribute("src", "/replacement.png");
+      expect(images[0]).not.toHaveClass("leaving");
+    });
+  });
+
   it("defines the transition and reduced-motion CSS contract", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "CrossfadeImage.svelte"),
