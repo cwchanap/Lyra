@@ -12,7 +12,8 @@ import type {
 const cityMap: InvestigationMapView = {
   id: "city_map.tokyo",
   backgroundAssetId: "background.city_map.tokyo",
-  nodes: [{ sublocationId: "coffee_shop", x: 0.5, y: 0.5 }],
+  nodes: [{ sublocationId: "coffee_shop", regionId: null, x: 0.5, y: 0.5 }],
+  regions: [],
 };
 
 const sublocation: SublocationView = {
