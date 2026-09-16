@@ -31,7 +31,8 @@ vi.mock("$lib/assets/story-assets", async (importOriginal) => {
 const map: MapView = {
   id: "city_map.tokyo",
   backgroundAssetId: "background.city_map.tokyo",
-  nodes: [{ sublocationId: "rain_bell_cafe", x: 0.35, y: 0.6 }],
+  nodes: [{ sublocationId: "rain_bell_cafe", regionId: null, x: 0.35, y: 0.6 }],
+  regions: [],
 };
 
 const sublocations = [
@@ -153,9 +154,15 @@ describe("InvestigationMapView", () => {
       id: "city_map.tokyo",
       backgroundAssetId: "background.city_map.tokyo",
       nodes: [
-        { sublocationId: "rain_bell_cafe", x: 0.35, y: 0.6 },
-        { sublocationId: "police_meeting_room", x: 0.7, y: 0.3 },
+        { sublocationId: "rain_bell_cafe", regionId: null, x: 0.35, y: 0.6 },
+        {
+          sublocationId: "police_meeting_room",
+          regionId: null,
+          x: 0.7,
+          y: 0.3,
+        },
       ],
+      regions: [],
     };
     const allSublocations = [
       ...sublocations,

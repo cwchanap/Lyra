@@ -130,12 +130,21 @@ export type CharacterView = {
 };
 export type InvestigationMapNodeView = {
   sublocationId: string;
+  regionId: string | null;
   x: number;
   y: number;
+};
+export type InvestigationMapRegionView = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  backgroundAssetId: string | null;
 };
 export type InvestigationMapView = {
   id: string;
   backgroundAssetId: string | null;
+  regions: InvestigationMapRegionView[];
   nodes: InvestigationMapNodeView[];
 };
 export type SublocationView = {

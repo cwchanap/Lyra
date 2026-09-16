@@ -59,8 +59,8 @@ use view::{
     AnalysisBoardView, AnalysisCardSourceView, AnalysisCardView, AnalysisFeedbackView,
     AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView, ChapterView, CharacterView,
     CrossExamView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
-    InvestigationMapNodeView, InvestigationMapView, PendingAcquisitionView, SceneView, SubjectView,
-    SublocationView, TopicView,
+    InvestigationMapNodeView, InvestigationMapRegionView, InvestigationMapView,
+    PendingAcquisitionView, SceneView, SubjectView, SublocationView, TopicView,
 };
 
 pub struct GameEngine {
@@ -2717,11 +2717,11 @@ impl GameEngine {
 
                 // Map projection (HPA-601 §7): only currently
                 // visible/unlocked sublocations become map nodes; a map-less
-                // scene projects `None` and never synthesizes a map.
-                let map_view = inv.def.map.as_ref().map(|map| InvestigationMapView {
-                    id: map.id.clone(),
-                    background_asset_id: map.background_asset_id.clone(),
-                    nodes: map
+                // scene projects `None` and never synthesizes a map. Regions
+                // are visible only through their projected leaves — never
+                // unioned back from the global topology.
+                let map_view = inv.def.map.as_ref().map(|map| {
+                    let nodes: Vec<InvestigationMapNodeView> = map
                         .nodes
                         .iter()
                         .filter(|node| {
@@ -2731,10 +2731,33 @@ impl GameEngine {
                         })
                         .map(|node| InvestigationMapNodeView {
                             sublocation_id: node.sublocation_id.clone(),
+                            region_id: node.region_id.clone(),
                             x: node.x,
                             y: node.y,
                         })
-                        .collect(),
+                        .collect();
+                    let regions: Vec<InvestigationMapRegionView> = map
+                        .regions
+                        .iter()
+                        .filter(|region| {
+                            nodes
+                                .iter()
+                                .any(|node| node.region_id.as_deref() == Some(region.id.as_str()))
+                        })
+                        .map(|region| InvestigationMapRegionView {
+                            id: region.id.clone(),
+                            label: region.label.clone(),
+                            x: region.x,
+                            y: region.y,
+                            background_asset_id: region.background_asset_id.clone(),
+                        })
+                        .collect();
+                    InvestigationMapView {
+                        id: map.id.clone(),
+                        background_asset_id: map.background_asset_id.clone(),
+                        regions,
+                        nodes,
+                    }
                 });
                 SceneView::Investigation {
                     id: inv.def.id.clone(),

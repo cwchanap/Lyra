@@ -1121,6 +1121,7 @@ mod tests {
             .map(|(i, sub_id)| {
                 serde_json::json!({
                     "sublocationId": sub_id,
+                    "regionId": "region_shared",
                     "x": 0.2 + 0.1 * i as f64,
                     "y": 0.5
                 })
@@ -1134,7 +1135,18 @@ mod tests {
             "id": id,
             "title": id,
             "summary": format!("Travel goal for {id}."),
-            "map": { "id": "tokyo", "backgroundAssetId": null, "nodes": nodes },
+            "map": {
+                "id": "tokyo",
+                "backgroundAssetId": null,
+                "regions": [{
+                    "id": "region_shared",
+                    "label": "共有區域",
+                    "x": 0.1,
+                    "y": 0.1,
+                    "backgroundAssetId": null
+                }],
+                "nodes": nodes
+            },
             "intro": intro,
             "sublocations": sublocations,
             "evidenceManifest": [],
@@ -4314,23 +4326,28 @@ mod tests {
 
     // HPA-601 §7: two unlocked real nodes. The pending map exposes both;
     // selecting B keeps the scene active in B; A was never auto-entered.
+    // office_b is overview-direct (`regionId: null`) and still travels like
+    // any region-owned leaf; guessed leaf IDs stay rejected.
     #[test]
     fn mapped_multi_node_pending_exposes_both_and_selection_stays_in_scene() {
-        let resources = mapped_pending_wrapper_resources(
-            "map-multi-node-select",
-            mapped_scene_json(
-                "investigation_scene_1",
-                &["cafe_a", "office_b"],
-                Some("打開地圖，選擇目的地。"),
-                serde_json::json!("auto"),
-                true,
-            ),
-        );
+        let mut mapped = serde_json::from_str::<serde_json::Value>(&mapped_scene_json(
+            "investigation_scene_1",
+            &["cafe_a", "office_b"],
+            Some("打開地圖，選擇目的地。"),
+            serde_json::json!("auto"),
+            true,
+        ))
+        .unwrap();
+        mapped["map"]["nodes"][1]["regionId"] = serde_json::json!(null);
+        let resources =
+            mapped_pending_wrapper_resources("map-multi-node-select", mapped.to_string());
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         let view = engine.view().unwrap();
         engine.advance_dialogue(token_from(&view)).unwrap();
 
-        // Pending map exposes both unlocked nodes with topology coordinates.
+        // Pending map exposes both unlocked nodes with topology coordinates;
+        // the region projects through its still-visible leaf, the
+        // overview-direct node carries `regionId: null`.
         let view = engine.view().unwrap();
         let SceneView::Investigation { map, .. } = &view.scene else {
             panic!("expected investigation scene")
@@ -4342,6 +4359,19 @@ mod tests {
             .map(|node| node.sublocation_id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(node_ids, vec!["cafe_a", "office_b"]);
+        assert_eq!(map.nodes[0].region_id.as_deref(), Some("region_shared"));
+        assert_eq!(map.nodes[1].region_id, None);
+        assert_eq!(
+            map.regions
+                .iter()
+                .map(|region| region.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["region_shared"]
+        );
+
+        // Guessed/stale leaf IDs remain rejected even while the map is up.
+        let guessed = engine.enter_sublocation("ghost_leaf").unwrap_err();
+        assert_eq!(guessed.code, "unknownSublocation");
 
         engine.enter_sublocation("office_b").unwrap();
 
@@ -4370,9 +4400,15 @@ mod tests {
     }
 
     // HPA-601 §7: a map-less scene projects `map: None` (never synthesized);
-    // a mapped scene projects only currently visible/unlocked sublocations.
+    // a mapped scene projects only currently visible/unlocked sublocations,
+    // and a region is visible only through its projected leaves — a region
+    // whose leaves are all locked/hidden is absent, never unioned back from
+    // the topology wire.
     #[test]
     fn map_projection_filters_locked_nodes_and_map_less_scenes_project_none() {
+        // Mixed region: `region_shared` owns a visible leaf (cafe_a) and a
+        // locked leaf (locked_b); it still projects exactly once, without the
+        // locked leaf's node.
         let mut mapped = serde_json::from_str::<serde_json::Value>(&mapped_scene_json(
             "investigation_scene_1",
             &["cafe_a", "locked_b"],
@@ -4397,6 +4433,75 @@ mod tests {
         assert_eq!(map.background_asset_id, None);
         assert_eq!(map.nodes.len(), 1, "locked node must not project");
         assert_eq!(map.nodes[0].sublocation_id, "cafe_a");
+        assert_eq!(
+            map.regions
+                .iter()
+                .map(|region| region.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["region_shared"],
+            "a region with at least one visible leaf still projects"
+        );
+
+        // Guessed/stale leaf IDs remain rejected: a locked topology leaf and
+        // an unknown id both fail through the existing enter_sublocation law.
+        let locked = engine.enter_sublocation("locked_b").unwrap_err();
+        assert_eq!(locked.code, "lockedSublocation");
+        let guessed = engine.enter_sublocation("ghost_leaf").unwrap_err();
+        assert_eq!(guessed.code, "unknownSublocation");
+
+        // Exclusive locked region: `region_locked_only` owns only the locked
+        // leaf, so it must be absent from the projection entirely.
+        let mut exclusive = serde_json::from_str::<serde_json::Value>(&mapped_scene_json(
+            "investigation_scene_1",
+            &["cafe_a", "locked_b"],
+            Some("打開地圖，選擇目的地。"),
+            serde_json::json!("auto"),
+            true,
+        ))
+        .unwrap();
+        exclusive["sublocations"][1]["status"] = serde_json::json!("locked");
+        exclusive["map"]["nodes"][1]["regionId"] = serde_json::json!("region_locked_only");
+        exclusive["map"]["regions"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({
+                "id": "region_locked_only",
+                "label": "鎖定區域",
+                "x": 0.8,
+                "y": 0.8,
+                "backgroundAssetId": null
+            }));
+        let exclusive_resources = mapped_pending_wrapper_resources(
+            "map-projection-filter-locked-region",
+            exclusive.to_string(),
+        );
+        let mut exclusive_engine = GameEngine::new_started(exclusive_resources.clone()).unwrap();
+        let view = exclusive_engine.view().unwrap();
+        exclusive_engine
+            .advance_dialogue(token_from(&view))
+            .unwrap();
+
+        let view = exclusive_engine.view().unwrap();
+        let SceneView::Investigation { map, .. } = &view.scene else {
+            panic!("expected investigation scene")
+        };
+        let map = map.as_ref().expect("mapped scene must project map data");
+        assert_eq!(
+            map.nodes
+                .iter()
+                .map(|node| node.sublocation_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cafe_a"],
+            "hidden/locked leaf must not project"
+        );
+        assert_eq!(
+            map.regions
+                .iter()
+                .map(|region| region.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["region_shared"],
+            "a region whose leaves are all locked/hidden must be absent"
+        );
 
         // Map-less scene: no synthesized map.
         let map_less_resources = acquisition_navigation_resources(
@@ -4431,6 +4536,7 @@ mod tests {
         assert!(map.is_none(), "map-less scenes must not synthesize a map");
 
         let _ = std::fs::remove_dir_all(resources);
+        let _ = std::fs::remove_dir_all(exclusive_resources);
         let _ = std::fs::remove_dir_all(map_less_resources);
     }
 }

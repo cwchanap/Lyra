@@ -616,21 +616,38 @@ pub struct LinearSceneJson {
 }
 
 /// Compiler-emitted city-map projection for a mapped investigation scene
-/// (HPA-601 §4). Mirrors `JSONInvestigationMap` byte-for-byte: topology
-/// coordinates joined by `sublocationId`; labels stay canonical in the
-/// sublocation list. This is scene wire data only — never persisted to saves.
+/// (HPA-601 §4, regional city maps v2). Mirrors `JSONInvestigationMap`
+/// byte-for-byte: topology coordinates joined by `sublocationId`; labels stay
+/// canonical in the sublocation list; `regions` carries ONLY the regions
+/// referenced by this scene's emitted nodes. This is scene wire data only —
+/// never persisted to saves.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvestigationMapJson {
     pub id: String,
     pub background_asset_id: Option<String>,
+    #[serde(default)]
+    pub regions: Vec<InvestigationMapRegionJson>,
     pub nodes: Vec<InvestigationMapNodeJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapRegionJson {
+    pub id: String,
+    pub label: String,
+    pub x: f64,
+    pub y: f64,
+    pub background_asset_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InvestigationMapNodeJson {
     pub sublocation_id: String,
+    /// Owning region on the global topology; `None` = overview-direct.
+    #[serde(default)]
+    pub region_id: Option<String>,
     pub x: f64,
     pub y: f64,
 }
@@ -1925,25 +1942,50 @@ mod tests {
         assert_eq!(map.nodes[0].sublocation_id, "rain_bell_cafe");
         assert_eq!(map.nodes[0].x, 0.42);
         assert_eq!(map.nodes[0].y, 0.55);
+        // Wire tolerance: an overview-direct v1 scene JSON carries neither
+        // `regions` nor per-node `regionId`.
+        assert!(map.regions.is_empty());
+        assert_eq!(map.nodes[0].region_id, None);
     }
 
     #[test]
     fn investigation_scene_map_two_nodes_with_null_background_deserializes() {
-        let scene =
-            parse_investigation_scene(investigation_scene_fixture_json(serde_json::json!({
+        let scene = parse_investigation_scene(investigation_scene_fixture_json(
+            serde_json::json!({
                 "id": "tokyo",
                 "backgroundAssetId": null,
+                "regions": [
+                    {
+                        "id": "kichijoji",
+                        "label": "吉祥寺",
+                        "x": 0.09,
+                        "y": 0.42,
+                        "backgroundAssetId": "background.city_map.kichijoji"
+                    }
+                ],
                 "nodes": [
-                    { "sublocationId": "rain_bell_cafe", "x": 0.42, "y": 0.55 },
-                    { "sublocationId": "soma_detective_office", "x": 0.61, "y": 0.38 }
+                    { "sublocationId": "rain_bell_cafe", "regionId": "kichijoji", "x": 0.42, "y": 0.55 },
+                    { "sublocationId": "soma_detective_office", "regionId": null, "x": 0.61, "y": 0.38 }
                 ]
-            })));
+            }),
+        ));
         let map = scene.map.unwrap();
         assert_eq!(map.id, "tokyo");
         assert_eq!(map.background_asset_id, None);
+        assert_eq!(map.regions.len(), 1);
+        assert_eq!(map.regions[0].id, "kichijoji");
+        assert_eq!(map.regions[0].label, "吉祥寺");
+        assert_eq!(map.regions[0].x, 0.09);
+        assert_eq!(map.regions[0].y, 0.42);
+        assert_eq!(
+            map.regions[0].background_asset_id.as_deref(),
+            Some("background.city_map.kichijoji")
+        );
         assert_eq!(map.nodes.len(), 2);
         assert_eq!(map.nodes[0].sublocation_id, "rain_bell_cafe");
+        assert_eq!(map.nodes[0].region_id.as_deref(), Some("kichijoji"));
         assert_eq!(map.nodes[1].sublocation_id, "soma_detective_office");
+        assert_eq!(map.nodes[1].region_id, None);
     }
 
     #[test]

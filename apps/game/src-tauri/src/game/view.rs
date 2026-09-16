@@ -503,8 +503,19 @@ pub struct SceneNavigationScene {
 #[serde(rename_all = "camelCase")]
 pub struct InvestigationMapNodeView {
     pub sublocation_id: String,
+    pub region_id: Option<String>,
     pub x: f64,
     pub y: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationMapRegionView {
+    pub id: String,
+    pub label: String,
+    pub x: f64,
+    pub y: f64,
+    pub background_asset_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -512,6 +523,9 @@ pub struct InvestigationMapNodeView {
 pub struct InvestigationMapView {
     pub id: String,
     pub background_asset_id: Option<String>,
+    /// Only regions still referenced by a projected (visible/unlocked) node;
+    /// never unioned back from the global topology (HPA-601 §7).
+    pub regions: Vec<InvestigationMapRegionView>,
     pub nodes: Vec<InvestigationMapNodeView>,
 }
 
