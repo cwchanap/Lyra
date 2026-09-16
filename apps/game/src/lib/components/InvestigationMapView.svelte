@@ -79,6 +79,15 @@
   // placeholder). CrossfadeImage only forwards load/error for the current
   // request, so this can never name a stale plane.
   let loadedPlaneKey = $state<string | null>(null);
+  // Every plane switch re-requests the raster through CrossfadeImage (the
+  // planeAsset guard drops src to null while the resolve catches up), so any
+  // earlier confirmation for the incoming key is stale — rapid A→B→A must
+  // not reopen markers over a still-pending re-requested raster. The
+  // load/error callbacks re-arm the gate once the active plane settles.
+  $effect(() => {
+    void planeKey;
+    loadedPlaneKey = null;
+  });
   // Raster-less planes bypass the load gate: named controls render immediately.
   const markersReady = $derived(
     planeBackgroundAssetId == null || loadedPlaneKey === planeKey,

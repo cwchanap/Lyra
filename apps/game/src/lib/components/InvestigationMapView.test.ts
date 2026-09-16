@@ -326,6 +326,47 @@ describe("InvestigationMapView", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("gates markers until the returned-to plane's own raster settles in rapid A→B→A (final raster and markers both A)", async () => {
+    const user = userEvent.setup();
+    const onTravel = vi.fn();
+    await renderMap({
+      map: multiRegionMap,
+      sublocations: extendedSublocations,
+      onTravel,
+    });
+
+    // A settled: overview raster loaded, overview markers visible.
+    expect(
+      screen.getByRole("button", { name: policeLabel }),
+    ).toBeInTheDocument();
+
+    // → B: enter the district and DO NOT settle its raster.
+    await user.click(screen.getByRole("button", { name: "檢視吉祥寺地圖" }));
+    expect(
+      screen.queryByRole("button", { name: policeLabel }),
+    ).not.toBeInTheDocument();
+
+    // → A before B settles: the stale overview load confirmation must not
+    // reopen markers over the still-pending re-requested overview raster.
+    await user.click(screen.getByRole("button", { name: "返回全景地圖" }));
+    expect(onTravel).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: policeLabel }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "檢視吉祥寺地圖" }),
+    ).not.toBeInTheDocument();
+
+    // The re-requested overview raster settles: markers return on A.
+    await loadMapBackground();
+    expect(
+      screen.getByRole("button", { name: policeLabel }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "檢視吉祥寺地圖" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens a single-region map directly on its district plane", async () => {
     const singleRegionMap: MapView = {
       id: "city_map.tokyo",
