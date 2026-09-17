@@ -626,7 +626,9 @@ pub struct LinearSceneJson {
 pub struct InvestigationMapJson {
     pub id: String,
     pub background_asset_id: Option<String>,
-    #[serde(default)]
+    // v2 hard cutover: `regions` is required even when empty, so a stale v1
+    // payload fails to deserialize instead of silently parsing as
+    // overview-direct. The compiler emits the key on every mapped scene.
     pub regions: Vec<InvestigationMapRegionJson>,
     pub nodes: Vec<InvestigationMapNodeJson>,
 }
@@ -1925,11 +1927,27 @@ mod tests {
     }
 
     #[test]
+    fn investigation_scene_map_without_regions_is_rejected() {
+        // v2 hard cutover: a stale v1 payload carries no `regions` key and
+        // must fail to deserialize rather than silently parse as
+        // overview-direct.
+        let result = serde_json::from_value::<SceneJson>(investigation_scene_fixture_json(
+            serde_json::json!({
+                "id": "tokyo",
+                "backgroundAssetId": "background.city_map.tokyo",
+                "nodes": [{ "sublocationId": "rain_bell_cafe", "x": 0.42, "y": 0.55 }]
+            }),
+        ));
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn investigation_scene_map_one_node_with_background_deserializes() {
         let scene =
             parse_investigation_scene(investigation_scene_fixture_json(serde_json::json!({
                 "id": "tokyo",
                 "backgroundAssetId": "background.city_map.tokyo",
+                "regions": [],
                 "nodes": [{ "sublocationId": "rain_bell_cafe", "x": 0.42, "y": 0.55 }]
             })));
         let map = scene.map.unwrap();
@@ -1942,8 +1960,8 @@ mod tests {
         assert_eq!(map.nodes[0].sublocation_id, "rain_bell_cafe");
         assert_eq!(map.nodes[0].x, 0.42);
         assert_eq!(map.nodes[0].y, 0.55);
-        // Wire tolerance: an overview-direct v1 scene JSON carries neither
-        // `regions` nor per-node `regionId`.
+        // An overview-direct v2 scene carries an explicit empty `regions`
+        // array; a node without `regionId` stays overview-direct.
         assert!(map.regions.is_empty());
         assert_eq!(map.nodes[0].region_id, None);
     }

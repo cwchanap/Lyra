@@ -156,6 +156,18 @@ export function parseCityMapJson(
         ),
       );
       regionValid = false;
+    } else if (regionId === CITY_MAP_ID) {
+      // The root map id is reserved: a region with the same slug would emit
+      // `background.city_map.<id>` identical to the overview raster's, and
+      // manifest dedup would silently drop the region's own art.
+      errors.push(
+        error(
+          sourceFile,
+          "cityMapReservedRegionId",
+          `City map ${pathLabel}.id "${regionId}" is reserved by the root map id "${CITY_MAP_ID}".`,
+        ),
+      );
+      regionValid = false;
     } else if (seenIds.has(regionId)) {
       errors.push(
         error(

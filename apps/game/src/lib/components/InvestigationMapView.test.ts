@@ -430,6 +430,72 @@ describe("InvestigationMapView", () => {
     ).toBeInTheDocument();
   });
 
+  it("namespaces district plane keys so a region named overview cannot inherit the overview raster and gate", async () => {
+    const user = userEvent.setup();
+    // "overview" is a legal region slug; its district plane must still get a
+    // distinct crossfade/loaded key from the real overview plane.
+    const collidingMap: MapView = {
+      id: "city_map.tokyo",
+      backgroundAssetId: "background.city_map.tokyo",
+      regions: [
+        {
+          id: "overview",
+          label: "環狀區",
+          x: 0.5,
+          y: 0.4,
+          backgroundAssetId: "background.city_map.overview",
+        },
+      ],
+      nodes: [
+        {
+          sublocationId: "police_meeting_room",
+          regionId: null,
+          x: 0.7,
+          y: 0.3,
+        },
+        {
+          sublocationId: "rain_bell_cafe",
+          regionId: "overview",
+          x: 0.2,
+          y: 0.5,
+        },
+      ],
+    };
+    await renderMap({
+      map: collidingMap,
+      sublocations: extendedSublocations,
+    });
+
+    // Overview plane settled on the Tokyo raster.
+    expect(
+      screen.getByRole("button", { name: policeLabel }),
+    ).toBeInTheDocument();
+    const regionControl = screen.getByRole("button", {
+      name: "檢視環狀區地圖",
+    });
+    expect(regionControl).toHaveAttribute("data-map-region", "overview");
+
+    await user.click(regionControl);
+    // The switch must invalidate the loaded-plane key: the district raster is
+    // re-requested and neither plane's markers may show before it settles.
+    expect(resolveStoryAssetCalls).toHaveBeenCalledWith(
+      "background.city_map.overview",
+      "background",
+    );
+    expect(
+      screen.queryByRole("button", { name: policeLabel }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: cafeLabel }),
+    ).not.toBeInTheDocument();
+
+    await loadMapBackground();
+    expect(screen.getByRole("button", { name: cafeLabel })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "返回全景地圖" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens a single-region map directly on its district plane", async () => {
     await renderMap({ map: singleRegionMap });
 

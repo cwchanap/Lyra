@@ -179,6 +179,18 @@ describe("parseCityMapJson", () => {
     );
   });
 
+  it("rejects a region whose id equals the root map id", () => {
+    // `background.city_map.tokyo` is the overview raster's assetId; a region
+    // with the same slug would collide with it and silently lose its own art
+    // to manifest dedup.
+    expectRejected(
+      serialize((map) => {
+        lastRegion(map).id = "tokyo";
+      }),
+      "cityMapReservedRegionId",
+    );
+  });
+
   it("rejects a non-slug region ID", () => {
     expectRejected(
       serialize((map) => {
