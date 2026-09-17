@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -92,6 +98,20 @@ const multiRegionMap: MapView = {
   nodes: [
     { sublocationId: "rain_bell_cafe", regionId: "kichijoji", x: 0.2, y: 0.5 },
     { sublocationId: "police_meeting_room", regionId: null, x: 0.7, y: 0.3 },
+  ],
+};
+
+const singleRegionMap: MapView = {
+  id: "city_map.tokyo",
+  backgroundAssetId: "background.city_map.kichijoji",
+  regions: [kichijojiRegion],
+  nodes: [
+    {
+      sublocationId: "rain_bell_cafe",
+      regionId: "kichijoji",
+      x: 0.2,
+      y: 0.5,
+    },
   ],
 };
 
@@ -209,6 +229,49 @@ describe("InvestigationMapView", () => {
     expect(button).toBeDisabled();
     await user.click(button);
     expect(onTravel).not.toHaveBeenCalled();
+  });
+
+  it("disables region and overview plane controls while a gameplay command is in flight", async () => {
+    const user = userEvent.setup();
+    const onTravel = vi.fn();
+    await renderMap({
+      map: multiRegionMap,
+      sublocations: extendedSublocations,
+      onTravel,
+      disabled: true,
+    });
+
+    // Overview plane: the region control locks alongside destinations, so the
+    // displayed plane cannot change mid-command.
+    const regionControl = screen.getByRole("button", {
+      name: "檢視吉祥寺地圖",
+    });
+    expect(regionControl).toBeDisabled();
+    expect(screen.getByRole("button", { name: policeLabel })).toBeDisabled();
+    await user.click(regionControl);
+    expect(onTravel).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: policeLabel }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: cafeLabel }),
+    ).not.toBeInTheDocument();
+
+    cleanup();
+
+    // District plane: the return-to-overview control locks too.
+    await renderMap({ map: singleRegionMap, onTravel, disabled: true });
+
+    const returnControl = screen.getByRole("button", {
+      name: "返回全景地圖",
+    });
+    expect(returnControl).toBeDisabled();
+    await user.click(returnControl);
+    expect(onTravel).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: cafeLabel })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "檢視吉祥寺地圖" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders only projected nodes in authored order as keyboard focus order", async () => {
@@ -368,19 +431,6 @@ describe("InvestigationMapView", () => {
   });
 
   it("opens a single-region map directly on its district plane", async () => {
-    const singleRegionMap: MapView = {
-      id: "city_map.tokyo",
-      backgroundAssetId: "background.city_map.kichijoji",
-      regions: [kichijojiRegion],
-      nodes: [
-        {
-          sublocationId: "rain_bell_cafe",
-          regionId: "kichijoji",
-          x: 0.2,
-          y: 0.5,
-        },
-      ],
-    };
     await renderMap({ map: singleRegionMap });
 
     expect(resolveStoryAssetCalls).toHaveBeenCalledWith(
@@ -399,19 +449,6 @@ describe("InvestigationMapView", () => {
   it("opens markers on background error so the active plane stays navigable", async () => {
     const user = userEvent.setup();
     const onTravel = vi.fn();
-    const singleRegionMap: MapView = {
-      id: "city_map.tokyo",
-      backgroundAssetId: "background.city_map.kichijoji",
-      regions: [kichijojiRegion],
-      nodes: [
-        {
-          sublocationId: "rain_bell_cafe",
-          regionId: "kichijoji",
-          x: 0.2,
-          y: 0.5,
-        },
-      ],
-    };
     render(InvestigationMapView, {
       map: singleRegionMap,
       sublocations,
