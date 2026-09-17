@@ -1,6 +1,6 @@
 # Regional City Maps — Single-PR Implementation Plan
 
-> **Status:** Implementation complete through Task 5 on `design/regional-anime-city-maps` (Draft PR #89): compiler, Rust, and UI wiring done; component/packaged E2E green; real-Tauri Tokyo/Kichijoji visual gate passed; Shibuya booth check deferred (no legal shibuya leaves exist in Chapter 1 — by design).
+> **Status:** Implementation and documented verification complete on `design/regional-anime-city-maps` (Draft PR #89): compiler, Rust, and UI wiring done; component/packaged E2E green locally and CI green at `be70ef78`; real-Tauri Tokyo/Kichijoji visual gate passed; Shibuya booth check deferred (no legal shibuya leaves exist in Chapter 1 — by design). PR remains Draft pending review, not outstanding work.
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
 > The [design spec](../specs/2026-09-12-regional-city-maps-design.md) is the product/data contract.
 > Keep design, runtime art, implementation, and verification in Draft PR #89 as one PR.
@@ -305,8 +305,12 @@ Run `production-journey.e2e.ts` explicitly too if the selected E2E suite exclude
 
 ## Current status
 
-Implementation complete through Task 5: six canonical runtime PNGs (district/spoiler review + metadata validation), Task 0 coordinate review, v2 topology/compiler cut, global manifest + Reader usage, Rust legal-region projection, `map-plane.ts` + pending-map UI (including the final-review rapid A→B→A marker-gating fix: `loadedPlaneKey` resets on plane change), production anchors, and component/Rust/packaged E2E green on this branch.
+Implemented: Tasks 0–5 complete — six canonical runtime PNGs (district/spoiler review + metadata validation), Task 0 coordinate review, v2 topology/compiler cut, global manifest + Reader usage, Rust legal-region projection, `map-plane.ts` + pending-map UI (including the final-review rapid A→B→A marker-gating fix: `loadedPlaneKey` resets on plane change), and production anchors.
 
-Real-Tauri visual gates (spec §10/§15 criterion 14; one-off recorded check, 2026-09-16, no committed screenshot infra): Tokyo overview and Kichijoji district planes captured from the packaged e2e binary at 1280×720 CSS — pins/labels readable, no overlap; PASS (screenshots under `/tmp/lyra-map-gate/`, not committed). Shibuya: unreachable in Chapter 1 production (no legal shibuya leaves, by design); art-level booth identification verified in Task 0; full check deferred until a chapter grants shibuya legal leaves.
+Verified locally: component/Rust/packaged E2E green on this branch. Real-Tauri visual gates (spec §10/§15 criterion 14; one-off recorded check, 2026-09-16, no committed screenshot infra): Tokyo overview and Kichijoji district planes captured from the packaged e2e binary at 1280×720 CSS — pins/labels readable, no overlap; PASS (screenshots under `/tmp/lyra-map-gate/`, not committed).
 
-A skipped workflow is not passing evidence. Keep PR #89 Draft until implementation and runtime verification are complete.
+Verified in CI: the full check suite is green at `be70ef78` (frontend check/build + unit tests, Rust check/clippy/unit tests, all three Tauri E2E chains, content golden, codecov/patch). The 2026-09-16 push-level run whose jobs were skipped is superseded by that run; a skipped workflow is not passing evidence.
+
+Deferred: Shibuya booth check — unreachable in Chapter 1 production (no legal shibuya leaves, by design); art-level booth identification verified in Task 0; re-check when a chapter grants shibuya legal leaves.
+
+Remaining gates: PR #89 stays Draft for spec/plan review only; no implementation or runtime verification work remains.
