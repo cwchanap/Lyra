@@ -1,6 +1,6 @@
 # Regional Anime City Map Design Specification
 
-> **Status:** Draft handoff for Draft PR #89. Six canonical runtime PNGs are committed and validated at 1920×1080; topology/compiler/Rust/UI wiring has not started.
+> **Status:** Implemented handoff for Draft PR #89. Six canonical runtime PNGs are committed and validated at 1920×1080; topology/compiler/Rust/UI wiring is complete and verified per the implementation plan's current status (local component/Rust/packaged E2E green, CI green at head, Tokyo/Kichijoji real-Tauri visual gate passed, Shibuya gate deferred by design). PR remains Draft pending review.
 > **Baseline:** `main` @ `4feeb0782d99fd9523063ee343f6df5a3d3306ef`.
 > **Delivery rule:** design, runtime art, implementation, and verification stay in this single PR.
 
