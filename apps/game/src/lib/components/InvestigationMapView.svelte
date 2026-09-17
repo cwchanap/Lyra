@@ -38,8 +38,12 @@
 
   const plane = $derived(projectMapPlane(map, activeRegionId));
   // One crossfade identity per plane; an invalid region id already fell back
-  // to the overview plane inside projectMapPlane.
-  const planeKey = $derived(plane.regionId ?? "overview");
+  // to the overview plane inside projectMapPlane. District keys are
+  // namespaced: "overview" is itself a legal region slug, so a bare id could
+  // share the overview plane's key and keep its raster and loaded-plane gate.
+  const planeKey = $derived(
+    plane.regionId === null ? "overview" : `region:${plane.regionId}`,
+  );
   const planeBackgroundAssetId = $derived(
     plane.region ? plane.region.backgroundAssetId : map.backgroundAssetId,
   );
