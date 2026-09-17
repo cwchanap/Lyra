@@ -59,13 +59,15 @@
     hud={sceneHud}
   />
 {:else if inv && inv.map && inv.currentSublocationId === null}
-  <InvestigationMapView
-    map={inv.map}
-    sublocations={inv.visibleSublocations}
-    summary={inv.summary}
-    onTravel={onEnterSublocation}
-    {disabled}
-  />
+  {#key inv.id}
+    <InvestigationMapView
+      map={inv.map}
+      sublocations={inv.visibleSublocations}
+      summary={inv.summary}
+      onTravel={onEnterSublocation}
+      {disabled}
+    />
+  {/key}
 {:else if inv}
   <p class="muted">尚未進入任何地點。</p>
 {/if}

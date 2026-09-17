@@ -163,6 +163,7 @@
           data-map-region={region.id}
           aria-label={`檢視${region.label}地圖`}
           style={pinStyle(region.x, region.y)}
+          {disabled}
           onclick={() => (activeRegionId = region.id)}
         >
           <span class="pin-dot"></span>
@@ -191,6 +192,7 @@
         class="map-overview-return"
         type="button"
         data-map-overview=""
+        {disabled}
         onclick={() => (activeRegionId = null)}
       >
         返回全景地圖
