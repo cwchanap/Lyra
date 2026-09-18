@@ -40,28 +40,6 @@ export const E2E_SUITE_IDS = Object.freeze([
   "exit-lifecycle",
 ]);
 
-export const E2E_CHAIN_IDS = Object.freeze(["gameplay", "persistence", "exit"]);
-
-export const E2E_CHAIN_DEFINITIONS = Object.freeze([
-  Object.freeze({
-    id: "gameplay",
-    suiteIds: Object.freeze([
-      "smoke",
-      "gameplay",
-      "production-journey",
-      "analysis-beat85",
-    ]),
-  }),
-  Object.freeze({
-    id: "persistence",
-    suiteIds: Object.freeze(["capture-proof", "save-core", "save-management"]),
-  }),
-  Object.freeze({
-    id: "exit",
-    suiteIds: Object.freeze(["exit-lifecycle"]),
-  }),
-]);
-
 export const E2E_SUITE_DEFINITIONS = Object.freeze([
   Object.freeze({
     id: "smoke",
@@ -329,24 +307,6 @@ export function e2eSuiteGuardedRoots(suiteIds) {
       ),
     ),
   ];
-}
-
-export function partitionE2eSuitesByChain(suiteIds) {
-  const selected = new Set(normalizeE2eSuiteIds(suiteIds));
-  return E2E_CHAIN_DEFINITIONS.flatMap((definition) => {
-    const selectedSuiteIds = definition.suiteIds.filter((suiteId) =>
-      selected.has(suiteId),
-    );
-    return selectedSuiteIds.length === 0
-      ? []
-      : [
-          {
-            id: definition.id,
-            suiteIds: selectedSuiteIds,
-            guardedRoots: e2eSuiteGuardedRoots(selectedSuiteIds),
-          },
-        ];
-  });
 }
 
 export function e2eSuiteForPhase(phaseId) {

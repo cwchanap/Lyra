@@ -225,12 +225,8 @@ test("runner retry preserves a failed attempt while using fresh roots and output
   const captured = [];
   let clockMs = 1_000;
   const runner = await runE2eRunner({
-    chainId: "gameplay",
     suiteIds: ["smoke"],
-    riskSelectedSuites: ["smoke"],
     attempts: 2,
-    forcedFull: false,
-    plannerReason: null,
     runDirectory,
     supervisor: { cancelledSignal: null },
     runGuard: async () => ({ exitCode: 0 }),
@@ -268,11 +264,7 @@ test("runner retry preserves a failed attempt while using fresh roots and output
 
   assert.equal(runner.exitCode, 0);
   assert.equal(runner.result.schemaVersion, 2);
-  assert.equal(runner.result.chainId, "gameplay");
   assert.deepEqual(runner.result.selectedSuites, ["smoke"]);
-  assert.deepEqual(runner.result.riskSelectedSuites, ["smoke"]);
-  assert.equal(runner.result.forcedFull, false);
-  assert.equal(runner.result.reason, null);
   assert.equal(runner.result.runnerWallTimeMs, 70);
   assert.equal(runner.result.testOnlyTimeMs, 70);
   assert.deepEqual(runner.result.attempts, {
@@ -316,9 +308,7 @@ test("runner applies an external mutation before starting its fresh discovery ch
   const events = [];
   await runE2eRunner({
     suiteIds: ["save-management"],
-    riskSelectedSuites: ["save-management"],
     attempts: 1,
-    forcedFull: false,
     runDirectory,
     supervisor: { cancelledSignal: null },
     runGuard: async () => ({ exitCode: 0 }),
@@ -365,9 +355,7 @@ test("runner cancellation writes diagnostics and cleans only its owned root", as
   const supervisor = { cancelledSignal: null };
   const runner = await runE2eRunner({
     suiteIds: ["smoke"],
-    riskSelectedSuites: ["smoke"],
     attempts: 1,
-    forcedFull: false,
     runDirectory,
     supervisor,
     runGuard: async () => ({ exitCode: 0 }),
@@ -412,11 +400,8 @@ test("cleanup failure fails the runner without blaming the last passing suite", 
   const runDirectory = holder();
   const roots = [];
   const runner = await runE2eRunner({
-    chainId: "gameplay",
     suiteIds: ["smoke"],
-    riskSelectedSuites: ["smoke"],
     attempts: 1,
-    forcedFull: false,
     runDirectory,
     supervisor: { cancelledSignal: null },
     runGuard: async () => ({ exitCode: 0 }),
@@ -457,11 +442,8 @@ test("ownership allocation failure is a retryable attempt failure", async () => 
   const roots = [];
   let ownershipCalls = 0;
   const runner = await runE2eRunner({
-    chainId: "gameplay",
     suiteIds: ["smoke"],
-    riskSelectedSuites: ["smoke"],
     attempts: 2,
-    forcedFull: false,
     runDirectory,
     supervisor: { cancelledSignal: null },
     runGuard: async () => ({ exitCode: 0 }),

@@ -273,24 +273,11 @@ export function cleanupOwnedE2eRoots(
   return ownership;
 }
 
-function createRunnerResult({
-  runId,
-  chainId,
-  suiteIds,
-  riskSelectedSuites,
-  forcedFull,
-  plannerReason,
-  attempts,
-  start,
-}) {
+function createRunnerResult({ runId, suiteIds, attempts, start }) {
   return {
     schemaVersion: E2E_RUN_RESULT_SCHEMA_VERSION,
     runId,
-    chainId,
     selectedSuites: suiteIds,
-    riskSelectedSuites,
-    forcedFull,
-    reason: plannerReason,
     phase: null,
     suite: null,
     attempt: null,
@@ -473,12 +460,8 @@ export async function runE2eAttempt({
 }
 
 export async function runE2eRunner({
-  chainId = "direct",
   suiteIds,
-  riskSelectedSuites,
   attempts,
-  forcedFull,
-  plannerReason = null,
   runDirectory,
   supervisor,
   runGuard,
@@ -502,11 +485,7 @@ export async function runE2eRunner({
   const runnerStartedMs = nowMs();
   const result = createRunnerResult({
     runId,
-    chainId,
     suiteIds,
-    riskSelectedSuites,
-    forcedFull,
-    plannerReason,
     attempts,
     start: now(),
   });
