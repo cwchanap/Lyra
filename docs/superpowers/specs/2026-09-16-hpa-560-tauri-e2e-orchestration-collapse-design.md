@@ -93,9 +93,9 @@ Current machinery LOC, production and test counted separately:
 
 Current suite list: `e2e-suite-registry.mjs` defines eight canonical suites — `smoke`, `gameplay`, `production-journey`, `analysis-beat85`, `capture-proof`, `save-core`, `save-management`, `exit-lifecycle` (16 phases) — partitioned today into the `gameplay` / `persistence` / `exit` chains. The locked post-HPA-560 disposition keeps every suite in full verification, with the expanded `smoke` additionally owning the PR path (see the disposition table under “Lower-layer ownership after the collapse”).
 
-Consumer inventory, from `rg -n "select-e2e-suites|plan-e2e-ci|e2e-ci-metrics|e2e-ci-results|e2e-plan|chain-id|suite-file|plan-file|run-ownership|ci:full-e2e" .` (109 matches across 17 live files, excluding historical `docs/superpowers/` material that this document supersedes):
+Consumer inventory, from `rg -n "select-e2e-suites|plan-e2e-ci|e2e-ci-metrics|e2e-ci-results|e2e-plan|chain-id|suite-file|plan-file|run-ownership|ci:full-e2e" . --hidden` (**140 matches across 18 live files**, excluding historical `docs/superpowers/` material that this document supersedes). Without `--hidden` the same pattern yields 108 matches across 17 files on this baseline: rg skips hidden directories by default and `.github` is hidden, which is why the Task 0 draft's verbatim listing missed `ci.yml` (its "cause unknown" note suspected a global ignore config; the actual cause is this rg default):
 
-- `.github/workflows/ci.yml` — the primary production consumer, verified directly: the `e2e-plan` job invokes `plan-e2e-ci.mjs` and emits the plan/suite/matrix/chain artifacts, `e2e-execution` runs the generated chain matrix and calls `e2e-ci-metrics.mjs`, and the workflow owns the `ci:full-e2e` label path.
+- `.github/workflows/ci.yml` — the primary production consumer (32 matches, included by the `--hidden` recount and verified directly): the `e2e-plan` job invokes `plan-e2e-ci.mjs` and emits the plan/suite/matrix/chain artifacts, `e2e-execution` runs the generated chain matrix and calls `e2e-ci-metrics.mjs`, and the workflow owns the `ci:full-e2e` label path.
 - production scripts (8): `run-save-e2e.mjs`, `e2e-runner-lifecycle.mjs`, `e2e-runner-selection.mjs`, `cleanup-e2e-roots.mjs`, `e2e-ci-results.mjs`, `plan-e2e-ci.mjs`, `select-e2e-suites.mjs`, `e2e-ci-metrics.mjs`;
 - scheduler/router/workflow contract tests (7): `e2e-ci-workflow.test.mjs` (30 matches), `e2e-ci-results.test.mjs` (19), `e2e-suite-registry.test.mjs` (17), `select-e2e-suites.test.mjs` (7), `plan-e2e-ci.test.mjs` (5), `e2e-runner-lifecycle.test.mjs` (3), `e2e-ci-metrics.test.mjs` (1);
 - `apps/game/package.json` (script delegation) and `CLAUDE.md` (live agent guidance, 7 matches).
@@ -499,6 +499,63 @@ Before merge, record:
 Use the latest 5 comparable PR runs and latest 3 scheduled/manual/full runs when available. The already-recorded recent schedule evidence is enough to start implementation; fill the complete table in the same PR before marking ready. The current-state sample is recorded in “Baseline measurements (Task 0)” under Current-state evidence.
 
 After implementation, capture the same measurements from the simplified PR smoke plus one full/manual run. No monitoring service or history database is added.
+
+## After-implementation measurements
+
+Recorded after implementation Tasks 1-5 on this branch (rebased base `30a50a44`), before the PR is marked ready.
+
+### Machinery LOC (before → after)
+
+| Surface | Production LOC | Test LOC |
+|---|---:|---:|
+| `select-e2e-suites.mjs` (changed-path risk router) | **0** (was 262) | **0** (was 485) |
+| `plan-e2e-ci.mjs` (planner / generated matrix) | **0** (was 151) | **0** (was 241) |
+| `e2e-ci-metrics.mjs` (custom timing metrics) | **0** (was 164) | **0** (was 100) |
+| `e2e-ci-results.mjs` (aggregate result analyzer) | **0** (was 1,195) | **0** (was 2,465) |
+| `cleanup-e2e-roots.mjs` (chain cleanup CLI) | **0** (was 21) | — (was —) |
+| chain-only APIs in `e2e-suite-registry.mjs` | **0** (was ~40) | — |
+| `run-save-e2e.mjs` (direct CLI) | 154 | — |
+| `e2e-runner-selection.mjs` (direct `--suite`/`--full` selection) | 24 | — |
+| `e2e-runner-lifecycle.mjs` (packaged process safety) | 612 | 491 |
+| `e2e-suite-registry.mjs` (minimal ordered suite table) | 318 | 183 |
+| `save-e2e-paths.test.mjs` (unchanged) | — | 674 |
+| `e2e-ci-workflow.test.mjs` (rewritten workflow policy test) | — | 236 |
+| **Removed machinery total** | **~1,833 → 0** | **3,291 → 0** |
+| **Surviving direct-runner/registry/test total** | **1,108** | **1,584** |
+
+Custom CI jobs/concepts: plan job + 3 dynamic chains + aggregate analyzer → **2 static jobs** (direct `test:e2e:smoke` / `test:e2e:all` under one `Tauri E2E` display name, mutually exclusive on `ci:full-e2e`).
+
+### Local verification results
+
+All run locally on this branch (macOS), in order:
+
+| Check | Result | Duration |
+|---|---|---|
+| `bun run check` | PASS (3/3 turbo tasks, 2 cached) | ~6s |
+| `bun run lint` | PASS | ~14s |
+| `bun run format:check` | PASS | ~9s |
+| `bun run rust:fmt` | PASS | ~1s |
+| `bun run rust:lint` | PASS (uncached) | ~1m11s |
+| `bun run --cwd apps/game test:e2e:ci-contracts` | PASS (59 tests across the 4 surviving files) | ~0.2s |
+| `bun run --cwd apps/game test:e2e:smoke` (packaged) | PASS (4 specs, incl. semantic save/continue) | ~63s wall including the E2E binary build; packaged spec itself 15.3s |
+| `bun run --cwd apps/game test:e2e:all` | not run locally | intentionally substituted by the GitHub full run per the plan; controller records it after PR-ready |
+
+### Pending CI observation
+
+| Metric | After |
+|---|---|
+| ordinary PR packaged E2E wall time | [pending CI observation — filled after PR-ready smoke and full runs] |
+| full/nightly wall time | [pending CI observation — filled after PR-ready smoke and full runs] |
+| retries/flakes in observed runs | [pending CI observation — filled after PR-ready smoke and full runs] |
+
+### Final file shape (confirmed against `git diff --stat 30a50a44..HEAD`)
+
+Net diff: 23 files, +626/−6,087 lines.
+
+- **Added:** nothing new — no new packaged journey spec, no new scripts, no new abstractions.
+- **Simplified:** `.github/workflows/ci.yml`, `apps/game/package.json`, `apps/game/e2e-tauri/smoke.e2e.ts` (expanded with the semantic save/continue slice), `apps/game/e2e-tauri/helpers.ts` + `analysis-beat85.e2e.ts` (shared Analysis helper extraction), direct runner/registry/lifecycle helpers (`run-save-e2e.mjs`, `e2e-runner-selection.mjs`, `e2e-runner-lifecycle.mjs`, `e2e-suite-registry.mjs`) and their surviving tests, `e2e-ci-workflow.test.mjs` (rewritten as the slim workflow policy test), `CLAUDE.md` live agent guidance, this design doc.
+- **Deleted:** changed-path selector (`select-e2e-suites.mjs` + test), planner (`plan-e2e-ci.mjs` + test), custom metrics (`e2e-ci-metrics.mjs` + test), aggregate results analyzer (`e2e-ci-results.mjs` + test), `cleanup-e2e-roots.mjs` wrapper, chain partition APIs in the registry.
+- **Kept:** packaged binary build helper (`build-e2e.mjs`), direct runner lifecycle/process safety, `cleanupOwnedE2eRoots` and safe test-root handling, gameplay packaged specs in full, full Chapter 1 `production-journey`, `analysis-beat85` remainder, dynamic thumbnail `capture-proof`, representative save/recovery coverage, exit lifecycle coverage, focused local debugging commands, `save-e2e-paths.test.mjs` unchanged.
 
 
 ## File-level scope
