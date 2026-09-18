@@ -48,19 +48,57 @@ The key point is that HPA-560 must respect the final HPA-550 decision. This tick
 
 The current data is already sufficient to choose the architecture. Task 0 still records the ticket's requested before/after sample, but it is an evidence-completion task rather than an implementation gate.
 
-### Recent whole-workflow wall time
+### Baseline measurements (Task 0)
 
-Recent successful scheduled CI runs:
+Recorded before any HPA-560 implementation change, from a branch rebased onto `main` at `7b95b005` (branch head `30a50a44`). Data comes from `gh run list` / `gh run view` against `cwchanap/Lyra`. Whole-workflow wall time is the run's created→updated span; chain columns are the full `Tauri E2E execution (<chain>)` job wall times (setup + packaged build + test steps), not the packaged-test step alone.
 
-| Run | Whole workflow wall time |
-|---|---:|
-| 2026-09-17 scheduled | ~23m00s |
-| 2026-09-16 scheduled | ~24m27s |
-| 2026-09-13 scheduled | ~21m05s |
+Latest 5 comparable PR runs (non-draft `pull_request` runs whose packaged chain jobs executed):
 
-Median of those three scheduled runs is roughly **23 minutes**.
+| Run | PR branch | Date | Whole workflow | gameplay | persistence | exit |
+|---|---|---|---:|---:|---:|---:|
+| 35254301792 | `design/regional-anime-city-maps` (#89) | 2026-09-17 | 21m40s | 20m13s | 10m52s | 5m52s |
+| 35187921141 | `design/regional-anime-city-maps` (#89) | 2026-09-17 | 21m16s | 20m33s | 12m50s | 5m17s |
+| 35175527557 | `design/regional-anime-city-maps` (#89) | 2026-09-17 | 24m14s | 22m59s | 11m20s | 5m39s |
+| 34711769462 | `…/hpa-136-story-workbench-add-context-aware-ai-review-mvp` | 2026-09-12 | 24m48s | 24m14s | 11m33s | 6m08s |
+| 34677795432 | `…/hpa-136-story-workbench-add-context-aware-ai-review-mvp` | 2026-09-12 | 18m09s | 17m26s | 12m44s | 5m47s |
 
-The final PR #89 CI run was roughly **21m40s** wall-clock and is relevant because PR #89 is now merged into `main` and changed packaged Chapter 1 city-map anchors.
+Sample medians: whole workflow **21m40s**; chain jobs **gameplay 20m33s / persistence 11m33s / exit 5m47s**. Sample skew: only five qualifying PR runs exist in the recent window, and three come from PR #89, which is now merged into `main` and changed packaged Chapter 1 city-map anchors, so it is the closest recent analog to current main-state PR CI; the two `hpa-136` runs are the latest additional distinct-branch qualifying runs.
+
+Latest 3 scheduled runs, plus the 2026-09-13 run recorded earlier:
+
+| Run | Date | Whole workflow | gameplay | persistence | exit |
+|---|---|---:|---:|---:|---:|
+| 35205101535 | 2026-09-17 | 23m00s | 22m15s | 12m30s | 5m46s |
+| 35078549930 | 2026-09-16 | 24m27s | 23m35s | 13m06s | 6m15s |
+| 34952376625 | 2026-09-15 | 20m59s | 20m12s | 12m02s | 6m09s |
+| 34749664097 | 2026-09-13 | 21m05s | 18m50s | 12m59s | 5m50s |
+
+The median whole-workflow wall time of the latest three scheduled runs is **~23m00s**, consistent with the roughly-23-minute median of the earlier three-run set. PR and scheduled wall times sit in the same band today; the router does not currently make scheduled runs meaningfully cheaper than PR runs.
+
+Setup/build/test split: chain job wall time ≈ packaged-test step + ~2m of setup/build/teardown (2026-09-17 scheduled: gameplay job 22m15s vs its ~20m05s packaged-test step). The representative split and the ~36-minute sequential direct-full estimate are in “Packaged-chain evidence” below.
+
+Retry/flake: **0 workflow-level retries or flakes visible** in the nine sampled runs — every run concluded success on its first attempt with no re-run attempts visible. Failing same-branch runs in the window (e.g. `hpa-136` on 2026-09-11/12) were followed by new pushes, not re-runs. The runner-internal `--attempts 2` suite retry is not observable at job level for passing runs.
+
+Current machinery LOC, production and test counted separately:
+
+| Surface | Production LOC | Test LOC |
+|---|---:|---:|
+| `select-e2e-suites.mjs` (changed-path risk router) | 262 | 485 |
+| `plan-e2e-ci.mjs` (planner / generated matrix) | 151 | 241 |
+| `e2e-ci-metrics.mjs` (custom timing metrics) | 164 | 100 |
+| `e2e-ci-results.mjs` (aggregate result analyzer) | 1,195 | 2,465 |
+| `cleanup-e2e-roots.mjs` (chain cleanup CLI) | 21 | — |
+| chain-only APIs in `e2e-suite-registry.mjs` (`E2E_CHAIN_IDS`, `E2E_CHAIN_DEFINITIONS`, `partitionE2eSuitesByChain`) | ~40 of 358 (estimate) | not separable |
+| **Total** | **~1,833** | **3,291** |
+
+Current suite list: `e2e-suite-registry.mjs` defines eight canonical suites — `smoke`, `gameplay`, `production-journey`, `analysis-beat85`, `capture-proof`, `save-core`, `save-management`, `exit-lifecycle` (16 phases) — partitioned today into the `gameplay` / `persistence` / `exit` chains. The locked post-HPA-560 disposition keeps every suite in full verification, with the expanded `smoke` additionally owning the PR path (see the disposition table under “Lower-layer ownership after the collapse”).
+
+Consumer inventory, from `rg -n "select-e2e-suites|plan-e2e-ci|e2e-ci-metrics|e2e-ci-results|e2e-plan|chain-id|suite-file|plan-file|run-ownership|ci:full-e2e" .` (109 matches across 17 live files, excluding historical `docs/superpowers/` material that this document supersedes):
+
+- `.github/workflows/ci.yml` — the primary production consumer, verified directly: the `e2e-plan` job invokes `plan-e2e-ci.mjs` and emits the plan/suite/matrix/chain artifacts, `e2e-execution` runs the generated chain matrix and calls `e2e-ci-metrics.mjs`, and the workflow owns the `ci:full-e2e` label path.
+- production scripts (8): `run-save-e2e.mjs`, `e2e-runner-lifecycle.mjs`, `e2e-runner-selection.mjs`, `cleanup-e2e-roots.mjs`, `e2e-ci-results.mjs`, `plan-e2e-ci.mjs`, `select-e2e-suites.mjs`, `e2e-ci-metrics.mjs`;
+- scheduler/router/workflow contract tests (7): `e2e-ci-workflow.test.mjs` (30 matches), `e2e-ci-results.test.mjs` (19), `e2e-suite-registry.test.mjs` (17), `select-e2e-suites.test.mjs` (7), `plan-e2e-ci.test.mjs` (5), `e2e-runner-lifecycle.test.mjs` (3), `e2e-ci-metrics.test.mjs` (1);
+- `apps/game/package.json` (script delegation) and `CLAUDE.md` (live agent guidance, 7 matches).
 
 ### Packaged-chain evidence
 
@@ -458,7 +496,7 @@ Before merge, record:
 - production and test LOC for selector/planner/metrics/analyzer/chain-only surfaces;
 - final suite ownership.
 
-Use the latest 5 comparable PR runs and latest 3 scheduled/manual/full runs when available. The already-recorded recent schedule evidence is enough to start implementation; fill the complete table in the same PR before marking ready.
+Use the latest 5 comparable PR runs and latest 3 scheduled/manual/full runs when available. The already-recorded recent schedule evidence is enough to start implementation; fill the complete table in the same PR before marking ready. The current-state sample is recorded in “Baseline measurements (Task 0)” under Current-state evidence.
 
 After implementation, capture the same measurements from the simplified PR smoke plus one full/manual run. No monitoring service or history database is added.
 
