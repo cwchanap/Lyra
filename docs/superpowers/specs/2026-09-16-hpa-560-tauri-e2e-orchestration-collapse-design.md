@@ -301,7 +301,7 @@ bun run --cwd apps/game test:e2e:all
 
 Focused commands such as `test:e2e:capture-proof` may remain for local debugging.
 
-The direct runner accepts only direct selection/lifecycle inputs such as `--suite`, `--full`, and `--attempts`. Remove:
+The direct runner accepts only direct selection/lifecycle inputs such as `--suite`, `--full`, and `--attempts`. The ordinary smoke uses the default one attempt; `test:e2e:all:run` passes `--attempts 2`. Remove:
 
 - `--suite-file`;
 - `--chain-id`;
@@ -328,9 +328,18 @@ Delete when direct CI no longer references them:
 Do **not** delete `cleanupOwnedE2eRoots` or its runner-lifecycle safety tests. The CLI is only a thin parallel-chain recovery wrapper; the direct runner already owns guarded cleanup.
 
 
+
 ## Workflow shape
 
 The target `.github/workflows/ci.yml` should read like ordinary CI rather than a CI application.
+
+Both packaged jobs use the same Rust build/cache contract:
+
+- `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`;
+- one shared `Swatinem/rust-cache` `prefix-key`, e.g. `tauri-e2e-v2`;
+- `workspaces: apps/game/src-tauri -> target-e2e`.
+
+Using one key lets scheduled runs on the default branch warm the same E2E Cargo cache that PR jobs can restore. The first run under the new key is still cold, so timeout budgets must tolerate a cold packaged build.
 
 Use two mutually exclusive job IDs, both with the human-facing job name **`Tauri E2E`** for continuity:
 
@@ -341,25 +350,49 @@ jobs:
   tauri-e2e-pr-smoke:
     name: Tauri E2E
     if: pull_request && !draft && !ci:full-e2e
-    timeout-minutes: 20
+    timeout-minutes: 45
+    env:
+      CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
     steps:
       - checkout/setup
-      - run test:e2e:smoke  # build once + run
+      - shared rust-cache prefix-key: tauri-e2e-v2
+      - run: xvfb-run -a bun run --cwd apps/game test:e2e:smoke
       - upload ordinary logs/screenshots
 
   tauri-e2e-full:
     name: Tauri E2E
     if: schedule || workflow_dispatch || tag || (pull_request && !draft && ci:full-e2e)
     timeout-minutes: 90
+    env:
+      CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
     steps:
       - checkout/setup
-      - run test:e2e:all  # build once + run
+      - shared rust-cache prefix-key: tauri-e2e-v2
+      - run: xvfb-run -a bun run --cwd apps/game test:e2e:all
       - upload ordinary logs/screenshots
 ```
+
+The package scripts remain the local reproduction commands. On Linux GitHub runners, CI wraps them with `xvfb-run -a` because packaged WebKitGTK needs a display; this wrapper is environment setup, not a different test contract.
 
 The exact GitHub expression should reuse existing event/label semantics rather than introduce another trigger helper.
 
 The current repository ruleset does **not** require a status check named `Tauri E2E`; keeping that display name is a low-cost continuity choice, not a branch-protection compatibility requirement.
+
+### Surviving Node contract tests
+
+Deleting `e2e-plan` would otherwise delete the only CI caller of the runner/registry/path/workflow Node contract tests. Preserve them explicitly.
+
+Add a named step to the existing `lint-frontend` / frontend-check job, next to `check:e2e`, that runs exactly the surviving files:
+
+```bash
+node --test \
+  apps/game/scripts/e2e-suite-registry.test.mjs \
+  apps/game/scripts/e2e-runner-lifecycle.test.mjs \
+  apps/game/scripts/save-e2e-paths.test.mjs \
+  apps/game/scripts/e2e-ci-workflow.test.mjs
+```
+
+Do not rely on Turbo/Vitest to discover these `node:test` files; it does not.
 
 Rewrite `e2e-ci-workflow.test.mjs` instead of deleting it. The slim policy test should lock:
 
@@ -368,13 +401,32 @@ Rewrite `e2e-ci-workflow.test.mjs` instead of deleting it. The slim policy test 
 - mutual exclusion so `ci:full-e2e` does not run both jobs;
 - the intentional absence of a main-push packaged-full trigger;
 - job display name `Tauri E2E`;
+- smoke timeout **45** and full timeout **90**;
+- shared `CARGO_TARGET_DIR` and shared Rust cache prefix;
+- `xvfb-run -a` around both packaged package commands;
+- the surviving Node-contract step in the frontend-check job;
 - no planner, generated matrix, plan artifact, metrics wrapper, or aggregate analyzer.
+
 
 ## One full job vs multiple static jobs
 
 The design commits to **one full job with one build**.
 
-Recent scheduled evidence estimates direct sequential full execution around 33-38 minutes with the observed cache state. Set the full job timeout to **90 minutes** to leave room for cache variance and one bounded retry without reintroducing orchestration.
+Recent scheduled evidence estimates direct sequential full execution around 33-38 minutes with the observed warm-cache state. The repository also records that a cold `target-e2e` setup/build can consume roughly 24 minutes before tests. Therefore:
+
+- PR smoke timeout: **45 minutes**;
+- full timeout: **90 minutes**;
+- both jobs use the same `CARGO_TARGET_DIR` and Rust-cache prefix.
+
+The expanded PR smoke keeps the runner default of **one attempt** so an ordinary PR flake is visible immediately.
+
+The broad command explicitly keeps bounded retry:
+
+```text
+test:e2e:all:run -> run-save-e2e.mjs --full --attempts 2
+```
+
+This makes the full-job retry policy an actual caller contract rather than a dormant CLI flag, and it explains why the 90-minute ceiling includes retry headroom.
 
 Only if an actual direct-full run still proves materially unreliable may this PR use at most two hard-coded static full jobs. That fallback must be justified in the PR and must not restore generated matrices or path routing.
 
@@ -448,28 +500,43 @@ Historical HPA-516 / PR #83 design documents are not live contracts and are not 
 
 1. Refresh/rebase the HPA-560 branch onto current `main` so PR #89 city-map anchors are part of the implementation baseline.
 2. Begin the requested before-measurement table; do not block implementation on completing the full sample.
-3. Expand existing `smoke.e2e.ts` using the Beat 8.5 semantic save/continue seam.
-4. Simplify direct runner/registry inputs and remove planner-shaped metadata.
-5. Replace dynamic CI planning with mutually exclusive direct smoke/full jobs and rewrite the workflow policy test.
+3. Expand existing `smoke.e2e.ts` using the Beat 8.5 semantic save/continue seam, including the required shared Analysis helper extraction.
+4. Cut the workflow to direct smoke/full commands, shared cache/CARGO target, Xvfb, and an explicit surviving Node-contract step while the old runner flags still exist.
+5. Simplify direct runner/registry inputs and remove planner-shaped metadata now that the workflow no longer passes them; add `--attempts 2` to full only.
 6. Delete selector/planner/metrics/results/chain machinery and the cleanup CLI after references are gone.
 7. Update `CLAUDE.md` live E2E guidance.
-8. Run smoke + full verification and finish before/after evidence before marking the PR ready.
+8. Mark the PR ready for review so the non-draft smoke can run; observe it, then exercise the broad path once via `ci:full-e2e` (or an equivalent branch-capable manual dispatch), record after-measurements, and only then close verification.
 
 Coverage ownership is decided before deletion; implementation does not wait for an open-ended suite audit.
 
+
 ## Risks and mitigations
+
+### Risk: deleting the selector removes automatic fail-safe-to-full behavior for unknown source paths
+
+Today, an unmatched non-documentation source path forces the complete packaged registry. After HPA-560, an ordinary PR touching an unrecognized source path gets only the universal smoke unless the developer explicitly escalates.
+
+**Mitigation:** Accept this as a deliberate pre-release solo-project tradeoff. Use `ci:full-e2e` for uncertain cross-boundary PRs, keep focused local packaged commands for targeted debugging, and rely on nightly full verification as the backstop. Document the loss plainly rather than implying the new policy preserves the selector's unknown-path safety net.
 
 ### Risk: the PR smoke becomes another miniature production journey
 
 **Mitigation:** Expand the existing smoke rather than adding a new spec. After New Game, jump directly to the existing Beat 8.5 checkpoint, persist one classify mutation, Continue, and prove one further live interaction. Do not add investigation acquisition or city-map hops.
 
-### Risk: removing routing causes every PR to pay unnecessary packaged setup
+### Risk: removing routing causes every non-draft PR to pay packaged setup
 
-**Mitigation:** Accept the small fixed cost in exchange for deleting the scheduler. Revisit only with real evidence after the simplified system lands.
+**Mitigation:** Use the shared E2E Rust cache and accept the fixed smoke cost in exchange for deleting the scheduler. Keep the draft skip so planning/in-progress draft pushes do not pay it. Revisit only with real evidence after the simplified system lands.
+
+### Risk: cold E2E builds exceed the short PR budget
+
+**Mitigation:** Preserve `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`, use one shared Rust-cache prefix for smoke/full, and set the smoke job to 45 minutes. The cache improves the normal case; the timeout still tolerates the first cold run.
 
 ### Risk: broad verification becomes too slow sequentially
 
-**Mitigation:** Use one direct full job with a 90-minute ceiling. Recent scheduled evidence estimates the direct sequential path around 33-38 minutes under observed cache conditions; the extra headroom covers cache variance and bounded retry. Only an observed direct-full reliability problem may justify two static jobs. Never restore dynamic chain planning.
+**Mitigation:** Use one direct full job with a 90-minute ceiling. Warm-cache evidence estimates the direct sequential path around 33-38 minutes; the extra headroom covers cold cache and one bounded full-run retry. Only an observed direct-full reliability problem may justify two static jobs. Never restore dynamic chain planning.
+
+### Risk: surviving runner/path/workflow contract tests silently stop running
+
+**Mitigation:** Move their CI invocation into the existing frontend-check job before deleting `e2e-plan`. Keep exactly the surviving registry/lifecycle/path/workflow `node --test` files.
 
 ### Risk: useful focused suites disappear with their CI ownership
 
@@ -481,7 +548,7 @@ Coverage ownership is decided before deletion; implementation does not wait for 
 
 ### Risk: hidden dependency on planner JSON or ownership manifests
 
-**Mitigation:** Search all repository references before deleting files/flags. Make direct command tests green before deleting the old contract tests.
+**Mitigation:** Search all repository references before deleting files/flags. Cut workflow consumers before removing runner flags, then make direct command tests green before deleting old planner contracts.
 
 ## Non-goals
 
