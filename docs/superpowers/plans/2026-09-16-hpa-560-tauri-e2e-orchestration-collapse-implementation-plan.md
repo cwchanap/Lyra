@@ -26,13 +26,11 @@ This ticket remains one implementation PR. Do not split planning, workflow clean
 non-draft PR without ci:full-e2e
 └─ normal checks
 └─ Tauri E2E
-   ├─ build packaged E2E binary once
-   └─ run expanded existing smoke
+   └─ run `test:e2e:smoke` (build once + expanded existing smoke)
 
 schedule / workflow_dispatch / tag / non-draft PR with ci:full-e2e
 └─ Tauri E2E
-   ├─ build packaged E2E binary once
-   └─ run test:e2e:all
+   └─ run `test:e2e:all` (build once + broad registry)
 ```
 
 A plain push to `main` no longer forces packaged full E2E; normal main-push checks remain and nightly owns broad packaged confidence.
@@ -320,8 +318,7 @@ Replace planner + matrix + aggregate flow for ordinary PRs with one direct job:
 non-draft PR without ci:full-e2e
 -> job display name: Tauri E2E
 -> checkout/setup
--> build packaged E2E binary once
--> run test:e2e:smoke
+-> run test:e2e:smoke  # build once + run
 -> upload normal logs/screenshots/artifacts
 ```
 
@@ -343,8 +340,7 @@ Shape:
 ```text
 -> job display name: Tauri E2E
 -> checkout/setup once
--> build packaged E2E binary once
--> run test:e2e:all
+-> run test:e2e:all  # build once + run
 -> upload normal logs/screenshots/artifacts
 ```
 
@@ -572,7 +568,7 @@ If `test:e2e:all` is too long to run locally in the working environment, trigger
 On the actual PR confirm:
 
 - one non-draft ordinary packaged PR smoke job named `Tauri E2E`;
-- one packaged build inside that job;
+- exactly one packaged build, owned by the public package command;
 - `ci:full-e2e` switches to full instead of adding a duplicate smoke job;
 - no packaged full on plain main push;
 - no planner job;
