@@ -1,10 +1,12 @@
 import path from "node:path";
 import {
   advanceDialogueUntil,
+  analysisBoard,
   captureMockupViewport,
   clickButton,
   closePersistenceBrowserToGameplay,
   continueFromTitle,
+  dragAnalysisCardSynthetic,
   ensureCaseFileViewport,
   getPackagedGameState,
   jumpToProductionScene,
@@ -12,9 +14,11 @@ import {
   resetE2eStorage,
   returnToTitle,
   saveManualSlot,
+  waitForAnalysisBoard,
+  waitForClassifyDraft,
   waitForPackagedGameState,
 } from "./helpers";
-import type { AnalysisBoardView, GameStateView } from "$lib/state/types";
+import type { GameStateView } from "$lib/state/types";
 
 const ANALYSIS_SCENE_ID = "analysis_scene_8_5";
 const HEARING_SCENE_ID = "interrogation_scene_10";
@@ -516,17 +520,6 @@ function expectInside(inner: Rect, outer: Rect): void {
   expect(inner.bottom).toBeLessThanOrEqual(outer.bottom + 1);
 }
 
-function analysisBoard(state: GameStateView, id: string): AnalysisBoardView {
-  if (state.scene.kind !== "analysis") {
-    throw new Error(`expected Analysis scene, got ${state.scene.kind}`);
-  }
-  const board = state.scene.visibleBoards.find(
-    (candidate) => candidate.id === id,
-  );
-  if (!board) throw new Error(`analysis board ${id} is not visible`);
-  return board;
-}
-
 async function clickAnalysisCard(
   label: string,
   boardClass: string,
@@ -574,132 +567,6 @@ async function clickAnalysisCard(
     boardClass,
   );
   if (!clicked) throw new Error(`analysis card ${label} was not clickable`);
-}
-
-// B4 selected this one synthetic PointerEvent transport for packaged WebKit.
-// Keep Classify and Order on this path; there is intentionally no W3C attempt
-// or runtime/test fallback.
-async function dragAnalysisCardSynthetic(
-  cardId: string,
-  targetId: string,
-): Promise<void> {
-  let dispatched: boolean;
-  try {
-    dispatched = await browser.execute(
-      (selectedCardId: string, selectedTargetId: string) => {
-        const card = document.querySelector<HTMLElement>(
-          `[data-analysis-card-id="${selectedCardId}"]`,
-        );
-        const target = document.querySelector<HTMLElement>(
-          `[data-analysis-drop-target="${selectedTargetId}"]`,
-        );
-        if (!card || !target) return false;
-
-        // Keep the synthetic destination inside the viewport so the production
-        // elementsFromPoint() resolver sees the same target on every board.
-        target.scrollIntoView({ block: "center", inline: "center" });
-
-        const center = (element: HTMLElement) => {
-          const rect = element.getBoundingClientRect();
-          return {
-            x: Math.round(rect.left + rect.width / 2),
-            y: Math.round(rect.top + rect.height / 2),
-          };
-        };
-        const source = center(card);
-        const destination = center(target);
-        const pointerId = 621;
-        const dispatch = (type: string, init: PointerEventInit) =>
-          card.dispatchEvent(new PointerEvent(type, init));
-
-        dispatch("pointerdown", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerId,
-          pointerType: "mouse",
-          isPrimary: true,
-          button: 0,
-          buttons: 1,
-          clientX: source.x,
-          clientY: source.y,
-        });
-        dispatch("pointermove", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerId,
-          pointerType: "mouse",
-          isPrimary: true,
-          button: -1,
-          buttons: 1,
-          clientX: destination.x,
-          clientY: destination.y,
-        });
-        dispatch("pointerup", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          pointerId,
-          pointerType: "mouse",
-          isPrimary: true,
-          button: 0,
-          buttons: 0,
-          clientX: destination.x,
-          clientY: destination.y,
-        });
-        return true;
-      },
-      cardId,
-      targetId,
-    );
-  } catch (error) {
-    throw new Error(
-      `analysis drag dispatch failed for ${cardId} -> ${targetId}`,
-      { cause: error },
-    );
-  }
-  if (!dispatched) {
-    throw new Error(`analysis drag hooks missing for ${cardId} -> ${targetId}`);
-  }
-}
-
-async function waitForAnalysisBoard(boardId: string): Promise<GameStateView> {
-  return waitForPackagedGameState(
-    (state) =>
-      state.scene.kind === "analysis" &&
-      state.scene.id === ANALYSIS_SCENE_ID &&
-      state.mode.type === "analysis" &&
-      state.mode.boardId === boardId,
-    30000,
-    `analysis board ${boardId} did not become active`,
-  );
-}
-
-async function waitForClassifyDraft(
-  expectedGroupByCard: Record<string, string>,
-): Promise<GameStateView> {
-  try {
-    return await waitForPackagedGameState((state) => {
-      const board = analysisBoard(state, "evidence_packages");
-      if (board.kind !== "classify" || board.draft.kind !== "classify") {
-        return false;
-      }
-      const actual = board.draft.groupByCard;
-      return (
-        Object.keys(actual).length ===
-          Object.keys(expectedGroupByCard).length &&
-        Object.entries(expectedGroupByCard).every(
-          ([cardId, groupId]) => actual[cardId] === groupId,
-        )
-      );
-    });
-  } catch (error) {
-    throw new Error(
-      `classify draft never matched ${JSON.stringify(expectedGroupByCard)}`,
-      { cause: error },
-    );
-  }
 }
 
 async function waitForOrderDraft(
@@ -777,7 +644,7 @@ async function drainToAnalysisBoard(boardId: string): Promise<GameStateView> {
       return false;
     }
   }, 120);
-  return waitForAnalysisBoard(boardId);
+  return waitForAnalysisBoard(ANALYSIS_SCENE_ID, boardId);
 }
 
 async function runChallengeIteration(
@@ -986,7 +853,10 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await resetE2eStorage();
     await loadPackagedCheckpoint("chapter-1-analysis-beat-85-ready");
 
-    let state = await waitForAnalysisBoard("evidence_packages");
+    let state = await waitForAnalysisBoard(
+      ANALYSIS_SCENE_ID,
+      "evidence_packages",
+    );
     await snapshotAnalysisClassifyGeometry();
     await assertAnalysisClassifySemantics();
     await captureMockupViewport({
@@ -1046,7 +916,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await closePersistenceBrowserToGameplay();
     await returnToTitle();
     await continueFromTitle();
-    state = await waitForAnalysisBoard("evidence_packages");
+    state = await waitForAnalysisBoard(ANALYSIS_SCENE_ID, "evidence_packages");
     const restoredClassify = analysisBoard(state, "evidence_packages");
     if (
       restoredClassify.kind !== "classify" ||
@@ -1083,7 +953,10 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(completedClassify.draft.groupByCard).toEqual(cardGroupIds);
     await drainToAnalysisBoard("local_event_sequence");
 
-    state = await waitForAnalysisBoard("local_event_sequence");
+    state = await waitForAnalysisBoard(
+      ANALYSIS_SCENE_ID,
+      "local_event_sequence",
+    );
     await snapshotAnalysisOrderGeometry();
     const order = analysisBoard(state, "local_event_sequence");
     if (order.kind !== "order")
@@ -1108,7 +981,10 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await closePersistenceBrowserToGameplay();
     await returnToTitle();
     await continueFromTitle();
-    state = await waitForAnalysisBoard("local_event_sequence");
+    state = await waitForAnalysisBoard(
+      ANALYSIS_SCENE_ID,
+      "local_event_sequence",
+    );
     const restoredOrder = analysisBoard(state, "local_event_sequence");
     if (
       restoredOrder.kind !== "order" ||
@@ -1158,7 +1034,10 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(completedOrder.draft.cardIds).toEqual(expectedOrder);
     await drainToAnalysisBoard("narrow_request_basis");
 
-    state = await waitForAnalysisBoard("narrow_request_basis");
+    state = await waitForAnalysisBoard(
+      ANALYSIS_SCENE_ID,
+      "narrow_request_basis",
+    );
     expect(
       state.inventory.evidence.some(
         (evidence) => evidence.id === APPROVED_CLIP_ID,
@@ -1195,7 +1074,10 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     await closePersistenceBrowserToGameplay();
     await returnToTitle();
     await continueFromTitle();
-    state = await waitForAnalysisBoard("narrow_request_basis");
+    state = await waitForAnalysisBoard(
+      ANALYSIS_SCENE_ID,
+      "narrow_request_basis",
+    );
     expect(
       state.inventory.evidence.some(
         (evidence) => evidence.id === APPROVED_CLIP_ID,

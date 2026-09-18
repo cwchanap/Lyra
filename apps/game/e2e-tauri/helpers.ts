@@ -12,7 +12,11 @@ import {
   validDevicePixelRatio,
   type CssViewportSize,
 } from "../src/lib/e2e/case-file-viewport";
-import type { GameStateView, PendingAcquisitionView } from "$lib/state/types";
+import type {
+  AnalysisBoardView,
+  GameStateView,
+  PendingAcquisitionView,
+} from "$lib/state/types";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
   drainPendingAcquisitionsWithinCap,
@@ -717,6 +721,149 @@ export async function waitForPackagedGameState(
   );
   if (!last) throw new Error(timeoutMsg);
   return last;
+}
+
+export function analysisBoard(
+  state: GameStateView,
+  id: string,
+): AnalysisBoardView {
+  if (state.scene.kind !== "analysis") {
+    throw new Error(`expected Analysis scene, got ${state.scene.kind}`);
+  }
+  const board = state.scene.visibleBoards.find(
+    (candidate) => candidate.id === id,
+  );
+  if (!board) throw new Error(`analysis board ${id} is not visible`);
+  return board;
+}
+
+// B4 selected this one synthetic PointerEvent transport for packaged WebKit.
+// Keep Classify and Order on this path; there is intentionally no W3C attempt
+// or runtime/test fallback.
+export async function dragAnalysisCardSynthetic(
+  cardId: string,
+  targetId: string,
+): Promise<void> {
+  let dispatched: boolean;
+  try {
+    dispatched = await browser.execute(
+      (selectedCardId: string, selectedTargetId: string) => {
+        const card = document.querySelector<HTMLElement>(
+          `[data-analysis-card-id="${selectedCardId}"]`,
+        );
+        const target = document.querySelector<HTMLElement>(
+          `[data-analysis-drop-target="${selectedTargetId}"]`,
+        );
+        if (!card || !target) return false;
+
+        // Keep the synthetic destination inside the viewport so the production
+        // elementsFromPoint() resolver sees the same target on every board.
+        target.scrollIntoView({ block: "center", inline: "center" });
+
+        const center = (element: HTMLElement) => {
+          const rect = element.getBoundingClientRect();
+          return {
+            x: Math.round(rect.left + rect.width / 2),
+            y: Math.round(rect.top + rect.height / 2),
+          };
+        };
+        const source = center(card);
+        const destination = center(target);
+        const pointerId = 621;
+        const dispatch = (type: string, init: PointerEventInit) =>
+          card.dispatchEvent(new PointerEvent(type, init));
+
+        dispatch("pointerdown", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: 0,
+          buttons: 1,
+          clientX: source.x,
+          clientY: source.y,
+        });
+        dispatch("pointermove", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: -1,
+          buttons: 1,
+          clientX: destination.x,
+          clientY: destination.y,
+        });
+        dispatch("pointerup", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          pointerId,
+          pointerType: "mouse",
+          isPrimary: true,
+          button: 0,
+          buttons: 0,
+          clientX: destination.x,
+          clientY: destination.y,
+        });
+        return true;
+      },
+      cardId,
+      targetId,
+    );
+  } catch (error) {
+    throw new Error(
+      `analysis drag dispatch failed for ${cardId} -> ${targetId}`,
+      { cause: error },
+    );
+  }
+  if (!dispatched) {
+    throw new Error(`analysis drag hooks missing for ${cardId} -> ${targetId}`);
+  }
+}
+
+export async function waitForAnalysisBoard(
+  sceneId: string,
+  boardId: string,
+): Promise<GameStateView> {
+  return waitForPackagedGameState(
+    (state) =>
+      state.scene.kind === "analysis" &&
+      state.scene.id === sceneId &&
+      state.mode.type === "analysis" &&
+      state.mode.boardId === boardId,
+    30000,
+    `analysis board ${boardId} did not become active`,
+  );
+}
+
+export async function waitForClassifyDraft(
+  expectedGroupByCard: Record<string, string>,
+): Promise<GameStateView> {
+  try {
+    return await waitForPackagedGameState((state) => {
+      const board = analysisBoard(state, "evidence_packages");
+      if (board.kind !== "classify" || board.draft.kind !== "classify") {
+        return false;
+      }
+      const actual = board.draft.groupByCard;
+      return (
+        Object.keys(actual).length ===
+          Object.keys(expectedGroupByCard).length &&
+        Object.entries(expectedGroupByCard).every(
+          ([cardId, groupId]) => actual[cardId] === groupId,
+        )
+      );
+    });
+  } catch (error) {
+    throw new Error(
+      `classify draft never matched ${JSON.stringify(expectedGroupByCard)}`,
+      { cause: error },
+    );
+  }
 }
 
 export async function waitForButton(
