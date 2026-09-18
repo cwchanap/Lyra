@@ -63,7 +63,11 @@ No replacement selector is introduced.
 - Preserve gameplay, production journey, Analysis remainder, representative save/recovery, and exit lifecycle packaged coverage in full verification.
 - Preserve the current draft-PR heavy-job skip.
 - Keep human-facing job name `Tauri E2E` for continuity, but do not treat it as branch-protection compatibility: the current ruleset has no required-status-check rule.
-- Set the direct full job timeout to 90 minutes.
+- Set the PR smoke timeout to **45 minutes** and the direct full timeout to **90 minutes**.
+- Preserve `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e` in both packaged jobs.
+- Give both packaged jobs one shared Rust-cache prefix key (for example `tauri-e2e-v2`) so nightly/default-branch cache warming benefits PR smoke.
+- Run both packaged commands under `xvfb-run -a` on Ubuntu CI; the package scripts themselves intentionally do not own Linux display setup.
+- Keep smoke at one attempt; change `test:e2e:all:run` to pass `--attempts 2`.
 - Do not preserve old planner JSON, suite-file, chain-id, or plan-file contracts for compatibility.
 - Do not create a generalized reusable CI framework.
 - Update `CLAUDE.md`; `AGENTS.md` is its symlink and updates with it.
@@ -123,6 +127,7 @@ git commit -m "docs: record HPA-560 E2E baseline"
 ```
 
 
+
 ## Task 1 — Expand the existing smoke with one semantic save/continue slice
 
 ### Purpose
@@ -134,7 +139,8 @@ Create the replacement packaged PR proof first while the old scheduler is still 
 Modify:
 
 - `apps/game/e2e-tauri/smoke.e2e.ts`
-- the smallest existing/shared Analysis helper location only if needed to avoid copying Beat 8.5 interaction logic
+- `apps/game/e2e-tauri/helpers.ts`
+- `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 - `apps/game/package.json` only if command wiring needs adjustment
 
 Reference existing behavior from:
@@ -143,6 +149,23 @@ Reference existing behavior from:
 - `apps/game/e2e-tauri/analysis-beat85.e2e.ts`
 
 Do **not** copy from `investigation-layout.e2e.ts` into smoke; its acquisition and city-map coverage remains in full verification.
+
+### Mandatory Analysis helper extraction
+
+The smoke cannot safely reuse the Beat 8.5 interaction without extracting the existing spec-local helper path. This is required, not optional.
+
+Move these four functions from `analysis-beat85.e2e.ts` into existing `helpers.ts` and export them:
+
+- `analysisBoard`;
+- `waitForAnalysisBoard`;
+- `waitForClassifyDraft`;
+- `dragAnalysisCardSynthetic`.
+
+Parameterize `waitForAnalysisBoard` so it does not capture the spec-local `ANALYSIS_SCENE_ID`; callers pass the expected scene ID explicitly (or use the smallest equivalent parameter shape).
+
+Keep `dragAnalysisCardSynthetic` behavior byte-for-byte equivalent apart from the move. Its synthetic `PointerEvent` transport is already the accepted packaged-WebKit interaction path; do not replace it with a W3C drag attempt or add a fallback.
+
+Update `analysis-beat85.e2e.ts` to import these helpers. This is a reuse extraction, not a rewrite of the full Analysis spec.
 
 ### Test-first contract
 
@@ -153,12 +176,13 @@ Retain the existing smoke checks, then add one semantic persistence slice:
 3. Preserve typed pre-start `get_state` error proof.
 4. Start Chapter 1 and prove real compiled dialogue/resources render.
 5. Load existing `chapter-1-analysis-beat-85-ready`.
-6. Perform **one** meaningful classify placement through the production Analysis UI.
-7. Explicitly save to a manual slot.
-8. Return to title.
-9. Continue.
-10. Assert the exact expected Analysis semantic draft survived.
-11. Perform one further production Analysis interaction after resume.
+6. Perform **one** meaningful classify placement through `dragAnalysisCardSynthetic`.
+7. Wait for the exact classify draft through `waitForClassifyDraft`.
+8. Explicitly save to a manual slot.
+9. Return to title.
+10. Continue.
+11. Assert the exact expected Analysis semantic draft survived.
+12. Perform one further production Analysis interaction after resume.
 
 ### Important cuts
 
@@ -184,13 +208,13 @@ Use the existing checkpoint bridge and save/continue helpers. If the smoke appea
 
 ### Package command
 
-Keep the existing obvious command:
+Keep the existing ordinary command and its fail-fast one-attempt behavior:
 
 ```bash
 bun run --cwd apps/game test:e2e:smoke
 ```
 
-Do not add `test:e2e:pr-smoke` unless renaming the existing command demonstrably produces less churn than reusing it.
+Do not add `test:e2e:pr-smoke`.
 
 ### Verification
 
@@ -207,11 +231,159 @@ git commit -m "test: expand packaged smoke with semantic resume"
 ```
 
 
-## Task 2 — Simplify runner selection to direct suites/full mode
+## Task 2 — Cut CI over to direct smoke/full commands while old runner flags still exist
 
 ### Purpose
 
-Make the runner direct: named suites or full mode, with no planner-generated files, chain IDs, or planner metadata.
+Remove the workflow's dependency on planner-generated suite files **before** deleting runner support for those flags. This keeps the branch's CI contract coherent at every commit boundary.
+
+### Files
+
+Modify:
+
+- `.github/workflows/ci.yml`
+- `apps/game/package.json`
+- `apps/game/scripts/e2e-ci-workflow.test.mjs`
+
+### Shared packaged-job environment
+
+Both packaged jobs must use:
+
+```yaml
+env:
+  CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
+```
+
+Both use the same Rust cache contract:
+
+```yaml
+uses: Swatinem/rust-cache@v2
+with:
+  workspaces: apps/game/src-tauri -> target-e2e
+  prefix-key: tauri-e2e-v2
+```
+
+Do not invent separate smoke/full cache keys. The shared key lets the nightly/default-branch run warm the cache that PR branches can restore. The first run under `v2` is cold by definition, so the timeout must not assume the ~2 minute warm setup/build sample.
+
+### PR smoke job
+
+Replace planner + matrix + aggregate flow for ordinary PRs with one direct job:
+
+```text
+non-draft PR without ci:full-e2e
+-> job display name: Tauri E2E
+-> checkout/setup
+-> shared E2E Rust cache
+-> xvfb-run -a bun run --cwd apps/game test:e2e:smoke
+-> upload normal logs/screenshots/artifacts
+```
+
+Set `timeout-minutes: 45`.
+
+Keep the current draft skip. Non-draft documentation-only PRs still run the smoke; do not add a docs exception table.
+
+### Full job
+
+Use one direct broad job for:
+
+- `schedule`;
+- `workflow_dispatch`;
+- tag/release push;
+- **non-draft** PR carrying `ci:full-e2e`.
+
+Shape:
+
+```text
+-> job display name: Tauri E2E
+-> checkout/setup
+-> shared E2E Rust cache
+-> xvfb-run -a bun run --cwd apps/game test:e2e:all
+-> upload normal logs/screenshots/artifacts
+```
+
+Set `timeout-minutes: 90`.
+
+A plain push to `main` does **not** run packaged full after HPA-560.
+
+Make the PR-smoke and PR-full predicates mutually exclusive so `ci:full-e2e` does not pay twice, and ensure the full PR predicate keeps `draft == false` so adding the label to a draft cannot resurrect heavy CI.
+
+### Full retry contract
+
+Update:
+
+```json
+"test:e2e:all:run": "node scripts/run-save-e2e.mjs --full --attempts 2"
+```
+
+Do **not** add `--attempts 2` to smoke. Ordinary PR smoke remains fail-fast; broad/full verification tolerates one retry.
+
+### Surviving Node contract tests
+
+The current `test:e2e:ci-contracts` call lives only in the planner job, so deleting that job would otherwise silently stop the direct safety tests.
+
+In this same task, add a named step to the existing `lint-frontend` / frontend-check job, near `check:e2e`:
+
+```bash
+node --test \
+  apps/game/scripts/e2e-suite-registry.test.mjs \
+  apps/game/scripts/e2e-runner-lifecycle.test.mjs \
+  apps/game/scripts/save-e2e-paths.test.mjs \
+  apps/game/scripts/e2e-ci-workflow.test.mjs
+```
+
+Do not defer this to Task 4. The surviving contracts must never have a commit where no CI job runs them.
+
+### Workflow policy test
+
+Rewrite `e2e-ci-workflow.test.mjs` to lock:
+
+- one non-draft PR smoke path;
+- one full path for schedule/manual/tag/non-draft `ci:full-e2e`;
+- mutual exclusion on `ci:full-e2e`;
+- no main-push packaged full;
+- display name `Tauri E2E`;
+- smoke timeout 45;
+- full timeout 90;
+- shared `CARGO_TARGET_DIR`;
+- shared Rust-cache prefix;
+- both packaged invocations wrapped in `xvfb-run -a`;
+- direct package commands `test:e2e:smoke` and `test:e2e:all`;
+- the explicit surviving Node-contract step in `lint-frontend`;
+- no planner job;
+- no matrix;
+- no plan artifact;
+- no metrics wrapper;
+- no aggregate routing validator.
+
+The current repository ruleset has no required-status-check rule. The display name is continuity only.
+
+### Verification
+
+```bash
+node --test apps/game/scripts/e2e-ci-workflow.test.mjs
+node --test apps/game/scripts/e2e-suite-registry.test.mjs
+node --test apps/game/scripts/e2e-runner-lifecycle.test.mjs
+node --test apps/game/scripts/save-e2e-paths.test.mjs
+bun run check
+bun run lint
+bun run format:check
+```
+
+At this point the workflow uses only direct package commands, but the old runner/planner flags may still exist unused. Remove them next.
+
+### Commit
+
+```bash
+git add .github/workflows/ci.yml apps/game/package.json apps/game/scripts/e2e-ci-workflow.test.mjs
+git commit -m "ci: cut Tauri E2E to direct smoke and full paths"
+```
+
+
+## Task 3 — Simplify runner selection and registry after workflow cutover
+
+### Purpose
+
+Now that CI no longer passes planner-generated files, make the runner direct: named suites or full mode, with no chain IDs or planner metadata.
 
 ### Files
 
@@ -228,8 +400,6 @@ Modify as needed:
 
 ### Desired public command surface
 
-CI and humans already have the required two commands:
-
 ```bash
 bun run --cwd apps/game test:e2e:smoke
 bun run --cwd apps/game test:e2e:all
@@ -240,13 +410,13 @@ Focused commands such as `test:e2e:capture-proof` or `test:e2e:exit-lifecycle` m
 ### Runner changes
 
 1. Keep direct `--suite <id>` and `--full`.
-2. Keep `--attempts` if bounded retry remains justified.
-3. Remove CI-only inputs:
+2. Keep `--attempts`; `test:e2e:all:run` is now its explicit `--attempts 2` caller while smoke uses the default one attempt.
+3. Remove:
    - `--suite-file`;
    - `--chain-id`;
    - `--plan-file`.
 4. Delete `resolveRunnerPlannerMetadata`.
-5. Remove planner-shaped fields from direct run metadata when nothing consumes them:
+5. Remove planner-shaped result fields when nothing consumes them:
    - `chainId`;
    - `riskSelectedSuites`;
    - `forcedFull`;
@@ -273,13 +443,12 @@ Retain tests for direct behavior:
 - unknown/duplicate phase definitions fail closed where applicable;
 - direct smoke and full selections produce expected specs;
 - runner shutdown/cleanup cannot target arbitrary roots;
-- retry/failure result behavior remains readable.
+- one-attempt smoke/default and two-attempt full selection behave as configured;
+- failure/retry results remain readable.
 
 Delete tests whose subject is planner metadata or chain partition.
 
 ### Verification
-
-Use repo-native Node/Bun forms already used by the package:
 
 ```bash
 node --test apps/game/scripts/e2e-suite-registry.test.mjs
@@ -294,108 +463,6 @@ bun run --cwd apps/game test:e2e:smoke
 git add apps/game/scripts apps/game/package.json
 git commit -m "refactor: simplify packaged E2E runner selection"
 ```
-
-
-## Task 3 — Replace dynamic CI planning with two direct workflow paths
-
-### Purpose
-
-Make `.github/workflows/ci.yml` describe the policy directly and lock that policy with a small workflow test.
-
-### Files
-
-Modify:
-
-- `.github/workflows/ci.yml`
-- `apps/game/package.json` if final command wiring changes
-- `apps/game/scripts/e2e-ci-workflow.test.mjs`
-
-### PR smoke job
-
-Replace planner + matrix + aggregate flow for ordinary PRs with one direct job:
-
-```text
-non-draft PR without ci:full-e2e
--> job display name: Tauri E2E
--> checkout/setup
--> run test:e2e:smoke  # build once + run
--> upload normal logs/screenshots/artifacts
-```
-
-Set `timeout-minutes: 20`.
-
-Keep the current draft skip. Non-draft documentation-only PRs still run the short smoke; do not add a docs exception table.
-
-### Full job
-
-Use one direct broad job for:
-
-- `schedule`;
-- `workflow_dispatch`;
-- tag/release push;
-- non-draft PR carrying `ci:full-e2e`.
-
-Shape:
-
-```text
--> job display name: Tauri E2E
--> checkout/setup once
--> run test:e2e:all  # build once + run
--> upload normal logs/screenshots/artifacts
-```
-
-Set `timeout-minutes: 90`.
-
-A plain push to `main` does **not** run packaged full after HPA-560. This intentionally removes the selector's existing `refs/heads/main` forced-full behavior; nightly owns broad packaged verification.
-
-Make the PR-smoke and PR-full predicates mutually exclusive so `ci:full-e2e` does not pay twice.
-
-### One-job default
-
-The design already chooses one full job. Recent scheduled evidence estimates direct sequential full around 33-38 minutes with observed caches. The 90-minute ceiling gives retry/cache-miss headroom.
-
-Only if an actual direct-full run is materially unreliable may this PR use at most two static hard-coded full jobs. No generated matrix.
-
-### Workflow policy test
-
-Rewrite, do not delete, `e2e-ci-workflow.test.mjs`.
-
-It should lock:
-
-- one non-draft PR smoke path;
-- one full path for schedule/manual/tag/`ci:full-e2e`;
-- mutual exclusion on `ci:full-e2e`;
-- no main-push packaged full;
-- display name `Tauri E2E`;
-- smoke timeout 20;
-- full timeout 90;
-- direct commands `test:e2e:smoke` and `test:e2e:all`;
-- no planner job;
-- no matrix;
-- no plan artifact;
-- no metrics wrapper;
-- no aggregate routing validator.
-
-The current repository ruleset has no required-status-check rule. The name is preserved for continuity, not because branch protection requires it.
-
-### Verification
-
-```bash
-node --test apps/game/scripts/e2e-ci-workflow.test.mjs
-bun run check
-bun run lint
-bun run format:check
-```
-
-After push, inspect the actual job graph for both ordinary PR and full-label/manual paths.
-
-### Commit
-
-```bash
-git add .github/workflows/ci.yml apps/game/package.json apps/game/scripts/e2e-ci-workflow.test.mjs
-git commit -m "ci: collapse Tauri E2E to smoke and full paths"
-```
-
 
 ## Task 4 — Delete the scheduler/router/metrics product
 
@@ -556,16 +623,35 @@ Run frontend/compiler/Rust tests that CI normally owns. At minimum, preserve the
 
 ### Required packaged checks
 
+Local/manual commands:
+
 ```bash
 bun run --cwd apps/game test:e2e:smoke
 bun run --cwd apps/game test:e2e:all
 ```
 
+Linux CI invokes the same package commands through `xvfb-run -a`; the display wrapper is environment setup, not a different suite contract.
+
 If `test:e2e:all` is too long to run locally in the working environment, trigger the manual/full GitHub Action and use that result before marking the PR ready. Do not declare completion from the PR smoke alone.
+
+### Ready-for-review verification transition
+
+This PR intentionally stays draft during implementation, and all heavy PR jobs retain the draft skip. Therefore the CI graph cannot be observed while the PR is still draft.
+
+After Tasks 1-5 and local/static verification are complete:
+
+1. mark PR #95 **ready for review**;
+2. let the ordinary non-draft `Tauri E2E` smoke run and record its wall time/artifacts;
+3. add `ci:full-e2e` once to switch the PR to the full path (or use an equivalent manual dispatch that runs this branch);
+4. confirm the smoke/full predicates are mutually exclusive;
+5. record the full-run wall time, retry/flake behavior, cache hit state, and artifacts;
+6. only then finalize the after-measurement table and close HPA-560.
+
+Do not add `ci:full-e2e` while the PR is draft as a workaround; the full PR condition must also require `draft == false`.
 
 ### CI graph verification
 
-On the actual PR confirm:
+On the actual ready PR confirm:
 
 - one non-draft ordinary packaged PR smoke job named `Tauri E2E`;
 - exactly one packaged build, owned by the public package command;
@@ -574,7 +660,7 @@ On the actual PR confirm:
 - no planner job;
 - no dynamic chain matrix;
 - no aggregate routing analyzer;
-- 20-minute smoke timeout and 90-minute full timeout;
+- 45-minute smoke timeout and 90-minute full timeout;
 - readable live failure output;
 - failure artifact upload still works.
 
@@ -584,7 +670,9 @@ Trigger the broad/manual path and confirm:
 - capture-proof executes;
 - save/recovery executes;
 - exit lifecycle executes;
-- one build is reused by the broad run unless the measured two-static-job fallback was explicitly required.
+- one build is reused by the broad run unless the measured two-static-job fallback was explicitly required;
+- both smoke/full restore/write the same `target-e2e` cache namespace;
+- full uses `--attempts 2`, while smoke remains one attempt.
 
 ### Record after measurements
 
