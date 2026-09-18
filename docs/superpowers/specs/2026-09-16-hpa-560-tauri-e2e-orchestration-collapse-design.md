@@ -540,13 +540,15 @@ All run locally on this branch (macOS), in order:
 | `bun run --cwd apps/game test:e2e:smoke` (packaged) | PASS (4 specs, incl. semantic save/continue) | ~63s wall including the E2E binary build; packaged spec itself 15.3s |
 | `bun run --cwd apps/game test:e2e:all` | not run locally | intentionally substituted by the GitHub full run per the plan; controller records it after PR-ready |
 
-### Pending CI observation
+### CI observation (PR #95 ready-for-review transition, 2026-09-18)
 
-| Metric | After |
-|---|---|
-| ordinary PR packaged E2E wall time | [pending CI observation — filled after PR-ready smoke and full runs] |
-| full/nightly wall time | [pending CI observation — filled after PR-ready smoke and full runs] |
-| retries/flakes in observed runs | [pending CI observation — filled after PR-ready smoke and full runs] |
+| Metric | Before (Task 0) | After | Notes |
+|---|---:|---:|---|
+| ordinary PR packaged E2E wall time | 21m40s median (5 runs) | **5m11s** | Run 35367524443: `Tauri E2E` smoke job 16:16:55→16:22:06, success; whole workflow ~5m17s. Non-draft, no label. |
+| full/nightly wall time | ~23m00s median scheduled (parallel chains) | **32m06s** | Run 35368646723 after adding `ci:full-e2e` once: full job 16:28:13→17:00:19, success; within the 33-38m sequential estimate, far under the 90m ceiling. |
+| retries/flakes in observed runs | 0 visible | **0** | Smoke one-attempt passed first try; full (`--full --attempts 2`, confirmed in step log) needed no retry. |
+
+Additional live evidence: mutual exclusion verified in both directions (unlabeled run skipped the full job; labeled run skipped the smoke job); plain-job display name `Tauri E2E` on both; no planner job, no matrix, no aggregate analyzer; both jobs used the shared `tauri-e2e-v2` rust-cache prefix and `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`; the four-file Node-contract step ran green inside `Frontend – check & build`; failure artifacts configured on both jobs. The `ci:full-e2e` label was removed after observation so subsequent pushes pay the ordinary smoke, per the design's escalation-only intent.
 
 ### Final file shape (confirmed against `git diff --stat 30a50a44..HEAD`)
 
