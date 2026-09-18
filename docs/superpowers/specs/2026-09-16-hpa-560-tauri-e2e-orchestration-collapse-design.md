@@ -4,6 +4,7 @@
 
 **Linear:** HPA-560 — `[Post-Chapter 1] Collapse Tauri E2E orchestration to one PR smoke and manual/nightly full verification`
 
+
 ## Summary
 
 Lyra has reached the point where the Tauri E2E scheduler costs more maintenance than it returns for a hobby project.
@@ -15,16 +16,18 @@ HPA-560 should therefore be a **deletion-first CI simplification**, not another 
 The target shape is deliberately small:
 
 ```text
-Pull request
+Non-draft pull request
   -> normal compiler/unit/type/Rust checks
-  -> one packaged Tauri PR smoke
+  -> one expanded existing packaged smoke
 
-Nightly / workflow_dispatch / release / explicit ci:full-e2e
+Nightly / workflow_dispatch / tag / explicit ci:full-e2e
   -> one packaged full verification command
-  -> production journey + capture proof + save/recovery + exit lifecycle
+  -> production journey + gameplay + analysis remainder + capture proof + save/recovery + exit lifecycle
 ```
 
-There is no changed-path E2E selector in the target architecture. There is no generated matrix. There is no replacement scheduler.
+The existing `smoke.e2e.ts` becomes the universal PR contract; HPA-560 does **not** add a third Chapter 1 packaged journey. There is no changed-path E2E selector in the target architecture, no generated matrix, and no replacement scheduler.
+
+A normal push to `main` intentionally stops forcing packaged full E2E after HPA-560. Main-push compiler/unit/type/Rust checks remain; broad packaged verification is owned by nightly/manual/tag or explicit `ci:full-e2e`. This is an intentional cost/simplicity cut, not an accidental trigger loss.
 
 ## Why HPA-560 is actionable now
 
@@ -40,41 +43,50 @@ The activation gate in the Linear issue is effectively satisfied:
 
 The key point is that HPA-560 must respect the final HPA-550 decision. This ticket does **not** delete dynamic thumbnail capture merely because it is expensive. It removes scheduler/orchestration complexity while retaining the packaged capture proof in full verification.
 
+
 ## Current-state evidence
 
-The figures below are a planning baseline from current GitHub Actions runs. They are not the ticket's final median measurement; implementation Task 0 must record a comparable sample before changing CI.
+The current data is already sufficient to choose the architecture. Task 0 still records the ticket's requested before/after sample, but it is an evidence-completion task rather than an implementation gate.
 
 ### Recent whole-workflow wall time
 
-- Scheduled run on 2026-09-16: roughly **24m 27s** wall time.
-- Recent PR #89 run: roughly **21m 16s** wall time.
+Recent successful scheduled CI runs:
 
-### Scheduled gameplay chain
+| Run | Whole workflow wall time |
+|---|---:|
+| 2026-09-17 scheduled | ~23m00s |
+| 2026-09-16 scheduled | ~24m27s |
+| 2026-09-13 scheduled | ~21m05s |
 
-The latest scheduled gameplay chain was roughly **23m 31s** end to end.
+Median of those three scheduled runs is roughly **23 minutes**.
 
-Approximate test portions:
+The final PR #89 CI run was roughly **21m40s** wall-clock and is relevant because PR #89 is now merged into `main` and changed packaged Chapter 1 city-map anchors.
 
-| Phase | Approximate time | Observation |
+### Packaged-chain evidence
+
+On the 2026-09-17 scheduled run:
+
+| Existing chain | Test step | Observation |
 |---|---:|---|
-| packaged build after setup | ~1m | Not the dominant cost once cache/setup is complete. |
-| `smoke` | ~1m 40s | Small enough for a PR-oriented proof. |
-| `gameplay` | ~5m | Useful focused coverage but too large to be the universal PR contract. |
-| `production-journey` | ~12m 40s | Dominates the chain; it belongs in broad verification, not every ordinary PR. |
-| `analysis-beat85` | ~2m | Already proves a useful Chapter 1 semantic save/continue boundary. |
+| gameplay | ~20m05s | Includes smoke, gameplay specs, production journey, and Analysis Beat 8.5. |
+| persistence | ~10m26s | Includes capture proof and save/recovery phases. |
+| exit | ~3m41s | Exit lifecycle phases. |
 
-### Scheduled persistence chain
+The same run's gameplay setup through packaged build was roughly **2m05s**. If those three test steps were executed sequentially behind one shared setup/build under the same cache conditions, the rough direct-full wall time is about **36 minutes**. Comparable 2026-09-16 and 2026-09-13 evidence lands around **38 minutes** and **33 minutes** respectively.
 
-The latest scheduled persistence chain was roughly **13m** end to end.
+That supports one direct full job. Because the direct runner may still allow a bounded retry, and cache misses can widen setup/build time, the full job gets a **90-minute timeout**. The timeout is safety headroom, not a claim that normal runs should approach 90 minutes.
 
-Notable phases:
+### Existing smoke and semantic-save reuse
 
-- `capture-proof`: ~2m 40s spec execution.
-- `save-seed`: ~1m 40s.
-- `save-resume`: ~1m 52s.
-- save-management recovery/corruption phases: individually short after seed setup.
+The repository already has the pieces HPA-560 needs:
 
-This is useful release/nightly coverage, but it does not justify rebuilding and running a separate persistence chain on every PR.
+- `smoke.e2e.ts` proves clean title state, typed `get_state` IPC, New Game, and real packaged dialogue.
+- `analysis-beat85.e2e.ts` already proves a packaged Beat 8.5 checkpoint, a real Analysis mutation, Save -> title -> Continue, exact semantic draft restoration, and further live interaction.
+- `investigation-layout.e2e.ts` owns real investigation hotspot acquisition and the Chapter 1 city-map packaged interactions.
+- `production-journey.e2e.ts` owns the organic Chapter 1 route and all authored map gates.
+- `save-resume.e2e.ts` owns exact persistence permutations including pending-map restore.
+
+HPA-560 should reuse those responsibilities instead of copying slices of each into a new `pr-smoke.e2e.ts`.
 
 ### Maintenance surface
 
@@ -120,91 +132,107 @@ Rely only on unit/type/Rust/compiler tests and run packaged E2E manually.
 
 **Why not:** Lyra still benefits from proving that the packaged Tauri binary launches, loads real compiled resources, crosses frontend/native IPC, persists state, and can resume it. One short packaged proof earns its cost.
 
+
 ## Target CI contract
 
 ### Pull requests
 
-Every pull request runs:
+Every **non-draft / ready-for-review** pull request runs:
 
 - existing compiler/content checks;
 - existing frontend unit/type/build checks;
 - existing Rust checks/tests;
-- exactly one packaged Tauri PR smoke job.
+- exactly one packaged Tauri smoke job.
 
-The PR smoke is **not** selected by changed paths. Documentation-only PRs may still run it; simplicity is preferred over maintaining another exception table. If later evidence shows this is materially wasteful, that is a separate decision, not a reason to preserve HPA-516 routing.
+Draft PRs keep the repository's current heavy-job skip. This matters because HPA-560 itself is intentionally developed as one draft planning+implementation PR; intermediate planning and implementation pushes should not pay for packaged CI.
 
-The PR smoke should have a bounded timeout and stream normal WDIO/Tauri output directly into the job log. No custom metrics wrapper is needed.
+The smoke is **not** selected by changed paths. A non-draft documentation-only PR may still pay the short smoke; simplicity is preferred over maintaining another exception table.
+
+If a PR carries `ci:full-e2e`, run the broad path instead of redundantly running both smoke and full.
 
 ### Broad verification
 
-A single broad verification path runs for:
+One direct broad verification path runs for:
 
 - `schedule` / nightly;
 - `workflow_dispatch`;
-- release/tag verification already covered by the repository workflow policy;
+- tag/release verification already covered by the workflow;
 - a PR explicitly labeled `ci:full-e2e`.
 
-The broad path runs the existing packaged full command after the runner is simplified.
+A plain push to `main` no longer forces packaged full E2E. That current behavior came from the selector's `refs/heads/main` forced-full rule; deleting it is part of the simplification.
+
+The broad path runs the existing `test:e2e:all` command after the runner/registry are simplified.
 
 It must retain representative coverage for:
 
+- expanded `smoke`;
+- gameplay packaged specs;
 - full Chapter 1 `production-journey`;
+- the geometry/pointer/full-flow remainder of `analysis-beat85`;
 - dynamic-thumbnail `capture-proof` retained by HPA-550;
 - semantic save/resume;
 - representative corrupted/missing save recovery;
-- exit/quit lifecycle and failure-bypass behavior;
-- Chapter 1 analysis state whose persistence semantics are not better proven elsewhere.
+- exit/quit lifecycle and failure-bypass behavior.
 
-This is not a promise that every current suite filename survives. It is a behavior contract.
+This is a behavior contract, not a promise that every suite filename survives forever.
+
 
 ## PR smoke contract
 
-The PR smoke should reuse existing accepted Chapter 1 test seams, especially the useful semantic save/continue work already present around Beat 8.5. It should **not** create a new native checkpoint protocol.
+Do **not** add `pr-smoke.e2e.ts`. Expand the existing `smoke.e2e.ts` and keep `test:e2e:smoke` as the one local reproduction command for ordinary PR CI.
 
-The intended journey is:
+The intended smoke is:
 
 ```text
-launch packaged app
--> enter Chapter 1 and prove real dialogue/resources render
--> use an existing accepted E2E checkpoint seam to reach a representative investigation/acquisition boundary
--> acquire or acknowledge one real Chapter 1 record through production UI
--> reach the Beat 8.5 analysis surface using existing checkpoint support
--> perform one meaningful analysis interaction
+launch packaged app on a clean root
+-> prove clean title + typed get_state IPC
+-> New Game -> prove real compiled Chapter 1 dialogue/resources render
+-> load existing chapter-1-analysis-beat-85-ready checkpoint
+-> perform one meaningful classify placement
 -> explicit Save
 -> return to title
 -> Continue
--> assert exact semantic state survived
--> perform one more interaction to prove the restored state is live
+-> assert exact semantic Analysis draft restored
+-> perform one further production interaction
 ```
+
+The implementation should extract/reuse the smallest existing Analysis helper(s) needed from `analysis-beat85.e2e.ts`; it should not duplicate its geometry, pointer-ordering, full-board completion, interrogation, or screenshot assertions.
+
+Do not add an investigation/acquisition or city-map hop to the universal smoke. Those are already real packaged responsibilities in `investigation-layout.e2e.ts`, `production-journey.e2e.ts`, and `save-resume.e2e.ts`, which remain in full verification.
 
 ### Why checkpoints are acceptable here
 
-The goal is packaged integration, not replaying 2.5–3 hours of Chapter 1 on every PR. Existing deterministic checkpoint support is already part of the accepted Chapter 1 testing surface. HPA-560 may reuse it to keep one smoke short.
+The goal is packaged integration, not replaying 2.5-3 hours of Chapter 1 on every PR. Existing deterministic checkpoint support is already part of the accepted Chapter 1 testing surface. HPA-560 may reuse the existing Beat 8.5 checkpoint to keep the smoke short.
 
-The ticket should delete E2E-only checkpoint controls **only if** the final PR smoke and broad verification no longer call them and lower-layer tests own their behavior. It must not add a new checkpoint command just to make the new smoke convenient.
+The ticket may delete E2E-only checkpoint controls only if no surviving smoke/full/local focused suite uses them and lower-layer tests own the corresponding behavior. It must not add a new checkpoint command.
 
 ### What the smoke must prove
 
 At minimum:
 
 - the packaged binary launches;
+- clean title/New Game behavior still works;
 - compiled Chapter 1 resources are available;
 - frontend/native command transport works;
-- one gameplay mutation is persisted through the real save path;
+- one real Analysis gameplay mutation is persisted through the save path;
 - returning to title and Continue works;
-- restored state matches semantic gameplay state, not merely a screenshot or scene label.
+- restored state matches semantic gameplay state, not merely a screenshot or scene label;
+- restored state accepts another production interaction.
 
 ### What the smoke should not prove
 
 Do not put these permutations into the universal PR smoke:
 
+- investigation hotspot acquisition;
+- city-map mouse/keyboard/layout/raster behavior;
 - every corruption/recovery case;
 - all save-browser presentation variants;
 - every checkpoint bridge;
 - the full production journey;
 - thumbnail capture visual fidelity;
 - all exit failure modes;
-- broad geometry/pointer-layout assertions that component tests can own.
+- geometry/pointer-layout permutations from the full Analysis journey.
+
 
 ## Lower-layer ownership after the collapse
 
@@ -213,13 +241,28 @@ Do not put these permutations into the universal PR smoke:
 | save schema, storage, atomic write, restore permutations | Rust tests |
 | save-card/modal/error/presentation permutations | frontend tests |
 | scene compilation, content definitions, reachability | compiler/content tests |
-| packaged binary boot, real resources, IPC, one semantic save/continue | PR smoke |
-| organic/full Chapter 1 journey | nightly/manual/release full E2E |
-| dynamic thumbnail integration | full `capture-proof` |
-| corruption/recovery integration | full E2E representative cases |
-| exit/quit lifecycle integration | full E2E |
+| packaged binary boot, real resources, IPC, one semantic Analysis save/continue | expanded `smoke` on PR + full |
+| investigation hotspot + city-map packaged behavior | gameplay specs in full |
+| organic/full Chapter 1 journey and all map gates | `production-journey` in full |
+| Analysis geometry/pointer/full completion | `analysis-beat85` remainder in full |
+| dynamic thumbnail integration | `capture-proof` in full |
+| corruption/recovery integration | save-core/save-management in full |
+| exit/quit lifecycle integration | exit-lifecycle in full |
 
-A focused packaged suite may remain as a **local debugging command** when useful. Remaining local commands do not need changed-path CI ownership.
+The suite disposition is locked before implementation:
+
+| Suite / spec family | After HPA-560 |
+|---|---|
+| `smoke` (expanded) | **PR + full** |
+| `gameplay` specs (`app`, `case-file`, `checkpoint-contract`, `investigation-layout`, `scene-navigation-gate`) | **KEEP IN FULL**; focused local command may remain |
+| `analysis-beat85` remainder | **KEEP IN FULL** |
+| `production-journey` | **KEEP IN FULL** |
+| `capture-proof` | **KEEP IN FULL** |
+| `save-core` | **KEEP IN FULL** |
+| `save-management` | **KEEP IN FULL** |
+| `exit-lifecycle` | **KEEP IN FULL** |
+
+Task-level cleanup may merge an obvious duplicate helper, but HPA-560 does not defer suite ownership to an open-ended audit.
 
 ## Explicit PR escalation instead of automatic routing
 
@@ -230,86 +273,112 @@ When a PR changes a boundary that cannot be proven convincingly by the universal
 
 Do not add an automatic "focused suite selector" after deleting the current selector. That would recreate HPA-516 under a new name.
 
+
 ## Runner and registry design
 
 ### Keep
 
-The reusable value in the current system is the ability to:
+Keep the reusable direct-runner value:
 
 - build the Tauri E2E binary;
 - start/stop the packaged application safely;
 - run a named suite/phase sequence;
-- retry a genuinely flaky packaged test when the current runner policy requires it;
+- bounded retry if current packaged-test evidence still justifies it;
 - isolate temporary save roots;
+- clean owned roots safely;
 - expose normal logs/artifacts on failure.
 
-Keep those pieces where they are already simple and well tested.
+Keep `e2e-suite-registry.mjs` only as the minimal ordered suite/phase table required by direct `--suite` and `--full` execution.
 
 ### Simplify
 
-The canonical registry may remain only if it is the smallest place to map a broad suite to its ordered phases. It no longer needs to model dynamic CI chains or partition selected suites into matrices.
-
-The runner should expose a small command surface such as:
+The public command surface remains the existing simple shape:
 
 ```text
-bun run test:e2e:pr-smoke
-bun run test:e2e:all
+bun run --cwd apps/game test:e2e:smoke
+bun run --cwd apps/game test:e2e:all
 ```
 
-Internally, the direct runner may support a named suite for local debugging, but CI no longer passes planner-generated `--suite-file`, `--chain-id`, or `--plan-file` contracts.
+Focused commands such as `test:e2e:capture-proof` may remain for local debugging.
+
+The direct runner accepts only direct selection/lifecycle inputs such as `--suite`, `--full`, and `--attempts`. Remove:
+
+- `--suite-file`;
+- `--chain-id`;
+- `--plan-file`;
+- `resolveRunnerPlannerMetadata`;
+- planner-shaped `chainId`, `riskSelectedSuites`, `forcedFull`, and planner-reason fields from direct run-result metadata when they have no remaining diagnostic consumer.
+
+The registry deletes `E2E_CHAIN_DEFINITIONS`, `E2E_CHAIN_IDS`, `partitionE2eSuitesByChain`, and other APIs whose only purpose is generated CI chains.
 
 ### Delete
 
-Delete when no longer referenced:
+Delete when direct CI no longer references them:
 
 - changed-path risk rules;
 - selector and ownership audit;
 - planner and generated matrix schema;
-- chain partition logic used only by CI orchestration;
+- chain partition logic;
 - custom timing metrics collection;
 - custom aggregate routing/result analyzer;
 - chain evidence manifests whose purpose is aggregate validation;
-- scheduler/router tests whose only product behavior disappears;
-- guarded cleanup machinery that exists only to coordinate independent chain jobs, if ordinary runner lifecycle cleanup already owns the required safety.
+- selector/planner/metrics/results tests whose product disappears;
+- the `cleanup-e2e-roots.mjs` CLI and workflow post-step.
+
+Do **not** delete `cleanupOwnedE2eRoots` or its runner-lifecycle safety tests. The CLI is only a thin parallel-chain recovery wrapper; the direct runner already owns guarded cleanup.
+
 
 ## Workflow shape
 
 The target `.github/workflows/ci.yml` should read like ordinary CI rather than a CI application.
 
-Conceptually:
+Use two mutually exclusive job IDs, both with the human-facing job name **`Tauri E2E`** for continuity:
 
 ```yaml
 jobs:
   # existing normal checks remain
 
   tauri-e2e-pr-smoke:
-    if: pull_request
+    name: Tauri E2E
+    if: pull_request && !draft && !ci:full-e2e
+    timeout-minutes: 20
     steps:
-      - checkout
-      - install toolchain/dependencies
+      - checkout/setup
       - build packaged E2E binary once
-      - run PR smoke
-      - upload normal logs/screenshots on failure/always as appropriate
+      - run test:e2e:smoke
+      - upload ordinary logs/screenshots
 
   tauri-e2e-full:
-    if: schedule || workflow_dispatch || tag/release || pull_request has ci:full-e2e
+    name: Tauri E2E
+    if: schedule || workflow_dispatch || tag || (pull_request && !draft && ci:full-e2e)
+    timeout-minutes: 90
     steps:
-      - checkout
-      - install toolchain/dependencies
+      - checkout/setup
       - build packaged E2E binary once
-      - run full packaged verification
-      - upload normal logs/screenshots
+      - run test:e2e:all
+      - upload ordinary logs/screenshots
 ```
 
-The exact GitHub Actions expression should reuse current repository event/label semantics rather than invent a new trigger system.
+The exact GitHub expression should reuse existing event/label semantics rather than introduce another trigger helper.
+
+The current repository ruleset does **not** require a status check named `Tauri E2E`; keeping that display name is a low-cost continuity choice, not a branch-protection compatibility requirement.
+
+Rewrite `e2e-ci-workflow.test.mjs` instead of deleting it. The slim policy test should lock:
+
+- the non-draft PR smoke path;
+- the broad schedule/manual/tag/`ci:full-e2e` path;
+- mutual exclusion so `ci:full-e2e` does not run both jobs;
+- the intentional absence of a main-push packaged-full trigger;
+- job display name `Tauri E2E`;
+- no planner, generated matrix, plan artifact, metrics wrapper, or aggregate analyzer.
 
 ## One full job vs multiple static jobs
 
-The default design is **one full job with one build**.
+The design commits to **one full job with one build**.
 
-This may increase broad-verification wall clock compared with the current three parallel chains, but broad verification is infrequent and the architecture becomes much smaller. It also avoids paying three independent runner setup/build costs.
+Recent scheduled evidence estimates direct sequential full execution around 33-38 minutes with the observed cache state. Set the full job timeout to **90 minutes** to leave room for cache variance and one bounded retry without reintroducing orchestration.
 
-If implementation evidence shows one sequential broad job exceeds a practical GitHub Actions timeout or becomes materially unreliable, the fallback is at most **two obvious static jobs** with no planner or generated matrix. That fallback must be justified by measured evidence in this PR; it is not the default implementation.
+Only if an actual direct-full run still proves materially unreliable may this PR use at most two hard-coded static full jobs. That fallback must be justified in the PR and must not restore generated matrices or path routing.
 
 ## Diagnostics after deleting custom metrics/analyzer
 
@@ -325,25 +394,24 @@ We do not need a bespoke JSON metrics format merely to know whether the packaged
 
 The direct runner should still identify the named phase/spec that failed and preserve enough logs/screenshots to reproduce it locally.
 
+
 ## Measurement contract
 
-HPA-560 explicitly requires before/after evidence. Do not turn that requirement into permanent telemetry.
+HPA-560 still records the requested before/after evidence, but measurement does **not** block construction of the expanded smoke.
 
-Before behavior changes, record in this document or the PR description:
+Before merge, record:
 
 - median wall time across a small comparable sample of recent ordinary PR E2E runs;
 - median wall time across recent scheduled/full runs;
 - setup/build/test split from representative jobs;
 - visible retry/flake count in that sample;
-- production and test LOC for selector/planner/metrics/analyzer/registry orchestration files;
-- which current suites still have a unique integration responsibility.
+- production and test LOC for selector/planner/metrics/analyzer/chain-only surfaces;
+- final suite ownership.
 
-Recommended sample size is intentionally small and auditable:
+Use the latest 5 comparable PR runs and latest 3 scheduled/manual/full runs when available. The already-recorded recent schedule evidence is enough to start implementation; fill the complete table in the same PR before marking ready.
 
-- latest 5 comparable PR runs where packaged E2E actually executed;
-- latest 3 scheduled/manual/full runs.
+After implementation, capture the same measurements from the simplified PR smoke plus one full/manual run. No monitoring service or history database is added.
 
-After implementation, capture the same measurements from this PR plus a full/manual run. No monitoring service or history database is added.
 
 ## File-level scope
 
@@ -351,11 +419,15 @@ After implementation, capture the same measurements from this PR plus a full/man
 
 - `.github/workflows/ci.yml`
 - `apps/game/package.json`
+- `apps/game/e2e-tauri/smoke.e2e.ts`
+- the smallest reusable Analysis helper location if needed to avoid copying logic
 - `apps/game/scripts/run-save-e2e.mjs`
-- `apps/game/scripts/e2e-suite-registry.mjs` if a minimal registry still earns its keep
-- `apps/game/scripts/e2e-runner-selection.mjs` if needed for the direct command shape
+- `apps/game/scripts/e2e-suite-registry.mjs`
+- `apps/game/scripts/e2e-runner-selection.mjs`
+- `apps/game/scripts/e2e-runner-lifecycle.mjs` if planner-shaped result metadata is removed there
 - direct runner/lifecycle/path tests that still protect real behavior
-- Chapter 1 packaged E2E spec(s) used to form the new PR smoke
+- `apps/game/scripts/e2e-ci-workflow.test.mjs`, rewritten as a small direct-workflow policy test
+- `CLAUDE.md` (and therefore `AGENTS.md`, which is a symlink) so live agent instructions stop teaching planner/chain reproduction
 
 ### Strong deletion candidates
 
@@ -367,29 +439,31 @@ After implementation, capture the same measurements from this PR plus a full/man
 - `apps/game/scripts/e2e-ci-metrics.test.mjs`
 - `apps/game/scripts/e2e-ci-results.mjs`
 - `apps/game/scripts/e2e-ci-results.test.mjs`
-- `apps/game/scripts/e2e-ci-workflow.test.mjs`
-- `apps/game/scripts/cleanup-e2e-roots.mjs` only if the direct runner lifecycle already safely cleans its own roots
+- `apps/game/scripts/cleanup-e2e-roots.mjs`
 
-The implementation must search current `main` before deletion because PR #89 and other work can move E2E anchors while this draft is reviewed.
+Keep `e2e-ci-workflow.test.mjs`; rewrite it around the simpler policy.
+
+Historical HPA-516 / PR #83 design documents are not live contracts and are not rewritten.
+
 
 ## Migration sequence
 
-1. Measure current behavior and freeze the baseline in the PR.
-2. Create the new PR smoke using existing test controls.
-3. Add direct local commands for PR smoke and full verification.
-4. Change CI to call those commands directly.
-5. Delete selector/planner/metrics/aggregate machinery after nothing references it.
-6. Audit focused suites/checkpoints; keep local/debugging value, delete only clearly redundant surfaces.
-7. Run the PR smoke and full verification from the simplified architecture.
-8. Record after measurements and remaining coverage ownership before marking the PR ready.
+1. Refresh/rebase the HPA-560 branch onto current `main` so PR #89 city-map anchors are part of the implementation baseline.
+2. Begin the requested before-measurement table; do not block implementation on completing the full sample.
+3. Expand existing `smoke.e2e.ts` using the Beat 8.5 semantic save/continue seam.
+4. Simplify direct runner/registry inputs and remove planner-shaped metadata.
+5. Replace dynamic CI planning with mutually exclusive direct smoke/full jobs and rewrite the workflow policy test.
+6. Delete selector/planner/metrics/results/chain machinery and the cleanup CLI after references are gone.
+7. Update `CLAUDE.md` live E2E guidance.
+8. Run smoke + full verification and finish before/after evidence before marking the PR ready.
 
-This ordering ensures that coverage is replaced before orchestration is removed.
+Coverage ownership is decided before deletion; implementation does not wait for an open-ended suite audit.
 
 ## Risks and mitigations
 
 ### Risk: the PR smoke becomes another miniature production journey
 
-**Mitigation:** Use existing checkpoints between representative boundaries. Keep one semantic interaction per important layer rather than replaying the chapter organically.
+**Mitigation:** Expand the existing smoke rather than adding a new spec. After New Game, jump directly to the existing Beat 8.5 checkpoint, persist one classify mutation, Continue, and prove one further live interaction. Do not add investigation acquisition or city-map hops.
 
 ### Risk: removing routing causes every PR to pay unnecessary packaged setup
 
@@ -397,7 +471,7 @@ This ordering ensures that coverage is replaced before orchestration is removed.
 
 ### Risk: broad verification becomes too slow sequentially
 
-**Mitigation:** Measure. Only if a real timeout/reliability problem appears may the implementation keep two static full jobs. Never restore dynamic chain planning.
+**Mitigation:** Use one direct full job with a 90-minute ceiling. Recent scheduled evidence estimates the direct sequential path around 33-38 minutes under observed cache conditions; the extra headroom covers cache variance and bounded retry. Only an observed direct-full reliability problem may justify two static jobs. Never restore dynamic chain planning.
 
 ### Risk: useful focused suites disappear with their CI ownership
 
@@ -428,13 +502,13 @@ This ordering ensures that coverage is replaced before orchestration is removed.
 | Linear acceptance criterion | HPA-560 design response |
 |---|---|
 | before/after runtime, flake, LOC recorded | One-time measurement task in this PR; no permanent telemetry subsystem. |
-| every PR runs one understandable packaged smoke | Fixed direct PR smoke job. |
+| every PR runs one understandable packaged smoke | Every non-draft PR runs the expanded existing smoke directly. |
 | extra PR E2E justified by concrete boundary | Local focused command or explicit `ci:full-e2e`; no automatic risk map. |
 | nightly/manual/release keeps recovery/lifecycle | Broad full command retains representative save/recovery/capture/exit coverage. |
 | deterministic permutations remain lower-layer | Explicit ownership table above. |
 | planner/router/metrics/ownership materially reduced | Delete them rather than redesign them. |
 | removed features own no stale E2E surfaces | Final audit after current product decisions; HPA-550 capture remains because feature remains. |
-| one local PR smoke + one broad command | `test:e2e:pr-smoke` and `test:e2e:all`. |
+| one local PR smoke + one broad command | Existing `test:e2e:smoke` and `test:e2e:all`. |
 | diagnostics remain sufficient | Direct logs, named phases, screenshots/artifacts; no aggregate analyzer. |
 | no replacement CI framework | Explicit design constraint. |
 
@@ -442,7 +516,7 @@ This ordering ensures that coverage is replaced before orchestration is removed.
 
 HPA-560 is done when a developer can understand Lyra's packaged E2E policy from two sentences:
 
-> Every PR proves one short real Tauri Chapter 1 save/continue vertical slice.  
-> Nightly/manual/release (or an explicit `ci:full-e2e` label) runs the broader packaged verification.
+> Every non-draft PR proves one short real Tauri Chapter 1 Analysis save/continue vertical slice through the expanded existing smoke.  
+> Nightly/manual/tag (or an explicit `ci:full-e2e` label) runs the broader packaged verification.
 
 If explaining the result still requires a path ownership table, generated matrix, chain manifest, or custom result classifier, the simplification is not finished.
