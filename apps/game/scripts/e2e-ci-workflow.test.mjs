@@ -9,10 +9,29 @@ const workflowPath = fileURLToPath(
 );
 const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
 
+const SMOKE_JOB = "tauri-e2e-pr-smoke";
+const FULL_JOB = "tauri-e2e-full";
+const CONTRACT_STEP = "Run surviving E2E contract tests";
+const CONTRACT_FILES = [
+  "apps/game/scripts/e2e-suite-registry.test.mjs",
+  "apps/game/scripts/e2e-runner-lifecycle.test.mjs",
+  "apps/game/scripts/save-e2e-paths.test.mjs",
+  "apps/game/scripts/e2e-ci-workflow.test.mjs",
+];
+
 function loadWorkflow() {
   const document = parseDocument(readFileSync(workflowPath, "utf8"));
   assert.deepEqual(document.errors, []);
   return document.toJS();
+}
+
+function loadPackagedJobs() {
+  const jobs = loadWorkflow().jobs;
+  const smoke = jobs[SMOKE_JOB];
+  const full = jobs[FULL_JOB];
+  assert.ok(smoke, `missing ${SMOKE_JOB} job`);
+  assert.ok(full, `missing ${FULL_JOB} job`);
+  return { jobs, smoke, full };
 }
 
 function namedStep(job, name) {
@@ -21,185 +40,185 @@ function namedStep(job, name) {
   return step;
 }
 
-test("workflow runs every E2E CI contract from the planner job", () => {
-  const packageJson = JSON.parse(readFileSync(packagePath, "utf8"));
-  assert.equal(
-    packageJson.scripts["test:e2e:ci-contracts"],
-    [
-      "node --test",
-      "scripts/e2e-suite-registry.test.mjs",
-      "scripts/e2e-runner-lifecycle.test.mjs",
-      "scripts/save-e2e-paths.test.mjs",
-      "scripts/select-e2e-suites.test.mjs",
-      "scripts/plan-e2e-ci.test.mjs",
-      "scripts/e2e-ci-metrics.test.mjs",
-      "scripts/e2e-ci-results.test.mjs",
-      "scripts/e2e-ci-workflow.test.mjs",
-    ].join(" "),
+function runStepMatching(job, pattern) {
+  const matches = job.steps.filter(
+    (candidate) =>
+      typeof candidate.run === "string" && pattern.test(candidate.run),
   );
-
-  const plan = loadWorkflow().jobs["e2e-plan"];
   assert.equal(
-    namedStep(plan, "Run E2E CI contracts").run,
-    "bun run --cwd apps/game test:e2e:ci-contracts",
+    matches.length,
+    1,
+    `expected exactly one step matching ${pattern}`,
+  );
+  return matches[0];
+}
+
+test("packaged E2E is exactly two direct jobs; planner machinery is gone", () => {
+  const { jobs } = loadPackagedJobs();
+  assert.equal(jobs["e2e-plan"], undefined, "planner job must be deleted");
+  assert.equal(
+    jobs["e2e-execution"],
+    undefined,
+    "matrix chain job must be deleted",
+  );
+  assert.equal(jobs.e2e, undefined, "aggregate job must be deleted");
+  const raw = JSON.stringify(jobs);
+  assert.ok(!raw.includes("e2e-plan"), "no plan artifact may remain");
+  assert.ok(
+    !raw.includes("plan-e2e-ci"),
+    "planner selector must no longer be invoked",
+  );
+  assert.ok(!raw.includes("e2e-ci-metrics"), "no metrics wrapper may remain");
+  assert.ok(
+    !raw.includes("e2e-ci-results"),
+    "no aggregate routing validator may remain",
+  );
+  assert.ok(!raw.includes("fromJSON"), "no matrix may remain");
+  assert.ok(
+    !raw.includes('"needs"'),
+    "packaged E2E must not chain through a planner job",
   );
 });
 
-test("planner publishes the dynamic matrix and every chain suite file", () => {
-  const plan = loadWorkflow().jobs["e2e-plan"];
-  assert.equal(plan.outputs.should_run, "${{ steps.plan.outputs.should_run }}");
-  assert.equal(plan.outputs.matrix, "${{ steps.plan.outputs.matrix }}");
-  assert.equal(
-    plan.outputs.expected_chain_ids,
-    "${{ steps.plan.outputs.expected_chain_ids }}",
-  );
-  const selector = namedStep(plan, "Select packaged E2E suites").run;
+test("both jobs display as Tauri E2E with 45/90 minute timeouts", () => {
+  const { smoke, full } = loadPackagedJobs();
+  assert.equal(smoke.name, "Tauri E2E");
+  assert.equal(full.name, "Tauri E2E");
+  assert.equal(smoke["timeout-minutes"], 45);
+  assert.equal(full["timeout-minutes"], 90);
+});
+
+test("smoke path is exactly the non-draft PRs without ci:full-e2e", () => {
+  const { smoke } = loadPackagedJobs();
+  const condition = smoke.if;
   assert.match(
-    selector,
-    /--suite-file "\$RUNNER_TEMP\/e2e-plan\/e2e-suites\.json"/,
+    condition,
+    /github\.event_name == 'pull_request'/,
+    "smoke is PR-only; plain push to main must not run it",
   );
   assert.match(
-    selector,
-    /--matrix-file "\$RUNNER_TEMP\/e2e-plan\/e2e-matrix\.json"/,
+    condition,
+    /github\.event\.pull_request\.draft == false/,
+    "draft PRs must not run packaged smoke",
   );
-  assert.match(selector, /--chain-directory "\$RUNNER_TEMP\/e2e-plan\/chains"/);
-  const upload = namedStep(plan, "Upload E2E plan");
-  assert.equal(upload.if, "${{ always() }}");
-  assert.equal(upload.with.name, "e2e-plan");
-  assert.equal(upload.with.path, "${{ runner.temp }}/e2e-plan/");
-  assert.equal(
-    upload.with.overwrite,
-    true,
-    "Upload E2E plan must overwrite so a failed-job rerun can replace the prior artifact",
+  assert.match(
+    condition,
+    /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
+    "smoke must be skipped when ci:full-e2e is present",
   );
 });
 
-test("changed paths are collected from the merge base without rename detection", () => {
-  const plan = loadWorkflow().jobs["e2e-plan"];
-  const collect = namedStep(plan, "Collect changed paths").run;
-  // Three-dot form diffs merge-base(BASE_SHA, HEAD_SHA) against HEAD_SHA, so
-  // base-branch-only changes after divergence are excluded.
+test("full path is schedule, manual dispatch, tag push, and labeled non-draft PRs", () => {
+  const { full } = loadPackagedJobs();
+  const condition = full.if;
+  assert.match(condition, /github\.event_name == 'schedule'/);
+  assert.match(condition, /github\.event_name == 'workflow_dispatch'/);
   assert.match(
-    collect,
-    /git diff --no-renames --name-only "\$BASE_SHA\.\.\.\$HEAD_SHA"/,
+    condition,
+    /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/,
+    "tag pushes must run the full registry",
   );
-  // --no-renames on the new-branch fallback keeps single-commit renames from
-  // hiding the deleted side of a moved risky source.
   assert.match(
-    collect,
-    /git diff-tree --no-renames --no-commit-id --name-only -r "\$HEAD_SHA"/,
+    condition,
+    /[^!]contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
+    "ci:full-e2e PRs must run the full path",
+  );
+  assert.match(
+    condition,
+    /github\.event\.pull_request\.draft == false/,
+    "labeled draft PRs must not resurrect heavy CI",
+  );
+  assert.doesNotMatch(
+    condition,
+    /github\.event_name != 'pull_request'/,
+    "plain push to main must not run packaged full",
   );
 });
 
-test("execution is a non-fail-fast isolated chain matrix", () => {
-  const execution = loadWorkflow().jobs["e2e-execution"];
-  assert.equal(execution.needs, "e2e-plan");
-  assert.equal(
-    execution.if,
-    "${{ needs.e2e-plan.outputs.should_run == 'true' }}",
-  );
-  assert.equal(execution.strategy["fail-fast"], false);
-  assert.equal(
-    execution.strategy.matrix,
-    "${{ fromJSON(needs.e2e-plan.outputs.matrix) }}",
-  );
-  assert.equal(execution["timeout-minutes"], 60);
-  assert.equal(execution.name, "Tauri E2E execution (${{ matrix.chainId }})");
-
-  const initialize = namedStep(execution, "Initialize chain metrics");
-  assert.match(initialize.run, /e2e-ci-metrics\.mjs initialize/);
-  assert.equal(initialize.env.CHAIN_ID, "${{ matrix.chainId }}");
-  assert.match(initialize.run, /--chain-id "\$CHAIN_ID"/);
-
-  const cache = namedStep(execution, "Rust cache");
-  assert.equal(cache.id, "rust-cache");
-  assert.equal(cache.with["prefix-key"], "${{ matrix.cacheKey }}");
-  const setup = namedStep(execution, "Record setup and restored cache");
-  assert.match(setup.run, /e2e-ci-metrics\.mjs setup/);
-  assert.equal(setup.env.CHAIN_ID, "${{ matrix.chainId }}");
-  assert.equal(
-    setup.env.RUST_CACHE_HIT,
-    "${{ steps.rust-cache.outputs.cache-hit }}",
-  );
-  assert.match(setup.run, /--cache-hit "\$RUST_CACHE_HIT"/);
-  const build = namedStep(execution, "Build Tauri E2E binary");
-  assert.match(build.run, /e2e-ci-metrics\.mjs run/);
-  assert.equal(build.env.CHAIN_ID, "${{ matrix.chainId }}");
-  assert.match(build.run, /--stage build/);
-  assert.match(build.run, /-- node apps\/game\/scripts\/build-e2e\.mjs/);
-  const run = namedStep(execution, "Run selected Tauri E2E chain");
-  assert.equal(run["timeout-minutes"], "${{ matrix.timeoutMinutes }}");
-  assert.match(run.run, /e2e-ci-metrics\.mjs run/);
-  assert.match(run.run, /--stage test/);
-  assert.match(run.run, /--suite-file "\$RUNNER_TEMP\/e2e-plan\/\$SUITE_FILE"/);
-  assert.match(run.run, /--chain-id "\$CHAIN_ID"/);
+test("smoke and full predicates are mutually exclusive on ci:full-e2e", () => {
+  const { jobs, smoke, full } = loadPackagedJobs();
   assert.match(
-    run.run,
-    /--plan-file "\$RUNNER_TEMP\/e2e-plan\/e2e-plan\.json"/,
+    smoke.if,
+    /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
   );
-  assert.match(run.run, /--attempts 2/);
+  assert.match(
+    full.if,
+    /[^!]contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
+  );
+  for (const [name, job] of Object.entries(jobs)) {
+    if (name === SMOKE_JOB || name === FULL_JOB) continue;
+    assert.ok(
+      !JSON.stringify(job).includes("ci:full-e2e"),
+      `${name} must not branch on ci:full-e2e`,
+    );
+  }
+});
 
-  assert.equal(
-    namedStep(execution, "Run guarded post-cleanup").if,
-    "${{ always() }}",
+test("both packaged jobs share one E2E cargo target dir", () => {
+  const { smoke, full } = loadPackagedJobs();
+  for (const job of [smoke, full]) {
+    assert.equal(job.env?.CARGO_TARGET_DIR, "apps/game/src-tauri/target-e2e");
+  }
+});
+
+test("both packaged jobs share the tauri-e2e-v2 Rust cache contract", () => {
+  const { smoke, full } = loadPackagedJobs();
+  for (const job of [smoke, full]) {
+    const cache = job.steps.find(
+      (candidate) => candidate.uses === "Swatinem/rust-cache@v2",
+    );
+    assert.ok(cache, "missing Swatinem/rust-cache@v2 step");
+    assert.equal(cache.with.workspaces, "apps/game/src-tauri -> target-e2e");
+    assert.equal(
+      cache.with["prefix-key"],
+      "tauri-e2e-v2",
+      "smoke and full must not invent separate cache keys",
+    );
+  }
+});
+
+test("jobs invoke the direct package commands under xvfb-run -a", () => {
+  const { smoke, full } = loadPackagedJobs();
+  const smokeRun = runStepMatching(smoke, /test:e2e:smoke/);
+  assert.match(
+    smokeRun.run,
+    /^xvfb-run -a bun run --cwd apps\/game test:e2e:smoke$/,
   );
-  const upload = namedStep(execution, "Upload chain evidence");
-  assert.equal(upload.if, "${{ always() }}");
-  assert.equal(upload.with.name, "${{ matrix.artifactName }}");
-  assert.equal(upload.with["if-no-files-found"], "warn");
-  assert.match(upload.with.path, /\$\{\{ runner\.temp \}\}\/e2e-metrics\//);
-  assert.equal(
-    upload.with.overwrite,
-    true,
-    "Upload chain evidence must overwrite so a failed-chain rerun can replace the prior artifact",
+  assert.ok(!smokeRun.run.includes("--attempts"), "smoke must stay fail-fast");
+  const fullRun = runStepMatching(full, /test:e2e:all/);
+  assert.match(
+    fullRun.run,
+    /^xvfb-run -a bun run --cwd apps\/game test:e2e:all$/,
   );
 });
 
-test("stable aggregate downloads every manifest and runs the pure validator", () => {
-  const aggregate = loadWorkflow().jobs.e2e;
-  assert.equal(aggregate.name, "Tauri E2E");
-  assert.equal(
-    aggregate.if,
-    "${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
-  );
-  assert.deepEqual(aggregate.needs, ["e2e-plan", "e2e-execution"]);
+test("both packaged jobs upload evidence on failure", () => {
+  const { smoke, full } = loadPackagedJobs();
+  for (const [job, artifact] of [
+    [smoke, "tauri-e2e-smoke"],
+    [full, "tauri-e2e-full"],
+  ]) {
+    const upload = job.steps.find(
+      (candidate) => candidate.uses === "actions/upload-artifact@v4",
+    );
+    assert.ok(upload, "missing evidence upload step");
+    assert.equal(upload.if, "${{ always() }}");
+    assert.equal(upload.with.name, artifact);
+    assert.match(upload.with.path, /apps\/game\/e2e-artifacts\//);
+  }
+});
 
-  const planDownload = namedStep(aggregate, "Download E2E plan");
-  assert.equal(planDownload.with.name, "e2e-plan");
-  const resultDownload = namedStep(aggregate, "Download chain evidence");
-  assert.equal(
-    resultDownload.if,
-    "${{ needs.e2e-plan.outputs.should_run == 'true' }}",
-  );
-  assert.equal(resultDownload.with.pattern, "tauri-e2e-*");
-  assert.equal(resultDownload.with.path, "${{ runner.temp }}/e2e-results");
-
-  const validate = namedStep(aggregate, "Validate E2E manifests and routing");
-  assert.equal(validate.env.PLAN_RESULT, "${{ needs.e2e-plan.result }}");
-  assert.equal(
-    validate.env.SHOULD_RUN,
-    "${{ needs.e2e-plan.outputs.should_run }}",
-  );
-  assert.equal(
-    validate.env.EXECUTION_RESULT,
-    "${{ needs.e2e-execution.result }}",
-  );
-  assert.match(validate.run, /scripts\/e2e-ci-results\.mjs/);
-  assert.match(validate.run, /--plan-file/);
-  assert.match(validate.run, /--results-directory/);
-  assert.match(validate.run, /--analysis-file/);
-  assert.match(
-    validate.run,
-    /\[\[ "\$SHOULD_RUN" == "true" && "\$EXECUTION_RESULT" != "success" \]\]/,
-  );
-  const upload = namedStep(aggregate, "Upload E2E aggregate analysis");
-  assert.equal(upload.if, "${{ always() }}");
-  assert.equal(upload.with.name, "tauri-e2e-analysis");
-  assert.equal(
-    upload.with.overwrite,
-    true,
-    "Upload E2E aggregate analysis must overwrite so a full rerun can replace the prior artifact",
-  );
+test("lint-frontend runs the surviving Node contract tests", () => {
+  const lint = loadWorkflow().jobs["lint-frontend"];
+  assert.ok(lint, "missing lint-frontend job");
+  const run = namedStep(lint, CONTRACT_STEP).run;
+  assert.match(run, /node --test/);
+  let cursor = run.indexOf("node --test");
+  for (const file of CONTRACT_FILES) {
+    const at = run.indexOf(file, cursor);
+    assert.ok(at !== -1, `contract step must run ${file}`);
+    cursor = at + file.length;
+  }
 });
 
 test("direct smoke and full commands remain intentionally distinct", () => {
@@ -210,7 +229,8 @@ test("direct smoke and full commands remain intentionally distinct", () => {
   );
   assert.equal(
     scripts["test:e2e:all:run"],
-    "node scripts/run-save-e2e.mjs --full",
+    "node scripts/run-save-e2e.mjs --full --attempts 2",
+    "full tolerates one retry; smoke stays fail-fast",
   );
   assert.equal(scripts["test:e2e:run"], "bun run test:e2e:smoke:run");
 });
