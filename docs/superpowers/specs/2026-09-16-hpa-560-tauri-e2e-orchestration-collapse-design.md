@@ -344,8 +344,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - checkout/setup
-      - build packaged E2E binary once
-      - run test:e2e:smoke
+      - run test:e2e:smoke  # build once + run
       - upload ordinary logs/screenshots
 
   tauri-e2e-full:
@@ -354,8 +353,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - checkout/setup
-      - build packaged E2E binary once
-      - run test:e2e:all
+      - run test:e2e:all  # build once + run
       - upload ordinary logs/screenshots
 ```
 
