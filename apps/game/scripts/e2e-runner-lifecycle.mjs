@@ -251,7 +251,18 @@ export function cleanupOwnedE2eRoots(
   const ownership = readRunOwnership(ownershipPath);
   const errors = [];
   for (const entry of ownership.roots) {
-    if (entry.cleanup.state !== "pending") continue;
+    if (entry.cleanup.state === "removed") continue;
+    if (entry.cleanup.state === "failed") {
+      // A rollback-recorded failure means removal was already attempted and
+      // the root could not be proved gone; surface it instead of letting the
+      // run report a clean "removed" over a leaked root.
+      errors.push(
+        new Error(
+          `e2e root "${entry.key}" cleanup already failed: ${entry.cleanup.message ?? "unknown error"}`,
+        ),
+      );
+      continue;
+    }
     try {
       // This is intentionally the only cleanup target source: no caller may
       // append a foreign root to a post-run cleanup request.
