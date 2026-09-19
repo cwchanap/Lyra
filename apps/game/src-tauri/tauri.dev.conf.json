@@ -2,5 +2,8 @@
   "identifier": "com.chanwaichan.lyra.dev",
   "build": {
     "beforeDevCommand": null
+  },
+  "app": {
+    "withGlobalTauri": true
   }
 }
