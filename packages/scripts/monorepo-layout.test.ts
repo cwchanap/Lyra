@@ -98,6 +98,9 @@ describe("monorepo layout", () => {
       build: {
         beforeDevCommand: null,
       },
+      app: {
+        withGlobalTauri: true,
+      },
     });
   });
 
