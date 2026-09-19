@@ -489,6 +489,118 @@ test("cleanup failure is terminal and cannot be retried into a pass", async () =
   holders.push(...roots);
 });
 
+test("cleanup surfaces an ownership-recorded rollback failure instead of reporting removal", () => {
+  const runDirectory = holder();
+  const ownershipPath = path.join(runDirectory, "run-ownership.json");
+  const roots = [];
+  const createRoot = () => {
+    const root = createSaveE2eAppDataDir();
+    roots.push(root);
+    return root;
+  };
+
+  assert.throws(
+    () =>
+      createRunOwnership({
+        ownershipPath,
+        runId: "rollback-failed",
+        rootKeys: ["smoke"],
+        createRoot,
+        writeRootMarker() {
+          throw new Error("marker failed");
+        },
+        removeRoot() {
+          throw new Error("rollback blocked");
+        },
+      }),
+    /marker failed/,
+  );
+  holders.push(...roots);
+
+  const recorded = readRunOwnership(ownershipPath);
+  assert.equal(recorded.roots[0].cleanup.state, "failed");
+  assert.equal(recorded.roots[0].cleanup.message, "rollback blocked");
+  assert.equal(existsSync(roots[0]), true);
+
+  assert.throws(
+    () => cleanupOwnedE2eRoots(ownershipPath),
+    /cleanup already failed: rollback blocked/,
+  );
+  assert.equal(
+    readRunOwnership(ownershipPath).roots[0].cleanup.state,
+    "failed",
+  );
+  assert.equal(existsSync(roots[0]), true);
+});
+
+test("failed ownership rollback is terminal and cannot be retried into a pass", async () => {
+  const runDirectory = holder();
+  const roots = [];
+  let attemptCalls = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["smoke"],
+    attempts: 2,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["smoke"],
+    createRoot() {
+      const root = createSaveE2eAppDataDir();
+      roots.push(root);
+      return root;
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [{ id: "smoke", root: "smoke", appDataDir: directories.smoke }];
+    },
+    suiteForPhase: () => "smoke",
+    applyCheckpoint() {},
+    createOutputDirectory: () => runDirectory,
+    async runPhase() {
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+    runAttempt: (options) => {
+      attemptCalls += 1;
+      return runE2eAttempt({
+        ...options,
+        createOwnership(details) {
+          return createRunOwnership({
+            ...details,
+            writeRootMarker() {
+              throw new Error("marker failed");
+            },
+            removeRoot() {
+              throw new Error("rollback blocked");
+            },
+          });
+        },
+      });
+    },
+  });
+
+  assert.equal(runner.exitCode, 1);
+  assert.equal(runner.result.result, "failed");
+  assert.equal(attemptCalls, 1);
+  assert.deepEqual(runner.result.attempts, {
+    configured: 2,
+    used: 1,
+    retries: 0,
+  });
+  assert.deepEqual(runner.result.firstAttemptFailures, [
+    { phase: "smoke", suite: "smoke", exitCode: 1 },
+  ]);
+  assert.deepEqual(runner.result.cleanup, {
+    state: "failed",
+    attempts: [{ attempt: 1, state: "failed" }],
+  });
+  const ownership = readRunOwnership(
+    path.join(runDirectory, "attempt-1", "run-ownership.json"),
+  );
+  assert.equal(ownership.roots[0].cleanup.state, "failed");
+  assert.equal(existsSync(roots[0]), true);
+  holders.push(...roots);
+});
+
 test("ownership allocation failure is a retryable attempt failure", async () => {
   const runDirectory = holder();
   const roots = [];
