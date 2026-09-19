@@ -80,12 +80,16 @@ test("packaged E2E is exactly two direct jobs; planner machinery is gone", () =>
   );
 });
 
-test("both jobs display as Tauri E2E with 45/90 minute timeouts", () => {
+test("both jobs display as Tauri E2E with 45/120 minute timeouts", () => {
   const { smoke, full } = loadPackagedJobs();
   assert.equal(smoke.name, "Tauri E2E");
   assert.equal(full.name, "Tauri E2E");
   assert.equal(smoke["timeout-minutes"], 45);
-  assert.equal(full["timeout-minutes"], 90);
+  assert.equal(
+    full["timeout-minutes"],
+    120,
+    "full must cover cold build + two ~34-38 min passes + upload (~100 min)",
+  );
 });
 
 test("smoke path is exactly the non-draft PRs without ci:full-e2e", () => {
@@ -173,6 +177,11 @@ test("both packaged jobs share the tauri-e2e-v2 Rust cache contract", () => {
       cache.with["prefix-key"],
       "tauri-e2e-v2",
       "smoke and full must not invent separate cache keys",
+    );
+    assert.equal(
+      cache.with["shared-key"],
+      "tauri-e2e-v2",
+      "rust-cache defaults add-job-id-key=true; only shared-key lets the two job ids resolve one entry",
     );
   }
 });

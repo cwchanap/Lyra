@@ -112,7 +112,7 @@ On the 2026-09-17 scheduled run:
 
 The same run's gameplay setup through packaged build was roughly **2m05s**. If those three test steps were executed sequentially behind one shared setup/build under the same cache conditions, the rough direct-full wall time is about **36 minutes**. Comparable 2026-09-16 and 2026-09-13 evidence lands around **38 minutes** and **33 minutes** respectively.
 
-That supports one direct full job. Because the direct runner may still allow a bounded retry, and cache misses can widen setup/build time, the full job gets a **90-minute timeout**. The timeout is safety headroom, not a claim that normal runs should approach 90 minutes.
+That supports one direct full job. Because the direct runner may still allow a bounded retry, and cache misses can widen setup/build time, the full job gets a **120-minute timeout**. The timeout is safety headroom, not a claim that normal runs should approach 120 minutes.
 
 ### Existing smoke and semantic-save reuse
 
@@ -374,10 +374,10 @@ The target `.github/workflows/ci.yml` should read like ordinary CI rather than a
 Both packaged jobs use the same Rust build/cache contract:
 
 - `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`;
-- one shared `Swatinem/rust-cache` `prefix-key`, e.g. `tauri-e2e-v2`;
+- one shared `Swatinem/rust-cache` `shared-key`, e.g. `tauri-e2e-v2` (with `prefix-key` kept as the manual bust knob);
 - `workspaces: apps/game/src-tauri -> target-e2e`.
 
-Using one key lets scheduled runs on the default branch warm the same E2E Cargo cache that PR jobs can restore. The first run under the new key is still cold, so timeout budgets must tolerate a cold packaged build.
+The `shared-key` is what makes the contract work: `Swatinem/rust-cache` defaults `add-job-id-key: true`, so a shared `prefix-key` alone would still produce one key per job id and `tauri-e2e-pr-smoke` could never restore what `tauri-e2e-full` writes. Using one `shared-key` lets scheduled runs on the default branch warm the same E2E Cargo cache that PR jobs can restore. The first run under the new key is still cold, so timeout budgets must tolerate a cold packaged build.
 
 Use two mutually exclusive job IDs, both with the human-facing job name **`Tauri E2E`** for continuity:
 
@@ -393,19 +393,19 @@ jobs:
       CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
     steps:
       - checkout/setup
-      - shared rust-cache prefix-key: tauri-e2e-v2
+      - shared rust-cache prefix-key + shared-key: tauri-e2e-v2
       - run: xvfb-run -a bun run --cwd apps/game test:e2e:smoke
       - upload ordinary logs/screenshots
 
   tauri-e2e-full:
     name: Tauri E2E
     if: schedule || workflow_dispatch || tag || (pull_request && !draft && ci:full-e2e)
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
     steps:
       - checkout/setup
-      - shared rust-cache prefix-key: tauri-e2e-v2
+      - shared rust-cache prefix-key + shared-key: tauri-e2e-v2
       - run: xvfb-run -a bun run --cwd apps/game test:e2e:all
       - upload ordinary logs/screenshots
 ```
@@ -439,8 +439,8 @@ Rewrite `e2e-ci-workflow.test.mjs` instead of deleting it. The slim policy test 
 - mutual exclusion so `ci:full-e2e` does not run both jobs;
 - the intentional absence of a main-push packaged-full trigger;
 - job display name `Tauri E2E`;
-- smoke timeout **45** and full timeout **90**;
-- shared `CARGO_TARGET_DIR` and shared Rust cache prefix;
+- smoke timeout **45** and full timeout **120**;
+- shared `CARGO_TARGET_DIR` and shared Rust-cache `shared-key`;
 - `xvfb-run -a` around both packaged package commands;
 - the surviving Node-contract step in the frontend-check job;
 - no planner, generated matrix, plan artifact, metrics wrapper, or aggregate analyzer.
@@ -453,8 +453,8 @@ The design commits to **one full job with one build**.
 Recent scheduled evidence estimates direct sequential full execution around 33-38 minutes with the observed warm-cache state. The repository also records that a cold `target-e2e` setup/build can consume roughly 24 minutes before tests. Therefore:
 
 - PR smoke timeout: **45 minutes**;
-- full timeout: **90 minutes**;
-- both jobs use the same `CARGO_TARGET_DIR` and Rust-cache prefix.
+- full timeout: **120 minutes** — the cold-build + two-pass worst case (~24 + ~2 setup + 2×38 ≈ 100 min before artifact upload) does not fit under 90;
+- both jobs use the same `CARGO_TARGET_DIR` and Rust-cache `shared-key`.
 
 The expanded PR smoke keeps the runner default of **one attempt** so an ordinary PR flake is visible immediately.
 
@@ -464,7 +464,7 @@ The broad command explicitly keeps bounded retry:
 test:e2e:all:run -> run-save-e2e.mjs --full --attempts 2
 ```
 
-This makes the full-job retry policy an actual caller contract rather than a dormant CLI flag, and it explains why the 90-minute ceiling includes retry headroom.
+This makes the full-job retry policy an actual caller contract rather than a dormant CLI flag, and it explains why the 120-minute ceiling includes retry headroom.
 
 Only if an actual direct-full run still proves materially unreliable may this PR use at most two hard-coded static full jobs. That fallback must be justified in the PR and must not restore generated matrices or path routing.
 
@@ -625,11 +625,11 @@ Today, an unmatched non-documentation source path forces the complete packaged r
 
 ### Risk: cold E2E builds exceed the short PR budget
 
-**Mitigation:** Preserve `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`, use one shared Rust-cache prefix for smoke/full, and set the smoke job to 45 minutes. The cache improves the normal case; the timeout still tolerates the first cold run.
+**Mitigation:** Preserve `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e`, use one shared Rust-cache `shared-key` for smoke/full, and set the smoke job to 45 minutes. The cache improves the normal case; the timeout still tolerates the first cold run.
 
 ### Risk: broad verification becomes too slow sequentially
 
-**Mitigation:** Use one direct full job with a 90-minute ceiling. Warm-cache evidence estimates the direct sequential path around 33-38 minutes; the extra headroom covers cold cache and one bounded full-run retry. Only an observed direct-full reliability problem may justify two static jobs. Never restore dynamic chain planning.
+**Mitigation:** Use one direct full job with a 120-minute ceiling. Warm-cache evidence estimates the direct sequential path around 33-38 minutes; the extra headroom covers cold cache and one bounded full-run retry. Only an observed direct-full reliability problem may justify two static jobs. Never restore dynamic chain planning.
 
 ### Risk: surviving runner/path/workflow contract tests silently stop running
 

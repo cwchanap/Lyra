@@ -63,9 +63,9 @@ No replacement selector is introduced.
 - Preserve gameplay, production journey, Analysis remainder, representative save/recovery, and exit lifecycle packaged coverage in full verification.
 - Preserve the current draft-PR heavy-job skip.
 - Keep human-facing job name `Tauri E2E` for continuity, but do not treat it as branch-protection compatibility: the current ruleset has no required-status-check rule.
-- Set the PR smoke timeout to **45 minutes** and the direct full timeout to **90 minutes**.
+- Set the PR smoke timeout to **45 minutes** and the direct full timeout to **120 minutes**.
 - Preserve `CARGO_TARGET_DIR=apps/game/src-tauri/target-e2e` in both packaged jobs.
-- Give both packaged jobs one shared Rust-cache prefix key (for example `tauri-e2e-v2`) so nightly/default-branch cache warming benefits PR smoke.
+- Give both packaged jobs one shared Rust-cache `shared-key` (for example `tauri-e2e-v2`) so nightly/default-branch cache warming benefits PR smoke; `Swatinem/rust-cache` defaults `add-job-id-key: true`, so `prefix-key` alone would still key each job id separately.
 - Run both packaged commands under `xvfb-run -a` on Ubuntu CI; the package scripts themselves intentionally do not own Linux display setup.
 - Keep smoke at one attempt; change `test:e2e:all:run` to pass `--attempts 2`.
 - Do not preserve old planner JSON, suite-file, chain-id, or plan-file contracts for compatibility.
@@ -261,9 +261,10 @@ uses: Swatinem/rust-cache@v2
 with:
   workspaces: apps/game/src-tauri -> target-e2e
   prefix-key: tauri-e2e-v2
+  shared-key: tauri-e2e-v2
 ```
 
-Do not invent separate smoke/full cache keys. The shared key lets the nightly/default-branch run warm the cache that PR branches can restore. The first run under `v2` is cold by definition, so the timeout must not assume the ~2 minute warm setup/build sample.
+Do not invent separate smoke/full cache keys. `shared-key` is required, not just `prefix-key`: rust-cache defaults `add-job-id-key: true`, so without `shared-key` the two job ids would resolve different entries. The shared key lets the nightly/default-branch run warm the cache that PR branches can restore. The first run under `v2` is cold by definition, so the timeout must not assume the ~2 minute warm setup/build sample.
 
 ### PR smoke job
 
@@ -301,7 +302,7 @@ Shape:
 -> upload normal logs/screenshots/artifacts
 ```
 
-Set `timeout-minutes: 90`.
+Set `timeout-minutes: 120`. The configured `--attempts 2` retry must fit inside the ceiling even on a cold cache: ~24 min cold `target-e2e` build + setup + two ~34-38 min sequential passes + artifact upload is ~100 min, so 90 was not enough headroom.
 
 A plain push to `main` does **not** run packaged full after HPA-560.
 
@@ -343,9 +344,9 @@ Rewrite `e2e-ci-workflow.test.mjs` to lock:
 - no main-push packaged full;
 - display name `Tauri E2E`;
 - smoke timeout 45;
-- full timeout 90;
+- full timeout 120;
 - shared `CARGO_TARGET_DIR`;
-- shared Rust-cache prefix;
+- shared Rust-cache `shared-key`;
 - both packaged invocations wrapped in `xvfb-run -a`;
 - direct package commands `test:e2e:smoke` and `test:e2e:all`;
 - the explicit surviving Node-contract step in `lint-frontend`;
@@ -660,7 +661,7 @@ On the actual ready PR confirm:
 - no planner job;
 - no dynamic chain matrix;
 - no aggregate routing analyzer;
-- 45-minute smoke timeout and 90-minute full timeout;
+- 45-minute smoke timeout and 120-minute full timeout;
 - readable live failure output;
 - failure artifact upload still works.
 

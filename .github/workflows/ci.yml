@@ -293,13 +293,15 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # Shared prefix with tauri-e2e-full so the nightly/tag run warms the
-      # cache that PR smoke branches restore.
+      # shared-key replaces rust-cache's default job-id key component, so
+      # both packaged jobs resolve one entry and the nightly/tag run warms
+      # the cache PR smoke restores. prefix-key stays the manual bust knob.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/game/src-tauri -> target-e2e
           prefix-key: tauri-e2e-v2
+          shared-key: tauri-e2e-v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -326,9 +328,10 @@ jobs:
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci:full-e2e')) }}
     name: Tauri E2E
     runs-on: ubuntu-latest
-    # Must exceed smoke's budget with headroom for the full registry on a
-    # cold cache.
-    timeout-minutes: 90
+    # Must cover the measured cold path plus the configured retry: ~24 min
+    # cold target-e2e build + setup + two ~34-38 min sequential passes +
+    # artifact upload (~100 min worst case), with headroom.
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -359,13 +362,15 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # Shared prefix with tauri-e2e-pr-smoke so this run warms the cache
-      # that PR smoke branches restore.
+      # shared-key replaces rust-cache's default job-id key component, so
+      # this run resolves the same entry PR smoke restores. prefix-key
+      # stays the manual bust knob.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/game/src-tauri -> target-e2e
           prefix-key: tauri-e2e-v2
+          shared-key: tauri-e2e-v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
