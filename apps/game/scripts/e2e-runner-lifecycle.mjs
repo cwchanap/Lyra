@@ -518,7 +518,13 @@ export async function runE2eRunner({
           now,
           nowMs,
         });
-        if (exitCode === 0 || supervisor.cancelledSignal) break;
+        const lastCleanup = result.cleanup.attempts.at(-1);
+        if (
+          exitCode === 0 ||
+          lastCleanup?.state === "failed" ||
+          supervisor.cancelledSignal
+        )
+          break;
       }
       result.result = exitCode === 0 ? "passed" : "failed";
       result.exitCode = exitCode;

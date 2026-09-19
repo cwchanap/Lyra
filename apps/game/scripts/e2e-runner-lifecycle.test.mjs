@@ -437,6 +437,58 @@ test("cleanup failure fails the runner without blaming the last passing suite", 
   holders.push(...roots);
 });
 
+test("cleanup failure is terminal and cannot be retried into a pass", async () => {
+  const runDirectory = holder();
+  const roots = [];
+  let attemptCalls = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["smoke"],
+    attempts: 2,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["smoke"],
+    createRoot() {
+      const root = createSaveE2eAppDataDir();
+      roots.push(root);
+      return root;
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [{ id: "smoke", root: "smoke", appDataDir: directories.smoke }];
+    },
+    suiteForPhase: () => "smoke",
+    applyCheckpoint() {},
+    createOutputDirectory: () => runDirectory,
+    async runPhase() {
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+    runAttempt: (options) => {
+      attemptCalls += 1;
+      return runE2eAttempt({
+        ...options,
+        cleanupRoots() {
+          throw new Error("cleanup blocked");
+        },
+      });
+    },
+  });
+
+  assert.equal(runner.exitCode, 1);
+  assert.equal(runner.result.result, "failed");
+  assert.equal(attemptCalls, 1);
+  assert.deepEqual(runner.result.attempts, {
+    configured: 2,
+    used: 1,
+    retries: 0,
+  });
+  assert.deepEqual(runner.result.cleanup, {
+    state: "failed",
+    attempts: [{ attempt: 1, state: "failed" }],
+  });
+  holders.push(...roots);
+});
+
 test("ownership allocation failure is a retryable attempt failure", async () => {
   const runDirectory = holder();
   const roots = [];
