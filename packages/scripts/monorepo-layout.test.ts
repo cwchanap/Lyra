@@ -100,6 +100,18 @@ describe("monorepo layout", () => {
       },
       app: {
         withGlobalTauri: true,
+        security: {
+          capabilities: [
+            "default",
+            {
+              identifier: "mcp-debug",
+              description:
+                "Debug-only MCP bridge capability (debug_assertions, non-e2e)",
+              windows: ["main"],
+              permissions: ["mcp-bridge:default"],
+            },
+          ],
+        },
       },
     });
   });
