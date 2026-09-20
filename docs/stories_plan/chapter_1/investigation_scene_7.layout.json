@@ -25,6 +25,13 @@
           "w": 0.115,
           "h": 0.15
         },
+        "masuda_paperback": {
+          "kind": "rect",
+          "x": 0.4,
+          "y": 0.61,
+          "w": 0.055,
+          "h": 0.065
+        },
         "phone_drop": {
           "kind": "rect",
           "x": 0.455,
