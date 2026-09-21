@@ -67,7 +67,15 @@
           "h": 0.36
         }
       },
-      "characters": {}
+      "characters": {
+        "contractor_clerk": {
+          "kind": "baked",
+          "x": 0.4,
+          "y": 0.26,
+          "w": 0.16,
+          "h": 0.26
+        }
+      }
     }
   }
 }
