@@ -207,14 +207,12 @@ returns from the menu to the still-open Present tray.
 - The testimony is centered in a large record panel with speaker and
   CrossExamView line progress.
 - The challenge remains a real button styled as the oversized crimson ring.
-- Pointer input begins a visual charge on pointerdown. A completed hold calls
-  onChallenge exactly once and suppresses its follow-on pointer click.
-  Pointerup, pointercancel, or pointerleave before completion cancels the
-  charge and suppresses that pointer sequence's click.
-- Clicks without a tracked pointer sequence, including keyboard activation,
-  assistive-technology activation, and programmatic button.click() used by
-  packaged E2E, call onChallenge directly. This preserves native semantics and
-  prevents duplicate submission.
+- The challenge activates on a single click with no hold gesture. Pointer
+  click, keyboard activation, assistive-technology activation, and
+  programmatic button.click() used by packaged E2E are all the same native
+  button activation path and each calls onChallenge exactly once.
+- The evidence tray opens only after the challenge lead-in dialogue has
+  drained, so the tray never covers dialogue that still must be advanced.
 - 退下 remains the secondary testimony action and uses unchanged onWithdraw.
 
 ### Evidence browsing and presentation

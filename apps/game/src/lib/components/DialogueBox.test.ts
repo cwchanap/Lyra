@@ -1760,154 +1760,29 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("does not arm the hold timer for non-primary mouse buttons", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
+  it("activates the challenge on a single pointer click", async () => {
+    const onChallenge = vi.fn();
+    const { onAdvance } = renderDialogueBox(
+      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
+      { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
+    );
+    const challenge = screen.getByRole("button", { name: /反駁/ });
 
-      // Right-button (button: 2) pointerdown must not start the hold timer.
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 1,
-        pointerType: "mouse",
-        button: 2,
-      });
-      await vi.advanceTimersByTimeAsync(600);
-      expect(onChallenge).not.toHaveBeenCalled();
+    // A plain click: pointerdown, pointerup, click with detail 1 — no timer
+    // advance. One activation must equal one challenge, and the click must
+    // not also advance the testimony.
+    await fireEvent.pointerDown(challenge, {
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    await fireEvent.pointerUp(challenge, {
+      pointerId: 1,
+      pointerType: "mouse",
+    });
+    await fireEvent.click(challenge, { detail: 1 });
 
-      // Middle-button (button: 1) pointerdown must not start it either.
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 2,
-        pointerType: "mouse",
-        button: 1,
-      });
-      await vi.advanceTimersByTimeAsync(600);
-      expect(onChallenge).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("fires one challenge after a completed pointer hold and ignores its physical click", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      const { onAdvance } = renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 1,
-        pointerType: "mouse",
-      });
-      await vi.advanceTimersByTimeAsync(600);
-      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-
-      await fireEvent.click(challenge, { detail: 1 });
-      expect(onChallenge).toHaveBeenCalledTimes(1);
-      expect(onAdvance).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("keeps suppression armed until release after a long completed pointer hold", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 11,
-        pointerType: "mouse",
-      });
-      // Let the hold finish and an additional turn elapse while the pointer
-      // remains down. The physical click only arrives at pointer release, so
-      // clearing suppression at the hold threshold would double-submit here.
-      await vi.advanceTimersByTimeAsync(601);
-      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-
-      await fireEvent.pointerUp(challenge, {
-        pointerId: 11,
-        pointerType: "mouse",
-      });
-      await fireEvent.click(challenge, { detail: 1 });
-
-      expect(onChallenge).toHaveBeenCalledTimes(1);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("cancels an early pointer sequence and ignores its physical click", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 2,
-        pointerType: "mouse",
-      });
-      await fireEvent.pointerUp(challenge, {
-        pointerId: 2,
-        pointerType: "mouse",
-      });
-      await fireEvent.click(challenge, { detail: 1 });
-
-      expect(onChallenge).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears the one-shot suppression guard on the next turn after a cancelled pointer sequence", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      // Cancel an early pointer sequence — this arms the one-shot suppression
-      // guard and schedules a setTimeout(0) to clear it on the next turn.
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 3,
-        pointerType: "mouse",
-      });
-      await fireEvent.pointerUp(challenge, {
-        pointerId: 3,
-        pointerType: "mouse",
-      });
-      // The physical click from this sequence is suppressed.
-      await fireEvent.click(challenge, { detail: 1 });
-      expect(onChallenge).not.toHaveBeenCalled();
-
-      // Synchronously flush the setTimeout(0) so the guard clears. A
-      // subsequent physical click (detail > 0) must now fire the challenge —
-      // if the guard never cleared, this click would be swallowed.
-      vi.runAllTimers();
-      await fireEvent.click(challenge, { detail: 1 });
-      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
+    expect(onAdvance).not.toHaveBeenCalled();
   });
 
   it("keeps direct keyboard, assistive, and packaged synthetic clicks as immediate challenges", async () => {
@@ -1975,99 +1850,5 @@ describe("DialogueBox inline cross-examination controls", () => {
 
     expect(onChallenge).not.toHaveBeenCalled();
     expect(onWithdraw).not.toHaveBeenCalled();
-  });
-
-  it("does not start a challenge hold when the pointer down arrives while disabled", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        {
-          disabled: true,
-          crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() },
-        },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 1,
-        pointerType: "mouse",
-      });
-      // Advance well past the hold threshold. Because the pointerdown
-      // handler returned early (disabled), no hold timer was scheduled.
-      await vi.advanceTimersByTimeAsync(600);
-      expect(onChallenge).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("clears the suppression guard via the setTimeout(0) when no physical click follows a cancelled pointer sequence", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      // Cancel an early pointer sequence — arms suppression and schedules
-      // a setTimeout(0) to clear it on the next turn.
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 7,
-        pointerType: "mouse",
-      });
-      await fireEvent.pointerUp(challenge, {
-        pointerId: 7,
-        pointerType: "mouse",
-      });
-
-      // Do NOT dispatch a click. Instead, let the setTimeout(0) fire on its
-      // own — this is the pointercancel/pointerleave path where the browser
-      // does not synthesize a click.
-      vi.runAllTimers();
-
-      // Suppression was cleared by the timer, so a subsequent physical click
-      // must fire the challenge.
-      await fireEvent.click(challenge, { detail: 1 });
-      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("ignores pointerup from a different pointer id than the one that started the hold", async () => {
-    vi.useFakeTimers();
-    try {
-      const onChallenge = vi.fn();
-      renderDialogueBox(
-        { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-        { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-      );
-      const challenge = screen.getByRole("button", { name: /反駁/ });
-
-      // Pointer 8 starts the hold.
-      await fireEvent.pointerDown(challenge, {
-        pointerId: 8,
-        pointerType: "mouse",
-      });
-
-      // A pointerup from a different pointer (9) must be ignored — the
-      // cancelChallengePointerSequence guard checks heldChallengePointerId
-      // !== event.pointerId and returns early.
-      await fireEvent.pointerUp(challenge, {
-        pointerId: 9,
-        pointerType: "mouse",
-      });
-
-      // The hold timer for pointer 8 is still active. Advance past the
-      // threshold and the challenge must fire.
-      await vi.advanceTimersByTimeAsync(600);
-      expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-    } finally {
-      vi.useRealTimers();
-    }
   });
 });
