@@ -40,7 +40,6 @@ describe("Interrogation handoff chrome", () => {
       "radial-gradient( circle at 50% 34%, #ae1c31, var(--crimson-deep) 74% )",
     );
     expect(dialogue).toContain("OBJECT");
-    expect(dialogue).toContain("長按");
     expect(dialogue).toContain("@media (prefers-reduced-motion: reduce)");
   });
 

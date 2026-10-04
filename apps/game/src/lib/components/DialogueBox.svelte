@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy, tick } from "svelte";
+  import { tick } from "svelte";
   import {
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
@@ -16,7 +16,6 @@
 
   const dialogueTransitionDurationMs = 1500;
   const textRevealTickMs = 25;
-  const challengeHoldDurationMs = 600;
   // Per-character floor so short lines finish faster than the full transition
   // duration. The effective reveal duration is `min(text.length * this, cap)`,
   // where the cap is `textRevealDurationMs` (default 1500ms). Long lines still
@@ -74,11 +73,6 @@
   let historyPanelBottom = $state(180);
   let visibleTextLength = $state(0);
   let textRevealTimer: ReturnType<typeof setInterval> | null = null;
-  let challengeHoldTimer: ReturnType<typeof setTimeout> | null = null;
-  let challengeSuppressionTimer: ReturnType<typeof setTimeout> | null = null;
-  let heldChallengePointerId: number | null = null;
-  let suppressNextPhysicalChallengeClick = false;
-  let challengeCharging = $state(false);
   const portraitAssetId = $derived(
     current.kind === "line" ? (current.portrait?.assetId ?? null) : null,
   );
@@ -197,86 +191,12 @@
     crossExam.onChallenge(crossExam.lineId);
   }
 
-  function clearChallengeHold() {
-    if (challengeHoldTimer) {
-      clearTimeout(challengeHoldTimer);
-      challengeHoldTimer = null;
-    }
-    heldChallengePointerId = null;
-    challengeCharging = false;
-  }
-
-  function clearChallengeClickSuppression() {
-    if (challengeSuppressionTimer) {
-      clearTimeout(challengeSuppressionTimer);
-      challengeSuppressionTimer = null;
-    }
-    suppressNextPhysicalChallengeClick = false;
-  }
-
-  function armChallengeClickSuppression() {
-    clearChallengeClickSuppression();
-    suppressNextPhysicalChallengeClick = true;
-  }
-
-  function suppressFollowingPhysicalChallengeClick() {
-    armChallengeClickSuppression();
-    // A pointer sequence normally dispatches click before the event loop
-    // advances. If it does not (for example, pointercancel/leave), clear the
-    // one-shot guard on the next turn so it cannot swallow a later click.
-    challengeSuppressionTimer = setTimeout(() => {
-      suppressNextPhysicalChallengeClick = false;
-      challengeSuppressionTimer = null;
-    }, 0);
-  }
-
-  function handleChallengePointerDown(event: PointerEvent) {
-    if (disabled || !crossExam) return;
-
-    // Only the primary button (left) should arm the hold timer. Secondary
-    // (right) and middle buttons never activate a native button, so arming
-    // the 600 ms hold on them would submit a challenge through a path the
-    // browser's own activation semantics reject.
-    if (event.button !== 0) return;
-
-    clearChallengeHold();
-    clearChallengeClickSuppression();
-    heldChallengePointerId = event.pointerId;
-    challengeCharging = true;
-    challengeHoldTimer = setTimeout(() => {
-      if (heldChallengePointerId !== event.pointerId) return;
-
-      challengeHoldTimer = null;
-      challengeCharging = false;
-      // Keep the pointer id until its release. A completed hold may last well
-      // beyond this timer, while the physical click arrives only after
-      // pointerup; release schedules the one-shot suppression cleanup.
-      armChallengeClickSuppression();
-      invokeChallenge();
-    }, challengeHoldDurationMs);
-  }
-
-  function cancelChallengePointerSequence(event: PointerEvent) {
-    if (heldChallengePointerId !== event.pointerId) return;
-
-    clearChallengeHold();
-    suppressFollowingPhysicalChallengeClick();
-  }
-
   // Cross-exam buttons share the dialogue surface, so each stops propagation
-  // to keep its activation from advancing the testimony.
+  // to keep its activation from advancing the testimony. One activation path —
+  // pointer click, keyboard, assistive tech, and programmatic .click() all
+  // arrive here as native button activation.
   function handleChallengeClick(event: MouseEvent) {
     event.stopPropagation();
-    if (disabled || !crossExam) return;
-
-    // detail > 0 identifies a physical pointer click. Direct keyboard,
-    // assistive technology, and packaged-E2E button.click() activation use
-    // detail === 0 and keep their native immediate behavior.
-    if (event.detail > 0 && suppressNextPhysicalChallengeClick) {
-      clearChallengeClickSuppression();
-      return;
-    }
-
     invokeChallenge();
   }
 
@@ -285,11 +205,6 @@
     if (disabled || !crossExam) return;
     crossExam.onWithdraw();
   }
-
-  onDestroy(() => {
-    clearChallengeHold();
-    clearChallengeClickSuppression();
-  });
 
   // The LOG button is a native <button>, so Space/Enter activation is delivered
   // as a synthesized click (with detail 0). AT click activation (e.g. VoiceOver
@@ -724,31 +639,20 @@
         <div class="xexam-challenge-wrap">
           <button
             class="xexam-challenge"
-            class:charging={challengeCharging}
             type="button"
             {disabled}
-            onpointerdown={handleChallengePointerDown}
-            onpointerup={cancelChallengePointerSequence}
-            onpointercancel={cancelChallengePointerSequence}
-            onpointerleave={cancelChallengePointerSequence}
             onclick={handleChallengeClick}
           >
             <span class="act-mark">▸</span>
             <span class="challenge-label">反駁</span>
             <span class="challenge-object">OBJECT</span>
           </button>
-          <span class="hold-cue">長按</span>
         </div>
       {:else}
         <button
           class="xexam-challenge"
-          class:charging={challengeCharging}
           type="button"
           {disabled}
-          onpointerdown={handleChallengePointerDown}
-          onpointerup={cancelChallengePointerSequence}
-          onpointercancel={cancelChallengePointerSequence}
-          onpointerleave={cancelChallengePointerSequence}
           onclick={handleChallengeClick}
         >
           <span class="act-mark">▸</span>
@@ -1191,11 +1095,6 @@
     animation: interrogation-halo 2.1s ease-in-out infinite;
   }
 
-  .wrapper.interrogation-stage-dialogue
-    .xexam-challenge-wrap:has(.xexam-challenge.charging) {
-    animation: none;
-  }
-
   .wrapper.interrogation-stage-dialogue .xexam-challenge {
     position: absolute;
     inset: 0;
@@ -1237,16 +1136,6 @@
     font-size: 9px;
     letter-spacing: 0.26em;
     opacity: 0.75;
-  }
-
-  .wrapper.interrogation-stage-dialogue .hold-cue {
-    position: absolute;
-    top: calc(100% + 9px);
-    color: var(--bone-dim);
-    font-family: var(--mono);
-    font-size: 9px;
-    letter-spacing: 0.28em;
-    animation: lyra-pulse 1.8s ease-in-out infinite;
   }
 
   .wrapper.interrogation-stage-dialogue .xexam-withdraw {
@@ -1352,25 +1241,6 @@
     box-shadow: inset 0 0 0 4px rgba(174, 28, 49, 0.1);
   }
 
-  .xexam-challenge.charging {
-    animation: xexam-charge 0.6s linear forwards;
-  }
-
-  @keyframes xexam-charge {
-    from {
-      box-shadow:
-        inset 0 0 0 4px rgba(174, 28, 49, 0.1),
-        0 0 0 0 rgba(174, 28, 49, 0.38);
-      transform: scale(1);
-    }
-    to {
-      box-shadow:
-        inset 0 0 0 26px rgba(174, 28, 49, 0.22),
-        0 0 0 10px rgba(174, 28, 49, 0);
-      transform: scale(1.05);
-    }
-  }
-
   .xexam-withdraw {
     color: var(--bone-faint);
   }
@@ -1432,15 +1302,7 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .xexam-challenge.charging {
-      animation: none;
-      border-width: 3px;
-      outline: 2px solid rgba(174, 28, 49, 0.5);
-      outline-offset: 3px;
-    }
-
-    .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap,
-    .wrapper.interrogation-stage-dialogue .hold-cue {
+    .wrapper.interrogation-stage-dialogue .xexam-challenge-wrap {
       animation: none;
     }
   }
