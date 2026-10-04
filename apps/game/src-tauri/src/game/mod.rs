@@ -2812,7 +2812,7 @@ impl GameEngine {
                             line_content: line.content.clone(),
                             line_index,
                             line_total: question.testimony.lines.len(),
-                            presenting: true,
+                            presenting: scene.pending_queue.is_none(),
                         })
                     }),
                 };
@@ -6705,6 +6705,16 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         }
     }
 
+    fn view_presenting(view: &GameStateView) -> bool {
+        let SceneView::Interrogation { visible_phases, .. } = &view.scene else {
+            panic!("expected interrogation scene view");
+        };
+        visible_phases
+            .iter()
+            .find_map(|phase| phase.cross_exam.as_ref())
+            .is_some_and(|cross_exam| cross_exam.presenting)
+    }
+
     #[test]
     fn challenge_lead_in_hides_cross_exam_line_id() {
         // The challenge lead-in dialogue plays with cross_exam already moved to
@@ -6726,6 +6736,22 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             ),
             other => panic!("expected Dialogue mode, got {other:?}"),
         }
+        assert!(
+            !view_presenting(&view),
+            "the evidence tray must stay closed while the challenge lead-in queue is pending"
+        );
+        // l_deny's lead-in is a single item, so one advance drains it: the
+        // queue is cleared, mode flips to Interrogation, and the tray opens.
+        let drained = engine.advance_dialogue(token_from(&view)).unwrap();
+        assert!(
+            matches!(drained.mode, ModeView::Interrogation { .. }),
+            "drained lead-in should surface interrogation mode, got {:?}",
+            drained.mode
+        );
+        assert!(
+            view_presenting(&drained),
+            "the evidence tray must open once the lead-in queue drains"
+        );
     }
 
     #[test]
@@ -6802,7 +6828,16 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         // Challenge mid-dialogue; l_off's empty challenge lead-in opens the
         // tray immediately.
-        engine.challenge_interrogation_line("l_off").unwrap();
+        let view = engine.challenge_interrogation_line("l_off").unwrap();
+        assert!(
+            matches!(view.mode, ModeView::Interrogation { .. }),
+            "an empty lead-in drains inside the challenge command, so the tray \n             surfaces immediately, got {:?}",
+            view.mode
+        );
+        assert!(
+            view_presenting(&view),
+            "tray must open on the challenge's own returned view"
+        );
         let SceneRuntime::Interrogation(scene) = &engine.scene else {
             panic!("expected interrogation scene");
         };
