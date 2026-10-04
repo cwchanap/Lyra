@@ -506,7 +506,7 @@ describe("detectLayoutOverlaps", () => {
     expect(warnings[0]?.message).toContain("slips");
   });
 
-  it("does not warn when overlap is below the 80% threshold", () => {
+  it("does not warn when overlap is below the 50% threshold", () => {
     // Partial corner overlap: ~49% of the smaller rect → below threshold.
     const layout = layoutWithHotspots({
       kagami: rect(0.245916, 0.289239, 0.220529, 0.201036),
@@ -516,19 +516,19 @@ describe("detectLayoutOverlaps", () => {
     expect(detectLayoutOverlaps(layout, sourceFile)).toEqual([]);
   });
 
-  it("treats the 80% threshold as inclusive and fires exactly at the boundary", () => {
+  it("treats the 50% threshold as inclusive and fires exactly at the boundary", () => {
     // Two equal rects offset along x. overlapRatio = (w - dx) / w when both
     // rects share the full y-extent, so dx = w * (1 - ratio) hits an exact
     // target ratio. w = 0.2 here.
     //
-    //   dx = 0.0402 -> ratio = 0.799  (just below -> no warn)
-    //   dx = 0.04    -> ratio = 0.8   (exactly at threshold -> warn, `>=`)
-    //   dx = 0.0398  -> ratio = 0.801 (just above -> warn)
+    //   dx = 0.1002 -> ratio = 0.499  (just below -> no warn)
+    //   dx = 0.1    -> ratio = 0.5    (exactly at threshold -> warn, `>=`)
+    //   dx = 0.0998 -> ratio = 0.501  (just above -> warn)
     const w = 0.2;
     const cases: Array<{ dx: number; ratio: number; warns: boolean }> = [
-      { dx: 0.0402, ratio: 0.799, warns: false },
-      { dx: 0.04, ratio: 0.8, warns: true },
-      { dx: 0.0398, ratio: 0.801, warns: true },
+      { dx: 0.1002, ratio: 0.499, warns: false },
+      { dx: 0.1, ratio: 0.5, warns: true },
+      { dx: 0.0998, ratio: 0.501, warns: true },
     ];
     for (const { dx, ratio, warns } of cases) {
       const layout = layoutWithHotspots({

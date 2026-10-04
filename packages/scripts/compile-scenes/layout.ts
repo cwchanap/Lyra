@@ -686,7 +686,7 @@ function pairKey(a: string, b: string): string {
 }
 
 /** Warn when the overlap covers at least this fraction of the smaller rect. */
-const OVERLAP_WARN_THRESHOLD = 0.8;
+const OVERLAP_WARN_THRESHOLD = 0.5;
 
 /**
  * Returns the overlap area as a fraction of the smaller rect's area, or 0

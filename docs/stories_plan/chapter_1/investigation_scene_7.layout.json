@@ -3,6 +3,9 @@
   "sceneId": "investigation_scene_7",
   "sublocations": {
     "inner": {
+      "intentionalOverlaps": [
+        { "hotspots": ["old_clock", "miyake_replay"] }
+      ],
       "hotspots": {
         "takase_replay": {
           "kind": "rect",
@@ -27,31 +30,31 @@
         },
         "masuda_paperback": {
           "kind": "rect",
-          "x": 0.4,
-          "y": 0.61,
-          "w": 0.055,
-          "h": 0.065
+          "x": 0.519,
+          "y": 0.872,
+          "w": 0.047,
+          "h": 0.046
         },
         "phone_drop": {
           "kind": "rect",
-          "x": 0.455,
-          "y": 0.682,
-          "w": 0.16,
-          "h": 0.13
+          "x": 0.413,
+          "y": 0.823,
+          "w": 0.042,
+          "h": 0.043
         },
         "old_clock": {
           "kind": "rect",
-          "x": 0.496,
-          "y": 0.191,
-          "w": 0.074,
-          "h": 0.128
+          "x": 0.274,
+          "y": 0.152,
+          "w": 0.099,
+          "h": 0.26
         },
         "corridor_scuff": {
           "kind": "rect",
-          "x": 0.46,
-          "y": 0.82,
-          "w": 0.16,
-          "h": 0.08
+          "x": 0.531,
+          "y": 0.73,
+          "w": 0.099,
+          "h": 0.104
         }
       },
       "characters": {
@@ -68,10 +71,10 @@
       "hotspots": {
         "fire_door_7": {
           "kind": "rect",
-          "x": 0.365,
+          "x": 0.369,
           "y": 0.15,
-          "w": 0.09,
-          "h": 0.12
+          "w": 0.083,
+          "h": 0.578
         },
         "umbrella_sleeve": {
           "kind": "rect",
@@ -96,10 +99,10 @@
         },
         "staff_shelf": {
           "kind": "rect",
-          "x": 0,
-          "y": 0.12,
-          "w": 0.22,
-          "h": 0.58
+          "x": 0.13,
+          "y": 0.144,
+          "w": 0.084,
+          "h": 0.819
         }
       },
       "characters": {
