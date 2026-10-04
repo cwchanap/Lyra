@@ -2721,6 +2721,51 @@ describe("compile (tracked production corpus compatibility)", () => {
           readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
         ),
       }).toMatchSnapshot();
+
+      // Live-content gate: every compiled investigation target must carry a
+      // layout placement. `layout: null` renders as the player-visible
+      // UNPLACED HOTSPOTS/WITNESSES fallback panel in production, which must
+      // never ship on required exploration paths. Scenes without a sidecar
+      // compile with `layout: null` for every target, so this catches both a
+      // missing sidecar file and missing entries.
+      const chapterDir = resolve(outRoot, "chapter_1");
+      const investigationFiles = readdirSync(chapterDir).filter((file) =>
+        /^investigation_scene_.*\.json$/.test(file),
+      );
+      const unplaced: string[] = [];
+      for (const file of investigationFiles) {
+        const scene = JSON.parse(
+          readFileSync(resolve(chapterDir, file), "utf-8"),
+        ) as {
+          id: string;
+          sublocations: Array<{
+            id: string;
+            hotspots: Array<{ id: string; layout: unknown }>;
+            characters: Array<{ id: string; layout: unknown }>;
+          }>;
+        };
+        for (const sublocation of scene.sublocations) {
+          for (const hotspot of sublocation.hotspots) {
+            if (hotspot.layout === null) {
+              unplaced.push(
+                `${scene.id}/${sublocation.id}/hotspot:${hotspot.id}`,
+              );
+            }
+          }
+          for (const character of sublocation.characters) {
+            if (character.layout === null) {
+              unplaced.push(
+                `${scene.id}/${sublocation.id}/character:${character.id}`,
+              );
+            }
+          }
+        }
+      }
+      expect(
+        unplaced,
+        "every live Chapter 1 investigation target must have a layout placement; " +
+          "unplaced targets render as the production UNPLACED fallback panel",
+      ).toEqual([]);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
     }
