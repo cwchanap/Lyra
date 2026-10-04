@@ -613,7 +613,9 @@ pub struct CrossExamView {
     pub line_content: Vec<DialogueItem>,
     pub line_index: usize,
     pub line_total: usize,
-    /// True when the evidence tray should be shown.
+    /// True when the evidence tray should be shown — only once no dialogue
+    /// queue is pending, so the challenge lead-in drains before the tray
+    /// activates.
     pub presenting: bool,
 }
 

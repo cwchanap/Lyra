@@ -2791,6 +2791,65 @@ mod tests {
     }
 
     #[test]
+    fn presenting_with_pending_lead_in_restores_into_dialogue_mode() {
+        // A save captured mid-lead-in (cross_exam already Presenting, challenge
+        // lead-in queue still pending) must restore into Dialogue mode with the
+        // tray closed — the same view contract as the fresh path.
+        let (_guard, resources, mut engine) = interrogation_engine();
+        engine.history = DialogueHistory::default();
+        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
+            panic!()
+        };
+        scene.intro_played = true;
+        scene.intro_queue_gen =
+            crate::game::scenes::interrogation::RESTORED_CONSUMED_INTRO_QUEUE_GEN;
+        scene.mark_phase_entered("phase_1");
+        scene.cross_exam = CrossExam::Presenting {
+            question_id: "q1".into(),
+            line_id: "l1".into(),
+        };
+        // The challenge lead-in has NOT drained: its queue is still pending.
+        scene.pending_queue = Some(
+            ActiveDialogueQueue::from_position(
+                vec![DialogueSegment::new(
+                    interrogation_origin("question:q1:line:l1:content"),
+                    vec![DialogueItem::Line {
+                        speaker: "witness".into(),
+                        text: "line".into(),
+                        portrait: None,
+                    }],
+                )
+                .unwrap()],
+                0,
+                0,
+                6,
+            )
+            .unwrap(),
+        );
+        scene.line_content_start = 0;
+        engine.next_queue_gen = 7;
+
+        let (_, restored) = round_trip(resources, &engine);
+        let view = restored.engine.view().unwrap();
+        assert!(
+            matches!(view.mode, ModeView::Dialogue { .. }),
+            "the restored lead-in must replay in dialogue mode, got {:?}",
+            view.mode
+        );
+        let crate::game::view::SceneView::Interrogation { visible_phases, .. } = view.scene else {
+            panic!("expected interrogation scene view");
+        };
+        assert!(
+            visible_phases
+                .iter()
+                .find(|phase| phase.id == "phase_1")
+                .and_then(|phase| phase.cross_exam.as_ref())
+                .is_some_and(|cross_exam| !cross_exam.presenting),
+            "the tray must stay closed while the restored lead-in is pending"
+        );
+    }
+
+    #[test]
     fn game_complete_retains_the_final_scene_sentinel() {
         let (_guard, resources, mut engine) = interrogation_engine();
         let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
