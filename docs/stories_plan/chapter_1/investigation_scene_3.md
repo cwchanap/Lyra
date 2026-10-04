@@ -391,7 +391,7 @@
 ## Evidence Manifest
 
 ### evidence:two_coffee_order {#two_coffee_order}
-- **Name:** 兩杯咖啡訂單 `K.`
+- **Name:** 兩杯咖啡訂單（K.）
 - **Description:** 增田圭當晚的訂單，點了兩杯咖啡，第二杯杯套備註寫著「K.」。
 - **Details:** 店內習慣以首字母標杯，「K.」只是首字母，不是完整姓名。
 - **Source Sublocation:** front
