@@ -328,6 +328,23 @@ export function compile(opts: CompileOptions): CompileResult {
         continue;
       }
       const sourceFileTag = `${dirName}/${file}`;
+      // Nothing in the pipeline renders Markdown, so a backtick in authored
+      // scene text always reaches the player literally. Reject it at the
+      // source with a line number so agents/authors quote printed text with
+      // 「」 or （） instead.
+      const backtickLines = [...source.matchAll(/`/g)];
+      for (const match of backtickLines) {
+        const line =
+          match.index === undefined
+            ? 1
+            : source.slice(0, match.index).split("\n").length;
+        errors.push({
+          code: "sceneSourceBacktick",
+          message: `${sourceFileTag}:${line}: literal backtick in authored scene text — nothing renders Markdown; quote printed text with 「」 or （） instead.`,
+          sourceFile: sourceFileTag,
+          line,
+        });
+      }
       if (file.startsWith("scene_")) {
         const parsed = parseLinearScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {

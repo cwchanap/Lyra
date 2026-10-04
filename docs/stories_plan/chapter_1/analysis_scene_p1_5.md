@@ -32,7 +32,7 @@
 ### Card: 標示 REPRINT 的收據 {#receipt_reprint}
 
 - **Source:** practice:p1_receipt_reprint
-- **Summary:** 收據上的十七點四十二分，旁邊明確印著 `REPRINT`。
+- **Summary:** 收據上的十七點四十二分，旁邊明確印著「REPRINT」。
 
 ### Card: 收銀機出紙口的卡紙痕跡 {#register_paper_jam}
 
