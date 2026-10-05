@@ -6831,7 +6831,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let view = engine.challenge_interrogation_line("l_off").unwrap();
         assert!(
             matches!(view.mode, ModeView::Interrogation { .. }),
-            "an empty lead-in drains inside the challenge command, so the tray \n             surfaces immediately, got {:?}",
+            "an empty lead-in drains inside the challenge command, so the tray surfaces immediately, got {:?}",
             view.mode
         );
         assert!(
