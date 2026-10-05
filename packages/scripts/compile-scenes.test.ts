@@ -1146,6 +1146,44 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       }
     });
   }
+
+  it("reports the authored line number for each literal backtick", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-backtick-line-"),
+    );
+    try {
+      const result = compile({
+        sourceRoot: resolve(
+          "packages/scripts/__fixtures__/invalid/investigation_scene_source_backtick",
+        ),
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) return;
+      // The fixture's only backtick pair is on line 5 of the scene file; one
+      // error per occurrence, each carrying its 1-based line.
+      expect(
+        result.errors
+          .filter((e) => e.code === "sceneSourceBacktick")
+          .map((e) => ({ line: e.line, sourceFile: e.sourceFile })),
+      ).toEqual([
+        {
+          line: 5,
+          sourceFile: expect.stringContaining(
+            "chapter_1/investigation_scene_1.md",
+          ),
+        },
+        {
+          line: 5,
+          sourceFile: expect.stringContaining(
+            "chapter_1/investigation_scene_1.md",
+          ),
+        },
+      ]);
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("HPA-257 compiler diagnostics", () => {
