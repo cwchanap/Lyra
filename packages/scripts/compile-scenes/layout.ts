@@ -517,14 +517,15 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 /**
  * Detect hotspot rects that share interior area within the same sublocation.
  *
- * Returns one non-blocking warning per pair whose overlap covers at least 80%
+ * Returns one non-blocking warning per pair whose overlap covers at least 50%
  * of the smaller rect's area. This is a warning rather than a hard error
  * because overlaps are occasionally intentional (e.g. a deliberate
- * layered/nested target); but when one hotspot nearly entirely covers
- * another, the later-painted hotspot silently wins every click in the shared
- * region — that is the case worth surfacing. Minor corner overlaps (below the
- * 80% threshold) are visually obvious and rarely cause silent misclicks, so
- * they are suppressed to keep the warning's signal-to-noise ratio high.
+ * layered/nested target — declare those in `intentionalOverlaps`); but when
+ * one hotspot largely covers another, the later-painted hotspot silently
+ * wins every click in the shared region — that is the case worth surfacing.
+ * Small corner overlaps (below the 50% threshold) are visually obvious and
+ * rarely cause silent misclicks, so they are suppressed to keep the
+ * warning's signal-to-noise ratio high.
  * Hotspots in different sublocations are never on screen together, so only
  * pairs within a single sublocation are compared. Edge-adjacency (touching
  * but non-overlapping) is allowed.
