@@ -254,7 +254,7 @@ returns from the menu to the still-open Present tray.
 | --- | --- |
 | Mode flip destroys chrome or forks DialogueBox behaviour | Always-mounted stage wrapper, one mode chain, one DialogueBox call site, and a lifecycle test across dialogue and Present. |
 | Restored Present has no opening trigger | AcquisitionPopup-style focus fallback plus the existing save-resume packaged test. |
-| Pointer hold double-submits or blocks accessibility/E2E | Separate tracked-pointer and click paths; component tests exercise pointer sequences, while packaged E2E verifies the programmatic-click compatibility path. |
+| Single-click challenge double-submits or diverges across pointer, keyboard, assistive-technology, and E2E activation | One native button activation path for every input modality; component tests assert exactly one onChallenge call per activation, while packaged E2E verifies the same programmatic-click path. |
 | Existing dossier and interrogation UI drift | HUD opens the existing CaseFilePanel; only Present selection cards are new. |
 | Missing subject art leaves an empty centerpiece | The standee layer is intentionally excluded. Future art requires its own asset/pipeline slice. |
 
@@ -265,8 +265,9 @@ Focused tests cover:
 1. InterrogationView question states, completion gating, and no-current-phase
    rendering; InterrogationStage derived-progress rendering.
 2. DialogueBox's presentation-only cross-exam path: CrossExamView progress,
-   xexam-challenge/反駁/退下 compatibility, pointer-hold cancellation/completion,
-   and direct keyboard or synthetic click activation.
+   xexam-challenge/反駁/退下 compatibility, and pointer, keyboard,
+   assistive-technology, and synthetic click activation each invoking
+   onChallenge exactly once.
 3. InterrogationStage and InterrogationEvidenceTray: stable lifecycle across
    mode flips, engine-only Present mounting, callback arguments, 收回/onResume,
    focus trapping/restoration with and without an initiating control, and
@@ -281,9 +282,10 @@ Focused tests cover:
 Before completion, run focused component tests, the Svelte autofixer for every
 edited Svelte component, bun run check, and bun run test:e2e.
 
-The packaged suite verifies the synthetic direct-click compatibility branch and
-restored Present flow. Component tests are the acceptance evidence for the
-real pointer-hold sequence; this distinction is deliberate and explicit.
+The packaged suite verifies the synthetic direct-click path and restored
+Present flow. Component tests are the acceptance evidence for single-click
+activation across input modalities; this distinction is deliberate and
+explicit.
 
 ## Expected implementation surface
 
