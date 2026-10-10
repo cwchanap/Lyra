@@ -598,6 +598,115 @@ describe("InvestigationSceneSurface", () => {
     expect(onInspect).toHaveBeenCalledWith("table");
   });
 
+  it("drops the minimum-target clamp only where it would steal a neighbour's clicks", async () => {
+    // At the 800×600 minimum window the cover plane is ~1067px wide, so the
+    // scene-9 packet slices (~27px each) render far below the 72px
+    // min-width (+chrome) clamp: each expanded button would overlap its
+    // neighbour and later DOM order would win the hit-test. Those targets
+    // must render compact — authored size, border-box — while an isolated
+    // target keeps the clamp.
+    const packets = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "workorder",
+          label: "工單",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.622, y: 0.488, w: 0.026, h: 0.073 },
+        },
+        {
+          id: "access_permission_list",
+          label: "名單",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.649, y: 0.488, w: 0.025, h: 0.073 },
+        },
+        {
+          id: "material_kit_list",
+          label: "材料表",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.674, y: 0.488, w: 0.025, h: 0.073 },
+        },
+        {
+          id: "far_target",
+          label: "遠處",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.1, y: 0.2, w: 0.1, h: 0.1 },
+        },
+      ],
+      characters: [],
+    } satisfies SublocationView;
+
+    const user = userEvent.setup();
+    const onInspect = vi.fn();
+    render(InvestigationSceneSurface, {
+      sublocation: packets,
+      onInspect,
+      onInterview: vi.fn(),
+    });
+
+    for (const label of ["工單", "名單", "材料表"]) {
+      expect(
+        screen.getByRole("button", { name: `調查：${label}` }),
+      ).toHaveClass("compact");
+    }
+    expect(screen.getByRole("button", { name: /調查：遠處/ })).not.toHaveClass(
+      "compact",
+    );
+
+    await user.click(screen.getByRole("button", { name: "調查：工單" }));
+    expect(onInspect).toHaveBeenCalledWith("workorder");
+  });
+
+  it("keeps the minimum-target clamp on authored-overlapping pairs", () => {
+    // Pairs whose authored rects already overlap (e.g. a declared
+    // intentionalOverlaps nested target) keep the clamp: their collision is
+    // authored intent, not clamp-induced.
+    const nested = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "replay",
+          label: "回放",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.3, y: 0.3, w: 0.2, h: 0.2 },
+        },
+        {
+          id: "clock",
+          label: "時鐘",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.35, y: 0.35, w: 0.03, h: 0.05 },
+        },
+      ],
+      characters: [],
+    } satisfies SublocationView;
+
+    render(InvestigationSceneSurface, {
+      sublocation: nested,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: /調查：回放/ })).not.toHaveClass(
+      "compact",
+    );
+    expect(screen.getByRole("button", { name: /調查：時鐘/ })).not.toHaveClass(
+      "compact",
+    );
+  });
+
+  it("renders compact targets at authored size without the minimum-target chrome", () => {
+    const compactRule = cssRule(surfaceSource(), ".hotspot-target.compact");
+    expect(compactRule).toContain("min-width: 0");
+    expect(compactRule).toContain("min-height: 0");
+    expect(compactRule).toContain("box-sizing: border-box");
+  });
+
   it("calls onInterview after choosing a placed character topic", async () => {
     const user = userEvent.setup();
     const onInterview = vi.fn();

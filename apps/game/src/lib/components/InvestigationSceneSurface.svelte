@@ -48,6 +48,64 @@
         hotspot.layout !== null,
     ),
   );
+  // .hotspot-target clamps each button to a 72×44px minimum target, which
+  // drags a small painted rect over its neighbours and steals their clicks
+  // wherever two expanded boxes overlap. Drop the clamp only where it
+  // *creates* a collision the authored rects do not have — declared
+  // overlapping pairs (intentionalOverlaps) keep the minimum size. Expansion
+  // is evaluated at the minimum supported 800×600 window (tauri.conf.json),
+  // where the cover plane is ~1067×600px; clamp-induced collisions are
+  // monotonic in viewport size, so a pair safe there is safe larger.
+  const MIN_TARGET_PX = { w: 72, h: 44 };
+  // content-box: padding 8px + border 1px per side extends the hit box.
+  const TARGET_CHROME_PX = 18;
+  const MIN_COVER_PLANE_PX = {
+    w: Math.max(800, (16 / 9) * 600),
+    h: Math.max(600, (9 / 16) * 800),
+  };
+
+  type HitRect = { left: number; top: number; right: number; bottom: number };
+
+  function hotspotHitRect(layout: HotspotLayout, clamped: boolean): HitRect {
+    const left = layout.x * MIN_COVER_PLANE_PX.w;
+    const top = layout.y * MIN_COVER_PLANE_PX.h;
+    const width = clamped
+      ? Math.max(layout.w * MIN_COVER_PLANE_PX.w, MIN_TARGET_PX.w) +
+        TARGET_CHROME_PX
+      : layout.w * MIN_COVER_PLANE_PX.w;
+    const height = clamped
+      ? Math.max(layout.h * MIN_COVER_PLANE_PX.h, MIN_TARGET_PX.h) +
+        TARGET_CHROME_PX
+      : layout.h * MIN_COVER_PLANE_PX.h;
+    return { left, top, right: left + width, bottom: top + height };
+  }
+
+  function hitRectsIntersect(a: HitRect, b: HitRect) {
+    return (
+      a.left < b.right &&
+      b.left < a.right &&
+      a.top < b.bottom &&
+      b.top < a.bottom
+    );
+  }
+
+  let compactHotspotIds = $derived.by(() => {
+    const hitRects = placedHotspots.map((hotspot) => ({
+      id: hotspot.id,
+      authored: hotspotHitRect(hotspot.layout, false),
+      clamped: hotspotHitRect(hotspot.layout, true),
+    }));
+    const ids = new Array<string>();
+    for (const [index, a] of hitRects.entries()) {
+      for (const b of hitRects.slice(index + 1)) {
+        if (hitRectsIntersect(a.authored, b.authored)) continue;
+        if (!hitRectsIntersect(a.clamped, b.clamped)) continue;
+        if (!ids.includes(a.id)) ids.push(a.id);
+        if (!ids.includes(b.id)) ids.push(b.id);
+      }
+    }
+    return ids;
+  });
   let unplacedHotspots = $derived(
     sublocation.hotspots.filter((hotspot) => hotspot.layout === null),
   );
@@ -262,6 +320,7 @@
         <button
           class="hotspot-target"
           class:inspected={hotspot.inspected}
+          class:compact={compactHotspotIds.includes(hotspot.id)}
           type="button"
           aria-label={`調查：${hotspot.label}`}
           style={layoutStyle(hotspot.layout)}
@@ -538,6 +597,13 @@
       border-color 0.18s,
       background 0.18s,
       transform 0.18s;
+  }
+
+  .hotspot-target.compact {
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    box-sizing: border-box;
   }
 
   .hotspot-target:hover:not(:disabled),
