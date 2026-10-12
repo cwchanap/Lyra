@@ -151,6 +151,8 @@ export type SublocationView = {
   id: string;
   label: string;
   sceneTag: string;
+  /** Authored-intentional hotspot rect overlap pairs (layout sidecar). */
+  intentionalOverlaps?: Array<{ hotspots: [string, string] }>;
   hotspots: HotspotView[];
   characters: CharacterView[];
 };

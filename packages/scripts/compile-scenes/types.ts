@@ -18,6 +18,7 @@ import type {
   BakedCharacterLayout,
   CharacterLayout,
   EvidenceSource,
+  IntentionalHotspotOverlap,
   RectLayout,
   RevealTarget,
   SpriteLayout,
@@ -376,6 +377,8 @@ export type ASTSublocation = Located<{
   transitionDialogue: DialogueItem[];
   hotspots: ASTHotspot[];
   characters: ASTCharacter[];
+  /** Declared-intentional hotspot rect pairs, merged from the layout sidecar. */
+  intentionalOverlaps?: ReadonlyArray<IntentionalHotspotOverlap>;
 }>;
 
 export type ASTHotspot = Located<{
@@ -696,6 +699,7 @@ export type JSONInvestigationScene = {
         onReexamine: JSONDialogueItem[] | null;
       }>;
     }>;
+    intentionalOverlaps?: ReadonlyArray<IntentionalHotspotOverlap>;
   }>;
   evidenceManifest: Array<{
     id: string;

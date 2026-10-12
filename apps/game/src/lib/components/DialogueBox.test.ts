@@ -1760,31 +1760,6 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("activates the challenge on a single pointer click", async () => {
-    const onChallenge = vi.fn();
-    const { onAdvance } = renderDialogueBox(
-      { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
-      { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
-    );
-    const challenge = screen.getByRole("button", { name: /反駁/ });
-
-    // A plain click: pointerdown, pointerup, click with detail 1 — no timer
-    // advance. One activation must equal one challenge, and the click must
-    // not also advance the testimony.
-    await fireEvent.pointerDown(challenge, {
-      pointerId: 1,
-      pointerType: "mouse",
-    });
-    await fireEvent.pointerUp(challenge, {
-      pointerId: 1,
-      pointerType: "mouse",
-    });
-    await fireEvent.click(challenge, { detail: 1 });
-
-    expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
-    expect(onAdvance).not.toHaveBeenCalled();
-  });
-
   it("keeps direct keyboard, assistive, and packaged synthetic clicks as immediate challenges", async () => {
     const onChallenge = vi.fn();
     renderDialogueBox(

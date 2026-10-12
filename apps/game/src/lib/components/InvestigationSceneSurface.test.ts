@@ -661,12 +661,12 @@ describe("InvestigationSceneSurface", () => {
     expect(onInspect).toHaveBeenCalledWith("workorder");
   });
 
-  it("keeps the minimum-target clamp on authored-overlapping pairs", () => {
-    // Pairs whose authored rects already overlap (e.g. a declared
-    // intentionalOverlaps nested target) keep the clamp: their collision is
-    // authored intent, not clamp-induced.
+  it("keeps the minimum-target clamp on declared authored-overlapping pairs", () => {
+    // Pairs whose authored rects overlap AND are declared in the sidecar's
+    // intentionalOverlaps keep the clamp: their collision is authored intent.
     const nested = {
       ...sublocation,
+      intentionalOverlaps: [{ hotspots: ["replay", "clock"] }],
       hotspots: [
         {
           id: "replay",
@@ -705,6 +705,120 @@ describe("InvestigationSceneSurface", () => {
     expect(compactRule).toContain("min-width: 0");
     expect(compactRule).toContain("min-height: 0");
     expect(compactRule).toContain("box-sizing: border-box");
+  });
+
+  it("compacts undeclared authored overlaps instead of enlarging the theft area", () => {
+    // Same nesting geometry as the declared test, but without the
+    // intentionalOverlaps declaration: the clamp must not grow the region
+    // the later-defined hotspot steals beyond the authored overlap.
+    const undeclared = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "replay",
+          label: "回放",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.3, y: 0.3, w: 0.2, h: 0.2 },
+        },
+        {
+          id: "clock",
+          label: "時鐘",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.35, y: 0.35, w: 0.03, h: 0.05 },
+        },
+      ],
+      characters: [],
+    } satisfies SublocationView;
+
+    render(InvestigationSceneSurface, {
+      sublocation: undeclared,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: /調查：回放/ })).toHaveClass(
+      "compact",
+    );
+    expect(screen.getByRole("button", { name: /調查：時鐘/ })).toHaveClass(
+      "compact",
+    );
+  });
+
+  it("compacts a hotspot whose clamp steals clicks from a character", () => {
+    // Chapter 1 scene 3 geometry: osmanthus_sign's clamped hit box reaches
+    // ~11px into takase's baked box; the authored rects do not intersect.
+    const withWitness = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "osmanthus_sign",
+          label: "桂花招牌",
+          description: "",
+          inspected: false,
+          layout: {
+            kind: "rect",
+            x: 0.626241,
+            y: 0.253472,
+            w: 0.067049,
+            h: 0.117701,
+          },
+        },
+        {
+          id: "far_target",
+          label: "遠處",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.1, y: 0.2, w: 0.1, h: 0.1 },
+        },
+      ],
+      characters: [
+        {
+          id: "takase",
+          name: "高瀬",
+          role: "店員",
+          bio: "",
+          topics: [],
+          layout: { kind: "baked", x: 0.7, y: 0.191, w: 0.11, h: 0.215 },
+        },
+      ],
+    } satisfies SublocationView;
+
+    render(InvestigationSceneSurface, {
+      sublocation: withWitness,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: "調查：桂花招牌" })).toHaveClass(
+      "compact",
+    );
+    expect(screen.getByRole("button", { name: /調查：遠處/ })).not.toHaveClass(
+      "compact",
+    );
+  });
+
+  it("keeps the hit-box model constants in sync with the CSS and window config", () => {
+    // The JS hit-box model hand-copies CSS values (min target, content-box
+    // chrome) and the tauri.conf.json minimum window. This tripwire fails
+    // when either side changes without the other.
+    const source = surfaceSource();
+    const targetRule = cssRule(source, ".hotspot-target");
+
+    expect(source).toContain("MIN_TARGET_PX = { w: 72, h: 44 }");
+    expect(targetRule).toContain("min-width: 72px");
+    expect(targetRule).toContain("min-height: 44px");
+    expect(source).toContain("TARGET_CHROME_PX = 18");
+    expect(targetRule).toContain("padding: 8px");
+    expect(targetRule).toContain("border: 1px solid transparent");
+
+    const tauriConfig = JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri/tauri.conf.json"), "utf8"),
+    ) as { app: { windows: Array<{ minWidth?: number; minHeight?: number }> } };
+    const [{ minWidth, minHeight }] = tauriConfig.app.windows;
+    expect(source).toContain(`Math.max(${minWidth}, (16 / 9) * ${minHeight})`);
+    expect(source).toContain(`Math.max(${minHeight}, (9 / 16) * ${minWidth})`);
   });
 
   it("calls onInterview after choosing a placed character topic", async () => {

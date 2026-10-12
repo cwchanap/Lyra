@@ -2,8 +2,8 @@
 use crate::game::analysis::{AnalysisActionToken, AnalysisDraft, AnalysisFeedbackState};
 use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
-    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson, InventoryTarget,
-    PortraitRefJson, SceneType,
+    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson,
+    IntentionalHotspotOverlapJson, InventoryTarget, PortraitRefJson, SceneType,
 };
 use crate::game::state::{EvidenceRecord, Inventory, StatementRecord};
 use crate::game::story::{StoryCatalog, StoryStateView};
@@ -535,6 +535,9 @@ pub struct SublocationView {
     pub id: String,
     pub label: String,
     pub scene_tag: String,
+    /// Authored-intentional hotspot rect overlap pairs; the frontend keeps
+    /// the minimum-target clamp for these.
+    pub intentional_overlaps: Vec<IntentionalHotspotOverlapJson>,
     pub hotspots: Vec<HotspotView>,
     pub characters: Vec<CharacterView>,
 }

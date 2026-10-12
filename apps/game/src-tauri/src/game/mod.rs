@@ -2661,6 +2661,7 @@ impl GameEngine {
                         id: s.id.clone(),
                         label: s.label.clone(),
                         scene_tag: s.scene_tag.clone(),
+                        intentional_overlaps: s.intentional_overlaps.clone(),
                         hotspots: s
                             .hotspots
                             .iter()
@@ -3203,6 +3204,7 @@ mod tests {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -3482,6 +3484,7 @@ mod tests {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -4511,6 +4514,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -5597,6 +5601,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -5656,6 +5661,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -5718,6 +5724,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -5790,6 +5797,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -5836,6 +5844,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             intro: vec![],
             sublocations: vec![
                 SublocationJson {
+                    intentional_overlaps: Vec::new(),
                     id: "room_a".into(),
                     label: "Room A".into(),
                     status: LockStatus::Unlocked,
@@ -5848,6 +5857,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     characters: vec![],
                 },
                 SublocationJson {
+                    intentional_overlaps: Vec::new(),
                     id: "room_b".into(),
                     label: "Room B".into(),
                     status: LockStatus::Unlocked,
@@ -5902,6 +5912,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,
@@ -6709,10 +6720,13 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         let SceneView::Interrogation { visible_phases, .. } = &view.scene else {
             panic!("expected interrogation scene view");
         };
+        // Distinguish "tray closed" from "cross-exam view missing": a
+        // vanished view must fail the assertion, not satisfy `!presenting`.
         visible_phases
             .iter()
             .find_map(|phase| phase.cross_exam.as_ref())
-            .is_some_and(|cross_exam| cross_exam.presenting)
+            .map(|cross_exam| cross_exam.presenting)
+            .unwrap_or_else(|| panic!("expected a visible cross-exam view"))
     }
 
     #[test]
