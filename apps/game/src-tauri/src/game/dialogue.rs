@@ -1051,6 +1051,7 @@ mod tests {
             asset_refs: vec![],
             intro: vec![],
             sublocations: vec![SublocationJson {
+                intentional_overlaps: Vec::new(),
                 id: "room".into(),
                 label: "Room".into(),
                 status: LockStatus::Unlocked,

@@ -392,6 +392,39 @@ describe("applyInvestigationLayout", () => {
     });
   });
 
+  it("merges declared intentionalOverlaps onto the sublocation AST", () => {
+    const parsed = parseInvestigationLayoutJson(
+      validLayoutJson({
+        sublocations: {
+          main_hall: {
+            hotspots: {
+              table: { kind: "rect", x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+              cabinet: { kind: "rect", x: 0.12, y: 0.21, w: 0.3, h: 0.4 },
+            },
+            characters: {},
+            intentionalOverlaps: [{ hotspots: ["table", "cabinet"] }],
+          },
+        },
+      }),
+      sourceFile,
+    );
+    if (!parsed.ok) throw new Error("Expected valid layout fixture");
+
+    const scene = minimalScene();
+    scene.sublocations[0]!.hotspots.push({
+      ...scene.sublocations[0]!.hotspots[0]!,
+      id: "cabinet",
+      label: "Cabinet",
+    });
+    const result = applyInvestigationLayout(scene, parsed.value);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.sublocations[0]?.intentionalOverlaps).toEqual([
+      { hotspots: ["table", "cabinet"] },
+    ]);
+  });
+
   it("attaches a baked character interaction region to the AST", () => {
     const parsed = parseInvestigationLayoutJson(
       validBakedLayoutJson(),

@@ -408,6 +408,7 @@ pub(crate) fn investigation_scene_with_intro(
         asset_refs: vec![],
         intro,
         sublocations: vec![SublocationJson {
+            intentional_overlaps: Vec::new(),
             id: "room".into(),
             label: "Room".into(),
             status: LockStatus::Unlocked,
@@ -827,6 +828,12 @@ fn write_scene_jump_fixture_into(d: &Path) {
                         "label": "行1",
                         "content": [{ "kind": "line", "speaker": "witness", "text": "我在店裡。" }],
                         "contradiction": null
+                    },{
+                        "id": "l2",
+                        "label": "行2",
+                        "content": [{ "kind": "line", "speaker": "witness", "text": "還有一行。" }],
+                        "contradiction": null,
+                        "challenge": [{ "kind": "line", "speaker": "witness", "text": "這行可被反駁。" }]
                     }]
                 }
             }]
@@ -1093,6 +1100,12 @@ pub(crate) fn save_capture_fixture_resources() -> (tempfile::TempDir, PathBuf) {
           "label": "行1",
           "content": [{"kind":"line","speaker":"witness","text":"line"}],
           "contradiction": {"kind":"evidence","id":"test_evidence"}
+        },{
+          "id": "l2",
+          "label": "行2",
+          "content": [{"kind":"line","speaker":"witness","text":"second line"}],
+          "contradiction": null,
+          "challenge": [{"kind":"line","speaker":"witness","text":"challengeable"}]
         }]
       }
     }]

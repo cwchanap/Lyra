@@ -2715,7 +2715,16 @@ mod tests {
 
     #[test]
     fn playing_and_presenting_cross_exam_round_trip_exactly() {
-        for presenting in [false, true] {
+        // (presenting, pending queue, line id): Playing replays its
+        // line-content queue; Presenting with no queue is the drained
+        // tray-open state; Presenting with a pending queue is a save captured
+        // mid-challenge-lead-in, which must restore into Dialogue mode with
+        // the tray closed and the internal state still `Presenting` — the
+        // same view contract as the fresh path. The lead-in queue carries the
+        // `:challenge` origin of the challenged line.
+        for (presenting, pending_queue, line_id) in
+            [(false, true, "l1"), (true, false, "l1"), (true, true, "l2")]
+        {
             let (_guard, resources, mut engine) = interrogation_engine();
             engine.history = DialogueHistory::default();
             let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
@@ -2728,7 +2737,7 @@ mod tests {
             scene.cross_exam = if presenting {
                 CrossExam::Presenting {
                     question_id: "q1".into(),
-                    line_id: "l1".into(),
+                    line_id: line_id.into(),
                 }
             } else {
                 CrossExam::Playing {
@@ -2736,31 +2745,44 @@ mod tests {
                     line_index: 0,
                 }
             };
-            if presenting {
+            let segments = if pending_queue {
+                vec![DialogueSegment::new(
+                    interrogation_origin(&if presenting {
+                        format!("question:q1:line:{line_id}:challenge")
+                    } else {
+                        format!("question:q1:line:{line_id}:content")
+                    }),
+                    // The queue items must byte-match the packaged
+                    // segment the origin resolves to.
+                    vec![DialogueItem::Line {
+                        speaker: "witness".into(),
+                        text: if presenting {
+                            "challengeable".into()
+                        } else {
+                            "line".into()
+                        },
+                        portrait: None,
+                    }],
+                )
+                .unwrap()]
+            } else {
                 // The challenge lead-in has drained and the evidence tray is
                 // the active public mode; there is no dialogue queue to replay.
-                scene.pending_queue = None;
-                scene.line_content_start = 0;
+                Vec::new()
+            };
+            scene.pending_queue = if segments.is_empty() {
+                None
             } else {
-                scene.pending_queue = Some(
-                    ActiveDialogueQueue::from_position(
-                        vec![DialogueSegment::new(
-                            interrogation_origin("question:q1:line:l1:content"),
-                            vec![DialogueItem::Line {
-                                speaker: "witness".into(),
-                                text: "line".into(),
-                                portrait: None,
-                            }],
-                        )
-                        .unwrap()],
-                        0,
-                        0,
-                        6,
-                    )
-                    .unwrap(),
-                );
-                scene.line_content_start = 0;
-            }
+                Some(ActiveDialogueQueue::from_position(segments.clone(), 0, 0, 6).unwrap())
+            };
+            // `install_or_exhaust` installs a challenge lead-in with
+            // `line_content_start` past the queue (nothing challengeable);
+            // testimony line content installs with 0.
+            scene.line_content_start = if presenting && !segments.is_empty() {
+                ActiveDialogueQueue::flattened_segment_start(&segments, segments.len()).unwrap()
+            } else {
+                0
+            };
             engine.next_queue_gen = 7;
             let expected_cross_exam = scene.cross_exam.clone();
 
@@ -2769,84 +2791,43 @@ mod tests {
             let SceneRuntime::Interrogation(restored_scene) = &restored.engine.scene else {
                 panic!()
             };
-            assert_eq!(restored_scene.cross_exam, expected_cross_exam);
-            if presenting {
-                let crate::game::view::SceneView::Interrogation { visible_phases, .. } = view.scene
-                else {
-                    panic!("expected interrogation view");
-                };
-                assert!(visible_phases
-                    .into_iter()
-                    .find(|phase| phase.id == "phase_1")
-                    .and_then(|phase| phase.cross_exam)
-                    .is_some_and(|cross_exam| {
-                        cross_exam.presenting
-                            && cross_exam.question_id == "q1"
-                            && cross_exam.line_id == "l1"
-                    }));
-            } else {
-                assert!(matches!(view.mode, ModeView::Dialogue { .. }));
-            }
-        }
-    }
-
-    #[test]
-    fn presenting_with_pending_lead_in_restores_into_dialogue_mode() {
-        // A save captured mid-lead-in (cross_exam already Presenting, challenge
-        // lead-in queue still pending) must restore into Dialogue mode with the
-        // tray closed — the same view contract as the fresh path.
-        let (_guard, resources, mut engine) = interrogation_engine();
-        engine.history = DialogueHistory::default();
-        let SceneRuntime::Interrogation(scene) = &mut engine.scene else {
-            panic!()
-        };
-        scene.intro_played = true;
-        scene.intro_queue_gen =
-            crate::game::scenes::interrogation::RESTORED_CONSUMED_INTRO_QUEUE_GEN;
-        scene.mark_phase_entered("phase_1");
-        scene.cross_exam = CrossExam::Presenting {
-            question_id: "q1".into(),
-            line_id: "l1".into(),
-        };
-        // The challenge lead-in has NOT drained: its queue is still pending.
-        scene.pending_queue = Some(
-            ActiveDialogueQueue::from_position(
-                vec![DialogueSegment::new(
-                    interrogation_origin("question:q1:line:l1:content"),
-                    vec![DialogueItem::Line {
-                        speaker: "witness".into(),
-                        text: "line".into(),
-                        portrait: None,
-                    }],
-                )
-                .unwrap()],
-                0,
-                0,
-                6,
-            )
-            .unwrap(),
-        );
-        scene.line_content_start = 0;
-        engine.next_queue_gen = 7;
-
-        let (_, restored) = round_trip(resources, &engine);
-        let view = restored.engine.view().unwrap();
-        assert!(
-            matches!(view.mode, ModeView::Dialogue { .. }),
-            "the restored lead-in must replay in dialogue mode, got {:?}",
-            view.mode
-        );
-        let crate::game::view::SceneView::Interrogation { visible_phases, .. } = view.scene else {
-            panic!("expected interrogation scene view");
-        };
-        assert!(
-            visible_phases
+            assert_eq!(
+                restored_scene.cross_exam, expected_cross_exam,
+                "restore must preserve the exact cross-exam state"
+            );
+            let crate::game::view::SceneView::Interrogation { visible_phases, .. } = view.scene
+            else {
+                panic!("expected interrogation view");
+            };
+            let cross_exam_view = visible_phases
                 .iter()
                 .find(|phase| phase.id == "phase_1")
                 .and_then(|phase| phase.cross_exam.as_ref())
-                .is_some_and(|cross_exam| !cross_exam.presenting),
-            "the tray must stay closed while the restored lead-in is pending"
-        );
+                .expect("phase_1 must surface a cross-exam view");
+            if pending_queue {
+                assert!(
+                    matches!(view.mode, ModeView::Dialogue { .. }),
+                    "a pending queue must restore into dialogue mode, got {:?}",
+                    view.mode
+                );
+                assert!(
+                    !cross_exam_view.presenting,
+                    "the tray must stay closed while a restored queue is pending"
+                );
+            } else {
+                assert!(
+                    matches!(view.mode, ModeView::Interrogation { .. }),
+                    "a drained queue must restore into interrogation mode, got {:?}",
+                    view.mode
+                );
+                assert!(
+                    cross_exam_view.presenting
+                        && cross_exam_view.question_id == "q1"
+                        && cross_exam_view.line_id == line_id,
+                    "the drained tray must reopen on the saved line"
+                );
+            }
+        }
     }
 
     #[test]

@@ -1184,6 +1184,87 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+  it("gates backticks in chapter and story-catalog text but exempts agent-facing prompts", () => {
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-backtick-surface-"),
+    );
+    const writeFixture = (
+      root: string,
+      chapterTitle: string,
+      catalogText: string | null,
+      scenePromptLine: string | null,
+    ) => {
+      const chapterDir = resolve(root, "chapter_1");
+      mkdirSync(chapterDir, { recursive: true });
+      writeFileSync(
+        resolve(chapterDir, "chapter.md"),
+        `# Chapter 1: ${chapterTitle}\n\n**Summary:** Fixture summary.\n\n## Scenes\n\n1. scene_0.md\n`,
+      );
+      const prompt =
+        scenePromptLine === null
+          ? ""
+          : `\n- **Background Prompt:** ${scenePromptLine}\n`;
+      writeFileSync(
+        resolve(chapterDir, "scene_0.md"),
+        `# Scene 0: 測試\n\n## Body\n\n**相馬律**：測試對白。\n${prompt}`,
+      );
+      if (catalogText !== null) {
+        writeFileSync(resolve(root, "story_catalog.md"), catalogText);
+      }
+    };
+    try {
+      // Backtick in the chapter title reaches save slots / the case file.
+      const chapterRoot = resolve(tmpdir(), "scene-compile-backtick-chapter-");
+      rmSync(chapterRoot, { recursive: true, force: true });
+      writeFixture(chapterRoot, "標題 `REPRINT` 測試", null, null);
+      let result = compile({
+        sourceRoot: chapterRoot,
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors.map((e) => e.code)).toContain(
+        "chapterSourceBacktick",
+      );
+
+      // Backtick in story-catalog facts surfaces in the case file.
+      const catalogRoot = resolve(tmpdir(), "scene-compile-backtick-catalog-");
+      rmSync(catalogRoot, { recursive: true, force: true });
+      writeFixture(
+        catalogRoot,
+        "正常標題",
+        "# Story Catalog\n\n## Facts\n\n### Fact: 測試 {#fact_test}\n\n- **Summary:** 含 `REPRINT` 的摘要。\n- **Details:** 說明。\n- **Category:** chapter_1\n",
+        null,
+      );
+      result = compile({
+        sourceRoot: catalogRoot,
+        outputRoot: outRoot,
+      });
+      expect(result.ok).toBe(false);
+      expect(result.ok ? [] : result.errors.map((e) => e.code)).toContain(
+        "catalogSourceBacktick",
+      );
+
+      // A backtick in an agent-facing generation prompt never renders.
+      const promptRoot = resolve(tmpdir(), "scene-compile-backtick-prompt-");
+      rmSync(promptRoot, { recursive: true, force: true });
+      writeFixture(
+        promptRoot,
+        "正常標題",
+        null,
+        "English prompt with `code` span",
+      );
+      result = compile({
+        sourceRoot: promptRoot,
+        outputRoot: outRoot,
+      });
+      expect(
+        result.ok ? [] : result.errors.map((e) => e.code),
+        "agent-facing prompt backticks must not fail the compile",
+      ).not.toContain("sceneSourceBacktick");
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("HPA-257 compiler diagnostics", () => {
@@ -2766,15 +2847,20 @@ describe("compile (tracked production corpus compatibility)", () => {
       // never ship on required exploration paths. Scenes without a sidecar
       // compile with `layout: null` for every target, so this catches both a
       // missing sidecar file and missing entries.
-      const chapterDir = resolve(outRoot, "chapter_1");
-      const investigationFiles = readdirSync(chapterDir).filter((file) =>
-        /^investigation_scene_.*\.json$/.test(file),
-      );
+      const investigationFiles = readdirSync(outRoot)
+        .filter((name) => /^chapter_\d+$/.test(name))
+        .flatMap((name) =>
+          readdirSync(resolve(outRoot, name))
+            .filter((file) => /^investigation_scene_.*\.json$/.test(file))
+            .map((file) => resolve(outRoot, name, file)),
+        );
+      expect(
+        investigationFiles.length,
+        "expected at least one compiled investigation scene to gate on placements",
+      ).toBeGreaterThan(0);
       const unplaced: string[] = [];
       for (const file of investigationFiles) {
-        const scene = JSON.parse(
-          readFileSync(resolve(chapterDir, file), "utf-8"),
-        ) as {
+        const scene = JSON.parse(readFileSync(file, "utf-8")) as {
           id: string;
           sublocations: Array<{
             id: string;
@@ -2801,7 +2887,7 @@ describe("compile (tracked production corpus compatibility)", () => {
       }
       expect(
         unplaced,
-        "every live Chapter 1 investigation target must have a layout placement; " +
+        "every live investigation target must have a layout placement; " +
           "unplaced targets render as the production UNPLACED fallback panel",
       ).toEqual([]);
     } finally {

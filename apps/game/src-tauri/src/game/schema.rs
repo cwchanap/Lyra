@@ -899,6 +899,17 @@ pub struct SublocationJson {
     pub transition_dialogue: Vec<DialogueItem>,
     pub hotspots: Vec<HotspotJson>,
     pub characters: Vec<CharacterJson>,
+    /// Hotspot id pairs whose authored rect overlap the layout sidecar
+    /// declared intentional. Missing in older compiled resources.
+    #[serde(default)]
+    pub intentional_overlaps: Vec<IntentionalHotspotOverlapJson>,
+}
+
+/// Mirrors `IntentionalHotspotOverlap` from `@lyra/scene-types`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct IntentionalHotspotOverlapJson {
+    pub hotspots: Vec<String>,
 }
 
 impl SublocationJson {
@@ -2009,6 +2020,7 @@ mod tests {
     #[test]
     fn sublocation_visual_asset_cue_returns_none_when_empty() {
         let sub = SublocationJson {
+            intentional_overlaps: Vec::new(),
             id: "test".into(),
             label: "Test".into(),
             status: LockStatus::Unlocked,
@@ -2030,6 +2042,7 @@ mod tests {
             ..Default::default()
         };
         let sub = SublocationJson {
+            intentional_overlaps: Vec::new(),
             id: "test".into(),
             label: "Test".into(),
             status: LockStatus::Unlocked,

@@ -201,6 +201,9 @@ export function emitInvestigationScene(
           onReexamine: emitNullableDialogueItems(t.onReexamine),
         })),
       })),
+      ...(sub.intentionalOverlaps && sub.intentionalOverlaps.length > 0
+        ? { intentionalOverlaps: sub.intentionalOverlaps }
+        : {}),
     })),
     evidenceManifest: ast.evidenceManifest.map((e) => ({
       id: e.id,

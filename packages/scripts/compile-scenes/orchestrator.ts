@@ -134,6 +134,39 @@ export type CompileResult =
     }
   | { ok: false; errors: CompileError[] };
 
+/**
+ * Agent-facing generation prompt metadata (e.g. `- **Background Prompt:**`)
+ * never renders for players, so backticks there are exempt from the gate.
+ */
+const AGENT_PROMPT_LINE = /^\s*-\s+\*\*[^*]*Prompt:\*\*/;
+
+/**
+ * Nothing in the pipeline renders Markdown, so a backtick in authored
+ * player-visible text reaches the player literally. One error per
+ * occurrence, each carrying its 1-based line.
+ */
+function backtickErrors(
+  lines: readonly string[],
+  sourceFileTag: string,
+  surface: string,
+  code: string,
+): CompileError[] {
+  const errors: CompileError[] = [];
+  lines.forEach((line, index) => {
+    if (AGENT_PROMPT_LINE.test(line)) return;
+    const occurrences = (line.match(/`/g) ?? []).length;
+    for (let i = 0; i < occurrences; i += 1) {
+      errors.push({
+        code,
+        message: `${sourceFileTag}:${index + 1}: literal backtick in ${surface} — nothing renders Markdown; quote printed text with 「】 or （） instead.`,
+        sourceFile: sourceFileTag,
+        line: index + 1,
+      });
+    }
+  });
+  return errors;
+}
+
 export function compile(opts: CompileOptions): CompileResult {
   const chapters: ASTChapter[] = [];
   const scenes: SceneRecord[] = [];
@@ -233,6 +266,15 @@ export function compile(opts: CompileOptions): CompileResult {
       );
       if (parsedCatalog.ok) {
         storyCatalog = parsedCatalog.value;
+        // Catalog facts/questions/objectives all surface in the case file.
+        errors.push(
+          ...backtickErrors(
+            readFileSync(storyCatalogPath, "utf-8").split("\n"),
+            "story_catalog.md",
+            "authored story-catalog text (surfaces in the case file)",
+            "catalogSourceBacktick",
+          ),
+        );
       } else {
         errors.push(...parsedCatalog.errors);
       }
@@ -311,6 +353,15 @@ export function compile(opts: CompileOptions): CompileResult {
       continue;
     }
     chapters.push(chapter.value);
+    // The chapter title/summary surface in save slots and the case file.
+    errors.push(
+      ...backtickErrors(
+        manifestSource.split("\n"),
+        `${dirName}/chapter.md`,
+        "authored chapter text (title and summary surface in saves and the case file)",
+        "chapterSourceBacktick",
+      ),
+    );
 
     for (const file of chapter.value.sceneFiles) {
       const sceneId = file.replace(/\.md$/, "");
@@ -329,22 +380,18 @@ export function compile(opts: CompileOptions): CompileResult {
       }
       const sourceFileTag = `${dirName}/${file}`;
       // Nothing in the pipeline renders Markdown, so a backtick in authored
-      // scene text always reaches the player literally. Reject it at the
+      // player-visible text reaches the player literally. Reject it at the
       // source with a line number so agents/authors quote printed text with
-      // 「」 or （） instead.
-      const backtickLines = [...source.matchAll(/`/g)];
-      for (const match of backtickLines) {
-        const line =
-          match.index === undefined
-            ? 1
-            : source.slice(0, match.index).split("\n").length;
-        errors.push({
-          code: "sceneSourceBacktick",
-          message: `${sourceFileTag}:${line}: literal backtick in authored scene text — nothing renders Markdown; quote printed text with 「」 or （） instead.`,
-          sourceFile: sourceFileTag,
-          line,
-        });
-      }
+      // 「」 or （） instead. Agent-facing generation prompts
+      // (`- **…Prompt:**` metadata) never render and are exempt.
+      errors.push(
+        ...backtickErrors(
+          source.split("\n"),
+          sourceFileTag,
+          "authored scene text",
+          "sceneSourceBacktick",
+        ),
+      );
       if (file.startsWith("scene_")) {
         const parsed = parseLinearScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {

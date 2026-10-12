@@ -251,6 +251,7 @@ export function applyInvestigationLayout(
             ...character,
             layout: sublocationLayout?.characters[character.id] ?? null,
           })),
+          intentionalOverlaps: sublocationLayout?.intentionalOverlaps ?? [],
         };
       }),
     },
