@@ -601,11 +601,11 @@ describe("InvestigationSceneSurface", () => {
   it("drops the minimum-target clamp only where it would steal a neighbour's clicks", async () => {
     // At the 800×600 minimum window the cover plane is ~1067px wide, so the
     // scene-9 packet slices (~27px each) render far below the 72px
-    // min-width (+chrome) clamp: each expanded button would overlap its
-    // neighbour and later DOM order would win the hit-test. The collision is
-    // horizontal only, so each culprit loses just its x-axis clamp and
-    // chrome — compact-x restores the authored right edge. The rightmost
-    // slice's own extension reaches nothing, so it keeps the clamp.
+    // min-width clamp: each expanded button would overlap its neighbour and
+    // later DOM order would win the hit-test. The collision is horizontal
+    // only, so each culprit loses just its x-axis clamp — compact-x restores
+    // the authored right edge. The rightmost slice's own extension reaches
+    // nothing, so it keeps the clamp.
     const packets = {
       ...sublocation,
       hotspots: [
@@ -667,13 +667,14 @@ describe("InvestigationSceneSurface", () => {
     expect(onInspect).toHaveBeenCalledWith("material_kit_list");
   });
 
-  it("compacts only the colliding axis of a culprit whose chrome reaches a neighbour", () => {
-    // Chapter 1 scene 7 geometry: fire_door_7 (88×306px authored) and
-    // floor_water (288×138px) both exceed the 72×44 minimum — their
-    // collision comes purely from the 18px bottom/right chrome, so only the
-    // top box's vertical axis compacts. doc_left/doc_right mirror the
-    // takase_replay × bean_can pair: authored x-disjoint, y-overlapping —
-    // only the left box's horizontal axis compacts.
+  it("compacts only the clamp-driven colliding axis of a culprit", () => {
+    // The authored rects are disjoint on the colliding axis; only the
+    // culprit's 72×44 minimum-target clamp crosses the neighbour. door's
+    // authored height (12px) clamps to 44px and reaches into puddle below —
+    // only the top box's vertical axis compacts. doc_left/doc_right mirror
+    // it horizontally: authored x-disjoint, y-overlapping, doc_left's
+    // authored width (32px) clamps to 72px — only the left box's horizontal
+    // axis compacts.
     const neighbours = {
       ...sublocation,
       hotspots: [
@@ -682,28 +683,28 @@ describe("InvestigationSceneSurface", () => {
           label: "防火門",
           description: "",
           inspected: false,
-          layout: { kind: "rect", x: 0.02, y: 0.3, w: 0.08, h: 0.4 },
+          layout: { kind: "rect", x: 0.02, y: 0.3, w: 0.08, h: 0.02 },
         },
         {
           id: "puddle",
           label: "積水",
           description: "",
           inspected: false,
-          layout: { kind: "rect", x: 0.05, y: 0.7, w: 0.25, h: 0.2 },
+          layout: { kind: "rect", x: 0.05, y: 0.34, w: 0.25, h: 0.2 },
         },
         {
           id: "doc_left",
           label: "左文件",
           description: "",
           inspected: false,
-          layout: { kind: "rect", x: 0.55, y: 0.2, w: 0.12, h: 0.12 },
+          layout: { kind: "rect", x: 0.55, y: 0.2, w: 0.03, h: 0.12 },
         },
         {
           id: "doc_right",
           label: "右文件",
           description: "",
           inspected: false,
-          layout: { kind: "rect", x: 0.68, y: 0.2, w: 0.1, h: 0.12 },
+          layout: { kind: "rect", x: 0.61, y: 0.2, w: 0.1, h: 0.12 },
         },
       ],
       characters: [],
@@ -772,22 +773,20 @@ describe("InvestigationSceneSurface", () => {
     );
   });
 
-  it("renders compact targets at authored size without the minimum-target chrome", () => {
+  it("renders compact targets at authored size without the minimum-target clamp", () => {
+    // Buttons size as border-box (UA default), so only the min-size clamp
+    // extends the hit edge; padding and border stay inside the box and are
+    // left untouched so the focus outline keeps all four sides.
     const compactRule = cssRule(surfaceSource(), ".hotspot-target.compact");
     expect(compactRule).toContain("min-width: 0");
     expect(compactRule).toContain("min-height: 0");
-    expect(compactRule).toContain("box-sizing: border-box");
 
-    // Single-axis compact strips only that axis's clamp + chrome so the
-    // surviving axis keeps its minimum-target affordance.
+    // Single-axis compact strips only that axis's clamp so the surviving
+    // axis keeps its minimum-target affordance.
     const compactXRule = cssRule(surfaceSource(), ".hotspot-target.compact-x");
     expect(compactXRule).toContain("min-width: 0");
-    expect(compactXRule).toContain("padding-left: 0");
-    expect(compactXRule).toContain("padding-right: 0");
     const compactYRule = cssRule(surfaceSource(), ".hotspot-target.compact-y");
     expect(compactYRule).toContain("min-height: 0");
-    expect(compactYRule).toContain("padding-top: 0");
-    expect(compactYRule).toContain("padding-bottom: 0");
   });
 
   it("compacts undeclared authored overlaps instead of enlarging the theft area", () => {
@@ -830,10 +829,10 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("compacts a hotspot whose clamp steals clicks from a character", () => {
-    // Chapter 1 scene 3 geometry: osmanthus_sign's clamped hit box reaches
-    // ~11px into takase's baked box; the authored rects do not intersect.
-    // The character's box is authored-exact, so the sign's own right-edge
-    // extension is the culprit — it compacts on x only.
+    // The sign's authored width (~32px) clamps to the 72px minimum and its
+    // hit box reaches ~8px into takase's baked box; the authored rects do
+    // not intersect. The character's box is authored-exact, so the sign's
+    // own right-edge extension is the culprit — it compacts on x only.
     const withWitness = {
       ...sublocation,
       hotspots: [
@@ -844,9 +843,9 @@ describe("InvestigationSceneSurface", () => {
           inspected: false,
           layout: {
             kind: "rect",
-            x: 0.626241,
+            x: 0.64,
             y: 0.253472,
-            w: 0.067049,
+            w: 0.03,
             h: 0.117701,
           },
         },
@@ -885,23 +884,33 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("keeps the hit-box model constants in sync with the CSS and window config", () => {
-    // The JS hit-box model hand-copies CSS values (min target, content-box
-    // chrome) and the tauri.conf.json minimum window. This tripwire fails
-    // when either side changes without the other.
+    // The JS hit-box model hand-copies the CSS minimum target and the
+    // tauri.conf.json minimum window (padding/border are irrelevant: the
+    // button sizes as border-box, so they stay inside the hit box). This
+    // tripwire fails when either side changes without the other — including
+    // the e2e window overlay, which REPLACES the base window entry and must
+    // restate the minimums.
     const source = surfaceSource();
     const targetRule = cssRule(source, ".hotspot-target");
 
     expect(source).toContain("MIN_TARGET_PX = { w: 72, h: 44 }");
     expect(targetRule).toContain("min-width: 72px");
     expect(targetRule).toContain("min-height: 44px");
-    expect(source).toContain("TARGET_CHROME_PX = 18");
-    expect(targetRule).toContain("padding: 8px");
-    expect(targetRule).toContain("border: 1px solid transparent");
 
-    const tauriConfig = JSON.parse(
-      readFileSync(join(process.cwd(), "src-tauri/tauri.conf.json"), "utf8"),
-    ) as { app: { windows: Array<{ minWidth?: number; minHeight?: number }> } };
-    const [{ minWidth, minHeight }] = tauriConfig.app.windows;
+    const readWindowMins = (path: string) => {
+      const config = JSON.parse(
+        readFileSync(join(process.cwd(), path), "utf8"),
+      ) as {
+        app: { windows: Array<{ minWidth?: number; minHeight?: number }> };
+      };
+      const [{ minWidth, minHeight }] = config.app.windows;
+      return { minWidth, minHeight };
+    };
+    const { minWidth, minHeight } = readWindowMins("src-tauri/tauri.conf.json");
+    expect(readWindowMins("src-tauri/tauri.e2e.conf.json")).toEqual({
+      minWidth,
+      minHeight,
+    });
     expect(source).toContain(`Math.max(${minWidth}, (16 / 9) * ${minHeight})`);
     expect(source).toContain(`Math.max(${minHeight}, (9 / 16) * ${minWidth})`);
   });
