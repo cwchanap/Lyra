@@ -137,8 +137,12 @@ export type CompileResult =
 /**
  * Agent-facing generation prompt metadata (e.g. `- **Background Prompt:**`)
  * never renders for players, so backticks there are exempt from the gate.
+ * `- **Prompt:**` (analysis board instructions) and `- **Loop Prompt:**`
+ * (testimony dialogue) ARE emitted to players, so the exemption is limited
+ * to the known generation-metadata keys.
  */
-const AGENT_PROMPT_LINE = /^\s*-\s+\*\*[^*]*Prompt:\*\*/;
+const AGENT_PROMPT_LINE =
+  /^\s*-\s+\*\*(?:Background|Image|Scene Source) Prompt:\*\*/;
 
 /**
  * Nothing in the pipeline renders Markdown, so a backtick in authored
@@ -383,7 +387,9 @@ export function compile(opts: CompileOptions): CompileResult {
       // player-visible text reaches the player literally. Reject it at the
       // source with a line number so agents/authors quote printed text with
       // 「」 or （） instead. Agent-facing generation prompts
-      // (`- **…Prompt:**` metadata) never render and are exempt.
+      // (`- **Background/Image/Scene Source Prompt:**` metadata) never
+      // render and are exempt; `- **Prompt:**` / `- **Loop Prompt:**`
+      // reach the player and stay gated.
       errors.push(
         ...backtickErrors(
           source.split("\n"),
