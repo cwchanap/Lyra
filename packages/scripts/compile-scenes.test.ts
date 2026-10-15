@@ -1212,10 +1212,13 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
         writeFileSync(resolve(root, "story_catalog.md"), catalogText);
       }
     };
+    const fixtureRoots: string[] = [];
     try {
       // Backtick in the chapter title reaches save slots / the case file.
-      const chapterRoot = resolve(tmpdir(), "scene-compile-backtick-chapter-");
-      rmSync(chapterRoot, { recursive: true, force: true });
+      const chapterRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-backtick-chapter-"),
+      );
+      fixtureRoots.push(chapterRoot);
       writeFixture(chapterRoot, "標題 `REPRINT` 測試", null, null);
       let result = compile({
         sourceRoot: chapterRoot,
@@ -1227,8 +1230,10 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       );
 
       // Backtick in story-catalog facts surfaces in the case file.
-      const catalogRoot = resolve(tmpdir(), "scene-compile-backtick-catalog-");
-      rmSync(catalogRoot, { recursive: true, force: true });
+      const catalogRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-backtick-catalog-"),
+      );
+      fixtureRoots.push(catalogRoot);
       writeFixture(
         catalogRoot,
         "正常標題",
@@ -1245,8 +1250,10 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       );
 
       // A backtick in an agent-facing generation prompt never renders.
-      const promptRoot = resolve(tmpdir(), "scene-compile-backtick-prompt-");
-      rmSync(promptRoot, { recursive: true, force: true });
+      const promptRoot = mkdtempSync(
+        resolve(tmpdir(), "scene-compile-backtick-prompt-"),
+      );
+      fixtureRoots.push(promptRoot);
       writeFixture(
         promptRoot,
         "正常標題",
@@ -1263,6 +1270,9 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       ).not.toContain("sceneSourceBacktick");
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
+      for (const root of fixtureRoots) {
+        rmSync(root, { recursive: true, force: true });
+      }
     }
   });
 

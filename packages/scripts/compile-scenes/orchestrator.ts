@@ -162,7 +162,7 @@ function backtickErrors(
     for (let i = 0; i < occurrences; i += 1) {
       errors.push({
         code,
-        message: `${sourceFileTag}:${index + 1}: literal backtick in ${surface} — nothing renders Markdown; quote printed text with 「】 or （） instead.`,
+        message: `${sourceFileTag}:${index + 1}: literal backtick in ${surface} — nothing renders Markdown; quote printed text with 「」 or （） instead.`,
         sourceFile: sourceFileTag,
         line: index + 1,
       });
@@ -264,17 +264,15 @@ export function compile(opts: CompileOptions): CompileResult {
 
   if (storyCatalogPath !== null) {
     try {
-      const parsedCatalog = parseStoryCatalog(
-        readFileSync(storyCatalogPath, "utf-8"),
-        storyCatalogPath,
-      );
+      const catalogSource = readFileSync(storyCatalogPath, "utf-8");
+      const parsedCatalog = parseStoryCatalog(catalogSource, storyCatalogPath);
       if (parsedCatalog.ok) {
         storyCatalog = parsedCatalog.value;
         // Catalog facts/questions/objectives all surface in the case file.
         errors.push(
           ...backtickErrors(
-            readFileSync(storyCatalogPath, "utf-8").split("\n"),
-            "story_catalog.md",
+            catalogSource.split("\n"),
+            storyCatalogPath,
             "authored story-catalog text (surfaces in the case file)",
             "catalogSourceBacktick",
           ),
