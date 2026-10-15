@@ -792,6 +792,9 @@
     font-family: var(--mono);
     font-size: 12px;
     line-height: 1;
+    /* The badge overflows a compact target shorter than ~22px and would
+       extend the button's hit area past its box, like .hotspot-content. */
+    pointer-events: none;
   }
 
   .character-target {
