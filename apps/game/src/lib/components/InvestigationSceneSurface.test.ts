@@ -602,9 +602,10 @@ describe("InvestigationSceneSurface", () => {
     // At the 800×600 minimum window the cover plane is ~1067px wide, so the
     // scene-9 packet slices (~27px each) render far below the 72px
     // min-width (+chrome) clamp: each expanded button would overlap its
-    // neighbour and later DOM order would win the hit-test. Those targets
-    // must render compact — authored size, border-box — while an isolated
-    // target keeps the clamp.
+    // neighbour and later DOM order would win the hit-test. The collision is
+    // horizontal only, so each culprit loses just its x-axis clamp and
+    // chrome — compact-x restores the authored right edge. The rightmost
+    // slice's own extension reaches nothing, so it keeps the clamp.
     const packets = {
       ...sublocation,
       hotspots: [
@@ -648,17 +649,88 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    for (const label of ["工單", "名單", "材料表"]) {
+    for (const label of ["工單", "名單"]) {
       expect(
         screen.getByRole("button", { name: `調查：${label}` }),
-      ).toHaveClass("compact");
+      ).toHaveClass("compact-x");
     }
-    expect(screen.getByRole("button", { name: /調查：遠處/ })).not.toHaveClass(
-      "compact",
-    );
+    for (const label of ["材料表", "遠處"]) {
+      const target = screen.getByRole("button", { name: `調查：${label}` });
+      expect(target).not.toHaveClass("compact");
+      expect(target).not.toHaveClass("compact-x");
+      expect(target).not.toHaveClass("compact-y");
+    }
 
     await user.click(screen.getByRole("button", { name: "調查：工單" }));
     expect(onInspect).toHaveBeenCalledWith("workorder");
+    await user.click(screen.getByRole("button", { name: "調查：材料表" }));
+    expect(onInspect).toHaveBeenCalledWith("material_kit_list");
+  });
+
+  it("compacts only the colliding axis of a culprit whose chrome reaches a neighbour", () => {
+    // Chapter 1 scene 7 geometry: fire_door_7 (88×306px authored) and
+    // floor_water (288×138px) both exceed the 72×44 minimum — their
+    // collision comes purely from the 18px bottom/right chrome, so only the
+    // top box's vertical axis compacts. doc_left/doc_right mirror the
+    // takase_replay × bean_can pair: authored x-disjoint, y-overlapping —
+    // only the left box's horizontal axis compacts.
+    const neighbours = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "door",
+          label: "防火門",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.02, y: 0.3, w: 0.08, h: 0.4 },
+        },
+        {
+          id: "puddle",
+          label: "積水",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.05, y: 0.7, w: 0.25, h: 0.2 },
+        },
+        {
+          id: "doc_left",
+          label: "左文件",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.55, y: 0.2, w: 0.12, h: 0.12 },
+        },
+        {
+          id: "doc_right",
+          label: "右文件",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.68, y: 0.2, w: 0.1, h: 0.12 },
+        },
+      ],
+      characters: [],
+    } satisfies SublocationView;
+
+    render(InvestigationSceneSurface, {
+      sublocation: neighbours,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const door = screen.getByRole("button", { name: "調查：防火門" });
+    expect(door).toHaveClass("compact-y");
+    expect(door).not.toHaveClass("compact");
+    expect(door).not.toHaveClass("compact-x");
+
+    const docLeft = screen.getByRole("button", { name: "調查：左文件" });
+    expect(docLeft).toHaveClass("compact-x");
+    expect(docLeft).not.toHaveClass("compact");
+    expect(docLeft).not.toHaveClass("compact-y");
+
+    for (const name of ["調查：積水", "調查：右文件"]) {
+      const target = screen.getByRole("button", { name });
+      expect(target).not.toHaveClass("compact");
+      expect(target).not.toHaveClass("compact-x");
+      expect(target).not.toHaveClass("compact-y");
+    }
   });
 
   it("keeps the minimum-target clamp on declared authored-overlapping pairs", () => {
@@ -705,6 +777,17 @@ describe("InvestigationSceneSurface", () => {
     expect(compactRule).toContain("min-width: 0");
     expect(compactRule).toContain("min-height: 0");
     expect(compactRule).toContain("box-sizing: border-box");
+
+    // Single-axis compact strips only that axis's clamp + chrome so the
+    // surviving axis keeps its minimum-target affordance.
+    const compactXRule = cssRule(surfaceSource(), ".hotspot-target.compact-x");
+    expect(compactXRule).toContain("min-width: 0");
+    expect(compactXRule).toContain("padding-left: 0");
+    expect(compactXRule).toContain("padding-right: 0");
+    const compactYRule = cssRule(surfaceSource(), ".hotspot-target.compact-y");
+    expect(compactYRule).toContain("min-height: 0");
+    expect(compactYRule).toContain("padding-top: 0");
+    expect(compactYRule).toContain("padding-bottom: 0");
   });
 
   it("compacts undeclared authored overlaps instead of enlarging the theft area", () => {
@@ -749,6 +832,8 @@ describe("InvestigationSceneSurface", () => {
   it("compacts a hotspot whose clamp steals clicks from a character", () => {
     // Chapter 1 scene 3 geometry: osmanthus_sign's clamped hit box reaches
     // ~11px into takase's baked box; the authored rects do not intersect.
+    // The character's box is authored-exact, so the sign's own right-edge
+    // extension is the culprit — it compacts on x only.
     const withWitness = {
       ...sublocation,
       hotspots: [
@@ -792,7 +877,7 @@ describe("InvestigationSceneSurface", () => {
     });
 
     expect(screen.getByRole("button", { name: "調查：桂花招牌" })).toHaveClass(
-      "compact",
+      "compact-x",
     );
     expect(screen.getByRole("button", { name: /調查：遠處/ })).not.toHaveClass(
       "compact",
