@@ -1,6 +1,6 @@
 <script lang="ts">
-  import type { Snippet } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
+  import type { Snippet } from "svelte";
   import CrossfadeImage from "./CrossfadeImage.svelte";
   import {
     imageStoryAssetTypeForId,
@@ -63,23 +63,23 @@
   );
   // .hotspot-target clamps each button to a 72×44px minimum target, which
   // drags a small painted rect over its neighbours and steals their clicks
-  // wherever two expanded boxes overlap. Clamp and chrome extend only right
-  // and down (the border box is anchored at the authored top-left), so a
-  // collision is resolved by compacting just the culprit box on the axis
-  // whose extension caused it: compact-x/compact-y zero that axis's
-  // min-size, padding, and border, restoring the hit edge to the authored
-  // edge while the free axis keeps its minimum-target affordance. Pairs
-  // whose authored rects already intersect on both axes compact fully —
-  // unless the layout sidecar declared them in intentionalOverlaps, which
-  // keeps the minimum size as authored intent. Characters (z-index 2, never
-  // expanded) can only be stolen from, so the hotspot side compacts.
+  // wherever two expanded boxes overlap. Buttons size as border-box (the
+  // WebKit/Chromium UA default; nothing here overrides it), so the 8px
+  // padding and 1px border live INSIDE the box and only the clamp extends
+  // the hit edge right/down (the border box is anchored at the authored
+  // top-left). A collision is therefore resolved by compacting just the
+  // culprit box on the axis whose clamp caused it: compact-x/compact-y zero
+  // that axis's min-size, restoring the hit edge to the authored edge while
+  // the free axis keeps its minimum-target affordance. Pairs whose authored
+  // rects already intersect on both axes compact fully — unless the layout
+  // sidecar declared them in intentionalOverlaps, which keeps the minimum
+  // size as authored intent. Characters (z-index 2, never expanded) can only
+  // be stolen from, so the hotspot side compacts.
   // Expansion is evaluated at the minimum window (tauri.conf.json
   // minWidth/minHeight), where the cover plane is ~1067×600px;
   // clamp-induced collisions are monotonic in viewport size, so a pair safe
   // there is safe larger.
   const MIN_TARGET_PX = { w: 72, h: 44 };
-  // content-box: padding 8px + border 1px per side extends the hit box.
-  const TARGET_CHROME_PX = 18;
   const MIN_COVER_PLANE_PX = {
     w: Math.max(800, (16 / 9) * 600),
     h: Math.max(600, (9 / 16) * 800),
@@ -109,24 +109,13 @@
     return {
       left: rect.left,
       top: rect.top,
-      right:
-        rect.left +
-        Math.max(rect.right - rect.left, MIN_TARGET_PX.w) +
-        TARGET_CHROME_PX,
-      bottom:
-        rect.top +
-        Math.max(rect.bottom - rect.top, MIN_TARGET_PX.h) +
-        TARGET_CHROME_PX,
+      right: rect.left + Math.max(rect.right - rect.left, MIN_TARGET_PX.w),
+      bottom: rect.top + Math.max(rect.bottom - rect.top, MIN_TARGET_PX.h),
     };
   }
 
   function hitRectsIntersect(a: HitRect, b: HitRect) {
-    return (
-      a.left < b.right &&
-      b.left < a.right &&
-      a.top < b.bottom &&
-      b.top < a.bottom
-    );
+    return overlapOnX(a, b) && overlapOnY(a, b);
   }
 
   function overlapOnX(a: HitRect, b: HitRect) {
@@ -153,7 +142,8 @@
       clamped: hotspotHitRect(hotspot.layout),
     }));
     type HitBox = (typeof boxes)[number];
-    // SvelteMap/SvelteSet are required by svelte/prefer-svelte-reactivity.
+    // Scratch collections local to this $derived.by; svelte/prefer-svelte-reactivity
+    // requires the reactive variants even for non-reactive scratch use.
     const axesById = new SvelteMap<string, SvelteSet<CompactAxis>>();
     const markCompact = (id: string, axis: CompactAxis) => {
       const axes = axesById.get(id) ?? new SvelteSet<CompactAxis>();
@@ -723,29 +713,20 @@
   .hotspot-target.compact {
     min-width: 0;
     min-height: 0;
-    padding: 0;
-    box-sizing: border-box;
   }
 
-  /* Single-axis compact: remove only this axis's clamp and chrome so the
-     hit edge returns to the authored edge while the other axis keeps the
-     minimum-target affordance. Border widths zero because content-box
-     padding+border would still extend the box right/down past the authored
-     edge. */
+  /* Single-axis compact: remove only this axis's clamp so the hit edge
+     returns to the authored edge while the other axis keeps the
+     minimum-target affordance. Padding and border stay — the button sizes
+     as border-box, so they live inside the box and never extend the hit
+     edge; keeping the border whole also keeps the focus outline on all
+     four sides. */
   .hotspot-target.compact-x {
     min-width: 0;
-    padding-left: 0;
-    padding-right: 0;
-    border-left-width: 0;
-    border-right-width: 0;
   }
 
   .hotspot-target.compact-y {
     min-height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-top-width: 0;
-    border-bottom-width: 0;
   }
 
   .hotspot-target:hover:not(:disabled),
