@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import CrossfadeImage from "./CrossfadeImage.svelte";
   import {
     imageStoryAssetTypeForId,
@@ -62,11 +63,16 @@
   );
   // .hotspot-target clamps each button to a 72×44px minimum target, which
   // drags a small painted rect over its neighbours and steals their clicks
-  // wherever two expanded boxes overlap. Drop the clamp wherever two hit
-  // boxes collide — clamp-induced or an undeclared authored overlap. Only
-  // pairs the layout sidecar declared in intentionalOverlaps keep the
-  // minimum size: their nesting is authored intent. Characters (z-index 2,
-  // never expanded) can only be stolen from, so the hotspot side compacts.
+  // wherever two expanded boxes overlap. Clamp and chrome extend only right
+  // and down (the border box is anchored at the authored top-left), so a
+  // collision is resolved by compacting just the culprit box on the axis
+  // whose extension caused it: compact-x/compact-y zero that axis's
+  // min-size, padding, and border, restoring the hit edge to the authored
+  // edge while the free axis keeps its minimum-target affordance. Pairs
+  // whose authored rects already intersect on both axes compact fully —
+  // unless the layout sidecar declared them in intentionalOverlaps, which
+  // keeps the minimum size as authored intent. Characters (z-index 2, never
+  // expanded) can only be stolen from, so the hotspot side compacts.
   // Expansion is evaluated at the minimum window (tauri.conf.json
   // minWidth/minHeight), where the cover plane is ~1067×600px;
   // clamp-induced collisions are monotonic in viewport size, so a pair safe
@@ -80,20 +86,36 @@
   };
 
   type HitRect = { left: number; top: number; right: number; bottom: number };
+  type CompactAxis = "x" | "y";
 
-  function hotspotHitRect(layout: HotspotLayout): HitRect {
+  function authoredRect(layout: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }): HitRect {
     const left = layout.x * MIN_COVER_PLANE_PX.w;
     const top = layout.y * MIN_COVER_PLANE_PX.h;
     return {
       left,
       top,
+      right: left + layout.w * MIN_COVER_PLANE_PX.w,
+      bottom: top + layout.h * MIN_COVER_PLANE_PX.h,
+    };
+  }
+
+  function hotspotHitRect(layout: HotspotLayout): HitRect {
+    const rect = authoredRect(layout);
+    return {
+      left: rect.left,
+      top: rect.top,
       right:
-        left +
-        Math.max(layout.w * MIN_COVER_PLANE_PX.w, MIN_TARGET_PX.w) +
+        rect.left +
+        Math.max(rect.right - rect.left, MIN_TARGET_PX.w) +
         TARGET_CHROME_PX,
       bottom:
-        top +
-        Math.max(layout.h * MIN_COVER_PLANE_PX.h, MIN_TARGET_PX.h) +
+        rect.top +
+        Math.max(rect.bottom - rect.top, MIN_TARGET_PX.h) +
         TARGET_CHROME_PX,
     };
   }
@@ -107,50 +129,111 @@
     );
   }
 
-  function characterHitRect(layout: CharacterLayout): HitRect {
-    const left = layout.x * MIN_COVER_PLANE_PX.w;
-    const top = layout.y * MIN_COVER_PLANE_PX.h;
-    return {
-      left,
-      top,
-      right: left + layout.w * MIN_COVER_PLANE_PX.w,
-      bottom: top + layout.h * MIN_COVER_PLANE_PX.h,
-    };
+  function overlapOnX(a: HitRect, b: HitRect) {
+    return a.left < b.right && b.left < a.right;
+  }
+
+  function overlapOnY(a: HitRect, b: HitRect) {
+    return a.top < b.bottom && b.top < a.bottom;
   }
 
   function overlapPairKey(a: string, b: string): string {
     return a < b ? `${a}\0${b}` : `${b}\0${a}`;
   }
 
-  let compactHotspotIds = $derived.by(() => {
+  let compactHotspotClasses = $derived.by(() => {
     const declaredOverlaps = new Set(
       (sublocation.intentionalOverlaps ?? []).map(({ hotspots }) =>
         overlapPairKey(hotspots[0], hotspots[1]),
       ),
     );
-    const hitRects = placedHotspots.map((hotspot) => ({
+    const boxes = placedHotspots.map((hotspot) => ({
       id: hotspot.id,
+      authored: authoredRect(hotspot.layout),
       clamped: hotspotHitRect(hotspot.layout),
     }));
-    const ids = new Array<string>();
-    const markCompact = (id: string) => {
-      if (!ids.includes(id)) ids.push(id);
+    type HitBox = (typeof boxes)[number];
+    // SvelteMap/SvelteSet are required by svelte/prefer-svelte-reactivity.
+    const axesById = new SvelteMap<string, SvelteSet<CompactAxis>>();
+    const markCompact = (id: string, axis: CompactAxis) => {
+      const axes = axesById.get(id) ?? new SvelteSet<CompactAxis>();
+      axes.add(axis);
+      axesById.set(id, axes);
     };
-    for (const [index, a] of hitRects.entries()) {
-      for (const b of hitRects.slice(index + 1)) {
+    const authoredSize = (box: HitBox, axis: CompactAxis) =>
+      axis === "x"
+        ? box.authored.right - box.authored.left
+        : box.authored.bottom - box.authored.top;
+    // Compacting an axis drops its clamp as well as its chrome, so prefer
+    // the axis where the culprit already meets the minimum — the hit box it
+    // keeps is larger.
+    const leastLossAxis = (
+      candidates: { axis: CompactAxis; culprit: HitBox }[],
+    ) =>
+      (candidates.find(
+        ({ axis, culprit }) =>
+          authoredSize(culprit, axis) >=
+          (axis === "x" ? MIN_TARGET_PX.w : MIN_TARGET_PX.h),
+      ) ?? candidates[0])!;
+    for (const [index, a] of boxes.entries()) {
+      for (const b of boxes.slice(index + 1)) {
         if (declaredOverlaps.has(overlapPairKey(a.id, b.id))) continue;
-        if (hitRectsIntersect(a.clamped, b.clamped)) {
-          markCompact(a.id);
-          markCompact(b.id);
+        if (!hitRectsIntersect(a.clamped, b.clamped)) continue;
+        const freeX = !overlapOnX(a.authored, b.authored);
+        const freeY = !overlapOnY(a.authored, b.authored);
+        if (!freeX && !freeY) {
+          // Undeclared authored overlap: both boxes fall to authored size so
+          // the clamp can't enlarge the theft area.
+          for (const box of [a, b]) {
+            markCompact(box.id, "x");
+            markCompact(box.id, "y");
+          }
+          continue;
         }
+        const candidates: { axis: CompactAxis; culprit: HitBox }[] = [];
+        if (freeX)
+          candidates.push({
+            axis: "x",
+            culprit: a.authored.left <= b.authored.left ? a : b,
+          });
+        if (freeY)
+          candidates.push({
+            axis: "y",
+            culprit: a.authored.top <= b.authored.top ? a : b,
+          });
+        const { axis, culprit } = leastLossAxis(candidates);
+        markCompact(culprit.id, axis);
       }
       for (const character of placedCharacters) {
-        if (hitRectsIntersect(a.clamped, characterHitRect(character.layout))) {
-          markCompact(a.id);
+        const characterRect = authoredRect(character.layout);
+        if (!hitRectsIntersect(a.clamped, characterRect)) continue;
+        const freeX = !overlapOnX(a.authored, characterRect);
+        const freeY = !overlapOnY(a.authored, characterRect);
+        if (!freeX && !freeY) {
+          markCompact(a.id, "x");
+          markCompact(a.id, "y");
+          continue;
         }
+        // The character's box is authored-exact, so only the hotspot's own
+        // right/bottom extension could have crossed a disjoint authored
+        // edge — the hotspot is necessarily the culprit on a free axis.
+        const candidates: { axis: CompactAxis; culprit: HitBox }[] = [];
+        if (freeX) candidates.push({ axis: "x", culprit: a });
+        if (freeY) candidates.push({ axis: "y", culprit: a });
+        markCompact(a.id, leastLossAxis(candidates).axis);
       }
     }
-    return ids;
+    const classes = new SvelteMap<
+      string,
+      "compact" | "compact-x" | "compact-y"
+    >();
+    for (const [id, axes] of axesById) {
+      classes.set(
+        id,
+        axes.size === 2 ? "compact" : axes.has("x") ? "compact-x" : "compact-y",
+      );
+    }
+    return classes;
   });
   let activeCharacter = $derived(
     placedCharacters.find((character) => character.id === activeCharacterId) ??
@@ -354,7 +437,11 @@
         <button
           class="hotspot-target"
           class:inspected={hotspot.inspected}
-          class:compact={compactHotspotIds.includes(hotspot.id)}
+          class:compact={compactHotspotClasses.get(hotspot.id) === "compact"}
+          class:compact-x={compactHotspotClasses.get(hotspot.id) ===
+            "compact-x"}
+          class:compact-y={compactHotspotClasses.get(hotspot.id) ===
+            "compact-y"}
           type="button"
           aria-label={`調查：${hotspot.label}`}
           style={layoutStyle(hotspot.layout)}
@@ -638,6 +725,27 @@
     min-height: 0;
     padding: 0;
     box-sizing: border-box;
+  }
+
+  /* Single-axis compact: remove only this axis's clamp and chrome so the
+     hit edge returns to the authored edge while the other axis keeps the
+     minimum-target affordance. Border widths zero because content-box
+     padding+border would still extend the box right/down past the authored
+     edge. */
+  .hotspot-target.compact-x {
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    border-left-width: 0;
+    border-right-width: 0;
+  }
+
+  .hotspot-target.compact-y {
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-top-width: 0;
+    border-bottom-width: 0;
   }
 
   .hotspot-target:hover:not(:disabled),
