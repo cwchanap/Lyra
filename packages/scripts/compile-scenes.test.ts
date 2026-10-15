@@ -1265,6 +1265,68 @@ describe("invalid fixtures: each one fails with a specific error code", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
+
+  it("gates backticks in player-visible board and loop prompts", () => {
+    // `- **Prompt:**` (analysis board instructions) and `- **Loop Prompt:**`
+    // (testimony dialogue) are emitted as player-visible text, so the
+    // agent-prompt exemption must not cover them. The gate scans raw source
+    // lines before parsing, so a minimal skeleton is enough — other parse
+    // errors may coexist with the expected sceneSourceBacktick entries.
+    const outRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-backtick-visible-prompt-"),
+    );
+    const chapterDir = resolve(outRoot, "chapter_1");
+    mkdirSync(chapterDir, { recursive: true });
+    try {
+      writeFileSync(
+        resolve(chapterDir, "chapter.md"),
+        "# Chapter 1: 提示門\n\n**Summary:** Fixture summary.\n\n## Scenes\n\n1. analysis_scene_1.md\n2. interrogation_scene_2.md\n",
+      );
+      writeFileSync(
+        resolve(chapterDir, "analysis_scene_1.md"),
+        [
+          "# Scene 1: 分類",
+          "- **Summary:** 整理證據。",
+          "## Board: 分類 {#board}",
+          "- **Kind:** classify",
+          "- **Prompt:** 把 `REPRINT` 卡放進正確的群組。",
+        ].join("\n"),
+      );
+      writeFileSync(
+        resolve(chapterDir, "interrogation_scene_2.md"),
+        [
+          "# Scene 2: 詢問",
+          "## Phase: 初步詢問 {#inquiry}",
+          "#### Testimony",
+          "- **Loop Prompt:** **相馬律**：重聽 `TAKE`。",
+        ].join("\n"),
+      );
+
+      const result = compile({
+        sourceRoot: outRoot,
+        outputRoot: mkdtempSync(
+          resolve(tmpdir(), "scene-compile-backtick-visible-prompt-out-"),
+        ),
+      });
+      expect(result.ok).toBe(false);
+      const backtickErrors = (result.ok ? [] : result.errors).filter(
+        (e) => e.code === "sceneSourceBacktick",
+      );
+      // One error per backtick character: `REPRINT`/`TAKE` each hold two.
+      for (const { line, file } of [
+        { line: 5, file: "chapter_1/analysis_scene_1.md" },
+        { line: 4, file: "chapter_1/interrogation_scene_2.md" },
+      ]) {
+        expect(
+          backtickErrors.filter(
+            (e) => e.line === line && e.sourceFile.endsWith(file),
+          ),
+        ).toHaveLength(2);
+      }
+    } finally {
+      rmSync(outRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("HPA-257 compiler diagnostics", () => {
@@ -2846,9 +2908,12 @@ describe("compile (tracked production corpus compatibility)", () => {
       // UNPLACED HOTSPOTS/WITNESSES fallback panel in production, which must
       // never ship on required exploration paths. Scenes without a sidecar
       // compile with `layout: null` for every target, so this catches both a
-      // missing sidecar file and missing entries.
+      // missing sidecar file and missing entries. The gate is scoped to
+      // release-gated chapters so an in-progress chapter can still compile
+      // and place targets incrementally in the layout editor.
+      const RELEASE_GATED_CHAPTERS = new Set(["chapter_1"]);
       const investigationFiles = readdirSync(outRoot)
-        .filter((name) => /^chapter_\d+$/.test(name))
+        .filter((name) => RELEASE_GATED_CHAPTERS.has(name))
         .flatMap((name) =>
           readdirSync(resolve(outRoot, name))
             .filter((file) => /^investigation_scene_.*\.json$/.test(file))
