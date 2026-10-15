@@ -1086,7 +1086,6 @@
     flex: 0 0 auto;
     flex-direction: column;
     align-items: center;
-    gap: 9px;
     border-radius: 50%;
     background: conic-gradient(
       var(--crimson) 0deg,
@@ -1140,7 +1139,7 @@
 
   .wrapper.interrogation-stage-dialogue .xexam-withdraw {
     position: absolute;
-    top: calc(100% + 32px);
+    top: calc(100% + 9px);
     right: 0;
     min-height: 38px;
     padding: 9px 16px 8px;
