@@ -1913,6 +1913,8 @@ impl GameEngine {
     /// to keep listening: returns from `Presenting` to *playing* the same
     /// testimony line in the dialogue box, rather than abandoning the
     /// cross-examination back to the question menu (which `withdraw` does).
+    /// Rejected while any dialogue queue is active (e.g. the 反駁 lead-in
+    /// that precedes the tray opening), like `present_interrogation_evidence`.
     pub fn resume_interrogation_testimony(&mut self) -> Result<GameStateView, GameError> {
         if self.current_chapter_idx >= self.chapters.len() {
             return Err(GameError::game_complete());
@@ -1933,6 +1935,12 @@ impl GameEngine {
                 return Err(GameError::not_in_cross_examination(
                     "resume_interrogation_testimony",
                 ));
+            }
+            // The cross-exam state can be `Presenting` while the 反駁
+            // lead-in queue is still playing (the tray opens only after it
+            // drains); resuming then would clobber the pending queue.
+            if scene.pending_queue.is_some() {
+                return Err(GameError::dialogue_active("resume_interrogation_testimony"));
             }
         }
 
@@ -7515,6 +7523,20 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         // At the question menu (Idle), not presenting.
         let err = engine.resume_interrogation_testimony().unwrap_err();
         assert_eq!(err.code, "notInCrossExamination");
+    }
+
+    #[test]
+    fn resume_interrogation_testimony_rejects_while_lead_in_dialogue_plays() {
+        let mut engine = empty_engine_with_interrogation_scene(two_line_question_scene(), 1);
+        engine.prime_initial_queue().unwrap();
+        engine.ask_interrogation_question("alibi").unwrap();
+        // Challenging enters Presenting but installs the 反駁 lead-in queue,
+        // which has not drained yet — the tray is not open.
+        engine.challenge_interrogation_line("l_deny").unwrap();
+
+        let err = engine.resume_interrogation_testimony().unwrap_err();
+
+        assert_eq!(err.code, "dialogueActive");
     }
 
     #[test]
