@@ -1745,16 +1745,22 @@ describe("DialogueBox inline cross-examination controls", () => {
     expect(log.closest(".xexam-actions")).toBeNull();
   });
 
-  it("challenges the current line without advancing the dialogue", async () => {
+  it("challenges the current line exactly once on a physical pointer click", async () => {
+    // userEvent dispatches the real pointer sequence (pointerdown → pointerup
+    // → click with detail > 0), the activation class that regressed in H1a.
+    // The challenge must fire exactly once through that path — a future
+    // pointer-specific suppression branch would otherwise hide behind the
+    // synthetic-click (detail 0) coverage below.
+    const user = userEvent.setup();
     const onChallenge = vi.fn();
     const { onAdvance } = renderDialogueBox(
       { kind: "line", speaker: "嫌疑人", text: "我沒去過。" },
       { crossExam: { lineId: "l_deny", onChallenge, onWithdraw: vi.fn() } },
     );
 
-    await fireEvent.click(screen.getByRole("button", { name: /反駁/ }));
+    await user.click(screen.getByRole("button", { name: /反駁/ }));
 
-    expect(onChallenge).toHaveBeenCalledWith("l_deny");
+    expect(onChallenge).toHaveBeenCalledExactlyOnceWith("l_deny");
     // The button lives inside the click-to-advance box; its click must not
     // also advance the testimony.
     expect(onAdvance).not.toHaveBeenCalled();
