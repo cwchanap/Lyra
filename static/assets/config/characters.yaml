@@ -204,6 +204,124 @@ characters:
       standard:
         prompt: quiet reserved expression, ordinary cafe-regular composure
 
+  - id: kisaragi_mashiro
+    displayNames: ["如月真白"]
+    portraitMode: portrait
+    visualPrompt: >
+      Popular Japanese livestreamer in her mid-twenties, slim upright
+      camera-ready posture that relaxes into tired shoulders off camera,
+      long light ash-brown hair worn loosely half-up, soft lavender-gray
+      oversized knit cardigan over a plain white top, small in-ear monitor
+      earpiece with a thin cable to a mic pack clipped at her waist, bright
+      practiced on-camera warmth over quiet fatigue; distinctly younger and
+      softer-toned than Hayasaka.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: bright practiced on-camera smile, attentive eyes
+      tired:
+        prompt: off-camera tired expression, smile dropped, eyes flat and dry
+      resolute:
+        prompt: quiet resolute expression, chin slightly lifted, holding a decision
+
+  - id: hasumi_toru
+    displayNames: ["蓮見透"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese talent manager in his late thirties, tall neat composed build,
+      dark navy slim suit with no tie over a pale gray shirt, wireless headset
+      resting around his neck, tablet with a schedule held against his chest,
+      soft reasonable face and calm attentive eyes, the most composed person
+      in any room; polished agency professional rather than menacing.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: calm reasonable expression, soft professional attentiveness
+      concerned:
+        prompt: measured concerned expression, brows slightly drawn, voice-level calm
+      firm:
+        prompt: polite firm expression, small closed smile, decision already made
+
+  - id: saegusa_yuma
+    displayNames: ["三枝悠真"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese rival livestreamer in his late twenties, lanky slouched
+      provocative stance, bleached ash hair with dark roots grown out,
+      oversized black hoodie with small neon-green accents, gaming headset
+      pushed down around his neck, phone ring-light clip in one hand,
+      sarcastic restless eyes; abrasive clout-chaser energy, clearly distinct
+      from Hasumi's neat suit and Soma's rolled shirt sleeves.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: smug sarcastic half-smile, eyes restless
+      irritated:
+        prompt: irritated scowl, jaw tight, leaning back defensively
+      uneasy:
+        prompt: uneasy guarded expression, bravado slipping for a moment
+
+  - id: stream_director
+    displayNames: ["導播"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese livestream event director in his mid-forties, stocky seated
+      control-desk posture, black staff t-shirt under a worn charcoal work
+      jacket, closed-back headset over short graying hair, reading glasses
+      pushed up on his forehead, tired precise technician presence.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: focused technical expression, eyes on monitors
+      tense:
+        prompt: tense expression, jaw set, scanning multiple screens
+
+  - id: assistant_director
+    displayNames: ["助理導播"]
+    portraitMode: portrait
+    visualPrompt: >
+      Young Japanese assistant director in her mid-twenties, quick upright
+      standing posture, black staff hoodie with a rolled sleeve, short bob
+      haircut, handheld radio in one hand and a cue-sheet clipboard in the
+      other, alert overworked energy.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: alert busy expression, radio held near her mouth
+      worried:
+        prompt: worried expression, glancing at a radio that will not answer
+
+  - id: pr_officer
+    displayNames: ["公關"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese event public-relations officer in her early thirties, narrow
+      composed standing posture, cream blazer over a black blouse, neat
+      shoulder-length straight hair, smartphone held up with a drafted
+      statement, polished corporate calm; distinct from the hoodie-wearing
+      assistant director.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: polished neutral expression, corporate composure
+      strained:
+        prompt: strained polite expression, composure under pressure
+
+  - id: event_security
+    displayNames: ["活動保全"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese event security lead in his fifties, broad square standing
+      posture, dark security uniform jacket with reflective trim, earpiece
+      coil, tablet showing a green status list, short cropped gray hair,
+      rule-following steady presence.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: steady rule-following expression, neutral
+      uneasy:
+        prompt: uneasy expression, rechecking a status screen
+
   - id: narrator
     displayNames: ["旁白"]
     portraitMode: none
@@ -241,6 +359,41 @@ characters:
 
   - id: student
     displayNames: ["學生"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: sponsor_host
+    displayNames: ["主持人"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: fan_a
+    displayNames: ["粉絲甲"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: fan_b
+    displayNames: ["粉絲乙"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: building_guard
+    displayNames: ["樓宇保全"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
+  - id: news_anchor
+    displayNames: ["新聞主播"]
     portraitMode: none
     visualPrompt: null
     referenceAssetId: null
