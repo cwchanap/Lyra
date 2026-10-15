@@ -787,6 +787,15 @@ describe("InvestigationSceneSurface", () => {
     expect(compactXRule).toContain("min-width: 0");
     const compactYRule = cssRule(surfaceSource(), ".hotspot-target.compact-y");
     expect(compactYRule).toContain("min-height: 0");
+
+    // Nothing inside the button may extend the hit area either: the label
+    // wrapper and the inspected badge both overflow a small compact target,
+    // so neither is hit-testable.
+    expect(surfaceSource()).toMatch(
+      /\.hotspot-content \{[^}]*pointer-events: none/,
+    );
+    const checkRule = cssRule(surfaceSource(), ".hotspot-check");
+    expect(checkRule).toContain("pointer-events: none");
   });
 
   it("compacts undeclared authored overlaps instead of enlarging the theft area", () => {
