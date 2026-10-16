@@ -49,9 +49,10 @@ bgm:
   bgm_glass_box_stream:
     prompt:
       Bright polished livestream-event instrumental for a 24-hour glass-booth
-      stream in Shibuya at night, glossy synth plucks and soft four-on-the-floor
-      pulse, slightly too clean and repetitive so it feels staged, an uneasy low
-      pad underneath, no vocals, no drop, seamless 45-second loop.
+      stream in a Shibuya plaza, neutral enough for day or night, glossy synth
+      plucks and soft four-on-the-floor pulse, slightly too clean and
+      repetitive so it feels staged, an uneasy low pad underneath, no vocals,
+      no drop, seamless 45-second loop.
     loop: true
   bgm_midnight_blind_window:
     prompt:
@@ -61,6 +62,14 @@ bgm:
       stings, no vocals, seamless 45-second loop with an open ending.
     loop: true
 bgs:
+  bgs_glass_box_backstage_day:
+    prompt:
+      Staff side behind a glass livestream booth in a Shibuya event plaza on an
+      overcast drizzly afternoon, crowd murmur held back behind barriers,
+      livestream audio bleeding faintly from a giant outdoor screen, light rain
+      tapping a canopy, low generator hum, daytime traffic in the distance, no
+      clear words, no music melody.
+    loop: true
   bgs_building_service_core_night:
     prompt:
       Empty commercial-building service core late at night, service elevator
