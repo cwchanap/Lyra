@@ -322,6 +322,26 @@ characters:
       uneasy:
         prompt: uneasy expression, rechecking a status screen
 
+  - id: togawa_miu
+    displayNames: ["戶川美羽"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese university student fan around twenty, small earnest upright
+      posture hugging a rolled-up damp handmade cheering banner, clear
+      lavender-tinted rain poncho over a beige college hoodie, shoulder-length
+      dark hair slightly wet at the ends, phone with a cracked case and a
+      small lavender charm in one hand, red-rimmed but stubborn eyes; clearly
+      younger and plainer than Mashiro, distinct from the black-hoodie
+      assistant director.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: earnest expression, red-rimmed eyes, holding herself together
+      insistent:
+        prompt: insistent expression, leaning forward, phone held up as proof
+      shaken:
+        prompt: shaken expression, certainty slipping, gripping the phone tighter
+
   - id: narrator
     displayNames: ["旁白"]
     portraitMode: none

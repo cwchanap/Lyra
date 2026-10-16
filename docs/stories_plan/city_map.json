@@ -12,6 +12,8 @@
   "locations": [
     { "id": "rain_bell_cafe", "label": "雨鐘咖啡館", "regionId": "kichijoji", "x": 0.37, "y": 0.72 },
     { "id": "kichijoji_shopping_street", "label": "吉祥寺商店街", "regionId": "kichijoji", "x": 0.672, "y": 0.514 },
+    { "id": "shibuya_glass_box_plaza", "label": "澀谷玻璃箱廣場", "regionId": "shibuya", "x": 0.612, "y": 0.74 },
+    { "id": "saegusa_stream_studio", "label": "三枝直播工作室", "regionId": "shibuya", "x": 0.79, "y": 0.6 },
     { "id": "police_meeting_room", "label": "警署臨時會面室", "regionId": null, "x": 0.29, "y": 0.5 },
     { "id": "outsourced_review_office", "label": "外包資料審查分室", "regionId": null, "x": 0.34, "y": 0.29 },
     { "id": "soma_detective_office", "label": "相馬偵探事務所", "regionId": null, "x": 0.54, "y": 0.38 },

@@ -147,6 +147,23 @@ export const anchors = {
       next: "scene_11_2",
     },
   ],
+  // Chapter 2 travel wrappers in authored order. Wrapper file names restart
+  // per chapter, so these reuse Chapter 1's ids; the journey matches the
+  // chapter id too before crossing.
+  chapter2MapGates: [
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_01",
+      destination: "shibuya_glass_box_plaza",
+      next: "investigation_scene_4",
+    },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_02",
+      destination: "saegusa_stream_studio",
+      next: "investigation_scene_5",
+    },
+  ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
