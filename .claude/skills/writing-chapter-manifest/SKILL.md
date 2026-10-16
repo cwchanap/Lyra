@@ -79,7 +79,7 @@ The compile-time parser checks the following — the manifest fails the build if
 
 - H1 line present and matches the directory number.
 - `**Summary:**` field present (non-empty).
-- `**Status:**`, if present, is exactly `in-progress` or `complete` (`chapterInvalidStatus` otherwise).
+- `**Status:**`, if present, is exactly `in-progress` or `complete` (`chapterInvalidStatus` otherwise), and appears at most once (`chapterDuplicateStatus`).
 - Only the final chapter (highest `chapter_<N>`) may be `**Status:** in-progress` (`chapterInProgressNotFinal` otherwise).
 - `## Scenes` list present, non-empty.
 - Every listed filename exists in this chapter's directory.

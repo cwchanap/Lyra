@@ -41,6 +41,7 @@ export function parseChapter(
   let chapterNumber: number | null = null;
   let summary: string | null = null;
   let inProgress = false;
+  let statusLine: number | null = null;
   let inScenes = false;
   const sceneFiles: string[] = [];
   // Track scene filenames seen so far so a duplicate manifest row is rejected
@@ -80,6 +81,15 @@ export function parseChapter(
     }
 
     if (line.startsWith("**Status:**")) {
+      if (statusLine !== null) {
+        return fail(
+          sourceFile,
+          lineNum,
+          "chapterDuplicateStatus",
+          `**Status:** may appear only once; first declared on line ${statusLine}`,
+        );
+      }
+      statusLine = lineNum;
       const status = line.slice("**Status:**".length).trim();
       if (!(CHAPTER_STATUSES as readonly string[]).includes(status)) {
         return fail(

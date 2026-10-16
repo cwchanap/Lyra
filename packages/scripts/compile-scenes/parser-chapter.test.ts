@@ -222,4 +222,23 @@ describe("parseChapter", () => {
     if (result.ok) return;
     expect(result.error.code).toBe("chapterInvalidStatus");
   });
+
+  it("rejects a second **Status:** line even when both values are valid", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+**Status:** in-progress
+
+## Scenes
+1. scene_0.md
+
+**Status:** complete
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterDuplicateStatus");
+    expect(result.error.line).toBe(9);
+  });
 });
