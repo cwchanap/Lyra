@@ -309,9 +309,9 @@ fn advance_dialogue_bounded(
             *operations += 1;
             Ok(())
         }
-        ModeView::Analysis { .. } | ModeView::Interrogation { .. } | ModeView::GameComplete => {
-            Err(GameError::e2e_checkpoint_unreachable())
-        }
+        ModeView::Analysis { .. }
+        | ModeView::Interrogation { .. }
+        | ModeView::GameComplete { .. } => Err(GameError::e2e_checkpoint_unreachable()),
     }
 }
 
@@ -377,7 +377,7 @@ fn project(
         }
         ModeView::Interrogation { .. } => (CheckpointMode::Interrogation, None, None),
         ModeView::Analysis { .. } => (CheckpointMode::Analysis, None, None),
-        ModeView::GameComplete => (CheckpointMode::GameComplete, None, None),
+        ModeView::GameComplete { .. } => (CheckpointMode::GameComplete, None, None),
     };
     let mut evidence_ids = view
         .inventory

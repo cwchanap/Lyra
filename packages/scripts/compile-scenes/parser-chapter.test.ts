@@ -18,6 +18,7 @@ describe("parseChapter", () => {
     expect(result.value.number).toBe(1);
     expect(result.value.title).toBe("雨鐘咖啡館殺人事件");
     expect(result.value.summary).toBe("律師相馬律調查咖啡館。");
+    expect(result.value.inProgress).toBe(false);
     expect(result.value.sceneFiles).toEqual([
       "scene_0.md",
       "investigation_scene_1.md",
@@ -153,5 +154,72 @@ describe("parseChapter", () => {
     expect(result.error.code).toBe("chapterDuplicateSceneFile");
     expect(result.error.line).toBe(7);
     expect(result.error.message).toContain("scene_1.md");
+  });
+
+  it("parses **Status:** in-progress as an in-progress chapter", () => {
+    const source = `
+# Chapter 2: foo
+
+**Summary:** bar
+**Status:** in-progress
+
+## Scenes
+1. scene_0.md
+`.trim();
+    const result = parseChapter(source, "chapter_2/chapter.md", "chapter_2");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.inProgress).toBe(true);
+    expect(result.value.summary).toBe("bar");
+  });
+
+  it("parses **Status:** complete as a complete chapter", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+**Status:** complete
+
+## Scenes
+1. scene_0.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.inProgress).toBe(false);
+  });
+
+  it("rejects an unknown **Status:** value", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+**Status:** draft
+
+## Scenes
+1. scene_0.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterInvalidStatus");
+    expect(result.error.line).toBe(4);
+    expect(result.error.message).toContain("draft");
+  });
+
+  it("rejects an empty **Status:** value", () => {
+    const source = `
+# Chapter 1: foo
+
+**Summary:** bar
+**Status:**
+
+## Scenes
+1. scene_0.md
+`.trim();
+    const result = parseChapter(source, "chapter_1/chapter.md", "chapter_1");
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.error.code).toBe("chapterInvalidStatus");
   });
 });

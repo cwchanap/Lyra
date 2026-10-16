@@ -293,7 +293,7 @@ function interrogationMenuState(): GameStateView {
   return state;
 }
 
-function gameCompleteState(): GameStateView {
+function gameCompleteState(storyCleared = true): GameStateView {
   return {
     chapter: {
       id: "chapter_1",
@@ -310,7 +310,7 @@ function gameCompleteState(): GameStateView {
       index: 0,
       total: 1,
     },
-    mode: { type: "gameComplete" },
+    mode: { type: "gameComplete", storyCleared },
     inventory: { evidence: [], statements: [] },
     story: { facts: [], questions: [], objectives: [], authorizations: [] },
     dialogueHistory: [],
@@ -2794,6 +2794,18 @@ describe("+page story clearance on game complete", () => {
         "true",
       );
     });
+  });
+
+  it("does not persist the cleared-once flag at an in-progress (to be continued) boundary", async () => {
+    // Exhausting an in-progress final chapter is terminal but not a story
+    // clear: the end card says 未完待續 and production replay stays locked.
+    gameState.value = gameCompleteState(false);
+
+    render(Page);
+
+    expect(await screen.findByText("未完待續")).toBeInTheDocument();
+    expect(screen.queryByText("案件結案")).not.toBeInTheDocument();
+    expect(window.localStorage.getItem(STORY_CLEARED_STORAGE_KEY)).toBeNull();
   });
 });
 

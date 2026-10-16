@@ -888,7 +888,7 @@ mod tests {
         while matches!(engine.view().unwrap().mode, ModeView::Dialogue { .. }) {
             let token = token_from(&engine.view().unwrap());
             engine.advance_dialogue(token).unwrap();
-            if matches!(engine.view().unwrap().mode, ModeView::GameComplete) {
+            if matches!(engine.view().unwrap().mode, ModeView::GameComplete { .. }) {
                 break;
             }
         }
@@ -932,7 +932,7 @@ mod tests {
         let final_token = token_from(&second_scene);
 
         let completed = engine.advance_dialogue(final_token.clone()).unwrap();
-        assert!(matches!(completed.mode, ModeView::GameComplete));
+        assert!(matches!(completed.mode, ModeView::GameComplete { .. }));
         let completed_chapter_idx = engine.current_chapter_idx;
         let completed_scene_idx = engine.current_scene_idx;
         let completed_history = history_labels(&completed);
@@ -945,7 +945,7 @@ mod tests {
         assert_eq!(engine.current_chapter_idx, completed_chapter_idx);
         assert_eq!(engine.current_scene_idx, completed_scene_idx);
         let after_replay = engine.view().unwrap();
-        assert!(matches!(after_replay.mode, ModeView::GameComplete));
+        assert!(matches!(after_replay.mode, ModeView::GameComplete { .. }));
         assert_eq!(history_labels(&after_replay), completed_history);
 
         let _ = std::fs::remove_dir_all(d);
@@ -1146,6 +1146,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_0.json".into(),
@@ -1225,6 +1226,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_0.json".into(),
@@ -1297,11 +1299,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(d);
     }
 
-    #[test]
-    fn terminal_tag_only_linear_scene_has_no_replayable_queue() {
+    /// A single-chapter engine whose only scene is tag-only, so priming the
+    /// queue exhausts the authored scene list and reaches the terminal
+    /// game-complete boundary.
+    fn tag_only_terminal_engine(in_progress: bool) -> GameEngine {
         use crate::game::schema::LinearSceneJson;
-        // A chapter with a single tag-only scene should advance to GameComplete
-        // instead of stalling with the cursor at the end of the queue.
         let tag_only_json = LinearSceneJson {
             id: "scene_0".into(),
             title: "Tag Only".into(),
@@ -1312,7 +1314,7 @@ mod tests {
                 asset_cue: None,
             }],
         };
-        let mut engine = GameEngine {
+        GameEngine {
             resources_dir: PathBuf::new(),
             content_manifest: test_content_manifest(),
             story_catalog: StoryCatalog::empty(),
@@ -1328,6 +1330,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_0.json".into(),
@@ -1343,13 +1346,20 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
-        };
+        }
+    }
+
+    #[test]
+    fn terminal_tag_only_linear_scene_has_no_replayable_queue() {
+        // A chapter with a single tag-only scene should advance to GameComplete
+        // instead of stalling with the cursor at the end of the queue.
+        let mut engine = tag_only_terminal_engine(false);
         engine.prime_initial_queue().unwrap();
 
         // Scene was tag-only → advance_scene ran → past last chapter → GameComplete.
         assert!(matches!(
             engine.view().unwrap().mode,
-            ModeView::GameComplete
+            ModeView::GameComplete { .. }
         ));
         assert_eq!(engine.last_visual_cue.scene_tag, Some("吉祥寺街道".into()));
         assert!(
@@ -1371,8 +1381,37 @@ mod tests {
         assert_eq!(engine.current_scene_idx, completed_scene_idx);
         assert!(matches!(
             engine.view().unwrap().mode,
-            ModeView::GameComplete
+            ModeView::GameComplete { .. }
         ));
+    }
+
+    #[test]
+    fn exhausting_complete_final_chapter_reports_story_cleared() {
+        let mut engine = tag_only_terminal_engine(false);
+        engine.prime_initial_queue().unwrap();
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::GameComplete {
+                story_cleared: true
+            }
+        ));
+    }
+
+    #[test]
+    fn exhausting_in_progress_final_chapter_is_not_a_story_clear() {
+        let mut engine = tag_only_terminal_engine(true);
+        engine.prime_initial_queue().unwrap();
+        let mode = engine.view().unwrap().mode;
+        assert!(matches!(
+            mode,
+            ModeView::GameComplete {
+                story_cleared: false
+            }
+        ));
+        assert_eq!(
+            serde_json::to_value(&mode).unwrap(),
+            serde_json::json!({ "type": "gameComplete", "storyCleared": false })
+        );
     }
 
     // --- Analysis dialogue support tests ---
@@ -1472,6 +1511,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Analysis,
                     file: "chapter_1/analysis_scene_1.json".into(),
@@ -1513,6 +1553,7 @@ mod tests {
             id: "chapter_2".into(),
             title: "Chapter 2".into(),
             summary: "Next chapter".into(),
+            in_progress: false,
             scenes: vec![SceneRef {
                 scene_type: SceneType::Linear,
                 file: "chapter_2/scene_2.json".into(),

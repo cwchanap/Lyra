@@ -1186,6 +1186,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![
                     SceneRef {
                         scene_type: SceneType::Investigation,
@@ -1344,6 +1345,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![
                     SceneRef {
                         scene_type: SceneType::Investigation,

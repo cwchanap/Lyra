@@ -136,7 +136,7 @@ describe("gameplay audio runtime", () => {
 
   it("stops loop channels without disposing when a game-complete mode arrives", async () => {
     const runtime = await loadRuntime();
-    runtime.syncGameplayAudioMode({ type: "gameComplete" });
+    runtime.syncGameplayAudioMode({ type: "gameComplete", storyCleared: true });
     expect(controller().stopLoopChannels).toHaveBeenCalledTimes(1);
     // The singleton must stay alive so SFX works for a subsequent new game in
     // the same session; dispose() would close the AudioContext permanently.
@@ -146,7 +146,7 @@ describe("gameplay audio runtime", () => {
 
   it("resumes loop syncing on the mode after game-complete (replay stays audible)", async () => {
     const runtime = await loadRuntime();
-    runtime.syncGameplayAudioMode({ type: "gameComplete" });
+    runtime.syncGameplayAudioMode({ type: "gameComplete", storyCleared: true });
     controller().stopLoopChannels.mockClear();
     controller().dispose.mockClear();
 

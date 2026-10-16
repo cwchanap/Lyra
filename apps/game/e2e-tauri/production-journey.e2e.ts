@@ -668,7 +668,7 @@ async function drainOrganicRoute(
 }
 
 describe("fresh production journey", () => {
-  it("plays the organic Chapter 1 route from the menu across all nine city-map gates to chapter completion", async function () {
+  it("plays the organic Chapter 1 route from the menu across all nine city-map gates to the end of authored content", async function () {
     this.timeout(2_400_000);
     await resetE2eStorage();
     // The 800×600 packaged default window squeezes the analysis workbench;
@@ -751,17 +751,27 @@ describe("fresh production journey", () => {
       await crossGate(gate, crossedWrappers);
     }
 
-    // Past the final gate (scene_11_2), the route drains into chapter end.
+    // Past the final gate (scene_11_2), the route drains out of Chapter 1 and
+    // through the authored Chapter 2 opening. Chapter 2 is `**Status:**
+    // in-progress`, so exhausting it is a terminal but non-clear boundary: the
+    // 未完待續 end card renders and production replay stays locked. When
+    // Chapter 2 is complete, this becomes `storyCleared: true` again.
     await drainOrganicRoute(
       (state) => state.mode.type === "gameComplete",
-      "chapter completion",
+      "end of authored content",
     );
-    expect(await elementExists(".complete")).toBe(true);
+    const finalState = await getPackagedGameState();
+    expect(finalState.chapter.id).toBe("chapter_2");
+    expect(finalState.mode).toEqual({
+      type: "gameComplete",
+      storyCleared: false,
+    });
+    expect(await elementExists(".complete.continued")).toBe(true);
     const cleared = await browser.execute(
       (key: string) => window.localStorage.getItem(key),
       STORY_CLEARED_STORAGE_KEY,
     );
-    expect(cleared).toBe("true");
+    expect(cleared).toBeNull();
 
     // All nine gates, in order, no extras (spec §11 Draft-exit evidence).
     expect(crossedWrappers).toEqual(

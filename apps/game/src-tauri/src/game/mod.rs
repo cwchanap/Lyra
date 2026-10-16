@@ -2332,9 +2332,19 @@ impl GameEngine {
             })
     }
 
+    /// The terminal game-complete view. Exhausting the authored scene list is
+    /// a story clear only when the final loaded chapter is complete; an
+    /// in-progress final chapter (`**Status:** in-progress`) ends at a
+    /// non-clear "to be continued" boundary instead.
+    fn game_complete_view(&self) -> ModeView {
+        ModeView::GameComplete {
+            story_cleared: !self.chapters.last().is_some_and(|c| c.in_progress),
+        }
+    }
+
     fn mode_view(&self) -> ModeView {
         if self.current_chapter_idx >= self.chapters.len() {
-            return ModeView::GameComplete;
+            return self.game_complete_view();
         }
         let token = self.current_queue_token();
         let current_item: Option<DialogueItem> = match &self.scene {
@@ -2424,9 +2434,9 @@ impl GameEngine {
                         bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                         bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                     },
-                    None => ModeView::GameComplete,
+                    None => self.game_complete_view(),
                 },
-                SceneRuntime::Linear(_) => ModeView::GameComplete,
+                SceneRuntime::Linear(_) => self.game_complete_view(),
                 SceneRuntime::Interrogation(scene) => match &scene.current_phase_id {
                     Some(phase_id) => ModeView::Interrogation {
                         phase_id: phase_id.clone(),
@@ -2434,7 +2444,7 @@ impl GameEngine {
                         bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                         bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                     },
-                    None => ModeView::GameComplete,
+                    None => self.game_complete_view(),
                 },
                 SceneRuntime::Analysis(scene) => {
                     let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
@@ -2467,7 +2477,7 @@ impl GameEngine {
                             bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                             bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
                         },
-                        None => ModeView::GameComplete,
+                        None => self.game_complete_view(),
                     }
                 }
             },
@@ -4382,6 +4392,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 id: "chapter_1".into(),
                 title: "Chapter 1".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Interrogation,
                     file: "chapter_1/interrogation_scene_1.json".into(),
@@ -5657,7 +5668,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         engine.prime_initial_queue().unwrap();
 
         let view = engine.inspect_hotspot("desk").unwrap();
-        assert!(matches!(view.mode, ModeView::GameComplete));
+        assert!(matches!(view.mode, ModeView::GameComplete { .. }));
     }
 
     #[test]
@@ -5720,7 +5731,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         engine.prime_initial_queue().unwrap();
 
         let view = engine.interview_topic("witness", "alibi").unwrap();
-        assert!(matches!(view.mode, ModeView::GameComplete));
+        assert!(matches!(view.mode, ModeView::GameComplete { .. }));
     }
 
     #[test]
@@ -5905,7 +5916,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         // Player is in room_a (first unlocked sublocation). Enter room_b.
         let view = engine.enter_sublocation("room_b").unwrap();
-        assert!(matches!(view.mode, ModeView::GameComplete));
+        assert!(matches!(view.mode, ModeView::GameComplete { .. }));
     }
 
     #[test]
@@ -5961,7 +5972,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
         // on_queue_exhausted should fire, advancing to GameComplete.
         assert!(matches!(
             engine.view().unwrap().mode,
-            ModeView::GameComplete
+            ModeView::GameComplete { .. }
         ));
     }
 

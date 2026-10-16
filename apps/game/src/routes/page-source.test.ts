@@ -338,7 +338,8 @@ describe("+page scene navigation wiring", () => {
     const source = pageSource();
 
     expect(source).toContain("saveStoryClearedOnce()");
-    expect(source).toContain('gameState.value?.mode.type === "gameComplete"');
+    expect(source).toContain('mode?.type === "gameComplete"');
+    expect(source).toContain("mode.storyCleared");
   });
 
   it("closes the menu after scene jump resolves", () => {

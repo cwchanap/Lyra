@@ -283,6 +283,7 @@ const mkChapter = (number: number, sceneFiles: string[]): ASTChapter => ({
   number,
   title: `Chapter ${number}`,
   summary: "s",
+  inProgress: false,
   sceneFiles,
   sourceFile: `chapter_${number}/chapter.md`,
   line: 1,
@@ -737,6 +738,41 @@ describe("validator", () => {
     expect(
       errors.find((e) => e.code === "chapterManifestMissingFile"),
     ).toBeUndefined();
+  });
+
+  it("accepts **Status:** in-progress on the final chapter", () => {
+    const errors = validate({
+      chapters: [
+        mkChapter(1, ["scene_a.md"]),
+        { ...mkChapter(2, ["scene_b.md"]), inProgress: true },
+      ],
+      scenes: [
+        { chapterId: "chapter_1", file: "scene_a.md", ast: mkLinearScene("a") },
+        { chapterId: "chapter_2", file: "scene_b.md", ast: mkLinearScene("b") },
+      ],
+    });
+    expect(
+      errors.find((e) => e.code === "chapterInProgressNotFinal"),
+    ).toBeUndefined();
+  });
+
+  it("rejects **Status:** in-progress on a chapter followed by another chapter", () => {
+    const errors = validate({
+      chapters: [
+        { ...mkChapter(1, ["scene_a.md"]), inProgress: true },
+        mkChapter(2, ["scene_b.md"]),
+      ],
+      scenes: [
+        { chapterId: "chapter_1", file: "scene_a.md", ast: mkLinearScene("a") },
+        { chapterId: "chapter_2", file: "scene_b.md", ast: mkLinearScene("b") },
+      ],
+    });
+    expect(errors).toContainEqual(
+      expect.objectContaining({
+        code: "chapterInProgressNotFinal",
+        sourceFile: "chapter_1/chapter.md",
+      }),
+    );
   });
 
   it("rejects a hotspot whose Reveals target an undeclared evidence id", () => {

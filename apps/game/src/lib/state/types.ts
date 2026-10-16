@@ -72,7 +72,15 @@ export type Mode =
       feedback: AnalysisFeedbackView | null;
       lastFeedback: string | null;
     } & VisualAssetCue)
-  | { type: "gameComplete" };
+  | {
+      type: "gameComplete";
+      /**
+       * False when the final loaded chapter is authored `**Status:**
+       * in-progress`: the boundary is still terminal, but it is "to be
+       * continued", not a story clear (no production replay unlock).
+       */
+      storyCleared: boolean;
+    };
 
 export type ChapterView = {
   id: string;

@@ -6,9 +6,16 @@
 // Schema (see writing-chapter-manifest skill):
 //   # Chapter <N>: <title>
 //   **Summary:** <summary>
+//   **Status:** in-progress        (optional; `in-progress` | `complete`)
 //   ## Scenes
 //   1. scene_0.md
 //   2. investigation_scene_1.md
+//
+// `**Status:**` is optional and defaults to `complete`. `in-progress` marks a
+// partially authored chapter: when the runtime exhausts its scene list it
+// reaches a non-clear "to be continued" boundary instead of recording the
+// story as cleared. Only the final chapter may be in progress; the validator
+// enforces that cross-chapter rule (`chapterInProgressNotFinal`).
 // =============================================================================
 
 import type { ASTChapter, CompileError } from "./types";
@@ -19,6 +26,8 @@ export type ChapterParseResult =
 
 // Reject path separators to prevent directory traversal (e.g. "../other/evil.md").
 const NUMBERED_FILE_RE = /^(\d+)\.\s+([^/\\]+\.md)\s*$/;
+
+const CHAPTER_STATUSES = ["in-progress", "complete"] as const;
 
 export function parseChapter(
   source: string,
@@ -31,6 +40,7 @@ export function parseChapter(
   let title: string | null = null;
   let chapterNumber: number | null = null;
   let summary: string | null = null;
+  let inProgress = false;
   let inScenes = false;
   const sceneFiles: string[] = [];
   // Track scene filenames seen so far so a duplicate manifest row is rejected
@@ -66,6 +76,20 @@ export function parseChapter(
 
     if (line.startsWith("**Summary:**")) {
       summary = line.slice("**Summary:**".length).trim();
+      continue;
+    }
+
+    if (line.startsWith("**Status:**")) {
+      const status = line.slice("**Status:**".length).trim();
+      if (!(CHAPTER_STATUSES as readonly string[]).includes(status)) {
+        return fail(
+          sourceFile,
+          lineNum,
+          "chapterInvalidStatus",
+          `**Status:** must be one of ${CHAPTER_STATUSES.map((s) => `"${s}"`).join(", ")}; got: "${status}"`,
+        );
+      }
+      inProgress = status === "in-progress";
       continue;
     }
 
@@ -146,6 +170,7 @@ export function parseChapter(
       number: chapterNumber,
       title,
       summary,
+      inProgress,
       sceneFiles,
       sourceFile,
       line: headerLine || 1,

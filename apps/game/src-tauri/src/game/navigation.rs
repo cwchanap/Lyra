@@ -407,6 +407,7 @@ pub(super) fn load_chapter_manifests(
             id: c.id,
             title: c.title,
             summary: c.summary,
+            in_progress: c.in_progress,
             scenes: c
                 .scenes
                 .into_iter()
@@ -2651,6 +2652,7 @@ mod tests {
             id: "chapter_1".into(),
             title: "Duplicate".into(),
             summary: "Duplicate".into(),
+            in_progress: false,
             scenes: vec![SceneRef {
                 scene_type: SceneType::Interrogation,
                 file: "chapter_1/interrogation_scene_1.json".into(),
@@ -3634,6 +3636,38 @@ mod tests {
     }
 
     #[test]
+    fn load_chapter_manifests_reads_optional_in_progress_flag() {
+        use std::fs;
+        use std::sync::atomic::{AtomicU64, Ordering};
+
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let n = SEQ.fetch_add(1, Ordering::Relaxed);
+        let d = std::env::temp_dir().join(format!(
+            "lyra-in-progress-chapters-test-{}-{}",
+            std::process::id(),
+            n
+        ));
+        fs::create_dir_all(&d).unwrap();
+        write_empty_story_catalog_and_content_manifest(&d);
+        fs::write(
+            d.join("chapters.json"),
+            r#"{"chapters": [
+                {"id": "chapter_1", "title": "One", "summary": "s",
+                 "scenes": [{"type": "linear", "file": "chapter_1/scene_0.json"}]},
+                {"id": "chapter_2", "title": "Two", "summary": "s", "inProgress": true,
+                 "scenes": [{"type": "linear", "file": "chapter_2/scene_0.json"}]}
+            ]}"#,
+        )
+        .unwrap();
+
+        let chapters = load_chapter_manifests(&d).unwrap();
+        assert!(!chapters[0].in_progress, "absent inProgress means complete");
+        assert!(chapters[1].in_progress);
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
     fn scene_navigation_index_from_chapters_rejects_duplicate_chapter_id_directly() {
         // load_chapter_manifests rejects duplicate chapter ids at load time,
         // so GameEngine::scene_navigation_index never reaches the duplicate
@@ -3665,6 +3699,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "First".into(),
                 summary: "First".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_0.json".into(),
@@ -3674,6 +3709,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Second".into(),
                 summary: "Second".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_0.json".into(),

@@ -59,7 +59,7 @@ describe("GameplayAudio", () => {
   it("re-syncs when the mode prop changes", async () => {
     const { rerender } = render(GameplayAudio, { mode: exploreMode });
 
-    const gameComplete: Mode = { type: "gameComplete" };
+    const gameComplete: Mode = { type: "gameComplete", storyCleared: true };
     await rerender({ mode: gameComplete });
 
     expect(mocks.syncGameplayAudioMode).toHaveBeenCalledWith(gameComplete);

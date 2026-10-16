@@ -204,6 +204,7 @@ mod tests {
             id: "chapter_1".into(),
             title: "雨鐘咖啡館殺人事件".into(),
             summary: "summary".into(),
+            in_progress: false,
             scenes: vec![
                 SceneRef {
                     scene_type: SceneType::Linear,
@@ -381,6 +382,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "雨鐘咖啡館殺人事件".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![
                     SceneRef {
                         scene_type: SceneType::Linear,
@@ -396,6 +398,7 @@ mod tests {
                 id: "chapter_2".into(),
                 title: "車站目擊者".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_2/scene_1.json".into(),

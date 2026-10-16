@@ -1212,6 +1212,7 @@ describe("emitter", () => {
       number: 1,
       title: "t",
       summary: "s",
+      inProgress: false,
       sceneFiles: [
         "scene_0.md",
         "investigation_scene_1.md",
@@ -1243,6 +1244,39 @@ describe("emitter", () => {
         },
       ],
     });
+  });
+
+  it("emits inProgress on the chapters index only for in-progress chapters", () => {
+    const base: ASTChapter = {
+      kind: "chapter",
+      dirName: "chapter_1",
+      number: 1,
+      title: "t",
+      summary: "s",
+      inProgress: false,
+      sceneFiles: ["scene_0.md"],
+      sourceFile: "chapter_1/chapter.md",
+      line: 1,
+    };
+    const idx = emitChaptersIndex([
+      base,
+      {
+        ...base,
+        dirName: "chapter_2",
+        number: 2,
+        inProgress: true,
+        sourceFile: "chapter_2/chapter.md",
+      },
+    ]);
+    expect(Object.keys(idx.chapters[0]!)).not.toContain("inProgress");
+    expect(idx.chapters[1]!.inProgress).toBe(true);
+    expect(Object.keys(idx.chapters[1]!)).toEqual([
+      "id",
+      "title",
+      "summary",
+      "inProgress",
+      "scenes",
+    ]);
   });
 });
 

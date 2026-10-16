@@ -476,6 +476,24 @@ export function validate(input: ValidatorInput): CompileError[] {
     }
   }
 
+  // ---- Pass 3b: only the final chapter may be `**Status:** in-progress`. ----
+  // The runtime treats exhausting the last chapter's scene list as the story
+  // boundary; an in-progress chapter followed by later chapters would let the
+  // player skip past unauthored content into the next chapter.
+  const finalChapterNumber = Math.max(
+    ...input.chapters.map((chapter) => chapter.number),
+  );
+  for (const chapter of input.chapters) {
+    if (chapter.inProgress && chapter.number !== finalChapterNumber) {
+      errors.push({
+        code: "chapterInProgressNotFinal",
+        message: `Chapter ${chapter.dirName} is marked **Status:** in-progress but is followed by chapter_${finalChapterNumber}; only the final chapter may be in progress.`,
+        sourceFile: chapter.sourceFile,
+        line: chapter.line,
+      });
+    }
+  }
+
   return errors;
 }
 

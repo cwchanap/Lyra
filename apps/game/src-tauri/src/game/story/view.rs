@@ -438,6 +438,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "First chapter".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![
                     SceneRef {
                         scene_type: SceneType::Linear,

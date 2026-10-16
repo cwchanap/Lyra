@@ -1,14 +1,28 @@
 <script lang="ts">
   let {
+    storyCleared,
     onReset,
     disabled = false,
-  }: { onReset: () => void; disabled?: boolean } = $props();
+  }: {
+    /**
+     * False at an in-progress final chapter's boundary: render a "to be
+     * continued" end card instead of the case-closed stamp.
+     */
+    storyCleared: boolean;
+    onReset: () => void;
+    disabled?: boolean;
+  } = $props();
 </script>
 
-<section class="complete">
+<section class="complete" class:continued={!storyCleared}>
   <div class="stamp-wrap">
-    <span class="stamp">案件結案</span>
-    <span class="stamp-en">CASE&nbsp;CLOSED</span>
+    {#if storyCleared}
+      <span class="stamp">案件結案</span>
+      <span class="stamp-en">CASE&nbsp;CLOSED</span>
+    {:else}
+      <span class="stamp">未完待續</span>
+      <span class="stamp-en">TO&nbsp;BE&nbsp;CONTINUED</span>
+    {/if}
   </div>
 
   <h1>
@@ -17,7 +31,11 @@
   </h1>
 
   <p class="line">
-    調查結束。<br /><em>The dossier closes — but the rain keeps falling.</em>
+    {#if storyCleared}
+      調查結束。<br /><em>The dossier closes — but the rain keeps falling.</em>
+    {:else}
+      本章後續內容製作中。<br /><em>The dossier stays open — for now.</em>
+    {/if}
   </p>
 
   <button onclick={onReset} type="button" {disabled}>
