@@ -1069,6 +1069,74 @@ export async function jumpToProductionScene(sceneId: string): Promise<void> {
   );
 }
 
+/**
+ * Scene Select jump that names the chapter too. Scene ids restart per
+ * chapter (both chapters have scene_0 and investigation_scene_map_01), and
+ * the panel only lists the expanded chapter's scenes, so expand the target
+ * chapter first and click the scene inside its own list.
+ */
+export async function jumpToProductionChapterScene(
+  chapterId: string,
+  sceneId: string,
+): Promise<void> {
+  await openGameMenu();
+  await clickButton(anchors.sceneSelect);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="場景跳轉"]'),
+    {
+      timeout: 15000,
+      timeoutMsg: "scene navigation panel did not appear",
+    },
+  );
+  const listId = `scene-list-${chapterId}`;
+  if (!(await elementExists(`#${listId}`))) {
+    const expanded = await browser.execute((controls: string) => {
+      const header = document.querySelector<HTMLButtonElement>(
+        `button[aria-controls="${controls}"]`,
+      );
+      if (!header) return false;
+      header.click();
+      return true;
+    }, listId);
+    if (!expanded) {
+      throw new Error(`chapter ${chapterId} is missing from Scene Select`);
+    }
+    await browser.waitUntil(async () => elementExists(`#${listId}`), {
+      timeout: 15000,
+      timeoutMsg: `chapter ${chapterId} scene list did not expand`,
+    });
+  }
+  const beforeGeneration = await packagedGameplayCommandGeneration();
+  const clicked = await browser.execute(
+    (list: string, id: string) => {
+      const button = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(`#${list} button`),
+      ).find((candidate) =>
+        (candidate.querySelector("small")?.textContent ?? "")
+          .trim()
+          .endsWith(`· ${id}`),
+      );
+      if (!button || button.disabled) return false;
+      button.click();
+      return true;
+    },
+    listId,
+    sceneId,
+  );
+  if (!clicked) {
+    throw new Error(`scene ${chapterId}/${sceneId} was missing or disabled`);
+  }
+  await waitForPackagedGameplayCommandSettled(
+    beforeGeneration,
+    `scene ${chapterId}/${sceneId} command did not settle`,
+  );
+  await waitForPackagedGameState(
+    (state) => state.chapter.id === chapterId && state.scene.id === sceneId,
+    30000,
+    `scene ${chapterId}/${sceneId} did not become current`,
+  );
+}
+
 export async function saveManualSlot(
   slot: 1 | 2 | 3,
   displayName: string,
@@ -2095,14 +2163,17 @@ export async function advanceDialogueOnce(): Promise<boolean> {
  * per-advance overhead from ~5 browser.execute calls to ~1, which is the
  * difference between fitting and not fitting the gameplay chain budget.
  *
- * Returns when the predicate becomes true, the advance control switches to
- * the testimony label (cross-exam), or the cap is hit. The caller
+ * Returns when the predicate becomes true or the advance control switches to
+ * the testimony label (cross-exam). Hitting the cap throws by default; pass
+ * `throwOnCap: false` to return instead, so a caller with its own bounded
+ * loop can re-check state across a long linear stretch. The caller
  * (drainOrganicRoute) re-checks the full game state at the top of its next
  * iteration, so overshooting a mode transition by one advance is harmless.
  */
 export async function drainDialogueFast(
   predicate: () => Promise<boolean>,
   cap: number = DIALOGUE_DRAIN_CAP,
+  { throwOnCap = true }: { throwOnCap?: boolean } = {},
 ): Promise<void> {
   for (let i = 0; i < cap; i++) {
     // Single DOM execute: check the advance button, detect cross-exam, and
@@ -2169,6 +2240,7 @@ export async function drainDialogueFast(
     if (await predicate()) return;
     // Advance control reappeared — continue draining from the next step.
   }
+  if (!throwOnCap) return;
   const lastText = await lastVisibleDialogueText();
   throw new Error(
     `drainDialogueFast: exceeded cap ${cap}; predicate still false; last visible text: ${JSON.stringify(lastText)}`,

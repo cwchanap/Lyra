@@ -3096,6 +3096,121 @@ describe("compile (tracked production corpus compatibility)", () => {
             supersedesRecordId: "evidence:miyake_mother_call_log",
           },
         ],
+        // Chapter 2 Phase A records are authored with provenance from the
+        // start rather than migrated.
+        [
+          "evidence:mashiro_phone_dock",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:sponsor_mode_signboard",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:press_camera_limits",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:program_composite_label",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "composite",
+            sourceLabel: "轉播車監看畫面",
+          },
+        ],
+        [
+          "evidence:silent_challenge_runsheet",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:platform_archive_rule",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+          },
+        ],
+        [
+          "evidence:raw_buffer_rule",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+          },
+        ],
+        [
+          "evidence:safety_briefing_record",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:togawa_phone_video",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "raw",
+            proceduralStatus: "lead",
+            completeness: "partial",
+            confidence: "unverified",
+            sourceLabel: "粉絲手機錄影",
+          },
+        ],
+        [
+          "evidence:togawa_video_position_check",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            sourceLabel: "相馬現場對照",
+          },
+        ],
+        [
+          "evidence:glass_box_kagami_summary",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "summary",
+            sourceLabel: "KAGAMI 證據摘要",
+          },
+        ],
+        [
+          "evidence:police_footage_source_list",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+          },
+        ],
+        [
+          "evidence:saegusa_stream_dashboard",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "summary",
+            proceduralStatus: "lead",
+            confidence: "unverified",
+            sourceLabel: "三枝帳號後台",
+          },
+        ],
+        [
+          "evidence:saegusa_studio_window",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            sourceLabel: "相馬現場觀察",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;
