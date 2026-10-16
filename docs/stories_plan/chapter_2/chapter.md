@@ -8,3 +8,7 @@
 2. scene_1.md
 3. scene_2.md
 4. scene_3.md
+5. investigation_scene_map_01.md
+6. investigation_scene_4.md
+7. investigation_scene_map_02.md
+8. investigation_scene_5.md
