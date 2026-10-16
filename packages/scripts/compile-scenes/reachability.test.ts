@@ -3296,6 +3296,7 @@ function chapter(
     number,
     title: dirName,
     summary: "summary",
+    inProgress: false,
     sceneFiles,
     sourceFile: `${dirName}/chapter.md`,
     line: 1,

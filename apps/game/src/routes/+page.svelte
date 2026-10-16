@@ -1101,7 +1101,14 @@
   });
 
   $effect(() => {
-    if (gameState.value?.mode.type === "gameComplete" && !storyClearedOnce) {
+    // Only a real story clear unlocks production replay. Exhausting an
+    // in-progress final chapter is a non-clear "to be continued" boundary.
+    const mode = gameState.value?.mode;
+    if (
+      mode?.type === "gameComplete" &&
+      mode.storyCleared &&
+      !storyClearedOnce
+    ) {
       storyClearedOnce = true;
       saveStoryClearedOnce();
     }
@@ -1419,7 +1426,11 @@
               disabled={gameState.inFlight}
             />
           {:else if gameState.value.mode.type === "gameComplete"}
-            <GameComplete onReset={handleReset} disabled={gameState.inFlight} />
+            <GameComplete
+              storyCleared={gameState.value.mode.storyCleared}
+              onReset={handleReset}
+              disabled={gameState.inFlight}
+            />
           {/if}
         </InterrogationStage>
       </GameShell>

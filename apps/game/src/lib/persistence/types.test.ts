@@ -114,7 +114,7 @@ const exit = {
 } satisfies ExitStatusView;
 
 const state = {
-  mode: { type: "gameComplete" },
+  mode: { type: "gameComplete", storyCleared: true },
   chapter: {
     id: "chapter_1",
     title: "第一章",

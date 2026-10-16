@@ -105,6 +105,12 @@ export type ChaptersIndex = {
     id: string;
     title: string;
     summary: string;
+    /**
+     * Present (and `true`) only when the manifest declares
+     * `**Status:** in-progress`. Exhausting an in-progress final chapter is a
+     * non-clear "to be continued" boundary, not a story clear.
+     */
+    inProgress?: true;
     scenes: Array<{
       type: "linear" | "investigation" | "interrogation" | "analysis";
       file: string;

@@ -283,6 +283,9 @@ export type ASTChapter = Located<{
   number: number; // parsed from the H1
   title: string;
   summary: string;
+  // `**Status:** in-progress` — the authored scene list is a partial chapter.
+  // Absent or `complete` → false.
+  inProgress: boolean;
   sceneFiles: string[]; // ordered, raw filenames as written in the manifest
 }>;
 

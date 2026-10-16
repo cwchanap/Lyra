@@ -45,7 +45,9 @@ fn issue(
 
 fn minimal_game_state_view() -> GameStateView {
     GameStateView {
-        mode: ModeView::GameComplete,
+        mode: ModeView::GameComplete {
+            story_cleared: true,
+        },
         chapter: ChapterView {
             id: "chapter_1".into(),
             title: "Chapter One".into(),

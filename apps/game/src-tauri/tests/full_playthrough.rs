@@ -225,7 +225,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                     // The advance may have triggered a scene transition or completion.
                     // Check the new mode before continuing.
                     let new_view = engine.view().unwrap();
-                    if matches!(new_view.mode, ModeView::GameComplete) {
+                    if matches!(new_view.mode, ModeView::GameComplete { .. }) {
                         break;
                     }
                 }
@@ -258,7 +258,7 @@ fn game_complete_clamps_chapter_index_to_last_chapter() {
                 assert!(view.chapter.index < view.chapter.total);
                 return;
             }
-            ModeView::GameComplete => {
+            ModeView::GameComplete { .. } => {
                 // Verify chapter index is clamped.
                 let view = engine.view().unwrap();
                 assert!(
@@ -417,7 +417,7 @@ fn full_playthrough_answers_interrogation_and_resolves_contradiction() {
     let view = engine.complete_interrogation_phase().unwrap();
     let view = advance_all_dialogue(&mut engine, view);
 
-    let reached_next_scene_or_complete = matches!(view.mode, ModeView::GameComplete)
+    let reached_next_scene_or_complete = matches!(view.mode, ModeView::GameComplete { .. })
         || match &view.scene {
             SceneView::Linear { index, .. }
             | SceneView::Investigation { index, .. }

@@ -307,7 +307,7 @@ describe("GameShell", () => {
 
   it("does not render the primary objective HUD after game completion", () => {
     render(GameShellHarness, {
-      gameState: state({ type: "gameComplete" }),
+      gameState: state({ type: "gameComplete", storyCleared: true }),
       onCloseCase: vi.fn(),
       activePrimaryObjective,
     });

@@ -1,6 +1,6 @@
 ---
 name: writing-chapter-manifest
-description: Use when authoring or updating a chapter.md file under docs/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
+description: Use when authoring or updating a chapter.md file under docs/stories_plan/chapter_<N>/. The manifest declares the chapter's title, summary, optional in-progress status, and the ordered list of scenes the engine plays through. Trigger when starting a new chapter, adding a new scene to a chapter, or reordering scenes within a chapter.
 ---
 
 # Writing Chapter Manifests (《東京雨證：第零證人》)
@@ -37,10 +37,25 @@ Chapter ordering across chapters is derived from the directory name
 4. investigation_scene_2.md
 ```
 
+A partially authored chapter adds an optional `**Status:**` line directly
+under `**Summary:**`:
+
+```markdown
+# Chapter 2: 澀谷玻璃箱直播失蹤事件
+
+**Summary:** 澀谷玻璃箱直播的最後一小時，人氣直播主在數萬人注視下消失。
+**Status:** in-progress
+
+## Scenes
+1. scene_0.md
+2. scene_1.md
+```
+
 Field details:
 
 - **H1 title (required, exactly one):** `# Chapter <N>: <繁體中文 title>`. The number `<N>` must match the directory name. The title is player-facing.
 - **`**Summary:**` field (required):** One-line Traditional Chinese summary the engine can show in chapter selection / save metadata.
+- **`**Status:**` field (optional):** `in-progress` or `complete`; absent means `complete`. Mark a chapter `in-progress` while its scene list is only a partial chapter (e.g. only the opening beats are authored). When the runtime exhausts an in-progress final chapter it shows a non-clear 未完待續 / TO BE CONTINUED end card instead of 案件結案, and does **not** record the story as cleared (production replay / scene select stays locked). Remove the line (or set `complete`) once the chapter's final scene is authored.
 - **`## Scenes` ordered list (required):** Numbered list of scene filenames in playable order, *relative to this chapter directory*. Each entry is one filename, no subdirectories.
 
 ## Scene-type inference
@@ -64,6 +79,8 @@ The compile-time parser checks the following — the manifest fails the build if
 
 - H1 line present and matches the directory number.
 - `**Summary:**` field present (non-empty).
+- `**Status:**`, if present, is exactly `in-progress` or `complete` (`chapterInvalidStatus` otherwise).
+- Only the final chapter (highest `chapter_<N>`) may be `**Status:** in-progress` (`chapterInProgressNotFinal` otherwise).
 - `## Scenes` list present, non-empty.
 - Every listed filename exists in this chapter's directory.
 - Every listed filename matches a known scene-type prefix.
@@ -73,6 +90,8 @@ The compile-time parser checks the following — the manifest fails the build if
 
 Chapters play in directory-name order: `chapter_1` → `chapter_2` → `chapter_3` → … There is no chapter manifest gating yet. Each chapter starts when its predecessor's final scene's Outro queue empties.
 
+When the final chapter's scene list is exhausted the game reaches its terminal boundary. That boundary is a story clear only when the final chapter is complete; if it is `**Status:** in-progress` the boundary is "to be continued". Because of that, an in-progress chapter must be the last chapter — start `chapter_<N+1>/` only after `chapter_<N>` drops its `**Status:** in-progress` line.
+
 ## Common mistakes
 
 | Mistake | Fix |
@@ -81,4 +100,5 @@ Chapters play in directory-name order: `chapter_1` → `chapter_2` → `chapter_
 | Adding scenes that don't exist in the directory | Either create the file or remove the entry. |
 | Mixing scene-type prefixes (e.g., `scene_2.md` listed before `investigation_scene_1.md`) | Allowed — playable order is whatever the manifest says, not what the filenames suggest. |
 | Forgetting to add a newly-authored scene to the manifest | The parser does *not* auto-discover scene files. A scene that exists but is not listed in `chapter.md` is never played. |
-| Adding metadata fields other than `**Summary:**` (e.g., `**Author:**`, `**Length:**`) | Not supported in v1. Stick to the schema. |
+| Adding metadata fields other than `**Summary:**` and `**Status:**` (e.g., `**Author:**`, `**Length:**`) | Not supported in v1. Stick to the schema. |
+| Leaving `**Status:** in-progress` on a finished chapter | Players see 未完待續 and never unlock the story-clear replay. Remove the line when the final scene lands. |

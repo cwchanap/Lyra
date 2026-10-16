@@ -1481,7 +1481,7 @@ describe("AnalysisWorkbench", () => {
     const state = analysisState();
     const nonAnalysisReturn = {
       ...state,
-      mode: { type: "gameComplete" },
+      mode: { type: "gameComplete", storyCleared: true },
     } as unknown as GameStateView;
     const onSubmit = vi.fn().mockResolvedValue(nonAnalysisReturn);
     renderWorkbench(state, { onSubmit });

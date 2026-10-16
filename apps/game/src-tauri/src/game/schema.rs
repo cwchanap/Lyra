@@ -567,6 +567,10 @@ pub struct ChapterEntryJson {
     pub id: String,
     pub title: String,
     pub summary: String,
+    /// `**Status:** in-progress` in the authored manifest. The compiler emits
+    /// the key only when true, so absent means a complete chapter.
+    #[serde(default)]
+    pub in_progress: bool,
     pub scenes: Vec<SceneEntryJson>,
 }
 

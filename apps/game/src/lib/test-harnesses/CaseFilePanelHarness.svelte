@@ -12,7 +12,7 @@
   >("objective");
   let panelDisabled = $state(false);
   let gameState = $state<GameStateView>({
-    mode: { type: "gameComplete" },
+    mode: { type: "gameComplete", storyCleared: true },
     chapter: {
       id: "chapter_1",
       title: "第一章",

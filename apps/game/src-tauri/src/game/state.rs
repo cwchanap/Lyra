@@ -104,6 +104,9 @@ pub struct ChapterManifest {
     pub id: String,
     pub title: String,
     pub summary: String,
+    /// The authored scene list is a partial chapter. Exhausting an in-progress
+    /// final chapter is a non-clear "to be continued" boundary.
+    pub in_progress: bool,
     pub scenes: Vec<SceneRef>,
 }
 

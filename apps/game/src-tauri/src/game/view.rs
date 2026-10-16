@@ -287,7 +287,10 @@ pub enum ModeView {
         bgm: Option<AudioCueView>,
         bgs: Option<AudioCueView>,
     },
-    GameComplete,
+    /// The authored scene list is exhausted. `story_cleared` is false when the
+    /// final loaded chapter is `**Status:** in-progress`: the boundary is still
+    /// terminal, but it is "to be continued", not a story clear.
+    GameComplete { story_cleared: bool },
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -734,6 +737,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "雨鐘咖啡館殺人事件".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_1.json".into(),
@@ -782,6 +786,7 @@ mod tests {
                 id: "chapter_1".into(),
                 title: "Test chapter".into(),
                 summary: "summary".into(),
+                in_progress: false,
                 scenes: vec![SceneRef {
                     scene_type: SceneType::Linear,
                     file: "chapter_1/scene_1.json".into(),

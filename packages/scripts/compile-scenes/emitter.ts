@@ -574,6 +574,8 @@ export function emitChaptersIndex(chapters: ASTChapter[]): JSONChaptersIndex {
       id: c.dirName,
       title: c.title,
       summary: c.summary,
+      // Emitted only when true so complete chapters stay byte-stable.
+      ...(c.inProgress ? { inProgress: true as const } : {}),
       scenes: c.sceneFiles.map((f) => {
         const type = inferType(f);
         const jsonName = f.replace(/\.md$/, ".json");

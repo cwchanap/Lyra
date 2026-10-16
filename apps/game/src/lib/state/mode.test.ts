@@ -65,7 +65,7 @@ describe("mode helpers", () => {
   });
 
   it("hides the Case File after game completion and disables reexamine", () => {
-    const mode: Mode = { type: "gameComplete" };
+    const mode: Mode = { type: "gameComplete", storyCleared: true };
     expect(shouldShowCaseFile(mode)).toBe(false);
     expect(canReexamineCaseRecords(mode)).toBe(false);
   });

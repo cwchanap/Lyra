@@ -51,7 +51,7 @@ function acceptanceState(): GameStateView {
     sourceGroup: null,
   };
   return {
-    mode: { type: "gameComplete" },
+    mode: { type: "gameComplete", storyCleared: true },
     chapter: {
       id: "synthetic_chapter",
       title: "合成測試章",

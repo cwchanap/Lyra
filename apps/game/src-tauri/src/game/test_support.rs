@@ -466,6 +466,7 @@ pub(crate) fn empty_engine_with_scene(
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
             summary: "summary".into(),
+            in_progress: false,
             scenes: vec![SceneRef {
                 scene_type: SceneType::Investigation,
                 file: "chapter_1/investigation_scene_1.json".into(),
@@ -2593,6 +2594,7 @@ pub(crate) fn empty_engine_with_interrogation_scene(
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
             summary: "summary".into(),
+            in_progress: false,
             scenes: vec![SceneRef {
                 scene_type: SceneType::Interrogation,
                 file: "chapter_1/interrogation_scene_1.json".into(),
@@ -2661,6 +2663,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
             id: "chapter_1".into(),
             title: "Chapter 1".into(),
             summary: "summary".into(),
+            in_progress: false,
             scenes: vec![
                 SceneRef {
                     scene_type: SceneType::Interrogation,
@@ -2894,7 +2897,9 @@ mod tests {
     #[test]
     fn token_from_panics_on_non_dialogue_mode() {
         let view = GameStateView {
-            mode: ModeView::GameComplete,
+            mode: ModeView::GameComplete {
+                story_cleared: true,
+            },
             chapter: ChapterView {
                 id: "chapter_1".into(),
                 title: "Chapter One".into(),
