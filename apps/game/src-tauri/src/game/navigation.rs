@@ -146,12 +146,13 @@ impl GameEngine {
         next_ordinal: &mut u32,
     ) -> Result<(), GameError> {
         let acquisition_event_baseline = self.pending_acquisition_events.len();
+        let ordinal_baseline = *next_ordinal;
         let mut acq = AcquisitionCtx {
             catalog: &self.story_catalog,
             inventory: &mut self.inventory,
             pending_events: &mut self.pending_acquisition_events,
             command_id,
-            next_ordinal,
+            next_ordinal: &mut *next_ordinal,
         };
         for scene in carried {
             for def in &scene.evidence {
@@ -161,8 +162,12 @@ impl GameEngine {
                 acq.statement(def, &scene.chapter_id, &scene.scene_id)?;
             }
         }
+        // The discarded events never leave this command, so hand their
+        // ordinals back: the target scene's own entry finds keep the same
+        // event ids however many records were carried.
         self.pending_acquisition_events
             .truncate(acquisition_event_baseline);
+        *next_ordinal = ordinal_baseline;
         Ok(())
     }
 
@@ -1667,6 +1672,71 @@ mod tests {
         assert!(
             view.inventory.evidence.is_empty(),
             "the target scene's own records are found by playing it"
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: the carry consumed acquisition ordinals for the popups it
+    // discards, so the target scene's own entry find got an event id that
+    // depended on how many records were carried instead of starting at 0.
+    #[test]
+    fn jump_target_entry_find_keeps_the_first_ordinal_after_a_carry() {
+        let resources = acquisition_navigation_resources(
+            "jump-carry-keeps-entry-ordinal",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_0.json" },
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_1.json" }
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        None,
+                        Some(("desk", "closing_routine")),
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+                (
+                    "investigation_scene_1.json",
+                    investigation_scene_json(
+                        "investigation_scene_1",
+                        Some("entry_note"),
+                        None,
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+            ],
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_1")
+            .unwrap();
+
+        assert!(view.inventory.has_evidence("closing_routine"));
+        assert!(view.inventory.has_evidence("entry_note"));
+        let events = &engine.pending_acquisition_events;
+        assert_eq!(events.len(), 1, "only the entry find is a new acquisition");
+        assert_eq!(events[0].record_id, "entry_note");
+        assert_eq!(events[0].ordinal, 0);
+        assert_eq!(
+            events[0].id,
+            crate::game::acquisition::acquisition_event_id(engine.durable_revision, 0)
         );
 
         let _ = std::fs::remove_dir_all(resources);
