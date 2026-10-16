@@ -397,7 +397,6 @@ async function clickPresentRecordWithPointer(
     throw new Error(`Present record ${recordName} was not available`);
   }
 
-  await tile.scrollIntoView();
   const hitTest = await browser.execute((name: string) => {
     const target = Array.from(
       document.querySelectorAll<HTMLButtonElement>(
@@ -405,6 +404,10 @@ async function clickPresentRecordWithPointer(
       ),
     ).find((candidate) => (candidate.textContent ?? "").includes(name));
     if (!target) return null;
+    // A Scene Select jump carries earlier evidence forward, so the grid can
+    // overflow. Scroll the grid itself: WDIO's scrollIntoView only moves the
+    // page viewport, which leaves a tile clipped below the grid.
+    target.scrollIntoView({ block: "center", inline: "nearest" });
     const rect = target.getBoundingClientRect();
     const hit = document.elementFromPoint(
       rect.left + rect.width / 2,
