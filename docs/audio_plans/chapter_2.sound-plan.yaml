@@ -1,0 +1,462 @@
+schemaVersion: 1
+chapterId: chapter_2
+sources:
+  - docs/stories_plan/chapter_2/chapter.md
+  - docs/stories_plan/chapter_2/scene_0.md
+  - docs/stories_plan/chapter_2/scene_1.md
+  - docs/stories_plan/chapter_2/scene_2.md
+  - docs/stories_plan/chapter_2/scene_3.md
+  - static/assets/config/audio.yaml
+# Catalog IDs that already had a generated .ogg on disk when this plan was
+# written (Beats 0-3 merged in PR #100 with catalog prompts but no audio files).
+catalogSnapshot:
+  bgm:
+    - bgm_breakthrough_pursuit
+    - bgm_casework_day
+    - bgm_chapter_close
+    - bgm_city_summary_motif
+    - bgm_rain_bell_daily
+    - bgm_review_board_loss
+    - bgm_review_board_victory
+  bgs:
+    - bgs_cafe_afternoon_after_rain
+    - bgs_cafe_backroom_corridor
+    - bgs_cafe_backroom_office
+    - bgs_cafe_closed_night
+    - bgs_contractor_office_day
+    - bgs_detective_office_night
+    - bgs_detective_office_rain
+    - bgs_institutional_corridor
+    - bgs_interview_room_fluorescent
+    - bgs_law_office_quiet
+    - bgs_police_station_late_night
+    - bgs_review_board_room
+    - bgs_shopping_street_rain_dusk
+    - bgs_shopping_street_rain_night
+    - bgs_stationery_copy_shop
+  sfx:
+    - sfx_anonymous_message_buzz
+    - sfx_coffee_machine_backflush
+    - sfx_dialogue_proceed_tick
+    - sfx_rice_ball_bag_crinkle
+    - sfx_usb_insert_chime
+entries:
+  # ---- BGM: new for Chapter 2 ----
+  - id: bgm_glass_box_stream
+    channel: bgm
+    status: generated
+    loop: true
+    intendedDurationSeconds: 45
+    prompt: >-
+      Bright polished livestream-event instrumental for a 24-hour glass-booth
+      stream in a Shibuya plaza, neutral enough for day or night, glossy synth
+      plucks and soft four-on-the-floor pulse, slightly too clean and repetitive
+      so it feels staged, an uneasy low pad underneath, no vocals, no drop,
+      seamless 45-second loop.
+    reuseRationale: >-
+      No catalog track fits a staged livestream event; the chapter's on-air
+      state recurs at the 01:00 stream start, the afternoon rest block, and on
+      Saegusa's second monitor, so one reusable loop carries all three.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_0.md,
+          line: 121,
+          note: 01:00 開播，玻璃箱與直播牆正對人群
+        }
+      - { file: docs/stories_plan/chapter_2/scene_1.md, line: 118, note: 直播中的靜音休息時段 }
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 5, note: 副螢幕開著玻璃箱直播分頁 }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: 7ddccc31fa31
+    generatedAt: 2026-10-16T05:27:27.357Z
+    outputPath: static/assets/audio/bgm/bgm_glass_box_stream.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgm_midnight_blind_window
+    channel: bgm
+    status: generated
+    loop: true
+    intendedDurationSeconds: 45
+    prompt: >-
+      Tense restrained instrumental for a midnight sponsor block where something
+      is going wrong unseen, muffled sponsor-jingle fragments over a dry ticking
+      pulse and low sustained strings, controlled dread without horror stings,
+      no vocals, seamless 45-second loop with an open ending.
+    reuseRationale: >-
+      bgm_breakthrough_pursuit is forward-moving pursuit, not unseen dread; the
+      midnight sponsor window and the body discovery share this one
+      controlled-dread state.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 68, note: 午夜贊助段開始，群眾看牆 }
+      - {
+          file: docs/stories_plan/chapter_2/scene_2.md,
+          line: 109,
+          note: 廣場喇叭裡低低的贊助音樂
+        }
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 5,
+          note: 凌晨兩點半，空置樓層發現現場
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: d4ed7f15ad5c
+    generatedAt: 2026-10-16T05:27:34.263Z
+    outputPath: static/assets/audio/bgm/bgm_midnight_blind_window.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+
+  # ---- BGM: reused catalog tracks ----
+  - id: bgm_casework_day
+    channel: bgm
+    status: generated
+    loop: true
+    intendedDurationSeconds: 45
+    prompt: >-
+      Light focused instrumental motif for a young detective's daytime casework
+      and short tutorial, warm muted piano, brushed percussion, subtle bass,
+      paper-and-coffee momentum, curious but restrained, no vocals, no dramatic
+      climax, seamless 45-second loop.
+    reuseRationale: Existing daytime office and procedural track from Chapter 1.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_1.md, line: 5, note: 相馬事務所，下午細雨 }
+      - { file: docs/stories_plan/chapter_2/scene_3.md, line: 135, note: 相馬事務所，早上八點半 }
+      - { file: docs/stories_plan/chapter_2/scene_3.md, line: 443, note: 澀谷警察署大廳 }
+  - id: bgm_city_summary_motif
+    channel: bgm
+    status: generated
+    loop: true
+    intendedDurationSeconds: 45
+    prompt: >-
+      Cold restrained urban-institutional instrumental motif for a Tokyo
+      evidence-summary opening, low glassy piano pulses, muted synth and low
+      strings, distant train-like harmonic motion, clean machine-like
+      repetition, no vocals, no dramatic climax, seamless 45-second loop with an
+      open ending.
+    reuseRationale: Existing KAGAMI summary motif from Chapter 1; Beat 3 reuses it
+      for the morning news and summary readout.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_3.md, line: 72, note: 車站通道早間新聞 }
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 93,
+          note: KAGAMI 證據摘要介面
+        }
+
+  # ---- BGS: new for Chapter 2 ----
+  - id: bgs_shibuya_plaza_night_crowd
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Large Shibuya event plaza at night during a livestream, dense murmuring
+      crowd held behind barriers, giant outdoor screen audio bleeding through PA
+      speakers, light drizzle on umbrellas, distant traffic and crossing
+      signals, no clear words, no music melody.
+    reuseRationale: >-
+      No catalog bed has a large outdoor crowd; reused for every night plaza
+      view in Beats 0 and 2.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_0.md, line: 5, note: 遠處傳來廣場人潮的低鳴 }
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 68, note: 廣場上擠滿撐傘的人 }
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 308, note: 人群開始騷動 }
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 396, note: 人群沒有散 }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: 0505c0581a00
+    generatedAt: 2026-10-16T05:28:19.920Z
+    outputPath: static/assets/audio/bgs/bgs_shibuya_plaza_night_crowd.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgs_glass_box_backstage_day
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Staff side behind a glass livestream booth in a Shibuya event plaza on an
+      overcast drizzly afternoon, crowd murmur held back behind barriers,
+      livestream audio bleeding faintly from a giant outdoor screen, light rain
+      tapping a canopy, low generator hum, daytime traffic in the distance, no
+      clear words, no music melody.
+    reuseRationale: Daytime staff-side counterpart to the night plaza crowd; quieter
+      and canopy-close.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_1.md,
+          line: 118,
+          note: 細雨落在頂棚邊緣，鐵馬圍欄隔開人群
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: 188441729c98
+    generatedAt: 2026-10-16T05:28:25.959Z
+    outputPath: static/assets/audio/bgs/bgs_glass_box_backstage_day.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgs_streamer_studio_night
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Small private streamer studio apartment at night, PC fans whirring, faint
+      notification pings from a chat monitor, ring-light transformer hum, rain
+      on a single window, no voices, no music.
+    reuseRationale: No catalog bed for a home streaming room; Saegusa's studio is
+      likely to recur.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_2.md,
+          line: 5,
+          note: 細雨打在單扇窗上，螢幕與環形燈照亮
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: a0407acc1f51
+    generatedAt: 2026-10-16T05:28:31.457Z
+    outputPath: static/assets/audio/bgs/bgs_streamer_studio_night.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgs_stream_control_room
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Cramped livestream control room inside an event truck at night, rack fan
+      hum, soft keyboard clicks, intermittent two-way radio squelch, muffled
+      plaza crowd through the wall, no clear words, no music.
+    reuseRationale: No catalog bed for broadcast equipment; covers all three
+      control-room views in Beat 2.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_2.md,
+          line: 153,
+          note: 車頂細雨聲，隔著車壁聽見廣場人聲
+        }
+      - {
+          file: docs/stories_plan/chapter_2/scene_2.md,
+          line: 255,
+          note: 控制台旁的無線電頻繁閃燈
+        }
+      - { file: docs/stories_plan/chapter_2/scene_2.md, line: 345, note: 無線電一個接一個響 }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: c56a8250b770
+    generatedAt: 2026-10-16T05:28:36.707Z
+    outputPath: static/assets/audio/bgs/bgs_stream_control_room.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgs_building_service_core_night
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Empty commercial-building service core late at night, service elevator
+      motor idling and a door-hold alarm chirping softly at intervals, cold
+      concrete stairwell air, a heavy fire door not quite latched creaking,
+      distant muffled city, no voices, no music.
+    reuseRationale: >-
+      The elevator door-hold chirp is written as a repeated beat in the
+      discovery scene, so it lives in the bed rather than as a one-off SFX.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 5,
+          note: 服務核心的消防門半開著沒有回彈
+        }
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 14,
+          note: 服務梯的提示音隔一陣響一次
+        }
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 70,
+          note: 服務梯的提示音，又響了一次
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: 065140b11f99
+    generatedAt: 2026-10-16T05:28:42.522Z
+    outputPath: static/assets/audio/bgs/bgs_building_service_core_night.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+
+  # ---- BGS: reused catalog beds ----
+  - id: bgs_detective_office_rain
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Small Tokyo private detective office at early morning drizzle, fine even
+      rain tapping a window, distant traffic hush, faint paper shuffle, no
+      voices, no music.
+    reuseRationale: Same Soma office in drizzle as Chapter 1.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_1.md, line: 5, note: 相馬事務所，晚秋細雨 }
+      - { file: docs/stories_plan/chapter_2/scene_3.md, line: 135, note: 窗外細雨綿密 }
+  - id: bgs_interview_room_fluorescent
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Small white Japanese interview room under exposed fluorescent tubes, hard
+      reflective walls, faint paper-slide on table, tense flat quiet, no voices,
+      no music.
+    reuseRationale: Existing interview-room bed from Chapter 1.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/scene_3.md,
+          line: 270,
+          note: 澀谷警察署詢問室，頭頂兩根日光燈管
+        }
+  - id: bgs_institutional_corridor
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Cold Japanese institutional corridor, pale fluorescent hum, faint
+      damp-shoe echo on hard floor, distant muffled official voices, no music,
+      no rain inside.
+    reuseRationale: Existing institutional bed fits the police station lobby.
+    evidence:
+      - { file: docs/stories_plan/chapter_2/scene_3.md, line: 443, note: 澀谷警察署一樓大廳 }
+cues:
+  # Mirrors the authored scene metadata; tags not listed inherit.
+  - {
+      file: docs/stories_plan/chapter_2/scene_0.md,
+      visualUnit: tag_001,
+      bgm: none,
+      bgs: bgs_shibuya_plaza_night_crowd
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_0.md,
+      visualUnit: tag_003,
+      bgm: bgm_glass_box_stream
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_1.md,
+      visualUnit: tag_001,
+      bgm: bgm_casework_day,
+      bgs: bgs_detective_office_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_1.md,
+      visualUnit: tag_002,
+      bgm: bgm_glass_box_stream,
+      bgs: bgs_glass_box_backstage_day
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_001,
+      bgm: bgm_glass_box_stream,
+      bgs: bgs_streamer_studio_night
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_002,
+      bgm: bgm_midnight_blind_window,
+      bgs: bgs_shibuya_plaza_night_crowd
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_003,
+      bgs: bgs_stream_control_room
+    }
+  # Beat 2 cuts between the plaza and the broadcast truck. Without explicit
+  # BGS on tags 005-007 the control-room bed would leak into the plaza views.
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_005,
+      bgs: bgs_shibuya_plaza_night_crowd
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_006,
+      bgs: bgs_stream_control_room
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      visualUnit: tag_007,
+      bgs: bgs_shibuya_plaza_night_crowd
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      visualUnit: tag_001,
+      bgm: bgm_midnight_blind_window,
+      bgs: bgs_building_service_core_night
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      visualUnit: tag_002,
+      bgm: bgm_city_summary_motif,
+      bgs: none
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      visualUnit: tag_005,
+      bgm: bgm_casework_day,
+      bgs: bgs_detective_office_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      visualUnit: tag_006,
+      bgm: none,
+      bgs: bgs_interview_room_fluorescent
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      visualUnit: tag_007,
+      bgm: bgm_casework_day,
+      bgs: bgs_institutional_corridor
+    }
+rejected:
+  - {
+      file: docs/stories_plan/chapter_2/scene_0.md,
+      line: 141,
+      sound: 廣場音響的倒數音效,
+      reason: one-off diegetic beat carried by dialogue and the stream BGM starting
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_0.md,
+      line: 159,
+      sound: 人群爆出笑聲和尖叫,
+      reason: one-off crowd reaction over the plaza crowd BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_1.md,
+      line: 50,
+      sound: 筆電裡的直播音樂和人聲,
+      reason: incidental diegetic laptop audio under the office BGM
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      line: 66,
+      sound: 窗外雨聲變大,
+      reason: rain already covered by the studio BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_2.md,
+      line: 139,
+      sound: 靜默挑戰結束的提示音,
+      reason: one-off cue carried by the sponsor narration that follows
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      line: 30,
+      sound: 門軸發出很長的一聲,
+      reason: fire-door creak already in the service-core BGS
+    }
+  - {
+      file: docs/stories_plan/chapter_2/scene_3.md,
+      line: 133,
+      sound: 月台列車進站廣播,
+      reason: one-off announcement would need readable voice; scene keeps BGS none
+    }
