@@ -1,6 +1,6 @@
 # Scene 1: 青葉企劃
 
-- **Summary:** 雨鐘案收尾的午後，相馬事務所裡開著真白的二十四小時直播；她在鏡頭前把青葉題目排進正式企劃，休息時卻被經紀人蓮見溫和地勸退。
+- **Summary:** 雨鐘案收尾的午後，相馬事務所裡開著真白的二十四小時直播；她在鏡頭前把青葉題目排進正式企劃，靜音休息時卻被經紀人蓮見隔著玻璃溫和地勸退。
 
 [場景：相馬事務所，案發日前一日下午，晚秋細雨。窗外天色灰白，桌上堆著雨鐘案的收尾文件，牆邊那台壞掉的咖啡機蓋著一張便條，筆電上播著一場直播。]
 - **Background Prompt:** Small private detective office in Tokyo on a gray late-autumn afternoon with fine drizzle on the window, cluttered desk with neatly stacked case-closing folders, a stapler and two paper cups of hot drink, an old broken drip coffee machine on a side shelf with a blank sticky note on its lid, open laptop facing away showing only a soft glow, worn leather file folder leaning on the desk leg, eye-level medium-wide view of the desk area, warm desk lamp against cool window light, no people, calm empty lower third for dialogue UI, no readable text, no UI.
@@ -115,20 +115,26 @@
 
 **相馬律**：……冷了。
 
-[場景：澀谷廣場，玻璃箱背面工作區，同日稍晚，排定的休息時段。細雨落在頂棚邊緣，鐵馬圍欄隔開人群，背面艙口半開。]
-- **Background Prompt:** Back side of a large transparent glass livestream booth set under a canopy in a Shibuya event plaza on a drizzly late-autumn afternoon, a half-open rear service hatch, a narrow screened staff area with a folding chair, a small side table with a paper cup and a closed tablet in a soft case, metal crowd barriers and blurred umbrellas beyond, cables taped along the floor, overcast daylight mixed with cool booth lighting, eye-level medium view from the staff side, no people, clear lower third for dialogue UI, no readable signage, no UI.
+[場景：澀谷廣場，玻璃箱背面工作區，同日稍晚，直播中的靜音休息時段。細雨落在頂棚邊緣，鐵馬圍欄隔開人群，背面服務艙口關著；艙口旁有一個送東西用的小傳遞口，玻璃兩側各掛著一支對講話筒。]
+- **Background Prompt:** Rear side of a large transparent glass livestream booth under a canopy in a Shibuya event plaza on a drizzly late-autumn afternoon, seen from the narrow screened staff area outside, the rear service hatch firmly closed, beside it a small pass-through drawer built into the glass wall and a corded intercom handset hanging on the outside, through the clear glass the booth's back corner with a low cushioned rest bench, a small shelf and a matching handset inside, metal crowd barriers and blurred umbrellas beyond, cables taped along the floor, overcast daylight mixed with cool booth lighting, eye-level medium view, no people, clear lower third for dialogue UI, no readable signage, no UI.
 - **BGM:** bgm_glass_box_stream
-- **BGS:** bgs_shibuya_plaza_night_crowd
+- **BGS:** bgs_glass_box_backstage_day
 
 **旁白**：同一天稍晚，澀谷廣場，玻璃箱背面。
 
-[真白從背面艙口彎身出來，在折疊椅上坐下。她摘下一邊耳麥，肩膀一下子垂了。]
+**旁白**：直播沒有停。只是到了排定的休息時段，麥克風關掉，鏡頭前的人可以不說話。
 
-**如月真白**[tired]：十五分鐘。我要一秒都不浪費。
+[真白坐到箱子後側的矮長椅上，背對正面鏡頭，拿起箱內那一側的對講話筒。玻璃外，蓮見也拿起了另一支。]
+
+**如月真白**[tired]：靜音了？
+
+**蓮見透**：靜音了。觀眾只看得到妳在休息。
+
+**如月真白**：那我要一秒都不浪費。
 
 **蓮見透**：先喝水。溫的。
 
-[蓮見把紙杯遞給她，行程平板抱在胸前。]
+[蓮見把紙杯放進傳遞口的小抽屜，推了進去。真白從箱內那頭拉開抽屜，把杯子捧在手裡。]
 
 **如月真白**：謝謝。外面還在下？
 
@@ -138,7 +144,7 @@
 
 **蓮見透**：傘多，代表人多。是好事。
 
-[真白喝了一口水，從椅子旁的包裡拿出一台小平板，解開鎖。]
+[真白喝了一口水，從長椅下的收納格裡拿出一台小平板，解開鎖。]
 
 **蓮見透**：休息就休息，別又在看留言。
 
@@ -146,7 +152,7 @@
 
 [平板上開著兩個分頁：一張被轉傳過很多次的截圖，和一份資料庫頁面。真白的手指停在兩個分頁之間。]
 
-[蓮見在她旁邊蹲下，聲音放得很低。]
+[隔著玻璃，蓮見看見了那兩個分頁。他把話筒換到另一隻手，聲音放得很低。]
 
 **蓮見透**[concerned]：剛才那個宣布，我在控制室外面聽到了。
 
@@ -162,7 +168,7 @@
 
 **蓮見透**：我們把力氣放在能做下去的地方，好不好？
 
-[真白沒有回答。她把平板轉了個角度，避開頂棚滴下來的水。]
+[真白沒有回答。她把平板轉了個角度，避開正面鏡頭的方向。]
 
 **如月真白**[resolute]：這題目我想自己做完。
 
@@ -178,7 +184,7 @@
 
 **如月真白**：……好啦。等結束再說。
 
-[她按熄螢幕，把平板收回軟套裡，拉上拉鍊，塞進包的最底層。]
+[她按熄螢幕，把平板收回軟套裡，拉上拉鍊，塞回收納格的最底層。]
 
 **蓮見透**[firm]：還有十分鐘。晚上的行程我再跟妳對一次。
 
@@ -190,9 +196,13 @@
 
 **蓮見透**：那個我得考慮一下。
 
-[真白終於笑出聲，把耳麥重新塞回耳朵裡。]
+[真白終於笑出聲。她回頭看了一眼身旁關著的服務艙口。]
 
-**如月真白**：剩幾個小時？
+**如月真白**：說真的，有時候很想開那扇門出去走一圈。
+
+**蓮見透**：一開，這二十四小時就不算數了。
+
+**如月真白**：我知道啦。剩幾個小時？
 
 **蓮見透**：九個小時左右。最後一小時是贊助段，照凌晨講的流程走就好。
 
@@ -202,6 +212,6 @@
 
 **如月真白**：一點都不擅長。
 
-[她站起來，拍掉針織外套上的雨點，彎身鑽回玻璃箱。]
+[她把空紙杯放回小抽屜推出去，掛好話筒，起身走回正面的椅子。]
 
-[艙口在她身後關上。前方廣場上，又響起一陣歡呼。]
+[直播牆上的靜音標示熄滅。前方廣場上，又響起一陣歡呼。]
