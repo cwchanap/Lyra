@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseAudioCatalogText } from "./audio-catalog";
 
 const CHANNELS = 2;
 const SAMPLE_RATE = 44_100;
@@ -8,26 +10,25 @@ const MAX_SILENCE_SECONDS = 0.1;
 const MAX_SILENCE_FRAMES = SAMPLE_RATE * MAX_SILENCE_SECONDS;
 const MAX_SILENCE_RMS = 10 ** (-45 / 20);
 const MAX_BOUNDARY_RMS = 0.005;
-const ASSETS = [
-  "bgm_city_summary_motif",
-  "bgm_casework_day",
-  "bgm_rain_bell_daily",
-  "bgm_breakthrough_pursuit",
-  "bgm_chapter_close",
-  "bgm_review_board_loss",
-  "bgm_review_board_victory",
-] as const;
+const REPO_ROOT = resolve(import.meta.dirname, "../../..");
+const AUDIO_CATALOG_PATH = "static/assets/config/audio.yaml";
+// Every looping catalog BGM that has a committed file. Catalog entries can land
+// before their media (staged content), so a missing .ogg is skipped, not failed.
+const catalog = parseAudioCatalogText(
+  readFileSync(resolve(REPO_ROOT, AUDIO_CATALOG_PATH), "utf-8"),
+  AUDIO_CATALOG_PATH,
+);
+if (!catalog.ok) throw new Error(JSON.stringify(catalog.diagnostics));
+const ASSETS = Object.entries(catalog.value.bgm)
+  .filter(([, entry]) => entry.loop)
+  .map(([id]) => id)
+  .filter((id) => existsSync(bgmPath(id)));
 
-describe("Chapter 1 BGM Vorbis loop boundaries", () => {
+describe("Catalog BGM Vorbis loop boundaries", () => {
   it.each(ASSETS)(
     "keeps the decoded loop boundary click-safe without long silence for %s",
     (id) => {
-      const path = resolve(
-        import.meta.dirname,
-        "../../..",
-        "static/assets/audio/bgm",
-        `${id}.ogg`,
-      );
+      const path = bgmPath(id);
       const singleCycle = decode(path);
       const twoCycles = decode(path, true);
       expect(singleCycle.length % CHANNELS).toBe(0);
@@ -47,6 +48,10 @@ describe("Chapter 1 BGM Vorbis loop boundaries", () => {
     },
   );
 });
+
+function bgmPath(id: string): string {
+  return resolve(REPO_ROOT, "static/assets/audio/bgm", `${id}.ogg`);
+}
 
 function longestSilenceFrames(pcm: Float32Array): number {
   let longest = 0;

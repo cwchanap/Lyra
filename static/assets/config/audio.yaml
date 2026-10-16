@@ -25,6 +25,20 @@ bgm:
       repetition, no vocals, no dramatic climax, seamless 45-second loop with an
       open ending.
     loop: true
+  bgm_glass_box_stream:
+    prompt:
+      Bright polished livestream-event instrumental for a 24-hour glass-booth
+      stream in a Shibuya plaza, neutral enough for day or night, glossy synth
+      plucks and soft four-on-the-floor pulse, slightly too clean and repetitive
+      so it feels staged, an uneasy low pad underneath, no vocals, no drop,
+      seamless 45-second loop.
+    loop: true
+  bgm_midnight_blind_window:
+    prompt: Tense restrained instrumental for a midnight sponsor block where
+      something is going wrong unseen, muffled sponsor-jingle fragments over a
+      dry ticking pulse and low sustained strings, controlled dread without
+      horror stings, no vocals, seamless 45-second loop with an open ending.
+    loop: true
   bgm_rain_bell_daily:
     prompt:
       Warm gentle instrumental theme for an ordinary Rain Bell cafe afternoon
@@ -46,30 +60,7 @@ bgm:
       institutional air giving way to a warmer sustained note, no triumphant
       swell, ends settled but somber.
     loop: true
-  bgm_glass_box_stream:
-    prompt:
-      Bright polished livestream-event instrumental for a 24-hour glass-booth
-      stream in a Shibuya plaza, neutral enough for day or night, glossy synth
-      plucks and soft four-on-the-floor pulse, slightly too clean and
-      repetitive so it feels staged, an uneasy low pad underneath, no vocals,
-      no drop, seamless 45-second loop.
-    loop: true
-  bgm_midnight_blind_window:
-    prompt:
-      Tense restrained instrumental for a midnight sponsor block where something
-      is going wrong unseen, muffled sponsor-jingle fragments over a dry
-      ticking pulse and low sustained strings, controlled dread without horror
-      stings, no vocals, seamless 45-second loop with an open ending.
-    loop: true
 bgs:
-  bgs_glass_box_backstage_day:
-    prompt:
-      Staff side behind a glass livestream booth in a Shibuya event plaza on an
-      overcast drizzly afternoon, crowd murmur held back behind barriers,
-      livestream audio bleeding faintly from a giant outdoor screen, light rain
-      tapping a canopy, low generator hum, daytime traffic in the distance, no
-      clear words, no music melody.
-    loop: true
   bgs_building_service_core_night:
     prompt:
       Empty commercial-building service core late at night, service elevator
@@ -115,6 +106,14 @@ bgs:
       rain tapping a window, distant traffic hush, faint paper shuffle, no
       voices, no music.
     loop: true
+  bgs_glass_box_backstage_day:
+    prompt:
+      Staff side behind a glass livestream booth in a Shibuya event plaza on
+      an overcast drizzly afternoon, crowd murmur held back behind barriers,
+      livestream audio bleeding faintly from a giant outdoor screen, light rain
+      tapping a canopy, low generator hum, daytime traffic in the distance, no
+      clear words, no music melody.
+    loop: true
   bgs_institutional_corridor:
     prompt: Cold Japanese institutional corridor, pale fluorescent hum, faint
       damp-shoe echo on hard floor, distant muffled official voices, no music,
@@ -141,6 +140,13 @@ bgs:
       occasional paper-page turn, tense procedural silence, faint fluorescent
       floor, no voices, no music.
     loop: true
+  bgs_shibuya_plaza_night_crowd:
+    prompt:
+      Large Shibuya event plaza at night during a livestream, dense murmuring
+      crowd held behind barriers, giant outdoor screen audio bleeding through PA
+      speakers, light drizzle on umbrellas, distant traffic and crossing
+      signals, no clear words, no music melody.
+    loop: true
   bgs_shopping_street_rain_dusk:
     prompt: Kichijoji shopping street at rainy dusk under a convenience-store
       awning, steady awning-edge drip, passing umbrella footsteps on wet
@@ -154,12 +160,12 @@ bgs:
       footsteps, no commuter chatter, muted closed storefronts, hollower and
       colder than dusk, no voices up close, no music.
     loop: true
-  bgs_shibuya_plaza_night_crowd:
+  bgs_stationery_copy_shop:
     prompt:
-      Large Shibuya event plaza at night during a livestream, dense murmuring
-      crowd held behind barriers, giant outdoor screen audio bleeding through
-      PA speakers, light drizzle on umbrellas, distant traffic and crossing
-      signals, no clear words, no music melody.
+      Small Tokyo stationery and copy shop interior, pale white fluorescent
+      light, compact copier humming steadily against the back wall, faint paper
+      and toner air, occasional paper-slide, faint rain audible through the
+      glass door, no voices, no music.
     loop: true
   bgs_stream_control_room:
     prompt:
@@ -169,15 +175,8 @@ bgs:
     loop: true
   bgs_streamer_studio_night:
     prompt: Small private streamer studio apartment at night, PC fans whirring,
-      faint notification pings from a chat monitor, ring-light transformer
-      hum, rain on a single window, no voices, no music.
-    loop: true
-  bgs_stationery_copy_shop:
-    prompt:
-      Small Tokyo stationery and copy shop interior, pale white fluorescent
-      light, compact copier humming steadily against the back wall, faint paper
-      and toner air, occasional paper-slide, faint rain audible through the
-      glass door, no voices, no music.
+      faint notification pings from a chat monitor, ring-light transformer hum,
+      rain on a single window, no voices, no music.
     loop: true
 sfx:
   sfx_anonymous_message_buzz:

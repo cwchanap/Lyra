@@ -307,6 +307,7 @@
 
 [場景：澀谷活動廣場，凌晨十二點二十五分。雨稍微大了一點。直播牆上贊助畫面停在一個循環的片段，主持人在台邊反覆拖延。人群開始騷動，有人舉起手機。]
 - **Background Prompt:** Same Shibuya event plaza later at midnight in heavier drizzle, slightly lower crowd-eye angle closer to the barriers, focal area on the giant screen frozen on a looping unreadable sponsor graphic, umbrellas tilted and jostling, raised phone screens glowing in the crowd as small unreadable rectangles, staff in reflective vests spreading along the barriers, glass booth canopy still lit in the middle distance, no visible faces, no readable text, no UI, darker lower third for dialogue, neo-noir visual-novel background.
+- **BGS:** bgs_shibuya_plaza_night_crowd
 
 [粉絲乙換了一隻手拿傘，甩了甩發麻的手腕。]
 
@@ -344,6 +345,7 @@
 
 [場景：廣場邊的活動轉播車內，凌晨十二點三十三分。車廂裡擠了更多人，無線電一個接一個響。監看螢幕上仍是贊助畫面。]
 - **Background Prompt:** Same broadcast-truck control room around half past midnight, wider view from just inside the opened rear door with plaza light spilling in, focal area on the console where multiple radios, a tablet with an unreadable status list, and phones are scattered, monitor wall still glowing with the same unreadable sponsor loop, no people, no readable text, no UI, lower third kept clear for dialogue, neo-noir visual-novel background.
+- **BGS:** bgs_stream_control_room
 
 [後門被拉開。蓮見透走上車廂，行程平板抱在胸前，無線耳麥掛在頸上。]
 
@@ -395,6 +397,7 @@
 
 [場景：澀谷活動廣場，凌晨十二點三十五分。直播牆暗了一半，只剩贊助商的品牌畫面。人群沒有散，所有傘都朝著同一個方向。]
 - **Background Prompt:** Same Shibuya event plaza at twelve thirty-five in the morning, wide crowd-eye view mirroring the earlier midnight establishing shot, focal area on the giant screen now half-dimmed with only an unreadable sponsor brand glow, the small glass booth under its canopy in the middle distance lit but quiet, umbrellas all still turned toward the screen, staff lines along the barriers, drizzle in the light beams, no visible faces, no readable text, no UI, darker lower third for dialogue, neo-noir visual-novel background.
+- **BGS:** bgs_shibuya_plaza_night_crowd
 
 **主持人**：各位現場的朋友，真白目前暫時離開鏡頭，工作人員正在確認狀況。
 
