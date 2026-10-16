@@ -231,7 +231,7 @@ describe("SceneNavigationPanel", () => {
   });
 
   it("disables the current scene so selecting it cannot wipe in-progress state", async () => {
-    // jump_to_scene unconditionally resets inventory / scene progress, so
+    // jump_to_scene drops the current scene's finds and progress, so
     // selecting the scene the player is already on is a destructive no-op.
     // The current-scene button must short-circuit onSelect (and announce as
     // disabled) to prevent the silent wipe.

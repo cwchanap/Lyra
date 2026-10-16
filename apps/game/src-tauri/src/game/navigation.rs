@@ -12,7 +12,7 @@ use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
 use super::scenes::linear::LinearSceneState;
 use super::scenes::SceneRuntime;
-use super::schema::{SceneJson, SceneType};
+use super::schema::{EvidenceJson, SceneJson, SceneType, StatementJson};
 use super::state::{ChapterManifest, Inventory, SceneRef};
 use super::story::StoryCatalog;
 use super::view::{
@@ -60,6 +60,13 @@ impl GameEngine {
             queue_gen,
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
+        let carried_records = case_records_before_scene(
+            &self.resources_dir,
+            &self.story_catalog,
+            &self.chapters,
+            chapter_idx,
+            scene_idx,
+        )?;
 
         self.command_tx(move |engine, command_id, next_ordinal| {
             engine.current_chapter_idx = chapter_idx;
@@ -71,20 +78,20 @@ impl GameEngine {
             engine.last_visual_cue = LastVisualCue::default();
             engine.inventory = Inventory::default();
             engine.pending_acquisition_events.clear();
+            engine.carry_case_records_into_jump(&carried_records, command_id, next_ordinal)?;
             engine.next_queue_gen = queue_gen + 1;
             engine.history.reset();
 
             engine.prime_initial_queue_for_command(command_id, next_ordinal)?;
-            // Developer convenience: jumping straight into an interrogation via
-            // scene-navigation skips the investigation where its contradiction
-            // evidence is normally collected. Generic debug jumps grant every
-            // record so every testimony is presentable for testing; the packaged
-            // Beat 8.5 hearing uses a narrow pre-hearing allowlist so its gate
-            // can acquire `approved_clip` for the first time. Gated to debug
-            // builds (`cfg!(debug_assertions)`) because Scene Select is also
-            // exposed in production replay after `storyClearedOnce`; releasing
-            // test inventory there would spoil every scene's evidence and bypass
-            // the intended inventory gating.
+            // Developer convenience: the carried records above cover normal
+            // play, but testing every testimony wants every record at hand.
+            // Generic debug jumps into an interrogation grant all of them; the
+            // packaged Beat 8.5 hearing uses a narrow pre-hearing allowlist so
+            // its gate can acquire `approved_clip` for the first time. Gated to
+            // debug builds (`cfg!(debug_assertions)`) because Scene Select is
+            // also exposed in production replay after `storyClearedOnce`;
+            // releasing test inventory there would spoil every scene's evidence
+            // and bypass the intended inventory gating.
             if cfg!(debug_assertions) && matches!(engine.scene, SceneRuntime::Interrogation(_)) {
                 // `grant_all_evidence_for_testing` seeds the inventory so every
                 // contradiction is presentable, but it also queues an
@@ -119,6 +126,44 @@ impl GameEngine {
             }
             Ok(CommandMutation::Changed)
         })
+    }
+
+    /// A jump starts the target scene fresh, but the scenes it skipped still
+    /// count as played: `StoryState` carries across the jump untouched, and
+    /// the compiler only guarantees a later interrogation's contradiction
+    /// targets against inventory accumulated from the start of the story.
+    /// Emptying the inventory therefore let a jump followed by normal play
+    /// reach an interrogation without the records it needs (issue #90: a jump
+    /// back into Chapter 1 scene 9 reached the final hearing holding only
+    /// scene 9's records). Rebuild the inventory from every record declared
+    /// before the target instead. Records from the target scene onward stay
+    /// unacquired, so nothing ahead is spoiled, and since these are not new
+    /// finds no acquisition popups are queued for them.
+    fn carry_case_records_into_jump(
+        &mut self,
+        carried: &[SceneCaseRecords],
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
+        let acquisition_event_baseline = self.pending_acquisition_events.len();
+        let mut acq = AcquisitionCtx {
+            catalog: &self.story_catalog,
+            inventory: &mut self.inventory,
+            pending_events: &mut self.pending_acquisition_events,
+            command_id,
+            next_ordinal,
+        };
+        for scene in carried {
+            for def in &scene.evidence {
+                acq.evidence(def, &scene.chapter_id, &scene.scene_id)?;
+            }
+            for def in &scene.statements {
+                acq.statement(def, &scene.chapter_id, &scene.scene_id)?;
+            }
+        }
+        self.pending_acquisition_events
+            .truncate(acquisition_event_baseline);
+        Ok(())
     }
 
     /// Grants every evidence and statement defined across all scenes so that
@@ -558,6 +603,54 @@ pub(super) fn scene_navigation_index_from_chapters(
     Ok(SceneNavigationIndex {
         chapters: chapter_views,
     })
+}
+
+/// The case records one scene declares, keyed by the scene that acquires them.
+struct SceneCaseRecords {
+    chapter_id: String,
+    scene_id: String,
+    evidence: Vec<EvidenceJson>,
+    statements: Vec<StatementJson>,
+}
+
+/// Every case record declared by a scene that precedes `(chapter_idx,
+/// scene_idx)` in story order, earliest scene first. Reveals only resolve
+/// against their own scene's manifests, so this is a superset of what normal
+/// play can hold on arrival at the target.
+fn case_records_before_scene(
+    resources_dir: &std::path::Path,
+    catalog: &StoryCatalog,
+    chapters: &[ChapterManifest],
+    chapter_idx: usize,
+    scene_idx: usize,
+) -> Result<Vec<SceneCaseRecords>, GameError> {
+    let mut carried = Vec::new();
+    for (idx, chapter) in chapters.iter().enumerate().take(chapter_idx + 1) {
+        let preceding = if idx == chapter_idx {
+            &chapter.scenes[..scene_idx]
+        } else {
+            &chapter.scenes[..]
+        };
+        for scene_ref in preceding {
+            let (scene_id, evidence, statements) =
+                match load_scene_json_for_ref(resources_dir, catalog, &chapter.id, scene_ref)? {
+                    SceneJson::Investigation(scene) => {
+                        (scene.id, scene.evidence_manifest, scene.statement_manifest)
+                    }
+                    SceneJson::Interrogation(scene) => {
+                        (scene.id, scene.evidence_manifest, scene.statement_manifest)
+                    }
+                    SceneJson::Linear(_) | SceneJson::Analysis(_) => continue,
+                };
+            carried.push(SceneCaseRecords {
+                chapter_id: chapter.id.clone(),
+                scene_id,
+                evidence,
+                statements,
+            });
+        }
+    }
+    Ok(carried)
 }
 
 fn find_scene_runtime_by_id(
@@ -1367,12 +1460,264 @@ mod tests {
         assert_eq!(engine.pending_acquisition_events.len(), 1);
 
         let jumped = engine
-            .jump_to_scene("chapter_1", "scene_1")
+            .jump_to_scene("chapter_1", "investigation_scene_0")
             .expect("jump should atomically reset acquisition state");
 
         assert!(jumped.inventory.evidence.is_empty());
         assert!(engine.pending_acquisition_events.is_empty());
         assert_eq!(engine.durable_revision, 2);
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    /// Issue #90 hearing route: `investigation_scene_0` hands over
+    /// `closing_routine` at its desk, `scene_1` is the walk to the hearing,
+    /// and `interrogation_scene_2` only breaks when `closing_routine` is
+    /// presented. The hearing also declares `approved_clip`, a record of its
+    /// own that no earlier scene hands out.
+    fn hearing_route_resources(label: &str) -> std::path::PathBuf {
+        let hearing = r#"{
+            "type": "interrogation",
+            "id": "interrogation_scene_2",
+            "title": "Hearing",
+            "summary": "The hearing only breaks on the closing routine.",
+            "intro": [],
+            "phases": [{
+                "kind": "inquiry",
+                "id": "p1",
+                "label": "證詞可信度",
+                "subject": { "id": "kamiya", "name": "神谷澪", "role": "主理", "bio": "Trusts the summary." },
+                "required": true,
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "hearing",
+                "entryDialogue": [],
+                "complete": "auto",
+                "questions": [{
+                    "id": "q_p1",
+                    "label": "證詞可信度",
+                    "status": "unlocked",
+                    "required": true,
+                    "unlock": null,
+                    "reveals": [],
+                    "testimony": {
+                        "onLoop": [],
+                        "lines": [{
+                            "id": "summary_line",
+                            "label": "摘要更可信",
+                            "content": [{ "kind": "line", "speaker": "神谷澪", "text": "摘要更可信。" }],
+                            "contradiction": { "kind": "evidence", "id": "closing_routine" },
+                            "challenge": [{ "kind": "line", "speaker": "相馬律", "text": "這句先停一下。" }],
+                            "onCorrect": [{ "kind": "line", "speaker": "神谷澪", "text": "……記下了。" }]
+                        }]
+                    }
+                }]
+            }],
+            "evidenceManifest": [{
+                "id": "approved_clip",
+                "name": "approved_clip",
+                "description": "approved_clip",
+                "details": "approved_clip",
+                "imageAssetId": null,
+                "onCollect": [],
+                "onReexamine": null
+            }],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        }"#
+        .to_string();
+        acquisition_navigation_resources(
+            label,
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_0.json" },
+                        { "type": "linear", "file": "chapter_1/scene_1.json" },
+                        { "type": "interrogation", "file": "chapter_1/interrogation_scene_2.json" }
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        None,
+                        Some(("desk", "closing_routine")),
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+                ("scene_1.json", linear_scene_json("scene_1", "前往審查會。")),
+                ("interrogation_scene_2.json", hearing),
+            ],
+        )
+    }
+
+    fn drain_dialogue(engine: &mut GameEngine, mut view: GameStateView) -> GameStateView {
+        for _ in 0..50 {
+            let ModeView::Dialogue { queue_token, .. } = &view.mode else {
+                return view;
+            };
+            view = engine.advance_dialogue(queue_token.clone()).unwrap();
+        }
+        panic!("dialogue did not drain");
+    }
+
+    // Break caught (issue #90): a jump emptied the inventory while StoryState
+    // kept every earlier scene's progress, so jumping back into the scene
+    // before the final hearing and playing on reached the hearing holding
+    // none of the evidence its first contradiction needs. The evidence must
+    // also survive a save and load at the hearing.
+    #[test]
+    fn jump_then_play_reaches_hearing_with_earlier_evidence_across_save_and_load() {
+        let resources = hearing_route_resources("jump-carries-hearing-evidence");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        let view = engine.inspect_hotspot("desk").unwrap();
+        let view = drain_dialogue(&mut engine, view);
+        assert!(view.inventory.has_evidence("closing_routine"));
+
+        let view = engine.jump_to_scene("chapter_1", "scene_1").unwrap();
+        assert!(engine.pending_acquisition_events.is_empty());
+        let view = drain_dialogue(&mut engine, view);
+        assert!(
+            matches!(&view.scene, SceneView::Interrogation { id, .. } if id == "interrogation_scene_2"),
+            "expected the hearing, got {:?}",
+            view.scene
+        );
+        assert!(view.inventory.has_evidence("closing_routine"));
+        assert!(
+            !view.inventory.has_evidence("approved_clip"),
+            "the hearing's own record must not be handed out early"
+        );
+
+        let checkpoint = capture_checkpoint(&engine).unwrap();
+        let envelope = SaveEnvelope {
+            schema_version: SAVE_SCHEMA_VERSION,
+            content_revision: engine.content_manifest.content_revision().into(),
+            save_id: "550e8400-e29b-41d4-a716-446655440090".into(),
+            save_type: SaveType::Auto,
+            slot: 1,
+            saved_at: "2026-10-16T12:00:00Z".into(),
+            display_name: "Final hearing".into(),
+            thumbnail: ThumbnailDescriptorV1::Unavailable,
+            summary: checkpoint.summary,
+            snapshot: checkpoint.snapshot,
+        };
+        let definitions = load_current_definitions(&resources).unwrap();
+        let mut engine = build_restore_candidate(resources.clone(), &definitions, envelope)
+            .unwrap()
+            .engine;
+
+        let view = engine.ask_interrogation_question("q_p1").unwrap();
+        assert!(view.inventory.has_evidence("closing_routine"));
+        let view = engine.challenge_interrogation_line("summary_line").unwrap();
+        drain_dialogue(&mut engine, view);
+        let view = engine
+            .present_interrogation_evidence("summary_line", "evidence", "closing_routine")
+            .expect("the carried evidence must be presentable");
+        let view = drain_dialogue(&mut engine, view);
+        let SceneView::Interrogation { visible_phases, .. } = &view.scene else {
+            panic!("expected the hearing, got {:?}", view.scene);
+        };
+        assert!(
+            visible_phases
+                .iter()
+                .flat_map(|phase| &phase.questions)
+                .any(|question| question.id == "q_p1" && question.broken),
+            "presenting the carried evidence must break the first question"
+        );
+        let view = engine.complete_interrogation_phase().unwrap();
+        let view = drain_dialogue(&mut engine, view);
+        assert!(
+            matches!(view.mode, ModeView::GameComplete { .. }),
+            "the hearing must be completable, got {:?}",
+            view.mode
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: production replay starts a fresh run, so jumping straight
+    // past the scene that hands a record over must still arrive holding it,
+    // without queuing popups for records the player never picked up here.
+    #[test]
+    fn fresh_jump_carries_only_records_declared_before_the_target() {
+        let resources = hearing_route_resources("jump-carries-only-earlier-records");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let view = engine.jump_to_scene("chapter_1", "scene_1").unwrap();
+        let carried: Vec<_> = view.inventory.evidence.iter().map(|e| &e.id).collect();
+        assert_eq!(carried, ["closing_routine"]);
+        let record = &engine.inventory.evidence[0];
+        assert_eq!(record.collected_in_chapter_id, "chapter_1");
+        assert_eq!(record.collected_in_scene_id, "investigation_scene_0");
+        assert!(engine.pending_acquisition_events.is_empty());
+        assert!(view.pending_acquisition.is_none());
+
+        let view = engine
+            .jump_to_scene("chapter_1", "investigation_scene_0")
+            .unwrap();
+        assert!(
+            view.inventory.evidence.is_empty(),
+            "the target scene's own records are found by playing it"
+        );
+
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: normal play keeps the inventory across a chapter boundary,
+    // so a jump into a later chapter must carry every earlier chapter too.
+    #[test]
+    fn jump_into_a_later_chapter_carries_earlier_chapter_records() {
+        let resources = acquisition_navigation_resources(
+            "jump-carries-across-chapters",
+            r#"{
+                "chapters": [{
+                    "id": "chapter_1",
+                    "title": "Chapter One",
+                    "summary": "First",
+                    "scenes": [
+                        { "type": "investigation", "file": "chapter_1/investigation_scene_0.json" }
+                    ]
+                }, {
+                    "id": "chapter_2",
+                    "title": "Chapter Two",
+                    "summary": "Second",
+                    "scenes": [
+                        { "type": "linear", "file": "chapter_1/scene_1.json" }
+                    ]
+                }]
+            }"#,
+            &[
+                (
+                    "investigation_scene_0.json",
+                    investigation_scene_json(
+                        "investigation_scene_0",
+                        None,
+                        Some(("desk", "closing_routine")),
+                        serde_json::json!({
+                            "predicate": "hotspot_investigated",
+                            "id": "never"
+                        }),
+                    ),
+                ),
+                ("scene_1.json", linear_scene_json("scene_1", "第二章。")),
+            ],
+        );
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+
+        let view = engine.jump_to_scene("chapter_2", "scene_1").unwrap();
+
+        assert_eq!(view.chapter.id, "chapter_2");
+        assert!(view.inventory.has_evidence("closing_routine"));
+        assert!(engine.pending_acquisition_events.is_empty());
 
         let _ = std::fs::remove_dir_all(resources);
     }

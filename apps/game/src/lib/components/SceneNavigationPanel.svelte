@@ -123,9 +123,10 @@
                     title={isCurrent ? "目前場景" : undefined}
                     onclick={() => {
                       // Jumping to the *current* scene is a destructive no-op:
-                      // jump_to_scene unconditionally resets inventory and
-                      // scene progress, so selecting "where you already are"
-                      // would silently wipe the run. Short-circuit it. The
+                      // jump_to_scene rebuilds inventory from the earlier
+                      // scenes only and resets scene progress, so selecting
+                      // "where you already are" would silently wipe what was
+                      // found and done here. Short-circuit it. The
                       // button stays focusable with aria-disabled so assistive
                       // tech still locates the current scene.
                       if (isCurrent) return;
