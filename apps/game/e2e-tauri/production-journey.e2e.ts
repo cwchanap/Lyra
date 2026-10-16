@@ -10,6 +10,7 @@ import {
   enabledMapDestinationIds,
   ensureCaseFileViewport,
   getPackagedGameState,
+  jumpToProductionChapterScene,
   jumpToProductionScene,
   lastVisibleDialogueText,
   resetE2eStorage,
@@ -64,12 +65,6 @@ type MapGate = {
   readonly next: string;
 };
 
-/** Every city-map gate on the organic route, Chapter 1 then Chapter 2. */
-const allMapGates: readonly MapGate[] = [
-  ...anchors.mapGates,
-  ...anchors.chapter2MapGates,
-];
-
 async function crossGate(
   gate: MapGate,
   crossedWrappers: string[],
@@ -90,7 +85,7 @@ async function crossGate(
   );
   await expectCrossedToSuccessor(gate.next);
   console.log(
-    `[ProductionJourney] crossed gate ${gate.wrapper} (${crossedWrappers.length}/${allMapGates.length})`,
+    `[ProductionJourney] crossed gate ${gate.wrapper} (${crossedWrappers.length} this run)`,
   );
 }
 
@@ -649,15 +644,22 @@ async function drainOrganicRoute(
         // drainDialogueFast uses DOM-only checks per advance (no IPC
         // round-trip) and only calls the predicate at mode transitions or
         // cross-exam entry, cutting per-advance overhead from ~5
-        // browser.execute calls to ~1.
-        await drainDialogueFast(async () => {
-          const next = await getPackagedGameState();
-          return (
-            next.mode.type !== "dialogue" ||
-            next.mode.crossExamLineId !== null ||
-            stop(next)
-          );
-        }, 120);
+        // browser.execute calls to ~1. Linear stretches can run past one
+        // call's cap with no mode change (Chapter 2 opens with four linear
+        // scenes), so a full cap returns here and the next iteration
+        // re-checks the stop; ORGANIC_ROUTE_CAP still bounds the drain.
+        await drainDialogueFast(
+          async () => {
+            const next = await getPackagedGameState();
+            return (
+              next.mode.type !== "dialogue" ||
+              next.mode.crossExamLineId !== null ||
+              stop(next)
+            );
+          },
+          120,
+          { throwOnCap: false },
+        );
         break;
       case "explore":
         await exploreStep(state);
@@ -680,7 +682,7 @@ async function drainOrganicRoute(
 }
 
 describe("fresh production journey", () => {
-  it("plays the organic route from the menu across every city-map gate to the end of authored content", async function () {
+  it("plays the organic Chapter 1 route from the menu across all nine city-map gates into Chapter 2", async function () {
     this.timeout(2_400_000);
     await resetE2eStorage();
     // The 800×600 packaged default window squeezes the analysis workbench;
@@ -763,10 +765,42 @@ describe("fresh production journey", () => {
       await crossGate(gate, crossedWrappers);
     }
 
-    // Past the final Chapter 1 gate (scene_11_2), the route drains through
-    // the authored Chapter 2 opening and crosses its travel wrappers. Their
-    // ids repeat Chapter 1's, so the stop also matches the chapter.
-    for (const gate of anchors.chapter2MapGates) {
+    // Past the final gate (scene_11_2), the route drains out of Chapter 1
+    // into the authored Chapter 2 opening. Chapter 2 plays in its own test
+    // below: one organic run through both chapters no longer fits the
+    // per-test WDIO timeout (wdio.conf.ts).
+    await drainOrganicRoute(
+      (state) => state.chapter.id === "chapter_2",
+      "Chapter 2 opening",
+    );
+    const cleared = await browser.execute(
+      (key: string) => window.localStorage.getItem(key),
+      STORY_CLEARED_STORAGE_KEY,
+    );
+    expect(cleared).toBeNull();
+
+    // All nine gates, in order, no extras (spec §11 Draft-exit evidence).
+    expect(crossedWrappers).toEqual(
+      anchors.mapGates.map((gate) => gate.wrapper),
+    );
+  });
+
+  it("plays Chapter 2 from its first city-map gate to the in-progress end card", async function () {
+    this.timeout(1_200_000);
+    await resetE2eStorage();
+    // Scene Select is production replay, unlocked by a story clear; seed it
+    // so the run can start at Chapter 2's first travel wrapper.
+    await seedStoryCleared();
+    await ensureCaseFileViewport();
+    await startFromMenu();
+    const [firstGate, ...laterGates] = anchors.chapter2MapGates;
+    await jumpToProductionChapterScene(firstGate.chapter, firstGate.wrapper);
+
+    // Chapter 2's wrapper ids repeat Chapter 1's, so each stop also matches
+    // the chapter.
+    const crossedWrappers: string[] = [];
+    await crossGate(firstGate, crossedWrappers);
+    for (const gate of laterGates) {
       await drainOrganicRoute(
         (state) =>
           state.chapter.id === gate.chapter &&
@@ -777,9 +811,8 @@ describe("fresh production journey", () => {
     }
 
     // Chapter 2 is `**Status:** in-progress`, so exhausting it is a terminal
-    // but non-clear boundary: the 未完待續 end card renders and production
-    // replay stays locked. When Chapter 2 is complete, this becomes
-    // `storyCleared: true` again.
+    // but non-clear boundary: the 未完待續 end card renders. When Chapter 2
+    // is complete, this becomes `storyCleared: true` again.
     await drainOrganicRoute(
       (state) => state.mode.type === "gameComplete",
       "end of authored content",
@@ -791,14 +824,9 @@ describe("fresh production journey", () => {
       storyCleared: false,
     });
     expect(await elementExists(".complete.continued")).toBe(true);
-    const cleared = await browser.execute(
-      (key: string) => window.localStorage.getItem(key),
-      STORY_CLEARED_STORAGE_KEY,
+    expect(crossedWrappers).toEqual(
+      anchors.chapter2MapGates.map((gate) => gate.wrapper),
     );
-    expect(cleared).toBeNull();
-
-    // Every gate, in order, no extras (spec §11 Draft-exit evidence).
-    expect(crossedWrappers).toEqual(allMapGates.map((gate) => gate.wrapper));
   });
 
   it("keeps the drain deterministic when several destinations are enabled", async () => {
