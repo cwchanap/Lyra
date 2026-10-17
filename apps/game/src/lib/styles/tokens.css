@@ -19,6 +19,8 @@
   --lyra-mobile-breakpoint: 720px; /* informational only; not usable in @media */
 
   --bg-deep: #07070d;
+  /* Backing for HUD panels laid over scene art (objective, progress, map). */
+  --ink: #07070d;
   --bg-violet: #160820;
   --bg-blood: #1a0510;
   --cell: #040408;
