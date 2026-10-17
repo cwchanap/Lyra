@@ -45,6 +45,8 @@
 
 **早坂茜**：手機拍的。如果是真的，那就是摘要第一點最硬的人證。
 
+**早坂茜**：轉播車跟警車那邊，我先傳訊息約人。對方回了，我們再過去。
+
 [相馬把剩下的飯糰塞進嘴裡，看向廣場右側那片花與傘。]
 
 **相馬律**：……那得先去聽聽看。
@@ -274,7 +276,7 @@
 [相馬抬頭看了直播牆一眼，又看回那個小小的箱子。他沒有接話。]
 
 ## Sub-location: 後台轉播車外圍 {#control_room_perimeter}
-- **Status:** unlocked
+- **Status:** locked
 - **Background Prompt:** Midday staff-side view outside the outdoor broadcast truck parked at the edge of the same Shibuya event plaza behind the booth area, overcast light drizzle, eye-level medium-wide shot facing the truck's open rear side door, used to read the control-room hotspots from outside the barriers; focal area on a small pulled-out monitor on a rolling stand beside the door showing a dark frame with a tiny unreadable corner tag, and a printed runsheet taped flat to the door with unreadable rows and curled wet corners; stable anchors of metal crowd barriers around the truck, gaffer-taped cable runs on wet asphalt, stacked equipment cases and a folding chair under a small canvas awning, the rear of the glass booth's canopy visible in the far background; cool gray daylight with dim console glow spilling from the doorway, no people, clear wet ground in the lower foreground left open for standee placement and dialogue UI, no readable text, no UI, neo-noir visual-novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_glass_box_backstage_day
@@ -557,7 +559,7 @@
 - **Description:** 應援區邊角那根水泥柱前，戶川昨晚拍攝時的站位。
 - **Evidence Source:** implied
 - **Scene Source Prompt:** Concrete pillar at the corner of the fan barrier and the oblique sightline from it toward the glass booth's right side panel catching the giant screen's mirrored reflection, used as the local spatial carrier for the filming-position check; no overlay or readable text.
-- **Reveals:** [evidence:togawa_video_position_check, topic:togawa_miu@what_i_saw, topic:kurose@fan_video]
+- **Reveals:** [evidence:togawa_video_position_check, topic:togawa_miu@what_i_saw, topic:kurose@fan_video, sublocation:control_room_perimeter, sublocation:police_review_van]
 
 [相馬走到水泥柱前，站在戶川說的位置。他把戶川的手機舉到眼前。]
 
@@ -598,6 +600,12 @@
 **相馬律**：真白也可能就坐在那片反光後面。看不出來，就只能說看不出來。
 
 [戶川看著那兩個反過來的白字，握著手機的手慢慢垂了下來。]
+
+[早坂的手機震了一下。她看了一眼螢幕。]
+
+**早坂茜**：助理導播回了，轉播車那邊可以過去。黑瀨刑警也在警車等我們。
+
+**相馬律**：粉絲的鏡頭拍到什麼，現在知道了。接下來，去看看其他鏡頭存了什麼。
 
 #### On Reexamine
 
@@ -698,7 +706,7 @@
 **早坂茜**[softened]：記得。
 
 ## Sub-location: 警方臨時審查車 {#police_review_van}
-- **Status:** unlocked
+- **Status:** locked
 - **Background Prompt:** Midday view beside a parked police van at the edge of the same Shibuya event plaza in light drizzle, eye-level medium shot facing the van's open sliding side door, used as the police's on-site review point; focal area on a folding table under a small pop-up rain awning with a printed multi-page summary laid flat beside an open laptop, and a clear plastic crate of sealed evidence bags with a bagged smartphone lying on top; stable anchors of the van's dark body with rain beading on the roof, a radio handset clipped inside the door, a convenience-store plastic bag on the van step, and the plaza with the glass booth's canopy softly blurred in the background; overcast gray daylight with cool laptop glow, no people, clear wet ground in the lower foreground left open for standee placement and dialogue UI, no readable text or police lettering, no UI, neo-noir visual-novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_police_command_van_rain
