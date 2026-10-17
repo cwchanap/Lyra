@@ -105,6 +105,9 @@ describe("InvestigationSceneSurface", () => {
     expect(button.style.getPropertyValue("--y")).toBe("20%");
     expect(button.style.getPropertyValue("--w")).toBe("30%");
     expect(button.style.getPropertyValue("--h")).toBe("20%");
+    // Unitless, so the pending cue can place the target in the viewport.
+    expect(button.style.getPropertyValue("--x-ratio")).toBe("0.1");
+    expect(button.style.getPropertyValue("--y-ratio")).toBe("0.2");
   });
 
   it("renders placed characters with normalized top-left bounding boxes", () => {
@@ -119,6 +122,8 @@ describe("InvestigationSceneSurface", () => {
     expect(button.style.getPropertyValue("--y")).toBe("10%");
     expect(button.style.getPropertyValue("--w")).toBe("18%");
     expect(button.style.getPropertyValue("--h")).toBe("80%");
+    expect(button.style.getPropertyValue("--x-ratio")).toBe("0.7");
+    expect(button.style.getPropertyValue("--y-ratio")).toBe("0.1");
   });
 
   it("does not offset character layout boxes with bottom-center transforms", () => {
