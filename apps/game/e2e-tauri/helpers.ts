@@ -1679,6 +1679,45 @@ export async function forceReducedMotion(): Promise<void> {
   });
 }
 
+/** Script timeout while waiting out a reload; see {@link reloadDocument}. */
+const RELOAD_POLL_SCRIPT_TIMEOUT_MS = 2000;
+
+/**
+ * Reload the page and return once the new document is in place. The embedded
+ * WebDriver's refresh only calls `location.reload()` and returns, so the next
+ * script can land in the unloading document and never answer. At the
+ * session's 30 s script timeout that stalled about a third of all refreshes
+ * for 30 s each; a short timeout while polling makes a lost reply a quick
+ * retry instead.
+ */
+async function reloadDocument(failureLabel: string): Promise<void> {
+  const marker = "data-e2e-pre-reload";
+  await browser.execute((name: string) => {
+    document.documentElement.setAttribute(name, "");
+  }, marker);
+  const { script } = await browser.getTimeouts();
+  await browser.refresh();
+  await browser.setTimeout({ script: RELOAD_POLL_SCRIPT_TIMEOUT_MS });
+  try {
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (name: string) =>
+            document.readyState === "complete" &&
+            !document.documentElement.hasAttribute(name),
+          marker,
+        ),
+      {
+        timeout: 30000,
+        interval: 100,
+        timeoutMsg: `${failureLabel} did not replace the prior document`,
+      },
+    );
+  } finally {
+    await browser.setTimeout({ script: script ?? 30000 });
+  }
+}
+
 export async function waitForShell(): Promise<void> {
   await forceReducedMotion();
   await browser.waitUntil(
@@ -1729,24 +1768,7 @@ export async function resetCaptureProofStorage(): Promise<void> {
     for (const key of toRemove) window.localStorage.removeItem(key);
     window.localStorage.setItem(clearanceKey, "true");
   }, STORY_CLEARED_STORAGE_KEY);
-  await browser.execute(() => {
-    document.documentElement.setAttribute("data-capture-proof-pre-refresh", "");
-  });
-  await browser.refresh();
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document.readyState === "complete" &&
-          !document.documentElement.hasAttribute(
-            "data-capture-proof-pre-refresh",
-          ),
-      ),
-    {
-      timeout: 30000,
-      timeoutMsg: "capture proof refresh did not replace the prior document",
-    },
-  );
+  await reloadDocument("capture proof refresh");
   await waitForCaptureProofShell();
 }
 
@@ -1879,28 +1901,7 @@ export async function resetE2eStorage(): Promise<void> {
     }
     for (const k of toRemove) window.localStorage.removeItem(k);
   }, STORY_CLEARED_STORAGE_KEY);
-  await browser.execute(() => {
-    document.documentElement.setAttribute(
-      "data-ordinary-storage-pre-refresh",
-      "",
-    );
-  });
-  await browser.refresh();
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document.readyState === "complete" &&
-          !document.documentElement.hasAttribute(
-            "data-ordinary-storage-pre-refresh",
-          ),
-      ),
-    {
-      timeout: 30000,
-      timeoutMsg:
-        "ordinary E2E setup refresh did not replace the prior document",
-    },
-  );
+  await reloadDocument("ordinary E2E setup refresh");
   // Re-apply motion stubs after navigation (refresh drops injected scripts).
   await waitForShell();
 }
@@ -1919,23 +1920,8 @@ export async function resetE2eStorageWithStoryClearance(): Promise<void> {
     }
     for (const key of toRemove) window.localStorage.removeItem(key);
     window.localStorage.setItem(clearanceKey, "true");
-    document.documentElement.setAttribute("data-save-storage-pre-refresh", "");
   }, STORY_CLEARED_STORAGE_KEY);
-  await browser.refresh();
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document.readyState === "complete" &&
-          !document.documentElement.hasAttribute(
-            "data-save-storage-pre-refresh",
-          ),
-      ),
-    {
-      timeout: 30000,
-      timeoutMsg: "save e2e setup refresh did not replace the prior document",
-    },
-  );
+  await reloadDocument("save e2e setup refresh");
   await waitForShell();
   const value = await browser.execute((clearanceKey: string) => {
     return window.localStorage.getItem(clearanceKey);
@@ -2635,7 +2621,7 @@ export async function seedStoryCleared(): Promise<void> {
   await browser.execute((key: string) => {
     window.localStorage.setItem(key, "true");
   }, STORY_CLEARED_STORAGE_KEY);
-  await browser.refresh();
+  await reloadDocument("seedStoryCleared refresh");
   await waitForShell();
   // Assert persistence so storage-isolation failures surface during setup,
   // before the test body runs with a missing clearance flag.
@@ -2658,7 +2644,7 @@ export async function forgetStoryCleared(): Promise<void> {
   await browser.execute((key: string) => {
     window.localStorage.removeItem(key);
   }, STORY_CLEARED_STORAGE_KEY);
-  await browser.refresh();
+  await reloadDocument("forgetStoryCleared refresh");
   await waitForShell();
   const value = await browser.execute((key: string) => {
     return window.localStorage.getItem(key);
