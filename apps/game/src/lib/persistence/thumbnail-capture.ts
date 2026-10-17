@@ -559,6 +559,10 @@ export function splitGameplayCaptureSvgLayers(svgUrl: string): {
   const overlays = Array.from(
     captureRoot.querySelectorAll('[data-save-thumbnail-layer="over-portrait"]'),
   );
+  // An overlay can sit in normal flow (the scene stamp follows the chapter
+  // header), so siblings along the overlays' ancestor chain stay behind as
+  // empty, hidden boxes. html-to-image inlines every element's computed
+  // size, so each box still takes its live space without painting anything.
   for (const element of Array.from(
     captureRoot.querySelectorAll("*"),
   ).reverse()) {
@@ -568,7 +572,18 @@ export function splitGameplayCaptureSvgLayers(svgUrl: string): {
         element.contains(overlay) ||
         overlay.contains(element),
     );
-    if (!retained) element.remove();
+    if (retained) continue;
+    const parent = element.parentElement;
+    if (!parent || !overlays.some((overlay) => parent.contains(overlay))) {
+      element.remove();
+      continue;
+    }
+    element.replaceChildren();
+    for (const name of element.getAttributeNames()) {
+      if (name !== "style") element.removeAttribute(name);
+    }
+    (element as Element & { style: CSSStyleDeclaration }).style.visibility =
+      "hidden";
   }
 
   return {

@@ -1,4 +1,7 @@
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 import {
+  advanceDialogueUntil,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
   elementExists,
@@ -7,6 +10,7 @@ import {
   jsClick,
   jumpToProductionScene,
   loadPackagedCheckpoint,
+  observedCssViewport,
   openGameMenu,
   resetE2eStorage,
   seedStoryCleared,
@@ -14,7 +18,97 @@ import {
   waitForPackagedGameState,
 } from "./helpers";
 import { anchors } from "./production-anchors";
+import { caseFileViewportNativeSize } from "$lib/e2e/case-file-viewport";
+import {
+  targetLayoutStyle,
+  type TargetLayout,
+} from "$lib/investigation/target-layout";
 import type { GameStateView } from "$lib/state/types";
+
+/** The game window's default and minimum size (tauri.conf.json). */
+const MINIMUM_WINDOW = { width: 800, height: 600 } as const;
+
+/**
+ * The least of each axis a cropped target must keep inside the window: the
+ * hotspot's minimum hit height. A target smaller than this must stay whole.
+ */
+const MIN_USABLE_TARGET_PX = 44;
+
+type ShippedPlacement = {
+  id: string;
+  kind: "hotspot" | "character";
+  style: string;
+};
+
+type Box = { left: number; top: number; right: number; bottom: number };
+
+/** Every placed hotspot and witness in the compiled scenes the app ships. */
+function shippedPlacements(): ShippedPlacement[] {
+  type PlacedTarget = { id: string; layout: TargetLayout | null };
+  type CompiledInvestigation = {
+    sublocations: Array<{
+      id: string;
+      hotspots: PlacedTarget[];
+      characters: PlacedTarget[];
+    }>;
+  };
+  const scenesDir = path.join(
+    process.cwd(),
+    "src-tauri",
+    "resources",
+    "scenes",
+  );
+  const placements: ShippedPlacement[] = [];
+  const chapters = readdirSync(scenesDir)
+    .filter((name) => name.startsWith("chapter_"))
+    .toSorted();
+  for (const chapter of chapters) {
+    const files = readdirSync(path.join(scenesDir, chapter))
+      .filter((name) => /^investigation_scene_.*\.json$/.test(name))
+      .toSorted();
+    for (const file of files) {
+      const scene = JSON.parse(
+        readFileSync(path.join(scenesDir, chapter, file), "utf8"),
+      ) as CompiledInvestigation;
+      const sceneId = `${chapter}/${file.replace(/\.json$/, "")}`;
+      for (const sublocation of scene.sublocations) {
+        const groups = [
+          ["hotspot", sublocation.hotspots],
+          ["character", sublocation.characters],
+        ] as const;
+        for (const [kind, targets] of groups) {
+          for (const target of targets) {
+            if (!target.layout) continue;
+            placements.push({
+              id: `${sceneId}/${sublocation.id}/${target.id}`,
+              kind,
+              style: targetLayoutStyle(target.layout),
+            });
+          }
+        }
+      }
+    }
+  }
+  return placements;
+}
+
+async function ensureMinimumWindowViewport(): Promise<void> {
+  const matches = (viewport: { width: number; height: number }) =>
+    viewport.width === MINIMUM_WINDOW.width &&
+    viewport.height === MINIMUM_WINDOW.height;
+  const viewport = await observedCssViewport();
+  if (matches(viewport)) return;
+  const native = caseFileViewportNativeSize(
+    viewport.devicePixelRatio,
+    MINIMUM_WINDOW,
+  );
+  await browser.setWindowSize(native.width, native.height);
+  await browser.waitUntil(async () => matches(await observedCssViewport()), {
+    timeout: 10000,
+    interval: 100,
+    timeoutMsg: "viewport did not settle at the 800x600 minimum window",
+  });
+}
 
 /** Explore parked on investigation_scene_map_01's city map (HPA-601 §7). */
 function isPendingFirstMapGate(state: GameStateView): boolean {
@@ -111,6 +205,170 @@ describe("investigation layout surface", () => {
         timeoutMsg: "character highlight/name opacity not 1 when expanded",
       },
     );
+  });
+
+  it("keeps every shipped placement usable and its pending cue on it at 800x600", async () => {
+    // Scene 3's front room has both an unfinished hotspot and a witness
+    // with open topics, so both cue variants are live.
+    await seedStoryCleared();
+    await startFromMenu();
+    await jumpToProductionScene("investigation_scene_3");
+    await advanceDialogueUntil(async () => {
+      const state = await getPackagedGameState();
+      return (
+        state.mode.type === "explore" &&
+        state.scene.kind === "investigation" &&
+        state.scene.currentSublocationId !== null
+      );
+    });
+    const hotspotSel = "button.hotspot-target";
+    const characterSel = "button.character-target";
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (selectors: string[]) =>
+            selectors.every((selector) =>
+              Array.from(document.querySelectorAll(selector)).some(
+                (target) => target.querySelector(".target-pending") !== null,
+              ),
+            ),
+          [hotspotSel, characterSel],
+        ),
+      {
+        timeout: 15000,
+        timeoutMsg: "scene 3 targets did not show their pending cues",
+      },
+    );
+    await ensureMinimumWindowViewport();
+
+    const placements = shippedPlacements();
+    const ids = placements.map((placement) => placement.id);
+    // Where the 800x600 clipping was found: two markers, and two targets
+    // the crop once hid almost or entirely.
+    for (const id of [
+      "chapter_1/investigation_scene_3/inner_entry/tall_shelf",
+      "chapter_1/investigation_scene_3/front/katase",
+      "chapter_1/investigation_scene_3/front/miyake_locker",
+      "chapter_1/investigation_scene_9/contractor_desk/to_confront",
+    ]) {
+      expect(ids).toContain(id);
+    }
+
+    // Real layout in the packaged WebView: re-place one live hotspot and one
+    // live witness at each shipped box through the production style
+    // contract, and read back where the target and its cue land. Hotspots
+    // are read both with and without the collision compaction, which only
+    // drops the minimum hit size.
+    const measured = await browser.execute(
+      (
+        entries: ShippedPlacement[],
+        hotspotSelector: string,
+        characterSelector: string,
+      ) => {
+        const box = (rect: DOMRect) => ({
+          left: rect.left,
+          top: rect.top,
+          right: rect.right,
+          bottom: rect.bottom,
+        });
+        const unfinished = (selector: string) =>
+          Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
+            (target) => target.querySelector(".target-pending") !== null,
+          )!;
+        const targets = {
+          hotspot: unfinished(hotspotSelector),
+          character: unfinished(characterSelector),
+        };
+        const saved = Object.values(targets).map((target) => ({
+          target,
+          style: target.getAttribute("style"),
+          className: target.className,
+        }));
+        const compactClasses = ["compact", "compact-x", "compact-y"];
+        const results: Array<{ id: string; target: Box; cue: Box }> = [];
+        for (const entry of entries) {
+          const target = targets[entry.kind];
+          const cue = target.querySelector<HTMLElement>(".target-pending")!;
+          target.setAttribute("style", entry.style);
+          // The pulse scales the cue; measure its resting box.
+          cue.style.animation = "none";
+          const variants = entry.kind === "hotspot" ? [false, true] : [false];
+          for (const compact of variants) {
+            target.classList.remove(...compactClasses);
+            if (compact) target.classList.add("compact");
+            results.push({
+              id: compact ? `${entry.id} (compact)` : entry.id,
+              target: box(target.getBoundingClientRect()),
+              cue: box(cue.getBoundingClientRect()),
+            });
+          }
+          cue.style.removeProperty("animation");
+        }
+        for (const { target, style, className } of saved) {
+          if (style === null) target.removeAttribute("style");
+          else target.setAttribute("style", style);
+          target.className = className;
+        }
+        return {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          results,
+        };
+      },
+      placements,
+      hotspotSel,
+      characterSel,
+    );
+
+    expect(measured.viewport).toEqual(MINIMUM_WINDOW);
+    expect(measured.results.length).toBeGreaterThan(placements.length);
+
+    // Every placed target is one the player may need, so the window's crop
+    // must leave enough of it to click, and its cue must sit on that part.
+    const unusable: string[] = [];
+    const misplaced: string[] = [];
+    for (const { id, target, cue } of measured.results) {
+      const visible: Box = {
+        left: Math.max(target.left, 0),
+        top: Math.max(target.top, 0),
+        right: Math.min(target.right, measured.viewport.width),
+        bottom: Math.min(target.bottom, measured.viewport.height),
+      };
+      const needWidth = Math.min(
+        target.right - target.left,
+        MIN_USABLE_TARGET_PX,
+      );
+      const needHeight = Math.min(
+        target.bottom - target.top,
+        MIN_USABLE_TARGET_PX,
+      );
+      if (
+        visible.right - visible.left < needWidth - 0.5 ||
+        visible.bottom - visible.top < needHeight - 0.5
+      ) {
+        unusable.push(
+          `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+        );
+        continue;
+      }
+      const cueWidth = cue.right - cue.left;
+      const cueHeight = cue.bottom - cue.top;
+      if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
+        misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
+        continue;
+      }
+      if (
+        cue.left < visible.left ||
+        cue.top < visible.top ||
+        cue.right > visible.right ||
+        cue.bottom > visible.bottom
+      ) {
+        misplaced.push(
+          `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+        );
+      }
+    }
+    expect(unusable).toEqual([]);
+    expect(misplaced).toEqual([]);
   });
 
   it("Escape closes the topic popover before opening the game menu", async () => {

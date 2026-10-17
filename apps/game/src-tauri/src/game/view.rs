@@ -344,6 +344,9 @@ pub enum SceneView {
         /// visible/unlocked sublocations (HPA-601 §7).
         map: Option<InvestigationMapView>,
         visible_sublocations: Vec<SublocationView>,
+        /// Reachable targets done out of total for the auto outro; `None`
+        /// when an authored `Unlock:` expression decides the outro.
+        outro_progress: Option<InvestigationProgressView>,
     },
     Interrogation {
         id: String,
@@ -519,6 +522,13 @@ pub struct InvestigationMapRegionView {
     pub x: f64,
     pub y: f64,
     pub background_asset_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InvestigationProgressView {
+    pub done: usize,
+    pub total: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]

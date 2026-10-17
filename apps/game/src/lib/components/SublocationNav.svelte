@@ -7,12 +7,15 @@
     onEnter,
     disabled = false,
     placement = "page",
+    remaining = null,
   }: {
     sublocations: SublocationView[];
     currentId: string | null;
     onEnter: (id: string) => void;
     disabled?: boolean;
     placement?: "page" | "scene";
+    /** Open targets per location; null hides the counts. */
+    remaining?: Record<string, number> | null;
   } = $props();
 </script>
 
@@ -28,6 +31,10 @@
       >
         <span class="idx">{String(i + 1).padStart(2, "0")}</span>
         <span class="label">{sub.label}</span>
+        {#if remaining && (remaining[sub.id] ?? 0) > 0}
+          <span class="remaining" aria-hidden="true">{remaining[sub.id]}</span>
+          <span class="sr-only">（尚有 {remaining[sub.id]} 項未查）</span>
+        {/if}
         {#if sub.id === currentId}
           <span class="active-mark">▸</span>
         {/if}
@@ -115,6 +122,32 @@
 
   button.active .idx {
     color: var(--crimson);
+  }
+
+  .remaining {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    place-items: center;
+    border: 1px solid var(--cyan);
+    border-radius: 999px;
+    color: var(--cyan);
+    font-family: var(--mono);
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   .active-mark {

@@ -10,6 +10,7 @@ import {
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
 import DialogueBox from "./DialogueBox.svelte";
+import { cssRule } from "$lib/test-utils";
 import type {
   CrossExamView,
   DialogueHistoryEntry,
@@ -115,6 +116,13 @@ describe("DialogueBox", () => {
     renderDialogueBox({ kind: "action", text: "Found evidence." });
     expect(screen.getByText("Found evidence.")).toBeInTheDocument();
     expect(screen.getByText(/NARRATION/)).toBeInTheDocument();
+  });
+
+  it("keeps the speaker nameplate on one line", () => {
+    // Playtest #90: 黑瀨徹 / 早坂茜 / 店長高瀨 orphaned their last character.
+    expect(cssRule(dialogueBoxSource(), ".speaker")).toContain(
+      "white-space: nowrap",
+    );
   });
 
   it("renders a line dialogue item with speaker", () => {

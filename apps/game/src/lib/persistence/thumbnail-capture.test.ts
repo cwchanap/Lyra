@@ -231,6 +231,60 @@ describe("gameplay capture SVG layout normalization", () => {
     expect(markup(split.overPortraitSvgUrl)).not.toContain("case hud");
     expect(markup(split.overPortraitSvgUrl)).not.toContain("scene-ui");
   });
+
+  it("keeps an in-flow overlay in place by leaving the boxes before it hidden", () => {
+    const source = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="800" height="600">
+        <foreignObject width="100%" height="100%">
+          <div xmlns="http://www.w3.org/1999/xhtml">
+            <header style="height: 120px;"><h1>chapter title</h1></header>
+            <main>
+              <div class="backdrop" data-save-thumbnail-layout="backdrop">
+                <img class="background-image" src="bg.png" />
+                <span
+                  class="stamp"
+                  data-save-thumbnail-layer="over-portrait"
+                >scene tag</span>
+              </div>
+              <div
+                class="dialogue-over"
+                data-save-thumbnail-layer="over-portrait"
+              >dialogue</div>
+            </main>
+          </div>
+        </foreignObject>
+      </svg>
+    `;
+    const split = splitGameplayCaptureSvgLayers(
+      normalizeGameplayCaptureSvg(
+        `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`,
+      ),
+    );
+    const layer = (value: string) =>
+      new DOMParser().parseFromString(
+        decodeURIComponent(value.split(",", 2)[1] ?? ""),
+        "image/svg+xml",
+      );
+    const under = layer(split.underPortraitSvgUrl);
+    const over = layer(split.overPortraitSvgUrl);
+
+    // The stamp paints above portraits, like the live z-order.
+    expect(under.querySelector(".stamp")).toBeNull();
+    expect(over.querySelector(".stamp")?.textContent).toBe("scene tag");
+
+    // The header still pushes the stamp down, but paints nothing.
+    const header = over.querySelector("foreignObject > div > header");
+    expect(header).not.toBeNull();
+    expect(header?.childNodes).toHaveLength(0);
+    expect(header?.getAttribute("style")).toContain("height: 120px");
+    expect(header?.getAttribute("style")).toContain("visibility: hidden");
+    expect(over.documentElement.outerHTML).not.toContain("chapter title");
+
+    // The background beside the stamp is hidden and no longer loads.
+    const background = over.querySelector(".backdrop > img");
+    expect(background?.getAttribute("src")).toBeNull();
+    expect(background?.getAttribute("style")).toContain("visibility: hidden");
+  });
 });
 
 describe("gameplay capture SVG repeated draw workaround", () => {
