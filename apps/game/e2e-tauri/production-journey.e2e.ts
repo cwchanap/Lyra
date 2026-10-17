@@ -3,17 +3,23 @@ import {
   advanceDialogueUntil,
   clickButton,
   clickSoleMapDestination,
+  closePersistenceBrowserToGameplay,
   collectKagamiSummaryEvidence,
   completeP1PracticeTutorial,
   drainDialogueFast,
   elementExists,
   enabledMapDestinationIds,
   ensureCaseFileViewport,
+  forgetStoryCleared,
   getPackagedGameState,
   jumpToProductionChapterScene,
   jumpToProductionScene,
   lastVisibleDialogueText,
+  loadTitleSlot,
+  openGameMenu,
   resetE2eStorage,
+  returnToTitle,
+  saveManualSlot,
   seedStoryCleared,
   startFromMenu,
   waitForButton,
@@ -35,6 +41,31 @@ function isPendingMapGate(state: GameStateView, wrapper: string): boolean {
     state.scene.currentSublocationId === null &&
     state.scene.map !== null
   );
+}
+
+/** Opens the game menu, reports whether it offers Scene Select, and closes it. */
+async function gameMenuOffersSceneSelect(): Promise<boolean> {
+  await openGameMenu();
+  const offered = await browser.execute(
+    (heading: string, label: string) => {
+      const menu = Array.from(
+        document.querySelectorAll('[role="dialog"]'),
+      ).find((dialog) =>
+        Array.from(dialog.querySelectorAll("h2")).some((title) =>
+          (title.textContent ?? "").includes(heading),
+        ),
+      );
+      if (!menu) return null;
+      return Array.from(menu.querySelectorAll("button")).some((button) =>
+        (button.textContent ?? "").includes(label),
+      );
+    },
+    anchors.gameMenu,
+    anchors.sceneSelect,
+  );
+  if (offered === null) throw new Error("game menu dialog is not open");
+  await clickButton(anchors.continueInvestigation);
+  return offered;
 }
 
 /**
@@ -821,6 +852,29 @@ describe("fresh production journey", () => {
     const [firstGate, ...laterGates] = anchors.chapter2MapGates;
     await jumpToProductionChapterScene(firstGate.chapter, firstGate.wrapper);
 
+    // The seed is only a way in. To prove the in-progress ending leaves a
+    // fresh profile uncleared, save the pending map, forget the seeded clear,
+    // and resume from the save with replay locked again.
+    const atFirstGate = (state: GameStateView) =>
+      state.chapter.id === firstGate.chapter &&
+      isPendingMapGate(state, firstGate.wrapper);
+    await waitForPackagedGameState(
+      atFirstGate,
+      30000,
+      `${firstGate.chapter}/${firstGate.wrapper} did not park on its pending city map`,
+    );
+    await saveManualSlot(1, "第二章地圖存檔");
+    await closePersistenceBrowserToGameplay();
+    await returnToTitle();
+    await forgetStoryCleared();
+    await loadTitleSlot("manual", 1);
+    await waitForPackagedGameState(
+      atFirstGate,
+      30000,
+      `manual load did not restore ${firstGate.chapter}/${firstGate.wrapper}'s pending city map`,
+    );
+    expect(await gameMenuOffersSceneSelect()).toBe(false);
+
     // Chapter 2's wrapper ids repeat Chapter 1's, so each stop also matches
     // the chapter.
     const crossedWrappers: string[] = [];
@@ -849,6 +903,11 @@ describe("fresh production journey", () => {
       storyCleared: false,
     });
     expect(await elementExists(".complete.continued")).toBe(true);
+    const cleared = await browser.execute(
+      (key: string) => window.localStorage.getItem(key),
+      STORY_CLEARED_STORAGE_KEY,
+    );
+    expect(cleared).toBeNull();
     expect(crossedWrappers).toEqual(
       anchors.chapter2MapGates.map((gate) => gate.wrapper),
     );
