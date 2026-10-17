@@ -6,6 +6,13 @@ use std::collections::HashSet;
 
 pub(crate) const RESTORED_CONSUMED_INTRO_QUEUE_GEN: u64 = 0;
 
+/// Inspected/discussed targets out of every reachable hotspot and topic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OutroProgress {
+    pub done: usize,
+    pub total: usize,
+}
+
 #[derive(Debug, Clone)]
 pub struct InvestigationSceneState {
     pub def: InvestigationSceneJson,
@@ -50,18 +57,36 @@ impl InvestigationSceneState {
     ) -> bool {
         match &self.def.outro.unlock {
             OutroUnlock::Auto(_) => {
-                self.all_unlocked_hotspots_inspected(local, story)
-                    && self.all_unlocked_topics_discussed(local, story)
+                let progress = self.reachable_target_progress(local, story);
+                progress.done == progress.total
             }
             OutroUnlock::Expr(expr) => unlock::evaluate(expr, local, story),
         }
     }
 
-    fn all_unlocked_hotspots_inspected(
+    /// How much of the auto outro's work is done, for the player-facing
+    /// progress cue. `None` when an authored `Unlock:` expression decides the
+    /// outro instead, because then the reachable targets are not the exit
+    /// condition.
+    pub fn auto_outro_progress(
         &self,
         local: &impl UnlockContext,
         story: &impl StoryUnlockContext,
-    ) -> bool {
+    ) -> Option<OutroProgress> {
+        match &self.def.outro.unlock {
+            OutroUnlock::Auto(_) => Some(self.reachable_target_progress(local, story)),
+            OutroUnlock::Expr(_) => None,
+        }
+    }
+
+    /// Counts every unlocked hotspot and topic in an unlocked sublocation —
+    /// the auto outro fires once all of them are inspected or discussed.
+    fn reachable_target_progress(
+        &self,
+        local: &impl UnlockContext,
+        story: &impl StoryUnlockContext,
+    ) -> OutroProgress {
+        let mut progress = OutroProgress { done: 0, total: 0 };
         for sub in &self.def.sublocations {
             if !self.is_sublocation_unlocked(&sub.id, local, story) {
                 continue;
@@ -73,23 +98,12 @@ impl InvestigationSceneState {
                     h.unlock.as_ref(),
                     local,
                     story,
-                ) && !self.inspected_hotspots.contains(&h.id)
-                {
-                    return false;
+                ) {
+                    progress.total += 1;
+                    if self.inspected_hotspots.contains(&h.id) {
+                        progress.done += 1;
+                    }
                 }
-            }
-        }
-        true
-    }
-
-    fn all_unlocked_topics_discussed(
-        &self,
-        local: &impl UnlockContext,
-        story: &impl StoryUnlockContext,
-    ) -> bool {
-        for sub in &self.def.sublocations {
-            if !self.is_sublocation_unlocked(&sub.id, local, story) {
-                continue;
             }
             for c in &sub.characters {
                 for t in &c.topics {
@@ -99,16 +113,19 @@ impl InvestigationSceneState {
                         t.unlock.as_ref(),
                         local,
                         story,
-                    ) && !self
-                        .discussed_topics
-                        .contains(&(c.id.clone(), t.id.clone()))
-                    {
-                        return false;
+                    ) {
+                        progress.total += 1;
+                        if self
+                            .discussed_topics
+                            .contains(&(c.id.clone(), t.id.clone()))
+                        {
+                            progress.done += 1;
+                        }
                     }
                 }
             }
         }
-        true
+        progress
     }
 
     pub fn is_sublocation_unlocked(
