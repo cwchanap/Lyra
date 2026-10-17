@@ -22,6 +22,7 @@
   } from "../state/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
   import { undiscussedTopicCount } from "$lib/investigation/progress";
+  import { targetLayoutStyle } from "$lib/investigation/target-layout";
 
   let {
     sublocation,
@@ -278,14 +279,6 @@
     };
   });
 
-  function percent(value: number) {
-    return `${value * 100}%`;
-  }
-
-  function layoutStyle(layout: { x: number; y: number; w: number; h: number }) {
-    return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)};`;
-  }
-
   function cropStyleForAsset(assetId: string): string {
     return cropStyles[assetId] ?? "";
   }
@@ -435,7 +428,7 @@
             "compact-y"}
           type="button"
           aria-label={`調查：${hotspot.label}`}
-          style={layoutStyle(hotspot.layout)}
+          style={targetLayoutStyle(hotspot.layout)}
           {disabled}
           onclick={() => onInspect(hotspot.id)}
         >
@@ -458,7 +451,7 @@
           aria-label={`詢問：${character.name}`}
           aria-expanded={activeCharacterId === character.id}
           aria-haspopup="dialog"
-          style={layoutStyle(character.layout)}
+          style={targetLayoutStyle(character.layout)}
           {disabled}
           onclick={() => toggleCharacter(character.id)}
         >
@@ -811,14 +804,52 @@
   /* Always-visible cue on targets the player has not finished, so the auto
      outro's remaining work can be found without hovering every prop. It
      sits where the inspected check appears and, like it, never extends the
-     hit area. */
+     hit area.
+     The scene plane overhangs any window that is not 16:9 (about 133px off
+     each side at 800×600), so a target's corner can sit offscreen. The cue
+     keeps its preferred corner but is clamped into the part of its target
+     that is inside the viewport; the target's viewport offset comes from
+     the plane's cover size and the layout ratios, so no hit box moves. A
+     target with no visible part keeps its cue on itself, offscreen. */
   .target-pending {
+    --pending-inset: 6px;
+    --pending-size: 12px;
+    --pending-left: calc(100% - var(--pending-inset) - var(--pending-size));
+    --pending-target-left: calc(
+      var(--x-ratio) * var(--scene-cover-width) -
+        (var(--scene-cover-width) - 100vw) / 2
+    );
+    --pending-target-top: calc(
+      var(--y-ratio) * var(--scene-cover-height) -
+        (var(--scene-cover-height) - 100vh) / 2
+    );
     position: absolute;
-    top: 6px;
-    right: 6px;
+    left: clamp(
+      max(0px, calc(var(--pending-inset) - var(--pending-target-left))),
+      var(--pending-left),
+      min(
+        calc(100% - var(--pending-size)),
+        calc(
+          100vw - var(--pending-target-left) - var(--pending-inset) -
+            var(--pending-size)
+        )
+      )
+    );
+    top: clamp(
+      max(0px, calc(var(--pending-inset) - var(--pending-target-top))),
+      var(--pending-inset),
+      min(
+        calc(100% - var(--pending-size)),
+        calc(
+          100vh - var(--pending-target-top) - var(--pending-inset) -
+            var(--pending-size)
+        )
+      )
+    );
     z-index: 3;
-    width: 10px;
-    height: 10px;
+    box-sizing: border-box;
+    width: var(--pending-size);
+    height: var(--pending-size);
     border: 1px solid rgba(10, 10, 16, 0.72);
     border-radius: 999px;
     background: var(--cyan);
@@ -829,9 +860,8 @@
   }
 
   .character-pending {
-    top: 10px;
-    right: auto;
-    left: 10px;
+    --pending-inset: 10px;
+    --pending-left: var(--pending-inset);
   }
 
   @keyframes target-pending-pulse {
