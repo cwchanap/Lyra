@@ -2649,6 +2649,27 @@ export async function seedStoryCleared(): Promise<void> {
   }
 }
 
+/**
+ * Undo {@link seedStoryCleared} from the title screen. The reload matters: the
+ * frontend reads the flag into memory at startup and only persists a clear
+ * while that copy is unset, so removing the key alone leaves a seeded run.
+ */
+export async function forgetStoryCleared(): Promise<void> {
+  await browser.execute((key: string) => {
+    window.localStorage.removeItem(key);
+  }, STORY_CLEARED_STORAGE_KEY);
+  await browser.refresh();
+  await waitForShell();
+  const value = await browser.execute((key: string) => {
+    return window.localStorage.getItem(key);
+  }, STORY_CLEARED_STORAGE_KEY);
+  if (value !== null) {
+    throw new Error(
+      `forgetStoryCleared: ${STORY_CLEARED_STORAGE_KEY} survived the refresh (got ${JSON.stringify(value)})`,
+    );
+  }
+}
+
 export async function jsClick(selector: string): Promise<void> {
   const ok = await browser.execute((sel: string) => {
     const el = document.querySelector(sel) as HTMLElement | null;
