@@ -13,14 +13,14 @@
       <strong>{progress.done}</strong>
       <span class="slash">/</span>
       <span>{progress.total}</span>
-    </p>
-    <p class="hint">
       {#if remaining > 0}
-        尚有 {remaining} 項未查。查完所有線索與詢問後自動前進。
-      {:else}
-        調查完畢。
+        <span class="sr-only">，尚有 {remaining} 項未查</span>
       {/if}
     </p>
+    <!-- Kept to one short line: the panel sits above the scene's hotspots
+         (scene-hud z-index 9 over targets at 4), so every extra line hides
+         more of the top-right art and any pending markers under it. -->
+    <p class="hint">{remaining > 0 ? "全部查完後自動前進" : "調查完畢"}</p>
   </section>
 {/if}
 
@@ -31,8 +31,8 @@
     align-items: baseline;
     column-gap: 12px;
     row-gap: 2px;
-    max-width: min(100%, 360px);
-    padding: 8px 12px;
+    max-width: 100%;
+    padding: 6px 12px;
     border-left: 2px solid var(--cyan);
     background: color-mix(in srgb, var(--ink) 82%, transparent);
     color: var(--bone);
@@ -74,6 +74,15 @@
     font-family: var(--serif-jp);
     font-size: 12px;
     line-height: 1.5;
-    line-break: strict;
+    white-space: nowrap;
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 </style>

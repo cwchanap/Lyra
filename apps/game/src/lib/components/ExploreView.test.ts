@@ -364,6 +364,7 @@ describe("ExploreView", () => {
     const progress = await screen.findByRole("status", { name: "調查進度" });
     expect(progress).toHaveTextContent("1 / 4");
     expect(progress).toHaveTextContent("尚有 3 項未查");
+    expect(progress).toHaveTextContent("全部查完後自動前進");
 
     const navigation = screen.getByRole("navigation", { name: "地點導航" });
     expect(
