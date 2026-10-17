@@ -6,6 +6,8 @@ sources:
   - docs/stories_plan/chapter_2/scene_1.md
   - docs/stories_plan/chapter_2/scene_2.md
   - docs/stories_plan/chapter_2/scene_3.md
+  - docs/stories_plan/chapter_2/investigation_scene_4.md
+  - docs/stories_plan/chapter_2/investigation_scene_5.md
   - static/assets/config/audio.yaml
 # Catalog IDs that already had a generated .ogg on disk when this plan was
 # written (Beats 0-3 merged in PR #100 with catalog prompts but no audio files).
@@ -71,7 +73,9 @@ entries:
     generatedAt: 2026-10-16T05:27:27.357Z
     outputPath: static/assets/audio/bgm/bgm_glass_box_stream.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
   - id: bgm_midnight_blind_window
     channel: bgm
     status: generated
@@ -104,7 +108,9 @@ entries:
     generatedAt: 2026-10-16T05:27:34.263Z
     outputPath: static/assets/audio/bgm/bgm_midnight_blind_window.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
 
   # ---- BGM: reused catalog tracks ----
   - id: bgm_casework_day
@@ -168,7 +174,9 @@ entries:
     generatedAt: 2026-10-16T05:28:19.920Z
     outputPath: static/assets/audio/bgs/bgs_shibuya_plaza_night_crowd.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
   - id: bgs_glass_box_backstage_day
     channel: bgs
     status: generated
@@ -194,7 +202,9 @@ entries:
     generatedAt: 2026-10-16T05:28:25.959Z
     outputPath: static/assets/audio/bgs/bgs_glass_box_backstage_day.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
   - id: bgs_streamer_studio_night
     channel: bgs
     status: generated
@@ -218,7 +228,9 @@ entries:
     generatedAt: 2026-10-16T05:28:31.457Z
     outputPath: static/assets/audio/bgs/bgs_streamer_studio_night.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
   - id: bgs_stream_control_room
     channel: bgs
     status: generated
@@ -248,7 +260,9 @@ entries:
     generatedAt: 2026-10-16T05:28:36.707Z
     outputPath: static/assets/audio/bgs/bgs_stream_control_room.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
   - id: bgs_building_service_core_night
     channel: bgs
     status: generated
@@ -284,7 +298,9 @@ entries:
     generatedAt: 2026-10-16T05:28:42.522Z
     outputPath: static/assets/audio/bgs/bgs_building_service_core_night.ogg
     forced: false
-    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q
+      5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no
+      loop splice
 
   # ---- BGS: reused catalog beds ----
   - id: bgs_detective_office_rain
@@ -328,6 +344,105 @@ entries:
     reuseRationale: Existing institutional bed fits the police station lobby.
     evidence:
       - { file: docs/stories_plan/chapter_2/scene_3.md, line: 443, note: 澀谷警察署一樓大廳 }
+  # ---- Beat 4 (investigation_scene_4/5) ----
+  - id: bgm_glass_box_aftermath
+    channel: bgm
+    status: generated
+    loop: true
+    intendedDurationSeconds: 45
+    prompt: >-
+      Subdued uneasy investigation instrumental for a public event plaza after a
+      livestream tragedy has stopped, sparse muted piano over a low hollow synth
+      pad, faint echo of a bright stream jingle slowed and detuned, soft ticking
+      pulse, neutral enough for day or night, no vocals, no dramatic climax,
+      seamless 45-second loop.
+    reuseRationale: >-
+      bgm_glass_box_stream is the live event and bgm_midnight_blind_window is
+      the unseen-dread window; the day-after investigation at the plaza and the
+      studio visit need a quieter aftermath state that echoes the stream.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+          line: 7,
+          note: 案發日中午的玻璃箱廣場入口
+        }
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_5.md,
+          line: 7,
+          note: 三枝公寓外廊，案發日晚上
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/music?output_format=mp3_44100_128
+    promptHash: 8cdcd40624c0
+    generatedAt: 2026-10-17T01:39:11.761Z
+    outputPath: static/assets/audio/bgm/bgm_glass_box_aftermath.ogg
+    forced: false
+    normalizationNotes: >-
+      cached provider MP3 locally loop-normalized: body 2.0-42.5s with a 2.0s
+      equal-power circular crossfade from 40.5-42.5s into 0-2.0s (drops the
+      fade-out tail that failed the loop-boundary silence check), encoded with
+      libvorbis via oggenc -q 5; nominal loop is 40.5s.
+  - id: bgs_shibuya_plaza_day_aftermath
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Shibuya event plaza at midday after a livestream incident, thinned quiet
+      crowd and murmuring fans behind police tape, light rain on umbrellas and a
+      canopy, a silent giant outdoor screen with only a soft electrical hum,
+      distant traffic and crossing signals, no clear words, no music melody.
+    reuseRationale: >-
+      The night crowd bed is far too dense for the thinned day-after plaza;
+      covers the entrance, booth, stream wall and fan area views.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+          line: 7,
+          note: 廣場入口，警戒線部分撤除
+        }
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+          line: 58,
+          note: 玻璃箱前，細雨
+        }
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+          line: 487,
+          note: 廣場右側的粉絲應援區
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: 0a89b1dc6155
+    generatedAt: 2026-10-17T01:39:17.377Z
+    outputPath: static/assets/audio/bgs/bgs_shibuya_plaza_day_aftermath.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
+  - id: bgs_police_command_van_rain
+    channel: bgs
+    status: generated
+    loop: true
+    intendedDurationSeconds: 30
+    prompt: >-
+      Interior of a parked police mobile command van on a rainy day, steady rain
+      drumming on the metal roof, intermittent police radio squelch, laptop fan
+      hum, a folding table creaking, muffled plaza murmur outside, no clear
+      words, no music.
+    reuseRationale: No catalog bed for a police field vehicle; the on-site review
+      point is a distinct acoustic space.
+    evidence:
+      - {
+          file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+          line: 706,
+          note: 停在廣場邊的廂型警車旁
+        }
+    provider: elevenlabs
+    endpoint: https://api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128
+    promptHash: 100bde933cf0
+    generatedAt: 2026-10-17T01:39:23.837Z
+    outputPath: static/assets/audio/bgs/bgs_police_command_van_rain.ogg
+    forced: false
+    normalizationNotes: converted from mp3 to 44.1 kHz ogg with libvorbis (oggenc -q 5, decoded by ffmpeg; the local ffmpeg build has no libvorbis encoder), no loop splice
 cues:
   # Mirrors the authored scene metadata; tags not listed inherit.
   - {
@@ -416,6 +531,60 @@ cues:
       visualUnit: tag_007,
       bgm: bgm_casework_day,
       bgs: bgs_institutional_corridor
+    }
+  # Beat 4: mirrors the authored investigation metadata.
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: tag_001,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_shibuya_plaza_day_aftermath
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: glass_box_plaza,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_shibuya_plaza_day_aftermath
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: stream_wall_plaza,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_shibuya_plaza_day_aftermath
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: control_room_perimeter,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_glass_box_backstage_day
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: fan_support_area,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_shibuya_plaza_day_aftermath
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_4.md,
+      visualUnit: police_review_van,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_police_command_van_rain
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_5.md,
+      visualUnit: tag_001,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_streamer_studio_night
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_5.md,
+      visualUnit: saegusa_studio,
+      bgm: bgm_glass_box_aftermath,
+      bgs: bgs_streamer_studio_night
+    }
+  - {
+      file: docs/stories_plan/chapter_2/investigation_scene_5.md,
+      visualUnit: tag_002,
+      bgs: none
     }
 rejected:
   - {
