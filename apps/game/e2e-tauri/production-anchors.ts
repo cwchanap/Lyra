@@ -147,6 +147,9 @@ export const anchors = {
       next: "scene_11_2",
     },
   ],
+  // Chapter 2's first authored scene: the opening test starts here so the
+  // four linear Beats 0-3 scenes stay on the production route.
+  chapter2Opening: { chapter: "chapter_2", scene: "scene_0" },
   // Chapter 2 travel wrappers in authored order. Wrapper file names restart
   // per chapter, so these reuse Chapter 1's ids; the journey matches the
   // chapter id too before crossing.

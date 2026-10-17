@@ -766,9 +766,9 @@ describe("fresh production journey", () => {
     }
 
     // Past the final gate (scene_11_2), the route drains out of Chapter 1
-    // into the authored Chapter 2 opening. Chapter 2 plays in its own test
-    // below: one organic run through both chapters no longer fits the
-    // per-test WDIO timeout (wdio.conf.ts).
+    // into the authored Chapter 2 opening. Chapter 2 plays in its own tests
+    // below (the opening, then the gates onward): one organic run through
+    // both chapters no longer fits the per-test WDIO timeout (wdio.conf.ts).
     await drainOrganicRoute(
       (state) => state.chapter.id === "chapter_2",
       "Chapter 2 opening",
@@ -783,6 +783,31 @@ describe("fresh production journey", () => {
     expect(crossedWrappers).toEqual(
       anchors.mapGates.map((gate) => gate.wrapper),
     );
+  });
+
+  it("plays the Chapter 2 opening from scene_0 to its first city-map gate", async function () {
+    this.timeout(1_200_000);
+    await resetE2eStorage();
+    // Scene Select is production replay, unlocked by a story clear; seed it
+    // so the run can start at Chapter 2's first scene.
+    await seedStoryCleared();
+    await ensureCaseFileViewport();
+    await startFromMenu();
+    const opening = anchors.chapter2Opening;
+    await jumpToProductionChapterScene(opening.chapter, opening.scene);
+
+    // Beats 0-3 are four linear scenes in a row, longer than one
+    // drainDialogueFast cap, so the drain must carry on past each cap until
+    // scene_3 hands off to the first travel wrapper.
+    const [firstGate] = anchors.chapter2MapGates;
+    await drainOrganicRoute(
+      (state) =>
+        state.chapter.id === firstGate.chapter &&
+        isPendingMapGate(state, firstGate.wrapper),
+      `${firstGate.chapter}/${firstGate.wrapper} pending city map`,
+    );
+    expect((await getPackagedGameState()).chapter.id).toBe(firstGate.chapter);
+    expect(await enabledMapDestinationIds()).toEqual([firstGate.destination]);
   });
 
   it("plays Chapter 2 from its first city-map gate to the in-progress end card", async function () {
