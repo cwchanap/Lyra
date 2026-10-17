@@ -157,4 +157,15 @@ describe("SceneBackdrop", () => {
     expect(zIndex).toBeGreaterThan(20);
     expect(zIndex).toBeLessThan(30);
   });
+
+  it("captures the SCENE stamp in the save-thumbnail layer above portraits", () => {
+    const { container } = render(SceneBackdrop, {
+      sceneTag: "雨鐘咖啡館，深夜",
+      backgroundAssetId: null,
+    });
+
+    const stamp = container.querySelector(".stamp");
+    expect(stamp).toHaveTextContent("雨鐘咖啡館，深夜");
+    expect(stamp).toHaveAttribute("data-save-thumbnail-layer", "over-portrait");
+  });
 });

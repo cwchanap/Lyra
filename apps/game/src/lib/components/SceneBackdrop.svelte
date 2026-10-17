@@ -47,7 +47,7 @@
       onImageError={handleBackgroundError}
     />
     {#if sceneTag}
-      <span class="stamp">
+      <span class="stamp" data-save-thumbnail-layer="over-portrait">
         <span class="kana">場 / SCENE</span>
         <span class="label">{sceneTag}</span>
       </span>
@@ -76,7 +76,9 @@
     position: relative;
     /* Above the dialogue portrait (fixed, z-index 20 in the same <main>
        stacking context) and below the dialogue box (30): a left-placed
-       portrait starts at 20vh and otherwise covers a wrapped scene tag. */
+       portrait starts at 20vh and otherwise covers a wrapped scene tag.
+       Save thumbnails draw portraits between two layers, so the stamp is
+       marked for the layer above them too. */
     z-index: 25;
     max-width: 100%;
     display: inline-flex;
