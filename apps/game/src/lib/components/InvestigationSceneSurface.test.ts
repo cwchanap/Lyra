@@ -536,6 +536,53 @@ describe("InvestigationSceneSurface", () => {
     expect(source).not.toContain('<span class="status">已調查</span>');
   });
 
+  it("marks unfinished placed targets without hover and clears the mark once done", () => {
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const hotspot = screen.getByRole("button", { name: "調查：桌面" });
+    const character = screen.getByRole("button", { name: "詢問：目擊者" });
+    expect(hotspot.querySelector(".target-pending")).not.toBeNull();
+    expect(character.querySelector(".character-pending")).not.toBeNull();
+
+    rerender({
+      sublocation: {
+        ...sublocation,
+        hotspots: sublocation.hotspots.map((entry) => ({
+          ...entry,
+          inspected: true,
+        })),
+        characters: sublocation.characters.map((entry) => ({
+          ...entry,
+          topics: entry.topics.map((topic) => ({ ...topic, discussed: true })),
+        })),
+      },
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(container.querySelector(".target-pending")).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "調查：桌面" })
+        .querySelector(".hotspot-check"),
+    ).not.toBeNull();
+
+    // The cue never widens a hit box, like the inspected check.
+    expect(cssRule(surfaceSource(), ".target-pending")).toContain(
+      "pointer-events: none",
+    );
+  });
+
+  it("keeps hotspot labels on one line inside narrow targets", () => {
+    expect(cssRule(surfaceSource(), ".target-label")).toContain(
+      "white-space: nowrap",
+    );
+  });
+
   it("highlights placed characters on hover and keyboard focus", () => {
     const source = surfaceSource();
     const highlightRule = cssRule(source, ".character-highlight");

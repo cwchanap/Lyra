@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
 import { describe, expect, it, vi } from "vitest";
@@ -310,5 +316,78 @@ describe("ExploreView", () => {
     // accounts for).
     expect(navigation).toHaveClass("scene");
     expect(navigation.querySelector(".chips")).not.toBeNull();
+  });
+
+  it("shows auto-outro progress and per-location open targets", async () => {
+    const yard: SublocationView = {
+      id: "yard",
+      label: "後院",
+      sceneTag: "雨中的後院",
+      hotspots: [
+        {
+          id: "gate",
+          label: "後門",
+          description: "門閂被撬過。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.5, y: 0.5, w: 0.1, h: 0.1 },
+        },
+        {
+          id: "bin",
+          label: "垃圾桶",
+          description: "空的。",
+          inspected: true,
+          layout: { kind: "rect", x: 0.7, y: 0.5, w: 0.1, h: 0.1 },
+        },
+      ],
+      characters: [
+        {
+          id: "neighbor",
+          name: "鄰居",
+          role: "目擊者",
+          bio: "",
+          layout: null,
+          topics: [{ id: "noise", label: "聲響", discussed: false }],
+        },
+      ],
+    };
+    render(ExploreView, {
+      scene: {
+        ...investigationScene(),
+        visibleSublocations: [sublocation, yard],
+        outroProgress: { done: 1, total: 4 },
+      },
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    const progress = await screen.findByRole("status", { name: "調查進度" });
+    expect(progress).toHaveTextContent("1 / 4");
+    expect(progress).toHaveTextContent("尚有 3 項未查");
+
+    const navigation = screen.getByRole("navigation", { name: "地點導航" });
+    expect(
+      within(navigation).getByRole("button", { name: /喫茶店/ }),
+    ).toHaveTextContent("尚有 1 項未查");
+    expect(
+      within(navigation).getByRole("button", { name: /後院/ }),
+    ).toHaveTextContent("尚有 2 項未查");
+  });
+
+  it("hides progress when an authored unlock decides the outro", async () => {
+    render(ExploreView, {
+      scene: { ...investigationScene(), outroProgress: null },
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+    });
+
+    const navigation = await screen.findByRole("navigation", {
+      name: "地點導航",
+    });
+    expect(
+      screen.queryByRole("status", { name: "調查進度" }),
+    ).not.toBeInTheDocument();
+    expect(navigation).not.toHaveTextContent("未查");
   });
 });

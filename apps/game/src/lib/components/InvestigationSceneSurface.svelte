@@ -21,6 +21,7 @@
     TopicView,
   } from "../state/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
+  import { undiscussedTopicCount } from "$lib/investigation/progress";
 
   let {
     sublocation,
@@ -444,6 +445,8 @@
           </span>
           {#if hotspot.inspected}
             <span class="hotspot-check" aria-label="已調查">✓</span>
+          {:else}
+            <span class="target-pending" aria-hidden="true"></span>
           {/if}
         </button>
       {/each}
@@ -478,6 +481,10 @@
             {:else}
               <span class="portrait-loading">{character.name}</span>
             {/if}
+          {/if}
+          {#if undiscussedTopicCount(character) > 0}
+            <span class="target-pending character-pending" aria-hidden="true"
+            ></span>
           {/if}
           <span class="character-name">{character.name}</span>
         </button>
@@ -799,6 +806,50 @@
     /* The badge overflows a compact target shorter than ~22px and would
        extend the button's hit area past its box, like .hotspot-content. */
     pointer-events: none;
+  }
+
+  /* Always-visible cue on targets the player has not finished, so the auto
+     outro's remaining work can be found without hovering every prop. It
+     sits where the inspected check appears and, like it, never extends the
+     hit area. */
+  .target-pending {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 3;
+    width: 10px;
+    height: 10px;
+    border: 1px solid rgba(10, 10, 16, 0.72);
+    border-radius: 999px;
+    background: var(--cyan);
+    box-shadow: 0 0 10px rgba(113, 209, 220, 0.8);
+    opacity: 0.85;
+    pointer-events: none;
+    animation: target-pending-pulse 2.4s ease-in-out infinite;
+  }
+
+  .character-pending {
+    top: 10px;
+    right: auto;
+    left: 10px;
+  }
+
+  @keyframes target-pending-pulse {
+    0%,
+    100% {
+      opacity: 0.85;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.8);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .target-pending {
+      animation: none;
+    }
   }
 
   .character-target {

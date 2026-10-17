@@ -60,7 +60,8 @@ use view::{
     AnalysisFixedAnchorView, AnalysisGroupView, AudioCueView, ChapterView, CharacterView,
     CrossExamView, HotspotView, InquiryQuestionView, InterrogationPhaseView,
     InvestigationMapNodeView, InvestigationMapRegionView, InvestigationMapView,
-    PendingAcquisitionView, SceneView, SubjectView, SublocationView, TopicView,
+    InvestigationProgressView, PendingAcquisitionView, SceneView, SubjectView, SublocationView,
+    TopicView,
 };
 
 pub struct GameEngine {
@@ -2787,6 +2788,12 @@ impl GameEngine {
                     current_sublocation_id: inv.current_sublocation_id.clone(),
                     map: map_view,
                     visible_sublocations,
+                    outro_progress: inv.auto_outro_progress(&ctx, &self.story_state).map(
+                        |progress| InvestigationProgressView {
+                            done: progress.done,
+                            total: progress.total,
+                        },
+                    ),
                 }
             }
             SceneRuntime::Interrogation(scene) => {
@@ -5732,6 +5739,118 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
 
         let view = engine.interview_topic("witness", "alibi").unwrap();
         assert!(matches!(view.mode, ModeView::GameComplete { .. }));
+    }
+
+    #[test]
+    fn investigation_view_reports_auto_outro_progress_over_reachable_targets() {
+        fn hotspot(id: &str) -> HotspotJson {
+            HotspotJson {
+                id: id.into(),
+                label: id.into(),
+                description: id.into(),
+                status: LockStatus::Unlocked,
+                unlock: None,
+                reveals: vec![],
+                layout: None,
+                inspect_dialogue: vec![],
+                on_reexamine: None,
+            }
+        }
+        fn sublocation(
+            id: &str,
+            status: LockStatus,
+            unlock: Option<UnlockExpr>,
+            hotspots: Vec<HotspotJson>,
+            characters: Vec<CharacterJson>,
+        ) -> SublocationJson {
+            SublocationJson {
+                intentional_overlaps: Vec::new(),
+                id: id.into(),
+                label: id.into(),
+                status,
+                unlock,
+                reveals: vec![],
+                scene_tag: id.into(),
+                flattened_asset_cue: crate::game::schema::VisualAssetCueJson::default(),
+                transition_dialogue: vec![],
+                hotspots,
+                characters,
+            }
+        }
+        fn progress(view: &GameStateView) -> Option<InvestigationProgressView> {
+            match &view.scene {
+                SceneView::Investigation { outro_progress, .. } => *outro_progress,
+                other => panic!("expected an investigation scene, got {other:?}"),
+            }
+        }
+
+        let mut scene = investigation_scene_with_intro("investigation_scene_1", vec![]);
+        scene.sublocations = vec![
+            sublocation(
+                "room",
+                LockStatus::Unlocked,
+                None,
+                vec![hotspot("desk")],
+                vec![CharacterJson {
+                    id: "witness".into(),
+                    name: "Witness".into(),
+                    role: "Witness".into(),
+                    bio: "Witness".into(),
+                    layout: None,
+                    topics: vec![TopicJson {
+                        id: "alibi".into(),
+                        label: "Alibi".into(),
+                        status: LockStatus::Unlocked,
+                        unlock: None,
+                        reveals: vec![],
+                        topic_dialogue: vec![],
+                        on_reexamine: None,
+                    }],
+                }],
+            ),
+            // Locked until the desk is inspected: its target only counts once
+            // the room is reachable, like the outro rule itself.
+            sublocation(
+                "back_room",
+                LockStatus::Locked,
+                Some(UnlockExpr::HotspotInvestigated {
+                    _predicate: crate::game::schema::PredicateHotspotInvestigated::X,
+                    id: "desk".into(),
+                }),
+                vec![hotspot("drawer")],
+                vec![],
+            ),
+        ];
+        let mut expr_scene = scene.clone();
+        let mut engine = empty_engine_with_scene(scene, 1);
+        engine.prime_initial_queue().unwrap();
+
+        let view = engine.view().unwrap();
+        assert_eq!(
+            progress(&view),
+            Some(InvestigationProgressView { done: 0, total: 2 })
+        );
+
+        let view = engine.inspect_hotspot("desk").unwrap();
+        assert_eq!(
+            progress(&view),
+            Some(InvestigationProgressView { done: 1, total: 3 })
+        );
+
+        let view = engine.interview_topic("witness", "alibi").unwrap();
+        assert_eq!(
+            progress(&view),
+            Some(InvestigationProgressView { done: 2, total: 3 })
+        );
+
+        // An authored Unlock: expression decides the exit, so no progress cue.
+        expr_scene.outro.unlock = OutroUnlock::Expr(UnlockExpr::HotspotInvestigated {
+            _predicate: crate::game::schema::PredicateHotspotInvestigated::X,
+            id: "drawer".into(),
+        });
+        let mut engine = empty_engine_with_scene(expr_scene, 1);
+        engine.prime_initial_queue().unwrap();
+        assert_eq!(progress(&engine.view().unwrap()), None);
     }
 
     #[test]
