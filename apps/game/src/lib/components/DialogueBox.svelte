@@ -917,6 +917,9 @@
     letter-spacing: 0.1em;
     color: var(--bone);
     line-height: 1.1;
+    /* A name never wraps: the intrinsic width can miss the trailing
+       letter-spacing and orphan the last character (黑瀨徹 → 黑瀨／徹). */
+    white-space: nowrap;
   }
 
   .speaker-block {
