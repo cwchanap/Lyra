@@ -29,15 +29,10 @@ import type { GameStateView } from "$lib/state/types";
 const MINIMUM_WINDOW = { width: 800, height: 600 } as const;
 
 /**
- * Placed targets painted in the 16:9 art's side bands, which a 4:3 window
- * crops away: at the minimum window they have no visible part to carry a
- * pending cue (or a click). Tracked on issue #90; drop an entry once its
- * art or rect moves into view, and never add one.
+ * The least of each axis a cropped target must keep inside the window: the
+ * hotspot's minimum hit height. A target smaller than this must stay whole.
  */
-const CROPPED_AT_MINIMUM_WINDOW = [
-  "chapter_1/investigation_scene_3/front/miyake_locker",
-  "chapter_1/investigation_scene_9/contractor_desk/to_confront",
-];
+const MIN_USABLE_TARGET_PX = 44;
 
 type ShippedPlacement = {
   id: string;
@@ -212,7 +207,7 @@ describe("investigation layout surface", () => {
     );
   });
 
-  it("keeps every shipped placement's pending cue on its visible target at 800x600", async () => {
+  it("keeps every shipped placement usable and its pending cue on it at 800x600", async () => {
     // Scene 3's front room has both an unfinished hotspot and a witness
     // with open topics, so both cue variants are live.
     await seedStoryCleared();
@@ -248,11 +243,16 @@ describe("investigation layout surface", () => {
 
     const placements = shippedPlacements();
     const ids = placements.map((placement) => placement.id);
-    // The two placements the 800x600 clipping was found on.
-    expect(ids).toContain(
+    // Where the 800x600 clipping was found: two markers, and two targets
+    // the crop once hid almost or entirely.
+    for (const id of [
       "chapter_1/investigation_scene_3/inner_entry/tall_shelf",
-    );
-    expect(ids).toContain("chapter_1/investigation_scene_3/front/katase");
+      "chapter_1/investigation_scene_3/front/katase",
+      "chapter_1/investigation_scene_3/front/miyake_locker",
+      "chapter_1/investigation_scene_9/contractor_desk/to_confront",
+    ]) {
+      expect(ids).toContain(id);
+    }
 
     // Real layout in the packaged WebView: re-place one live hotspot and one
     // live witness at each shipped box through the production style
@@ -322,8 +322,10 @@ describe("investigation layout surface", () => {
     expect(measured.viewport).toEqual(MINIMUM_WINDOW);
     expect(measured.results.length).toBeGreaterThan(placements.length);
 
+    // Every placed target is one the player may need, so the window's crop
+    // must leave enough of it to click, and its cue must sit on that part.
+    const unusable: string[] = [];
     const misplaced: string[] = [];
-    const cropped = new Set<string>();
     for (const { id, target, cue } of measured.results) {
       const visible: Box = {
         left: Math.max(target.left, 0),
@@ -331,17 +333,27 @@ describe("investigation layout surface", () => {
         right: Math.min(target.right, measured.viewport.width),
         bottom: Math.min(target.bottom, measured.viewport.height),
       };
+      const needWidth = Math.min(
+        target.right - target.left,
+        MIN_USABLE_TARGET_PX,
+      );
+      const needHeight = Math.min(
+        target.bottom - target.top,
+        MIN_USABLE_TARGET_PX,
+      );
+      if (
+        visible.right - visible.left < needWidth - 0.5 ||
+        visible.bottom - visible.top < needHeight - 0.5
+      ) {
+        unusable.push(
+          `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+        );
+        continue;
+      }
       const cueWidth = cue.right - cue.left;
       const cueHeight = cue.bottom - cue.top;
       if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
         misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
-        continue;
-      }
-      if (
-        visible.right - visible.left < cueWidth ||
-        visible.bottom - visible.top < cueHeight
-      ) {
-        cropped.add(id.replace(/ \(compact\)$/, ""));
         continue;
       }
       if (
@@ -355,8 +367,8 @@ describe("investigation layout surface", () => {
         );
       }
     }
+    expect(unusable).toEqual([]);
     expect(misplaced).toEqual([]);
-    expect([...cropped].toSorted()).toEqual(CROPPED_AT_MINIMUM_WINDOW);
   });
 
   it("Escape closes the topic popover before opening the game menu", async () => {
