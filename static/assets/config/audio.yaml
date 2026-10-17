@@ -140,9 +140,9 @@ bgs:
   bgs_police_command_van_rain:
     prompt:
       Interior of a parked police mobile command van on a rainy day, steady
-      rain drumming on the metal roof, intermittent police radio squelch,
-      laptop fan hum, a folding table creaking, muffled plaza murmur outside,
-      no clear words, no music.
+      rain drumming on the metal roof, intermittent police radio squelch, laptop
+      fan hum, a folding table creaking, muffled plaza murmur outside, no clear
+      words, no music.
     loop: true
   bgs_police_station_late_night:
     prompt: Late-night Japanese police station interior, pale fluorescent wash,
@@ -158,8 +158,8 @@ bgs:
   bgs_shibuya_plaza_day_aftermath:
     prompt:
       Shibuya event plaza at midday after a livestream incident, thinned quiet
-      crowd and murmuring fans behind police tape, light rain on umbrellas and
-      a canopy, a silent giant outdoor screen with only a soft electrical hum,
+      crowd and murmuring fans behind police tape, light rain on umbrellas and a
+      canopy, a silent giant outdoor screen with only a soft electrical hum,
       distant traffic and crossing signals, no clear words, no music melody.
     loop: true
   bgs_shibuya_plaza_night_crowd:
