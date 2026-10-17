@@ -775,6 +775,10 @@
     font-size: 12px;
     letter-spacing: 0.08em;
     line-height: 1.2;
+    /* Narrow (compact) targets would otherwise stack the label one
+       character per line; it may overflow the box, which never widens the
+       hit area (.hotspot-content has pointer-events: none). */
+    white-space: nowrap;
   }
 
   .hotspot-check {

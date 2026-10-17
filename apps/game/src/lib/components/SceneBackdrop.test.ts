@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SceneBackdrop from "./SceneBackdrop.svelte";
+import { cssRule } from "$lib/test-utils";
 
 describe("SceneBackdrop", () => {
   afterEach(() => {
@@ -138,5 +139,22 @@ describe("SceneBackdrop", () => {
 
     expect(source).toContain(".backdrop :global(img.background-image)");
     expect(source).not.toContain(":global(.background-image) {");
+  });
+
+  it("keeps the SCENE badge on one line above the dialogue portrait", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
+      "utf-8",
+    );
+    const stamp = cssRule(source, ".stamp");
+    const badge = cssRule(source, ".kana");
+
+    expect(badge).toContain("white-space: nowrap");
+    expect(badge).toContain("flex: none");
+    // DialogueBox paints its portrait at z-index 20 and the dialogue box at
+    // 30 inside the same <main> stacking context.
+    const zIndex = Number(/z-index:\s*(\d+)/.exec(stamp)?.[1]);
+    expect(zIndex).toBeGreaterThan(20);
+    expect(zIndex).toBeLessThan(30);
   });
 });
