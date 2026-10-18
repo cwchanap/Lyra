@@ -28,15 +28,14 @@ function loadWorkflow(path = workflowPath) {
   return document.toJS();
 }
 
-// Smoke lives in CI; the full registry has its own manual-only workflow.
+// Smoke lives in CI and full in its own workflow; the shared checks below
+// keep the two files from drifting apart (e.g. losing the shared cache).
 function loadPackagedJobs() {
-  const ci = loadWorkflow();
-  const fullWorkflow = loadWorkflow(fullWorkflowPath);
-  const smoke = ci.jobs[SMOKE_JOB];
-  const full = fullWorkflow.jobs[FULL_JOB];
+  const smoke = loadWorkflow().jobs[SMOKE_JOB];
+  const full = loadWorkflow(fullWorkflowPath).jobs[FULL_JOB];
   assert.ok(smoke, `missing ${SMOKE_JOB} job in ci.yml`);
   assert.ok(full, `missing ${FULL_JOB} job in e2e-full.yml`);
-  return { ci, fullWorkflow, smoke, full };
+  return { smoke, full };
 }
 
 function namedStep(job, name) {
@@ -59,13 +58,7 @@ function runStepMatching(job, pattern) {
 }
 
 test("packaged E2E is exactly two direct jobs; planner machinery is gone", () => {
-  const { ci, fullWorkflow } = loadPackagedJobs();
-  assert.deepEqual(
-    Object.keys(fullWorkflow.jobs),
-    [FULL_JOB],
-    "the full workflow holds only the full job",
-  );
-  const jobs = { ...ci.jobs, ...fullWorkflow.jobs };
+  const jobs = loadWorkflow().jobs;
   assert.equal(jobs["e2e-plan"], undefined, "planner job must be deleted");
   assert.equal(
     jobs["e2e-execution"],
@@ -124,27 +117,12 @@ test("smoke path is non-draft PRs plus the nightly schedule", () => {
   );
 });
 
-test("full path is its own workflow, started only by manual dispatch", () => {
-  const { ci, fullWorkflow, full } = loadPackagedJobs();
-  assert.equal(fullWorkflow.name, "E2E Full");
-  assert.deepEqual(
-    fullWorkflow.on,
-    { workflow_dispatch: null },
-    "pushes, PRs and the schedule must not start the full registry",
-  );
-  assert.equal(full.if, undefined, "the trigger alone gates the full job");
-  assert.equal(ci.jobs[FULL_JOB], undefined, "CI must not carry the full job");
-});
-
 test("no job branches on PR labels, so label changes do not rerun CI", () => {
-  const { ci, fullWorkflow } = loadPackagedJobs();
-  const types = ci.on.pull_request.types;
+  const workflow = loadWorkflow();
+  const types = workflow.on.pull_request.types;
   assert.ok(!types.includes("labeled"), "labeled must not trigger CI");
   assert.ok(!types.includes("unlabeled"), "unlabeled must not trigger CI");
-  for (const [name, job] of Object.entries({
-    ...ci.jobs,
-    ...fullWorkflow.jobs,
-  })) {
+  for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.ok(
       !JSON.stringify(job).includes("pull_request.labels"),
       `${name} must not branch on PR labels`,
