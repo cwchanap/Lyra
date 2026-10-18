@@ -49,8 +49,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # shared-key replaces rust-cache's default job-id key component, so
-      # this run resolves the same entry CI's PR smoke job restores.
-      # prefix-key stays the manual bust knob.
+      # this run resolves the same entry CI's PR smoke job restores. Keep
+      # both keys identical to ci.yml's smoke job. prefix-key stays the
+      # manual bust knob.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
