@@ -555,7 +555,7 @@ cues:
       file: docs/stories_plan/chapter_2/investigation_scene_4.md,
       visualUnit: control_room_perimeter,
       bgm: bgm_glass_box_aftermath,
-      bgs: bgs_glass_box_backstage_day
+      bgs: bgs_shibuya_plaza_day_aftermath
     }
   - {
       file: docs/stories_plan/chapter_2/investigation_scene_4.md,
@@ -573,7 +573,7 @@ cues:
       file: docs/stories_plan/chapter_2/investigation_scene_5.md,
       visualUnit: tag_001,
       bgm: bgm_glass_box_aftermath,
-      bgs: bgs_streamer_studio_night
+      bgs: none
     }
   - {
       file: docs/stories_plan/chapter_2/investigation_scene_5.md,
