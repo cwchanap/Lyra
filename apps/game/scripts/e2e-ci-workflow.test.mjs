@@ -7,6 +7,9 @@ import { parseDocument } from "yaml";
 const workflowPath = fileURLToPath(
   new URL("../../../.github/workflows/ci.yml", import.meta.url),
 );
+const fullWorkflowPath = fileURLToPath(
+  new URL("../../../.github/workflows/e2e-full.yml", import.meta.url),
+);
 const packagePath = fileURLToPath(new URL("../package.json", import.meta.url));
 
 const SMOKE_JOB = "tauri-e2e-pr-smoke";
@@ -19,19 +22,21 @@ const CONTRACT_FILES = [
   "apps/game/scripts/e2e-ci-workflow.test.mjs",
 ];
 
-function loadWorkflow() {
-  const document = parseDocument(readFileSync(workflowPath, "utf8"));
+function loadWorkflow(path = workflowPath) {
+  const document = parseDocument(readFileSync(path, "utf8"));
   assert.deepEqual(document.errors, []);
   return document.toJS();
 }
 
+// Smoke lives in CI; the full registry has its own manual-only workflow.
 function loadPackagedJobs() {
-  const jobs = loadWorkflow().jobs;
-  const smoke = jobs[SMOKE_JOB];
-  const full = jobs[FULL_JOB];
-  assert.ok(smoke, `missing ${SMOKE_JOB} job`);
-  assert.ok(full, `missing ${FULL_JOB} job`);
-  return { jobs, smoke, full };
+  const ci = loadWorkflow();
+  const fullWorkflow = loadWorkflow(fullWorkflowPath);
+  const smoke = ci.jobs[SMOKE_JOB];
+  const full = fullWorkflow.jobs[FULL_JOB];
+  assert.ok(smoke, `missing ${SMOKE_JOB} job in ci.yml`);
+  assert.ok(full, `missing ${FULL_JOB} job in e2e-full.yml`);
+  return { ci, fullWorkflow, smoke, full };
 }
 
 function namedStep(job, name) {
@@ -54,7 +59,13 @@ function runStepMatching(job, pattern) {
 }
 
 test("packaged E2E is exactly two direct jobs; planner machinery is gone", () => {
-  const { jobs } = loadPackagedJobs();
+  const { ci, fullWorkflow } = loadPackagedJobs();
+  assert.deepEqual(
+    Object.keys(fullWorkflow.jobs),
+    [FULL_JOB],
+    "the full workflow holds only the full job",
+  );
+  const jobs = { ...ci.jobs, ...fullWorkflow.jobs };
   assert.equal(jobs["e2e-plan"], undefined, "planner job must be deleted");
   assert.equal(
     jobs["e2e-execution"],
@@ -113,17 +124,27 @@ test("smoke path is non-draft PRs plus the nightly schedule", () => {
   );
 });
 
-test("full path is manual dispatch only", () => {
-  const { full } = loadPackagedJobs();
-  assert.equal(full.if, "${{ github.event_name == 'workflow_dispatch' }}");
+test("full path is its own workflow, started only by manual dispatch", () => {
+  const { ci, fullWorkflow, full } = loadPackagedJobs();
+  assert.equal(fullWorkflow.name, "E2E Full");
+  assert.deepEqual(
+    fullWorkflow.on,
+    { workflow_dispatch: null },
+    "pushes, PRs and the schedule must not start the full registry",
+  );
+  assert.equal(full.if, undefined, "the trigger alone gates the full job");
+  assert.equal(ci.jobs[FULL_JOB], undefined, "CI must not carry the full job");
 });
 
 test("no job branches on PR labels, so label changes do not rerun CI", () => {
-  const workflow = loadWorkflow();
-  const types = workflow.on.pull_request.types;
+  const { ci, fullWorkflow } = loadPackagedJobs();
+  const types = ci.on.pull_request.types;
   assert.ok(!types.includes("labeled"), "labeled must not trigger CI");
   assert.ok(!types.includes("unlabeled"), "unlabeled must not trigger CI");
-  for (const [name, job] of Object.entries(workflow.jobs)) {
+  for (const [name, job] of Object.entries({
+    ...ci.jobs,
+    ...fullWorkflow.jobs,
+  })) {
     assert.ok(
       !JSON.stringify(job).includes("pull_request.labels"),
       `${name} must not branch on PR labels`,

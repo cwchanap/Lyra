@@ -257,7 +257,7 @@ jobs:
 
   tauri-e2e-pr-smoke:
     # The nightly run keeps main's target-e2e cache warm for PR smoke, since
-    # the full job only runs when dispatched by hand.
+    # the full job (e2e-full.yml) only runs when dispatched by hand.
     if: ${{ github.event_name == 'schedule' || (github.event_name == 'pull_request' && github.event.pull_request.draft == false) }}
     name: Tauri E2E
     runs-on: ubuntu-latest
@@ -296,8 +296,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       # shared-key replaces rust-cache's default job-id key component, so
-      # both packaged jobs resolve one entry and the nightly run warms the
-      # cache PR smoke restores. prefix-key stays the manual bust knob.
+      # this job and e2e-full.yml resolve one entry and the nightly run
+      # warms the cache PR smoke restores. prefix-key stays the manual bust
+      # knob.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
@@ -316,76 +317,6 @@ jobs:
         if: ${{ always() }}
         with:
           name: tauri-e2e-smoke
-          path: |
-            apps/game/*.log
-            apps/game/logs/
-            apps/game/e2e-artifacts/
-          retention-days: 7
-          if-no-files-found: warn
-          # A failed run re-reaching this always() step re-uploads the same
-          # name; overwrite avoids a duplicate-name error on the rerun.
-          overwrite: true
-
-  tauri-e2e-full:
-    # Manual only: start it from the Actions tab (Run workflow).
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    name: Tauri E2E
-    runs-on: ubuntu-latest
-    # Must cover the measured cold path plus the configured retry: ~24 min
-    # cold target-e2e build + setup + two ~34-38 min sequential passes +
-    # artifact upload (~100 min worst case), with headroom.
-    timeout-minutes: 120
-    permissions:
-      contents: read
-    env:
-      # Dedicated target dir for e2e builds so rust-cache caches it
-      # separately from the normal debug target used by other jobs.
-      CARGO_TARGET_DIR: apps/game/src-tauri/target-e2e
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.1"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            libgtk-3-dev \
-            xvfb
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      # shared-key replaces rust-cache's default job-id key component, so
-      # this run resolves the same entry PR smoke restores. prefix-key
-      # stays the manual bust knob.
-      - name: Rust cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: apps/game/src-tauri -> target-e2e
-          prefix-key: tauri-e2e-v2
-          shared-key: tauri-e2e-v2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Run packaged E2E full registry
-        run: xvfb-run -a bun run --cwd apps/game test:e2e:all
-
-      - name: Upload E2E evidence
-        uses: actions/upload-artifact@v4
-        if: ${{ always() }}
-        with:
-          name: tauri-e2e-full
           path: |
             apps/game/*.log
             apps/game/logs/
