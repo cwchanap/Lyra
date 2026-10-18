@@ -92,14 +92,10 @@ test("both jobs display as Tauri E2E with 45/120 minute timeouts", () => {
   );
 });
 
-test("smoke path is exactly the non-draft PRs without ci:full-e2e", () => {
+test("smoke path is non-draft PRs plus the nightly schedule", () => {
   const { smoke } = loadPackagedJobs();
   const condition = smoke.if;
-  assert.match(
-    condition,
-    /github\.event_name == 'pull_request'/,
-    "smoke is PR-only; plain push to main must not run it",
-  );
+  assert.match(condition, /github\.event_name == 'pull_request'/);
   assert.match(
     condition,
     /github\.event\.pull_request\.draft == false/,
@@ -107,53 +103,30 @@ test("smoke path is exactly the non-draft PRs without ci:full-e2e", () => {
   );
   assert.match(
     condition,
-    /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
-    "smoke must be skipped when ci:full-e2e is present",
-  );
-});
-
-test("full path is schedule, manual dispatch, tag push, and labeled non-draft PRs", () => {
-  const { full } = loadPackagedJobs();
-  const condition = full.if;
-  assert.match(condition, /github\.event_name == 'schedule'/);
-  assert.match(condition, /github\.event_name == 'workflow_dispatch'/);
-  assert.match(
-    condition,
-    /github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/,
-    "tag pushes must run the full registry",
-  );
-  assert.match(
-    condition,
-    /[^!]contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
-    "ci:full-e2e PRs must run the full path",
-  );
-  assert.match(
-    condition,
-    /github\.event\.pull_request\.draft == false/,
-    "labeled draft PRs must not resurrect heavy CI",
+    /github\.event_name == 'schedule'/,
+    "the nightly run keeps main's target-e2e cache warm for PR smoke",
   );
   assert.doesNotMatch(
     condition,
-    /github\.event_name != 'pull_request'/,
-    "plain push to main must not run packaged full",
+    /'push'|workflow_dispatch/,
+    "plain pushes and manual dispatch must not run smoke",
   );
 });
 
-test("smoke and full predicates are mutually exclusive on ci:full-e2e", () => {
-  const { jobs, smoke, full } = loadPackagedJobs();
-  assert.match(
-    smoke.if,
-    /!contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
-  );
-  assert.match(
-    full.if,
-    /[^!]contains\(github\.event\.pull_request\.labels\.\*\.name, 'ci:full-e2e'\)/,
-  );
-  for (const [name, job] of Object.entries(jobs)) {
-    if (name === SMOKE_JOB || name === FULL_JOB) continue;
+test("full path is manual dispatch only", () => {
+  const { full } = loadPackagedJobs();
+  assert.equal(full.if, "${{ github.event_name == 'workflow_dispatch' }}");
+});
+
+test("no job branches on PR labels, so label changes do not rerun CI", () => {
+  const workflow = loadWorkflow();
+  const types = workflow.on.pull_request.types;
+  assert.ok(!types.includes("labeled"), "labeled must not trigger CI");
+  assert.ok(!types.includes("unlabeled"), "unlabeled must not trigger CI");
+  for (const [name, job] of Object.entries(workflow.jobs)) {
     assert.ok(
-      !JSON.stringify(job).includes("ci:full-e2e"),
-      `${name} must not branch on ci:full-e2e`,
+      !JSON.stringify(job).includes("pull_request.labels"),
+      `${name} must not branch on PR labels`,
     );
   }
 });
