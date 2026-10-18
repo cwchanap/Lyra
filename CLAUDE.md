@@ -79,11 +79,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   identifier `com.chanwaichan.lyra.e2e`), then run the expanded smoke suite
   (including the Beat 8.5 semantic save/continue slice). Production scene
   resources and a production frontend bundle (`import.meta.env.DEV === false`)
-  are used. This is the exact command ordinary non-draft PRs run in CI.
+  are used. This is the exact command non-draft PRs and the nightly schedule
+  run in CI.
 - `bun run --cwd apps/game test:e2e:all` - packaged E2E **full** proof: same
   build, then every suite in the canonical registry (`--attempts 2`). This is
-  the exact command CI runs for nightly schedule, manual dispatch, tag pushes,
-  and non-draft PRs carrying the `ci:full-e2e` label.
+  the exact command CI runs when the workflow is dispatched manually.
 - Focused packaged E2E commands (`test:e2e:gameplay`, `test:e2e:capture-proof`,
   `test:e2e:save`, or a bare `test:e2e:<suite>:run` /
   `node apps/game/scripts/run-save-e2e.mjs --suite <id>`) are for **local
@@ -91,11 +91,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   `--suite <id>` (repeatable), `--full`, and `--attempts 1|2`. A guard
   (`apps/game/scripts/require-e2e-binary.mjs`) fails fast with a clear message
   if the E2E binary is missing.
-- CI packaged E2E contract: a non-draft pull request without the `ci:full-e2e`
-  label runs the smoke job (`tauri-e2e-pr-smoke`); the `ci:full-e2e` label on a
-  non-draft pull request runs the full job (`tauri-e2e-full`) **instead of**
-  smoke; nightly schedule, manual `workflow_dispatch`, and tag pushes run full.
-  A plain push to main runs no packaged E2E. CI wraps both commands in
+- CI packaged E2E contract: every non-draft pull request and the nightly
+  schedule run the smoke job (`tauri-e2e-pr-smoke`); the nightly run keeps
+  main's E2E build cache warm for PR smoke. The full job (`tauri-e2e-full`)
+  runs only on a manual `workflow_dispatch`. A plain push to main or a tag push
+  runs no packaged E2E. CI wraps both commands in
   `xvfb-run -a` — that is headless environment setup, not a different contract.
 
 - Packaged E2E runs require both the Rust `e2e` feature and `VITE_E2E=true`
