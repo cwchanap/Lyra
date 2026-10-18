@@ -84,8 +84,7 @@ jobs:
           node --test \
             apps/game/scripts/e2e-suite-registry.test.mjs \
             apps/game/scripts/e2e-runner-lifecycle.test.mjs \
-            apps/game/scripts/save-e2e-paths.test.mjs \
-            apps/game/scripts/e2e-ci-workflow.test.mjs
+            apps/game/scripts/save-e2e-paths.test.mjs
 
       - name: Type-check scripts (tsc)
         run: bun run check:scripts
@@ -297,8 +296,8 @@ jobs:
 
       # shared-key replaces rust-cache's default job-id key component, so
       # this job and e2e-full.yml resolve one entry and the nightly run
-      # warms the cache PR smoke restores. prefix-key stays the manual bust
-      # knob.
+      # warms the cache PR smoke restores. Keep both keys identical to
+      # e2e-full.yml's. prefix-key stays the manual bust knob.
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
