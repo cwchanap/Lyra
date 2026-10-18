@@ -83,7 +83,7 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   run in CI.
 - `bun run --cwd apps/game test:e2e:all` - packaged E2E **full** proof: same
   build, then every suite in the canonical registry (`--attempts 2`). This is
-  the exact command CI runs when the workflow is dispatched manually.
+  the exact command the manual `E2E Full` workflow runs.
 - Focused packaged E2E commands (`test:e2e:gameplay`, `test:e2e:capture-proof`,
   `test:e2e:save`, or a bare `test:e2e:<suite>:run` /
   `node apps/game/scripts/run-save-e2e.mjs --suite <id>`) are for **local
@@ -94,9 +94,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
 - CI packaged E2E contract: every non-draft pull request and the nightly
   schedule run the smoke job (`tauri-e2e-pr-smoke`); the nightly run keeps
   main's E2E build cache warm for PR smoke. The full job (`tauri-e2e-full`)
-  runs only on a manual `workflow_dispatch`. A plain push to main or a tag push
-  runs no packaged E2E. CI wraps both commands in
-  `xvfb-run -a` — that is headless environment setup, not a different contract.
+  lives in its own `E2E Full` workflow (`.github/workflows/e2e-full.yml`),
+  whose only trigger is a manual `workflow_dispatch` (Actions tab, Run
+  workflow). A plain push to main or a tag push runs no packaged E2E. Both
+  jobs wrap their command in `xvfb-run -a` — that is headless environment
+  setup, not a different contract.
 
 - Packaged E2E runs require both the Rust `e2e` feature and `VITE_E2E=true`
   (both set by `apps/game/scripts/build-e2e.mjs`). Checkpoint IPC and its
