@@ -7,7 +7,7 @@
 [場景：三枝悠真住的老舊公寓三樓外廊，案發日傍晚六點半，入夜細雨。外廊一側是掛滿雨珠的鐵欄杆，另一側是一排一模一樣的鐵門；最裡面那扇門的門縫下，漏出冷白和螢光綠的光。]
 - **Background Prompt:** Arrival view on the open-air exterior corridor of an aging four-story Tokyo walk-up apartment building at 6:30 p.m. in light evening drizzle, eye-level medium shot looking down the narrow corridor toward the last steel apartment door, focal area on that end door with a faint cold white and neon-green glow leaking from the gap beneath it, stable anchors of a rain-beaded metal railing on the left with blurred Shibuya backstreet lights and wet rooftops beyond, a row of identical doors with blank nameplates and gas meters, a black folded umbrella leaning beside the end door, dim fluorescent corridor tube light, empty of people, lower third kept as plain wet corridor floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
-- **BGS:** bgs_streamer_studio_night
+- **BGS:** none
 
 **旁白**：案發日，傍晚六點半。澀谷，廣場後面的小巷。
 

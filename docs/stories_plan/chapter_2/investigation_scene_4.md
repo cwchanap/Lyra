@@ -279,7 +279,7 @@
 - **Status:** locked
 - **Background Prompt:** Midday staff-side view outside the outdoor broadcast truck parked at the edge of the same Shibuya event plaza behind the booth area, overcast light drizzle, eye-level medium-wide shot facing the truck's open rear side door, used to read the control-room hotspots from outside the barriers; focal area on a small pulled-out monitor on a rolling stand beside the door showing a dark frame with a tiny unreadable corner tag, and a printed runsheet taped flat to the door with unreadable rows and curled wet corners; stable anchors of metal crowd barriers around the truck, gaffer-taped cable runs on wet asphalt, stacked equipment cases and a folding chair under a small canvas awning, the rear of the glass booth's canopy visible in the far background; cool gray daylight with dim console glow spilling from the doorway, no people, clear wet ground in the lower foreground left open for standee placement and dialogue UI, no readable text, no UI, neo-noir visual-novel background.
 - **BGM:** bgm_glass_box_aftermath
-- **BGS:** bgs_glass_box_backstage_day
+- **BGS:** bgs_shibuya_plaza_day_aftermath
 
 [場景：廣場邊的活動轉播車外，案發日中午，細雨。轉播車四周圍著鐵馬，地上纏著用膠帶固定的電纜。車門邊架著一台拉出來的監看螢幕，門上貼著一張流程表。幾個器材箱疊在車旁的帆布棚下。]
 
