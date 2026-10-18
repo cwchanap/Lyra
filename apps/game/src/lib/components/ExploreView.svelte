@@ -4,6 +4,8 @@
   import SublocationNav from "./SublocationNav.svelte";
   import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
   import InvestigationMapView from "./InvestigationMapView.svelte";
+  import InvestigationProgressHud from "./InvestigationProgressHud.svelte";
+  import { remainingTargetsBySublocation } from "$lib/investigation/progress";
 
   let {
     scene,
@@ -28,6 +30,14 @@
     inv?.visibleSublocations.find((s) => s.id === inv.currentSublocationId) ??
       null,
   );
+  let outroProgress = $derived(inv?.outroProgress ?? null);
+  // Per-location counts only mean "work left before the scene moves on" when
+  // the auto outro decides the exit.
+  let remainingBySublocation = $derived(
+    inv && outroProgress
+      ? remainingTargetsBySublocation(inv.visibleSublocations)
+      : null,
+  );
 </script>
 
 {#if inv && currentSub}
@@ -42,11 +52,15 @@
           onEnter={onEnterSublocation}
           {disabled}
           placement="scene"
+          remaining={remainingBySublocation}
         />
       {/if}
-      {#if hud}
-        {@render hud()}
-      {/if}
+      <div class="hud-side">
+        <InvestigationProgressHud progress={outroProgress} />
+        {#if hud}
+          {@render hud()}
+        {/if}
+      </div>
     </div>
   {/snippet}
 
@@ -97,6 +111,13 @@
      wraps below (narrow viewports) the location navigator without the two
      independently pinning the same top offset. */
   .explore-hud :global(.primary-objective-hud) {
+    max-width: min(360px, 100%);
+  }
+
+  .hud-side {
+    display: grid;
+    justify-items: end;
+    gap: 8px;
     max-width: min(360px, 100%);
   }
 

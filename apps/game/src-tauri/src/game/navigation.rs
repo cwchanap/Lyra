@@ -7,20 +7,22 @@ use super::command_tx::CommandMutation;
 use super::dialogue_queue::{DialogueSegment, DialogueSegmentOriginV1};
 use super::loader;
 use super::provenance::validate_catalog_record_origin_coverage;
+use super::reveals;
 use super::scenes::analysis::AnalysisSceneState;
 use super::scenes::interrogation::InterrogationSceneState;
 use super::scenes::investigation::InvestigationSceneState;
 use super::scenes::linear::LinearSceneState;
 use super::scenes::SceneRuntime;
-use super::schema::{EvidenceJson, SceneJson, SceneType, StatementJson};
+use super::schema::{EvidenceJson, SceneJson, SceneType, StatementJson, StoryRevealTarget};
 use super::state::{ChapterManifest, Inventory, SceneRef};
-use super::story::StoryCatalog;
+use super::story::{AssertionOrigin, StoryCatalog};
 use super::view::{
     GameStateView, SceneNavigationChapter, SceneNavigationIndex, SceneNavigationScene,
 };
 use super::{GameEngine, GameError, LastVisualCue};
 #[cfg(test)]
 use std::cell::Cell;
+use std::collections::BTreeMap;
 
 #[cfg(test)]
 thread_local! {
@@ -60,7 +62,7 @@ impl GameEngine {
             queue_gen,
         )?
         .ok_or_else(|| GameError::unknown_scene(chapter_id, scene_id))?;
-        let carried_records = case_records_before_scene(
+        let skipped = progress_before_scene(
             &self.resources_dir,
             &self.story_catalog,
             &self.chapters,
@@ -72,13 +74,16 @@ impl GameEngine {
             engine.current_chapter_idx = chapter_idx;
             engine.current_scene_idx = scene_idx;
             engine.scene = new_scene;
-            if let SceneRuntime::Analysis(scene) = &mut engine.scene {
-                scene.recompute_available_board_ids(&engine.story_state);
-            }
             engine.last_visual_cue = LastVisualCue::default();
             engine.inventory = Inventory::default();
             engine.pending_acquisition_events.clear();
-            engine.carry_case_records_into_jump(&carried_records, command_id, next_ordinal)?;
+            engine.carry_case_records_into_jump(&skipped.records, command_id, next_ordinal)?;
+            engine.carry_analysis_progress_into_jump(&skipped.analysis)?;
+            // After the carry: a target analysis scene's boards can unlock on
+            // story progress an earlier analysis scene asserts.
+            if let SceneRuntime::Analysis(scene) = &mut engine.scene {
+                scene.recompute_available_board_ids(&engine.story_state);
+            }
             engine.next_queue_gen = queue_gen + 1;
             engine.history.reset();
 
@@ -129,7 +134,8 @@ impl GameEngine {
     }
 
     /// A jump starts the target scene fresh, but the scenes it skipped still
-    /// count as played: `StoryState` carries across the jump untouched, and
+    /// count as played: `StoryState` carries across the jump (plus the
+    /// analysis progress `carry_analysis_progress_into_jump` adds), and
     /// the compiler only guarantees a later interrogation's contradiction
     /// targets against inventory accumulated from the start of the story.
     /// Emptying the inventory therefore let a jump followed by normal play
@@ -168,6 +174,52 @@ impl GameEngine {
         self.pending_acquisition_events
             .truncate(acquisition_event_baseline);
         *next_ordinal = ordinal_baseline;
+        Ok(())
+    }
+
+    /// The story-progress half of treating skipped scenes as played. An
+    /// analysis scene completes only once every board holds its correct
+    /// answer, so its outcome is fixed: complete each board, apply its
+    /// reveals exactly as `submit_analysis_board` does, then complete the
+    /// scene. Without this, a fresh-run jump past Chapter 1's Analysis 8.5
+    /// reached the final hearing without `prepare_narrow_lock_request`, and
+    /// the hearing's gate phase never unlocked (issue #90). Every mutation is
+    /// monotonic, so a session that already played these scenes is unchanged.
+    fn carry_analysis_progress_into_jump(
+        &mut self,
+        carried: &[SceneAnalysisProgress],
+    ) -> Result<(), GameError> {
+        let fact_support_by_id = BTreeMap::new();
+        for scene in carried {
+            for (board_id, board_reveals) in &scene.boards {
+                self.story_state.complete_analysis_board(
+                    &self.story_catalog,
+                    &scene.chapter_id,
+                    &scene.scene_id,
+                    board_id,
+                )?;
+                let context = reveals::StoryRevealMaterializationContext {
+                    origin: AssertionOrigin::AnalysisBoard {
+                        chapter_id: scene.chapter_id.clone(),
+                        scene_id: scene.scene_id.clone(),
+                        board_id: board_id.clone(),
+                    },
+                    fact_support_by_id: &fact_support_by_id,
+                    represented_authority: None,
+                };
+                reveals::apply_story_reveals(
+                    &self.story_catalog,
+                    &mut self.story_state,
+                    board_reveals,
+                    &context,
+                )?;
+            }
+            self.story_state.complete_analysis_scene(
+                &self.story_catalog,
+                &scene.chapter_id,
+                &scene.scene_id,
+            )?;
+        }
         Ok(())
     }
 
@@ -618,18 +670,35 @@ struct SceneCaseRecords {
     statements: Vec<StatementJson>,
 }
 
-/// Every case record declared by a scene that precedes `(chapter_idx,
-/// scene_idx)` in story order, earliest scene first. Reveals only resolve
-/// against their own scene's manifests, so this is a superset of what normal
+/// One analysis scene's boards in authored order, each with the story
+/// reveals its correct answer applies.
+struct SceneAnalysisProgress {
+    chapter_id: String,
+    scene_id: String,
+    boards: Vec<(String, Vec<StoryRevealTarget>)>,
+}
+
+/// What the scenes before a jump target hand on, earliest scene first.
+struct SkippedSceneProgress {
+    records: Vec<SceneCaseRecords>,
+    analysis: Vec<SceneAnalysisProgress>,
+}
+
+/// Every case record and analysis outcome declared by a scene that precedes
+/// `(chapter_idx, scene_idx)` in story order. Reveals only resolve against
+/// their own scene's manifests, so the records are a superset of what normal
 /// play can hold on arrival at the target.
-fn case_records_before_scene(
+fn progress_before_scene(
     resources_dir: &std::path::Path,
     catalog: &StoryCatalog,
     chapters: &[ChapterManifest],
     chapter_idx: usize,
     scene_idx: usize,
-) -> Result<Vec<SceneCaseRecords>, GameError> {
-    let mut carried = Vec::new();
+) -> Result<SkippedSceneProgress, GameError> {
+    let mut skipped = SkippedSceneProgress {
+        records: Vec::new(),
+        analysis: Vec::new(),
+    };
     for (idx, chapter) in chapters.iter().enumerate().take(chapter_idx + 1) {
         let preceding = if idx == chapter_idx {
             &chapter.scenes[..scene_idx]
@@ -645,9 +714,24 @@ fn case_records_before_scene(
                     SceneJson::Interrogation(scene) => {
                         (scene.id, scene.evidence_manifest, scene.statement_manifest)
                     }
-                    SceneJson::Linear(_) | SceneJson::Analysis(_) => continue,
+                    SceneJson::Analysis(scene) => {
+                        skipped.analysis.push(SceneAnalysisProgress {
+                            chapter_id: chapter.id.clone(),
+                            scene_id: scene.id,
+                            boards: scene
+                                .boards
+                                .into_iter()
+                                .map(|board| {
+                                    let common = board.common();
+                                    (common.id.clone(), common.reveals.clone())
+                                })
+                                .collect(),
+                        });
+                        continue;
+                    }
+                    SceneJson::Linear(_) => continue,
                 };
-            carried.push(SceneCaseRecords {
+            skipped.records.push(SceneCaseRecords {
                 chapter_id: chapter.id.clone(),
                 scene_id,
                 evidence,
@@ -655,7 +739,7 @@ fn case_records_before_scene(
             });
         }
     }
-    Ok(carried)
+    Ok(skipped)
 }
 
 fn find_scene_runtime_by_id(
@@ -885,12 +969,34 @@ mod tests {
         write_empty_story_catalog_and_content_manifest(&resources);
         std::fs::write(resources.join("chapters.json"), chapters).unwrap();
         let mut evidence_index = Vec::new();
+        let mut analysis_scenes = Vec::new();
+        let mut analysis_boards = Vec::new();
         for (file, body) in scenes {
             std::fs::write(chapter_dir.join(file), body).unwrap();
             let scene: serde_json::Value = serde_json::from_str(body).unwrap();
             let Some(scene_id) = scene.get("id").and_then(serde_json::Value::as_str) else {
                 continue;
             };
+            // Like the compiler, register every analysis scene and board: a
+            // jump past one completes it.
+            if scene.get("type").and_then(serde_json::Value::as_str) == Some("analysis") {
+                analysis_scenes.push(serde_json::json!({
+                    "chapterId": "chapter_1",
+                    "sceneId": scene_id,
+                }));
+                for board in scene
+                    .get("boards")
+                    .and_then(serde_json::Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    analysis_boards.push(serde_json::json!({
+                        "chapterId": "chapter_1",
+                        "sceneId": scene_id,
+                        "boardId": board["common"]["id"],
+                    }));
+                }
+            }
             for record in scene
                 .get("evidenceManifest")
                 .and_then(serde_json::Value::as_array)
@@ -916,6 +1022,8 @@ mod tests {
                 "sourceGroups": [],
                 "evidenceIndex": evidence_index,
                 "statementsIndex": [],
+                "analysisScenes": analysis_scenes,
+                "analysisBoards": analysis_boards,
             }))
             .unwrap(),
         )
@@ -1675,6 +1783,64 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(resources);
+    }
+
+    // Break caught: production replay starts a fresh run, so a jump past an
+    // analysis scene kept an empty StoryState; a hearing gated on that scene's
+    // objective (Chapter 1 Analysis 8.5 → final hearing) then never unlocked.
+    #[test]
+    fn fresh_jump_carries_earlier_analysis_outcomes() {
+        use crate::game::unlock::StoryUnlockContext;
+
+        let (_guard, resources) = analysis_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+
+        let view = engine.jump_to_scene("chapter_1", "analysis_after").unwrap();
+        assert!(engine
+            .story_state
+            .objective_completed("prepare_narrow_lock_request"));
+        assert!(engine
+            .story_state
+            .analysis_scene_completed("chapter_1", "analysis_scene_8_5"));
+        for board_id in [
+            "evidence_packages",
+            "local_event_sequence",
+            "narrow_request_basis",
+        ] {
+            assert!(engine.story_state.analysis_board_completed(
+                "chapter_1",
+                "analysis_scene_8_5",
+                board_id
+            ));
+        }
+        let facts: Vec<_> = view
+            .story
+            .facts
+            .iter()
+            .map(|fact| fact.id.as_str())
+            .collect();
+        for fact_id in [
+            "miyake_known_lies_are_unrelated_to_murder",
+            "earlier_external_entry_exists",
+            "merge_time_is_not_event_time",
+            "two_independent_lock_contradictions_identified",
+        ] {
+            assert!(facts.contains(&fact_id), "missing carried fact {fact_id}");
+        }
+
+        // The target analysis scene is played, not carried, and a second jump
+        // over the same scene is a no-op for progress already held.
+        let mut engine = GameEngine::new_started(engine.resources_dir.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_8_5")
+            .unwrap();
+        assert!(!engine
+            .story_state
+            .objective_completed("prepare_narrow_lock_request"));
+        engine.jump_to_scene("chapter_1", "analysis_after").unwrap();
+        let before = engine.story_state.clone();
+        engine.jump_to_scene("chapter_1", "analysis_after").unwrap();
+        assert_eq!(engine.story_state, before);
     }
 
     // Break caught: the carry consumed acquisition ordinals for the popups it

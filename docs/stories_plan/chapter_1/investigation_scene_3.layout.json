@@ -41,9 +41,9 @@
         },
         "miyake_locker": {
           "kind": "rect",
-          "x": 0.87,
+          "x": 0.825,
           "y": 0.05,
-          "w": 0.12,
+          "w": 0.16,
           "h": 0.33
         },
         "katase_register_gap": {

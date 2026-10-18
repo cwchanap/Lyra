@@ -155,6 +155,10 @@ export type InvestigationMapView = {
   regions: InvestigationMapRegionView[];
   nodes: InvestigationMapNodeView[];
 };
+export type InvestigationProgressView = {
+  done: number;
+  total: number;
+};
 export type SublocationView = {
   id: string;
   label: string;
@@ -290,6 +294,12 @@ export type SceneView =
       /** City-map projection for mapped investigations; null for map-less scenes. */
       map: InvestigationMapView | null;
       visibleSublocations: SublocationView[];
+      /**
+       * Auto-outro progress over every reachable hotspot and topic; null when
+       * an authored Unlock: expression decides the outro. Optional so older
+       * fixtures stay valid.
+       */
+      outroProgress?: InvestigationProgressView | null;
     }
   | {
       kind: "interrogation";
