@@ -10,7 +10,9 @@
     "validate-docs-scenes": "bun run validate-docs-scenes.ts",
     "audio:validate": "bun run audio/cli.ts validate",
     "audio:apply": "bun run audio/cli.ts apply",
-    "audio:generate": "bun run audio/cli.ts generate"
+    "audio:generate": "bun run audio/cli.ts generate",
+    "voice:sync": "bun run voice/cli.ts sync",
+    "voice:validate": "bun run voice/cli.ts validate"
   },
   "dependencies": {
     "@lyra/asset-paths": "workspace:*",
