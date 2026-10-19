@@ -1,0 +1,73 @@
+# ja script for docs/stories_plan/chapter_1/scene_6.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_6.md
+lines:
+  - speaker: 旁白
+    zh: 審查會結束後，雨又下起來了。
+    ja: ""
+  - speaker: 旁白
+    zh: 兩人沒急著走，在便利店的屋簷下停了下來。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先喝。你的胃今天只收過一個麵包。
+    ja: ""
+  - speaker: 相馬律
+    zh: 事務所那台咖啡機還是壞的。中午只啃了個麵包。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 等雨小一點，再買飯糰。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你每次都拿紙本收據。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 紙的至少摸得到，放進包裡不會自己換地方。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你以前帶我跑第一個審查會，也先塞咖啡。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那天你空腹站到散會，臉色比收據紙還白。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你居然記得。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你少吃一餐就更愛逞強。我只是不想再扶你一次。
+    ja: ""
+  - speaker: 相馬律
+    zh: 剛才第一次聽見摘要把三宅釘進嫌疑人，我就慌了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 我一直想證明三宅不像兇手，差點又拿他的表情替他辯護。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 第一次輸在會場，很正常。你還是我的搭檔，別拿那句話撐場。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 人說的、店裡留下的、系統排的，先分開。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 啊，早坂律師。你們還沒走？我得趕末班車，先走了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 路上小心。
+    ja: ""
+  - speaker: 相馬律
+    zh: 早坂小姐。我想回雨鐘一趟。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 再看一次摘要？
+    ja: ""
+  - speaker: 相馬律
+    zh: 不是。我想再走一遍那間店。
+    ja: ""
+  - speaker: 相馬律
+    zh: 剛才我只看見它排好的故事。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就去看它沒寫出的地方。
+    ja: ""

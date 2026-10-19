@@ -1,0 +1,230 @@
+# ja script for docs/stories_plan/chapter_1/investigation_scene_8.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/investigation_scene_8.md
+lines:
+  - speaker: 相馬律
+    zh: 又回來了。白天看表面，這次把那扇門固定下來。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 程序我接。鑑識待會到，先把店長那段問清楚。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我想起來，那晚拍過維護頁。只是怕隔天門又卡住。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 如果早點拿出來，三宅是不是就不用坐那麼久？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 截圖不能直接救人，但能告訴我們該固定哪裡。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 手機給我看，不收。面板還在，就拍面板。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 那天晚上，後場那扇門其實一直在維護模式。
+    ja: ""
+  - speaker: 相馬律
+    zh: 維護模式？手機裡那張截圖，能看出什麼？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先看看那頁面記了什麼。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以那晚，三宅進門之前，已經有一個外部憑證開過後門。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 對。第三者的事件成立了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 可是我們還不知道那是誰。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 身份未定。下一步，才是把這個事件對到一個人。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 鑑識收完，這張桌子就空了。我們留在這裡，把手上的東西理一理。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我只是想證明那扇門在維護，沒別的意思。
+    ja: ""
+  - speaker: 相馬律
+    zh: 四條：1841 維護模式，1842 外部憑證開後門，1843 員工憑證開後走廊，1844 同步完成。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 只有先後，沒有秒數，也沒有使用者全名。
+    ja: ""
+  - speaker: 相馬律
+    zh: 截圖不能進審查會。讓鑑識把面板正式固定。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你也從早上站到現在。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 別管我。你眼下的青色比這些帳本還深。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……等收工再說。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 嗯。收工再說。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先別管它。跟我們手上的案子對不上。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這間店，什麼時候都聞得到這股甜味。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 招牌拿鐵。先看面板。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長，這頁面平常你都怎麼看？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我平常只看這頁確認門有沒有卡住、維護模式有沒有關掉。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我不知道它不能拿來判斷幾點幾分有人進門。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 所以之前一直沒提，是我疏忽了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 不是疏忽。這頁本來就不是給你判斷時間用的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長，你從早上撐到現在，都沒坐下？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 這間店是我扛起來的，總不能這時候丟著。
+    ja: ""
+  - speaker: 店長高瀨
+    expression: tired
+    zh: ……其實腿早就軟了。只是不想在你們面前坐下。
+    ja: ""
+  - speaker: 相馬律
+    zh: 沒關係。先靠一下也好。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 等鑑識那邊收完再說。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 一個人顧店，連生病都不敢。倒了就沒人開門。
+    ja: ""
+  - speaker: 相馬律
+    zh: 十年都這樣？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 習慣了。開店的人沒有在請假的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長，這頁的事件順序，有沒有可能被人動過？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我……我不會動那個。我只會看門卡不卡。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 你們是覺得，是我改的？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 她連這頁能判斷時間都不知道。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 要重排這種紀錄，得碰得到設備本身，不是手機拍一張就能改。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……也是。順序是機器自己存的。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我開店十年，從沒碰過那台機器的設定。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長，這間店為什麼叫「雨鐘」？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 前任老闆取的。他說吉祥寺常下雨，鐘聲又響得遠。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我接手的時候想過改名字，最後沒改。
+    ja: ""
+  - speaker: 相馬律
+    zh: 為什麼沒改？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 常客都叫習慣了。改了，他們反而找不到門。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 開店的人，有些東西不是自己的，也得替別人留著。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 截圖我不收。要用，就讓鑑識把它固定下來。
+    ja: ""
+  - speaker: 相馬律
+    zh: 設備、機身、畫面時間都登記在案；底下是 1841 到 1844 的本機順序。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 手機截圖只是線索。這份才是能進審查會的材料。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 記住，這是本機順序，不是核准片段。
+    ja: ""
+  - speaker: 相馬律
+    zh: 1842 是外包憑證開後門，排在 1843 的三宅憑證前面。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那就是兇手吧？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 只能說有外部憑證比三宅早。還沒對到人。
+    ja: ""
+  - speaker: 相馬律
+    zh: 摘要上的 23:07:50，本機順序裡沒有。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 本機順序沒被改，摘要怎麼讀，留到核准片段再定。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 電信方的回覆也到了。三宅那通電話，手機履歷和通信紀錄都對上。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 原本的待確認項留著。這張是正式核實後的新紀錄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 刑警，店長那張截圖到底差在哪？
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 截圖只是線索，誰都能拍、誰都能裁。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 固定紀錄從設備到畫面時間都有簽字。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 審查會看的是這個，不是手機相簿。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這份是程序固定過的，能進審查會。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 但它只是本機順序，別把它當成核准片段。
+    ja: ""
+  - speaker: 相馬律
+    zh: 原來店裡只拿這頁看門有沒有關好。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 所以這頁告訴你的，只有門卡沒卡、模式關沒關。
+    ja: ""
+  - speaker: 相馬律
+    zh: 外部憑證，排在三宅前面。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先別填名字。我們只證明了有第三方的事件。
+    ja: ""
+  - speaker: 相馬律
+    zh: 舊的待確認項不改，正式核實另留一筆。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 對。誰確認、什麼時候確認，都在這張。
+    ja: ""

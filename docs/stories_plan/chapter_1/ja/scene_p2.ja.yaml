@@ -1,0 +1,61 @@
+# ja script for docs/stories_plan/chapter_1/scene_p2.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_p2.md
+lines:
+  - speaker: 旁白
+    zh: 雨鐘咖啡館，某個普通的雨天。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: ……這個，還能帶。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 先登記。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 剩下的可以帶。沒登記的，不行。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我知道。我每次都有登記。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: ……又慢了。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 歡迎。……今天也金木犀拿鐵？
+    ja: ""
+  - speaker: 增田圭
+    zh: 嗯。糖少。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 好。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這張，今天幫你蓋一個。
+    ja: ""
+  - speaker: 增田圭
+    zh: 謝謝。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 你每次都說糖少，最後還是自己加糖包。
+    ja: ""
+  - speaker: 增田圭
+    zh: ……今天不會。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: ……又快了。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 我先把這邊擦完。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 先讓機器跑完排氣，再關燈。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: ……這聲音——
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 那台機器一直這樣，跑完就好。
+    ja: ""

@@ -1,0 +1,34 @@
+# ja script for docs/stories_plan/chapter_1/scene_0.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_0.md
+lines:
+  - speaker: 旁白
+    zh: 一份案件摘要，正在生成。
+    ja: ""
+  - speaker: 旁白
+    zh: 死者：增田圭。
+    ja: ""
+  - speaker: 旁白
+    zh: 地點：吉祥寺咖啡館「雨鐘」。
+    ja: ""
+  - speaker: 旁白
+    zh: 推定案發時間：23:08 至 23:12。
+    ja: ""
+  - speaker: 旁白
+    zh: 門鎖事件：23:07:50，以員工憑證開啟，持有人 三宅蒼太。
+    ja: ""
+  - speaker: 旁白
+    zh: 監視器截圖：三宅蒼太靠近後場。
+    ja: ""
+  - speaker: 旁白
+    zh: 打卡紀錄：三宅蒼太當晚值班。
+    ja: ""
+  - speaker: 旁白
+    zh: 建議：主要嫌疑人 三宅蒼太。
+    ja: ""
+  - speaker: 旁白
+    zh: 故事看起來，已經完整了。
+    ja: ""

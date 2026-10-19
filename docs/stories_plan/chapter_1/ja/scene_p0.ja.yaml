@@ -1,0 +1,31 @@
+# ja script for docs/stories_plan/chapter_1/scene_p0.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_p0.md
+lines:
+  - speaker: 旁白
+    zh: 東京，下雨的傍晚。
+    ja: ""
+  - speaker: 旁白
+    zh: KAGAMI Evidence Summary Pilot：證據摘要審查會擴大試行。
+    ja: ""
+  - speaker: 路人甲
+    zh: 新聞說現在連證據都能先整理好。
+    ja: ""
+  - speaker: 路人乙
+    zh: 有系統整理，也好，總比誰聲音大誰贏。
+    ja: ""
+  - speaker: 旁白
+    zh: 腳步比雨聲還急。
+    ja: ""
+  - speaker: 旁白
+    zh: 看板上，影片正在播放。
+    ja: ""
+  - speaker: 旁白
+    zh: 畫面很乾淨，字也很整齊。
+    ja: ""
+  - speaker: 路人丙
+    zh: 有系統整理，應該比較不會冤枉人吧。
+    ja: ""

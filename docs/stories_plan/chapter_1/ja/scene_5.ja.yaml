@@ -1,0 +1,174 @@
+# ja script for docs/stories_plan/chapter_1/scene_5.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_5.md
+lines:
+  - speaker: 相馬律
+    zh: 這會場比我想的冷。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 冷氣直直吹。外套穿上。
+    ja: ""
+  - speaker: 相馬律
+    zh: 等下要站起來講話，穿外套顯得太隨便。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 隨便總比發抖好。披著，輪到你再脫。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 今天不是審判，是審查。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 他們只看摘要站不站得住。
+    ja: ""
+  - speaker: 旁白
+    zh: 那個袋子，從案發那晚起就沒離開過她的手。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 主位那位，是神谷澪。
+    ja: ""
+  - speaker: 相馬律
+    zh: 報告裡常看到這個名字。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 她信摘要。今天這場，不會輕鬆。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 開始吧。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 這份摘要，整合了現場、紀錄與供述三方來源。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 不是單一人的判斷。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 三宅蒼太的員工憑證、店內監視器、打卡紀錄。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 三者互相對得上。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 時間、位置、身分，沒有缺口。
+    ja: ""
+  - speaker: 相馬律
+    zh: 可是——
+    ja: ""
+  - speaker: 神谷澪
+    zh: 還有一點。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 三宅本人，在第一次問話時隱瞞了事。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 他承認自己說了謊。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他買錯飲料那一下，先想的是母親能不能喝。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這個細節，不像會動手的人會有的。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 嫌疑人的態度不是證據。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 我不接受「他看起來不像兇手」這種反駁。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他說謊，是因為當晚母親打了電話。
+    ja: ""
+  - speaker: 相馬律
+    zh: 還有一個蛋糕盒的事，他怕被誤會。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 這也許說明他為什麼說謊。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 但說明不了他沒有動手。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 說謊的理由，洗不掉說謊本身。
+    ja: ""
+  - speaker: 相馬律
+    zh: 當晚有「第二杯咖啡」。
+    ja: ""
+  - speaker: 相馬律
+    zh: 點單上署名是個「K.」。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那代表現場還有另一個人。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 「K.」是一個字母。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 它可以是任何人，也可以什麼都不是。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 太模糊，不能推翻互相對上的三方紀錄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 摘要裡那筆外包維護紀錄，很可疑。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那段時間，店裡的系統並不單純。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 那筆紀錄的憑證，沒有核實。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 監視器上也沒有對應的人影。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 在摘要裡，它只是一項低權重的旁註。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 相馬先生，我說一句。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 三宅這筆，有員工憑證、監視器、打卡紀錄。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 外包那筆，只有未核憑證和排程備註。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 你要我採哪一筆？
+    ja: ""
+  - speaker: 相馬律
+    expression: shaken
+    zh: 摘要不是在說謊。
+    ja: ""
+  - speaker: 相馬律
+    expression: shaken
+    zh: 它只是更願意相信「好對上的那一筆」。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 這一輪，我們輸在只有截圖。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 能翻的，不在紙上。在現場。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 今天到這裡。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 本輪審查暫停，摘要維持原判。
+    ja: ""
+  - speaker: 神谷澪
+    zh: 相馬先生，先拿更硬的東西再來。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 這張我不收。要用，讓鑑識固定。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 回現場。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這一輪，摘要贏了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就找它漏掉的地方。
+    ja: ""

@@ -1,0 +1,97 @@
+# ja script for docs/stories_plan/chapter_1/analysis_scene_8_5.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/analysis_scene_8_5.md
+lines:
+  - speaker: 早坂茜
+    zh: 坐下。
+    ja: ""
+  - speaker: 相馬律
+    zh: 我還站得住。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你剛才把外包憑證直接叫成兇手。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……坐一下。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 水。
+    ja: ""
+  - speaker: 相馬律
+    zh: 妳包裡到底裝了多少東西？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 能讓搭檔不倒下的東西。
+    ja: ""
+  - speaker: 相馬律
+    zh: 今天第三次回這張桌子。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 也第三次說「收工再吃」。
+    ja: ""
+  - speaker: 相馬律
+    zh: 妳記仇？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 我留紀錄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這張也放上來。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 正式證物，放小謊那欄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 其餘先留白。我不替空位猜人。
+    ja: ""
+  - speaker: 相馬律
+    zh: 我急著找兇手時，也差點把三宅的小謊塞進同一欄。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你肯停手重排，就還來得及。
+    ja: ""
+  - speaker: 相馬律
+    zh: 第三者還沒有名字。先留白。
+    ja: ""
+  - speaker: 相馬律
+    zh: 本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 把這句寫進申請，名字那格繼續空著。
+    ja: ""
+  - speaker: 相馬律
+    zh: 申請寫好了。我的字開始飄了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先別送。你把名字那格留白了嗎？
+    ja: ""
+  - speaker: 相馬律
+    zh: 留了。外部憑證還沒有身分。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 好。餅乾一人一半。
+    ja: ""
+  - speaker: 早坂茜
+    expression: stern
+    zh: 申請準備好了；身分仍未明，核准片段也還不能取得。
+    ja: ""
+  - speaker: 相馬律
+    expression: relieved
+    zh: 先不猜名字。
+    ja: ""
+  - speaker: 相馬律
+    expression: relieved
+    zh: 餅乾真的分我一半？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你先把水喝完。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這算合作默契？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 這算避免搭檔倒在證據桌上。
+    ja: ""

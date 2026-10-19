@@ -1,0 +1,103 @@
+# ja script for docs/stories_plan/chapter_1/investigation_scene_p1.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/investigation_scene_p1.md
+lines:
+  - speaker: 旁白
+    zh: 雨從下午就開始下，一直沒停。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……就是這家。
+    ja: ""
+  - speaker: 相馬律
+    zh: 委託單上只寫了影印費糾紛。金額不大，但店主那邊說得很急。
+    ja: ""
+  - speaker: 旁白
+    zh: 委託很小。店主和一個學生，為了幾張影印費起了爭執。
+    ja: ""
+  - speaker: 旁白
+    zh: 這種事，通常不會找上偵探。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……既然接了，就從門口開始看。
+    ja: ""
+  - speaker: 相馬律
+    zh: 先別急著替誰定罪。
+    ja: ""
+  - speaker: 相馬律
+    zh: 把能說明「十七點四十二分是什麼」的資料挑出來，比一比。
+    ja: ""
+  - speaker: 店主
+    zh: ……好。你說怎麼看，我就怎麼看。
+    ja: ""
+  - speaker: 旁白
+    zh: 四個小小的痕跡都在眼前。
+    ja: ""
+  - speaker: 旁白
+    zh: 下一步，不是再找一張紙，而是決定哪些能放在同一個答案裡。
+    ja: ""
+  - speaker: 店主
+    zh: 收據和監視器的時間對不上，才吵起來。
+    ja: ""
+  - speaker: 學生
+    zh: 我只記得付完錢就離開了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 先不要急著判斷。我想把留下的東西各看一遍，再拿來比。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 我來取你上一份小型證據審查的意見書。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 剛好看見這個小委託收尾。你先做完，我不插手。
+    ja: ""
+  - speaker: 相馬律
+    zh: 「REPRINT」。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這不是第一次印出的那張，是重印收據。
+    ja: ""
+  - speaker: 店主
+    zh: 可是時間是真的。機器不會自己亂打。
+    ja: ""
+  - speaker: 相馬律
+    zh: 真的時間，也要先問它記的是哪一件事。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這裡剛卡過紙。
+    ja: ""
+  - speaker: 店主
+    zh: 舊機器偶爾會卡，那又怎樣？
+    ja: ""
+  - speaker: 相馬律
+    zh: 如果原本的收據卡在裡面，後來重印就不等於當時付款。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店主先找了錢，學生才離開。
+    ja: ""
+  - speaker: 學生
+    zh: 我那時候還低頭看了一下零錢。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這段影像是真的，也支持你們之間有一筆交易。
+    ja: ""
+  - speaker: 相馬律
+    zh: 但它只告訴我們你在十七點三十八分前離開。
+    ja: ""
+  - speaker: 相馬律
+    zh: 還不能單獨解釋十七點四十二分的收據。
+    ja: ""
+  - speaker: 相馬律
+    zh: 十七點三十七分，影印費。
+    ja: ""
+  - speaker: 店主
+    zh: 那是我手寫的，不像機器那麼漂亮。
+    ja: ""
+  - speaker: 相馬律
+    zh: 漂亮不漂亮不重要。這一行記的是收入發生的時間。
+    ja: ""
+  - speaker: 相馬律
+    zh: 現在，把四項東西排開看看。
+    ja: ""

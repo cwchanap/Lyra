@@ -1,0 +1,325 @@
+# ja script for docs/stories_plan/chapter_1/investigation_scene_9.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/investigation_scene_9.md
+lines:
+  - speaker: 相馬律
+    zh: 這地方，連椅子都不讓人久坐。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 撐著點。拿到工單，那個空位才有名字可以填。
+    ja: ""
+  - speaker: 相馬律
+    zh: 從昨晚到現在，那格一直空著。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 今天把它填上。黑瀨刑警，說吧。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 我以現場刑警的身份，向承包商提了協力請求。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 他們只肯給後場門鎖那一段，22:50 到 23:10。
+    ja: ""
+  - speaker: 相馬律
+    zh: 我們不能自己進承包商的資料庫翻嗎？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 不能。那不是律師私下翻得到的東西。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 我是憑審查會確認過的那幾條矛盾，正式申請調的。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 所以拿到的，只有跟那扇門鎖有關的工單。
+    ja: ""
+  - speaker: 相馬律
+    expression: determined
+    zh: 那個一直空著的第三人座位，現在能對到一個名字了。
+    ja: ""
+  - speaker: 相馬律
+    expression: determined
+    zh: 北見修一。臨時工單和外包憑證，先把名字對上。
+    ja: ""
+  - speaker: 相馬律
+    expression: determined
+    zh: 備忘裡的那個 K，這樣才能收口。
+    ja: ""
+  - speaker: 相馬律
+    expression: determined
+    zh: 傘套只留在動線脈絡裡。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 身份對上了。動機和當夜的壓力，也都站住了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 剩下的，就交給最後的審查會。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 對。材料齊了。我們去把這條鏈，當著所有人講清楚。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他從頭到尾，沒答買家是誰。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 對。這條留到審查會再追。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他一直摺那張名片。還有眼鏡，一直往下滑。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你連這個都記著。
+    ja: ""
+  - speaker: 相馬律
+    zh: 不是記著。是他在怕。怕的人，才會把東西摺成那樣。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 怕不怕，不影響證據。鏈補齊了，走。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 就這些。後場門鎖，22:50 到 23:10，超出範圍的我不能給。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 夠了。我們要的就是這一段。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 權限過期就不能進系統。人也一樣，到期就走流程。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……這種地方，待久了會記得自己只是暫時的。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 他們的排程跟我們無關。回函拿到了，看裡面。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你一緊張，就先整理東西。
+    ja: ""
+  - speaker: 相馬律
+    zh: 手不動，腦子更亂。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就先讓手忙著。腦子留給正事。
+    ja: ""
+  - speaker: 相馬律
+    zh: 以前做協力的時候，這種表一厚，我就會忘記人長什麼樣。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那今天別忘。先把人看清楚，再說別的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 雨鐘打烊以後，也是這種聲音。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那間店的雨聲，比這裡有人情味。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這裡連傘套都被收得很整齊。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……從這邊看過去，那邊只剩影子。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 看資料，不要看雨。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……嗯。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 手冷？
+    ja: ""
+  - speaker: 相馬律
+    zh: 沒有。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就別逞強。進去之後少搶話。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這一個呢？那晚也在名單上。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 這個上週就到期了。臨時識別證交回，憑證停用。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 那晚他進不來。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 所以那晚能動這組憑證的，還是只剩北見那一組。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 我只照規矩給名單。誰是誰，你們自己判。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……是條死路。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 記著，別再繞回來。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 我說過了，那個上週到期。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你今天也待了很久。那個保溫瓶也是你的？
+    ja: ""
+  - speaker: 承包商主管
+    zh: 這窗口開到五點。我每天泡一壺麥茶，撐到時間就走。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 二十年了，都是這張桌子。
+    ja: ""
+  - speaker: 承包商主管
+    zh: 資料給你了。剩下的不在我份內。
+    ja: ""
+  - speaker: 早坂茜
+    zh: ……謝謝。我們看資料就好。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 死者手機的鑑識，這一批我按證物鏈固定過了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 跟之前那則手機通知，是同一批裡的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 「22:50 雨鐘。校驗值確認。K。」
+    ja: ""
+  - speaker: 早坂茜
+    zh: 22:50 是備忘裡約的時間和地點，不是維護開啟。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 維護開是 22:52。兩件事別混。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以增田知道那場碰面有風險，在等一個跟校驗值有關的人。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 對。但光這則備忘，定不了北見。得跟工單、憑證、那個 K 一起看。
+    ja: ""
+  - speaker: 相馬律
+    zh: 是檢舉草稿。沒送出，只躺在監察信箱的草稿匣。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 沒送出，就還沒走完程序。光一份草稿，證不了資料怎麼流出去的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 後面還附了一張異常存取整理表，沒做完。
+    ja: ""
+  - speaker: 相馬律
+    zh: 北見的帳號，好幾次在排程外接觸試點資料。
+    ja: ""
+  - speaker: 相馬律
+    zh: 有一部分，匯到一個外部傳輸載體上。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 到買家是誰，這張表還沒證到。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 但足夠說，北見有盜賣資料的嫌疑了。
+    ja: ""
+  - speaker: 北見修一
+    zh: 他不該把那份草稿留下。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那組外包憑證，那晚是你動的。
+    ja: ""
+  - speaker: 北見修一
+    zh: 規則從來不是寫給我們這種人看的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那資料，最後賣給了誰？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 他不答「買家是誰」。記著這條，別讓他繞過去。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那晚到底是什麼，把你逼到動手？
+    ja: ""
+  - speaker: 北見修一
+    expression: defensive
+    zh: 增田已經把那份草稿，存進監察信箱的草稿匣了。
+    ja: ""
+  - speaker: 北見修一
+    expression: defensive
+    zh: 我那組外包帳號，隔天就要面對合約審查、憑證收回。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以只要檢舉一送出，那些異常存取就會被翻出來。
+    ja: ""
+  - speaker: 北見修一
+    zh: 我只是想在被換掉之前，留一點退路。
+    ja: ""
+  - speaker: 早坂茜
+    expression: stern
+    zh: 壓力講夠了。盜賊就是盜賊，審查再急也不改這件事。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你看起來沒睡。
+    ja: ""
+  - speaker: 北見修一
+    zh: ……我另一個早班四點開始。跟這件無關。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這條線跑了多久？
+    ja: ""
+  - speaker: 北見修一
+    expression: cornered
+    zh: 八年。都是這種排法。
+    ja: ""
+  - speaker: 北見修一
+    expression: cornered
+    zh: 合約一到期就重簽，年資歸零。八年跟八天一樣。
+    ja: ""
+  - speaker: 相馬律
+    zh: 沒想過換？
+    ja: ""
+  - speaker: 北見修一
+    zh: 換了也是另一份外包。到哪都一樣。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你的班表不是這裡要處理的事。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 名字對上了，就先對著名字走。
+    ja: ""
+  - speaker: 北見修一
+    zh: ……沒什麼好說的了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那晚臨時排了一張維護工單。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 工單對得上憑證，但人還沒對上。
+    ja: ""
+  - speaker: 相馬律
+    zh: 工單加憑證，只落在一個人身上。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 北見修一。名字第一次對到了人。
+    ja: ""
+  - speaker: 相馬律
+    zh: 資材包這只傘套，尺寸和摺痕都對得上後場那只。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 但那只是較晚的雨水。它只留在動線脈絡裡。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 更早進來的是誰，還得看工單和憑證。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 他在等一個跟校驗值有關的人。但這還不足以定罪。
+    ja: ""
+  - speaker: 相馬律
+    zh: 是檢舉草稿，沒送出。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 光一份草稿，證不了資料怎麼流出去。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 這支另編，送鑑識。
+    ja: ""
+  - speaker: 相馬律
+    zh: 排程外接觸試點資料，還匯到外部載體。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 買家是誰還沒證到，但盜賣的嫌疑成立了。
+    ja: ""
