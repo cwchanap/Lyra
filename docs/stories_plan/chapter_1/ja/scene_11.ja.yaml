@@ -1,0 +1,92 @@
+# ja script for docs/stories_plan/chapter_1/scene_11.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_11.md
+lines:
+  - speaker: 旁白
+    zh: 案子結了。
+    ja: ""
+  - speaker: 旁白
+    zh: 北見修一指認成立那天，雨鐘的門終於重新打開。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 店長……我、我來收一下自己的東西。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 不急。慢慢來。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 店裡……得先歇個幾週。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 出了這種事，客人也得緩緩。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我、我明白的。
+    ja: ""
+  - speaker: 三宅蒼太
+    expression: relieved
+    zh: 那段時間……我找點短工就好。
+    ja: ""
+  - speaker: 三宅蒼太
+    expression: relieved
+    zh: 反正我本來就常替店裡跑外送。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 嗯。回來的時候，位子還在。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 相馬先生，您……要不要喝一杯再走？
+    ja: ""
+  - speaker: 相馬律
+    zh: 好。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 金木犀拿鐵……我請您。
+    ja: ""
+  - speaker: 相馬律
+    zh: 謝謝。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……很甜。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 啊、太甜了嗎？對不起，我糖放……
+    ja: ""
+  - speaker: 相馬律
+    zh: 不。
+    ja: ""
+  - speaker: 相馬律
+    zh: 很好喝。
+    ja: ""
+  - speaker: 早坂茜
+    expression: softened
+    zh: 偵探喝得這麼乾脆，看來真的不錯。
+    ja: ""
+  - speaker: 早坂茜
+    expression: softened
+    zh: 不過證據顯示，他還需要練習。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 早、早坂小姐……
+    ja: ""
+  - speaker: 旁白
+    zh: 他們陸續離開了。
+    ja: ""
+  - speaker: 旁白
+    zh: 那股甜香，沒有人再多說一句。
+    ja: ""
+  - speaker: 旁白
+    zh: 她沒有立刻把它丟掉。
+    ja: ""
+  - speaker: 旁白
+    zh: 案子結了。三宅的那杯太甜的拿鐵，也喝完了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 結案的，只是這一樁。
+    ja: ""
+  - speaker: 旁白
+    zh: 增田留下的那支隨身碟，還沒有人打開過。
+    ja: ""

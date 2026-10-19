@@ -1,0 +1,141 @@
+# ja script for docs/stories_plan/chapter_1/interrogation_scene_4.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/interrogation_scene_4.md
+lines:
+  - speaker: 早坂茜
+    zh: 他從進來就一直捏著那罐東西。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他剛才在販賣機前站了一會兒。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 等下用物證說話。
+    ja: ""
+  - speaker: 相馬律
+    zh: 嗯。先看他那罐。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你買了黑咖啡。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: ……啊。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我媽不能喝咖啡。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那你為什麼買這個？
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我本來要買熱牛奶的。給我媽的。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我只是……習慣先想她喝什麼。一緊張就按錯了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 相馬，問話可以開始了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 他撒的是小謊，為了蛋糕盒和那通電話。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 摘要還站得住。下一步，找能對上時間的物證。
+    ja: ""
+  - speaker: 相馬律
+    zh: 我知道。要動搖摘要，靠的是物證，不是他孝不孝順。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 把他的說法和現場紀錄一條條對上。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 那個時間……你要問，我再想一次。
+    ja: ""
+  - speaker: 相馬律
+    zh: 把那段時間，從頭再理一次。
+    ja: ""
+  - speaker: 相馬律
+    zh: 等一下，這句先讓我想想。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這句……應該沒問題吧？
+    ja: ""
+  - speaker: 相馬律
+    zh: 不對，這對不上那個時間點。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 那個時候……我記不太清楚。關店的事很碎，我沒特別記。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那個時間，白板上的收銀關帳、清潔回收都還沒做完。你不會完全沒印象。
+    ja: ""
+  - speaker: 三宅蒼太
+    expression: strained
+    zh: ……那時候我躲在員工休息區，偷偷打給我媽。值班不能打私人電話，我怕被說，才沒講。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這跟那個時間有什麼關係？我記不清楚就是記不清楚。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 後場那趟……我說的都是真的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 後場那段，我再聽一次。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這句，先停一下。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這……沒有不對吧？
+    ja: ""
+  - speaker: 相馬律
+    zh: 不是這件，再找一次，別繞著清潔用品打轉。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 拿清潔用品。擦桌、倒垃圾那些，東西都放在後場。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 那趟大概二十三點零六分，我記得經過走廊那個鐘。
+    ja: ""
+  - speaker: 相馬律
+    zh: 只拿清潔用品？再想一次。
+    ja: ""
+  - speaker: 三宅蒼太
+    expression: strained
+    zh: ……我還從後場拿了一個蛋糕盒。本來就要丟的，我想帶回去給我媽，怕被當成偷東西，才沒講。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這跟清潔用品有什麼關係？我就是拿了那些而已。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 這點我沒說謊，你再問幾次都一樣。
+    ja: ""
+  - speaker: 相馬律
+    zh: 內側倉庫，你確定一次都沒進？
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 確定。這點我真的沒進去。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 沒有。那裡平常我也不太進去。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 我知道的就這些，真的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那個外包的人，你看過？知道是誰嗎？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 別急著把「外包的人」當成兇手。沒身分、沒時間、動線也對不上，這還不是證據。
+    ja: ""
+  - speaker: 三宅蒼太
+    zh: 好像是……外包那邊的人吧。我只聽他說過一句，不知道對方長什麼樣。
+    ja: ""
+  - speaker: 相馬律
+    zh: 一個要丟的蛋糕盒。他為這個撒了第一個小謊。
+    ja: ""
+  - speaker: 相馬律
+    zh: 通話時間先記成待確認，之後再正式調。
+    ja: ""

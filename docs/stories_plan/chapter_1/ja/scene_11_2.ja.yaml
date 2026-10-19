@@ -1,0 +1,70 @@
+# ja script for docs/stories_plan/chapter_1/scene_11_2.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/scene_11_2.md
+lines:
+  - speaker: 旁白
+    zh: 那天深夜，相馬回到事務所。
+    ja: ""
+  - speaker: 相馬律
+    zh: 增田先生……到底想藏什麼。
+    ja: ""
+  - speaker: 旁白
+    zh: 裡頭只有一個檔案。
+    ja: ""
+  - speaker: 相馬律
+    zh: 加密的。
+    ja: ""
+  - speaker: 旁白
+    zh: 權限不足。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 還沒回家？
+    ja: ""
+  - speaker: 相馬律
+    zh: 增田的隨身碟，我打開了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 北見的資料？
+    ja: ""
+  - speaker: 相馬律
+    zh: ……不像。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那是什麼？
+    ja: ""
+  - speaker: 相馬律
+    zh: 我也還不知道。
+    ja: ""
+  - speaker: 旁白
+    zh: 警方移交清單最後一頁，附著匿名「雨宮」訊息的來源比對。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 北見的手機、電腦和承包帳號，都不是發訊來源。
+    ja: ""
+  - speaker: 相馬律
+    zh: ……不是他。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 來源不明，先按移交紀錄留檔。
+    ja: ""
+  - speaker: 旁白
+    zh: 地方科技新聞報導雨鐘案與 KAGAMI 外包資料外洩，後續調查已經開始。
+    ja: ""
+  - speaker: 旁白
+    zh: 節目接入如月真白的短預告。
+    ja: ""
+  - speaker: 旁白
+    zh: 如月真白在預告裡說：「下一期，我想回看——2016 年青葉記憶研究所火災。」
+    ja: ""
+  - speaker: 早坂茜
+    zh: 要關掉嗎？
+    ja: ""
+  - speaker: 相馬律
+    zh: 先靜一會。
+    ja: ""
+  - speaker: 旁白
+    zh: 事務所的燈熄了，雨鐘門邊的傘架還留著一點微光。
+    ja: ""

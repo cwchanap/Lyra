@@ -1,7 +1,8 @@
 # Chapter 1 Japanese Voice Cast Plan
 
-**Status:** proposed, awaiting owner review. Nothing in this plan has been
-built or generated yet.
+**Status:** step 1 of the work order (the Japanese script) is built in the
+same PR as this plan; steps 2 to 5 are not started, and no audio has been
+generated.
 
 **Goal:** Give a few Chapter 1 characters Japanese voices generated with
 ElevenLabs text-to-speech, write a repo skill that captures the SOP so later
@@ -193,9 +194,10 @@ from the character description.
 
 ## 7. Work order
 
-1. **PR 1, Japanese script (cloud).** Locale file format, `voice:sync` and
-   `voice:validate`, the glossary and style guide, and all 793 Chapter 1
-   lines translated scene by scene.
+1. **PR 1, Japanese script (cloud). Done in this PR.** Locale file format,
+   `voice:sync` and `voice:validate`, the glossary and style guide, and all
+   793 Chapter 1 lines (789 unique entries) translated scene by scene. Clip
+   IDs and the `voice` block are left for PR 3, which owns them.
 2. **PR 2, voice playback (cloud).** Compiler manifest, `voice` asset type,
    the Rust read-only command, the frontend voice channel and settings.
    Ships silent until clips exist. Can run alongside PR 1 since this plan

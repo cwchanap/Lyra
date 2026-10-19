@@ -1,0 +1,277 @@
+# ja script for docs/stories_plan/chapter_1/investigation_scene_7.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/investigation_scene_7.md
+lines:
+  - speaker: 相馬律
+    zh: 雨比昨晚還大。站一下，讓呼吸順過來。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 濕成這樣，鑑識那邊也快收了。趁還沒收，把後巷這條走完。
+    ja: ""
+  - speaker: 相馬律
+    zh: 前場那條是三宅的。後巷這條，摘要只當旁註。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 旁註不代表不存在。進去走完。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 你們要看摘要漏掉的動線？就是這裡。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 進來看。外面雨大。
+    ja: ""
+  - speaker: 相馬律
+    zh: 摘要裡的死亡和進場時間，站不住了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 水痕、傘套、出杯紀錄，全比摘要更早。
+    ja: ""
+  - speaker: 相馬律
+    zh: 可能有第三個人，比三宅更早就進來了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 截圖我不收。要往下走，就讓鑑識把這些一條條固定。
+    ja: ""
+  - speaker: 相馬律
+    zh: 有一則署名雨宮的匿名訊息，只有一句話和一張圖。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 別急著回。先看現場對不對得上。
+    ja: ""
+  - speaker: 相馬律
+    zh: 只有這句，還有一張縮圖。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 匿名訊息十條有九條是鬧事。剩下一條也未必幫得上忙。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 不是核准片段，像某個外包縮圖板流出的一角。
+    ja: ""
+  - speaker: 相馬律
+    zh: 不像案發前的警告。也不是剛發現屍體時送來的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 縮圖裡就是這塊墊子，水痕位置也對得上。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 它在警方把儲藏入口照片匯進摘要後才送來。
+    ja: ""
+  - speaker: 相馬律
+    zh: 對方看見的是資料缺口，不是整件事的答案。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 水痕不像剛踩的。邊緣都收乾了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 雨大的夜，店裡總有人把傘套掛錯地方。明早開門，還得一個個分。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 明早還是得開門。
+    ja: ""
+  - speaker: 相馬律
+    zh: 雨下成這樣，什麼都會被沖走。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先看地上的。還沒被沖乾淨的，才是線索。
+    ja: ""
+  - speaker: 相馬律
+    zh: 片瀨美咲的杯子還在。拖鞋也磨薄了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 站一整天的人，鞋比什麼都先壞。
+    ja: ""
+  - speaker: 相馬律
+    zh: 裡面還沒看。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 感應燈在。進去吧。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 關店前的單子最容易亂。人都盯著門鎖、垃圾和末班車。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 誰還記得杯子喝沒喝完。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 所以店裡才有這麼多寫到一半的備註。
+    ja: ""
+  - speaker: 相馬律
+    zh: 摘要裡那些時間，都是從這裡來的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 入口這台。店長說它常慢。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 開店的人記得這種東西。客人不會走到這。
+    ja: ""
+  - speaker: 相馬律
+    zh: 手機掉在這。最後一則通知，大概 22:58。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 跟掛鐘的 22:59 幾乎貼在一起。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 這種罐，店裡用到字都磨掉。明天還要補豆，誰也不會特地換。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 小店就是這樣。能用的東西，總要撐到用不動。
+    ja: ""
+  - speaker: 相馬律
+    zh: 書背磨成這樣，放很久了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 增田等人的時候會看書？
+    ja: ""
+  - speaker: 相馬律
+    zh: 可能。跟案子對不上，先放著。
+    ja: ""
+  - speaker: 相馬律
+    zh: 從這裡……看不到裡面。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 高貨架擋死了視線。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以他站在這，不代表他知道屍體在裡面。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 只能說他看不見。不能說他全程不在場。
+    ja: ""
+  - speaker: 相馬律
+    zh: 擦痕比三宅平常的動線更往裡。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 只說有人急著在這轉彎。是誰，得再對。
+    ja: ""
+  - speaker: 相馬律
+    zh: 前場對帳卡住，片瀨美咲趕末班車，漏了紀錄冊確認。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 店長為了白板上沒勾的項目走到後場。
+    ja: ""
+  - speaker: 相馬律
+    zh: 燈一亮，高貨架後先露出增田的鞋尖。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 流程漏掉，發現就晚到 23:20。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 法醫初步。後頭部鈍器傷。死亡時間給的是一段範圍。
+    ja: ""
+  - speaker: 相馬律
+    zh: 範圍。不是某一分鐘。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 對。但那段範圍，跟 22:58 那個衝突點，不衝突。我只能給你這些。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 店長說，她聽到一聲悶響。但那台洗杯機排氣的時候，也常那樣。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以悶響被蓋過去了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 兩個來源。一個是洗杯機排氣，一個是收銀抽屜的硬幣盤。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 別問我更多。聲音這種事，要用就讓鑑識去固定。
+    ja: ""
+  - speaker: 相馬律
+    zh: 黑瀨刑警，你每到一個地方，都先看地？
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 一雙鞋撐不過半年。看地看出來的。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 二十年了。回家也改不掉。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 職業病。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 地不會替人圓話。看久了，就信這個。
+    ja: ""
+  - speaker: 相馬律
+    zh: 刑警，你晚餐就吃那個？
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 便利商店的飯糰。站著吃，五分鐘解決。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 夜班的人不挑嘴。能吞下去就行。
+    ja: ""
+  - speaker: 早坂茜
+    zh: ……至少坐下來吃。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 坐下就會想睡。站著比較清醒。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 久了，胃已經不知道什麼叫餓了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 一句話加一張縮圖。沒指名要我看哪裡。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 時間點是關鍵。它在照片匯進摘要之後才來。
+    ja: ""
+  - speaker: 相馬律
+    zh: 對方看見的是資料缺口，不是答案本身。
+    ja: ""
+  - speaker: 相馬律
+    zh: 墊子、水痕，都對得上。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 而且乾了一半。不是剛剛才踩的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這個比水痕新。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先濕後乾。兩個時間點。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這不能告訴我們他幾點死。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 但能告訴我們，那個人不是 23:08 之後才出現。
+    ja: ""
+  - speaker: 相馬律
+    zh: 22:59。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 一台舊鐘。別只靠它。
+    ja: ""
+  - speaker: 相馬律
+    zh: 22:58。跟掛鐘貼在一起。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 兩個獨立的點，指向同一刻。
+    ja: ""
+  - speaker: 相馬律
+    zh: 擦過，罐口還凹了。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 順手抄起來就能打人。沒那麼玄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 是範圍，不是某一分鐘。
+    ja: ""
+  - speaker: 黑瀨徹
+    zh: 但跟 22:58 不衝突。我只給你這些。
+    ja: ""
+  - speaker: 相馬律
+    zh: 從那個點，看不到屍體。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 看不見，不等於不在場。先記著這條界線。
+    ja: ""
+  - speaker: 相馬律
+    zh: 23:20 才發現，原來是白板上那條沒做完的流程。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 流程沒走完，發現就會晚。這條線，從閉店白板一路接上了。
+    ja: ""

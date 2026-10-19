@@ -1,0 +1,267 @@
+# Japanese glossary and style guide for the locale scripts under
+# docs/stories_plan/<chapter>/ja/. Translators follow it; `voice:validate`
+# checks that every speaker has a `characters` entry. `reading` is the kana a
+# voice needs (it feeds the ElevenLabs pronunciation dictionary later); it is
+# never written into a line.
+schemaVersion: 1
+locale: ja
+styleRules:
+  - Translate meaning and voice, not word order. Each `ja` is one spoken line that sounds natural to a Japanese player, about as long as the Chinese line, so it fits the same dialogue box and pacing.
+  - One entry, one line. Never merge, split or drop entries, and never add stage directions, parentheses, furigana or speaker names inside `ja`.
+  - Names and fixed terms come from this glossary, in shinjitai (黒瀬, 高瀬, 片瀬, 増田). Keep the glossary's choice even where another word would also be right; consistency across scenes matters more.
+  - Punctuation is Japanese full-width. Quotes are 「」 (nested 『』), the ellipsis is …… and a cut-off line ends in ――. Keep ？ and ！ only where the Chinese has them.
+  - Clock times stay in the form the Chinese uses. Digits stay digits (22:58, 23:07:50, 1842); spelled-out Chinese times become Japanese kanji readings (十七點四十二分 → 十七時四十二分, 二十三點零七分五十秒 → 二十三時七分五十秒). The voice step normalizes digits for speech.
+  - Latin text that the Chinese keeps (KAGAMI, REPRINT, K., USB, L 型) stays as written; L 型 becomes L字.
+  - Address forms follow each character's `register`. By default, use 〜さん for adults by surname, 先生 for a lawyer (早坂律師 → 早坂先生), 刑事 for Kurose (黑瀨刑警 → 黒瀬刑事), 探偵さん for 偵探先生, お母さん when Hayasaka addresses Miyake's mother (阿姨).
+  - Keep the restraint of the Chinese. No added jokes, slang, dialect, exclamations or role-language (no ござる, no heavy わ/のよ). Narration (旁白) is terse written Japanese in plain form.
+  - Do not explain or foreshadow beyond the Chinese line; chapter seals in docs/stories_plan/characters.md still apply.
+characters:
+  - zh: 相馬律
+    ja: 相馬律
+    reading: そうま りつ
+    firstPerson: 僕
+    register: 26-year-old detective. Short conclusions, orderly, no swagger. Casual plain speech with Hayasaka (calls her 早坂さん) and when thinking aloud; polite です/ます with Kurose, clients, witnesses, the clerk and in the review hearing (calls Kamiya 神谷検事 only when the line names her). Gentle plain speech with Miyake Sota.
+  - zh: 早坂茜
+    ja: 早坂茜
+    reading: はやさか あかね
+    firstPerson: 私
+    register: Defense lawyer in her early thirties. Short, hard, practical; procedural words over slogans. Plain speech with Soma (calls him 相馬), often clipped imperatives (座って。水。). Polite です/ます with clients, the clerk, Kamiya and witnesses. Neutral endings, no feminine softeners.
+  - zh: 神谷澪
+    ja: 神谷澪
+    reading: かみや みお
+    firstPerson: 私
+    register: Prosecutor presiding over the review hearing. Cool, precise, sentences cleanly closed. Formal です/ます with no contractions and no sentence-final particles; authority comes from calm, never volume or sarcasm. Short procedural rulings may drop to a clipped noun or plain form (始めましょう。/ 本日はここまで。). Calls Soma 相馬さん.
+  - zh: 黑瀨徹
+    ja: 黒瀬徹
+    reading: くろせ とおる
+    firstPerson: 俺
+    register: Field detective near fifty. Blunt, short, grounded; plain rough speech (〜だ, 〜ん, 受け取らん) without dialect. Not technical. Calls Soma 探偵 when he must address him.
+  - zh: 三宅蒼太
+    ja: 三宅蒼太
+    reading: みやけ そうた
+    firstPerson: 僕
+    register: Part-time cafe worker in his early twenties. Nervous, trailing sentences, quiet omissions rather than protests. Polite です/ます to Soma (相馬さん), Hayasaka (早坂さん) and the manager (店長); calls his mother 母さん.
+  - zh: 三宅母親
+    ja: 三宅の母
+    reading: みやけのはは
+    firstPerson: 私
+    register: Miyake's mother. Plain, restrained, everyday detail instead of tears. Polite です/ます to Soma (探偵さん); refers to her son as あの子.
+  - zh: 店長高瀨
+    ja: 高瀬店長
+    reading: たかせ てんちょう
+    firstPerson: 私
+    register: Rain Bell cafe manager, late thirties to early forties. Tired, everyday, not technical. Light polite speech to Soma and Hayasaka; plain and warm with Miyake, whom she calls 三宅.
+  - zh: 片瀨美咲
+    ja: 片瀬美咲
+    reading: かたせ みさき
+    firstPerson: 私
+    register: Young cafe employee always racing the last train. Quick, casual-polite (すみません、終電なので). Calls Hayasaka 早坂先生.
+  - zh: 增田圭
+    ja: 増田圭
+    reading: ますだ けい
+    firstPerson: 僕
+    register: The victim, seen only in the prologue as a quiet regular. Very few words, mild and reserved.
+  - zh: 北見修一
+    ja: 北見修一
+    reading: きたみ しゅういち
+    firstPerson: 私
+    register: Outsourced data worker in his early forties. Timid, self-protective, mumbled; bitterness in one short line, never a speech. Polite but evasive です/ます; drops to plain speech only when cornered.
+  - zh: 書記官
+    ja: 書記官
+    reading: しょきかん
+    firstPerson: 私
+    register: Review-board clerk. Formal, procedural keigo, gatekeeping distance.
+  - zh: 承包商主管
+    ja: 委託業者の主任
+    reading: いたくぎょうしゃのしゅにん
+    firstPerson: 私
+    register: Contractor records supervisor. Bureaucratic, curt です/ます; does exactly his job and no more.
+  - zh: 店主
+    ja: 店主
+    reading: てんしゅ
+    firstPerson: 私
+    register: Owner of a small stationery and copy shop in the prologue case. Brusque neighborhood shop speech, plain form; softens into an apology at the end.
+  - zh: 學生
+    ja: 学生
+    reading: がくせい
+    firstPerson: 僕
+    register: Student customer in the prologue case. Casual, a little defensive, then relieved.
+  - zh: 路人甲
+    ja: 通行人A
+    reading: つうこうにん エー
+    register: Passer-by reacting to a news board. Casual plain speech.
+  - zh: 路人乙
+    ja: 通行人B
+    reading: つうこうにん ビー
+    register: Passer-by reacting to a news board. Casual plain speech.
+  - zh: 路人丙
+    ja: 通行人C
+    reading: つうこうにん シー
+    register: Passer-by reacting to a news board. Casual plain speech.
+  - zh: 旁白
+    ja: ナレーション
+    reading: ナレーション
+    register: Narration. Terse written Japanese in plain form (〜た / noun endings), present-tense captions where the Chinese is a caption.
+terms:
+  - zh: KAGAMI
+    ja: KAGAMI
+    reading: カガミ
+  - zh: 雨鐘
+    ja: 雨鐘
+    reading: あまがね
+    note: The cafe. 雨鐘咖啡館 → カフェ「雨鐘」 or 雨鐘 alone.
+  - zh: 吉祥寺
+    ja: 吉祥寺
+    reading: きちじょうじ
+  - zh: 金木犀拿鐵
+    ja: 金木犀ラテ
+    reading: きんもくせいラテ
+  - zh: 雨宮
+    ja: 雨宮
+    reading: あまみや
+    note: Signature on the anonymous message.
+  - zh: 如月真白
+    ja: 如月真白
+    reading: きさらぎ ましろ
+  - zh: 青葉記憶研究所
+    ja: 青葉記憶研究所
+    reading: あおばきおくけんきゅうじょ
+  - zh: 證據摘要審查會
+    ja: 証拠サマリー審査会
+    reading: しょうこサマリーしんさかい
+    note: Usually just 審査会 (審查會).
+  - zh: 摘要
+    ja: サマリー
+    note: The KAGAMI evidence summary. Always サマリー, never 要約, so the system's product reads as one thing.
+  - zh: 主時間線
+    ja: 主タイムライン
+    reading: しゅタイムライン
+    note: The summary's main timeline. 時間線 alone → タイムライン.
+  - zh: 核准片段
+    ja: 承認済み抜粋
+    reading: しょうにんずみ ばっすい
+    note: Record excerpt the review board approves for release. 限定片段 → 限定抜粋. After the first mention in a line, 抜粋 alone is fine.
+  - zh: 本機順序
+    ja: 本体の記録順
+    reading: ほんたいのきろくじゅん
+    note: Event order stored on the door-lock unit itself.
+  - zh: 合併時間
+    ja: 統合時刻
+    reading: とうごうじこく
+    note: When the summary merged the records; 合併完成的時間 → 統合が完了した時刻. 同步 → 同期, 同步完成 → 同期完了.
+  - zh: 憑證
+    ja: 認証
+    note: Door credential. 員工憑證 → 従業員認証, 外包憑證 → 外注認証, 外部憑證 → 外部認証.
+  - zh: 外包
+    ja: 外注
+    reading: がいちゅう
+    note: 外包的人 → 外注の人, 外包帳號 → 外注アカウント.
+  - zh: 承包商
+    ja: 委託業者
+    reading: いたくぎょうしゃ
+    note: 承包商動線 → 業者側の動線, 承包帳號 → 業者アカウント.
+  - zh: 工單
+    ja: 作業票
+    reading: さぎょうひょう
+    note: 臨時維護工單 → 臨時のメンテナンス作業票.
+  - zh: 維護模式
+    ja: メンテナンスモード
+    note: 維護頁 / 維護頁面 → メンテナンス画面, 維護紀錄冊 → メンテナンス記録簿, 維護紀錄 → メンテナンス記録, 面板 → パネル.
+  - zh: 打卡紀錄
+    ja: 打刻記録
+    reading: だこくきろく
+  - zh: 監視器
+    ja: 防犯カメラ
+    note: 監視器截圖 → 防犯カメラの静止画.
+  - zh: 截圖
+    ja: スクリーンショット
+    note: Kurose may shorten it to スクショ.
+  - zh: 鑑識
+    ja: 鑑識
+    reading: かんしき
+  - zh: 固定
+    ja: 保全
+    reading: ほぜん
+    note: Fixing evidence by procedure. 讓鑑識固定 → 鑑識に保全させろ; 正式固定 → 正式に保全.
+  - zh: 證物鏈
+    ja: 証拠の保管記録
+    reading: しょうこのほかんきろく
+    note: Chain of custody.
+  - zh: 待確認項
+    ja: 要確認の項目
+    reading: ようかくにんのこうもく
+  - zh: 審查會
+    ja: 審査会
+    reading: しんさかい
+  - zh: 辯方
+    ja: 弁護側
+    reading: べんごがわ
+    note: 檢方 → 検察側, 辯方聘任書 → 弁護人の選任書, 法院核准函 → 裁判所の承認書, 第三方資料分析人 → 第三者データ分析人.
+  - zh: 主嫌
+    ja: 主たる被疑者
+    reading: しゅたるひぎしゃ
+    note: 嫌疑人 → 被疑者, 主要嫌疑人 → 主たる被疑者.
+  - zh: 重新調查
+    ja: 再捜査
+    reading: さいそうさ
+  - zh: 指認成立
+    ja: 特定が成立
+    reading: とくていがせいりつ
+  - zh: 第二杯咖啡
+    ja: 二杯目のコーヒー
+  - zh: 杯套
+    ja: カップスリーブ
+  - zh: 水痕
+    ja: 水の跡
+    reading: みずのあと
+    note: 半乾水痕 / 半乾水跡 → 半乾きの水の跡.
+  - zh: 傘套
+    ja: 傘袋
+    reading: かさぶくろ
+  - zh: 止滑墊
+    ja: 滑り止めマット
+    reading: すべりどめマット
+    note: 墊子 → マット.
+  - zh: 後場
+    ja: バックヤード
+    note: 前場 → 店内, 內側倉庫 → 奥の倉庫, 後巷 → 裏路地, 走廊 → 廊下, 後走廊 → 裏の廊下, 後門 → 裏口.
+  - zh: 閉店流程
+    ja: 閉店作業
+    reading: へいてんさぎょう
+    note: 白板 → ホワイトボード, 收銀關帳 → レジ締め, 清潔回收 → 清掃と回収.
+  - zh: 洗杯機
+    ja: 食洗機
+    reading: しょくせんき
+  - zh: 末班車
+    ja: 終電
+    reading: しゅうでん
+  - zh: 校驗值
+    ja: 検証値
+    reading: けんしょうち
+  - zh: 檢舉草稿
+    ja: 告発の下書き
+    reading: こくはつのしたがき
+    note: 監察信箱的草稿匣 → 監察窓口宛ての下書きフォルダ.
+  - zh: 異常存取整理表
+    ja: 不正アクセスの整理表
+  - zh: 試點資料
+    ja: 試験運用データ
+    reading: しけんうんようデータ
+  - zh: 盜賣
+    ja: 横流し
+    reading: よこながし
+    note: 買家 → 買い手, 外部傳輸載體 → 外部の記録媒体.
+  - zh: 權限名單
+    ja: 権限リスト
+    reading: けんげんリスト
+  - zh: 隨身碟
+    ja: USBメモリ
+  - zh: 法醫初步
+    ja: 検視の初見
+    reading: けんしのしょけん
+  - zh: 便利店
+    ja: コンビニ
+    note: 便利商店 → コンビニ, 飯糰 → おにぎり, 罐咖啡 → 缶コーヒー.
+  - zh: 影印費
+    ja: コピー代
+    note: Prologue case. 收據 → レシート, 重印 → 再印刷, 卡紙 → 紙詰まり, 帳本 → 帳簿.

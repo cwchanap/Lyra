@@ -1,0 +1,49 @@
+# ja script for docs/stories_plan/chapter_1/analysis_scene_p1_5.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/analysis_scene_p1_5.md
+lines:
+  - speaker: 相馬律
+    zh: 先不用猜誰說謊。
+    ja: ""
+  - speaker: 相馬律
+    zh: 選出能一起解釋這張重印收據的東西，再比對一次。
+    ja: ""
+  - speaker: 相馬律
+    zh: 收據是真的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 但它記下的是收銀機卡紙後，在十七點四十二分重印的時間。
+    ja: ""
+  - speaker: 相馬律
+    zh: 帳本記著十七點三十七分的影印費。
+    ja: ""
+  - speaker: 相馬律
+    zh: 監視器也看見店主找零後，學生在十七點三十八分離開。
+    ja: ""
+  - speaker: 相馬律
+    zh: 學生付過錢，店主也沒有造假。
+    ja: ""
+  - speaker: 相馬律
+    zh: 只是兩個人把同一張真的收據，讀成了不同的時間。
+    ja: ""
+  - speaker: 學生
+    zh: ……所以我沒有漏付。
+    ja: ""
+  - speaker: 店主
+    zh: 是我太快把四十二分當成付款了。對不起。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 這份紙本我帶走。小事也要留一個能回頭看的版本。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你連這種小事都留？
+    ja: ""
+  - speaker: 早坂茜
+    zh: 小事才最容易被當成沒必要留。
+    ja: ""
+  - speaker: 旁白
+    zh: 整理板上的練習卡隨著這件小委託收起，沒有被放進任何卷宗。
+    ja: ""

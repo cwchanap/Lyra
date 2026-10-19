@@ -1,0 +1,300 @@
+# ja script for docs/stories_plan/chapter_1/investigation_scene_3.md.
+# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
+# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+schemaVersion: 1
+locale: ja
+source: docs/stories_plan/chapter_1/investigation_scene_3.md
+lines:
+  - speaker: 相馬律
+    zh: 閉店後的店，比白天安靜得多。
+    ja: ""
+  - speaker: 相馬律
+    zh: 先把現場記下來。從前場開始，一個一個看。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 別漏東西。今天看見的，之後不一定能再進來。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這麼安靜。我還沒在這種時候進過現場。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 閉店後的現場都是這樣。安靜才正常。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 等一下。店長在裡面等嗎？
+    ja: ""
+  - speaker: 相馬律
+    zh: 黑瀨刑警說店長會開門。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就讓他開。我們不要自己進。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長在裡面。她看到我們了。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 辯護方的第三方分析師，法院核可的。黑瀨刑警應該跟你說過。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: ……警察說不要讓太多人碰現場。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 所以我們只看，不碰。需要碰的，請黑瀨刑警固定。
+    ja: ""
+  - speaker: 相馬律
+    zh: 今天還營業嗎？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 出了這種事，哪還有人敢喝咖啡。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 但三宅那孩子……不是會把人往裡面拖的人。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 表面上，三宅確實可疑。值班、進後場、一個人收尾。
+    ja: ""
+  - speaker: 相馬律
+    zh: 嗯。表面上是這樣。
+    ja: ""
+  - speaker: 相馬律
+    zh: 好。黑瀨刑警安排了警署詢問。先聽三宅怎麼說，不急著下結論。
+    ja: ""
+  - speaker: 店長高瀨
+    expression: tired
+    zh: 平常這個時間，三宅會把椅子翻上桌，音樂轉小。每天都這樣。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 他做事不用人盯。閉店那套，他比我還熟。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: ……音樂還沒關。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 沒人記得關。
+    ja: ""
+  - speaker: 相馬律
+    zh: 嗯。今天哪裡不對。
+    ja: ""
+  - speaker: 相馬律
+    zh: 增田點了兩杯。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 兩杯？他一個人？
+    ja: ""
+  - speaker: 相馬律
+    zh: 第二杯杯套寫了一個「K.」。只有首字母。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 店裡標杯習慣寫首字母，方便分。不是全名。
+    ja: ""
+  - speaker: 相馬律
+    zh: 三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。
+    ja: ""
+  - speaker: 相馬律
+    zh: 回前場擦桌，再去後巷倒垃圾。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 來回後場好幾趟。
+    ja: ""
+  - speaker: 相馬律
+    zh: 閉店本來就要進後場。靠近後場，不等於做了什麼。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 紙本值班表在這裡。門鎖那邊，只能看摘要。
+    ja: ""
+  - speaker: 相馬律
+    zh: 三宅蒼太，當晚值班。一個人收尾。
+    ja: ""
+  - speaker: 相馬律
+    zh: 二十三點零七分五十秒。
+    ja: ""
+  - speaker: 相馬律
+    zh: 又一張收據。他連這個都收著。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 像是他會做的事。先別急著往壞處想。
+    ja: ""
+  - speaker: 相馬律
+    zh: 她簽退的時間，比她估的要早一點。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 差幾分鐘。她是憑習慣估的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 嗯。先記著。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長當晚也進過後場。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 她是閉店負責人，本來就會進後場巡一圈。
+    ja: ""
+  - speaker: 相馬律
+    zh: 那她怎麼沒早點發現？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 我那趟只在走廊前段繞了一下，沒往裡走。帳還沒對完。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 記著。店長有進出，但只到走廊前段。先別往她身上想。
+    ja: ""
+  - speaker: 相馬律
+    zh: 店長，後場從哪裡進？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 從吧台裡側繞過去。我帶你們。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 這間店開了十年了。本來是住宅改的，走廊才這麼窄。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 那個鐘又慢了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 三宅平常也走這條路？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 對，員工都從這裡進後場。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 那就進去看看。
+    ja: ""
+  - speaker: 店長高瀨
+    expression: tired
+    zh: 那個鐘常慢。前任老闆留下的，我一直沒丟。
+    ja: ""
+  - speaker: 相馬律
+    zh: 留著也好。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 前任老闆是個很準時的人。諷刺吧。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 換了我就懶得校了。反正客人也不看。
+    ja: ""
+  - speaker: 相馬律
+    zh: 先別拿它來判斷時間。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 增田先生？他是門鎖資料那邊的人，之前來確認過幾次紀錄。
+    ja: ""
+  - speaker: 相馬律
+    zh: 當晚他也在？
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 說要確認維護紀錄，借後場小角落坐一下。我以為是例行的，就讓他用了。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 他常來，我沒多想。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 門鎖那邊今天也有預約嗎？每次都挑快關店的時候來。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 說是確認紀錄，很快就走。
+    ja: ""
+  - speaker: 相馬律
+    zh: 片瀨小姐，你剛才一直看手機，是在算末班車嗎？
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 嗯。我都是看末班車提醒估時間，沒盯著鐘。
+    ja: ""
+  - speaker: 相馬律
+    zh: 所以你記得的是準備走的那一段，不是幾分幾秒。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 對。三宅往後場那趟，就在我準備收銀、趕車的前後。我沒看清他進去多久。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 抱歉，我得趕末班車。
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 錯過了就得等四十分鐘。上禮拜已經被扣過一次遲到。
+    ja: ""
+  - speaker: 相馬律
+    zh: 你住很遠？
+    ja: ""
+  - speaker: 片瀨美咲
+    zh: 通勤來回一個半小時。店裡排班好，不然不會撐著。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先去。這裡我們看著就好。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這裡轉了個彎。前段看不到後段。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 很窄。兩個人並排走都嫌擠。
+    ja: ""
+  - speaker: 相馬律
+    zh: 嗯。轉角再過去，聲音也聽不太到。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 先看完再說。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 下雨天最麻煩。地一濕，抹布怎麼換都不夠。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 紙杯一到就先堆這裡。明天開店前，又得補一箱。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 蛋糕盒也堆這。賣剩的邊角，三宅常會問能不能帶回家。
+    ja: ""
+  - speaker: 相馬律
+    zh: 二十二點五十，閉店流程開始。二十二點五十二，維護模式開啟。
+    ja: ""
+  - speaker: 相馬律
+    zh: 收銀關帳，小額差額確認中，清潔回收，蛋糕盒紙杯箱整理。
+    ja: ""
+  - speaker: 相馬律
+    zh: 維護紀錄冊沒蓋章。維護模式，也還沒關。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 流程沒走完就停下了。
+    ja: ""
+  - speaker: 相馬律
+    zh: 這道門半開著，正好擋住裡面的視線。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 站在走廊，看不進去。
+    ja: ""
+  - speaker: 相馬律
+    zh: 再往裡就更暗了。
+    ja: ""
+  - speaker: 店長高瀨
+    zh: 豆子、紙杯、糖包，全堆在這裡。補貨的日子，連轉身都難。
+    ja: ""
+  - speaker: 相馬律
+    zh: 要走進去，燈才會亮。站在門口，這裡是暗的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 前場、走廊、內側倉庫。是個 L 型。
+    ja: ""
+  - speaker: 相馬律
+    zh: 轉角、半掩的門、高貨架，一層一層擋著。
+    ja: ""
+  - speaker: 早坂茜
+    zh: 你在想什麼？
+    ja: ""
+  - speaker: 相馬律
+    zh: 先記下這個空間。其他的，等看完再說。
+    ja: ""
+  - speaker: 相馬律
+    zh: 兩杯。其中一杯，是給別人的。
+    ja: ""
+  - speaker: 相馬律
+    zh: 進後場是工作的一部分。先記著，別急著下結論。
+    ja: ""
+  - speaker: 相馬律
+    zh: 當晚是他關的店。一個人。
+    ja: ""
+  - speaker: 相馬律
+    zh: 二十三點零七分五十秒。先記下這個時間。
+    ja: ""
+  - speaker: 相馬律
+    zh: 流程停在一半。最後兩項沒做完。
+    ja: ""
+  - speaker: 相馬律
+    zh: L 型。一層一層，都擋著視線。
+    ja: ""
