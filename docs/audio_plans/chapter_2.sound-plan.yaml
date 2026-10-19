@@ -381,7 +381,10 @@ entries:
       cached provider MP3 locally loop-normalized: body 2.0-42.5s with a 2.0s
       equal-power circular crossfade from 40.5-42.5s into 0-2.0s (drops the
       fade-out tail that failed the loop-boundary silence check), encoded with
-      libvorbis via oggenc -q 5; nominal loop is 40.5s.
+      libvorbis via oggenc -q 5; nominal loop is 40.5s. Re-running
+      audio:generate --force writes a plain transcode without this splice and
+      overwrites these notes; after any regeneration, re-apply the splice and
+      re-run bun run audio:check-boundaries.
   - id: bgs_shibuya_plaza_day_aftermath
     channel: bgs
     status: generated
