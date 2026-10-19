@@ -7,25 +7,26 @@ source: docs/stories_plan/chapter_1/scene_p0.md
 lines:
   - speaker: 旁白
     zh: 東京，下雨的傍晚。
-    ja: ""
+    ja: 東京、雨の夕暮れ。
   - speaker: 旁白
     zh: KAGAMI Evidence Summary Pilot：證據摘要審查會擴大試行。
-    ja: ""
+    ja: KAGAMI Evidence Summary Pilot：証拠サマリー審査会、試行を拡大。
+    note: News caption read off a station screen; the English title stays in English.
   - speaker: 路人甲
     zh: 新聞說現在連證據都能先整理好。
-    ja: ""
+    ja: ニュースで言ってた。今は証拠まで先に整理してくれるんだって。
   - speaker: 路人乙
     zh: 有系統整理，也好，總比誰聲音大誰贏。
-    ja: ""
+    ja: システムが整理してくれるなら、それもいいよ。声の大きい方が勝つよりはまし。
   - speaker: 旁白
     zh: 腳步比雨聲還急。
-    ja: ""
+    ja: 雨音よりも、足音のほうがせわしない。
   - speaker: 旁白
     zh: 看板上，影片正在播放。
-    ja: ""
+    ja: 看板の画面に、映像が流れている。
   - speaker: 旁白
     zh: 畫面很乾淨，字也很整齊。
-    ja: ""
+    ja: 画面はきれいで、文字も整然と並んでいる。
   - speaker: 路人丙
     zh: 有系統整理，應該比較不會冤枉人吧。
-    ja: ""
+    ja: システムが整理してくれるなら、濡れ衣を着せられる人も減るんだろうね。
