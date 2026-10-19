@@ -7,64 +7,67 @@ source: docs/stories_plan/chapter_1/scene_11_2.md
 lines:
   - speaker: 旁白
     zh: 那天深夜，相馬回到事務所。
-    ja: ""
+    ja: その夜遅く、相馬は事務所に戻った。
   - speaker: 相馬律
     zh: 增田先生……到底想藏什麼。
-    ja: ""
+    ja: 増田さん……いったい何を隠したかったんだ。
   - speaker: 旁白
     zh: 裡頭只有一個檔案。
-    ja: ""
+    ja: 中には、ファイルが一つだけ。
   - speaker: 相馬律
     zh: 加密的。
-    ja: ""
+    ja: 暗号化されてる。
   - speaker: 旁白
     zh: 權限不足。
-    ja: ""
+    ja: 権限不足。
+    note: On-screen system message; read flat.
   - speaker: 早坂茜
     zh: 還沒回家？
-    ja: ""
+    ja: まだ帰ってないの？
+    note: Over the phone.
   - speaker: 相馬律
     zh: 增田的隨身碟，我打開了。
-    ja: ""
+    ja: 増田のUSBメモリ、開けた。
   - speaker: 早坂茜
     zh: 北見的資料？
-    ja: ""
+    ja: 北見のデータ？
   - speaker: 相馬律
     zh: ……不像。
-    ja: ""
+    ja: ……そうは見えない。
   - speaker: 早坂茜
     zh: 那是什麼？
-    ja: ""
+    ja: じゃあ、何？
   - speaker: 相馬律
     zh: 我也還不知道。
-    ja: ""
+    ja: 僕にも、まだわからない。
   - speaker: 旁白
     zh: 警方移交清單最後一頁，附著匿名「雨宮」訊息的來源比對。
-    ja: ""
+    ja: 警察の引き継ぎリストの最後のページに、匿名の「雨宮」メッセージの送信元照合が添付されていた。
   - speaker: 早坂茜
     zh: 北見的手機、電腦和承包帳號，都不是發訊來源。
-    ja: ""
+    ja: 北見の携帯も、パソコンも、業者アカウントも、送信元じゃない。
   - speaker: 相馬律
     zh: ……不是他。
-    ja: ""
+    ja: ……彼じゃない。
   - speaker: 早坂茜
     zh: 來源不明，先按移交紀錄留檔。
-    ja: ""
+    ja: 送信元は不明。ひとまず引き継ぎ記録として保管しておく。
   - speaker: 旁白
     zh: 地方科技新聞報導雨鐘案與 KAGAMI 外包資料外洩，後續調查已經開始。
-    ja: ""
+    ja: 地元のテックニュースが、雨鐘事件とKAGAMIの外注データ流出を報じた。後続の調査も、すでに始まっている。
   - speaker: 旁白
     zh: 節目接入如月真白的短預告。
-    ja: ""
+    ja: 番組は、如月真白の短い予告に切り替わった。
   - speaker: 旁白
     zh: 如月真白在預告裡說：「下一期，我想回看——2016 年青葉記憶研究所火災。」
-    ja: ""
+    ja: 如月真白は予告でこう語った。「次回、振り返りたいのは――2016年、青葉記憶研究所の火災です。」
+    note: Narration quoting Mashiro's bright on-air preview; the dash is a short beat before the subject.
   - speaker: 早坂茜
     zh: 要關掉嗎？
-    ja: ""
+    ja: 消す？
   - speaker: 相馬律
     zh: 先靜一會。
-    ja: ""
+    ja: 今は、少し静かにしたい。
   - speaker: 旁白
     zh: 事務所的燈熄了，雨鐘門邊的傘架還留著一點微光。
-    ja: ""
+    ja: 事務所の明かりが消え、雨鐘のドア脇の傘立てには、まだかすかな光が残っていた。
