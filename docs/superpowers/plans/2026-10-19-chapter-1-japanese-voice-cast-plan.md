@@ -22,7 +22,7 @@ as today.
 | Which of their lines are voiced | Every Chapter 1 line those four speak, including interrogation loop/challenge/wrong-answer lines | A voiced character who falls silent mid-scene reads as a bug. Repeated identical lines (same speaker, same text, same expression) share one clip: 608 unique clips. |
 | Which lines get Japanese text | All 793 spoken lines in Chapter 1 (every speaker plus 旁白), voiced or not | Translation needs whole-conversation context anyway, and it makes Chapter 1 dialogue complete for a later Japanese mode. Stage directions, scene tags, evidence text, hotspot labels and UI strings are left for that later localization project; the file format below extends to them. |
 | Where the Japanese script lives | One YAML file per scene beside the source: `docs/stories_plan/chapter_1/ja/<scene>.ja.yaml` | Keeps the Chinese Markdown and its parser contract untouched, sits next to the dialogue it translates, and is invisible to gameplay compilation (the compiler only reads files `chapter.md` lists). |
-| How a Japanese line is tied to its Chinese line | By speaker + exact emitted Chinese text (+ the line's expression tag when it has one), translation-memory style | Survives line insertions and reordering. When a writer later edits the Chinese text, the validator reports the Japanese entry as stale instead of silently pairing the wrong audio. |
+| How a Japanese line is tied to its Chinese line | By the emitted line's `speaker`, exact `text`, and `portrait.expression` (null when the line has no portrait), translation-memory style. All three fields already reach the frontend on every `line` item, and one shared helper in a workspace package builds the key for both the compiler and the frontend | Survives line insertions and reordering. When a writer later edits the Chinese text, the validator reports the Japanese entry as stale instead of silently pairing the wrong audio. |
 | Does voice touch saves | No. Voice and Japanese text ship in a separate locale manifest, not in scene JSON | The save `contentRevision` hashes emitted scene JSON, so keeping locale data out of it means recording or re-recording voices never invalidates saves. |
 | TTS model | `eleven_v4` (ElevenLabs' current model; supports Japanese, audio tags such as `[whispers]`, and pronunciation dictionaries), with `eleven_v3` as the fallback if a chosen voice sounds better there | Audio tags let one stored direction per line steer delivery; the pilot confirms the model before the full run. |
 | Where generation runs | The owner's Mac checkout through Remote Control, the same way Chapter 2 art and audio were made | The ElevenLabs key lives there (`packages/scripts/.env`, per CLAUDE.md). Translation, tooling and runtime work need no Mac. |
@@ -119,11 +119,13 @@ locales:
 - **Frontend:** a voice channel in the gameplay audio controller.
   `AudioPreferences` gains `voiceVolume` (default 0.9) and `voiceEnabled`
   (default on); the existing normalizer fills them in for stored v1
-  preferences, so no storage key bump. When a line becomes current in
-  `DialogueBox.svelte` or an interrogation testimony line in
-  `InterrogationStage.svelte`, its clip plays; any previous clip stops on
-  advance, skip, scene change, mode change, load and return to title. Voice
-  never blocks advancing. A failed or missing clip is silence plus one warning,
+  preferences, so no storage key bump. `DialogueBox.svelte` is the single
+  playback owner: every `line` item, including interrogation testimony
+  (which `DialogueBox` renders while `InterrogationStage` only hosts the
+  stage and portrait), starts its clip when it becomes current, keyed on the
+  box's queue token so a re-render never starts a second clip. The previous
+  clip stops on advance, skip, scene change, mode change, load and return to
+  title. Voice never blocks advancing. A failed or missing clip is silence plus one warning,
   matching the existing audio contract.
 - **Packaged E2E:** contract unchanged. Headless runs absorb voice playback
   failures as warnings; controller behavior is covered by Vitest.
@@ -148,7 +150,11 @@ Root scripts delegate to `@lyra/scripts`, like `audio:*`.
   run calls `POST /v1/text-to-speech/{voice_id}` with the cast's model,
   settings, seed and `language_code: ja`, plus the neighbouring lines as
   `previous_text`/`next_text` for natural continuity. It regenerates only clips
-  whose `ttsHash` (model + voice + settings + final TTS text) changed, writes
+  whose `ttsHash` changed. The hash covers every input that shapes the
+  performance: model, voice ID, settings, seed, the resolved direction
+  (the line's own `direction`, else the cast's expression fallback), and the
+  final TTS text. Neighbouring-line context is left out on purpose, so
+  editing one line does not regenerate its neighbours. It writes
   provenance back into the script entry, and reuses the existing
   `PaymentRequiredError` handling and exit code 3.
 - Post-processing reuses the existing ffmpeg step: trim leading and trailing
