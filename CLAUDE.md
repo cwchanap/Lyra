@@ -61,6 +61,16 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
     transcode ElevenLabs MP3 to the `.ogg` files the runtime expects. A local
     `ffmpeg` build with `libvorbis` is therefore a runtime prerequisite;
     without it, generation fails at the transcoding step.
+- `bun run voice:sync <chapter_N>` - rebuild the chapter's Japanese locale
+  scripts (`docs/stories_plan/<chapter_N>/ja/<scene>.ja.yaml`) from the compiled
+  dialogue: adds an untranslated entry per new spoken line, keeps existing
+  translations, and moves translations whose Chinese line is gone into the
+  file's `stale` list. It compiles into a temporary directory and never touches
+  the generated resource tree.
+- `bun run voice:validate <chapter_N> [--strict] [--verbose]` - check those
+  scripts and `docs/stories_plan/ja_glossary.yaml` against the compiled
+  dialogue. Missing, untranslated, stale or misplaced entries and speakers
+  without a glossary entry are warnings; `--strict` fails on them.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run check:scripts` - type-check `packages/scripts` (compiler + audio
@@ -246,6 +256,11 @@ Chinese). Narrative content has two kinds — keep them straight:
   - `analysis_scene_<K>.md` - compiler-validated Analysis workbench scenes.
     Authored via `writing-analysis-scene`, which owns the supported board kinds
     and kind-specific authoring contract.
+  - `ja/<scene>.ja.yaml` - the Japanese translation of each scene's spoken
+    lines, one entry per unique speaker, expression and Chinese line, kept in
+    step with `bun run voice:sync`. Edit only `ja` and `note`; names and terms
+    follow `docs/stories_plan/ja_glossary.yaml`. The compiler ignores these
+    files.
 
 Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with
