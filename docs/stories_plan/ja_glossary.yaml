@@ -12,7 +12,7 @@ styleRules:
   - Punctuation is Japanese full-width. Quotes are 「」 (nested 『』), the ellipsis is …… and a cut-off line ends in ――. Keep ？ and ！ only where the Chinese has them.
   - Clock times stay in the form the Chinese uses. Digits stay digits (22:58, 23:07:50, 1842); spelled-out Chinese times become Japanese kanji readings (十七點四十二分 → 十七時四十二分, 二十三點零七分五十秒 → 二十三時七分五十秒). The voice step normalizes digits for speech.
   - Latin text that the Chinese keeps (KAGAMI, REPRINT, K., USB, L 型) stays as written; L 型 becomes L字.
-  - Address forms follow each character's `register`. By default, use 〜さん for adults by surname, 先生 for a lawyer (早坂律師 → 早坂先生), 刑事 for Kurose (黑瀨刑警 → 黒瀬刑事), 探偵さん for 偵探先生, お母さん when Hayasaka addresses Miyake's mother (阿姨).
+  - Address forms follow each character's `register`. By default, use 〜さん for adults by surname, 先生 for a lawyer (早坂律師 → 早坂先生), 刑事 for Kurose (黑瀨刑警 → 黒瀬刑事), 探偵さん for 偵探先生, お母さん when Hayasaka addresses Miyake's mother (阿姨). Soma, Hayasaka and Kamiya say 三宅さん and 増田さん; Takase, Kurose and narration use the bare surname. Soma and Hayasaka name a suspect bare between themselves (北見) but say 北見さん in the hearing.
   - Keep the restraint of the Chinese. No added jokes, slang, dialect, exclamations or role-language (no ござる, no heavy わ/のよ). Narration (旁白) is terse written Japanese in plain form.
   - Do not explain or foreshadow beyond the Chinese line; chapter seals in docs/stories_plan/characters.md still apply.
 characters:
@@ -265,3 +265,60 @@ terms:
   - zh: 影印費
     ja: コピー代
     note: Prologue case. 收據 → レシート, 重印 → 再印刷, 卡紙 → 紙詰まり, 帳本 → 帳簿.
+  - zh: 門鎖
+    ja: ドアロック
+    note: 門鎖紀錄 → ドアロックの記録. Locking up at closing time (Kurose's 盯著門鎖) → 戸締まり. 開門 / 開後門 in the lock log → 解錠.
+  - zh: 手機
+    ja: スマホ
+    note: Kurose says 携帯 (手機截圖 → 携帯のスクショ).
+  - zh: 值班
+    ja: シフト
+    note: 班表 / 值班表 → シフト表, 當晚值班 → その夜のシフト. The KAGAMI summary field reads 当夜の勤務あり.
+  - zh: 備忘
+    ja: メモ
+  - zh: 空位
+    ja: 空欄
+    note: The blank name slot on the board. 那格 / 那一格 → その欄 / あの欄, 名字那格 → 名前の欄, 第三人座位 → 三人目の席.
+  - zh: 證據鏈
+    ja: 証拠の連鎖
+    note: 這條鏈 / 鏈 for the reasoning chain. Not 證物鏈 (chain of custody).
+  - zh: 動線脈絡
+    ja: 動線の前後関係
+  - zh: 旁註
+    ja: 注記
+  - zh: 縮圖
+    ja: サムネイル
+  - zh: 小謊
+    ja: 小さな嘘
+  - zh: 兇手
+    ja: 犯人
+  - zh: 身分
+    ja: 身元
+    note: Also 身份. The clerk's 請出示身分 is the idiom 身分を証明するもの.
+  - zh: 物證
+    ja: 物証
+    note: 證物 → 証拠品.
+  - zh: 問話
+    ja: 聴取
+    note: Also 詢問 (警署詢問 → 署での聴取).
+  - zh: 死亡時間
+    ja: 死亡時刻
+  - zh: 事件順序
+    ja: イベントの順番
+    note: 事件 meaning one lock-log entry → イベント. 第三者的事件 → 第三者による解錠.
+  - zh: 蛋糕盒
+    ja: ケーキの箱
+    note: 蛋糕邊 → ケーキの切れ端.
+  - zh: 前任老闆
+    ja: 前のオーナー
+  - zh: 搭檔
+    ja: 相棒
+  - zh: 故事
+    ja: 物語
+    note: The story the summary tells. 好對上的那一筆 → よく合う一件 (scene 5 and the final hearing call back to each other).
+  - zh: 委託
+    ja: 依頼
+    note: 委託單 → 依頼票, 委託書 (Hayasaka's paperwork) → 委任状.
+  - zh: 案子
+    ja: 事件
+    note: Hayasaka, as a lawyer, says 案件.
