@@ -8,6 +8,8 @@ const preferences: AudioPreferences = {
   bgmVolume: 0.55,
   bgsVolume: 0.45,
   sfxVolume: 0.7,
+  voiceVolume: 0.9,
+  voiceEnabled: true,
 };
 
 describe("AudioSettings", () => {
@@ -28,6 +30,39 @@ describe("AudioSettings", () => {
     expect(screen.getByText("55")).toBeInTheDocument();
     expect(screen.getByText("45")).toBeInTheDocument();
     expect(screen.getByText("70")).toBeInTheDocument();
+    expect(screen.getByLabelText("VOICE")).toHaveValue("90");
+    expect(screen.getByText("90")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "目前角色語音開啟，按下可關閉" }),
+    ).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("updates the voice volume and toggles voices", async () => {
+    const onUpdate = vi.fn();
+
+    render(AudioSettings, { preferences, onUpdate });
+
+    await fireEvent.input(screen.getByLabelText("VOICE"), {
+      target: { value: "40" },
+    });
+    await fireEvent.click(
+      screen.getByRole("button", { name: "目前角色語音開啟，按下可關閉" }),
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({ voiceVolume: 0.4 });
+    expect(onUpdate).toHaveBeenCalledWith({ voiceEnabled: false });
+  });
+
+  it("shows voices as off", () => {
+    render(AudioSettings, {
+      preferences: { ...preferences, voiceEnabled: false },
+      onUpdate: vi.fn(),
+    });
+
+    expect(
+      screen.getByRole("button", { name: "目前角色語音關閉，按下可開啟" }),
+    ).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("語音關閉")).toBeInTheDocument();
   });
 
   it("updates mute", async () => {

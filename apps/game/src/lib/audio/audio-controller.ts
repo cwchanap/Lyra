@@ -56,6 +56,13 @@ type LoopState = {
   onError: () => void;
 };
 
+type VoiceState = {
+  assetId: string;
+  audio: AudioElementLike;
+  onEnded: () => void;
+  onError: () => void;
+};
+
 type SfxState = {
   audio: AudioElementLike;
   destroy: () => void;
@@ -313,6 +320,8 @@ export class GameplayAudioController {
     bgs: false,
   };
   private lastDesiredInput: LoopChannelInput = { bgm: null, bgs: null };
+  private voice: VoiceState | null = null;
+  private readonly voiceWarned = new Set<string>();
 
   constructor(options: GameplayAudioControllerOptions = {}) {
     this.audioFactory = options.audioFactory ?? defaultAudioFactory;
@@ -356,6 +365,77 @@ export class GameplayAudioController {
       sfx.audio.muted = preferences.muted;
       sfx.audio.volume = channelVolume("sfx", preferences);
     }
+    // Turning voices off cuts the line in progress; mute and volume apply to
+    // it in place, like the loop channels.
+    if (this.voice && !preferences.voiceEnabled) {
+      this.stopVoice();
+    } else if (this.voice) {
+      this.voice.audio.muted = preferences.muted;
+      this.voice.audio.volume = preferences.voiceVolume;
+    }
+  }
+
+  /**
+   * Plays one dialogue voice clip, replacing any clip still playing. Voice is
+   * a one-shot that never loops or retries: a clip that is missing, fails to
+   * decode, or is blocked by the autoplay policy is silence plus one warning
+   * per asset, and never blocks advancing the dialogue.
+   */
+  playVoice(assetId: string | null, preferences: AudioPreferences): void {
+    this.stopVoice();
+    if (!assetId || preferences.muted || !preferences.voiceEnabled) return;
+    let url: string;
+    try {
+      url = publicPathForStoryAsset(assetId, "voice");
+    } catch (error) {
+      this.warnVoiceOnce(assetId, String(error));
+      return;
+    }
+
+    const audio = this.audioFactory(url);
+    const voice: VoiceState = {
+      assetId,
+      audio,
+      onEnded: () => undefined,
+      onError: () => undefined,
+    };
+    voice.onEnded = () => {
+      if (this.voice === voice) this.stopVoice();
+    };
+    voice.onError = () => {
+      if (this.voice !== voice) return;
+      this.warnVoiceOnce(assetId, mediaErrorDetail(audio, url));
+      this.stopVoice();
+    };
+    audio.loop = false;
+    audio.preload = "auto";
+    audio.muted = preferences.muted;
+    audio.volume = preferences.voiceVolume;
+    audio.addEventListener("error", voice.onError);
+    audio.addEventListener("ended", voice.onEnded);
+    this.voice = voice;
+    audio.load?.();
+    try {
+      const playResult = audio.play();
+      if (playResult) {
+        void Promise.resolve(playResult).catch((error) => {
+          this.handleVoicePlaybackFailure(voice, url, error);
+        });
+      }
+    } catch (error) {
+      this.handleVoicePlaybackFailure(voice, url, error);
+    }
+  }
+
+  /** Stops the dialogue voice clip, if one is playing. */
+  stopVoice(): void {
+    const voice = this.voice;
+    if (!voice) return;
+    this.voice = null;
+    voice.audio.removeEventListener("error", voice.onError);
+    voice.audio.removeEventListener("ended", voice.onEnded);
+    voice.audio.pause();
+    voice.audio.currentTime = 0;
   }
 
   /**
@@ -474,6 +554,7 @@ export class GameplayAudioController {
     // warning on every repeat. Once disposed, the controller is single-use.
     if (this.disposed) return;
     this.disposed = true;
+    this.stopVoice();
     this.stopLoop("bgm");
     this.stopLoop("bgs");
     for (const sfx of Array.from(this.sfxByAsset.values())) {
@@ -643,6 +724,26 @@ export class GameplayAudioController {
     if (sfx.generation !== generation || !this.activeSfx.has(sfx)) return;
     sfx.warnOnce(playbackFailureDetail(url, error));
     sfx.destroy();
+  }
+
+  private handleVoicePlaybackFailure(
+    voice: VoiceState,
+    url: string,
+    error: unknown,
+  ): void {
+    // A clip stopped before play() settled rejects with AbortError; only the
+    // clip that is still current has really failed.
+    if (this.voice !== voice) return;
+    this.warnVoiceOnce(voice.assetId, playbackFailureDetail(url, error));
+    this.stopVoice();
+  }
+
+  private warnVoiceOnce(assetId: string, detail: string): void {
+    if (this.voiceWarned.has(assetId)) return;
+    this.voiceWarned.add(assetId);
+    this.logger.warn(
+      `[GameplayAudio] Voice unavailable: ${assetId} (${detail})`,
+    );
   }
 
   private warn(assetId: string, detail: string): void {

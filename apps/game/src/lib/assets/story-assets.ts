@@ -5,7 +5,8 @@ export type StoryAssetType =
   | "portrait"
   | "standee"
   | "evidence"
-  | "audio";
+  | "audio"
+  | "voice";
 
 export type ResolvedStoryAsset = {
   assetId: string;
@@ -24,7 +25,7 @@ export function publicPathForStoryAsset(
 }
 
 export function placeholderForStoryAsset(
-  type: Exclude<StoryAssetType, "audio">,
+  type: Exclude<StoryAssetType, "audio" | "voice">,
 ): ResolvedStoryAsset {
   const color =
     type === "background"
@@ -46,7 +47,7 @@ export function placeholderForStoryAsset(
 
 export function placeholderForMissingStoryAsset(
   assetId: string,
-  type: Exclude<StoryAssetType, "audio">,
+  type: Exclude<StoryAssetType, "audio" | "voice">,
 ): ResolvedStoryAsset {
   return { ...placeholderForStoryAsset(type), assetId };
 }
@@ -69,7 +70,7 @@ export function resolveStoryAsset(
 
 export function imageStoryAssetTypeForId(
   assetId: string,
-): Exclude<StoryAssetType, "audio"> {
+): Exclude<StoryAssetType, "audio" | "voice"> {
   if (assetId.startsWith("portrait.")) return "portrait";
   if (assetId.startsWith("standee.")) return "standee";
   if (assetId.startsWith("evidence.")) return "evidence";

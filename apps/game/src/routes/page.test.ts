@@ -48,6 +48,8 @@ const mocks = vi.hoisted(() => ({
     bgmVolume: 0.5,
     bgsVolume: 0.5,
     sfxVolume: 0.5,
+    voiceVolume: 0.9,
+    voiceEnabled: true,
   },
   updateAudioPreferences: vi.fn(),
   playGameplaySfxEvent: vi.fn(),
@@ -56,6 +58,8 @@ const mocks = vi.hoisted(() => ({
   preloadKnownGameplaySfx: vi.fn(),
   retryLockedGameplayAudio: vi.fn(),
   disposeGameplayAudio: vi.fn(),
+  playDialogueVoice: vi.fn(() => 0),
+  stopDialogueVoice: vi.fn(),
   currentWindow: {
     close: vi.fn(),
     isFullscreen: vi.fn(),
@@ -80,6 +84,8 @@ vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
   preloadKnownGameplaySfx: mocks.preloadKnownGameplaySfx,
   retryLockedGameplayAudio: mocks.retryLockedGameplayAudio,
   disposeGameplayAudio: mocks.disposeGameplayAudio,
+  playDialogueVoice: mocks.playDialogueVoice,
+  stopDialogueVoice: mocks.stopDialogueVoice,
 }));
 
 vi.mock("$lib/components/SaveNameDialog.svelte", async (importOriginal) => {

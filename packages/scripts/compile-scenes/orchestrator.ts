@@ -91,6 +91,15 @@ import {
   type OrderedAssetScene,
 } from "./assets/enrich";
 import type { AssetManifest } from "./assets/manifest";
+import {
+  DIALOGUE_LOCALES,
+  dialogueLocaleManifestFileName,
+} from "@lyra/dialogue-locale";
+import {
+  buildDialogueLocaleManifest,
+  type LocaleManifestChapterInput,
+} from "../voice/locale-manifest";
+import { spokenLinesOfScene } from "../voice/scene-lines";
 
 export type CompileOptions = {
   /**
@@ -131,6 +140,12 @@ export type CompileResult =
        * by the CLI but never change the exit code.
        */
       warnings: CompileError[];
+      /**
+       * Non-blocking gaps in the dialogue locale manifests (untranslated
+       * lines, missing voice clips, unreadable locale scripts). Empty unless
+       * `assetOutputRoot` is set.
+       */
+      localeWarnings: CompileError[];
     }
   | { ok: false; errors: CompileError[] };
 
@@ -807,8 +822,13 @@ export function compile(opts: CompileOptions): CompileResult {
       ] as const;
     }),
   );
+  const chapterDirByName = new Map(
+    discovered.map(({ dirName, chapterDir }) => [dirName, chapterDir] as const),
+  );
+  const localeChapters: LocaleManifestChapterInput[] = [];
   for (const chapter of chapters) {
     const emittedScenes: EmittedSceneJsonV1[] = [];
+    const localeScenes: LocaleManifestChapterInput["scenes"] = [];
     for (const file of chapter.sceneFiles) {
       const key = `${chapter.dirName}/${file}`;
       const rec = sceneRecordsByManifestKey.get(key);
@@ -824,6 +844,20 @@ export function compile(opts: CompileOptions): CompileResult {
       mkdirSync(dirname(outFile), { recursive: true });
       writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
       emittedScenes.push(json);
+      if (opts.assetOutputRoot) {
+        localeScenes.push({
+          sceneFile: file,
+          lines: spokenLinesOfScene(chapter.dirName, json),
+        });
+      }
+    }
+    const chapterDir = chapterDirByName.get(chapter.dirName);
+    if (chapterDir) {
+      localeChapters.push({
+        chapterId: chapter.dirName,
+        chapterDir,
+        scenes: localeScenes,
+      });
     }
     emittedChapters.push({
       id: chapter.dirName,
@@ -873,12 +907,33 @@ export function compile(opts: CompileOptions): CompileResult {
     );
   }
 
+  // Dialogue locale manifests sit beside the asset manifest, outside the
+  // scene JSON that save content revisions hash, so translating or voicing a
+  // line never invalidates a save.
+  const localeWarnings: CompileError[] = [];
+  if (opts.assetOutputRoot) {
+    mkdirSync(opts.assetOutputRoot, { recursive: true });
+    for (const locale of DIALOGUE_LOCALES) {
+      const built = buildDialogueLocaleManifest({
+        locale,
+        chapters: localeChapters,
+        repoRoot: opts.repoRoot ?? process.cwd(),
+      });
+      writeFileSync(
+        resolve(opts.assetOutputRoot, dialogueLocaleManifestFileName(locale)),
+        JSON.stringify(built.manifest, null, 2) + "\n",
+      );
+      localeWarnings.push(...built.warnings);
+    }
+  }
+
   return {
     ok: true,
     chaptersCompiled: chapters.length,
     scenesCompiled: scenes.length + analysisScenes.length,
     assetReport,
     warnings,
+    localeWarnings,
   };
 }
 

@@ -1,8 +1,8 @@
 # Chapter 1 Japanese Voice Cast Plan
 
-**Status:** step 1 of the work order (the Japanese script) is built in the
-same PR as this plan; steps 2 to 5 are not started, and no audio has been
-generated.
+**Status:** steps 1 (the Japanese script) and 2 (voice playback) of the work
+order are built in the same PR as this plan; steps 3 to 5 are not started, and
+no audio has been generated, so the game still plays silent.
 
 **Goal:** Give a few Chapter 1 characters Japanese voices generated with
 ElevenLabs text-to-speech, write a repo skill that captures the SOP so later
@@ -110,8 +110,12 @@ locales:
   Japanese script and writes `apps/game/src-tauri/resources/assets/dialogue_locale.ja.json`
   (Japanese text plus, for voiced lines, a `voice.ja.<clip>` asset ID). It sits
   in the already-bundled `resources/assets/` tree and outside the
-  `contentRevision` bundle. Missing script entries and missing `.ogg` files are
-  warnings, like missing art today.
+  `contentRevision` bundle. Lines are grouped per chapter, so the same Chinese
+  line in two chapters keeps two clips. A line gets its asset ID only when its
+  script entry has a `voice.clip` and that `.ogg` exists at compile time.
+  Missing script entries and missing `.ogg` files are warnings, like missing
+  art today. The line key, locale list and manifest types live in the shared
+  `@lyra/dialogue-locale` package, which the compiler and the game both use.
 - **Asset paths:** `@lyra/asset-paths` gains a `voice` type:
   `voice.<locale>.<clip>` resolves to `/assets/voice/<locale>/<clip>.ogg`.
   Clips live under `static/assets/voice/ja/`.
@@ -197,11 +201,13 @@ from the character description.
 1. **PR 1, Japanese script (cloud). Done in this PR.** Locale file format,
    `voice:sync` and `voice:validate`, the glossary and style guide, and all
    793 Chapter 1 lines (789 unique entries) translated scene by scene. Clip
-   IDs and the `voice` block are left for PR 3, which owns them.
-2. **PR 2, voice playback (cloud).** Compiler manifest, `voice` asset type,
-   the Rust read-only command, the frontend voice channel and settings.
-   Ships silent until clips exist. Can run alongside PR 1 since this plan
-   fixes the format.
+   IDs are left for PR 3, which assigns them.
+2. **PR 2, voice playback (cloud). Done in this PR.** Compiler manifest,
+   `voice` asset type, the Rust read-only command, the frontend voice channel
+   and settings. The script's optional `voice` block (`clip`, plus the
+   `direction`, `tts`, `ttsHash` and `generatedAt` fields PR 3 fills in) is
+   parsed and validated here, because the manifest reads `voice.clip`. Ships
+   silent until clips exist.
 3. **PR 3, generation tooling and the SOP skill (cloud).** `voice_cast.yaml`
    with the shortlists, `voice:audition`, `voice:generate`, ffmpeg
    post-processing, tests with a fake client, the

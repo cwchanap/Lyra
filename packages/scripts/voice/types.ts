@@ -18,6 +18,22 @@ export type EmittedScene = {
 };
 
 /**
+ * Voice clip for one translated line. `clip` names the file
+ * `static/assets/voice/<locale>/<clip>.ogg`; the other fields record how the
+ * clip was generated.
+ */
+export type LocaleScriptVoice = {
+  clip: string;
+  /** Delivery direction, such as an audio tag like `[calm]`. */
+  direction?: string;
+  /** Reading override sent to text-to-speech instead of `ja`. */
+  tts?: string;
+  /** Hash of the generation inputs, written back by the generator. */
+  ttsHash?: string;
+  generatedAt?: string;
+};
+
+/**
  * One translated line in a per-scene locale script. `expression` is omitted
  * for the `standard` expression and for portrait-less lines; see
  * {@link localeLineKey}.
@@ -28,6 +44,7 @@ export type LocaleScriptLine = {
   zh: string;
   ja: string;
   note?: string;
+  voice?: LocaleScriptVoice;
 };
 
 export type LocaleScriptFile = {

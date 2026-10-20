@@ -75,6 +75,47 @@ describe("syncChapterScripts", () => {
     });
   });
 
+  it("keeps a voice block with its line and keeps a voiced orphan as stale", () => {
+    const voiced: LocaleScriptLine = {
+      speaker: "相馬律",
+      zh: "好。",
+      ja: "",
+      voice: { clip: "ch1_soma_ritsu_0001" },
+    };
+    const result = syncChapterScripts({
+      chapterId: CHAPTER,
+      locale: "ja",
+      existing: [
+        existing("scene_0.md", [
+          {
+            speaker: "旁白",
+            zh: "雨。",
+            ja: "雨。",
+            voice: { clip: "ch1_narration_0001" },
+          },
+          voiced,
+        ]),
+      ],
+      scenes: [
+        scene("scene_0.md", [
+          { speaker: "旁白", text: "雨。", expression: null },
+        ]),
+      ],
+    });
+
+    expect(written(result, "scene_0.md")).toMatchObject({
+      lines: [
+        {
+          speaker: "旁白",
+          zh: "雨。",
+          ja: "雨。",
+          voice: { clip: "ch1_narration_0001" },
+        },
+      ],
+      stale: [voiced],
+    });
+  });
+
   it("moves a translation with its line and keeps orphaned translations as stale", () => {
     const result = syncChapterScripts({
       chapterId: CHAPTER,

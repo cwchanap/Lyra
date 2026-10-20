@@ -19,7 +19,8 @@ export type AssetPathType =
   | "portrait"
   | "standee"
   | "evidence"
-  | "audio";
+  | "audio"
+  | "voice";
 
 /**
  * Validates that an assetId has the expected number of dot-separated segments.
@@ -80,6 +81,32 @@ export function parsePortraitAssetId(assetId: string): {
   return { characterId, expression };
 }
 
+/**
+ * Builds the canonical voice-clip assetId for one translated dialogue line.
+ * Single owner of voice ID construction; inverse of parseVoiceAssetId().
+ */
+export function voiceAssetId(locale: string, clip: string): string {
+  return `voice.${locale}.${clip}`;
+}
+
+/**
+ * Decomposes a voice assetId into its locale and clip ID. Throws (like
+ * requireSegments) for malformed IDs.
+ */
+export function parseVoiceAssetId(assetId: string): {
+  locale: string;
+  clip: string;
+} {
+  const segments = requireSegments(assetId, "voice", 3, true);
+  const [prefix, locale, clip] = segments;
+  if (prefix !== "voice" || !locale || !clip) {
+    throw new Error(
+      `Invalid voice assetId "${assetId}": expected voice.<locale>.<clip>.`,
+    );
+  }
+  return { locale, clip };
+}
+
 function requireAudioChannel(channel: string, assetId: string): AudioChannel {
   if (!AUDIO_CHANNELS.has(channel)) {
     throw new Error(
@@ -102,6 +129,7 @@ function formatList(items: readonly string[]): string {
  *   standee.<charId>.<pose>   → /assets/standees/<charId>/<pose>.png
  *   evidence.<id>             → /assets/evidence/<id>.png
  *   audio.<channel>.<id>      → /assets/audio/<channel>/<id>.ogg
+ *   voice.<locale>.<clip>     → /assets/voice/<locale>/<clip>.ogg
  *   background.<...>          → /assets/backgrounds/<...>.png  (dots → /)
  */
 export function publicPathForAssetId(
@@ -129,6 +157,10 @@ export function publicPathForAssetId(
       );
     }
     return `/assets/audio/${requireAudioChannel(channel, assetId)}/${id}.ogg`;
+  }
+  if (type === "voice") {
+    const { locale, clip } = parseVoiceAssetId(assetId);
+    return `/assets/voice/${locale}/${clip}.ogg`;
   }
   return `/assets/backgrounds/${assetId.replace(/^background\./, "").replaceAll(".", "/")}.png`;
 }

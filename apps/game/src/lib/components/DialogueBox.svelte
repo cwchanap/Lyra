@@ -1,10 +1,14 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, untrack } from "svelte";
   import {
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
+  import {
+    playDialogueVoice,
+    stopDialogueVoice,
+  } from "$lib/audio/gameplay-audio-runtime.svelte";
   import CrossfadeImage from "./CrossfadeImage.svelte";
   import DialogueHistoryOverlay from "./DialogueHistoryOverlay.svelte";
   import type {
@@ -33,6 +37,7 @@
     crossExam = null,
     interrogationStageActive = false,
     textRevealDurationMs = dialogueTransitionDurationMs,
+    chapterId = null,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
@@ -50,6 +55,9 @@
     } | null;
     interrogationStageActive?: boolean;
     textRevealDurationMs?: number;
+    /** Chapter of the current line; voice clips are looked up per chapter.
+     * Without it the box stays silent. */
+    chapterId?: string | null;
   } = $props();
 
   const rightSidePortraitCharacterIds = new Set([
@@ -125,6 +133,32 @@
       ? `證詞 ${crossExam.presentation.lineIndex + 1} / ${crossExam.presentation.lineTotal}`
       : "",
   );
+
+  // One voice start per shown line: the key changes when the queue moves on
+  // or the line itself changes, never on a re-render of the same line.
+  const voiceKey = $derived(
+    chapterId && current.kind === "line" ? `${chapterId}:${revealKey}` : null,
+  );
+
+  // This box is the single owner of dialogue voice. Each new line (including
+  // interrogation testimony) starts its clip; the cleanup stops it when the
+  // line advances, the scene or mode changes, a save loads, or the box
+  // unmounts. Voice never gates advancing.
+  $effect(() => {
+    if (voiceKey === null) return;
+    const request = untrack(() =>
+      current.kind === "line" && chapterId
+        ? playDialogueVoice({
+            chapterId,
+            speaker: current.speaker,
+            text: current.text,
+            expression: current.portrait?.expression ?? null,
+          })
+        : null,
+    );
+    if (request === null) return;
+    return () => stopDialogueVoice(request);
+  });
 
   function placementForPortrait(characterId: string | null | undefined) {
     return rightSidePortraitCharacterIds.has(characterId ?? "")

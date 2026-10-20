@@ -1,7 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { waitFor } from "@testing-library/svelte";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { tick } from "svelte";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -10,6 +11,26 @@ import {
   resetEscapeCoordinator,
 } from "$lib/state/escape-coordinator";
 import DialogueBox from "./DialogueBox.svelte";
+
+const voice = vi.hoisted(() => {
+  let next = 0;
+  const play = vi.fn((_line: unknown) => ++next);
+  const stop = vi.fn((_request: number) => undefined);
+  return {
+    play,
+    stop,
+    reset() {
+      next = 0;
+      play.mockClear();
+      stop.mockClear();
+    },
+  };
+});
+
+vi.mock("$lib/audio/gameplay-audio-runtime.svelte", () => ({
+  playDialogueVoice: voice.play,
+  stopDialogueVoice: voice.stop,
+}));
 import { cssRule } from "$lib/test-utils";
 import type {
   CrossExamView,
@@ -110,6 +131,85 @@ describe("DialogueBox", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     resetEscapeCoordinator();
+  });
+
+  describe("voice", () => {
+    // Cleared before each test: the previous test's component unmounts (and
+    // stops its clip) in testing-library's own afterEach.
+    beforeEach(() => {
+      voice.reset();
+    });
+
+    const line: DialogueItem = {
+      kind: "line",
+      speaker: "早坂茜",
+      text: "門鎖時間線指向他。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "concerned",
+        assetId: "portrait.hayasaka_akane.concerned",
+      },
+    };
+
+    function renderVoiced(current: DialogueItem, chapterId: string | null) {
+      return render(DialogueBox, {
+        current,
+        queueToken: token,
+        onAdvance: vi.fn(),
+        history: [],
+        textRevealDurationMs: 0,
+        chapterId,
+      });
+    }
+
+    it("starts one clip for each line shown, keyed by chapter", async () => {
+      const { rerender } = renderVoiced(line, "chapter_1");
+      await tick();
+      expect(voice.play).toHaveBeenCalledExactlyOnceWith({
+        chapterId: "chapter_1",
+        speaker: "早坂茜",
+        text: "門鎖時間線指向他。",
+        expression: "concerned",
+      });
+
+      await rerender({ disabled: true });
+      expect(voice.play).toHaveBeenCalledOnce();
+      expect(voice.stop).not.toHaveBeenCalled();
+
+      await rerender({
+        current: { kind: "line", speaker: "相馬律", text: "不說謊。" },
+        queueToken: { ...token, cursor: 1 },
+      });
+      expect(voice.stop).toHaveBeenCalledExactlyOnceWith(1);
+      expect(voice.play).toHaveBeenLastCalledWith({
+        chapterId: "chapter_1",
+        speaker: "相馬律",
+        text: "不說謊。",
+        expression: null,
+      });
+    });
+
+    it("stops the clip when the queue reaches an action or the box unmounts", async () => {
+      const { rerender, unmount } = renderVoiced(line, "chapter_1");
+      await tick();
+      await rerender({
+        current: { kind: "action", text: "雨聲壓過車流。" },
+        queueToken: { ...token, cursor: 1 },
+      });
+      expect(voice.stop).toHaveBeenCalledOnce();
+      expect(voice.play).toHaveBeenCalledOnce();
+
+      await rerender({ current: line, queueToken: { ...token, cursor: 2 } });
+      expect(voice.play).toHaveBeenCalledTimes(2);
+      unmount();
+      expect(voice.stop).toHaveBeenCalledTimes(2);
+    });
+
+    it("stays silent without a chapter", async () => {
+      renderVoiced(line, null);
+      await tick();
+      expect(voice.play).not.toHaveBeenCalled();
+    });
   });
 
   it("renders an action dialogue item", () => {

@@ -1,5 +1,6 @@
 import {
   cpSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -8,6 +9,7 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { compile, formatErrors } from "../compile-scenes/orchestrator";
 import { runVoiceCli } from "./cli";
 
 const FIXTURE = resolve(__dirname, "../__fixtures__/asset_enabled");
@@ -105,5 +107,63 @@ describe("voice cli", () => {
     expect(updated).toContain(
       "stale:\n  - speaker: 相馬律\n    zh: 不說謊。\n    ja: 嘘をつかない。",
     );
+  });
+
+  it("feeds synced translations and existing clips into the compiled locale manifest", async () => {
+    const repoRoot = createRepoRoot();
+    expect((await run(repoRoot, ["sync", "chapter_1"])).code).toBe(0);
+    const scriptPath = join(repoRoot, SCRIPT);
+    writeFileSync(
+      scriptPath,
+      readFileSync(scriptPath, "utf-8")
+        .replace(
+          '    zh: 不說謊。\n    ja: ""',
+          "    zh: 不說謊。\n    ja: 嘘をつかない。\n    voice:\n      clip: ch1_soma_ritsu_0001",
+        )
+        .replace(
+          '    zh: KAGAMI 門鎖時間線指向他。警察幾乎確定了。\n    ja: ""',
+          "    zh: KAGAMI 門鎖時間線指向他。警察幾乎確定了。\n    ja: KAGAMIのドアロック記録は彼を指してる。\n    voice:\n      clip: ch1_hayasaka_akane_0001",
+        ),
+    );
+    mkdirSync(join(repoRoot, "static/assets/voice/ja"), { recursive: true });
+    writeFileSync(
+      join(repoRoot, "static/assets/voice/ja/ch1_soma_ritsu_0001.ogg"),
+      "",
+    );
+
+    const assetOutputRoot = join(repoRoot, "out/assets");
+    const result = compile({
+      sourceRoot: join(repoRoot, "docs/stories_plan"),
+      outputRoot: join(repoRoot, "out/scenes"),
+      assetConfigRoot: join(repoRoot, "static/assets/config"),
+      assetOutputRoot,
+      repoRoot,
+    });
+    if (!result.ok) throw new Error(formatErrors(result.errors));
+
+    const manifest = JSON.parse(
+      readFileSync(join(assetOutputRoot, "dialogue_locale.ja.json"), "utf-8"),
+    );
+    expect(manifest.chapters).toHaveLength(1);
+    expect(manifest.chapters[0].lines).toEqual([
+      {
+        speaker: "相馬律",
+        expression: null,
+        zh: "不說謊。",
+        text: "嘘をつかない。",
+        voice: "voice.ja.ch1_soma_ritsu_0001",
+      },
+      {
+        speaker: "早坂茜",
+        expression: "concerned",
+        zh: "KAGAMI 門鎖時間線指向他。警察幾乎確定了。",
+        text: "KAGAMIのドアロック記録は彼を指してる。",
+        voice: null,
+      },
+    ]);
+    expect(result.localeWarnings.map((w) => w.code)).toEqual([
+      "dialogueLocaleIncomplete",
+      "voiceClipMissing",
+    ]);
   });
 });

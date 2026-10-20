@@ -1031,6 +1031,17 @@ describe("compile (end-to-end against valid fixture)", () => {
         ),
       ).toBe(true);
       expect(report).toEqual(result.assetReport);
+      // No chapter in the fixture has a ja/ script folder, so the Japanese
+      // manifest is written but lists no chapters, with nothing to warn about.
+      expect(
+        JSON.parse(
+          readFileSync(
+            resolve(assetOutRoot, "dialogue_locale.ja.json"),
+            "utf-8",
+          ),
+        ),
+      ).toEqual({ schemaVersion: 1, locale: "ja", chapters: [] });
+      expect(result.localeWarnings).toEqual([]);
     } finally {
       rmSync(outRoot, { recursive: true, force: true });
       rmSync(assetOutRoot, { recursive: true, force: true });

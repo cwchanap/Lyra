@@ -321,6 +321,7 @@ describe("GameplayAudioController", () => {
       preferences,
     );
     audio.applyPreferences({
+      ...preferences,
       muted: true,
       bgmVolume: 0.1,
       bgsVolume: 0.2,
@@ -342,6 +343,7 @@ describe("GameplayAudioController", () => {
     expect(sfx.muted).toBe(false);
 
     audio.applyPreferences({
+      ...preferences,
       muted: true,
       bgmVolume: preferences.bgmVolume,
       bgsVolume: preferences.bgsVolume,
@@ -370,6 +372,7 @@ describe("GameplayAudioController", () => {
     });
 
     audio.applyPreferences({
+      ...preferences,
       muted: true,
       bgmVolume: preferences.bgmVolume,
       bgsVolume: preferences.bgsVolume,
@@ -378,6 +381,7 @@ describe("GameplayAudioController", () => {
     expect(backend.setActiveGain).toHaveBeenCalledExactlyOnceWith(0);
 
     audio.applyPreferences({
+      ...preferences,
       muted: false,
       bgmVolume: preferences.bgmVolume,
       bgsVolume: preferences.bgsVolume,
@@ -1189,6 +1193,7 @@ describe("GameplayAudioController default SFX backend", () => {
     expect(gain.gain.value).toBe(preferences.sfxVolume);
 
     audio.applyPreferences({
+      ...preferences,
       muted: true,
       bgmVolume: preferences.bgmVolume,
       bgsVolume: preferences.bgsVolume,
@@ -1197,6 +1202,7 @@ describe("GameplayAudioController default SFX backend", () => {
     expect(gain.gain.value).toBe(0);
 
     audio.applyPreferences({
+      ...preferences,
       muted: false,
       bgmVolume: preferences.bgmVolume,
       bgsVolume: preferences.bgsVolume,
@@ -1310,5 +1316,115 @@ describe("GameplayAudioController default SFX backend", () => {
 
     expect(instances).toHaveLength(0);
     expect(created).toHaveLength(1);
+  });
+});
+
+describe("GameplayAudioController dialogue voice", () => {
+  let created: FakeAudio[];
+  let warn: ReturnType<typeof vi.fn<(message: string) => void>>;
+
+  beforeEach(() => {
+    created = [];
+    warn = vi.fn<(message: string) => void>();
+  });
+
+  function controller() {
+    return new GameplayAudioController({
+      audioFactory: (url) => {
+        const audio = new FakeAudio(url);
+        created.push(audio);
+        return audio;
+      },
+      logger: { warn },
+      sfxBackend: null,
+    });
+  }
+
+  it("plays one clip at a time at the voice volume", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.ch1_soma_ritsu_0001", {
+      ...preferences,
+      voiceVolume: 0.4,
+    });
+    expect(created[0]?.src).toBe("/assets/voice/ja/ch1_soma_ritsu_0001.ogg");
+    expect(created[0]?.volume).toBe(0.4);
+    expect(created[0]?.loop).toBe(false);
+    expect(created[0]?.play).toHaveBeenCalledOnce();
+
+    audio.playVoice("voice.ja.ch1_soma_ritsu_0002", preferences);
+    expect(created[0]?.pause).toHaveBeenCalled();
+    expect(created[0]?.listeners.get("ended")?.size).toBe(0);
+    expect(created[1]?.play).toHaveBeenCalledOnce();
+
+    audio.stopVoice();
+    expect(created[1]?.pause).toHaveBeenCalled();
+    expect(created[1]?.currentTime).toBe(0);
+  });
+
+  it("stays silent while muted, with voices off, or without a clip", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.a", { ...preferences, muted: true });
+    audio.playVoice("voice.ja.a", { ...preferences, voiceEnabled: false });
+    audio.playVoice(null, preferences);
+    expect(created).toHaveLength(0);
+  });
+
+  it("applies volume and mute to the clip in progress and cuts it when voices turn off", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.a", preferences);
+    audio.applyPreferences({ ...preferences, muted: true, voiceVolume: 0.2 });
+    expect(created[0]?.muted).toBe(true);
+    expect(created[0]?.volume).toBe(0.2);
+
+    audio.applyPreferences({ ...preferences, voiceEnabled: false });
+    expect(created[0]?.pause).toHaveBeenCalled();
+    audio.applyPreferences(preferences);
+    expect(created).toHaveLength(1);
+  });
+
+  it("warns once per clip that fails", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.missing", preferences);
+    created[0]!.error = { code: 4 };
+    created[0]!.emit("error");
+    audio.playVoice("voice.ja.missing", preferences);
+    created[1]!.emit("error");
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      "[GameplayAudio] Voice unavailable: voice.ja.missing (/assets/voice/ja/missing.ogg (media error 4))",
+    );
+
+    audio.playVoice("voice.ja-bad", preferences);
+    expect(warn).toHaveBeenLastCalledWith(
+      expect.stringContaining("Voice unavailable: voice.ja-bad"),
+    );
+  });
+
+  it("does not warn when a replaced clip's play() is aborted", async () => {
+    const pending = deferred();
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0)
+          element.play.mockReturnValueOnce(pending.promise);
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+      sfxBackend: null,
+    });
+    audio.playVoice("voice.ja.slow", preferences);
+    audio.playVoice("voice.ja.next", preferences);
+    pending.reject(new DOMException("interrupted", "AbortError"));
+    await pending.promise.catch(() => undefined);
+    await Promise.resolve();
+    expect(warn).not.toHaveBeenCalled();
+    expect(created[1]?.play).toHaveBeenCalledOnce();
+  });
+
+  it("stops the clip on dispose", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.a", preferences);
+    audio.dispose();
+    expect(created[0]?.pause).toHaveBeenCalled();
   });
 });

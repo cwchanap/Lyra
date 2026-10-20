@@ -7,6 +7,8 @@ const DEFAULTS: AudioPreferences = {
   bgmVolume: 0.5,
   bgsVolume: 0.5,
   sfxVolume: 0.5,
+  voiceVolume: 0.9,
+  voiceEnabled: true,
 };
 
 type ControllerSpy = {
@@ -16,6 +18,8 @@ type ControllerSpy = {
   stopLoopChannels: ReturnType<typeof vi.fn>;
   playSfx: ReturnType<typeof vi.fn>;
   unlock: ReturnType<typeof vi.fn>;
+  playVoice: ReturnType<typeof vi.fn>;
+  stopVoice: ReturnType<typeof vi.fn>;
   dispose: ReturnType<typeof vi.fn>;
 };
 
@@ -28,6 +32,8 @@ const mocks = vi.hoisted(() => {
     stopLoopChannels = vi.fn();
     playSfx = vi.fn();
     unlock = vi.fn();
+    playVoice = vi.fn();
+    stopVoice = vi.fn();
     dispose = vi.fn();
     constructor() {
       instances.push(this as unknown as ControllerSpy);
@@ -43,6 +49,8 @@ const mocks = vi.hoisted(() => {
     ),
     assetIdForGameplaySfxEvent: vi.fn((): string | null => null),
     mappedGameplaySfxAssetIds: vi.fn((): string[] => []),
+    voiceFor: vi.fn((_line: unknown): string | null => null),
+    loadDialogueVoices: vi.fn(),
   };
 });
 
@@ -55,6 +63,10 @@ vi.mock("./audio-preferences", () => ({
   loadAudioPreferences: mocks.loadAudioPreferences,
   saveAudioPreferences: mocks.saveAudioPreferences,
   normalizeAudioPreferences: mocks.normalizeAudioPreferences,
+}));
+
+vi.mock("./dialogue-voice", () => ({
+  createDialogueVoiceLoader: () => mocks.loadDialogueVoices,
 }));
 
 vi.mock("./sfx-events", () => ({
@@ -96,6 +108,10 @@ describe("gameplay audio runtime", () => {
     mocks.assetIdForGameplaySfxEvent.mockClear();
     mocks.mappedGameplaySfxAssetIds.mockReturnValue([]);
     mocks.mappedGameplaySfxAssetIds.mockClear();
+    mocks.voiceFor.mockReset().mockReturnValue(null);
+    mocks.loadDialogueVoices
+      .mockReset()
+      .mockImplementation(async () => ({ voiceFor: mocks.voiceFor }));
   });
 
   it("constructs the controller eagerly but defers SFX preload past module init", async () => {
@@ -118,6 +134,8 @@ describe("gameplay audio runtime", () => {
       bgmVolume: 0.2,
       bgsVolume: 0.3,
       sfxVolume: 0.4,
+      voiceVolume: 0.5,
+      voiceEnabled: false,
     };
     mocks.normalizeAudioPreferences.mockReturnValue(normalized);
 
@@ -132,6 +150,8 @@ describe("gameplay audio runtime", () => {
     );
     expect(runtime.audioPreferences.muted).toBe(true);
     expect(runtime.audioPreferences.bgmVolume).toBe(0.2);
+    expect(runtime.audioPreferences.voiceVolume).toBe(0.5);
+    expect(runtime.audioPreferences.voiceEnabled).toBe(false);
   });
 
   it("stops loop channels without disposing when a game-complete mode arrives", async () => {
@@ -288,5 +308,121 @@ describe("gameplay audio runtime", () => {
     expect(mocks.normalizeAudioPreferences).toHaveBeenCalledWith(DEFAULTS);
     expect(controller().applyPreferences).toHaveBeenCalledWith(DEFAULTS);
     expect(mocks.saveAudioPreferences).toHaveBeenCalledWith(DEFAULTS);
+  });
+
+  describe("dialogue voice", () => {
+    const line = {
+      chapterId: "chapter_1",
+      speaker: "相馬律",
+      text: "不說謊。",
+      expression: null,
+    };
+
+    it("plays the clip the manifest names for a line", async () => {
+      mocks.voiceFor.mockReturnValue("voice.ja.ch1_soma_ritsu_0001");
+      const runtime = await loadRuntime();
+
+      runtime.playDialogueVoice(line);
+      await vi.waitFor(() =>
+        expect(controller().playVoice).toHaveBeenCalledOnce(),
+      );
+
+      expect(controller().stopVoice).toHaveBeenCalledBefore(
+        controller().playVoice,
+      );
+      expect(mocks.voiceFor).toHaveBeenCalledExactlyOnceWith(line);
+      expect(controller().playVoice).toHaveBeenCalledWith(
+        "voice.ja.ch1_soma_ritsu_0001",
+        expect.objectContaining({ voiceEnabled: true }),
+      );
+    });
+
+    it("plays nothing for an unvoiced line", async () => {
+      const runtime = await loadRuntime();
+      runtime.playDialogueVoice(line);
+      await vi.waitFor(() => expect(mocks.voiceFor).toHaveBeenCalledOnce());
+      expect(controller().playVoice).not.toHaveBeenCalled();
+    });
+
+    it("skips the manifest entirely while muted or with voices off", async () => {
+      mocks.loadAudioPreferences.mockReturnValue({
+        ...DEFAULTS,
+        voiceEnabled: false,
+      });
+      const runtime = await loadRuntime();
+      runtime.playDialogueVoice(line);
+      runtime.updateAudioPreferences({ voiceEnabled: true, muted: true });
+      runtime.playDialogueVoice(line);
+      await Promise.resolve();
+      expect(mocks.loadDialogueVoices).not.toHaveBeenCalled();
+      expect(controller().stopVoice).toHaveBeenCalledTimes(2);
+    });
+
+    it("drops a line whose manifest load resolves after the next line started", async () => {
+      let release!: () => void;
+      mocks.loadDialogueVoices.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            release = () => resolve({ voiceFor: mocks.voiceFor });
+          }),
+      );
+      mocks.voiceFor.mockImplementation((next) =>
+        (next as typeof line).text === "不說謊。"
+          ? "voice.ja.old"
+          : "voice.ja.new",
+      );
+      const runtime = await loadRuntime();
+
+      runtime.playDialogueVoice(line);
+      runtime.playDialogueVoice({ ...line, text: "下一句。" });
+      await vi.waitFor(() =>
+        expect(controller().playVoice).toHaveBeenCalledOnce(),
+      );
+      release();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(controller().playVoice).toHaveBeenCalledOnce();
+      expect(controller().playVoice).toHaveBeenCalledWith(
+        "voice.ja.new",
+        expect.anything(),
+      );
+    });
+
+    it("stops a line only while it is still the current one", async () => {
+      const runtime = await loadRuntime();
+      const first = runtime.playDialogueVoice(line);
+      const second = runtime.playDialogueVoice(line);
+      controller().stopVoice.mockClear();
+
+      runtime.stopDialogueVoice(first);
+      expect(controller().stopVoice).not.toHaveBeenCalled();
+
+      runtime.stopDialogueVoice(second);
+      expect(controller().stopVoice).toHaveBeenCalledOnce();
+    });
+
+    it("cuts the voice on the ending screen and the main menu", async () => {
+      const runtime = await loadRuntime();
+      runtime.syncGameplayAudioMode({
+        type: "gameComplete",
+        storyCleared: true,
+      });
+      expect(controller().stopVoice).toHaveBeenCalledOnce();
+      runtime.syncMainMenuAudio();
+      expect(controller().stopVoice).toHaveBeenCalledTimes(2);
+    });
+
+    it("never starts a clip that was still loading when audio was disposed", async () => {
+      mocks.voiceFor.mockReturnValue("voice.ja.ch1_soma_ritsu_0001");
+      const runtime = await loadRuntime();
+      const first = controller();
+      runtime.playDialogueVoice(line);
+      runtime.disposeGameplayAudio();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(first.playVoice).not.toHaveBeenCalled();
+      expect(mocks.instances).toHaveLength(1);
+    });
   });
 });

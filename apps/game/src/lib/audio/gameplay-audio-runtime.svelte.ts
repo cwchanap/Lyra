@@ -8,6 +8,10 @@ import {
 } from "./audio-preferences";
 import { GameplayAudioController } from "./audio-controller";
 import {
+  createDialogueVoiceLoader,
+  type DialogueVoiceLine,
+} from "./dialogue-voice";
+import {
   assetIdForGameplaySfxEvent,
   mappedGameplaySfxAssetIds,
   type GameplaySfxEvent,
@@ -52,8 +56,48 @@ export function updateAudioPreferences(patch: Partial<AudioPreferences>): void {
   audioPreferences.bgmVolume = next.bgmVolume;
   audioPreferences.bgsVolume = next.bgsVolume;
   audioPreferences.sfxVolume = next.sfxVolume;
+  audioPreferences.voiceVolume = next.voiceVolume;
+  audioPreferences.voiceEnabled = next.voiceEnabled;
   saveAudioPreferences(next);
   activeController().applyPreferences(next);
+}
+
+// The voice manifest is read once per session, on the first voiced line.
+const loadDialogueVoices = createDialogueVoiceLoader();
+// Bumped by every voice start and stop, so a manifest load that resolves
+// after the line has moved on (or the dialogue box closed) plays nothing.
+let voiceRequest = 0;
+
+/**
+ * Starts the voice clip for a dialogue line, cutting any clip still playing.
+ * Returns a handle for {@link stopDialogueVoice}. Lines without a clip, and
+ * every line while muted or with voices off, are silent.
+ */
+export function playDialogueVoice(line: DialogueVoiceLine): number {
+  const request = ++voiceRequest;
+  activeController().stopVoice();
+  if (audioPreferences.muted || !audioPreferences.voiceEnabled) return request;
+  void loadDialogueVoices().then((index) => {
+    if (request !== voiceRequest) return;
+    const assetId = index.voiceFor(line);
+    if (assetId) activeController().playVoice(assetId, audioPreferences);
+  });
+  return request;
+}
+
+/**
+ * Stops the clip started by `request`. A stale handle (its line already
+ * replaced by a newer one) is ignored, so a closing dialogue box never cuts
+ * the next line's voice.
+ */
+export function stopDialogueVoice(request: number): void {
+  if (request !== voiceRequest) return;
+  stopAnyDialogueVoice();
+}
+
+function stopAnyDialogueVoice(): void {
+  voiceRequest += 1;
+  if (!disposed) controller.stopVoice();
 }
 
 export function syncGameplayAudioMode(mode: Mode): void {
@@ -63,6 +107,7 @@ export function syncGameplayAudioMode(mode: Mode): void {
     // start a new game in the same session, and dispose() would close the SFX
     // AudioContext permanently (leaving all later SFX silent). True teardown
     // belongs to disposeGameplayAudio().
+    stopAnyDialogueVoice();
     active.stopLoopChannels();
     return;
   }
@@ -76,6 +121,7 @@ export function syncGameplayAudioMode(mode: Mode): void {
 }
 
 export function syncMainMenuAudio(): void {
+  stopAnyDialogueVoice();
   void activeController().updateLoopChannels(
     {
       bgm: {
@@ -126,6 +172,7 @@ export function retryLockedGameplayAudio(): void {
 }
 
 export function disposeGameplayAudio(): void {
+  voiceRequest += 1;
   controller.dispose();
   disposed = true;
 }

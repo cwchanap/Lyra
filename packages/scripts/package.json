@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@lyra/asset-paths": "workspace:*",
+    "@lyra/dialogue-locale": "workspace:*",
     "@lyra/scene-types": "workspace:*",
     "chokidar": "^5.0.0",
     "yaml": "^2.9.0"

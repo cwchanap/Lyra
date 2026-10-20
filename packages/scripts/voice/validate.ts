@@ -1,4 +1,4 @@
-import { localeLineKey } from "./line-key";
+import { localeLineKey } from "@lyra/dialogue-locale";
 import { localeScriptPath, sceneSourcePath } from "./locale-script";
 import type { ExistingScript } from "./sync";
 import type {
@@ -73,6 +73,23 @@ export function validateChapterScripts(input: {
     string,
     { line: LocaleScriptLine; path: string }
   >();
+  const clipOwner = new Map<string, string>();
+  for (const script of input.existing) {
+    for (const line of [...script.file.lines, ...script.file.stale]) {
+      if (!line.voice) continue;
+      const prior = clipOwner.get(line.voice.clip);
+      if (prior !== undefined) {
+        diagnostics.push({
+          severity: "error",
+          code: "localeScriptDuplicateClip",
+          message: `Clip ${line.voice.clip} is used by both "${prior}" and "${label(line)}"; each line needs its own clip.`,
+          path: script.path,
+        });
+        continue;
+      }
+      clipOwner.set(line.voice.clip, label(line));
+    }
+  }
   for (const script of input.existing) {
     const expectedSource = sceneSourcePath(input.chapterId, script.sceneFile);
     if (script.file.source !== expectedSource) {
@@ -145,6 +162,14 @@ export function validateChapterScripts(input: {
           message: `"${label(line)}" has no translation yet.`,
           path: script.path,
         });
+        if (line.voice) {
+          diagnostics.push({
+            severity: "warning",
+            code: "localeScriptVoiceWithoutTranslation",
+            message: `"${label(line)}" has voice clip ${line.voice.clip} but no translation; the game skips it.`,
+            path: script.path,
+          });
+        }
       } else {
         summary.translated += 1;
       }

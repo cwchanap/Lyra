@@ -175,6 +175,10 @@ that is what prevents silent drift in the emitted JSON/wire contract:
   wire types, not the full runtime scene JSON. Add a new shared `EvidenceSource`
   variant or layout shape here, not on one side. `DialogueItem` is deliberately
   NOT shared (the editor keeps a narrower rendering view).
+- `@lyra/dialogue-locale` - the translated-dialogue contract shared by the
+  compiler and the game: the line key that matches a spoken line to its
+  translation (speaker, Chinese text, expression), the supported locales, and
+  the `dialogue_locale.<locale>.json` manifest types.
 - `@lyra/scripts` - the compile-scenes pipeline plus audio tooling (formerly the
   root `scripts/` directory). The root `scenes:*`, `audio:*`, and
   `evidence-sources:audit` scripts delegate here via
@@ -205,6 +209,12 @@ Keep the ownership boundary intact:
 - Only `.gitkeep` files are tracked in those generated resource directories.
   Generated JSON may appear locally after compile/build and is intentionally
   ignored.
+- `scenes:compile` also writes `resources/assets/dialogue_locale.ja.json`:
+  each chapter's spoken lines with their Japanese text and, when the script
+  names a `voice.clip` whose `.ogg` exists under `static/assets/voice/ja/`, a
+  `voice.ja.<clip>` asset ID. The game reads it through the
+  `get_dialogue_locale` command and `DialogueBox` plays the clip. Missing
+  translations and clips are locale warnings, never errors.
 - `story_catalog.json` is always compiler-generated and required at runtime,
   including when no authored `story_catalog.md` exists. Do not hand-edit or
   commit it; repair a stale local resource tree with exactly

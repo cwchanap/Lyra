@@ -9,8 +9,10 @@ import {
 import type { AssetConfig } from "./config";
 import {
   parsePortraitAssetId,
+  parseVoiceAssetId,
   portraitAssetId,
   publicPathForAssetId,
+  voiceAssetId,
   type AssetPathType,
 } from "@lyra/asset-paths";
 
@@ -20,7 +22,7 @@ import {
 // All three now delegate to publicPathForAssetId() from @lyra/asset-paths.
 const CROSS_CHECK_CASES: Array<{
   assetId: string;
-  type: AssetPathType;
+  type: Exclude<AssetPathType, "voice">;
   expected: string;
 }> = [
   {
@@ -137,6 +139,23 @@ describe("story asset manifest paths", () => {
   it("throws for audio assetIds with unsupported channels", () => {
     expect(() => publicPath("audio.voice.line_001", "audio")).toThrow(
       /expected channel bgm, bgs, or sfx, got "voice"/,
+    );
+  });
+
+  it("builds, parses and maps voice clip asset ids through one owner", () => {
+    expect(voiceAssetId("ja", "ch1_soma_ritsu_0001")).toBe(
+      "voice.ja.ch1_soma_ritsu_0001",
+    );
+    expect(parseVoiceAssetId("voice.ja.ch1_soma_ritsu_0001")).toEqual({
+      locale: "ja",
+      clip: "ch1_soma_ritsu_0001",
+    });
+    expect(publicPathForAssetId("voice.ja.ch1_soma_ritsu_0001", "voice")).toBe(
+      "/assets/voice/ja/ch1_soma_ritsu_0001.ogg",
+    );
+    expect(() => parseVoiceAssetId("voice.ja")).toThrow(/expected exactly 3/);
+    expect(() => parseVoiceAssetId("audio.ja.ch1_soma_ritsu_0001")).toThrow(
+      /expected voice\.<locale>\.<clip>/,
     );
   });
 

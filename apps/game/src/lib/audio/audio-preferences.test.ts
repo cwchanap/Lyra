@@ -37,12 +37,37 @@ describe("audio preferences", () => {
         bgmVolume: 2,
         bgsVolume: -1,
         sfxVolume: 0.25,
+        voiceVolume: 7,
+        voiceEnabled: "no",
       }),
     ).toEqual({
       muted: false,
       bgmVolume: 1,
       bgsVolume: 0,
       sfxVolume: 0.25,
+      voiceVolume: 1,
+      voiceEnabled: true,
+    });
+  });
+
+  it("gives preferences saved before voices existed the voice defaults", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      AUDIO_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({
+        muted: false,
+        bgmVolume: 0.3,
+        bgsVolume: 0.2,
+        sfxVolume: 0.1,
+      }),
+    );
+    expect(loadAudioPreferences(storage)).toEqual({
+      muted: false,
+      bgmVolume: 0.3,
+      bgsVolume: 0.2,
+      sfxVolume: 0.1,
+      voiceVolume: 0.9,
+      voiceEnabled: true,
     });
   });
 
@@ -55,6 +80,8 @@ describe("audio preferences", () => {
         bgmVolume: 0.4,
         bgsVolume: 0.5,
         sfxVolume: 0.6,
+        voiceVolume: 0.7,
+        voiceEnabled: false,
       }),
     );
     expect(loadAudioPreferences(storage)).toEqual({
@@ -62,6 +89,8 @@ describe("audio preferences", () => {
       bgmVolume: 0.4,
       bgsVolume: 0.5,
       sfxVolume: 0.6,
+      voiceVolume: 0.7,
+      voiceEnabled: false,
     });
   });
 
@@ -83,7 +112,14 @@ describe("audio preferences", () => {
   it("saves normalized preferences", () => {
     const storage = new MemoryStorage();
     const saved = saveAudioPreferences(
-      { muted: true, bgmVolume: 9, bgsVolume: 0.2, sfxVolume: -3 },
+      {
+        muted: true,
+        bgmVolume: 9,
+        bgsVolume: 0.2,
+        sfxVolume: -3,
+        voiceVolume: 0.5,
+        voiceEnabled: false,
+      },
       storage,
     );
     expect(saved).toBe(true);
@@ -94,6 +130,8 @@ describe("audio preferences", () => {
       bgmVolume: 1,
       bgsVolume: 0.2,
       sfxVolume: 0,
+      voiceVolume: 0.5,
+      voiceEnabled: false,
     });
   });
 
@@ -197,6 +235,8 @@ describe("browserStorage", () => {
       bgmVolume: 0.3,
       bgsVolume: 0.4,
       sfxVolume: 0.5,
+      voiceVolume: 0.9,
+      voiceEnabled: true,
     });
   });
 
