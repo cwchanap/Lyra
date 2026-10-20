@@ -1,141 +1,187 @@
 # ja script for docs/stories_plan/chapter_1/interrogation_scene_4.md.
-# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
-# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+# Each entry is linked to its scene line by `id` (the line's {#L012} tag);
+# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,
+# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run
+# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
 schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/interrogation_scene_4.md
 lines:
-  - speaker: 早坂茜
+  - id: L001
+    speaker: 早坂茜
     zh: 他從進來就一直捏著那罐東西。
     ja: 来てからずっと、あの缶を握りしめてる。
-  - speaker: 相馬律
+  - id: L002
+    speaker: 相馬律
     zh: 他剛才在販賣機前站了一會兒。
     ja: さっき、自販機の前でしばらく立ってた。
-  - speaker: 早坂茜
+  - id: L003
+    speaker: 早坂茜
     zh: 等下用物證說話。
     ja: 始まったら、物証で話して。
-  - speaker: 相馬律
+  - id: L004
+    speaker: 相馬律
     zh: 嗯。先看他那罐。
     ja: うん。まずは、あの缶からだ。
-  - speaker: 相馬律
+  - id: L005
+    speaker: 相馬律
     zh: 你買了黑咖啡。
     ja: ブラックコーヒーを買ったんだね。
-  - speaker: 三宅蒼太
+  - id: L006
+    speaker: 三宅蒼太
     zh: ……啊。
     ja: ……あ。
-  - speaker: 三宅蒼太
+  - id: L007
+    speaker: 三宅蒼太
     zh: 我媽不能喝咖啡。
     ja: 母さん、コーヒー飲めないんです。
-  - speaker: 相馬律
+  - id: L008
+    speaker: 相馬律
     zh: 那你為什麼買這個？
     ja: じゃあ、どうしてこれを？
-  - speaker: 三宅蒼太
+  - id: L009
+    speaker: 三宅蒼太
     zh: 我本來要買熱牛奶的。給我媽的。
     ja: 本当は、ホットミルクを買うつもりだったんです。母さんに。
-  - speaker: 三宅蒼太
+  - id: L010
+    speaker: 三宅蒼太
     zh: 我只是……習慣先想她喝什麼。一緊張就按錯了。
     ja: ただ……いつも先に、母さんが何を飲むか考えちゃって。緊張すると、押し間違えるんです。
-  - speaker: 早坂茜
+  - id: L011
+    speaker: 早坂茜
     zh: 相馬，問話可以開始了。
     ja: 相馬、聴取を始めていい。
-  - speaker: 相馬律
+  - id: L042
+    speaker: 相馬律
     zh: 他撒的是小謊，為了蛋糕盒和那通電話。
     ja: 彼がついたのは小さな嘘だ。ケーキの箱と、あの電話のことで。
-  - speaker: 早坂茜
+  - id: L043
+    speaker: 早坂茜
     zh: 摘要還站得住。下一步，找能對上時間的物證。
     ja: サマリーはまだ崩れてない。次は、時刻と噛み合う物証を探す。
-  - speaker: 相馬律
+  - id: L044
+    speaker: 相馬律
     zh: 我知道。要動搖摘要，靠的是物證，不是他孝不孝順。
     ja: わかってる。サマリーを揺るがすのは物証だ。彼が親孝行かどうかじゃない。
-  - speaker: 早坂茜
+  - id: L012
+    speaker: 早坂茜
     zh: 把他的說法和現場紀錄一條條對上。
     ja: 彼の話と現場の記録を、ひとつずつ突き合わせて。
-  - speaker: 三宅蒼太
+  - id: L013
+    speaker: 三宅蒼太
     zh: 那個時間……你要問，我再想一次。
     ja: その時間のこと……聞かれるなら、もう一度思い出してみます。
-  - speaker: 相馬律
+  - id: L014
+    speaker: 相馬律
     zh: 把那段時間，從頭再理一次。
     ja: その時間のことを、最初から整理し直そう。
-  - speaker: 相馬律
+  - id: L015
+    speaker: 相馬律
     zh: 等一下，這句先讓我想想。
     ja: 待って。そこ、少し考えさせて。
-  - speaker: 三宅蒼太
+  - id: L016
+    speaker: 三宅蒼太
     zh: 這句……應該沒問題吧？
     ja: そこ……おかしくないですよね？
-  - speaker: 相馬律
+  - id: L017
+    speaker: 相馬律
     zh: 不對，這對不上那個時間點。
     ja: 違う。これじゃ、その時刻と噛み合わない。
-  - speaker: 三宅蒼太
+  - id: L018
+    speaker: 三宅蒼太
     zh: 那個時候……我記不太清楚。關店的事很碎，我沒特別記。
     ja: その頃は……よく覚えてないです。閉店の作業って細かいので、特に覚えてなくて。
-  - speaker: 相馬律
+  - id: L019
+    speaker: 相馬律
     zh: 那個時間，白板上的收銀關帳、清潔回收都還沒做完。你不會完全沒印象。
     ja: その時間は、ホワイトボードのレジ締めも、清掃と回収も、まだ終わってない。何も覚えてないはずはないよ。
-  - speaker: 三宅蒼太
+  - id: L020
+    speaker: 三宅蒼太
     expression: strained
     zh: ……那時候我躲在員工休息區，偷偷打給我媽。值班不能打私人電話，我怕被說，才沒講。
     ja: ……そのとき、スタッフの休憩スペースに隠れて、こっそり母さんに電話してました。シフト中は私用の電話が禁止で、怒られるのが怖くて、言えなかったんです。
-  - speaker: 三宅蒼太
+  - id: L021
+    speaker: 三宅蒼太
     zh: 這跟那個時間有什麼關係？我記不清楚就是記不清楚。
     ja: それが、その時間と何の関係があるんですか？覚えてないものは、覚えてないです。
-  - speaker: 三宅蒼太
+  - id: L022
+    speaker: 三宅蒼太
     zh: 後場那趟……我說的都是真的。
     ja: バックヤードに行ったのは……本当に、言った通りです。
-  - speaker: 相馬律
+  - id: L023
+    speaker: 相馬律
     zh: 後場那段，我再聽一次。
     ja: バックヤードのところ、もう一回聞かせて。
-  - speaker: 相馬律
+  - id: L024
+    speaker: 相馬律
     zh: 這句，先停一下。
     ja: そこで、ちょっと止めて。
-  - speaker: 三宅蒼太
+  - id: L025
+    speaker: 三宅蒼太
     zh: 這……沒有不對吧？
     ja: これ……間違ってないですよね？
-  - speaker: 相馬律
+  - id: L026
+    speaker: 相馬律
     zh: 不是這件，再找一次，別繞著清潔用品打轉。
     ja: これじゃない。探し直そう。清掃用品のところで堂々巡りしても仕方ない。
-  - speaker: 三宅蒼太
+  - id: L027
+    speaker: 三宅蒼太
     zh: 拿清潔用品。擦桌、倒垃圾那些，東西都放在後場。
     ja: 清掃用品を取りに行きました。テーブル拭きとか、ゴミ出しとか、そういう道具は全部バックヤードにあるので。
-  - speaker: 三宅蒼太
+  - id: L028
+    speaker: 三宅蒼太
     zh: 那趟大概二十三點零六分，我記得經過走廊那個鐘。
     ja: それが大体、二十三時六分で……廊下の時計の前を通ったのを覚えてます。
-  - speaker: 相馬律
+  - id: L029
+    speaker: 相馬律
     zh: 只拿清潔用品？再想一次。
     ja: 清掃用品だけ？もう一度、思い出して。
-  - speaker: 三宅蒼太
+  - id: L030
+    speaker: 三宅蒼太
     expression: strained
     zh: ……我還從後場拿了一個蛋糕盒。本來就要丟的，我想帶回去給我媽，怕被當成偷東西，才沒講。
     ja: ……バックヤードから、ケーキの箱もひとつ持ってきました。もともと捨てるものだったんです。母さんに持って帰りたくて……盗んだと思われるのが怖くて、言えませんでした。
-  - speaker: 三宅蒼太
+  - id: L031
+    speaker: 三宅蒼太
     zh: 這跟清潔用品有什麼關係？我就是拿了那些而已。
     ja: それが清掃用品と何の関係があるんですか？取ったのは、それだけです。
-  - speaker: 三宅蒼太
+  - id: L032
+    speaker: 三宅蒼太
     zh: 這點我沒說謊，你再問幾次都一樣。
     ja: そこは嘘ついてません。何回聞かれても同じです。
-  - speaker: 相馬律
+  - id: L033
+    speaker: 相馬律
     zh: 內側倉庫，你確定一次都沒進？
     ja: 奥の倉庫には、本当に一度も入ってない？
-  - speaker: 三宅蒼太
+  - id: L034
+    speaker: 三宅蒼太
     zh: 確定。這點我真的沒進去。
     ja: はい。そこは本当に入ってません。
-  - speaker: 三宅蒼太
+  - id: L035
+    speaker: 三宅蒼太
     zh: 沒有。那裡平常我也不太進去。
     ja: 入ってません。あそこは普段から、あまり入らないので。
-  - speaker: 三宅蒼太
+  - id: L036
+    speaker: 三宅蒼太
     zh: 我知道的就這些，真的。
     ja: 僕が知ってるのは、これだけです。本当に。
-  - speaker: 相馬律
+  - id: L037
+    speaker: 相馬律
     zh: 那個外包的人，你看過？知道是誰嗎？
     ja: その外注の人、見たことある？誰だかわかる？
-  - speaker: 早坂茜
+  - id: L038
+    speaker: 早坂茜
     zh: 別急著把「外包的人」當成兇手。沒身分、沒時間、動線也對不上，這還不是證據。
     ja: 「外注の人」をすぐ犯人扱いしないで。身元も時刻もない、動線も合わない。これはまだ証拠じゃない。
-  - speaker: 三宅蒼太
+  - id: L039
+    speaker: 三宅蒼太
     zh: 好像是……外包那邊的人吧。我只聽他說過一句，不知道對方長什麼樣。
     ja: たしか……外注のほうの人、だったと思います。一度そう聞いただけで、相手がどんな人かは知りません。
-  - speaker: 相馬律
+  - id: L040
+    speaker: 相馬律
     zh: 一個要丟的蛋糕盒。他為這個撒了第一個小謊。
     ja: 捨てるはずだったケーキの箱。そのために、最初の小さな嘘をついた。
-  - speaker: 相馬律
+  - id: L041
+    speaker: 相馬律
     zh: 通話時間先記成待確認，之後再正式調。
     ja: 通話の時刻は、ひとまず要確認の項目に。あとで正式に照会する。

@@ -12,39 +12,39 @@
 
 [鑑識人員收起器材離開。早坂把資料包推到桌子中間，又拉開一張椅子。]
 
-**早坂茜**：坐下。
+**早坂茜**：坐下。 {#L001}
 
-**相馬律**：我還站得住。
+**相馬律**：我還站得住。 {#L002}
 
-**早坂茜**：你剛才把外包憑證直接叫成兇手。
+**早坂茜**：你剛才把外包憑證直接叫成兇手。 {#L003}
 
-**相馬律**：……坐一下。
+**相馬律**：……坐一下。 {#L004}
 
 [早坂從包裡拿出水瓶，放到相馬手邊。]
 
-**早坂茜**：水。
+**早坂茜**：水。 {#L005}
 
-**相馬律**：妳包裡到底裝了多少東西？
+**相馬律**：妳包裡到底裝了多少東西？ {#L006}
 
-**早坂茜**：能讓搭檔不倒下的東西。
+**早坂茜**：能讓搭檔不倒下的東西。 {#L007}
 
 [相馬喝了幾口水，肩膀終於鬆下來。]
 
-**相馬律**：今天第三次回這張桌子。
+**相馬律**：今天第三次回這張桌子。 {#L008}
 
-**早坂茜**：也第三次說「收工再吃」。
+**早坂茜**：也第三次說「收工再吃」。 {#L009}
 
-**相馬律**：妳記仇？
+**相馬律**：妳記仇？ {#L010}
 
-**早坂茜**：我留紀錄。
+**早坂茜**：我留紀錄。 {#L011}
 
 [相馬把三宅母親通話核實回覆放到桌面一側。]
 
-**相馬律**：這張也放上來。
+**相馬律**：這張也放上來。 {#L012}
 
-**早坂茜**：正式證物，放小謊那欄。
+**早坂茜**：正式證物，放小謊那欄。 {#L013}
 
-**相馬律**：其餘先留白。我不替空位猜人。
+**相馬律**：其餘先留白。我不替空位猜人。 {#L014}
 
 ## Board: 證據包整理 {#evidence_packages}
 
@@ -82,11 +82,11 @@
 
 ### Result Dialogue
 
-**相馬律**：我急著找兇手時，也差點把三宅的小謊塞進同一欄。
+**相馬律**：我急著找兇手時，也差點把三宅的小謊塞進同一欄。 {#L015}
 
-**早坂茜**：你肯停手重排，就還來得及。
+**早坂茜**：你肯停手重排，就還來得及。 {#L016}
 
-**相馬律**：第三者還沒有名字。先留白。
+**相馬律**：第三者還沒有名字。先留白。 {#L017}
 
 [場景：雨鐘咖啡館後場的保全鏈固定區，深夜；同一張紀錄桌與打開的維護面板留在工作燈下。]
 - **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, no readable text. Detective Kurose Toru baked into the center of the room standing beside the panel: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he supervises the forensic fixation, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard practical lamp with cool rain spill, not covering the open maintenance panel, evidence record table, or the fixed-record hotspot on the table.
@@ -127,9 +127,9 @@
 
 ### Result Dialogue
 
-**相馬律**：本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。
+**相馬律**：本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。 {#L018}
 
-**早坂茜**：把這句寫進申請，名字那格繼續空著。
+**早坂茜**：把這句寫進申請，名字那格繼續空著。 {#L019}
 
 ## Board: 有限調取申請基礎 {#narrow_request_basis}
 
@@ -169,24 +169,24 @@
 
 ### Result Dialogue
 
-**相馬律**：申請寫好了。我的字開始飄了。
+**相馬律**：申請寫好了。我的字開始飄了。 {#L020}
 
-**早坂茜**：先別送。你把名字那格留白了嗎？
+**早坂茜**：先別送。你把名字那格留白了嗎？ {#L021}
 
-**相馬律**：留了。外部憑證還沒有身分。
+**相馬律**：留了。外部憑證還沒有身分。 {#L022}
 
-**早坂茜**：好。餅乾一人一半。
+**早坂茜**：好。餅乾一人一半。 {#L023}
 
 ## Outro
 
-**早坂茜**[stern]：申請準備好了；身分仍未明，核准片段也還不能取得。
+**早坂茜**[stern]：申請準備好了；身分仍未明，核准片段也還不能取得。 {#L024}
 
-**相馬律**[relieved]：先不猜名字。
+**相馬律**[relieved]：先不猜名字。 {#L025}
 
-**相馬律**[relieved]：餅乾真的分我一半？
+**相馬律**[relieved]：餅乾真的分我一半？ {#L026}
 
-**早坂茜**：你先把水喝完。
+**早坂茜**：你先把水喝完。 {#L027}
 
-**相馬律**：這算合作默契？
+**相馬律**：這算合作默契？ {#L028}
 
-**早坂茜**：這算避免搭檔倒在證據桌上。
+**早坂茜**：這算避免搭檔倒在證據桌上。 {#L029}

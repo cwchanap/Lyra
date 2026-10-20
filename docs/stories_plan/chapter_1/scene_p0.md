@@ -7,21 +7,21 @@
 - **BGM:** bgm_city_summary_motif
 - **BGS:** bgs_shopping_street_rain_dusk
 
-**旁白**：東京，下雨的傍晚。
+**旁白**：東京，下雨的傍晚。 {#L001}
 
 [站內螢幕亮起，顯示一份普通的運行摘要：延誤原因、影響路線、替代方案。這是城市裡隨處可見的資訊介面。]
 
 [另一側的新聞螢幕切換，播出一則簡短快訊。]
 
-**旁白**：KAGAMI Evidence Summary Pilot：證據摘要審查會擴大試行。
+**旁白**：KAGAMI Evidence Summary Pilot：證據摘要審查會擴大試行。 {#L002}
 
 [場景：吉祥寺商店街的騎樓下，傍晚，雨勢轉小。幾名路人站在簷下避雨，遠處招牌的燈光映在濕地上。]
 - **Background Prompt:** Kichijoji shopping street arcade under an awning at rainy dusk, small group of anonymous commuters sheltering from drizzle, wet pavement reflecting neon storefront signs, stacked vending machines glowing softly, neo-noir visual novel background, no foreground faces, no readable signage text.
 - **BGS:** bgs_shopping_street_rain_dusk
 
-**路人甲**：新聞說現在連證據都能先整理好。
+**路人甲**：新聞說現在連證據都能先整理好。 {#L003}
 
-**路人乙**：有系統整理，也好，總比誰聲音大誰贏。
+**路人乙**：有系統整理，也好，總比誰聲音大誰贏。 {#L004}
 
 [兩人沒再說下去，雨聲蓋過對話。]
 
@@ -29,7 +29,7 @@
 - **Background Prompt:** Wide Tokyo pedestrian crossing in the rain at dusk, a stream of transparent umbrellas crossing under traffic lights, giant overhead screen captions reflected on wet umbrella surfaces, blue storefront signboard glow briefly tinting a few umbrellas pale blue, wet asphalt reflections, cinematic neo-noir visual novel background, no individual faces, no readable screen text.
 - **BGS:** bgs_shopping_street_rain_dusk
 
-**旁白**：腳步比雨聲還急。
+**旁白**：腳步比雨聲還急。 {#L005}
 
 [巨型螢幕的字幕倒映在傘面上，隨腳步晃動。]
 
@@ -43,13 +43,13 @@
 - **Background Prompt:** Exterior of a Japanese legal-aid office at rainy dusk shifting to night, tall electronic billboard playing a procedural promotional short, a few anonymous umbrella-holding pedestrians pausing underneath, wet sidewalk reflections, cold institutional light mixed with storefront glow, neo-noir visual novel background, no foreground faces, no readable billboard text.
 - **BGS:** bgs_shopping_street_rain_night
 
-**旁白**：看板上，影片正在播放。
+**旁白**：看板上，影片正在播放。 {#L006}
 
-**旁白**：畫面很乾淨，字也很整齊。
+**旁白**：畫面很乾淨，字也很整齊。 {#L007}
 
 [一名路人抬頭看了標題一會兒。]
 
-**路人丙**：有系統整理，應該比較不會冤枉人吧。
+**路人丙**：有系統整理，應該比較不會冤枉人吧。 {#L008}
 
 [身旁的人沒有接話，只是把傘壓低了一點。]
 

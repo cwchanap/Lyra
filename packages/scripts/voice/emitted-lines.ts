@@ -1,19 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, resolve } from "node:path";
-import type { EmittedSceneRecordV1 } from "../compile-scenes/dialogue-segment-origins";
+import { resolve } from "node:path";
 import { compile } from "../compile-scenes/orchestrator";
 import type { CompileError } from "../compile-scenes/types";
 import { STORY_ROOT } from "./locale-script";
-import { spokenLinesOfScene } from "./scene-lines";
 import type { EmittedScene } from "./types";
-
-type ChaptersIndex = {
-  chapters: Array<{
-    id: string;
-    scenes: Array<{ type: string; file: string }>;
-  }>;
-};
 
 type EmittedLinesResult =
   | { ok: true; scenes: EmittedScene[] }
@@ -21,10 +12,10 @@ type EmittedLinesResult =
 
 /**
  * Lists every spoken `line` item of one chapter, in manifest scene order and
- * emitted dialogue order, by compiling the authored tree into a throwaway
- * directory. Reads the same emitted JSON the game loads (asset enrichment
- * included, so portrait expressions match runtime), and never touches the
- * generated resource tree.
+ * emitted dialogue order, with each line's `{#L012}` ID, by compiling the
+ * authored tree into a throwaway directory. Uses the same emitted scenes the
+ * game loads (asset enrichment included, so portrait expressions match
+ * runtime), and never touches the generated resource tree.
  */
 export function collectEmittedLines(input: {
   repoRoot: string;
@@ -34,10 +25,9 @@ export function collectEmittedLines(input: {
 }): EmittedLinesResult {
   const workDir = mkdtempSync(resolve(tmpdir(), "lyra-voice-"));
   try {
-    const outputRoot = resolve(workDir, "scenes");
     const result = compile({
       sourceRoot: resolve(input.repoRoot, input.storyRoot ?? STORY_ROOT),
-      outputRoot,
+      outputRoot: resolve(workDir, "scenes"),
       assetConfigRoot: resolve(
         input.repoRoot,
         input.assetConfigRoot ?? "static/assets/config",
@@ -47,10 +37,9 @@ export function collectEmittedLines(input: {
     });
     if (!result.ok) return { ok: false, errors: result.errors };
 
-    const index = JSON.parse(
-      readFileSync(resolve(outputRoot, "chapters.json"), "utf-8"),
-    ) as ChaptersIndex;
-    const chapter = index.chapters.find((c) => c.id === input.chapterId);
+    const chapter = result.spokenLines.find(
+      (c) => c.chapterId === input.chapterId,
+    );
     if (!chapter) {
       return {
         ok: false,
@@ -64,19 +53,15 @@ export function collectEmittedLines(input: {
         ],
       };
     }
-
-    const scenes: EmittedScene[] = chapter.scenes.map((ref) => {
-      const json = JSON.parse(
-        readFileSync(resolve(outputRoot, ref.file), "utf-8"),
-      ) as EmittedSceneRecordV1["json"];
-      return {
+    return {
+      ok: true,
+      scenes: chapter.scenes.map((scene) => ({
         chapterId: input.chapterId,
-        sceneFile: basename(ref.file).replace(/\.json$/, ".md"),
-        sceneId: json.id,
-        lines: spokenLinesOfScene(input.chapterId, json),
-      };
-    });
-    return { ok: true, scenes };
+        sceneFile: scene.sceneFile,
+        sceneId: scene.sceneId,
+        lines: scene.lines,
+      })),
+    };
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }

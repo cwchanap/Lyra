@@ -61,6 +61,25 @@ describe("direct reader lines", () => {
     );
   });
 
+  it("keeps the line's trailing line ID", () => {
+    const source =
+      "**相馬律**：原文 {#L012}  \n- **On Loop:** **澪**：舊 {#L013}";
+    const first = render(
+      source,
+      target({ line: 1, currentText: "原文" }),
+      "新文",
+    );
+    if (!first.ok) throw new Error(first.diagnostic.message);
+    expect(first.nextContent).toBe(
+      "**相馬律**：新文 {#L012}  \n- **On Loop:** **澪**：舊 {#L013}",
+    );
+    const second = render(source, target({ line: 2, currentText: "舊" }), "新");
+    if (!second.ok) throw new Error(second.diagnostic.message);
+    expect(second.nextContent).toBe(
+      "**相馬律**：原文 {#L012}  \n- **On Loop:** **澪**：新 {#L013}",
+    );
+  });
+
   it("preserves CRLF line endings on untouched parts of the document", () => {
     const source = "# Scene 0: 接案\r\n\r\n**相馬律**：原文\r\nnext";
     const result = render(

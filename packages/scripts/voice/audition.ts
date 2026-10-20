@@ -75,6 +75,7 @@ export function planAuditions(input: {
         path: auditionPath(cast.characterId, candidate, index + 1),
         request: buildTtsRequest({
           line: {
+            id: `L${String(index + 1).padStart(3, "0")}`,
             speaker,
             zh: "",
             ja: audition.ja,

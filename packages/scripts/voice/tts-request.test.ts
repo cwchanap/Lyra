@@ -46,6 +46,7 @@ const read = glossaryReader(GLOSSARY);
 
 function line(extra: Partial<LocaleScriptLine> = {}): LocaleScriptLine {
   return {
+    id: "L012",
     speaker: "神谷澪",
     zh: "中",
     ja: "相馬律は証拠サマリー審査会に来た。",

@@ -1,6 +1,7 @@
 import { basename } from "node:path";
 import YAML from "yaml";
 import { DEFAULT_EXPRESSION } from "@lyra/dialogue-locale";
+import { LINE_ID_PATTERN } from "../compile-scenes/line-ids";
 import type {
   LocaleScriptFile,
   LocaleScriptLine,
@@ -19,6 +20,7 @@ const ROOT_KEYS = new Set([
   "stale",
 ]);
 const LINE_KEYS = new Set([
+  "id",
   "speaker",
   "expression",
   "zh",
@@ -148,7 +150,16 @@ function parseLine(
       );
     }
   }
-  const { speaker, expression, zh, ja, note, voice } = raw;
+  const { id, speaker, expression, zh, ja, note, voice } = raw;
+  if (typeof id !== "string" || !LINE_ID_PATTERN.test(id)) {
+    diagnostics.push(
+      error(
+        path,
+        "localeScriptSchema",
+        "`id` must be the scene line's ID, such as L012.",
+      ),
+    );
+  }
   if (typeof speaker !== "string" || speaker.length === 0) {
     diagnostics.push(
       error(
@@ -205,6 +216,7 @@ function parseLine(
   if (diagnostics.length > before) return null;
 
   const line: LocaleScriptLine = {
+    id: id as string,
     speaker: speaker as string,
     zh: zh as string,
     ja: ja as string,
@@ -319,7 +331,10 @@ function orderedVoice(voice: LocaleScriptVoice): Record<string, string> {
 }
 
 function orderedLine(line: LocaleScriptLine): Record<string, unknown> {
-  const out: Record<string, unknown> = { speaker: line.speaker };
+  const out: Record<string, unknown> = {
+    id: line.id,
+    speaker: line.speaker,
+  };
   if (line.expression !== undefined) out.expression = line.expression;
   out.zh = line.zh;
   out.ja = line.ja;
@@ -338,8 +353,10 @@ export function serializeLocaleScript(file: LocaleScriptFile): string {
   if (file.stale.length > 0) body.stale = file.stale.map(orderedLine);
   const header = [
     `# ${file.locale} script for ${file.source}.`,
-    "# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,",
-    "# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.",
+    "# Each entry is linked to its scene line by `id` (the line's {#L012} tag);",
+    "# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,",
+    "# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run",
+    "# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.",
   ].join("\n");
   return `${header}\n${YAML.stringify(body, { lineWidth: 0 })}`;
 }

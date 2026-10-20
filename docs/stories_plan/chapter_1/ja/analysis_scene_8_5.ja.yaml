@@ -1,97 +1,128 @@
 # ja script for docs/stories_plan/chapter_1/analysis_scene_8_5.md.
-# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
-# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+# Each entry is linked to its scene line by `id` (the line's {#L012} tag);
+# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,
+# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run
+# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
 schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/analysis_scene_8_5.md
 lines:
-  - speaker: 早坂茜
+  - id: L001
+    speaker: 早坂茜
     zh: 坐下。
     ja: 座って。
-  - speaker: 相馬律
+  - id: L002
+    speaker: 相馬律
     zh: 我還站得住。
     ja: まだ立ってられる。
-  - speaker: 早坂茜
+  - id: L003
+    speaker: 早坂茜
     zh: 你剛才把外包憑證直接叫成兇手。
     ja: さっき、外注認証をそのまま犯人呼ばわりした。
-  - speaker: 相馬律
+  - id: L004
+    speaker: 相馬律
     zh: ……坐一下。
     ja: ……少しだけ座る。
-  - speaker: 早坂茜
+  - id: L005
+    speaker: 早坂茜
     zh: 水。
     ja: 水。
-  - speaker: 相馬律
+  - id: L006
+    speaker: 相馬律
     zh: 妳包裡到底裝了多少東西？
     ja: その鞄、いったい何がどれだけ入ってるんだ？
-  - speaker: 早坂茜
+  - id: L007
+    speaker: 早坂茜
     zh: 能讓搭檔不倒下的東西。
     ja: 相棒を倒れさせないためのもの。
-  - speaker: 相馬律
+  - id: L008
+    speaker: 相馬律
     zh: 今天第三次回這張桌子。
     ja: この机に戻ってくるの、今日で三回目だ。
-  - speaker: 早坂茜
+  - id: L009
+    speaker: 早坂茜
     zh: 也第三次說「收工再吃」。
     ja: 「片付いてから食べる」も、三回目。
-  - speaker: 相馬律
+  - id: L010
+    speaker: 相馬律
     zh: 妳記仇？
     ja: 根に持ってるのか？
-  - speaker: 早坂茜
+  - id: L011
+    speaker: 早坂茜
     zh: 我留紀錄。
     ja: 記録を残してるだけ。
-  - speaker: 相馬律
+  - id: L012
+    speaker: 相馬律
     zh: 這張也放上來。
     ja: これも並べておく。
-  - speaker: 早坂茜
+  - id: L013
+    speaker: 早坂茜
     zh: 正式證物，放小謊那欄。
     ja: 正式な証拠品。小さな嘘の欄へ。
-  - speaker: 相馬律
+  - id: L014
+    speaker: 相馬律
     zh: 其餘先留白。我不替空位猜人。
     ja: 残りはまだ空けておく。空欄に、当て推量で人は入れない。
-  - speaker: 相馬律
+  - id: L015
+    speaker: 相馬律
     zh: 我急著找兇手時，也差點把三宅的小謊塞進同一欄。
     ja: 犯人探しを焦って、三宅さんの小さな嘘まで同じ欄に押し込むところだった。
-  - speaker: 早坂茜
+  - id: L016
+    speaker: 早坂茜
     zh: 你肯停手重排，就還來得及。
     ja: 手を止めて並べ直せるなら、まだ間に合う。
-  - speaker: 相馬律
+  - id: L017
+    speaker: 相馬律
     zh: 第三者還沒有名字。先留白。
     ja: 第三者には、まだ名前がない。空けておく。
-  - speaker: 相馬律
+  - id: L018
+    speaker: 相馬律
     zh: 本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。
     ja: 本体の記録順とサマリーが合わない。二十三時七分五十秒は統合が完了した時刻で、誰か一人のイベントの時刻じゃない。
-  - speaker: 早坂茜
+  - id: L019
+    speaker: 早坂茜
     zh: 把這句寫進申請，名字那格繼續空著。
     ja: その一文を申請書に。名前の欄は空けたまま。
-  - speaker: 相馬律
+  - id: L020
+    speaker: 相馬律
     zh: 申請寫好了。我的字開始飄了。
     ja: 申請書、書けた。字が踊ってきた。
-  - speaker: 早坂茜
+  - id: L021
+    speaker: 早坂茜
     zh: 先別送。你把名字那格留白了嗎？
     ja: まだ出さないで。名前の欄、空けてある？
-  - speaker: 相馬律
+  - id: L022
+    speaker: 相馬律
     zh: 留了。外部憑證還沒有身分。
     ja: 空けてある。外部認証には、まだ身元がない。
-  - speaker: 早坂茜
+  - id: L023
+    speaker: 早坂茜
     zh: 好。餅乾一人一半。
     ja: よし。クッキー、半分ずつ。
-  - speaker: 早坂茜
+  - id: L024
+    speaker: 早坂茜
     expression: stern
     zh: 申請準備好了；身分仍未明，核准片段也還不能取得。
     ja: 申請の準備はできた。身元はまだ不明、承認済み抜粋もまだ取れない。
-  - speaker: 相馬律
+  - id: L025
+    speaker: 相馬律
     expression: relieved
     zh: 先不猜名字。
     ja: 名前は、まだ推測しない。
-  - speaker: 相馬律
+  - id: L026
+    speaker: 相馬律
     expression: relieved
     zh: 餅乾真的分我一半？
     ja: クッキー、本当に半分くれるのか？
-  - speaker: 早坂茜
+  - id: L027
+    speaker: 早坂茜
     zh: 你先把水喝完。
     ja: 先に水を飲み切って。
-  - speaker: 相馬律
+  - id: L028
+    speaker: 相馬律
     zh: 這算合作默契？
     ja: これって、息が合ってるってことか？
-  - speaker: 早坂茜
+  - id: L029
+    speaker: 早坂茜
     zh: 這算避免搭檔倒在證據桌上。
     ja: 相棒が証拠の机に倒れ込まないための予防。

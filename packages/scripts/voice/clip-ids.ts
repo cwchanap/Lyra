@@ -1,5 +1,6 @@
+import { keyExpression } from "@lyra/dialogue-locale";
 import type { CastEntry } from "./voice-cast";
-import type { LocaleScriptFile } from "./types";
+import type { LocaleScriptFile, LocaleScriptLine } from "./types";
 
 /** `chapter_1` + `soma_ritsu` -> `ch1_soma_ritsu_` */
 export function clipPrefix(chapterId: string, characterId: string): string {
@@ -17,11 +18,27 @@ function clipNumber(clip: string, prefix: string): number | null {
 }
 
 /**
+ * Two script entries with the same key read the same, so they share one clip.
+ */
+export function clipReadingKey(line: LocaleScriptLine): string {
+  return JSON.stringify([
+    line.speaker,
+    keyExpression(line.expression ?? null),
+    line.zh,
+    line.ja,
+  ]);
+}
+
+/**
  * Gives every translated line spoken by an approved cast member a clip ID,
  * `ch<N>_<characterId>_<nnnn>`, in chapter order. Numbers continue after the
  * highest one already used by a script entry (stale entries included) or by a
  * clip file on disk, so a clip ID is never reused for a different line and
  * existing IDs never change. Lines that already have a clip keep it.
+ *
+ * A line that reads exactly like an earlier one (same speaker, expression,
+ * Chinese and Japanese) gets no clip of its own: the game matches lines by
+ * their text, so both play the first one's clip.
  *
  * Mutates the lines of `files` in place and returns how many IDs it assigned.
  */
@@ -55,12 +72,21 @@ export function assignClipIds(input: {
     return value;
   };
 
+  const voiced = new Set(
+    files.flatMap((file) =>
+      file.lines.flatMap((line) => (line.voice ? [clipReadingKey(line)] : [])),
+    ),
+  );
+
   let assigned = 0;
   for (const file of files) {
     for (const line of file.lines) {
       if (line.voice || line.ja.trim().length === 0) continue;
       const cast = input.castBySpeaker.get(line.speaker);
       if (!cast) continue;
+      const reading = clipReadingKey(line);
+      if (voiced.has(reading)) continue;
+      voiced.add(reading);
       const prefix = clipPrefix(input.chapterId, cast.characterId);
       line.voice = {
         clip: `${prefix}${String(nextNumber(prefix)).padStart(4, "0")}`,

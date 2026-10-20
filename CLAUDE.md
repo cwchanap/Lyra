@@ -63,17 +63,20 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
     without it, generation fails at the transcoding step.
 - `bun run voice:sync <chapter_N>` - rebuild the chapter's Japanese locale
   scripts (`docs/stories_plan/<chapter_N>/ja/<scene>.ja.yaml`) from the compiled
-  dialogue: adds an untranslated entry per new spoken line, keeps existing
-  translations, and moves translations whose Chinese line is gone into the
-  file's `stale` list. It also gives each translated line of a role marked
+  dialogue. It first appends a line ID (` {#L012}`, unique within the scene
+  file) to every spoken line of the chapter's scene Markdown that has none,
+  then adds an untranslated entry per new ID, keeps existing entries, and
+  moves translated entries whose line was deleted into the file's `stale`
+  list. It also gives each translated line of a role marked
   `approved` in `static/assets/config/voice_cast.yaml` a clip ID
   (`ch<N>_<characterId>_<nnnn>`, never renumbered or reused). It compiles into
   a temporary directory and never touches the generated resource tree.
 - `bun run voice:validate <chapter_N> [--strict] [--verbose]` - check those
   scripts and `docs/stories_plan/ja_glossary.yaml` against the compiled
-  dialogue. Missing, untranslated, stale or misplaced entries, speakers
-  without a glossary entry and clips of roles with no approved voice are
-  warnings; `--strict` fails on them.
+  dialogue. Lines without an ID, missing, untranslated or stale entries,
+  lines that changed since translation, speakers without a glossary entry
+  and clips of roles with no approved voice are warnings; `--strict` fails
+  on them.
 - `bun run voice:audition <characterId>` (flags `--candidate <voiceId>`,
   `--dry-run`, `--force`) - record the role's `auditionLines` with each
   shortlisted voice in `voice_cast.yaml` into the gitignored
@@ -286,10 +289,15 @@ Chinese). Narrative content has two kinds — keep them straight:
     Authored via `writing-analysis-scene`, which owns the supported board kinds
     and kind-specific authoring contract.
   - `ja/<scene>.ja.yaml` - the Japanese translation of each scene's spoken
-    lines, one entry per unique speaker, expression and Chinese line, kept in
-    step with `bun run voice:sync`. Edit only `ja`, `note`, and a voiced
-    line's `voice.direction` / `voice.tts`; names and terms follow
-    `docs/stories_plan/ja_glossary.yaml`. The compiler ignores these files.
+    lines, one entry per line ID, kept in step with `bun run voice:sync`.
+    Once a chapter is translated, each spoken line in its scene Markdown ends
+    in an ID such as ` {#L012}` that links it to its entry: keep the ID when
+    editing or moving a line, never copy it to another line, and let
+    `voice:sync` add IDs to new lines. The ID is not part of the spoken text
+    or the scene JSON. Edit only `ja`, `note`, and a voiced line's
+    `voice.direction` / `voice.tts`; names and terms follow
+    `docs/stories_plan/ja_glossary.yaml`. Scene JSON never reads these files;
+    `scenes:compile` reads them only for `dialogue_locale.ja.json`.
     Translating, casting and generating voice follow the
     `voicing-lyra-dialogue` skill.
 

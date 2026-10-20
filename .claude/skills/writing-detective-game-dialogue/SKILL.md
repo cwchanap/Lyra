@@ -29,6 +29,7 @@ Use when the user asks you to:
    - Character name in Markdown **bold**.
    - Full-width colon `：` between name and dialogue.
    - One blank line between dialogue lines.
+   - **Line IDs:** a translated chapter's spoken lines end in an ID such as ` {#L012}` (`**相馬律**：先確認現場。 {#L012}`). It links the line to its translation and voice clip, and is never shown or spoken. Write new lines without one (`bun run voice:sync` adds it). When editing a line, keep its ID at the end; when moving a line, move its ID with it; never copy an ID onto another line or type one yourself.
 4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read `characters.md` (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry; resolve the on-screen label and portrait mode in `characters.yaml`.**
 5. **Scene tags on every scene change.** `[場景：...]` block at the top of every new scene, covering 地點 / 時間 / 天氣 / 氛圍 / 視覺要素 — feeds AI background-image generation.
 6. **Visible non-dialogue content lives in `[ ]` brackets** — facial expressions, body language, atmospheric beats, room/object state, and prop movement. Brackets are filtered out of the in-game dialogue UI; they serve as production reference only.

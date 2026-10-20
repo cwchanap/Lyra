@@ -23,7 +23,7 @@ as today.
 | Which of their lines are voiced | Every Chapter 1 line those four speak, including interrogation loop/challenge/wrong-answer lines | A voiced character who falls silent mid-scene reads as a bug. Repeated identical lines (same speaker, same text, same expression) share one clip: 608 unique clips. |
 | Which lines get Japanese text | All 793 spoken lines in Chapter 1 (every speaker plus 旁白), voiced or not | Translation needs whole-conversation context anyway, and it makes Chapter 1 dialogue complete for a later Japanese mode. Stage directions, scene tags, evidence text, hotspot labels and UI strings are left for that later localization project; the file format below extends to them. |
 | Where the Japanese script lives | One YAML file per scene beside the source: `docs/stories_plan/chapter_1/ja/<scene>.ja.yaml` | Keeps the Chinese Markdown and its parser contract untouched, sits next to the dialogue it translates, and is invisible to gameplay compilation (the compiler only reads files `chapter.md` lists). |
-| How a Japanese line is tied to its Chinese line | By the emitted line's `speaker`, exact `text`, and `portrait.expression` (null when the line has no portrait), translation-memory style. All three fields already reach the frontend on every `line` item, and one shared helper in a workspace package builds the key for both the compiler and the frontend | Survives line insertions and reordering. When a writer later edits the Chinese text, the validator reports the Japanese entry as stale instead of silently pairing the wrong audio. |
+| How a Japanese line is tied to its Chinese line | By a line ID: every spoken line in a translated scene ends in ` {#L012}`, unique within its scene file, and the script entry with `id: L012` is its translation. `voice:sync` writes the IDs; writers never type them. (Changed on 2026-10-20 from matching by speaker, exact text and expression, at the owner's request, so further locales can link to the same lines.) | Editing a line's Chinese text or moving it keeps its translation and clip; the validator flags the entry for review instead of dropping it. The ID stays out of the scene JSON, so saves are untouched, and the game still matches lines at runtime by speaker, text and expression through the generated locale manifest. |
 | Does voice touch saves | No. Voice and Japanese text ship in a separate locale manifest, not in scene JSON | The save `contentRevision` hashes emitted scene JSON, so keeping locale data out of it means recording or re-recording voices never invalidates saves. |
 | TTS model | `eleven_v3` (supports Japanese and audio tags such as `[whispers]` on the text-to-speech endpoint; `eleven_v4` is listed for the Text to Dialogue API, so the pilot tries it before switching) | Audio tags let one stored direction per line steer delivery; the pilot confirms the model before the full run. |
 | Where generation runs | The owner's Mac checkout through Remote Control, the same way Chapter 2 art and audio were made | The ElevenLabs key lives there (`packages/scripts/.env`, per CLAUDE.md). Translation, tooling and runtime work need no Mac. |
@@ -39,7 +39,8 @@ schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/scene_5.md
 lines:
-  - speaker: 神谷澪
+  - id: L012                         # the scene line `**神谷澪**：嫌疑人的態度不是證據。 {#L012}`
+    speaker: 神谷澪                  # speaker, expression and zh record what was translated
     zh: 嫌疑人的態度不是證據。
     ja: 被疑者の態度は、証拠ではありません。
     voice:
@@ -48,23 +49,29 @@ lines:
       tts: ひぎしゃのたいどは、しょうこではありません。  # optional reading override
       ttsHash: 3f9a1c2e0b4d          # written back by voice:generate
       generatedAt: 2026-10-25T10:00:00Z
-  - speaker: 旁白
+  - id: L013
+    speaker: 旁白
     zh: 一份案件摘要，正在生成。
     ja: 事件の要約が、生成されていく。
 ```
 
-- Lines appear in authored order. A repeated line is listed once, in the first
-  scene (chapter order) where it occurs; every occurrence plays that clip.
+- Lines appear in emitted order, each in the script of the scene file it is
+  written in. Each ID is listed once, even when the line plays more than
+  once. Two lines that read exactly the same keep separate entries but share
+  one clip.
 - `voice` exists only for speakers with an approved cast entry.
 - `clip` IDs are `ch<N>_<characterId>_<nnnn>`, assigned once and never
   renumbered (deleted lines leave gaps), so regenerating one line never
   renames another's file. `voice:sync` assigns them to translated lines of
   approved roles; a number used by a stale entry or an existing clip file is
   never reused. A clip of a role without an approved voice is a warning.
-- `voice:validate` fails on a key listed twice, a clip ID used twice, or a
-  wrong `source`/`locale`. A stale `zh`, an emitted line with no entry
-  (missing), an untranslated line and a voiced line with no translation are
-  warnings; `--strict` fails on warnings too.
+- `voice:validate` fails on an ID listed twice, a clip ID used twice, or a
+  wrong `source`/`locale`; the compiler fails on an ID used twice in a scene
+  file or a malformed `{#…}` tag. A line without an ID, a line whose speaker,
+  expression or text changed since translation, a stale entry (its line was
+  deleted), an emitted line with no entry (missing), an untranslated line
+  and a voiced line with no translation are warnings; `--strict` fails on
+  warnings too.
 
 ### 2.2 Glossary and style guide
 

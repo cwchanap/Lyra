@@ -1,41 +1,52 @@
 # ja script for docs/stories_plan/chapter_1/scene_0.md.
-# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
-# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+# Each entry is linked to its scene line by `id` (the line's {#L012} tag);
+# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,
+# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run
+# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
 schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/scene_0.md
 lines:
-  - speaker: 旁白
+  - id: L001
+    speaker: 旁白
     zh: 一份案件摘要，正在生成。
     ja: 事件サマリーが一件、生成されていく。
-  - speaker: 旁白
+  - id: L002
+    speaker: 旁白
     zh: 死者：增田圭。
     ja: 死亡者：増田圭。
     note: Field read off the KAGAMI summary screen; flat, clinical.
-  - speaker: 旁白
+  - id: L003
+    speaker: 旁白
     zh: 地點：吉祥寺咖啡館「雨鐘」。
     ja: 場所：吉祥寺のカフェ「雨鐘」。
     note: Field read off the KAGAMI summary screen.
-  - speaker: 旁白
+  - id: L004
+    speaker: 旁白
     zh: 推定案發時間：23:08 至 23:12。
     ja: 推定犯行時刻：23:08から23:12。
     note: Field read off the KAGAMI summary screen.
-  - speaker: 旁白
+  - id: L005
+    speaker: 旁白
     zh: 門鎖事件：23:07:50，以員工憑證開啟，持有人 三宅蒼太。
     ja: ドアロック記録：23:07:50、従業員認証で解錠。保有者、三宅蒼太。
     note: Field read off the KAGAMI summary screen.
-  - speaker: 旁白
+  - id: L006
+    speaker: 旁白
     zh: 監視器截圖：三宅蒼太靠近後場。
     ja: 防犯カメラの静止画：三宅蒼太、バックヤードに接近。
     note: Field read off the KAGAMI summary screen.
-  - speaker: 旁白
+  - id: L007
+    speaker: 旁白
     zh: 打卡紀錄：三宅蒼太當晚值班。
     ja: 打刻記録：三宅蒼太、当夜の勤務あり。
     note: Field read off the KAGAMI summary screen.
-  - speaker: 旁白
+  - id: L008
+    speaker: 旁白
     zh: 建議：主要嫌疑人 三宅蒼太。
     ja: 提案：主たる被疑者、三宅蒼太。
     note: Final field of the KAGAMI summary screen; the line that lands.
-  - speaker: 旁白
+  - id: L009
+    speaker: 旁白
     zh: 故事看起來，已經完整了。
     ja: 物語は、もう完成しているように見えた。
