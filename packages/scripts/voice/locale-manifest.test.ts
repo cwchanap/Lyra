@@ -62,9 +62,16 @@ describe("buildDialogueLocaleManifest", () => {
         ja: "待って。",
         voice: { clip: "ch1_hayasaka_akane_0001" },
       },
-      { speaker: "相馬律", zh: "走吧。", ja: "" },
+      // Whitespace counts as untranslated, so its existing clip never plays.
+      {
+        speaker: "相馬律",
+        zh: "走吧。",
+        ja: "  ",
+        voice: { clip: "ch1_soma_ritsu_0002" },
+      },
     ]);
     writeClip("ch1_soma_ritsu_0001");
+    writeClip("ch1_soma_ritsu_0002");
 
     const result = buildDialogueLocaleManifest({
       locale: "ja",

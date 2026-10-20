@@ -129,7 +129,7 @@ export function buildDialogueLocaleManifest(input: {
         if (seen.has(key)) continue;
         seen.add(key);
         const entry = pool.get(key);
-        if (!entry || entry.ja.length === 0) {
+        if (!entry || entry.ja.trim().length === 0) {
           untranslated += 1;
           continue;
         }
