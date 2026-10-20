@@ -1,0 +1,91 @@
+# Voice cast for the per-scene locale scripts (docs/stories_plan/<chapter>/<locale>/).
+# One entry per voiced character, reused across chapters. Only an `approved`
+# entry with a `voiceId` gets clip IDs from `voice:sync` and clips from
+# `voice:generate`. Set `approved` only for the exact voice the owner picked
+# after hearing `voice:audition`. See .claude/skills/voicing-lyra-dialogue.
+schemaVersion: 1
+locales:
+  ja:
+    # eleven_v3 takes audio tags such as [calm] and supports Japanese on the
+    # text-to-speech endpoint. eleven_v4 is listed for the Text to Dialogue API;
+    # try it in the pilot before switching.
+    model: eleven_v3
+    # ElevenLabs' Japanese text normalization: better kanji readings, slower requests.
+    languageTextNormalization: true
+    cast:
+      - characterId: soma_ritsu
+        status: proposed
+        voiceId: null
+        settings:
+          { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
+        seed: 1101
+        expressionDirections:
+          standard: "[calm]"
+          determined: "[determined]"
+          shaken: "[unsettled, quietly]"
+          relieved: "[relieved]"
+        auditionLines:
+          - ja: この会場、思ってたより寒いな。
+          - ja: つまり、現場にはもう一人いたということです。
+          - expression: shaken
+            ja: サマリーは嘘をついてるわけじゃない。
+        candidates:
+          - { name: Calm Japanese voice komi, voiceId: G4sNoJjgWjyp9nhj1Bhj }
+          - { name: Hadou v3, voiceId: 3VouIDzZzPEjDgmtbXBJ }
+          - { name: Yuta, voiceId: YqSsGYVfnt78k7OGZl33 }
+      - characterId: hayasaka_akane
+        status: proposed
+        voiceId: null
+        settings:
+          { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
+        seed: 1102
+        expressionDirections:
+          standard: "[matter-of-fact]"
+          stern: "[firmly]"
+          softened: "[warmly]"
+        auditionLines:
+          - ja: 今日は裁判じゃない。審査。
+          - expression: stern
+            ja: スクリーンショットで持てるのは疑いだけ。救うなら、採用されるもので救う。
+          - expression: softened
+            ja: 探偵がこんなにすんなり飲むなら、本当においしいんですね。
+        candidates:
+          - { name: Popo, voiceId: 1zDn39fNfsYODLsGC75y }
+          - { name: Kurea, voiceId: IgiTcMDSHJPIJjnlwIdM }
+          - { name: Shino, voiceId: Kohz4YYGbPgnEUrf8CZl }
+      - characterId: kamiya_mio
+        status: proposed
+        voiceId: null
+        settings:
+          { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
+        seed: 1103
+        expressionDirections:
+          standard: "[cool, precise]"
+          skeptical: "[skeptical]"
+          conceding: "[measured]"
+        auditionLines:
+          - ja: 被疑者の態度は証拠ではありません。
+          - expression: skeptical
+            ja: 小さな嘘が認められる以上、サマリーの信用性は彼の供述を上回ります。
+          - expression: conceding
+            ja: 北見修一、特定が成立。三宅蒼太を主たる被疑者とする方向は、撤回します。
+        candidates:
+          - { name: Kasane, voiceId: ioLsi3BGjCKHDhF2fNod }
+          - { name: Chiemi, voiceId: CAz2VQzFEVyGujit7Iof }
+          - { name: Yoko, voiceId: j3dRDAhPGt6NA8DY9Flv }
+      - characterId: kurose_toru
+        status: proposed
+        voiceId: null
+        settings:
+          { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
+        seed: 1104
+        expressionDirections:
+          standard: "[gruff, low]"
+        auditionLines:
+          - ja: これは受け取らん。使うなら、鑑識に保全させろ。
+          - ja: 二十年だ。家に帰っても抜けん。
+          - ja: そうだ。だがその幅は、22:58の争いの時刻と食い違わない。俺から渡せるのはこれだけだ。
+        candidates:
+          - { name: PiropiroRX, voiceId: YkUoVuNq2782tso28g8Q }
+          - { name: Haruma, voiceId: pL2AN47H9Cgg5ce6LNmO }
+          - { name: Shintarou, voiceId: Z9CocQcpiyoQFqRiRwRE }

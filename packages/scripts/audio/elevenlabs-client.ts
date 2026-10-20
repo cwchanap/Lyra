@@ -16,7 +16,7 @@ import type { SoundPlanChannel } from "./types";
  */
 export class PaymentRequiredError extends Error {
   constructor(
-    public readonly channel: SoundPlanChannel,
+    public readonly channel: SoundPlanChannel | "voice",
     public readonly id: string,
     public readonly status: number,
     public readonly statusText: string,
@@ -38,7 +38,7 @@ export class PaymentRequiredError extends Error {
  * body. A plain `invalid_api_key` 401 must NOT match — its remedy is "fix the
  * key," not "top up credits."
  */
-function isPaymentFailure(status: number, body: string): boolean {
+export function isPaymentFailure(status: number, body: string): boolean {
   if (status === 402) return true;
   return /quota_exceeded|exceeds your quota|payment_required|needs_payment|payment_method_required|add a payment method/i.test(
     body,

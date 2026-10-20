@@ -1,6 +1,7 @@
 import { localeLineKey } from "@lyra/dialogue-locale";
 import { localeScriptPath, sceneSourcePath } from "./locale-script";
 import type { ExistingScript } from "./sync";
+import type { CastEntry } from "./voice-cast";
 import type {
   EmittedScene,
   LocaleGlossary,
@@ -46,6 +47,8 @@ export function validateChapterScripts(input: {
   scenes: EmittedScene[];
   existing: ExistingScript[];
   glossary?: { path: string; value: LocaleGlossary } | undefined;
+  /** Approved cast by speaker; when given, clips of uncast speakers warn. */
+  castBySpeaker?: Map<string, CastEntry> | undefined;
 }): ValidateResult {
   const diagnostics: VoiceDiagnostic[] = [];
   const summary: ValidateSummary = {
@@ -88,6 +91,14 @@ export function validateChapterScripts(input: {
         continue;
       }
       clipOwner.set(line.voice.clip, label(line));
+      if (input.castBySpeaker && !input.castBySpeaker.has(line.speaker)) {
+        diagnostics.push({
+          severity: "warning",
+          code: "localeScriptVoiceUncast",
+          message: `"${label(line)}" has clip ${line.voice.clip} but ${line.speaker} has no approved voice in voice_cast.yaml; voice:generate skips it.`,
+          path: script.path,
+        });
+      }
     }
   }
   for (const script of input.existing) {
