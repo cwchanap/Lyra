@@ -1,4 +1,4 @@
-import { keyExpression, localeLineKey } from "./line-key";
+import { keyExpression, localeLineKey } from "@lyra/dialogue-locale";
 import { localeScriptPath, sceneSourcePath } from "./locale-script";
 import type {
   EmittedLine,
@@ -54,7 +54,9 @@ function skeleton(line: EmittedLine): LocaleScriptLine {
 }
 
 function worthKeeping(line: LocaleScriptLine): boolean {
-  return line.ja.length > 0 || line.note !== undefined;
+  return (
+    line.ja.length > 0 || line.note !== undefined || line.voice !== undefined
+  );
 }
 
 /**

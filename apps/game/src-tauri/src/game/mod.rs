@@ -7,6 +7,7 @@ pub mod analysis;
 pub mod command_tx;
 mod content_manifest;
 pub mod dialogue;
+pub mod dialogue_locale;
 mod dialogue_queue;
 #[cfg(feature = "e2e")]
 pub(crate) mod e2e_checkpoints;

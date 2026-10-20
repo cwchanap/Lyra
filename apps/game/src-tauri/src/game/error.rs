@@ -433,6 +433,9 @@ impl GameError {
     pub fn scene_load_failed(detail: String) -> Self {
         Self::new("sceneLoadFailed", detail)
     }
+    pub fn dialogue_locale_load_failed(detail: String) -> Self {
+        Self::new("dialogueLocaleLoadFailed", detail)
+    }
     pub fn scene_validation_failed(detail: String) -> Self {
         Self::new("sceneValidationFailed", detail)
     }

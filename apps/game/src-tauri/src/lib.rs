@@ -10,6 +10,7 @@ use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager};
 
 use game::analysis::{AnalysisActionToken, AnalysisDraft};
+use game::dialogue_locale::{load_dialogue_locale, DialogueLocaleManifest};
 #[cfg(feature = "e2e")]
 use game::e2e_checkpoints::{build_checkpoint, CheckpointId, CheckpointProjection};
 use game::save::application::commands::{
@@ -384,28 +385,35 @@ fn run_gameplay_mutation(
 /// actually exist before accepting it, and only then fall back to the
 /// executable's directory.
 fn resolve_scenes_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
+    resolve_resource_subdir(app, "scenes").map_err(GameError::scene_load_failed)
+}
+
+/// Resolve the `resources/assets` directory (asset and dialogue locale
+/// manifests) with the same fallback as [`resolve_scenes_dir`].
+fn resolve_assets_dir(app: &tauri::AppHandle) -> Result<PathBuf, GameError> {
+    resolve_resource_subdir(app, "assets").map_err(GameError::dialogue_locale_load_failed)
+}
+
+fn resolve_resource_subdir(app: &tauri::AppHandle, name: &str) -> Result<PathBuf, String> {
     if let Ok(dir) = app
         .path()
-        .resolve("resources/scenes", BaseDirectory::Resource)
+        .resolve(format!("resources/{name}"), BaseDirectory::Resource)
     {
         if dir.exists() {
             return Ok(dir);
         }
     }
-    let exe = std::env::current_exe()
-        .map_err(|e| GameError::scene_load_failed(format!("cannot resolve resources dir: {e}")))?;
+    let exe = std::env::current_exe().map_err(|e| format!("cannot resolve resources dir: {e}"))?;
     let dir = exe
         .parent()
-        .ok_or_else(|| {
-            GameError::scene_load_failed("cannot resolve resources dir: no parent".into())
-        })?
+        .ok_or_else(|| "cannot resolve resources dir: no parent".to_string())?
         .join("resources")
-        .join("scenes");
+        .join(name);
     if !dir.exists() {
-        return Err(GameError::scene_load_failed(format!(
+        return Err(format!(
             "cannot resolve resources dir: {} does not exist",
             dir.display()
-        )));
+        ));
     }
     Ok(dir)
 }
@@ -784,6 +792,18 @@ fn list_scenes(app: tauri::AppHandle) -> Result<SceneNavigationIndex, GameError>
     GameEngine::scene_navigation_index(resources_dir)
 }
 
+/// Returns the dialogue locale manifest for `locale` (translated lines and
+/// voice clip asset IDs), or `None` when the build has none. Read-only: it
+/// touches neither the engine nor persistence.
+#[tauri::command]
+fn get_dialogue_locale(
+    app: tauri::AppHandle,
+    locale: String,
+) -> Result<Option<DialogueLocaleManifest>, GameError> {
+    let assets_dir = resolve_assets_dir(&app)?;
+    load_dialogue_locale(&assets_dir, &locale)
+}
+
 fn dialogue_persistence_policy(
     source_chapter_id: &str,
     source_scene_id: &str,
@@ -1118,6 +1138,7 @@ pub fn run() {
             reset_game,
             get_state,
             list_scenes,
+            get_dialogue_locale,
             jump_to_scene,
             advance_dialogue,
             select_analysis_board,
@@ -4146,6 +4167,7 @@ mod tests {
                 "exit_without_saving",
                 "reset_game",
                 "list_scenes",
+                "get_dialogue_locale",
                 "jump_to_scene",
                 "advance_dialogue",
                 "select_analysis_board",

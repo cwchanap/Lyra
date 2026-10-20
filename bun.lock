@@ -7,6 +7,7 @@
       "devDependencies": {
         "@eslint/js": "^10.0.1",
         "@lyra/asset-paths": "workspace:*",
+        "@lyra/dialogue-locale": "workspace:*",
         "@lyra/scene-types": "workspace:*",
         "@sveltejs/adapter-static": "^3.0.6",
         "@sveltejs/kit": "^2.9.0",
@@ -45,6 +46,7 @@
       "dependencies": {
         "@fontsource-variable/noto-serif-tc": "5.3.0",
         "@lyra/asset-paths": "workspace:*",
+        "@lyra/dialogue-locale": "workspace:*",
         "@lyra/shared": "workspace:*",
         "@tauri-apps/api": "^2",
         "@tauri-apps/plugin-opener": "^2",
@@ -90,6 +92,10 @@
       "name": "@lyra/asset-paths",
       "version": "0.1.0",
     },
+    "packages/dialogue-locale": {
+      "name": "@lyra/dialogue-locale",
+      "version": "0.1.0",
+    },
     "packages/scene-types": {
       "name": "@lyra/scene-types",
       "version": "0.1.0",
@@ -99,6 +105,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@lyra/asset-paths": "workspace:*",
+        "@lyra/dialogue-locale": "workspace:*",
         "@lyra/scene-types": "workspace:*",
         "chokidar": "^5.0.0",
         "yaml": "^2.9.0",
@@ -295,6 +302,8 @@
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
     "@lyra/asset-paths": ["@lyra/asset-paths@workspace:packages/asset-paths"],
+
+    "@lyra/dialogue-locale": ["@lyra/dialogue-locale@workspace:packages/dialogue-locale"],
 
     "@lyra/game": ["@lyra/game@workspace:apps/game"],
 

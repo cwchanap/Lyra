@@ -153,6 +153,7 @@ describe("isCompileScenesWatchPath", () => {
     "/repo/static/stories_plan/chapter_1/scene_0.md",
     "/repo/docs/stories_plan/chapter_20/interrogation_scene_3.md",
     "/repo/static/stories_plan/chapter_1/investigation_scene_2.layout.json",
+    "/repo/docs/stories_plan/chapter_1/ja/scene_5.ja.yaml",
     "/repo/static/assets/config/audio.yaml",
     "/repo/static/assets/config/nested/characters.yaml",
   ])("accepts supported compiler input %s", (path) => {
@@ -169,6 +170,9 @@ describe("isCompileScenesWatchPath", () => {
     "/repo/static/stories_plan/chapter_1/nested/scene_0.md",
     "/repo/static/stories_plan/chapter_1/scene_0.json",
     "/repo/static/stories_plan/chapter_1/scene_0.md.bak",
+    "/repo/docs/stories_plan/chapter_1/ja/scene_5.en.yaml",
+    "/repo/docs/stories_plan/chapter_1/ja/notes.md",
+    "/repo/docs/stories_plan/chapter_1/drafts/scene_5.drafts.yaml",
     "/repo/static/stories_plan/unrelated/story_catalog.md",
     "/repo/static/assets/config/audio.yml",
     "/repo/static/assets/config/readme.md",

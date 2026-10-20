@@ -48,6 +48,45 @@ const SCENES: EmittedScene[] = [
 ];
 
 describe("validateChapterScripts", () => {
+  it("rejects a clip shared by two lines and flags a voiced empty line", () => {
+    const result = validateChapterScripts({
+      chapterId: CHAPTER,
+      locale: "ja",
+      scenes: SCENES,
+      existing: [
+        existing("scene_0.md", [
+          { speaker: "旁白", zh: "雨。", ja: "雨。" },
+          {
+            speaker: "相馬律",
+            zh: "好。",
+            ja: "ああ。",
+            voice: { clip: "ch1_soma_ritsu_0001" },
+          },
+          {
+            speaker: "相馬律",
+            zh: "走吧。",
+            ja: "",
+            voice: { clip: "ch1_soma_ritsu_0001" },
+          },
+        ]),
+        existing("scene_1.md", [
+          {
+            speaker: "早坂茜",
+            expression: "concerned",
+            zh: "等等。",
+            ja: "待って。",
+          },
+        ]),
+      ],
+    });
+
+    expect(result.diagnostics.map((d) => `${d.severity} ${d.code}`)).toEqual([
+      "error localeScriptDuplicateClip",
+      "warning localeScriptUntranslated",
+      "warning localeScriptVoiceWithoutTranslation",
+    ]);
+  });
+
   it("passes a complete chapter", () => {
     const result = validateChapterScripts({
       chapterId: CHAPTER,

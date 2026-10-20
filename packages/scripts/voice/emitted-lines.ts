@@ -1,14 +1,12 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, resolve } from "node:path";
-import {
-  deriveDialogueSegments,
-  type EmittedSceneRecordV1,
-} from "../compile-scenes/dialogue-segment-origins";
+import type { EmittedSceneRecordV1 } from "../compile-scenes/dialogue-segment-origins";
 import { compile } from "../compile-scenes/orchestrator";
 import type { CompileError } from "../compile-scenes/types";
 import { STORY_ROOT } from "./locale-script";
-import type { EmittedLine, EmittedScene } from "./types";
+import { spokenLinesOfScene } from "./scene-lines";
+import type { EmittedScene } from "./types";
 
 type ChaptersIndex = {
   chapters: Array<{
@@ -71,25 +69,11 @@ export function collectEmittedLines(input: {
       const json = JSON.parse(
         readFileSync(resolve(outputRoot, ref.file), "utf-8"),
       ) as EmittedSceneRecordV1["json"];
-      const lines: EmittedLine[] = [];
-      for (const segment of deriveDialogueSegments({
-        chapterId: input.chapterId,
-        json,
-      })) {
-        for (const item of segment.items) {
-          if (item.kind !== "line") continue;
-          lines.push({
-            speaker: item.speaker,
-            text: item.text,
-            expression: item.portrait?.expression ?? null,
-          });
-        }
-      }
       return {
         chapterId: input.chapterId,
         sceneFile: basename(ref.file).replace(/\.json$/, ".md"),
         sceneId: json.id,
-        lines,
+        lines: spokenLinesOfScene(input.chapterId, json),
       };
     });
     return { ok: true, scenes };

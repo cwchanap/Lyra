@@ -1376,6 +1376,7 @@
             <DialogueBox
               current={gameState.value.mode.current}
               queueToken={gameState.value.mode.queueToken}
+              chapterId={gameState.value.chapter.id}
               onAdvance={advanceDialogue}
               onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
               history={gameState.value.dialogueHistory}

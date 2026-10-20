@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AudioPreferences } from "$lib/audio/audio-preferences";
 
-  type Channel = "bgmVolume" | "bgsVolume" | "sfxVolume";
+  type Channel = "bgmVolume" | "bgsVolume" | "sfxVolume" | "voiceVolume";
 
   let {
     preferences,
@@ -22,21 +22,38 @@
 </script>
 
 <section class="audio-settings" aria-label="音訊設定">
-  <button
-    class:enabled={!preferences.muted}
-    class:muted={preferences.muted}
-    type="button"
-    aria-label={preferences.muted
-      ? "目前已靜音，按下可開啟聲音"
-      : "目前聲音開啟，按下可靜音"}
-    aria-pressed={preferences.muted}
-    onclick={() => onUpdate({ muted: !preferences.muted })}
-  >
-    <span class="icon" aria-hidden="true"
-      >{preferences.muted ? "MUTED" : "ON"}</span
+  <div class="toggles">
+    <button
+      class:enabled={!preferences.muted}
+      class:muted={preferences.muted}
+      type="button"
+      aria-label={preferences.muted
+        ? "目前已靜音，按下可開啟聲音"
+        : "目前聲音開啟，按下可靜音"}
+      aria-pressed={preferences.muted}
+      onclick={() => onUpdate({ muted: !preferences.muted })}
     >
-    <span>{preferences.muted ? "已靜音" : "聲音開啟"}</span>
-  </button>
+      <span class="icon" aria-hidden="true"
+        >{preferences.muted ? "MUTED" : "ON"}</span
+      >
+      <span>{preferences.muted ? "已靜音" : "聲音開啟"}</span>
+    </button>
+    <button
+      class:enabled={preferences.voiceEnabled}
+      class:muted={!preferences.voiceEnabled}
+      type="button"
+      aria-label={preferences.voiceEnabled
+        ? "目前角色語音開啟，按下可關閉"
+        : "目前角色語音關閉，按下可開啟"}
+      aria-pressed={preferences.voiceEnabled}
+      onclick={() => onUpdate({ voiceEnabled: !preferences.voiceEnabled })}
+    >
+      <span class="icon" aria-hidden="true"
+        >{preferences.voiceEnabled ? "VOICE" : "OFF"}</span
+      >
+      <span>{preferences.voiceEnabled ? "語音開啟" : "語音關閉"}</span>
+    </button>
+  </div>
 
   <div class="sliders">
     <div class="channel">
@@ -78,6 +95,19 @@
       </label>
       <span class="value">{percent(preferences.sfxVolume)}</span>
     </div>
+    <div class="channel">
+      <label>
+        <span>VOICE</span>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={percent(preferences.voiceVolume)}
+          oninput={(event) => updateChannel("voiceVolume", event)}
+        />
+      </label>
+      <span class="value">{percent(preferences.voiceVolume)}</span>
+    </div>
   </div>
 </section>
 
@@ -92,6 +122,12 @@
     padding: 8px 10px;
     border: 1px solid var(--rule-strong);
     background: color-mix(in srgb, var(--cell) 64%, transparent);
+  }
+
+  .toggles {
+    flex: 0 0 auto;
+    display: grid;
+    gap: 6px;
   }
 
   button {
@@ -157,7 +193,7 @@
 
   label {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-columns: 44px minmax(0, 1fr);
     align-items: center;
     gap: 8px;
     min-width: 0;

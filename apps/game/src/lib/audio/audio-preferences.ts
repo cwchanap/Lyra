@@ -3,8 +3,13 @@ export type AudioPreferences = {
   bgmVolume: number;
   bgsVolume: number;
   sfxVolume: number;
+  voiceVolume: number;
+  /** Character voice lines on/off, independent of the master mute. */
+  voiceEnabled: boolean;
 };
 
+// Still v1: the voice fields were added later, and normalizeAudioPreferences
+// fills them with defaults for preferences stored before they existed.
 export const AUDIO_PREFERENCES_STORAGE_KEY = "lyra.audioPreferences.v1";
 
 export const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
@@ -12,6 +17,8 @@ export const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
   bgmVolume: 0.55,
   bgsVolume: 0.45,
   sfxVolume: 0.7,
+  voiceVolume: 0.9,
+  voiceEnabled: true,
 };
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
@@ -59,6 +66,14 @@ export function normalizeAudioPreferences(value: unknown): AudioPreferences {
       record.sfxVolume,
       DEFAULT_AUDIO_PREFERENCES.sfxVolume,
     ),
+    voiceVolume: clampVolume(
+      record.voiceVolume,
+      DEFAULT_AUDIO_PREFERENCES.voiceVolume,
+    ),
+    voiceEnabled:
+      typeof record.voiceEnabled === "boolean"
+        ? record.voiceEnabled
+        : DEFAULT_AUDIO_PREFERENCES.voiceEnabled,
   };
 }
 

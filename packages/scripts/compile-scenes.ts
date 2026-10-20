@@ -126,4 +126,12 @@ async function runOnce() {
       console.warn(`  - [${w.code}] ${w.message}`);
     }
   }
+  if (result.localeWarnings.length > 0) {
+    console.warn(
+      `[compile-scenes] Locale warnings (${result.localeWarnings.length}):`,
+    );
+    for (const w of result.localeWarnings) {
+      console.warn(`  - [${w.code}] ${w.message}`);
+    }
+  }
 }

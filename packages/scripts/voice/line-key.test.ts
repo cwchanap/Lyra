@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyExpression, localeLineKey } from "./line-key";
+import { keyExpression, localeLineKey } from "@lyra/dialogue-locale";
 
 describe("localeLineKey", () => {
   it("treats the standard expression and a portrait-less line alike", () => {

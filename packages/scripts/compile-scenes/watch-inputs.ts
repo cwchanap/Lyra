@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, relative, sep } from "node:path";
+import { LOCALE_PATTERN } from "../voice/locale-script";
 
 export function compileScenesWatchInputs(
   sourceRoots: readonly string[],
@@ -61,6 +62,18 @@ export function isCompileScenesWatchPath(
       segments.length === 2 &&
       /^chapter_\d+$/.test(segments[0] ?? "") &&
       (segments[1]?.endsWith(".md") || segments[1]?.endsWith(".layout.json"))
+    ) {
+      return true;
+    }
+    // Locale scripts feed the dialogue locale manifest:
+    // chapter_<N>/<locale>/<scene>.<locale>.yaml
+    const [chapterDir, locale, scriptName] = segments;
+    if (
+      segments.length === 3 &&
+      /^chapter_\d+$/.test(chapterDir ?? "") &&
+      locale !== undefined &&
+      LOCALE_PATTERN.test(locale) &&
+      scriptName?.endsWith(`.${locale}.yaml`) === true
     ) {
       return true;
     }

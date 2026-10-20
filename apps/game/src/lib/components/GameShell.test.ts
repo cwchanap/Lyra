@@ -22,6 +22,8 @@ const mocks = vi.hoisted(() => ({
     bgmVolume: 0.5,
     bgsVolume: 0.5,
     sfxVolume: 0.5,
+    voiceVolume: 0.9,
+    voiceEnabled: true,
   },
   updateAudioPreferences: vi.fn(),
   currentWindow: {
@@ -907,9 +909,9 @@ describe("GameShell", () => {
         name: /返回選單/,
       });
       backFromSound.focus();
-      const sfx = within(dialog).getByLabelText("SFX");
+      const voice = within(dialog).getByLabelText("VOICE");
       await user.tab({ shift: true });
-      expect(sfx).toHaveFocus();
+      expect(voice).toHaveFocus();
 
       await fireEvent.click(backFromSound);
       const currentResume = within(dialog).getByRole("button", {

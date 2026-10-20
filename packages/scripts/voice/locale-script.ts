@@ -1,9 +1,10 @@
 import { basename } from "node:path";
 import YAML from "yaml";
-import { DEFAULT_EXPRESSION } from "./line-key";
+import { DEFAULT_EXPRESSION } from "@lyra/dialogue-locale";
 import type {
   LocaleScriptFile,
   LocaleScriptLine,
+  LocaleScriptVoice,
   VoiceDiagnostic,
 } from "./types";
 
@@ -17,7 +18,23 @@ const ROOT_KEYS = new Set([
   "lines",
   "stale",
 ]);
-const LINE_KEYS = new Set(["speaker", "expression", "zh", "ja", "note"]);
+const LINE_KEYS = new Set([
+  "speaker",
+  "expression",
+  "zh",
+  "ja",
+  "note",
+  "voice",
+]);
+const VOICE_KEYS = [
+  "clip",
+  "direction",
+  "tts",
+  "ttsHash",
+  "generatedAt",
+] as const;
+/** Clip IDs become file names, so they are lowercase slugs. */
+export const VOICE_CLIP_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
 export type ParseResult<T> =
   | { ok: true; value: T }
@@ -60,6 +77,58 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function parseVoice(
+  raw: unknown,
+  path: string,
+  diagnostics: VoiceDiagnostic[],
+): LocaleScriptVoice | null {
+  if (!isRecord(raw)) {
+    diagnostics.push(
+      error(path, "localeScriptSchema", "`voice` must be a mapping."),
+    );
+    return null;
+  }
+  const before = diagnostics.length;
+  const known = new Set<string>(VOICE_KEYS);
+  for (const key of Object.keys(raw)) {
+    if (!known.has(key)) {
+      diagnostics.push(
+        error(path, "localeScriptSchema", `Unknown voice field "${key}".`),
+      );
+    }
+  }
+  if (typeof raw.clip !== "string" || !VOICE_CLIP_PATTERN.test(raw.clip)) {
+    diagnostics.push(
+      error(
+        path,
+        "localeScriptSchema",
+        "`voice.clip` must be a lowercase slug such as ch1_soma_ritsu_0001.",
+      ),
+    );
+  }
+  for (const key of VOICE_KEYS) {
+    const value = raw[key];
+    if (key === "clip" || value === undefined) continue;
+    if (typeof value !== "string" || value.length === 0) {
+      diagnostics.push(
+        error(
+          path,
+          "localeScriptSchema",
+          `\`voice.${key}\` must be a non-empty string when present.`,
+        ),
+      );
+    }
+  }
+  if (diagnostics.length > before) return null;
+
+  const voice: LocaleScriptVoice = { clip: raw.clip as string };
+  for (const key of VOICE_KEYS) {
+    const value = raw[key];
+    if (key !== "clip" && typeof value === "string") voice[key] = value;
+  }
+  return voice;
+}
+
 function parseLine(
   raw: unknown,
   path: string,
@@ -79,7 +148,7 @@ function parseLine(
       );
     }
   }
-  const { speaker, expression, zh, ja, note } = raw;
+  const { speaker, expression, zh, ja, note, voice } = raw;
   if (typeof speaker !== "string" || speaker.length === 0) {
     diagnostics.push(
       error(
@@ -131,6 +200,8 @@ function parseLine(
       ),
     );
   }
+  const parsedVoice =
+    voice === undefined ? undefined : parseVoice(voice, path, diagnostics);
   if (diagnostics.length > before) return null;
 
   const line: LocaleScriptLine = {
@@ -140,6 +211,7 @@ function parseLine(
   };
   if (typeof expression === "string") line.expression = expression;
   if (typeof note === "string") line.note = note;
+  if (parsedVoice) line.voice = parsedVoice;
   return line;
 }
 
@@ -237,12 +309,22 @@ export function parseLocaleScriptText(
   };
 }
 
-function orderedLine(line: LocaleScriptLine): Record<string, string> {
-  const out: Record<string, string> = { speaker: line.speaker };
+function orderedVoice(voice: LocaleScriptVoice): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of VOICE_KEYS) {
+    const value = voice[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
+function orderedLine(line: LocaleScriptLine): Record<string, unknown> {
+  const out: Record<string, unknown> = { speaker: line.speaker };
   if (line.expression !== undefined) out.expression = line.expression;
   out.zh = line.zh;
   out.ja = line.ja;
   if (line.note !== undefined) out.note = line.note;
+  if (line.voice !== undefined) out.voice = orderedVoice(line.voice);
   return out;
 }
 
