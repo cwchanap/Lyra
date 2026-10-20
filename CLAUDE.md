@@ -65,12 +65,31 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   scripts (`docs/stories_plan/<chapter_N>/ja/<scene>.ja.yaml`) from the compiled
   dialogue: adds an untranslated entry per new spoken line, keeps existing
   translations, and moves translations whose Chinese line is gone into the
-  file's `stale` list. It compiles into a temporary directory and never touches
-  the generated resource tree.
+  file's `stale` list. It also gives each translated line of a role marked
+  `approved` in `static/assets/config/voice_cast.yaml` a clip ID
+  (`ch<N>_<characterId>_<nnnn>`, never renumbered or reused). It compiles into
+  a temporary directory and never touches the generated resource tree.
 - `bun run voice:validate <chapter_N> [--strict] [--verbose]` - check those
   scripts and `docs/stories_plan/ja_glossary.yaml` against the compiled
-  dialogue. Missing, untranslated, stale or misplaced entries and speakers
-  without a glossary entry are warnings; `--strict` fails on them.
+  dialogue. Missing, untranslated, stale or misplaced entries, speakers
+  without a glossary entry and clips of roles with no approved voice are
+  warnings; `--strict` fails on them.
+- `bun run voice:audition <characterId>` (flags `--candidate <voiceId>`,
+  `--dry-run`, `--force`) - record the role's `auditionLines` with each
+  shortlisted voice in `voice_cast.yaml` into the gitignored
+  `.voice-auditions/<characterId>/` folder, for the owner to listen to before
+  picking a voice. Never commit audition files.
+- `bun run voice:generate <chapter_N>` (flags `--scene <file.md>`,
+  `--speaker <characterId>`, `--only <clip>`, `--dry-run`, `--force`) -
+  generate Japanese voice clips through ElevenLabs text-to-speech into
+  `static/assets/voice/ja/<clip>.ogg` (silence trimmed, -18 LUFS, mono Ogg
+  Vorbis via `ffmpeg`). Refuses when `voice:sync` would change the scripts.
+  Regenerates only clips whose recorded `ttsHash` no longer matches; writes
+  `ttsHash` and `generatedAt` back into the script. `--dry-run` prints the clip
+  count and character total and needs no key; get the owner's OK on that total
+  before a paid run. Uses `ELEVENLABS_API_KEY` and exit code 3 exactly like
+  `audio:generate`: on exit 3 do not retry with `--force`. The SOP is the
+  `voicing-lyra-dialogue` skill.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run check:scripts` - type-check `packages/scripts` (compiler + audio
@@ -268,9 +287,11 @@ Chinese). Narrative content has two kinds — keep them straight:
     and kind-specific authoring contract.
   - `ja/<scene>.ja.yaml` - the Japanese translation of each scene's spoken
     lines, one entry per unique speaker, expression and Chinese line, kept in
-    step with `bun run voice:sync`. Edit only `ja` and `note`; names and terms
-    follow `docs/stories_plan/ja_glossary.yaml`. The compiler ignores these
-    files.
+    step with `bun run voice:sync`. Edit only `ja`, `note`, and a voiced
+    line's `voice.direction` / `voice.tts`; names and terms follow
+    `docs/stories_plan/ja_glossary.yaml`. The compiler ignores these files.
+    Translating, casting and generating voice follow the
+    `voicing-lyra-dialogue` skill.
 
 Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with

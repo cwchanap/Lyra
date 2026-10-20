@@ -25,7 +25,7 @@ as today.
 | Where the Japanese script lives | One YAML file per scene beside the source: `docs/stories_plan/chapter_1/ja/<scene>.ja.yaml` | Keeps the Chinese Markdown and its parser contract untouched, sits next to the dialogue it translates, and is invisible to gameplay compilation (the compiler only reads files `chapter.md` lists). |
 | How a Japanese line is tied to its Chinese line | By the emitted line's `speaker`, exact `text`, and `portrait.expression` (null when the line has no portrait), translation-memory style. All three fields already reach the frontend on every `line` item, and one shared helper in a workspace package builds the key for both the compiler and the frontend | Survives line insertions and reordering. When a writer later edits the Chinese text, the validator reports the Japanese entry as stale instead of silently pairing the wrong audio. |
 | Does voice touch saves | No. Voice and Japanese text ship in a separate locale manifest, not in scene JSON | The save `contentRevision` hashes emitted scene JSON, so keeping locale data out of it means recording or re-recording voices never invalidates saves. |
-| TTS model | `eleven_v4` (ElevenLabs' current model; supports Japanese, audio tags such as `[whispers]`, and pronunciation dictionaries), with `eleven_v3` as the fallback if a chosen voice sounds better there | Audio tags let one stored direction per line steer delivery; the pilot confirms the model before the full run. |
+| TTS model | `eleven_v3` (supports Japanese and audio tags such as `[whispers]` on the text-to-speech endpoint; `eleven_v4` is listed for the Text to Dialogue API, so the pilot tries it before switching) | Audio tags let one stored direction per line steer delivery; the pilot confirms the model before the full run. |
 | Where generation runs | The owner's Mac checkout through Remote Control, the same way Chapter 2 art and audio were made | The ElevenLabs key lives there (`packages/scripts/.env`, per CLAUDE.md). Translation, tooling and runtime work need no Mac. |
 
 ## 2. Data files
@@ -58,8 +58,9 @@ lines:
 - `voice` exists only for speakers with an approved cast entry.
 - `clip` IDs are `ch<N>_<characterId>_<nnnn>`, assigned once and never
   renumbered (deleted lines leave gaps), so regenerating one line never
-  renames another's file. Assigning them is PR 3's job; today's `voice:sync`
-  writes no `voice` block.
+  renames another's file. `voice:sync` assigns them to translated lines of
+  approved roles; a number used by a stale entry or an existing clip file is
+  never reused. A clip of a role without an approved voice is a warning.
 - `voice:validate` fails on a key listed twice, a clip ID used twice, or a
   wrong `source`/`locale`. A stale `zh`, an emitted line with no entry
   (missing), an untranslated line and a voiced line with no translation are
@@ -94,12 +95,13 @@ override wins when the model still misreads it.
 schemaVersion: 1
 locales:
   ja:
-    model: eleven_v4
+    model: eleven_v3
+    languageTextNormalization: true
     cast:
       - characterId: kamiya_mio          # must exist in characters.yaml
         status: proposed                  # approved only on the owner's explicit pick
         voiceId: null                     # filled at casting
-        settings: { stability: 0.5, similarity_boost: 0.75, style: 0, speed: 1.0 }
+        settings: { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1102                        # fixed per character for consistency
         expressionDirections: { standard: "[calm]", stern: "[firmly]" }
         auditionLines: [ ... three representative Chapter 1 lines ... ]
@@ -148,7 +150,9 @@ Root scripts delegate to `@lyra/scripts`, like `audio:*`.
   lines, and moves translated or voiced entries whose line is gone to the
   file's `stale` list. It never overwrites a filled `ja`. Entries that are
   both orphaned and empty are dropped, and a script file left with nothing in
-  it is deleted. Assigning clip IDs is added in PR 3.
+  it is deleted. It also gives each translated line of an `approved` cast role
+  a clip ID, continuing after the highest number any script entry or clip
+  file already uses.
 - `voice:validate <chapter>`: coverage, stale entries, conflicting
   translations, cast references, and a soft length check.
 - `voice:audition <characterId>`: generates that role's audition lines with
@@ -158,7 +162,9 @@ Root scripts delegate to `@lyra/scripts`, like `audio:*`.
   the dry run prints clip count and character total with no key needed. A real
   run calls `POST /v1/text-to-speech/{voice_id}` with the cast's model,
   settings, seed and `language_code: ja`, plus the neighbouring lines as
-  `previous_text`/`next_text` for natural continuity. It regenerates only clips
+  `previous_text`/`next_text` on models that support request stitching
+  (`eleven_v3` does not). It refuses to run when `voice:sync` would change
+  the scripts. It regenerates only clips
   whose `ttsHash` changed. The hash covers every input that shapes the
   performance: model, voice ID, settings, seed, the resolved direction
   (the line's own `direction`, else the cast's expression fallback), and the
@@ -212,7 +218,7 @@ from the character description.
    `direction`, `tts`, `ttsHash` and `generatedAt` fields PR 3 fills in) is
    parsed and validated here, because the manifest reads `voice.clip`. Ships
    silent until clips exist.
-3. **PR 3, generation tooling and the SOP skill (cloud).** `voice_cast.yaml`
+3. **PR 3, generation tooling and the SOP skill (cloud). Done in this PR.** `voice_cast.yaml`
    with the shortlists, `voice:audition`, `voice:generate`, ffmpeg
    post-processing, tests with a fake client, the
    `voicing-lyra-dialogue` skill, and the CLAUDE.md command list.

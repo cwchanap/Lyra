@@ -29,6 +29,8 @@ apps/game/src-tauri/resources/scenes/*
 apps/game/src-tauri/resources/assets/*
 !apps/game/src-tauri/resources/assets/.gitkeep
 packages/scripts/.audio-cache/
+packages/scripts/.voice-cache/
+.voice-auditions/
 .claude/settings.local.json
 .devin/config.local.json
 .tmp-*
