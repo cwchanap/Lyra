@@ -15,8 +15,9 @@ function script(overrides: Partial<LocaleScriptFile> = {}): LocaleScriptFile {
     locale: "ja",
     source: "docs/stories_plan/chapter_1/scene_5.md",
     lines: [
-      { speaker: "旁白", zh: "雨停了。", ja: "雨が止んだ。" },
+      { id: "L001", speaker: "旁白", zh: "雨停了。", ja: "雨が止んだ。" },
       {
+        id: "L002",
         speaker: "早坂茜",
         expression: "concerned",
         zh: "你還好嗎？",
@@ -41,7 +42,9 @@ describe("locale script paths", () => {
 describe("serializeLocaleScript", () => {
   it("round-trips through the parser", () => {
     const file = script({
-      stale: [{ speaker: "旁白", zh: "舊的一句。", ja: "古い一文。" }],
+      stale: [
+        { id: "L003", speaker: "旁白", zh: "舊的一句。", ja: "古い一文。" },
+      ],
     });
     const parsed = parseLocaleScriptText(serializeLocaleScript(file), PATH);
     expect(parsed).toEqual({ ok: true, value: file });
@@ -51,6 +54,7 @@ describe("serializeLocaleScript", () => {
     const file = script({
       lines: [
         {
+          id: "L012",
           speaker: "神谷澪",
           zh: "嫌疑人的態度不是證據。",
           ja: "被疑者の態度は、証拠ではありません。",
@@ -84,7 +88,8 @@ describe("serializeLocaleScript", () => {
     expect(text).not.toContain("stale:");
     expect(text).toContain(
       [
-        "  - speaker: 早坂茜",
+        "  - id: L002",
+        "    speaker: 早坂茜",
         "    expression: concerned",
         "    zh: 你還好嗎？",
         '    ja: ""',
@@ -109,7 +114,7 @@ describe("parseLocaleScriptText", () => {
   it("rejects unknown fields, a missing translation and a spelled-out standard", () => {
     expect(
       codes(
-        `${header}\nlines:\n  - speaker: 旁白\n    zh: 雨。\n    en: rain\n`,
+        `${header}\nlines:\n  - id: L001\n    speaker: 旁白\n    zh: 雨。\n    en: rain\n`,
       ),
     ).toEqual([
       'Unknown line field "en".',
@@ -117,13 +122,27 @@ describe("parseLocaleScriptText", () => {
     ]);
     expect(
       codes(
-        `${header}\nlines:\n  - speaker: 旁白\n    expression: standard\n    zh: 雨。\n    ja: 雨。\n`,
+        `${header}\nlines:\n  - id: L001\n    speaker: 旁白\n    expression: standard\n    zh: 雨。\n    ja: 雨。\n`,
       ),
     ).toEqual(['Omit `expression` for "standard"; it is the default.']);
   });
 
+  it("requires each entry's scene line ID", () => {
+    expect(
+      codes(
+        `${header}\nlines:\n  - speaker: 旁白\n    zh: 雨。\n    ja: 雨。\n`,
+      ),
+    ).toEqual(["`id` must be the scene line's ID, such as L012."]);
+    expect(
+      codes(
+        `${header}\nlines:\n  - id: 12\n    speaker: 旁白\n    zh: 雨。\n    ja: 雨。\n`,
+      ),
+    ).toEqual(["`id` must be the scene line's ID, such as L012."]);
+  });
+
   it("rejects a malformed voice block", () => {
-    const line = "lines:\n  - speaker: 旁白\n    zh: 雨。\n    ja: 雨。\n";
+    const line =
+      "lines:\n  - id: L001\n    speaker: 旁白\n    zh: 雨。\n    ja: 雨。\n";
     expect(codes(`${header}\n${line}    voice: ch1_x_0001\n`)).toEqual([
       "`voice` must be a mapping.",
     ]);

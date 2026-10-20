@@ -95,6 +95,7 @@ import {
   DIALOGUE_LOCALES,
   dialogueLocaleManifestFileName,
 } from "@lyra/dialogue-locale";
+import { scanSourceLineIds } from "./line-ids";
 import {
   buildDialogueLocaleManifest,
   type LocaleManifestChapterInput,
@@ -146,6 +147,8 @@ export type CompileResult =
        * `assetOutputRoot` is set.
        */
       localeWarnings: CompileError[];
+      /** Every chapter's emitted spoken lines, with their line IDs. */
+      spokenLines: LocaleManifestChapterInput[];
     }
   | { ok: false; errors: CompileError[] };
 
@@ -197,6 +200,8 @@ export function compile(opts: CompileOptions): CompileResult {
   const warnings: CompileError[] = [];
   const skippedReservedFiles = new Set<string>();
   const failedParseFiles = new Set<string>();
+  // Spoken-line IDs per authored scene file (`chapter_1/scene_5.md`).
+  const lineIdsByFile = new Map<string, Map<number, string>>();
   let storyCatalog: ASTStoryCatalog = emptyStoryCatalog("story_catalog.md");
   let storyCatalogPath: string | null = null;
   let cityMap: ASTCityMap | null = null;
@@ -411,6 +416,9 @@ export function compile(opts: CompileOptions): CompileResult {
           "sceneSourceBacktick",
         ),
       );
+      const lineIds = scanSourceLineIds(source, sourceFileTag);
+      errors.push(...lineIds.errors);
+      lineIdsByFile.set(sourceFileTag, lineIds.byLine);
       if (file.startsWith("scene_")) {
         const parsed = parseLinearScene(source, sourceFileTag, sceneId);
         if (!parsed.ok) {
@@ -822,6 +830,9 @@ export function compile(opts: CompileOptions): CompileResult {
       ] as const;
     }),
   );
+  const analysisAstByManifestKey = new Map<string, AnalysisSceneRecord["ast"]>(
+    analysisScenes.map((rec) => [`${rec.chapterId}/${rec.file}`, rec.ast]),
+  );
   const chapterDirByName = new Map(
     discovered.map(({ dirName, chapterDir }) => [dirName, chapterDir] as const),
   );
@@ -844,12 +855,14 @@ export function compile(opts: CompileOptions): CompileResult {
       mkdirSync(dirname(outFile), { recursive: true });
       writeFileSync(outFile, JSON.stringify(json, null, 2) + "\n");
       emittedScenes.push(json);
-      if (opts.assetOutputRoot) {
-        localeScenes.push({
-          sceneFile: file,
-          lines: spokenLinesOfScene(chapter.dirName, json),
-        });
-      }
+      localeScenes.push({
+        sceneFile: file,
+        sceneId: json.id,
+        lines: spokenLinesOfScene(chapter.dirName, json, {
+          sourceAst: rec?.ast ?? analysisAstByManifestKey.get(key),
+          lineIds: lineIdsByFile,
+        }),
+      });
     }
     const chapterDir = chapterDirByName.get(chapter.dirName);
     if (chapterDir) {
@@ -934,6 +947,7 @@ export function compile(opts: CompileOptions): CompileResult {
     assetReport,
     warnings,
     localeWarnings,
+    spokenLines: localeChapters,
   };
 }
 

@@ -1,94 +1,123 @@
 # ja script for docs/stories_plan/chapter_1/scene_11.md.
-# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
-# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+# Each entry is linked to its scene line by `id` (the line's {#L012} tag);
+# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,
+# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run
+# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
 schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/scene_11.md
 lines:
-  - speaker: 旁白
+  - id: L001
+    speaker: 旁白
     zh: 案子結了。
     ja: 事件は終わった。
-  - speaker: 旁白
+  - id: L002
+    speaker: 旁白
     zh: 北見修一指認成立那天，雨鐘的門終於重新打開。
     ja: 北見修一の特定が成立したその日、雨鐘のドアがようやく再び開いた。
-  - speaker: 三宅蒼太
+  - id: L003
+    speaker: 三宅蒼太
     zh: 店長……我、我來收一下自己的東西。
     ja: 店長……ぼ、僕、自分の荷物を取りに来ました。
-  - speaker: 店長高瀨
+  - id: L004
+    speaker: 店長高瀨
     zh: 不急。慢慢來。
     ja: 急がなくていいよ。ゆっくりで。
-  - speaker: 店長高瀨
+  - id: L005
+    speaker: 店長高瀨
     zh: 店裡……得先歇個幾週。
     ja: 店は……しばらく、何週間か休まないと。
-  - speaker: 店長高瀨
+  - id: L006
+    speaker: 店長高瀨
     zh: 出了這種事，客人也得緩緩。
     ja: こんなことがあったんだから、お客さんにも少し時間がいる。
-  - speaker: 三宅蒼太
+  - id: L007
+    speaker: 三宅蒼太
     zh: 我、我明白的。
     ja: わ、わかってます。
-  - speaker: 三宅蒼太
+  - id: L008
+    speaker: 三宅蒼太
     expression: relieved
     zh: 那段時間……我找點短工就好。
     ja: その間は……短期のバイトでも探します。
-  - speaker: 三宅蒼太
+  - id: L009
+    speaker: 三宅蒼太
     expression: relieved
     zh: 反正我本來就常替店裡跑外送。
     ja: どうせ、もともと店の配達もよくやってましたし。
-  - speaker: 店長高瀨
+  - id: L010
+    speaker: 店長高瀨
     zh: 嗯。回來的時候，位子還在。
     ja: うん。戻ってきたら、三宅の場所はちゃんとあるから。
-  - speaker: 三宅蒼太
+  - id: L011
+    speaker: 三宅蒼太
     zh: 相馬先生，您……要不要喝一杯再走？
     ja: 相馬さん、あの……一杯、飲んでいきませんか？
-  - speaker: 相馬律
+  - id: L012
+    speaker: 相馬律
     zh: 好。
     ja: うん、いただくよ。
-  - speaker: 三宅蒼太
+  - id: L013
+    speaker: 三宅蒼太
     zh: 金木犀拿鐵……我請您。
     ja: 金木犀ラテ……僕のおごりです。
-  - speaker: 相馬律
+  - id: L014
+    speaker: 相馬律
     zh: 謝謝。
     ja: ありがとう。
-  - speaker: 相馬律
+  - id: L015
+    speaker: 相馬律
     zh: ……很甜。
     ja: ……甘いな。
-  - speaker: 三宅蒼太
+  - id: L016
+    speaker: 三宅蒼太
     zh: 啊、太甜了嗎？對不起，我糖放……
     ja: あ、甘すぎましたか？すみません、砂糖を……
-  - speaker: 相馬律
+  - id: L017
+    speaker: 相馬律
     zh: 不。
     ja: いや。
-  - speaker: 相馬律
+  - id: L018
+    speaker: 相馬律
     zh: 很好喝。
     ja: おいしいよ。
-  - speaker: 早坂茜
+  - id: L019
+    speaker: 早坂茜
     expression: softened
     zh: 偵探喝得這麼乾脆，看來真的不錯。
     ja: 探偵がこんなにすんなり飲むなら、本当においしいんですね。
-  - speaker: 早坂茜
+  - id: L020
+    speaker: 早坂茜
     expression: softened
     zh: 不過證據顯示，他還需要練習。
     ja: ただ、証拠を見る限り、まだ練習が必要ですね。
     note: "Teasing: the 'evidence' is Soma's '...it's sweet'; the one who needs practice is Miyake."
-  - speaker: 三宅蒼太
+  - id: L021
+    speaker: 三宅蒼太
     zh: 早、早坂小姐……
     ja: は、早坂さん……
-  - speaker: 旁白
+  - id: L022
+    speaker: 旁白
     zh: 他們陸續離開了。
     ja: 一人、また一人と、店を後にした。
-  - speaker: 旁白
+  - id: L023
+    speaker: 旁白
     zh: 那股甜香，沒有人再多說一句。
     ja: あの甘い香りのことを、誰もそれ以上口にしなかった。
-  - speaker: 旁白
+  - id: L024
+    speaker: 旁白
     zh: 她沒有立刻把它丟掉。
     ja: 彼女は、それをすぐには捨てなかった。
     note: She = the manager; it = the stopped old wall clock she has just boxed up.
-  - speaker: 旁白
+  - id: L025
+    speaker: 旁白
     zh: 案子結了。三宅的那杯太甜的拿鐵，也喝完了。
     ja: 事件は終わった。三宅の甘すぎるラテも、飲み干された。
-  - speaker: 相馬律
+  - id: L026
+    speaker: 相馬律
     zh: 結案的，只是這一樁。
     ja: 片付いたのは、この一件だけだ。
-  - speaker: 旁白
+  - id: L027
+    speaker: 旁白
     zh: 增田留下的那支隨身碟，還沒有人打開過。
     ja: 増田が残したUSBメモリは、まだ誰も開けていない。

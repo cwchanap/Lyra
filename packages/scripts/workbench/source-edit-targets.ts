@@ -123,7 +123,8 @@ export function renderSceneSourceReplacement(input: {
       if (token.text !== target.currentText) {
         return stale(target, `current value is "${token.text}"`);
       }
-      valueEndOffset = token.kind === "action" ? 1 : 0; // closing bracket
+      // Closing bracket, or the dialogue's trailing ` {#L012}` line ID.
+      valueEndOffset = token.kind === "action" ? 1 : token.lineIdSuffixLength;
     } else if (token.kind === "metadata") {
       // Metadata-wrapped Reader item: the outer metadata value re-tokenizes
       // to the inner dialogue/action (interrogation fields). The outer
@@ -139,7 +140,7 @@ export function renderSceneSourceReplacement(input: {
           "metadata value does not re-tokenize to the compiled dialogue/action",
         );
       }
-      valueEndOffset = inner.kind === "action" ? 1 : 0;
+      valueEndOffset = inner.kind === "action" ? 1 : inner.lineIdSuffixLength;
     } else if (token.kind === "unknown" && trimmed.startsWith("[")) {
       // Bracketed block spanning multiple physical lines: read-only in v1.
       return fail(

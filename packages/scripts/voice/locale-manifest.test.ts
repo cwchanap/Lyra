@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildDialogueLocaleManifest } from "./locale-manifest";
 import { serializeLocaleScript } from "./locale-script";
-import type { LocaleScriptLine } from "./types";
+import type { EmittedLine, LocaleScriptLine } from "./types";
 
 let repoRoot: string;
 
@@ -45,29 +45,48 @@ function writeClip(clip: string): void {
   writeFileSync(resolve(dir, `${clip}.ogg`), "");
 }
 
+function line(
+  id: string | null,
+  speaker: string,
+  text: string,
+  expression: string | null = null,
+  sourceFile: string | null = null,
+): EmittedLine {
+  return { id, speaker, text, expression, sourceFile };
+}
+
+function scene(sceneFile: string, lines: EmittedLine[]) {
+  return { sceneFile, sceneId: sceneFile.replace(/\.md$/, ""), lines };
+}
+
 describe("buildDialogueLocaleManifest", () => {
-  it("joins emitted lines with their translations and existing clips", () => {
+  it("joins emitted lines with their translations by line ID", () => {
     writeScript("chapter_1", "scene_0.md", [
-      { speaker: "旁白", zh: "雨。", ja: "雨。" },
+      { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
       {
+        id: "L002",
         speaker: "相馬律",
         zh: "好。",
         ja: "ああ。",
         voice: { clip: "ch1_soma_ritsu_0001" },
       },
+      // Whitespace counts as untranslated, so its existing clip never plays.
       {
+        id: "L003",
+        speaker: "相馬律",
+        zh: "走吧。",
+        ja: "  ",
+        voice: { clip: "ch1_soma_ritsu_0002" },
+      },
+    ]);
+    writeScript("chapter_1", "investigation_scene_1.md", [
+      {
+        id: "L004",
         speaker: "早坂茜",
         expression: "concerned",
         zh: "等等。",
         ja: "待って。",
         voice: { clip: "ch1_hayasaka_akane_0001" },
-      },
-      // Whitespace counts as untranslated, so its existing clip never plays.
-      {
-        speaker: "相馬律",
-        zh: "走吧。",
-        ja: "  ",
-        voice: { clip: "ch1_soma_ritsu_0002" },
       },
     ]);
     writeClip("ch1_soma_ritsu_0001");
@@ -81,32 +100,28 @@ describe("buildDialogueLocaleManifest", () => {
           chapterId: "chapter_1",
           chapterDir: chapterDir("chapter_1"),
           scenes: [
-            {
-              sceneFile: "scene_0.md",
-              lines: [
-                { speaker: "旁白", text: "雨。", expression: null },
-                { speaker: "相馬律", text: "好。", expression: "standard" },
-                { speaker: "相馬律", text: "走吧。", expression: "standard" },
-              ],
-            },
-            {
-              sceneFile: "scene_1.md",
-              lines: [
-                { speaker: "相馬律", text: "好。", expression: null },
-                { speaker: "早坂茜", text: "等等。", expression: "concerned" },
-              ],
-            },
+            scene("scene_0.md", [
+              line("L001", "旁白", "雨。"),
+              line("L002", "相馬律", "好。", "standard"),
+              line("L003", "相馬律", "走吧。", "standard"),
+              line("L002", "相馬律", "好。", "standard"),
+            ]),
+            scene("analysis_scene_1.md", [
+              line(
+                "L004",
+                "早坂茜",
+                "等等。",
+                "concerned",
+                "investigation_scene_1.md",
+              ),
+              line(null, "相馬律", "新的一句。"),
+            ]),
           ],
         },
         {
           chapterId: "chapter_2",
           chapterDir: chapterDir("chapter_2"),
-          scenes: [
-            {
-              sceneFile: "scene_0.md",
-              lines: [{ speaker: "旁白", text: "晴。", expression: null }],
-            },
-          ],
+          scenes: [scene("scene_0.md", [line("L001", "旁白", "晴。")])],
         },
       ],
     });
@@ -147,7 +162,7 @@ describe("buildDialogueLocaleManifest", () => {
       {
         code: "dialogueLocaleIncomplete",
         message:
-          "chapter_1 ja: 1 of 4 spoken lines have no translation yet. Run `bun run voice:sync chapter_1`, then `bun run voice:validate chapter_1`.",
+          "chapter_1 ja: 2 spoken lines have no translation yet. Run `bun run voice:sync chapter_1`, then `bun run voice:validate chapter_1`.",
         sourceFile: "docs/stories_plan/chapter_1/ja",
         line: 1,
       },
@@ -161,12 +176,114 @@ describe("buildDialogueLocaleManifest", () => {
     ]);
   });
 
-  it("skips unreadable scripts and keeps the first of repeated keys", () => {
+  it("keeps a translation when its line is edited, and warns that it changed", () => {
     writeScript("chapter_1", "scene_0.md", [
-      { speaker: "旁白", zh: "雨。", ja: "雨。" },
+      { id: "L001", speaker: "旁白", zh: "雨停了。", ja: "雨が止んだ。" },
+    ]);
+
+    const result = buildDialogueLocaleManifest({
+      locale: "ja",
+      repoRoot,
+      chapters: [
+        {
+          chapterId: "chapter_1",
+          chapterDir: chapterDir("chapter_1"),
+          scenes: [scene("scene_0.md", [line("L001", "旁白", "雨終於停了。")])],
+        },
+      ],
+    });
+
+    expect(result.manifest.chapters[0]?.lines).toEqual([
+      {
+        speaker: "旁白",
+        expression: null,
+        zh: "雨終於停了。",
+        text: "雨が止んだ。",
+        voice: null,
+      },
+    ]);
+    expect(result.warnings.map((w) => w.code)).toEqual([
+      "dialogueLocaleSourceChanged",
+    ]);
+  });
+
+  it("plays the first translation of two lines that read the same", () => {
+    writeScript("chapter_1", "scene_0.md", [
+      { id: "L001", speaker: "相馬律", zh: "好。", ja: "よし。" },
+      { id: "L002", speaker: "相馬律", zh: "好。", ja: "いいだろう。" },
+    ]);
+
+    const result = buildDialogueLocaleManifest({
+      locale: "ja",
+      repoRoot,
+      chapters: [
+        {
+          chapterId: "chapter_1",
+          chapterDir: chapterDir("chapter_1"),
+          scenes: [
+            scene("scene_0.md", [
+              line("L001", "相馬律", "好。"),
+              line("L002", "相馬律", "好。"),
+            ]),
+          ],
+        },
+      ],
+    });
+
+    expect(result.manifest.chapters[0]?.lines.map((l) => l.text)).toEqual([
+      "よし。",
+    ]);
+    expect(result.warnings.map((w) => w.code)).toEqual([
+      "dialogueLocaleAmbiguous",
+    ]);
+  });
+
+  it("plays the clip of either of two identical lines", () => {
+    writeScript("chapter_1", "scene_0.md", [
+      { id: "L001", speaker: "相馬律", zh: "好。", ja: "よし。" },
     ]);
     writeScript("chapter_1", "scene_1.md", [
-      { speaker: "旁白", zh: "雨。", ja: "雨だ。" },
+      {
+        id: "L001",
+        speaker: "相馬律",
+        zh: "好。",
+        ja: "よし。",
+        voice: { clip: "ch1_soma_ritsu_0001" },
+      },
+    ]);
+    writeClip("ch1_soma_ritsu_0001");
+
+    const result = buildDialogueLocaleManifest({
+      locale: "ja",
+      repoRoot,
+      chapters: [
+        {
+          chapterId: "chapter_1",
+          chapterDir: chapterDir("chapter_1"),
+          scenes: [
+            scene("scene_0.md", [line("L001", "相馬律", "好。")]),
+            scene("scene_1.md", [line("L001", "相馬律", "好。")]),
+          ],
+        },
+      ],
+    });
+
+    expect(result.manifest.chapters[0]?.lines).toEqual([
+      {
+        speaker: "相馬律",
+        expression: null,
+        zh: "好。",
+        text: "よし。",
+        voice: "voice.ja.ch1_soma_ritsu_0001",
+      },
+    ]);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("skips unreadable scripts and keeps the first of repeated IDs", () => {
+    writeScript("chapter_1", "scene_0.md", [
+      { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
+      { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨だ。" },
     ]);
     writeFileSync(
       resolve(chapterDir("chapter_1"), "ja/scene_2.ja.yaml"),
@@ -180,12 +297,7 @@ describe("buildDialogueLocaleManifest", () => {
         {
           chapterId: "chapter_1",
           chapterDir: chapterDir("chapter_1"),
-          scenes: [
-            {
-              sceneFile: "scene_0.md",
-              lines: [{ speaker: "旁白", text: "雨。", expression: null }],
-            },
-          ],
+          scenes: [scene("scene_0.md", [line("L001", "旁白", "雨。")])],
         },
       ],
     });
@@ -202,7 +314,7 @@ describe("buildDialogueLocaleManifest", () => {
     expect(result.warnings.map((w) => [w.code, w.sourceFile])).toEqual([
       [
         "dialogueLocaleDuplicateKey",
-        "docs/stories_plan/chapter_1/ja/scene_1.ja.yaml",
+        "docs/stories_plan/chapter_1/ja/scene_0.ja.yaml",
       ],
       [
         "dialogueLocaleScriptInvalid",

@@ -1,5 +1,6 @@
-import { keyExpression, localeLineKey } from "@lyra/dialogue-locale";
+import { keyExpression } from "@lyra/dialogue-locale";
 import { localeScriptPath, sceneSourcePath } from "./locale-script";
+import { ownerSceneFile, scriptLineKey } from "./script-key";
 import type {
   EmittedLine,
   EmittedScene,
@@ -21,6 +22,8 @@ export type SyncReport = {
   kept: number;
   staled: number;
   droppedUntranslated: number;
+  /** Emitted lines whose scene line has no `{#L012}` ID yet. */
+  withoutId: number;
 };
 
 export type SyncResult =
@@ -34,16 +37,9 @@ export type SyncResult =
     }
   | { ok: false; diagnostics: VoiceDiagnostic[] };
 
-function lineKey(line: LocaleScriptLine): string {
-  return localeLineKey({
-    speaker: line.speaker,
-    text: line.zh,
-    expression: line.expression ?? null,
-  });
-}
-
-function skeleton(line: EmittedLine): LocaleScriptLine {
+function skeleton(line: EmittedLine & { id: string }): LocaleScriptLine {
   const entry: LocaleScriptLine = {
+    id: line.id,
     speaker: line.speaker,
     zh: line.text,
     ja: "",
@@ -60,13 +56,15 @@ function worthKeeping(line: LocaleScriptLine): boolean {
 }
 
 /**
- * Rebuilds a chapter's locale scripts from its emitted lines. Each unique line
- * (by {@link localeLineKey}) is listed once, in the first scene that emits it;
- * existing translations move with their key. Translated or annotated entries
- * that no longer match any emitted line move to their file's `stale` list
- * instead of being dropped; untranslated ones are dropped.
+ * Rebuilds a chapter's locale scripts from its emitted lines. Entries are
+ * linked to scene lines by `{#L012}` ID; each ID is listed once, in the
+ * script of the scene file the line is written in, in emitted order. An
+ * existing entry is kept exactly as it is (its `zh` records what was
+ * translated, and `voice:validate` reports lines that changed since).
+ * Entries whose ID is gone move to the file's `stale` list when they hold a
+ * translation, note or clip, and are dropped otherwise.
  *
- * Refuses to run when existing scripts list the same key twice, since picking
+ * Refuses to run when existing scripts list the same ID twice, since picking
  * one translation would silently discard the other.
  */
 export function syncChapterScripts(input: {
@@ -82,13 +80,12 @@ export function syncChapterScripts(input: {
   >();
   for (const script of input.existing) {
     for (const line of [...script.file.lines, ...script.file.stale]) {
-      const key = lineKey(line);
-      const prior = pool.get(key);
-      if (prior) {
+      const key = scriptLineKey(script.sceneFile, line.id);
+      if (pool.has(key)) {
         diagnostics.push({
           severity: "error",
           code: "localeScriptDuplicateKey",
-          message: `"${line.speaker}: ${line.zh}" is listed in both ${prior.origin.path} and ${script.path}; keep one entry before syncing.`,
+          message: `${line.id} is listed twice in ${script.path}; keep one entry before syncing.`,
           path: script.path,
         });
         continue;
@@ -103,25 +100,37 @@ export function syncChapterScripts(input: {
     kept: 0,
     staled: 0,
     droppedUntranslated: 0,
+    withoutId: 0,
   };
   const linesByScene = new Map<string, LocaleScriptLine[]>();
   const used = new Set<string>();
+  const sceneFiles: string[] = [];
+  const noteScene = (sceneFile: string) => {
+    if (!sceneFiles.includes(sceneFile)) sceneFiles.push(sceneFile);
+  };
   for (const scene of input.scenes) {
-    const lines: LocaleScriptLine[] = [];
+    noteScene(scene.sceneFile);
     for (const emitted of scene.lines) {
-      const key = localeLineKey(emitted);
+      if (emitted.id === null) {
+        report.withoutId += 1;
+        continue;
+      }
+      const owner = ownerSceneFile(emitted, scene.sceneFile);
+      noteScene(owner);
+      const key = scriptLineKey(owner, emitted.id);
       if (used.has(key)) continue;
       used.add(key);
+      const lines = linesByScene.get(owner) ?? [];
       const existing = pool.get(key);
       if (existing) {
         lines.push(existing.line);
         report.kept += 1;
       } else {
-        lines.push(skeleton(emitted));
+        lines.push(skeleton({ ...emitted, id: emitted.id }));
         report.added += 1;
       }
+      linesByScene.set(owner, lines);
     }
-    linesByScene.set(scene.sceneFile, lines);
   }
 
   const staleByScene = new Map<string, LocaleScriptLine[]>();
@@ -132,18 +141,13 @@ export function syncChapterScripts(input: {
       continue;
     }
     report.staled += 1;
+    noteScene(origin.sceneFile);
     const list = staleByScene.get(origin.sceneFile) ?? [];
     list.push(line);
     staleByScene.set(origin.sceneFile, list);
   }
 
   const writes = new Map<string, LocaleScriptFile>();
-  const sceneFiles = [
-    ...input.scenes.map((scene) => scene.sceneFile),
-    ...[...staleByScene.keys()].filter(
-      (sceneFile) => !linesByScene.has(sceneFile),
-    ),
-  ];
   for (const sceneFile of sceneFiles) {
     const lines = linesByScene.get(sceneFile) ?? [];
     const stale = staleByScene.get(sceneFile) ?? [];

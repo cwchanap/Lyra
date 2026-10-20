@@ -1,61 +1,85 @@
 # ja script for docs/stories_plan/chapter_1/scene_p2.md.
-# Edit `ja` (and an optional `note`) only. After the Chinese scene changes,
-# run `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
+# Each entry is linked to its scene line by `id` (the line's {#L012} tag);
+# `speaker`, `expression` and `zh` record what was translated. Edit `ja`,
+# `note`, `voice.direction` and `voice.tts` only. After the scene changes, run
+# `bun run voice:sync <chapter>`, then `bun run voice:validate <chapter>`.
 schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/scene_p2.md
 lines:
-  - speaker: 旁白
+  - id: L001
+    speaker: 旁白
     zh: 雨鐘咖啡館，某個普通的雨天。
     ja: カフェ「雨鐘」、ありふれた雨の日。
-  - speaker: 三宅蒼太
+  - id: L002
+    speaker: 三宅蒼太
     zh: ……這個，還能帶。
     ja: ……これ、まだ持って帰れる。
-  - speaker: 店長高瀨
+  - id: L003
+    speaker: 店長高瀨
     zh: 先登記。
     ja: 先に記入して。
-  - speaker: 店長高瀨
+  - id: L004
+    speaker: 店長高瀨
     zh: 剩下的可以帶。沒登記的，不行。
     ja: 余った分は持って帰っていい。記入してないのは、だめ。
-  - speaker: 三宅蒼太
+  - id: L005
+    speaker: 三宅蒼太
     zh: 我知道。我每次都有登記。
     ja: 分かってます。毎回ちゃんと記入してます。
-  - speaker: 店長高瀨
+  - id: L006
+    speaker: 店長高瀨
     zh: ……又慢了。
     ja: ……また遅れてる。
-  - speaker: 三宅蒼太
+  - id: L007
+    speaker: 三宅蒼太
     zh: 歡迎。……今天也金木犀拿鐵？
     ja: いらっしゃいませ。……今日も金木犀ラテですか？
-  - speaker: 增田圭
+  - id: L008
+    speaker: 增田圭
     zh: 嗯。糖少。
     ja: ええ。砂糖は少なめで。
-  - speaker: 三宅蒼太
+  - id: L009
+    speaker: 三宅蒼太
     zh: 好。
     ja: はい。
-  - speaker: 三宅蒼太
+  - id: L010
+    speaker: 三宅蒼太
     zh: 這張，今天幫你蓋一個。
     ja: こちら、今日の分、押しておきますね。
-  - speaker: 增田圭
+  - id: L011
+    speaker: 增田圭
     zh: 謝謝。
     ja: ありがとう。
-  - speaker: 店長高瀨
+  - id: L012
+    speaker: 店長高瀨
     zh: 你每次都說糖少，最後還是自己加糖包。
     ja: いつも砂糖少なめって言うのに、結局ご自分でシュガーを足しますよね。
-  - speaker: 增田圭
+  - id: L013
+    speaker: 增田圭
     zh: ……今天不會。
     ja: ……今日は足しません。
-  - speaker: 片瀨美咲
+  - id: L014
+    speaker: 片瀨美咲
     zh: ……又快了。
     ja: ……またこんな時間。
-  - speaker: 片瀨美咲
+  - id: L015
+    speaker: 片瀨美咲
     zh: 我先把這邊擦完。
     ja: 先にこっち、拭いちゃいますね。
-  - speaker: 店長高瀨
+  - id: L016
+    speaker: 店長高瀨
     zh: 先讓機器跑完排氣，再關燈。
     ja: 機械の排気が終わってから、電気を消してね。
-  - speaker: 三宅蒼太
+  - id: L017
+    speaker: 三宅蒼太
+    zh: 好。
+    ja: はい。
+  - id: L018
+    speaker: 三宅蒼太
     zh: ……這聲音——
     ja: ……この音――
-  - speaker: 店長高瀨
+  - id: L019
+    speaker: 店長高瀨
     zh: 那台機器一直這樣，跑完就好。
     ja: あの機械はずっとああだから。終われば大丈夫。

@@ -91,6 +91,8 @@ describe("tokenizer", () => {
         speaker: "早坂茜",
         expression: null,
         text: "你來得比我想的快。",
+        lineId: null,
+        lineIdSuffixLength: 0,
         sourceFile: "test.md",
         line: 1,
       },
@@ -104,10 +106,27 @@ describe("tokenizer", () => {
         speaker: "早坂茜",
         expression: "concerned",
         text: "你不舒服？",
+        lineId: null,
+        lineIdSuffixLength: 0,
         sourceFile: "test.md",
         line: 1,
       },
     ]);
+  });
+
+  it("splits a trailing line ID off the spoken text", () => {
+    const line = "**早坂茜**[concerned]：你不舒服？ {#L012}";
+    expect(tokenize(line, "test.md")[0]).toMatchObject({
+      kind: "dialogue",
+      expression: "concerned",
+      text: "你不舒服？",
+      lineId: "L012",
+      lineIdSuffixLength: " {#L012}".length,
+    });
+    expect(tokenize("**A**：hi {#L1}", "test.md")[0]).toMatchObject({
+      text: "hi {#L1}",
+      lineId: null,
+    });
   });
 
   it("rejects malformed expression brackets as unknown", () => {

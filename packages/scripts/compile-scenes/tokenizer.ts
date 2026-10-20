@@ -6,7 +6,8 @@
 //   - metadata       (- **Key:** value)
 //   - sceneTag       ([場景：...])
 //   - action         (any other [bracketed] line)
-//   - dialogue       (**Name**：text — full-width colon)
+//   - dialogue       (**Name**：text — full-width colon, optionally ending in a
+//                     ` {#L012}` line ID that is not part of the text)
 //   - unknown        (any line that didn't match above)
 //
 // Blank lines are skipped but counted (so line numbers stay accurate).
@@ -36,6 +37,10 @@ export type Token =
       speaker: string;
       expression: string | null;
       text: string;
+      /** Stable line ID from a trailing ` {#L012}`, or null. */
+      lineId: string | null;
+      /** Length of the trailing ` {#L012}` (whitespace included), or 0. */
+      lineIdSuffixLength: number;
       sourceFile: string;
       line: number;
     }
@@ -44,7 +49,8 @@ export type Token =
 const HEADING_RE = /^(#{1,5})\s+(.+?)(?:\s+\{#([a-z0-9_]+)\})?\s*$/;
 const METADATA_RE = /^-\s+\*\*([A-Za-z][A-Za-z0-9 ]*):\*\*\s+(.+?)\s*$/;
 const BRACKETED_RE = /^\[(.+?)\]\s*$/;
-const DIALOGUE_RE = /^\*\*([^*]+)\*\*(?:\[([a-z][a-z0-9_]*)\])?：(.+?)\s*$/;
+const DIALOGUE_RE =
+  /^\*\*([^*]+)\*\*(?:\[([a-z][a-z0-9_]*)\])?：(.+?)(\s+\{#(L\d{3,})\})?\s*$/;
 const SCENE_TAG_PREFIX = "場景：";
 
 export function tokenize(source: string, sourceFile: string): Token[] {
@@ -142,6 +148,8 @@ export function tokenize(source: string, sourceFile: string): Token[] {
         speaker: dialogue[1] ?? "",
         expression: dialogue[2] ?? null,
         text: dialogue[3] ?? "",
+        lineId: dialogue[5] ?? null,
+        lineIdSuffixLength: dialogue[4]?.length ?? 0,
         sourceFile,
         line,
       });

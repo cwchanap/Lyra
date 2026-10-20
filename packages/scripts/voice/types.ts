@@ -6,6 +6,10 @@ export type EmittedLine = {
   speaker: string;
   text: string;
   expression: string | null;
+  /** The authored line's `{#L012}` ID, or null when it has none yet. */
+  id: string | null;
+  /** Scene file the authored line is in (and so its script), if known. */
+  sourceFile: string | null;
 };
 
 /** The spoken lines of one manifest scene, in emitted dialogue order. */
@@ -34,11 +38,12 @@ export type LocaleScriptVoice = {
 };
 
 /**
- * One translated line in a per-scene locale script. `expression` is omitted
- * for the `standard` expression and for portrait-less lines; see
- * {@link localeLineKey}.
+ * One translated line in a per-scene locale script, linked to its scene line
+ * by `id`. `speaker`, `expression` and `zh` record the line as it was when
+ * translated; `expression` is omitted for `standard` and portrait-less lines.
  */
 export type LocaleScriptLine = {
+  id: string;
   speaker: string;
   expression?: string;
   zh: string;

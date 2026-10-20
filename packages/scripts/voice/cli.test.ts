@@ -57,17 +57,27 @@ describe("voice cli", () => {
     expect((await run(repoRoot, ["translate", "chapter_1"])).code).toBe(2);
   });
 
-  it("writes skeletons once, then keeps translations when the scene changes", async () => {
+  it("adds line IDs and skeletons once, then keeps translations by ID when the scene changes", async () => {
     const repoRoot = createRepoRoot();
     const scriptPath = join(repoRoot, SCRIPT);
+    const scenePath = join(repoRoot, "docs/stories_plan/chapter_1/scene_0.md");
 
     const first = await run(repoRoot, ["sync", "chapter_1"]);
     expect(first.code).toBe(0);
+    expect(first.stdout).toContain(
+      "[voice] added 78 line IDs to docs/stories_plan/chapter_1/scene_0.md",
+    );
     expect(first.stdout).toContain(`[voice] wrote ${SCRIPT}`);
+    const scene = readFileSync(scenePath, "utf-8");
+    expect(scene).toContain("**相馬律**：不說謊。 {#L001}\n");
+    expect(scene).toContain(
+      "**早坂茜**[concerned]：KAGAMI 門鎖時間線指向他。警察幾乎確定了。 {#L010}\n",
+    );
     const skeleton = readFileSync(scriptPath, "utf-8");
     expect(skeleton).toContain(
       [
-        "  - speaker: 早坂茜",
+        "  - id: L010",
+        "    speaker: 早坂茜",
         "    expression: concerned",
         "    zh: KAGAMI 門鎖時間線指向他。警察幾乎確定了。",
         '    ja: ""',
@@ -75,9 +85,12 @@ describe("voice cli", () => {
     );
 
     const again = await run(repoRoot, ["sync", "chapter_1"]);
-    expect(again.stdout.some((line) => line.startsWith("[voice] wrote"))).toBe(
-      false,
-    );
+    expect(
+      again.stdout.some(
+        (line) =>
+          line.startsWith("[voice] wrote") || line.startsWith("[voice] added"),
+      ),
+    ).toBe(false);
 
     const notStrict = await run(repoRoot, ["validate", "chapter_1"]);
     expect(notStrict.code).toBe(0);
@@ -85,6 +98,7 @@ describe("voice cli", () => {
     expect(strict.code).toBe(2);
     expect(strict.stderr.join("\n")).toContain("localeScriptUntranslated");
 
+    // Translate L001, then edit its text and add a line after it.
     writeFileSync(
       scriptPath,
       skeleton.replace(
@@ -92,22 +106,48 @@ describe("voice cli", () => {
         "    zh: 不說謊。\n    ja: 嘘をつかない。",
       ),
     );
-    const scenePath = join(repoRoot, "docs/stories_plan/chapter_1/scene_0.md");
     writeFileSync(
       scenePath,
-      readFileSync(scenePath, "utf-8").replace(
-        "**相馬律**：不說謊。",
-        "**相馬律**：絕不說謊。",
+      scene.replace(
+        "**相馬律**：不說謊。 {#L001}",
+        "**相馬律**：絕不說謊。 {#L001}\n\n**相馬律**：真的。",
       ),
     );
 
     const resync = await run(repoRoot, ["sync", "chapter_1"]);
     expect(resync.code).toBe(0);
-    expect(resync.stdout.at(-1)).toMatch(/1 added, .* 1 stale/);
+    expect(readFileSync(scenePath, "utf-8")).toContain(
+      "**相馬律**：絕不說謊。 {#L001}\n\n**相馬律**：真的。 {#L079}",
+    );
+    expect(resync.stdout.at(-1)).toMatch(
+      /1 line IDs added, 1 entries added, .* 0 stale/,
+    );
     const updated = readFileSync(scriptPath, "utf-8");
-    expect(updated).toContain('    zh: 絕不說謊。\n    ja: ""');
     expect(updated).toContain(
-      "stale:\n  - speaker: 相馬律\n    zh: 不說謊。\n    ja: 嘘をつかない。",
+      '  - id: L001\n    speaker: 相馬律\n    zh: 不說謊。\n    ja: 嘘をつかない。\n  - id: L079\n    speaker: 相馬律\n    zh: 真的。\n    ja: ""',
+    );
+    const changed = await run(repoRoot, ["validate", "chapter_1", "--verbose"]);
+    expect(changed.stderr.join("\n")).toContain(
+      'L001 was translated from "相馬律: 不說謊。" but now reads "相馬律: 絕不說謊。"',
+    );
+
+    // Deleting the line keeps its translation as stale; its ID is not reused.
+    writeFileSync(
+      scenePath,
+      readFileSync(scenePath, "utf-8")
+        .replace("**相馬律**：絕不說謊。 {#L001}\n\n", "")
+        .replace(
+          "**相馬律**：真的。 {#L079}",
+          "**相馬律**：真的。 {#L079}\n\n**相馬律**：好。",
+        ),
+    );
+    const removed = await run(repoRoot, ["sync", "chapter_1"]);
+    expect(removed.stdout.at(-1)).toMatch(/1 line IDs added, .* 1 stale/);
+    expect(readFileSync(scenePath, "utf-8")).toContain(
+      "**相馬律**：好。 {#L080}",
+    );
+    expect(readFileSync(scriptPath, "utf-8")).toContain(
+      "stale:\n  - id: L001\n    speaker: 相馬律\n    zh: 不說謊。\n    ja: 嘘をつかない。",
     );
   });
 

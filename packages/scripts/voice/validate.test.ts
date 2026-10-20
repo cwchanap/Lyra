@@ -25,15 +25,25 @@ function existing(
   };
 }
 
+function line(
+  id: string | null,
+  speaker: string,
+  text: string,
+  expression: string | null = null,
+): EmittedScene["lines"][number] {
+  return { id, speaker, text, expression, sourceFile: null };
+}
+
 const SCENES: EmittedScene[] = [
   {
     chapterId: CHAPTER,
     sceneFile: "scene_0.md",
     sceneId: "scene_0",
     lines: [
-      { speaker: "旁白", text: "雨。", expression: null },
-      { speaker: "相馬律", text: "好。", expression: "standard" },
-      { speaker: "相馬律", text: "走吧。", expression: null },
+      line("L001", "旁白", "雨。"),
+      line("L002", "相馬律", "好。", "standard"),
+      line("L003", "相馬律", "走吧。"),
+      line("L002", "相馬律", "好。", "standard"),
     ],
   },
   {
@@ -41,11 +51,22 @@ const SCENES: EmittedScene[] = [
     sceneFile: "scene_1.md",
     sceneId: "scene_1",
     lines: [
-      { speaker: "旁白", text: "雨。", expression: null },
-      { speaker: "早坂茜", text: "等等。", expression: "concerned" },
+      line("L001", "旁白", "雨。"),
+      line("L002", "早坂茜", "等等。", "concerned"),
     ],
   },
 ];
+
+const COMPLETE_SCENE_1 = existing("scene_1.md", [
+  { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
+  {
+    id: "L002",
+    speaker: "早坂茜",
+    expression: "concerned",
+    zh: "等等。",
+    ja: "待って。",
+  },
+]);
 
 describe("validateChapterScripts", () => {
   it("rejects a clip shared by two lines and flags a voiced empty line", () => {
@@ -55,28 +76,23 @@ describe("validateChapterScripts", () => {
       scenes: SCENES,
       existing: [
         existing("scene_0.md", [
-          { speaker: "旁白", zh: "雨。", ja: "雨。" },
+          { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
           {
+            id: "L002",
             speaker: "相馬律",
             zh: "好。",
             ja: "ああ。",
             voice: { clip: "ch1_soma_ritsu_0001" },
           },
           {
+            id: "L003",
             speaker: "相馬律",
             zh: "走吧。",
             ja: "",
             voice: { clip: "ch1_soma_ritsu_0001" },
           },
         ]),
-        existing("scene_1.md", [
-          {
-            speaker: "早坂茜",
-            expression: "concerned",
-            zh: "等等。",
-            ja: "待って。",
-          },
-        ]),
+        COMPLETE_SCENE_1,
       ],
     });
 
@@ -94,54 +110,90 @@ describe("validateChapterScripts", () => {
       scenes: SCENES,
       existing: [
         existing("scene_0.md", [
-          { speaker: "旁白", zh: "雨。", ja: "雨。" },
-          { speaker: "相馬律", zh: "好。", ja: "ああ。" },
-          { speaker: "相馬律", zh: "走吧。", ja: "行こう。" },
+          { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
+          { id: "L002", speaker: "相馬律", zh: "好。", ja: "ああ。" },
+          { id: "L003", speaker: "相馬律", zh: "走吧。", ja: "行こう。" },
         ]),
-        existing("scene_1.md", [
-          {
-            speaker: "早坂茜",
-            expression: "concerned",
-            zh: "等等。",
-            ja: "待って。",
-          },
-        ]),
+        COMPLETE_SCENE_1,
       ],
     });
 
     expect(result.diagnostics).toEqual([]);
     expect(result.summary).toEqual({
-      emittedLines: 5,
-      uniqueLines: 4,
-      translated: 4,
+      emittedLines: 6,
+      uniqueLines: 5,
+      translated: 5,
       missing: 0,
       untranslated: 0,
       stale: 0,
+      changed: 0,
+      withoutId: 0,
     });
+  });
+
+  it("flags a line whose text or expression changed since it was translated", () => {
+    const result = validateChapterScripts({
+      chapterId: CHAPTER,
+      locale: "ja",
+      scenes: SCENES,
+      existing: [
+        existing("scene_0.md", [
+          { id: "L001", speaker: "旁白", zh: "小雨。", ja: "小雨。" },
+          {
+            id: "L002",
+            speaker: "相馬律",
+            expression: "tired",
+            zh: "好。",
+            ja: "ああ。",
+          },
+          { id: "L003", speaker: "相馬律", zh: "走吧。", ja: "行こう。" },
+        ]),
+        COMPLETE_SCENE_1,
+      ],
+    });
+
+    expect(result.diagnostics.map((d) => d.code)).toEqual([
+      "localeScriptSourceChanged",
+      "localeScriptSourceChanged",
+    ]);
+    expect(result.diagnostics[0]?.message).toContain(
+      'L001 was translated from "旁白: 小雨。" but now reads "旁白: 雨。"',
+    );
+    expect(result.summary).toMatchObject({ translated: 5, changed: 2 });
   });
 
   it("warns on coverage gaps and errors on structural problems", () => {
     const result = validateChapterScripts({
       chapterId: CHAPTER,
       locale: "ja",
-      scenes: SCENES,
+      scenes: [
+        ...SCENES,
+        {
+          chapterId: CHAPTER,
+          sceneFile: "scene_2.md",
+          sceneId: "scene_2",
+          lines: [line(null, "早坂茜", "新的一句。")],
+        },
+      ],
       existing: [
         existing(
           "scene_0.md",
           [
-            { speaker: "旁白", zh: "雨。", ja: "雨。" },
-            { speaker: "相馬律", zh: "好。", ja: "" },
+            { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
+            { id: "L002", speaker: "相馬律", zh: "好。", ja: "" },
             {
-              speaker: "早坂茜",
-              expression: "concerned",
-              zh: "等等。",
-              ja: "待って。",
+              id: "L009",
+              speaker: "旁白",
+              zh: "刪掉的句子。",
+              ja: "消えた文。",
             },
-            { speaker: "旁白", zh: "刪掉的句子。", ja: "消えた文。" },
           ],
           { source: "docs/stories_plan/chapter_1/scene_9.md" },
         ),
-        existing("scene_1.md", [{ speaker: "旁白", zh: "雨。", ja: "雨だ。" }]),
+        existing("scene_1.md", [
+          { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨だ。" },
+          { id: "L001", speaker: "旁白", zh: "雨。", ja: "雨。" },
+        ]),
       ],
       glossary: {
         path: "docs/stories_plan/ja_glossary.yaml",
@@ -159,21 +211,24 @@ describe("validateChapterScripts", () => {
     });
 
     expect(result.diagnostics.map((d) => `${d.severity} ${d.code}`)).toEqual([
+      "warning dialogueLineWithoutId",
       "error localeScriptSourceMismatch",
       "warning localeScriptUntranslated",
-      "warning localeScriptMisplacedEntry",
       "warning localeScriptStaleEntry",
       "error localeScriptDuplicateKey",
+      "warning localeScriptMissingEntry",
       "warning localeScriptMissingEntry",
       "warning localeGlossaryMissingSpeaker",
     ]);
     expect(result.summary).toEqual({
-      emittedLines: 5,
-      uniqueLines: 4,
-      translated: 2,
-      missing: 1,
+      emittedLines: 7,
+      uniqueLines: 5,
+      translated: 3,
+      missing: 2,
       untranslated: 1,
       stale: 1,
+      changed: 0,
+      withoutId: 1,
     });
   });
 });

@@ -23,11 +23,13 @@ import { assignClipIds } from "./clip-ids";
 import { collectEmittedLines } from "./emitted-lines";
 import { planVoiceGeneration, type VoiceTarget } from "./generate";
 import { glossaryPath, parseGlossaryText } from "./glossary";
+import { addMissingLineIds } from "../compile-scenes/line-ids";
 import {
   localeScriptDir,
   localeScriptPath,
   parseLocaleScriptText,
   sceneFileForScriptName,
+  sceneSourcePath,
   serializeLocaleScript,
 } from "./locale-script";
 import { syncChapterScripts, type ExistingScript } from "./sync";
@@ -276,13 +278,58 @@ function printDiagnostics(
   }
 }
 
+/**
+ * Appends a `{#L012}` ID to every spoken line without one in the scene files
+ * whose emitted lines lack IDs. IDs a script still refers to (stale entries
+ * included) are never handed out again. Returns how many IDs were added.
+ */
+function addLineIds(
+  parsed: ParsedArgs,
+  scenes: EmittedScene[],
+  existing: ExistingScript[],
+  context: CliContext,
+): number {
+  const files = new Set<string>();
+  for (const scene of scenes) {
+    for (const line of scene.lines) {
+      if (line.id === null) files.add(line.sourceFile ?? scene.sceneFile);
+    }
+  }
+  let added = 0;
+  for (const sceneFile of files) {
+    const path = sceneSourcePath(parsed.chapterId, sceneFile);
+    const fullPath = resolve(context.repoRoot, path);
+    const script = existing.find((s) => s.sceneFile === sceneFile);
+    const reserved = script
+      ? [...script.file.lines, ...script.file.stale].map((line) => line.id)
+      : [];
+    const result = addMissingLineIds(readFileSync(fullPath, "utf-8"), reserved);
+    if (result.added === 0) continue;
+    writeFileSync(fullPath, result.text);
+    context.stdout(`[voice] added ${result.added} line IDs to ${path}`);
+    added += result.added;
+  }
+  return added;
+}
+
 function runSync(args: string[], context: CliContext): number {
   const parsed = parseArgs(args, [], context);
   if (!parsed) return DIAGNOSTIC_EXIT_CODE;
-  const scenes = loadEmittedScenes(parsed, context);
+  let scenes = loadEmittedScenes(parsed, context);
   if (!scenes) return DIAGNOSTIC_EXIT_CODE;
   const existing = loadExistingScripts(parsed, context);
   if (!existing) return DIAGNOSTIC_EXIT_CODE;
+  let lineIds: number;
+  try {
+    lineIds = addLineIds(parsed, scenes, existing, context);
+  } catch (cause) {
+    context.stderr(`[voice] failed to add line IDs: ${errorMessage(cause)}`);
+    return FAILURE_EXIT_CODE;
+  }
+  if (lineIds > 0) {
+    scenes = loadEmittedScenes(parsed, context);
+    if (!scenes) return DIAGNOSTIC_EXIT_CODE;
+  }
 
   const result = syncChapterScripts({
     chapterId: parsed.chapterId,
@@ -326,9 +373,14 @@ function runSync(args: string[], context: CliContext): number {
     return FAILURE_EXIT_CODE;
   }
 
-  const { added, kept, staled, droppedUntranslated } = result.report;
+  const { added, kept, staled, droppedUntranslated, withoutId } = result.report;
+  if (withoutId > 0) {
+    context.stderr(
+      `[voice] ${withoutId} spoken lines could not be given a line ID; run voice:validate for details.`,
+    );
+  }
   context.stdout(
-    `[voice] ${parsed.chapterId} ${parsed.locale}: ${added} added, ${kept} kept, ${staled} stale, ${droppedUntranslated} untranslated removed, ${clips} clip IDs assigned.`,
+    `[voice] ${parsed.chapterId} ${parsed.locale}: ${lineIds} line IDs added, ${added} entries added, ${kept} kept, ${staled} stale, ${droppedUntranslated} untranslated removed, ${clips} clip IDs assigned.`,
   );
   return SUCCESS_EXIT_CODE;
 }
@@ -355,7 +407,7 @@ function runValidate(args: string[], context: CliContext): number {
   });
   printDiagnostics(diagnostics, context, parsed.flags.has("--verbose"));
   context.stdout(
-    `[voice] ${parsed.chapterId} ${parsed.locale}: ${summary.uniqueLines} unique lines (${summary.emittedLines} emitted), ${summary.translated} translated, ${summary.untranslated} untranslated, ${summary.missing} missing, ${summary.stale} stale.`,
+    `[voice] ${parsed.chapterId} ${parsed.locale}: ${summary.uniqueLines} unique lines (${summary.emittedLines} emitted), ${summary.translated} translated, ${summary.untranslated} untranslated, ${summary.missing} missing, ${summary.changed} changed since translation, ${summary.stale} stale, ${summary.withoutId} without a line ID.`,
   );
 
   const strict = parsed.flags.has("--strict");

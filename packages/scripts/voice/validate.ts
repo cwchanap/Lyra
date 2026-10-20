@@ -1,13 +1,13 @@
-import { localeLineKey } from "@lyra/dialogue-locale";
 import { localeScriptPath, sceneSourcePath } from "./locale-script";
+import { ownerSceneFile, scriptLineKey, sourceChanged } from "./script-key";
 import type { ExistingScript } from "./sync";
-import type { CastEntry } from "./voice-cast";
 import type {
+  EmittedLine,
   EmittedScene,
   LocaleGlossary,
-  LocaleScriptLine,
   VoiceDiagnostic,
 } from "./types";
+import type { CastEntry } from "./voice-cast";
 
 export type ValidateSummary = {
   emittedLines: number;
@@ -16,6 +16,10 @@ export type ValidateSummary = {
   missing: number;
   untranslated: number;
   stale: number;
+  /** Translated lines whose scene line changed since translation. */
+  changed: number;
+  /** Emitted lines whose scene line has no `{#L012}` ID yet. */
+  withoutId: number;
 };
 
 export type ValidateResult = {
@@ -23,23 +27,17 @@ export type ValidateResult = {
   summary: ValidateSummary;
 };
 
-function lineKey(line: LocaleScriptLine): string {
-  return localeLineKey({
-    speaker: line.speaker,
-    text: line.zh,
-    expression: line.expression ?? null,
-  });
-}
-
 function label(line: { speaker: string; zh?: string; text?: string }): string {
   return `${line.speaker}: ${line.zh ?? line.text ?? ""}`;
 }
 
 /**
  * Checks a chapter's locale scripts against its emitted lines. Errors are
- * structural (duplicate keys, a script pointing at the wrong scene); warnings
- * are coverage gaps (missing or untranslated lines, stale or misplaced
- * entries, speakers without a glossary entry) that `--strict` promotes.
+ * structural (an ID or clip listed twice, a script pointing at the wrong
+ * scene); warnings are coverage gaps (lines without an ID, missing or
+ * untranslated entries, lines that changed since translation, stale
+ * entries, speakers without a glossary entry, clips of uncast roles) that
+ * `--strict` promotes.
  */
 export function validateChapterScripts(input: {
   chapterId: string;
@@ -58,24 +56,42 @@ export function validateChapterScripts(input: {
     missing: 0,
     untranslated: 0,
     stale: 0,
+    changed: 0,
+    withoutId: 0,
   };
 
-  const ownerByKey = new Map<string, string>();
+  const emittedByKey = new Map<
+    string,
+    { line: EmittedLine & { id: string }; owner: string }
+  >();
   const speakers = new Set<string>();
+  const unidentified = new Set<string>();
   for (const scene of input.scenes) {
     for (const line of scene.lines) {
       summary.emittedLines += 1;
       speakers.add(line.speaker);
-      const key = localeLineKey(line);
-      if (!ownerByKey.has(key)) ownerByKey.set(key, scene.sceneFile);
+      const owner = ownerSceneFile(line, scene.sceneFile);
+      if (line.id === null) {
+        summary.withoutId += 1;
+        unidentified.add(owner);
+        continue;
+      }
+      const key = scriptLineKey(owner, line.id);
+      if (!emittedByKey.has(key)) {
+        emittedByKey.set(key, { line: { ...line, id: line.id }, owner });
+      }
     }
   }
-  summary.uniqueLines = ownerByKey.size;
+  summary.uniqueLines = emittedByKey.size;
+  for (const owner of unidentified) {
+    diagnostics.push({
+      severity: "warning",
+      code: "dialogueLineWithoutId",
+      message: `${owner} has spoken lines without a {#L012} ID; run voice:sync to add them.`,
+      path: sceneSourcePath(input.chapterId, owner),
+    });
+  }
 
-  const entryByKey = new Map<
-    string,
-    { line: LocaleScriptLine; path: string }
-  >();
   const clipOwner = new Map<string, string>();
   for (const script of input.existing) {
     for (const line of [...script.file.lines, ...script.file.stale]) {
@@ -85,22 +101,24 @@ export function validateChapterScripts(input: {
         diagnostics.push({
           severity: "error",
           code: "localeScriptDuplicateClip",
-          message: `Clip ${line.voice.clip} is used by both "${prior}" and "${label(line)}"; each line needs its own clip.`,
+          message: `Clip ${line.voice.clip} is used by both ${prior} and ${script.sceneFile} ${line.id}; each line needs its own clip.`,
           path: script.path,
         });
         continue;
       }
-      clipOwner.set(line.voice.clip, label(line));
+      clipOwner.set(line.voice.clip, `${script.sceneFile} ${line.id}`);
       if (input.castBySpeaker && !input.castBySpeaker.has(line.speaker)) {
         diagnostics.push({
           severity: "warning",
           code: "localeScriptVoiceUncast",
-          message: `"${label(line)}" has clip ${line.voice.clip} but ${line.speaker} has no approved voice in voice_cast.yaml; voice:generate skips it.`,
+          message: `${line.id} "${label(line)}" has clip ${line.voice.clip} but ${line.speaker} has no approved voice in voice_cast.yaml; voice:generate skips it.`,
           path: script.path,
         });
       }
     }
   }
+
+  const entries = new Set<string>();
   for (const script of input.existing) {
     const expectedSource = sceneSourcePath(input.chapterId, script.sceneFile);
     if (script.file.source !== expectedSource) {
@@ -119,89 +137,81 @@ export function validateChapterScripts(input: {
         path: script.path,
       });
     }
+    const ids = new Set<string>();
+    for (const line of [...script.file.lines, ...script.file.stale]) {
+      if (ids.has(line.id)) {
+        diagnostics.push({
+          severity: "error",
+          code: "localeScriptDuplicateKey",
+          message: `${line.id} is listed twice in this script.`,
+          path: script.path,
+        });
+      }
+      ids.add(line.id);
+    }
     for (const line of script.file.stale) {
       summary.stale += 1;
       diagnostics.push({
         severity: "warning",
         code: "localeScriptStaleEntry",
-        message: `Stale entry "${label(line)}": re-map its translation to the current line or delete it.`,
+        message: `Stale entry ${line.id} "${label(line)}": move its translation to the line that replaced it, then delete it.`,
         path: script.path,
       });
     }
     for (const line of script.file.lines) {
-      const key = lineKey(line);
-      const prior = entryByKey.get(key);
-      if (prior) {
-        diagnostics.push({
-          severity: "error",
-          code: "localeScriptDuplicateKey",
-          message: `"${label(line)}" is listed in both ${prior.path} and ${script.path}.`,
-          path: script.path,
-        });
-        continue;
-      }
-      entryByKey.set(key, { line, path: script.path });
-      const owner = ownerByKey.get(key);
-      if (owner === undefined) {
+      const key = scriptLineKey(script.sceneFile, line.id);
+      entries.add(key);
+      const emitted = emittedByKey.get(key);
+      if (!emitted) {
         summary.stale += 1;
         diagnostics.push({
           severity: "warning",
           code: "localeScriptStaleEntry",
-          message: `"${label(line)}" no longer matches any emitted line; run voice:sync.`,
+          message: `${line.id} "${label(line)}" is no longer a spoken line of ${script.sceneFile}; run voice:sync.`,
           path: script.path,
         });
         continue;
-      }
-      const expectedPath = localeScriptPath(
-        input.chapterId,
-        owner,
-        input.locale,
-      );
-      if (script.path !== expectedPath) {
-        diagnostics.push({
-          severity: "warning",
-          code: "localeScriptMisplacedEntry",
-          message: `"${label(line)}" first appears in ${owner}; run voice:sync to move it to ${expectedPath}.`,
-          path: script.path,
-        });
       }
       if (line.ja.trim().length === 0) {
         summary.untranslated += 1;
         diagnostics.push({
           severity: "warning",
           code: "localeScriptUntranslated",
-          message: `"${label(line)}" has no translation yet.`,
+          message: `${line.id} "${label(line)}" has no translation yet.`,
           path: script.path,
         });
         if (line.voice) {
           diagnostics.push({
             severity: "warning",
             code: "localeScriptVoiceWithoutTranslation",
-            message: `"${label(line)}" has voice clip ${line.voice.clip} but no translation; the game skips it.`,
+            message: `${line.id} "${label(line)}" has voice clip ${line.voice.clip} but no translation; the game skips it.`,
             path: script.path,
           });
         }
-      } else {
-        summary.translated += 1;
+        continue;
+      }
+      summary.translated += 1;
+      if (sourceChanged(line, emitted.line)) {
+        summary.changed += 1;
+        diagnostics.push({
+          severity: "warning",
+          code: "localeScriptSourceChanged",
+          message: `${line.id} was translated from "${label(line)}"${line.expression ? ` [${line.expression}]` : ""} but now reads "${label(emitted.line)}"${emitted.line.expression && emitted.line.expression !== "standard" ? ` [${emitted.line.expression}]` : ""}. Check the ja, then copy the current speaker, expression and zh into the entry.`,
+          path: script.path,
+        });
       }
     }
   }
 
-  for (const scene of input.scenes) {
-    const reported = new Set<string>();
-    for (const line of scene.lines) {
-      const key = localeLineKey(line);
-      if (entryByKey.has(key) || reported.has(key)) continue;
-      if (ownerByKey.get(key) !== scene.sceneFile) continue;
-      reported.add(key);
-      summary.missing += 1;
-      diagnostics.push({
-        severity: "warning",
-        code: "localeScriptMissingEntry",
-        message: `"${label(line)}" has no entry; run voice:sync.`,
-        path: localeScriptPath(input.chapterId, scene.sceneFile, input.locale),
-      });
-    }
+  for (const [key, { line, owner }] of emittedByKey) {
+    if (entries.has(key)) continue;
+    summary.missing += 1;
+    diagnostics.push({
+      severity: "warning",
+      code: "localeScriptMissingEntry",
+      message: `${line.id} "${label(line)}" has no entry; run voice:sync.`,
+      path: localeScriptPath(input.chapterId, owner, input.locale),
+    });
   }
 
   if (input.glossary) {

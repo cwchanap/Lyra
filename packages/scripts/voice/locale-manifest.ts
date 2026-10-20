@@ -10,6 +10,7 @@ import {
 } from "@lyra/dialogue-locale";
 import type { CompileError } from "../compile-scenes/types";
 import { parseLocaleScriptText, sceneFileForScriptName } from "./locale-script";
+import { ownerSceneFile, scriptLineKey, sourceChanged } from "./script-key";
 import type { EmittedLine, LocaleScriptLine } from "./types";
 
 export type LocaleManifestChapterInput = {
@@ -17,7 +18,7 @@ export type LocaleManifestChapterInput = {
   /** Absolute path of the authored chapter directory. */
   chapterDir: string;
   /** Manifest scenes in order, each with its emitted spoken lines. */
-  scenes: Array<{ sceneFile: string; lines: EmittedLine[] }>;
+  scenes: Array<{ sceneFile: string; sceneId: string; lines: EmittedLine[] }>;
 };
 
 export type LocaleManifestResult = {
@@ -33,18 +34,10 @@ function warning(
   return { code, message, sourceFile, line: 1 };
 }
 
-function scriptKey(line: LocaleScriptLine): string {
-  return localeLineKey({
-    speaker: line.speaker,
-    text: line.zh,
-    expression: line.expression ?? null,
-  });
-}
-
 /**
- * Reads one chapter's `<locale>/*.<locale>.yaml` scripts into a key -> line
- * pool. Unreadable scripts and repeated keys become warnings (the first
- * entry wins); `voice:validate` reports the details.
+ * Reads one chapter's `<locale>/*.<locale>.yaml` scripts into a
+ * `scene_5.md#L012` -> line pool. Unreadable scripts and repeated IDs become
+ * warnings (the first entry wins); `voice:validate` reports the details.
  */
 function readChapterScripts(
   chapterId: string,
@@ -58,6 +51,7 @@ function readChapterScripts(
     .filter((name) => sceneFileForScriptName(name, locale) !== null)
     .sort();
   for (const name of names) {
+    const sceneFile = sceneFileForScriptName(name, locale) as string;
     const path = relative(repoRoot, resolve(scriptDir, name));
     const parsed = parseLocaleScriptText(
       readFileSync(resolve(scriptDir, name), "utf-8"),
@@ -75,12 +69,12 @@ function readChapterScripts(
       continue;
     }
     for (const line of parsed.value.lines) {
-      const key = scriptKey(line);
+      const key = scriptLineKey(sceneFile, line.id);
       if (pool.has(key)) {
         warnings.push(
           warning(
             "dialogueLocaleDuplicateKey",
-            `${path} repeats "${line.speaker}: ${line.zh}"; the first entry is used. Run \`bun run voice:validate ${chapterId}\`.`,
+            `${path} lists ${line.id} twice; the first entry is used. Run \`bun run voice:validate ${chapterId}\`.`,
             path,
           ),
         );
@@ -121,18 +115,26 @@ export function buildDialogueLocaleManifest(input: {
 
     const lines: DialogueLocaleLineV1[] = [];
     const seen = new Set<string>();
+    const lineByRuntimeKey = new Map<string, DialogueLocaleLineV1>();
     let untranslated = 0;
+    let changed = 0;
+    let ambiguous = 0;
     const missingClips: string[] = [];
     for (const scene of chapter.scenes) {
       for (const emitted of scene.lines) {
-        const key = localeLineKey(emitted);
-        if (seen.has(key)) continue;
-        seen.add(key);
-        const entry = pool.get(key);
+        const owner = ownerSceneFile(emitted, scene.sceneFile);
+        const key =
+          emitted.id === null ? null : scriptLineKey(owner, emitted.id);
+        if (key !== null) {
+          if (seen.has(key)) continue;
+          seen.add(key);
+        }
+        const entry = key === null ? undefined : pool.get(key);
         if (!entry || entry.ja.trim().length === 0) {
           untranslated += 1;
           continue;
         }
+        if (sourceChanged(entry, emitted)) changed += 1;
         let voice: string | null = null;
         if (entry.voice) {
           const assetId = voiceAssetId(input.locale, entry.voice.clip);
@@ -143,13 +145,26 @@ export function buildDialogueLocaleManifest(input: {
             missingClips.push(expected);
           }
         }
-        lines.push({
+        // The game matches lines by speaker, expression and Chinese text.
+        // Two IDs that read the same share one runtime entry: the first
+        // translation wins, and the line's clip is whichever of them has one
+        // (voice:sync gives a clip to only one of two identical lines).
+        const runtimeKey = localeLineKey(emitted);
+        const prior = lineByRuntimeKey.get(runtimeKey);
+        if (prior !== undefined) {
+          if (prior.text !== entry.ja) ambiguous += 1;
+          else if (prior.voice === null) prior.voice = voice;
+          continue;
+        }
+        const line: DialogueLocaleLineV1 = {
           speaker: emitted.speaker,
           expression: keyExpression(emitted.expression),
           zh: emitted.text,
           text: entry.ja,
           voice,
-        });
+        };
+        lineByRuntimeKey.set(runtimeKey, line);
+        lines.push(line);
       }
     }
     chapters.push({ id: chapter.chapterId, lines });
@@ -158,7 +173,25 @@ export function buildDialogueLocaleManifest(input: {
       warnings.push(
         warning(
           "dialogueLocaleIncomplete",
-          `${chapter.chapterId} ${input.locale}: ${untranslated} of ${seen.size} spoken lines have no translation yet. Run \`bun run voice:sync ${chapter.chapterId}\`, then \`bun run voice:validate ${chapter.chapterId}\`.`,
+          `${chapter.chapterId} ${input.locale}: ${untranslated} spoken lines have no translation yet. Run \`bun run voice:sync ${chapter.chapterId}\`, then \`bun run voice:validate ${chapter.chapterId}\`.`,
+          scriptDirPath,
+        ),
+      );
+    }
+    if (changed > 0) {
+      warnings.push(
+        warning(
+          "dialogueLocaleSourceChanged",
+          `${chapter.chapterId} ${input.locale}: ${changed} translated lines changed in the scene since translation and still use the old translation. Run \`bun run voice:validate ${chapter.chapterId}\`.`,
+          scriptDirPath,
+        ),
+      );
+    }
+    if (ambiguous > 0) {
+      warnings.push(
+        warning(
+          "dialogueLocaleAmbiguous",
+          `${chapter.chapterId} ${input.locale}: ${ambiguous} lines repeat another line's speaker and Chinese text with a different translation; the game plays the first one's.`,
           scriptDirPath,
         ),
       );

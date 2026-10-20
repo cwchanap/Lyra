@@ -13,10 +13,18 @@ explicit word.
 
 | File | What it holds | Who edits it |
 | --- | --- | --- |
-| `docs/stories_plan/chapter_<N>/ja/<scene>.ja.yaml` | One entry per unique spoken line: `speaker`, `expression`, `zh`, `ja`, `note`, `voice` | `voice:sync` adds and moves entries; you fill `ja`, `note`, `voice.direction`, `voice.tts` |
+| `docs/stories_plan/chapter_<N>/ja/<scene>.ja.yaml` | One entry per spoken line of that scene file, linked by the line's ID: `id`, `speaker`, `expression`, `zh`, `ja`, `note`, `voice` | `voice:sync` adds entries and moves orphans to `stale`; you fill `ja`, `note`, `voice.direction`, `voice.tts` |
 | `docs/stories_plan/ja_glossary.yaml` | Japanese names, kana readings, each character's register, style rules | You, when a new name or term appears |
 | `static/assets/config/voice_cast.yaml` | Per role: model, settings, seed, expression directions, audition lines, shortlist, picked `voiceId`, `status` | You propose; only the owner's pick makes a role `approved` |
 | `static/assets/voice/ja/<clip>.ogg` | Generated clips | Only `voice:generate` |
+
+Every spoken line in a translated scene ends in a line ID such as
+` {#L012}`, unique within its scene file. The script entry with
+`id: L012` is that line's translation, so editing or moving the Chinese line
+keeps its translation and clip. `voice:sync` writes the IDs into the scene
+files; nobody types them, and the ID of a deleted translated line is never
+reused. `speaker`, `expression` and `zh` in an entry record what the
+Japanese was translated from.
 
 Commands: `voice:sync`, `voice:validate`, `voice:audition`,
 `voice:generate`. The compiler turns scripts plus clips into the generated
@@ -31,9 +39,12 @@ existing `ja/` files. Translate only from the authored scene lines that
 
 ## 2. Sync and translate
 
-1. `bun run voice:sync chapter_<N>` adds an empty entry for every new spoken
-   line and moves entries whose Chinese line is gone to the file's `stale`
-   list.
+1. `bun run voice:sync chapter_<N>` appends an ID to every spoken line
+   that has none, adds an empty entry for every new ID, and moves entries
+   whose line was deleted to the file's `stale` list (translated or voiced
+   ones only). Commit the scene files with the scripts. A chapter still
+   being written gets its IDs only when its translation starts, so the
+   writing PRs do not churn.
 2. Fill every empty `ja`:
    - Use the glossary's name, reading and register for each speaker (first
      person, politeness level, sentence endings).
@@ -45,11 +56,15 @@ existing `ja/` files. Translate only from the authored scene lines that
    - Read the scene around the line, not the line alone.
 3. For a whole chapter, use one subagent per scene, then do one review pass
    across scene boundaries for consistent names, terms and registers.
-4. A stale entry: if its Japanese still fits the new Chinese line, move the
-   translation to the new entry; otherwise retranslate. Then delete the stale
-   entry. Never edit `zh` to silence a stale warning; `zh` must match the
-   scene.
-5. `bun run voice:validate chapter_<N> --strict` must pass before the
+4. A changed line (`localeScriptSourceChanged`): the scene line's speaker,
+   expression or Chinese text differs from the entry's. Check the `ja`
+   against the new line and fix it if needed, then copy the current
+   `speaker`, `expression` and `zh` into the entry. Until then the game
+   keeps showing and playing the old translation.
+5. A stale entry: its line was deleted. If a new line replaced it and the
+   Japanese still fits, move the translation to that line's entry;
+   otherwise retranslate. Then delete the stale entry.
+6. `bun run voice:validate chapter_<N> --strict` must pass before the
    translation PR is ready.
 
 ## 3. Pronunciation
@@ -133,7 +148,9 @@ then `bun run voice:generate chapter_<N> --only <clip>`.
 | Thought | Reality |
 | --- | --- |
 | "Generate this role too, its voice is obvious" | Only `approved` roles get clips. The owner picks the voice. |
-| "Edit `zh` so the stale warning goes away" | `zh` must match the scene. Move or retranslate, then delete the stale entry. |
+| "Copy the new `zh` in so the changed warning goes away" | Check the `ja` first; `zh` records what was translated. |
+| "Give the edited line a fresh ID" | Keep the ID; it is what keeps the translation and clip. |
+| "Copy this line's `{#L012}` onto a new line" | Each ID is one line. New lines get theirs from `voice:sync`. |
 | "Patch `dialogue_locale.ja.json`" | Generated. Fix the script and run `scenes:compile`. |
 | "Commit the audition takes for reference" | Auditions stay in the gitignored folder. |
 | "Voice it now, translate later" | A line with empty `ja` gets no clip ID and no clip. |

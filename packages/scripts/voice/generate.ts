@@ -1,4 +1,4 @@
-import { assignClipIds } from "./clip-ids";
+import { assignClipIds, clipReadingKey } from "./clip-ids";
 import { serializeLocaleScript } from "./locale-script";
 import { syncChapterScripts, type ExistingScript } from "./sync";
 import {
@@ -101,6 +101,18 @@ export function planVoiceGeneration(input: {
     existing: structuredClone(input.existing),
   });
   if (!synced.ok) return synced;
+  if (synced.report.withoutId > 0) {
+    return {
+      ok: false,
+      diagnostics: [
+        planError(
+          `docs/stories_plan/${input.chapterId}`,
+          "voiceScriptsOutOfDate",
+          `${synced.report.withoutId} spoken lines have no {#L012} line ID; run \`bun run voice:sync ${input.chapterId}\` and commit the result first.`,
+        ),
+      ],
+    };
+  }
   assignClipIds({
     chapterId: input.chapterId,
     files: synced.writes.values(),
@@ -146,6 +158,8 @@ export function planVoiceGeneration(input: {
     for (const speaker of entry.speakers) pendingBySpeaker.set(speaker, entry);
   }
   const tags = localeCast ? supportsAudioTags(localeCast.model) : false;
+  // Identical lines will share one clip (see assignClipIds).
+  const pendingReadings = new Set<string>();
 
   for (const script of input.existing) {
     const lines = script.file.lines;
@@ -158,6 +172,9 @@ export function planVoiceGeneration(input: {
         ) {
           return;
         }
+        const reading = clipReadingKey(line);
+        if (pendingReadings.has(reading)) return;
+        pendingReadings.add(reading);
         const direction = tags ? resolveDirection(line, pendingCast) : null;
         const text = spokenText(line, input.read);
         const totals = pending.get(pendingCast.characterId) ?? {
