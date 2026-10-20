@@ -56,12 +56,14 @@ lines:
 - Lines appear in authored order. A repeated line is listed once, in the first
   scene (chapter order) where it occurs; every occurrence plays that clip.
 - `voice` exists only for speakers with an approved cast entry.
-- `clip` IDs are `ch<N>_<characterId>_<nnnn>`, assigned once by `voice:sync`
-  and never renumbered (deleted lines leave gaps), so regenerating one line
-  never renames another's file.
-- The validator fails when the same key carries two different Japanese
-  translations, when `zh` no longer matches any emitted line (stale), or when
-  an emitted line has no entry (missing).
+- `clip` IDs are `ch<N>_<characterId>_<nnnn>`, assigned once and never
+  renumbered (deleted lines leave gaps), so regenerating one line never
+  renames another's file. Assigning them is PR 3's job; today's `voice:sync`
+  writes no `voice` block.
+- `voice:validate` fails on a key listed twice, a clip ID used twice, or a
+  wrong `source`/`locale`. A stale `zh`, an emitted line with no entry
+  (missing), an untranslated line and a voiced line with no translation are
+  warnings; `--strict` fails on warnings too.
 
 ### 2.2 Glossary and style guide
 
@@ -143,8 +145,10 @@ locales:
 Root scripts delegate to `@lyra/scripts`, like `audio:*`.
 
 - `voice:sync <chapter>`: compiles the chapter, adds skeleton entries for new
-  lines, assigns clip IDs, and reports stale entries. It never deletes or
-  overwrites a filled `ja`.
+  lines, and moves translated or voiced entries whose line is gone to the
+  file's `stale` list. It never overwrites a filled `ja`. Entries that are
+  both orphaned and empty are dropped, and a script file left with nothing in
+  it is deleted. Assigning clip IDs is added in PR 3.
 - `voice:validate <chapter>`: coverage, stale entries, conflicting
   translations, cast references, and a soft length check.
 - `voice:audition <characterId>`: generates that role's audition lines with
