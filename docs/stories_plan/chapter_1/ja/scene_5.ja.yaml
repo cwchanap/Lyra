@@ -11,26 +11,38 @@ lines:
     speaker: 相馬律
     zh: 這會場比我想的冷。
     ja: この会場、思ってたより寒いな。
+    voice:
+      clip: ch1_soma_ritsu_0121
   - id: L002
     speaker: 早坂茜
     zh: 冷氣直直吹。外套穿上。
     ja: 冷房がまともに当たる。コート、着て。
+    voice:
+      clip: ch1_hayasaka_akane_0047
   - id: L003
     speaker: 相馬律
     zh: 等下要站起來講話，穿外套顯得太隨便。
     ja: このあと立って話すんだ。コートを着たままじゃ、だらしなく見える。
+    voice:
+      clip: ch1_soma_ritsu_0122
   - id: L004
     speaker: 早坂茜
     zh: 隨便總比發抖好。披著，輪到你再脫。
     ja: だらしないほうが、震えるよりまし。羽織っておいて、自分の番で脱げばいい。
+    voice:
+      clip: ch1_hayasaka_akane_0048
   - id: L005
     speaker: 早坂茜
     zh: 今天不是審判，是審查。
     ja: 今日は裁判じゃない。審査。
+    voice:
+      clip: ch1_hayasaka_akane_0049
   - id: L006
     speaker: 早坂茜
     zh: 他們只看摘要站不站得住。
     ja: 向こうが見るのは、サマリーが成り立つかどうかだけ。
+    voice:
+      clip: ch1_hayasaka_akane_0050
   - id: L007
     speaker: 旁白
     zh: 那個袋子，從案發那晚起就沒離開過她的手。
@@ -39,194 +51,290 @@ lines:
     speaker: 早坂茜
     zh: 主位那位，是神谷澪。
     ja: 正面の席にいるのが、神谷澪。
+    voice:
+      clip: ch1_hayasaka_akane_0051
   - id: L009
     speaker: 相馬律
     zh: 報告裡常看到這個名字。
     ja: 報告書でよく見る名前だ。
+    voice:
+      clip: ch1_soma_ritsu_0123
   - id: L010
     speaker: 早坂茜
     zh: 她信摘要。今天這場，不會輕鬆。
     ja: 彼女はサマリーを信じてる。今日は楽にはいかない。
+    voice:
+      clip: ch1_hayasaka_akane_0052
   - id: L011
     speaker: 神谷澪
     zh: 開始吧。
     ja: 始めましょう。
+    voice:
+      clip: ch1_kamiya_mio_0001
   - id: L012
     speaker: 神谷澪
     zh: 這份摘要，整合了現場、紀錄與供述三方來源。
     ja: このサマリーは、現場、記録、供述の三つの情報源を統合したものです。
+    voice:
+      clip: ch1_kamiya_mio_0002
   - id: L013
     speaker: 神谷澪
     zh: 不是單一人的判斷。
     ja: 一人の人間の判断ではありません。
+    voice:
+      clip: ch1_kamiya_mio_0003
   - id: L014
     speaker: 神谷澪
     zh: 三宅蒼太的員工憑證、店內監視器、打卡紀錄。
     ja: 三宅蒼太の従業員認証、店内の防犯カメラ、打刻記録。
+    voice:
+      clip: ch1_kamiya_mio_0004
   - id: L015
     speaker: 神谷澪
     zh: 三者互相對得上。
     ja: 三者は互いに整合しています。
+    voice:
+      clip: ch1_kamiya_mio_0005
   - id: L016
     speaker: 神谷澪
     zh: 時間、位置、身分，沒有缺口。
     ja: 時刻、位置、身元。どこにも欠落はありません。
+    voice:
+      clip: ch1_kamiya_mio_0006
   - id: L017
     speaker: 相馬律
     zh: 可是——
     ja: ですが――
+    voice:
+      clip: ch1_soma_ritsu_0124
   - id: L018
     speaker: 神谷澪
     zh: 還有一點。
     ja: もう一点あります。
+    voice:
+      clip: ch1_kamiya_mio_0007
   - id: L019
     speaker: 神谷澪
     zh: 三宅本人，在第一次問話時隱瞞了事。
     ja: 三宅さん本人は、最初の聴取で事実を伏せていました。
+    voice:
+      clip: ch1_kamiya_mio_0008
   - id: L020
     speaker: 神谷澪
     zh: 他承認自己說了謊。
     ja: 嘘をついたことも、本人が認めています。
+    voice:
+      clip: ch1_kamiya_mio_0009
   - id: L021
     speaker: 相馬律
     zh: 他買錯飲料那一下，先想的是母親能不能喝。
     ja: 飲み物を買い間違えたとき、彼がまず考えたのは、母親が飲めるかどうかでした。
+    voice:
+      clip: ch1_soma_ritsu_0125
   - id: L022
     speaker: 相馬律
     zh: 這個細節，不像會動手的人會有的。
     ja: そういう細やかさは、手を下すような人間のものとは思えません。
+    voice:
+      clip: ch1_soma_ritsu_0126
   - id: L023
     speaker: 神谷澪
     zh: 嫌疑人的態度不是證據。
     ja: 被疑者の態度は証拠ではありません。
+    voice:
+      clip: ch1_kamiya_mio_0010
   - id: L024
     speaker: 神谷澪
     zh: 我不接受「他看起來不像兇手」這種反駁。
     ja: 「彼は犯人には見えない」という類の反論は、受け入れません。
+    voice:
+      clip: ch1_kamiya_mio_0011
   - id: L025
     speaker: 相馬律
     zh: 他說謊，是因為當晚母親打了電話。
     ja: 彼が嘘をついたのは、あの夜、母親と電話をしていたからです。
+    voice:
+      clip: ch1_soma_ritsu_0127
   - id: L026
     speaker: 相馬律
     zh: 還有一個蛋糕盒的事，他怕被誤會。
     ja: それに、ケーキの箱の件もあります。誤解されるのが怖かったんです。
+    voice:
+      clip: ch1_soma_ritsu_0128
   - id: L027
     speaker: 神谷澪
     zh: 這也許說明他為什麼說謊。
     ja: それで、嘘をついた理由は説明できるかもしれません。
+    voice:
+      clip: ch1_kamiya_mio_0012
   - id: L028
     speaker: 神谷澪
     zh: 但說明不了他沒有動手。
     ja: ですが、手を下していないことの説明にはなりません。
+    voice:
+      clip: ch1_kamiya_mio_0013
   - id: L029
     speaker: 神谷澪
     zh: 說謊的理由，洗不掉說謊本身。
     ja: 理由があっても、嘘をついた事実が消えるわけではありません。
+    voice:
+      clip: ch1_kamiya_mio_0014
   - id: L030
     speaker: 相馬律
     zh: 當晚有「第二杯咖啡」。
     ja: あの夜には、「二杯目のコーヒー」がありました。
+    voice:
+      clip: ch1_soma_ritsu_0129
   - id: L031
     speaker: 相馬律
     zh: 點單上署名是個「K.」。
     ja: 注文票の名前は「K.」でした。
+    voice:
+      clip: ch1_soma_ritsu_0130
   - id: L032
     speaker: 相馬律
     zh: 那代表現場還有另一個人。
     ja: つまり、現場にはもう一人いたということです。
+    voice:
+      clip: ch1_soma_ritsu_0131
   - id: L033
     speaker: 神谷澪
     zh: 「K.」是一個字母。
     ja: 「K.」は、アルファベット一文字です。
+    voice:
+      clip: ch1_kamiya_mio_0015
   - id: L034
     speaker: 神谷澪
     zh: 它可以是任何人，也可以什麼都不是。
     ja: 誰のことでもあり得ますし、何の意味もないこともあり得ます。
+    voice:
+      clip: ch1_kamiya_mio_0016
   - id: L035
     speaker: 神谷澪
     zh: 太模糊，不能推翻互相對上的三方紀錄。
     ja: 曖昧すぎます。互いに整合する三つの記録を覆すことはできません。
+    voice:
+      clip: ch1_kamiya_mio_0017
   - id: L036
     speaker: 相馬律
     zh: 摘要裡那筆外包維護紀錄，很可疑。
     ja: サマリーにある外注のメンテナンス記録。あれは疑わしいです。
+    voice:
+      clip: ch1_soma_ritsu_0132
   - id: L037
     speaker: 相馬律
     zh: 那段時間，店裡的系統並不單純。
     ja: あの時間帯、店のシステムは単純な状態ではありませんでした。
+    voice:
+      clip: ch1_soma_ritsu_0133
   - id: L038
     speaker: 神谷澪
     zh: 那筆紀錄的憑證，沒有核實。
     ja: その記録の認証は、確認が取れていません。
+    voice:
+      clip: ch1_kamiya_mio_0018
   - id: L039
     speaker: 神谷澪
     zh: 監視器上也沒有對應的人影。
     ja: 防犯カメラにも、該当する人影は映っていません。
+    voice:
+      clip: ch1_kamiya_mio_0019
   - id: L040
     speaker: 神谷澪
     zh: 在摘要裡，它只是一項低權重的旁註。
     ja: サマリーの中では、重みの低い注記にすぎません。
+    voice:
+      clip: ch1_kamiya_mio_0020
   - id: L041
     speaker: 神谷澪
     zh: 相馬先生，我說一句。
     ja: 相馬さん、一つ言わせてください。
+    voice:
+      clip: ch1_kamiya_mio_0021
   - id: L042
     speaker: 神谷澪
     zh: 三宅這筆，有員工憑證、監視器、打卡紀錄。
     ja: 三宅さんの記録には、従業員認証、防犯カメラ、打刻記録があります。
+    voice:
+      clip: ch1_kamiya_mio_0022
   - id: L043
     speaker: 神谷澪
     zh: 外包那筆，只有未核憑證和排程備註。
     ja: 外注の記録にあるのは、未確認の認証と、スケジュールの備考だけです。
+    voice:
+      clip: ch1_kamiya_mio_0023
   - id: L044
     speaker: 神谷澪
     zh: 你要我採哪一筆？
     ja: 私に、どちらを採れと言うのですか？
+    voice:
+      clip: ch1_kamiya_mio_0024
   - id: L045
     speaker: 相馬律
     expression: shaken
     zh: 摘要不是在說謊。
     ja: サマリーは嘘をついてるわけじゃない。
     note: Shaken, half to himself after failing to answer Kamiya; plain form is intentional even though he is in the hearing.
+    voice:
+      clip: ch1_soma_ritsu_0134
   - id: L046
     speaker: 相馬律
     expression: shaken
     zh: 它只是更願意相信「好對上的那一筆」。
     ja: ただ、「よく合う一件」のほうを信じたがるだけだ。
+    voice:
+      clip: ch1_soma_ritsu_0135
   - id: L047
     speaker: 早坂茜
     zh: 這一輪，我們輸在只有截圖。
     ja: 今回負けたのは、手元にスクリーンショットしかなかったから。
+    voice:
+      clip: ch1_hayasaka_akane_0053
   - id: L048
     speaker: 早坂茜
     zh: 能翻的，不在紙上。在現場。
     ja: ひっくり返せるものは、紙の上にはない。現場にある。
+    voice:
+      clip: ch1_hayasaka_akane_0054
   - id: L049
     speaker: 神谷澪
     zh: 今天到這裡。
     ja: 本日はここまで。
+    voice:
+      clip: ch1_kamiya_mio_0025
   - id: L050
     speaker: 神谷澪
     zh: 本輪審查暫停，摘要維持原判。
     ja: 今回の審査は一時中断とし、サマリーの判断はそのまま維持します。
+    voice:
+      clip: ch1_kamiya_mio_0026
   - id: L051
     speaker: 神谷澪
     zh: 相馬先生，先拿更硬的東西再來。
     ja: 相馬さん。もっと確かな材料を揃えてから、出直してください。
+    voice:
+      clip: ch1_kamiya_mio_0027
   - id: L052
     speaker: 黑瀨徹
     zh: 這張我不收。要用，讓鑑識固定。
     ja: これは受け取らん。使うなら、鑑識に保全させろ。
+    voice:
+      clip: ch1_kurose_toru_0001
   - id: L053
     speaker: 早坂茜
     zh: 回現場。
     ja: 現場に戻る。
+    voice:
+      clip: ch1_hayasaka_akane_0055
   - id: L054
     speaker: 相馬律
     zh: 這一輪，摘要贏了。
     ja: 今回は、サマリーの勝ちだな。
+    voice:
+      clip: ch1_soma_ritsu_0136
   - id: L055
     speaker: 早坂茜
     zh: 那就找它漏掉的地方。
     ja: なら、サマリーの取りこぼしを探す。
+    voice:
+      clip: ch1_hayasaka_akane_0056

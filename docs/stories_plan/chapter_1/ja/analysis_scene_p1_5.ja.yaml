@@ -11,34 +11,50 @@ lines:
     speaker: 相馬律
     zh: 先不用猜誰說謊。
     ja: 誰が嘘をついたのか、当て推量はやめましょう。
+    voice:
+      clip: ch1_soma_ritsu_0019
   - id: L002
     speaker: 相馬律
     zh: 選出能一起解釋這張重印收據的東西，再比對一次。
     ja: この再印刷のレシートをまとめて説明できるものを選んで、もう一度照らし合わせます。
+    voice:
+      clip: ch1_soma_ritsu_0020
   - id: L003
     speaker: 相馬律
     zh: 收據是真的。
     ja: レシートは本物です。
+    voice:
+      clip: ch1_soma_ritsu_0021
   - id: L004
     speaker: 相馬律
     zh: 但它記下的是收銀機卡紙後，在十七點四十二分重印的時間。
     ja: ただ、記録されているのは、レジが紙詰まりしたあと、十七時四十二分に再印刷した時刻です。
+    voice:
+      clip: ch1_soma_ritsu_0022
   - id: L005
     speaker: 相馬律
     zh: 帳本記著十七點三十七分的影印費。
     ja: 帳簿には、十七時三十七分のコピー代が記されています。
+    voice:
+      clip: ch1_soma_ritsu_0023
   - id: L006
     speaker: 相馬律
     zh: 監視器也看見店主找零後，學生在十七點三十八分離開。
     ja: 防犯カメラにも、店主さんがお釣りを渡し、十七時三十八分に学生さんが店を出るところが映っています。
+    voice:
+      clip: ch1_soma_ritsu_0024
   - id: L007
     speaker: 相馬律
     zh: 學生付過錢，店主也沒有造假。
     ja: 学生さんは支払っていたし、店主さんも何もごまかしていません。
+    voice:
+      clip: ch1_soma_ritsu_0025
   - id: L008
     speaker: 相馬律
     zh: 只是兩個人把同一張真的收據，讀成了不同的時間。
     ja: ただ二人が、同じ本物のレシートを、違う時刻として読んでいただけです。
+    voice:
+      clip: ch1_soma_ritsu_0026
   - id: L009
     speaker: 學生
     zh: ……所以我沒有漏付。
@@ -51,14 +67,20 @@ lines:
     speaker: 早坂茜
     zh: 這份紙本我帶走。小事也要留一個能回頭看的版本。
     ja: この控えは私がもらっていく。小さなことでも、あとで見返せる形で残しておく。
+    voice:
+      clip: ch1_hayasaka_akane_0003
   - id: L012
     speaker: 相馬律
     zh: 你連這種小事都留？
     ja: こんな小さなことまで残すのか？
+    voice:
+      clip: ch1_soma_ritsu_0027
   - id: L013
     speaker: 早坂茜
     zh: 小事才最容易被當成沒必要留。
     ja: 小さなことほど、残さなくていいと思われやすい。
+    voice:
+      clip: ch1_hayasaka_akane_0004
   - id: L014
     speaker: 旁白
     zh: 整理板上的練習卡隨著這件小委託收起，沒有被放進任何卷宗。

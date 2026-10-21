@@ -202,6 +202,17 @@ working but new lines need a recast, so the cast file records each voice ID.
 If no candidate fits a role, ElevenLabs Voice Design can build a custom voice
 from the character description.
 
+**Cast picked 2026-10-21.** The owner chose from a second, wider shortlist of
+library samples (no paid auditions). The cast record for each role is in
+`voice_cast.yaml`.
+
+| Role | Voice |
+| --- | --- |
+| 相馬律 | Kenzo `b34JylakFZPlGS0BnwyY` (the owner's own find in the library) |
+| 早坂茜 | Popo `1zDn39fNfsYODLsGC75y` |
+| 神谷澪 | Kasane `ioLsi3BGjCKHDhF2fNod` |
+| 黑瀨徹 | Ishibashi `Mv8AjrYZCBkdsmDHNwcB` |
+
 ## 6. Cost
 
 - The four voiced characters' 608 unique lines hold about 10,000 Chinese
@@ -229,8 +240,9 @@ from the character description.
    with the shortlists, `voice:audition`, `voice:generate`, ffmpeg
    post-processing, tests with a fake client, the
    `voicing-lyra-dialogue` skill, and the CLAUDE.md command list.
-4. **Casting (Mac, Remote Control).** Run auditions; the owner picks one voice
-   per role; the cast entries become `approved`.
+4. **Casting. Done 2026-10-21.** The owner picked one voice per role from
+   library samples; the four cast entries are `approved` and `voice:sync`
+   gave their 608 lines clip IDs.
 5. **PR 4, Chapter 1 clips (Mac).** Generate the pilot scene first
    (`scene_5.md`, the review-board hearing, where all four voiced characters
    speak 54 lines);
@@ -238,7 +250,13 @@ from the character description.
    readings; then generate the remaining clips, run QA, and mark the PR ready
    (CI skips drafts).
 
-## 8. The SOP skill: `.claude/skills/voicing-lyra-dialogue/SKILL.md`
+## 8. The SOP skills
+
+Translation and casting are `.claude/skills/voicing-lyra-dialogue/SKILL.md`.
+Generation (gates, recording the cast, preparing the Mac, estimate, pilot,
+chapter run, exit codes, listening QA and shipping) was split out on
+2026-10-21 into `.claude/skills/generating-lyra-voice-clips/SKILL.md`. The
+outline below is the original combined plan.
 
 Description: use when translating Lyra dialogue into the per-scene Japanese
 script, casting or auditioning ElevenLabs voices, generating or regenerating
@@ -291,7 +309,7 @@ empty, or treating a vague "sounds good" as approval for a paid run.
 
 ## 10. Owner decisions
 
-- **Voice picks**, one per role, after hearing the auditions in step 4.
+- **Voice picks**, one per role. Done 2026-10-21 (section 5).
 - **Credit budget:** approve up to 30,000 ElevenLabs credits for Chapter 1
   before step 4.
 

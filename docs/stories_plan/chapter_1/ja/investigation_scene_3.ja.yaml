@@ -11,43 +11,63 @@ lines:
     speaker: 相馬律
     zh: 閉店後的店，比白天安靜得多。
     ja: 閉店後の店は、昼間よりずっと静かだな。
+    voice:
+      clip: ch1_soma_ritsu_0057
   - id: L002
     speaker: 相馬律
     zh: 先把現場記下來。從前場開始，一個一個看。
     ja: まず現場を記録する。店内から、ひとつずつ見ていこう。
+    voice:
+      clip: ch1_soma_ritsu_0058
   - id: L003
     speaker: 早坂茜
     zh: 別漏東西。今天看見的，之後不一定能再進來。
     ja: 見落とさないで。今日を逃したら、また入れるとは限らない。
+    voice:
+      clip: ch1_hayasaka_akane_0020
   - id: L004
     speaker: 相馬律
     zh: 這麼安靜。我還沒在這種時候進過現場。
     ja: こんなに静かなのか。こういう時間に現場に入るのは初めてだ。
+    voice:
+      clip: ch1_soma_ritsu_0059
   - id: L005
     speaker: 早坂茜
     zh: 閉店後的現場都是這樣。安靜才正常。
     ja: 閉店後の現場は、どこもこう。静かなのが普通。
+    voice:
+      clip: ch1_hayasaka_akane_0021
   - id: L006
     speaker: 早坂茜
     zh: 等一下。店長在裡面等嗎？
     ja: 待って。店長は中で待ってる？
+    voice:
+      clip: ch1_hayasaka_akane_0022
   - id: L007
     speaker: 相馬律
     zh: 黑瀨刑警說店長會開門。
     ja: 黒瀬刑事が、店長が開けてくれるって言ってた。
+    voice:
+      clip: ch1_soma_ritsu_0060
   - id: L008
     speaker: 早坂茜
     zh: 那就讓他開。我們不要自己進。
     ja: なら開けてもらう。こっちから勝手には入らない。
+    voice:
+      clip: ch1_hayasaka_akane_0023
   - id: L009
     speaker: 相馬律
     zh: 店長在裡面。她看到我們了。
     ja: 店長は中にいる。こっちに気づいた。
+    voice:
+      clip: ch1_soma_ritsu_0061
   - id: L010
     speaker: 早坂茜
     zh: 辯護方的第三方分析師，法院核可的。黑瀨刑警應該跟你說過。
     ja: 弁護側の、裁判所が承認した第三者データ分析人です。黒瀬刑事からお聞きのはずです。
     note: Said through the glass door while holding the court papers up to it.
+    voice:
+      clip: ch1_hayasaka_akane_0024
   - id: L011
     speaker: 店長高瀨
     zh: ……警察說不要讓太多人碰現場。
@@ -56,10 +76,14 @@ lines:
     speaker: 早坂茜
     zh: 所以我們只看，不碰。需要碰的，請黑瀨刑警固定。
     ja: ですから、見るだけで触りません。触る必要があるものは、黒瀬刑事に保全してもらいます。
+    voice:
+      clip: ch1_hayasaka_akane_0025
   - id: L013
     speaker: 相馬律
     zh: 今天還營業嗎？
     ja: 今日は、営業してるんですか？
+    voice:
+      clip: ch1_soma_ritsu_0062
   - id: L014
     speaker: 店長高瀨
     zh: 出了這種事，哪還有人敢喝咖啡。
@@ -72,14 +96,20 @@ lines:
     speaker: 早坂茜
     zh: 表面上，三宅確實可疑。值班、進後場、一個人收尾。
     ja: 表向きは、確かに三宅さんが怪しい。その夜のシフト、バックヤードへの出入り、一人きりの閉店作業。
+    voice:
+      clip: ch1_hayasaka_akane_0026
   - id: L096
     speaker: 相馬律
     zh: 嗯。表面上是這樣。
     ja: うん。表向きはね。
+    voice:
+      clip: ch1_soma_ritsu_0063
   - id: L097
     speaker: 相馬律
     zh: 好。黑瀨刑警安排了警署詢問。先聽三宅怎麼說，不急著下結論。
     ja: よし。黒瀬刑事が署での聴取を手配してくれた。まず三宅さんの話を聞こう。結論は急がない。
+    voice:
+      clip: ch1_soma_ritsu_0064
   - id: L016
     speaker: 店長高瀨
     expression: tired
@@ -97,22 +127,32 @@ lines:
     speaker: 早坂茜
     zh: 沒人記得關。
     ja: 誰も、止めるのを覚えてなかった。
+    voice:
+      clip: ch1_hayasaka_akane_0027
   - id: L020
     speaker: 相馬律
     zh: 嗯。今天哪裡不對。
     ja: うん。今日は、どこか違う。
+    voice:
+      clip: ch1_soma_ritsu_0065
   - id: L021
     speaker: 相馬律
     zh: 增田點了兩杯。
     ja: 増田さんは、二杯頼んでる。
+    voice:
+      clip: ch1_soma_ritsu_0066
   - id: L022
     speaker: 早坂茜
     zh: 兩杯？他一個人？
     ja: 二杯？一人なのに？
+    voice:
+      clip: ch1_hayasaka_akane_0028
   - id: L023
     speaker: 相馬律
     zh: 第二杯杯套寫了一個「K.」。只有首字母。
     ja: 二杯目のカップスリーブに「K.」とある。イニシャルだけだ。
+    voice:
+      clip: ch1_soma_ritsu_0067
   - id: L024
     speaker: 店長高瀨
     zh: 店裡標杯習慣寫首字母，方便分。不是全名。
@@ -121,18 +161,26 @@ lines:
     speaker: 相馬律
     zh: 三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。
     ja: 三宅さんは紙コップを補充して、バックヤードに清掃用品を取りに行き、倉庫の入口で箱をひとつ取ってる。
+    voice:
+      clip: ch1_soma_ritsu_0068
   - id: L026
     speaker: 相馬律
     zh: 回前場擦桌，再去後巷倒垃圾。
     ja: 店内に戻ってテーブルを拭いて、それから裏路地へゴミを出しに行ってる。
+    voice:
+      clip: ch1_soma_ritsu_0069
   - id: L027
     speaker: 早坂茜
     zh: 來回後場好幾趟。
     ja: バックヤードを何度も行き来してる。
+    voice:
+      clip: ch1_hayasaka_akane_0029
   - id: L028
     speaker: 相馬律
     zh: 閉店本來就要進後場。靠近後場，不等於做了什麼。
     ja: 閉店作業なら、バックヤードに入るのは当たり前だ。近づいたからって、何かしたことにはならない。
+    voice:
+      clip: ch1_soma_ritsu_0070
   - id: L029
     speaker: 店長高瀨
     zh: 紙本值班表在這裡。門鎖那邊，只能看摘要。
@@ -142,43 +190,63 @@ lines:
     zh: 三宅蒼太，當晚值班。一個人收尾。
     ja: 三宅蒼太、その夜のシフト。閉店作業は一人。
     note: Reading the paper shift sheet aloud.
+    voice:
+      clip: ch1_soma_ritsu_0071
   - id: L031
     speaker: 相馬律
     zh: 二十三點零七分五十秒。
     ja: 二十三時七分五十秒。
     note: Read off the door-lock summary on the terminal screen.
+    voice:
+      clip: ch1_soma_ritsu_0072
   - id: L032
     speaker: 相馬律
     zh: 又一張收據。他連這個都收著。
     ja: またレシートだ。こんなものまで取ってある。
+    voice:
+      clip: ch1_soma_ritsu_0073
   - id: L033
     speaker: 早坂茜
     zh: 像是他會做的事。先別急著往壞處想。
     ja: 彼らしい。悪いほうに考えるのは、まだ早い。
+    voice:
+      clip: ch1_hayasaka_akane_0030
   - id: L034
     speaker: 相馬律
     zh: 她簽退的時間，比她估的要早一點。
     ja: 退勤の時刻が、彼女の見積もりより少し早い。
+    voice:
+      clip: ch1_soma_ritsu_0074
   - id: L035
     speaker: 早坂茜
     zh: 差幾分鐘。她是憑習慣估的。
     ja: 数分の差。いつもの感覚で見積もってるだけ。
+    voice:
+      clip: ch1_hayasaka_akane_0031
   - id: L036
     speaker: 相馬律
     zh: 嗯。先記著。
     ja: うん。ひとまず覚えておく。
+    voice:
+      clip: ch1_soma_ritsu_0075
   - id: L037
     speaker: 相馬律
     zh: 店長當晚也進過後場。
     ja: 店長も、あの夜バックヤードに入ってる。
+    voice:
+      clip: ch1_soma_ritsu_0076
   - id: L038
     speaker: 早坂茜
     zh: 她是閉店負責人，本來就會進後場巡一圈。
     ja: 閉店の責任者だから、バックヤードを一回りするのは当然。
+    voice:
+      clip: ch1_hayasaka_akane_0032
   - id: L039
     speaker: 相馬律
     zh: 那她怎麼沒早點發現？
     ja: なら、どうしてもっと早く気づかなかったんだろう？
+    voice:
+      clip: ch1_soma_ritsu_0077
   - id: L040
     speaker: 店長高瀨
     zh: 我那趟只在走廊前段繞了一下，沒往裡走。帳還沒對完。
@@ -187,10 +255,14 @@ lines:
     speaker: 早坂茜
     zh: 記著。店長有進出，但只到走廊前段。先別往她身上想。
     ja: 記録しておいて。店長は出入りしてるけど、廊下の手前まで。まだ店長を疑う段階じゃない。
+    voice:
+      clip: ch1_hayasaka_akane_0033
   - id: L042
     speaker: 相馬律
     zh: 店長，後場從哪裡進？
     ja: 店長、バックヤードにはどこから入るんですか？
+    voice:
+      clip: ch1_soma_ritsu_0078
   - id: L043
     speaker: 店長高瀨
     zh: 從吧台裡側繞過去。我帶你們。
@@ -207,6 +279,8 @@ lines:
     speaker: 相馬律
     zh: 三宅平常也走這條路？
     ja: 三宅さんも、普段ここを通るんですか？
+    voice:
+      clip: ch1_soma_ritsu_0079
   - id: L047
     speaker: 店長高瀨
     zh: 對，員工都從這裡進後場。
@@ -215,6 +289,8 @@ lines:
     speaker: 早坂茜
     zh: 那就進去看看。
     ja: なら、中を見せてもらいましょう。
+    voice:
+      clip: ch1_hayasaka_akane_0034
   - id: L049
     speaker: 店長高瀨
     expression: tired
@@ -224,6 +300,8 @@ lines:
     speaker: 相馬律
     zh: 留著也好。
     ja: 残しておくのも、いいと思います。
+    voice:
+      clip: ch1_soma_ritsu_0080
   - id: L051
     speaker: 店長高瀨
     zh: 前任老闆是個很準時的人。諷刺吧。
@@ -236,6 +314,8 @@ lines:
     speaker: 相馬律
     zh: 先別拿它來判斷時間。
     ja: あの時計で時間を判断するのは、やめておこう。
+    voice:
+      clip: ch1_soma_ritsu_0081
   - id: L054
     speaker: 店長高瀨
     zh: 增田先生？他是門鎖資料那邊的人，之前來確認過幾次紀錄。
@@ -244,6 +324,8 @@ lines:
     speaker: 相馬律
     zh: 當晚他也在？
     ja: あの夜も、来ていたんですか？
+    voice:
+      clip: ch1_soma_ritsu_0082
   - id: L056
     speaker: 店長高瀨
     zh: 說要確認維護紀錄，借後場小角落坐一下。我以為是例行的，就讓他用了。
@@ -264,6 +346,8 @@ lines:
     speaker: 相馬律
     zh: 片瀨小姐，你剛才一直看手機，是在算末班車嗎？
     ja: 片瀬さん、さっきからずっとスマホを見てますね。終電までの時間を気にしてるんですか？
+    voice:
+      clip: ch1_soma_ritsu_0083
   - id: L061
     speaker: 片瀨美咲
     zh: 嗯。我都是看末班車提醒估時間，沒盯著鐘。
@@ -272,6 +356,8 @@ lines:
     speaker: 相馬律
     zh: 所以你記得的是準備走的那一段，不是幾分幾秒。
     ja: つまり覚えているのは、帰り支度をしていた頃のことで、何分何秒ではないんですね。
+    voice:
+      clip: ch1_soma_ritsu_0084
   - id: L063
     speaker: 片瀨美咲
     zh: 對。三宅往後場那趟，就在我準備收銀、趕車的前後。我沒看清他進去多久。
@@ -288,6 +374,8 @@ lines:
     speaker: 相馬律
     zh: 你住很遠？
     ja: 家、遠いんですか？
+    voice:
+      clip: ch1_soma_ritsu_0085
   - id: L067
     speaker: 片瀨美咲
     zh: 通勤來回一個半小時。店裡排班好，不然不會撐著。
@@ -296,22 +384,32 @@ lines:
     speaker: 早坂茜
     zh: 先去。這裡我們看著就好。
     ja: 行ってください。ここは私たちで見ておきますから。
+    voice:
+      clip: ch1_hayasaka_akane_0035
   - id: L069
     speaker: 相馬律
     zh: 這裡轉了個彎。前段看不到後段。
     ja: ここで曲がってる。手前からは、奥が見えない。
+    voice:
+      clip: ch1_soma_ritsu_0086
   - id: L070
     speaker: 早坂茜
     zh: 很窄。兩個人並排走都嫌擠。
     ja: 狭い。二人並んで歩くのも窮屈。
+    voice:
+      clip: ch1_hayasaka_akane_0036
   - id: L071
     speaker: 相馬律
     zh: 嗯。轉角再過去，聲音也聽不太到。
     ja: うん。角の先だと、音もあまり聞こえない。
+    voice:
+      clip: ch1_soma_ritsu_0087
   - id: L072
     speaker: 早坂茜
     zh: 先看完再說。
     ja: まず全部見てから。
+    voice:
+      clip: ch1_hayasaka_akane_0037
   - id: L073
     speaker: 店長高瀨
     zh: 下雨天最麻煩。地一濕，抹布怎麼換都不夠。
@@ -329,31 +427,45 @@ lines:
     zh: 二十二點五十，閉店流程開始。二十二點五十二，維護模式開啟。
     ja: 二十二時五十分、閉店作業開始。二十二時五十二分、メンテナンスモード、オン。
     note: Read off the closing-routine checklist board on the corridor wall.
+    voice:
+      clip: ch1_soma_ritsu_0088
   - id: L077
     speaker: 相馬律
     zh: 收銀關帳，小額差額確認中，清潔回收，蛋糕盒紙杯箱整理。
     ja: レジ締め、少額の差額を確認中、清掃と回収、ケーキの箱と紙コップの箱の整理。
     note: Still reading the checklist items off the board.
+    voice:
+      clip: ch1_soma_ritsu_0089
   - id: L078
     speaker: 相馬律
     zh: 維護紀錄冊沒蓋章。維護模式，也還沒關。
     ja: メンテナンス記録簿に判が押されてない。メンテナンスモードも、まだオフになってない。
+    voice:
+      clip: ch1_soma_ritsu_0090
   - id: L079
     speaker: 早坂茜
     zh: 流程沒走完就停下了。
     ja: 作業が途中で止まってる。
+    voice:
+      clip: ch1_hayasaka_akane_0038
   - id: L080
     speaker: 相馬律
     zh: 這道門半開著，正好擋住裡面的視線。
     ja: この扉が半開きで、ちょうど中への視線を遮ってる。
+    voice:
+      clip: ch1_soma_ritsu_0091
   - id: L081
     speaker: 早坂茜
     zh: 站在走廊，看不進去。
     ja: 廊下からじゃ、中は見えない。
+    voice:
+      clip: ch1_hayasaka_akane_0039
   - id: L082
     speaker: 相馬律
     zh: 再往裡就更暗了。
     ja: この奥は、もっと暗い。
+    voice:
+      clip: ch1_soma_ritsu_0092
   - id: L083
     speaker: 店長高瀨
     zh: 豆子、紙杯、糖包，全堆在這裡。補貨的日子，連轉身都難。
@@ -362,43 +474,65 @@ lines:
     speaker: 相馬律
     zh: 要走進去，燈才會亮。站在門口，這裡是暗的。
     ja: 中まで入らないと、明かりがつかない。入口に立っているだけだと、ここは暗いままだ。
+    voice:
+      clip: ch1_soma_ritsu_0093
   - id: L085
     speaker: 相馬律
     zh: 前場、走廊、內側倉庫。是個 L 型。
     ja: 店内、廊下、奥の倉庫。L字になってる。
+    voice:
+      clip: ch1_soma_ritsu_0094
   - id: L086
     speaker: 相馬律
     zh: 轉角、半掩的門、高貨架，一層一層擋著。
     ja: 曲がり角、半開きの扉、背の高い棚。何重にも遮られてる。
+    voice:
+      clip: ch1_soma_ritsu_0095
   - id: L087
     speaker: 早坂茜
     zh: 你在想什麼？
     ja: 何を考えてる？
+    voice:
+      clip: ch1_hayasaka_akane_0040
   - id: L088
     speaker: 相馬律
     zh: 先記下這個空間。其他的，等看完再說。
     ja: まず、この空間を覚えておく。ほかのことは、全部見てからだ。
+    voice:
+      clip: ch1_soma_ritsu_0096
   - id: L089
     speaker: 相馬律
     zh: 兩杯。其中一杯，是給別人的。
     ja: 二杯。そのうち一杯は、別の誰かの分だ。
+    voice:
+      clip: ch1_soma_ritsu_0097
   - id: L090
     speaker: 相馬律
     zh: 進後場是工作的一部分。先記著，別急著下結論。
     ja: バックヤードに入るのは仕事のうちだ。覚えておこう。結論は急がない。
+    voice:
+      clip: ch1_soma_ritsu_0098
   - id: L091
     speaker: 相馬律
     zh: 當晚是他關的店。一個人。
     ja: あの夜、店を閉めたのは彼だ。一人で。
+    voice:
+      clip: ch1_soma_ritsu_0099
   - id: L092
     speaker: 相馬律
     zh: 二十三點零七分五十秒。先記下這個時間。
     ja: 二十三時七分五十秒。この時刻を控えておこう。
+    voice:
+      clip: ch1_soma_ritsu_0100
   - id: L093
     speaker: 相馬律
     zh: 流程停在一半。最後兩項沒做完。
     ja: 作業は途中で止まってる。最後の二項目が終わってない。
+    voice:
+      clip: ch1_soma_ritsu_0101
   - id: L094
     speaker: 相馬律
     zh: L 型。一層一層，都擋著視線。
     ja: L字。何重にも、視線が遮られてる。
+    voice:
+      clip: ch1_soma_ritsu_0102

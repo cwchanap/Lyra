@@ -2,7 +2,7 @@
 # One entry per voiced character, reused across chapters. Only an `approved`
 # entry with a `voiceId` gets clip IDs from `voice:sync` and clips from
 # `voice:generate`. Set `approved` only for the exact voice the owner picked
-# after hearing `voice:audition`. See .claude/skills/voicing-lyra-dialogue.
+# (from library samples or `voice:audition`). See .claude/skills/voicing-lyra-dialogue.
 schemaVersion: 1
 locales:
   ja:
@@ -14,8 +14,11 @@ locales:
     languageTextNormalization: true
     cast:
       - characterId: soma_ritsu
-        status: proposed
-        voiceId: null
+        # Cast record: picked by the owner on 2026-10-21 from library samples.
+        # Kenzo: calm, young male voice. The owner found it in the voice
+        # library, outside the shortlist below.
+        status: approved
+        voiceId: b34JylakFZPlGS0BnwyY
         settings:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1101
@@ -30,12 +33,16 @@ locales:
           - expression: shaken
             ja: サマリーは嘘をついてるわけじゃない。
         candidates:
+          - { name: Kenzo, voiceId: b34JylakFZPlGS0BnwyY }
           - { name: Calm Japanese voice komi, voiceId: G4sNoJjgWjyp9nhj1Bhj }
+          - { name: Nao, voiceId: tBfOvWrqvlfBiyUGpSAS }
           - { name: Hadou v3, voiceId: 3VouIDzZzPEjDgmtbXBJ }
-          - { name: Yuta, voiceId: YqSsGYVfnt78k7OGZl33 }
+          - { name: Makoto, voiceId: 6wdSVG3CMjPfAthsnMv9 }
       - characterId: hayasaka_akane
-        status: proposed
-        voiceId: null
+        # Cast record: picked by the owner on 2026-10-21 from library samples.
+        # Popo: calm, very clear, early 30s. The shortlist's recommendation.
+        status: approved
+        voiceId: 1zDn39fNfsYODLsGC75y
         settings:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1102
@@ -51,11 +58,14 @@ locales:
             ja: 探偵がこんなにすんなり飲むなら、本当においしいんですね。
         candidates:
           - { name: Popo, voiceId: 1zDn39fNfsYODLsGC75y }
+          - { name: Fumi, voiceId: PmgfHCGeS5b7sH90BOOJ }
           - { name: Kurea, voiceId: IgiTcMDSHJPIJjnlwIdM }
-          - { name: Shino, voiceId: Kohz4YYGbPgnEUrf8CZl }
+          - { name: Haruno, voiceId: b02kNc4YmZR6NvjjXr2a }
       - characterId: kamiya_mio
-        status: proposed
-        voiceId: null
+        # Cast record: picked by the owner on 2026-10-21 from library samples.
+        # Kasane: quiet, solemn, composed.
+        status: approved
+        voiceId: ioLsi3BGjCKHDhF2fNod
         settings:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1103
@@ -71,11 +81,14 @@ locales:
             ja: 北見修一、特定が成立。三宅蒼太を主たる被疑者とする方向は、撤回します。
         candidates:
           - { name: Kasane, voiceId: ioLsi3BGjCKHDhF2fNod }
-          - { name: Chiemi, voiceId: CAz2VQzFEVyGujit7Iof }
-          - { name: Yoko, voiceId: j3dRDAhPGt6NA8DY9Flv }
+          - { name: Ayana, voiceId: sMn4G4mQjSqzhvSaltjg }
+          - { name: Hijiri, voiceId: nMLAJvHm96aMWubKsf0q }
+          - { name: Hiromi, voiceId: NvhgGxXb4NEIE2LNSzzn }
       - characterId: kurose_toru
-        status: proposed
-        voiceId: null
+        # Cast record: picked by the owner on 2026-10-21 from library samples.
+        # Ishibashi: deep, strong traditional Tokyo voice.
+        status: approved
+        voiceId: Mv8AjrYZCBkdsmDHNwcB
         settings:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1104
@@ -86,6 +99,7 @@ locales:
           - ja: 二十年だ。家に帰っても抜けん。
           - ja: そうだ。だがその幅は、22:58の争いの時刻と食い違わない。俺から渡せるのはこれだけだ。
         candidates:
-          - { name: PiropiroRX, voiceId: YkUoVuNq2782tso28g8Q }
-          - { name: Haruma, voiceId: pL2AN47H9Cgg5ce6LNmO }
-          - { name: Shintarou, voiceId: Z9CocQcpiyoQFqRiRwRE }
+          - { name: Ishibashi, voiceId: Mv8AjrYZCBkdsmDHNwcB }
+          - { name: kiyo, voiceId: KdlbMHGeafEyWqPCWkW0 }
+          - { name: Koichi, voiceId: H8ZPDxbrPcks5hEsi2fq }
+          - { name: Hajime, voiceId: SOuiRq8aXqyALuq5QIQ8 }

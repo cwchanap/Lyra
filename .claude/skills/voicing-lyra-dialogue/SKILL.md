@@ -1,6 +1,6 @@
 ---
 name: voicing-lyra-dialogue
-description: Use when translating Lyra dialogue into the per-scene Japanese script, casting or auditioning ElevenLabs voices, generating or regenerating Japanese voice clips, or checking a chapter's voice coverage.
+description: Use when translating Lyra dialogue into the per-scene Japanese script, fixing Japanese readings, casting or auditioning ElevenLabs voices, or checking a chapter's translation coverage. Clip generation is generating-lyra-voice-clips.
 ---
 
 # Voicing Lyra Dialogue
@@ -91,57 +91,19 @@ its kana before sending text to ElevenLabs. Fix a misreading in this order:
 4. `bun run voice:audition <characterId>` writes takes to
    `.voice-auditions/<characterId>/<voice>_<voiceId>_<n>.mp3`. Play them for
    the owner. Never commit them.
-5. Set `status: approved` and `voiceId` only for the exact voice the owner
-   names for that role. "These sound fine" is not a pick; ask which one.
-6. Run `bun run voice:sync chapter_<N>` so the approved roles' translated
-   lines get clip IDs, and commit the scripts.
+5. Record the owner's pick (exact `voiceId`, `status: approved` and the
+   cast record comment) and run `voice:sync` as `generating-lyra-voice-clips`
+   step 1 says. "These sound fine" is not a pick; ask which one.
 
 Clip IDs are `ch<N>_<characterId>_<nnnn>`. They are never renumbered, and a
 number used by a deleted line or an existing file is never reused, so a clip
 file always belongs to one line.
 
-## 5. Estimate and approval
+## 5. Generate, listen and ship
 
-`bun run voice:generate chapter_<N> --dry-run` prints each clip it would make,
-the clip count and the character total (roughly the credit cost), and the
-lines of roles not approved yet. It needs no API key. Post the total to the
-owner and wait for an explicit OK on that amount before any paid run.
-
-## 6. Generate
-
-1. Pilot one scene first: `bun run voice:generate chapter_<N> --scene scene_<K>.md`.
-   The owner listens in `bun run dev:game` (Settings > VOICE). Tune
-   `settings`, `expressionDirections`, readings, or a line's `direction` /
-   `tts`, then regenerate.
-2. Then the rest of the chapter: `bun run voice:generate chapter_<N>`.
-3. A run regenerates only clips whose inputs changed (`ttsHash`: model, voice,
-   settings, seed, direction and final text). Neighbouring lines are not in
-   the hash. `--force` takes a new performance of unchanged lines; use it
-   with `--only <clip>`, never on a whole chapter without the owner's OK.
-4. The script records `ttsHash` and `generatedAt` after each clip, so an
-   interrupted run resumes where it stopped. Commit scripts and clips
-   together.
-5. **Exit code 3 means credits or billing ran out.** Stop and ask the owner
-   to top up or enable API billing. Never retry with `--force`.
-6. The key comes from `ELEVENLABS_API_KEY` in the environment or
-   `packages/scripts/.env`. `ffmpeg` with `libvorbis` must be installed.
-   Cloud threads cannot reach the owner's key; generation runs on the
-   owner's Mac.
-
-## 7. QA
-
-Listen to every new clip in game, not only in a file browser. Check names and
-kanji readings, the emotion against the scene, clipped starts or endings, and
-loudness against neighbouring clips. Fix with a reading, `direction` or `tts`,
-then `bun run voice:generate chapter_<N> --only <clip>`.
-
-## 8. Ship
-
-1. `bun run voice:validate chapter_<N> --strict`
-2. `bun run scenes:compile` (no `voiceClipMissing` warning for the chapter)
-3. `bun run test:scripts` and `bun run check:scripts`
-4. Commit scripts, cast file and clips; never `.voice-auditions/` or
-   `packages/scripts/.voice-cache/`. Mark the PR ready (CI skips drafts).
+Everything from the dry-run estimate to the clips PR is the
+`generating-lyra-voice-clips` skill: the owner's budget OK, preparing the
+Mac, the pilot scene, the chapter run, exit codes, listening QA and shipping.
 
 ## Red flags
 
@@ -154,6 +116,3 @@ then `bun run voice:generate chapter_<N> --only <clip>`.
 | "Patch `dialogue_locale.ja.json`" | Generated. Fix the script and run `scenes:compile`. |
 | "Commit the audition takes for reference" | Auditions stay in the gitignored folder. |
 | "Voice it now, translate later" | A line with empty `ja` gets no clip ID and no clip. |
-| "They said it sounds good, run the chapter" | A paid run needs an explicit OK on the dry-run total. |
-| "Exit 3, retry with `--force`" | Billing or quota. Stop and ask the owner. |
-| "Regenerate the chapter with `--force` to be safe" | Spends credits on unchanged lines. Use `--only`. |
