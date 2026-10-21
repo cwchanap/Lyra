@@ -169,10 +169,12 @@ Root scripts delegate to `@lyra/scripts`, like `audio:*`.
   the dry run prints clip count and character total with no key needed. A real
   run calls `POST /v1/text-to-speech/{voice_id}` with the cast's model,
   settings, seed and `language_code: ja`. On models that support request
-  stitching (`eleven_v3` does not) it also sends the neighbouring lines as
-  `previous_text`/`next_text`, but only for linear `scene_<K>.md` files:
-  investigation, interrogation and analysis scripts list branch and result
-  lines out of play order, so their clips get no context. It refuses to run when `voice:sync` would change
+  stitching (`eleven_v3` does not) it also sends the lines heard just
+  before and after as `previous_text`/`next_text`. Those come from the
+  compiled dialogue queues (a linear scene, one hotspot's talk, one answer),
+  not from script order, since branching scripts list lines out of play
+  order; a line emitted in several places keeps only neighbours every place
+  agrees on. It refuses to run when `voice:sync` would change
   the scripts. It regenerates only clips
   whose `ttsHash` changed. The hash covers every input that shapes the
   performance: model, voice ID, settings, seed, the resolved direction
@@ -298,8 +300,7 @@ empty, or treating a vague "sounds good" as approval for a paid run.
   glossary, line-level `tts` overrides, and ElevenLabs' Japanese text
   normalization option cover it; the pilot measures how often it happens.
 - **Consistency across about 600 clips:** a fixed seed per character, stable
-  settings, and neighbouring-line context in linear scenes keep the
-  performance even. The seed
+  settings, and neighbouring-line context keep the performance even. The seed
   does not guarantee identical output, so QA still listens.
 - **Chinese edits after recording:** the validator flags the entry as stale.
   If the Japanese line still fits, updating `zh` keeps the clip; if not, the
