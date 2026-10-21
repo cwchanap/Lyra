@@ -130,7 +130,7 @@ describe("buildTtsRequest", () => {
     expect(supportsAudioTags("eleven_flash_v2_5")).toBe(false);
   });
 
-  it("changes the hash with the performance but not with the neighbours", () => {
+  it("changes the hash with the performance and the context it sends", () => {
     const base = { line: line(), cast: CAST, localeCast: localeCast(), read };
     const hash = buildTtsRequest(base).hash;
     expect(
@@ -143,6 +143,17 @@ describe("buildTtsRequest", () => {
     expect(buildTtsRequest({ ...base, next: line({ ja: "次。" }) }).hash).toBe(
       hash,
     );
+    const v4 = { ...base, localeCast: localeCast("eleven_v4") };
+    const alone = buildTtsRequest(v4).hash;
+    const before = buildTtsRequest({ ...v4, previous: line({ ja: "前。" }) });
+    expect(before.body.previous_text).toBe("前。");
+    expect(before.hash).not.toBe(alone);
+    expect(
+      buildTtsRequest({ ...v4, previous: line({ ja: "別の前。" }) }).hash,
+    ).not.toBe(before.hash);
+    expect(
+      buildTtsRequest({ ...v4, next: line({ ja: "前。" }) }).hash,
+    ).not.toBe(before.hash);
     expect(
       buildTtsRequest({ ...base, cast: { ...CAST, seed: 2 } }).hash,
     ).not.toBe(hash);
