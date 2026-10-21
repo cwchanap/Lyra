@@ -1427,4 +1427,46 @@ describe("GameplayAudioController dialogue voice", () => {
     audio.dispose();
     expect(created[0]?.pause).toHaveBeenCalled();
   });
+
+  it("releases a clip that finishes playing", () => {
+    const audio = controller();
+    audio.playVoice("voice.ja.a", preferences);
+    created[0]!.emit("ended");
+    expect(created[0]?.listeners.get("ended")?.size).toBe(0);
+    expect(created[0]?.listeners.get("error")?.size).toBe(0);
+  });
+
+  it("warns and stops when the current clip's play() fails", async () => {
+    const audio = new GameplayAudioController({
+      audioFactory: (url) => {
+        const element = new FakeAudio(url);
+        if (created.length === 0) {
+          element.play.mockRejectedValueOnce(new Error("NotAllowedError"));
+        } else {
+          element.play.mockImplementationOnce(() => {
+            throw new Error("no audio device");
+          });
+        }
+        created.push(element);
+        return element;
+      },
+      logger: { warn },
+      sfxBackend: null,
+    });
+    audio.playVoice("voice.ja.rejected", preferences);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(warn).toHaveBeenLastCalledWith(
+      expect.stringContaining(
+        "Voice unavailable: voice.ja.rejected (/assets/voice/ja/rejected.ogg",
+      ),
+    );
+    expect(created[0]?.pause).toHaveBeenCalled();
+
+    audio.playVoice("voice.ja.thrown", preferences);
+    expect(warn).toHaveBeenLastCalledWith(
+      expect.stringContaining("Voice unavailable: voice.ja.thrown"),
+    );
+    expect(created[1]?.pause).toHaveBeenCalled();
+  });
 });

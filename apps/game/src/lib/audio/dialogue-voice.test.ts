@@ -7,6 +7,13 @@ import {
   indexDialogueVoices,
 } from "./dialogue-voice";
 
+const tauri = vi.hoisted(() => ({
+  invoke: vi.fn(),
+  isTauri: vi.fn(() => false),
+}));
+
+vi.mock("@tauri-apps/api/core", () => tauri);
+
 const manifest: DialogueLocaleManifestV1 = {
   schemaVersion: 1,
   locale: "ja",
@@ -158,5 +165,41 @@ describe("createDialogueVoiceLoader", () => {
 describe("fetchDialogueLocale", () => {
   it("has nothing to read outside the Tauri shell", async () => {
     await expect(fetchDialogueLocale("ja")).resolves.toBeNull();
+  });
+
+  it("reads the manifest through the Rust shell inside Tauri", async () => {
+    tauri.isTauri.mockReturnValueOnce(true);
+    tauri.invoke.mockResolvedValueOnce(manifest);
+    await expect(fetchDialogueLocale("ja")).resolves.toBe(manifest);
+    expect(tauri.invoke).toHaveBeenCalledExactlyOnceWith(
+      "get_dialogue_locale",
+      { locale: "ja" },
+    );
+  });
+});
+
+describe("EMPTY_DIALOGUE_VOICE_INDEX", () => {
+  it("voices nothing", () => {
+    expect(
+      EMPTY_DIALOGUE_VOICE_INDEX.voiceFor({
+        chapterId: "chapter_1",
+        speaker: "相馬律",
+        text: "不說謊。",
+        expression: null,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("createDialogueVoiceLoader errors", () => {
+  it("reports a plain rejection reason as text", async () => {
+    const warn = vi.fn();
+    const load = createDialogueVoiceLoader(() => Promise.reject("ipc closed"), {
+      warn,
+    });
+    expect(await load()).toBe(EMPTY_DIALOGUE_VOICE_INDEX);
+    expect(warn).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("could not be loaded (ipc closed)"),
+    );
   });
 });
