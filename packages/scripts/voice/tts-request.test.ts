@@ -119,6 +119,14 @@ describe("buildTtsRequest", () => {
     expect(request.body.language_code).toBeUndefined();
     expect(request.body.apply_language_text_normalization).toBe(true);
     expect(supportsAudioTags("eleven_v4")).toBe(true);
+    expect(
+      buildTtsRequest({
+        line: line(),
+        cast: CAST,
+        localeCast: localeCast("eleven_v4"),
+        read,
+      }).body.apply_language_text_normalization,
+    ).toBeUndefined();
     expect(supportsAudioTags("eleven_flash_v2_5")).toBe(false);
   });
 

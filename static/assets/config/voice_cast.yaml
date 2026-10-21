@@ -6,13 +6,13 @@
 schemaVersion: 1
 locales:
   ja:
-    # eleven_v3 takes audio tags such as [calm] and supports Japanese on the
-    # text-to-speech endpoint. eleven_v4 is listed for the Text to Dialogue API;
-    # try it in the pilot before switching.
-    model: eleven_v3
-    # ElevenLabs' Japanese text normalization: better kanji readings, slower
-    # requests. eleven_v3 rejects it, so voice:generate leaves it out for v3.
-    languageTextNormalization: true
+    # eleven_v4 takes audio tags such as [calm] and supports Japanese on the
+    # text-to-speech endpoint. The Chapter 1 pilot (2026-10-21) picked it over
+    # eleven_v3, whose takes the owner found stiff and unnatural.
+    model: eleven_v4
+    # ElevenLabs' Japanese text normalization (better kanji readings). eleven_v3
+    # and eleven_v4 reject it, so readings come from the glossary and `voice.tts`.
+    languageTextNormalization: false
     cast:
       - characterId: soma_ritsu
         # Cast record: picked by the owner on 2026-10-21 from library samples.
@@ -24,7 +24,6 @@ locales:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1101
         expressionDirections:
-          standard: "[calm]"
           determined: "[determined]"
           shaken: "[unsettled, quietly]"
           relieved: "[relieved]"
@@ -48,7 +47,6 @@ locales:
           { stability: 0.5, similarityBoost: 0.75, style: 0, speed: 1.0 }
         seed: 1102
         expressionDirections:
-          standard: "[matter-of-fact]"
           stern: "[firmly]"
           softened: "[warmly]"
         auditionLines:
