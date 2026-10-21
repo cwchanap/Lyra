@@ -108,8 +108,9 @@ export function spokenText(
 
 /**
  * Builds the text-to-speech request for one line. The hash covers the model,
- * voice, settings, seed, normalization, direction and final text, but not the
- * neighbouring lines, so editing one line never regenerates its neighbours.
+ * voice, settings, seed, normalization, direction and final text, plus the
+ * neighbouring text when the request sends any, so a clip goes stale when the
+ * context it was performed in changes.
  */
 export function buildTtsRequest(input: {
   line: LocaleScriptLine;
@@ -168,6 +169,12 @@ export function buildTtsRequest(input: {
         normalization: body.apply_language_text_normalization ?? false,
         direction,
         text,
+        // Absent when no context is sent, so those hashes stay unchanged.
+        ...(body.previous_text === undefined && body.next_text === undefined
+          ? {}
+          : {
+              context: [body.previous_text ?? null, body.next_text ?? null],
+            }),
       }),
     )
     .digest("hex")

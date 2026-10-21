@@ -13,7 +13,12 @@ import {
   type CastEntry,
   type LocaleCast,
 } from "./voice-cast";
-import type { EmittedScene, LocaleScriptLine, VoiceDiagnostic } from "./types";
+import type {
+  EmittedScene,
+  LocaleScriptFile,
+  LocaleScriptLine,
+  VoiceDiagnostic,
+} from "./types";
 
 export type VoiceFilters = {
   /** Authored scene file, e.g. `scene_5.md`. */
@@ -82,6 +87,26 @@ function matchesFilters(
  * story. A clip is current when its file exists and the stored `ttsHash`
  * equals the hash of today's request; `force` regenerates current clips too.
  */
+/**
+ * The lines heard just before and after `lines[index]`, sent to models with
+ * request stitching. Only linear `scene_<K>.md` files play in script order;
+ * investigation, interrogation and analysis scripts list branch and result
+ * lines wherever the compiler collects them, so their neighbours in the file
+ * may never be heard together and get no context at all.
+ */
+export function stitchingNeighbours(
+  file: LocaleScriptFile,
+  index: number,
+): { previous?: LocaleScriptLine; next?: LocaleScriptLine } {
+  if (!/(?:^|\/)scene_[^/]+\.md$/.test(file.source)) return {};
+  const previous = file.lines[index - 1];
+  const next = file.lines[index + 1];
+  return {
+    ...(previous === undefined ? {} : { previous }),
+    ...(next === undefined ? {} : { next }),
+  };
+}
+
 export function planVoiceGeneration(input: {
   chapterId: string;
   locale: string;
@@ -196,8 +221,7 @@ export function planVoiceGeneration(input: {
         cast,
         localeCast,
         read: input.read,
-        previous: lines[index - 1],
-        next: lines[index + 1],
+        ...stitchingNeighbours(script.file, index),
       });
       if (
         !input.force &&
