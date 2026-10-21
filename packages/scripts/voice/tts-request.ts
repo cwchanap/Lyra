@@ -38,10 +38,14 @@ export function supportsAudioTags(model: string): boolean {
 
 /**
  * eleven_v3 has no request stitching, so it gets no neighbouring-line
- * context. The older multilingual and monolingual models take no
+ * context, and it rejects `apply_language_text_normalization`. The older multilingual and monolingual models take no
  * `language_code`.
  */
 function supportsContextText(model: string): boolean {
+  return model !== "eleven_v3";
+}
+
+function supportsTextNormalization(model: string): boolean {
   return model !== "eleven_v3";
 }
 
@@ -139,7 +143,10 @@ export function buildTtsRequest(input: {
     body.voice_settings.use_speaker_boost = cast.settings.useSpeakerBoost;
   }
   if (supportsLanguageCode(model)) body.language_code = localeCast.locale;
-  if (localeCast.languageTextNormalization) {
+  if (
+    localeCast.languageTextNormalization &&
+    supportsTextNormalization(model)
+  ) {
     body.apply_language_text_normalization = true;
   }
   if (supportsContextText(model)) {
@@ -158,7 +165,7 @@ export function buildTtsRequest(input: {
         settings: body.voice_settings,
         seed: cast.seed,
         languageCode: body.language_code ?? null,
-        normalization: localeCast.languageTextNormalization,
+        normalization: body.apply_language_text_normalization ?? false,
         direction,
         text,
       }),
