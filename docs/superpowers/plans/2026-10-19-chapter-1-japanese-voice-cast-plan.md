@@ -25,7 +25,7 @@ as today.
 | Where the Japanese script lives | One YAML file per scene beside the source: `docs/stories_plan/chapter_1/ja/<scene>.ja.yaml` | Keeps the Chinese Markdown and its parser contract untouched, sits next to the dialogue it translates, and is invisible to gameplay compilation (the compiler only reads files `chapter.md` lists). |
 | How a Japanese line is tied to its Chinese line | By a line ID: every spoken line in a translated scene ends in ` {#L012}`, unique within its scene file, and the script entry with `id: L012` is its translation. `voice:sync` writes the IDs; writers never type them. (Changed on 2026-10-20 from matching by speaker, exact text and expression, at the owner's request, so further locales can link to the same lines.) | Editing a line's Chinese text or moving it keeps its translation and clip; the validator flags the entry for review instead of dropping it. The ID stays out of the scene JSON, so saves are untouched, and the game still matches lines at runtime by speaker, text and expression through the generated locale manifest. |
 | Does voice touch saves | No. Voice and Japanese text ship in a separate locale manifest, not in scene JSON | The save `contentRevision` hashes emitted scene JSON, so keeping locale data out of it means recording or re-recording voices never invalidates saves. |
-| TTS model | `eleven_v3` (supports Japanese and audio tags such as `[whispers]` on the text-to-speech endpoint; `eleven_v4` is listed for the Text to Dialogue API, so the pilot tries it before switching) | Audio tags let one stored direction per line steer delivery; the pilot confirms the model before the full run. |
+| TTS model | `eleven_v4` (supports Japanese and audio tags such as `[whispers]` on the text-to-speech endpoint). The 2026-10-21 pilot picked it over `eleven_v3`, whose takes sounded stiff, and dropped the default calm tags. Both models reject `apply_language_text_normalization`, so readings come from the glossary and `voice.tts`. | Audio tags let one stored direction per line steer delivery; the pilot confirmed the model before the full run. |
 | Where generation runs | The owner's Mac checkout through Remote Control, the same way Chapter 2 art and audio were made | The ElevenLabs key lives there (`packages/scripts/.env`, per CLAUDE.md). Translation, tooling and runtime work need no Mac. |
 
 ## 2. Data files
@@ -102,8 +102,8 @@ override wins when the model still misreads it.
 schemaVersion: 1
 locales:
   ja:
-    model: eleven_v3
-    languageTextNormalization: true
+    model: eleven_v4
+    languageTextNormalization: false
     cast:
       - characterId: kamiya_mio          # must exist in characters.yaml
         status: proposed                  # approved only on the owner's explicit pick
