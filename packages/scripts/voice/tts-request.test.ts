@@ -85,7 +85,6 @@ describe("buildTtsRequest", () => {
         speed: 0.95,
       },
       seed: 1103,
-      apply_language_text_normalization: true,
     });
     expect(request.hash).toMatch(/^[0-9a-f]{12}$/);
   });
@@ -118,6 +117,7 @@ describe("buildTtsRequest", () => {
     expect(request.body.previous_text).toBe("そうまりつ。");
     expect(request.body.next_text).toBeUndefined();
     expect(request.body.language_code).toBeUndefined();
+    expect(request.body.apply_language_text_normalization).toBe(true);
     expect(supportsAudioTags("eleven_v4")).toBe(true);
     expect(supportsAudioTags("eleven_flash_v2_5")).toBe(false);
   });
