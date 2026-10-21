@@ -38,7 +38,7 @@ export function supportsAudioTags(model: string): boolean {
 
 /**
  * eleven_v3 has no request stitching, so it gets no neighbouring-line
- * context, and it rejects `apply_language_text_normalization`. The older multilingual and monolingual models take no
+ * context. eleven_v3 and later reject `apply_language_text_normalization`. The older multilingual and monolingual models take no
  * `language_code`.
  */
 function supportsContextText(model: string): boolean {
@@ -46,7 +46,7 @@ function supportsContextText(model: string): boolean {
 }
 
 function supportsTextNormalization(model: string): boolean {
-  return model !== "eleven_v3";
+  return !supportsAudioTags(model);
 }
 
 function supportsLanguageCode(model: string): boolean {
