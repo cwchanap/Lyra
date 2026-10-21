@@ -17,12 +17,16 @@ lines:
     ja: ……ここか。
     voice:
       clip: ch1_soma_ritsu_0001
+      ttsHash: 7f56383f9218
+      generatedAt: 2026-10-21T05:07:47.836Z
   - id: L003
     speaker: 相馬律
     zh: 委託單上只寫了影印費糾紛。金額不大，但店主那邊說得很急。
     ja: 依頼票には、コピー代のトラブルとしか書いてない。額は小さいけど、店主の口ぶりはずいぶん急いでいた。
     voice:
       clip: ch1_soma_ritsu_0002
+      ttsHash: 55312d7fdce7
+      generatedAt: 2026-10-21T05:07:51.440Z
   - id: L004
     speaker: 旁白
     zh: 委託很小。店主和一個學生，為了幾張影印費起了爭執。
@@ -37,18 +41,24 @@ lines:
     ja: ……引き受けた以上、入口から見ていこう。
     voice:
       clip: ch1_soma_ritsu_0003
+      ttsHash: c59b107ef44d
+      generatedAt: 2026-10-21T05:07:52.819Z
   - id: L028
     speaker: 相馬律
     zh: 先別急著替誰定罪。
     ja: 誰が悪いと決めるのは、まだ早いです。
     voice:
       clip: ch1_soma_ritsu_0004
+      ttsHash: aa76c077bac3
+      generatedAt: 2026-10-21T05:07:54.448Z
   - id: L029
     speaker: 相馬律
     zh: 把能說明「十七點四十二分是什麼」的資料挑出來，比一比。
     ja: 「十七時四十二分が何なのか」を説明できる資料を選んで、比べてみましょう。
     voice:
       clip: ch1_soma_ritsu_0005
+      ttsHash: cb553e9767ed
+      generatedAt: 2026-10-21T05:07:56.597Z
   - id: L030
     speaker: 店主
     zh: ……好。你說怎麼看，我就怎麼看。
@@ -75,18 +85,24 @@ lines:
     ja: 判断を急ぐのはやめましょう。残っているものを一つずつ見てから、比べたいんです。
     voice:
       clip: ch1_soma_ritsu_0006
+      ttsHash: de65430dae2f
+      generatedAt: 2026-10-21T05:07:58.864Z
   - id: L010
     speaker: 早坂茜
     zh: 我來取你上一份小型證據審查的意見書。
     ja: 前回の小規模な証拠審査の意見書、受け取りに来た。
     voice:
       clip: ch1_hayasaka_akane_0001
+      ttsHash: 97953e3b8fb0
+      generatedAt: 2026-10-21T05:08:04.121Z
   - id: L011
     speaker: 早坂茜
     zh: 剛好看見這個小委託收尾。你先做完，我不插手。
     ja: この小さな依頼、ちょうど片付くところみたい。先に終わらせて。私は口を出さない。
     voice:
       clip: ch1_hayasaka_akane_0002
+      ttsHash: 65108915a950
+      generatedAt: 2026-10-21T05:08:06.769Z
   - id: L012
     speaker: 相馬律
     zh: 「REPRINT」。
@@ -94,12 +110,16 @@ lines:
     note: Reading the English word printed on the receipt.
     voice:
       clip: ch1_soma_ritsu_0007
+      ttsHash: 1e64e0899284
+      generatedAt: 2026-10-21T05:08:07.888Z
   - id: L013
     speaker: 相馬律
     zh: 這不是第一次印出的那張，是重印收據。
     ja: これは最初に印刷されたものじゃなく、再印刷されたレシートです。
     voice:
       clip: ch1_soma_ritsu_0008
+      ttsHash: 40cb5fbe6c35
+      generatedAt: 2026-10-21T05:08:10.572Z
   - id: L014
     speaker: 店主
     zh: 可是時間是真的。機器不會自己亂打。
@@ -110,12 +130,16 @@ lines:
     ja: 本物の時間でも、まずそれが何を記録した時間なのか、確かめないといけません。
     voice:
       clip: ch1_soma_ritsu_0009
+      ttsHash: 0afdd5fdf332
+      generatedAt: 2026-10-21T05:08:13.073Z
   - id: L016
     speaker: 相馬律
     zh: 這裡剛卡過紙。
     ja: ここ、ついさっき紙詰まりを起こしてますね。
     voice:
       clip: ch1_soma_ritsu_0010
+      ttsHash: 4f3fd0a288d1
+      generatedAt: 2026-10-21T05:08:14.595Z
   - id: L017
     speaker: 店主
     zh: 舊機器偶爾會卡，那又怎樣？
@@ -126,12 +150,16 @@ lines:
     ja: もし元のレシートが中で詰まっていたなら、あとの再印刷は、その時の支払いと同じとは言えません。
     voice:
       clip: ch1_soma_ritsu_0011
+      ttsHash: 1f9de8652303
+      generatedAt: 2026-10-21T05:08:17.478Z
   - id: L019
     speaker: 相馬律
     zh: 店主先找了錢，學生才離開。
     ja: 店主さんがお釣りを渡してから、学生さんが店を出ていますね。
     voice:
       clip: ch1_soma_ritsu_0012
+      ttsHash: 9fbcab50654f
+      generatedAt: 2026-10-21T05:08:19.939Z
   - id: L020
     speaker: 學生
     zh: 我那時候還低頭看了一下零錢。
@@ -142,18 +170,24 @@ lines:
     ja: この映像は本物ですし、お二人の間で取引があったことも裏づけています。
     voice:
       clip: ch1_soma_ritsu_0013
+      ttsHash: 4ed480d83d28
+      generatedAt: 2026-10-21T05:08:22.181Z
   - id: L022
     speaker: 相馬律
     zh: 但它只告訴我們你在十七點三十八分前離開。
     ja: でもこれで分かるのは、十七時三十八分より前に店を出た、ということだけです。
     voice:
       clip: ch1_soma_ritsu_0014
+      ttsHash: d5edc30760e2
+      generatedAt: 2026-10-21T05:08:24.411Z
   - id: L023
     speaker: 相馬律
     zh: 還不能單獨解釋十七點四十二分的收據。
     ja: これだけでは、十七時四十二分のレシートは説明できません。
     voice:
       clip: ch1_soma_ritsu_0015
+      ttsHash: 85c3f80a5973
+      generatedAt: 2026-10-21T05:08:26.562Z
   - id: L024
     speaker: 相馬律
     zh: 十七點三十七分，影印費。
@@ -161,6 +195,8 @@ lines:
     note: Reading an entry aloud from the handwritten ledger.
     voice:
       clip: ch1_soma_ritsu_0016
+      ttsHash: 70f2d2ffd4b5
+      generatedAt: 2026-10-21T05:08:28.010Z
   - id: L025
     speaker: 店主
     zh: 那是我手寫的，不像機器那麼漂亮。
@@ -171,9 +207,13 @@ lines:
     ja: きれいかどうかは関係ありません。この行に書かれているのは、お金を受け取った時刻です。
     voice:
       clip: ch1_soma_ritsu_0017
+      ttsHash: e0abb99d691c
+      generatedAt: 2026-10-21T05:08:30.567Z
   - id: L027
     speaker: 相馬律
     zh: 現在，把四項東西排開看看。
     ja: では、この四つを並べてみましょう。
     voice:
       clip: ch1_soma_ritsu_0018
+      ttsHash: fc6b2e0753b4
+      generatedAt: 2026-10-21T05:08:31.965Z
