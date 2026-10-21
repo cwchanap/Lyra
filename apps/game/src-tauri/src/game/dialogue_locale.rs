@@ -164,6 +164,15 @@ mod tests {
     }
 
     #[test]
+    fn reports_an_unreadable_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::create_dir(dir.path().join(manifest_file_name("ja"))).expect("mkdir");
+        let error = load_dialogue_locale(dir.path(), "ja").expect_err("directory");
+        assert_eq!(error.code, "dialogueLocaleLoadFailed");
+        assert!(error.message.contains("cannot read"));
+    }
+
+    #[test]
     fn rejects_path_like_locales_before_reading() {
         let dir = tempfile::tempdir().expect("tempdir");
         for locale in ["../ja", "ja/x", "JA", "", "pt-br", "japanese"] {

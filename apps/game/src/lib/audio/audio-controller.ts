@@ -393,20 +393,15 @@ export class GameplayAudioController {
     }
 
     const audio = this.audioFactory(url);
-    const voice: VoiceState = {
-      assetId,
-      audio,
-      onEnded: () => undefined,
-      onError: () => undefined,
-    };
-    voice.onEnded = () => {
+    const onEnded = () => {
       if (this.voice === voice) this.stopVoice();
     };
-    voice.onError = () => {
+    const onError = () => {
       if (this.voice !== voice) return;
       this.warnVoiceOnce(assetId, mediaErrorDetail(audio, url));
       this.stopVoice();
     };
+    const voice: VoiceState = { assetId, audio, onEnded, onError };
     audio.loop = false;
     audio.preload = "auto";
     audio.muted = preferences.muted;
