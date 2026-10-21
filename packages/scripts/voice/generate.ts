@@ -1,5 +1,6 @@
 import { assignClipIds, clipReadingKey } from "./clip-ids";
 import { serializeLocaleScript } from "./locale-script";
+import { ownerSceneFile, scriptLineKey } from "./script-key";
 import { syncChapterScripts, type ExistingScript } from "./sync";
 import {
   buildTtsRequest,
@@ -87,24 +88,66 @@ function matchesFilters(
  * story. A clip is current when its file exists and the stored `ttsHash`
  * equals the hash of today's request; `force` regenerates current clips too.
  */
+type Neighbours = { previous?: LocaleScriptLine; next?: LocaleScriptLine };
+
 /**
- * The lines heard just before and after `lines[index]`, sent to models with
- * request stitching. Only linear `scene_<K>.md` files play in script order;
- * investigation, interrogation and analysis scripts list branch and result
- * lines wherever the compiler collects them, so their neighbours in the file
- * may never be heard together and get no context at all.
+ * The lines heard just before and after each script line, keyed by
+ * `scriptLineKey`, sent as context to models with request stitching. They
+ * come from the emitted dialogue queues, not from script order: branching
+ * scripts list each queue's lines wherever the compiler collects them, so
+ * two entries next to each other in a file may never be heard together. A
+ * line emitted in more than one place keeps a neighbour only when every
+ * place agrees on it.
  */
 export function stitchingNeighbours(
-  file: LocaleScriptFile,
-  index: number,
-): { previous?: LocaleScriptLine; next?: LocaleScriptLine } {
-  if (!/(?:^|\/)scene_[^/]+\.md$/.test(file.source)) return {};
-  const previous = file.lines[index - 1];
-  const next = file.lines[index + 1];
-  return {
-    ...(previous === undefined ? {} : { previous }),
-    ...(next === undefined ? {} : { next }),
+  scenes: EmittedScene[],
+  scripts: Iterable<{ sceneFile: string; file: LocaleScriptFile }>,
+): Map<string, Neighbours> {
+  const entries = new Map<string, LocaleScriptLine>();
+  for (const script of scripts) {
+    for (const line of script.file.lines) {
+      entries.set(scriptLineKey(script.sceneFile, line.id), line);
+    }
+  }
+  const seen = new Map<
+    string,
+    { previous: Set<string | null>; next: Set<string | null> }
+  >();
+  for (const scene of scenes) {
+    const keyAt = (index: number, segment: number): string | null => {
+      const line = scene.lines[index];
+      if (!line || line.segment !== segment || line.id === null) return null;
+      return scriptLineKey(ownerSceneFile(line, scene.sceneFile), line.id);
+    };
+    scene.lines.forEach((line, index) => {
+      if (line.id === null) return;
+      const key = scriptLineKey(ownerSceneFile(line, scene.sceneFile), line.id);
+      const sides = seen.get(key) ?? { previous: new Set(), next: new Set() };
+      seen.set(key, sides);
+      if (line.segment === undefined) {
+        sides.previous.add(null);
+        sides.next.add(null);
+        return;
+      }
+      sides.previous.add(keyAt(index - 1, line.segment));
+      sides.next.add(keyAt(index + 1, line.segment));
+    });
+  }
+  const only = (keys: Set<string | null>): LocaleScriptLine | undefined => {
+    if (keys.size !== 1) return undefined;
+    const [key] = keys;
+    return key === null || key === undefined ? undefined : entries.get(key);
   };
+  const neighbours = new Map<string, Neighbours>();
+  for (const [key, sides] of seen) {
+    const previous = only(sides.previous);
+    const next = only(sides.next);
+    neighbours.set(key, {
+      ...(previous === undefined ? {} : { previous }),
+      ...(next === undefined ? {} : { next }),
+    });
+  }
+  return neighbours;
 }
 
 export function planVoiceGeneration(input: {
@@ -168,6 +211,7 @@ export function planVoiceGeneration(input: {
     };
   }
 
+  const neighbours = stitchingNeighbours(input.scenes, input.existing);
   const plan: VoicePlan = {
     targets: [],
     current: 0,
@@ -187,8 +231,7 @@ export function planVoiceGeneration(input: {
   const pendingReadings = new Set<string>();
 
   for (const script of input.existing) {
-    const lines = script.file.lines;
-    lines.forEach((line, index) => {
+    script.file.lines.forEach((line) => {
       if (line.ja.trim().length === 0) return;
       const pendingCast = pendingBySpeaker.get(line.speaker);
       if (pendingCast) {
@@ -221,7 +264,7 @@ export function planVoiceGeneration(input: {
         cast,
         localeCast,
         read: input.read,
-        ...stitchingNeighbours(script.file, index),
+        ...neighbours.get(scriptLineKey(script.sceneFile, line.id)),
       });
       if (
         !input.force &&

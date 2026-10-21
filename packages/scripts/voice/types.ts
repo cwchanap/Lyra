@@ -10,6 +10,12 @@ export type EmittedLine = {
   id: string | null;
   /** Scene file the authored line is in (and so its script), if known. */
   sourceFile: string | null;
+  /**
+   * Index of the dialogue queue the line plays in (a linear scene, one
+   * hotspot's talk, one answer or result). Lines next to each other in the
+   * same queue are heard back to back; the queues play in any order.
+   */
+  segment?: number;
 };
 
 /** The spoken lines of one manifest scene, in emitted dialogue order. */

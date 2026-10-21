@@ -26,7 +26,7 @@ export function spokenLinesOfScene(
     json,
     ...(source?.sourceAst ? { sourceAst: source.sourceAst } : {}),
   });
-  for (const segment of segments) {
+  segments.forEach((segment, segmentIndex) => {
     segment.items.forEach((item, index) => {
       if (item.kind !== "line") return;
       const origin = segment.itemSources?.[index];
@@ -39,8 +39,9 @@ export function spokenLinesOfScene(
           ? (source?.lineIds.get(located.sourceFile)?.get(located.line) ?? null)
           : null,
         sourceFile: located ? basename(located.sourceFile) : null,
+        segment: segmentIndex,
       });
     });
-  }
+  });
   return lines;
 }
