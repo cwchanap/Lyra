@@ -10,7 +10,8 @@ locales:
     # text-to-speech endpoint. eleven_v4 is listed for the Text to Dialogue API;
     # try it in the pilot before switching.
     model: eleven_v3
-    # ElevenLabs' Japanese text normalization: better kanji readings, slower requests.
+    # ElevenLabs' Japanese text normalization: better kanji readings, slower
+    # requests. eleven_v3 rejects it, so voice:generate leaves it out for v3.
     languageTextNormalization: true
     cast:
       - characterId: soma_ritsu
