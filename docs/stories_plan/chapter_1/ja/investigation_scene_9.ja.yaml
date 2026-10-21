@@ -11,98 +11,144 @@ lines:
     speaker: 相馬律
     zh: 這地方，連椅子都不讓人久坐。
     ja: ここは椅子まで、長く座っていられない作りだな。
+    voice:
+      clip: ch1_soma_ritsu_0224
   - id: L002
     speaker: 早坂茜
     zh: 撐著點。拿到工單，那個空位才有名字可以填。
     ja: もう少し辛抱して。作業票が手に入れば、あの空欄にやっと名前が書ける。
+    voice:
+      clip: ch1_hayasaka_akane_0126
   - id: L003
     speaker: 相馬律
     zh: 從昨晚到現在，那格一直空著。
     ja: 昨日の夜からずっと、あそこは空欄のままだ。
+    voice:
+      clip: ch1_soma_ritsu_0225
   - id: L004
     speaker: 早坂茜
     zh: 今天把它填上。黑瀨刑警，說吧。
     ja: 今日、それを埋める。黒瀬刑事、どうぞ。
+    voice:
+      clip: ch1_hayasaka_akane_0127
   - id: L005
     speaker: 黑瀨徹
     zh: 我以現場刑警的身份，向承包商提了協力請求。
     ja: 現場の刑事として、委託業者に協力を要請した。
+    voice:
+      clip: ch1_kurose_toru_0039
   - id: L006
     speaker: 黑瀨徹
     zh: 他們只肯給後場門鎖那一段，22:50 到 23:10。
     ja: 向こうが出すのは、バックヤードのドアロックの分だけだ。22:50から23:10まで。
+    voice:
+      clip: ch1_kurose_toru_0040
   - id: L007
     speaker: 相馬律
     zh: 我們不能自己進承包商的資料庫翻嗎？
     ja: 委託業者のデータベースを、僕たちで直接調べることはできないのか？
+    voice:
+      clip: ch1_soma_ritsu_0226
   - id: L008
     speaker: 早坂茜
     zh: 不能。那不是律師私下翻得到的東西。
     ja: できない。弁護士が勝手に覗けるものじゃない。
+    voice:
+      clip: ch1_hayasaka_akane_0128
   - id: L009
     speaker: 早坂茜
     zh: 我是憑審查會確認過的那幾條矛盾，正式申請調的。
     ja: 審査会で確認された矛盾をいくつか根拠にして、正式に取り寄せを申請した。
+    voice:
+      clip: ch1_hayasaka_akane_0129
   - id: L010
     speaker: 早坂茜
     zh: 所以拿到的，只有跟那扇門鎖有關的工單。
     ja: だから出てきたのは、あのドアロックに関わる作業票だけ。
+    voice:
+      clip: ch1_hayasaka_akane_0130
   - id: L092
     speaker: 相馬律
     expression: determined
     zh: 那個一直空著的第三人座位，現在能對到一個名字了。
     ja: ずっと空いていた三人目の席に、ようやく名前を当てられる。
+    voice:
+      clip: ch1_soma_ritsu_0227
   - id: L093
     speaker: 相馬律
     expression: determined
     zh: 北見修一。臨時工單和外包憑證，先把名字對上。
     ja: 北見修一。まずは臨時の作業票と外注認証で、名前を突き合わせる。
+    voice:
+      clip: ch1_soma_ritsu_0228
   - id: L094
     speaker: 相馬律
     expression: determined
     zh: 備忘裡的那個 K，這樣才能收口。
     ja: メモにあったKも、そうして初めて片が付く。
+    voice:
+      clip: ch1_soma_ritsu_0229
   - id: L095
     speaker: 相馬律
     expression: determined
     zh: 傘套只留在動線脈絡裡。
     ja: 傘袋は、動線の前後関係を示すだけにとどめる。
+    voice:
+      clip: ch1_soma_ritsu_0230
   - id: L096
     speaker: 早坂茜
     zh: 身份對上了。動機和當夜的壓力，也都站住了。
     ja: 身元は一致した。動機も、あの夜の圧力も、ちゃんと成り立つ。
+    voice:
+      clip: ch1_hayasaka_akane_0131
   - id: L097
     speaker: 相馬律
     zh: 剩下的，就交給最後的審查會。
     ja: あとは、最後の審査会に委ねよう。
+    voice:
+      clip: ch1_soma_ritsu_0231
   - id: L098
     speaker: 早坂茜
     zh: 對。材料齊了。我們去把這條鏈，當著所有人講清楚。
     ja: そう。材料は揃った。この証拠の連鎖を、全員の前ではっきり説明しに行く。
+    voice:
+      clip: ch1_hayasaka_akane_0132
   - id: L099
     speaker: 相馬律
     zh: 他從頭到尾，沒答買家是誰。
     ja: 彼は最後まで、買い手が誰なのかには答えなかった。
+    voice:
+      clip: ch1_soma_ritsu_0232
   - id: L100
     speaker: 早坂茜
     zh: 對。這條留到審查會再追。
     ja: そう。そこは審査会で改めて追う。
+    voice:
+      clip: ch1_hayasaka_akane_0133
   - id: L101
     speaker: 相馬律
     zh: 他一直摺那張名片。還有眼鏡，一直往下滑。
     ja: ずっとあの名刺を折ってた。それに眼鏡も、ずっとずり落ちてた。
+    voice:
+      clip: ch1_soma_ritsu_0233
   - id: L102
     speaker: 早坂茜
     zh: 你連這個都記著。
     ja: そんなことまで覚えてるんだ。
+    voice:
+      clip: ch1_hayasaka_akane_0134
   - id: L103
     speaker: 相馬律
     zh: 不是記著。是他在怕。怕的人，才會把東西摺成那樣。
     ja: 覚えてたんじゃない。彼が怯えてたんだ。怯えてる人間だけが、物をあんなふうに折るんだ。
+    voice:
+      clip: ch1_soma_ritsu_0234
   - id: L104
     speaker: 早坂茜
     zh: 怕不怕，不影響證據。鏈補齊了，走。
     ja: 怯えてようがいまいが、証拠には関係ない。証拠の連鎖はそろった。行くよ。
+    voice:
+      clip: ch1_hayasaka_akane_0135
   - id: L011
     speaker: 承包商主管
     zh: 就這些。後場門鎖，22:50 到 23:10，超出範圍的我不能給。
@@ -111,6 +157,8 @@ lines:
     speaker: 早坂茜
     zh: 夠了。我們要的就是這一段。
     ja: 十分です。私たちに必要なのは、まさにこの部分です。
+    voice:
+      clip: ch1_hayasaka_akane_0136
   - id: L013
     speaker: 承包商主管
     zh: 權限過期就不能進系統。人也一樣，到期就走流程。
@@ -119,70 +167,104 @@ lines:
     speaker: 相馬律
     zh: ……這種地方，待久了會記得自己只是暫時的。
     ja: ……こういう場所に長くいると、自分は仮の存在なんだって思い知らされる。
+    voice:
+      clip: ch1_soma_ritsu_0235
   - id: L015
     speaker: 早坂茜
     zh: 他們的排程跟我們無關。回函拿到了，看裡面。
     ja: あの人たちのスケジュールは、私たちには関係ない。回答書は受け取った。中を見て。
+    voice:
+      clip: ch1_hayasaka_akane_0137
   - id: L016
     speaker: 早坂茜
     zh: 你一緊張，就先整理東西。
     ja: 相馬は緊張すると、まず物を片づける。
+    voice:
+      clip: ch1_hayasaka_akane_0138
   - id: L017
     speaker: 相馬律
     zh: 手不動，腦子更亂。
     ja: 手を動かしてないと、頭がもっと散らかるんだ。
+    voice:
+      clip: ch1_soma_ritsu_0236
   - id: L018
     speaker: 早坂茜
     zh: 那就先讓手忙著。腦子留給正事。
     ja: なら手は動かしてていい。頭は本題のために空けておいて。
+    voice:
+      clip: ch1_hayasaka_akane_0139
   - id: L019
     speaker: 相馬律
     zh: 以前做協力的時候，這種表一厚，我就會忘記人長什麼樣。
     ja: 協力員をやってた頃は、こういう表が厚くなると、人の顔を忘れてた。
+    voice:
+      clip: ch1_soma_ritsu_0237
   - id: L020
     speaker: 早坂茜
     zh: 那今天別忘。先把人看清楚，再說別的。
     ja: なら今日は忘れないで。まず人をよく見る。ほかのことはそれから。
+    voice:
+      clip: ch1_hayasaka_akane_0140
   - id: L021
     speaker: 相馬律
     zh: 雨鐘打烊以後，也是這種聲音。
     ja: 雨鐘も閉店のあとは、こんな音がしてた。
+    voice:
+      clip: ch1_soma_ritsu_0238
   - id: L022
     speaker: 早坂茜
     zh: 那間店的雨聲，比這裡有人情味。
     ja: あの店の雨音のほうが、ここより温かみがある。
+    voice:
+      clip: ch1_hayasaka_akane_0141
   - id: L023
     speaker: 相馬律
     zh: 這裡連傘套都被收得很整齊。
     ja: ここは傘袋まで、きっちり片づけられてる。
+    voice:
+      clip: ch1_soma_ritsu_0239
   - id: L024
     speaker: 相馬律
     zh: ……從這邊看過去，那邊只剩影子。
     ja: ……ここから見ると、向こうは影しか残らない。
+    voice:
+      clip: ch1_soma_ritsu_0240
   - id: L025
     speaker: 早坂茜
     zh: 看資料，不要看雨。
     ja: 雨じゃなくて、資料を見て。
+    voice:
+      clip: ch1_hayasaka_akane_0142
   - id: L026
     speaker: 相馬律
     zh: ……嗯。
     ja: ……うん。
+    voice:
+      clip: ch1_soma_ritsu_0241
   - id: L040
     speaker: 早坂茜
     zh: 手冷？
     ja: 手、冷たい？
+    voice:
+      clip: ch1_hayasaka_akane_0143
   - id: L041
     speaker: 相馬律
     zh: 沒有。
     ja: いや。
+    voice:
+      clip: ch1_soma_ritsu_0242
   - id: L042
     speaker: 早坂茜
     zh: 那就別逞強。進去之後少搶話。
     ja: なら強がらないで。中に入ったら、口を挟みすぎないこと。
+    voice:
+      clip: ch1_hayasaka_akane_0144
   - id: L027
     speaker: 相馬律
     zh: 這一個呢？那晚也在名單上。
     ja: こちらはどうですか？あの夜もリストに載っています。
+    voice:
+      clip: ch1_soma_ritsu_0243
   - id: L028
     speaker: 承包商主管
     zh: 這個上週就到期了。臨時識別證交回，憑證停用。
@@ -195,6 +277,8 @@ lines:
     speaker: 早坂茜
     zh: 所以那晚能動這組憑證的，還是只剩北見那一組。
     ja: つまり、あの夜この認証を動かせたのは、やっぱり北見の分だけ。
+    voice:
+      clip: ch1_hayasaka_akane_0145
   - id: L031
     speaker: 承包商主管
     zh: 我只照規矩給名單。誰是誰，你們自己判。
@@ -203,10 +287,14 @@ lines:
     speaker: 相馬律
     zh: ……是條死路。
     ja: ……行き止まりか。
+    voice:
+      clip: ch1_soma_ritsu_0244
   - id: L033
     speaker: 早坂茜
     zh: 記著，別再繞回來。
     ja: 覚えておいて。もうここには戻ってこないこと。
+    voice:
+      clip: ch1_hayasaka_akane_0146
   - id: L034
     speaker: 承包商主管
     zh: 我說過了，那個上週到期。
@@ -215,6 +303,8 @@ lines:
     speaker: 相馬律
     zh: 你今天也待了很久。那個保溫瓶也是你的？
     ja: 今日も長くいらっしゃるんですね。その水筒も、ご自分のですか？
+    voice:
+      clip: ch1_soma_ritsu_0245
   - id: L036
     speaker: 承包商主管
     zh: 這窗口開到五點。我每天泡一壺麥茶，撐到時間就走。
@@ -231,63 +321,93 @@ lines:
     speaker: 早坂茜
     zh: ……謝謝。我們看資料就好。
     ja: ……ありがとうございます。こちらは資料を拝見するだけで結構です。
+    voice:
+      clip: ch1_hayasaka_akane_0147
   - id: L043
     speaker: 黑瀨徹
     zh: 死者手機的鑑識，這一批我按證物鏈固定過了。
     ja: 被害者の携帯の鑑識結果だ。この分は、証拠の保管記録どおりに保全してある。
+    voice:
+      clip: ch1_kurose_toru_0041
   - id: L044
     speaker: 黑瀨徹
     zh: 跟之前那則手機通知，是同一批裡的。
     ja: 前に見た携帯の通知と、同じ束のもんだ。
+    voice:
+      clip: ch1_kurose_toru_0042
   - id: L045
     speaker: 相馬律
     zh: 「22:50 雨鐘。校驗值確認。K。」
     ja: 「22:50 雨鐘。検証値確認。K。」
     note: "Read aloud off a forensic printout of Masuda's phone memo: three terse items, flat delivery."
+    voice:
+      clip: ch1_soma_ritsu_0246
   - id: L046
     speaker: 早坂茜
     zh: 22:50 是備忘裡約的時間和地點，不是維護開啟。
     ja: 22:50は、メモにある待ち合わせの時間と場所。メンテナンスの開始じゃない。
+    voice:
+      clip: ch1_hayasaka_akane_0148
   - id: L047
     speaker: 早坂茜
     zh: 維護開是 22:52。兩件事別混。
     ja: メンテナンスが入ったのは22:52。二つを混ぜないで。
+    voice:
+      clip: ch1_hayasaka_akane_0149
   - id: L048
     speaker: 相馬律
     zh: 所以增田知道那場碰面有風險，在等一個跟校驗值有關的人。
     ja: つまり増田さんは、あの待ち合わせが危ないと分かったうえで、検証値に関わる誰かを待っていた。
+    voice:
+      clip: ch1_soma_ritsu_0247
   - id: L049
     speaker: 早坂茜
     zh: 對。但光這則備忘，定不了北見。得跟工單、憑證、那個 K 一起看。
     ja: そう。でもこのメモだけじゃ、北見とは決められない。作業票、認証、あのKと合わせて見ないと。
+    voice:
+      clip: ch1_hayasaka_akane_0150
   - id: L050
     speaker: 相馬律
     zh: 是檢舉草稿。沒送出，只躺在監察信箱的草稿匣。
     ja: 告発の下書きだ。送信されずに、監察窓口宛ての下書きフォルダに残ってるだけ。
+    voice:
+      clip: ch1_soma_ritsu_0248
   - id: L051
     speaker: 早坂茜
     zh: 沒送出，就還沒走完程序。光一份草稿，證不了資料怎麼流出去的。
     ja: 送信されてないなら、手続きはまだ済んでない。下書き一つじゃ、データがどう流出したかまでは証明できない。
+    voice:
+      clip: ch1_hayasaka_akane_0151
   - id: L052
     speaker: 相馬律
     zh: 後面還附了一張異常存取整理表，沒做完。
     ja: 後ろに不正アクセスの整理表も付いてる。作りかけだ。
+    voice:
+      clip: ch1_soma_ritsu_0249
   - id: L053
     speaker: 相馬律
     zh: 北見的帳號，好幾次在排程外接觸試點資料。
     ja: 北見のアカウントが、スケジュール外で何度も試験運用データに触れてる。
+    voice:
+      clip: ch1_soma_ritsu_0250
   - id: L054
     speaker: 相馬律
     zh: 有一部分，匯到一個外部傳輸載體上。
     ja: その一部は、外部の記録媒体に書き出されてる。
+    voice:
+      clip: ch1_soma_ritsu_0251
   - id: L055
     speaker: 早坂茜
     zh: 到買家是誰，這張表還沒證到。
     ja: 買い手が誰かまでは、この表じゃまだ証明できない。
+    voice:
+      clip: ch1_hayasaka_akane_0152
   - id: L056
     speaker: 早坂茜
     zh: 但足夠說，北見有盜賣資料的嫌疑了。
     ja: でも、北見にデータ横流しの疑いがあると言うには十分。
+    voice:
+      clip: ch1_hayasaka_akane_0153
   - id: L057
     speaker: 北見修一
     zh: 他不該把那份草稿留下。
@@ -297,6 +417,8 @@ lines:
     speaker: 相馬律
     zh: 那組外包憑證，那晚是你動的。
     ja: あの夜、あの外注認証を動かしたのはあなたですね。
+    voice:
+      clip: ch1_soma_ritsu_0252
   - id: L059
     speaker: 北見修一
     zh: 規則從來不是寫給我們這種人看的。
@@ -306,14 +428,20 @@ lines:
     speaker: 相馬律
     zh: 那資料，最後賣給了誰？
     ja: そのデータは、最後に誰に売ったんですか？
+    voice:
+      clip: ch1_soma_ritsu_0253
   - id: L061
     speaker: 早坂茜
     zh: 他不答「買家是誰」。記著這條，別讓他繞過去。
     ja: 「買い手は誰か」には答えない。ここは覚えておいて。はぐらかさせないで。
+    voice:
+      clip: ch1_hayasaka_akane_0154
   - id: L062
     speaker: 相馬律
     zh: 那晚到底是什麼，把你逼到動手？
     ja: あの夜、何があなたを、手を出すところまで追い詰めたんですか？
+    voice:
+      clip: ch1_soma_ritsu_0254
   - id: L063
     speaker: 北見修一
     expression: defensive
@@ -328,6 +456,8 @@ lines:
     speaker: 相馬律
     zh: 所以只要檢舉一送出，那些異常存取就會被翻出來。
     ja: つまり告発が送られた時点で、あの不正アクセスが掘り返される。そういうことですね。
+    voice:
+      clip: ch1_soma_ritsu_0255
   - id: L066
     speaker: 北見修一
     zh: 我只是想在被換掉之前，留一點退路。
@@ -337,10 +467,14 @@ lines:
     expression: stern
     zh: 壓力講夠了。盜賊就是盜賊，審查再急也不改這件事。
     ja: 圧力の話はもう十分です。泥棒は泥棒です。審査がどれだけ迫っていても、それは変わりません。
+    voice:
+      clip: ch1_hayasaka_akane_0155
   - id: L068
     speaker: 相馬律
     zh: 你看起來沒睡。
     ja: 寝ていないように見えますね。
+    voice:
+      clip: ch1_soma_ritsu_0256
   - id: L069
     speaker: 北見修一
     zh: ……我另一個早班四點開始。跟這件無關。
@@ -349,6 +483,8 @@ lines:
     speaker: 相馬律
     zh: 這條線跑了多久？
     ja: この仕事、もう何年になりますか？
+    voice:
+      clip: ch1_soma_ritsu_0257
   - id: L071
     speaker: 北見修一
     expression: cornered
@@ -363,6 +499,8 @@ lines:
     speaker: 相馬律
     zh: 沒想過換？
     ja: 他に移ろうとは思わなかったんですか？
+    voice:
+      clip: ch1_soma_ritsu_0258
   - id: L074
     speaker: 北見修一
     zh: 換了也是另一份外包。到哪都一樣。
@@ -371,10 +509,14 @@ lines:
     speaker: 早坂茜
     zh: 你的班表不是這裡要處理的事。
     ja: あなたのシフトは、ここで扱う話ではありません。
+    voice:
+      clip: ch1_hayasaka_akane_0156
   - id: L076
     speaker: 早坂茜
     zh: 名字對上了，就先對著名字走。
     ja: 名前は一致した。まずは、その名前を軸に進める。
+    voice:
+      clip: ch1_hayasaka_akane_0157
   - id: L077
     speaker: 北見修一
     zh: ……沒什麼好說的了。
@@ -383,30 +525,44 @@ lines:
     speaker: 相馬律
     zh: 那晚臨時排了一張維護工單。
     ja: あの夜、臨時のメンテナンス作業票が一枚入ってた。
+    voice:
+      clip: ch1_soma_ritsu_0259
   - id: L079
     speaker: 早坂茜
     zh: 工單對得上憑證，但人還沒對上。
     ja: 作業票は認証と合う。でも、人とはまだつながってない。
+    voice:
+      clip: ch1_hayasaka_akane_0158
   - id: L080
     speaker: 相馬律
     zh: 工單加憑證，只落在一個人身上。
     ja: 作業票と認証を合わせると、当てはまるのは一人だけだ。
+    voice:
+      clip: ch1_soma_ritsu_0260
   - id: L081
     speaker: 早坂茜
     zh: 北見修一。名字第一次對到了人。
     ja: 北見修一。名前が初めて、実在の人間に結びついた。
+    voice:
+      clip: ch1_hayasaka_akane_0159
   - id: L082
     speaker: 相馬律
     zh: 資材包這只傘套，尺寸和摺痕都對得上後場那只。
     ja: 資材キットのこの傘袋、サイズも折り目も、バックヤードのものと一致する。
+    voice:
+      clip: ch1_soma_ritsu_0261
   - id: L083
     speaker: 早坂茜
     zh: 但那只是較晚的雨水。它只留在動線脈絡裡。
     ja: でもそれは、後から来た雨水でしかない。動線の前後関係を示すだけ。
+    voice:
+      clip: ch1_hayasaka_akane_0160
   - id: L084
     speaker: 早坂茜
     zh: 更早進來的是誰，還得看工單和憑證。
     ja: もっと前に入ったのが誰かは、まだ作業票と認証を見ないと分からない。
+    voice:
+      clip: ch1_hayasaka_akane_0161
   - id: L085
     speaker: 相馬律
     zh: 「22:50 雨鐘。校驗值確認。K。」
@@ -416,23 +572,35 @@ lines:
     speaker: 早坂茜
     zh: 他在等一個跟校驗值有關的人。但這還不足以定罪。
     ja: 増田さんは、検証値に関わる誰かを待っていた。でも、これだけじゃ罪を問うには足りない。
+    voice:
+      clip: ch1_hayasaka_akane_0162
   - id: L087
     speaker: 相馬律
     zh: 是檢舉草稿，沒送出。
     ja: 告発の下書きだ。送信されてない。
+    voice:
+      clip: ch1_soma_ritsu_0262
   - id: L088
     speaker: 早坂茜
     zh: 光一份草稿，證不了資料怎麼流出去。
     ja: 下書き一つじゃ、データがどう流出したかは証明できない。
+    voice:
+      clip: ch1_hayasaka_akane_0163
   - id: L089
     speaker: 黑瀨徹
     zh: 這支另編，送鑑識。
     ja: こいつは別に番号を振って、鑑識に回す。
+    voice:
+      clip: ch1_kurose_toru_0043
   - id: L090
     speaker: 相馬律
     zh: 排程外接觸試點資料，還匯到外部載體。
     ja: スケジュール外で試験運用データに触れて、外部の記録媒体にまで書き出してる。
+    voice:
+      clip: ch1_soma_ritsu_0263
   - id: L091
     speaker: 早坂茜
     zh: 買家是誰還沒證到，但盜賣的嫌疑成立了。
     ja: 買い手が誰かはまだ証明できてない。でも、横流しの疑いは成り立った。
+    voice:
+      clip: ch1_hayasaka_akane_0164

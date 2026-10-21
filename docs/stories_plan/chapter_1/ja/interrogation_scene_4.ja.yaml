@@ -11,22 +11,32 @@ lines:
     speaker: 早坂茜
     zh: 他從進來就一直捏著那罐東西。
     ja: 来てからずっと、あの缶を握りしめてる。
+    voice:
+      clip: ch1_hayasaka_akane_0041
   - id: L002
     speaker: 相馬律
     zh: 他剛才在販賣機前站了一會兒。
     ja: さっき、自販機の前でしばらく立ってた。
+    voice:
+      clip: ch1_soma_ritsu_0103
   - id: L003
     speaker: 早坂茜
     zh: 等下用物證說話。
     ja: 始まったら、物証で話して。
+    voice:
+      clip: ch1_hayasaka_akane_0042
   - id: L004
     speaker: 相馬律
     zh: 嗯。先看他那罐。
     ja: うん。まずは、あの缶からだ。
+    voice:
+      clip: ch1_soma_ritsu_0104
   - id: L005
     speaker: 相馬律
     zh: 你買了黑咖啡。
     ja: ブラックコーヒーを買ったんだね。
+    voice:
+      clip: ch1_soma_ritsu_0105
   - id: L006
     speaker: 三宅蒼太
     zh: ……啊。
@@ -39,6 +49,8 @@ lines:
     speaker: 相馬律
     zh: 那你為什麼買這個？
     ja: じゃあ、どうしてこれを？
+    voice:
+      clip: ch1_soma_ritsu_0106
   - id: L009
     speaker: 三宅蒼太
     zh: 我本來要買熱牛奶的。給我媽的。
@@ -51,22 +63,32 @@ lines:
     speaker: 早坂茜
     zh: 相馬，問話可以開始了。
     ja: 相馬、聴取を始めていい。
+    voice:
+      clip: ch1_hayasaka_akane_0043
   - id: L042
     speaker: 相馬律
     zh: 他撒的是小謊，為了蛋糕盒和那通電話。
     ja: 彼がついたのは小さな嘘だ。ケーキの箱と、あの電話のことで。
+    voice:
+      clip: ch1_soma_ritsu_0107
   - id: L043
     speaker: 早坂茜
     zh: 摘要還站得住。下一步，找能對上時間的物證。
     ja: サマリーはまだ崩れてない。次は、時刻と噛み合う物証を探す。
+    voice:
+      clip: ch1_hayasaka_akane_0044
   - id: L044
     speaker: 相馬律
     zh: 我知道。要動搖摘要，靠的是物證，不是他孝不孝順。
     ja: わかってる。サマリーを揺るがすのは物証だ。彼が親孝行かどうかじゃない。
+    voice:
+      clip: ch1_soma_ritsu_0108
   - id: L012
     speaker: 早坂茜
     zh: 把他的說法和現場紀錄一條條對上。
     ja: 彼の話と現場の記録を、ひとつずつ突き合わせて。
+    voice:
+      clip: ch1_hayasaka_akane_0045
   - id: L013
     speaker: 三宅蒼太
     zh: 那個時間……你要問，我再想一次。
@@ -75,10 +97,14 @@ lines:
     speaker: 相馬律
     zh: 把那段時間，從頭再理一次。
     ja: その時間のことを、最初から整理し直そう。
+    voice:
+      clip: ch1_soma_ritsu_0109
   - id: L015
     speaker: 相馬律
     zh: 等一下，這句先讓我想想。
     ja: 待って。そこ、少し考えさせて。
+    voice:
+      clip: ch1_soma_ritsu_0110
   - id: L016
     speaker: 三宅蒼太
     zh: 這句……應該沒問題吧？
@@ -87,6 +113,8 @@ lines:
     speaker: 相馬律
     zh: 不對，這對不上那個時間點。
     ja: 違う。これじゃ、その時刻と噛み合わない。
+    voice:
+      clip: ch1_soma_ritsu_0111
   - id: L018
     speaker: 三宅蒼太
     zh: 那個時候……我記不太清楚。關店的事很碎，我沒特別記。
@@ -95,6 +123,8 @@ lines:
     speaker: 相馬律
     zh: 那個時間，白板上的收銀關帳、清潔回收都還沒做完。你不會完全沒印象。
     ja: その時間は、ホワイトボードのレジ締めも、清掃と回収も、まだ終わってない。何も覚えてないはずはないよ。
+    voice:
+      clip: ch1_soma_ritsu_0112
   - id: L020
     speaker: 三宅蒼太
     expression: strained
@@ -112,10 +142,14 @@ lines:
     speaker: 相馬律
     zh: 後場那段，我再聽一次。
     ja: バックヤードのところ、もう一回聞かせて。
+    voice:
+      clip: ch1_soma_ritsu_0113
   - id: L024
     speaker: 相馬律
     zh: 這句，先停一下。
     ja: そこで、ちょっと止めて。
+    voice:
+      clip: ch1_soma_ritsu_0114
   - id: L025
     speaker: 三宅蒼太
     zh: 這……沒有不對吧？
@@ -124,6 +158,8 @@ lines:
     speaker: 相馬律
     zh: 不是這件，再找一次，別繞著清潔用品打轉。
     ja: これじゃない。探し直そう。清掃用品のところで堂々巡りしても仕方ない。
+    voice:
+      clip: ch1_soma_ritsu_0115
   - id: L027
     speaker: 三宅蒼太
     zh: 拿清潔用品。擦桌、倒垃圾那些，東西都放在後場。
@@ -136,6 +172,8 @@ lines:
     speaker: 相馬律
     zh: 只拿清潔用品？再想一次。
     ja: 清掃用品だけ？もう一度、思い出して。
+    voice:
+      clip: ch1_soma_ritsu_0116
   - id: L030
     speaker: 三宅蒼太
     expression: strained
@@ -153,6 +191,8 @@ lines:
     speaker: 相馬律
     zh: 內側倉庫，你確定一次都沒進？
     ja: 奥の倉庫には、本当に一度も入ってない？
+    voice:
+      clip: ch1_soma_ritsu_0117
   - id: L034
     speaker: 三宅蒼太
     zh: 確定。這點我真的沒進去。
@@ -169,10 +209,14 @@ lines:
     speaker: 相馬律
     zh: 那個外包的人，你看過？知道是誰嗎？
     ja: その外注の人、見たことある？誰だかわかる？
+    voice:
+      clip: ch1_soma_ritsu_0118
   - id: L038
     speaker: 早坂茜
     zh: 別急著把「外包的人」當成兇手。沒身分、沒時間、動線也對不上，這還不是證據。
     ja: 「外注の人」をすぐ犯人扱いしないで。身元も時刻もない、動線も合わない。これはまだ証拠じゃない。
+    voice:
+      clip: ch1_hayasaka_akane_0046
   - id: L039
     speaker: 三宅蒼太
     zh: 好像是……外包那邊的人吧。我只聽他說過一句，不知道對方長什麼樣。
@@ -181,7 +225,11 @@ lines:
     speaker: 相馬律
     zh: 一個要丟的蛋糕盒。他為這個撒了第一個小謊。
     ja: 捨てるはずだったケーキの箱。そのために、最初の小さな嘘をついた。
+    voice:
+      clip: ch1_soma_ritsu_0119
   - id: L041
     speaker: 相馬律
     zh: 通話時間先記成待確認，之後再正式調。
     ja: 通話の時刻は、ひとまず要確認の項目に。あとで正式に照会する。
+    voice:
+      clip: ch1_soma_ritsu_0120

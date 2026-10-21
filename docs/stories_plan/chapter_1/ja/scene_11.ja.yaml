@@ -57,6 +57,8 @@ lines:
     speaker: 相馬律
     zh: 好。
     ja: うん、いただくよ。
+    voice:
+      clip: ch1_soma_ritsu_0298
   - id: L013
     speaker: 三宅蒼太
     zh: 金木犀拿鐵……我請您。
@@ -65,10 +67,14 @@ lines:
     speaker: 相馬律
     zh: 謝謝。
     ja: ありがとう。
+    voice:
+      clip: ch1_soma_ritsu_0299
   - id: L015
     speaker: 相馬律
     zh: ……很甜。
     ja: ……甘いな。
+    voice:
+      clip: ch1_soma_ritsu_0300
   - id: L016
     speaker: 三宅蒼太
     zh: 啊、太甜了嗎？對不起，我糖放……
@@ -77,21 +83,29 @@ lines:
     speaker: 相馬律
     zh: 不。
     ja: いや。
+    voice:
+      clip: ch1_soma_ritsu_0301
   - id: L018
     speaker: 相馬律
     zh: 很好喝。
     ja: おいしいよ。
+    voice:
+      clip: ch1_soma_ritsu_0302
   - id: L019
     speaker: 早坂茜
     expression: softened
     zh: 偵探喝得這麼乾脆，看來真的不錯。
     ja: 探偵がこんなにすんなり飲むなら、本当においしいんですね。
+    voice:
+      clip: ch1_hayasaka_akane_0176
   - id: L020
     speaker: 早坂茜
     expression: softened
     zh: 不過證據顯示，他還需要練習。
     ja: ただ、証拠を見る限り、まだ練習が必要ですね。
     note: "Teasing: the 'evidence' is Soma's '...it's sweet'; the one who needs practice is Miyake."
+    voice:
+      clip: ch1_hayasaka_akane_0177
   - id: L021
     speaker: 三宅蒼太
     zh: 早、早坂小姐……
@@ -117,6 +131,8 @@ lines:
     speaker: 相馬律
     zh: 結案的，只是這一樁。
     ja: 片付いたのは、この一件だけだ。
+    voice:
+      clip: ch1_soma_ritsu_0303
   - id: L027
     speaker: 旁白
     zh: 增田留下的那支隨身碟，還沒有人打開過。

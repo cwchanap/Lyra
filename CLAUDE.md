@@ -92,7 +92,8 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   count and character total and needs no key; get the owner's OK on that total
   before a paid run. Uses `ELEVENLABS_API_KEY` and exit code 3 exactly like
   `audio:generate`: on exit 3 do not retry with `--force`. The SOP is the
-  `voicing-lyra-dialogue` skill.
+  `generating-lyra-voice-clips` skill; each role's picked voice and its cast
+  record live in `static/assets/config/voice_cast.yaml`.
 - `bun run check` / `bun run check:watch` - type-check Svelte + TS
   (`svelte-kit sync && svelte-check`). Run before declaring frontend work done.
 - `bun run check:scripts` - type-check `packages/scripts` (compiler + audio
@@ -298,8 +299,8 @@ Chinese). Narrative content has two kinds — keep them straight:
     `voice.direction` / `voice.tts`; names and terms follow
     `docs/stories_plan/ja_glossary.yaml`. Scene JSON never reads these files;
     `scenes:compile` reads them only for `dialogue_locale.ja.json`.
-    Translating, casting and generating voice follow the
-    `voicing-lyra-dialogue` skill.
+    Translating and casting follow the `voicing-lyra-dialogue` skill;
+    generating clips follows `generating-lyra-voice-clips`.
 
 Compiler unit tests use fixtures under `packages/scripts/__fixtures__/` (e.g.
 `valid/`, `valid_interrogation/`, `asset_enabled/`, and `invalid/<case>/` with

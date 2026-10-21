@@ -15,6 +15,8 @@ lines:
     speaker: 相馬律
     zh: 增田先生……到底想藏什麼。
     ja: 増田さん……いったい何を隠したかったんだ。
+    voice:
+      clip: ch1_soma_ritsu_0304
   - id: L003
     speaker: 旁白
     zh: 裡頭只有一個檔案。
@@ -23,6 +25,8 @@ lines:
     speaker: 相馬律
     zh: 加密的。
     ja: 暗号化されてる。
+    voice:
+      clip: ch1_soma_ritsu_0305
   - id: L005
     speaker: 旁白
     zh: 權限不足。
@@ -33,26 +37,38 @@ lines:
     zh: 還沒回家？
     ja: まだ帰ってないの？
     note: Over the phone.
+    voice:
+      clip: ch1_hayasaka_akane_0178
   - id: L007
     speaker: 相馬律
     zh: 增田的隨身碟，我打開了。
     ja: 増田さんのUSBメモリ、開けた。
+    voice:
+      clip: ch1_soma_ritsu_0306
   - id: L008
     speaker: 早坂茜
     zh: 北見的資料？
     ja: 北見のデータ？
+    voice:
+      clip: ch1_hayasaka_akane_0179
   - id: L009
     speaker: 相馬律
     zh: ……不像。
     ja: ……そうは見えない。
+    voice:
+      clip: ch1_soma_ritsu_0307
   - id: L010
     speaker: 早坂茜
     zh: 那是什麼？
     ja: じゃあ、何？
+    voice:
+      clip: ch1_hayasaka_akane_0180
   - id: L011
     speaker: 相馬律
     zh: 我也還不知道。
     ja: 僕にも、まだわからない。
+    voice:
+      clip: ch1_soma_ritsu_0308
   - id: L012
     speaker: 旁白
     zh: 警方移交清單最後一頁，附著匿名「雨宮」訊息的來源比對。
@@ -61,14 +77,20 @@ lines:
     speaker: 早坂茜
     zh: 北見的手機、電腦和承包帳號，都不是發訊來源。
     ja: 北見のスマホも、パソコンも、業者アカウントも、送信元じゃない。
+    voice:
+      clip: ch1_hayasaka_akane_0181
   - id: L014
     speaker: 相馬律
     zh: ……不是他。
     ja: ……彼じゃない。
+    voice:
+      clip: ch1_soma_ritsu_0309
   - id: L015
     speaker: 早坂茜
     zh: 來源不明，先按移交紀錄留檔。
     ja: 送信元は不明。ひとまず引き継ぎ記録として保管しておく。
+    voice:
+      clip: ch1_hayasaka_akane_0182
   - id: L016
     speaker: 旁白
     zh: 地方科技新聞報導雨鐘案與 KAGAMI 外包資料外洩，後續調查已經開始。
@@ -86,10 +108,14 @@ lines:
     speaker: 早坂茜
     zh: 要關掉嗎？
     ja: 消す？
+    voice:
+      clip: ch1_hayasaka_akane_0183
   - id: L020
     speaker: 相馬律
     zh: 先靜一會。
     ja: 今は、少し静かにしたい。
+    voice:
+      clip: ch1_soma_ritsu_0310
   - id: L021
     speaker: 旁白
     zh: 事務所的燈熄了，雨鐘門邊的傘架還留著一點微光。

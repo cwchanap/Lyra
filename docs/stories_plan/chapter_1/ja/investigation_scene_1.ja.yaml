@@ -11,87 +11,131 @@ lines:
     speaker: 相馬律
     zh: 雨聲也有它的節奏。資料排好了，人就不會慌。
     ja: 雨音にもリズムがある。資料が整っていれば、人は慌てない。
+    voice:
+      clip: ch1_soma_ritsu_0028
   - id: L002
     speaker: 相馬律
     zh: 先收好。別漏頁。
     ja: 先にしまっておく。一枚も抜けないように。
+    voice:
+      clip: ch1_soma_ritsu_0029
   - id: L003
     speaker: 相馬律
     zh: 七點四十。她今天早了。
     ja: 七時四十分。彼女、今日は早いな。
+    voice:
+      clip: ch1_soma_ritsu_0030
   - id: L004
     speaker: 相馬律
     zh: 約的是八點。早到的人，通常手上有事要交代。
     ja: 約束は八時だ。早く来る人は、たいてい何か用件を抱えてる。
+    voice:
+      clip: ch1_soma_ritsu_0031
   - id: L005
     speaker: 相馬律
     zh: 資料、場勘、程序，她管後面那一段，我走前面。
     ja: 資料、現場、手続き。後ろは彼女が受け持って、前は僕が歩く。
+    voice:
+      clip: ch1_soma_ritsu_0032
   - id: L019
     speaker: 早坂茜
     zh: 三宅蒼太的母親就拜託我們了。先去見她，再走審查會程序。
     ja: 三宅蒼太のお母さんから、私たちに任された。まず会いに行って、審査会の手続きはそれから。
+    voice:
+      clip: ch1_hayasaka_akane_0005
   - id: L020
     speaker: 相馬律
     zh: 好。我先把人和程序都擺到位，再回頭看這份摘要。
     ja: 分かった。まず人と手続きをそろえてから、このサマリーを見直す。
+    voice:
+      clip: ch1_soma_ritsu_0033
   - id: L021
     speaker: 早坂茜
     zh: 別折。審查會會先挑折角的頁。
     ja: 折らないで。審査会は、角の折れたページから突いてくる。
+    voice:
+      clip: ch1_hayasaka_akane_0006
   - id: L022
     speaker: 早坂茜
     zh: 我見過太多「差一張紙」輸掉的案子。
     ja: 「紙一枚足りなかった」で負けた案件を、嫌というほど見てきた。
+    voice:
+      clip: ch1_hayasaka_akane_0007
   - id: L006
     speaker: 早坂茜
     zh: 咖啡機還是只出熱水？
     ja: コーヒーメーカー、まだお湯しか出ない？
+    voice:
+      clip: ch1_hayasaka_akane_0008
   - id: L007
     speaker: 相馬律
     zh: 還在排隊等修。
     ja: まだ修理の順番待ち。
+    voice:
+      clip: ch1_soma_ritsu_0034
   - id: L008
     speaker: 早坂茜
     zh: 上次文書偽造案那台，你也是這樣說。
     ja: 前の文書偽造の案件のときも、同じことを言ってた。
+    voice:
+      clip: ch1_hayasaka_akane_0009
   - id: L009
     speaker: 相馬律
     zh: 地方小，東西多。但每一樣我都知道在哪。
     ja: 狭いし、物も多い。でも、どれがどこにあるかは全部分かってる。
+    voice:
+      clip: ch1_soma_ritsu_0035
   - id: L010
     speaker: 相馬律
     zh: 按時間排，誰先來、誰後到一眼就清楚；人會記錯，紙不會。
     ja: 時系列に並べれば、誰が先で誰が後か一目で分かる。人は記憶違いをするが、紙はしない。
+    voice:
+      clip: ch1_soma_ritsu_0036
   - id: L011
     speaker: 相馬律
     zh: 又只有水。先靠罐咖啡，等有空再修。
     ja: またお湯だけか。しばらく缶コーヒーでしのいで、暇ができたら直そう。
+    voice:
+      clip: ch1_soma_ritsu_0037
   - id: L012
     speaker: 相馬律
     zh: 機器壞著，就先靠這個。便利店的，省一點。
     ja: 機械が壊れてるうちは、これで。コンビニのだし、安く済む。
+    voice:
+      clip: ch1_soma_ritsu_0038
   - id: L013
     speaker: 相馬律
     zh: 時間、門、鏡頭，三條線都對上了。
     ja: 時刻、ドア、カメラ。三本の線が、きれいに揃ってる。
+    voice:
+      clip: ch1_soma_ritsu_0039
   - id: L014
     speaker: 早坂茜
     zh: 三宅蒼太的母親委託我們，案子已經走到審查會那一關。我把來源和收據收齊了，先看程序。
     ja: 三宅蒼太のお母さんからの依頼。案件はもう審査会の段階まで来てる。出所とレシートはそろえたから、まず手続きを見る。
+    voice:
+      clip: ch1_hayasaka_akane_0010
   - id: L015
     speaker: 相馬律
     zh: 審查會的文件都備齊了？
     ja: 審査会の書類は、全部そろってる？
+    voice:
+      clip: ch1_soma_ritsu_0040
   - id: L016
     speaker: 早坂茜
     zh: 程序我接。你先把現場走完，走完再信摘要。
     ja: 手続きは私が引き受ける。先に現場を歩いてきて。サマリーを信じるのは、それから。
+    voice:
+      clip: ch1_hayasaka_akane_0011
   - id: L017
     speaker: 相馬律
     zh: 好。那邊歸你，這邊歸我。
     ja: 分かった。そっちは任せる。こっちは僕が。
+    voice:
+      clip: ch1_soma_ritsu_0041
   - id: L018
     speaker: 相馬律
     zh: 正式的摘要，先收好。這是這件案子的入口。
     ja: 正式なサマリーだ。ちゃんとしまっておこう。この事件の入口だから。
+    voice:
+      clip: ch1_soma_ritsu_0042

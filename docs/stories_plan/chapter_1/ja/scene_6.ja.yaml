@@ -19,54 +19,80 @@ lines:
     speaker: 早坂茜
     zh: 先喝。你的胃今天只收過一個麵包。
     ja: 先に飲んで。今日、胃に入ったのはパン一個だけ。
+    voice:
+      clip: ch1_hayasaka_akane_0057
   - id: L004
     speaker: 相馬律
     zh: 事務所那台咖啡機還是壞的。中午只啃了個麵包。
     ja: 事務所のコーヒーメーカー、まだ壊れてるんだ。昼はパンをかじっただけ。
+    voice:
+      clip: ch1_soma_ritsu_0137
   - id: L005
     speaker: 早坂茜
     zh: 等雨小一點，再買飯糰。
     ja: 雨が少し弱まったら、おにぎりを買う。
+    voice:
+      clip: ch1_hayasaka_akane_0058
   - id: L006
     speaker: 相馬律
     zh: 你每次都拿紙本收據。
     ja: いつも紙のレシートをもらうよな。
+    voice:
+      clip: ch1_soma_ritsu_0138
   - id: L007
     speaker: 早坂茜
     zh: 紙的至少摸得到，放進包裡不會自己換地方。
     ja: 紙なら、少なくとも手で触れる。鞄に入れておけば、勝手に場所が変わらない。
+    voice:
+      clip: ch1_hayasaka_akane_0059
   - id: L008
     speaker: 相馬律
     zh: 你以前帶我跑第一個審查會，也先塞咖啡。
     ja: 初めて審査会に連れていってくれたときも、まずコーヒーを押しつけてきたよな。
+    voice:
+      clip: ch1_soma_ritsu_0139
   - id: L009
     speaker: 早坂茜
     zh: 那天你空腹站到散會，臉色比收據紙還白。
     ja: あの日は空きっ腹で閉会まで立ってて、顔色がレシートより白かった。
+    voice:
+      clip: ch1_hayasaka_akane_0060
   - id: L010
     speaker: 相馬律
     zh: 你居然記得。
     ja: よく覚えてるな。
+    voice:
+      clip: ch1_soma_ritsu_0140
   - id: L011
     speaker: 早坂茜
     zh: 你少吃一餐就更愛逞強。我只是不想再扶你一次。
     ja: 一食抜くと、余計に強がる。また肩を貸すのが嫌なだけ。
+    voice:
+      clip: ch1_hayasaka_akane_0061
   - id: L012
     speaker: 相馬律
     zh: 剛才第一次聽見摘要把三宅釘進嫌疑人，我就慌了。
     ja: さっき、サマリーが三宅さんを被疑者に決めつけるのを初めて聞いて、慌てたんだ。
+    voice:
+      clip: ch1_soma_ritsu_0141
   - id: L013
     speaker: 相馬律
     zh: 我一直想證明三宅不像兇手，差點又拿他的表情替他辯護。
     ja: ずっと三宅さんが犯人に見えないことを示そうとして、また表情で弁護しかけた。
+    voice:
+      clip: ch1_soma_ritsu_0142
   - id: L014
     speaker: 早坂茜
     zh: 第一次輸在會場，很正常。你還是我的搭檔，別拿那句話撐場。
     ja: 審査会で初めて負けるのは、普通のこと。相馬は今も私の相棒。あの一言で場をもたせようとしないで。
+    voice:
+      clip: ch1_hayasaka_akane_0062
   - id: L015
     speaker: 早坂茜
     zh: 人說的、店裡留下的、系統排的，先分開。
     ja: 人が言ったこと、店に残ってたもの、システムが並べたもの。まず分ける。
+    voice:
+      clip: ch1_hayasaka_akane_0063
   - id: L016
     speaker: 片瀨美咲
     zh: 啊，早坂律師。你們還沒走？我得趕末班車，先走了。
@@ -75,23 +101,35 @@ lines:
     speaker: 早坂茜
     zh: 路上小心。
     ja: お気をつけて。
+    voice:
+      clip: ch1_hayasaka_akane_0064
   - id: L018
     speaker: 相馬律
     zh: 早坂小姐。我想回雨鐘一趟。
     ja: 早坂さん。雨鐘に一度戻りたい。
+    voice:
+      clip: ch1_soma_ritsu_0143
   - id: L019
     speaker: 早坂茜
     zh: 再看一次摘要？
     ja: サマリーをもう一度読む？
+    voice:
+      clip: ch1_hayasaka_akane_0065
   - id: L020
     speaker: 相馬律
     zh: 不是。我想再走一遍那間店。
     ja: いや。あの店を、もう一度歩きたいんだ。
+    voice:
+      clip: ch1_soma_ritsu_0144
   - id: L021
     speaker: 相馬律
     zh: 剛才我只看見它排好的故事。
     ja: さっきは、サマリーが並べた物語しか見てなかった。
+    voice:
+      clip: ch1_soma_ritsu_0145
   - id: L022
     speaker: 早坂茜
     zh: 那就去看它沒寫出的地方。
     ja: なら、サマリーに書かれなかったところを見に行こう。
+    voice:
+      clip: ch1_hayasaka_akane_0066

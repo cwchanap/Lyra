@@ -23,6 +23,8 @@ lines:
     speaker: 相馬律
     zh: 他呢？
     ja: 息子さんは？
+    voice:
+      clip: ch1_soma_ritsu_0043
   - id: L005
     speaker: 三宅母親
     zh: 他啊。忙起來就忘記吃飯。
@@ -44,14 +46,20 @@ lines:
     speaker: 相馬律
     zh: 這句話，我不能當證據。
     ja: その言葉を、証拠として扱うことはできません。
+    voice:
+      clip: ch1_soma_ritsu_0044
   - id: L010
     speaker: 早坂茜
     zh: 所以我們才需要去找證據。
     ja: だから、私たちが証拠を探しに行くんです。
+    voice:
+      clip: ch1_hayasaka_akane_0012
   - id: L011
     speaker: 早坂茜
     zh: 阿姨，能不能把他的班表也給我們一份？
     ja: お母さん、息子さんのシフト表も一部いただけますか？
+    voice:
+      clip: ch1_hayasaka_akane_0013
   - id: L012
     speaker: 三宅母親
     zh: 班表……我有影本。他每次排了班，都會抄一張貼在冰箱上。
@@ -60,30 +68,44 @@ lines:
     speaker: 相馬律
     zh: 我會收下委託。
     ja: ご依頼は、お引き受けします。
+    voice:
+      clip: ch1_soma_ritsu_0045
   - id: L014
     speaker: 相馬律
     zh: 但我得先告訴您，今天我能做的，不是證明他清白。
     ja: ただ、先にお伝えしておきます。今日僕にできるのは、息子さんの無実を証明することではありません。
+    voice:
+      clip: ch1_soma_ritsu_0046
   - id: L015
     speaker: 相馬律
     zh: 是替他爭取，把證據重新看一遍的機會。
     ja: 息子さんのために、証拠をもう一度見直す機会を勝ち取ることです。
+    voice:
+      clip: ch1_soma_ritsu_0047
   - id: L016
     speaker: 相馬律
     zh: 她沒有哭。比哭還難受。
     ja: 泣かなかったな。泣かれるより、ずっときつい。
+    voice:
+      clip: ch1_soma_ritsu_0048
   - id: L017
     speaker: 早坂茜
     zh: 委託書我備好了。這次不能只看摘要，檢方打算直接起訴。
     ja: 委任状は用意した。今回はサマリーを眺めてるだけじゃ済まない。検察側は、このまま起訴する気だ。
+    voice:
+      clip: ch1_hayasaka_akane_0014
   - id: L018
     speaker: 相馬律
     zh: 那就去敲。
     ja: なら、扉を叩きに行こう。
+    voice:
+      clip: ch1_soma_ritsu_0049
   - id: L019
     speaker: 相馬律
     zh: 審查會的入口，比我想的要冷清。
     ja: 審査会の入口、思ってたよりひっそりしてるな。
+    voice:
+      clip: ch1_soma_ritsu_0050
   - id: L020
     speaker: 書記官
     zh: 先生，請出示身分。
@@ -92,10 +114,14 @@ lines:
     speaker: 相馬律
     zh: 我是受委託的偵探——
     ja: 依頼を受けて来た探偵で――
+    voice:
+      clip: ch1_soma_ritsu_0051
   - id: L022
     speaker: 早坂茜
     zh: 辯方聘任書。法院核准函。還有第三方資料分析人的指定文件。
     ja: 弁護人の選任書です。裁判所の承認書。それから、第三者データ分析人の指定書類です。
+    voice:
+      clip: ch1_hayasaka_akane_0015
   - id: L023
     speaker: 書記官
     zh: ……文件齊全。但你們不是警方，能看的只有審查會核准的片段。
@@ -104,10 +130,14 @@ lines:
     speaker: 相馬律
     zh: 所以摘要，不是全部？
     ja: つまり、サマリーがすべてじゃない？
+    voice:
+      clip: ch1_soma_ritsu_0052
   - id: L025
     speaker: 早坂茜
     zh: 摘要是系統整合的公開版。先去看現場，片段等核准。
     ja: サマリーは、システムがまとめた公開版。先に現場を見る。抜粋は承認待ち。
+    voice:
+      clip: ch1_hayasaka_akane_0016
   - id: L026
     speaker: 書記官
     zh: 登記好了。你們先去看現場，核准片段等通知。
@@ -120,28 +150,42 @@ lines:
     speaker: 相馬律
     zh: 早坂小姐。今天如果我們提不出來，會怎麼樣？
     ja: 早坂さん。今日、もし何も出せなかったら、どうなる？
+    voice:
+      clip: ch1_soma_ritsu_0053
   - id: L029
     speaker: 早坂茜
     zh: 今天如果證明不了摘要時間線的具體矛盾，三宅會被起訴，之後能要求的片段也會少很多。
     ja: 今日サマリーのタイムラインに具体的な矛盾を示せなければ、三宅さんは起訴される。あとで請求できる抜粋も、ぐっと減る。
+    voice:
+      clip: ch1_hayasaka_akane_0017
   - id: L030
     speaker: 相馬律
     zh: 今天不是要贏一場辯論，而是保住重新看證據的權利。
     ja: 今日は議論に勝つ日じゃない。証拠を見直す権利を守る日なんだ。
+    voice:
+      clip: ch1_soma_ritsu_0054
   - id: L031
     speaker: 相馬律
     zh: 我以前做資料分析，總站在系統那邊看摘要；第一次站到這邊，覺得它變重了。
     ja: データ分析をしてた頃は、いつもシステム側からサマリーを見てた。初めてこっち側に立って、重く感じる。
+    voice:
+      clip: ch1_soma_ritsu_0055
   - id: L032
     speaker: 早坂茜
     zh: 重就對了。走吧。
     ja: 重くていい。行こう。
+    voice:
+      clip: ch1_hayasaka_akane_0018
   - id: L033
     speaker: 早坂茜
     expression: stern
     zh: 截圖只能讓我們懷疑；要救他，得拿可以被採用的東西。
     ja: スクリーンショットで持てるのは疑いだけ。救うなら、採用されるもので救う。
+    voice:
+      clip: ch1_hayasaka_akane_0019
   - id: L034
     speaker: 相馬律
     zh: 我知道了。
     ja: 分かった。
+    voice:
+      clip: ch1_soma_ritsu_0056
