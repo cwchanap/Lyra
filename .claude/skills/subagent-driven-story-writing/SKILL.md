@@ -32,8 +32,13 @@ format details (those live in the `writing-*` skills this skill dispatches to).
 | Role | Owns |
 |---|---|
 | **Orchestrator** (you) | Reading sources, canon reconciliation, `chapter.md` manifest, the IDs, every subagent brief, validation, review dispatch, remediation triage, reporting. |
-| **Writing subagent** (1 per scene file) | Only its one scene file's body. Starts cold. |
-| **Review subagent** (1 per batch) | A findings report. Edits nothing. |
+| **Writing subagent** (1 per scene file) | Only its one scene file's body. Starts cold. Dispatched as the `story-writer` agent. |
+| **Review subagent** (1 per batch) | A findings report. Edits nothing. Dispatched as the `story-reviewer` agent. |
+
+Both agents are defined in `.claude/agents/` and run on **Sonnet at medium
+effort**. Dispatch them with the Agent tool's `subagent_type`; if a host cannot
+load `.claude/agents/`, use a general-purpose agent with `model: "sonnet"` and
+`effort: "medium"`. Do not raise the model or effort unless the user asks.
 
 ## Workflow
 
@@ -65,10 +70,10 @@ format details (those live in the `writing-*` skills this skill dispatches to).
    locked block with no inbound path; a missing `#### On Collect`; an H2 inside
    a linear scene; a dialogue line >100 chars) and re-run until green. Don't
    edit the compiler.
-7. **REVIEW gate.** Dispatch a separate review subagent (capable model) whose
+7. **REVIEW gate.** Dispatch a separate review subagent (`story-reviewer`) whose
    brief's first action is to invoke Skill `reviewing-story-scenes` — see the
-   review brief below. Triage findings: fix Blocker/Important, re-run the GREEN
-   gate, then re-review if needed. Minor/"no change required" can ship.
+   review brief below. Triage findings: fix Blocker/Important (dispatch a
+   `story-writer` with the findings pasted in), re-run the GREEN gate, then re-review if needed. Minor/"no change required" can ship.
 8. **Report and stop.** State files written, the `OK` line, and the review
    verdict. Commit only if the user asks (branch off `main` first).
 

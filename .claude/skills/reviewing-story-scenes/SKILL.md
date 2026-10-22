@@ -105,7 +105,7 @@ Axis 9), one axis at a time.** For each axis, run two subagents in sequence:
 
 1. **Review agent** (read-only — use the `story-reviewer` profile) — reads the
    axis's sources, produces a findings report with a per-axis verdict.
-2. **Implementer agent** (write access — use the `subagent_general` profile) —
+2. **Implementer agent** (write access — use the `story-writer` profile) —
    **only if** the review agent returned `BLOCKERS-PRESENT` or
    `FIX-RECOMMENDED` with Blocker/Important findings — reads the same sources
    plus the review agent's findings, and edits the authored scene files to
@@ -148,7 +148,7 @@ Each review-agent brief must contain:
    produces a findings report only.
 
 Use the `story-reviewer` profile so the review agent is hard-blocked from
-editing.
+editing (see "Subagent profiles" below).
 
 ### Step 2b — Implementer agent brief (per axis, only if review found Blocker/Important)
 
@@ -201,9 +201,24 @@ Each implementer-agent brief must contain:
    - A short list of any new text the implementer added that the next axis's
      reviewer should be aware of (so the orchestrator can note it).
 
-Use the `subagent_general` profile so the implementer has write access to
+Use the `story-writer` profile so the implementer has write access to
 authored scene files. The implementer must **not** be granted write access to
 generated resource JSON or to files outside the chapter directory.
+
+### Subagent profiles
+
+Both profiles are agent definitions checked into `.claude/agents/` and run on
+**Sonnet at medium effort** (`model: sonnet`, `effort: medium` in their
+frontmatter):
+
+- `story-reviewer` — read-only (Read, Grep, Glob, Bash). Every review agent,
+  including the stale-axis refresh pass.
+- `story-writer` — can edit authored scene Markdown. Every implementer agent.
+
+Dispatch them with the Agent tool's `subagent_type` set to the profile name.
+If a host cannot load `.claude/agents/`, dispatch a general-purpose agent with
+`model: "sonnet"` and `effort: "medium"` and copy the profile's rules into the
+brief. Do not raise the model or effort for a single axis unless the user asks.
 
 ### The nine axes (run in this order)
 
@@ -212,10 +227,10 @@ generated resource JSON or to files outside the chapter directory.
 | **1. Canon / factual** | Names, victim, true culprit, times, locations, roster match bible/plan. Verify against the bible line — never assume (e.g. confirm the suspect's exact given name rather than trusting recall). | Bible character sections + `characters.md` roster/設定 + `chapter.md` summary + scene dialogue mentioning names/roles/times |
 | **2. Forbidden / premature reveals** | Nothing on the addendum 不要做 / 伏筆留白 list surfaces early. A detail allowed to be *shown* must not be *explained*. | Addendum forbidden-reveal list + bible sealed-lore sections + all scene dialogue and evidence descriptions |
 | **3. Voice, style, narration & expression** | Each character matches the `characters.md` 台詞風格 + addendum voice guide; no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified, no JP-only kanji). Apply the base narration assignment and catalog-bounded expression choreography to all four scene types: visible action/state stays bracketed, present-character judgment stays in dialogue, and a fitting configured expression is used for a meaningful transition without line-by-line flicker. For analysis scenes inspect Intro, every `### Result Dialogue`, and Outro. | `characters.md` per-character 台詞風格/禁止 + `static/assets/config/characters.yaml` labels/modes/slugs + addendum voice guides + `writing-detective-game-dialogue` format rules + every dialogue carrier in the reviewed scene files |
-| **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. | Plan evidence-package list + all scene files (outros, intros, evidence manifests, statement manifests, unlock chains) |
+| **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. Dialogue time and history words match the scene order: "today" vs "tomorrow", "daytime" vs a night visit, "last night", and every "first time" / 第一次 claim (a character can't have a first hearing twice, or one the player already saw). Objects keep their state across scenes (sealed evidence stays sealed; a room's props don't jump to another location's `[場景：...]` tag). | Plan evidence-package list + all scene files (outros, intros, evidence manifests, statement manifests, unlock chains) |
 | **5. Visual background coverage** | Keep the existing completeness, compiled-ID, and asset-file checks: every player-visible location change that needs a backdrop has authored `Background Prompt` metadata and compiles to a non-null `backgroundAssetId`; linear queues and investigation/interrogation/analysis intros establish a background before the first dialogue/action unless carry-over is documented; for analysis scenes check the Intro, every `### Result Dialogue`, and the Outro when those dialogue carriers author a visual transition, using their `[場景：...]` + supported asset metadata cues — the analysis board UI itself carries no cue, so do not flag a board panel for a missing background; report `assetFileMissing` separately from a missing prompt. Then check catalog/portrait appropriateness, spatial usability (hotspots plus visible floor/standee clearance), same-location continuity (stable anchors, adjacency, and case props), and purposeful variation. Do not flag a same-view carry-over as missing variation or a duplicate merely because it reuses a materially unchanged view. **Note:** `assetFileMissing` (the PNG does not exist) is not fixable by the implementer — escalate it as `ASSET-MISSING — needs human` (use the `generating-lyra-image-assets` skill). The implementer can fix missing `Background Prompt` metadata and missing `Background Asset ID` references in authored Markdown. | All scene files with `[場景：...]`, `Background Prompt`, `Background Asset ID`, sub-location metadata, interrogation phase metadata, analysis Intro/Result Dialogue/Outro scene tags + `static/assets/config/characters.yaml` + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` + `bun run scenes:compile` warnings |
 | **6. Investigation interaction balance** | The chapter's investigation scenes' interaction points, *in aggregate*, follow the addendum §2.1 ratio guidance: ~45% 破案資訊 (directly support the three evidence packages), ~30% 角色生活資訊 (make characters feel alive), ~20% 氣氛與伏筆 (blue umbrella, osmanthus, rain, shop objects), ~5% 錯誤焦點 / 紅鯡魚 (let players briefly suspect the manager, Katase, or deeper Miyake lies). The ratio is per-chapter, not per-scene — a single scene may legitimately concentrate in one bucket (e.g. a reversal scene mostly 破案). Flag the chapter-wide aggregate when it starves a bucket, and flag individual points that leak case-breaking info through a 生活/氣氛 point. | Addendum §2.1 ratio table + all `investigation_scene_*.md` hotspot/topic/evidence manifests + evidence-package list from the plan |
-| **7. Natural conversation & situational context** | Every scene has enough natural, non-case dialogue to ground the player before investigation/hearing mechanics begin. Check against addendum §5.4 minimums: linear transitions ≥25% breathing dialogue, investigation scenes need 2–3 lines of pre-investigation dialogue (why we're here, partner check-in, first impression), interrogation/hearing scenes need 2–3 lines of pre-proceeding partner dialogue, breathing points ≥30%. New characters get a natural introduction exchange, not just a Bio field. Flag scenes that open directly into case mechanics with no human grounding, scenes where the 相馬/早坂 partnership has no relational texture (no history, no familiarity, no working dynamic), and breathing points that are actually case summaries in dialogue form. | Addendum §5.4 ratio table + all scene files' opening dialogue blocks + `characters.md` voice guides for partnership dynamics |
+| **7. Natural conversation & situational context** | Every scene has enough natural, non-case dialogue to ground the player before investigation/hearing mechanics begin. Check against addendum §5.4 minimums: linear transitions ≥25% breathing dialogue, investigation scenes need 2–3 lines of pre-investigation dialogue (why we're here, partner check-in, first impression), interrogation/hearing scenes need 2–3 lines of pre-proceeding partner dialogue, breathing points ≥30%. New characters get a natural introduction exchange, not just a Bio field. Flag scenes that open directly into case mechanics with no human grounding, scenes where the 相馬/早坂 partnership has no relational texture (no history, no familiarity, no working dynamic), and breathing points that are actually case summaries in dialogue form. **Motivation and reader context:** every choice a character makes on the page (taking a case, cooperating with the other side, showing up somewhere, handing over evidence) has an on-page reason the player can state; the protagonist and each recurring character are introduced by who they are and why they're here on first appearance, not only by nameplate; each case shows what is at stake for the person involved; arrivals are not unexplained coincidences; a character is not named in dialogue before the player has met or been told about them; and narration that flags an oddity ("這種事，通常不會…") is followed by its answer. Flag a scene where a reader would ask "why would they do that?" or "who is this?" and the text never answers. | Addendum §5.4 ratio table + all scene files' opening dialogue blocks + `characters.md` voice guides for partnership dynamics |
 | **8. Visual-novel prose economy** | This is a visual novel, not a text-only novel — the background image already shows the location, weather, lighting, and atmosphere; the character portrait already shows appearance, posture, and expression. Narration and bracketed stage directions must not redundantly describe what the visuals already convey. Prose should add only what the visuals cannot: internal state, off-screen sounds, time passage, tactile details, scent. Flag paragraphs of scene-setting description that duplicate the `Background Prompt` / `[場景：...]` cue, character appearance narration that duplicates what the portrait and `characters.yaml` expression slug already show, and atmosphere description that the BGM/BGS channel or the background art already carries. Do not flag concise stage directions that direct a meaningful visual transition (expression change, new character entering) — those are choreography, not redundancy. | All scene files' narration blocks and bracketed stage directions + `static/assets/config/characters.yaml` (what portraits/expressions already convey) + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` `backgroundAssetId` (what background art is shown) + `writing-detective-game-dialogue` format rules |
 | **9. Interrogation loop dialogue naturalness** | Specific to `interrogation_scene_*.md`. The interrogation loop (question selection → testimony → evidence challenge → response) produces dialogue fragments the player assembles in variable order. When the dialogue carriers are read connected together in the order a player would typically encounter them, the exchange should feel like a natural cross-examination — not disjointed menu prompts, not repetitive beats, not testimony that contradicts itself across re-challenges. Check that: locked/unlocked question transitions flow like a coherent line of questioning, testimony lines don't repeat the same denial verbatim across multiple questions, challenge responses acknowledge the specific evidence presented rather than generic deflection, and the overall arc builds tension rather than circling or resetting. Read the interrogation scene's dialogue carriers in sequence and flag jarring jumps, redundant denials across questions, beats that feel like a menu rather than a conversation, and challenge responses that could swap between evidence without noticing. | All `interrogation_scene_*.md` files (questions, testimony, challenge responses, outro) + `characters.md` voice guides for the suspect + `writing-interrogation-scene` skill format rules + addendum voice guides |
 
@@ -230,7 +245,7 @@ For each axis N (1 → 9), in order:
    implementer**, record the axis as `SHIP` / `MINOR-ONLY`, and continue to the
    next axis.
 4. Otherwise, spawn the **implementer agent** (foreground,
-   `subagent_general` profile) with the Step 2b brief, pasting the review
+   `story-writer` profile) with the Step 2b brief, pasting the review
    agent's findings verbatim. Wait for its fix report.
 5. Record the implementer's `FIXES-APPLIED` / `PARTIAL` /
    `STRUCTURAL-ESCALATED` / `NO-OP` verdict and the per-finding fix lines.
