@@ -166,6 +166,12 @@ export const anchors = {
       destination: "saegusa_stream_studio",
       next: "investigation_scene_5",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_03",
+      destination: "kagami_review_room",
+      next: "interrogation_scene_6",
+    },
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",

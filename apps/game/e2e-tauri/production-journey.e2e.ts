@@ -122,7 +122,7 @@ async function crossGate(
 
 /**
  * Authored cross-examination routes: the correct contradicting evidence for
- * every required question on the normal Chapter 1 route (content coupling
+ * every required question on the normal Chapter 1 and 2 routes (content coupling
  * points, like the anchors tables; wrapper IDs stay in anchors.mapGates).
  */
 const interrogationChallenges: Record<
@@ -139,6 +139,23 @@ const interrogationChallenges: Record<
       phaseId: "ask_miyake",
       questionId: "q_backroom",
       evidenceId: "cctv_screenshot",
+    },
+  ],
+  interrogation_scene_6: [
+    {
+      phaseId: "p_observation",
+      questionId: "q_crowd",
+      evidenceId: "togawa_video_position_check",
+    },
+    {
+      phaseId: "p_observation",
+      questionId: "q_0014",
+      evidenceId: "platform_archive_rule",
+    },
+    {
+      phaseId: "p_observation",
+      questionId: "q_phone",
+      evidenceId: "mashiro_phone_dock",
     },
   ],
   interrogation_scene_10: [

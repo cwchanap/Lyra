@@ -344,3 +344,27 @@ Writer 回報後由 orchestrator 補入下表；後續 beat 的「更新後描�
 - `statement:hasumi_back_standby_account`：蓮見說，助理導播在頻道上叫他，他回「人在背面安全位，我去接」；走到背面時安全位沒人，之後在後台與休息區一帶找她。不給時間，不給路線。
 - `statement:togawa_saw_mashiro`：戶川說，她整段午夜贊助段都在應援區看著真白，也拍了下來；真白沒有離開箱子。
 - `statement:saegusa_watched_until_cut`：三枝說，十二點關台後在家看真白的直播看到斷；「她十幾分鐘一動不動，我還以為她睡著了」。
+
+## 9. Beat 5（第一輪審查會——摘要先贏）編排決定
+
+### 9.1 檔案與順序
+
+- `investigation_scene_map_03.md`：東京地圖上前往 `kagami_review_room`（KAGAMI 證據摘要審查室）的 wrapper，接在 scene 5（三枝工作室）之後。
+- `interrogation_scene_6.md`：第一輪審查會。一個 inquiry phase `p_observation`，主體 `kamiya`（神谷主持、逐點宣讀摘要），三個 Question 以 Unlock 串起：
+  - `q_crowd`：`summary_crowd_saw_her` ← `evidence:togawa_video_position_check`
+  - `q_0014`：`summary_platform_until_0014` ← `evidence:platform_archive_rule`
+  - `q_phone`：`summary_phone_in_box` ← `evidence:mashiro_phone_dock`
+- 本 beat 不新增證物、不新增陳述，不用 Reveals。
+
+### 9.2 審查會狀態（案發翌日上午）
+
+- 時間：案發翌日 10:00 開始，地點 KAGAMI 證據摘要審查室，神谷主持；三枝列席，蓮見與戶川在旁聽席。
+- 戶川的影片原檔仍在她手機裡，尚未固定。相馬只能把位置比對當成「待固定的線索」提出，神谷只記錄、不採為證物（遵守黑瀨「別拿去審查會上亂用」）。
+- 三枝帳號後台仍是委託人提供的線索，未經平台核實。
+
+### 9.3 結果與固定數值（後續 beat 沿用）
+
+- 結論維持：摘要第一點的觀測來源疑點三項正式記錄在案，但結論不推翻。
+- 神谷留下三個辯方必須回答的問題：如果她離開過箱子，是怎麼離開的；就算有那條路，誰能走；為什麼不是三枝。Beat 6–9 依序回答。
+- 神谷准許辯方在**七十二小時內**以書面申請下一輪審查（新固定值）。
+- 散會後相馬請戶川保留原檔；下一步是向黑瀨申請調閱、固定原檔與時間碼。
