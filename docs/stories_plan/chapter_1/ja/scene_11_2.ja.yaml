@@ -41,8 +41,8 @@ lines:
       clip: ch1_hayasaka_akane_0178
   - id: L007
     speaker: 相馬律
-    zh: 增田的隨身碟，我打開了。
-    ja: 増田さんのUSBメモリ、開けた。
+    zh: "增田那支隨身碟的副本，我打開了。"
+    ja: "増田さんのUSBメモリの複製、開けた。"
     voice:
       clip: ch1_soma_ritsu_0306
   - id: L008

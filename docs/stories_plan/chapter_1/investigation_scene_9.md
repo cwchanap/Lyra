@@ -26,7 +26,7 @@
 
 **早坂茜**：不能。那不是律師私下翻得到的東西。 {#L008}
 
-**早坂茜**：我是憑審查會確認過的那幾條矛盾，正式申請調的。 {#L009}
+**早坂茜**：我是憑那幾條獨立矛盾，正式申請調的。 {#L009}
 
 **早坂茜**：所以拿到的，只有跟那扇門鎖有關的工單。 {#L010}
 
@@ -163,6 +163,8 @@
 - **Unlock:** evidence:temp_maintenance_workorder collected and evidence:kitami_external_access collected and evidence:contractor_umbrella_sleeve_match collected
 - **Description:** 北見修一已被請到隔壁的訪談室，可以過去當面問。
 - **Reveals:** [sublocation:confront_kitami]
+
+**黑瀨徹**：北見在隔壁。我以協力詢問請他來的，他隨時可以走。 {#L105}
 
 [相馬律把三份材料疊齊，手指在公事包的搭扣上停了一下。]
 

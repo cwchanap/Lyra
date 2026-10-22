@@ -9,11 +9,11 @@
 
 **旁白**：那天深夜，相馬回到事務所。 {#L001}
 
-[相馬從證物袋裡取出一支隨身碟，是增田圭留下的。]
+[筆電旁放著一張鑑識移交單。辯方能看的，是增田那支隨身碟的唯讀副本。]
 
 **相馬律**：增田先生……到底想藏什麼。 {#L002}
 
-[他把隨身碟插上筆電。螢幕跳出一行目錄。]
+[他把那支副本隨身碟插上筆電。螢幕跳出一行目錄。]
 
 **旁白**：裡頭只有一個檔案。 {#L003}
 
@@ -29,7 +29,7 @@
 
 **早坂茜**：還沒回家？ {#L006}
 
-**相馬律**：增田的隨身碟，我打開了。 {#L007}
+**相馬律**：增田那支隨身碟的副本，我打開了。 {#L007}
 
 **早坂茜**：北見的資料？ {#L008}
 
@@ -54,7 +54,7 @@
 
 **早坂茜**：來源不明，先按移交紀錄留檔。 {#L015}
 
-[相馬闔上筆電，把隨身碟收回證物袋；螢幕上的檔名隨即消失。]
+[相馬闔上筆電；螢幕上的檔名隨即消失。]
 
 [場景：地方科技新聞／雨鐘咖啡館後續頁面，夜晚。合法拍攝的咖啡館入口在雨後街面上，傘架邊角掠過一把藍色透明傘。]
 - **Background Prompt:** Local technology news follow-up showing a legally filmed Rain Bell cafe entrance after rain at night, a blue transparent umbrella only briefly visible at the edge of the umbrella stand, restrained public-media framing, no readable text, no USB or private file.

@@ -616,7 +616,7 @@ mod tests {
             Some(DialogueIdentity {
                 kind: DialogueKind::Line,
                 speaker: Some("相馬律".into()),
-                text: "……就是這家。".into(),
+                text: "事務所的印表機又沒碳粉了。意見書只好來這裡印。".into(),
                 portrait_character_id: Some("soma_ritsu".into()),
                 portrait_expression: Some("standard".into()),
                 portrait_asset_id: Some("portrait.soma_ritsu.standard".into()),
@@ -729,7 +729,7 @@ mod tests {
                 "dialogue": {
                     "kind": "line",
                     "speaker": "相馬律",
-                    "text": "……就是這家。",
+                    "text": "事務所的印表機又沒碳粉了。意見書只好來這裡印。",
                     "portraitCharacterId": "soma_ritsu",
                     "portraitExpression": "standard",
                     "portraitAssetId": "portrait.soma_ritsu.standard"

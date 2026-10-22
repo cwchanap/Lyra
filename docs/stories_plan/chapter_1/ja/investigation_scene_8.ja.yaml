@@ -9,8 +9,8 @@ source: docs/stories_plan/chapter_1/investigation_scene_8.md
 lines:
   - id: L001
     speaker: 相馬律
-    zh: 又回來了。白天看表面，這次把那扇門固定下來。
-    ja: また戻ってきた。昼間は表面を見ただけだ。今度は、あのドアを保全する。
+    zh: "又回來了。上次看表面，這次把那扇門固定下來。"
+    ja: "また戻ってきた。前回は表面を見ただけだ。今度は、あのドアを保全する。"
     voice:
       clip: ch1_soma_ritsu_0183
   - id: L002
