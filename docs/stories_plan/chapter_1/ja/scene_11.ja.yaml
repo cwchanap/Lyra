@@ -94,11 +94,13 @@ lines:
   - id: L028
     speaker: 三宅蒼太
     zh: 我媽說……下次換她做飯糰，給兩位帶過去。
-    ja: "母が……今度は自分がおにぎりを作って、お二人に持っていくって。"
+    ja: 母が……今度は自分がおにぎりを作って、お二人に持っていくって。
   - id: L029
     speaker: 相馬律
     zh: ……那我先把咖啡機修好。
-    ja: "……じゃあ、先にコーヒーメーカーを直しておきます。"
+    ja: ……じゃあ、先にコーヒーメーカーを直しておきます。
+    voice:
+      clip: ch1_soma_ritsu_0327
   - id: L019
     speaker: 早坂茜
     expression: softened
@@ -133,8 +135,8 @@ lines:
     note: She = the manager; it = the stopped old wall clock she has just boxed up.
   - id: L025
     speaker: 旁白
-    zh: "三宅那杯太甜的拿鐵，也喝完了。"
-    ja: "三宅の甘すぎるラテも、飲み干された。"
+    zh: 三宅那杯太甜的拿鐵，也喝完了。
+    ja: 三宅の甘すぎるラテも、飲み干された。
   - id: L026
     speaker: 相馬律
     zh: 結案的，只是這一樁。
