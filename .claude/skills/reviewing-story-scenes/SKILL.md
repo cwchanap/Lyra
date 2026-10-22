@@ -74,9 +74,11 @@ For the chapter under review (under `docs/stories_plan/`), locate these paths (l
   directory.
 - **Compiled scene JSON** under `src-tauri/resources/scenes/chapter_<N>/` after
   `bun run scenes:compile` — visual coverage is checked against runtime output,
-  not only authored Markdown. Subagents read generated JSON for review evidence
-  only; the implementer does not edit generated JSON (regenerate it with
-  `bun run scenes:compile`).
+  not only authored Markdown. You (the dispatcher) run the compile before
+  dispatching reviewers and paste its warnings into each brief; the read-only
+  `story-reviewer` never runs it. Subagents read generated JSON for review
+  evidence only; the implementer does not edit generated JSON (regenerate it
+  with `bun run scenes:compile`).
 - The relevant `writing-*` skills for format rules (≤100-char dialogue lines,
   Traditional-only, scene structure).
 
