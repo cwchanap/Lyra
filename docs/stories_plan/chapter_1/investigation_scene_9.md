@@ -339,7 +339,7 @@
 ### evidence:contractor_umbrella_sleeve_match {#contractor_umbrella_sleeve_match}
 - **Name:** 承包商資材包傘套來源比對
 - **Description:** 資材包清單裡的透明傘套，與後場那只濕傘套的來源比對。
-- **Details:** 資材包傘套的尺寸與摺痕和後場牆角的濕傘套一致，卻比地上半乾水痕新；它不能單獨定罪或辨認更早進場者，只留承包商資材在此路線上的時間與動線脈絡。要對到人，仍須臨時維護工單和外包憑證。
+- **Details:** 資材包傘套的尺寸與摺痕和後場牆角那只傘套一致；初勘照片裡，那只傘套比地上的半乾水痕新；它不能單獨定罪或辨認更早進場者，只留承包商資材在此路線上的時間與動線脈絡。要對到人，仍須臨時維護工單和外包憑證。
 - **Source Sublocation:** contractor_desk
 - **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
 
