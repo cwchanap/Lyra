@@ -339,7 +339,7 @@
 ### evidence:contractor_umbrella_sleeve_match {#contractor_umbrella_sleeve_match}
 - **Name:** 承包商資材包傘套來源比對
 - **Description:** 資材包清單裡的透明傘套，與後場那只濕傘套的來源比對。
-- **Details:** 資材包傘套的尺寸與摺痕和後場牆角那只傘套一致；初勘照片裡，那只傘套比地上的半乾水痕新；它不能單獨定罪或辨認更早進場者，只留承包商資材在此路線上的時間與動線脈絡。要對到人，仍須臨時維護工單和外包憑證。
+- **Details:** 資材包傘套的尺寸與摺痕和後場牆角那只傘套一致；初勘照片裡它還在滴水，但排不出先後；它不能單獨定罪或辨認更早進場者，只留承包商資材在此路線上的時間與動線脈絡。要對到人，仍須臨時維護工單和外包憑證。
 - **Source Sublocation:** contractor_desk
 - **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
 
@@ -347,7 +347,7 @@
 
 **相馬律**：資材包這只傘套，尺寸和摺痕都對得上後場那只。 {#L082}
 
-**早坂茜**：但那只是較晚的雨水。它只留在動線脈絡裡。 {#L083}
+**早坂茜**：但傘套排不出先後。它只留在動線脈絡裡。 {#L083}
 
 **早坂茜**：更早進來的是誰，還得看工單和憑證。 {#L084}
 
