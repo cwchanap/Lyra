@@ -453,14 +453,14 @@ lines:
       clip: ch1_kurose_toru_0027
   - id: L071
     speaker: 相馬律
-    zh: 這個比水痕新。
-    ja: これは、水の跡より新しい。
+    zh: 這個還在滴水。
+    ja: これは、まだ滴ってる。
     voice:
       clip: ch1_soma_ritsu_0175
   - id: L072
     speaker: 早坂茜
-    zh: 先濕後乾。兩個時間點。
-    ja: 乾きかけと、濡れたまま。時点が二つある。
+    zh: 傘套乾得慢，排不出先後。只說明有人走過後巷。
+    ja: 傘袋は乾きにくいから、前後は決められない。裏路地を誰かが通ったってことだけ。
     voice:
       clip: ch1_hayasaka_akane_0086
   - id: L073

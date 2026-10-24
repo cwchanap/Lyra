@@ -327,7 +327,7 @@
 ### evidence:floor_water_drying_map {#floor_water_drying_map}
 - **Name:** 地板雨水乾燥圖
 - **Description:** 案發夜初勘照片裡，後場門口止滑墊旁半乾水痕的乾燥分布。
-- **Details:** 黑瀨調出的案發夜初勘照片，23:34 和 23:49 各一張，都帶時間戳。第一張裡，止滑墊旁的水痕邊緣已經收乾，位置跟縮圖裡那塊墊子一致；拿兩張的乾燥速度往回推，這灘水最晚在 23:00 前後就被帶進來，比三宅 23:06 進後場更早。今晚的地面一直有雨、有人進出，不拿來比。
+- **Details:** 黑瀨調出的案發夜初勘照片，23:34 和 23:49 各一張，都帶時間戳。第一張裡，止滑墊旁的水痕邊緣已經收乾，位置跟縮圖裡那塊墊子一致；水痕外圈收乾的邊緣留著原本的大小，拿兩張的收縮速度往回推，誤差取最寬，這灘水最晚也在 23:01 前就被帶進來，比三宅 23:06 進後場更早。今晚的地面一直有雨、有人進出，不拿來比。
 - **Source Sublocation:** back_door
 - **Image Prompt:** Forensic-style floor moisture drying map around a non-slip mat, pale blue water-shape overlays, no readable labels, isolated evidence icon.
 
@@ -342,15 +342,15 @@
 ### evidence:wet_umbrella_sleeve {#wet_umbrella_sleeve}
 - **Name:** 濕傘套
 - **Description:** 初勘照片裡，掛在牆角、邊角還在滴水的濕傘套。
-- **Details:** 同一組初勘照片裡，傘套在 23:34 還在滴水，明顯比地上的半乾水痕新，顯示那晚先後有不只一次有人從後巷帶著雨水進來。實物還掛在原處。
+- **Details:** 同一組初勘照片裡，傘套在 23:34 還在滴水。塑膠和地面乾得不一樣快，它排不出先後，只說明有人帶著雨傘走過後巷這條路。實物還掛在原處。
 - **Source Sublocation:** back_door
 - **Image Prompt:** Wet transparent umbrella sleeve hanging from a cafe backroom wall hook, visible droplets, isolated evidence icon, no readable text.
 
 #### On Collect
 
-**相馬律**：這個比水痕新。 {#L071}
+**相馬律**：這個還在滴水。 {#L071}
 
-**早坂茜**：先濕後乾。兩個時間點。 {#L072}
+**早坂茜**：傘套乾得慢，排不出先後。只說明有人走過後巷。 {#L072}
 
 ### evidence:coffee_last_cup_record {#coffee_last_cup_record}
 - **Name:** 咖啡機最後出杯紀錄
