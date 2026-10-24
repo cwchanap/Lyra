@@ -32,7 +32,7 @@
 - **Background Prompt:** Rain Bell cafe back door at rainy night, non-slip mat, half-dry water trace on floor, wet umbrella sleeve on wall, dark rear alley beyond. Detective Kurose Toru baked into the left-center of the threshold: stocky weathered middle-aged man standing like nailed to the ground, wrinkled brown-gray field coat, worn dark leather shoes with outer-duty mud at the edges, thick hands resting loosely, flattened onigiri wrapper peeking from one coat pocket, deep crow's-feet and night-shift weariness in his face, perspective-correct scale and lighting matching the non-slip mat and doorframe, not covering the mat, water trace, umbrella sleeve, or staff shelf.
 - **BGS:** bgs_cafe_closed_night
 
-[場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只濕傘套，門外是後巷入口。]
+[場景：雨鐘咖啡館後場門口，深夜，雨夜。止滑墊鋪在門檻內側，地上有半乾的水痕，牆角掛著一只透明傘套，門外是後巷入口。]
 
 [相馬律與早坂茜跨過門檻，走進後場門口。相馬律的視線先落在地上的止滑墊，沒有急著往裡走。早坂茜雙手插在口袋裡，安靜地掃過牆角的傘套和門外的後巷。]
 
@@ -70,10 +70,10 @@
 
 [黑瀨徹在旁邊看了一眼，雙手抱胸，整個人像釘在地上似的穩。]
 
-**黑瀨徹**：水痕不像剛踩的。邊緣都收乾了。 {#L016}
+**黑瀨徹**：今晚的水痕不能算，雨沒停過，這一天也有人進出。要比，就比案發那晚的初勘照片。 {#L016}
 
 ### Hotspot: 傘套邊角 {#umbrella_sleeve}
-- **Description:** 牆角掛著的濕傘套，邊角還在滴水。
+- **Description:** 牆角掛著的傘套，跟初勘照片裡掛的是同一只。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Wet transparent umbrella sleeve hanging from the backroom wall hook as the visible source clue.
 - **Reveals:** [evidence:wet_umbrella_sleeve]
@@ -326,23 +326,23 @@
 
 ### evidence:floor_water_drying_map {#floor_water_drying_map}
 - **Name:** 地板雨水乾燥圖
-- **Description:** 後場門口止滑墊旁，半乾水痕的乾燥分布。
-- **Details:** 水痕邊緣已經收乾，跟縮圖裡的那塊墊子位置一致。乾燥程度顯示這灘水比現在更早被帶進來。
+- **Description:** 案發夜初勘照片裡，後場門口止滑墊旁半乾水痕的乾燥分布。
+- **Details:** 黑瀨調出的案發夜初勘照片，23:34 和 23:49 各一張，都帶時間戳。第一張裡，止滑墊旁的水痕邊緣已經收乾，位置跟縮圖裡那塊墊子一致；拿兩張的乾燥速度往回推，這灘水最晚在 23:00 前後就被帶進來，比三宅 23:06 進後場更早。今晚的地面一直有雨、有人進出，不拿來比。
 - **Source Sublocation:** back_door
 - **Image Prompt:** Forensic-style floor moisture drying map around a non-slip mat, pale blue water-shape overlays, no readable labels, isolated evidence icon.
 
 #### On Collect
 
-[相馬律把縮圖跟地面再比對一次。]
+[相馬律把縮圖跟黑瀨手機上的初勘照片再比對一次。]
 
 **相馬律**：墊子、水痕，都對得上。 {#L069}
 
-**黑瀨徹**：而且乾了一半。不是剛剛才踩的。 {#L070}
+**黑瀨徹**：那晚 23:34 拍的時候，它就已經乾了一半。 {#L070}
 
 ### evidence:wet_umbrella_sleeve {#wet_umbrella_sleeve}
 - **Name:** 濕傘套
-- **Description:** 掛在牆角、邊角仍在滴水的濕傘套。
-- **Details:** 傘套濕度明顯比地上的半乾水痕新，顯示先後有不只一次有人從後巷帶著雨水進來。
+- **Description:** 初勘照片裡，掛在牆角、邊角還在滴水的濕傘套。
+- **Details:** 同一組初勘照片裡，傘套在 23:34 還在滴水，明顯比地上的半乾水痕新，顯示那晚先後有不只一次有人從後巷帶著雨水進來。實物還掛在原處。
 - **Source Sublocation:** back_door
 - **Image Prompt:** Wet transparent umbrella sleeve hanging from a cafe backroom wall hook, visible droplets, isolated evidence icon, no readable text.
 
@@ -451,7 +451,7 @@
 
 **相馬律**：摘要裡的死亡和進場時間，站不住了。 {#L087}
 
-**早坂茜**：水痕、傘套、出杯紀錄，全比摘要更早。 {#L088}
+**早坂茜**：水痕和出杯紀錄都比摘要更早。傘套只說明後巷那條路有人走過。 {#L088}
 
 **相馬律**：可能有第三個人，比三宅更早就進來了。 {#L089}
 
