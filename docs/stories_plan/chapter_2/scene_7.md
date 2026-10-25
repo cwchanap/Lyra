@@ -1,6 +1,6 @@
-# Scene 7: 按來源分堆
+# Scene 7: 從哪裡看見的
 
-- **Summary:** 審查會結束後，相馬與早坂把攤滿桌面的材料從按時間排改成按來源排，才發現少了兩種看法，而三枝偏在這時跑到天橋上開台。
+- **Summary:** 審查會結束後，相馬與早坂把攤滿桌面的材料從按時間排改成按「站在哪裡、透過什麼看見」排，才發現少了兩種看法，而三枝偏在這時跑到天橋上開台。
 
 [場景：相馬律的偵探事務所，案發翌日中午過後。窗外細雨不停，窗玻璃上全是水痕。辦公桌上攤滿一長排按時間貼好的列印紙，旁邊一台停擺的老咖啡機，電熱水壺正冒著蒸氣。]
 - **Background Prompt:** Eye-level medium-wide view of the same small cluttered Tokyo private detective office as the morning scene, now in gray midday drizzle, a single rain-streaked window with flat cool daylight, the worn wooden desk and a long row of unreadable paper printouts taped edge to edge across its surface, a whiteboard leaning on the cabinet with blank sticky notes along its tray, an old drip coffee machine on the side cabinet with its carafe empty and dry beside a small electric kettle giving off steam, two cardboard archive boxes on the floor, a coat rack by the door with a damp umbrella, quiet working mood, no people, no readable text, no UI, keep the lower composition clear and uncluttered for dialogue UI.
@@ -143,7 +143,7 @@
 
 **早坂茜**：拆成什麼樣？
 
-**相馬律**：不按幾點發生。按它是從哪裡來的。
+**相馬律**：不按幾點發生。按它是站在哪裡、透過什麼看到的。
 
 [早坂看了他一眼，把飯糰推到一旁，站起來。]
 
