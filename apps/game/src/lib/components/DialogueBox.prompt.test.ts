@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeCoordinator } from "$lib/state/escape-coordinator";
@@ -107,6 +107,19 @@ describe("DialogueBox 推理 prompt", () => {
 
     expect(onAnswerPrompt).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it("returns focus to the first option when LOG closes on a prompt", async () => {
+    renderPrompt();
+
+    await fireEvent.keyDown(window, { key: "l" });
+    await fireEvent.keyDown(window, { key: "l" });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /摘要合併了時間/ }),
+      ).toHaveFocus(),
+    );
   });
 
   it("shows the reply to a wrong pick", () => {
