@@ -173,7 +173,20 @@ function emittedMatchesSource(
     return item.text === ast.text;
   }
   if (item.kind === "prompt" && ast.kind === "prompt") {
-    return item.question === ast.question;
+    return (
+      item.question === ast.question &&
+      item.options.length === ast.options.length &&
+      item.options.every((option, i) => {
+        const source = ast.options[i];
+        return (
+          source !== undefined &&
+          option.label === source.label &&
+          option.correct === source.correct &&
+          option.reply?.speaker === source.reply?.speaker &&
+          option.reply?.text === source.reply?.text
+        );
+      })
+    );
   }
   return false;
 }

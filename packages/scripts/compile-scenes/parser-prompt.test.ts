@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  deriveDialogueSegments,
+  resolveDialogueItemSource,
+} from "./dialogue-segment-origins";
 import { emitLinearScene } from "./emitter";
 import { parseInterrogationScene } from "./parser-interrogation";
 import { parseLinearScene } from "./parser-linear";
@@ -152,6 +156,30 @@ describe("推理 prompts", () => {
     ],
   ])("rejects %s", (_name, body, code) => {
     expect(errorCode(body)).toBe(code);
+  });
+
+  it("flags a compiled prompt as stale when its options change in the source", () => {
+    const result = linear(PROMPT);
+    if (!result.ok) throw new Error(result.error.message);
+    const json = emitLinearScene(result.value);
+    const sourceAt = (sourceAst: typeof result.value) =>
+      resolveDialogueItemSource(
+        deriveDialogueSegments({ chapterId: "chapter_1", json, sourceAst }),
+        "main",
+        1,
+      );
+
+    expect(sourceAt(result.value)).toMatchObject({ ok: true });
+
+    const edited = structuredClone(result.value);
+    const prompt = edited.queue[1];
+    if (prompt?.kind !== "prompt") throw new Error("expected the prompt");
+    prompt.options[1]!.label = "三宅隱瞞了時間";
+    expect(sourceAt(edited)).toMatchObject({
+      ok: false,
+      reason: "stale",
+      error: { code: "workbenchSourceCarrierStale" },
+    });
   });
 
   it("rejects a stray option line with no question", () => {
