@@ -463,9 +463,15 @@
       return;
     }
 
-    // 1-4 pick a 推理 option.
+    // 1-4 pick a 推理 option, unless a menu has made the dialogue inert or
+    // focus sits in a control outside it (such as the save-name input).
     if (current.kind === "prompt" && /^[1-4]$/.test(e.key)) {
       if (isModifiedHistoryShortcut(e) || historyOpen) return;
+      if (
+        wrapper?.closest("[inert]") ||
+        isHistoryShortcutBlockedByFocusedControl()
+      )
+        return;
       const optionIndex = Number(e.key) - 1;
       if (optionIndex >= current.options.length) return;
       e.preventDefault();
