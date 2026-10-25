@@ -69,6 +69,8 @@
   }
 
   let presentingCharacterId = $state<string | null>(null);
+  // The 出示紀錄 button that opened the tray gets focus back when it closes.
+  let presentReturnFocus = $state<HTMLElement | null>(null);
   let presentingCharacter = $derived(
     sublocation.characters.find(
       (character) => character.id === presentingCharacterId,
@@ -583,7 +585,10 @@
       class="present-record"
       type="button"
       {disabled}
-      onclick={() => (presentingCharacterId = character.id)}
+      onclick={(event) => {
+        presentReturnFocus = event.currentTarget;
+        presentingCharacterId = character.id;
+      }}
     >
       <span>出示紀錄</span>
       <small>SHOW</small>
@@ -609,6 +614,7 @@
       {inventory}
       onPresent={presentRecord}
       onResume={closePresentTray}
+      returnFocusTo={presentReturnFocus}
       {disabled}
     />
   {/if}

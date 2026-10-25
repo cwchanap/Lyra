@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/svelte";
+import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeCoordinator } from "$lib/state/escape-coordinator";
@@ -111,6 +111,20 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
     expect(
       screen.queryByRole("dialog", { name: "出示紀錄" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("returns focus to 出示紀錄 when the tray closes", async () => {
+    const user = userEvent.setup();
+    renderSurface(clerk(null));
+
+    const show = screen.getByRole("button", { name: /出示紀錄/ });
+    await user.click(show);
+    await user.click(screen.getByRole("button", { name: /收回/ }));
+
+    expect(
+      screen.queryByRole("dialog", { name: "出示紀錄" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(show).toHaveFocus());
   });
 
   it("lists a discussed Present topic for re-examination and shows the wrong-pick reply", () => {
