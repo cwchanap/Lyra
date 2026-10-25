@@ -296,6 +296,11 @@ with neither is unreachable (`interrogationLockedBlockUnreachable`).
   honest testimony with `interrogationHonestTestimonyMultipleLines`. Author an
   honest question as a **single** Line, or give at least one Line a
   `Contradiction` if you want multiple Lines to play.
+- **No 推理 prompts inside testimony.** Cross-examination steps through the
+  lines one at a time, so the compiler rejects a `> 推理：` prompt in a Line
+  body (`promptNotAllowedInTestimony`). Put the prompt in the phase entry
+  dialogue, the Intro or the Outro instead (syntax in
+  `writing-detective-game-dialogue`).
 
 Every field value (`On Loop`, `Loop Prompt`, `Default Challenge`,
 `Default Wrong`, `Wrong Reply`, and the per-line fields below) is a single
@@ -658,6 +663,7 @@ reference。
 
 | Mistake | Fix |
 | --- | --- |
+| A `> 推理：` prompt inside a `##### Line:` body | Move it to the phase entry dialogue, the Intro or the Outro; testimony rejects prompts with `promptNotAllowedInTestimony`. |
 | Authoring a `- **Content:**` field on a `##### Line:` | The suspect line is plain dialogue directly under the heading (`**角色名**：...`), not a metadata bullet — `Content` was a field of the retired `#### Statement:` block. Writing it as metadata triggers `interrogationEmptyLine` (no dialogue found) or `interrogationBadLineField`. |
 | Writing a `#### Follow-up:`, `#### On Reask`, `#### Statement:`, or `### Result:` block | These blocks no longer exist. A follow-up is a locked `### Question`; the parser rejects unknown headings. |
 | `Contradiction` line missing `Challenge` / `On Correct` / `On Wrong Evidence` | All three are required together — the compiler fails with `interrogationMissingChallenge`, `interrogationMissingOnCorrect`, or `interrogationMissingOnWrongEvidence`. |

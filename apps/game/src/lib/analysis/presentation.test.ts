@@ -15,6 +15,7 @@ const analysisMode = beat85CompilerAnalysisModeFixture;
 
 const dialogueMode: Extract<Mode, { type: "dialogue" }> = {
   type: "dialogue",
+  promptFeedback: null,
   current: { kind: "action", text: "場景切換" },
   queueRemaining: 0,
   sceneTag: null,

@@ -242,7 +242,7 @@
     <InterrogationEvidenceTray
       {crossExam}
       {inventory}
-      {onPresent}
+      onPresent={(kind, itemId) => onPresent(crossExam.lineId, kind, itemId)}
       {onResume}
       {onOpenGameMenu}
       {disabled}

@@ -49,8 +49,10 @@ export const MUTATING_GAMEPLAY_COMMANDS: ReadonlySet<string> = new Set<
   "reset_game",
   "jump_to_scene",
   "advance_dialogue",
+  "answer_dialogue_prompt",
   "inspect_hotspot",
   "interview_topic",
+  "present_to_character",
   "enter_sublocation",
   "reexamine_evidence",
   "reexamine_statement",
@@ -449,11 +451,32 @@ export async function advanceDialogue(expected: QueueToken) {
   await dispatchGameCommand("advance_dialogue", { expected });
 }
 
+export async function answerDialoguePrompt(
+  expected: QueueToken,
+  optionIndex: number,
+) {
+  await dispatchGameCommand("answer_dialogue_prompt", {
+    expected,
+    optionIndex,
+  });
+}
+
 export async function inspectHotspot(hotspotId: string) {
   await dispatchGameCommand("inspect_hotspot", { hotspotId });
 }
 export async function interviewTopic(characterId: string, topicId: string) {
   await dispatchGameCommand("interview_topic", { characterId, topicId });
+}
+export async function presentToCharacter(
+  characterId: string,
+  itemKind: "evidence" | "statement",
+  itemId: string,
+) {
+  await dispatchGameCommand("present_to_character", {
+    characterId,
+    itemKind,
+    itemId,
+  });
 }
 export async function enterSublocation(sublocationId: string) {
   await dispatchGameCommand("enter_sublocation", { sublocationId });

@@ -823,9 +823,28 @@ fn advance_dialogue_core(
     state: &AppState,
     expected: QueueToken,
 ) -> Result<GameplayCommandResultView, GameError> {
+    dialogue_step_core(state, |engine| engine.advance_dialogue(expected))
+}
+
+fn answer_dialogue_prompt_core(
+    state: &AppState,
+    expected: QueueToken,
+    option_index: usize,
+) -> Result<GameplayCommandResultView, GameError> {
+    dialogue_step_core(state, |engine| {
+        engine.answer_dialogue_prompt(expected, option_index)
+    })
+}
+
+/// Runs a command that moves the dialogue cursor (`step`) under the dialogue
+/// autosave policy.
+fn dialogue_step_core(
+    state: &AppState,
+    step: impl FnOnce(&mut GameEngine) -> Result<GameStateView, GameError>,
+) -> Result<GameplayCommandResultView, GameError> {
     // Scene IDs are chapter-scoped (see `StoryLocationIndex`), so the
     // "same interrogation" check must compare the full (chapter_id, scene_id)
-    // identity. `advance_dialogue` can exhaust a queue and call
+    // identity. A dialogue step can exhaust a queue and call
     // `advance_scene`, which may move into the next chapter within this same
     // mutation; if the next scene reuses the source `scene_id`, comparing only
     // the scene ID would wrongly suppress the entry/exit thumbnail milestone.
@@ -847,7 +866,7 @@ fn advance_dialogue_core(
             move |engine| {
                 let identity = engine.current_scene_identity();
                 cell.set(Some(identity));
-                engine.advance_dialogue(expected)
+                step(engine)
             }
         },
     )
@@ -872,6 +891,15 @@ fn advance_dialogue(
     expected: QueueToken,
 ) -> Result<GameplayCommandResultView, GameError> {
     advance_dialogue_core(&state, expected)
+}
+
+#[tauri::command]
+fn answer_dialogue_prompt(
+    state: tauri::State<'_, AppState>,
+    expected: QueueToken,
+    option_index: usize,
+) -> Result<GameplayCommandResultView, GameError> {
+    answer_dialogue_prompt_core(&state, expected, option_index)
 }
 
 #[tauri::command]
@@ -934,6 +962,20 @@ fn interview_topic(
         &state,
         MutationPersistencePolicy::AutosaveIfAdvanced,
         |engine| engine.interview_topic(&character_id, &topic_id),
+    )
+}
+
+#[tauri::command]
+fn present_to_character(
+    state: tauri::State<'_, AppState>,
+    character_id: String,
+    item_kind: String,
+    item_id: String,
+) -> Result<GameplayCommandResultView, GameError> {
+    run_gameplay_mutation(
+        &state,
+        MutationPersistencePolicy::AutosaveIfAdvanced,
+        |engine| engine.present_to_character(&character_id, &item_kind, &item_id),
     )
 }
 
@@ -1141,11 +1183,13 @@ pub fn run() {
             get_dialogue_locale,
             jump_to_scene,
             advance_dialogue,
+            answer_dialogue_prompt,
             select_analysis_board,
             update_analysis_draft,
             submit_analysis_board,
             inspect_hotspot,
             interview_topic,
+            present_to_character,
             enter_sublocation,
             reexamine_evidence,
             reexamine_statement,
@@ -4056,6 +4100,7 @@ mod tests {
                 "jump_to_scene",
                 "inspect_hotspot",
                 "interview_topic",
+                "present_to_character",
                 "enter_sublocation",
                 "reexamine_evidence",
                 "reexamine_statement",
@@ -4121,9 +4166,14 @@ mod tests {
 
             let advance = function_body(source, "advance_dialogue");
             assert!(advance.contains("advance_dialogue_core"));
-            let advance_core = function_body(source, "advance_dialogue_core");
-            assert!(advance_core.contains("run_gameplay_mutation_selecting_policy"));
-            assert!(advance_core.contains("dialogue_persistence_policy"));
+            let answer = function_body(source, "answer_dialogue_prompt");
+            assert!(answer.contains("answer_dialogue_prompt_core"));
+            for core in ["advance_dialogue_core", "answer_dialogue_prompt_core"] {
+                assert!(function_body(source, core).contains("dialogue_step_core"));
+            }
+            let step_core = function_body(source, "dialogue_step_core");
+            assert!(step_core.contains("run_gameplay_mutation_selecting_policy"));
+            assert!(step_core.contains("dialogue_persistence_policy"));
 
             let challenge = function_body(source, "challenge_interrogation_line");
             assert!(challenge.contains("challenge_interrogation_line_core"));
@@ -4170,11 +4220,13 @@ mod tests {
                 "get_dialogue_locale",
                 "jump_to_scene",
                 "advance_dialogue",
+                "answer_dialogue_prompt",
                 "select_analysis_board",
                 "update_analysis_draft",
                 "submit_analysis_board",
                 "inspect_hotspot",
                 "interview_topic",
+                "present_to_character",
                 "enter_sublocation",
                 "reexamine_evidence",
                 "reexamine_statement",

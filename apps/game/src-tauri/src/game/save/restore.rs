@@ -323,6 +323,7 @@ pub(crate) fn build_restore_candidate(
         durable_revision: snapshot.durable_revision,
         pending_acquisition_events: snapshot.pending_acquisition_events.clone(),
         cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+        transient_feedback: None,
     };
 
     // The capture boundary is intentionally independent from restore. Re-run

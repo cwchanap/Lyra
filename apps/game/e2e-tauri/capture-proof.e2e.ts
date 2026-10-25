@@ -161,7 +161,9 @@ async function waitForCaptureProofDialogueTextStable(): Promise<string> {
     }, advanceDialogueSelector);
     const state = await getPackagedGameState();
     const authoritativeText =
-      state.mode.type === "dialogue" ? state.mode.current.text : "";
+      state.mode.type === "dialogue" && "text" in state.mode.current
+        ? state.mode.current.text
+        : "";
     if (
       captureProofDialogueTextIsStable({
         before,
@@ -1012,6 +1014,7 @@ describe("packaged gameplay thumbnail proof", () => {
       const current = await getPackagedGameState();
       if (
         current.mode.type === "dialogue" &&
+        "text" in current.mode.current &&
         current.mode.current.text.includes(
           anchors.unicodeSave.interrogationEntryDialogue,
         )
@@ -1033,9 +1036,10 @@ describe("packaged gameplay thumbnail proof", () => {
       await waitForPackagedGameState(
         (next) =>
           next.mode.type === "dialogue" &&
-          (next.mode.current.text.includes(
-            anchors.unicodeSave.interrogationEntryDialogue,
-          ) ||
+          (("text" in next.mode.current &&
+            next.mode.current.text.includes(
+              anchors.unicodeSave.interrogationEntryDialogue,
+            )) ||
             next.mode.queueToken.cursor !== cursorBefore),
         30000,
         "interrogation intro did not settle after advancing",

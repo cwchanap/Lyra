@@ -22,6 +22,7 @@ import GameplayAudio from "./GameplayAudio.svelte";
 
 const exploreMode: Mode = {
   type: "explore",
+  presentFeedback: null,
   sublocationId: "main",
   backgroundAssetId: null,
   bgm: { channel: "bgm", assetId: "audio.bgm.review" },

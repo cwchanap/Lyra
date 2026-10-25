@@ -47,6 +47,7 @@ import GameShell from "./GameShell.svelte";
 function state(
   mode: GameStateView["mode"] = {
     type: "dialogue",
+    promptFeedback: null,
     crossExamLineId: null,
     current: { kind: "action", text: "幕開" },
     queueRemaining: 0,
@@ -498,6 +499,7 @@ describe("GameShell", () => {
     render(GameShellHarness, {
       gameState: state({
         type: "explore",
+        presentFeedback: null,
         sublocationId: "main",
         backgroundAssetId: null,
         bgm: null,
@@ -813,6 +815,7 @@ describe("GameShell", () => {
       render(GameShellHarness, {
         gameState: state({
           type: "explore",
+          presentFeedback: null,
           sublocationId: "main",
           backgroundAssetId: null,
           bgm: null,
@@ -1167,6 +1170,7 @@ describe("GameShell", () => {
       render(GameShellHarness, {
         gameState: state({
           type: "explore",
+          presentFeedback: null,
           sublocationId: "main",
           backgroundAssetId: null,
           bgm: null,
@@ -1213,6 +1217,7 @@ describe("GameShell", () => {
       render(GameShellHarness, {
         gameState: state({
           type: "explore",
+          presentFeedback: null,
           sublocationId: "main",
           backgroundAssetId: null,
           bgm: null,

@@ -1115,6 +1115,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1133,6 +1134,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "背景內建角色。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "baked",
@@ -1233,6 +1235,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1300,6 +1303,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1367,6 +1371,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1434,6 +1439,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1508,6 +1514,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1575,6 +1582,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1642,6 +1650,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "早坂茜",
                   role: "助手",
                   bio: "助手。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",
@@ -1706,6 +1715,7 @@ describe("enrichScenesWithAssets", () => {
                   name: "謎の人物",
                   role: "NPC",
                   bio: "NPC。",
+                  wrongPresent: null,
                   topics: [],
                   layout: {
                     kind: "sprite",

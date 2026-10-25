@@ -301,6 +301,36 @@ impl GameError {
     pub fn locked_topic(c: &str, t: &str) -> Self {
         Self::new("lockedTopic", format!("Topic '{c}@{t}' is locked."))
     }
+    pub fn topic_requires_present(c: &str, t: &str) -> Self {
+        Self::new(
+            "topicRequiresPresent",
+            format!("Topic '{c}@{t}' opens only by showing '{c}' a record."),
+        )
+    }
+    pub fn nothing_to_present(c: &str) -> Self {
+        Self::new(
+            "nothingToPresent",
+            format!("Character '{c}' has no topic that a shown record could open."),
+        )
+    }
+    pub fn dialogue_prompt_unanswered() -> Self {
+        Self::new(
+            "dialoguePromptUnanswered",
+            "The current 推理 prompt must be answered before the dialogue can continue.",
+        )
+    }
+    pub fn no_dialogue_prompt() -> Self {
+        Self::new(
+            "noDialoguePrompt",
+            "The current dialogue item is not a 推理 prompt.",
+        )
+    }
+    pub fn unknown_prompt_option(index: usize) -> Self {
+        Self::new(
+            "unknownPromptOption",
+            format!("The current 推理 prompt has no option {index}."),
+        )
+    }
     pub fn unknown_sublocation(id: &str) -> Self {
         Self::new(
             "unknownSublocation",

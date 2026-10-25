@@ -59,6 +59,7 @@ impl EngineRollbackSnapshot {
             durable_revision,
             pending_acquisition_events,
             cached_pending_acquisition_scene: _,
+            transient_feedback: _,
         } = engine;
         Self {
             current_chapter_idx: *current_chapter_idx,
@@ -159,6 +160,7 @@ impl GameEngine {
         let mut next_ordinal = 0;
         match f(self, command_id, &mut next_ordinal) {
             Ok(CommandMutation::Changed) => {
+                self.transient_feedback = None;
                 self.record_current_dialogue_history();
                 self.durable_revision = command_id;
                 match self.view() {
@@ -1210,6 +1212,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         };
         engine.prime_initial_queue().unwrap();
         let token = token_from(&engine.view().unwrap());
@@ -1369,6 +1372,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         };
         engine.prime_initial_queue().unwrap();
         let previous_scene_tag = engine.last_visual_cue.scene_tag.clone();

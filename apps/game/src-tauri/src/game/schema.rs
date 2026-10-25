@@ -30,6 +30,35 @@ pub enum DialogueItem {
         #[serde(default)]
         portrait: Option<PortraitRefJson>,
     },
+    /// An inline deduction question (`> 推理：`). The queue cursor stops on
+    /// it until the player picks the correct option; a wrong option only
+    /// shows its reply and changes nothing.
+    Prompt {
+        question: String,
+        options: Vec<PromptOptionJson>,
+    },
+}
+
+/// One answer of a `Prompt`. The answer key (`correct`) and the wrong-answer
+/// reply are read from the compiled scene but never serialized, so the view
+/// that carries the current item shows the player only the labels.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PromptOptionJson {
+    pub label: String,
+    #[serde(skip_serializing)]
+    pub correct: bool,
+    #[serde(skip_serializing)]
+    pub reply: Option<FeedbackLineJson>,
+}
+
+/// A one-line reply shown as feedback: spoken when `speaker` is set,
+/// narration otherwise.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FeedbackLineJson {
+    pub speaker: Option<String>,
+    pub text: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -957,6 +986,11 @@ pub struct CharacterJson {
     #[serde(default)]
     pub layout: Option<CharacterLayoutJson>,
     pub topics: Vec<TopicJson>,
+    /// Reply when the player shows this character a record that opens none
+    /// of its topics. The compiler emits it for every character that has a
+    /// `present` topic.
+    #[serde(default)]
+    pub wrong_present: Option<FeedbackLineJson>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -969,6 +1003,12 @@ pub struct TopicJson {
     pub reveals: Vec<InvestigationRevealTarget>,
     pub topic_dialogue: Vec<DialogueItem>,
     pub on_reexamine: Option<Vec<DialogueItem>>,
+    /// Records that open this topic when shown to its character (any one
+    /// will do). Empty for an ordinary topic. The compiler already folds
+    /// "holds one of them" into `unlock`, so availability needs no extra
+    /// check; the list only decides which record opens the topic.
+    #[serde(default)]
+    pub present: Vec<InventoryTarget>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

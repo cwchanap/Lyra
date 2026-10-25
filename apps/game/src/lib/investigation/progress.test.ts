@@ -27,11 +27,13 @@ function sublocation(
         name: "Witness",
         role: "Witness",
         bio: "Witness",
+        acceptsPresent: false,
         layout: null,
         topics: topics.map(([topicId, discussed]) => ({
           id: topicId,
           label: topicId,
           discussed,
+          requiresPresent: false,
         })),
       },
     ],

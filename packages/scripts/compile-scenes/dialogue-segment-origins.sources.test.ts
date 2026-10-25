@@ -262,7 +262,9 @@ describe("deriveDialogueSegments itemSources", () => {
               }
             : item.kind === "sceneTag"
               ? { kind: "sceneTag" as const, text: item.text, assetCue: null }
-              : { kind: "action" as const, text: item.text },
+              : item.kind === "action"
+                ? { kind: "action" as const, text: item.text }
+                : item,
         ),
         assetRefs: [],
       },

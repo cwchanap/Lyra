@@ -38,6 +38,7 @@ pub(crate) enum DialogueKind {
     SceneTag,
     Action,
     Line,
+    Prompt,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -341,6 +342,14 @@ fn project(
                     kind: DialogueKind::SceneTag,
                     speaker: None,
                     text: text.clone(),
+                    portrait_character_id: None,
+                    portrait_expression: None,
+                    portrait_asset_id: None,
+                },
+                DialogueItem::Prompt { question, .. } => DialogueIdentity {
+                    kind: DialogueKind::Prompt,
+                    speaker: None,
+                    text: question.clone(),
                     portrait_character_id: None,
                     portrait_expression: None,
                     portrait_asset_id: None,

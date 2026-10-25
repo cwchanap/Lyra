@@ -66,7 +66,15 @@ const sublocation = {
       name: "目擊者",
       role: "常客",
       bio: "案發時坐在窗邊。",
-      topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+      acceptsPresent: false,
+      topics: [
+        {
+          id: "alibi",
+          label: "不在場證明",
+          discussed: false,
+          requiresPresent: false,
+        },
+      ],
       layout: {
         kind: "sprite",
         assetId: "portrait.witness.standard",
@@ -562,7 +570,11 @@ describe("InvestigationSceneSurface", () => {
         })),
         characters: sublocation.characters.map((entry) => ({
           ...entry,
-          topics: entry.topics.map((topic) => ({ ...topic, discussed: true })),
+          topics: entry.topics.map((topic) => ({
+            ...topic,
+            discussed: true,
+            requiresPresent: false,
+          })),
         })),
       },
       onInspect: vi.fn(),
@@ -924,6 +936,7 @@ describe("InvestigationSceneSurface", () => {
           name: "高瀬",
           role: "店員",
           bio: "",
+          acceptsPresent: false,
           topics: [],
           layout: { kind: "baked", x: 0.7, y: 0.191, w: 0.11, h: 0.215 },
         },
@@ -1013,9 +1026,20 @@ describe("InvestigationSceneSurface", () => {
           name: "路人",
           role: "旁觀者",
           bio: "站在門外看熱鬧。",
+          acceptsPresent: false,
           topics: [
-            { id: "sight", label: "目撃", discussed: false },
-            { id: "motive", label: "動機", discussed: true },
+            {
+              id: "sight",
+              label: "目撃",
+              discussed: false,
+              requiresPresent: false,
+            },
+            {
+              id: "motive",
+              label: "動機",
+              discussed: true,
+              requiresPresent: false,
+            },
           ],
           layout: null,
         },
@@ -1184,7 +1208,15 @@ describe("InvestigationSceneSurface", () => {
             name: "目擊者",
             role: "常客",
             bio: "案發時坐在窗邊。",
-            topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+            acceptsPresent: false,
+            topics: [
+              {
+                id: "alibi",
+                label: "不在場證明",
+                discussed: false,
+                requiresPresent: false,
+              },
+            ],
             layout: {
               kind: "sprite" as const,
               assetId: "portrait.witness.standard",
@@ -1200,7 +1232,15 @@ describe("InvestigationSceneSurface", () => {
             name: "嫌疑人",
             role: "店員",
             bio: "當晚值班。",
-            topics: [{ id: "shift", label: "班表", discussed: false }],
+            acceptsPresent: false,
+            topics: [
+              {
+                id: "shift",
+                label: "班表",
+                discussed: false,
+                requiresPresent: false,
+              },
+            ],
             layout: {
               kind: "sprite" as const,
               assetId: "standee.suspect.standard",
@@ -1284,7 +1324,14 @@ describe("InvestigationSceneSurface", () => {
       characters: [
         {
           ...sublocation.characters[0],
-          topics: [{ id: "alibi", label: "不在場證明", discussed: true }],
+          topics: [
+            {
+              id: "alibi",
+              label: "不在場證明",
+              discussed: true,
+              requiresPresent: false,
+            },
+          ],
         },
       ],
     };
@@ -1350,7 +1397,15 @@ describe("InvestigationSceneSurface", () => {
           name: "目擊者",
           role: "常客",
           bio: "案發時坐在窗邊。",
-          topics: [{ id: "alibi", label: "不在場證明", discussed: false }],
+          acceptsPresent: false,
+          topics: [
+            {
+              id: "alibi",
+              label: "不在場證明",
+              discussed: false,
+              requiresPresent: false,
+            },
+          ],
           layout: {
             kind: "sprite" as const,
             assetId: "portrait.witness.standard",
@@ -1366,7 +1421,15 @@ describe("InvestigationSceneSurface", () => {
           name: "嫌疑人",
           role: "店員",
           bio: "當晚值班。",
-          topics: [{ id: "shift", label: "班表", discussed: false }],
+          acceptsPresent: false,
+          topics: [
+            {
+              id: "shift",
+              label: "班表",
+              discussed: false,
+              requiresPresent: false,
+            },
+          ],
           layout: {
             kind: "sprite" as const,
             assetId: "standee.suspect.standard",

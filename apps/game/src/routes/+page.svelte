@@ -11,8 +11,10 @@
     returnPersistedToTitle,
     returnPersistedToTitleWithoutSaving,
     advanceDialogue,
+    answerDialoguePrompt,
     inspectHotspot,
     interviewTopic,
+    presentToCharacter,
     enterSublocation,
     reexamineEvidence,
     reexamineStatement,
@@ -1379,6 +1381,8 @@
               chapterId={gameState.value.chapter.id}
               onAdvance={advanceDialogue}
               onAdvanceFeedback={() => playGameplaySfxEvent("ui:menu-confirm")}
+              onAnswerPrompt={answerDialoguePrompt}
+              promptFeedback={gameState.value.mode.promptFeedback}
               history={gameState.value.dialogueHistory}
               disabled={gameState.inFlight}
               interrogationStageActive={interrogationPresentationActive}
@@ -1399,6 +1403,9 @@
               onInspect={inspectHotspot}
               onInterview={interviewTopic}
               onEnterSublocation={enterSublocation}
+              inventory={gameState.value.inventory}
+              onPresent={presentToCharacter}
+              presentFeedback={gameState.value.mode.presentFeedback}
               disabled={gameState.inFlight}
             >
               {#snippet hud()}

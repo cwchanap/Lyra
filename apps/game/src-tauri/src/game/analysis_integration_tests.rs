@@ -37,7 +37,8 @@ fn drain_dialogue(engine: &mut GameEngine) -> Vec<String> {
         match current {
             super::schema::DialogueItem::Line { text, .. }
             | super::schema::DialogueItem::Action { text } => lines.push(text.clone()),
-            super::schema::DialogueItem::SceneTag { .. } => {}
+            super::schema::DialogueItem::SceneTag { .. }
+            | super::schema::DialogueItem::Prompt { .. } => {}
         }
         engine.advance_dialogue(queue_token(&view)).unwrap();
     }
@@ -63,7 +64,8 @@ fn drain_dialogue_queue_once(engine: &mut GameEngine) -> Vec<String> {
         match current {
             super::schema::DialogueItem::Line { text, .. }
             | super::schema::DialogueItem::Action { text } => lines.push(text.clone()),
-            super::schema::DialogueItem::SceneTag { .. } => {}
+            super::schema::DialogueItem::SceneTag { .. }
+            | super::schema::DialogueItem::Prompt { .. } => {}
         }
         engine.advance_dialogue(token).unwrap();
     }

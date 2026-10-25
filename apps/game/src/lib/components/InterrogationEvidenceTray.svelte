@@ -13,8 +13,12 @@
   import { claimEscape } from "$lib/state/escape-coordinator";
   import type { CrossExamView, Inventory } from "../state/types";
 
+  // The record picker, opened either against a cross-examined testimony line
+  // (`crossExam`) or to show a record to an investigation character
+  // (`presentTo`). Exactly one of the two is set.
   let {
-    crossExam,
+    crossExam = null,
+    presentTo = null,
     inventory,
     onPresent,
     onResume,
@@ -24,15 +28,17 @@
     returnFocusTo = null,
     fallbackFocusTarget = null,
   }: {
-    crossExam: CrossExamView;
+    crossExam?: CrossExamView | null;
+    presentTo?: { name: string } | null;
     inventory: Inventory;
     onPresent: (
-      lineId: string,
       kind: "evidence" | "statement",
       itemId: string,
     ) => void | Promise<void>;
+    /** Closes the tray (Escape, 收回). */
     onResume: () => void | Promise<void>;
-    onOpenGameMenu: (trigger: HTMLElement) => void;
+    /** Omitted where the game menu stays reachable without the tray. */
+    onOpenGameMenu?: (trigger: HTMLElement) => void;
     disabled?: boolean;
     // True while an upper layer (Game Menu, Save Browser, acquisition popup)
     // is open above this tray. The tray stays mounted (the engine's
@@ -74,7 +80,7 @@
   );
   let crossExamProgressText = $derived(
     /* v8 ignore next -- template concatenation artifact */
-    `證詞 ${crossExam.lineIndex + 1} / ${crossExam.lineTotal}`,
+    crossExam ? `證詞 ${crossExam.lineIndex + 1} / ${crossExam.lineTotal}` : "",
   );
   let focusTarget: HTMLElement | null = null;
   let fallbackTarget: HTMLElement | null = null;
@@ -135,7 +141,7 @@
 
   function present(kind: "evidence" | "statement", itemId: string) {
     if (disabled) return;
-    void onPresent(crossExam.lineId, kind, itemId);
+    void onPresent(kind, itemId);
   }
 
   function resume() {
@@ -147,7 +153,7 @@
     if (disabled) return;
     const trigger = event.currentTarget;
     if (trigger instanceof HTMLElement) {
-      onOpenGameMenu(trigger);
+      onOpenGameMenu?.(trigger);
     }
   }
 
@@ -234,12 +240,18 @@
   >
     <header>
       <div class="header-copy">
-        <p class="eyebrow">PRESENT / 提出證據</p>
-        <h2 id="interrogation-evidence-heading">提出證據</h2>
+        <p class="eyebrow">
+          {crossExam ? "PRESENT / 提出證據" : "SHOW / 出示紀錄"}
+        </p>
+        <h2 id="interrogation-evidence-heading">
+          {crossExam ? "提出證據" : "出示紀錄"}
+        </h2>
       </div>
-      <p class="progress">
-        {crossExamProgressText}
-      </p>
+      {#if crossExam}
+        <p class="progress">
+          {crossExamProgressText}
+        </p>
+      {/if}
       <button
         type="button"
         class="tray-escape"
@@ -252,10 +264,15 @@
     </header>
 
     <blockquote id="interrogation-evidence-line" class="line-record">
-      <span class="target-kicker">鎖定證詞 · TARGET LINE</span>
-      <span class="target-text"
-        >{interrogationLineText(crossExam.lineContent)}</span
-      >
+      {#if crossExam}
+        <span class="target-kicker">鎖定證詞 · TARGET LINE</span>
+        <span class="target-text"
+          >{interrogationLineText(crossExam.lineContent)}</span
+        >
+      {:else}
+        <span class="target-kicker">出示對象 · SHOW TO</span>
+        <span class="target-text">{presentTo?.name ?? ""}</span>
+      {/if}
     </blockquote>
 
     <section
@@ -320,17 +337,23 @@
     </section>
 
     <footer>
-      <p>選擇一項紀錄以反駁目前證詞。</p>
+      <p>
+        {crossExam
+          ? "選擇一項紀錄以反駁目前證詞。"
+          : `選擇一項紀錄給${presentTo?.name ?? ""}看。`}
+      </p>
       <div class="footer-actions">
-        <button
-          class="game-menu"
-          data-interrogation-game-menu=""
-          type="button"
-          {disabled}
-          onclick={openGameMenu}
-        >
-          遊戲選單
-        </button>
+        {#if onOpenGameMenu}
+          <button
+            class="game-menu"
+            data-interrogation-game-menu=""
+            type="button"
+            {disabled}
+            onclick={openGameMenu}
+          >
+            遊戲選單
+          </button>
+        {/if}
         <button class="withdraw" type="button" {disabled} onclick={resume}>
           收回
         </button>

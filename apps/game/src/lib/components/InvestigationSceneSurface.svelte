@@ -2,6 +2,7 @@
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import type { Snippet } from "svelte";
   import CrossfadeImage from "./CrossfadeImage.svelte";
+  import InterrogationEvidenceTray from "./InterrogationEvidenceTray.svelte";
   import {
     imageStoryAssetTypeForId,
     placeholderForMissingStoryAsset,
@@ -15,8 +16,10 @@
   import type {
     CharacterLayout,
     CharacterView,
+    FeedbackLine,
     HotspotLayout,
     HotspotView,
+    Inventory,
     SublocationView,
     TopicView,
   } from "../state/types";
@@ -29,6 +32,9 @@
     backgroundAssetId = null,
     onInspect,
     onInterview,
+    inventory = { evidence: [], statements: [] },
+    onPresent = () => {},
+    presentFeedback = null,
     disabled = false,
     hud,
   }: {
@@ -36,9 +42,48 @@
     backgroundAssetId?: string | null;
     onInspect: (id: string) => void;
     onInterview: (characterId: string, topicId: string) => void;
+    /** The records the 出示紀錄 tray offers. */
+    inventory?: Inventory;
+    onPresent?: (
+      characterId: string,
+      kind: "evidence" | "statement",
+      itemId: string,
+    ) => void;
+    /** A character's reply to a shown record that opened nothing. */
+    presentFeedback?: { characterId: string; line: FeedbackLine } | null;
     disabled?: boolean;
     hud?: Snippet;
   } = $props();
+
+  // A Present topic stays out of the list until a shown record opens it.
+  function listedTopics(character: CharacterView): TopicView[] {
+    return character.topics.filter(
+      (topic) => !topic.requiresPresent || topic.discussed,
+    );
+  }
+
+  function feedbackFor(character: CharacterView): FeedbackLine | null {
+    return presentFeedback?.characterId === character.id
+      ? presentFeedback.line
+      : null;
+  }
+
+  let presentingCharacterId = $state<string | null>(null);
+  let presentingCharacter = $derived(
+    sublocation.characters.find(
+      (character) => character.id === presentingCharacterId,
+    ) ?? null,
+  );
+
+  function closePresentTray() {
+    presentingCharacterId = null;
+  }
+
+  function presentRecord(kind: "evidence" | "statement", itemId: string) {
+    const character = presentingCharacter;
+    presentingCharacterId = null;
+    if (character) onPresent(character.id, kind, itemId);
+  }
 
   let activeCharacterId = $state<string | null>(null);
   let portraits = $state<Record<string, ResolvedStoryAsset | null>>({});
@@ -512,7 +557,7 @@
         </button>
       </div>
       <div class="topic-actions">
-        {#each activeCharacter.topics as topic (topic.id)}
+        {#each listedTopics(activeCharacter) as topic (topic.id)}
           <button
             class:done={topic.discussed}
             type="button"
@@ -525,8 +570,47 @@
             {/if}
           </button>
         {/each}
+        {#if activeCharacter.acceptsPresent}
+          {@render presentButton(activeCharacter)}
+        {/if}
       </div>
+      {@render presentReply(activeCharacter)}
     </div>
+  {/if}
+
+  {#snippet presentButton(character: CharacterView)}
+    <button
+      class="present-record"
+      type="button"
+      {disabled}
+      onclick={() => (presentingCharacterId = character.id)}
+    >
+      <span>出示紀錄</span>
+      <small>SHOW</small>
+    </button>
+  {/snippet}
+
+  {#snippet presentReply(character: CharacterView)}
+    {@const reply = feedbackFor(character)}
+    {#if reply}
+      <p class="present-reply" role="status">
+        {#if reply.speaker}
+          <strong>{reply.speaker}</strong>{reply.text}
+        {:else}
+          <em>{reply.text}</em>
+        {/if}
+      </p>
+    {/if}
+  {/snippet}
+
+  {#if presentingCharacter}
+    <InterrogationEvidenceTray
+      presentTo={presentingCharacter}
+      {inventory}
+      onPresent={presentRecord}
+      onResume={closePresentTray}
+      {disabled}
+    />
   {/if}
 
   {#if unplacedHotspots.length > 0 || unplacedCharacters.length > 0}
@@ -568,7 +652,7 @@
                   <p>{character.bio}</p>
                 </div>
                 <div class="fallback-topics">
-                  {#each character.topics as topic (topic.id)}
+                  {#each listedTopics(character) as topic (topic.id)}
                     <button
                       class:done={topic.discussed}
                       type="button"
@@ -581,6 +665,10 @@
                       {/if}
                     </button>
                   {/each}
+                  {#if character.acceptsPresent}
+                    {@render presentButton(character)}
+                  {/if}
+                  {@render presentReply(character)}
                 </div>
               </div>
             {/each}
@@ -1131,6 +1219,29 @@
   .fallback-topics button.done,
   .fallback-button.done {
     opacity: 0.66;
+  }
+
+  .topic-actions button.present-record,
+  .fallback-topics button.present-record {
+    border-color: rgba(174, 28, 49, 0.6);
+    border-style: dashed;
+  }
+
+  .present-reply {
+    margin: 10px 0 0;
+    padding: 6px 10px;
+    border-left: 2px solid var(--cyan);
+    background: rgba(236, 228, 207, 0.05);
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  .present-reply strong {
+    margin-right: 0.6em;
+    color: var(--bone);
+    font-weight: 400;
   }
 
   .topic-actions small,

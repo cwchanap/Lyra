@@ -8,6 +8,8 @@
 //   - action         (any other [bracketed] line)
 //   - dialogue       (**Name**：text — full-width colon, optionally ending in a
 //                     ` {#L012}` line ID that is not part of the text)
+//   - prompt         (`> 推理：question` plus the `> - ...` option lines that
+//                     follow it; the parser validates the options)
 //   - unknown        (any line that didn't match above)
 //
 // Blank lines are skipped but counted (so line numbers stay accurate).
@@ -44,6 +46,14 @@ export type Token =
       sourceFile: string;
       line: number;
     }
+  | {
+      kind: "prompt";
+      question: string;
+      /** Raw option lines after `> - `, in authored order. */
+      options: Array<{ text: string; line: number }>;
+      sourceFile: string;
+      line: number;
+    }
   | { kind: "unknown"; text: string; sourceFile: string; line: number };
 
 const HEADING_RE = /^(#{1,5})\s+(.+?)(?:\s+\{#([a-z0-9_]+)\})?\s*$/;
@@ -52,6 +62,8 @@ const BRACKETED_RE = /^\[(.+?)\]\s*$/;
 const DIALOGUE_RE =
   /^\*\*([^*]+)\*\*(?:\[([a-z][a-z0-9_]*)\])?：(.+?)(\s+\{#(L\d{3,})\})?\s*$/;
 const SCENE_TAG_PREFIX = "場景：";
+const PROMPT_QUESTION_RE = /^>\s*推理：\s*(.+?)\s*$/;
+const PROMPT_OPTION_RE = /^>\s*-\s+(.+?)\s*$/;
 
 export function tokenize(source: string, sourceFile: string): Token[] {
   const tokens: Token[] = [];
@@ -138,6 +150,31 @@ export function tokenize(source: string, sourceFile: string): Token[] {
       // If we accumulated lines but still couldn't parse a valid bracket
       // block, emit the original first line as unknown.
       tokens.push({ kind: "unknown", text: trimmed, sourceFile, line });
+      continue;
+    }
+
+    const question = PROMPT_QUESTION_RE.exec(trimmed);
+    if (question) {
+      const options: Array<{ text: string; line: number }> = [];
+      // Option lines may be separated by blank lines; the block ends at the
+      // first non-blank line that is not a `> - ` option.
+      let last = i;
+      for (let j = i + 1; j < lines.length; j++) {
+        const nextTrimmed = (lines[j] ?? "").trim();
+        if (nextTrimmed.length === 0) continue;
+        const option = PROMPT_OPTION_RE.exec(nextTrimmed);
+        if (!option) break;
+        options.push({ text: option[1] ?? "", line: j + 1 });
+        last = j;
+      }
+      i = last;
+      tokens.push({
+        kind: "prompt",
+        question: question[1] ?? "",
+        options,
+        sourceFile,
+        line,
+      });
       continue;
     }
 

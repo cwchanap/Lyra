@@ -88,6 +88,7 @@ function controller(): ControllerSpy {
 
 const exploreMode: Mode = {
   type: "explore",
+  presentFeedback: null,
   sublocationId: "main",
   backgroundAssetId: null,
   bgm: { channel: "bgm", assetId: "audio.bgm.review" },

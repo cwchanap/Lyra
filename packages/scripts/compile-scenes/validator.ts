@@ -21,6 +21,7 @@ import type {
   ASTInvestigationScene,
   ASTLinearScene,
   ASTSublocation,
+  ASTTopic,
   CompileError,
   InterrogationLocalRevealTarget,
   InterrogationLocalPredicate,
@@ -429,7 +430,7 @@ export function validate(input: ValidatorInput): CompileError[] {
   // ---- Pass 2: per-scene ID resolution + locked-block reachability. ----
   for (const rec of input.scenes) {
     if (rec.ast.kind === "investigationScene")
-      validateInvestigationScene(rec, errors);
+      validateInvestigationScene(rec, errors, corpusContext);
     if (rec.ast.kind === "interrogationScene")
       validateInterrogationScene(rec, errors, corpusContext);
   }
@@ -440,7 +441,11 @@ export function validate(input: ValidatorInput): CompileError[] {
   // Cycles (A needs B, B needs A) or dead-ends produce unreachable blocks.
   for (const rec of input.scenes) {
     if (rec.ast.kind !== "investigationScene") continue;
-    checkReachability(rec.ast, errors);
+    checkReachability(
+      rec.ast,
+      errors,
+      guaranteedInventoryBeforeScene.get(sceneRecordKey(rec)) ?? new Set(),
+    );
   }
 
   // ---- Pass 3: chapter manifests refer to existing files. ----
@@ -1292,7 +1297,7 @@ function guaranteedInventoryFromScene(
   initialInventory: Set<string>,
 ): Set<string> {
   if (scene.kind === "investigationScene")
-    return guaranteedInventoryFromInvestigation(scene);
+    return guaranteedInventoryFromInvestigation(scene, initialInventory);
   if (scene.kind === "interrogationScene") {
     return analyzeInterrogationInventory(scene, {
       mode: "guaranteed",
@@ -1304,6 +1309,7 @@ function guaranteedInventoryFromScene(
 
 function guaranteedInventoryFromInvestigation(
   scene: ASTInvestigationScene,
+  carried: ReadonlySet<string>,
 ): Set<string> {
   const guaranteed = new Set<string>();
   if (scene.outro.unlock === "auto") {
@@ -1348,6 +1354,7 @@ function guaranteedInventoryFromInvestigation(
         scene,
         subReachable,
         subMandatory,
+        carried,
       );
 
       // Update mandatory set: a reachable sub-location is mandatory if it has
@@ -1417,6 +1424,7 @@ function guaranteedInventoryFromInvestigation(
       scene,
       subReachable,
       subMandatory,
+      carried,
     );
     for (const sub of scene.sublocations) {
       if (!subReachable.has(sub.id)) continue;
@@ -2269,8 +2277,12 @@ function sceneRecordKey(rec: SceneRecord): string {
 function validateInvestigationScene(
   rec: SceneRecord,
   errors: CompileError[],
+  corpusContext: CorpusContext,
 ): void {
   const scene = rec.ast as ASTInvestigationScene;
+  const carried =
+    corpusContext.guaranteedInventoryBeforeScene.get(sceneRecordKey(rec)) ??
+    new Set<string>();
 
   const localEvidence = new Set(scene.evidenceManifest.map((e) => e.id));
   const localStatement = new Set(scene.statementManifest.map((s) => s.id));
@@ -2455,16 +2467,22 @@ function validateInvestigationScene(
 
   // v1 restriction (spec §3d): all four predicate kinds must resolve scene-local.
   // We don't distinguish "doesn't exist anywhere" vs. "exists in another scene".
+  // `checkedElsewhere` holds a Present topic's records: checkPresent below
+  // accepts those from earlier scenes too.
   const checkUnlock = (
     expr: UnlockExpr | null,
     sourceFile: string,
     line: number,
+    checkedElsewhere: ReadonlySet<string> = new Set(),
   ) => {
     if (expr === null) return;
     walkUnlock(expr, (pred) => {
       switch (pred.predicate) {
         case "evidence_collected":
-          if (!localEvidence.has(pred.id)) {
+          if (
+            !localEvidence.has(pred.id) &&
+            !checkedElsewhere.has(`evidence:${pred.id}`)
+          ) {
             errors.push({
               code: "crossChapterUnlock",
               message: `Unlock predicate evidence:${pred.id} collected — id not declared in this scene's Evidence Manifest. v1 disallows cross-scene Unlock predicates (see spec §3d).`,
@@ -2474,7 +2492,10 @@ function validateInvestigationScene(
           }
           break;
         case "statement_acquired":
-          if (!localStatement.has(pred.id)) {
+          if (
+            !localStatement.has(pred.id) &&
+            !checkedElsewhere.has(`statement:${pred.id}`)
+          ) {
             errors.push({
               code: "crossChapterUnlock",
               message: `Unlock predicate statement:${pred.id} acquired — id not declared in this scene's Statement Manifest. v1 disallows cross-scene Unlock predicates (see spec §3d).`,
@@ -2505,12 +2526,38 @@ function validateInvestigationScene(
     });
   };
 
+  // A shown record is one the player can hold here: from this scene, or
+  // collected on every path through the earlier scenes.
+  const checkPresent = (characterId: string, topic: ASTTopic) => {
+    for (const record of topic.present) {
+      const local =
+        record.kind === "evidence"
+          ? localEvidence.has(record.id)
+          : localStatement.has(record.id);
+      if (local || carried.has(`${record.kind}:${record.id}`)) continue;
+      errors.push({
+        code: "presentRecordUnavailable",
+        message: `Topic ${characterId}@${topic.id} lists Present ${record.kind}:${record.id}, which is neither in this scene's manifest nor collected on every path through the earlier scenes.`,
+        sourceFile: scene.sourceFile,
+        line: topic.line,
+      });
+    }
+  };
+
   for (const sub of scene.sublocations) {
     checkUnlock(sub.unlock, scene.sourceFile, sub.line);
     for (const h of sub.hotspots)
       checkUnlock(h.unlock, scene.sourceFile, h.line);
     for (const c of sub.characters)
-      for (const t of c.topics) checkUnlock(t.unlock, scene.sourceFile, t.line);
+      for (const t of c.topics) {
+        checkUnlock(
+          t.unlock,
+          scene.sourceFile,
+          t.line,
+          new Set(t.present.map((record) => `${record.kind}:${record.id}`)),
+        );
+        checkPresent(c.id, t);
+      }
   }
   if (scene.outro.unlock !== "auto")
     checkUnlock(scene.outro.unlock, scene.sourceFile, scene.line);
@@ -2603,6 +2650,7 @@ function checkLockedReachability(
 function checkReachability(
   scene: ASTInvestigationScene,
   errors: CompileError[],
+  carried: ReadonlySet<string>,
 ): void {
   // --- Phase 1: sub-location reachability ---
   const subReachable = new Set<string>();
@@ -2648,6 +2696,8 @@ function checkReachability(
     const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
       scene,
       subReachable,
+      undefined,
+      carried,
     );
     refreshReachableReveals(reachableAtoms);
     refreshReachableItems();
@@ -2689,6 +2739,8 @@ function checkReachability(
   const reachableAtoms = collectReachableAtomsAcrossReachableSublocations(
     scene,
     subReachable,
+    undefined,
+    carried,
   );
   for (const sub of scene.sublocations) {
     if (subReachable.has(sub.id)) {
@@ -2787,12 +2839,17 @@ function checkInternalReachability(
   }
 }
 
+/**
+ * `carried` seeds the records the player already holds from earlier scenes,
+ * which only Present topics may depend on.
+ */
 function collectReachableAtomsAcrossReachableSublocations(
   scene: ASTInvestigationScene,
   reachableSubs: Set<string>,
   mandatorySubs?: Set<string>,
+  carried: ReadonlySet<string> = new Set(),
 ): Set<string> {
-  const reachable = new Set<string>();
+  const reachable = new Set<string>(carried);
 
   for (const sub of scene.sublocations) {
     if (!reachableSubs.has(sub.id)) continue;

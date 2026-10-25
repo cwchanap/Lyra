@@ -312,6 +312,7 @@ When asked to write any part of a chapter:
 | Scene tag | `[場景：地點、時間、氛圍、視覺要素]` |
 | Action / expression | `[相馬眉頭微皺]` |
 | Atmosphere beat | `[一陣風從後巷吹入]` |
+| Deduction prompt | `> 推理：問題` then `> - [x] 正解` / `> - [ ] 錯誤 → **角色**：回應` |
 | Phone context | `[相馬的手機震動，他接起。]` then plain speaker labels |
 | Line spacing | one blank line between every line / block |
 | Max line length | ≈100 Chinese characters |
@@ -375,7 +376,36 @@ Exactly one H1 title line at the top, then dialogue. **No H2 or deeper headings 
 | `[場景：...]` (square brackets with `場景：` prefix) | scene tag |
 | `[anything else inside brackets]` | bracketed action |
 | `**Name**：text` (Markdown bold name, full-width colon, dialogue text) | dialogue line |
+| `> 推理：question` followed by `> - [x] ...` / `> - [ ] ... → reply` lines | deduction prompt (see below) |
 | blank line | separator (ignored) |
+
+### 推理 deduction prompts (any dialogue block)
+
+A prompt stops the dialogue and asks the player to pick the right conclusion
+before Soma says it. Use one where the player has just seen the facts and can
+reasonably work the answer out; do not use it to quiz trivia or to guess what
+the writer is thinking.
+
+```
+**相馬律**：總時長是 89.7 秒。
+
+> 推理：那 89.7 秒說明了什麼？
+> - [x] 摘要把合併的時間當成了事件時間
+> - [ ] 三宅說了謊 → **早坂茜**：他的小謊和這段時間無關。
+> - [ ] 門鎖當晚故障 → [門鎖的紀錄一直完整。]
+
+**相馬律**：對，摘要把三段時間合併成了一段。
+```
+
+- 2-4 options, exactly one `[x]`. Option labels are short and distinct; the
+  correct one should not stand out by length or wording.
+- Every wrong `[ ]` option needs a reply after ` → `: one `**Name**：line` or one
+  `[narration]`, no expression and no line ID. The reply shows under the
+  question and the player picks again; a wrong pick costs nothing.
+- The correct option takes no reply. The dialogue after the prompt states the
+  conclusion, so write it as if the player said it.
+- Prompts work in linear scenes and in every investigation, interrogation and
+  analysis dialogue block, except inside interrogation testimony.
 
 ### Linear scene semantics
 
@@ -393,6 +423,8 @@ Exactly one H1 title line at the top, then dialogue. **No H2 or deeper headings 
 | Adding metadata like `**Status:** unlocked` | Linear scenes have no metadata. Remove. |
 | Forgetting a `[場景：...]` tag at the top | A linear scene should open with a scene tag so the engine can render a backdrop from the first frame. |
 | Mixing investigation-scene blocks (`### Hotspot:`) into a linear scene | Wrong scene type. Move that content to an `investigation_scene_<N>.md` file. |
+| A 推理 prompt whose wrong option has no `→ reply`, or whose correct option has one | Every wrong option needs one reply; the correct one has none, and the lines after the prompt give the conclusion. |
+| A 推理 prompt the player cannot answer from what they have seen | Move it after the clue, or drop it; the prompt should reward attention, not guessing. |
 
 ## Core spirit
 

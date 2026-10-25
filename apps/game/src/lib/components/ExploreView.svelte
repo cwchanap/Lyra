@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
-  import type { SceneView } from "../state/types";
+  import type { FeedbackLine, Inventory, SceneView } from "../state/types";
   import SublocationNav from "./SublocationNav.svelte";
   import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
   import InvestigationMapView from "./InvestigationMapView.svelte";
@@ -13,6 +13,9 @@
     onInspect,
     onInterview,
     onEnterSublocation,
+    inventory = { evidence: [], statements: [] },
+    onPresent = () => {},
+    presentFeedback = null,
     disabled = false,
     hud,
   }: {
@@ -21,6 +24,13 @@
     onInspect: (id: string) => void;
     onInterview: (cId: string, tId: string) => void;
     onEnterSublocation: (id: string) => void;
+    inventory?: Inventory;
+    onPresent?: (
+      characterId: string,
+      kind: "evidence" | "statement",
+      itemId: string,
+    ) => void;
+    presentFeedback?: { characterId: string; line: FeedbackLine } | null;
     disabled?: boolean;
     hud?: Snippet;
   } = $props();
@@ -69,6 +79,9 @@
     {backgroundAssetId}
     {onInspect}
     {onInterview}
+    {inventory}
+    {onPresent}
+    {presentFeedback}
     {disabled}
     hud={sceneHud}
   />

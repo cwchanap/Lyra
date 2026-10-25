@@ -66,6 +66,7 @@ function scene(
               name: "證人",
               role: "",
               bio: "",
+              wrongPresent: null,
               sourceFile: "chapter_1/investigation_scene_1.md",
               line: 4,
               topics: [
@@ -75,6 +76,7 @@ function scene(
                   status: "unlocked",
                   unlock: null,
                   reveals: [],
+                  present: [],
                   topicDialogue: [],
                   onReexamine: input.topic ?? null,
                   sourceFile: "chapter_1/investigation_scene_1.md",

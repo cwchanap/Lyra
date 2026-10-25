@@ -3,8 +3,13 @@ import {
   rejectUnknownAssetMetadata,
   VISUAL_ASSET_METADATA_KEYS,
 } from "./parser-assets";
-import type { Token } from "./tokenizer";
-import type { CompileError, DialogueItem } from "./types";
+import { tokenize, type Token } from "./tokenizer";
+import type {
+  CompileError,
+  DialogueItem,
+  PromptOption,
+  FeedbackLine,
+} from "./types";
 
 type CursorLike = {
   readonly sourceFile: string;
@@ -93,6 +98,10 @@ export function consumeDialogueUntilHeading(
         portrait: null,
         sourceLine: next.line,
       });
+    } else if (next.kind === "prompt") {
+      const prompt = parsePromptToken(next);
+      if (!prompt.ok) return prompt;
+      out.push(prompt.value);
     } else if (next.kind === "metadata") {
       return parseFailure(
         cur.sourceFile,
@@ -124,6 +133,8 @@ export function describeToken(tok: Token): string {
       return `[${tok.text}]`;
     case "dialogue":
       return `**${tok.speaker}**：${tok.text}`;
+    case "prompt":
+      return `> 推理：${tok.question}`;
     case "unknown":
       return `unknown(${tok.text})`;
     default: {
@@ -133,6 +144,136 @@ export function describeToken(tok: Token): string {
       return String((_exhaustive as Token).kind);
     }
   }
+}
+
+const PROMPT_MIN_OPTIONS = 2;
+const PROMPT_MAX_OPTIONS = 4;
+const PROMPT_OPTION_RE = /^\[( |x)\]\s+(.+?)(?:\s+→\s+(.+))?$/;
+
+/**
+ * Builds an inline deduction prompt from its tokenizer block:
+ *
+ *   > 推理：那 89.7 秒說明了什麼？
+ *   > - [x] 摘要把合併的時間當成了事件時間
+ *   > - [ ] 三宅說了謊 → **早坂茜**：他的小謊和這段時間無關。
+ *
+ * Exactly one option is correct and carries no reply; the lines after the
+ * prompt say the conclusion. Every wrong option needs a one-line reply (a
+ * `**Name**：` line or a `[narration]`), shown before the prompt asks again.
+ */
+export function parsePromptToken(
+  tok: Extract<Token, { kind: "prompt" }>,
+): { ok: true; value: DialogueItem } | { ok: false; error: CompileError } {
+  if (
+    tok.options.length < PROMPT_MIN_OPTIONS ||
+    tok.options.length > PROMPT_MAX_OPTIONS
+  ) {
+    return parseFailure(
+      tok.sourceFile,
+      tok.line,
+      "promptOptionCount",
+      `A 推理 prompt needs ${PROMPT_MIN_OPTIONS}-${PROMPT_MAX_OPTIONS} \`> - \` options; found ${tok.options.length}.`,
+    );
+  }
+  const options: PromptOption[] = [];
+  for (const raw of tok.options) {
+    const match = PROMPT_OPTION_RE.exec(raw.text);
+    if (!match) {
+      return parseFailure(
+        tok.sourceFile,
+        raw.line,
+        "promptOptionMalformed",
+        `A 推理 option must read \`> - [x] answer\` or \`> - [ ] answer → reply\`. Got: ${raw.text}`,
+      );
+    }
+    const correct = match[1] === "x";
+    const label = (match[2] ?? "").trim();
+    const rawReply = match[3]?.trim() ?? null;
+    if (options.some((option) => option.label === label)) {
+      return parseFailure(
+        tok.sourceFile,
+        raw.line,
+        "promptDuplicateOption",
+        `A 推理 prompt repeats the option "${label}".`,
+      );
+    }
+    if (correct && rawReply !== null) {
+      return parseFailure(
+        tok.sourceFile,
+        raw.line,
+        "promptCorrectOptionHasReply",
+        "The correct 推理 option takes no reply; write the conclusion as the dialogue after the prompt.",
+      );
+    }
+    if (!correct && rawReply === null) {
+      return parseFailure(
+        tok.sourceFile,
+        raw.line,
+        "promptWrongOptionMissingReply",
+        `The wrong 推理 option "${label}" needs a reply after →, e.g. → **早坂茜**：……`,
+      );
+    }
+    let reply: FeedbackLine | null = null;
+    if (rawReply !== null) {
+      const parsed = parseFeedbackLine(
+        rawReply,
+        tok.sourceFile,
+        raw.line,
+        "promptReplyMalformed",
+        "A 推理 reply",
+      );
+      if (!parsed.ok) return parsed;
+      reply = parsed.value;
+    }
+    options.push({ label, correct, reply });
+  }
+  const correctCount = options.filter((option) => option.correct).length;
+  if (correctCount !== 1) {
+    return parseFailure(
+      tok.sourceFile,
+      tok.line,
+      "promptCorrectOptionCount",
+      `A 推理 prompt needs exactly one [x] option; found ${correctCount}.`,
+    );
+  }
+  return {
+    ok: true,
+    value: {
+      kind: "prompt",
+      question: tok.question,
+      options,
+      sourceLine: tok.line,
+    },
+  };
+}
+
+/**
+ * Parses a one-line reply (a wrong 推理 option's reply, a character's
+ * Wrong Present line): one `**Name**：line` with no expression or line ID,
+ * or one `[narration]`.
+ */
+export function parseFeedbackLine(
+  raw: string,
+  sourceFile: string,
+  line: number,
+  code: string,
+  what: string,
+): { ok: true; value: FeedbackLine } | { ok: false; error: CompileError } {
+  // Reuse the tokenizer's dialogue/action recognition on the single reply.
+  const tokens = tokenize(raw, sourceFile);
+  const only = tokens.length === 1 ? tokens[0] : undefined;
+  if (only?.kind === "dialogue" && only.expression === null && !only.lineId) {
+    return { ok: true, value: { speaker: only.speaker, text: only.text } };
+  }
+  if (only?.kind === "action") {
+    return { ok: true, value: { speaker: null, text: only.text } };
+  }
+  return parseFailure(
+    sourceFile,
+    line,
+    code,
+    `${what} must be one **Name**：line (no expression or line ID) or one [narration]. Got: ${raw}`,
+  );
 }
 
 export function parseFailure(

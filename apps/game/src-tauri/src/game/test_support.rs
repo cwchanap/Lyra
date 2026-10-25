@@ -492,6 +492,7 @@ pub(crate) fn empty_engine_with_scene(
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
         cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+        transient_feedback: None,
     }
 }
 pub(super) fn token_from(view: &GameStateView) -> QueueToken {
@@ -2620,6 +2621,7 @@ pub(crate) fn empty_engine_with_interrogation_scene(
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
         cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+        transient_feedback: None,
     }
 }
 pub(super) fn completed_interrogation_engine_with_bad_next_scene(
@@ -2695,6 +2697,7 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
         cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+        transient_feedback: None,
     }
 }
 /// Builds a single required `Auto` inquiry phase with one required

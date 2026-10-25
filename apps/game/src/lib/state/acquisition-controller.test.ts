@@ -40,6 +40,7 @@ function state(
     },
     mode: {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "main",
       backgroundAssetId: null,
       bgm: null,
