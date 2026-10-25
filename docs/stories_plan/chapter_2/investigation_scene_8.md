@@ -4,26 +4,24 @@
 
 ## Intro
 
-[場景：廣場前天橋樓梯下，案發翌日下午三點三十分，陰天細雨。水泥樓梯往上延伸，橋面欄杆邊有一圈冷白色的環形燈在雨裡亮著，樓梯下一角是便利店的玻璃門與自動販賣機。]
-- **Background Prompt:** Arrival view at the foot of a covered concrete pedestrian-bridge staircase at 3:30 p.m. on an overcast drizzly day in Shibuya, eye-level medium-wide shot looking up the wet concrete stairs toward the bridge deck, focal area on the small cold-white glow of a ring light clamped to the railing at the top of the stairs, stable anchors of rain-streaked stair handrails, a glass-fronted convenience store corner with a lit vending machine at the lower right under the stair overhang, wet pavement and a blurred gray plaza entrance road beyond, a few distant faceless pedestrians under plain black and clear umbrellas, no blue umbrellas, lower third kept as plain wet pavement for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+[場景：廣場前天橋樓梯下，案發翌日下午兩點左右，陰天細雨。水泥樓梯往上延伸，橋面欄杆邊有一圈冷白色的環形燈在雨裡亮著，樓梯下一角是便利店的玻璃門與自動販賣機。]
+- **Background Prompt:** Arrival view at the foot of a covered concrete pedestrian-bridge staircase at about 2 p.m. on an overcast drizzly day in Shibuya, eye-level medium-wide shot looking up the wet concrete stairs toward the bridge deck, focal area on the small cold-white glow of a ring light clamped to the railing at the top of the stairs, stable anchors of rain-streaked stair handrails, a glass-fronted convenience store corner with a lit vending machine at the lower right under the stair overhang, wet pavement and a blurred gray plaza entrance road beyond, a few distant faceless pedestrians under plain black and clear umbrellas, no blue umbrellas, lower third kept as plain wet pavement for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_shibuya_plaza_day_aftermath
 
-**旁白**：案發翌日，下午三點三十分。廣場前天橋。
+**旁白**：案發翌日，下午兩點左右。廣場前天橋。
 
 [相馬律與早坂茜站在天橋樓梯下。雨絲比中午更細，天色壓得很低。]
 
-**早坂茜**：神谷給的七十二小時，已經用掉四個多鐘頭了。
+**早坂茜**：這座橋，我一直不喜歡它重新開著。
 
-**相馬律**：黑瀨給的那份節目輸出，在事務所多等了一陣才下載完。
+**相馬律**：那天晚上，沒有人站在這裡。
 
-**早坂茜**：值得。要不是等它，我們應該更早到。
-
-**相馬律**：三枝中間斷過一次線，重開了。我們到的時候，剛好趕上。
+**早坂茜**：所以我們今天的紙，沒有一張是從這裡來的。
 
 [早坂抬頭，指向樓梯上方。天橋欄杆邊，一圈冷白的光在雨裡特別突兀。]
 
-**早坂茜**：看見沒有。下午三點半，下雨，在橋上，開著環形燈。
+**早坂茜**：看見沒有。下午兩點，下雨，在橋上，開著環形燈。
 
 **相馬律**：他連天橋都能當攝影棚。
 
@@ -33,11 +31,11 @@
 
 ## Sub-location: 廣場前天橋 {#overpass_deck}
 - **Status:** unlocked
-- **Background Prompt:** Investigation view on the open deck of a concrete pedestrian bridge in drizzle at about 3:30 p.m., high eye-level wide shot standing near the stair head and looking out over the bridge railing at the whole event plaza below from the booth's front-left side; focal area on the plaza: the transparent glass livestream booth with its dark canopy at the center, a giant building-facade LED screen at the far right corner of the plaza above and beyond the booth showing a plain ad with a soft glow, a fan memorial area with bouquets along the right barrier with a single concrete pillar at its corner, a media platform and an outdoor broadcast truck behind barriers on the left; stable anchors at the lower left foreground of two metal barriers zip-tied at the stair head with a laminated notice sheet hanging on them, and a gimbal with a cold-white ring light and a phone clamped to the bridge railing at the lower center. Saegusa Yuma baked into the left side of the deck: lanky slouched rival livestreamer in his late twenties, bleached ash hair with dark roots grown out, oversized black hoodie with small neon-green accents, gaming headset pushed down around his neck, leaning one elbow on the railing next to the clamped rig with a sarcastic restless look, perspective-correct scale, not covering the zip-tied barriers, the clamped phone rig, the glass booth or the giant screen. Overcast flat gray daylight, wet railing and deck, thin scattered umbrellas far below, no blue umbrellas, lower third kept as plain wet bridge deck for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **Background Prompt:** Investigation view on the open deck of a concrete pedestrian bridge in drizzle at about 2 p.m., high eye-level wide shot standing near the stair head and looking out over the bridge railing at the whole event plaza below from the booth's front-left side; focal area on the plaza: the transparent glass livestream booth with its dark canopy at the center, a giant building-facade LED screen at the far right corner of the plaza above and beyond the booth showing a plain ad with a soft glow, a fan memorial area with bouquets along the right barrier with a single concrete pillar at its corner, a media platform and an outdoor broadcast truck behind barriers on the left; the near-side plaza corner partly hidden by the convenience store's eave and the far stair roof; yellow seal tape visible across the booth's rear hatch through the clear glass; stable anchors on the mid-foreground railing line, above the bottom third, of two metal barriers zip-tied at the stair head at the left with a laminated notice sheet hanging on them, and a gimbal with a cold-white ring light and a phone clamped to the bridge railing at the center. Saegusa Yuma baked into the left side of the deck: lanky slouched rival livestreamer in his late twenties, bleached ash hair with dark roots grown out, oversized black hoodie with small neon-green accents, gaming headset pushed down around his neck, leaning one elbow on the railing with clear empty railing spacing between him and the clamped rig, with a sarcastic restless look, perspective-correct scale, not covering the zip-tied barriers, the clamped phone rig, the glass booth or the giant screen. Overcast flat gray daylight, wet railing and deck, thin scattered umbrellas far below, no blue umbrellas, the entire bottom third kept as empty plain wet bridge deck for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_shibuya_plaza_day_aftermath
 
-[場景：廣場前天橋橋面，案發翌日下午，陰天細雨。欄杆外是整片廣場：中央的玻璃箱與頂棚，遠端右角大樓外牆的巨大螢幕，右側的粉絲應援區，左側的媒體平台與轉播車。樓梯口兩座鐵馬被束線帶綁著，上面掛著一張護貝告示；欄杆上夾著一組雲台、環形燈與手機。]
+[場景：廣場前天橋橋面，案發翌日下午兩點左右，陰天細雨。欄杆外是整片廣場：中央的玻璃箱與頂棚，遠端右角大樓外牆的巨大螢幕，右側的粉絲應援區，左側的媒體平台與轉播車。樓梯口兩座鐵馬被束線帶綁著，上面掛著一張護貝告示；欄杆上夾著一組雲台、環形燈與手機。]
 
 [三枝悠真倚在欄杆邊，一手拿著手機，另一手對著廣場比劃。]
 
@@ -49,7 +47,17 @@
 
 **相馬律**：橋上看得到整個廣場。
 
-**三枝悠真**：所以才是好機位。別擋我鏡頭——算了，反正已經沒人在看了。
+**三枝悠真**：所以才是好機位。別擋我鏡頭——
+
+**早坂茜**[stern]：把直播關掉。
+
+**三枝悠真**：現在？我才開四十分鐘，演算法正熱——
+
+**早坂茜**[stern]：現在。
+
+[三枝嘖了一聲，拇指在手機上點了兩下。鏡頭旁的紅點熄了。]
+
+**三枝悠真**[irritated]：關了。滿意嗎？
 
 ### Hotspot: 封橋鐵馬與告示 {#closure_barrier}
 - **Description:** 樓梯口還用束線帶綁著的鐵馬，和一張被雨打皺的護貝告示。
@@ -142,17 +150,17 @@
 [螢幕又轉回廣告。熱飲的蒸氣在雨天的灰色裡顯得過分明亮。]
 
 ### Hotspot: 三枝的直播架 {#saegusa_rig}
-- **Description:** 夾在欄杆上的雲台、環形燈與手機，手機螢幕上還開著聊天室。
+- **Description:** 夾在欄杆上的雲台、環形燈與手機，直播已經關掉，手機上的社群頁面留言還在跳。
 
 [雲台和環形燈用夾子牢牢固定在欄杆上，手機螢幕朝著外側的廣場。]
 
-[聊天室一行一行往上跳：「現場追查在哪」「律師來了」「別走」「人數怎麼掉了」。]
+[手機螢幕停在直播結束的畫面，切到社群頁面，留言還一行一行往上跳：「現場追查在哪」「律師來了」「別走」「人數怎麼掉了」。]
 
 **相馬律**：留言還在動。
 
 **三枝悠真**[irritated]：喂，別碰。這組器材比你的西裝還貴。
 
-**三枝悠真**：人數一直在掉。你們一站過來，掉得更快。
+**三枝悠真**：台是關了，人還在罵。你們一站過來，人數掉得比誰都快。
 
 **早坂茜**：那是你的問題。
 
@@ -176,17 +184,7 @@
 
 **三枝悠真**：全澀谷最好的機位。看得到整片廣場，又不用付場地費。
 
-**早坂茜**[stern]：把直播關掉。
-
-**三枝悠真**：現在？我重開才一下下，演算法正熱——
-
-**早坂茜**[stern]：現在。
-
-[三枝嘖了一聲，拇指在手機上點了兩下。鏡頭旁的紅點熄了。]
-
-**三枝悠真**[irritated]：關了。滿意嗎？
-
-**三枝悠真**：「現場追查」這四個字，點進來的人是我昨天的三倍。你叫我關，我就是白白少賺一個月房租。
+**三枝悠真**[irritated]：「現場追查」這四個字，點進來的人是我昨天的三倍。你叫我關，我就是白白少賺一個月房租。
 
 **早坂茜**：你在案發現場旁邊開台。
 
@@ -367,7 +365,7 @@
 
 ## Sub-location: 流出影片留言串 {#leaked_clip_thread}
 - **Status:** locked
-- **Background Prompt:** Investigation view of a tablet propped upright on a narrow concrete ledge under the roofed stair landing of a pedestrian bridge, eye-level close medium shot, focal area on the tablet screen showing a social comment-thread layout with a small paused vertical video frame at the top, a profile header strip above it, and a long column of comment bubbles below, all content unreadable blocks and glow; stable anchors of the damp concrete landing wall, a strip of gray rain curtain beyond the roof edge, and the cold white glow of the screen on wet concrete, overcast daylight dimming toward evening, no people, no umbrellas, lower third kept as plain concrete ledge and wet floor for dialogue UI, no readable text, no UI overlay beyond the abstract tablet screen, neo-noir visual novel background.
+- **Background Prompt:** Investigation view of a tablet propped upright on a narrow concrete ledge under the roofed stair landing of a pedestrian bridge, eye-level close medium shot, focal area on the tablet screen showing a social comment-thread layout with a small paused vertical video frame at the top, a profile header strip above it, and a long column of comment bubbles below, all content unreadable blocks and glow; stable anchors of the damp concrete landing wall, a strip of gray rain curtain beyond the roof edge, and the cold white glow of the screen on wet concrete, overcast afternoon daylight, no people, no umbrellas, lower third kept as plain concrete ledge and wet floor for dialogue UI, no readable text, no UI overlay beyond the abstract tablet screen, neo-noir visual novel background.
 - **BGM:** bgm_midnight_blind_window
 - **BGS:** bgs_shibuya_plaza_day_aftermath
 
