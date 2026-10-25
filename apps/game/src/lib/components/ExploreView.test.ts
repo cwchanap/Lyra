@@ -345,8 +345,16 @@ describe("ExploreView", () => {
           name: "鄰居",
           role: "目擊者",
           bio: "",
+          acceptsPresent: false,
           layout: null,
-          topics: [{ id: "noise", label: "聲響", discussed: false }],
+          topics: [
+            {
+              id: "noise",
+              label: "聲響",
+              discussed: false,
+              requiresPresent: false,
+            },
+          ],
         },
       ],
     };

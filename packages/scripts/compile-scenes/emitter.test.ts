@@ -985,6 +985,7 @@ describe("emitter", () => {
               name: "Witness",
               role: "Witness",
               bio: "Waiting.",
+              wrongPresent: null,
               topics: [],
               layout: {
                 kind: "sprite",
@@ -1003,6 +1004,7 @@ describe("emitter", () => {
               name: "Baked Witness",
               role: "Witness",
               bio: "Painted into the room.",
+              wrongPresent: null,
               topics: [],
               layout: {
                 kind: "baked",

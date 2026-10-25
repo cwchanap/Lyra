@@ -156,6 +156,7 @@ function currentState(): GameStateView {
     },
     mode: {
       type: "dialogue",
+      promptFeedback: null,
       crossExamLineId: null,
       current: { kind: "action", text: "幕開" },
       queueRemaining: 0,
@@ -252,6 +253,7 @@ function interrogationDialogueState(): GameStateView {
   };
   state.mode = {
     type: "dialogue",
+    promptFeedback: null,
     current: {
       kind: "line",
       speaker: "相馬律",
@@ -343,6 +345,7 @@ function jumpedState(): GameStateView {
     },
     mode: {
       type: "dialogue",
+      promptFeedback: null,
       crossExamLineId: null,
       current: { kind: "action", text: "幕開" },
       queueRemaining: 0,
@@ -1227,6 +1230,7 @@ describe("+page in-game persistence browser", () => {
       ...state,
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         current: { kind: "action", text: "訊問開始。" },
         queueRemaining: 0,
         sceneTag: "訊問室",
@@ -3094,6 +3098,7 @@ describe("+page active primary objective HUD", () => {
     };
     state.mode = {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "coffee_shop",
       backgroundAssetId: null,
       bgm: null,

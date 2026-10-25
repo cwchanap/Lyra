@@ -54,8 +54,10 @@ export type GameplayCommandName =
   | "start_game"
   | "reset_game"
   | "advance_dialogue"
+  | "answer_dialogue_prompt"
   | "inspect_hotspot"
   | "interview_topic"
+  | "present_to_character"
   | "enter_sublocation"
   | "reexamine_evidence"
   | "reexamine_statement"
@@ -227,7 +229,9 @@ function enteredDialogueBeat(
   matches: (kind: string, text: string) => boolean,
 ): boolean {
   if (next.mode.type !== "dialogue") return false;
-  if (!matches(next.mode.current.kind, next.mode.current.text)) return false;
+  const current = next.mode.current;
+  const text = current.kind === "prompt" ? current.question : current.text;
+  if (!matches(current.kind, text)) return false;
   if (previous?.mode.type !== "dialogue") return true;
 
   return (

@@ -2,7 +2,7 @@
 use crate::game::analysis::{AnalysisActionToken, AnalysisDraft, AnalysisFeedbackState};
 use crate::game::save::schema::RecordKind;
 use crate::game::schema::{
-    AudioChannelJson, CharacterLayoutJson, DialogueItem, HotspotLayoutJson,
+    AudioChannelJson, CharacterLayoutJson, DialogueItem, FeedbackLineJson, HotspotLayoutJson,
     IntentionalHotspotOverlapJson, InventoryTarget, PortraitRefJson, SceneType,
 };
 use crate::game::state::{EvidenceRecord, Inventory, StatementRecord};
@@ -259,6 +259,9 @@ pub enum ModeView {
         /// `None` for every other dialogue (linear/investigation scenes, the
         /// challenge lead-in, on-correct reveals, honest-question testimony).
         cross_exam_line_id: Option<String>,
+        /// The reply to the last wrong option of the `Prompt` shown in
+        /// `current`; `None` until the player picks a wrong option.
+        prompt_feedback: Option<FeedbackLineJson>,
     },
     Explore {
         /// `None` is valid only for a mapped investigation awaiting player
@@ -269,6 +272,9 @@ pub enum ModeView {
         background_asset_id: Option<String>,
         bgm: Option<AudioCueView>,
         bgs: Option<AudioCueView>,
+        /// The character's reply after the player showed them a record that
+        /// opens nothing; `None` otherwise.
+        present_feedback: Option<PresentFeedbackView>,
     },
     Interrogation {
         phase_id: String,
@@ -291,6 +297,13 @@ pub enum ModeView {
     /// final loaded chapter is `**Status:** in-progress`: the boundary is still
     /// terminal, but it is "to be continued", not a story clear.
     GameComplete { story_cleared: bool },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PresentFeedbackView {
+    pub character_id: String,
+    pub line: FeedbackLineJson,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -574,6 +587,10 @@ pub struct CharacterView {
     pub bio: String,
     pub layout: Option<CharacterLayoutJson>,
     pub topics: Vec<TopicView>,
+    /// The player can show this character a record: some topic of theirs
+    /// opens on one. True even before the player holds any such record, so
+    /// the option itself gives nothing away.
+    pub accepts_present: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -582,6 +599,9 @@ pub struct TopicView {
     pub id: String,
     pub label: String,
     pub discussed: bool,
+    /// The topic opens only when the player shows the character one of its
+    /// accepted records; the view never names which ones.
+    pub requires_present: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

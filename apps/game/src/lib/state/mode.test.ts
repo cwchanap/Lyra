@@ -6,6 +6,7 @@ describe("mode helpers", () => {
   it("shows the Case File in explore mode and enables reexamine", () => {
     const mode: Mode = {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "cafe_floor",
       backgroundAssetId: null,
       bgm: null,
@@ -30,6 +31,7 @@ describe("mode helpers", () => {
   it("shows the Case File in dialogue mode but disables reexamine", () => {
     const mode: Mode = {
       type: "dialogue",
+      promptFeedback: null,
       crossExamLineId: null,
       current: { kind: "action", text: "Found evidence." },
       queueRemaining: 0,

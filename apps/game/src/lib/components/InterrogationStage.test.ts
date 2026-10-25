@@ -122,6 +122,7 @@ const interrogationMode: Mode = {
 
 const ordinaryDialogue: Mode = {
   type: "dialogue",
+  promptFeedback: null,
   current: { kind: "action", text: "普通對話" },
   queueRemaining: 0,
   sceneTag: null,
@@ -137,6 +138,7 @@ function dialogueWithPortrait(
 ): Extract<Mode, { type: "dialogue" }> {
   return {
     type: "dialogue",
+    promptFeedback: null,
     current: { kind: "line", speaker: "相馬律", text: "請回答。", portrait },
     queueRemaining: 0,
     queueToken: { sceneId: "interrogation_1", queueGen: 1, cursor: 0 },
@@ -409,6 +411,7 @@ describe("InterrogationStage", () => {
       props({
         mode: {
           type: "explore",
+          presentFeedback: null,
           sublocationId: "sub_1",
           backgroundAssetId: null,
           bgm: null,

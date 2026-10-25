@@ -172,6 +172,9 @@ function emittedMatchesSource(
   ) {
     return item.text === ast.text;
   }
+  if (item.kind === "prompt" && ast.kind === "prompt") {
+    return item.question === ast.question;
+  }
   return false;
 }
 

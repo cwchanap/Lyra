@@ -197,9 +197,13 @@ export function emitInvestigationScene(
           status: t.status,
           unlock: t.unlock,
           reveals: t.reveals,
+          // Omitted when unused so scenes without the mechanic keep their
+          // JSON (and content revision) unchanged.
+          ...(t.present.length > 0 ? { present: t.present } : {}),
           topicDialogue: emitDialogueItems(t.topicDialogue),
           onReexamine: emitNullableDialogueItems(t.onReexamine),
         })),
+        ...(c.wrongPresent ? { wrongPresent: c.wrongPresent } : {}),
       })),
       ...(sub.intentionalOverlaps && sub.intentionalOverlaps.length > 0
         ? { intentionalOverlaps: sub.intentionalOverlaps }
@@ -540,6 +544,19 @@ function emitDialogueItem(item: DialogueItem): JSONDialogueItem {
   }
   if (item.kind === "action") {
     return { kind: "action", text: item.text };
+  }
+  if (item.kind === "prompt") {
+    return {
+      kind: "prompt",
+      question: item.question,
+      options: item.options.map((option) => ({
+        label: option.label,
+        correct: option.correct,
+        reply: option.reply
+          ? { speaker: option.reply.speaker, text: option.reply.text }
+          : null,
+      })),
+    };
   }
   return {
     kind: "line",

@@ -70,11 +70,7 @@ function props(
     topLayerOpen: boolean;
     returnFocusTo: HTMLElement | null;
     fallbackFocusTarget: HTMLElement | null;
-    onPresent: (
-      lineId: string,
-      kind: "evidence" | "statement",
-      itemId: string,
-    ) => void;
+    onPresent: (kind: "evidence" | "statement", itemId: string) => void;
     onResume: () => void;
     onOpenGameMenu: (trigger: HTMLElement) => void;
   }> = {},
@@ -248,7 +244,7 @@ describe("InterrogationEvidenceTray", () => {
     await user.click(
       screen.getByRole("button", { name: /咖啡收據.*店內收銀匯出/ }),
     );
-    expect(onPresent).toHaveBeenCalledWith("line_1", "evidence", "receipt");
+    expect(onPresent).toHaveBeenCalledWith("evidence", "receipt");
 
     const escape = screen.getByRole("button", { name: "ESC" });
     expect(escape).toHaveAttribute("data-interrogation-tray-escape");
@@ -277,18 +273,8 @@ describe("InterrogationEvidenceTray", () => {
     await user.click(screen.getByRole("button", { name: /咖啡收據/ }));
     await user.click(screen.getByRole("button", { name: /目擊者/ }));
 
-    expect(onPresent).toHaveBeenNthCalledWith(
-      1,
-      "line_1",
-      "evidence",
-      "receipt",
-    );
-    expect(onPresent).toHaveBeenNthCalledWith(
-      2,
-      "line_1",
-      "statement",
-      "witness",
-    );
+    expect(onPresent).toHaveBeenNthCalledWith(1, "evidence", "receipt");
+    expect(onPresent).toHaveBeenNthCalledWith(2, "statement", "witness");
   });
 
   it("resumes the testimony from 收回 and its topmost Escape claim", async () => {

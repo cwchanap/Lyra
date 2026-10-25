@@ -178,8 +178,12 @@ describe("buildSaveContentManifest", () => {
     (reordered.chapters[0]!.scenes[0]! as JSONLinearScene).queue.reverse();
     const edited = structuredClone(baseline);
     edited.chapters[0]!.title = "Corrected title";
-    (edited.chapters[0]!.scenes[0]! as JSONLinearScene).queue[0]!.text =
-      "Corrected copy";
+    (
+      (edited.chapters[0]!.scenes[0]! as JSONLinearScene).queue[0]! as Extract<
+        JSONDialogueItem,
+        { kind: "line" }
+      >
+    ).text = "Corrected copy";
 
     const baselineRevision = manifest({ bundle: baseline }).contentRevision;
     expect(manifest({ bundle: reordered }).contentRevision).not.toBe(

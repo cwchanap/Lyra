@@ -1340,7 +1340,12 @@ describe("AnalysisWorkbench", () => {
     const state = analysisState();
     const wrongMode = {
       ...state,
-      mode: { type: "explore", sceneId: "scene_1", sublocationId: "loc_1" },
+      mode: {
+        type: "explore",
+        presentFeedback: null,
+        sceneId: "scene_1",
+        sublocationId: "loc_1",
+      },
     } as unknown as GameStateView;
     const onSelectBoard = vi.fn().mockResolvedValue(wrongMode);
     renderWorkbench(state, { onSelectBoard });
@@ -1391,6 +1396,7 @@ describe("AnalysisWorkbench", () => {
   it("renders a loading state when the mode is not analysis", () => {
     const nonAnalysisMode = {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "loc_1",
     } as unknown as Mode;
     render(AnalysisWorkbench, {
@@ -1565,6 +1571,7 @@ describe("AnalysisWorkbench", () => {
     // Rerender with a non-analysis mode so analysisMode?.boardId becomes null.
     const nonAnalysisMode = {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "loc_1",
     } as unknown as Mode;
     await view.rerender({

@@ -141,11 +141,15 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
 
 ### Character (H3, inside a Sub-location)
 - **Required:** `Role`, `Bio`
-- **Optional:** none
+- **Optional:** `Wrong Present` — the one line the character says when the
+  player shows a record none of their `Present` topics accepts:
+  `- **Wrong Present:** **店員**：這跟我無關吧。` or a `[narration]`. Allowed
+  only on a character with at least one `Present` topic; defaults to
+  `[<name>看了一眼，沒有反應。]`. A wrong pick changes nothing.
 - **Body:** none directly — container for `#### Topic:` blocks.
 
 ### Topic (H4, inside a Character)
-- **Required:** `Status`
+- **Required:** `Status` (except `Present` topics, below)
 - **Optional:** `Unlock`, `Reveals` (list)
 - **Person-sourced evidence:** if the evidence comes from what a person provides,
   reveal it from the specific `#### Topic:` where that person gives the
@@ -157,6 +161,35 @@ Field labels are English; reserved keyword values are English (`locked` / `unloc
   cleanup and avoids editor/generated-JSON sync drift.
 - **Body:** topic dialogue (plays on the player's **first** selection of this topic, followed by `Reveals:` chain dialogue).
 - **Optional sub-block:** `##### On Reexamine` — H5 immediately under this Topic's body. Plays on every selection **after** the first. No new reveals fire on reexamine. If absent, the engine plays a fallback line on subsequent selections.
+
+### Present topics (出示紀錄)
+
+A topic with `Present` opens only when the player shows the character one of
+the listed records through the 出示紀錄 button. It is hidden from the topic
+list until then; afterwards it is listed like any discussed topic and plays
+its `##### On Reexamine`.
+
+```
+#### Topic: 那張收據 {#receipt_reaction}
+
+- **Present:** evidence:reprint_receipt, statement:miyake_order_time
+- **Reveals:**
+  - statement:clerk_reprint
+
+**店員**：這是重印的，原本那張早就給客人了。
+```
+
+- `Present` lists one or more `evidence:<id>` / `statement:<id>` records; any
+  one of them opens the topic. Each record must be revealed in this scene or
+  be guaranteed held before it (from an earlier scene).
+- A Present topic is locked by default; omit `Status` or write `locked`. An
+  optional `Unlock` adds a further condition on top of holding a record.
+- Do not reveal a Present topic with `Reveals: topic:...`; the record is its
+  unlock.
+- Use it for a quick reaction to a shown record, such as a witness recognising
+  an item. Breaking testimony with evidence still belongs in an
+  interrogation scene.
+- Give the character a `Wrong Present` line that sounds like them.
 
 ### Evidence Manifest entry (H3 under `## Evidence Manifest`)
 - **Heading:** `### evidence:<id> {#id}`
@@ -616,7 +649,9 @@ When asked to write an `investigation_scene_<N>.md`:
 | Evidence revealed from a different sub-location than its `Source Sublocation` | Move the reveal to a local trigger or change the evidence source to the actual local sub-location |
 | Hotspot names an exact document that is not visible in the background | Use a broader local trigger and mark the evidence `hidden`/`implied`, or make it derived from visible geometry/object placement |
 | Manifest entries placed inline under their producing hotspot/topic | Move to the dedicated `## Evidence Manifest` / `## Statement Manifest` sections near the file bottom |
-| Inline dialogue describes "present this evidence to the witness" | That belongs in the separate `interrogation_scene_<N>.md` format covered by `writing-interrogation-scene`; investigation scenes only collect, not confront |
+| Inline dialogue describes "present this evidence to the witness" | Make it a `Present` topic so the player shows the record themselves; a full testimony confrontation belongs in `interrogation_scene_<N>.md` (`writing-interrogation-scene`) |
+| `Present` topic marked `Status: unlocked`, or revealed by another block | Drop the status (it is locked by default) and the inbound reveal; holding the record is its unlock |
+| `Present` record that is neither revealed in this scene nor held from an earlier one | Reveal it locally, or move the topic to a scene after the record is guaranteed |
 | Dialogue line >100 Chinese characters | Split per the base dialogue skill |
 | Action/expression written into a dialogue line | Move to a `[ ]` bracket on its own line |
 | Field labels written in Chinese (e.g. `**狀態：**`) | Use English labels (`**Status:**`); only field *values* are Chinese |

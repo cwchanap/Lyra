@@ -19,7 +19,7 @@ export type E2eCheckpointProjection = {
   sceneId: string;
   mode: "dialogue" | "explore" | "interrogation" | "analysis" | "gameComplete";
   dialogue: {
-    kind: "sceneTag" | "action" | "line";
+    kind: "sceneTag" | "action" | "line" | "prompt";
     speaker: string | null;
     text: string;
     portraitCharacterId: string | null;

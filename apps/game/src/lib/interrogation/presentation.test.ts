@@ -55,6 +55,7 @@ function dialogueMode(
 ): Extract<Mode, { type: "dialogue" }> {
   return {
     type: "dialogue",
+    promptFeedback: null,
     current: { kind: "line", speaker: "嫌疑人", text: "我沒去。" },
     queueRemaining: 0,
     sceneTag: null,

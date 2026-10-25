@@ -137,6 +137,7 @@ function state(overrides: Partial<GameStateView> = {}): GameStateView {
     },
     mode: {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "back_door",
       backgroundAssetId: null,
       bgm: null,
@@ -209,6 +210,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: { kind: "line", speaker: "相馬律", text: "先確認時間。" },
         queueRemaining: 2,
@@ -230,6 +232,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: { kind: "line", speaker: "早坂朱音", text: "好。" },
         queueRemaining: 1,
@@ -261,6 +264,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: { kind: "action", text: "" },
         queueRemaining: 0,
@@ -281,6 +285,7 @@ describe("inferGameplaySfxEvents", () => {
     const previous = state({
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -301,6 +306,7 @@ describe("inferGameplaySfxEvents", () => {
     const next = state({
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -345,6 +351,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -375,6 +382,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -399,6 +407,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: { kind: "line", speaker: "旁白", text: "裡頭只有一個檔案。" },
         queueRemaining: 3,
@@ -428,6 +437,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "line",
@@ -459,6 +469,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -496,6 +507,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "action",
@@ -527,6 +539,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "dialogue",
+        promptFeedback: null,
         crossExamLineId: null,
         current: {
           kind: "line",
@@ -565,6 +578,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "explore",
+        presentFeedback: null,
         sublocationId: "inner",
         backgroundAssetId: null,
         bgm: null,
@@ -585,6 +599,7 @@ describe("inferGameplaySfxEvents", () => {
       },
       mode: {
         type: "explore",
+        presentFeedback: null,
         sublocationId: "inner",
         backgroundAssetId: null,
         bgm: null,
@@ -742,8 +757,10 @@ describe("inferGameplaySfxEvents", () => {
       start_game: true,
       reset_game: true,
       advance_dialogue: true,
+      answer_dialogue_prompt: true,
       inspect_hotspot: true,
       interview_topic: true,
+      present_to_character: true,
       enter_sublocation: true,
       reexamine_evidence: true,
       reexamine_statement: true,
@@ -762,7 +779,7 @@ describe("inferGameplaySfxEvents", () => {
     // Every union member is listed exactly once.
     expect(new Set(names).size).toBe(names.length);
     expect(names).toContain("present_interrogation_evidence");
-    expect(names).toHaveLength(17);
+    expect(names).toHaveLength(19);
   });
 });
 

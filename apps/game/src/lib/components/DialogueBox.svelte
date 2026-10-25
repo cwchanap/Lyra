@@ -14,6 +14,7 @@
   import type {
     DialogueHistoryEntry,
     DialogueItem,
+    FeedbackLine,
     QueueToken,
     CrossExamView,
   } from "../state/types";
@@ -32,6 +33,8 @@
     queueToken,
     onAdvance,
     onAdvanceFeedback,
+    onAnswerPrompt = () => {},
+    promptFeedback = null,
     history = [],
     disabled = false,
     crossExam = null,
@@ -43,6 +46,10 @@
     queueToken: QueueToken;
     onAdvance: (t: QueueToken) => void;
     onAdvanceFeedback?: () => void;
+    /** Picks option `optionIndex` of the 推理 prompt shown in `current`. */
+    onAnswerPrompt?: (t: QueueToken, optionIndex: number) => void;
+    /** The reply to the last wrong option of the current prompt. */
+    promptFeedback?: FeedbackLine | null;
     history?: DialogueHistoryEntry[];
     disabled?: boolean;
     /** Present while an interrogation testimony plays here: renders the inline
@@ -95,8 +102,13 @@
   const portraitTransitionKey = $derived(
     portraitSource ? `${portraitSource}:${portraitPlacement}` : null,
   );
+  const isPrompt = $derived(current.kind === "prompt");
   const revealableText = $derived(
-    current.kind === "line" || current.kind === "action" ? current.text : "",
+    current.kind === "line" || current.kind === "action"
+      ? current.text
+      : current.kind === "prompt"
+        ? current.question
+        : "",
   );
   const revealKey = $derived(
     `${queueToken.sceneId}:${queueToken.queueGen}:${queueToken.cursor}:${current.kind}:${
@@ -212,7 +224,20 @@
       onAdvanceFeedback?.();
       return;
     }
+    // A prompt moves on only through one of its options.
+    if (isPrompt) return;
     dispatchAdvance();
+  }
+
+  function answerPrompt(optionIndex: number) {
+    if (disabled || historyOpen) return;
+    completeTextRevealIfNeeded();
+    onAnswerPrompt(queueToken, optionIndex);
+  }
+
+  function handlePromptOptionClick(event: MouseEvent, optionIndex: number) {
+    event.stopPropagation();
+    answerPrompt(optionIndex);
   }
 
   function handleAdvanceButtonClick(event: MouseEvent) {
@@ -438,6 +463,16 @@
       return;
     }
 
+    // 1-4 pick a 推理 option.
+    if (current.kind === "prompt" && /^[1-4]$/.test(e.key)) {
+      if (isModifiedHistoryShortcut(e) || historyOpen) return;
+      const optionIndex = Number(e.key) - 1;
+      if (optionIndex >= current.options.length) return;
+      e.preventDefault();
+      answerPrompt(optionIndex);
+      return;
+    }
+
     if (e.key !== " " && e.key !== "Enter") return;
     // IME composition fires Space/Enter with isComposing=true; advancing
     // mid-composition would corrupt CJK input. No text inputs exist in the
@@ -471,6 +506,7 @@
       onAdvanceFeedback?.();
       return;
     }
+    if (isPrompt) return;
     dispatchAdvance();
   }
 </script>
@@ -583,7 +619,7 @@
        isAdvanceBlockedByFocusedControl returns true and handleKey returns
        without preventDefault, so native button auto-repeat proceeds
        unaffected. -->
-  {#if !(interrogationTestimony && current.kind === "line")}
+  {#if !(interrogationTestimony && current.kind === "line") && !isPrompt}
     <button
       class="advance-button"
       type="button"
@@ -604,6 +640,7 @@
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
+    class:prompt={isPrompt}
     class:xexam-presentation={Boolean(crossExam?.presentation)}
     class:disabled
     data-interrogation-dialogue-frame={interrogationStageActive
@@ -615,6 +652,36 @@
     {#if current.kind === "sceneTag"}
       <span class="kind">場 · SCENE</span>
       <p class="text-scene">（場景切換）</p>
+    {:else if current.kind === "prompt"}
+      <span class="kind">推理 · DEDUCE</span>
+      <p class="text-prompt">{visibleDialogueText}</p>
+      {#if promptFeedback}
+        <p class="prompt-feedback" role="status">
+          {#if promptFeedback.speaker}
+            <span class="prompt-feedback-speaker">{promptFeedback.speaker}</span
+            >{promptFeedback.text}
+          {:else}
+            <span class="prompt-feedback-narration">{promptFeedback.text}</span>
+          {/if}
+        </p>
+      {/if}
+      <ol class="prompt-options" aria-label="推理選項">
+        {#each current.options as option, index (index)}
+          <li>
+            <button
+              class="prompt-option"
+              type="button"
+              aria-disabled={disabled}
+              onclick={(event) => handlePromptOptionClick(event, index)}
+            >
+              <span class="prompt-option-key" aria-hidden="true"
+                >{index + 1}</span
+              >
+              <span>{option.label}</span>
+            </button>
+          </li>
+        {/each}
+      </ol>
     {:else}
       {#if current.kind === "action"}
         <span class="kind">敘述 · NARRATION</span>
@@ -1030,6 +1097,85 @@
     font-size: 17px;
     line-height: 1.6;
     letter-spacing: 0.02em;
+  }
+
+  .text-prompt {
+    margin: 0 0 10px;
+    font-family: var(--serif-jp);
+    font-size: 16px;
+    line-height: 1.7;
+    color: var(--bone);
+    letter-spacing: 0.04em;
+  }
+
+  .prompt-feedback {
+    margin: 0 0 10px;
+    padding: 6px 10px;
+    border-left: 2px solid var(--cyan);
+    background: rgba(236, 228, 207, 0.05);
+    font-family: var(--serif-jp);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--bone-dim);
+  }
+
+  .prompt-feedback-speaker {
+    margin-right: 0.6em;
+    color: var(--bone);
+  }
+
+  .prompt-feedback-narration {
+    font-family: var(--serif-it);
+    font-style: italic;
+  }
+
+  .prompt-options {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .prompt-option {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 12px 6px;
+    border: 1px solid var(--rule-strong);
+    background: rgba(236, 228, 207, 0.04);
+    color: var(--bone);
+    cursor: pointer;
+    font-family: var(--serif-jp);
+    font-size: 14.5px;
+    letter-spacing: 0.04em;
+    text-align: left;
+  }
+
+  .prompt-option:hover:not([aria-disabled="true"]),
+  .prompt-option:focus-visible {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    outline: none;
+  }
+
+  .prompt-option[aria-disabled="true"] {
+    cursor: wait;
+    opacity: 0.55;
+  }
+
+  .prompt-option-key {
+    color: var(--crimson);
+    font-family: var(--impact);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+
+  /* A prompt has no advance pill, so it needs no bottom-right clearance. */
+  .box.prompt {
+    padding-bottom: 22px;
+    cursor: default;
   }
 
   .text-scene {

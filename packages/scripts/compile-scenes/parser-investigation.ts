@@ -27,6 +27,8 @@ import {
   consumeMetadata,
   describeToken as describe,
   parseFailure as fail,
+  parseFeedbackLine,
+  parsePromptToken,
 } from "./parser-common";
 import { parseUnlockExpr } from "./parser-unlock";
 import { parseRevealsList } from "./parser-reveals";
@@ -46,6 +48,8 @@ import type {
   CompileError,
   DialogueItem,
   EvidenceSource,
+  FeedbackLine,
+  InventoryTarget,
   InvestigationRevealTarget,
   UnlockExpr,
 } from "./types";
@@ -409,6 +413,10 @@ function parseSublocation(
         portrait: null,
         sourceLine: next.line,
       });
+    } else if (next.kind === "prompt") {
+      const prompt = parsePromptToken(next);
+      if (!prompt.ok) return prompt;
+      transitionDialogue.push(prompt.value);
     } else if (next.kind === "metadata") {
       return fail(
         cur.sourceFile,
@@ -668,6 +676,31 @@ function parseCharacter(
     );
   }
 
+  const hasPresentTopic = topics.some((topic) => topic.present.length > 0);
+  const rawWrongPresent = meta.value["Wrong Present"];
+  let wrongPresent: FeedbackLine | null = null;
+  if (rawWrongPresent !== undefined) {
+    const wrongPresentLine = meta.lines["Wrong Present"] ?? head.line;
+    if (!hasPresentTopic)
+      return fail(
+        cur.sourceFile,
+        wrongPresentLine,
+        "wrongPresentWithoutPresentTopic",
+        `Character ${id} has Wrong Present but none of its topics has Present.`,
+      );
+    const parsed = parseFeedbackLine(
+      rawWrongPresent,
+      cur.sourceFile,
+      wrongPresentLine,
+      "wrongPresentMalformed",
+      "Wrong Present",
+    );
+    if (!parsed.ok) return parsed;
+    wrongPresent = parsed.value;
+  } else if (hasPresentTopic) {
+    wrongPresent = { speaker: null, text: `${name}看了一眼，沒有反應。` };
+  }
+
   return {
     ok: true,
     value: {
@@ -676,6 +709,7 @@ function parseCharacter(
       role,
       bio,
       topics,
+      wrongPresent,
       sourceFile: cur.sourceFile,
       line: head.line,
     },
@@ -720,14 +754,30 @@ function parseTopic(
     head.line,
   );
   if (badAssetMeta) return { ok: false, error: badAssetMeta };
+  const present = parsePresentList(
+    meta.value.Present,
+    cur.sourceFile,
+    meta.lines.Present ?? head.line,
+  );
+  if (!present.ok) return present;
+  const presented = present.value.length > 0;
+  // A Present topic is locked until the player shows one of its records.
   const statusCheck = validateStatus(
     meta.value.Status,
-    "unlocked",
+    presented ? "locked" : "unlocked",
     cur.sourceFile,
     head.line,
   );
   if (!statusCheck.ok) return statusCheck;
   const status = statusCheck.value;
+  if (presented && status !== "locked") {
+    return fail(
+      cur.sourceFile,
+      head.line,
+      "presentTopicUnlocked",
+      `Topic ${id} has Present, so it opens only when a record is shown. Remove Status: unlocked.`,
+    );
+  }
   let unlock: UnlockExpr | null = null;
   if (meta.value.Unlock) {
     if (status !== "locked") {
@@ -741,6 +791,12 @@ function parseTopic(
     const r = parseUnlockExpr(meta.value.Unlock, cur.sourceFile, head.line);
     if (!r.ok) return r;
     unlock = r.value;
+  }
+  if (presented) {
+    // Fold "holds one of the records" into the unlock, so availability and
+    // reachability treat a Present topic like any other locked topic.
+    const held = anyRecordHeld(present.value);
+    unlock = unlock === null ? held : { op: "and", left: unlock, right: held };
   }
   const reveals = meta.value.Reveals
     ? parseRevealsList({
@@ -767,12 +823,58 @@ function parseTopic(
       status,
       unlock,
       reveals: reveals.value,
+      present: present.value,
       topicDialogue,
       onReexamine,
       sourceFile: cur.sourceFile,
       line: head.line,
     },
   };
+}
+
+const PRESENT_RECORD_RE = /^(evidence|statement):([a-z0-9_]+)$/;
+
+/** `evidence:<id>, statement:<id>, ...`: the records that open a topic. */
+function parsePresentList(
+  raw: string | undefined,
+  sourceFile: string,
+  line: number,
+): { ok: true; value: InventoryTarget[] } | { ok: false; error: CompileError } {
+  if (raw === undefined) return { ok: true, value: [] };
+  const records: InventoryTarget[] = [];
+  for (const part of raw.split(",")) {
+    const match = PRESENT_RECORD_RE.exec(part.trim());
+    if (!match)
+      return fail(
+        sourceFile,
+        line,
+        "presentMalformed",
+        `Present must list evidence:<id> or statement:<id>, separated by commas. Got: ${raw}`,
+      );
+    const record = {
+      kind: match[1] as InventoryTarget["kind"],
+      id: match[2] ?? "",
+    };
+    if (records.some((r) => r.kind === record.kind && r.id === record.id))
+      return fail(
+        sourceFile,
+        line,
+        "presentDuplicateRecord",
+        `Present lists ${record.kind}:${record.id} twice.`,
+      );
+    records.push(record);
+  }
+  return { ok: true, value: records };
+}
+
+function anyRecordHeld(records: InventoryTarget[]): UnlockExpr {
+  const held = records.map(
+    (record): UnlockExpr =>
+      record.kind === "evidence"
+        ? { predicate: "evidence_collected", id: record.id }
+        : { predicate: "statement_acquired", id: record.id },
+  );
+  return held.reduce((left, right) => ({ op: "or", left, right }));
 }
 
 function parseOutro(

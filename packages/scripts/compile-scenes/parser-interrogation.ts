@@ -31,6 +31,7 @@ import {
   consumeMetadata,
   describeToken as describe,
   parseFailure as fail,
+  parsePromptToken,
 } from "./parser-common";
 import {
   parseEvidenceManifest,
@@ -1063,6 +1064,12 @@ function consumePhaseBodyToken(
     });
     return { ok: true, value: { sceneTag } };
   }
+  if (next.kind === "prompt") {
+    const prompt = parsePromptToken(next);
+    if (!prompt.ok) return prompt;
+    entryDialogue.push(prompt.value);
+    return { ok: true, value: { sceneTag } };
+  }
   if (next.kind === "metadata")
     return fail(
       cur.sourceFile,
@@ -1120,6 +1127,15 @@ function readLeadingDialogue(cur: Cursor): DialogueResult {
         portrait: null,
         sourceLine: next.line,
       });
+    } else if (next.kind === "prompt") {
+      // Cross-examination steps through testimony lines one by one, so a
+      // deduction prompt there would fight the 反駁 controls.
+      return fail(
+        cur.sourceFile,
+        next.line,
+        "promptNotAllowedInTestimony",
+        "A 推理 prompt cannot sit inside testimony. Put it in the phase entry dialogue instead.",
+      );
     } else if (next.kind === "unknown") {
       return fail(
         cur.sourceFile,

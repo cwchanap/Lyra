@@ -98,7 +98,27 @@ export type DialogueItem =
       expression?: string | null;
       portrait?: PortraitRef | null;
       sourceLine?: number;
+    }
+  | {
+      kind: "prompt";
+      question: string;
+      options: PromptOption[];
+      sourceLine?: number;
     };
+
+/**
+ * One answer of an inline deduction prompt (`> 推理：...`). Exactly one
+ * option of a prompt is correct; every wrong option carries the one-line
+ * reply shown before the prompt asks again.
+ */
+export type PromptOption = {
+  label: string;
+  correct: boolean;
+  reply: FeedbackLine | null;
+};
+
+/** A one-line reply: spoken when `speaker` is set, narration otherwise. */
+export type FeedbackLine = { speaker: string | null; text: string };
 
 export type JSONDialogueItem =
   | {
@@ -112,7 +132,8 @@ export type JSONDialogueItem =
       speaker: string;
       text: string;
       portrait: PortraitRef | null;
-    };
+    }
+  | { kind: "prompt"; question: string; options: PromptOption[] };
 
 export type InventoryTarget =
   | { kind: "evidence"; id: string }
@@ -404,6 +425,11 @@ export type ASTCharacter = Located<{
   role: string;
   bio: string;
   topics: ASTTopic[];
+  /**
+   * Reply when the player shows a record that opens none of the character's
+   * `present` topics. Null when the character has no such topic.
+   */
+  wrongPresent: FeedbackLine | null;
   layout?: CharacterLayout | null;
 }>;
 
@@ -411,8 +437,11 @@ export type ASTTopic = Located<{
   id: string;
   label: string;
   status: "locked" | "unlocked";
+  /** For a `present` topic, already includes "holds one of the records". */
   unlock: UnlockExpr | null;
   reveals: InvestigationRevealTarget[];
+  /** Records that open the topic when shown (any one); empty otherwise. */
+  present: InventoryTarget[];
   topicDialogue: DialogueItem[];
   onReexamine: DialogueItem[] | null;
 }>;
@@ -698,9 +727,13 @@ export type JSONInvestigationScene = {
         status: "locked" | "unlocked";
         unlock: UnlockExpr | null;
         reveals: InvestigationRevealTarget[];
+        /** Omitted for an ordinary topic. */
+        present?: InventoryTarget[];
         topicDialogue: JSONDialogueItem[];
         onReexamine: JSONDialogueItem[] | null;
       }>;
+      /** Omitted when no topic of the character has `present`. */
+      wrongPresent?: FeedbackLine;
     }>;
     intentionalOverlaps?: ReadonlyArray<IntentionalHotspotOverlap>;
   }>;

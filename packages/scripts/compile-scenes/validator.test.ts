@@ -920,6 +920,7 @@ describe("validator", () => {
           name: "Witness",
           role: "Resident",
           bio: "Saw the corridor.",
+          wrongPresent: null,
           topics: [
             {
               id: "badge",
@@ -927,6 +928,7 @@ describe("validator", () => {
               status: "unlocked",
               unlock: null,
               reveals: [{ kind: "evidence", id: "badge" }],
+              present: [],
               topicDialogue: [],
               onReexamine: null,
               sourceFile: "i.md",
@@ -1566,6 +1568,7 @@ describe("validator", () => {
         name: "NPC1",
         role: "witness",
         bio: "bio",
+        wrongPresent: null,
         topics: [
           {
             id: "secret",
@@ -1573,6 +1576,7 @@ describe("validator", () => {
             status: "locked",
             unlock: { predicate: "evidence_collected", id: "ev1" },
             reveals: [],
+            present: [],
             topicDialogue: [
               { kind: "line", speaker: "NPC1", text: "unlocked" },
             ],
@@ -1602,6 +1606,7 @@ describe("validator", () => {
           name: "NPC2",
           role: "witness",
           bio: "bio",
+          wrongPresent: null,
           topics: [
             {
               id: "another_secret",
@@ -1609,6 +1614,7 @@ describe("validator", () => {
               status: "locked",
               unlock: { predicate: "evidence_collected", id: "ev1" },
               reveals: [],
+              present: [],
               topicDialogue: [
                 { kind: "line", speaker: "NPC2", text: "unlocked" },
               ],
@@ -2001,6 +2007,7 @@ describe("validator", () => {
         name: "NPC",
         role: "witness",
         bio: "bio",
+        wrongPresent: null,
         topics: [],
         sourceFile: "i.md",
         line: 10,
@@ -2010,6 +2017,7 @@ describe("validator", () => {
         name: "NPC Dup",
         role: "suspect",
         bio: "bio",
+        wrongPresent: null,
         topics: [],
         sourceFile: "i.md",
         line: 11,
@@ -2036,6 +2044,7 @@ describe("validator", () => {
         name: "NPC",
         role: "witness",
         bio: "bio",
+        wrongPresent: null,
         topics: [
           {
             id: "alibi",
@@ -2043,6 +2052,7 @@ describe("validator", () => {
             status: "unlocked" as const,
             unlock: null,
             reveals: [],
+            present: [],
             topicDialogue: [],
             onReexamine: null,
             sourceFile: "i.md",
@@ -2069,6 +2079,7 @@ describe("validator", () => {
           name: "NPC Again",
           role: "suspect",
           bio: "bio",
+          wrongPresent: null,
           topics: [
             {
               id: "motive",
@@ -2076,6 +2087,7 @@ describe("validator", () => {
               status: "unlocked" as const,
               unlock: null,
               reveals: [],
+              present: [],
               topicDialogue: [],
               onReexamine: null,
               sourceFile: "i.md",
@@ -2475,6 +2487,7 @@ describe("validator", () => {
             name: "NPC",
             role: "witness",
             bio: "bio",
+            wrongPresent: null,
             topics: [
               {
                 id: "secret",
@@ -2482,6 +2495,7 @@ describe("validator", () => {
                 status: "unlocked",
                 unlock: null,
                 reveals: [],
+                present: [],
                 topicDialogue: [{ kind: "line", speaker: "NPC", text: "hi" }],
                 onReexamine: null,
                 sourceFile: "i.md",
@@ -4039,6 +4053,7 @@ describe("validator", () => {
         name: "Witness",
         role: "witness",
         bio: "bio",
+        wrongPresent: null,
         topics: [
           {
             id: "topic_a",
@@ -4046,6 +4061,7 @@ describe("validator", () => {
             status: "unlocked",
             unlock: null,
             reveals: [{ kind: "practice", id: "p_ctx" }],
+            present: [],
             topicDialogue: [],
             onReexamine: null,
             sourceFile: "i.md",
@@ -4098,6 +4114,7 @@ describe("validator", () => {
               name: "Witness",
               role: "witness",
               bio: "bio",
+              wrongPresent: null,
               topics: [
                 {
                   id: "topic_a",
@@ -4105,6 +4122,7 @@ describe("validator", () => {
                   status: "locked",
                   unlock: null,
                   reveals: [{ kind: "practice", id: "p_ctx" }],
+                  present: [],
                   topicDialogue: [],
                   onReexamine: null,
                   sourceFile: "i.md",

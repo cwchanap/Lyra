@@ -84,6 +84,25 @@ pub struct GameEngine {
     durable_revision: u64,
     pending_acquisition_events: Vec<save::schema::AcquisitionEventStateV1>,
     cached_pending_acquisition_scene: RefCell<Option<(String, String, SceneJson)>>,
+    /// The reply to the player's last wrong pick: a 推理 prompt option or a
+    /// record shown to a character. Not saved and not rollback-tracked, so a
+    /// wrong pick can stay an `Unchanged` command; the next `Changed` command
+    /// clears it.
+    transient_feedback: Option<TransientFeedback>,
+}
+
+#[derive(Debug, Clone)]
+enum TransientFeedback {
+    /// Shown while the dialogue cursor still sits on the prompt it answers.
+    Prompt {
+        token: QueueToken,
+        line: schema::FeedbackLineJson,
+    },
+    /// Shown in Explore under the character the record was shown to.
+    Present {
+        character_id: String,
+        line: schema::FeedbackLineJson,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -295,6 +314,7 @@ impl GameEngine {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: RefCell::new(None),
+            transient_feedback: None,
         };
         if let SceneRuntime::Analysis(scene) = &mut engine.scene {
             scene.recompute_available_board_ids(&engine.story_state);
@@ -588,48 +608,107 @@ impl GameEngine {
         if current_token != expected {
             return self.command_tx(|_, _, _| Ok(CommandMutation::Unchanged));
         }
+        // A 推理 prompt moves on only through answer_dialogue_prompt.
+        if matches!(
+            self.current_dialogue_item(),
+            Some(DialogueItem::Prompt { .. })
+        ) {
+            return Err(GameError::dialogue_prompt_unanswered());
+        }
 
         self.command_tx(|engine, command_id, next_ordinal| {
-            let consumed = engine.current_dialogue_item();
-            let mut exhausted = match &mut engine.scene {
-                SceneRuntime::Linear(scene) => scene.advance(),
-                SceneRuntime::Investigation(inv) => {
-                    let queue = inv
-                        .pending_queue
-                        .as_mut()
-                        .ok_or_else(GameError::no_active_dialogue)?;
-                    queue.advance()
-                }
-                SceneRuntime::Interrogation(scene) => {
-                    let queue = scene
-                        .pending_queue
-                        .as_mut()
-                        .ok_or_else(GameError::no_active_dialogue)?;
-                    queue.advance()
-                }
-                SceneRuntime::Analysis(scene) => {
-                    let queue = scene
-                        .pending_queue
-                        .as_mut()
-                        .ok_or_else(GameError::no_active_dialogue)?;
-                    queue.advance()
-                }
-            };
-            // Capture the just-consumed item as a scene tag if applicable.
-            if let Some(DialogueItem::SceneTag { text, asset_cue }) = consumed {
-                engine.last_visual_cue.set_scene_tag(text, asset_cue);
-            }
-            // Skip over any consecutive SceneTag items so the next visible frame
-            // is a real dialogue/action line. This mirrors the leading-tag skip
-            // in prime_initial_queue.
-            if !exhausted {
-                exhausted = engine.consume_scene_tags_at_cursor();
-            }
-            if exhausted {
-                engine.on_queue_exhausted(command_id, next_ordinal)?;
-            }
+            engine.step_dialogue_cursor(command_id, next_ordinal)?;
             Ok(CommandMutation::Changed)
         })
+    }
+
+    /// Answers the 推理 prompt under the cursor. The correct option moves the
+    /// dialogue on exactly like `advance_dialogue`; a wrong option changes no
+    /// game state and only shows its reply until the next state change.
+    pub fn answer_dialogue_prompt(
+        &mut self,
+        expected: QueueToken,
+        option_index: usize,
+    ) -> Result<GameStateView, GameError> {
+        let current_token = self
+            .current_queue_token()
+            .ok_or_else(GameError::no_active_dialogue)?;
+        if current_token != expected {
+            return self.command_tx(|_, _, _| Ok(CommandMutation::Unchanged));
+        }
+        let Some(DialogueItem::Prompt { options, .. }) = self.current_dialogue_item() else {
+            return Err(GameError::no_dialogue_prompt());
+        };
+        let option = options
+            .into_iter()
+            .nth(option_index)
+            .ok_or_else(|| GameError::unknown_prompt_option(option_index))?;
+        if option.correct {
+            return self.command_tx(|engine, command_id, next_ordinal| {
+                engine.step_dialogue_cursor(command_id, next_ordinal)?;
+                Ok(CommandMutation::Changed)
+            });
+        }
+        let line = option.reply.ok_or_else(|| {
+            GameError::internal(format!(
+                "wrong 推理 option {option_index} has no reply; the compiler requires one"
+            ))
+        })?;
+        self.command_tx(|engine, _, _| {
+            engine.transient_feedback = Some(TransientFeedback::Prompt {
+                token: current_token,
+                line,
+            });
+            Ok(CommandMutation::Unchanged)
+        })
+    }
+
+    /// Consumes the item under the cursor, skips any scene tags after it and
+    /// runs the exhausted-queue machinery when the queue runs out.
+    fn step_dialogue_cursor(
+        &mut self,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
+        let consumed = self.current_dialogue_item();
+        let mut exhausted = match &mut self.scene {
+            SceneRuntime::Linear(scene) => scene.advance(),
+            SceneRuntime::Investigation(inv) => {
+                let queue = inv
+                    .pending_queue
+                    .as_mut()
+                    .ok_or_else(GameError::no_active_dialogue)?;
+                queue.advance()
+            }
+            SceneRuntime::Interrogation(scene) => {
+                let queue = scene
+                    .pending_queue
+                    .as_mut()
+                    .ok_or_else(GameError::no_active_dialogue)?;
+                queue.advance()
+            }
+            SceneRuntime::Analysis(scene) => {
+                let queue = scene
+                    .pending_queue
+                    .as_mut()
+                    .ok_or_else(GameError::no_active_dialogue)?;
+                queue.advance()
+            }
+        };
+        // Capture the just-consumed item as a scene tag if applicable.
+        if let Some(DialogueItem::SceneTag { text, asset_cue }) = consumed {
+            self.last_visual_cue.set_scene_tag(text, asset_cue);
+        }
+        // Skip over any consecutive SceneTag items so the next visible frame
+        // is a real dialogue/action line. This mirrors the leading-tag skip
+        // in prime_initial_queue.
+        if !exhausted {
+            exhausted = self.consume_scene_tags_at_cursor();
+        }
+        if exhausted {
+            self.on_queue_exhausted(command_id, next_ordinal)?;
+        }
+        Ok(())
     }
 
     fn try_advance_investigation(
@@ -1106,27 +1185,8 @@ impl GameEngine {
         let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
 
         let (topic, first_time) = {
-            let inv = match &self.scene {
-                SceneRuntime::Investigation(i) => i,
-                _ => return Err(GameError::wrong_mode("interview_topic", "linear")),
-            };
-            if inv.pending_queue.is_some() {
-                return Err(GameError::dialogue_active("interview_topic"));
-            }
-            let sub_id = inv.current_sublocation_id.clone().ok_or_else(|| {
-                GameError::wrong_mode("interview_topic", "no sublocation entered")
-            })?;
-            let sub_def = inv
-                .def
-                .sublocations
-                .iter()
-                .find(|s| s.id == sub_id)
-                .ok_or_else(|| GameError::unknown_sublocation(&sub_id))?;
-            let character = sub_def
-                .characters
-                .iter()
-                .find(|c| c.id == character_id)
-                .ok_or_else(|| GameError::unknown_character(character_id))?;
+            let (inv, character) =
+                self.current_sublocation_character("interview_topic", character_id)?;
             let topic = character
                 .topics
                 .iter()
@@ -1150,69 +1210,212 @@ impl GameEngine {
             let first_time = !inv
                 .discussed_topics
                 .contains(&(character_id.into(), topic_id.into()));
+            // A Present topic opens through present_to_character; once
+            // discussed it can be re-examined from the topic list like any
+            // other.
+            if first_time && !topic.present.is_empty() {
+                return Err(GameError::topic_requires_present(character_id, topic_id));
+            }
             (topic, first_time)
         };
         self.command_tx(|engine, command_id, next_ordinal| {
-            let queue_items = if first_time {
-                let fact_support_by_id = BTreeMap::new();
-                let story_context = reveals::StoryRevealMaterializationContext {
-                    origin: AssertionOrigin::SceneEvent {
-                        chapter_id: chapter_id.clone(),
-                        scene_id: engine.scene.id().into(),
-                        block_kind: StoryEventBlockKind::Topic,
-                        // Two characters may legally share a topic id, so the
-                        // topic block id is qualified by its owning character
-                        // to keep fact provenance unambiguous across the save
-                        // wire format and restore validation.
-                        block_id: format!("{character_id}@{topic_id}"),
-                    },
-                    fact_support_by_id: &fact_support_by_id,
-                    represented_authority: None,
-                };
-                let inv = match &mut engine.scene {
-                    SceneRuntime::Investigation(i) => i,
-                    _ => {
-                        return Err(GameError::internal(
-                            "scene changed during interview_topic".into(),
-                        ))
-                    }
-                };
-                inv.record_topic_discussed(character_id, topic_id);
-                let trigger_segment = investigation_segment(
-                    &chapter_id,
-                    &inv.def.id,
-                    format!("topic:{character_id}:{topic_id}:dialogue"),
-                    topic.topic_dialogue.clone(),
-                );
-                reveals::apply_reveals_and_build_queue(
-                    inv,
-                    &mut AcquisitionCtx {
-                        catalog: &engine.story_catalog,
-                        inventory: &mut engine.inventory,
-                        pending_events: &mut engine.pending_acquisition_events,
-                        command_id,
-                        next_ordinal,
-                    },
-                    &mut engine.story_state,
-                    &story_context,
-                    trigger_segment,
-                    &topic.reveals,
-                    &chapter_id,
-                )?
-            } else {
-                investigation_segment(
-                    &chapter_id,
-                    engine.scene.id(),
-                    format!("topic:{character_id}:{topic_id}:reexamine"),
-                    topic.on_reexamine.clone().unwrap_or_default(),
-                )
-                .into_iter()
-                .collect()
-            };
-
-            engine.install_or_exhaust(queue_items, command_id, next_ordinal)?;
+            engine.play_topic(
+                &chapter_id,
+                character_id,
+                &topic,
+                first_time,
+                command_id,
+                next_ordinal,
+            )?;
             Ok(CommandMutation::Changed)
         })
+    }
+
+    /// Shows the held record `item_kind:item_id` to a character in the
+    /// current sublocation. A record that one of the character's unlocked
+    /// Present topics accepts plays that topic as `interview_topic` would
+    /// (re-examination once discussed). Any other record only shows the
+    /// character's Wrong Present reply and changes no game state.
+    pub fn present_to_character(
+        &mut self,
+        character_id: &str,
+        item_kind: &str,
+        item_id: &str,
+    ) -> Result<GameStateView, GameError> {
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
+        let chapter_id = self.chapters[self.current_chapter_idx].id.clone();
+        if !self.inventory_target_exists(item_kind, item_id) {
+            return Err(GameError::unknown_inventory_target(item_kind, item_id));
+        }
+
+        let (opened, wrong_present) = {
+            let (inv, character) =
+                self.current_sublocation_character("present_to_character", character_id)?;
+            if character.topics.iter().all(|t| t.present.is_empty()) {
+                return Err(GameError::nothing_to_present(character_id));
+            }
+            let ctx = SceneAndInventoryCtx {
+                scene: inv,
+                inventory: &self.inventory,
+            };
+            let accepts = |t: &&schema::TopicJson| {
+                t.present.iter().any(|record| match record {
+                    InventoryTarget::Evidence { id } => item_kind == "evidence" && id == item_id,
+                    InventoryTarget::Statement { id } => item_kind == "statement" && id == item_id,
+                }) && inv.is_block_unlocked(
+                    &format!("topic:{character_id}@{}", t.id),
+                    t.status,
+                    t.unlock.as_ref(),
+                    &ctx,
+                    &self.story_state,
+                )
+            };
+            let discussed = |t: &schema::TopicJson| {
+                inv.discussed_topics
+                    .contains(&(character_id.into(), t.id.clone()))
+            };
+            // Prefer a topic not yet discussed when one record opens several.
+            let mut matches: Vec<&schema::TopicJson> =
+                character.topics.iter().filter(accepts).collect();
+            matches.sort_by_key(|t| discussed(t));
+            let opened = matches.first().map(|t| ((*t).clone(), !discussed(t)));
+            (opened, character.wrong_present.clone())
+        };
+
+        match opened {
+            Some((topic, first_time)) => self.command_tx(|engine, command_id, next_ordinal| {
+                engine.play_topic(
+                    &chapter_id,
+                    character_id,
+                    &topic,
+                    first_time,
+                    command_id,
+                    next_ordinal,
+                )?;
+                Ok(CommandMutation::Changed)
+            }),
+            None => {
+                let line = wrong_present.ok_or_else(|| {
+                    GameError::internal(format!(
+                        "character '{character_id}' has Present topics but no wrongPresent \
+                         reply; the compiler emits one"
+                    ))
+                })?;
+                self.command_tx(|engine, _, _| {
+                    engine.transient_feedback = Some(TransientFeedback::Present {
+                        character_id: character_id.into(),
+                        line,
+                    });
+                    Ok(CommandMutation::Unchanged)
+                })
+            }
+        }
+    }
+
+    /// The investigation scene and the named character of its current
+    /// sublocation, for a topic command with no dialogue playing.
+    fn current_sublocation_character(
+        &self,
+        command: &'static str,
+        character_id: &str,
+    ) -> Result<(&InvestigationSceneState, &schema::CharacterJson), GameError> {
+        let inv = match &self.scene {
+            SceneRuntime::Investigation(i) => i,
+            _ => return Err(GameError::wrong_mode(command, "linear")),
+        };
+        if inv.pending_queue.is_some() {
+            return Err(GameError::dialogue_active(command));
+        }
+        let sub_id = inv
+            .current_sublocation_id
+            .as_deref()
+            .ok_or_else(|| GameError::wrong_mode(command, "no sublocation entered"))?;
+        let sub_def = inv
+            .def
+            .sublocations
+            .iter()
+            .find(|s| s.id == sub_id)
+            .ok_or_else(|| GameError::unknown_sublocation(sub_id))?;
+        let character = sub_def
+            .characters
+            .iter()
+            .find(|c| c.id == character_id)
+            .ok_or_else(|| GameError::unknown_character(character_id))?;
+        Ok((inv, character))
+    }
+
+    /// Plays a topic: its dialogue and reveals the first time, its
+    /// re-examination after that.
+    fn play_topic(
+        &mut self,
+        chapter_id: &str,
+        character_id: &str,
+        topic: &schema::TopicJson,
+        first_time: bool,
+        command_id: u64,
+        next_ordinal: &mut u32,
+    ) -> Result<(), GameError> {
+        let topic_id = topic.id.as_str();
+        let queue_items = if first_time {
+            let fact_support_by_id = BTreeMap::new();
+            let story_context = reveals::StoryRevealMaterializationContext {
+                origin: AssertionOrigin::SceneEvent {
+                    chapter_id: chapter_id.to_string(),
+                    scene_id: self.scene.id().into(),
+                    block_kind: StoryEventBlockKind::Topic,
+                    // Two characters may legally share a topic id, so the
+                    // topic block id is qualified by its owning character
+                    // to keep fact provenance unambiguous across the save
+                    // wire format and restore validation.
+                    block_id: format!("{character_id}@{topic_id}"),
+                },
+                fact_support_by_id: &fact_support_by_id,
+                represented_authority: None,
+            };
+            let inv = match &mut self.scene {
+                SceneRuntime::Investigation(i) => i,
+                _ => {
+                    return Err(GameError::internal(
+                        "scene changed while playing a topic".into(),
+                    ))
+                }
+            };
+            inv.record_topic_discussed(character_id, topic_id);
+            let trigger_segment = investigation_segment(
+                chapter_id,
+                &inv.def.id,
+                format!("topic:{character_id}:{topic_id}:dialogue"),
+                topic.topic_dialogue.clone(),
+            );
+            reveals::apply_reveals_and_build_queue(
+                inv,
+                &mut AcquisitionCtx {
+                    catalog: &self.story_catalog,
+                    inventory: &mut self.inventory,
+                    pending_events: &mut self.pending_acquisition_events,
+                    command_id,
+                    next_ordinal,
+                },
+                &mut self.story_state,
+                &story_context,
+                trigger_segment,
+                &topic.reveals,
+                chapter_id,
+            )?
+        } else {
+            investigation_segment(
+                chapter_id,
+                self.scene.id(),
+                format!("topic:{character_id}:{topic_id}:reexamine"),
+                topic.on_reexamine.clone().unwrap_or_default(),
+            )
+            .into_iter()
+            .collect()
+        };
+
+        self.install_or_exhaust(queue_items, command_id, next_ordinal)
     }
 
     pub fn enter_sublocation(&mut self, sublocation_id: &str) -> Result<GameStateView, GameError> {
@@ -2412,6 +2615,12 @@ impl GameEngine {
                 background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                 bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                 bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
+                prompt_feedback: match &self.transient_feedback {
+                    Some(TransientFeedback::Prompt { token, line }) if *token == t => {
+                        Some(line.clone())
+                    }
+                    _ => None,
+                },
                 queue_token: t,
                 cross_exam_line_id: match &self.scene {
                     SceneRuntime::Interrogation(scene) => scene.playing_unbroken_line_id(),
@@ -2425,6 +2634,15 @@ impl GameEngine {
                         background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                         bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                         bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
+                        present_feedback: match &self.transient_feedback {
+                            Some(TransientFeedback::Present { character_id, line }) => {
+                                Some(view::PresentFeedbackView {
+                                    character_id: character_id.clone(),
+                                    line: line.clone(),
+                                })
+                            }
+                            _ => None,
+                        },
                     },
                     // Pending map state (HPA-601 §7): a mapped scene with no
                     // current sublocation is awaiting destination selection
@@ -2435,6 +2653,7 @@ impl GameEngine {
                         background_asset_id: self.last_visual_cue.background_asset_id.clone(),
                         bgm: self.last_visual_cue.bgm.as_ref().map(audio_cue_view),
                         bgs: self.last_visual_cue.bgs.as_ref().map(audio_cue_view),
+                        present_feedback: None,
                     },
                     None => self.game_complete_view(),
                 },
@@ -2711,6 +2930,7 @@ impl GameEngine {
                                 role: c.role.clone(),
                                 bio: c.bio.clone(),
                                 layout: c.layout.clone(),
+                                accepts_present: c.topics.iter().any(|t| !t.present.is_empty()),
                                 topics: c
                                     .topics
                                     .iter()
@@ -2729,6 +2949,7 @@ impl GameEngine {
                                         discussed: inv
                                             .discussed_topics
                                             .contains(&(c.id.clone(), t.id.clone())),
+                                        requires_present: !t.present.is_empty(),
                                     })
                                     .collect(),
                             })
@@ -3004,6 +3225,12 @@ mod case_file_integration_tests;
 
 #[cfg(test)]
 mod analysis_integration_tests;
+
+#[cfg(test)]
+mod present_integration_tests;
+
+#[cfg(test)]
+mod prompt_integration_tests;
 
 #[cfg(test)]
 pub(crate) mod test_support;
@@ -4320,6 +4547,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                 background_asset_id,
                 bgm,
                 bgs,
+                present_feedback: _,
             } => {
                 assert_eq!(sublocation_id.as_deref(), Some("cafe"));
                 assert_eq!(
@@ -4418,6 +4646,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: RefCell::new(None),
+            transient_feedback: None,
         };
 
         engine.prime_initial_queue().unwrap();
@@ -4556,6 +4785,7 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     name: "Witness".into(),
                     role: "Witness".into(),
                     bio: "Saw something.".into(),
+                    wrong_present: None,
                     layout: Some(CharacterLayoutJson::Baked {
                         x: 0.5,
                         y: 0.3,
@@ -5703,10 +5933,12 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     name: "Witness".into(),
                     role: "Witness".into(),
                     bio: "Witness".into(),
+                    wrong_present: None,
                     layout: None,
                     topics: vec![TopicJson {
                         id: "alibi".into(),
                         label: "Alibi".into(),
+                        present: vec![],
                         status: LockStatus::Unlocked,
                         unlock: None,
                         reveals: vec![InvestigationRevealTarget::Local(RevealTarget::Statement {
@@ -5797,10 +6029,12 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
                     name: "Witness".into(),
                     role: "Witness".into(),
                     bio: "Witness".into(),
+                    wrong_present: None,
                     layout: None,
                     topics: vec![TopicJson {
                         id: "alibi".into(),
                         label: "Alibi".into(),
+                        present: vec![],
                         status: LockStatus::Unlocked,
                         unlock: None,
                         reveals: vec![],

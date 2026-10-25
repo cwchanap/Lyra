@@ -11,7 +11,7 @@
 
 import { tokenize } from "./tokenizer";
 import { parseSceneHeader } from "./parser-scene-header";
-import { parseFailure } from "./parser-common";
+import { parseFailure, parsePromptToken } from "./parser-common";
 import {
   parseVisualAssetCue,
   rejectUnknownAssetMetadata,
@@ -98,6 +98,12 @@ export function parseLinearScene(
           sourceLine: tok.line,
         });
         break;
+      case "prompt": {
+        const prompt = parsePromptToken(tok);
+        if (!prompt.ok) return prompt;
+        queue.push(prompt.value);
+        break;
+      }
       case "unknown":
         return parseFailure(
           sourceFile,

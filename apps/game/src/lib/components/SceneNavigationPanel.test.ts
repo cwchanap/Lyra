@@ -58,6 +58,7 @@ function currentState(): GameStateView {
     },
     mode: {
       type: "explore",
+      presentFeedback: null,
       sublocationId: "main",
       backgroundAssetId: null,
       bgm: null,

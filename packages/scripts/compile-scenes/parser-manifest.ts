@@ -6,6 +6,7 @@
 // =============================================================================
 
 import type { Token } from "./tokenizer";
+import { parsePromptToken } from "./parser-common";
 import {
   CASE_RECORD_PROVENANCE_METADATA_KEYS,
   parseCaseRecordProvenance,
@@ -383,6 +384,10 @@ function consumeDialogueUntilHeading(
         portrait: null,
         sourceLine: next.line,
       });
+    } else if (next.kind === "prompt") {
+      const prompt = parsePromptToken(next);
+      if (!prompt.ok) return prompt;
+      out.push(prompt.value);
     } else if (next.kind === "metadata") {
       return fail(
         cur.sourceFile,
@@ -414,6 +419,8 @@ function describe(tok: Token): string {
       return `[${tok.text}]`;
     case "dialogue":
       return `**${tok.speaker}**：${tok.text}`;
+    case "prompt":
+      return `> 推理：${tok.question}`;
     case "unknown":
       return `unknown(${tok.text})`;
   }

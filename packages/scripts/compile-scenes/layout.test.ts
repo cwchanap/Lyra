@@ -53,6 +53,7 @@ function minimalScene(): ASTInvestigationScene {
             name: "Witness",
             role: "Witness",
             bio: "A witness.",
+            wrongPresent: null,
             topics: [],
             sourceFile: "investigation_scene_1.md",
             line: 20,

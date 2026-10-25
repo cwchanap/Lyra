@@ -25,7 +25,13 @@ export type DialogueItem =
       speaker: string;
       text: string;
       portrait?: PortraitRef | null;
-    };
+    }
+  /** An inline 推理 question. The view carries only the option labels; the
+   * engine keeps the answer key. */
+  | { kind: "prompt"; question: string; options: { label: string }[] };
+
+/** A one-line reply: spoken when `speaker` is set, narration otherwise. */
+export type FeedbackLine = { speaker: string | null; text: string };
 
 export type DialogueHistoryEntry =
   | {
@@ -60,8 +66,15 @@ export type Mode =
       /** While an interrogation testimony plays in the dialogue box, the id of
        * the line the inline `反駁` challenge targets; null otherwise. */
       crossExamLineId: string | null;
+      /** The reply to the last wrong option of the prompt in `current`. */
+      promptFeedback: FeedbackLine | null;
     } & VisualAssetCue)
-  | ({ type: "explore"; sublocationId: string | null } & VisualAssetCue)
+  | ({
+      type: "explore";
+      sublocationId: string | null;
+      /** A character's reply to a shown record that opened nothing. */
+      presentFeedback: { characterId: string; line: FeedbackLine } | null;
+    } & VisualAssetCue)
   | ({ type: "interrogation"; phaseId: string } & VisualAssetCue)
   | ({
       type: "analysis";
@@ -127,6 +140,8 @@ export type TopicView = {
   id: string;
   label: string;
   discussed: boolean;
+  /** Opens only by showing the character a record (出示紀錄). */
+  requiresPresent: boolean;
 };
 export type CharacterView = {
   id: string;
@@ -134,6 +149,8 @@ export type CharacterView = {
   role: string;
   bio: string;
   topics: TopicView[];
+  /** Some topic of this character opens on a shown record. */
+  acceptsPresent: boolean;
   layout: CharacterLayout | null;
 };
 export type InvestigationMapNodeView = {

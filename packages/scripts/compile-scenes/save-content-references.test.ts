@@ -157,6 +157,7 @@ function scene(): SceneRecord {
               name: "偵探",
               role: "",
               bio: "",
+              wrongPresent: null,
               sourceFile,
               line: 3,
               topics: [],

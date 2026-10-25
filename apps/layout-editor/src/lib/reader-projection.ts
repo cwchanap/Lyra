@@ -100,6 +100,15 @@ export function projectDialogue(
       return { kind: "action", text: item.text, editable };
     case "line":
       return { kind: "line", speaker: item.speaker, text: item.text, editable };
+    case "prompt":
+      // Read-only: the 推理 block spans several authored lines.
+      return {
+        kind: "notice",
+        noticeKind: "prompt",
+        text: `推理：${item.question}（${item.options
+          .map((option) => `${option.correct ? "✓ " : ""}${option.label}`)
+          .join("／")}）`,
+      };
     default:
       return assertNever(item);
   }

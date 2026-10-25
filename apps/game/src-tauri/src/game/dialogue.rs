@@ -102,6 +102,14 @@ impl DialogueHistory {
                 chapter_title,
                 scene_title,
             },
+            // The log keeps the question; the answer shows up as the lines
+            // that follow it.
+            DialogueItem::Prompt { question, .. } => DialogueHistoryEntry::Action {
+                id,
+                text: format!("推理：{question}"),
+                chapter_title,
+                scene_title,
+            },
             // Scene tags are not logged, and must not consume the token —
             // matching the pre-extraction early return.
             DialogueItem::SceneTag { .. } => return,
@@ -1162,6 +1170,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         };
         engine.prime_initial_queue().unwrap();
 
@@ -1242,6 +1251,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         };
         // prime_initial_queue: no leading tags, cursor at 0 (first Line)
         engine.prime_initial_queue().unwrap();
@@ -1346,6 +1356,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         }
     }
 
@@ -1530,6 +1541,7 @@ mod tests {
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
             cached_pending_acquisition_scene: std::cell::RefCell::new(None),
+            transient_feedback: None,
         }
     }
 
