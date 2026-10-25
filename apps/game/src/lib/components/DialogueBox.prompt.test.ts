@@ -77,6 +77,38 @@ describe("DialogueBox 推理 prompt", () => {
     expect(onAnswerPrompt).toHaveBeenCalledExactlyOnceWith(token, 0);
   });
 
+  it("leaves number keys alone while a menu makes the dialogue inert", async () => {
+    const menu = document.body.appendChild(document.createElement("div"));
+    menu.setAttribute("inert", "");
+    const onAnswerPrompt = vi.fn();
+    render(DialogueBox, {
+      target: menu,
+      props: {
+        current: prompt,
+        queueToken: token,
+        onAdvance: vi.fn(),
+        onAnswerPrompt,
+        textRevealDurationMs: 0,
+      },
+    });
+
+    await fireEvent.keyDown(window, { key: "1" });
+
+    expect(onAnswerPrompt).not.toHaveBeenCalled();
+    menu.remove();
+  });
+
+  it("leaves number keys to a focused text field outside the dialogue", async () => {
+    const { onAnswerPrompt } = renderPrompt();
+    const input = document.body.appendChild(document.createElement("input"));
+    input.focus();
+
+    await fireEvent.keyDown(window, { key: "1" });
+
+    expect(onAnswerPrompt).not.toHaveBeenCalled();
+    input.remove();
+  });
+
   it("shows the reply to a wrong pick", () => {
     renderPrompt({
       promptFeedback: { speaker: "早坂茜", text: "他的小謊和這段時間無關。" },
