@@ -172,6 +172,12 @@ export const anchors = {
       destination: "kagami_review_room",
       next: "interrogation_scene_6",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_04",
+      destination: "shibuya_plaza_overpass",
+      next: "investigation_scene_8",
+    },
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",

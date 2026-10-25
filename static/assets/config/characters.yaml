@@ -418,3 +418,10 @@ characters:
     visualPrompt: null
     referenceAssetId: null
     expressions: {}
+
+  - id: konbini_clerk
+    displayNames: ["便利店店員"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
