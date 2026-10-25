@@ -3222,6 +3222,36 @@ describe("compile (tracked production corpus compatibility)", () => {
             sourceLabel: "相馬現場觀察",
           },
         ],
+        [
+          "evidence:plaza_sightline_map",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            sourceLabel: "相馬現場觀察",
+          },
+        ],
+        [
+          "evidence:staff_leaked_clip",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "raw",
+            proceduralStatus: "lead",
+            completeness: "partial",
+            confidence: "unverified",
+            sourceLabel: "匿名轉貼帳號",
+          },
+        ],
+        [
+          "evidence:leaked_clip_caption_timing",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            representationLayer: "composite",
+            proceduralStatus: "lead",
+            sourceLabel: "早坂比對（平台節目輸出副本）",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;
