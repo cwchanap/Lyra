@@ -186,6 +186,11 @@ its `##### On Reexamine`.
   optional `Unlock` adds a further condition on top of holding a record.
 - Do not reveal a Present topic with `Reveals: topic:...`; the record is its
   unlock.
+- In a scene with an auto outro, a Present topic counts toward completion as
+  soon as the player holds one of its records, so the player must show it
+  before the outro plays. The character keeps its pending marker until then.
+  Make the right record a fair guess, or give the outro an `Unlock` that
+  leaves the topic optional.
 - Use it for a quick reaction to a shown record, such as a witness recognising
   an item. Breaking testimony with evidence still belongs in an
   interrogation scene.
