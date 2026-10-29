@@ -20,7 +20,7 @@
 
 **黑瀨徹**：我以現場刑警的身分，向承包商提了協力請求。 {#L005}
 
-**黑瀨徹**：他們只肯回後場門鎖那一份：維護工單，加權限名單。 {#L006}
+**黑瀨徹**：他們只肯回後場門鎖那一份：維護工單、權限名單，加工單附的資材包清單。 {#L006}
 
 **相馬律**：我們不能自己進承包商的資料庫翻嗎？ {#L007}
 
@@ -80,7 +80,7 @@
 **早坂茜**：那今天別忘。先把人看清楚，再說別的。 {#L020}
 
 ### Hotspot: 資材包清單 {#material_kit_list}
-- **Description:** 回函資料包裡，外包維護資材包的內容清單。
+- **Description:** 回函資料包裡，工單附帶的外包維護資材包清單，連傘套的規格都列在上面。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Contractor material-kit list page from the reply packet on the counter, one row showing a transparent umbrella sleeve item icon, labels unreadable.
 - **Reveals:** [evidence:contractor_umbrella_sleeve_match]
@@ -224,7 +224,7 @@
 
 [北見聽到這裡，在椅子上微微換了個姿勢，肩膀往內縮了一點，手指又把那張名片的摺痕抹平了一次。]
 
-**北見修一**：他不該把那份草稿留下。 {#L057}
+**北見修一**：他連結尾都還沒寫完，就說要送出去。 {#L057}
 
 ### Character: 北見修一 {#kitami}
 - **Role:** KAGAMI 外包維護人員
@@ -257,7 +257,7 @@
 
 **相馬律**：那晚到底是什麼，把你逼到動手？ {#L062}
 
-**北見修一**[defensive]：增田已經把那份草稿，存進監察信箱的草稿匣了。 {#L063}
+**北見修一**[defensive]：他要是真送出去，我就完了。 {#L063}
 
 **北見修一**[defensive]：我那組外包帳號，隔天就要面對合約審查、憑證收回。 {#L064}
 
@@ -302,13 +302,13 @@
 
 [相馬律把草稿推到北見面前。]
 
-**相馬律**：你剛才說，他不該把那份草稿留下。 {#L107}
+**相馬律**：你剛才說，他連結尾都還沒寫完。 {#L107}
 
-**相馬律**：它一直躺在增田的草稿匣裡，沒送出去。你怎麼知道它存在？ {#L108}
+**相馬律**：這份草稿從沒離開過草稿匣，結尾空著的事，我們剛才一個字都沒提。你什麼時候看到的？ {#L108}
 
 [北見推眼鏡的手停在半空，名片被指節壓出一道新的折痕。]
 
-**北見修一**[cornered]：……是他那晚約我去雨鐘。22:50，說要談。 {#L109}
+**北見修一**[cornered]：……是他那晚約我去雨鐘。22:50，說要談。他把螢幕轉給我看，草稿還沒寫完。 {#L109}
 
 **北見修一**：談完我就走了。後面的事，我不知道。 {#L110}
 
@@ -377,7 +377,7 @@
 ### evidence:masuda_whistleblower_draft {#masuda_whistleblower_draft}
 - **Name:** 增田檢舉草稿
 - **Description:** 監察信箱草稿匣裡，一份沒送出的檢舉草稿。
-- **Details:** 草稿沒送出，只躺在監察信箱的草稿匣，程序還沒走完。它記著北見有異常存取，但光一份草稿，證不了資料是怎麼流出去的。增田本來帶了 USB，想當場比對買家鏈校驗值的最後一段。
+- **Details:** 草稿沒送出，只躺在監察信箱的草稿匣，結尾那一段還空著，程序還沒走完。它記著北見有異常存取，但光一份草稿，證不了資料是怎麼流出去的。增田本來帶了 USB，想當場比對買家鏈校驗值的最後一段。
 - **Source Sublocation:** confront_kitami
 - **Image Prompt:** Unsent whistleblower draft document in a folder with attachment tab shapes, all paragraphs unreadable, isolated evidence icon.
 

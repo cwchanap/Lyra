@@ -158,7 +158,7 @@
 ### Card: 死者手機通知 {#phone_notification}
 
 - **Source:** evidence:victim_phone_notification
-- **Summary:** 提供獨立的時間錨，將衝突拉回更早時段。
+- **Summary:** 提供獨立的時間錨：最後一次操作在 22:58，早於三宅進場，說明後場更早就有動靜。
 
 ### Incorrect Selection
 
