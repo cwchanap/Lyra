@@ -376,8 +376,8 @@
 
 ### evidence:victim_phone_notification {#victim_phone_notification}
 - **Name:** 死者手機通知紀錄
-- **Description:** 死者手機掉落位置與最後一則通知的時間紀錄。
-- **Details:** 最後一則通知約落在 22:58，只證明有訊息在那一刻進來。之後手機沒有解鎖、沒有已讀，後面的訊息都還沒開，22:58 就是他停止處理手機的時間，與舊掛鐘的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
+- **Description:** 死者手機掉落位置與最後一次操作的時間紀錄。
+- **Details:** 手機紀錄顯示，22:58 進來的訊息是他最後點開的一則，已讀時間同樣是 22:58。之後手機沒有再解鎖，後面的訊息都還沒開，22:58 就是他最後一次操作手機的時間，與舊掛鐘撞停的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
 - **Source Sublocation:** inner
 - **Image Prompt:** Smartphone near a storage-room shelf impact mark with a blurred notification row, unreadable timestamp blocks, isolated evidence icon.
 - **Source Group:** victim_phone_device
@@ -385,7 +385,7 @@
 
 #### On Collect
 
-**早坂茜**：通知之後手機沒再被解鎖，後面的訊息都沒讀。他那刻就停手了。 {#L078}
+**早坂茜**：22:58 那則是他最後點開的。之後手機沒再被解鎖，後面的訊息都沒讀。他那刻就停手了。 {#L078}
 
 ### evidence:murder_weapon_candidate {#murder_weapon_candidate}
 - **Name:** 金屬咖啡豆罐（兇器候補）
