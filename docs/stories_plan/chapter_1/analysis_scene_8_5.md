@@ -30,9 +30,9 @@
 
 [相馬喝了幾口水，肩膀終於鬆下來。]
 
-**相馬律**：今天第三次回這張桌子。 {#L008}
+**相馬律**：又回到這張桌子。 {#L008}
 
-**早坂茜**：也第三次說「收工再吃」。 {#L009}
+**早坂茜**：又說了一次「收工再吃」。 {#L009}
 
 **相馬律**：妳記仇？ {#L010}
 
@@ -86,8 +86,6 @@
 
 **早坂茜**：你肯停手重排，就還來得及。 {#L016}
 
-**相馬律**：第三者還沒有名字。先留白。 {#L017}
-
 [場景：雨鐘咖啡館後場的保全鏈固定區，深夜；同一張紀錄桌與打開的維護面板留在工作燈下。]
 - **Background Prompt:** Medium-wide Rain Bell cafe backroom fixed-panel view at night, camera facing the formally photographed open maintenance panel and evidence record table on the left, dark storage shelves and rain-streaked window preserving backroom continuity on the right, hard practical lamp with cool rain spill, no readable text. Detective Kurose Toru baked into the center of the room standing beside the panel: stocky weathered middle-aged man, wrinkled brown-gray field coat, worn dark leather shoes, thick hands, standing with slow steady footing as he supervises the forensic fixation, deep crow's-feet and night-shift weariness, perspective-correct scale and lighting under the hard practical lamp with cool rain spill, not covering the open maintenance panel, evidence record table, or the fixed-record hotspot on the table.
 - **BGM:** bgm_breakthrough_pursuit
@@ -129,7 +127,7 @@
 
 **相馬律**：本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。 {#L018}
 
-**早坂茜**：把這句寫進申請，名字那格繼續空著。 {#L019}
+**早坂茜**：把這句寫進申請。 {#L019}
 
 ## Board: 有限調取申請基礎 {#narrow_request_basis}
 
@@ -171,17 +169,17 @@
 
 **相馬律**：申請寫好了。我的字開始飄了。 {#L020}
 
-**早坂茜**：先別送。你把名字那格留白了嗎？ {#L021}
+**早坂茜**：先別送。再看一遍，有沒有寫過頭？ {#L021}
 
-**相馬律**：留了。外部憑證還沒有身分。 {#L022}
+**相馬律**：看過了。外部憑證還沒有身分。 {#L022}
 
 **早坂茜**：好。餅乾一人一半。 {#L023}
 
 ## Outro
 
-**早坂茜**[stern]：申請準備好了；身分仍未明，核准片段也還不能取得。 {#L024}
+**早坂茜**：工單那條線，黑瀨刑警在幫我們談。 {#L024}
 
-**相馬律**[relieved]：先不猜名字。 {#L025}
+**相馬律**：那就等他的消息。 {#L030}
 
 **相馬律**[relieved]：餅乾真的分我一半？ {#L026}
 

@@ -73,7 +73,7 @@
 
 [片瀨美咲在角落收拾。]
 
-[殘留在空氣裡的咖啡渣味混著潮濕的雨氣。洗杯機偶爾排一口氣，收銀抽屜被推回去時硬幣盤輕輕一響。]
+[殘留在空氣裡的咖啡渣味混著潮濕的雨氣。咖啡機偶爾排一口氣，收銀抽屜被推回去時硬幣盤輕輕一響。]
 
 [店長高瀨又抹了一下檯面。]
 
@@ -124,12 +124,12 @@
 **店長高瀨**：店裡標杯習慣寫首字母，方便分。不是全名。 {#L024}
 
 ### Hotspot: 閉店回放小螢幕 {#closing_playback_screen}
-- **Description:** 收銀終端旁的小螢幕，可以調出閉店前二三十秒的監視器回放。
+- **Description:** 收銀終端旁的小螢幕，可以調出閉店前監視器的快轉摘錄。
 - **Evidence Source:** visible
 - **Scene Source Prompt:** Small cafe counter playback monitor screen showing a brief grainy closing-time surveillance clip as the source object; unreadable timestamp, no UI text.
 - **Reveals:** [evidence:cctv_screenshot]
 
-[相馬律在收銀終端旁的小螢幕調出閉店回放。畫面大約二三十秒。]
+[相馬律在收銀終端旁的小螢幕調出閉店回放。畫面是一段快轉摘錄，閉店前的幾個動作被壓在一起。]
 
 **相馬律**：三宅補紙杯，去後場拿清潔用品，到倉庫門口拿了個紙箱。 {#L025}
 
@@ -190,7 +190,7 @@
 
 **店長高瀨**：我那趟只在走廊前段繞了一下，沒往裡走。帳還沒對完。 {#L040}
 
-**早坂茜**：記著。店長有進出，但只到走廊前段。先別往她身上想。 {#L041}
+**早坂茜**：記著。店長有進出，但只到走廊前段。 {#L041}
 
 ### Character: 店長高瀨 {#takase}
 - **Role:** 店長
@@ -210,7 +210,7 @@
 
 [三人走過吧台後方。店長提起那座舊掛鐘。]
 
-**店長高瀨**：那個鐘又慢了。 {#L045}
+**店長高瀨**：那個鐘的秒針又頓住了。 {#L045}
 
 **相馬律**：三宅平常也走這條路？ {#L046}
 
@@ -223,7 +223,7 @@
 
 [相馬律記起店長剛提過的那座舊掛鐘。店長注意到了。]
 
-**店長高瀨**[tired]：那個鐘常慢。前任老闆留下的，我一直沒丟。 {#L049}
+**店長高瀨**[tired]：那個鐘走得準，就是秒針常頓一下。前任老闆留下的，我一直沒丟。 {#L049}
 
 [相馬律點頭，沒有對時間多問。]
 
@@ -231,9 +231,9 @@
 
 **店長高瀨**：前任老闆是個很準時的人。諷刺吧。 {#L051}
 
-**店長高瀨**：換了我就懶得校了。反正客人也不看。 {#L052}
+**店長高瀨**：換了我就懶得修那根秒針了。反正客人也不看。 {#L052}
 
-**相馬律**：先別拿它來判斷時間。 {#L053}
+**相馬律**：好，我先記著這裡有一台鐘。 {#L053}
 
 #### Topic: 增田為何能在後場 {#masuda_backroom}
 - **Status:** unlocked
@@ -407,7 +407,7 @@
 
 ### evidence:cctv_screenshot {#cctv_screenshot}
 - **Name:** 閉店監視器截圖
-- **Description:** 閉店前約二三十秒的監視器畫面：三宅補紙杯、進後場拿清潔用品、取紙箱、擦桌、倒垃圾。
+- **Description:** 閉店前監視器快轉摘錄的畫面：三宅補紙杯、進後場拿清潔用品、取紙箱、擦桌、倒垃圾。
 - **Details:** 畫面顯示三宅多次來回後場，皆為閉店例行動線。
 - **Source Sublocation:** front
 - **Image Prompt:** Small surveillance monitor screenshot thumbnail showing a blurred cafe backroom route, unreadable timestamp blocks, isolated evidence icon.

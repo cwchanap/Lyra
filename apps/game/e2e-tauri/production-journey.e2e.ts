@@ -30,7 +30,12 @@ import {
   DIALOGUE_DRAIN_CAP,
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
-import type { GameStateView, HotspotView } from "$lib/state/types";
+import type {
+  CharacterView,
+  GameStateView,
+  HotspotView,
+  TopicView,
+} from "$lib/state/types";
 
 /** Explore parked on a mapped wrapper's city map (HPA-601 §7 pending map). */
 function isPendingMapGate(state: GameStateView, wrapper: string): boolean {
@@ -159,26 +164,90 @@ const interrogationChallenges: Record<
     },
   ],
   interrogation_scene_10: [
-    { phaseId: "p1", questionId: "q_p1", evidenceId: "closing_routine" },
+    {
+      phaseId: "p1",
+      questionId: "q_p1",
+      evidenceId: "miyake_mother_call_confirmation",
+    },
     {
       phaseId: "p1",
       questionId: "q_p2",
       evidenceId: "victim_phone_notification",
     },
-    { phaseId: "p1", questionId: "q_p3", evidenceId: "miyake_pov_replay" },
+    { phaseId: "p1", questionId: "q_p3", evidenceId: "floor_water_drying_map" },
     {
       phaseId: "gate",
       questionId: "q_request_clip",
       evidenceId: "doorlock_summary_timetable",
     },
     { phaseId: "p4", questionId: "q_p4", evidenceId: "approved_clip" },
+    { phaseId: "p5", questionId: "q_p5", evidenceId: "kitami_external_access" },
     {
       phaseId: "p5",
-      questionId: "q_p5",
-      evidenceId: "temp_maintenance_workorder",
+      questionId: "q_p6",
+      evidenceId: "kitami_data_theft_record",
     },
   ],
 };
+
+/**
+ * Authored 出示紀錄 routes: the record that opens each Present topic on the
+ * normal route, keyed by scene then topic (content coupling points, like
+ * interrogationChallenges).
+ */
+const investigationPresents: Record<string, Record<string, string>> = {
+  investigation_scene_9: { draft_slip: "masuda_whistleblower_draft" },
+};
+
+/**
+ * The record to show for a pending Present topic, or null while the player
+ * does not hold it yet. A Present topic with no authored route is an error.
+ */
+function heldPresentRecord(
+  state: GameStateView,
+  topic: TopicView,
+): { name: string } | null {
+  const evidenceId = investigationPresents[state.scene.id]?.[topic.id];
+  if (!evidenceId) {
+    throw new Error(
+      `no authored 出示紀錄 route for ${state.scene.id}/${topic.id}`,
+    );
+  }
+  return (
+    state.inventory.evidence.find((candidate) => candidate.id === evidenceId) ??
+    null
+  );
+}
+
+/** A topic the drain can act on now: plain and undiscussed, or a Present topic whose record is held. */
+function actionableTopic(
+  state: GameStateView,
+  character: CharacterView,
+): TopicView | undefined {
+  return character.topics.find(
+    (topic) =>
+      !topic.discussed &&
+      (!topic.requiresPresent || heldPresentRecord(state, topic) !== null),
+  );
+}
+
+/** Clicks the enabled record tile showing `recordName` in the open tray. */
+async function clickRecordTile(recordName: string): Promise<void> {
+  const clicked = await browser.execute((name: string) => {
+    const tile = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+    ).find(
+      (candidate) =>
+        !candidate.disabled && (candidate.textContent ?? "").includes(name),
+    );
+    if (!tile) return false;
+    tile.click();
+    return true;
+  }, recordName);
+  if (!clicked) {
+    throw new Error(`record tile ${recordName} was not clickable`);
+  }
+}
 
 /**
  * Authored solutions for the Analysis boards on the normal route
@@ -262,16 +331,25 @@ async function exploreStep(state: GameStateView): Promise<void> {
     await clickButton(hotspotButtonLabel(hotspot));
     return;
   }
-  const character = current.characters.find((candidate) =>
-    candidate.topics.some((topic) => !topic.discussed),
+  const character = current.characters.find(
+    (candidate) => actionableTopic(state, candidate) !== undefined,
   );
   if (character) {
-    const topic = character.topics.find((candidate) => !candidate.discussed);
+    const topic = actionableTopic(state, character);
     if (!topic) throw new Error("unreachable topic state");
     // Placed witnesses open a topic popover; layout-less witnesses render
     // their topic buttons directly in the 未放置證人 fallback list.
     if (character.layout !== null) {
       await clickButton(`詢問：${character.name}`);
+    }
+    if (topic.requiresPresent) {
+      // A Present topic stays hidden until its record is shown.
+      const record = heldPresentRecord(state, topic);
+      if (!record) throw new Error("unreachable present state");
+      await clickButton("出示紀錄");
+      await waitForButton(record.name);
+      await clickRecordTile(record.name);
+      return;
     }
     await clickButton(topic.label);
     return;
@@ -281,7 +359,7 @@ async function exploreStep(state: GameStateView): Promise<void> {
     if (candidate.id === scene.currentSublocationId) return false;
     return (
       candidate.hotspots.some((h) => !h.inspected) ||
-      candidate.characters.some((c) => c.topics.some((t) => !t.discussed))
+      candidate.characters.some((c) => actionableTopic(state, c) !== undefined)
     );
   });
   if (next) {
@@ -311,21 +389,7 @@ async function presentChallengeEvidence(
       `evidence ${challenge.evidenceId} is not in the inventory for ${questionId}`,
     );
   }
-  const presented = await browser.execute((recordName: string) => {
-    const tile = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-    ).find(
-      (candidate) =>
-        !candidate.disabled &&
-        (candidate.textContent ?? "").includes(recordName),
-    );
-    if (!tile) return false;
-    tile.click();
-    return true;
-  }, evidence.name);
-  if (!presented) {
-    throw new Error(`record tile ${evidence.name} was not clickable`);
-  }
+  await clickRecordTile(evidence.name);
 }
 
 /** One interrogation interaction: challenge, present, or complete. */

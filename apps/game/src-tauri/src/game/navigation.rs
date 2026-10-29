@@ -252,7 +252,7 @@ impl GameEngine {
             "external_maintenance_credential",
             "local_sequence_record",
             "victim_phone_notification",
-            "closing_routine",
+            "floor_water_drying_map",
             "doorlock_summary_timetable",
         ];
 

@@ -29,6 +29,8 @@
 
 [摘要完成。畫面右下角閃過一行極小的灰字，幾乎看不見：維護合併延遲：89.7 秒。隨即消失。]
 
+[摘要頁尾還留著另一行灰字：初次審查：明日上午。]
+
 [場景：警署會面室外的走廊，日光燈下，空氣安靜。牆上的螢幕還亮著那份摘要。]
 - **Background Prompt:** Quiet Japanese police meeting-room corridor under pale fluorescent light, wall monitor showing an unreadable case-summary layout, empty bench, tense still air.
 - **BGS:** bgs_institutional_corridor

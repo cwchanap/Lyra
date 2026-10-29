@@ -544,7 +544,7 @@ describe("inferGameplaySfxEvents", () => {
         current: {
           kind: "line",
           speaker: "黑瀨徹",
-          text: "店長說，她聽到一聲悶響。但那台洗杯機排氣的時候，也常那樣。",
+          text: "店長說，她聽到一聲悶響。但那台咖啡機排氣的時候，也常那樣。",
         },
         queueRemaining: 1,
         sceneTag: null,
@@ -854,9 +854,9 @@ describe("story-beat SFX substring coupling (authored-content drift guard)", () 
     ).toBe(true);
 
     // A line beat must not be misread as an action beat, and vice versa.
-    const lineBeat = "**黑瀨徹**：那台洗杯機排氣的時候，也常那樣。";
+    const lineBeat = "**黑瀨徹**：那台咖啡機排氣的時候，也常那樣。";
     expect(beatsOfKind(lineBeat, "line")).toEqual([
-      "那台洗杯機排氣的時候，也常那樣。",
+      "那台咖啡機排氣的時候，也常那樣。",
     ]);
     expect(beatsOfKind(lineBeat, "action")).toEqual([]);
   });

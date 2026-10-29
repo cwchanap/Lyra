@@ -536,19 +536,26 @@ mod tests {
         assert_eq!(checkpoint.projection.mode, CheckpointMode::Analysis);
         assert_eq!(checkpoint.projection.pending_acquisition, None);
         assert!(checkpoint.projection.scene_navigation_eligible);
-        let expected_pre_hearing_evidence = vec![
-            "closing_routine".to_owned(),
-            "doorlock_summary_timetable".to_owned(),
-            "external_maintenance_credential".to_owned(),
-            "local_sequence_record".to_owned(),
-            "miyake_mother_call_confirmation".to_owned(),
-            "miyake_pov_replay".to_owned(),
-            "victim_phone_notification".to_owned(),
-        ];
-        assert_eq!(
-            checkpoint.projection.evidence_ids,
-            expected_pre_hearing_evidence
-        );
+        // Earlier scenes' evidence carries forward; the allowlist adds the
+        // hearing's challenge records on top of it.
+        for id in [
+            "doorlock_summary_timetable",
+            "external_maintenance_credential",
+            "floor_water_drying_map",
+            "local_sequence_record",
+            "miyake_mother_call_confirmation",
+            "miyake_pov_replay",
+            "victim_phone_notification",
+        ] {
+            assert!(
+                checkpoint
+                    .projection
+                    .evidence_ids
+                    .iter()
+                    .any(|held| held == id),
+                "beat 8.5 checkpoint must hold {id}"
+            );
+        }
         assert!(!checkpoint
             .projection
             .evidence_ids
@@ -576,31 +583,36 @@ mod tests {
             .jump_to_scene("chapter_1", "interrogation_scene_10")
             .unwrap();
         assert!(matches!(view.scene, SceneView::Interrogation { .. }));
-        let mut evidence_ids = view
-            .inventory
-            .evidence
-            .iter()
-            .map(|record| record.id.clone())
-            .collect::<Vec<_>>();
-        evidence_ids.sort();
-        assert_eq!(
-            evidence_ids,
-            vec![
-                "closing_routine",
-                "doorlock_summary_timetable",
-                "external_maintenance_credential",
-                "local_sequence_record",
-                "miyake_mother_call_confirmation",
-                "miyake_pov_replay",
-                "victim_phone_notification",
-            ]
-        );
+        // Scene Select carries forward evidence from earlier scenes, so only
+        // check that the hearing's challenge records are held.
+        for id in [
+            "doorlock_summary_timetable",
+            "external_maintenance_credential",
+            "floor_water_drying_map",
+            "kitami_data_theft_record",
+            "kitami_external_access",
+            "local_sequence_record",
+            "miyake_mother_call_confirmation",
+            "miyake_pov_replay",
+            "victim_phone_notification",
+        ] {
+            assert!(
+                view.inventory.evidence.iter().any(|record| record.id == id),
+                "hearing jump must hold {id}"
+            );
+        }
         assert!(!view
             .inventory
             .evidence
             .iter()
             .any(|record| record.id == "approved_clip"));
-        assert!(view.inventory.statements.is_empty());
+        let statement_ids = view
+            .inventory
+            .statements
+            .iter()
+            .map(|record| record.id.clone())
+            .collect::<Vec<_>>();
+        assert_eq!(statement_ids, vec!["kitami_meeting_admission"]);
         assert!(view
             .story
             .authorizations
