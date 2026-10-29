@@ -87,6 +87,12 @@ lines:
     ja: 審査会で初めて負けるのは、普通のこと。次は「犯人に見えない」で場をもたせようとしないで。
     voice:
       clip: ch1_hayasaka_akane_0062
+  - id: L023
+    speaker: 早坂茜
+    zh: 起訴程序已經啟動了，但審查會留了重查的入口。
+    ja: 起訴の手続きはもう動き出してる。でも審査会は、再捜査の入口を残した。
+    voice:
+      clip: ch1_hayasaka_akane_0194
   - id: L015
     speaker: 早坂茜
     zh: 人說的、店裡留下的、系統排的，先分開。

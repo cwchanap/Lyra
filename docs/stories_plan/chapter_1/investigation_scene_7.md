@@ -66,7 +66,7 @@
 
 **早坂茜**：它在警方把儲藏入口照片匯進摘要後才送來。 {#L014}
 
-**相馬律**：對方看見的是資料缺口，不是整件事的答案。 {#L015}
+**相馬律**：縮圖只拍到墊子、水痕和一角傘套。 {#L015}
 
 [黑瀨徹在旁邊看了一眼，雙手抱胸，整個人像釘在地上似的穩。]
 
@@ -152,9 +152,9 @@
 - **Scene Source Prompt:** Stopped old wall clock mounted on the inner wall of the inner-storage entrance as the visible source object, with clock face readable only as a vague late-night position.
 - **Reveals:** [evidence:old_clock_photo]
 
-[相馬律停在剛跨過防火門就能看見的入口內側牆下。這正是店長先前提過的那台舊掛鐘，指針仍卡在接近 22:59；高貨架後方才是被陰影吞住的倉庫深處。]
+[相馬律停在剛跨過防火門就能看見的入口內側牆下。這正是店長先前提過的那台舊掛鐘，鐘面玻璃一道斜裂，像是貨架被撞的那一下震停了它，指針仍卡在接近 22:59；高貨架後方才是被陰影吞住的倉庫深處。]
 
-**相馬律**：入口這台。店長說它常慢。 {#L029}
+**相馬律**：入口這台。店長說它走得準，就是秒針常頓一下。 {#L029}
 
 **黑瀨徹**：開店的人記得這種東西。客人不會走到這。 {#L030}
 
@@ -265,11 +265,11 @@
 
 [相馬律問起店長那晚有沒有聽見聲響。]
 
-**黑瀨徹**：店長說，她聽到一聲悶響。但那台洗杯機排氣的時候，也常那樣。 {#L051}
+**黑瀨徹**：店長說，她聽到一聲悶響。但那台咖啡機排氣的時候，也常那樣。 {#L051}
 
 **相馬律**：所以悶響被蓋過去了。 {#L052}
 
-**黑瀨徹**：兩個來源。一個是洗杯機排氣，一個是收銀抽屜的硬幣盤。 {#L053}
+**黑瀨徹**：兩個來源。一個是咖啡機排氣，一個是收銀抽屜的硬幣盤。 {#L053}
 
 **黑瀨徹**：別問我更多。聲音這種事，要用就讓鑑識去固定。 {#L054}
 
@@ -320,14 +320,10 @@
 
 **相馬律**：一句話加一張縮圖。沒指名要我看哪裡。 {#L066}
 
-**早坂茜**：時間點是關鍵。它在照片匯進摘要之後才來。 {#L067}
-
-**相馬律**：對方看見的是資料缺口，不是答案本身。 {#L068}
-
 ### evidence:floor_water_drying_map {#floor_water_drying_map}
 - **Name:** 地板雨水乾燥圖
 - **Description:** 案發夜初勘照片裡，後場門口止滑墊旁半乾水痕的乾燥分布。
-- **Details:** 黑瀨調出的案發夜初勘照片，23:34 和 23:49 各一張，都帶時間戳。第一張裡，止滑墊旁的水痕邊緣已經收乾，位置跟縮圖裡那塊墊子一致；水痕外圈收乾的邊緣留著原本的大小，拿兩張的收縮速度往回推，誤差取最寬，這灘水最晚也在 23:01 前就被帶進來，比三宅 23:06 進後場更早。今晚的地面一直有雨、有人進出，不拿來比。
+- **Details:** 黑瀨調出的案發夜初勘照片，23:34 和 23:49 各一張，都帶時間戳。第一張裡，止滑墊旁的水痕邊緣已經收乾，位置跟縮圖裡那塊墊子一致；水痕外圈收乾的邊緣留著原本的大小，拿兩張的收縮速度往回推，誤差取最寬，這灘水最晚也在 23:01 前就被帶進來，比三宅 23:06 進後場更早。回放裡三宅只出過一次後門，是 23:06 進後場、回前場擦完桌之後，才去後巷倒垃圾，所以這灘更早的水不是他帶進來的。今晚的地面一直有雨、有人進出，不拿來比。
 - **Source Sublocation:** back_door
 - **Image Prompt:** Forensic-style floor moisture drying map around a non-slip mat, pale blue water-shape overlays, no readable labels, isolated evidence icon.
 
@@ -368,7 +364,7 @@
 ### evidence:old_clock_photo {#old_clock_photo}
 - **Name:** 舊掛鐘照片
 - **Description:** 停在接近 22:59 的舊掛鐘照片。
-- **Details:** 指針卡住的時間落在約 22:59，疑似遭撞擊停擺。一台舊鐘無法單獨錨定真正的時間，只能當旁證。
+- **Details:** 鐘走得準，只是秒針偶爾頓一下。鐘面有一道撞擊裂痕，貨架被撞的那一刻把它震停在約 22:59，所以這個時間是真的。
 - **Source Sublocation:** inner
 - **Image Prompt:** Isolated photo print of the recurring round old analog cafe wall clock examined at the inner-storage entrance, with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring; stopped at a vague late-night position with the minute hand nearly vertical at 12 and the hour hand just before 11, shadowed aged appearance with one sharp diagonal impact crack crossing the lower-left of the cream dial, distinct from the fine hairline crazing, no readable timestamp or text, transparent evidence-icon composition.
 
@@ -376,12 +372,12 @@
 
 **相馬律**：22:59。 {#L075}
 
-**黑瀨徹**：一台舊鐘。別只靠它。 {#L076}
+**黑瀨徹**：鐘是被撞停的，不是壞的。 {#L076}
 
 ### evidence:victim_phone_notification {#victim_phone_notification}
 - **Name:** 死者手機通知紀錄
 - **Description:** 死者手機掉落位置與最後一則通知的時間紀錄。
-- **Details:** 最後一則通知約落在 22:58，與舊掛鐘的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
+- **Details:** 最後一則通知約落在 22:58，只證明有訊息在那一刻進來。之後手機沒有解鎖、沒有已讀，後面的訊息都還沒開，22:58 就是他停止處理手機的時間，與舊掛鐘的 22:59 幾乎重疊，把衝突發生的時間往前拉到接近 22:58。
 - **Source Sublocation:** inner
 - **Image Prompt:** Smartphone near a storage-room shelf impact mark with a blurred notification row, unreadable timestamp blocks, isolated evidence icon.
 - **Source Group:** victim_phone_device
@@ -389,9 +385,7 @@
 
 #### On Collect
 
-**相馬律**：22:58。跟掛鐘貼在一起。 {#L077}
-
-**早坂茜**：兩個獨立的點，指向同一刻。 {#L078}
+**早坂茜**：通知之後手機沒再被解鎖，後面的訊息都沒讀。他那刻就停手了。 {#L078}
 
 ### evidence:murder_weapon_candidate {#murder_weapon_candidate}
 - **Name:** 金屬咖啡豆罐（兇器候補）
@@ -417,8 +411,6 @@
 
 **相馬律**：是範圍，不是某一分鐘。 {#L081}
 
-**黑瀨徹**：但跟 22:58 不衝突。我只給你這些。 {#L082}
-
 ### evidence:miyake_pov_replay {#miyake_pov_replay}
 - **Name:** 三宅視角重現
 - **Description:** 站在三宅 23:06 站位上的後場視線記錄。
@@ -429,8 +421,6 @@
 #### On Collect
 
 **相馬律**：從那個點，看不到屍體。 {#L083}
-
-**早坂茜**：看不見，不等於不在場。先記著這條界線。 {#L084}
 
 ### evidence:takase_2320_replay {#takase_2320_replay}
 - **Name:** 店長 23:20 發現重現
@@ -443,15 +433,13 @@
 
 **相馬律**：23:20 才發現，原來是白板上那條沒做完的流程。 {#L085}
 
-**早坂茜**：流程沒走完，發現就會晚。這條線，從閉店白板一路接上了。 {#L086}
-
 ## Outro
 
 [相馬律站在後場門口，回頭看了一眼那扇半掩的防火門。]
 
 **相馬律**：摘要裡的死亡和進場時間，站不住了。 {#L087}
 
-**早坂茜**：水痕和出杯紀錄都比摘要更早。傘套只說明後巷那條路有人走過。 {#L088}
+**早坂茜**：水痕和出杯紀錄都比摘要更早。 {#L088}
 
 **相馬律**：可能有第三個人，比三宅更早就進來了。 {#L089}
 

@@ -1214,9 +1214,12 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     const gateReady = await challengePhase(
       "p1",
       [
-        { questionId: "q_p1", evidenceId: "closing_routine" },
+        {
+          questionId: "q_p1",
+          evidenceId: "miyake_mother_call_confirmation",
+        },
         { questionId: "q_p2", evidenceId: "victim_phone_notification" },
-        { questionId: "q_p3", evidenceId: "miyake_pov_replay" },
+        { questionId: "q_p3", evidenceId: "floor_water_drying_map" },
       ],
       "gate",
     );

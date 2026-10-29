@@ -51,14 +51,14 @@ lines:
       clip: ch1_hayasaka_akane_0115
   - id: L008
     speaker: 相馬律
-    zh: 今天第三次回這張桌子。
-    ja: この机に戻ってくるの、今日で三回目だ。
+    zh: 又回到這張桌子。
+    ja: また、この机に戻ってきた。
     voice:
       clip: ch1_soma_ritsu_0212
   - id: L009
     speaker: 早坂茜
-    zh: 也第三次說「收工再吃」。
-    ja: 「片付いてから食べる」も、三回目。
+    zh: 又說了一次「收工再吃」。
+    ja: 「片付いてから食べる」、また言った。
     voice:
       clip: ch1_hayasaka_akane_0116
   - id: L010
@@ -103,12 +103,6 @@ lines:
     ja: 手を止めて並べ直せるなら、まだ間に合う。
     voice:
       clip: ch1_hayasaka_akane_0119
-  - id: L017
-    speaker: 相馬律
-    zh: 第三者還沒有名字。先留白。
-    ja: 第三者には、まだ名前がない。空けておく。
-    voice:
-      clip: ch1_soma_ritsu_0217
   - id: L018
     speaker: 相馬律
     zh: 本機順序和摘要對不上；二十三點零七分五十秒是合併完成的時間，不是某一個人的事件時間。
@@ -117,8 +111,8 @@ lines:
       clip: ch1_soma_ritsu_0218
   - id: L019
     speaker: 早坂茜
-    zh: 把這句寫進申請，名字那格繼續空著。
-    ja: その一文を申請書に。名前の欄は空けたまま。
+    zh: 把這句寫進申請。
+    ja: その一文を申請書に。
     voice:
       clip: ch1_hayasaka_akane_0120
   - id: L020
@@ -129,14 +123,14 @@ lines:
       clip: ch1_soma_ritsu_0219
   - id: L021
     speaker: 早坂茜
-    zh: 先別送。你把名字那格留白了嗎？
-    ja: まだ出さないで。名前の欄、空けてある？
+    zh: 先別送。再看一遍，有沒有寫過頭？
+    ja: まだ出さないで。もう一度見て、書きすぎてない？
     voice:
       clip: ch1_hayasaka_akane_0121
   - id: L022
     speaker: 相馬律
-    zh: 留了。外部憑證還沒有身分。
-    ja: 空けてある。外部認証には、まだ身元がない。
+    zh: 看過了。外部憑證還沒有身分。
+    ja: 見た。外部認証には、まだ身元がない。
     voice:
       clip: ch1_soma_ritsu_0220
   - id: L023
@@ -147,18 +141,16 @@ lines:
       clip: ch1_hayasaka_akane_0122
   - id: L024
     speaker: 早坂茜
-    expression: stern
-    zh: 申請準備好了；身分仍未明，核准片段也還不能取得。
-    ja: 申請の準備はできた。身元はまだ不明、承認済み抜粋もまだ取れない。
+    zh: 工單那條線，黑瀨刑警在幫我們談。
+    ja: 作業票の線は、黒瀬刑事が掛け合ってくれてる。
     voice:
       clip: ch1_hayasaka_akane_0123
-  - id: L025
+  - id: L030
     speaker: 相馬律
-    expression: relieved
-    zh: 先不猜名字。
-    ja: 名前は、まだ推測しない。
+    zh: 那就等他的消息。
+    ja: それなら、向こうの知らせを待つ。
     voice:
-      clip: ch1_soma_ritsu_0221
+      clip: ch1_soma_ritsu_0328
   - id: L026
     speaker: 相馬律
     expression: relieved

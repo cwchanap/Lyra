@@ -25,13 +25,13 @@
 
 [他點了一下頭，動作有點急。]
 
-[場景：雨鐘咖啡館後場走道盡頭、內側倉庫入口，午後。入口內側牆上的一只舊掛鐘，秒針走得有點慢。]
+[場景：雨鐘咖啡館後場走道盡頭、內側倉庫入口，午後。入口內側牆上的一只舊掛鐘，走得準，只是秒針常頓一下。]
 - **Background Prompt:** Eye-level medium-wide establishing view from the corridor mouth, camera pulled back to frame the narrow back corridor of a small Tokyo cafe leading to the inner-storage entrance at its end, focal area a round old analog cafe wall clock with a heavy black multi-ring metal bezel, aged cream enamel dial with fine hairline crazing, twelve short black baton hour markers and no numerals, thick tapered black hands, and a small scuff on the lower-right outer ring, mounted on the entrance's inner wall above stacked supply boxes, dim service light, quiet operational mood, no people, no readable text, keep the lower composition clear and uncluttered for dialogue UI.
 - **BGS:** bgs_cafe_backroom_corridor
 
 [店長走到後場走道盡頭，抬手想調整舊掛鐘，最後只把鐘身扶正。]
 
-**店長高瀨**：……又慢了。 {#L006}
+**店長高瀨**：……秒針又頓住了。 {#L006}
 
 [場景：雨鐘咖啡館主廳與店門口，午後。門外雨又細細地下起來。]
 - **Background Prompt:** Cafe entrance from inside, a regular customer folding a transparent umbrella at the door, wet street reflections, warm interior light, ordinary afternoon, no readable text.
@@ -100,6 +100,6 @@
 
 [增田已經離開了。窗邊老位子上，留著一杯沒喝完的金木犀拿鐵。]
 
-[入口內側牆上的舊掛鐘，還是慢著。秒針頓了半拍，才往前跳了一格。]
+[入口內側牆上的舊掛鐘，還是老樣子。秒針頓了半拍，才往前跳了一格。]
 
 [畫面慢慢暗下來。]
