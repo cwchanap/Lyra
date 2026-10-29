@@ -1,0 +1,178 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_4",
+  "sublocations": {
+    "glass_box_plaza": {
+      "hotspots": {
+        "phone_dock": {
+          "kind": "rect",
+          "x": 0.52,
+          "y": 0.5,
+          "w": 0.05,
+          "h": 0.055
+        },
+        "sponsor_signboard": {
+          "kind": "rect",
+          "x": 0.053,
+          "y": 0.503,
+          "w": 0.137,
+          "h": 0.247
+        },
+        "rear_safety_spot": {
+          "kind": "rect",
+          "x": 0.19,
+          "y": 0.52,
+          "w": 0.07,
+          "h": 0.11
+        },
+        "mashiro_desk_notes": {
+          "kind": "rect",
+          "x": 0.572,
+          "y": 0.52,
+          "w": 0.04,
+          "h": 0.05
+        }
+      },
+      "characters": {
+        "event_security": {
+          "kind": "sprite",
+          "assetId": "portrait.event_security.standard",
+          "x": 0.7,
+          "y": 0.4,
+          "w": 0.16,
+          "h": 0.4,
+          "anchor": "bottomCenter"
+        }
+      }
+    },
+    "stream_wall_plaza": {
+      "hotspots": {
+        "stream_wall_screen": {
+          "kind": "rect",
+          "x": 0.63,
+          "y": 0.02,
+          "w": 0.25,
+          "h": 0.35
+        },
+        "press_pen": {
+          "kind": "rect",
+          "x": 0.03,
+          "y": 0.26,
+          "w": 0.17,
+          "h": 0.32
+        },
+        "crowd_sightline": {
+          "kind": "rect",
+          "x": 0.22,
+          "y": 0.51,
+          "w": 0.17,
+          "h": 0.11
+        }
+      },
+      "characters": {}
+    },
+    "control_room_perimeter": {
+      "hotspots": {
+        "ob_van_monitor": {
+          "kind": "rect",
+          "x": 0.03,
+          "y": 0.33,
+          "w": 0.17,
+          "h": 0.18
+        },
+        "silent_challenge_runsheet": {
+          "kind": "rect",
+          "x": 0.135,
+          "y": 0.2,
+          "w": 0.05,
+          "h": 0.13
+        }
+      },
+      "characters": {
+        "assistant_director": {
+          "kind": "sprite",
+          "assetId": "portrait.assistant_director.standard",
+          "x": 0.72,
+          "y": 0.36,
+          "w": 0.14,
+          "h": 0.38,
+          "anchor": "bottomCenter"
+        },
+        "hasumi": {
+          "kind": "sprite",
+          "assetId": "portrait.hasumi_toru.standard",
+          "x": 0.44,
+          "y": 0.32,
+          "w": 0.15,
+          "h": 0.42,
+          "anchor": "bottomCenter"
+        }
+      }
+    },
+    "fan_support_area": {
+      "hotspots": {
+        "fan_banner_flowers": {
+          "kind": "rect",
+          "x": 0.56,
+          "y": 0.32,
+          "w": 0.235,
+          "h": 0.38
+        },
+        "torn_heckle_sign": {
+          "kind": "rect",
+          "x": 0.45,
+          "y": 0.44,
+          "w": 0.09,
+          "h": 0.15
+        },
+        "fan_shooting_spot": {
+          "kind": "rect",
+          "x": 0.8,
+          "y": 0.28,
+          "w": 0.075,
+          "h": 0.5
+        }
+      },
+      "characters": {
+        "togawa_miu": {
+          "kind": "sprite",
+          "assetId": "portrait.togawa_miu.standard",
+          "x": 0.25,
+          "y": 0.36,
+          "w": 0.16,
+          "h": 0.44,
+          "anchor": "bottomCenter"
+        }
+      }
+    },
+    "police_review_van": {
+      "hotspots": {
+        "kagami_printout": {
+          "kind": "rect",
+          "x": 0.11,
+          "y": 0.73,
+          "w": 0.35,
+          "h": 0.12
+        },
+        "kurose_rice_ball": {
+          "kind": "rect",
+          "x": 0.075,
+          "y": 0.55,
+          "w": 0.125,
+          "h": 0.15
+        }
+      },
+      "characters": {
+        "kurose": {
+          "kind": "sprite",
+          "assetId": "standee.kurose_toru.standard",
+          "x": 0.62,
+          "y": 0.3,
+          "w": 0.14,
+          "h": 0.6,
+          "anchor": "bottomCenter"
+        }
+      }
+    }
+  }
+}
