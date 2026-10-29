@@ -1160,16 +1160,11 @@ describe("packaged Analysis Beat 8.5 journey", () => {
         next.scene.kind === "analysis" &&
         next.mode.type === "dialogue" &&
         next.mode.current.kind === "line" &&
-        next.mode.current.text ===
-          "申請準備好了；身分仍未明，核准片段也還不能取得。"
+        next.mode.current.text === "工單那條線，黑瀨刑警在幫我們談。"
       );
     }, 160);
     state = await getPackagedGameState();
-    expectDialogueLine(
-      state,
-      "早坂茜",
-      "申請準備好了；身分仍未明，核准片段也還不能取得。",
-    );
+    expectDialogueLine(state, "早坂茜", "工單那條線，黑瀨刑警在幫我們談。");
     await advanceDialogueUntil(
       async () => (await getPackagedGameState()).scene.id !== ANALYSIS_SCENE_ID,
       160,
