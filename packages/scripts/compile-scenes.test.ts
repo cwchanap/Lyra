@@ -2824,7 +2824,7 @@ describe("compile (tracked production corpus compatibility)", () => {
           (line: { id: string }) => line.id === "summary_death_after_miyake",
         );
       expect(p1CorrectLine.onCorrect[0].text).toBe(
-        "手機通知與後場紀錄顯示衝突早於摘要；摘要的主時間線不成立。",
+        "手機最後一次操作在 22:58，掛鐘被撞停在 22:59，都早於三宅進場。摘要沒交代這一段，主時間線不能只靠他的動線。",
       );
       expect(gate).toMatchObject({
         id: "gate",
