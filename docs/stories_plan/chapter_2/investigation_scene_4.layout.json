@@ -83,9 +83,9 @@
         "silent_challenge_runsheet": {
           "kind": "rect",
           "x": 0.135,
-          "y": 0.2,
+          "y": 0.355,
           "w": 0.05,
-          "h": 0.13
+          "h": 0.075
         }
       },
       "characters": {
@@ -107,7 +107,15 @@
           "h": 0.42,
           "anchor": "bottomCenter"
         }
-      }
+      },
+      "intentionalOverlaps": [
+        {
+          "hotspots": [
+            "ob_van_monitor",
+            "silent_challenge_runsheet"
+          ]
+        }
+      ]
     },
     "fan_support_area": {
       "hotspots": {
