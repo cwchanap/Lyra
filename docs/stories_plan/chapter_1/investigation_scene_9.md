@@ -353,7 +353,7 @@
 - **Description:** 資材包清單裡的透明傘套規格，與後場那只濕傘套的比對。
 - **Details:** 資材包清單列的傘套規格，與後場牆角那只傘套相符；初勘照片裡它還在滴水。同款傘套外面也買得到，所以它排不出先後，也不專屬於承包商，只能算旁證：走過後巷的人，帶的是和資材包同款的傘套。它不能單獨定罪；要對到人，仍須臨時維護工單和外包憑證。
 - **Source Sublocation:** contractor_desk
-- **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
+- **Image Prompt:** Specification comparison card pairing a transparent umbrella sleeve silhouette with a list-entry icon, matching type and size marks only, no creases or fold detail, no readable labels, isolated evidence icon.
 
 #### On Collect
 
