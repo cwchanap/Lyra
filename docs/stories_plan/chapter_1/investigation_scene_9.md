@@ -167,7 +167,7 @@
 
 ## Sub-location: 質問北見 {#confront_kitami}
 - **Status:** locked
-- **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts spread on table, plain walls, restrained office pressure, no readable document text. Kitami Shuichi baked into the center seat across the table: middle-aged man of medium-soft build with shoulders drawn inward, unremarkable beige-gray business-casual layers, thin metal-frame glasses slipping down his nose, dark lanyard, a deeply creased business card gripped under his palm, a face used to being overlooked in the workplace, perspective-correct scale and lighting under the exposed fluorescent tubes, not covering the unsent memo or whistleblower draft printouts on the table.
+- **Background Prompt:** Small white interview room under exposed fluorescent tubes, forensic printouts on table, plain walls, restrained office pressure, no readable document text. Kitami Shuichi baked into the center seat across the table: middle-aged man of medium-soft build with shoulders drawn inward, unremarkable beige-gray business-casual layers, thin metal-frame glasses slipping down his nose, dark lanyard, a deeply creased business card gripped under his palm, a face used to being overlooked in the workplace, perspective-correct scale and lighting under the exposed fluorescent tubes, the unsent memo and whistleblower draft kept in the investigators' hands, pages angled away from him.
 - **BGS:** bgs_interview_room_fluorescent
 
 [場景：訪談室，白日。日光燈照得無處可藏；窄室四面白牆，桌上攤著死者手機鑑識列印件。北見修一坐在對面，攥著摺痕很深的名片：眼鏡下滑，他每隔幾秒以中指推回，一張習慣在職場被忽略的臉。]
@@ -199,10 +199,10 @@
 ### Hotspot: 增田檢舉草稿與附件 {#whistleblower_draft}
 - **Description:** 監察信箱草稿匣裡，增田沒送出的檢舉草稿與未完成的異常存取整理表。
 - **Evidence Source:** visible
-- **Scene Source Prompt:** Forensic printout packet with an unsent whistleblower draft and attached abnormal-access table spread on the interview-room table, no readable text.
+- **Scene Source Prompt:** Forensic printout packet with an unsent whistleblower draft and attached abnormal-access table held in the investigator's hands with the pages angled away from the seated suspect, no readable text.
 - **Reveals:** [evidence:masuda_whistleblower_draft, evidence:kitami_data_theft_record]
 
-[相馬律翻開那份草稿，注意到結尾還空著。]
+[相馬律把那份草稿拿在手裡，頁面朝自己，沒讓對面的北見看見。翻到最後，結尾還空著。]
 
 **相馬律**：是檢舉草稿。沒送出，只躺在監察信箱的草稿匣。 {#L050}
 
@@ -349,17 +349,17 @@
 **早坂茜**：北見修一。名字第一次對到了人。 {#L081}
 
 ### evidence:contractor_umbrella_sleeve_match {#contractor_umbrella_sleeve_match}
-- **Name:** 承包商資材包傘套來源比對
-- **Description:** 資材包清單裡的透明傘套，與後場那只濕傘套的來源比對。
-- **Details:** 資材包傘套的尺寸與摺痕和後場牆角那只傘套一致；初勘照片裡它還在滴水。傘套排不出先後，只說明有人走過承包商的後巷動線，不是員工動線；它不能單獨定罪。要對到人，仍須臨時維護工單和外包憑證。
+- **Name:** 承包商資材包傘套規格比對
+- **Description:** 資材包清單裡的透明傘套規格，與後場那只濕傘套的比對。
+- **Details:** 資材包清單列的傘套規格，與後場牆角那只傘套相符；初勘照片裡它還在滴水。同款傘套外面也買得到，所以它排不出先後，也不專屬於承包商，只能算旁證：走過後巷的人，帶的是和資材包同款的傘套。它不能單獨定罪；要對到人，仍須臨時維護工單和外包憑證。
 - **Source Sublocation:** contractor_desk
 - **Image Prompt:** Transparent umbrella sleeve comparison card with two matching sleeve silhouettes and fold marks, no readable labels, isolated evidence icon.
 
 #### On Collect
 
-**相馬律**：資材包這只傘套，尺寸和摺痕都對得上後場那只。 {#L082}
+**相馬律**：清單上的傘套規格，和後場那只對得上。 {#L082}
 
-**早坂茜**：傘套排不出先後，只說明有人走過承包商的後巷動線，不是員工動線。 {#L083}
+**早坂茜**：傘套排不出先後，也不專屬誰。只能說，後巷那個人帶的是和資材包同款的傘套。 {#L083}
 
 ### evidence:masuda_unsent_memo {#masuda_unsent_memo}
 - **Name:** 增田未送出備忘
