@@ -263,7 +263,7 @@
 
 - **Contradiction:** evidence:kitami_external_access
 - **Challenge:** **相馬律**：那一格能填。那晚誰能用那組外包憑證，查得出來。 {#L079}
-- **On Correct:** **相馬律**：事件一八四二的外包憑證，那晚只有北見能用。增田二十二點五十備忘裡的 K，和第二杯咖啡的 K.，都是他；他也承認那個時間見過增田。 {#L080}
+- **On Correct:** **相馬律**：事件一八四二的外包憑證，那晚只有北見能用。增田二十二點五十備忘裡的 K，和第二杯咖啡的 K.，都是他。 {#L080}
 - **On Wrong Evidence:** **神谷澪**：這和工單、憑證、傘套都沾邊，但沒有把任何一個人放進那個空位。 {#L081}
 
 ### Question: 為何動手 {#q_p6}
@@ -287,7 +287,7 @@
 
 - **Contradiction:** evidence:kitami_data_theft_record
 - **Challenge:** **相馬律**：他有理由。增田那時在查的，就是這件事。 {#L100}
-- **On Correct:** **相馬律**：增田要檢舉北見盜賣 KAGAMI 試點資料。草稿已經備好，他的合約審查就在隔天。 {#L101}
+- **On Correct:** **相馬律**：增田要檢舉北見盜賣 KAGAMI 試點資料。草稿還沒寫完，他的合約審查就在隔天。 {#L101}
 - **On Wrong Evidence:** **神谷澪**：草稿本身沒離開過草稿匣。我要看的是增田到底要檢舉什麼。 {#L102}
 
 ## Evidence Manifest
