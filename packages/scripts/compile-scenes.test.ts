@@ -3252,6 +3252,50 @@ describe("compile (tracked production corpus compatibility)", () => {
             sourceLabel: "早坂比對（平台節目輸出副本）",
           },
         ],
+        // Chapter 2 Beat 7 (side alley) records are all leads until the
+        // rider's formal statement and the platform confirm them.
+        [
+          "evidence:rider_deleted_comment",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            completeness: "cropped",
+            confidence: "unverified",
+            sourceLabel: "拉麵店評論區的轉貼截圖",
+          },
+        ],
+        [
+          "evidence:rider_order_record",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            representationLayer: "raw",
+            proceduralStatus: "lead",
+            completeness: "partial",
+            confidence: "unverified",
+            sourceLabel: "柚木的外送 App 訂單紀錄",
+          },
+        ],
+        [
+          "evidence:alley_side_view_check",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            proceduralStatus: "lead",
+            sourceLabel: "相馬現場觀察",
+          },
+        ],
+        [
+          "statement:rider_side_view_account",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "testimony",
+            proceduralStatus: "lead",
+            confidence: "unverified",
+            sourceLabel: "柚木陸口述（非正式）",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;
