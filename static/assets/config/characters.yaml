@@ -342,6 +342,36 @@ characters:
       shaken:
         prompt: shaken expression, certainty slipping, gripping the phone tighter
 
+  - id: yuzuki_riku
+    displayNames: ["柚木陸"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese night-shift food delivery rider in his early twenties, wiry
+      tired build with slightly hunched guarded shoulders, dark olive-green
+      hooded waterproof shell jacket beaded with rain over a gray knit
+      sweater, charcoal knit beanie, plain unbranded square insulated delivery
+      backpack in dull gray strapped on, phone in a rubber bike-mount case on a
+      wrist lanyard, cheap fingerless gloves, faint stubble and sleepless eyes;
+      clearly plainer and more weathered than Saegusa, distinct from Saegusa's
+      black hoodie and the event security's uniform with reflective strips.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: tired guarded expression, neutral, checking the phone
+      wary:
+        prompt: wary defensive expression, shoulders drawn in, half turned away
+      bitter:
+        prompt: bitter expression, short humorless smile, eyes on the phone screen
+      earnest:
+        prompt: earnest expression, looking straight ahead, recalling something carefully
+
+  - id: ramen_shop_owner
+    displayNames: ["拉麵店老闆"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
   - id: narrator
     displayNames: ["旁白"]
     portraitMode: none
