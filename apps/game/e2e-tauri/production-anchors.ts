@@ -185,6 +185,11 @@ export const anchors = {
       next: "investigation_scene_10",
     },
   ],
+  // The Chapter 2 gates route plays in two tests so each stays under the
+  // per-test WDIO timeout (wdio.conf.ts): the first stops when this gate's
+  // city map is pending, the second starts there. Played as one test after
+  // Beat 7 it took ~19 of the 20 minutes locally.
+  chapter2SecondLegWrapper: "investigation_scene_map_04",
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
