@@ -178,6 +178,12 @@ export const anchors = {
       destination: "shibuya_plaza_overpass",
       next: "investigation_scene_8",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_05",
+      destination: "shibuya_overpass_side_alley",
+      next: "investigation_scene_10",
+    },
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",

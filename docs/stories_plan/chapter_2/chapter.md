@@ -17,3 +17,6 @@
 11. scene_7.md
 12. investigation_scene_map_04.md
 13. investigation_scene_8.md
+14. scene_9.md
+15. investigation_scene_map_05.md
+16. investigation_scene_10.md

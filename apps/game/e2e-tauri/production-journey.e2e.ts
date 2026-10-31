@@ -197,6 +197,7 @@ const interrogationChallenges: Record<
  */
 const investigationPresents: Record<string, Record<string, string>> = {
   investigation_scene_9: { draft_slip: "masuda_whistleblower_draft" },
+  investigation_scene_10: { that_comment: "rider_deleted_comment" },
 };
 
 /**
