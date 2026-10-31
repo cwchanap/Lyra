@@ -15,7 +15,7 @@
 
 **早坂茜**：離十二點還有二十分鐘。
 
-**相馬律**：從巷子裡吹出來的風，比街上涼，還有一點油煙味。
+**相馬律**：圖上空著的那個邊角，就是這裡。
 
 **早坂茜**：先走一遍。腳下濕，別只顧著抬頭。
 
@@ -43,7 +43,7 @@
 
 [箱子貼著封條，裡面只亮著警方留下的一盞小工作燈。玻璃後面隱約看得到椅背。]
 
-**相馬律**：看得到。左邊那面，整面，中間沒有東西擋著。
+**相馬律**：看得到。箱子左邊那面，整面，中間沒有東西擋著。
 
 **早坂茜**：巷口呢？
 
@@ -73,6 +73,12 @@
 [光在水面上換來換去，沒有一定的節奏。]
 
 **相馬律**：像隔壁房間開著電視，光從門縫漏出來。
+
+**早坂茜**：你睡覺會開著電視？
+
+**相馬律**：不會。太亮，我睡不著。
+
+**早坂茜**：我會。有點聲音，才睡得著。
 
 [早坂踩過那灘水，光在她的鞋邊碎成一圈一圈。]
 
@@ -192,11 +198,13 @@
 
 **相馬律**：差不多，就是那晚他站在這裡的時間。
 
-[相馬回頭，找到來時右手邊、樓梯底座上的那道窄縫。]
+[相馬回頭，望向來時的右手邊。]
 
 **相馬律**：這塊乾地，在剛才那道縫的延長線上。
 
 [相馬側過身，順著樓梯底座上那道窄縫，斜著往外看。]
+
+**相馬律**：從這裡也看得到。還是左邊那面。
 
 **早坂茜**：戶川拍到牆的倒影，是右邊那面玻璃。
 
@@ -229,11 +237,13 @@
 
 **拉麵店老闆**：後門不接客！要吃進前門排隊！
 
-**早坂茜**：我們不是來吃的，也不是網路上那些人。
+**早坂茜**：我們不是來吃的，也不是來鬧事的。
 
 **拉麵店老闆**：……那你們是誰？在我後門晃什麼！
 
 **早坂茜**：為廣場那件案子來問的。想請教老闆，這個鐘點的生意。
+
+**拉麵店老闆**：……廣場那件？我這兩天的一星，全是它害的。
 
 **拉麵店老闆**：這個鐘點？十二點以後才開始。加班的、喝完酒的、睡不著的，全都要一碗。
 
@@ -274,6 +284,8 @@
 **拉麵店老闆**：一星、一星、一星。什麼「外送員在你們店門口造謠」！
 
 **拉麵店老闆**：什麼「箱子裡是活動方找來的替身，為了把活動撐完」，什麼「這話是你們家外送員講的」！
+
+**早坂茜**：替身？
 
 **拉麵店老闆**：我賣的是拉麵，哪來的替身！
 
@@ -379,6 +391,8 @@
 
 **柚木陸**：我就一句話。他們幾個鐘頭就罵了幾百則。
 
+**柚木陸**：案發那天早上我就刪了。
+
 **早坂茜**：然後呢？
 
 **柚木陸**：然後人死了。
@@ -394,8 +408,6 @@
 **柚木陸**：……你們是第一個這樣說的。
 
 **柚木陸**：後來有人翻我以前的貼文，認出這家店。
-
-**柚木陸**：案發那天早上我就刪了。
 
 [他看了後門一眼，又低下頭。]
 
@@ -463,9 +475,9 @@
 
 **柚木陸**[bitter]：他們也這麼說。可能吧。
 
-**相馬律**：你說的是不像在動，沒說不是她。
+**相馬律**：你只說了不像在動。
 
-**柚木陸**：……我只說不像。
+**柚木陸**：……對。我只說不像。
 
 **相馬律**：你看了多久？
 
@@ -633,13 +645,13 @@
 
 **拉麵店老闆**：柚木！你的單好了！還愣著幹嘛，超時我不負責！
 
-[柚木把車架殼扣回手腕，伸手去拿架上的保溫袋。]
+[柚木把車架殼扣回手腕，伸手去拿架上那袋屬於他的餐點。]
 
 **早坂茜**：等一下。給我兩分鐘。
 
-[柚木的手停在保溫袋上，回頭看她。]
+[柚木的手停在那袋餐點上，回頭看她。]
 
-**早坂茜**：剛才說的，天亮以後要去警署再做一份正式筆錄。你願意去嗎？
+**早坂茜**：剛才說的正式筆錄，天亮以後去警署做。你願意去嗎？
 
 **柚木陸**[wary]：名字要是被貼出去，我就不講了。
 
@@ -675,16 +687,16 @@
 
 **柚木陸**：……知道了。
 
-[他把保溫袋背上肩，跨上機車。]
+[他把那袋餐點放進背上的保溫外送背包，拉好扣帶，跨上機車。]
 
 [場景：拉麵店後門，案發第三日零點二十分過後，雨沒有停。機車的引擎聲沿著窄巷往外退，一抹紅色的尾燈光在濕牆和地上閃了一下，隨即消失在巷口的雨裡；靠牆那排機車空出一個位子，巷子裡只剩空了的取餐架、白煙和一小塊空下來的乾地。]
-- **Background Prompt:** Closing view of the same ramen shop back door just after the rider has left, the same eye-level medium shot as the previous closing view, still facing the rear service door at the alley's end but now emptied, focal area on the stainless-steel pickup shelf at the right of the slightly ajar warm-lit back door with no insulated bags left on it, stable anchors of the crooked taped paper notice on the door, a small bare lamp above the door, the exhaust fan above the door breathing white steam, the empty dry rectangle of pavement under the staircase eave beside the shelf with its sharp dry-to-wet boundary, a row of delivery scooters parked along the left wall with one conspicuous gap where his scooter stood, and glistening puddles carrying faint shifting white and orange light, a faint smear of red tail light reflected on the wet wall and floor from off-frame behind the camera, all anchors above the bottom third, no one in the doorway, no people, no blue umbrellas, lower third kept as plain wet alley floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **Background Prompt:** Closing view of the same ramen shop back door just after the rider has left, the same eye-level medium shot as the previous closing view, still facing the rear service door at the alley's end but now emptied, focal area on the stainless-steel pickup shelf at the right of the slightly ajar warm-lit back door with no insulated bags left on it, stable anchors of the crooked taped paper notice on the door, a small bare lamp above the door, the exhaust fan above the door breathing white steam, the empty dry rectangle of pavement under the staircase eave beside the shelf with its sharp dry-to-wet boundary, a row of delivery scooters parked along the left wall with one conspicuous gap where his scooter stood, and glistening puddles carrying faint shifting white and orange light, all anchors above the bottom third, no one in the doorway, no people, no blue umbrellas, lower third kept as plain wet alley floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_city_summary_motif
 - **BGS:** bgs_shopping_street_rain_night
 
 [相馬翻開筆記本，指尖按在圖上被樓梯擋住的那個邊角。他沒有動筆。]
 
-**相馬律**：這塊空白，今晚有人站進去了。
+**相馬律**：這塊空白，那一晚有人站進去了。
 
 **早坂茜**：圖要改嗎？
 
@@ -692,9 +704,7 @@
 
 **相馬律**：他看見的，和牆上的不一樣。
 
-**相馬律**：圖上還剩一塊空白，箱子背面的後場。
-
-**早坂茜**：天亮先去十點的筆錄，再走活動方的程序，然後是黑瀨說的那棟大樓外面的監視器。
+**早坂茜**：天亮先去十點的筆錄，再走活動方的程序，然後是大樓的監視器。
 
 **相馬律**：事務所桌上那兩張便利貼，一張有名字了。另一張，還空著。
 
