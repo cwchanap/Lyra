@@ -4,7 +4,7 @@ use crate::game::provenance::validate_scene_records_against_catalog;
 use crate::game::schema::{
     AnalysisSceneJson, ChaptersIndexJson, CombinedInterrogationRevealTarget,
     InterrogationOutroUnlock, InterrogationPhaseJson, InterrogationRevealTarget,
-    InterrogationSceneJson, InterrogationUnlockExpr, InvestigationRevealTarget,
+    InterrogationSceneJson, InterrogationUnlockExpr, InventoryTarget, InvestigationRevealTarget,
     InvestigationSceneJson, OutroUnlock, RevealTarget, SceneJson, StoryRevealTarget,
     StoryUnlockExpr, UnlockExpr,
 };
@@ -141,10 +141,26 @@ fn validate_investigation_scene_references(
                     &topics,
                     file_rel,
                 )?;
+                // A Present topic's unlock holds "the player holds one of the
+                // shown records". The compiler lets a shown record come from an
+                // earlier scene (collected on every path there), so those ids
+                // resolve here too, for this topic only.
+                let mut topic_evidence = evidence.clone();
+                let mut topic_statements = statements.clone();
+                for record in &t.present {
+                    match record {
+                        InventoryTarget::Evidence { id } => {
+                            topic_evidence.insert(id.as_str());
+                        }
+                        InventoryTarget::Statement { id } => {
+                            topic_statements.insert(id.as_str());
+                        }
+                    }
+                }
                 validate_unlock(
                     t.unlock.as_ref(),
-                    &evidence,
-                    &statements,
+                    &topic_evidence,
+                    &topic_statements,
                     &hotspots,
                     &topics,
                     file_rel,
@@ -1560,6 +1576,95 @@ mod tests {
                 .unwrap_err();
         assert_eq!(err.code, "sceneValidationFailed");
         assert!(err.message.contains("unlock predicate evidence:missing"));
+        let _ = fs::remove_dir_all(d);
+    }
+
+    /// A Present topic may show a record carried from an earlier scene; its
+    /// "holds a shown record" unlock resolves for that topic only.
+    fn present_topic_scene(unlock: Value) -> String {
+        json!({
+            "type": "investigation",
+            "id": "investigation_scene_1",
+            "title": "Carried Present",
+            "summary": "Fixture scene summary.",
+            "intro": [],
+            "sublocations": [{
+                "id": "room",
+                "label": "Room",
+                "status": "unlocked",
+                "unlock": null,
+                "reveals": [],
+                "sceneTag": "Room",
+                "transitionDialogue": [],
+                "hotspots": [],
+                "characters": [{
+                    "id": "clerk",
+                    "name": "店員",
+                    "role": "Clerk",
+                    "bio": "On shift.",
+                    "layout": null,
+                    "topics": [{
+                        "id": "carried",
+                        "label": "Carried",
+                        "status": "locked",
+                        "unlock": unlock,
+                        "reveals": [],
+                        "present": [
+                            { "kind": "evidence", "id": "carried_note" },
+                            { "kind": "statement", "id": "carried_alibi" }
+                        ],
+                        "topicDialogue": [],
+                        "onReexamine": null
+                    }],
+                    "wrongPresent": { "speaker": "店員", "text": "這跟我無關吧。" }
+                }]
+            }],
+            "evidenceManifest": [],
+            "statementManifest": [],
+            "outro": { "unlock": "auto", "dialogue": [] }
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn accepts_present_topic_unlock_on_records_from_earlier_scenes() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("investigation_scene_1.json"),
+            present_topic_scene(json!({
+                "op": "or",
+                "left": { "predicate": "evidence_collected", "id": "carried_note" },
+                "right": { "predicate": "statement_acquired", "id": "carried_alibi" }
+            })),
+        )
+        .unwrap();
+
+        decode_scene_json_without_catalog_for_test(&d, "chapter_1/investigation_scene_1.json")
+            .expect("a Present topic's own shown records resolve in its unlock");
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn rejects_present_topic_unlock_on_a_record_it_does_not_show() {
+        let d = unique_temp_dir();
+        let chapter_dir = d.join("chapter_1");
+        fs::create_dir_all(&chapter_dir).unwrap();
+        fs::write(
+            chapter_dir.join("investigation_scene_1.json"),
+            present_topic_scene(json!({
+                "predicate": "evidence_collected",
+                "id": "elsewhere"
+            })),
+        )
+        .unwrap();
+
+        let err =
+            decode_scene_json_without_catalog_for_test(&d, "chapter_1/investigation_scene_1.json")
+                .unwrap_err();
+        assert_eq!(err.code, "sceneValidationFailed");
+        assert!(err.message.contains("unlock predicate evidence:elsewhere"));
         let _ = fs::remove_dir_all(d);
     }
 
