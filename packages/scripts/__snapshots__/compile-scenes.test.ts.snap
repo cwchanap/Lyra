@@ -3,7 +3,7 @@
 exports[`compile (tracked production corpus compatibility) > keeps the Chapter 1 warning and save-content manifest baseline 1`] = `
 {
   "manifest": {
-    "contentRevision": "sha256:e2455a8ab9c9c91b0a153c4172f65d03c6fb36f4e89a148ebb5b23b93aeeaa83",
+    "contentRevision": "sha256:c3bcf10eba2309cc74fd5195f13431e06dd04cab09af9ec9fae53f6abca91374",
     "manifestVersion": 1,
   },
   "warnings": [

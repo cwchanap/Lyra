@@ -967,7 +967,7 @@
 ### evidence:togawa_phone_video {#togawa_phone_video}
 - **Name:** 戶川美羽的手機影片
 - **Description:** 戶川美羽在應援區拍的手機影片，約 00:01 起、約四十秒：畫面中真白坐在箱內，身影明亮清楚，邊緣有字幕。
-- **Details:** 原檔仍在戶川的手機裡，尚未交給警方。拍攝者表示，她站在應援區邊角的水泥柱前拍攝。
+- **Details:** 中午看的時候，原檔還在戶川的手機裡，尚未交給警方；之後要用，得改用警方固定的那份。拍攝者表示，她站在應援區邊角的水泥柱前拍攝。
 - **Source Sublocation:** fan_support_area
 - **Image Prompt:** Smartphone with a cracked case corner and a small lavender charm, its screen showing a bright figure seated inside a glowing glass booth with a thin band of unreadable subtitles along the edge, isolated evidence icon.
 - **Source Kind:** digital

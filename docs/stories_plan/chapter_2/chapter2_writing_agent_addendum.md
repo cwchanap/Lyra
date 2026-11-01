@@ -477,6 +477,8 @@ Beat 6 審查時的全章累計（investigation_scene_4、5、8，約 48 點）�
 
 - 審查會使用語是 Beat 8 以後的可選台詞，不得在 Beat 7 說出；也不得改寫成 Beat 8 的結論句或 plan §8.1 的完成結論。
 - 「替身」謠言不進任何證物文字；截圖只寫原文那一句。
+- `evidence:rider_order_record` 是從 App 畫面拍下的部分訂單歷程，`Representation Layer` 記作 `summary`（App 呈現的事件歷程），不是 `raw`：防方沒有拿到平台的原始紀錄。
+- **戶川影片的兩份紀錄**（owner 審查 PR #116）：Beat 4 的 `evidence:togawa_phone_video` 只記中午在戶川手機上看到的狀態，Details 標明「中午看的時候」，之後要用得改用警方固定的那份；Scene 9 黑瀨來電之後也不改寫成已固定。警方固定、登進證物系統的那份，等防方實際拿到時，另立一筆後繼紀錄（`Supersedes: evidence:togawa_phone_video`，依 plan §14 記作 `exhibit`），寫明誰固定、何時登錄；舊的那張保留不改。
 
 ### 12.6 互動點比例（Beats 4～7 累計）
 
