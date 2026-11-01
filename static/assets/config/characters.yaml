@@ -372,6 +372,28 @@ characters:
     referenceAssetId: null
     expressions: {}
 
+  - id: projection_technician
+    displayNames: ["設備商技術員"]
+    portraitMode: portrait
+    visualPrompt: >
+      Japanese projection-rig rental technician in her late thirties, compact
+      sturdy build with a practical planted stance, faded dark-teal work
+      coverall with the top half unzipped and the sleeves tied at the waist
+      over a charcoal long-sleeve thermal shirt, a plain unbranded patch on
+      the chest, a headlamp pushed up on a dark knit cap, a battered steel
+      thermos clipped to her tool belt, short practical hair and tired sharp
+      eyes; clearly distinct from the
+      director's black t-shirt and charcoal jacket, the assistant director's
+      black hoodie, and the event security's uniform with reflective strips.
+    referenceAssetId: null
+    expressions:
+      standard:
+        prompt: focused practical expression, eyes on the equipment
+      annoyed:
+        prompt: tired annoyed expression, mouth flat, glancing at a phone screen
+      earnest:
+        prompt: earnest expression, explaining carefully, one hand describing a shape
+
   - id: narrator
     displayNames: ["旁白"]
     portraitMode: none
