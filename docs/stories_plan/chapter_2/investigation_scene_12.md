@@ -569,51 +569,17 @@
 ### Hotspot: 樓梯底座的窄縫 {#stair_gap}
 - **Status:** locked
 - **Description:** 廣場邊緣、樓梯水泥底座上，兩塊水泥墩之間那道只容一個人的窄縫。
-- **Evidence Source:** visible
-- **Scene Source Prompt:** The one-person-wide vertical slit in the concrete staircase base at the plaza edge as the visible local source area, with the lit glass booth glimpsed beyond it, no people, no readable text.
-- **Reveals:** [evidence:silhouette_side_view_check]
+- **Reveals:** [sublocation:alley_pickup_spot]
 
-[相馬離開鐵馬，沿著廣場邊緣往暗處走，拐進天橋下的側巷，一路走到拉麵店後門旁。早坂跟到取餐架邊，沒有站上那塊乾地。]
+[相馬隔著暗下來的廣場邊緣，望向遠處樓梯底座上那道窄縫，細得只剩一條黑線。]
 
-[他站上屋簷下那塊乾的地面，柚木半夜等單的位置，側過身，順著樓梯底座上那道窄縫的斜線看出去。]
+**相馬律**：他站過的地方，我也去站一次。
 
-[隔著一段暗下來的空地，玻璃箱的左側亮著警方的小工作燈。椅子後面，立著一個坐姿的人形。]
-
-**相馬律**：斜著看，是一個坐著的人。
-
-[他沒有眨眼。數了十下，又數了十下。]
-
-**相馬律**：肩膀沒有起伏。頭沒有偏。手也沒有動。
-
-**相馬律**：一下都不動。
-
-**早坂茜**：看多久了？
-
-**相馬律**：半分鐘。人坐著發呆，半分鐘也會晃一次。這個沒有。
-
-**相馬律**：今天沒有投影的光邊。但形狀是一樣的。
-
-> 推理：柚木那一晚看見的「不像人在動」，最可能是什麼？
-> - [x] 那塊照她坐姿裁的板子
-> - [ ] 累到睡著的真白 → **早坂茜**：睡著的人也會呼吸、會晃。柚木說的是一下都不動。
-> - [ ] 活動方找來的替身 → **相馬律**：柚木從沒說過替身。那是網路上替他改的話。
-> - [ ] 玻璃上映出來的直播牆 → **相馬律**：左邊那面玻璃不對著牆，映不出牆上的畫面。
-
-**相馬律**：對。他看見的那個人形，最可能是這塊板子。
-
-**早坂茜**：哪一刻？
-
-**相馬律**：他說不準，我們也說不準。燈暗以後、店裡叫他之前，他沒看錶。
-
-**相馬律**：他那一下看到的，最可能是它。
+[他沒有提名字，轉身往天橋下的暗處走。早坂沒有多問，跟了上去。]
 
 #### On Reexamine
 
-[相馬又站回那塊乾地，順著縫的斜線看過去。板子還立在椅子後面，一動也不動。]
-
-**早坂茜**：我替你數過了，你一次都沒眨眼。
-
-**相馬律**：我眨了。
+[相馬又望了一眼廣場邊緣暗處那道細縫，沒有再說什麼。]
 
 ### Hotspot: 左側鐵馬的花 {#memorial_fence}
 - **Description:** 左側鐵馬上綁著粉絲留下的花和紙條，花束的緞帶是薰衣草色的。
@@ -669,6 +635,62 @@
 
 **黑瀨徹**：看什麼。站久了，都這樣。
 
+## Sub-location: 側巷取餐架旁 {#alley_pickup_spot}
+- **Status:** locked
+- **Background Prompt:** Investigation view at dusk, around 5:15 p.m., after the rain has stopped, from the clearly dry rectangle of pavement under the pedestrian-bridge staircase eave beside the stainless-steel delivery pickup shelf next to the small ramen shop's rear service door at the end of the same narrow side alley, eye-level medium shot turned side-on toward the rough concrete staircase base; focal area on the one-person-wide vertical slit between two massive concrete blocks, through which, across a darkening stretch of open plaza, the small lit left glass of the sealed transparent booth is seen at a slant, a warm police work light inside and, standing behind the empty chair, a small flat translucent seated silhouette with hands on knees and head bowed; stable anchors of the empty stainless-steel pickup shelf, the ramen shop's rear door shut with its small lamp unlit, delivery scooters parked along the far wall, drips falling from the staircase edge and damp ground under a pale blue-gray dusk sky, with the slit, the shelf and the scooters all sitting in the mid-ground above the bottom third; no people, no blue umbrellas, lower third kept as plain wet alley floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **BGM:** bgm_midnight_blind_window
+- **BGS:** bgs_shibuya_plaza_day_aftermath
+
+[場景：天橋樓梯下的側巷深處、拉麵店後門旁，案發第三日傍晚，雨停了。巷子暗得很快，屋簷還在滴水。]
+
+[相馬沿著廣場邊緣拐進天橋下的側巷，一路走到拉麵店後門旁。早坂跟到取餐架邊，停在乾地外面。]
+
+[他走上屋簷下那塊乾的地面，柚木半夜等單的位置，側過身，對著樓梯底座。]
+
+### Hotspot: 窄縫裡的人形 {#slit_silhouette}
+- **Description:** 從乾地上順著樓梯底座那道窄縫看出去，遠處玻璃箱的左側亮著一點暖光。
+- **Evidence Source:** visible
+- **Scene Source Prompt:** The one-person-wide vertical slit in the concrete staircase base as the visible local source area, with the small lit booth glass and the flat translucent seated silhouette beyond it, no people, no readable text.
+- **Reveals:** [evidence:silhouette_side_view_check]
+
+[隔著一段暗下來的空地，玻璃箱的左側亮著警方的小工作燈。椅子後面，立著一個坐姿的人形。]
+
+**相馬律**：斜著看，是一個坐著的人。
+
+[他沒有眨眼。數了十下，又數了十下。]
+
+**相馬律**：肩膀沒有起伏。頭沒有偏。手也沒有動。
+
+**相馬律**：一下都不動。
+
+**早坂茜**：看多久了？
+
+**相馬律**：半分鐘。人坐著發呆，半分鐘也會晃一次。這個沒有。
+
+**相馬律**：今天沒有投影的光邊。但形狀是一樣的。
+
+> 推理：柚木那一晚看見的「不像人在動」，最可能是什麼？
+> - [x] 那塊照她坐姿裁的板子
+> - [ ] 累到睡著的真白 → **早坂茜**：睡著的人也會呼吸、會晃。柚木說的是一下都不動。
+> - [ ] 活動方找來的替身 → **相馬律**：柚木從沒說過替身。那是網路上替他改的話。
+> - [ ] 玻璃上映出來的直播牆 → **相馬律**：左邊那面玻璃不對著牆，映不出牆上的畫面。
+
+**相馬律**：對。他看見的那個人形，最可能是這塊板子。
+
+**早坂茜**：哪一刻？
+
+**相馬律**：他說不準，我們也說不準。燈暗以後、店裡叫他之前，他沒看錶。
+
+**相馬律**：他那一下看到的，最可能是它。
+
+#### On Reexamine
+
+[相馬又站回那塊乾地，順著縫的斜線看過去。板子還立在椅子後面，一動也不動。]
+
+**早坂茜**：我替你數過了，你一次都沒眨眼。
+
+**相馬律**：我眨了。
+
 ## Evidence Manifest
 
 ### evidence:sponsor_audio_routing {#sponsor_audio_routing}
@@ -717,7 +739,7 @@
 - **Name:** 輪廓板側面視線確認
 - **Description:** 傍晚升起輪廓板之後，相馬站在柚木當晚等單的位置，順著側巷那道窄縫的斜線看向玻璃箱左側：椅子後面立著一個坐姿的人形，乍看像有人坐著；看久了，它一下都不動，連肩膀的起伏也沒有。這只說明從那個位置看，輪廓板像什麼。
 - **Details:** 這是相馬站在柚木當晚等單的位置（取餐架旁屋簷下那塊乾地）所做的現場觀察。當時沒有投影的光邊，傍晚的光也只是接近、不等於那一晚。這張卡片只記從那個位置看，升起的輪廓板是什麼樣子；柚木那一晚看到的是不是同一個輪廓，是相馬的推論，要等柚木的正式筆錄和訂單時間到了辯方手上，才能拿來用。它也不說明他看的那一下是幾點。
-- **Source Sublocation:** box_left_side
+- **Source Sublocation:** alley_pickup_spot
 - **Image Prompt:** Hand-drawn notebook sketch of an oblique sightline through a narrow vertical slit in a concrete staircase base toward a small lit glass box with a flat seated silhouette standing behind the chair, pencil lines on lined paper, isolated evidence icon, no readable text.
 - **Source Kind:** subjective
 - **Procedural Status:** lead
@@ -765,6 +787,8 @@
 - **Background Prompt:** Closing view at about 5:40 p.m. at the same left-side barrier of the sealed glass booth, the same eye-level medium-wide oblique shot as the previous dusk view but darker with the plaza lamps fully lit, the moment just before the technician packs up; the translucent silhouette board is almost fully lowered, only its faint top edge still sinking out of sight below the chair back, so the booth holds the empty chair, the small desk with its empty phone charging dock and small yellow numbered police marker, the small police work light and the yellow seal tape; stable anchors of the bouquets and notes tied with lavender ribbon along the left barrier, the gray equipment control case still standing at the booth's base with its thin cable still running into the booth's underside, the staircase base with its narrow slit small and dark at the far right, and the pale glow of the giant screen at the top right edge; no people, no blue umbrellas, wet paving reflecting lamp light, lower third kept as plain wet paving for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_city_summary_motif
 - **BGS:** bgs_shibuya_plaza_day_aftermath
+
+[兩人從側巷走回鐵馬邊時，技術員正蹲在控制箱旁，手指已經搭在開關上。]
 
 [技術員按下控制箱的開關。箱底傳來和剛才一樣的低鳴，椅子後面的板子慢慢沉下去，直到椅背後面只剩一片空。]
 

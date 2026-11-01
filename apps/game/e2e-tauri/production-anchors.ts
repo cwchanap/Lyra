@@ -192,6 +192,24 @@ export const anchors = {
       next: "investigation_scene_12",
     },
   ],
+  // Every authored 推理 prompt on the production route, matched by its
+  // question. The drain checks the chapter, scene and visible options against
+  // the entry and clicks only `answer`; a prompt with no entry fails the run.
+  // Coupling point when authoring adds, rewords or re-answers a prompt.
+  deductionAnswers: [
+    {
+      chapter: "chapter_2",
+      scene: "investigation_scene_12",
+      question: "柚木那一晚看見的「不像人在動」，最可能是什麼？",
+      options: [
+        "那塊照她坐姿裁的板子",
+        "累到睡著的真白",
+        "活動方找來的替身",
+        "玻璃上映出來的直播牆",
+      ],
+      answer: "那塊照她坐姿裁的板子",
+    },
+  ],
   // The Chapter 2 gates route plays in two tests so each stays under the
   // per-test WDIO timeout (wdio.conf.ts): the first stops when this gate's
   // city map is pending, the second starts there. Played as one test after
