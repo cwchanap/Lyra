@@ -2243,9 +2243,11 @@ export async function drainDialogueFast(
 type DeductionPromptState = {
   question: string;
   feedback: string | null;
-  optionCount: number;
+  options: string[];
   enabled: boolean;
 };
+
+type DeductionAnswer = (typeof anchors.deductionAnswers)[number];
 
 async function readDeductionPrompt(): Promise<DeductionPromptState | null> {
   return browser.execute((sel: string) => {
@@ -2259,7 +2261,13 @@ async function readDeductionPrompt(): Promise<DeductionPromptState | null> {
       ).trim(),
       feedback:
         document.querySelector(".prompt-feedback")?.textContent?.trim() ?? null,
-      optionCount: options.length,
+      // Each option is a number key span (aria-hidden) and its label span.
+      options: options.map((option) =>
+        (
+          option.querySelector(":scope > span:not(.prompt-option-key)")
+            ?.textContent ?? ""
+        ).trim(),
+      ),
       enabled: options.every(
         (option) => option.getAttribute("aria-disabled") !== "true",
       ),
@@ -2268,62 +2276,92 @@ async function readDeductionPrompt(): Promise<DeductionPromptState | null> {
 }
 
 /**
- * Answers the 推理 prompt on screen, if there is one. A prompt has no advance
- * control and moves on only through its correct option; a wrong option shows
- * its reply and keeps the prompt without changing game state
- * (answer_dialogue_prompt). The view does not say which option is correct, so
- * the drain tries them in order until the prompt clears. Returns false when no
- * prompt is showing.
+ * Answers the 推理 prompt on screen, if there is one, with its authored answer
+ * from anchors.deductionAnswers. A prompt has no advance control and moves on
+ * only through its correct option. The drain checks the chapter, scene,
+ * question and options against the entry, then clicks only the expected
+ * answer, so a reworded prompt or a changed answer fails here instead of being
+ * guessed past. Returns false when no prompt is showing.
  */
 export async function answerDeductionPrompt(): Promise<boolean> {
-  const initial = await readDeductionPrompt();
-  if (!initial) return false;
-  const cleared = (state: DeductionPromptState | null) =>
-    state === null || state.question !== initial.question;
-  let lastFeedback = initial.feedback;
-  for (let index = 0; index < initial.optionCount; index++) {
-    await browser.waitUntil(
+  if (!(await readDeductionPrompt())) return false;
+  // The question types out like a line, so wait until it reads as a known
+  // prompt and its options take clicks.
+  let prompt: DeductionPromptState | null = null;
+  let expected: DeductionAnswer | undefined;
+  await browser
+    .waitUntil(
       async () => {
-        const state = await readDeductionPrompt();
-        return cleared(state) || state!.enabled;
+        prompt = await readDeductionPrompt();
+        if (!prompt) return true;
+        const question = prompt.question;
+        expected = anchors.deductionAnswers.find(
+          (entry) => entry.question === question,
+        );
+        return expected !== undefined && prompt.enabled;
       },
-      {
-        timeout: 5000,
-        interval: 50,
-        timeoutMsg: `answerDeductionPrompt: options stayed disabled for ${JSON.stringify(initial.question)}`,
-      },
+      { timeout: 5000, interval: 50 },
+    )
+    .catch(() => undefined);
+  const shown = prompt as DeductionPromptState | null;
+  if (!shown) return true;
+  if (!expected) {
+    throw new Error(
+      `answerDeductionPrompt: no anchors.deductionAnswers entry for the prompt ${JSON.stringify(shown.question)}`,
     );
-    if (cleared(await readDeductionPrompt())) return true;
-    await browser.execute(
-      (sel: string, i: number) => {
-        document.querySelectorAll<HTMLButtonElement>(sel)[i]?.click();
-      },
-      deductionOptionSelector,
-      index,
-    );
-    // Wait for the prompt to clear (right answer) or a new reply (wrong
-    // answer). Two wrong options with the same reply text show no change, so
-    // a timeout here also means "wrong": a pick that changes no state is safe
-    // to follow with the next option.
-    await browser
-      .waitUntil(
-        async () => {
-          const state = await readDeductionPrompt();
-          if (cleared(state)) return true;
-          if (state!.feedback !== null && state!.feedback !== lastFeedback) {
-            lastFeedback = state!.feedback;
-            return true;
-          }
-          return false;
-        },
-        { timeout: 3000, interval: 50 },
-      )
-      .catch(() => undefined);
-    if (cleared(await readDeductionPrompt())) return true;
   }
-  throw new Error(
-    `answerDeductionPrompt: no option cleared the prompt ${JSON.stringify(initial.question)}; last reply: ${JSON.stringify(lastFeedback)}`,
+  if (!shown.enabled) {
+    throw new Error(
+      `answerDeductionPrompt: options stayed disabled for ${JSON.stringify(shown.question)}`,
+    );
+  }
+  const { chapter, scene } = await getPackagedGameState();
+  if (chapter.id !== expected.chapter || scene.id !== expected.scene) {
+    throw new Error(
+      `answerDeductionPrompt: prompt ${JSON.stringify(shown.question)} showed in ${chapter.id}/${scene.id}, expected ${expected.chapter}/${expected.scene}`,
+    );
+  }
+  if (
+    shown.options.length !== expected.options.length ||
+    shown.options.some((label, i) => label !== expected!.options[i])
+  ) {
+    throw new Error(
+      `answerDeductionPrompt: options for ${JSON.stringify(shown.question)} were ${JSON.stringify(shown.options)}, expected ${JSON.stringify(expected.options)}`,
+    );
+  }
+  const index = shown.options.indexOf(expected.answer);
+  if (index < 0) {
+    throw new Error(
+      `answerDeductionPrompt: answer ${JSON.stringify(expected.answer)} is not among its options`,
+    );
+  }
+  await browser.execute(
+    (sel: string, i: number) => {
+      document.querySelectorAll<HTMLButtonElement>(sel)[i]?.click();
+    },
+    deductionOptionSelector,
+    index,
   );
+  // The correct option moves the queue on; a wrong one would show its reply
+  // and keep the prompt.
+  const question = expected.question;
+  let last: DeductionPromptState | null = shown;
+  await browser
+    .waitUntil(
+      async () => {
+        last = await readDeductionPrompt();
+        return last === null || last.question !== question;
+      },
+      { timeout: 10000, interval: 50 },
+    )
+    .catch(() => undefined);
+  const after = last as DeductionPromptState | null;
+  if (after && after.question === question) {
+    throw new Error(
+      `answerDeductionPrompt: the authored answer ${JSON.stringify(expected.answer)} did not clear ${JSON.stringify(question)}; reply shown: ${JSON.stringify(after.feedback)}`,
+    );
+  }
+  return true;
 }
 
 /**
