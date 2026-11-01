@@ -560,6 +560,16 @@ fn restore_scene(
             scene.pending_queue = active_queue;
             Ok(SceneRuntime::Interrogation(Box::new(scene)))
         }
+        (SceneJson::Analysis(definition), SceneProgressSnapshot::GameComplete) => {
+            let mut scene = AnalysisSceneState::from_json(
+                definition.clone(),
+                crate::game::scenes::analysis::RESTORED_CONSUMED_INTRO_QUEUE_GEN,
+            );
+            scene.intro_played = true;
+            scene.outro_played = true;
+            scene.pending_queue = None;
+            Ok(SceneRuntime::Analysis(Box::new(scene)))
+        }
         (SceneJson::Interrogation(definition), SceneProgressSnapshot::GameComplete) => {
             let mut scene = InterrogationSceneState::from_json(
                 definition.clone(),
@@ -2843,6 +2853,53 @@ mod tests {
         engine.current_chapter_idx = engine.chapters.len();
         engine.current_scene_idx = 0;
         engine.history = DialogueHistory::default();
+        assert_round_trip(resources, &engine);
+    }
+
+    // Break caught: a story whose last packaged scene is an analysis scene
+    // saved at the Game Complete boundary, but restore had no analysis arm
+    // for that progress and rejected the save as a kind mismatch.
+    #[test]
+    fn game_complete_retains_a_final_analysis_scene() {
+        let (_guard, resources) = p1_feedback_resources();
+        let chapters_path = resources.join("chapters.json");
+        let mut chapters: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&chapters_path).unwrap()).unwrap();
+        // Practice cards need the investigation directly before the analysis
+        // scene, so drop the trailing interrogation to make analysis last.
+        let scenes = chapters["chapters"][0]["scenes"].as_array_mut().unwrap();
+        let interrogation = scenes.pop().unwrap();
+        assert_eq!(interrogation["type"], "interrogation");
+        assert_eq!(scenes.last().unwrap()["type"], "analysis");
+        std::fs::write(&chapters_path, serde_json::to_vec(&chapters).unwrap()).unwrap();
+
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        engine
+            .jump_to_scene("chapter_1", "analysis_scene_p1_5")
+            .expect("final P1 analysis scene should be reachable in the fixture");
+        update_analysis_threshold(
+            &mut engine,
+            &[
+                "receipt_reprint",
+                "register_paper_jam",
+                "handwritten_ledger",
+            ],
+        );
+        submit_analysis(&mut engine);
+        while let Some(token) = engine.current_queue_token() {
+            engine.advance_dialogue(token).unwrap();
+        }
+        assert_eq!(engine.current_chapter_idx, engine.chapters.len());
+        assert!(matches!(engine.scene, SceneRuntime::Analysis(_)));
+        assert!(matches!(
+            engine.view().unwrap().mode,
+            ModeView::GameComplete { .. }
+        ));
+        assert!(matches!(
+            capture_checkpoint(&engine).unwrap().snapshot.scene,
+            SceneProgressSnapshot::GameComplete
+        ));
+
         assert_round_trip(resources, &engine);
     }
 
