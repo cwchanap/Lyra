@@ -572,7 +572,7 @@
 - **Source Sublocation:** ramen_backdoor
 - **Image Prompt:** Smartphone delivery app order history screen with three stacked timeline rows, a small shop icon and a progress line, abstract blocks instead of text, held in a rubber bike-mount case on a wrist lanyard with rain beads on the case, isolated evidence icon, no readable text.
 - **Source Kind:** digital
-- **Representation Layer:** raw
+- **Representation Layer:** summary
 - **Procedural Status:** lead
 - **Completeness:** partial
 - **Confidence:** unverified

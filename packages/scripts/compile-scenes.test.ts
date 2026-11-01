@@ -3270,7 +3270,7 @@ describe("compile (tracked production corpus compatibility)", () => {
           {
             ...NEUTRAL_CASE_RECORD_PROVENANCE,
             sourceKind: "digital",
-            representationLayer: "raw",
+            representationLayer: "summary",
             proceduralStatus: "lead",
             completeness: "partial",
             confidence: "unverified",
