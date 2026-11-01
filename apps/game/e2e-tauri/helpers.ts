@@ -1631,6 +1631,9 @@ export const advanceDialogueSelector = [
   `button[aria-label="${anchors.advanceTestimony}"]`,
 ].join(", ");
 
+/** The option buttons of an on-screen 推理 prompt (DialogueBox). */
+const deductionOptionSelector = `ol[aria-label="${anchors.deductionOptions}"] button`;
+
 /**
  * Main-menu cards animate with opacity 0 (fill-mode both). Under WebDriver the
  * WebView can keep animations frozen when focus is flaky, so isDisplayed()
@@ -2195,9 +2198,11 @@ export async function drainDialogueFast(
       await browser.pause(50);
       continue;
     }
-    // result === "none": advance control gone — mode transition. Check the
-    // predicate (IPC) and handle the transition grace, same as
-    // advanceDialogueUntil.
+    // result === "none": advance control gone. A 推理 prompt has no advance
+    // control; answer it and keep draining.
+    if (await answerDeductionPrompt()) continue;
+    // Otherwise a mode transition. Check the predicate (IPC) and handle the
+    // transition grace, same as advanceDialogueUntil.
     if (await predicate()) return;
     try {
       await browser.waitUntil(
@@ -2205,9 +2210,11 @@ export async function drainDialogueFast(
           if (await predicate()) return true;
           // Pending city-map gate: click the sole destination pin.
           if (await clickSoleMapDestination()) return true;
-          return browser.execute((sel: string) => {
-            return document.querySelector(sel) !== null;
-          }, advanceDialogueSelector);
+          // The advance control, or a 推理 prompt (which has none).
+          return browser.execute(
+            (sel: string) => document.querySelector(sel) !== null,
+            `${advanceDialogueSelector}, ${deductionOptionSelector}`,
+          );
         },
         {
           timeout: 5000,
@@ -2233,6 +2240,92 @@ export async function drainDialogueFast(
   );
 }
 
+type DeductionPromptState = {
+  question: string;
+  feedback: string | null;
+  optionCount: number;
+  enabled: boolean;
+};
+
+async function readDeductionPrompt(): Promise<DeductionPromptState | null> {
+  return browser.execute((sel: string) => {
+    const options = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(sel),
+    );
+    if (options.length === 0) return null;
+    return {
+      question: (
+        document.querySelector(".text-prompt")?.textContent ?? ""
+      ).trim(),
+      feedback:
+        document.querySelector(".prompt-feedback")?.textContent?.trim() ?? null,
+      optionCount: options.length,
+      enabled: options.every(
+        (option) => option.getAttribute("aria-disabled") !== "true",
+      ),
+    };
+  }, deductionOptionSelector);
+}
+
+/**
+ * Answers the 推理 prompt on screen, if there is one. A prompt has no advance
+ * control and moves on only through its correct option; a wrong option shows
+ * its reply and keeps the prompt without changing game state
+ * (answer_dialogue_prompt). The view does not say which option is correct, so
+ * the drain tries them in order until the prompt clears. Returns false when no
+ * prompt is showing.
+ */
+export async function answerDeductionPrompt(): Promise<boolean> {
+  const initial = await readDeductionPrompt();
+  if (!initial) return false;
+  const cleared = (state: DeductionPromptState | null) =>
+    state === null || state.question !== initial.question;
+  let lastFeedback = initial.feedback;
+  for (let index = 0; index < initial.optionCount; index++) {
+    await browser.waitUntil(
+      async () => {
+        const state = await readDeductionPrompt();
+        return cleared(state) || state!.enabled;
+      },
+      {
+        timeout: 5000,
+        interval: 50,
+        timeoutMsg: `answerDeductionPrompt: options stayed disabled for ${JSON.stringify(initial.question)}`,
+      },
+    );
+    if (cleared(await readDeductionPrompt())) return true;
+    await browser.execute(
+      (sel: string, i: number) => {
+        document.querySelectorAll<HTMLButtonElement>(sel)[i]?.click();
+      },
+      deductionOptionSelector,
+      index,
+    );
+    // Wait for the prompt to clear (right answer) or a new reply (wrong
+    // answer). Two wrong options with the same reply text show no change, so
+    // a timeout here also means "wrong": a pick that changes no state is safe
+    // to follow with the next option.
+    await browser
+      .waitUntil(
+        async () => {
+          const state = await readDeductionPrompt();
+          if (cleared(state)) return true;
+          if (state!.feedback !== null && state!.feedback !== lastFeedback) {
+            lastFeedback = state!.feedback;
+            return true;
+          }
+          return false;
+        },
+        { timeout: 3000, interval: 50 },
+      )
+      .catch(() => undefined);
+    if (cleared(await readDeductionPrompt())) return true;
+  }
+  throw new Error(
+    `answerDeductionPrompt: no option cleared the prompt ${JSON.stringify(initial.question)}; last reply: ${JSON.stringify(lastFeedback)}`,
+  );
+}
+
 /**
  * Read the currently visible dialogue line/narration/scene text so capped
  * drain failures report what was on screen (see flake policy in the design
@@ -2240,7 +2333,9 @@ export async function drainDialogueFast(
  */
 export async function lastVisibleDialogueText(): Promise<string> {
   return browser.execute(() => {
-    const el = document.querySelector(".text-line, .text-action, .text-scene");
+    const el = document.querySelector(
+      ".text-line, .text-action, .text-scene, .text-prompt",
+    );
     return el ? (el.textContent ?? "").trim() : "";
   });
 }
@@ -2264,6 +2359,8 @@ export async function advanceDialogueUntil(
     }, advanceDialogueSelector);
     if (!hasAdvance) {
       if (await predicate()) return;
+      // A 推理 prompt has no advance control; answer it and keep draining.
+      if (await answerDeductionPrompt()) continue;
       // The advance selector can be transiently absent during a mode
       // transition. Right after a hotspot click, jsClick only dispatches the
       // DOM event while inspect_hotspot is still awaiting IPC — the app
@@ -2285,9 +2382,11 @@ export async function advanceDialogueUntil(
             // let the loop drain the entered dialogue. Several enabled
             // destinations fail deterministically via the pure helper.
             if (await clickSoleMapDestination()) return true;
-            return browser.execute((sel: string) => {
-              return document.querySelector(sel) !== null;
-            }, advanceDialogueSelector);
+            // The advance control, or a 推理 prompt (which has none).
+            return browser.execute(
+              (sel: string) => document.querySelector(sel) !== null,
+              `${advanceDialogueSelector}, ${deductionOptionSelector}`,
+            );
           },
           {
             timeout: 5000,

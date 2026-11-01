@@ -3296,6 +3296,46 @@ describe("compile (tracked production corpus compatibility)", () => {
             sourceLabel: "柚木陸口述（非正式）",
           },
         ],
+        // Chapter 2 Beat 8 (control room and building exterior) records are
+        // leads: the defense only photographed or watched them with the
+        // police present.
+        [
+          "evidence:sponsor_audio_routing",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "轉播車音訊機架上的路由表（警方在場拍攝）",
+          },
+        ],
+        [
+          "evidence:projection_silhouette_board",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "玻璃箱內投影輪廓板（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:silhouette_side_view_check",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "subjective",
+            proceduralStatus: "lead",
+            sourceLabel: "相馬現場觀察",
+          },
+        ],
+        [
+          "statement:vendor_projection_setup",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "testimony",
+            proceduralStatus: "lead",
+            confidence: "unverified",
+            sourceLabel: "設備商技術員口述",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;

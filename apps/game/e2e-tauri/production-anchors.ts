@@ -28,6 +28,7 @@ export const anchors = {
   previewUnavailable: "無法顯示預覽",
   advanceDialogue: "推進對話",
   advanceTestimony: "推進證詞",
+  deductionOptions: "推理選項",
   gameMenu: "遊戲選單",
   continueInvestigation: "繼續調查",
   caseFileMenuEntry: "案件檔案",
@@ -183,6 +184,12 @@ export const anchors = {
       wrapper: "investigation_scene_map_05",
       destination: "shibuya_overpass_side_alley",
       next: "investigation_scene_10",
+    },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_06",
+      destination: "shibuya_glass_box_plaza",
+      next: "investigation_scene_12",
     },
   ],
   // The Chapter 2 gates route plays in two tests so each stays under the
