@@ -2422,6 +2422,11 @@ impl GameEngine {
     }
 
     fn validate_analysis_action(&self, expected: &AnalysisActionToken) -> Result<(), GameError> {
+        // An analysis scene that ends the authored story stays loaded after
+        // completion, so its tokens would otherwise still match.
+        if self.current_chapter_idx >= self.chapters.len() {
+            return Err(GameError::game_complete());
+        }
         let SceneRuntime::Analysis(scene) = &self.scene else {
             return Err(GameError::stale_analysis_action());
         };
@@ -3121,7 +3126,11 @@ impl GameEngine {
                 }
             }
             SceneRuntime::Analysis(scene) => {
-                let chapter_id = self.chapters[self.current_chapter_idx].id.as_str();
+                // Clamped like `total`: once the final scene is exhausted the
+                // chapter index is past the end, but an analysis scene that
+                // ends the authored story is still the scene the view shows.
+                let chapter_idx = self.current_chapter_idx.min(self.chapters.len() - 1);
+                let chapter_id = self.chapters[chapter_idx].id.as_str();
                 let visible_boards = scene
                     .def
                     .boards
@@ -8417,6 +8426,75 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             .submit_analysis_board(token)
             .expect_err("submit during dialogue must be rejected");
         assert_eq!(error.code, "dialogueActive");
+        let _ = std::fs::remove_dir_all(resources);
+    }
+
+    #[test]
+    fn analysis_scene_that_ends_the_story_reaches_game_complete() {
+        // The fixture's analysis scene is the last scene of the last chapter.
+        let resources = simple_analysis_resources("ends-story");
+        let mut engine = GameEngine::new_started(resources.clone()).unwrap();
+        enter_analysis_scene(&mut engine);
+        let advance_result_dialogue = |engine: &mut GameEngine| {
+            let view = engine.view().unwrap();
+            let ModeView::Dialogue { queue_token, .. } = view.mode else {
+                panic!("a completed board should play its result dialogue");
+            };
+            engine.advance_dialogue(queue_token).unwrap()
+        };
+        for (board, card) in [("board_1", "card_b"), ("board_2", "card_c")] {
+            engine
+                .select_analysis_board(engine.analysis_action_token().unwrap(), board.into())
+                .expect("the next board should be selectable");
+            engine
+                .update_analysis_draft(
+                    engine.analysis_action_token().unwrap(),
+                    AnalysisDraft::Threshold {
+                        selected_card_ids: [card.to_owned()].into_iter().collect(),
+                    },
+                )
+                .expect("correct draft should update");
+            engine
+                .submit_analysis_board(engine.analysis_action_token().unwrap())
+                .expect("correct submit should complete the board");
+            if board == "board_1" {
+                advance_result_dialogue(&mut engine);
+            }
+        }
+        let stale = engine.analysis_action_token().unwrap();
+
+        // The last result dialogue ends the scene, and with it the story.
+        let completed = advance_result_dialogue(&mut engine);
+        assert!(matches!(
+            completed.mode,
+            ModeView::GameComplete {
+                story_cleared: true
+            }
+        ));
+        assert_eq!(completed.chapter.id, "chapter_1");
+        let view = engine
+            .view()
+            .expect("the completed story must still render");
+        assert!(matches!(view.mode, ModeView::GameComplete { .. }));
+        assert!(matches!(view.scene, SceneView::Analysis { .. }));
+
+        let error = engine
+            .select_analysis_board(stale.clone(), "board_1".into())
+            .expect_err("select must fail after the story ends");
+        assert_eq!(error.code, "gameComplete");
+        let error = engine
+            .update_analysis_draft(
+                stale.clone(),
+                AnalysisDraft::Threshold {
+                    selected_card_ids: BTreeSet::new(),
+                },
+            )
+            .expect_err("update must fail after the story ends");
+        assert_eq!(error.code, "gameComplete");
+        let error = engine
+            .submit_analysis_board(stale)
+            .expect_err("submit must fail after the story ends");
+        assert_eq!(error.code, "gameComplete");
         let _ = std::fs::remove_dir_all(resources);
     }
 
