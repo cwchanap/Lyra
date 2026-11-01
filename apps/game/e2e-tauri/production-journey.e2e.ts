@@ -127,30 +127,81 @@ async function crossGate(
 
 type ChapterMapGate = MapGate & { readonly chapter: string };
 
+type ChapterGateLeg = {
+  readonly gates: readonly ChapterMapGate[];
+  /** The next leg's first gate, where this leg stops; none on the last leg. */
+  readonly stopGate: ChapterMapGate | undefined;
+};
+
 /**
- * Chapter 2's map gates split where the second gates test starts
- * (`anchors.chapter2SecondLegWrapper`); both legs are non-empty.
+ * Chapter 2's map gates split into one leg per gates test, at each wrapper in
+ * `anchors.chapter2LegStartWrappers`; every leg is non-empty.
  */
-function chapter2GateLegs(): {
-  firstLeg: readonly ChapterMapGate[];
-  secondLeg: readonly ChapterMapGate[];
-  secondLegGate: ChapterMapGate;
-} {
+function chapter2GateLegs(): readonly ChapterGateLeg[] {
   const gates: readonly ChapterMapGate[] = anchors.chapter2MapGates;
-  const split = gates.findIndex(
-    (gate) => gate.wrapper === anchors.chapter2SecondLegWrapper,
+  const splits = anchors.chapter2LegStartWrappers.map((wrapper) =>
+    gates.findIndex((gate) => gate.wrapper === wrapper),
   );
-  const secondLegGate = gates[split];
-  if (split < 1 || !secondLegGate) {
-    throw new Error(
-      `chapter2SecondLegWrapper ${anchors.chapter2SecondLegWrapper} must name a Chapter 2 map gate after the first`,
-    );
+  splits.forEach((split, i) => {
+    const previous = i === 0 ? 0 : splits[i - 1];
+    if (split < 1 || previous === undefined || split <= previous) {
+      throw new Error(
+        `chapter2LegStartWrappers must name Chapter 2 map gates after the first, in authored order (got ${anchors.chapter2LegStartWrappers.join(", ")})`,
+      );
+    }
+  });
+  const bounds = [0, ...splits, gates.length];
+  return bounds.slice(0, -1).map((start, i) => {
+    const end = bounds[i + 1] ?? gates.length;
+    return { gates: gates.slice(start, end), stopGate: gates[end] };
+  });
+}
+
+function chapter2GateLeg(index: number): ChapterGateLeg {
+  const leg = chapter2GateLegs()[index];
+  if (!leg) {
+    throw new Error(`Chapter 2 has no gates leg ${index}`);
   }
-  return {
-    firstLeg: gates.slice(0, split),
-    secondLeg: gates.slice(split),
-    secondLegGate,
-  };
+  return leg;
+}
+
+/** Drains to each later gate of `leg` and crosses it, after its first. */
+async function crossLaterGates(
+  leg: ChapterGateLeg,
+  crossedWrappers: string[],
+): Promise<void> {
+  for (const gate of leg.gates.slice(1)) {
+    await drainOrganicRoute(
+      (state) =>
+        state.chapter.id === gate.chapter &&
+        isPendingMapGate(state, gate.wrapper),
+      `${gate.chapter}/${gate.wrapper} pending city map`,
+    );
+    await crossGate(gate, crossedWrappers);
+  }
+}
+
+/**
+ * Stops a non-final leg where the next test starts: the next leg's first gate
+ * pending, so the gates tests together play every authored Chapter 2 scene
+ * after the opening.
+ */
+async function stopAtNextLeg(
+  leg: ChapterGateLeg,
+  crossedWrappers: readonly string[],
+): Promise<void> {
+  const { stopGate } = leg;
+  if (!stopGate) {
+    throw new Error("the last Chapter 2 gates leg has no next leg to stop at");
+  }
+  await drainOrganicRoute(
+    (state) =>
+      state.chapter.id === stopGate.chapter &&
+      isPendingMapGate(state, stopGate.wrapper),
+    `${stopGate.chapter}/${stopGate.wrapper} pending city map`,
+  );
+  expect(await enabledMapDestinationIds()).toEqual([stopGate.destination]);
+  expect(crossedWrappers).toEqual(leg.gates.map((gate) => gate.wrapper));
 }
 
 /**
@@ -305,6 +356,31 @@ const analysisSolutions: Record<string, Record<string, AnalysisSolution>> = {
     narrow_request_basis: {
       kind: "threshold",
       cardIds: ["lock_sequence", "phone_notification"],
+    },
+  },
+  analysis_scene_13: {
+    sightline_board: {
+      kind: "classify",
+      groupByCard: {
+        crowd_on_plaza: "watched_the_wall",
+        togawa_phone: "watched_the_wall",
+        control_monitors: "watched_a_feed",
+        platform_viewers: "watched_a_feed",
+        saegusa_at_home: "watched_a_feed",
+        rider_in_alley: "saw_the_box",
+      },
+    },
+    footage_board: {
+      kind: "classify",
+      groupByCard: {
+        composite_label: "program_feed",
+        audio_routing: "program_feed",
+        archive_rule: "program_feed",
+        phone_dock: "stayed_in_box",
+        silhouette_board: "stayed_in_box",
+        raw_buffer: "raw_fragments",
+        leaked_clip: "raw_fragments",
+      },
     },
   },
 };
@@ -960,48 +1036,50 @@ describe("fresh production journey", () => {
     await seedStoryCleared();
     await ensureCaseFileViewport();
     await startFromMenu();
-    const { firstLeg, secondLegGate } = chapter2GateLegs();
-    const [firstGate, ...laterGates] = firstLeg;
+    const leg = chapter2GateLeg(0);
+    const [firstGate] = leg.gates;
+    if (!firstGate) throw new Error("Chapter 2 gates leg 0 is empty");
     await jumpToProductionChapterScene(firstGate.chapter, firstGate.wrapper);
 
     // Chapter 2's wrapper ids repeat Chapter 1's, so each stop also matches
     // the chapter.
     const crossedWrappers: string[] = [];
     await crossGate(firstGate, crossedWrappers);
-    for (const gate of laterGates) {
-      await drainOrganicRoute(
-        (state) =>
-          state.chapter.id === gate.chapter &&
-          isPendingMapGate(state, gate.wrapper),
-        `${gate.chapter}/${gate.wrapper} pending city map`,
-      );
-      await crossGate(gate, crossedWrappers);
-    }
-
-    // The second test starts from this pending map, so the two tests
-    // together play every authored Chapter 2 scene after the opening.
-    await drainOrganicRoute(
-      (state) =>
-        state.chapter.id === secondLegGate.chapter &&
-        isPendingMapGate(state, secondLegGate.wrapper),
-      `${secondLegGate.chapter}/${secondLegGate.wrapper} pending city map`,
-    );
-    expect(await enabledMapDestinationIds()).toEqual([
-      secondLegGate.destination,
-    ]);
-    expect(crossedWrappers).toEqual(firstLeg.map((gate) => gate.wrapper));
+    await crossLaterGates(leg, crossedWrappers);
+    await stopAtNextLeg(leg, crossedWrappers);
   });
 
-  it("plays Chapter 2 from the overpass gate to the in-progress end card", async function () {
+  it("plays Chapter 2 from the overpass gate to the plaza-return gate", async function () {
     this.timeout(1_200_000);
     await resetE2eStorage();
-    // Scene Select is production replay, unlocked by a story clear; seed it
-    // so the run can start at the second leg's travel wrapper.
+    // Scene Select carries the skipped scenes' records, so the jump starts
+    // this leg with what the first leg collected.
     await seedStoryCleared();
     await ensureCaseFileViewport();
     await startFromMenu();
-    const { secondLeg } = chapter2GateLegs();
-    const [startGate, ...laterGates] = secondLeg;
+    const leg = chapter2GateLeg(1);
+    const [startGate] = leg.gates;
+    if (!startGate) throw new Error("Chapter 2 gates leg 1 is empty");
+    await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
+
+    const crossedWrappers: string[] = [];
+    await crossGate(startGate, crossedWrappers);
+    await crossLaterGates(leg, crossedWrappers);
+    await stopAtNextLeg(leg, crossedWrappers);
+  });
+
+  it("plays Chapter 2 from the plaza-return gate to the in-progress end card", async function () {
+    this.timeout(1_200_000);
+    await resetE2eStorage();
+    // Scene Select is production replay, unlocked by a story clear; seed it
+    // so the run can start at the last leg's travel wrapper.
+    await seedStoryCleared();
+    await ensureCaseFileViewport();
+    await startFromMenu();
+    const legs = chapter2GateLegs();
+    const leg = legs[legs.length - 1];
+    const startGate = leg?.gates[0];
+    if (!leg || !startGate) throw new Error("Chapter 2 has no last gates leg");
     await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
 
     // The seed is only a way in. To prove the in-progress ending leaves a
@@ -1029,15 +1107,7 @@ describe("fresh production journey", () => {
 
     const crossedWrappers: string[] = [];
     await crossGate(startGate, crossedWrappers);
-    for (const gate of laterGates) {
-      await drainOrganicRoute(
-        (state) =>
-          state.chapter.id === gate.chapter &&
-          isPendingMapGate(state, gate.wrapper),
-        `${gate.chapter}/${gate.wrapper} pending city map`,
-      );
-      await crossGate(gate, crossedWrappers);
-    }
+    await crossLaterGates(leg, crossedWrappers);
 
     // Chapter 2 is `**Status:** in-progress`, so exhausting it is a terminal
     // but non-clear boundary: the 未完待續 end card renders. When Chapter 2
@@ -1058,7 +1128,7 @@ describe("fresh production journey", () => {
       STORY_CLEARED_STORAGE_KEY,
     );
     expect(cleared).toBeNull();
-    expect(crossedWrappers).toEqual(secondLeg.map((gate) => gate.wrapper));
+    expect(crossedWrappers).toEqual(leg.gates.map((gate) => gate.wrapper));
   });
 
   it("keeps the drain deterministic when several destinations are enabled", async () => {

@@ -210,11 +210,15 @@ export const anchors = {
       answer: "那塊照她坐姿裁的板子",
     },
   ],
-  // The Chapter 2 gates route plays in two tests so each stays under the
-  // per-test WDIO timeout (wdio.conf.ts): the first stops when this gate's
-  // city map is pending, the second starts there. Played as one test after
-  // Beat 7 it took ~19 of the 20 minutes locally.
-  chapter2SecondLegWrapper: "investigation_scene_map_04",
+  // The Chapter 2 gates route plays in three tests so each stays under the
+  // per-test WDIO timeout (wdio.conf.ts). Each wrapper here starts a leg: the
+  // leg before it stops when that gate's city map is pending, and its own
+  // test starts there. With two legs, the second took ~14 of the 20 minutes
+  // locally after Beat 8.
+  chapter2LegStartWrappers: [
+    "investigation_scene_map_04",
+    "investigation_scene_map_06",
+  ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
