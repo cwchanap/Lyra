@@ -26,6 +26,18 @@
 - **Details:** 本機順序與獨立時間錨共同挑戰既有門鎖時序。
 - **Category:** chapter_1
 
+### Fact: 群眾看的是同一面牆 {#crowd_watched_the_wall}
+
+- **Summary:** 群眾沒有集體說謊；他們被安排去看同一面牆。
+- **Details:** 當晚廣場上多數人看的是直播牆；轉播車、平台上的觀眾，和自稱在家看直播的三枝，看的都是節目畫面；能直接看著玻璃箱本身的只有少數側角，目前已知的是側巷那道縫。
+- **Category:** chapter_2
+
+### Fact: 午夜後的影像不是箱內的直接觀測 {#footage_is_not_direct_box_observation}
+
+- **Summary:** 影像是真的，但不是那一刻箱內的直接觀測。
+- **Details:** 轉播車與平台看的是合成後的節目畫面；手機與輪廓板整晚留在箱內，原始信號已覆寫，繞過節目的只剩碎片。
+- **Category:** chapter_2
+
 ## Objectives
 
 ### Objective: 準備有限門鎖調取申請 {#prepare_narrow_lock_request}

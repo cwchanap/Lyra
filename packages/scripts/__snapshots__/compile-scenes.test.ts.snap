@@ -3,13 +3,13 @@
 exports[`compile (tracked production corpus compatibility) > keeps the Chapter 1 warning and save-content manifest baseline 1`] = `
 {
   "manifest": {
-    "contentRevision": "sha256:5fda330dd3e70867aaf4efafec40affaf9350b92a4b8411dc1b54a1c2202743a",
+    "contentRevision": "sha256:bbeb7ae32a829dbe3108eb45e1f28508cd0a9c51d51ac8f994513b606e1ae222",
     "manifestVersion": 1,
   },
   "warnings": [
     {
       "code": "singletonSourceGroup",
-      "line": 50,
+      "line": 62,
       "message": "Source group "victim_phone_device" has one member: evidence:victim_phone_notification.",
     },
   ],
