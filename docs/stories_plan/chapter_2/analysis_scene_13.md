@@ -49,18 +49,18 @@
 
 **相馬律**：審查會上，對方第一句一定是：幾萬個人都看見她在箱子裡。
 
-**早坂茜**：好。先從桌上這幾道說「看見了」的視線開始。
+**早坂茜**：好。先從桌上這幾道說「看見了」的視線和鏡頭開始。
 
 [她把第一排卡片推到桌面正中央。]
 
 ## Board: 視線板 {#sightline_board}
 
 - **Kind:** classify
-- **Prompt:** 這幾道說「看見她」的視線和鏡頭，各自真正看著、拍到的是什麼？把它放進對的那一欄。
+- **Prompt:** 這幾道說「看見她」的視線和鏡頭，各自真正看著什麼、拍到什麼？把它放進對的那一欄。
 - **Reveals:** [assert_fact:crowd_watched_the_wall]
-- **Incomplete Feedback:** 每一道視線都要放進其中一欄。
-- **Incorrect Feedback:** 至少有一道視線放錯了。再想想那一刻，看的人站在哪裡、眼前是什麼。
-- **Hint:** 先問：看的人站在哪裡？他和玻璃箱之間，隔著什麼？
+- **Incomplete Feedback:** 每一道視線和鏡頭都要放進其中一欄。
+- **Incorrect Feedback:** 至少有一道放錯了。再想想那一刻，看的人或鏡頭站在哪裡、眼前是什麼。
+- **Hint:** 先問：看的人或鏡頭站在哪裡？它和玻璃箱之間，隔著什麼？
 
 ### Card: 廣場上的觀眾 {#crowd_on_plaza}
 
@@ -70,7 +70,7 @@
 ### Card: 戶川手機拍到的畫面 {#togawa_phone}
 
 - **Source:** evidence:togawa_video_position_check
-- **Summary:** 從她拍攝的位置，手機拍到右側玻璃斜映著直播牆；影片裡最清楚的身影，和倒影的位置重疊。她親眼看見什麼，影片判斷不了。
+- **Summary:** 從她拍攝的位置，右側玻璃斜映著直播牆；手機拍到的畫面裡，最清楚的身影和倒影的位置重疊。她親眼看見什麼，這段影片說不出來。
 
 ### Card: 轉播車門邊的監看螢幕 {#control_monitors}
 
@@ -94,7 +94,7 @@
 
 ### Group: 看的是牆 {#watched_the_wall}
 
-- **Description:** 視線被導向直播牆；或鏡頭拍到的，是牆在玻璃上的倒影。
+- **Description:** 視線被導向直播牆，或是鏡頭拍到最清楚的，是牆在玻璃上的倒影。
 - **Accepted Cards:** [crowd_on_plaza, togawa_phone]
 
 ### Group: 看的是別人送出來的畫面 {#watched_a_feed}
@@ -123,12 +123,12 @@
 
 **相馬律**：所以只記到這裡。他沒說的，我不替他補。
 
-**早坂茜**：好。下一塊，平台和轉播車那一邊。
+**早坂茜**：好。下一塊，平台，和轉播車門邊那台監看螢幕。
 
 ## Board: 畫面板 {#footage_board}
 
 - **Kind:** classify
-- **Prompt:** 平台和轉播車門邊的監看螢幕，看到的是箱子本身嗎？把每份紀錄，放進它真正說明的那一層。
+- **Prompt:** 平台上的畫面、轉播車門邊的監看螢幕、保存下來的節目輸出，是箱子本身嗎？把每份紀錄，放進它真正說明的那一層。
 - **Unlock:** analysis_board:chapter_2@analysis_scene_13@sightline_board completed
 - **Reveals:** [assert_fact:footage_is_not_direct_box_observation]
 - **Incomplete Feedback:** 七份紀錄都要放進其中一層。
@@ -172,7 +172,7 @@
 
 ### Group: 送出去的那一路是合成的 {#program_feed}
 
-- **Description:** 門邊標著 Program Composite 的監看畫面、保存下來的 PGM 輸出、平台上的那一路，載的都是導播台送出去的節目輸出：合成的畫面，加上贊助的音訊。
+- **Description:** 轉播車門邊標著 Program Composite 的監看畫面、轉播車保存下來的那一路、平台上的那一路，都是導播台送出去的節目輸出：合成的畫面，加上贊助的音訊。
 - **Accepted Cards:** [composite_label, audio_routing, archive_rule]
 
 ### Group: 整晚都留在箱子裡的東西 {#stayed_in_box}
