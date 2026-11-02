@@ -56,7 +56,7 @@
 ## Board: 視線板 {#sightline_board}
 
 - **Kind:** classify
-- **Prompt:** 這幾道說「看見她」的視線，各自真正看著什麼？把它放進對的那一欄。
+- **Prompt:** 這幾道說「看見她」的視線和鏡頭，各自真正看著、拍到的是什麼？把它放進對的那一欄。
 - **Reveals:** [assert_fact:crowd_watched_the_wall]
 - **Incomplete Feedback:** 每一道視線都要放進其中一欄。
 - **Incorrect Feedback:** 至少有一道視線放錯了。再想想那一刻，看的人站在哪裡、眼前是什麼。
@@ -67,10 +67,10 @@
 - **Source:** evidence:sponsor_mode_signboard
 - **Summary:** 燈光調暗時，看板和口播都請大家「看主螢幕」。
 
-### Card: 應援區的戶川 {#togawa_phone}
+### Card: 戶川手機拍到的畫面 {#togawa_phone}
 
 - **Source:** evidence:togawa_video_position_check
-- **Summary:** 從她拍攝的位置，右側玻璃斜映著直播牆；影片裡最清楚的身影，和倒影的位置重疊。
+- **Summary:** 從她拍攝的位置，手機拍到右側玻璃斜映著直播牆；影片裡最清楚的身影，和倒影的位置重疊。她親眼看見什麼，影片判斷不了。
 
 ### Card: 轉播車門邊的監看螢幕 {#control_monitors}
 
@@ -94,7 +94,7 @@
 
 ### Group: 看的是牆 {#watched_the_wall}
 
-- **Description:** 視線被導向直播牆，或被牆在玻璃上的倒影接住。
+- **Description:** 視線被導向直播牆；或鏡頭拍到的，是牆在玻璃上的倒影。
 - **Accepted Cards:** [crowd_on_plaza, togawa_phone]
 
 ### Group: 看的是別人送出來的畫面 {#watched_a_feed}
@@ -113,7 +113,7 @@
 
 **早坂茜**：那箱子本身呢？有誰是直接看著它的？
 
-**相馬律**：目前只有一道，直接落在箱子上。
+**相馬律**：這幾張裡，目前只有一道，直接落在箱子上。
 
 **早坂茜**：巷子裡的柚木。
 
@@ -128,7 +128,7 @@
 ## Board: 畫面板 {#footage_board}
 
 - **Kind:** classify
-- **Prompt:** 平台和轉播車看到的，是箱子本身嗎？把每份紀錄，放進它真正說明的那一層。
+- **Prompt:** 平台和轉播車門邊的監看螢幕，看到的是箱子本身嗎？把每份紀錄，放進它真正說明的那一層。
 - **Unlock:** analysis_board:chapter_2@analysis_scene_13@sightline_board completed
 - **Reveals:** [assert_fact:footage_is_not_direct_box_observation]
 - **Incomplete Feedback:** 七份紀錄都要放進其中一層。
@@ -138,7 +138,7 @@
 ### Card: 監看畫面標籤 {#composite_label}
 
 - **Source:** evidence:program_composite_label
-- **Summary:** 轉播車監看螢幕的角落，標著「Program Composite / Sponsor Mode」；切進贊助段後，標籤一直沒變。
+- **Summary:** 轉播車門邊那台監看螢幕的角落，標著「Program Composite / Sponsor Mode」；切進贊助段後，標籤一直沒變。
 
 ### Card: 贊助模式音訊路由 {#audio_routing}
 
@@ -172,7 +172,7 @@
 
 ### Group: 送出去的那一路是合成的 {#program_feed}
 
-- **Description:** 監看、平台和存檔，載的都是導播台送出去的節目輸出：合成的畫面，加上贊助的音訊。
+- **Description:** 門邊標著 Program Composite 的監看畫面、保存下來的 PGM 輸出、平台上的那一路，載的都是導播台送出去的節目輸出：合成的畫面，加上贊助的音訊。
 - **Accepted Cards:** [composite_label, audio_routing, archive_rule]
 
 ### Group: 整晚都留在箱子裡的東西 {#stayed_in_box}
