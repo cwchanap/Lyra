@@ -464,6 +464,13 @@ characters:
     referenceAssetId: null
     expressions: {}
 
+  - id: building_cleaner
+    displayNames: ["清潔員"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
+
   - id: news_anchor
     displayNames: ["新聞主播"]
     portraitMode: none
