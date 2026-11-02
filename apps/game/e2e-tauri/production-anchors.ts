@@ -228,14 +228,15 @@ export const anchors = {
       answer: "讓人從後場通道走進大樓的服務核心",
     },
   ],
-  // The Chapter 2 gates route plays in three tests so each stays under the
+  // The Chapter 2 gates route plays in four tests so each stays under the
   // per-test WDIO timeout (wdio.conf.ts). Each wrapper here starts a leg: the
   // leg before it stops when that gate's city map is pending, and its own
-  // test starts there. With two legs, the second took ~14 of the 20 minutes
-  // locally after Beat 8.
+  // test starts there. With three legs, the third reached 14 of the 20
+  // minutes partway through Beat 9A's investigation on a slow container.
   chapter2LegStartWrappers: [
     "investigation_scene_map_04",
     "investigation_scene_map_06",
+    "investigation_scene_map_07",
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",

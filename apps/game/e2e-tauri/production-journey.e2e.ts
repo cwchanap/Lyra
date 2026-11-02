@@ -278,6 +278,7 @@ const investigationPresents: Record<string, Record<string, string>> = {
   investigation_scene_9: { draft_slip: "masuda_whistleblower_draft" },
   investigation_scene_10: { that_comment: "rider_deleted_comment" },
   investigation_scene_12: { side_view: "alley_side_view_check" },
+  investigation_scene_14: { match_the_records: "service_elevator_b_log" },
 };
 
 /**
@@ -1091,7 +1092,26 @@ describe("fresh production journey", () => {
     await stopAtNextLeg(leg, crossedWrappers);
   });
 
-  it("plays Chapter 2 from the plaza-return gate to the in-progress end card", async function () {
+  it("plays Chapter 2 from the plaza-return gate to the service-route gate", async function () {
+    this.timeout(1_200_000);
+    await resetE2eStorage();
+    // Scene Select carries the skipped scenes' records, so the jump starts
+    // this leg with what the earlier legs collected.
+    await seedStoryCleared();
+    await ensureCaseFileViewport();
+    await startFromMenu();
+    const leg = chapter2GateLeg(2);
+    const [startGate] = leg.gates;
+    if (!startGate) throw new Error("Chapter 2 gates leg 2 is empty");
+    await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
+
+    const crossedWrappers: string[] = [];
+    await crossGate(startGate, crossedWrappers);
+    await crossLaterGates(leg, crossedWrappers);
+    await stopAtNextLeg(leg, crossedWrappers);
+  });
+
+  it("plays Chapter 2 from the service-route gate to the in-progress end card", async function () {
     this.timeout(1_200_000);
     await resetE2eStorage();
     // Scene Select is production replay, unlocked by a story clear; seed it
