@@ -573,15 +573,17 @@ Beat 9A（Phase C 路線調查）在下一個 PR。
 
 - **方法論台詞**只在 Intro 由相馬說一次，改成劇中說法（plan 的「第 1 章」是後設用語，劇中是兩人一起辦的吉祥寺雨鐘咖啡館案）：「吉祥寺那次，我們分的是紀錄從哪裡來。」／「這次呢？」／「人到底站在哪裡。看的是箱、牆，還是別人的畫面。」
 - **視線板** `sightline_board`（classify）：
-  - 看的是牆：廣場上的觀眾（`sponsor_mode_signboard`）、應援區的戶川（`togawa_video_position_check`）。
+  - 看的是牆：廣場上的觀眾（`sponsor_mode_signboard`）、戶川手機拍到的畫面（卡 `togawa_phone`，來源 `togawa_video_position_check`）。後者只記她的手機拍到了牆在玻璃上的倒影；板的 Prompt 與這一欄的 Description 因此同時涵蓋視線和鏡頭，分欄不決定她用自己的眼睛看見什麼（那是戶川的說法，影片判斷不了）。
   - 看的是別人送出來的畫面：轉播車門邊的監看螢幕（`program_composite_label`）、平台上的觀眾（`platform_archive_rule`）、在家看直播的三枝（`statement:saegusa_watched_until_cut`）。
   - 看的是箱子本身：側巷裡的柚木（`statement:rider_side_view_account`）。
   - 完成後確立事實 `crowd_watched_the_wall`；plan §8.1 的完成結論「群眾沒有集體說謊。他們只是被安排去看同一面牆。」在 Result Dialogue 由相馬說一次。
 - **畫面板** `footage_board`（classify，視線板完成後解鎖）：
-  - 送出去的那一路是合成的：監看畫面標籤、贊助模式音訊路由、平台保存規則。
+  - 送出去的那一路是合成的：監看畫面標籤、贊助模式音訊路由、平台保存規則。轉播車這一側只指門邊標示 Program Composite 的監看畫面與保存的 PGM 輸出（`investigation_scene_12` 的 PGM 錄影機）；板的 Prompt 與這一欄的 Description 都照這個範圍寫，不說「整輛轉播車」。
+  - 車內的即時預覽（`monitor_wall` 的 C1 與整面小螢幕）看得到，只是不存：它們不是這一欄的卡，也沒有被這兩個事實排除。
   - 整晚都留在箱子裡的東西：箱內手機資料座、投影輪廓板（plan §5：手機位置不能等於本人位置）。
   - 沒經過合成的，只剩碎片：原始信號短時緩存、後台流出短片。
   - 完成後確立事實 `footage_is_not_direct_box_observation`；plan §8.2 的完成結論「影像是真的。但不是那一刻箱內的直接觀測。」在 Result Dialogue 由相馬說一次。
+- 兩個事實的 Details（`story_catalog.md`）同樣照上面的範圍寫：轉播車只指門邊標示 Program Composite 的監看畫面與保存的 PGM 輸出，另註明車內即時預覽可看但不存、不在此列。
 - 這兩個事實就是最終審查會 Proof Order 第 1～3 段的玩家反擊依據（plan §12）。兩句完成結論在 Beat 10 可以再用；Phase C 不要重講。
 
 ### 14.4 Beat 8.5 封印（沿用 §2.2、§8.3、§11.3、§12.3、§13.3，並追加）
@@ -591,4 +593,6 @@ Beat 9A（Phase C 路線調查）在下一個 PR。
 - 三枝那一張卡記的是他自己的說法（「他說他在家…」）：放進「看的是別人送出來的畫面」只分類視線，不洗清他的行蹤。
 - 保全室有沒有看節目畫面，目前沒有任何紀錄；Beat 8.5 只說轉播車與平台。保全室的監看要等之後的 beat 有紀錄才可以說。
 - 投影輪廓板仍是贊助商正當的投影道具，放在「整晚都留在箱子裡的東西」，不叫「替身」，也沒有人用它假裝她。
+- 戶川那一張卡只分類她的手機拍到了什麼：不決定她用自己的眼睛看見什麼。
+- 兩個事實對轉播車只涵蓋 Program Composite 監看畫面與保存的 PGM 輸出；車內的即時預覽存在、只是沒有保存，後續 beat 不得拿這兩個事實排除那些預覽。
 - 分析場景沒有調查互動點，不計入 §13.6 的互動點比例。
