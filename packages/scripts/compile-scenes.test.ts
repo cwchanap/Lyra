@@ -3339,6 +3339,97 @@ describe("compile (tracked production corpus compatibility)", () => {
             sourceLabel: "設備商技術員口述",
           },
         ],
+        [
+          "evidence:venue_logistics_board",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "後場隔板上的後勤配置板（警方在場拍攝）",
+          },
+        ],
+        [
+          "evidence:sponsor_maintenance_passcode",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:qa_snapshot_frames",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "設備商提交的低幀率 QA 快照（黑瀨提供副本）",
+          },
+        ],
+        [
+          "evidence:m03_door_log",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:mashiro_watch_ping",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "真白手錶帳號的定位紀錄（黑瀨提供副本）",
+          },
+        ],
+        [
+          "evidence:service_elevator_b_log",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:fire_door_alarm_log",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:building_night_access_log",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:vacant_floor_traces",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "七樓空置樓層地面（警方現場照片，黑瀨提供）",
+          },
+        ],
+        [
+          "statement:cleaner_elevator_account",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "testimony",
+            proceduralStatus: "lead",
+            confidence: "unverified",
+            sourceLabel: "商業大樓清潔員口述",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;
