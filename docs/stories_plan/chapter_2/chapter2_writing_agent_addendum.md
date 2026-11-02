@@ -667,7 +667,7 @@ Beat 9B（真白工作室、蓮見事務所、青葉公開資料核驗）在下�
 
 ### 15.6 Beat 9A 新證物與陳述
 
-全部 `Procedural Status: lead`。Source Kind：配置板與樓層痕跡為 `physical`，其餘紀錄為 `record`，清潔員為 `testimony`（`Confidence: unverified`）。
+全部 `Procedural Status: lead`。Source Kind：配置板與樓層痕跡為 `physical`，其餘紀錄為 `digital`，清潔員為 `testimony`（`Confidence: unverified`）。
 
 | ID | 名稱 | 初始描述 | 更新後描述 | 審查會使用語 |
 |---|---|---|---|---|
@@ -692,7 +692,7 @@ Beat 9B（真白工作室、蓮見事務所、青葉公開資料核驗）在下�
 
 - 子場景：`backstage_rear`（unlocked）→ `sponsor_corridor`（locked，`Unlock`：收下 `venue_logistics_board` 且談過活動保全的 `the_tablet`）→ `disaster_center`（locked，由 `m03_door` 的 `Reveals`）→ `seventh_floor_core`（locked，由清潔員的出示紀錄話題 `match_the_records` 的 `Reveals`）。
 - 紀錄的來處：`logistics_board` → `venue_logistics_board`；`vendor_cabinet` → `qa_snapshot_frames`（黑瀨把警方副本給兩人看）；`m03_door` → `mashiro_watch_ping`（黑瀨站在門前說手錶最後一筆在門的那一邊）並解鎖 `disaster_center`；`access_terminal` → `sponsor_maintenance_passcode`、`m03_door_log`；`alarm_panel` → `service_elevator_b_log`、`fire_door_alarm_log`；`cctv_monitors` → `building_night_access_log`；清潔員 `elevator_b` → `cleaner_elevator_account`；七樓 `fire_door` → `vacant_floor_traces`（黑瀨給警方照片）。
-- 推理（一題，在後場通道黑瀨的 `vendor_note` 話題裡，看過 QA 快照之後）：「申請寫的是投影設備校準，設備商卻沒有派人。這十五分鐘的通行碼，那一晚實際上被拿來做什麼？」選項：「讓設備商校準投影機」「讓人從後場通道走進大樓的服務核心」「讓保全封住後場」；答案：「讓人從後場通道走進大樓的服務核心」。相馬推到「通行碼被拿來讓人走進大樓」為止：不推是誰、不推她為什麼跟著走。
+- 推理（一題，在後場通道黑瀨的 `vendor_note` 話題裡，看過 QA 快照之後）：「申請寫的是投影設備校準，設備商卻沒有派人。這十五分鐘的通行碼，那一晚實際上被拿來做什麼？」選項：「讓設備商校準投影機」「讓設備商的人進大樓取器材」「讓人從後場通道走進大樓的服務核心」；答案：「讓人從後場通道走進大樓的服務核心」。相馬推到「通行碼被拿來讓人走進大樓」為止：不推是誰、不推她為什麼跟著走。
 - 出示紀錄（一處）：清潔員的 `match_the_records`，出示 `service_elevator_b_log` 或 `fire_door_alarm_log`，她把時間對上，黑瀨同意帶兩人上七樓。
 - 互動點約 22：破案 14、生活 4、氣氛 3、紅鯡魚 1。後場：背面安全位與服務艙口（破案）、後勤配置板（破案）、一箱暖暖包（生活）、活動保全 `the_tablet`（破案）、`last_shift`（生活）。後場通道：通道入口的玻璃門（破案，對照短片）、器材櫃與測試相機（破案）、M-03 鋼門（破案）、臨時頂棚的漏水（氣氛）、黑瀨 `vendor_note`（破案）、`today`（生活）。防災中心：門禁終端（破案）、防災面板（破案）、監視器（破案）、樓宇保全 `that_night_panel`（生活）、清潔員 `elevator_b`（破案）、`the_rumor`（紅鯡魚）、`match_the_records`（破案）。七樓：服務梯 B 的門（氣氛）、消防門（破案）、避難梯的門（破案）、走廊盡頭的小窗（氣氛）。比例是參考值，不要為了湊數加點。
 - 音效：後場與後場通道用 `bgs_glass_box_backstage_day`；防災中心與七樓用 `bgs_institutional_corridor`（`bgs_building_service_core_night` 有門保持警示音，只屬於案發當晚）；分析場景用 `bgs_detective_office_rain`。
