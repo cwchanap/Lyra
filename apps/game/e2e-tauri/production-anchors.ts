@@ -191,6 +191,12 @@ export const anchors = {
       destination: "shibuya_glass_box_plaza",
       next: "investigation_scene_12",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_07",
+      destination: "shibuya_glass_box_plaza",
+      next: "investigation_scene_14",
+    },
   ],
   // Every authored 推理 prompt on the production route, matched by its
   // question. The drain checks the chapter, scene and visible options against
@@ -208,6 +214,18 @@ export const anchors = {
         "玻璃上映出來的直播牆",
       ],
       answer: "那塊照她坐姿裁的板子",
+    },
+    {
+      chapter: "chapter_2",
+      scene: "investigation_scene_14",
+      question:
+        "申請寫的是投影設備校準，設備商卻沒有派人。這十五分鐘的通行碼，那一晚實際上被拿來做什麼？",
+      options: [
+        "讓設備商校準投影機",
+        "讓設備商的人進大樓取器材",
+        "讓人從後場通道走進大樓的服務核心",
+      ],
+      answer: "讓人從後場通道走進大樓的服務核心",
     },
   ],
   // The Chapter 2 gates route plays in three tests so each stays under the

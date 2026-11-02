@@ -383,6 +383,29 @@ const analysisSolutions: Record<string, Record<string, AnalysisSolution>> = {
       },
     },
   },
+  analysis_scene_15: {
+    route_board: {
+      kind: "order",
+      cardIds: [
+        "safety_spot",
+        "logistics_board",
+        "m03_door",
+        "watch_ping",
+        "elevator_b",
+        "floor_traces",
+      ],
+    },
+    return_board: {
+      kind: "classify",
+      groupByCard: {
+        passcode_window: "closed_after_expiry",
+        m03_after: "closed_after_expiry",
+        elevator_after: "closed_after_expiry",
+        fire_door: "still_open",
+        logistics_exit: "still_open",
+      },
+    },
+  },
 };
 
 /** Placed hotspots render as placed targets; layout-less ones fall back. */
