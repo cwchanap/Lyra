@@ -16,9 +16,11 @@
     { "id": "saegusa_stream_studio", "label": "三枝直播工作室", "regionId": "shibuya", "x": 0.79, "y": 0.6 },
     { "id": "shibuya_plaza_overpass", "label": "廣場前天橋", "regionId": "shibuya", "x": 0.43, "y": 0.66 },
     { "id": "shibuya_overpass_side_alley", "label": "天橋下側巷", "regionId": "shibuya", "x": 0.5, "y": 0.69 },
+    { "id": "mashiro_studio", "label": "真白的工作室", "regionId": "shibuya", "x": 0.26, "y": 0.4 },
     { "id": "police_meeting_room", "label": "警署臨時會面室", "regionId": null, "x": 0.29, "y": 0.5 },
     { "id": "outsourced_review_office", "label": "外包資料審查分室", "regionId": null, "x": 0.34, "y": 0.29 },
     { "id": "soma_detective_office", "label": "相馬偵探事務所", "regionId": null, "x": 0.54, "y": 0.38 },
-    { "id": "kagami_review_room", "label": "KAGAMI 證據摘要審查室", "regionId": null, "x": 0.72, "y": 0.45 }
+    { "id": "kagami_review_room", "label": "KAGAMI 證據摘要審查室", "regionId": null, "x": 0.72, "y": 0.45 },
+    { "id": "hasumi_agency_office", "label": "蓮見的事務所", "regionId": null, "x": 0.58, "y": 0.7 }
   ]
 }

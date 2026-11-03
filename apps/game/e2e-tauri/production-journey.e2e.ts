@@ -407,6 +407,22 @@ const analysisSolutions: Record<string, Record<string, AnalysisSolution>> = {
       },
     },
   },
+  analysis_scene_18: {
+    people_board: {
+      kind: "classify",
+      groupByCard: {
+        sr2307_sender: "entry_and_control",
+        process_channel: "entry_and_control",
+        first_report: "entry_and_control",
+        revenue_table: "wanted_to_leave",
+        exit_message: "wanted_to_leave",
+        accountant: "cannot_take_back",
+        scheduled_statement: "cannot_take_back",
+        saegusa_window: "saegusa_cannot_reach",
+        saegusa_no_key: "saegusa_cannot_reach",
+      },
+    },
+  },
 };
 
 /** Placed hotspots render as placed targets; layout-less ones fall back. */
