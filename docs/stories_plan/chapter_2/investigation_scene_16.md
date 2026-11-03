@@ -78,7 +78,7 @@
 ### Hotspot: 傘架 {#umbrella_stand}
 - **Description:** 玄關門邊的傘架裡，只插著一把淡藍色的透明傘。
 
-[傘架裡只有一把傘。透明的塑膠傘面帶著一點淡藍，傘尖在鐵架底下積了一小灘水。]
+[傘架裡只有一把傘。透明的塑膠傘面帶著一點淡藍，傘面乾乾的，看起來沒人動過。]
 
 **早坂茜**：透明傘。
 
@@ -96,11 +96,9 @@
 
 #### On Reexamine
 
-[傘尖又滴下一顆水。]
+[相馬的視線在那把傘上停了一下，就移開了。]
 
-**早坂茜**：還在滴。
-
-**黑瀨徹**：潮氣重。放著不會乾。
+**早坂茜**：走吧。
 
 ### Hotspot: 粉絲信 {#fan_letter_box}
 - **Description:** 鞋櫃上的紙箱裡，是粉絲寄來的信；最上面一封被抽出來過。
@@ -788,7 +786,7 @@
 
 ## Outro
 
-[場景：真白工作室的玄關，案發第四日傍晚四點四十分，細雨。窗外的天色比剛來時暗了一階，玄關的燈被黑瀨打開，照出鞋櫃和那把傘架。]
+[場景：真白工作室的玄關，案發第四日傍晚四點四十分，細雨。窗外的天色比剛來時暗了一階，玄關的燈被黑瀨打開，照出鞋櫃和窄窄的走道。]
 - **Background Prompt:** Closing view at about 4:40 p.m. from the living-room end of the narrow entrance hallway of an old Tokyo apartment looking back toward the front door, eye-level medium shot, used as the exit beat before the defense team leaves the studio; focal area on the front door at the end of the hallway with the entrance light switched on above it, and the low shoe cabinet beside it carrying a cardboard box of bundled envelopes; stable anchors of the umbrella stand beside the door holding exactly one pale blue transparent vinyl umbrella, a pair of neat flat shoes on the entrance step, the small kitchen counter with a mug on the right and a faint gray window glow behind the viewer; warm yellow entrance light against cool dusky window light, no people, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_detective_office_rain
