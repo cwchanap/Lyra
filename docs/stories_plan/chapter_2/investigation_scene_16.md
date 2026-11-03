@@ -523,7 +523,7 @@
 
 #### Topic: 網路上的說法 {#aoba_rumor}
 - **Status:** locked
-- **Unlock:** evidence:aoba_official_database_page collected and evidence:mashiro_cloud_activity collected and evidence:hasumi_schedule_cancellations collected
+- **Unlock:** evidence:aoba_official_database_page collected and evidence:mashiro_cloud_activity collected and evidence:hasumi_schedule_cancellations collected and evidence:mashiro_revenue_table collected and evidence:accountant_engagement collected
 - **Reveals:** [assert_fact:aoba_project_was_not_the_motive]
 
 **黑瀨徹**：有件事，我順便提。這說法一直傳到分局的電話上，我不想辯護這邊被它拖進去。
