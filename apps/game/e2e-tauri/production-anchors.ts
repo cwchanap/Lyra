@@ -148,6 +148,11 @@ export const anchors = {
       next: "scene_11_2",
     },
   ],
+  // The Chapter 1 route plays in two tests: the first from the menu until
+  // this gate's city map is pending, the second from there into Chapter 2.
+  // In one test it passed 20 minutes on a slow container (click p50 about
+  // 1s); this gate falls about halfway.
+  chapter1SecondHalfWrapper: "investigation_scene_map_05",
   // Chapter 2's first authored scene: the opening test starts here so the
   // four linear Beats 0-3 scenes stay on the production route.
   chapter2Opening: { chapter: "chapter_2", scene: "scene_0" },
@@ -272,14 +277,17 @@ export const anchors = {
       answer: "送出申請的經紀窗口——蓮見",
     },
   ],
-  // The Chapter 2 gates route plays in five tests so each stays under the
-  // per-test WDIO timeout (wdio.conf.ts). Each wrapper here starts a leg: the
-  // leg before it stops when that gate's city map is pending, and its own
-  // test starts there. With three legs, the third reached 14 of the 20
-  // minutes partway through Beat 9A's investigation on a slow container; the
-  // Beat 9A leg alone took 12 minutes, so Beat 9B starts its own leg.
+  // The Chapter 2 gates route plays in one test per leg so each stays under
+  // the per-test WDIO timeout (wdio.conf.ts). Each wrapper here starts a leg:
+  // the leg before it stops when that gate's city map is pending, and its own
+  // test starts there. On a slow container (click p50 about 1.2s) the old
+  // map_01-map_04 and map_04-map_06 legs took 17-18 of the 20 minutes, so
+  // they split at map_02 and map_05; the Beat 9A and 9B legs took 12-15
+  // minutes each, so each keeps its own leg.
   chapter2LegStartWrappers: [
+    "investigation_scene_map_02",
     "investigation_scene_map_04",
+    "investigation_scene_map_05",
     "investigation_scene_map_06",
     "investigation_scene_map_07",
     "investigation_scene_map_08",

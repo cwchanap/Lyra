@@ -44,10 +44,10 @@ export const config: WebdriverIO.Config = {
     // arms a setTimeout race that rejects with `Error: Timeout`. Per-test
     // `this.timeout(...)` calls inside it() bodies execute after that read,
     // so they cannot raise the deadline — the global value here is the only
-    // effective per-test cap. The production-journey spec plays the full
-    // Chapter 1 organic route across all nine city-map gates (~10-12m plus
-    // CI runner variance), so 20m accommodates it while staying under the
-    // gameplay chain's 25m step-level timeout (the outer hang guard).
+    // effective per-test cap. The production-journey spec splits Chapter 1
+    // in two tests and Chapter 2 into legs (production-anchors.ts) so each
+    // test fits in 20m on a slow runner, which stays under the gameplay
+    // chain's 25m step-level timeout (the outer hang guard).
     timeout: 1200000,
   },
   services: [
