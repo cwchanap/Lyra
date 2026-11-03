@@ -157,12 +157,24 @@ function chapter2GateLegs(): readonly ChapterGateLeg[] {
   });
 }
 
-function chapter2GateLeg(index: number): ChapterGateLeg {
-  const leg = chapter2GateLegs()[index];
-  if (!leg) {
-    throw new Error(`Chapter 2 has no gates leg ${index}`);
+/**
+ * Chapter 1's map gates split at `anchors.chapter1SecondHalfWrapper`: the
+ * first test crosses `firstHalf`, the second starts at `secondHalf[0]`.
+ */
+function chapter1Halves(): {
+  readonly firstHalf: readonly MapGate[];
+  readonly secondHalf: readonly MapGate[];
+} {
+  const gates: readonly MapGate[] = anchors.mapGates;
+  const split = gates.findIndex(
+    (gate) => gate.wrapper === anchors.chapter1SecondHalfWrapper,
+  );
+  if (split < 1) {
+    throw new Error(
+      `chapter1SecondHalfWrapper must name a Chapter 1 map gate after the first (got ${anchors.chapter1SecondHalfWrapper})`,
+    );
   }
-  return leg;
+  return { firstHalf: gates.slice(0, split), secondHalf: gates.slice(split) };
 }
 
 /** Drains to each later gate of `leg` and crosses it, after its first. */
@@ -179,6 +191,36 @@ async function crossLaterGates(
     );
     await crossGate(gate, crossedWrappers);
   }
+}
+
+/**
+ * The Scene Select seed is only a way in. Saves the pending city map, forgets
+ * the seeded clear, and resumes from the save with replay locked again, so the
+ * rest of the test plays as a fresh, uncleared profile. Saves outlive each
+ * test's storage reset, so every caller takes its own slot.
+ */
+async function resumeUnclearedFromSave(
+  atGate: (state: GameStateView) => boolean,
+  gateLabel: string,
+  slot: 1 | 2 | 3,
+  slotName: string,
+): Promise<void> {
+  await waitForPackagedGameState(
+    atGate,
+    30000,
+    `${gateLabel} did not park on its pending city map`,
+  );
+  await saveManualSlot(slot, slotName);
+  await closePersistenceBrowserToGameplay();
+  await returnToTitle();
+  await forgetStoryCleared();
+  await loadTitleSlot("manual", slot);
+  await waitForPackagedGameState(
+    atGate,
+    30000,
+    `manual load did not restore ${gateLabel}'s pending city map`,
+  );
+  expect(await gameMenuOffersSceneSelect()).toBe(false);
 }
 
 /**
@@ -940,8 +982,8 @@ async function drainOrganicRoute(
 }
 
 describe("fresh production journey", () => {
-  it("plays the organic Chapter 1 route from the menu across all nine city-map gates into Chapter 2", async function () {
-    this.timeout(2_400_000);
+  it("plays the organic Chapter 1 route from the menu to its second-half city-map gate", async function () {
+    this.timeout(1_200_000);
     await resetE2eStorage();
     // The 800×600 packaged default window squeezes the analysis workbench;
     // the synthetic pointer transport (like analysis-beat85) is proven at a
@@ -1012,10 +1054,58 @@ describe("fresh production journey", () => {
       DIALOGUE_DRAIN_CAP,
     );
 
-    // The organic Chapter 1 route crosses every gate in authored order.
+    // The organic Chapter 1 route crosses each gate in authored order up to
+    // the second half's gate; the next test plays on from there, because
+    // one test for the whole chapter no longer fits the per-test WDIO
+    // timeout (wdio.conf.ts).
+    const { firstHalf, secondHalf } = chapter1Halves();
+    const [stopGate] = secondHalf;
+    if (!stopGate) throw new Error("Chapter 1 has no second-half gate");
     const crossedWrappers: string[] = [];
     await crossGate(anchors.mapGates[0], crossedWrappers);
-    for (const gate of anchors.mapGates.slice(1)) {
+    for (const gate of firstHalf.slice(1)) {
+      await drainOrganicRoute(
+        (state) => isPendingMapGate(state, gate.wrapper),
+        `${gate.wrapper} pending city map`,
+      );
+      await crossGate(gate, crossedWrappers);
+    }
+    await drainOrganicRoute(
+      (state) =>
+        state.chapter.id === "chapter_1" &&
+        isPendingMapGate(state, stopGate.wrapper),
+      `chapter_1/${stopGate.wrapper} pending city map`,
+    );
+    expect(await enabledMapDestinationIds()).toEqual([stopGate.destination]);
+    expect(crossedWrappers).toEqual(firstHalf.map((gate) => gate.wrapper));
+  });
+
+  it("plays Chapter 1 from its second-half city-map gate into Chapter 2", async function () {
+    this.timeout(1_200_000);
+    await resetE2eStorage();
+    // Scene Select is production replay, unlocked by a story clear; seed it
+    // so the run can start at the second half's travel wrapper. Scene Select
+    // carries the skipped scenes' records, so the jump starts with what the
+    // first half collected.
+    await seedStoryCleared();
+    await ensureCaseFileViewport();
+    await startFromMenu();
+    const { secondHalf } = chapter1Halves();
+    const [startGate] = secondHalf;
+    if (!startGate) throw new Error("Chapter 1 has no second-half gate");
+    await jumpToProductionChapterScene("chapter_1", startGate.wrapper);
+    await resumeUnclearedFromSave(
+      (state) =>
+        state.chapter.id === "chapter_1" &&
+        isPendingMapGate(state, startGate.wrapper),
+      `chapter_1/${startGate.wrapper}`,
+      2,
+      "第一章地圖存檔",
+    );
+
+    const crossedWrappers: string[] = [];
+    await crossGate(startGate, crossedWrappers);
+    for (const gate of secondHalf.slice(1)) {
       await drainOrganicRoute(
         (state) => isPendingMapGate(state, gate.wrapper),
         `${gate.wrapper} pending city map`,
@@ -1024,9 +1114,9 @@ describe("fresh production journey", () => {
     }
 
     // Past the final gate (scene_11_2), the route drains out of Chapter 1
-    // into the authored Chapter 2 opening. Chapter 2 plays in its own tests
-    // below (the opening, then the gates onward): one organic run through
-    // both chapters no longer fits the per-test WDIO timeout (wdio.conf.ts).
+    // into the authored Chapter 2 opening, which leaves the uncleared
+    // profile uncleared. Chapter 2 plays in its own tests below (the
+    // opening, then the gates legs).
     await drainOrganicRoute(
       (state) => state.chapter.id === "chapter_2",
       "Chapter 2 opening",
@@ -1037,10 +1127,9 @@ describe("fresh production journey", () => {
     );
     expect(cleared).toBeNull();
 
-    // All nine gates, in order, no extras (spec §11 Draft-exit evidence).
-    expect(crossedWrappers).toEqual(
-      anchors.mapGates.map((gate) => gate.wrapper),
-    );
+    // With the first half, all nine gates, in order, no extras (spec §11
+    // Draft-exit evidence).
+    expect(crossedWrappers).toEqual(secondHalf.map((gate) => gate.wrapper));
   });
 
   it("plays the Chapter 2 opening from scene_0 to its first city-map gate", async function () {
@@ -1068,66 +1157,36 @@ describe("fresh production journey", () => {
     expect(await enabledMapDestinationIds()).toEqual([firstGate.destination]);
   });
 
-  it("plays Chapter 2 from its first city-map gate to the overpass gate", async function () {
-    this.timeout(1_200_000);
-    await resetE2eStorage();
-    // Scene Select is production replay, unlocked by a story clear; seed it
-    // so the run can start at Chapter 2's first travel wrapper.
-    await seedStoryCleared();
-    await ensureCaseFileViewport();
-    await startFromMenu();
-    const leg = chapter2GateLeg(0);
-    const [firstGate] = leg.gates;
-    if (!firstGate) throw new Error("Chapter 2 gates leg 0 is empty");
-    await jumpToProductionChapterScene(firstGate.chapter, firstGate.wrapper);
-
-    // Chapter 2's wrapper ids repeat Chapter 1's, so each stop also matches
-    // the chapter.
-    const crossedWrappers: string[] = [];
-    await crossGate(firstGate, crossedWrappers);
-    await crossLaterGates(leg, crossedWrappers);
-    await stopAtNextLeg(leg, crossedWrappers);
-  });
-
-  it("plays Chapter 2 from the overpass gate to the plaza-return gate", async function () {
-    this.timeout(1_200_000);
-    await resetE2eStorage();
-    // Scene Select carries the skipped scenes' records, so the jump starts
-    // this leg with what the first leg collected.
-    await seedStoryCleared();
-    await ensureCaseFileViewport();
-    await startFromMenu();
-    const leg = chapter2GateLeg(1);
+  // One test per Chapter 2 gates leg before the last
+  // (anchors.chapter2LegStartWrappers); the last leg's test below also proves
+  // the in-progress ending. Scene Select carries the skipped scenes' records,
+  // so each jump starts its leg with what the earlier legs collected.
+  for (const [index, leg] of chapter2GateLegs().slice(0, -1).entries()) {
     const [startGate] = leg.gates;
-    if (!startGate) throw new Error("Chapter 2 gates leg 1 is empty");
-    await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
+    const { stopGate } = leg;
+    if (!startGate || !stopGate) {
+      throw new Error(`Chapter 2 gates leg ${index} has no start or stop gate`);
+    }
+    it(`plays Chapter 2 from ${startGate.wrapper} to ${stopGate.wrapper}`, async function () {
+      this.timeout(1_200_000);
+      await resetE2eStorage();
+      // Scene Select is production replay, unlocked by a story clear; seed it
+      // so the run can start at this leg's travel wrapper.
+      await seedStoryCleared();
+      await ensureCaseFileViewport();
+      await startFromMenu();
+      await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
 
-    const crossedWrappers: string[] = [];
-    await crossGate(startGate, crossedWrappers);
-    await crossLaterGates(leg, crossedWrappers);
-    await stopAtNextLeg(leg, crossedWrappers);
-  });
+      // Chapter 2's wrapper ids repeat Chapter 1's, so each stop also matches
+      // the chapter.
+      const crossedWrappers: string[] = [];
+      await crossGate(startGate, crossedWrappers);
+      await crossLaterGates(leg, crossedWrappers);
+      await stopAtNextLeg(leg, crossedWrappers);
+    });
+  }
 
-  it("plays Chapter 2 from the plaza-return gate to the service-route gate", async function () {
-    this.timeout(1_200_000);
-    await resetE2eStorage();
-    // Scene Select carries the skipped scenes' records, so the jump starts
-    // this leg with what the earlier legs collected.
-    await seedStoryCleared();
-    await ensureCaseFileViewport();
-    await startFromMenu();
-    const leg = chapter2GateLeg(2);
-    const [startGate] = leg.gates;
-    if (!startGate) throw new Error("Chapter 2 gates leg 2 is empty");
-    await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
-
-    const crossedWrappers: string[] = [];
-    await crossGate(startGate, crossedWrappers);
-    await crossLaterGates(leg, crossedWrappers);
-    await stopAtNextLeg(leg, crossedWrappers);
-  });
-
-  it("plays Chapter 2 from the service-route gate to the in-progress end card", async function () {
+  it("plays Chapter 2 from its last gates leg to the in-progress end card", async function () {
     this.timeout(1_200_000);
     await resetE2eStorage();
     // Scene Select is production replay, unlocked by a story clear; seed it
@@ -1141,28 +1200,16 @@ describe("fresh production journey", () => {
     if (!leg || !startGate) throw new Error("Chapter 2 has no last gates leg");
     await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
 
-    // The seed is only a way in. To prove the in-progress ending leaves a
-    // fresh profile uncleared, save the pending map, forget the seeded clear,
-    // and resume from the save with replay locked again.
-    const atStartGate = (state: GameStateView) =>
-      state.chapter.id === startGate.chapter &&
-      isPendingMapGate(state, startGate.wrapper);
-    await waitForPackagedGameState(
-      atStartGate,
-      30000,
-      `${startGate.chapter}/${startGate.wrapper} did not park on its pending city map`,
+    // To prove the in-progress ending leaves a fresh profile uncleared, play
+    // this leg from a save with the seeded clear forgotten.
+    await resumeUnclearedFromSave(
+      (state) =>
+        state.chapter.id === startGate.chapter &&
+        isPendingMapGate(state, startGate.wrapper),
+      `${startGate.chapter}/${startGate.wrapper}`,
+      1,
+      "第二章地圖存檔",
     );
-    await saveManualSlot(1, "第二章地圖存檔");
-    await closePersistenceBrowserToGameplay();
-    await returnToTitle();
-    await forgetStoryCleared();
-    await loadTitleSlot("manual", 1);
-    await waitForPackagedGameState(
-      atStartGate,
-      30000,
-      `manual load did not restore ${startGate.chapter}/${startGate.wrapper}'s pending city map`,
-    );
-    expect(await gameMenuOffersSceneSelect()).toBe(false);
 
     const crossedWrappers: string[] = [];
     await crossGate(startGate, crossedWrappers);
