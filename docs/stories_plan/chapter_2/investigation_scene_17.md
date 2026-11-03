@@ -11,7 +11,7 @@
 
 **旁白**：案發第四日，傍晚六點。
 
-[雨從下午起就小了，到傍晚又密起來。相馬收起傘，甩了甩，抬頭看那棟樓。]
+[細雨一直沒停，到傍晚才轉成小雨。相馬收起傘，甩了甩，抬頭看那棟樓。]
 
 **早坂茜**：五樓。電梯只有一台，門口的名牌也只有一排。
 
@@ -188,7 +188,7 @@
 
 **早坂茜**：辯方想整理那一晚控制室的情況。活動方有沒有留下通訊紀錄？
 
-**蓮見透**：有。活動方整理了一份，給我寫聯名聲明用。
+**蓮見透**：有。活動方整理了一份，給我對外說明用。
 
 [蓮見從桌上拿起一疊影印紙，對齊邊角，雙手遞給相馬。]
 
@@ -517,7 +517,7 @@
 ### evidence:sr2307_submission_record {#sr2307_submission_record}
 - **Name:** SR-2307 的送出紀錄
 - **Description:** 贊助商回覆警方的書面資料（黑瀨提供副本）：SR-2307 在案發前一日 21:12，從贊助商系統的「經紀窗口」帳號送出；這個帳號登記在蓮見透名下。系統生成的十五分鐘通行碼，照規定只發到送出帳號登記的手機。這次活動能送維修申請的帳號，只有贊助商宣傳部、活動製作、設備商與經紀窗口。
-- **Details:** 回函只寫帳號與登記人，沒有寫用的是哪一部裝置，也沒有寫碼後來被誰用過。四個帳號裡沒有任何直播主個人的帳號。設備商的書面說明另寫明：當晚沒有派人，也沒有申請校準。
+- **Details:** 回函只寫帳號與登記人，沒有寫用的是哪一部裝置，也沒有寫碼後來被誰用過。四個帳號裡沒有任何直播主個人的帳號。設備商的書面說明另寫明：00:00～00:15 沒有派人，也沒有申請校準。
 - **Source Sublocation:** agency_entrance
 - **Image Prompt:** Official reply letter icon with a small rubber stamp mark at the lower corner and a short list of four boxed entries, one entry highlighted, unreadable text, isolated evidence icon, no readable text.
 - **Source Kind:** digital
