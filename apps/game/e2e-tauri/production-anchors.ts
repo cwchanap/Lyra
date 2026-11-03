@@ -197,6 +197,18 @@ export const anchors = {
       destination: "shibuya_glass_box_plaza",
       next: "investigation_scene_14",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_08",
+      destination: "mashiro_studio",
+      next: "investigation_scene_16",
+    },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_09",
+      destination: "hasumi_agency_office",
+      next: "investigation_scene_17",
+    },
   ],
   // Every authored 推理 prompt on the production route, matched by its
   // question. The drain checks the chapter, scene and visible options against
@@ -227,16 +239,50 @@ export const anchors = {
       ],
       answer: "讓人從後場通道走進大樓的服務核心",
     },
+    {
+      chapter: "chapter_2",
+      scene: "investigation_scene_16",
+      question:
+        "網路上說，這是火災當晚唯一的逃生影像。完整頁最下面那三行小字，說的其實是什麼？",
+      options: [
+        "火災當晚，研究所監視器拍下的原始畫面",
+        "火災後，依證詞與平面圖製作的官方重演",
+        "網友把幾段新聞畫面剪在一起的合成影片",
+      ],
+      answer: "火災後，依證詞與平面圖製作的官方重演",
+    },
+    {
+      chapter: "chapter_2",
+      scene: "investigation_scene_16",
+      question:
+        "蓮見確實想取消青葉企劃。對照雲端和行程表，這件事最可能說明什麼？",
+      options: [
+        "有人要他讓青葉的事不被提起",
+        "他取消的不只青葉；凡是不經過他的題目、行程和發言，他都想取消",
+        "真白查到了青葉的祕密，他非阻止不可",
+      ],
+      answer: "他取消的不只青葉；凡是不經過他的題目、行程和發言，他都想取消",
+    },
+    {
+      chapter: "chapter_2",
+      scene: "investigation_scene_17",
+      question:
+        "系統只把通行碼發到送出申請的帳號。那一晚打開 M-03 的那組碼，最可能是從誰手上出去的？",
+      options: ["設備商的技術員", "活動製作的人", "送出申請的經紀窗口——蓮見"],
+      answer: "送出申請的經紀窗口——蓮見",
+    },
   ],
-  // The Chapter 2 gates route plays in four tests so each stays under the
+  // The Chapter 2 gates route plays in five tests so each stays under the
   // per-test WDIO timeout (wdio.conf.ts). Each wrapper here starts a leg: the
   // leg before it stops when that gate's city map is pending, and its own
   // test starts there. With three legs, the third reached 14 of the 20
-  // minutes partway through Beat 9A's investigation on a slow container.
+  // minutes partway through Beat 9A's investigation on a slow container; the
+  // Beat 9A leg alone took 12 minutes, so Beat 9B starts its own leg.
   chapter2LegStartWrappers: [
     "investigation_scene_map_04",
     "investigation_scene_map_06",
     "investigation_scene_map_07",
+    "investigation_scene_map_08",
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
