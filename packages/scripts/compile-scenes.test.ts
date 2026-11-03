@@ -3430,6 +3430,127 @@ describe("compile (tracked production corpus compatibility)", () => {
             sourceLabel: "商業大樓清潔員口述",
           },
         ],
+        [
+          "evidence:backup_account_scheduled_statement",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "真白留言用的舊手機（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:mashiro_cloud_activity",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "真白留言用的舊手機（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:mashiro_revenue_table",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:accountant_engagement",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
+          },
+        ],
+        [
+          "evidence:aoba_viral_screenshot",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            completeness: "cropped",
+            sourceLabel: "真白工作室的企劃板",
+          },
+        ],
+        [
+          "evidence:aoba_official_database_page",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            completeness: "complete",
+            sourceLabel: "真白工作室的企劃板",
+          },
+        ],
+        [
+          "evidence:hasumi_schedule_cancellations",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "真白工作室牆上的行程表列印",
+          },
+        ],
+        [
+          "evidence:mashiro_exit_message",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            completeness: "partial",
+            sourceLabel: "警方抽出的真白手機對話紀錄（黑瀨提供一頁）",
+          },
+        ],
+        [
+          "evidence:process_channel_roster",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "physical",
+            proceduralStatus: "lead",
+            sourceLabel: "活動製作手冊（蓮見出借，辯方拍照）",
+          },
+        ],
+        [
+          "evidence:incident_comms_log",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "活動方整理的事故通訊紀錄影本（蓮見提供）",
+          },
+        ],
+        [
+          "statement:hasumi_after_project_account",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "testimony",
+            proceduralStatus: "lead",
+            confidence: "unverified",
+            sourceLabel: "蓮見透的口述",
+          },
+        ],
+        [
+          "evidence:sr2307_submission_record",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "贊助商回覆警方的書面資料（黑瀨提供副本）",
+          },
+        ],
+        [
+          "evidence:saegusa_access_check",
+          {
+            ...NEUTRAL_CASE_RECORD_PROVENANCE,
+            sourceKind: "digital",
+            proceduralStatus: "lead",
+            sourceLabel: "警方向活動方、贊助商與大樓的查核結果（黑瀨提供）",
+          },
+        ],
       ]);
       for (const record of [...sceneRecords, ...catalogRecords]) {
         const key = `${record.kind}:${record.id}`;
