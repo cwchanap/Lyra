@@ -219,7 +219,7 @@ export const anchors = {
       chapter: "chapter_2",
       scene: "investigation_scene_14",
       question:
-        "申請寫的是投影設備校準，設備商卻沒有派人。這十五分鐘的通行碼，那一晚實際上被拿來做什麼？",
+        "申請寫的是投影設備校準，設備商卻沒有派人。這十五分鐘的通行碼，那一晚最可能被拿來做什麼？",
       options: [
         "讓設備商校準投影機",
         "讓設備商的人進大樓取器材",
