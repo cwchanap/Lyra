@@ -65,7 +65,7 @@
 
 ## Sub-location: 玄關與小廚房 {#studio_entry}
 - **Status:** unlocked
-- **Background Prompt:** Investigation view inside the narrow entrance hallway and tiny kitchen of an old Tokyo apartment on a rainy afternoon, eye-level medium-wide shot from just inside the front door looking down the short hallway, used as the first space of the studio where the owner's daily life is read; focal area on the umbrella stand by the door at the right foreground holding exactly one pale blue transparent vinyl umbrella standing alone, and on the low shoe cabinet beside it carrying an open cardboard box of bundled paper envelopes; stable anchors of a worn wooden floor with a single pair of neat flat shoes on the entrance step, a narrow kitchen counter at the far end of the hallway with one ceramic mug, a tidy row of small throat-lozenge packets and a compact kettle, a small refrigerator beside it with one small paper note stuck to its door, the note's writing unreadable, and a doorway to a brighter living room with gray rainy light at the far left; soft dim interior light with a gray window glow, no people, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **Background Prompt:** Investigation view inside the narrow entrance hallway and tiny kitchen of an old Tokyo apartment on a rainy afternoon, eye-level medium-wide shot from just inside the front door looking down the short hallway, used as the first space of the studio where the owner's daily life is read; focal area on the umbrella stand by the door at the right foreground holding exactly one pale blue transparent vinyl umbrella standing alone, and on the low shoe cabinet beside it carrying an open cardboard box of bundled paper envelopes; stable anchors of a worn wooden floor with a single pair of neat flat shoes on the entrance step, a narrow kitchen counter at the far end of the hallway with one mug upside down on a small dish rack, a tidy row of small throat-lozenge packets and a compact kettle, a small refrigerator beside it with one small paper note stuck to its door, the note's writing unreadable, and a doorway to a brighter living room with gray rainy light at the far left; soft dim interior light with a gray window glow, no people, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_detective_office_rain
 
@@ -185,7 +185,7 @@
 **早坂茜**：鏡頭外面的房間，原來這麼小。
 
 ### Hotspot: 直播桌 {#stream_desk}
-- **Description:** 直播桌上有環形燈、兩台關著的螢幕和麥克風臂；椅背上掛著一件淺紫色的針織外套。
+- **Description:** 直播桌上有環形燈、兩台關著的螢幕和麥克風臂；椅背上掛著一件米白色的針織外套。
 
 [環形燈沒有開，燈圈在灰色的天光裡像一個空的圓。兩台螢幕都是黑的，只剩麥克風臂還對著椅子的方向。]
 
@@ -789,7 +789,7 @@
 ## Outro
 
 [場景：真白工作室的玄關，案發第四日傍晚四點四十分，細雨。窗外的天色比剛來時暗了一階，玄關的燈被黑瀨打開，照出鞋櫃和窄窄的走道。]
-- **Background Prompt:** Closing view at about 4:40 p.m. from the living-room end of the narrow entrance hallway of an old Tokyo apartment looking back toward the front door, eye-level medium shot, used as the exit beat before the defense team leaves the studio; focal area on the front door at the end of the hallway with the entrance light switched on above it, and the low shoe cabinet beside it carrying a cardboard box of bundled envelopes; stable anchors of the umbrella stand beside the door holding exactly one pale blue transparent vinyl umbrella, a pair of neat flat shoes on the entrance step, the small kitchen counter with a mug on the right and a faint gray window glow behind the viewer; warm yellow entrance light against cool dusky window light, no people, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **Background Prompt:** Closing view at about 4:40 p.m. from the living-room end of the narrow entrance hallway of an old Tokyo apartment looking back toward the front door, eye-level medium shot, used as the exit beat before the defense team leaves the studio; focal area on the front door at the end of the hallway with the entrance light switched on above it, and the low shoe cabinet beside it carrying a cardboard box of bundled envelopes; stable anchors of a pair of neat flat shoes on the entrance step, the small kitchen counter with a mug on the right and a faint gray window glow behind the viewer; warm yellow entrance light against cool dusky window light, no people, umbrella stand out of frame, no blue umbrellas, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_detective_office_rain
 
