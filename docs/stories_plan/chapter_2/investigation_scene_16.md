@@ -33,6 +33,10 @@
 
 **相馬律**：所以才來她房間。
 
+**早坂茜**：黑瀨先生說三點，在她家門口等。
+
+**相馬律**：三點了。
+
 **早坂茜**：期限是明天上午十一點。現在，還剩二十個小時。
 
 [走廊盡頭，黑瀨從那扇鐵門前轉過身。大衣肩頭是濕的，手裡捏著一把舊鑰匙。]
@@ -146,7 +150,7 @@
 
 **早坂茜**：要連著說二十四小時的話，嗓子就是飯碗。
 
-**早坂茜**：開播那天，她手上捧的是蜂蜜檸檬，熱的。
+**早坂茜**：開播那天，她手上捧的是蜂蜜檸檬，溫的。
 
 **相馬律**：妳記得。
 
@@ -164,7 +168,7 @@
 
 ## Sub-location: 直播間 {#studio_room}
 - **Status:** unlocked
-- **Background Prompt:** Investigation view of a small apartment living room converted into a livestream room on a rainy afternoon, eye-level medium-wide shot from the doorway looking across the room, used as the main space where the owner's work and private records are read; focal area on a streaming desk at the center with a ring light on a stand, two dark switched-off monitors and a microphone boom arm, an old smartphone sitting in a small phone stand beside the monitors with a charging cable running to the wall, its screen faintly lit, and a lavender knit cardigan draped over the back of the desk chair; stable anchors of a shallow desk drawer under the desk top with a stack of small sample boxes on the desk beside it, a large cork board on the wall at the right with several pinned paper printouts overlapping near its center and one small handwritten index card at its top edge, all writing unreadable, a monthly schedule printout pinned to the wall right beside the desk, a window at the far end with fine rain and soft blurred city lights beyond and two small potted plants on the sill; Kurose baked in at the left-center between the doorway and the desk: Japanese police detective nearly fifty, broad sturdy build, weathered face with deep eye-corner wrinkles, rumpled brown-gray field coat as if slept in a car, muddy worn dark dress shoes, large steady hands holding a small notebook and a ballpoint pen, blunt planted stance, perspective-correct scale, not covering the phone stand, the drawer, the cork board, the schedule printout or the window. Soft gray window light mixed with a warm dim lamp, no other people, no blue umbrellas, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
+- **Background Prompt:** Investigation view of a small apartment living room converted into a livestream room on a rainy afternoon, eye-level medium-wide shot from the doorway looking across the room, used as the main space where the owner's work and private records are read; focal area on a streaming desk at the center with a ring light on a stand, two dark switched-off monitors and a microphone boom arm, an old smartphone sitting in a small phone stand beside the monitors with a charging cable running to the wall, its screen faintly lit, and an oatmeal-beige knit cardigan draped over the back of the desk chair; stable anchors of a shallow desk drawer under the desk top with a stack of small sample boxes on the desk beside it, a large cork board on the wall at the right with several pinned paper printouts overlapping near its center and one small handwritten index card at its top edge, all writing unreadable, a monthly schedule printout pinned to the wall right beside the desk, a window at the far end with fine rain and soft blurred city lights beyond and two small potted plants on the sill; Kurose baked in at the left-center between the doorway and the desk: Japanese police detective nearly fifty, broad sturdy build, weathered face with deep eye-corner wrinkles, rumpled brown-gray field coat as if slept in a car, muddy worn dark dress shoes, large steady hands holding a small notebook and a ballpoint pen, blunt planted stance, perspective-correct scale, not covering the phone stand, the drawer, the cork board, the schedule printout or the window. Soft gray window light mixed with a warm dim lamp, no other people, no blue umbrellas, lower third kept as plain wooden floor for dialogue UI, no readable text, no UI overlay, neo-noir visual novel background.
 - **BGM:** bgm_glass_box_aftermath
 - **BGS:** bgs_detective_office_rain
 
@@ -185,7 +189,7 @@
 
 [環形燈沒有開，燈圈在灰色的天光裡像一個空的圓。兩台螢幕都是黑的，只剩麥克風臂還對著椅子的方向。]
 
-[椅背上掛著一件淺紫色的針織外套，袖口起了一點毛球。]
+[椅背上掛著一件米白色的針織外套，袖口起了一點毛球。]
 
 **早坂茜**：兩台螢幕。
 
@@ -666,8 +670,6 @@
 **相馬律**：成員，兩個人。真白，和蓮見。
 
 **早坂茜**：「青葉企劃」，最後一次開啟，案發前一天下午。從平板。
-
-**相馬律**：那個下午，玻璃箱靜音休息的時候，她把平板收了起來。
 
 **早坂茜**：「行程」和「贊助」，幾乎每天都有蓮見的名字。
 
