@@ -99,6 +99,8 @@ describe("InvestigationSceneSurface", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     resetEscapeCoordinator();
+    window.innerWidth = 1024;
+    window.innerHeight = 768;
   });
 
   it("renders placed hotspots with normalized style variables", () => {
@@ -747,7 +749,9 @@ describe("InvestigationSceneSurface", () => {
           label: "防火門",
           description: "",
           inspected: false,
-          layout: { kind: "rect", x: 0.02, y: 0.3, w: 0.08, h: 0.02 },
+          // x must keep the target reachable in jsdom's 1024×768 viewport
+          // (the cover plane crops normalized x below 0.125 there).
+          layout: { kind: "rect", x: 0.15, y: 0.3, w: 0.08, h: 0.02 },
         },
         {
           id: "puddle",
@@ -1057,6 +1061,81 @@ describe("InvestigationSceneSurface", () => {
     expect(screen.getByText("站在門外看熱鬧。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /目撃/ })).toBeInTheDocument();
     expect(screen.getByText("已詢問")).toBeInTheDocument();
+  });
+
+  it("routes placed targets the cover plane crops away into fallback controls", async () => {
+    // At 800×720 the 1280px cover plane only shows normalized x through
+    // 0.8125: the ledger rect is fully offscreen and the off-plane witness
+    // too, so both must stay reachable through the fallback panel.
+    window.innerWidth = 800;
+    window.innerHeight = 720;
+    const clippedView: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        ...sublocation.hotspots,
+        {
+          id: "ledger",
+          label: "帳本",
+          description: "手寫帳本。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+        },
+      ],
+      characters: [
+        ...sublocation.characters,
+        {
+          id: "far_witness",
+          name: "對面店主",
+          role: "鄰店",
+          bio: "隔著櫃台看。",
+          acceptsPresent: false,
+          topics: [
+            {
+              id: "greet",
+              label: "打招呼",
+              discussed: false,
+              requiresPresent: false,
+            },
+          ],
+          layout: {
+            kind: "sprite",
+            assetId: "portrait.far_witness.standard",
+            x: 0.9,
+            y: 0.1,
+            w: 0.08,
+            h: 0.8,
+            anchor: "bottomCenter",
+          },
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    const onInspect = vi.fn();
+
+    render(InvestigationSceneSurface, {
+      sublocation: clippedView,
+      onInspect,
+      onInterview: vi.fn(),
+    });
+
+    expect(
+      screen.queryByRole("button", { name: /調查：帳本/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /詢問：對面店主/ }),
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /畫面外：帳本/ }));
+    expect(onInspect).toHaveBeenCalledWith("ledger");
+    // Reachable targets stay on the plane.
+    expect(
+      screen.getByRole("button", { name: /調查：桌面/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /詢問：目擊者/ }),
+    ).toBeInTheDocument();
+    // The clipped witness renders through the witness fallback block.
+    expect(screen.getByText("對面店主")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /打招呼/ })).toBeInTheDocument();
   });
 
   it("toggles active character off when clicking the same character twice", async () => {
