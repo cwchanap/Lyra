@@ -25,7 +25,10 @@
   } from "../state/types";
   import { claimEscape } from "$lib/state/escape-coordinator";
   import { undiscussedTopicCount } from "$lib/investigation/progress";
-  import { targetLayoutStyle } from "$lib/investigation/target-layout";
+  import {
+    isTargetReachable,
+    targetLayoutStyle,
+  } from "$lib/investigation/target-layout";
 
   let {
     sublocation,
@@ -109,6 +112,49 @@
   );
   let unplacedCharacters = $derived(
     sublocation.characters.filter((character) => character.layout === null),
+  );
+
+  // The cover plane overhangs every non-16:9 viewport (133px each side at
+  // 800×600, more as the window grows taller), so a placed target can end up
+  // fully offscreen — or leave only an undiscoverable sliver — with no other
+  // way to reach it. Targets whose hit box shows less than
+  // MIN_VISIBLE_SPAN_PX on either axis are rerouted to the fallback panel so
+  // required evidence never soft-locks on window shape.
+  let viewportW = $state(800);
+  let viewportH = $state(600);
+  let viewport = $derived({ w: viewportW, h: viewportH });
+  let reachableHotspots = $derived(
+    placedHotspots.filter((hotspot) =>
+      isTargetReachable(
+        hotspot.layout,
+        viewport,
+        MIN_TARGET_PX.w,
+        MIN_TARGET_PX.h,
+      ),
+    ),
+  );
+  let clippedHotspots = $derived(
+    placedHotspots.filter(
+      (hotspot) =>
+        !isTargetReachable(
+          hotspot.layout,
+          viewport,
+          MIN_TARGET_PX.w,
+          MIN_TARGET_PX.h,
+        ),
+    ),
+  );
+  let reachableCharacters = $derived(
+    placedCharacters.filter((character) =>
+      isTargetReachable(character.layout, viewport),
+    ),
+  );
+  let clippedCharacters = $derived(
+    placedCharacters.filter(
+      (character) =>
+        character.id !== activeCharacterId &&
+        !isTargetReachable(character.layout, viewport),
+    ),
   );
   // .hotspot-target clamps each button to a 72×44px minimum target, which
   // drags a small painted rect over its neighbours and steals their clicks
@@ -446,6 +492,8 @@
   }
 </script>
 
+<svelte:window bind:innerWidth={viewportW} bind:innerHeight={viewportH} />
+
 <section class="surface-shell" aria-label={`${sublocation.label}調查場景`}>
   <CrossfadeImage
     src={background?.url ?? null}
@@ -464,7 +512,7 @@
     </div>
 
     <div class="scene-coordinate-plane">
-      {#each placedHotspots as hotspot (hotspot.id)}
+      {#each reachableHotspots as hotspot (hotspot.id)}
         <button
           class="hotspot-target"
           class:inspected={hotspot.inspected}
@@ -491,7 +539,7 @@
         </button>
       {/each}
 
-      {#each placedCharacters as character (character.id)}
+      {#each reachableCharacters as character (character.id)}
         <button
           class="character-target"
           type="button"
@@ -619,7 +667,52 @@
     />
   {/if}
 
-  {#if unplacedHotspots.length > 0 || unplacedCharacters.length > 0}
+  {#snippet fallbackHotspotButton(hotspot: HotspotView, offscreen: boolean)}
+    <button
+      class="fallback-button"
+      class:done={hotspot.inspected}
+      type="button"
+      aria-label={offscreen
+        ? `畫面外：${hotspot.label}`
+        : `未放置：${hotspot.label}`}
+      {disabled}
+      onclick={() => onInspect(hotspot.id)}
+    >
+      <span>{hotspot.label}</span>
+      <small>{hotspot.description}</small>
+    </button>
+  {/snippet}
+
+  {#snippet fallbackWitness(character: CharacterView)}
+    <div class="fallback-witness">
+      <div class="witness-copy">
+        <strong>{character.name}</strong>
+        <small>{character.role}</small>
+        <p>{character.bio}</p>
+      </div>
+      <div class="fallback-topics">
+        {#each listedTopics(character) as topic (topic.id)}
+          <button
+            class:done={topic.discussed}
+            type="button"
+            {disabled}
+            onclick={() => onInterview(character.id, topic.id)}
+          >
+            <span>{topic.label}</span>
+            {#if topic.discussed}
+              <small>已詢問</small>
+            {/if}
+          </button>
+        {/each}
+        {#if character.acceptsPresent}
+          {@render presentButton(character)}
+        {/if}
+        {@render presentReply(character)}
+      </div>
+    </div>
+  {/snippet}
+
+  {#if unplacedHotspots.length > 0 || unplacedCharacters.length > 0 || clippedHotspots.length > 0 || clippedCharacters.length > 0}
     <div class="fallback-controls">
       {#if unplacedHotspots.length > 0}
         <section class="fallback-section" aria-label="未放置線索">
@@ -628,17 +721,20 @@
           </header>
           <div class="fallback-list">
             {#each unplacedHotspots as hotspot (hotspot.id)}
-              <button
-                class="fallback-button"
-                class:done={hotspot.inspected}
-                type="button"
-                aria-label={`未放置：${hotspot.label}`}
-                {disabled}
-                onclick={() => onInspect(hotspot.id)}
-              >
-                <span>{hotspot.label}</span>
-                <small>{hotspot.description}</small>
-              </button>
+              {@render fallbackHotspotButton(hotspot, false)}
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if clippedHotspots.length > 0}
+        <section class="fallback-section" aria-label="畫面外線索">
+          <header>
+            <span class="eyebrow">OFFSCREEN HOTSPOTS</span>
+          </header>
+          <div class="fallback-list">
+            {#each clippedHotspots as hotspot (hotspot.id)}
+              {@render fallbackHotspotButton(hotspot, true)}
             {/each}
           </div>
         </section>
@@ -651,32 +747,20 @@
           </header>
           <div class="fallback-list">
             {#each unplacedCharacters as character (character.id)}
-              <div class="fallback-witness">
-                <div class="witness-copy">
-                  <strong>{character.name}</strong>
-                  <small>{character.role}</small>
-                  <p>{character.bio}</p>
-                </div>
-                <div class="fallback-topics">
-                  {#each listedTopics(character) as topic (topic.id)}
-                    <button
-                      class:done={topic.discussed}
-                      type="button"
-                      {disabled}
-                      onclick={() => onInterview(character.id, topic.id)}
-                    >
-                      <span>{topic.label}</span>
-                      {#if topic.discussed}
-                        <small>已詢問</small>
-                      {/if}
-                    </button>
-                  {/each}
-                  {#if character.acceptsPresent}
-                    {@render presentButton(character)}
-                  {/if}
-                  {@render presentReply(character)}
-                </div>
-              </div>
+              {@render fallbackWitness(character)}
+            {/each}
+          </div>
+        </section>
+      {/if}
+
+      {#if clippedCharacters.length > 0}
+        <section class="fallback-section" aria-label="畫面外證人">
+          <header>
+            <span class="eyebrow">OFFSCREEN WITNESSES</span>
+          </header>
+          <div class="fallback-list">
+            {#each clippedCharacters as character (character.id)}
+              {@render fallbackWitness(character)}
             {/each}
           </div>
         </section>
