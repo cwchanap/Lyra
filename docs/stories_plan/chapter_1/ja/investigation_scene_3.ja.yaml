@@ -225,14 +225,14 @@ lines:
       clip: ch1_hayasaka_akane_0030
   - id: L034
     speaker: 相馬律
-    zh: 她簽退的時間，比收銀關帳早了一點。
+    zh: 她簽退的時間，比關帳早了一點。
     ja: 退勤の時刻が、レジ締めより少し早い。
     voice:
       clip: ch1_soma_ritsu_0074
   - id: L035
     speaker: 早坂茜
-    zh: 差幾分鐘。趕末班車的人，簽退本來就會早一點。
-    ja: 数分の差。終電を急ぐ人は、退勤が少し早くなるものだ。
+    zh: 差幾分鐘。這時間下班的，多半在趕末班車。
+    ja: 数分の差。この時間に上がる人は、たいてい終電を急いでいる。
     voice:
       clip: ch1_hayasaka_akane_0031
   - id: L036
