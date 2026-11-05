@@ -4,7 +4,7 @@
 >
 > **單一 PR 政策：** 本次既有 Draft PR 先存規格與計劃；所有功能實作、驗收與最終結論加在同一 PR。以下 Task 是 PR 內的工作段，不新開 tickets 或第二個 PR。建議每段完成後各自 commit。
 >
-> **基線：** `main` @ `c713de3b2943f3dc6edbdc5e0d53ba09dfe3cf2c`；bun@1.3.1。Review：[2026-11-04 design review](https://github.com/cwchanap/Lyra/pull/122#issuecomment-6647158070)。本 PR 原始 issue playtest 1180×812（舊 commit `8e31c4b`），未進行新的手動操作驗證。
+> **基線：** `main` @ `c713de3b2943f3dc6edbdc5e0d53ba09dfe3cf2c`；bun@1.3.1。Review：[首輪 design review](https://github.com/cwchanap/Lyra/pull/122#issuecomment-6647158070)、[最新 Design & Plan Review](https://github.com/cwchanap/Lyra/pull/122#pullrequestreview-5779388872)。本 PR 原始 issue playtest 1180×812（舊 commit `8e31c4b`），未進行新的手動操作驗證。
 
 ## 工作順序（保持小改動）
 
@@ -24,16 +24,21 @@
 - `docs/stories_plan/chapter_1/scene_5.md`：相馬薄弱人品論證前加入**一句**正式核准片段未到手／本輪主張受限的程序提示，保留神谷的反駁及「摘要先贏」。
 - `docs/stories_plan/chapter_1/investigation_scene_map_08.md`：**只改 Summary**：「返回雨鐘咖啡館，迎接結案後的日常。」→「暫緩起訴後，回到雨鐘咖啡館。」不要改真正遊戲終章 `GameComplete`。
 
-**有界重複句裁切（事先列 ID，不開放掃全章重寫）：**
+**有界重複句裁切（以實際播放佇列為準）：**
 
-| 檔案 | 只處理以下 ID | 理由與保留 |
+`apps/game/src-tauri/src/game/mod.rs` 的 `inspect_hotspot` 先送 `inspect_dialogue`，再由 `reveals::apply_reveals_and_build_queue` 串入每一筆 evidence 的 `On Collect`；第一次點擊後是**同一條連續對話**，不能只刪 `On Collect` 的第一句而留下一句重述或同角色連續插話。編譯器仍要求每個 evidence 有 `#### On Collect` 段落。
+
+| 位置 | 鎖定修改 | 為甚麼 |
 | --- | --- | --- |
-| `investigation_scene_7.md` | `L049` | 剛由黑瀨 `L048` 說明時間範圍，接著相馬又覆述；保留 `L050` 對 22:58 的限制說明 |
-| `investigation_scene_9.md` | `L085` | 重念與 hotspot `L045` 相同的「22:50 雨鐘／校驗值／K」；保留 `L086` 的有界結論 |
-| `investigation_scene_9.md` | `L087` | 重述 hotspot `L050` 的未送出草稿資訊；保留 `L088` 提醒僅草稿仍不能證明資料流向 |
-| `investigation_scene_9.md` | `L090` | 重述 `L053–L054` 的異常存取及外部載體；保留 `L091` 的買家尚未證明界線 |
+| `investigation_scene_7.md` | **保留 `L049`** | 「範圍。不是某一分鐘」是相馬讓玩家確認規則的短提問；刪除反而令黑瀨 `L048→L050` 連續發話，並不改善對話節奏 |
+| `investigation_scene_9.md` 備忘 inspect | 保留 `L045–L048`，**刪 `L049`** | 保留備忘原文、22:50/22:52 的區別和相馬的初步理解；「光靠備忘不能定北見」由取得回覆完成 |
+| `investigation_scene_9.md` `masuda_unsent_memo` On Collect | **刪 `L085`**（重述備忘原文）；**改寫 `L086`** 為「要把 K 對到人，還得核對工單與那組憑證。」 | inspect 已由相馬講過原文，之後接早坂提出下一步核對，沒有相同警告連講兩次 |
+| `investigation_scene_9.md` 草稿 inspect | **保留 `L050–L057`** | 保留未送出草稿的程序限制、附件存取事實、買家未明和北見在場反應；不讓重要玩家信息消失 |
+| `investigation_scene_9.md` `masuda_whistleblower_draft` On Collect | **同時刪 `L087` / `L088`**；保留 USB 裝袋動作與 `L089` | 草稿及其限制已在 inspect 說過；只留下黑瀨對 USB 的新證物鏈行動。不可留單句 `L088` 造成重覆早坂說法 |
+| `investigation_scene_9.md` `kitami_data_theft_record` On Collect | **刪 `L090`**；把 `L091` 改為「這些存取紀錄能說明他為何怕被查；是否動手，還得看現場證據。」 | 首次 inspect 已講異常存取、外部傳輸及買家未明；此處只追加「動機≠動手」的合法推理界線 |
+| `interrogation_scene_10.md` `L067` | `- **Challenge:**` **保留**，只將文案縮成「把本機順序和摘要的時間排在一起看。」 | `Challenge` 是正確證物下的對質反應，不應作為重複敘述直接刪掉；把完整的時間論證留給 `On Correct L068` |
 
-如某行刪除會破壞 `On Collect` 節奏或編譯契約，只調整同一段相鄰台詞並記錄，**不擴大**到其他未列 ID。保留事件事實、證物取得、源頭與法律程序。
+**完成前連起來讀**兩條 hotspot 的 inspect、取得草稿/附件的 On Collect、下一次 reexamine 與最後 scene outro；每筆 `On Collect` 都留下有效內容，不讓短句裁切斷掉證物取得。只修改以上明列 ID，不展開全章台詞重寫。原 review 提到 `L057` 的示例台詞與目前 main 原文不同；以實際原文「他連結尾都還沒寫完，就說要送出去。」及其前後次序為準。
 
 **本地化：**
 - 按工具契約檢查 `docs/stories_plan/chapter_1/ja/*.ja.yaml` 的變更行及刪除行。使用 `bun run voice:sync chapter_1`（維持 line IDs、既有 clip IDs；因文字更新可能產生 stale locale entries）及 `bun run voice:validate chapter_1`，人工校對日文文字。
@@ -49,19 +54,25 @@
 
 ## Task 2 — A3 地圖盒模型及 B 文字／進度語義
 
-**修改：**
-- `apps/game/src/lib/components/InvestigationMapView.svelte`：`.city-map` 設 **`box-sizing: border-box`**。原 `width: 100%` + `padding-inline` 在預設 content-box 會超寬；**不加全域 reset**、不改 map plane、pin、CrossfadeImage 或儲存。
-- `apps/game/src/lib/components/DialogueBox.svelte`：核對 `.text-scene` 和其他實際必讀敘述的 `--bone-faint` 使用，改為現有 `--bone-dim` 或 `--bone`；`反駁 / OBJECT` 補清楚的出示證據含義，但仍是原生單次觸發。
-- `apps/game/src/lib/components/InterrogationStage.svelte`：`動搖 · COMPOSURE` → 真實的「已突破題目」進度文字；保留 `brokenQuestionProgress()`、原 `aria-valuenow/max`。
-- 在現有 `GameShell.svelte` 章摘要、證物／Case File 副文中，只修改**確實使用過暗色系且承載必讀訊息**的位置。既有已使用 `--bone-dim` 的不做無謂改動。
+**修改（優先復用現有 tokens 和 test）：**
+- `apps/game/src/lib/components/InvestigationMapView.svelte`：`.city-map` 增加 **`box-sizing: border-box`**，修正 `width: 100%` + 左右 padding 令容器超寬；在真實 800×600 檢查垂直 padding 與地圖高度，如仍超過視窗則**局部**收緊上下間距。不要改 map plane/pin、CrossfadeImage、save，也不加全域 reset。
+- **主要閱讀文字**（使正文與 `DialogueHistoryPanel .line-text` 使用的 `--bone` 同級）從 `--bone-dim` → `--bone`：
+  - `apps/game/src/lib/components/DialogueBox.svelte` 的 **`.text-action`**（這才是真正的斜體 narration，不是 `.text-scene`）。
+  - `apps/game/src/lib/components/GameShell.svelte` 的 `.summary`（目前 13px、`--bone-dim`）。
+  - `apps/game/src/lib/components/AcquisitionPopup.svelte` 的 `#acquisition-description`。
+  - `apps/game/src/lib/components/InterrogationEvidenceTray.svelte` 的 `.record-copy`、`.record-detail`。
+- **需要閱讀的次要註解** 從 `--bone-faint` → `--bone-dim`：`DialogueBox.svelte .text-scene`（只是「（場景切換）」）、`apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte .reexamine-note`、`InterrogationEvidenceTray.svelte .record-source` 及 `footer p`。純裝飾 micro-label 不必一起改，`tokens.css` 不新增 token。
+- `apps/game/src/lib/components/InterrogationStage.svelte`：把原本只在 `aria-label` 看得到的 `progress.broken / progress.total` 放上**肉眼可見**的 `.subject-meter p`：例如 `突破進度 {progress.broken} / {progress.total}`，並改 `.subject-meter p` 從 `--bone-faint` → `--bone-dim`；沿用 `brokenQuestionProgress()`、`aria-valuenow/max`。
+- `apps/game/src/lib/components/DialogueBox.svelte`：訊問 `.xexam-challenge` 保持主要標籤 **「反駁」** 及 native click；其次標 `OBJECT` 改為「出示證據」。**同步更新 `apps/game/src/lib/components/InterrogationChrome.test.ts` 的 `OBJECT` 斷言**。不變更 `apps/game/e2e-tauri/production-anchors.ts` 的 `challengeButtonText: "反駁"`。
 
-**明確不改：** `tokens.css`（使用 `--bone` / `--bone-dim`）、`InvestigationSceneSurface.svelte` 點擊幾何、`GameComplete.svelte`、Rust。
+**明確不改：** `tokens.css`、`InvestigationSceneSurface.svelte` 點擊幾何、`GameComplete.svelte`、Rust。除了一項地圖 viewport 斷言，不新增 CSS 文字檢查或自建 hover/rect 測試。
 
 **驗收：**
-- [ ] 地圖返回全景控制不再因 container padding 超出 viewport。
-- [ ] 重要正文可讀；裝飾小標不必全部提亮，無完整 WCAG audit 宣稱。
-- [ ] 紅色填充是「已突破題數」，反駁是「出示證據」；單擊、Enter、Space 行為沒有倒退。
-- [ ] 依受影響元件執行既有 `DialogueBox`、`InterrogationStage`、`InvestigationMapView` Vitest，`bun run check`。
+- [ ] 在真實 Tauri 800×600 下，城市地圖不橫向超寬、可見 overview 按鈕，必要時收緊垂直 padding；畫面仍使用同一地圖及 travel 邏輯。
+- [ ] 四個玩家指出的主閱讀面（action narration／chapter summary／acquisition desc／interrogation evidence）主要文字用 `--bone`，較次級但仍要讀的來源註解用 `--bone-dim`；不宣稱整站 WCAG audit。
+- [ ] 訊問進度肉眼可讀 **n/total**，而非只有 ARIA 看得到；進度數值仍為已突破題數、非精神值。
+- [ ] 「反駁」按鈕仍可由單擊／Enter／Space 觸發，副標清楚指出出示證據。
+- [ ] 跑現有 `DialogueBox`、`InterrogationStage`、`InterrogationChrome.test.ts`、`InvestigationMapView` 及受影響元件 Vitest，`bun run check`；最終再跑完整 `bun run --cwd apps/game test`。
 - [ ] **不新增**只檢查 CSS 字串的 jsdom style-contract 單元測試。
 
 ## Task 3 — 只用既有 Layout Editor 修正 A2
@@ -69,15 +80,17 @@
 **工具：** `bun run dev:editor` → `apps/layout-editor/src/lib/EditorCanvas.svelte`；正常版面為 16:9 raster + normalized rect，拖移／縮放後存回 sidecar。不另外開發量測工具，也不靠 scene 背景 prompt 推測實物位置。
 
 **修改：**
-- `docs/stories_plan/chapter_1/investigation_scene_p1.layout.json`：以已提交的 `static/assets/backgrounds/chapter_1/scene_p1/tag_002.png` 對齊 `receipt`、`register`、`cctv`、`ledger`。Receipt 目前被 register 框住；四個圓整小數是佔位值。
-- **CCTV 決策（無新美術）：** 800×600 時 16:9 cover 只顯示 normalized x `0.125～0.875`，而畫中 monitor 據 review 位於 x 約 `0.88～1.00`。使 `cctv` 點擊框左端伸入**可見的櫃台靠螢幕區**，以原有 hover/focus 名稱清楚標示「監視器」，不得覆蓋 receipt/register 等已對位的道具。若原圖無合理目標區，不默默放到完全無關的物件上，先在 PR 記錄需另案處理的視覺障礙。
+- `docs/stories_plan/chapter_1/investigation_scene_p1.layout.json`：在既有 Layout Editor 上比對 `static/assets/backgrounds/chapter_1/scene_p1/tag_002.png`，修 `receipt`、`register`、`cctv`、`ledger`，以圖像目測微調，**非用下列近似值硬編定案**。
+  - `receipt` 近似 `x≈0.45,y≈0.56`；`register` 近似 `x≈0.62,y≈0.45`，注意紙張不應被 register 命中。
+  - **CCTV 已決定的方案：** 監視器右方 CRT 據 review 在 `x≈0.88～0.995,y≈0.525～0.725`，相連的錄影器／控制盒在 `x≈0.805～0.875,y≈0.59～0.70`；把 `cctv` 當**同一組可見監視設備**，以約 `{x:0.81,y:0.52,w:0.18,h:0.20}` 的矩形覆蓋錄影器 + CRT，再按圖片實際位置校正。800×600 可見裁切為 `x=0.125～0.875`，框左段約有 69px 可點，現有 `.target-pending` clamp 可將未完成標記留在可見部分；不用新畫、也無需額外候補方案。不得重疊不相關收據／收銀機。
+  - **Ledger 不是櫃台上畫好的帳本：** `investigation_scene_p1.md` 的 `Background Prompt` 沒有 ledger；review 指示用**櫃台後方可見的文具、記事簿、資料夾／裝訂本群組**作可辨識的對應目標；在 Layout Editor 疊圖確認，不能憑「手寫帳本」名稱往空白櫃台放 hitbox。
 - `docs/stories_plan/chapter_1/investigation_scene_7.layout.json`：校正 `bean_can` 至照片的低處罐身，保留 `phone_drop` 可點性。
 - `docs/stories_plan/chapter_1/investigation_scene_9.layout.json`：`contractor_clerk` 由 `kind: baked` → `kind: sprite`，使用已有 `portrait.contractor_supervisor.standard`，`anchor: bottomCenter`；位置靠櫃台/服務窗口並保持場景透視。參考既有 `chapter_2/investigation_scene_4.layout.json` sprite 結構。**不新增 art task**。
-- `investigation_scene_3.layout.json` 只在 editor 明確看到有偏差才修改；不做無差別全章重排。
+- `investigation_scene_3.layout.json` 只在 editor 明確看到有偏差才修改；不做無差別全章重排。Review 另外提及 `temp_badge_box`、`visitor_tablet`、`shredder_bin`、`cable_locker`、`extension_log` 等目標，但**目前上述 Chapter 1 sidecar 並無這些 IDs**，不得憑 review 字面加入新的強制物件。`contractor_clerk` 在 `investigation_scene_9.layout.json`（不是 Scene 7）。
 
 **驗收：**
 - [ ] 在 editor 為每個實際修改的 sublocation 附一張 overlay 截圖。
-- [ ] 800×600 可見安全區內每個 required target 可達，`receipt` 不落入 `register`；`cctv` 是清楚標示的可見操作區而不是其他道具。
+- [ ] 800×600 可見安全區內每個 required target 可達，`receipt` 不落入 `register`；`cctv` 在 recorder + CRT 聯合區有至少 44px 可點範圍，現有 cue clamp 正常且不錯點其他道具。
 - [ ] `bean_can`、`phone_drop` 不互蓋；主管有實際可見 sprite 且可以被詢問。
 - [ ] `bun run scenes:compile` 保留既有 placed-target / overlap 檢查；**重用** `apps/game/e2e-tauri/investigation-layout.e2e.ts` 800×600 shipped placement 契約；不加一套 per-hotspot 點擊／bbox 測試。
 
