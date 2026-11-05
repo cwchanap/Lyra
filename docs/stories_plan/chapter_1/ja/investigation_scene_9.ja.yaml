@@ -317,12 +317,6 @@ lines:
     ja: つまり増田さんは、あの待ち合わせが危ないと分かったうえで、検証値に関わる誰かを待っていた。
     voice:
       clip: ch1_soma_ritsu_0247
-  - id: L049
-    speaker: 早坂茜
-    zh: 對。但光這則備忘，定不了北見。得跟工單、憑證、那個 K 一起看。
-    ja: そう。でもこのメモだけじゃ、北見とは決められない。作業票、認証、あのKと合わせて見ないと。
-    voice:
-      clip: ch1_hayasaka_akane_0150
   - id: L050
     speaker: 相馬律
     zh: 是檢舉草稿。沒送出，只躺在監察信箱的草稿匣。
@@ -395,8 +389,8 @@ lines:
       clip: ch1_hayasaka_akane_0154
   - id: L062
     speaker: 相馬律
-    zh: 那晚到底是什麼，把你逼到動手？
-    ja: あの夜、何があなたを、手を出すところまで追い詰めたんですか？
+    zh: 那晚到底是什麼壓力，把你逼成那個樣子？
+    ja: あの夜、どんな圧力が、あなたをあんなふうに追い詰めたんですか？
     voice:
       clip: ch1_soma_ritsu_0254
   - id: L063
@@ -535,45 +529,22 @@ lines:
     ja: 傘袋じゃ前後は決められないし、誰のものとも言えない。言えるのは、裏路地にいた人物が、資材キットと同じ型の傘袋を持っていたことだけ。
     voice:
       clip: ch1_hayasaka_akane_0160
-  - id: L085
-    speaker: 相馬律
-    zh: 「22:50 雨鐘。校驗值確認。K。」
-    ja: 「22:50 雨鐘。検証値確認。K。」
-    note: "Read aloud off a forensic printout of Masuda's phone memo: three terse items, flat delivery."
   - id: L086
     speaker: 早坂茜
-    zh: 他在等一個跟校驗值有關的人。但這還不足以定罪。
-    ja: 増田さんは、検証値に関わる誰かを待っていた。でも、これだけじゃ罪を問うには足りない。
+    zh: 要把 K 對到人，還得核對工單與那組憑證。
+    ja: Kを人に結びつけるには、作業票とあの認証を突き合わせないと。
     voice:
       clip: ch1_hayasaka_akane_0162
-  - id: L087
-    speaker: 相馬律
-    zh: 是檢舉草稿，沒送出。
-    ja: 告発の下書きだ。送信されてない。
-    voice:
-      clip: ch1_soma_ritsu_0262
-  - id: L088
-    speaker: 早坂茜
-    zh: 光一份草稿，證不了資料怎麼流出去。
-    ja: 下書き一つじゃ、データがどう流出したかは証明できない。
-    voice:
-      clip: ch1_hayasaka_akane_0163
   - id: L089
     speaker: 黑瀨徹
     zh: 這支另編，送鑑識。
     ja: こいつは別に番号を振って、鑑識に回す。
     voice:
       clip: ch1_kurose_toru_0043
-  - id: L090
-    speaker: 相馬律
-    zh: 排程外接觸試點資料，還匯到外部載體。
-    ja: スケジュール外で試験運用データに触れて、外部の記録媒体にまで書き出してる。
-    voice:
-      clip: ch1_soma_ritsu_0263
   - id: L091
     speaker: 早坂茜
-    zh: 買家是誰還沒證到，但盜賣的嫌疑成立了。
-    ja: 買い手が誰かはまだ証明できてない。でも、横流しの疑いは成り立った。
+    zh: 這些存取紀錄能說明他為何怕被查；是否動手，還得看現場證據。
+    ja: このアクセス記録が説明するのは、彼がなぜ調べられるのを恐れたか。手を出したかどうかは、現場の証拠次第。
     voice:
       clip: ch1_hayasaka_akane_0164
   - id: L113

@@ -52,8 +52,8 @@
 - **Prompt:** 把每張卡放進它真正支持的命題。
 - **Reveals:** [assert_fact:miyake_known_lies_are_unrelated_to_murder, assert_fact:earlier_external_entry_exists]
 - **Incomplete Feedback:** 每張卡都必須放進一個證據包。
-- **Incorrect Feedback:** 至少有一張卡被放進錯誤命題。
-- **Hint:** 先問每一項資料真正能證明什麼。
+- **Incorrect Feedback:** 有卡放錯了。先問每張卡真正證到什麼：視線重現只證明三宅看不見裡面，不能單獨說成有人先進場。
+- **Hint:** 通話紀錄只解釋三宅的私事。視線遮擋和先出現的外部憑證，證的是三宅之外的事，但僅止於此。
 
 ### Card: 三宅母親通話紀錄 {#miyake_call}
 
@@ -75,9 +75,9 @@
 - **Description:** 只解釋三宅因生活壓力而隱瞞的事情。
 - **Accepted Cards:** [miyake_call]
 
-### Group: 更早的第三者 {#earlier_third_party}
+### Group: 視線遮擋與更早憑證 {#earlier_third_party}
 
-- **Description:** 支持較早外部進入者存在，但不替他補上身分。
+- **Description:** 只證明三宅看不見裡面、以及一筆外部憑證先出現；不替他補上身分，也不單獨斷定有人先進場。
 - **Accepted Cards:** [miyake_pov_replay, external_credential_event]
 
 ### Result Dialogue
@@ -103,25 +103,25 @@
 - **Incomplete Feedback:** 所有事件都必須放進時間線。
 - **Incorrect Feedback:** 本機事件順序仍有錯誤。
 
-### Card: 維護模式開啟 {#event_1841}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1841，維護模式開啟。
-
-### Card: 外包憑證開門 {#event_1842}
-
-- **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1842，外部維護憑證開啟後門。
-
 ### Card: 員工憑證開門 {#event_1843}
 
 - **Source:** evidence:local_sequence_record
 - **Summary:** 本機事件 1843，員工憑證開啟後走廊。
 
+### Card: 維護模式開啟 {#event_1841}
+
+- **Source:** evidence:local_sequence_record
+- **Summary:** 本機事件 1841，維護模式開啟。
+
 ### Card: 維護同步完成 {#event_1844}
 
 - **Source:** evidence:local_sequence_record
 - **Summary:** 本機事件 1844，維護同步完成。
+
+### Card: 外包憑證開門 {#event_1842}
+
+- **Source:** evidence:local_sequence_record
+- **Summary:** 本機事件 1842，外部維護憑證開啟後門。
 
 ### Result Dialogue
 
