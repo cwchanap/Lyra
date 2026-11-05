@@ -69,11 +69,13 @@
       },
       "characters": {
         "contractor_clerk": {
-          "kind": "baked",
-          "x": 0.4,
-          "y": 0.26,
+          "kind": "sprite",
+          "assetId": "portrait.contractor_supervisor.standard",
+          "x": 0.46,
+          "y": 0.2,
           "w": 0.16,
-          "h": 0.26
+          "h": 0.32,
+          "anchor": "bottomCenter"
         }
       }
     }
