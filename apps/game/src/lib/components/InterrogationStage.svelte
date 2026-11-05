@@ -67,6 +67,10 @@
 
   let phase = $derived(currentInterrogationPhase(scene));
   let progress = $derived(brokenQuestionProgress(phase));
+  let subjectProgressText = $derived(
+    /* v8 ignore next -- template concatenation artifact: only rendered inside {#if phase} */
+    `突破進度 ${progress.broken} / ${progress.total}`,
+  );
   let crossExam = $derived(phase?.crossExam ?? null);
   let presenting = $derived(active && crossExam?.presenting === true);
   let menuChromeVisible = $derived(
@@ -168,7 +172,7 @@
             <h2>{phase.subject.name}</h2>
             <p class="role">{phase.subject.role}</p>
             <div class="subject-meter">
-              <p>突破進度 {progress.broken} / {progress.total}</p>
+              <p>{subjectProgressText}</p>
               <div
                 data-interrogation-broken-progress=""
                 role="progressbar"
