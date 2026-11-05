@@ -249,7 +249,8 @@
 **早坂茜**：他沒答。名片倒是被抹得更平了。 {#L061}
 
 #### Topic: 當夜壓力 {#night_pressure}
-- **Status:** unlocked
+- **Status:** locked
+- **Unlock:** evidence:masuda_whistleblower_draft collected
 
 [北見的肩膀垮了下來，整個人像被抽掉了什麼支撐，聲音壓得很低。]
 
