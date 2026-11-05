@@ -1,53 +1,68 @@
-# Issue #119 — Chapter 1 玩家視角 Playtest 修正設計規格
+# Issue #119 — Chapter 1 玩家視角修正設計規格（Review 收斂版）
 
-> 狀態：規格草案；對應 [Lyra #119](https://github.com/cwchanap/Lyra/issues/119)。本次 PR 先提交規格與實作計劃，功能實作沿用**同一條分支、同一個 PR**。
+> **狀態：** 規格草案。對應 [Issue #119](https://github.com/cwchanap/Lyra/issues/119) 與 [Draft PR #122](https://github.com/cwchanap/Lyra/pull/122)。根據 2026-11-04 的 [design review](https://github.com/cwchanap/Lyra/pull/122#issuecomment-6647158070) 收斂，**單一 PR** 先載規劃、後續在同一 PR 實作。
 >
-> 檢查基線：2026-11-04 的 main @ c713de3b2943f3dc6edbdc5e0d53ba09dfe3cf2c。原始觀察來自 8e31c4b、Tauri 視窗 1180 × 812，第一章完整遊玩。這不是目前 main 的第二次真人操作驗證。
+> **基線：** main `c713de3b2943f3dc6edbdc5e0d53ba09dfe3cf2c`；Issue #119 的實際 playtest 是 `8e31c4b`、Tauri 1180×812。原測試無進度阻塞；本文件的原始碼核實不等於新一輪視覺 playtest。
 
-## 1. 目標與判定
+## 1. 結論與定位
 
-改善第一章文字時序、畫面點擊、地圖可達性和推理回饋的明顯摩擦，不改動案件答案、法庭程序、保存格式、地圖拓樸或第二章故事。
+**修正內容、座標、盒模型及說明文字，不重寫機制。** 目前已有 Svelte 調查座標平面、Story Workbench Layout Editor、編譯器 reachability、packaged Tauri E2E、日文 locale 工作流；只需沿用。
 
-- 已在目前 main **以原始內容核實**：A1 提前引用片瀨談話、A4 提前預設北見動手、C1 視線證物和分類名稱的語義差距、C2 不精確的錯誤提示、B 的 COMPOSURE 實際代表已突破題數、C3 事件卡片按正解順序撰寫。
-- **待實際視窗複核**：A2 熱點/背景物件對位、A3 溢出與裁切、B 對比的視覺效果、承包商主管的空場景、章尾狀態的實際出現時機。不得把推測成因寫成已證明的 runtime root cause。
-- 兩次錯誤提交皆能恢復，不是引擎 softlock。原 playtest 沒有崩潰；存讀檔、聲音與無障礙合規不在原測試涵蓋範圍。
+已由現有原始碼確認：
+- A1 片瀨簽退單在她談末班車前引用「方才說的」；A4 北見動機話題尚未供認即預設「動手」。
+- A3 `InvestigationMapView.svelte` 的 `.city-map` 採 `width: 100%` 加左右 padding，但未設本地 `box-sizing: border-box`；按預設 content-box 計算會橫向超出。
+- C1 視線重現卡與外包憑證同被放入「更早的第三者」；C2 `On Wrong Evidence` 錯誤地假設選了整份摘要；C3 待加入排序卡原文按 1841→1844 排列。
+- B `brokenQuestionProgress()` 是已突破題數，不是角色精神值；`DialogueBox` 的 `.text-scene` 使用低對比 `--bone-faint`，其他指定正文應逐個確認是否需要提高層級。
+- D 第一章章間地圖實際顯示 `investigation_scene_map_08.md` 的 Summary「迎接結案後的日常」；`GameComplete.svelte` 的真正完結 stamp 在現階段第二章 `in-progress` 時不會出現，**不應修改**。
 
-## 2. 實作矩陣
+Review 提供了背景圖對位觀察：P1 `register` rect 包住畫中的收據、Scene 7 `bean_can` 區塊在中層貨架但罐子在地面；圖像相對位置仍以**最後提交的 raster + Layout Editor** 檢查，不硬猜新的精確座標。
 
-| 議題 | 現有依據 / 位置 | 決議 | 驗收 |
-| --- | --- | --- | --- |
-| A1 簽退單次序 | docs/stories_plan/chapter_1/investigation_scene_3.md 的 katase_register_gap；片瀨話題 contractor_ambient 可後於熱點 | 將 Description、舞台指示及兩句回應改為**先查單據也成立**的中性內容；不加旗標、不改解鎖 | 先點熱點及先訪談片瀨，兩條路都沒有引用尚未說出口的話 |
-| A4 北見動機 | investigation_scene_9.md 的 kitami 動機話題開放，現有 L062 預設「動手」 | 改為未供認前也自然的追問，保留北見恐懼、帳號回收及資料盜賣的回答內容 | 動機話題第一個點也不等於口頭認罪 |
-| A2 畫面熱點 | investigation_scene_p1.layout.json 的 receipt/register/cctv/ledger；investigation_scene_7.layout.json 的 bean_can；investigation_scene_9.layout.json 的 contractor_clerk | 用**已提交的背景圖**在實際 16:9 cover 畫面對位；只更新受影響 sidecar rect、必要標籤/hover。先釐清主管是 baked 人物、背景不足或目標標示不足，不推斷缺圖 | 1180×812 及最低尺寸：可見物件與其按鈕一致，receipt 不觸發 register；焦點／滑鼠均可選；不遮相鄰必需互動 |
-| A3 地圖裁切 | apps/game/src/lib/components/InvestigationMapView.svelte 的 city-map width:100% 加水平 padding；map-overview-return right:12px | **優先檢查本地 box-sizing** 與容器寬度，必要時局部修正。維持單一 16:9 地圖、原 marker 座標、返回鍵和 44px 點擊尺寸 | 1180×812、800×600、1280×720，返回全景按鈕完整可見、可用滑鼠/鍵盤到達，無意外水平 scroll |
-| B 閱讀對比 | GameShell .summary、DialogueBox 斜體敘述、InvestigationSceneSurface 證物／人物副文、Case File 說明；tokens.css 的 bone-dim / bone-faint | 只提高**承載可讀內容**的文字層級與必要字級；保留低對比的純裝飾小字及既有視覺風格。以實畫面比較，勿憑此稱完成 WCAG audit | 主要敘述、章節摘要、證據說明在 1180×812 可分辨，不犧牲層次 |
-| B COMPOSURE / OBJECT | InterrogationStage 的 brokenQuestionProgress() 真實為 broken/total；DialogueBox 的 反駁 / OBJECT | 標示為「已突破題數」等符合現有數值的名稱；讓反駁按鈕表明「出示證據」，保留原生一鍵觸發、鍵盤與送件流程 | 玩家能看出紅條增加是成功突破，非剩餘意志值；不新增精神值或傷害機制 |
-| C1 視線證物分類 | analysis_scene_8_5.md 中 miyake_pov_replay 與 external_credential_event 共同被放在「更早的第三者」 | 更名該組為**後場視線／外部進場線索**等能涵蓋兩者的命題；說清楚視線只能證明三宅看不見屍體，較早入場由憑證事件支持。改静態 Incorrect Feedback，不改 Accepted Cards 或 Reveal IDs | 錯放仍可重試；提示解釋推理差距而非說玩家笨；正解與後續 fact 不變 |
-| C2 選錯紀錄回饋 | interrogation_scene_10.md 的 gate_hold_record 要 doorlock_summary_timetable，卻對所有 wrong evidence 說「摘要整份我看過」 | 改成**對任何錯誤證物均成立**的程序提示：要核對的是摘要主時間錨所用的特定時刻表，不是孤立的本機順序。保持機關答案不變 | 選 local_sequence_record、其他錯誤物件時都不會被說成選了整份摘要；再選正解可過 |
-| C3 過度提示 | analysis_scene_8_5.md 的 local_event_sequence 按 1841→1844 撰寫且保留第一個固定錨點 | 此處定位為**教學式排序**：保留真實的本機事件編號（它們是公平線索），但將待加入卡片的呈現次序與正解區別；檢查明說答案的提示，保留足夠教學支持。不引入隨機洗牌或新 schema | 卡片一開始不是完整正解；玩家仍能靠事件序號、原始紀錄與固定錨完成 |
-| D 敘事節奏 | scene_5.md 的首輪弱論證、反覆法醫/22:50/外包說明及各場景 flavor gate | 首輪審查**提前交代正式證物尚未核准**與相馬壓力，再保留他犯下的弱論證及敗北；只刪重複表述。只在證實不影響 reachability/auto-outro 時減少低價值強制互動，不廣泛改完成規則 | 先有程序限制、再有情緒性失策；三證據包、兩輪聽證和北見動機仍完整 |
-| D 結尾法律狀態 | GameComplete.svelte 的「案件結案 / CASE CLOSED」文字；scene_11.md 的尾聲 | 將**狀態標語**改為「篇章完成／CHAPTER COMPLETE」一類的內容進度用語；不要將 storyCleared 變成法律裁定，也不碰解鎖持久化 | 玩家理解暫緩起訴／補充調查與遊戲篇章完成是兩回事 |
+## 2. 鎖定的修正矩陣
 
-## 3. 架構與敘事邊界
+| 議題 | 決議 | 主要位置與驗收 |
+| --- | --- | --- |
+| **A1 簽退單** | Description、舞台指示與回應改成先點單據也成立；**不加 topic-read flag** | `investigation_scene_3.md` `katase_register_gap`；先點熱點或先問片瀨，均不提前引用問話 |
+| **A4 北見** | 動機話題改為追問檢舉、權限審核壓力，不預設口頭認罪 | `investigation_scene_9.md` `kitami` 動機 L062；topic 任意順序成立 |
+| **A2 P1 熱點** | 用 **`apps/layout-editor`** 對準既有 `tag_002.png`，只修 `receipt/register/cctv/ledger` sidecar | `investigation_scene_p1.layout.json`；收據與收銀機不得搶點，editor 每 sublocation 一張覆核截圖 |
+| **A2 Scene 7** | 將 `bean_can` 對準圖中的罐子，不動已正確的 `phone_drop` 等目標 | `investigation_scene_7.layout.json`；保留現有排版及其 overlap 檢查 |
+| **A2 主管空白** | 已有 `static/assets/portraits/contractor_supervisor/standard.png`，將 `contractor_clerk` 從 `baked` 改為 `sprite`，`assetId: portrait.contractor_supervisor.standard`、`anchor: bottomCenter`，在櫃台後放置 | `investigation_scene_9.layout.json`；沿用第 2 章既有 sprite schema；**無新 art task** |
+| **A2 監視器安全區** | **採用不新增美術方案**：P1 監視器在 800×600 可見裁切之外；以既有 `cctv` 目標擴展／移到櫃台近監視器一側、與其他道具不重疊的**可見操作區**，hover/focus 明確標「監視器」；不可再讓目標誤落在收據或 register 上 | Layout Editor 同時檢查 16:9 全圖和 800×600 的可見安全區；若確實無合理可見操作區，**先回報設計阻礙**，不冒然造新圖片或偷移到無關物件 |
+| **A3 地圖** | 本地 `.city-map { box-sizing: border-box; }`；不加全域 reset，不改比例、marker、狀態或 travel | `InvestigationMapView.svelte`；在既有 `investigation-layout.e2e.ts` 對 `[data-map-overview]` 加**一個** viewport rect 驗證 |
+| **B 可讀性** | 必讀敘述、章摘要與證物副文以現有 `--bone-dim` 或 `--bone` 呈現；裝飾性小標仍可較淡。先修確有問題的 `.text-scene`，逐個核對其他現有指定畫面 | `DialogueBox`、`GameShell` 與證物文字元件；**不新增 token，不聲稱 WCAG 完整審核** |
+| **B 反駁進度** | 將「動搖 · COMPOSURE」改成「已突破問題／題數」等反映 `broken/total` 的文案；讓 反駁／OBJECT 更清楚表示「出示證據」。原生一擊／鍵盤行為不變 | `InterrogationStage.svelte`、`DialogueBox.svelte`；不新增耐力、血量或錯誤扣分機制 |
+| **C1 分類** | 第二組改成同時涵蓋「遮擋視線」及「外部憑證先出現」的名稱／說明；更新 `Incorrect Feedback` / `Hint` | `analysis_scene_8_5.md`；Accepted Cards、Reveals、ID 原封不動，錯放可重試 |
+| **C2 錯誤回覆** | `gate_hold_record` L057 改成「需要摘要門鎖主時間錨所依據的時刻表」等**對任何錯誤提交都成立**的中性回覆 | `interrogation_scene_10.md`；不新增 per-evidence API |
+| **C3 排序教學** | 保留事件 1841～1844 **真實序號**和 `Fixed Anchors`，只打亂未加入卡的**文件呈現順序**；明確接受「看序號排序」是教學用途，不追求獨立高難度推理 | `analysis_scene_8_5.md`；不隨機洗牌，不改驗證答案 |
+| **D 首輪審查** | 只在 scene_5 加一個短程序前提：本輪未有足夠核准片段，讓相馬的弱論證是有壓力的失策，而非莫名愚蠢 | `scene_5.md`；神谷不提前准許 raw；原「摘要先贏」不動 |
+| **D 重複內容** | 不再任意掃五份檔案。只在指定重複位做減法：`investigation_scene_7.md L049`（法醫範圍重覆回聲）、`investigation_scene_9.md L085`（重述 22:50 備忘原文）、`L087`（重述未送出草稿）、`L090`（重述資料匯出）；**保留周邊獨立意義與證物取得回饋** | 以上四個 line ID 為此次唯一預定刪減；如編譯或敘事上下文要求保留，在 PR 記錄並不擴大刪改 |
+| **D 章間文案** | 改 `investigation_scene_map_08.md` 的 Summary，例如「暫緩起訴後，回到雨鐘咖啡館。」；`scene_11.md L026` 已有「結案的，只是這一樁。」保留 | **不動** `GameComplete.svelte`、它的測試與 `storyCleared` 意義 |
 
-1. **內容先修正，狀態不要增加。** A1/A4 用順序中立的繁體中文文本解決；不新增 topic-read flag、分支引擎狀態或 Rust wire 欄位。編譯器仍保留 line ID；日語地方化資源按現有 voice sync/validate 契約同步，**不產生付費配音**。
-2. **座標是內容資料。** 優先改四個已存在的 layout sidecar；InvestigationSceneSurface 已有最低尺寸、同軸收縮、focus/hover、待調查提示。除非驗證證實是 UI 算法問題，禁止全面重寫 hit-testing 或疊加第二層互動。
-3. **地圖只修本地盒模型。** 不動 city_map.json、map-plane.ts、Rust travel、保存內容和地圖動畫。返回全景只在 pending district map 顯示。
-4. **推理保持公平。** C1 不能說視線本身證明第三人更早進來；C2 不能讓錯誤反應誤述玩家選擇；C3 不隱藏用來推斷的真實紀錄，也不提前破梗。審查會仍先拆三宅小謊、較早事件、合併時間，然後收束北見。
-5. **主線 Canon 不變。** 第 1 章仍只命名青葉，公開青葉影像與 ZW_A16.lock 不連線；藍傘／金木犀不變成硬證物；不改第二章。
-6. **Art/SFX 分離。** 本 PR 不生成新背景、人物或 SFX。若 Tauri 確認承包商背景缺可點擊人物且光靠位置／標籤不能解決，另外建立 art 任務；本 PR 留下明確必要的視覺依賴，不在 coding 工作裡混入生成工序。
+### 2.1 裁切與座標準則
 
-## 4. 非目標與風險
+背景圖及互動平面同為 16:9 cover。玩家視窗不是 16:9 時，**畫面裁切會影響可達性，但不改變 raster 上的幾何對位**：
 
-- 不把原測試中短暫空白縮圖視為資產缺失；須先重現。603 個日語配音警告只代表編譯警告，不代表聽感故障，聲音測試另行處理。
-- Issue #90 的過往 Present softlock、UNPLACED panels、WebKit SIGABRT、存讀檔問題不可在本 PR 重新當作 #119 確定故障；不新增 renderer recovery、通用 hit-target rewrite 或 double-click 修正。
-- 不做全遊戲大規模字體／對比 redesign、完整 WCAG 合規宣告、改造分析引擎或增加新系統。
-- 不保證在未實測視窗前能指定準確矩形座標。可接受第一階段先把不需肉眼的內容與 CSS 問題實作；幾何驗收需要真實 PNG 和 Tauri 實測紀錄。
+- 1180×812：約可見 normalized x `0.09～0.91`。
+- 800×600：約可見 normalized x `0.125～0.875`。
+- 1280×720：不裁切，可作地圖補充檢視，不需對所有熱點重跑。
+
+不為每個熱點記錄三份 bbox；只用 Layout Editor 圖像疊框，保留既有 packaged 800×600 placed-target 檢查與一次 Chapter 1 真人視覺 pass。CCTV 的可見操作區不得引發另一個「點 A 取得 B」問題。
+
+## 3. 重用邊界
+
+- **既有編輯器：** `apps/layout-editor/src/lib/EditorCanvas.svelte` 使用 normalized percentage placement + 16:9 plate。執行 `bun run dev:editor`，不要新做 layout 工具。
+- **既有 E2E：** `apps/game/e2e-tauri/investigation-layout.e2e.ts` 已把所有 shipped placements 於 800×600 套進實際 CSS 契約，保留；只增加地圖返回鍵 viewport 斷言，不加每個 props 的新 bbox/click 測試，也不加 jsdom CSS 字串測試。
+- **既有 review skill：** 更新 `.claude/skills/reviewing-story-scenes/SKILL.md` Axis 4（同一 investigation 中熱點與話題任意順序）及 Axis 9（`On Wrong Evidence` / `Default Wrong` 對所有錯誤選擇都成立），不加脆弱的 Markdown 固定句 grep。
+- **既有內容與本地化：** `voice:sync` / `voice:validate` 更新日文 locale、保留 ID；既有片段無需重生，絕不執行付費 `voice:generate`。修改行後 `voice:sync` 可能產生 `stale`，需按工具規則清理。
+- **不改流程門檻：** **本 PR 不改任何 `Required`／unlock／flavor-gate 或 auto-outro 條件。** 未來真有具體 gate 問題才由 `packages/scripts/compile-scenes/reachability.ts` 驗證。
+
+## 4. 明確非目標
+
+不修改 `GameComplete`、`tokens.css`、`InvestigationSceneSurface.svelte` 的 hit testing、Rust、存檔或第二章。沒有新增背景圖、人物立繪、SFX、語音輸出。Issue #90 的歷史 softlock、WebKit SIGABRT、短暫空白縮圖、603 個日語配音警告未在 #119 中獲新的失效證據，不據此擴充。
 
 ## 5. 完成定義
 
-- 兩個順序逆轉路徑、兩個錯誤證物重試路徑，以及事件排序的教學提示有回歸測試。
-- 實際渲染的四組易錯熱點、承包商主管及城市地圖返回鍵在指定尺寸取得**點擊目標與畫面一致**的證據；不得僅依 jsdom CSS snapshot 宣稱視覺驗收完成。
-- 核心閱讀樣式與 COMPOSURE/OBJECT 改稱，保留原來的數值及鍵盤操作。
-- 首輪審查理由可理解、尾聲不把程序勝利誤稱終局定罪、故事 master canon 不變。
-- 既有編譯、型別、Rust/前端測試、局部 packaged E2E 與完整 Chapter 1 production journey 通過；實測結果與未驗證項目明記 PR。
+1. A1/A4 兩種互動順序均成立；C1/C2 錯誤提交仍可恢復，文案不預設玩家選了哪件證物；C3 仍是可用原始序號完成的教學排序。
+2. 以 Layout Editor 疊框實際圖片（每受影響 sublocation 一張截圖）校正 P1 四點、bean can 和主管 sprite；特別檢查 CCTV 在最窄 cover crop 的可達性。原有 800×600 E2E 不退步。
+3. `[data-map-overview]` 完整位於 800×600 視窗內；既有滑鼠與鍵盤操作保持有效。1180×812 做一輪整體視覺 pass；1280×720 只作地圖補充。
+4. 必讀文字不再用 `--bone-faint`；COMPOSURE/OBJECT 意思直觀，進度仍是 `broken/total`。
+5. 現有編譯、evidence audit、相關 Vitest、Svelte check、packaged smoke E2E 綠燈；實際執行結果記錄於 PR，不把尚未執行的測試標成通過。維持 Chapter 1 與 Story Bible 的青葉早期提問契約。
