@@ -194,7 +194,7 @@
 <style>
   .reexamine-note {
     margin: 0;
-    color: var(--bone-faint);
+    color: var(--bone-dim);
     font-family: var(--serif-jp);
     font-size: 13px;
     font-style: italic;

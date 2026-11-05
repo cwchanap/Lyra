@@ -330,7 +330,7 @@
   }
 
   #acquisition-description {
-    color: var(--bone-dim);
+    color: var(--bone);
     font-family: var(--serif-jp);
     font-size: 16px;
     line-height: 1.75;

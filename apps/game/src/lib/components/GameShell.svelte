@@ -661,7 +661,7 @@
 
   .summary {
     margin: 4px 0 0;
-    color: var(--bone-dim);
+    color: var(--bone);
     font-family: var(--serif-jp);
     font-size: 13px;
     line-height: 1.55;

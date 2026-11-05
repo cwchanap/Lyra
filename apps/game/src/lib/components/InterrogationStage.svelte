@@ -168,7 +168,7 @@
             <h2>{phase.subject.name}</h2>
             <p class="role">{phase.subject.role}</p>
             <div class="subject-meter">
-              <p>動搖 · COMPOSURE</p>
+              <p>突破進度 {progress.broken} / {progress.total}</p>
               <div
                 data-interrogation-broken-progress=""
                 role="progressbar"
@@ -384,7 +384,7 @@
   }
 
   .subject-meter p {
-    color: var(--bone-faint);
+    color: var(--bone-dim);
     font-size: 10px;
     letter-spacing: 0.18em;
   }

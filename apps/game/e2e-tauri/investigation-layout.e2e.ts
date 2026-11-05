@@ -18,7 +18,10 @@ import {
   waitForPackagedGameState,
 } from "./helpers";
 import { anchors } from "./production-anchors";
-import { caseFileViewportNativeSize } from "$lib/e2e/case-file-viewport";
+import {
+  caseFileViewportNativeSize,
+  validDevicePixelRatio,
+} from "$lib/e2e/case-file-viewport";
 import {
   targetLayoutStyle,
   type TargetLayout,
@@ -96,18 +99,34 @@ async function ensureMinimumWindowViewport(): Promise<void> {
   const matches = (viewport: { width: number; height: number }) =>
     viewport.width === MINIMUM_WINDOW.width &&
     viewport.height === MINIMUM_WINDOW.height;
-  const viewport = await observedCssViewport();
+  let viewport = await observedCssViewport();
   if (matches(viewport)) return;
-  const native = caseFileViewportNativeSize(
+  const requested = caseFileViewportNativeSize(
     viewport.devicePixelRatio,
     MINIMUM_WINDOW,
   );
-  await browser.setWindowSize(native.width, native.height);
-  await browser.waitUntil(async () => matches(await observedCssViewport()), {
-    timeout: 10000,
-    interval: 100,
-    timeoutMsg: "viewport did not settle at the 800x600 minimum window",
-  });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await browser.setWindowSize(requested.width, requested.height);
+    await browser
+      .waitUntil(
+        async () => matches((viewport = await observedCssViewport())),
+        {
+          timeout: 10000,
+          interval: 100,
+          timeoutMsg: "viewport did not settle at the 800x600 minimum window",
+        },
+      )
+      .catch(() => {});
+    if (matches(viewport)) return;
+    const scale = validDevicePixelRatio(viewport.devicePixelRatio);
+    requested.width += Math.ceil(
+      Math.max(0, MINIMUM_WINDOW.width - viewport.width) * scale,
+    );
+    requested.height += Math.ceil(
+      Math.max(0, MINIMUM_WINDOW.height - viewport.height) * scale,
+    );
+  }
+  throw new Error("viewport did not settle at the 800x600 minimum window");
 }
 
 /** Explore parked on investigation_scene_map_01's city map (HPA-601 §7). */
@@ -462,6 +481,28 @@ describe("investigation layout surface", () => {
     expect(await enabledMapDestinationIds()).toEqual([
       anchors.firstMapDestination,
     ]);
+
+    await ensureMinimumWindowViewport();
+    const overviewRect = await browser.execute((selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const rect = element.getBoundingClientRect();
+      return {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+      };
+    }, anchors.mapOverviewSelector);
+    if (overviewRect === null) {
+      throw new Error("city-map overview return was not rendered");
+    }
+    expect(overviewRect.left).toBeGreaterThanOrEqual(0);
+    expect(overviewRect.top).toBeGreaterThanOrEqual(0);
+    expect(overviewRect.right).toBeLessThanOrEqual(overviewRect.innerWidth);
+    expect(overviewRect.bottom).toBeLessThanOrEqual(overviewRect.innerHeight);
 
     // Native WDIO click (not jsClick) so pointer hit-testing detects any
     // blocking overlay or pointer-events:none on the map pin — jsClick's

@@ -210,6 +210,7 @@
     position: relative;
     display: grid;
     place-items: center;
+    box-sizing: border-box;
     width: 100%;
     padding: clamp(16px, 4vh, 48px) clamp(20px, 3vw, 40px);
   }
