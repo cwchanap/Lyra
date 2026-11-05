@@ -83,7 +83,7 @@
 
 ## Task 4 — 最小防回歸：review skill + 一個真實 E2E 斷言
 
-- [ ] 更新 `.claude/skills/reviewing-story-scenes/SKILL.md`：
+- [x] 更新 `.claude/skills/reviewing-story-scenes/SKILL.md`（本次 review 已在本 PR 完成）：
   - Axis 4：同一 investigation 的 unlocked hotspot 與 character topic 可能任意順序發生；檢查「剛才說過／如你所見／第一次」等語句是否引用了尚未必經的動作。
   - Axis 9：`On Wrong Evidence` 與 `Default Wrong` 是共享的錯誤回覆，所有錯誤證物都會用到，不能假設玩家選了某一個特定錯誤物品；正解的 `Challenge`/`On Correct` 仍可具體。
 - [ ] 擴充現有 `apps/game/e2e-tauri/investigation-layout.e2e.ts` 的第一張地圖 district 測試（約 :430）：用既有 `ensureMinimumWindowViewport()` 設 800×600，對 `[data-map-overview]` 取 `getBoundingClientRect()`，斷言 left ≥ 0、right ≤ `innerWidth`、top ≥ 0、bottom ≤ `innerHeight`。沿用已存在的地圖 travel E2E，不新增專用 E2E suite、CSS snapshot 或多點 bbox replay。
