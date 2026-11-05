@@ -754,7 +754,7 @@
           >
             <span class="act-mark">▸</span>
             <span class="challenge-label">反駁</span>
-            <span class="challenge-object">OBJECT</span>
+            <span class="challenge-object">出示證據</span>
           </button>
         </div>
       {:else}
@@ -1100,7 +1100,7 @@
     margin: 0;
     font-family: var(--serif-it);
     font-style: italic;
-    color: var(--bone-dim);
+    color: var(--bone);
     text-align: center;
     font-size: 17px;
     line-height: 1.6;
@@ -1189,7 +1189,7 @@
   .text-scene {
     margin: 0;
     font-family: var(--serif-jp);
-    color: var(--bone-faint);
+    color: var(--bone-dim);
     font-style: italic;
     text-align: center;
     font-size: 14px;

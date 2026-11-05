@@ -39,7 +39,7 @@ describe("Interrogation handoff chrome", () => {
     expect(dialogue).toContain(
       "radial-gradient( circle at 50% 34%, #ae1c31, var(--crimson-deep) 74% )",
     );
-    expect(dialogue).toContain("OBJECT");
+    expect(dialogue).toContain("出示證據");
     expect(dialogue).toContain("@media (prefers-reduced-motion: reduce)");
   });
 

@@ -247,6 +247,13 @@ describe("InterrogationStage", () => {
     );
   });
 
+  it("shows the broken-question count as visible text on the subject meter", () => {
+    render(InterrogationStageHarness, props());
+
+    const meterLabel = document.querySelector(".subject-meter p");
+    expect(meterLabel).toHaveTextContent("突破進度 1 / 3");
+  });
+
   it("dispatches the evidence Case File section from the locker trigger", async () => {
     const user = userEvent.setup();
     const onOpenCaseFile = vi.fn();

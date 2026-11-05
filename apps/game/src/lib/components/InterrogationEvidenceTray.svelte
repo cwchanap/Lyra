@@ -591,7 +591,7 @@
     font-family: var(--serif-jp);
     font-size: 13px;
     line-height: 1.45;
-    color: var(--bone-dim);
+    color: var(--bone);
   }
 
   .record-copy strong {
@@ -601,7 +601,7 @@
   }
 
   .record-source {
-    color: var(--bone-faint);
+    color: var(--bone-dim);
     font-size: 12px;
   }
 
@@ -613,7 +613,7 @@
     border: 1px solid rgba(236, 228, 207, 0.16);
     border-left: 2px solid rgba(236, 228, 207, 0.16);
     background: rgba(9, 9, 15, 0.72);
-    color: var(--bone-dim);
+    color: var(--bone);
     font-family: var(--serif-jp);
     font-size: 13px;
     line-height: 1.7;
@@ -654,7 +654,7 @@
   }
 
   footer p {
-    color: var(--bone-faint);
+    color: var(--bone-dim);
     font-family: var(--serif-jp);
     font-size: 12px;
   }
