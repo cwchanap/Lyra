@@ -878,7 +878,7 @@ Beat 10（最終審查會）在下一個 PR。plan §10 H「青葉專題深挖�
 - 神谷這輪不再逐點宣讀摘要，而是把摘要的結論拆成七個主張，一段一段審；每一段她都先講主張，再問辯方拿什麼回應。辯方拿來的每一份材料，來路不明或未固定的，她只記作線索，不採為證據。她信摘要，因為她比誰都清楚人的偏見有多危險；今天她要的是紀錄，不是氣勢。
 - 在場：神谷澪（主理）、書記官、辯方席相馬與早坂與三枝、黑瀨徹（立在證物推車旁）、旁聽席蓮見透（被害人事務所，照 Beat 5 的位置，平板擺在膝上）。戶川美羽、柚木陸、清潔員不在場。
 - **材料來路**（Intro 由黑瀨交代一次，兩三句，不要唸清單）：事務所提供的耳麥頻道表與事故通訊紀錄是影本，黑瀨已向活動方調出原件，逐頁核對一致；SR-2307 送出紀錄、三枝權限查核、退出訊息那一頁，是警方與贊助商的書面資料。這是為了讓 Beat 9B 標為 `lead` 的紀錄在審查會上有可說的來路，不要寫成新的程序關卡。
-- 蓮見在 Intro 只被神谷點名一次（「被害人事務所，蓮見透先生」），他欠身，沒有別的動作。直到 p7 以前沒有人看他、提他。
+- 蓮見在 Intro 只被神谷點名一次（「被害人事務所，蓮見透先生」），他欠身，沒有別的動作。p4 的第一回報是紀錄上寫著的事，相馬唸出「蓮見先生」一次；除此之外，直到 p7 以前沒有人看他、提他、轉頭向旁聽席。
 
 ### 17.3 固定數值（沿用，不新增）
 
@@ -917,11 +917,11 @@ Beat 10（最終審查會）在下一個 PR。plan §10 H「青葉專題深挖�
 | Phase | 神谷的主張 | Question `{#id}` 與 Contradiction 證物 | 站不住的是哪一處（寫給 Contradiction 行用） |
 |---|---|---|---|
 | `p1` 群眾目擊成立 | 摘要第一點：數萬人看見她在箱內，沒有一個人說她離開過。第一輪我記了疑點，這輪我要答案：他們看的是什麼。 | `q_p1_crowd`：`evidence:plaza_sightline_map` | 「彼此不認識、各自看見，就是獨立目擊」——站不住：幾乎每一張臉先看見的是牆，能直接看見箱子的只有少數側角；可帶一句「活動方請大家看主螢幕」。 |
-| `p2` 牆不是箱 | 牆上的她就是箱內的她；手機影片、側面目擊，講的是同一個她。 | `q_p2_phones`：`evidence:togawa_video_position_check`<br>`q_p2_side`：`evidence:silhouette_side_view_check` | 手機影片：她拍到的是玻璃上的牆，原檔仍待固定。側面：「不像人在動」可以是靜默挑戰裡她保持不動——站不住：從側面看，椅子上立的是投影輪廓板。柚木的口述神谷只記作陳述。 |
+| `p2` 牆不是箱 | 牆上的她就是箱內的她；手機影片、側面目擊，講的是同一個她。 | `q_p2_phones`：`evidence:togawa_video_position_check`<br>`q_p2_side`：`evidence:silhouette_side_view_check` | 手機影片：她拍到的是玻璃上的牆；警方已固定原檔（scene_9、analysis_scene_13），副本還沒到辯方手上，神谷只記作線索。側面：「不像人在動」可以是靜默挑戰裡她保持不動——站不住：從側面看，椅子上立的是投影輪廓板。柚木的口述神谷只記作陳述。 |
 | `p3` 畫面不是 raw | 平台與轉播端都看見她；原始信號要比對就調出來比對，沒人調，是因為沒有疑義。 | `q_p3_composite`：`evidence:program_composite_label`<br>`q_p3_raw`：`evidence:raw_buffer_rule` | 「平台保存的就是箱內畫面」——站不住：標籤寫節目合成畫面、贊助模式（平台保存整夜連續、約 00:14 切換，神谷在主張裡自己唸）。「沒人調是沒疑義」——站不住：原始信號按規則覆寫，事故鎖到近三點才按。 |
 | `p4` 控制室合理誤判 | 控制室依手冊把它分類成 sponsor 異常，request 有效，每個人的處置都合理，沒有空窗可言。 | `q_p4_first_report`：`evidence:incident_comms_log`<br>`q_p4_channel`：`evidence:process_channel_roster` | 「回報及時，流程無疏漏」——站不住不是處置，是回報內容：回報的是蓮見，說她在背面安全位；約十一分鐘後保全報安全位沒人。「流程通道不錄音，說了什麼無從得知」——不爭說了什麼，爭誰能：只有導播與經紀人；神谷收下「誰能」，不收「做了什麼」。 |
 | `p5` 個人裝置 | 手機整晚在資料座（第一輪已記：位置不是本人位置）；她若離箱，麥克風與貼身裝置不會毫無異常。 | `q_p5_audio`：`evidence:sponsor_audio_routing`<br>`q_p5_watch`：`evidence:mashiro_watch_ping` | 麥克風：節目裡她的麥克風本來就是關的，觀眾聽的是預錄旁白。手錶：神谷說弱訊號她不採；相馬只說最後一次被收到的位置在大樓服務核心附近，不是玻璃箱，不說她在那裡做什麼。 |
-| `p6` 通行碼路線 | 就算畫面有疑義，也沒有任何證據顯示她離開了現場；背面有保全、有封鎖，門有權限管制。 | `q_p6_route`：`evidence:venue_logistics_board`<br>`q_p6_door`：`evidence:sponsor_maintenance_passcode`<br>`q_p6_elevator`：`evidence:service_elevator_b_log` | 路線：背面安全位不是死角。門：M-03 那晚只開過一次（00:07，`evidence:m03_door_log`，神谷自己引），那十五分鐘是合法打開的，申請寫校準、沒有人去校準。梯：停在七樓直到保全上去，坐它上樓的人下樓沒坐它；可帶 00:23 消防門與「她是自己走進那一層的」。 |
+| `p6` 通行碼路線 | 就算畫面有疑義，也沒有任何證據顯示她離開了現場；背面有保全、有封鎖，門有權限管制。 | `q_p6_route`：`evidence:venue_logistics_board`<br>`q_p6_door`：`evidence:sponsor_maintenance_passcode`<br>`q_p6_elevator`：`evidence:service_elevator_b_log` | 路線：背面安全位不是死角。門：M-03 那晚只開過一次（00:07，`evidence:m03_door_log`，神谷自己引），那十五分鐘是合法打開的，申請寫校準、沒有人去校準。梯：00:08:21 停在七樓直到保全上去，坐它上樓的人下樓沒坐它；鞋印（`vacant_floor_traces`：她的鞋、沒有拖行）放在相馬的 On Correct，不放在神谷的主張裡。 |
 | `p7` 摘要的結論：高度關聯人物 | 你們要換掉這個結論，就得說換成誰，憑什麼。三枝有動機也有惡意，這些我不否認。 | `q_p7_saegusa`：`evidence:saegusa_access_check`<br>`q_p7_entry`：`evidence:sr2307_submission_record`<br>`q_p7_motive`：`evidence:mashiro_exit_message` | 三枝：摘要第三點量的是距離，不是路線；登記在冊的入口沒有一個在他名下；神谷自己補上「碼可以轉給別人」，相馬只答紀錄沒有任何一筆把碼放到他手上。入口：申請從登記在蓮見名下的帳號送出，碼只發到那個帳號登記的手機；「碼可以轉給別人，這還不算證實」神谷提、相馬接。動機：神谷唸蓮見的陳述（`statement:hasumi_after_project_account`：她只想休息、企劃後坐下來談）；相馬出示退出訊息；On Correct 再帶一句收益對照表。 |
 
 - **可選題（`Required: false`，不進 E2E）**：`q_p6_return`（`Unlock`：`question:q_p6_elevator answered`）Contradiction `evidence:building_night_access_log`——神谷問通行碼過期後，這個人要怎麼回前場；`q_p7_cannot_take_back`（`Unlock`：`question:q_p7_motive answered`）Contradiction `evidence:backup_account_scheduled_statement`——神谷說離開事務所是她的權利，不是動機；相馬說她辦了會計師委任、排了他撤不掉的貼文（`evidence:accountant_engagement`），神谷收下，但說明「他知不知道這些，紀錄沒有說」。若編譯器因「保證出現」規則拒絕某個可選題，直接刪掉它，不要改成必答。
