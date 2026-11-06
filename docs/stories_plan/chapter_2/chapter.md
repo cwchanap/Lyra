@@ -32,3 +32,5 @@
 26. investigation_scene_map_09.md
 27. investigation_scene_17.md
 28. analysis_scene_18.md
+29. investigation_scene_map_10.md
+30. interrogation_scene_19.md

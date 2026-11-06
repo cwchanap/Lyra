@@ -309,6 +309,83 @@ const interrogationChallenges: Record<
       evidenceId: "kitami_data_theft_record",
     },
   ],
+  interrogation_scene_19: [
+    {
+      phaseId: "p1",
+      questionId: "q_p1_crowd",
+      evidenceId: "plaza_sightline_map",
+    },
+    {
+      phaseId: "p2",
+      questionId: "q_p2_phones",
+      evidenceId: "togawa_video_position_check",
+    },
+    {
+      phaseId: "p2",
+      questionId: "q_p2_side",
+      evidenceId: "silhouette_side_view_check",
+    },
+    {
+      phaseId: "p3",
+      questionId: "q_p3_composite",
+      evidenceId: "program_composite_label",
+    },
+    {
+      phaseId: "p3",
+      questionId: "q_p3_raw",
+      evidenceId: "raw_buffer_rule",
+    },
+    {
+      phaseId: "p4",
+      questionId: "q_p4_first_report",
+      evidenceId: "incident_comms_log",
+    },
+    {
+      phaseId: "p4",
+      questionId: "q_p4_channel",
+      evidenceId: "process_channel_roster",
+    },
+    {
+      phaseId: "p5",
+      questionId: "q_p5_audio",
+      evidenceId: "sponsor_audio_routing",
+    },
+    {
+      phaseId: "p5",
+      questionId: "q_p5_watch",
+      evidenceId: "mashiro_watch_ping",
+    },
+    {
+      phaseId: "p6",
+      questionId: "q_p6_route",
+      evidenceId: "venue_logistics_board",
+    },
+    {
+      phaseId: "p6",
+      questionId: "q_p6_door",
+      evidenceId: "sponsor_maintenance_passcode",
+    },
+    {
+      phaseId: "p6",
+      questionId: "q_p6_elevator",
+      evidenceId: "service_elevator_b_log",
+    },
+    {
+      phaseId: "p7",
+      questionId: "q_p7_saegusa",
+      evidenceId: "saegusa_access_check",
+    },
+    {
+      phaseId: "p7",
+      questionId: "q_p7_entry",
+      evidenceId: "sr2307_submission_record",
+    },
+    {
+      phaseId: "p7",
+      questionId: "q_p7_motive",
+      evidenceId: "mashiro_exit_message",
+    },
+  ],
 };
 
 /**

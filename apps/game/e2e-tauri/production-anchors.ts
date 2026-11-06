@@ -214,6 +214,12 @@ export const anchors = {
       destination: "hasumi_agency_office",
       next: "investigation_scene_17",
     },
+    {
+      chapter: "chapter_2",
+      wrapper: "investigation_scene_map_10",
+      destination: "kagami_review_room",
+      next: "interrogation_scene_19",
+    },
   ],
   // Every authored 推理 prompt on the production route, matched by its
   // question. The drain checks the chapter, scene and visible options against
@@ -283,7 +289,8 @@ export const anchors = {
   // test starts there. On a slow container (click p50 about 1.2s) the old
   // map_01-map_04 and map_04-map_06 legs took 17-18 of the 20 minutes, so
   // they split at map_02 and map_05; the Beat 9A and 9B legs took 12-15
-  // minutes each, so each keeps its own leg.
+  // minutes each, so each keeps its own leg. The final hearing (map_10) is
+  // one long Interrogation scene, so it keeps its own leg too.
   chapter2LegStartWrappers: [
     "investigation_scene_map_02",
     "investigation_scene_map_04",
@@ -291,6 +298,7 @@ export const anchors = {
     "investigation_scene_map_06",
     "investigation_scene_map_07",
     "investigation_scene_map_08",
+    "investigation_scene_map_10",
   ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
