@@ -1138,6 +1138,124 @@ describe("InvestigationSceneSurface", () => {
     expect(screen.getByRole("button", { name: /打招呼/ })).toBeInTheDocument();
   });
 
+  it("collapses the fallback panel to a corner pill and re-expands it", async () => {
+    // The bottom-fixed panel covers the viewport band it overlaps: at a
+    // tall window size it can swallow clicks meant for still-reachable
+    // targets near the bottom. The player must be able to collapse it to
+    // reach that band — and re-expand it to use the fallback entries.
+    window.innerWidth = 800;
+    window.innerHeight = 720;
+    const clippedView: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        ...sublocation.hotspots.filter((hotspot) => hotspot.layout !== null),
+        {
+          id: "ledger",
+          label: "帳本",
+          description: "手寫帳本。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation: clippedView,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const toggle = screen.getByRole("button", { name: /收合/ });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("button", { name: /畫面外：帳本/ }),
+    ).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+    expect(screen.getByRole("button", { name: /展開/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(
+      screen.queryByRole("button", { name: /畫面外：帳本/ }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /展開/ }));
+    expect(
+      screen.getByRole("button", { name: /畫面外：帳本/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("re-expands the fallback panel when the sublocation changes", async () => {
+    window.innerWidth = 800;
+    window.innerHeight = 720;
+    const clippedView: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        ...sublocation.hotspots.filter((hotspot) => hotspot.layout !== null),
+        {
+          id: "ledger",
+          label: "帳本",
+          description: "手寫帳本。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+        },
+      ],
+    };
+    const user = userEvent.setup();
+    const { container, rerender } = render(InvestigationSceneSurface, {
+      sublocation: clippedView,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await user.click(screen.getByRole("button", { name: /收合/ }));
+    expect(container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+
+    // A different sublocation's hidden targets surface expanded — the
+    // collapse from the previous location must not hide them silently.
+    const otherSublocation: SublocationView = {
+      ...clippedView,
+      id: "alley",
+      label: "後巷",
+    };
+    await rerender({
+      sublocation: otherSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+    expect(container.querySelector(".fallback-controls")).not.toHaveClass(
+      "collapsed",
+    );
+    expect(
+      screen.getByRole("button", { name: /畫面外：帳本/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shrinks the collapsed fallback panel to a corner pill", () => {
+    // Dropping the right inset lets the fixed bar shrink-wrap its toggle
+    // instead of spanning — and covering — the viewport's bottom band.
+    const rule = cssRule(surfaceSource(), ".fallback-controls.collapsed");
+    expect(rule).toContain("right: auto");
+  });
+
+  it("keeps the fallback toggle outside the panel's scroll area", () => {
+    // A list long enough to scroll must not carry the collapse control
+    // away — it is the only way back to covered scene targets.
+    const gridRule = cssRule(surfaceSource(), ".fallback-grid");
+    expect(gridRule).toContain("overflow-y: auto");
+    const source = surfaceSource();
+    const toggleIndex = source.indexOf('class="fallback-toggle"');
+    const gridIndex = source.indexOf('class="fallback-grid"');
+    expect(toggleIndex).toBeGreaterThan(-1);
+    expect(gridIndex).toBeGreaterThan(toggleIndex);
+  });
+
   it("toggles active character off when clicking the same character twice", async () => {
     const user = userEvent.setup();
     render(InvestigationSceneSurface, {
