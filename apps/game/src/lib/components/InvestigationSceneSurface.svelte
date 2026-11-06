@@ -156,6 +156,23 @@
         !isTargetReachable(character.layout, viewport),
     ),
   );
+  // The bottom-fixed fallback panel covers whatever scene band it overlaps:
+  // at a tall window size its z-10 pointer layer can swallow clicks meant
+  // for still-reachable targets near the viewport bottom (Chapter 1 scene
+  // 7's masuda_paperback sits at y≈785–829 under the panel at 800×900).
+  // Collapsing to a corner pill frees that band. The collapse is keyed to
+  // the sublocation so a different location's hidden targets still surface
+  // expanded — collapsing "inner" never silently hides "back_door"'s.
+  let collapsedFallbackSublocation = $state<string | null>(null);
+  let fallbackCollapsed = $derived(
+    collapsedFallbackSublocation === sublocation.id,
+  );
+  let fallbackEntryCount = $derived(
+    unplacedHotspots.length +
+      clippedHotspots.length +
+      unplacedCharacters.length +
+      clippedCharacters.length,
+  );
   // .hotspot-target clamps each button to a 72×44px minimum target, which
   // drags a small painted rect over its neighbours and steals their clicks
   // wherever two expanded boxes overlap. Buttons size as border-box (the
@@ -712,58 +729,78 @@
     </div>
   {/snippet}
 
-  {#if unplacedHotspots.length > 0 || unplacedCharacters.length > 0 || clippedHotspots.length > 0 || clippedCharacters.length > 0}
-    <div class="fallback-controls">
-      {#if unplacedHotspots.length > 0}
-        <section class="fallback-section" aria-label="未放置線索">
-          <header>
-            <span class="eyebrow">UNPLACED HOTSPOTS</span>
-          </header>
-          <div class="fallback-list">
-            {#each unplacedHotspots as hotspot (hotspot.id)}
-              {@render fallbackHotspotButton(hotspot, false)}
-            {/each}
-          </div>
-        </section>
-      {/if}
+  {#if fallbackEntryCount > 0}
+    <div class="fallback-controls" class:collapsed={fallbackCollapsed}>
+      <button
+        class="fallback-toggle"
+        type="button"
+        aria-expanded={!fallbackCollapsed}
+        {disabled}
+        onclick={() => {
+          collapsedFallbackSublocation = fallbackCollapsed
+            ? null
+            : sublocation.id;
+        }}
+      >
+        <span class="eyebrow">OFF-SCENE TARGETS · {fallbackEntryCount}</span>
+        <span class="fallback-toggle-action"
+          >{fallbackCollapsed ? "展開" : "收合"}</span
+        >
+      </button>
+      {#if !fallbackCollapsed}
+        <div class="fallback-grid">
+          {#if unplacedHotspots.length > 0}
+            <section class="fallback-section" aria-label="未放置線索">
+              <header>
+                <span class="eyebrow">UNPLACED HOTSPOTS</span>
+              </header>
+              <div class="fallback-list">
+                {#each unplacedHotspots as hotspot (hotspot.id)}
+                  {@render fallbackHotspotButton(hotspot, false)}
+                {/each}
+              </div>
+            </section>
+          {/if}
 
-      {#if clippedHotspots.length > 0}
-        <section class="fallback-section" aria-label="畫面外線索">
-          <header>
-            <span class="eyebrow">OFFSCREEN HOTSPOTS</span>
-          </header>
-          <div class="fallback-list">
-            {#each clippedHotspots as hotspot (hotspot.id)}
-              {@render fallbackHotspotButton(hotspot, true)}
-            {/each}
-          </div>
-        </section>
-      {/if}
+          {#if clippedHotspots.length > 0}
+            <section class="fallback-section" aria-label="畫面外線索">
+              <header>
+                <span class="eyebrow">OFFSCREEN HOTSPOTS</span>
+              </header>
+              <div class="fallback-list">
+                {#each clippedHotspots as hotspot (hotspot.id)}
+                  {@render fallbackHotspotButton(hotspot, true)}
+                {/each}
+              </div>
+            </section>
+          {/if}
 
-      {#if unplacedCharacters.length > 0}
-        <section class="fallback-section" aria-label="未放置證人">
-          <header>
-            <span class="eyebrow">UNPLACED WITNESSES</span>
-          </header>
-          <div class="fallback-list">
-            {#each unplacedCharacters as character (character.id)}
-              {@render fallbackWitness(character)}
-            {/each}
-          </div>
-        </section>
-      {/if}
+          {#if unplacedCharacters.length > 0}
+            <section class="fallback-section" aria-label="未放置證人">
+              <header>
+                <span class="eyebrow">UNPLACED WITNESSES</span>
+              </header>
+              <div class="fallback-list">
+                {#each unplacedCharacters as character (character.id)}
+                  {@render fallbackWitness(character)}
+                {/each}
+              </div>
+            </section>
+          {/if}
 
-      {#if clippedCharacters.length > 0}
-        <section class="fallback-section" aria-label="畫面外證人">
-          <header>
-            <span class="eyebrow">OFFSCREEN WITNESSES</span>
-          </header>
-          <div class="fallback-list">
-            {#each clippedCharacters as character (character.id)}
-              {@render fallbackWitness(character)}
-            {/each}
-          </div>
-        </section>
+          {#if clippedCharacters.length > 0}
+            <section class="fallback-section" aria-label="畫面外證人">
+              <header>
+                <span class="eyebrow">OFFSCREEN WITNESSES</span>
+              </header>
+              <div class="fallback-list">
+                {#each clippedCharacters as character (character.id)}
+                  {@render fallbackWitness(character)}
+                {/each}
+              </div>
+            </section>
+          {/if}
+        </div>
       {/if}
     </div>
   {/if}
@@ -1350,12 +1387,52 @@
     right: clamp(20px, 3vw, 40px);
     bottom: 16px;
     z-index: 10;
+    pointer-events: auto;
+  }
+
+  /* Collapsed drops the right inset so the bar shrink-wraps its toggle
+     into a corner pill instead of spanning the viewport's bottom band. */
+  .fallback-controls.collapsed {
+    right: auto;
+  }
+
+  .fallback-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    width: 100%;
+    padding: 8px 0;
+    border: 0;
+    border-top: 1px solid var(--rule);
+    background: transparent;
+    color: var(--bone);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .fallback-toggle:hover:not(:disabled),
+  .fallback-toggle:focus-visible:not(:disabled) {
+    color: var(--cyan);
+  }
+
+  .fallback-controls.collapsed .fallback-toggle {
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .fallback-toggle-action {
+    color: var(--bone-faint);
+    font-family: var(--serif-jp);
+    font-size: 12px;
+    letter-spacing: 0.1em;
+  }
+
+  .fallback-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 16px;
     max-height: min(36vh, 280px);
     overflow-y: auto;
-    pointer-events: auto;
   }
 
   .fallback-section {
@@ -1413,6 +1490,9 @@
       left: 12px;
       right: 12px;
       bottom: 12px;
+    }
+
+    .fallback-grid {
       grid-template-columns: 1fr;
     }
 
