@@ -858,3 +858,98 @@ Beat 10（最終審查會）在下一個 PR。plan §10 H「青葉專題深挖�
 
 - 事實 `aoba_footage_is_an_official_reenactment`、`aoba_commission_is_unsupported`、`hasumi_had_access_motive_and_control`。
 - 問題 `aoba_official_reenactment`（「青葉官方重演」，`Resolved By: []`）：保持未解，是 plan §9.4 的「未解事項：青葉官方重演」；Summary 用 plan §9.4 的固定最後一問。
+
+## 17. Beat 10（最終審查會）編排決定
+
+### 17.1 檔案與順序
+
+| 檔案 | 內容 |
+|---|---|
+| `investigation_scene_map_10.md` | 東京地圖上前往 `kagami_review_room` 的 wrapper（格式同 `investigation_scene_map_03.md`），接在 `analysis_scene_18.md` 之後。 |
+| `interrogation_scene_19.md` | 第二輪審查會。七個 inquiry phase（`p1`～`p7`），主體都是 `kamiya`（神谷澪），依 plan §12 的 Proof Order 一段一個 phase。 |
+
+- `chapter.md` 的 Scenes 追加 29 `investigation_scene_map_10.md`、30 `interrogation_scene_19.md`；Status 維持 `in-progress`（Beat 11 才結案）。
+- 本 beat 不新增證物與陳述、不新增角色、不改 story catalog。審查會用的每一件證物都已在 Beat 4～9B 宣告；審查會只出示，不重新定義。
+- 蓮見、三枝、黑瀨、書記官在場，但說話的主體只有神谷澪（Subject）與相馬；其他人只在 Intro、Outro 與相馬／神谷的台詞之間出聲，不當 Subject。
+
+### 17.2 審查會狀態
+
+- 第二輪審查會，早坂的書面申請已在期限內送出，神谷看過材料後准了（Intro 由神谷說一句：「申請書我看過了，准。」不寫幾點收件、不寫第幾天）。場景標記用「第二輪審查會，上午十點」，不寫案發第幾日。
+- 神谷這輪不再逐點宣讀摘要，而是把摘要的結論拆成七個主張，一段一段審；每一段她都先講主張，再問辯方拿什麼回應。辯方拿來的每一份材料，來路不明或未固定的，她只記作線索，不採為證據。她信摘要，因為她比誰都清楚人的偏見有多危險；今天她要的是紀錄，不是氣勢。
+- 在場：神谷澪（主理）、書記官、辯方席相馬與早坂與三枝、黑瀨徹（立在證物推車旁）、旁聽席蓮見透（被害人事務所，照 Beat 5 的位置，平板擺在膝上）。戶川美羽、柚木陸、清潔員不在場。
+- **材料來路**（Intro 由黑瀨交代一次，兩三句，不要唸清單）：事務所提供的耳麥頻道表與事故通訊紀錄是影本，黑瀨已向活動方調出原件，逐頁核對一致；SR-2307 送出紀錄、三枝權限查核、退出訊息那一頁，是警方與贊助商的書面資料。這是為了讓 Beat 9B 標為 `lead` 的紀錄在審查會上有可說的來路，不要寫成新的程序關卡。
+- 蓮見在 Intro 只被神谷點名一次（「被害人事務所，蓮見透先生」），他欠身，沒有別的動作。直到 p7 以前沒有人看他、提他。
+
+### 17.3 固定數值（沿用，不新增）
+
+- 時間用 §15.3、§16.3 已定的數字：00:00:12 三枝關台；約 00:01 起三枝在真白頁面看到 00:14；00:03:41、00:03:58、00:04:35、00:13:20、00:15～00:16、00:33 事故通訊；00:07 M-03 開門；00:07:46 手錶最後一次被收到；00:23 七樓消防門；約 02:30 發現屍體。
+- 時間差只能寫紀錄寫得出的：回報「人在背面安全位」（00:03:58）到保全報安全位沒人（00:15），約十一分鐘。不另算別的時間差，不新增秒數。
+- 十五分鐘通行碼、SR-2307、案發前一日 21:12、退出訊息案發前三日 23:12 都沿用 §16.3。
+
+### 17.4 Beat 10 封印（沿用 §2.2、§8.3、§11.3、§12.3、§13.3、§14.4、§15.4、§16.4，並追加）
+
+審查會是把證據排成順序，不是新發現，也不是自白場。每一句（含 On Correct、On Wrong Evidence、Default Wrong、Wrong Reply、神谷的裁定）都要過 Beat 7～9B 擋下來的幾條邏輯：
+
+- **「最可能」到哪裡**：相馬在審查會能說到的上限是 §16.4 的「通行碼最可能是從蓮見手上出去的；碼可以轉給別人，這還不算證實」。神谷自己會把「碼可以轉給別人」提出來，相馬不否認，只說紀錄裡沒有任何一筆把碼放到別人手上。
+- **沒有紀錄不等於沒有**：三枝名下沒有登記的入口，只說紀錄沒有把他放在那條路上，不說他不可能；不說任何人「不可能」「一定」「絕對」。用「紀錄沒有支持」「登記在冊的入口」。
+- **存根證明寄出，不證明送達**；會計師委任書證明她自己辦了委任，不證明結果；排程聲明證明她排了一則貼文，不證明蓮見知道，更不證明發出過。蓮見知不知道她做了這些，紀錄沒有說，神谷可以直接這樣說。
+- **不寫七樓**：七樓上說了什麼、流程通道上說了什麼、她怎麼死的、誰動的手，審查會一律不裁定、不描述；沒有兇器、掛繩、束線帶、掛帶。鞋印只說「她是自己走進那一層的」。神谷在裁定時明說：這些紀錄沒有寫，是重新調查要回答的。
+- **事故分類不等於現場事實**：控制室每個人的判斷各自合理，相馬不說他們疏忽、不說誰降智；空窗是第一回報位置加上分類形成的，不是誰犯錯。
+- 說「轉播車」「平台」，不說「保全」來指合成畫面的來源；保全的「失聯」與轉播緩存無關（§11.3）。
+- 不連到青葉、A-90、`ZW_A16.lock`、鏡原、久遠、第零證人；青葉的兩張列印、雲端紀錄、月行程表不進審查會。藍色透明傘不出現。公關只以職稱在事故通訊紀錄裡出現一次，不改名、不加暗示。雨宮不出現。
+- 三枝仍然討人厭：Intro 不耐煩，Outro 鬆一口氣就開始算帳；他不被寫成被冤枉的好人，也不被洗成可靠盟友。
+- 蓮見直到 p7 都是冷靜、有用的經紀人；p7 與 Outro 他也不自白、不失控、不冷笑、不擦汗、不看錶，不替自己辯解到讓人覺得他在表演。他只做兩件事：Outro 在神谷裁定時放下平板，與黑瀨請他留下時說「我會配合」。
+- 序列上不要讓主張一次攤完：每個 phase 的神谷主張只有一個，相馬一次只反駁一處。
+
+### 17.5 角色與語氣
+
+- 神谷澪（`kamiya`）：理性、精確、不帶情緒。主張用「摘要」「紀錄」當主詞，不用「我認為」；被反駁成立時，她說「這一點，我記下」，不說「你贏了」。Role／Bio 照 `interrogation_scene_6.md` 與 Ch1 hearing 原文。
+- 相馬律：句子短，只出示、只說紀錄寫了什麼；不替主題演講。早坂：Intro 與 Outro 有人味（薑糖、緊張），審查中偶爾補一句，不搶 Subject。
+- 蓮見透：只有 Intro 一次欠身與 Outro 兩個動作（見 17.4）。黑瀨：Intro 交代材料來路，Outro 請蓮見留下。
+- 三枝悠真：Intro 嘴硬、Outro 先鬆一口氣再算帳；神谷回他「紀錄會更正；網路上怎麼說，不在我的權限內」，這是 Beat 11 的伏筆，不展開。
+
+### 17.6 七段 phase 與題目（共 15 個 Required）
+
+每個 Question 的 Testimony 照 `interrogation_scene_6.md` 的樣式：誠實的主張一至二句，然後**剛好一個** Contradiction 行（神谷的說法有一處站不住），可再接一句誠實的收尾。`On Correct` 以相馬的台詞為主，核心句取自該證物 §8.6、§11.4、§12.5、§13.5、§15.6、§16.6 表的「審查會使用語」，可再展開一兩句；`On Wrong Evidence` 是神谷一句，只說「這個回答不到我問的那一點」並指出她要的是哪一類紀錄，不洩漏答案。
+
+每個 phase 先由神谷講那一段的主張（兩三句，放在 phase 標題後的對白），所有 phase 之間的 `Unlock` 用 `phase:<前一個 id> completed`；同一個 phase 內的題目用 `question:<前一題> answered` 串成一條線。phase 與 question 的 `{#id}` 如下；`Subject` 一律 `### Subject: 神谷澪 {#kamiya}`。
+
+| Phase | 神谷的主張 | Question `{#id}` 與 Contradiction 證物 | 站不住的是哪一處（寫給 Contradiction 行用） |
+|---|---|---|---|
+| `p1` 群眾目擊成立 | 摘要第一點：數萬人看見她在箱內，沒有一個人說她離開過。第一輪我記了疑點，這輪我要答案：他們看的是什麼。 | `q_p1_crowd`：`evidence:plaza_sightline_map` | 「彼此不認識、各自看見，就是獨立目擊」——站不住：幾乎每一張臉先看見的是牆，能直接看見箱子的只有少數側角；可帶一句「活動方請大家看主螢幕」。 |
+| `p2` 牆不是箱 | 牆上的她就是箱內的她；手機影片、側面目擊，講的是同一個她。 | `q_p2_phones`：`evidence:togawa_video_position_check`<br>`q_p2_side`：`evidence:silhouette_side_view_check` | 手機影片：她拍到的是玻璃上的牆，原檔仍待固定。側面：「不像人在動」可以是靜默挑戰裡她保持不動——站不住：從側面看，椅子上立的是投影輪廓板。柚木的口述神谷只記作陳述。 |
+| `p3` 畫面不是 raw | 平台與轉播端都看見她；原始信號要比對就調出來比對，沒人調，是因為沒有疑義。 | `q_p3_composite`：`evidence:program_composite_label`<br>`q_p3_raw`：`evidence:raw_buffer_rule` | 「平台保存的就是箱內畫面」——站不住：標籤寫節目合成畫面、贊助模式（平台保存整夜連續、約 00:14 切換，神谷在主張裡自己唸）。「沒人調是沒疑義」——站不住：原始信號按規則覆寫，事故鎖到近三點才按。 |
+| `p4` 控制室合理誤判 | 控制室依手冊把它分類成 sponsor 異常，request 有效，每個人的處置都合理，沒有空窗可言。 | `q_p4_first_report`：`evidence:incident_comms_log`<br>`q_p4_channel`：`evidence:process_channel_roster` | 「回報及時，流程無疏漏」——站不住不是處置，是回報內容：回報的是蓮見，說她在背面安全位；約十一分鐘後保全報安全位沒人。「流程通道不錄音，說了什麼無從得知」——不爭說了什麼，爭誰能：只有導播與經紀人；神谷收下「誰能」，不收「做了什麼」。 |
+| `p5` 個人裝置 | 手機整晚在資料座（第一輪已記：位置不是本人位置）；她若離箱，麥克風與貼身裝置不會毫無異常。 | `q_p5_audio`：`evidence:sponsor_audio_routing`<br>`q_p5_watch`：`evidence:mashiro_watch_ping` | 麥克風：節目裡她的麥克風本來就是關的，觀眾聽的是預錄旁白。手錶：神谷說弱訊號她不採；相馬只說最後一次被收到的位置在大樓服務核心附近，不是玻璃箱，不說她在那裡做什麼。 |
+| `p6` 通行碼路線 | 就算畫面有疑義，也沒有任何證據顯示她離開了現場；背面有保全、有封鎖，門有權限管制。 | `q_p6_route`：`evidence:venue_logistics_board`<br>`q_p6_door`：`evidence:sponsor_maintenance_passcode`<br>`q_p6_elevator`：`evidence:service_elevator_b_log` | 路線：背面安全位不是死角。門：M-03 那晚只開過一次（00:07，`evidence:m03_door_log`，神谷自己引），那十五分鐘是合法打開的，申請寫校準、沒有人去校準。梯：停在七樓直到保全上去，坐它上樓的人下樓沒坐它；可帶 00:23 消防門與「她是自己走進那一層的」。 |
+| `p7` 摘要的結論：高度關聯人物 | 你們要換掉這個結論，就得說換成誰，憑什麼。三枝有動機也有惡意，這些我不否認。 | `q_p7_saegusa`：`evidence:saegusa_access_check`<br>`q_p7_entry`：`evidence:sr2307_submission_record`<br>`q_p7_motive`：`evidence:mashiro_exit_message` | 三枝：摘要第三點量的是距離，不是路線；登記在冊的入口沒有一個在他名下；神谷自己補上「碼可以轉給別人」，相馬只答紀錄沒有任何一筆把碼放到他手上。入口：申請從登記在蓮見名下的帳號送出，碼只發到那個帳號登記的手機；「碼可以轉給別人，這還不算證實」神谷提、相馬接。動機：神谷唸蓮見的陳述（`statement:hasumi_after_project_account`：她只想休息、企劃後坐下來談）；相馬出示退出訊息；On Correct 再帶一句收益對照表。 |
+
+- **可選題（`Required: false`，不進 E2E）**：`q_p6_return`（`Unlock`：`question:q_p6_elevator answered`）Contradiction `evidence:building_night_access_log`——神谷問通行碼過期後，這個人要怎麼回前場；`q_p7_cannot_take_back`（`Unlock`：`question:q_p7_motive answered`）Contradiction `evidence:backup_account_scheduled_statement`——神谷說離開事務所是她的權利，不是動機；相馬說她辦了會計師委任、排了他撤不掉的貼文（`evidence:accountant_engagement`），神谷收下，但說明「他知不知道這些，紀錄沒有說」。若編譯器因「保證出現」規則拒絕某個可選題，直接刪掉它，不要改成必答。
+- 每個 phase 的 `Required` 題都要在 phase 內可被保證打破（照 `writing-interrogation-scene`「Contradiction guarantee」）；若編譯器報 `crossSceneInventoryNotGuaranteed`，回報 orchestrator，不要自己換證物。
+- 互動節奏：每個 phase 的對白（含主張、四到六行誠實／反駁／解答）在 40 行上下；Intro 與 Outro 合計不超過 90 行。審查會本身就是這個 beat 的重量，不要為了篇幅加對白。
+
+### 17.7 背景與音效
+
+- **Intro** 與 **p1～p6**：重用 Beat 5 審查室的既有背景，不新增圖。Intro 的 Background Prompt 原文與 `Background Asset ID` 取 `interrogation_scene_6.md` Intro 的（編譯後 id 為 `background.chapter_2.interrogation_scene_6.tag_001`）；p1～p6 每個 phase 重複 `interrogation_scene_6.md` 的 `p_observation` phase 背景 prompt，並明確寫 `Background Asset ID: background.chapter_2.interrogation_scene_6.p_observation`。
+- **p7**：新背景（`background.chapter_2.interrogation_scene_19.p7`，編譯器自動產生，不寫 id）：同一間審查室，主理桌正面近景，桌上依序攤著幾疊紀錄，辯方席與旁聽席入鏡但沒有人當主體，燈光比前面冷一點，不寫任何可讀文字。
+- **Outro**：新背景（編譯器產生 id）：同一間審查室，裁定之後，摘要夾翻開、被合上一半，窗外的雨小了，灰白的天光；與 Beat 5 的 Outro（夾子闔上、三張小標籤）要看得出是不同的一刻。
+- BGM：Intro 與 p1、p2 `none`；p3～p7 `bgm_breakthrough_pursuit`；Outro `bgm_review_board_victory`。BGS 全程 `bgs_review_board_room`。不用 `bgm_chapter_close`（留給 Beat 11）。
+- 新增的圖只有 p7 與 Outro 兩張背景；沒有新證物，所以沒有新圖示。這兩張背景要加進轉給美術串的清單。
+
+### 17.8 裁定與 Outro
+
+神谷的裁定依序說完（每一句只說一件事）：
+
+1. 摘要第一點，量到的不是她，是節目的畫面；第一點不再採用。
+2. 摘要的結論撤回。三枝悠真不再列為高度關聯人物，理由只有一個：那條路上需要的每一樣東西，紀錄都不在他名下，也沒有任何一筆把他放在那條路上。他的嘲諷與惡意是另一回事，不歸這份摘要。
+3. 紀錄顯示入口（申請與通行碼）、動機（要離開、帳對不上）、第一回報的位置，都在蓮見透身上；摘要改列蓮見透為高度關聯人物，案件轉入重新調查。
+4. 這些紀錄沒有寫七樓上發生了什麼，審查會不裁定；那是重新調查要回答的。碼有沒有轉給別人，也是重新調查要回答的。
+5. 排程聲明、會計師委任的處理，不在這場審查會的範圍。
+
+之後：蓮見放下平板。神谷請他留在席上，黑瀨走到旁聽席邊；蓮見說「我會配合。」就這句。三枝鬆一口氣，立刻問頻道怎麼辦、能不能要求道歉；神谷說紀錄會更正，網路上怎麼說，不在她的權限內；早坂叫他閉嘴。最後相馬與早坂收拾卷宗，早坂一句人味（薑糖、沒吃東西，或手），相馬看窗外的雨。不離開審查室，不去大樓門口，不開 Beat 11 的場景。
+
+### 17.9 E2E 與 compile
+
+- `production-anchors.ts`：`chapter2MapGates` 追加 `investigation_scene_map_10` → `kagami_review_room` → `interrogation_scene_19`；`chapter2LegStartWrappers` 追加 `investigation_scene_map_10`（審查會自己一個 leg，並帶存檔／忘記清關／讀檔的證明；`map_08` 起的 leg 改成中間 leg）。
+- `production-journey.e2e.ts`：`interrogationChallenges.interrogation_scene_19` 列出 15 個必答題，順序與上表一致。沒有新的 推理 題，不需新增 `deductionAnswers`。
+- 本 beat 沒有新證物，`packages/scripts/compile-scenes.test.ts` 的記錄基準不動；`contentRevision` 快照要在編譯後重新產生。
