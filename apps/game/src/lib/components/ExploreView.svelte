@@ -84,6 +84,7 @@
     {presentFeedback}
     {disabled}
     hud={sceneHud}
+    surfaceKey={`${inv.id}/${currentSub.id}`}
   />
 {:else if inv && inv.map && inv.currentSublocationId === null}
   {#key inv.id}

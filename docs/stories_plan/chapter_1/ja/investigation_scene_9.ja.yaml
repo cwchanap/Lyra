@@ -559,3 +559,33 @@ lines:
     ja: 出た時刻は、本人の言い分だ。ドアロックの記録が物を言う。
     voice:
       clip: ch1_hayasaka_akane_0196
+stale:
+  - id: L049
+    speaker: 早坂茜
+    zh: 對。但光這則備忘，定不了北見。得跟工單、憑證、那個 K 一起看。
+    ja: そう。でもこのメモだけじゃ、北見とは決められない。作業票、認証、あのKと合わせて見ないと。
+    voice:
+      clip: ch1_hayasaka_akane_0150
+  - id: L085
+    speaker: 相馬律
+    zh: 「22:50 雨鐘。校驗值確認。K。」
+    ja: 「22:50 雨鐘。検証値確認。K。」
+    note: "Read aloud off a forensic printout of Masuda's phone memo: three terse items, flat delivery."
+  - id: L087
+    speaker: 相馬律
+    zh: 是檢舉草稿，沒送出。
+    ja: 告発の下書きだ。送信されてない。
+    voice:
+      clip: ch1_soma_ritsu_0262
+  - id: L088
+    speaker: 早坂茜
+    zh: 光一份草稿，證不了資料怎麼流出去。
+    ja: 下書き一つじゃ、データがどう流出したかは証明できない。
+    voice:
+      clip: ch1_hayasaka_akane_0163
+  - id: L090
+    speaker: 相馬律
+    zh: 排程外接觸試點資料，還匯到外部載體。
+    ja: スケジュール外で試験運用データに触れて、外部の記録媒体にまで書き出してる。
+    voice:
+      clip: ch1_soma_ritsu_0263

@@ -1322,9 +1322,12 @@
 
   .wrapper.interrogation-stage-dialogue .challenge-object {
     color: var(--bone);
-    font-family: var(--impact);
-    font-size: 9px;
-    letter-spacing: 0.26em;
+    /* CJK subtitle: --impact is Antonio (Latin); its CJK fallback rendered
+       出示證據 at 9px with Latin tracking. Use the JP serif the rest of the
+       interrogation chrome uses, at a readable size. */
+    font-family: var(--serif-jp);
+    font-size: 11px;
+    letter-spacing: 0.12em;
     opacity: 0.75;
   }
 
