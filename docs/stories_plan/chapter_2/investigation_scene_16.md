@@ -1,6 +1,6 @@
 # Scene 16: 真白的工作室
 
-- **Summary:** 案發第四日下午，黑瀨帶相馬與早坂進到真白自己的房間；抽屜、舊手機與牆上的企劃板，替她沒說完的事補上了幾段話，也讓「她因青葉被滅口」的說法站不住。
+- **Summary:** 案發第四日下午，黑瀨帶相馬與早坂進到真白自己的房間；抽屜、舊手機與牆上的企劃板，替她沒說完的事補上了幾段話，也讓「她因青葉被滅口」的說法找不到紀錄支持。
 
 ## Intro
 
@@ -524,7 +524,7 @@
 #### Topic: 網路上的說法 {#aoba_rumor}
 - **Status:** locked
 - **Unlock:** evidence:aoba_official_database_page collected and evidence:mashiro_cloud_activity collected and evidence:hasumi_schedule_cancellations collected and evidence:mashiro_revenue_table collected and evidence:accountant_engagement collected
-- **Reveals:** [assert_fact:aoba_project_was_not_the_motive]
+- **Reveals:** [assert_fact:aoba_commission_is_unsupported]
 
 **黑瀨徹**：有件事，我順便提。這說法一直傳到分局的電話上，我不想辯護這邊被它拖進去。
 
@@ -539,9 +539,9 @@
 **相馬律**：那就把手上的拿出來對一對。
 
 > 推理：蓮見確實想取消青葉企劃。對照雲端和行程表，這件事最可能說明什麼？
-> - [ ] 有人要他讓青葉的事不被提起 → **相馬律**：那他會先去碰那個資料夾。雲端上，他的帳號一次都沒開過。
+> - [ ] 有人要他讓青葉的事不被提起 → **相馬律**：這個說法，紀錄裡找不到支持。雲端上，他的帳號一次都沒開過那個資料夾。
 > - [x] 他取消的不只青葉；凡是不經過他的題目、行程和發言，他都想取消
-> - [ ] 真白查到了青葉的祕密，他非阻止不可 → **早坂茜**：要滅口的人，不會讓資料原封不動地留著。案發當夜，那個資料夾沒有被開、被複製，也沒有被刪。
+> - [ ] 真白查到了青葉的祕密，他非阻止不可 → **早坂茜**：她有沒有查到什麼，紀錄沒寫。紀錄只寫了一件事：案發當夜，那個資料夾沒有被開、被複製，也沒有被刪。
 
 **早坂茜**：行程表上，慈善直播、專訪、休假，全被他改了。
 
@@ -549,13 +549,13 @@
 
 **黑瀨徹**：我們手上的紀錄裡，沒有任何一筆，是有人找他談過青葉。
 
-**相馬律**[determined]：所以，青葉專題是蓮見想壓掉的其中一個聲音，不是本案的幕後委託。
+**相馬律**[determined]：所以，青葉只是他壓掉的其中一個聲音。至於有人為了青葉委託他，手上的紀錄裡，沒有任何支持。
 
-**早坂茜**：那他要壓掉那麼多東西，真正的理由在哪裡？
+**早坂茜**：那他要壓掉那麼多東西，紀錄裡看得出什麼理由？
 
 **相馬律**：在抽屜裡。
 
-**相馬律**：三十六個月的對照表，和寄出去的會計師委任書。
+**相馬律**：三十六個月的對照表，和會計師委任書。錢和控制，手上的紀錄比較指向這一邊。
 
 **黑瀨徹**：我什麼都沒聽見。
 
@@ -596,7 +596,7 @@
 ### evidence:accountant_engagement {#accountant_engagement}
 - **Name:** 外部會計師委任書
 - **Description:** 同一個資料夾裡的委任書影本，日期是案發前兩天：委託一間會計師事務所核對過去三年的平台分潤與事務所轉帳，結果只交給她本人；後面釘著一張同日寄出帳目影本的宅配存根。
-- **Details:** 這是影本，原件在會計師事務所。委任書上寫明，核對的結果只交給真白本人。宅配存根的日期，和委任書是同一天。
+- **Details:** 這是影本，原件在會計師事務所；委託人與簽名都是真白本人。委任書上寫明，核對的結果只交給真白本人。宅配存根的日期和委任書同一天，品名寫「帳目影本」；存根沒有簽收，也沒有送達紀錄。
 - **Source Sublocation:** studio_room
 - **Image Prompt:** Photocopied engagement letter stapled to a small courier receipt stub in a kraft folder, a signature line and a faint stamp mark, isolated evidence icon, unreadable text, no readable text.
 - **Source Kind:** physical
@@ -618,6 +618,8 @@
 **早坂茜**：委任書的那一天，影本就寄走了。
 
 **相馬律**：寄出去的東西，不在這個抽屜裡。
+
+**相馬律**：存根說的是寄出，不是收到。
 
 ### evidence:backup_account_scheduled_statement {#backup_account_scheduled_statement}
 - **Name:** 備用帳號的排程聲明

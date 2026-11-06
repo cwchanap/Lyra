@@ -415,7 +415,7 @@
 
 **黑瀨徹**：我這邊查到的，就這些。
 
-**早坂茜**[stern]：這只說明，他走不了這條路。
+**早坂茜**[stern]：這只說明，他名下沒有登記的入口。別人轉給他的碼，這張紙沒寫。
 
 **早坂茜**：網路不會因為這樣放過他。
 
@@ -425,7 +425,7 @@
 
 ##### On Reexamine
 
-**黑瀨徹**：三邊查的結果，一張。他那邊，沒有鑰匙。
+**黑瀨徹**：三邊查的結果，一張。他名下，查不到登記的入口。
 
 **早坂茜**：對網路來說，不重要。
 
@@ -543,9 +543,9 @@
 ### evidence:saegusa_access_check {#saegusa_access_check}
 - **Name:** 三枝的權限查核
 - **Description:** 黑瀨向活動方、贊助商與大樓查核的結果：三枝沒有贊助商系統的帳號，不在活動的通行證名冊上，不在任何耳麥頻道上，大樓也沒有他的卡。
-- **Details:** 這是警方查核的結果，只回答「他碰不碰得到這條路」。查核不涉及他在網路上說過什麼、做過什麼，也不代表他沒有惡意。
+- **Details:** 這是警方查核的結果，只回答「他名下有沒有登記的入口」。別人轉給他的碼或通行證，不在查核範圍內。查核不涉及他在網路上說過什麼、做過什麼，也不代表他沒有惡意。
 - **Source Sublocation:** agency_entrance
-- **Image Prompt:** Checklist sheet icon with four rows each ending in an empty check box and a small crossed-out key glyph at the top, unreadable text, isolated evidence icon, no readable text.
+- **Image Prompt:** Checklist sheet icon with four rows each ending in an empty check box and a small crossed-out badge glyph at the top, unreadable text, isolated evidence icon, no readable text.
 - **Source Kind:** digital
 - **Procedural Status:** lead
 - **Source Label:** 警方向活動方、贊助商與大樓的查核結果（黑瀨提供）
@@ -556,7 +556,7 @@
 
 **早坂茜**：四個「沒有」。
 
-**相馬律**：先記成線索。它只說他碰不到這條路。
+**相馬律**：先記成線索。它只說他名下沒有登記的入口，別人轉給他的碼，它沒寫。
 
 #### On Reexamine
 
