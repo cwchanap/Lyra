@@ -3,7 +3,9 @@ import { userEvent } from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
+import InvestigationSceneSurface, {
+  resetFallbackCollapseForTests,
+} from "./InvestigationSceneSurface.svelte";
 import type { SublocationView } from "../state/types";
 import { cssRule, reportAsyncTestFailure } from "$lib/test-utils";
 import {
@@ -99,6 +101,7 @@ describe("InvestigationSceneSurface", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     resetEscapeCoordinator();
+    resetFallbackCollapseForTests();
     window.innerWidth = 1024;
     window.innerHeight = 768;
   });
@@ -989,8 +992,9 @@ describe("InvestigationSceneSurface", () => {
       minWidth,
       minHeight,
     });
-    expect(source).toContain(`Math.max(${minWidth}, (16 / 9) * ${minHeight})`);
-    expect(source).toContain(`Math.max(${minHeight}, (9 / 16) * ${minWidth})`);
+    expect(source).toContain(
+      `MIN_VIEWPORT_PX = { w: ${minWidth}, h: ${minHeight} }`,
+    );
   });
 
   it("calls onInterview after choosing a placed character topic", async () => {
@@ -1112,29 +1116,41 @@ describe("InvestigationSceneSurface", () => {
     const user = userEvent.setup();
     const onInspect = vi.fn();
 
-    render(InvestigationSceneSurface, {
+    const { container } = render(InvestigationSceneSurface, {
       sublocation: clippedView,
       onInspect,
       onInterview: vi.fn(),
     });
 
+    // Clipped targets stay mounted but inert — the element must not take
+    // clicks or keyboard focus while its interactive copy lives in the
+    // fallback list.
+    // jsdom has no `inert` IDL reflection: Svelte assigns the property, so
+    // assert .inert rather than the attribute (the browser sets both).
+    expect(screen.getByRole("button", { name: /調查：帳本/ })).toHaveProperty(
+      "inert",
+      true,
+    );
     expect(
-      screen.queryByRole("button", { name: /調查：帳本/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /詢問：對面店主/ }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: /詢問：對面店主/ }),
+    ).toHaveProperty("inert", true);
     await user.click(screen.getByRole("button", { name: /畫面外：帳本/ }));
     expect(onInspect).toHaveBeenCalledWith("ledger");
-    // Reachable targets stay on the plane.
+    // Reachable targets stay on the plane and interactive.
+    expect(screen.getByRole("button", { name: /調查：桌面/ })).toHaveProperty(
+      "inert",
+      false,
+    );
+    expect(screen.getByRole("button", { name: /詢問：目擊者/ })).toHaveProperty(
+      "inert",
+      false,
+    );
+    // The clipped witness renders through the witness fallback block (the
+    // name also survives inside the hidden inert plane copy — scope to the
+    // witness block).
     expect(
-      screen.getByRole("button", { name: /調查：桌面/ }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /詢問：目擊者/ }),
-    ).toBeInTheDocument();
-    // The clipped witness renders through the witness fallback block.
-    expect(screen.getByText("對面店主")).toBeInTheDocument();
+      container.querySelector(".fallback-witness strong"),
+    ).toHaveTextContent("對面店主");
     expect(screen.getByRole("button", { name: /打招呼/ })).toBeInTheDocument();
   });
 
@@ -1237,23 +1253,126 @@ describe("InvestigationSceneSurface", () => {
     ).toBeInTheDocument();
   });
 
-  it("shrinks the collapsed fallback panel to a corner pill", () => {
-    // Dropping the right inset lets the fixed bar shrink-wrap its toggle
-    // instead of spanning — and covering — the viewport's bottom band.
-    const rule = cssRule(surfaceSource(), ".fallback-controls.collapsed");
-    expect(rule).toContain("right: auto");
+  it("keeps the collapse choice after the surface unmounts and remounts", async () => {
+    // +page.svelte only renders the surface while the mode is "explore":
+    // every inspect/interview unmounts it. The collapse must survive that
+    // remount or the re-expanded panel covers the same bottom-band targets
+    // the player just freed.
+    window.innerWidth = 800;
+    window.innerHeight = 720;
+    const clippedView: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        ...sublocation.hotspots.filter((hotspot) => hotspot.layout !== null),
+        {
+          id: "ledger",
+          label: "帳本",
+          description: "手寫帳本。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+        },
+      ],
+    };
+    const props = {
+      sublocation: clippedView,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    };
+    const user = userEvent.setup();
+    const first = render(InvestigationSceneSurface, props);
+
+    await user.click(screen.getByRole("button", { name: /收合/ }));
+    expect(first.container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+
+    first.unmount();
+    const second = render(InvestigationSceneSurface, props);
+    expect(second.container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+    expect(
+      screen.queryByRole("button", { name: /畫面外：帳本/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("routes a placed target the fallback panel itself occludes into the list", async () => {
+    // The expanded panel is a fixed bottom band: a target can clear the
+    // cover-plane crop yet still sit under the panel. A mocked panel rect
+    // over a low hotspot must route it — otherwise the panel swallows its
+    // clicks while routing claims it reachable.
+    window.innerWidth = 800;
+    window.innerHeight = 600;
+    const occludedView: SublocationView = {
+      ...sublocation,
+      characters: [],
+      hotspots: [
+        ...sublocation.hotspots,
+        {
+          id: "floor_safe",
+          label: "地板夾層",
+          description: "地毯下的暗格。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.5, y: 0.85, w: 0.08, h: 0.08 },
+        },
+      ],
+    };
+    // The unplaced "cabinet" keeps the fallback panel mounted; pretend its
+    // painted rect covers the viewport's bottom 120px.
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: Element) {
+        const rect = {
+          left: 0,
+          top: 0,
+          right: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        };
+        if (this.classList?.contains("fallback-controls")) {
+          return { ...rect, right: 800, top: 480, bottom: 600, height: 120 };
+        }
+        return rect;
+      },
+    );
+
+    render(InvestigationSceneSurface, {
+      sublocation: occludedView,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /調查：地板夾層/ }),
+      ).toHaveProperty("inert", true);
+    });
+    expect(
+      screen.getByRole("button", { name: /畫面外：地板夾層/ }),
+    ).toBeInTheDocument();
+    // Targets above the panel band stay interactive.
+    expect(screen.getByRole("button", { name: /調查：桌面/ })).toHaveProperty(
+      "inert",
+      false,
+    );
   });
 
   it("keeps the fallback toggle outside the panel's scroll area", () => {
     // A list long enough to scroll must not carry the collapse control
-    // away — it is the only way back to covered scene targets.
-    const gridRule = cssRule(surfaceSource(), ".fallback-grid");
-    expect(gridRule).toContain("overflow-y: auto");
-    const source = surfaceSource();
-    const toggleIndex = source.indexOf('class="fallback-toggle"');
-    const gridIndex = source.indexOf('class="fallback-grid"');
-    expect(toggleIndex).toBeGreaterThan(-1);
-    expect(gridIndex).toBeGreaterThan(toggleIndex);
+    // away — it is the only way back to covered scene targets. Assert the
+    // DOM relationship directly (the scroll container never wraps it).
+    render(InvestigationSceneSurface, {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    const toggle = screen.getByRole("button", { name: /收合/ });
+    expect(toggle.closest(".fallback-controls")).not.toBeNull();
+    expect(toggle.closest(".fallback-grid")).toBeNull();
   });
 
   it("toggles active character off when clicking the same character twice", async () => {

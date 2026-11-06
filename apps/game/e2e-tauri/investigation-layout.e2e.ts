@@ -105,28 +105,41 @@ async function ensureMinimumWindowViewport(): Promise<void> {
     viewport.devicePixelRatio,
     MINIMUM_WINDOW,
   );
+  let lastError: unknown = null;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await browser.setWindowSize(requested.width, requested.height);
-    await browser
-      .waitUntil(
+    try {
+      await browser.waitUntil(
         async () => matches((viewport = await observedCssViewport())),
         {
           timeout: 10000,
           interval: 100,
           timeoutMsg: "viewport did not settle at the 800x600 minimum window",
         },
-      )
-      .catch(() => {});
+      );
+    } catch (error) {
+      // Keep the retry tolerance — a slow-clamping WM may need a corrected
+      // request — but hang on to the failure for the final error instead of
+      // dropping it.
+      lastError = error;
+    }
     if (matches(viewport)) return;
     const scale = validDevicePixelRatio(viewport.devicePixelRatio);
+    // Signed correction: the WM can clamp a request in either direction, so
+    // overshoots must shrink as well as shortfalls grow.
     requested.width += Math.ceil(
-      Math.max(0, MINIMUM_WINDOW.width - viewport.width) * scale,
+      (MINIMUM_WINDOW.width - viewport.width) * scale,
     );
     requested.height += Math.ceil(
-      Math.max(0, MINIMUM_WINDOW.height - viewport.height) * scale,
+      (MINIMUM_WINDOW.height - viewport.height) * scale,
     );
   }
-  throw new Error("viewport did not settle at the 800x600 minimum window");
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `viewport did not settle at the 800x600 minimum window (last observed ${viewport.width}x${viewport.height})`,
+    { cause: detail === "null" ? undefined : detail },
+  );
 }
 
 /** Explore parked on investigation_scene_map_01's city map (HPA-601 §7). */

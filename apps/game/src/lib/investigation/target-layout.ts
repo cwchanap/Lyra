@@ -52,27 +52,111 @@ export function targetViewportRect(
 }
 
 /**
- * Smallest viewport span (px, per axis) a hit box must show to count as
- * reachable. A sliver of the painted edge — e.g. the ~3px a tall window
- * leaves of a cropped target — is technically clickable but effectively
- * undiscoverable, so the target routes to the fallback list instead.
+ * Smallest viewport span (px, per axis) a hit box must keep clear to count
+ * as reachable. Matches the project's own usability floor — the packaged
+ * E2E contract (MIN_USABLE_TARGET_PX in investigation-layout.e2e.ts) and
+ * the hotspot's minimum hit height are both 44px: a target showing less is
+ * effectively undiscoverable and routes to the fallback list instead.
  * Boxes narrower/shorter than the floor need their full extent visible.
  */
-export const MIN_VISIBLE_SPAN_PX = 24;
+export const MIN_VISIBLE_SPAN_PX = 44;
+
+/**
+ * The parts of `rect` inside `viewport` and clear of `occluded`, as up to
+ * four axis-aligned residuals. `occluded` is the fixed fallback panel's
+ * painted rect: a target must keep its usable span outside the panel that
+ * covers it, not just inside the window, so plain viewport intersection
+ * alone can't decide reachability.
+ */
+export function visibleSpans(
+  rect: ViewportRect,
+  viewport: ViewportSize,
+  occluded: ViewportRect | null = null,
+): ViewportRect[] {
+  const visible: ViewportRect = {
+    left: Math.max(rect.left, 0),
+    top: Math.max(rect.top, 0),
+    right: Math.min(rect.right, viewport.w),
+    bottom: Math.min(rect.bottom, viewport.h),
+  };
+  if (visible.right <= visible.left || visible.bottom <= visible.top) {
+    return [];
+  }
+  if (!occluded) return [visible];
+  const spans: ViewportRect[] = [];
+  if (occluded.top > visible.top) {
+    spans.push({
+      left: visible.left,
+      top: visible.top,
+      right: visible.right,
+      bottom: Math.min(occluded.top, visible.bottom),
+    });
+  }
+  if (occluded.bottom < visible.bottom) {
+    spans.push({
+      left: visible.left,
+      top: Math.max(occluded.bottom, visible.top),
+      right: visible.right,
+      bottom: visible.bottom,
+    });
+  }
+  const bandTop = Math.max(visible.top, occluded.top);
+  const bandBottom = Math.min(visible.bottom, occluded.bottom);
+  if (bandBottom > bandTop) {
+    if (occluded.left > visible.left) {
+      spans.push({
+        left: visible.left,
+        top: bandTop,
+        right: Math.min(occluded.left, visible.right),
+        bottom: bandBottom,
+      });
+    }
+    if (occluded.right < visible.right) {
+      spans.push({
+        left: Math.max(occluded.right, visible.left),
+        top: bandTop,
+        right: visible.right,
+        bottom: bandBottom,
+      });
+    }
+  }
+  return spans.filter(
+    (span) => span.right > span.left && span.bottom > span.top,
+  );
+}
 
 export function isTargetReachable(
   layout: TargetLayout,
   viewport: ViewportSize,
   minW = 0,
   minH = 0,
+  occluded: ViewportRect | null = null,
 ): boolean {
   const rect = targetViewportRect(layout, viewport, minW, minH);
-  const visibleW = Math.min(rect.right, viewport.w) - Math.max(rect.left, 0);
-  const visibleH = Math.min(rect.bottom, viewport.h) - Math.max(rect.top, 0);
-  return (
-    visibleW >= Math.min(MIN_VISIBLE_SPAN_PX, rect.right - rect.left) &&
-    visibleH >= Math.min(MIN_VISIBLE_SPAN_PX, rect.bottom - rect.top)
+  const needW = Math.min(MIN_VISIBLE_SPAN_PX, rect.right - rect.left);
+  const needH = Math.min(MIN_VISIBLE_SPAN_PX, rect.bottom - rect.top);
+  return visibleSpans(rect, viewport, occluded).some(
+    (span) =>
+      span.right - span.left >= needW && span.bottom - span.top >= needH,
   );
+}
+
+/**
+ * The interactive copy a target's focus can move to when routing rerenders
+ * it: the same `data-target-id` among plane buttons (skipped while they
+ * carry `inert`) or its fallback-panel entry. A witness block resolves to
+ * its first topic button.
+ */
+export function targetCounterpart(
+  root: ParentNode,
+  targetId: string,
+): HTMLElement | null {
+  const host = root.querySelector<HTMLElement>(
+    `[data-target-id="${CSS.escape(targetId)}"]:not([inert])`,
+  );
+  if (!host) return null;
+  if (host instanceof HTMLButtonElement) return host;
+  return host.querySelector("button");
 }
 
 /**

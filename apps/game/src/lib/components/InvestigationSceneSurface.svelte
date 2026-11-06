@@ -1,6 +1,24 @@
+<script module lang="ts">
+  import { SvelteSet as CollapseSet } from "svelte/reactivity";
+
+  // Collapse choices outlive the surface: +page.svelte renders this
+  // component only while the mode is "explore", so every inspect or
+  // interview unmounts it and component-local state would forget the
+  // collapse — re-covering the bottom-band targets the pill exists to
+  // free. Keyed per scene+sublocation: collapsing one location's panel
+  // must never hide a different location's off-scene targets.
+  const collapsedFallbackKeys = new CollapseSet<string>();
+
+  /** Test hook: module state survives component unmounts, so suites must
+      clear it between cases. */
+  export function resetFallbackCollapseForTests() {
+    collapsedFallbackKeys.clear();
+  }
+</script>
+
 <script lang="ts">
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import type { Snippet } from "svelte";
+  import { tick, type Snippet } from "svelte";
   import CrossfadeImage from "./CrossfadeImage.svelte";
   import InterrogationEvidenceTray from "./InterrogationEvidenceTray.svelte";
   import {
@@ -27,7 +45,10 @@
   import { undiscussedTopicCount } from "$lib/investigation/progress";
   import {
     isTargetReachable,
+    targetCounterpart,
     targetLayoutStyle,
+    targetViewportRect,
+    type ViewportRect,
   } from "$lib/investigation/target-layout";
 
   let {
@@ -40,6 +61,7 @@
     presentFeedback = null,
     disabled = false,
     hud,
+    surfaceKey = null,
   }: {
     sublocation: SublocationView;
     backgroundAssetId?: string | null;
@@ -56,6 +78,9 @@
     presentFeedback?: { characterId: string; line: FeedbackLine } | null;
     disabled?: boolean;
     hud?: Snippet;
+    /** Stable identity for the collapse memory — sublocation ids repeat
+        across scenes, so callers pass `${scene.id}/${sublocation.id}`. */
+    surfaceKey?: string | null;
   } = $props();
 
   // A Present topic stays out of the list until a shown record opens it.
@@ -115,64 +140,27 @@
   );
 
   // The cover plane overhangs every non-16:9 viewport (133px each side at
-  // 800×600, more as the window grows taller), so a placed target can end up
-  // fully offscreen — or leave only an undiscoverable sliver — with no other
-  // way to reach it. Targets whose hit box shows less than
-  // MIN_VISIBLE_SPAN_PX on either axis are rerouted to the fallback panel so
-  // required evidence never soft-locks on window shape.
+  // 800×600, more as the window grows taller), and whenever the fallback
+  // panel has entries it paints a fixed band over the viewport bottom
+  // (Chapter 1 scene 7's masuda_paperback sits at y≈785–829 under the
+  // expanded panel at 800×900). Either can leave a placed target fully
+  // unclickable — or reduce it to an undiscoverable sliver — so a target
+  // that can't keep MIN_VISIBLE_SPAN_PX clear of BOTH the crop and the
+  // panel is rerouted to the fallback list. Routed targets stay mounted
+  // but inert: their element never unmounts mid-resize (which would
+  // destroy keyboard focus) and their hit box can no longer steal clicks,
+  // so they drop out of the collision set below.
   let viewportW = $state(800);
   let viewportH = $state(600);
   let viewport = $derived({ w: viewportW, h: viewportH });
-  let reachableHotspots = $derived(
-    placedHotspots.filter((hotspot) =>
-      isTargetReachable(
-        hotspot.layout,
-        viewport,
-        MIN_TARGET_PX.w,
-        MIN_TARGET_PX.h,
-      ),
-    ),
-  );
-  let clippedHotspots = $derived(
-    placedHotspots.filter(
-      (hotspot) =>
-        !isTargetReachable(
-          hotspot.layout,
-          viewport,
-          MIN_TARGET_PX.w,
-          MIN_TARGET_PX.h,
-        ),
-    ),
-  );
-  let reachableCharacters = $derived(
-    placedCharacters.filter((character) =>
-      isTargetReachable(character.layout, viewport),
-    ),
-  );
-  let clippedCharacters = $derived(
-    placedCharacters.filter(
-      (character) =>
-        character.id !== activeCharacterId &&
-        !isTargetReachable(character.layout, viewport),
-    ),
-  );
-  // The bottom-fixed fallback panel covers whatever scene band it overlaps:
-  // at a tall window size its z-10 pointer layer can swallow clicks meant
-  // for still-reachable targets near the viewport bottom (Chapter 1 scene
-  // 7's masuda_paperback sits at y≈785–829 under the panel at 800×900).
-  // Collapsing to a corner pill frees that band. The collapse is keyed to
-  // the sublocation so a different location's hidden targets still surface
-  // expanded — collapsing "inner" never silently hides "back_door"'s.
-  let collapsedFallbackSublocation = $state<string | null>(null);
-  let fallbackCollapsed = $derived(
-    collapsedFallbackSublocation === sublocation.id,
-  );
-  let fallbackEntryCount = $derived(
-    unplacedHotspots.length +
-      clippedHotspots.length +
-      unplacedCharacters.length +
-      clippedCharacters.length,
-  );
+  let surfaceEl = $state<HTMLElement | undefined>();
+  let fallbackControlsEl = $state<HTMLDivElement | undefined>();
+  // The fixed panel's painted rect — the viewport band it can swallow
+  // clicks in. Measured (not recomputed from CSS) so the entry count,
+  // collapse state and window all stay honest.
+  let occludedRect = $state<ViewportRect | null>(null);
+  let lastFocusedTargetId = $state<string | null>(null);
+
   // .hotspot-target clamps each button to a 72×44px minimum target, which
   // drags a small painted rect over its neighbours and steals their clicks
   // wherever two expanded boxes overlap. Buttons size as border-box (the
@@ -190,71 +178,56 @@
   // Expansion is evaluated at the minimum window (tauri.conf.json
   // minWidth/minHeight), where the cover plane is ~1067×600px;
   // clamp-induced collisions are monotonic in viewport size, so a pair safe
-  // there is safe larger.
+  // there is safe larger. Only ACTIVE targets join the collision set: an
+  // inert box can't steal clicks or be stolen from, so a neighbour routed
+  // to the fallback list must not shrink a visible target's clamp.
   const MIN_TARGET_PX = { w: 72, h: 44 };
-  const MIN_COVER_PLANE_PX = {
-    w: Math.max(800, (16 / 9) * 600),
-    h: Math.max(600, (9 / 16) * 800),
-  };
+  const MIN_VIEWPORT_PX = { w: 800, h: 600 };
 
-  type HitRect = { left: number; top: number; right: number; bottom: number };
   type CompactAxis = "x" | "y";
+  type CompactClass = "compact" | "compact-x" | "compact-y";
 
-  function authoredRect(layout: {
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-  }): HitRect {
-    const left = layout.x * MIN_COVER_PLANE_PX.w;
-    const top = layout.y * MIN_COVER_PLANE_PX.h;
-    return {
-      left,
-      top,
-      right: left + layout.w * MIN_COVER_PLANE_PX.w,
-      bottom: top + layout.h * MIN_COVER_PLANE_PX.h,
-    };
+  /** The min-target clamp each compact class leaves on a hotspot's axes. */
+  function hotspotClamp(cls: CompactClass | undefined) {
+    if (cls === "compact") return { w: 0, h: 0 };
+    if (cls === "compact-x") return { w: 0, h: MIN_TARGET_PX.h };
+    if (cls === "compact-y") return { w: MIN_TARGET_PX.w, h: 0 };
+    return { w: MIN_TARGET_PX.w, h: MIN_TARGET_PX.h };
   }
 
-  function hotspotHitRect(layout: HotspotLayout): HitRect {
-    const rect = authoredRect(layout);
-    return {
-      left: rect.left,
-      top: rect.top,
-      right: rect.left + Math.max(rect.right - rect.left, MIN_TARGET_PX.w),
-      bottom: rect.top + Math.max(rect.bottom - rect.top, MIN_TARGET_PX.h),
-    };
-  }
-
-  function hitRectsIntersect(a: HitRect, b: HitRect) {
-    return overlapOnX(a, b) && overlapOnY(a, b);
-  }
-
-  function overlapOnX(a: HitRect, b: HitRect) {
+  function overlapOnX(a: ViewportRect, b: ViewportRect) {
     return a.left < b.right && b.left < a.right;
   }
 
-  function overlapOnY(a: HitRect, b: HitRect) {
+  function overlapOnY(a: ViewportRect, b: ViewportRect) {
     return a.top < b.bottom && b.top < a.bottom;
+  }
+
+  function hitRectsIntersect(a: ViewportRect, b: ViewportRect) {
+    return overlapOnX(a, b) && overlapOnY(a, b);
   }
 
   function overlapPairKey(a: string, b: string): string {
     return a < b ? `${a}\0${b}` : `${b}\0${a}`;
   }
 
-  let compactHotspotClasses = $derived.by(() => {
-    const declaredOverlaps = new Set(
-      (sublocation.intentionalOverlaps ?? []).map(({ hotspots }) =>
-        overlapPairKey(hotspots[0], hotspots[1]),
-      ),
-    );
-    const boxes = placedHotspots.map((hotspot) => ({
+  function computeCompactClasses(
+    hotspots: (HotspotView & { layout: HotspotLayout })[],
+    characters: (CharacterView & { layout: CharacterLayout })[],
+    declaredOverlaps: ReadonlySet<string>,
+  ): SvelteMap<string, CompactClass> {
+    const boxes = hotspots.map((hotspot) => ({
       id: hotspot.id,
-      authored: authoredRect(hotspot.layout),
-      clamped: hotspotHitRect(hotspot.layout),
+      authored: targetViewportRect(hotspot.layout, MIN_VIEWPORT_PX),
+      clamped: targetViewportRect(
+        hotspot.layout,
+        MIN_VIEWPORT_PX,
+        MIN_TARGET_PX.w,
+        MIN_TARGET_PX.h,
+      ),
     }));
     type HitBox = (typeof boxes)[number];
-    // Scratch collections local to this $derived.by; svelte/prefer-svelte-reactivity
+    // Scratch collections local to this pass; svelte/prefer-svelte-reactivity
     // requires the reactive variants even for non-reactive scratch use.
     const axesById = new SvelteMap<string, SvelteSet<CompactAxis>>();
     const markCompact = (id: string, axis: CompactAxis) => {
@@ -306,8 +279,11 @@
         const { axis, culprit } = leastLossAxis(candidates);
         markCompact(culprit.id, axis);
       }
-      for (const character of placedCharacters) {
-        const characterRect = authoredRect(character.layout);
+      for (const character of characters) {
+        const characterRect = targetViewportRect(
+          character.layout,
+          MIN_VIEWPORT_PX,
+        );
         if (!hitRectsIntersect(a.clamped, characterRect)) continue;
         const freeX = !overlapOnX(a.authored, characterRect);
         const freeY = !overlapOnY(a.authored, characterRect);
@@ -325,10 +301,7 @@
         markCompact(a.id, leastLossAxis(candidates).axis);
       }
     }
-    const classes = new SvelteMap<
-      string,
-      "compact" | "compact-x" | "compact-y"
-    >();
+    const classes = new SvelteMap<string, CompactClass>();
     for (const [id, axes] of axesById) {
       classes.set(
         id,
@@ -336,7 +309,94 @@
       );
     }
     return classes;
+  }
+
+  // Routing decides which placed targets stay interactive on the plane.
+  // Each pass bounds the interactive set under the full min-target clamp,
+  // resolves clamp collisions among only those targets, then re-checks
+  // every target against the clamp its compact class actually keeps
+  // (compact/compact-x/compact-y zero that axis's min-size in CSS, so
+  // checking reachability against the full clamp would measure a hit box
+  // the button does not have). Dropping a neighbour can only un-compact —
+  // grow — a box, so the bounded loop converges quickly.
+  let targetRouting = $derived.by(() => {
+    const occlusion = occludedRect;
+    const activeCharacters = placedCharacters.filter((character) =>
+      isTargetReachable(character.layout, viewport, 0, 0, occlusion),
+    );
+    const declaredOverlaps = new Set(
+      (sublocation.intentionalOverlaps ?? []).map(({ hotspots }) =>
+        overlapPairKey(hotspots[0], hotspots[1]),
+      ),
+    );
+    let active = placedHotspots.filter((hotspot) =>
+      isTargetReachable(
+        hotspot.layout,
+        viewport,
+        MIN_TARGET_PX.w,
+        MIN_TARGET_PX.h,
+        occlusion,
+      ),
+    );
+    let compactClasses = computeCompactClasses(
+      active,
+      activeCharacters,
+      declaredOverlaps,
+    );
+    for (let pass = 0; pass <= placedHotspots.length; pass += 1) {
+      const next = placedHotspots.filter((hotspot) => {
+        const clamp = hotspotClamp(compactClasses.get(hotspot.id));
+        return isTargetReachable(
+          hotspot.layout,
+          viewport,
+          clamp.w,
+          clamp.h,
+          occlusion,
+        );
+      });
+      if (
+        next.length === active.length &&
+        next.every((hotspot, index) => hotspot.id === active[index]?.id)
+      )
+        break;
+      active = next;
+      compactClasses = computeCompactClasses(
+        active,
+        activeCharacters,
+        declaredOverlaps,
+      );
+    }
+    return {
+      activeHotspotIds: new Set(active.map((hotspot) => hotspot.id)),
+      activeCharacterIds: new Set(
+        activeCharacters.map((character) => character.id),
+      ),
+      compactClasses,
+    };
   });
+
+  let clippedHotspots = $derived(
+    placedHotspots.filter(
+      (hotspot) => !targetRouting.activeHotspotIds.has(hotspot.id),
+    ),
+  );
+  // A witness with an open topic popover stays off the list — the popover
+  // already carries her topics.
+  let clippedCharacters = $derived(
+    placedCharacters.filter(
+      (character) =>
+        character.id !== activeCharacterId &&
+        !targetRouting.activeCharacterIds.has(character.id),
+    ),
+  );
+  let fallbackEntryCount = $derived(
+    unplacedHotspots.length +
+      clippedHotspots.length +
+      unplacedCharacters.length +
+      clippedCharacters.length,
+  );
+  let collapseKey = $derived(surfaceKey ?? sublocation.id);
+  let fallbackCollapsed = $derived(collapsedFallbackKeys.has(collapseKey));
   let activeCharacter = $derived(
     placedCharacters.find((character) => character.id === activeCharacterId) ??
       null,
@@ -507,11 +567,80 @@
       imageStoryAssetTypeForId(current.assetId),
     );
   }
+
+  function sameRect(a: ViewportRect | null, b: ViewportRect | null) {
+    return (
+      a === b ||
+      (a !== null &&
+        b !== null &&
+        a.left === b.left &&
+        a.top === b.top &&
+        a.right === b.right &&
+        a.bottom === b.bottom)
+    );
+  }
+
+  // Re-measure the panel's painted rect after anything that can move it.
+  // Feeding the measurement into targetRouting can add entries to the
+  // panel and grow the rect in turn, but that cascade is monotone — the
+  // clip set only grows — and converges once the rect stops changing.
+  $effect(() => {
+    const el = fallbackControlsEl;
+    void fallbackEntryCount;
+    void fallbackCollapsed;
+    void viewport;
+    const next = el
+      ? (() => {
+          const r = el.getBoundingClientRect();
+          return {
+            left: r.left,
+            top: r.top,
+            right: r.right,
+            bottom: r.bottom,
+          };
+        })()
+      : null;
+    if (!sameRect(next, occludedRect)) occludedRect = next;
+  });
+
+  // Routing rerenders a target's interactive copy between the plane and
+  // the fallback list. If a re-route drops keyboard focus to <body> — the
+  // focused plane button went inert or its list entry unmounted — hand it
+  // to the same target's surviving interactive copy.
+  function handleSurfaceFocusIn(event: FocusEvent) {
+    const host =
+      event.target instanceof HTMLElement
+        ? event.target.closest<HTMLElement>("[data-target-id]")
+        : null;
+    // Non-target hosts (the collapse toggle, topic buttons) clear the
+    // remembered target — migrating to a stale id on their unmount would
+    // steal focus from wherever the user actually went.
+    lastFocusedTargetId = host?.dataset.targetId ?? null;
+  }
+
+  $effect(() => {
+    void targetRouting;
+    void fallbackCollapsed;
+    void tick().then(() => {
+      if (
+        document.activeElement !== document.body ||
+        !lastFocusedTargetId ||
+        !surfaceEl
+      )
+        return;
+      targetCounterpart(surfaceEl, lastFocusedTargetId)?.focus();
+    });
+  });
 </script>
 
 <svelte:window bind:innerWidth={viewportW} bind:innerHeight={viewportH} />
 
-<section class="surface-shell" aria-label={`${sublocation.label}調查場景`}>
+<section
+  class="surface-shell"
+  aria-label={`${sublocation.label}調查場景`}
+  bind:this={surfaceEl}
+  onfocusin={handleSurfaceFocusIn}
+>
   <CrossfadeImage
     src={background?.url ?? null}
     imageClass="background-image"
@@ -529,17 +658,20 @@
     </div>
 
     <div class="scene-coordinate-plane">
-      {#each reachableHotspots as hotspot (hotspot.id)}
+      {#each placedHotspots as hotspot (hotspot.id)}
         <button
           class="hotspot-target"
           class:inspected={hotspot.inspected}
-          class:compact={compactHotspotClasses.get(hotspot.id) === "compact"}
-          class:compact-x={compactHotspotClasses.get(hotspot.id) ===
+          class:compact={targetRouting.compactClasses.get(hotspot.id) ===
+            "compact"}
+          class:compact-x={targetRouting.compactClasses.get(hotspot.id) ===
             "compact-x"}
-          class:compact-y={compactHotspotClasses.get(hotspot.id) ===
+          class:compact-y={targetRouting.compactClasses.get(hotspot.id) ===
             "compact-y"}
           type="button"
           aria-label={`調查：${hotspot.label}`}
+          data-target-id={hotspot.id}
+          inert={!targetRouting.activeHotspotIds.has(hotspot.id)}
           style={targetLayoutStyle(hotspot.layout)}
           {disabled}
           onclick={() => onInspect(hotspot.id)}
@@ -556,13 +688,15 @@
         </button>
       {/each}
 
-      {#each reachableCharacters as character (character.id)}
+      {#each placedCharacters as character (character.id)}
         <button
           class="character-target"
           type="button"
           aria-label={`詢問：${character.name}`}
           aria-expanded={activeCharacterId === character.id}
           aria-haspopup="dialog"
+          data-target-id={character.id}
+          inert={!targetRouting.activeCharacterIds.has(character.id)}
           style={targetLayoutStyle(character.layout)}
           {disabled}
           onclick={() => toggleCharacter(character.id)}
@@ -692,6 +826,7 @@
       aria-label={offscreen
         ? `畫面外：${hotspot.label}`
         : `未放置：${hotspot.label}`}
+      data-target-id={hotspot.id}
       {disabled}
       onclick={() => onInspect(hotspot.id)}
     >
@@ -701,7 +836,7 @@
   {/snippet}
 
   {#snippet fallbackWitness(character: CharacterView)}
-    <div class="fallback-witness">
+    <div class="fallback-witness" data-target-id={character.id}>
       <div class="witness-copy">
         <strong>{character.name}</strong>
         <small>{character.role}</small>
@@ -730,16 +865,19 @@
   {/snippet}
 
   {#if fallbackEntryCount > 0}
-    <div class="fallback-controls" class:collapsed={fallbackCollapsed}>
+    <div
+      class="fallback-controls"
+      class:collapsed={fallbackCollapsed}
+      bind:this={fallbackControlsEl}
+    >
       <button
         class="fallback-toggle"
         type="button"
         aria-expanded={!fallbackCollapsed}
         {disabled}
         onclick={() => {
-          collapsedFallbackSublocation = fallbackCollapsed
-            ? null
-            : sublocation.id;
+          if (fallbackCollapsed) collapsedFallbackKeys.delete(collapseKey);
+          else collapsedFallbackKeys.add(collapseKey);
         }}
       >
         <span class="eyebrow">OFF-SCENE TARGETS · {fallbackEntryCount}</span>
@@ -901,6 +1039,14 @@
     color: var(--bone);
     cursor: pointer;
     pointer-events: auto;
+  }
+
+  /* Clipped targets stay mounted (so a resize can't destroy a focused
+     button) but must not paint a dead sliver next to the fallback panel —
+     the fallback list carries their interactive copy. */
+  .hotspot-target[inert],
+  .character-target[inert] {
+    visibility: hidden;
   }
 
   .hotspot-target {
