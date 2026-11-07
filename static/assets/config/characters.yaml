@@ -292,7 +292,7 @@ characters:
         prompt: worried expression, glancing at a radio that will not answer
 
   - id: pr_officer
-    displayNames: ["公關"]
+    displayNames: ["公關", "潮見冴子"]
     portraitMode: portrait
     visualPrompt: >
       Japanese event public-relations officer in her early thirties, narrow
@@ -393,6 +393,15 @@ characters:
         prompt: tired annoyed expression, mouth flat, glancing at a phone screen
       earnest:
         prompt: earnest expression, explaining carefully, one hand describing a shape
+
+  # Chapter 2 closing caller. Chapter 3 gives him a proper name and portrait;
+  # until then he is deliberately only a form of address, with no portrait.
+  - id: uncle_caller
+    displayNames: ["叔叔"]
+    portraitMode: none
+    visualPrompt: null
+    referenceAssetId: null
+    expressions: {}
 
   - id: narrator
     displayNames: ["旁白"]

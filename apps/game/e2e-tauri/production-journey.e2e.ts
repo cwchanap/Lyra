@@ -1236,7 +1236,7 @@ describe("fresh production journey", () => {
 
   // One test per Chapter 2 gates leg before the last
   // (anchors.chapter2LegStartWrappers); the last leg's test below also proves
-  // the in-progress ending. Scene Select carries the skipped scenes' records,
+  // the story-cleared ending. Scene Select carries the skipped scenes' records,
   // so each jump starts its leg with what the earlier legs collected.
   for (const [index, leg] of chapter2GateLegs().slice(0, -1).entries()) {
     const [startGate] = leg.gates;
@@ -1263,7 +1263,7 @@ describe("fresh production journey", () => {
     });
   }
 
-  it("plays Chapter 2 from its last gates leg to the in-progress end card", async function () {
+  it("plays Chapter 2 from its last gates leg to the story-cleared end card", async function () {
     this.timeout(1_200_000);
     await resetE2eStorage();
     // Scene Select is production replay, unlocked by a story clear; seed it
@@ -1277,8 +1277,8 @@ describe("fresh production journey", () => {
     if (!leg || !startGate) throw new Error("Chapter 2 has no last gates leg");
     await jumpToProductionChapterScene(startGate.chapter, startGate.wrapper);
 
-    // To prove the in-progress ending leaves a fresh profile uncleared, play
-    // this leg from a save with the seeded clear forgotten.
+    // To prove finishing Chapter 2 clears a fresh profile's story, play this
+    // leg from a save with the seeded clear forgotten.
     await resumeUnclearedFromSave(
       (state) =>
         state.chapter.id === startGate.chapter &&
@@ -1292,25 +1292,26 @@ describe("fresh production journey", () => {
     await crossGate(startGate, crossedWrappers);
     await crossLaterGates(leg, crossedWrappers);
 
-    // Chapter 2 is `**Status:** in-progress`, so exhausting it is a terminal
-    // but non-clear boundary: the 未完待續 end card renders. When Chapter 2
-    // is complete, this becomes `storyCleared: true` again.
+    // Chapter 2 is complete (no `**Status:** in-progress`), so exhausting it
+    // clears the story: the 案件結案 end card renders, not 未完待續, and the
+    // forgotten clear is written back.
     await drainOrganicRoute(
       (state) => state.mode.type === "gameComplete",
-      "end of authored content",
+      "end of Chapter 2",
     );
     const finalState = await getPackagedGameState();
     expect(finalState.chapter.id).toBe("chapter_2");
     expect(finalState.mode).toEqual({
       type: "gameComplete",
-      storyCleared: false,
+      storyCleared: true,
     });
-    expect(await elementExists(".complete.continued")).toBe(true);
+    expect(await elementExists(".complete")).toBe(true);
+    expect(await elementExists(".complete.continued")).toBe(false);
     const cleared = await browser.execute(
       (key: string) => window.localStorage.getItem(key),
       STORY_CLEARED_STORAGE_KEY,
     );
-    expect(cleared).toBeNull();
+    expect(cleared).toBe("true");
     expect(crossedWrappers).toEqual(leg.gates.map((gate) => gate.wrapper));
   });
 
