@@ -14,7 +14,7 @@ This skill is the canonical authority for the project's script format.
 ## When to use
 
 Use when the user asks you to:
-- Convert a `docs/stories_plan/chapter_<N>_plan.md` into the corresponding playable chapter scenes
+- Convert a chapter plan (Notion page, see `CLAUDE.md`) into the corresponding playable chapter scenes
 - Write or extend any Part of any chapter's script
 - Write a single scene (e.g. "write Part 0 of Chapter 1")
 - Add new dialogue beats to an existing 劇本
@@ -30,7 +30,7 @@ Use when the user asks you to:
    - Full-width colon `：` between name and dialogue.
    - One blank line between dialogue lines.
    - **Line IDs:** a translated chapter's spoken lines end in an ID such as ` {#L012}` (`**相馬律**：先確認現場。 {#L012}`). It links the line to its translation and voice clip, and is never shown or spoken. Write new lines without one (`bun run voice:sync` adds it). When editing a line, keep its ID at the end; when moving a line, move its ID with it; never copy an ID onto another line or type one yourself.
-4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read `characters.md` (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry; resolve the on-screen label and portrait mode in `characters.yaml`.**
+4. **Natural, direct voice.** Lines should sound like something the character would actually say, matching their personality. Avoid ornate literary phrasing. Keep reasoning beats clear, not winding. **Before writing any character's lines, read the Notion 角色設定總表 (see "Character reference" below) and match that character's 台詞風格 / 禁止 entry; resolve the on-screen label and portrait mode in `characters.yaml`.**
 5. **Scene tags on every scene change.** `[場景：...]` block at the top of every new scene, covering 地點 / 時間 / 天氣 / 氛圍 / 視覺要素 — feeds AI background-image generation.
 6. **Visible non-dialogue content lives in `[ ]` brackets** — facial expressions, body language, atmospheric beats, room/object state, and prop movement. Brackets are filtered out of the in-game dialogue UI; they serve as production reference only.
 7. **Traditional Chinese only.** No simplified characters. No raw Japanese kanji forms (経 → 經, 実 → 實). Japanese-style proper names (相馬律, 早坂茜, 神谷澪) are kept as-is.
@@ -180,9 +180,6 @@ Each chapter is split into **one file per scene**. Four authored file kinds exis
 
 ```
 stories_plan/               ← docs/stories_plan/
-  final_story_bible.md                             ← canonical story bible (planning only)
-  chapter_<N>_plan.md                              ← per-chapter construction plan (planning only)
-  characters.md                                   ← consolidated cast reference
   chapter_<N>/
     chapter.md                                     ← playable chapter manifest
     scene_0.md                                     ← linear dialogue scene (this skill)
@@ -192,6 +189,9 @@ stories_plan/               ← docs/stories_plan/
     scene_3.md
     ...
 ```
+
+Planning docs (story bible, chapter plans, character reference) live in Notion,
+not in this tree; `CLAUDE.md` → Project domain links the pages.
 
 - **`scene_<N>.md`** — linear dialogue (intro cutscenes, transitions, in-car conversations). Covered fully by this skill.
 - **`investigation_scene_<N>.md`** — interactive scenes with hotspots, characters, evidence and statement manifests. Authored using the **`writing-investigation-scene`** skill, which inherits the base dialogue rules from this skill. Use that skill when the file you are writing has the `investigation_scene_` prefix.
@@ -204,11 +204,11 @@ stories_plan/               ← docs/stories_plan/
 
 - **All filenames and folder names are English / ASCII.** Only the file **contents** are Traditional Chinese.
 - **Playable folder:** `<stories_plan_root>/chapter_<N>/` where `<stories_plan_root>` is `docs/stories_plan/`, and `<N>` is the chapter number (e.g. `chapter_1/`, `chapter_2/`).
-- **Construction plan:** `docs/stories_plan/chapter_<N>_plan.md`.
+- **Construction plan:** the chapter plan page in Notion (see `CLAUDE.md`).
 - **Filename:** `scene_<N>.md` — scene numbers align with the beat/scene numbers in the construction plan (so Beat 0 → `scene_0.md`, etc.).
 - Create the playable folder if it doesn't exist before writing.
 
-**Do not confuse `chapter_<N>_plan.md` with `chapter_<N>/chapter.md`:** the former is planning material; the latter is the playable scene manifest consumed by the compiler.
+**Do not confuse the Notion chapter plan with `chapter_<N>/chapter.md`:** the former is planning material; the latter is the playable scene manifest consumed by the compiler.
 
 ### Internal structure of one scene file
 
@@ -230,26 +230,28 @@ Each `scene_<N>.md` is **one scene only**. Structure:
 **早坂茜**：...
 ```
 
-- One `#` H1 at the top: `# Scene <N>: <title>`. Title is Traditional Chinese, matches the corresponding beat title in `chapter_<N>_plan.md`.
+- One `#` H1 at the top: `# Scene <N>: <title>`. Title is Traditional Chinese, matches the corresponding beat title in the Notion chapter plan.
 - Immediately after the H1, write `- **Summary:** <...>`: one sentence of player-facing recap copy, not a beat list. The `[場景：...]` block follows the Summary.
 - **No `##` Part headings inside the file** — the file *is* the scene.
 - If a single Part needs multiple sub-scenes (rare — e.g. location change mid-Part), use additional `[場景：...]` blocks within the same file rather than `##` subheadings.
 
 ### Related project files
 
-- `docs/stories_plan/final_story_bible.md` — canonical eight-chapter story canon and reveal boundaries. **Do not modify while authoring a scene.**
-- `docs/stories_plan/chapter_<N>_plan.md` — per-chapter construction plan, timeline, clue placement and beat intent. **Read before** writing that chapter's script.
-- `docs/stories_plan/characters.md` — consolidated cast reference (see below). **Read before** writing any character's dialogue.
+- Notion **Story Bible** — canonical eight-chapter story canon and reveal boundaries. **Do not modify while authoring a scene.**
+- Notion **chapter plan** (`<N>`) — per-chapter construction plan, timeline, clue placement and beat intent. **Read before** writing that chapter's script.
+- Notion **角色設定總表** — consolidated cast reference (see below). **Read before** writing any character's dialogue.
+
+Page links are in `CLAUDE.md` → Project domain; read them with the Notion fetch tool.
 - `static/assets/config/characters.yaml` — the global runtime speaker catalog for authored display labels, portrait intent, and configured expression slugs. **Read before** writing any speaker who appears on-screen.
 - `chapter_<N>/scene_<K>.md` — the output of this skill (one file per scene).
 
-### Character reference (`stories_plan/characters.md`)
+### Character reference (Notion 角色設定總表)
 
-`characters.md` sits at the root of the `stories_plan/` tree (currently
-`docs/stories_plan/characters.md`). It is the single source for each character's
+The 角色設定總表 page in Notion (linked from `CLAUDE.md`) is the single source for
+each character's
 **設定 (background) / 性格 (personality) / 台詞風格 (voice) / 禁止 (avoid + spoiler seals)**,
 consolidated from the story bible. It is planning material, **not** a scene file —
-the compiler ignores it.
+it lives outside the repo.
 
 Use it like this:
 
@@ -257,15 +259,15 @@ Use it like this:
   (sentence length, register, verbal tics) — not a generic voice.
 - **Honour the 禁止 / 🔒 主線封印 list.** Each entry flags what would break the character or leak
   a sealed reveal. This is the per-character companion to the chapter-level foreshadowing rules
-  in `final_story_bible.md` and `chapter_<N>_plan.md`.
-- If `characters.md` and the story bible ever disagree, the **story bible wins** (characters.md says so).
-- Adding a new named character? Add the story-voice entry to `characters.md`
-  when planning requires it, and resolve the global catalog label and
+  in the Notion Story Bible and chapter plan.
+- If the 角色設定總表 and the story bible ever disagree, the **story bible wins** (the page says so).
+- Adding a new named character? Add the story-voice entry to the 角色設定總表
+  in Notion when planning requires it, and resolve the global catalog label and
   `portraitMode` under the rule below before production use.
 
 ### Global visual speaker catalog (`static/assets/config/characters.yaml`)
 
-`characters.md` governs story voice and spoiler seals. The global catalog
+The 角色設定總表 governs story voice and spoiler seals. The global catalog
 governs the runtime label, portrait intent, and available expression slugs;
 it is the only visual-speaker contract. Resolve an authored bold speaker label
 against its catalog `displayNames` rather than inventing or shortening one.
@@ -280,14 +282,14 @@ never rely on an uncatalogued speaker compiling portraitless
 For a missing or unresolved speaker, return an explicit asset/catalog
 escalation before production use: identify the needed global `displayNames`
 label and `portraitMode` decision. Do not create a local speaker list or treat
-an entry in `characters.md` as a substitute for the global catalog.
+an entry in the 角色設定總表 as a substitute for the global catalog.
 
 ## Writing workflow
 
 When asked to write any part of a chapter:
 
-1. **Read `docs/stories_plan/final_story_bible.md` and the matching `docs/stories_plan/chapter_<N>_plan.md`** — canon, timeline, clue placement, foreshadow seeds and reveal boundaries.
-2. **Read `characters.md` and `static/assets/config/characters.yaml`** for every speaker in this scene — lock their 台詞風格 / 禁止, catalog display label, portrait mode, and configured expression slugs before drafting lines.
+1. **Read the Notion Story Bible and the matching Notion chapter plan** — canon, timeline, clue placement, foreshadow seeds and reveal boundaries.
+2. **Read the Notion 角色設定總表 and `static/assets/config/characters.yaml`** for every speaker in this scene — lock their 台詞風格 / 禁止, catalog display label, portrait mode, and configured expression slugs before drafting lines.
 3. **Check the chapter's reveal contract in the story bible and chapter plan** — which foreshadows are seeded *this* chapter, and critically, which secrets must not yet be revealed.
 4. **Confirm scope with the user before writing** — which Part(s)? If unclear, write one Part and stop, so tone can be reviewed before scaling.
 5. **Plan the Part structure** — opening scene tag, 3–5 conversation beats, ending moment. Output the plan first when scope is ambiguous.
@@ -298,10 +300,10 @@ When asked to write any part of a chapter:
    - Any action/expression inline with dialogue? Move it into `[ ]`.
    - Every scene change has a scene tag?
    - No simplified Chinese? No 経/実-style kanji?
-   - Does each character's voice match their `characters.md` 台詞風格, with no 禁止 / 🔒 line crossed?
+   - Does each character's voice match their 角色設定總表 台詞風格, with no 禁止 / 🔒 line crossed?
    - Does every speaker resolve to the global catalog label and an intentional `portraitMode`, with no uncatalogued portraitless fallback?
    - Does each meaningful visual state transition use a fitting configured expression slug when one exists, without flickering on every line?
-   - Foreshadows match `final_story_bible.md` and the current `chapter_<N>_plan.md`?
+   - Foreshadows match the Notion Story Bible and the current chapter plan?
 
 ## Quick reference
 
@@ -327,13 +329,13 @@ When asked to write any part of a chapter:
 | Action written inside dialogue line | Move to a bracketed line above or below |
 | Scene change with no `[場景：...]` | Add one covering all four required elements |
 | Simplified Chinese / raw Japanese kanji | Convert to Traditional (経→經, 実→實, 関→關, etc.) |
-| Revealing a sealed cross-chapter secret too early | Cross-check `final_story_bible.md` + the current `chapter_<N>_plan.md`; hold back |
+| Revealing a sealed cross-chapter secret too early | Cross-check the Notion Story Bible + the current chapter plan; hold back |
 | Inline phone qualifier `（電話）` on speaker name | Use `[相馬的手機震動，他接起]` stage direction instead |
 | Writing multiple Parts when user asked for one | Stop. Scope creep is a process failure, not a feature. |
 
 ## Foreshadowing discipline
 
-This is a multi-chapter mystery with deliberately staged reveals. Before placing any clue or hint, check `docs/stories_plan/final_story_bible.md` and the current `docs/stories_plan/chapter_<N>_plan.md`.
+This is a multi-chapter mystery with deliberately staged reveals. Before placing any clue or hint, check the Notion Story Bible and the current chapter plan.
 
 For Chapter 1 specifically:
 - **Prologue 0–2:** do not name 青葉, A-90, 雨宮, `ZW_A16.lock`, or 相馬's old-case identity.
@@ -341,7 +343,7 @@ For Chapter 1 specifically:
 - **Beat 11.5 is the only Chapter 1 青葉-name exception:** a public Mashiro preview may say **「2016 年青葉記憶研究所火災」**, and 相馬 may mute, look away, or pause briefly. Do not label the flashed image as raw / actual / reenactment, do not explain his reaction, and keep `ZW_A16.lock` off-screen so the two source chains are not linked.
 - **Still forbidden through Chapter 1:** `A16 = Aoba_2016`, `ZW = ZERO WITNESS`, 雨宮's real identity, 相馬 being an Aoba witness, his father's full Aoba role, left/right escape truth, A-90 Hold, Kagamihara involvement, or any KAGAMI-conspiracy explanation.
 
-For later chapters: read that chapter's reveal-ladder row and the matching `chapter_<N>_plan.md`. Stay strict.
+For later chapters: read that chapter's reveal-ladder row and the matching Notion chapter plan. Stay strict.
 
 ## Linear scene file format (`chapter_<N>/scene_<K>.md`)
 

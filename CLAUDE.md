@@ -271,11 +271,23 @@ attributes like `onsubmit={...}` rather than legacy `on:submit` /
 This repo is a detective/mystery game (《東京雨證：第零證人》, Traditional
 Chinese). Narrative content has two kinds — keep them straight:
 
-- **Planning/design** is reference for writers, not playable input: the canonical
-  story bible (`docs/stories_plan/final_story_bible.md`), per-chapter plans
-  (`docs/stories_plan/chapter_<N>_plan.md`), and agent addenda. The compiler only
-  descends into `chapter_<N>/` directories and within each only reads the files
-  its `chapter.md` manifest lists, so root-level planning docs are ignored.
+- **Planning/design** is reference for writers, not playable input. The
+  canonical planning docs live in Notion, not in this repo (moved there on
+  2026-11-07; edit them there). Read a page with the Notion connector
+  (`notion-fetch`), starting from the [Story Plans index](https://app.notion.com/p/411586265aa98123bdb7f0dbaa2e302d):
+  - [Story Bible](https://app.notion.com/p/411586265aa981d6a36de66215bfd07b) - canon, old-case truth, reveal boundaries.
+  - [Chapter 1 plan](https://app.notion.com/p/411586265aa9816283caf49cbc9693c9) and [Chapter 2 plan](https://app.notion.com/p/411586265aa98183843dc16559f093b7) - per-chapter
+    construction plans (Beats, evidence order, timecodes). Chapters 3-8 have
+    no plan page yet; the Story Bible outlines them.
+  - [角色設定總表](https://app.notion.com/p/411586265aa981878f37d7fc87b564a8) - per-character 設定/性格/台詞風格/禁止; the Story
+    Bible wins where they disagree.
+
+  Older docs refer to these pages by their former repo names
+  (`final_story_bible.md`, `chapter_<N>_plan.md`, `characters.md`). The agent
+  addenda (`docs/stories_plan/chapter_<N>/*addendum.md`) stay in the repo. The
+  compiler only descends into `chapter_<N>/` directories and within each only
+  reads the files its `chapter.md` manifest lists, so addenda are ignored.
+
 - **Authored playable content** lives in `docs/stories_plan/chapter_<N>/`, containing:
   - `chapter.md` - the chapter manifest (title, summary, ordered scene list).
     Authored via the `writing-chapter-manifest` skill.

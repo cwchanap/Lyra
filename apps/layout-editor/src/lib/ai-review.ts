@@ -28,9 +28,9 @@ Set noChange true only with zero findings and no replacement; set noChange false
 
 export const LENS_INSTRUCTIONS: Record<AiReviewLens, string> = {
   storyConsistency:
-    "Report only source-supported canon contradictions, premature reveals, missing explicitly-required reveals, or timeline/fair-play/location/capability conflicts. Do not rewrite for taste.",
+    "Report only contradictions within the supplied scene text: timeline, location, capability, or fair-play conflicts, and lines that reveal something the text itself has not yet established. Do not rewrite for taste.",
   dialogue:
-    "Review only character voice against supplied voice context, repeated exposition, and local pacing/readability. Keep any replacement local to the selected line/action.",
+    "Review only tone consistency within the supplied group, repeated exposition, and local pacing/readability. Keep any replacement local to the selected line/action.",
   promptRefinement:
     "Review only visual specificity, clarity, conflicts/redundancy across supplied prompt layers, and concrete usage impact. Suggest a replacement only for the locally editable entry prompt target.",
 };

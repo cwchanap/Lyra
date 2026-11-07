@@ -75,8 +75,6 @@ fn normalize_existing_root(root: &Path) -> Result<PathBuf, EditorError> {
 const CHAPTERS_INDEX_RELATIVE_PATH: &str = "apps/game/src-tauri/resources/scenes/chapters.json";
 const COMPILED_SCENES_RELATIVE_ROOT: &str = "apps/game/src-tauri/resources/scenes";
 const STORY_SOURCE_RELATIVE_ROOT: &str = "docs/stories_plan";
-const PLAN_STORY_BIBLE_RELATIVE_PATH: &str = "docs/stories_plan/final_story_bible.md";
-const STORY_CHARACTERS_RELATIVE_PATH: &str = "docs/stories_plan/characters.md";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -713,7 +711,7 @@ struct WorkbenchSourceDocument {
 }
 
 /// HPA-135 v1 identity: `scene:<chapterId>:<sceneId>` with non-empty parts.
-/// Anything else (plan/asset documents, traversal, blank parts) is unsupported.
+/// Anything else (asset documents, traversal, blank parts) is unsupported.
 fn parse_source_document_id(source_document_id: &str) -> Option<(String, String)> {
     let rest = source_document_id.strip_prefix("scene:")?;
     let (chapter_id, scene_id) = rest.split_once(':')?;
@@ -1490,139 +1488,6 @@ fn read_text_source(
     })
 }
 
-/// Read-only snapshot of the fixed planning documents: the story bible plus
-/// every root-level `chapter_<N>_plan.md`, sorted numerically, bible first.
-/// `story_characters_md` is a sibling source (never a `documents` entry) read
-/// from the fixed characters.md path for AI-review voice context.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WorkbenchPlanWorkspace {
-    documents: Vec<WorkbenchPlanDocument>,
-    story_characters_md: AssetWorkspaceTextSource,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WorkbenchPlanDocument {
-    id: String,
-    kind: PlanDocumentKind,
-    chapter_number: Option<u32>,
-    #[serde(flatten)]
-    source: AssetWorkspaceTextSource,
-}
-
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(rename_all = "camelCase")]
-enum PlanDocumentKind {
-    StoryBible,
-    ChapterPlan,
-}
-
-/// Single source of the `id`/`kind`/`chapterNumber` identity triple so it is
-/// never re-derived at other call sites.
-impl WorkbenchPlanDocument {
-    fn story_bible(source: AssetWorkspaceTextSource) -> Self {
-        Self {
-            id: "story-bible".to_string(),
-            kind: PlanDocumentKind::StoryBible,
-            chapter_number: None,
-            source,
-        }
-    }
-
-    fn chapter_plan(source: AssetWorkspaceTextSource, chapter_number: u32) -> Self {
-        Self {
-            id: format!("chapter-{chapter_number}-plan"),
-            kind: PlanDocumentKind::ChapterPlan,
-            chapter_number: Some(chapter_number),
-            source,
-        }
-    }
-}
-
-/// Accepts only root-level `chapter_<N>_plan.md` with a positive numeric N.
-/// Rejects non-canonical numeric forms (e.g. leading zeros like
-/// `chapter_01_plan.md`) so they cannot collide with `chapter_1_plan.md` and
-/// produce a duplicate `chapter-1-plan` document identity.
-fn chapter_plan_number(name: &str) -> Option<u32> {
-    let raw = name.strip_prefix("chapter_")?.strip_suffix("_plan.md")?;
-    let number = raw.parse::<u32>().ok()?;
-    if number == 0 || raw != number.to_string().as_str() {
-        return None;
-    }
-    Some(number)
-}
-
-#[tauri::command]
-fn load_plan_workspace() -> Result<WorkbenchPlanWorkspace, EditorError> {
-    let root = workspace_root()?;
-    load_plan_workspace_at_root(&root)
-}
-
-fn load_plan_workspace_at_root(root: &Path) -> Result<WorkbenchPlanWorkspace, EditorError> {
-    let bible = read_text_source(root, PLAN_STORY_BIBLE_RELATIVE_PATH).map_err(|error| {
-        if error.code == "notFound" {
-            EditorError::new(
-                "planStoryBibleNotFound",
-                format!(
-                    "story bible not found: {}",
-                    root.join(PLAN_STORY_BIBLE_RELATIVE_PATH).display()
-                ),
-            )
-        } else {
-            error
-        }
-    })?;
-
-    let plans_dir = root.join(STORY_SOURCE_RELATIVE_ROOT);
-    let mut chapter_plans = Vec::new();
-    for entry in fs::read_dir(&plans_dir).map_err(|error| {
-        EditorError::new(
-            "readFailed",
-            format!("failed to read {}: {error}", plans_dir.display()),
-        )
-    })? {
-        let entry = entry.map_err(|error| {
-            EditorError::new(
-                "readFailed",
-                format!("failed to read {}: {error}", plans_dir.display()),
-            )
-        })?;
-        // DirEntry::file_type does not follow symlinks; only regular root
-        // files whose name the parser accepts are chapter plans.
-        if !entry
-            .file_type()
-            .map_err(|error| {
-                EditorError::new(
-                    "readFailed",
-                    format!("failed to stat {}: {error}", entry.path().display()),
-                )
-            })?
-            .is_file()
-        {
-            continue;
-        }
-        let name = entry.file_name();
-        if let Some(chapter_number) = name.to_str().and_then(chapter_plan_number) {
-            chapter_plans.push((chapter_number, name.to_string_lossy().into_owned()));
-        }
-    }
-    chapter_plans.sort_by_key(|(chapter_number, _)| *chapter_number);
-
-    let story_characters_md = read_text_source(root, STORY_CHARACTERS_RELATIVE_PATH)?;
-
-    let mut documents = vec![WorkbenchPlanDocument::story_bible(bible)];
-    for (chapter_number, name) in chapter_plans {
-        let relative_path = format!("{STORY_SOURCE_RELATIVE_ROOT}/{name}");
-        let source = read_text_source(root, &relative_path)?;
-        documents.push(WorkbenchPlanDocument::chapter_plan(source, chapter_number));
-    }
-    Ok(WorkbenchPlanWorkspace {
-        documents,
-        story_characters_md,
-    })
-}
-
 /// Recursively enumerates regular files beneath the fixed `static/assets`
 /// root as repo-relative forward-slash paths, sorted. Symlinks (even to
 /// regular files) and directories are never listed.
@@ -1680,7 +1545,6 @@ pub fn run() {
             load_investigation_layout,
             save_investigation_layout,
             load_asset_workspace,
-            load_plan_workspace,
             load_workbench_source_document,
             apply_workbench_source_edit,
             ai_review::run_ai_review
@@ -2025,146 +1889,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn plan_workspace_reads_bible_then_numeric_chapter_plans() {
-        let root = temp_workbench_root();
-        fs::write(
-            root.join("docs/stories_plan/final_story_bible.md"),
-            "# Bible\n",
-        )
-        .unwrap();
-        fs::write(root.join("docs/stories_plan/chapter_10_plan.md"), "# Ten\n").unwrap();
-        fs::write(root.join("docs/stories_plan/chapter_2_plan.md"), "# Two\n").unwrap();
-        fs::write(
-            root.join("docs/stories_plan/characters.md"),
-            "# 角色設定總表\n### 相馬律（主角）\n",
-        )
-        .unwrap();
-
-        let snapshot = load_plan_workspace_at_root(&root).unwrap();
-        assert_eq!(
-            snapshot
-                .documents
-                .iter()
-                .map(|document| document.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["story-bible", "chapter-2-plan", "chapter-10-plan"]
-        );
-        // Sibling field with the exact fixed path and content — never a
-        // `documents` entry.
-        assert_eq!(
-            snapshot.story_characters_md.path,
-            "docs/stories_plan/characters.md"
-        );
-        assert_eq!(
-            snapshot.story_characters_md.content,
-            "# 角色設定總表\n### 相馬律（主角）\n"
-        );
-        assert!(serde_json::to_value(&snapshot)
-            .unwrap()
-            .get("storyCharactersMd")
-            .is_some());
-    }
-
-    #[test]
-    fn plan_workspace_requires_the_fixed_characters_md_source() {
-        let root = temp_workbench_root();
-        fs::write(
-            root.join("docs/stories_plan/final_story_bible.md"),
-            "# Bible\n",
-        )
-        .unwrap();
-
-        // Missing characters.md is a stable read error, even though the bible
-        // and every chapter plan are present.
-        let error = load_plan_workspace_at_root(&root).unwrap_err();
-        assert_eq!(error.code, "notFound");
-        assert!(error.message.contains("characters.md"));
-
-        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
-        let snapshot = load_plan_workspace_at_root(&root).unwrap();
-        assert_eq!(
-            snapshot
-                .documents
-                .iter()
-                .map(|document| document.id.as_str())
-                .collect::<Vec<_>>(),
-            vec!["story-bible"]
-        );
-    }
-
-    #[test]
-    fn plan_workspace_ignores_nested_and_invalid_chapter_plan_names() {
-        let root = temp_workbench_root();
-        fs::write(
-            root.join("docs/stories_plan/final_story_bible.md"),
-            "# Bible\n",
-        )
-        .unwrap();
-        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
-        fs::write(root.join("docs/stories_plan/chapter_0_plan.md"), "# Zero\n").unwrap();
-        fs::write(root.join("docs/stories_plan/chapter_x_plan.md"), "# X\n").unwrap();
-        fs::write(
-            root.join("docs/stories_plan/chapter_1/scene_a.md"),
-            "# Scene\n",
-        )
-        .unwrap();
-
-        assert_eq!(
-            load_plan_workspace_at_root(&root).unwrap().documents.len(),
-            1
-        );
-    }
-
-    #[test]
-    fn plan_workspace_rejects_leading_zero_chapter_plan_names() {
-        // `chapter_01_plan.md` must not be accepted: it would parse to 1 and
-        // collide with `chapter_1_plan.md`'s `chapter-1-plan` identity.
-        let root = temp_workbench_root();
-        fs::write(
-            root.join("docs/stories_plan/final_story_bible.md"),
-            "# Bible\n",
-        )
-        .unwrap();
-        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
-        fs::write(root.join("docs/stories_plan/chapter_1_plan.md"), "# One\n").unwrap();
-        fs::write(
-            root.join("docs/stories_plan/chapter_01_plan.md"),
-            "# Leading zero\n",
-        )
-        .unwrap();
-
-        let snapshot = load_plan_workspace_at_root(&root).unwrap();
-        let ids: Vec<&str> = snapshot
-            .documents
-            .iter()
-            .map(|document| document.id.as_str())
-            .collect();
-        assert_eq!(ids, vec!["story-bible", "chapter-1-plan"]);
-        // No duplicate identity from the leading-zero filename.
-        assert_eq!(ids.iter().filter(|id| **id == "chapter-1-plan").count(), 1);
-    }
-
-    #[test]
-    fn plan_workspace_requires_only_the_story_bible() {
-        let root = temp_workbench_root();
-        assert_eq!(
-            load_plan_workspace_at_root(&root).unwrap_err().code,
-            "planStoryBibleNotFound"
-        );
-
-        fs::write(
-            root.join("docs/stories_plan/final_story_bible.md"),
-            "# Bible\n",
-        )
-        .unwrap();
-        fs::write(root.join("docs/stories_plan/characters.md"), "# 角色\n").unwrap();
-        assert_eq!(
-            load_plan_workspace_at_root(&root).unwrap().documents.len(),
-            1
-        );
-    }
-
     fn overwrite_compiled_scene_field(root: &Path, scene: &str, field: &str, value: &str) {
         let path = root
             .join(COMPILED_SCENES_RELATIVE_ROOT)
@@ -2280,7 +2004,6 @@ mod tests {
         fn focused_source_load_rejects_malformed_traversal_and_unknown_ids() {
             let root = temp_workbench_root();
             for id in [
-                "plan:story-bible",
                 "asset:background:unit_a",
                 "scene:chapter_1",
                 "scene:",

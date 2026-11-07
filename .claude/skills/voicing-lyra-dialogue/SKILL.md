@@ -32,8 +32,8 @@ Commands: `voice:sync`, `voice:validate`, `voice:audition`,
 
 ## 1. Inputs
 
-Read the chapter's `chapter.md`, the authored scenes it lists, `characters.md`
-for each role's profile, the glossary, `voice_cast.yaml`, and the chapter's
+Read the chapter's `chapter.md`, the authored scenes it lists, the Notion
+角色設定總表 (linked from `CLAUDE.md`) for each role's profile, the glossary, `voice_cast.yaml`, and the chapter's
 existing `ja/` files. Translate only from the authored scene lines that
 `voice:sync` lists. Never translate from planning docs or the story bible.
 

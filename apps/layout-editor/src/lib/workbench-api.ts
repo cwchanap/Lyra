@@ -10,15 +10,11 @@ import type {
 import type {
   WorkbenchAssetWorkspacePayload,
   WorkbenchIndex,
-  WorkbenchPlanWorkspacePayload,
   WorkbenchSceneBundle,
 } from "./workbench-types";
 
 export const loadWorkbenchIndex = () =>
   invoke<WorkbenchIndex>("load_workbench_index");
-
-export const loadPlanWorkspace = () =>
-  invoke<WorkbenchPlanWorkspacePayload>("load_plan_workspace");
 
 export const loadSceneBundle = (chapterId: string, sceneId: string) =>
   invoke<WorkbenchSceneBundle>("load_scene_bundle", { chapterId, sceneId });

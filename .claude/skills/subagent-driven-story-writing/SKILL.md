@@ -43,9 +43,9 @@ load `.claude/agents/`, use a general-purpose agent with `model: "sonnet"` and
 ## Workflow
 
 1. **Read the authoritative sources and reconcile canon first.** Use the
-   chapter construction plan `docs/stories_plan/chapter_<N>_plan.md`, the
-   writing addendum (voice + Do/Don't), and the story bible
-   `docs/stories_plan/final_story_bible.md`. Resolve any discrepancy (stale
+   chapter construction plan (Notion chapter plan page), the
+   writing addendum (voice + Do/Don't), and the Notion story bible
+   (page links in `CLAUDE.md` → Project domain). Resolve any discrepancy (stale
    names, old examples in a `writing-*` skill) and record the correction — it
    goes in every brief.
 2. **Map beats → scene files and pick granularity.** Linear →
@@ -90,8 +90,9 @@ Because the agent has none of your context, every brief carries all of:
 - **The beat excerpt** from the construction plan (the content spec).
 - **The matching addendum voice + Do/Don't** for the characters present.
 - **Authoritative source paths + source-located canon corrections.** Give the
-  writer the actual story bible, `characters.md`,
-  `static/assets/config/characters.yaml`, plan, and addendum paths to read;
+  writer the Notion URLs of the story bible, 角色設定總表 and chapter plan
+  (the writer reads them with the Notion fetch tool) plus the
+  `static/assets/config/characters.yaml` and addendum paths to read;
   include a concrete correction only when it is source-located (for example,
   "suspect is X, NEVER Y — ignore Y in skill examples"). Do not relay an
   ephemeral cast table: it drifts from the sources.
@@ -177,8 +178,9 @@ and the edit-nothing rule. Your job is to hand it what that skill needs — do n
 restate the axes, verdict, or finding format in the brief, the skill owns them:
 
 - The exact files under review, and the chapter id.
-- The authoritative sources to check against: the story bible, the chapter
-  construction plan, and the writing addendum (under `docs/stories_plan/`).
+- The authoritative sources to check against: the Notion story bible and
+  chapter construction plan (URLs), and the writing addendum (under
+  `docs/stories_plan/`).
 - "First action: invoke Skill `reviewing-story-scenes`. Edit nothing — return a
   findings report only, not corrected files."
 

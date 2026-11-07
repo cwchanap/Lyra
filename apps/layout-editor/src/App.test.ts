@@ -8,7 +8,6 @@ import App from "./App.svelte";
 import type { InvokeArgs } from "@tauri-apps/api/core";
 import { invoke } from "@tauri-apps/api/core";
 import { editorState } from "./lib/layout-store.svelte";
-import { planState } from "./lib/plan-store.svelte";
 import type {
   CaseRecordProvenance,
   JSONInterrogationScene,
@@ -21,7 +20,6 @@ import type {
   PublicAnalysisScene,
   WorkbenchAssetWorkspacePayload,
   WorkbenchIndex,
-  WorkbenchPlanWorkspacePayload,
   WorkbenchSceneBundle,
 } from "./lib/workbench-types";
 
@@ -531,33 +529,11 @@ function assetsWorkspacePayload(): WorkbenchAssetWorkspacePayload {
   };
 }
 
-// Minimal Plan snapshot: one Story Bible document is enough for the shell
-// integration tests; projection/selection details live in the store's tests.
-function planWorkspacePayload(): WorkbenchPlanWorkspacePayload {
-  return {
-    documents: [
-      {
-        id: "story-bible",
-        kind: "storyBible",
-        path: "docs/stories_plan/final_story_bible.md",
-        chapterNumber: null,
-        content: "# Story Bible\n\n## §10 蒐證規則\n\nprose\n",
-      },
-    ],
-    storyCharactersMd: {
-      path: "docs/stories_plan/characters.md",
-      content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
-    },
-  };
-}
-
 function mockBackend() {
   mockInvoke.mockImplementation(async (command: string, args?: InvokeArgs) => {
     switch (command) {
       case "load_workbench_index":
         return workbenchIndex;
-      case "load_plan_workspace":
-        return planWorkspacePayload();
       case "load_scene_bundle": {
         const sceneId =
           (args as { sceneId?: string } | undefined)?.sceneId ?? "";
@@ -603,12 +579,6 @@ describe("Lyra Story Workbench shell", () => {
     editorState.chapterId = null;
     editorState.sceneId = null;
     editorState.error = null;
-    planState.workspace = null;
-    planState.error = null;
-    planState.loading = false;
-    planState.surface = "overview";
-    planState.selectedDocumentId = "story-bible";
-    planState.selectedAnchor = null;
     vi.clearAllMocks();
     mockBackend();
   });
@@ -638,8 +608,8 @@ describe("Lyra Story Workbench shell", () => {
       within(modeBar).getByRole("button", { name: "Assets" }),
     ).toHaveAttribute("aria-pressed", "false");
     expect(
-      within(modeBar).getByRole("button", { name: "Plan" }),
-    ).toHaveAttribute("aria-pressed", "false");
+      within(modeBar).queryByRole("button", { name: "Plan" }),
+    ).not.toBeInTheDocument();
     expect(
       within(modeBar).getByRole("button", { name: "Stage" }),
     ).toHaveAttribute("aria-pressed", "false");
@@ -647,80 +617,6 @@ describe("Lyra Story Workbench shell", () => {
     expect(
       screen.queryByRole("region", { name: "Assets" }),
     ).not.toBeInTheDocument();
-  });
-
-  it("entering Plan replaces the scene-tree sidebar and the Reader detail placeholder", async () => {
-    const user = userEvent.setup();
-    render(App);
-
-    await user.click(
-      within(screen.getByRole("group", { name: "Workbench mode" })).getByRole(
-        "button",
-        { name: "Plan" },
-      ),
-    );
-
-    // Sidebar slot: the Plan document outline replaces the scene tree.
-    expect(
-      await screen.findByRole("navigation", { name: "Plan documents" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByLabelText("Story workbench scenes"),
-    ).not.toBeInTheDocument();
-    // Detail slot: the Plan view replaces the Reader placeholder.
-    expect(
-      screen.getByRole("region", { name: "Plan overview" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Select a scene to read."),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByRole("group", { name: "Workbench mode" })).getByRole(
-        "button",
-        { name: "Plan" },
-      ),
-    ).toHaveAttribute("aria-pressed", "true");
-  });
-
-  it("entering and leaving Plan preserves the selected gameplay chapter/scene", async () => {
-    const user = userEvent.setup();
-    render(App);
-    await selectSceneByLabel("Scene 1");
-    expect(
-      await screen.findByRole("article", { name: "Reader for First Rain" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Plan" }));
-    expect(
-      await screen.findByRole("navigation", { name: "Plan documents" }),
-    ).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Reader" }));
-    expect(
-      await screen.findByRole("article", { name: "Reader for First Rain" }),
-    ).toBeInTheDocument();
-    // The selection must not have been cleared while Plan owned the shell.
-    expect(sceneListLabels()).toContain("Scene 1");
-  });
-
-  it("the first Plan entry triggers exactly one store-backed snapshot load", async () => {
-    const user = userEvent.setup();
-    render(App);
-
-    await user.click(screen.getByRole("button", { name: "Plan" }));
-    expect(
-      await screen.findByRole("navigation", { name: "Plan documents" }),
-    ).toBeInTheDocument();
-    expect(
-      invokedCommands().filter((command) => command === "load_plan_workspace"),
-    ).toHaveLength(1);
-
-    // Re-entering Plan must reuse the loaded snapshot, not reload it.
-    await user.click(screen.getByRole("button", { name: "Reader" }));
-    await user.click(screen.getByRole("button", { name: "Plan" }));
-    expect(
-      invokedCommands().filter((command) => command === "load_plan_workspace"),
-    ).toHaveLength(1);
   });
 
   it("selecting a scene under Assets changes the selection without Reader or Stage loading", async () => {
@@ -2158,12 +2054,6 @@ describe("focused edit review", () => {
     editorState.chapterId = null;
     editorState.sceneId = null;
     editorState.error = null;
-    planState.workspace = null;
-    planState.error = null;
-    planState.loading = false;
-    planState.surface = "overview";
-    planState.selectedDocumentId = "story-bible";
-    planState.selectedAnchor = null;
     vi.clearAllMocks();
     // The staleness test mutates this record; keep every test pristine.
     sourceDocuments["scene:chapter_1:scene_1"] = {
@@ -2744,86 +2634,6 @@ describe("focused edit review", () => {
 
 // ---- HPA-136 Task 3: contextual AI review (context + mutual exclusion) -------
 
-function mdTable(headers: string[], rows: string[][]): string {
-  return [
-    `| ${headers.join(" | ")} |`,
-    `| ${headers.map(() => "---").join(" | ")} |`,
-    ...rows.map((row) => `| ${row.join(" | ")} |`),
-  ].join("\n");
-}
-
-const AI_CHAPTER_HEADERS = ["章節", "標題", "案件類型", "變體", "主線誤導"];
-const AI_AOBA_HEADERS = ["章節", "必須建立", "絕對不能建立"];
-
-const aiChapterPlanContent = [
-  "# Chapter 1 Plan",
-  "",
-  "# Beat 1：第一章的開始",
-  "beat1 內容",
-  "",
-  "# Prologue 0：雨中的東京",
-  "prologue0 內容",
-  "",
-  "# Prologue 1：零號小委託",
-  "prologue1 內容",
-  "",
-  "# Prologue 2：雨鐘咖啡館的普通日",
-  "prologue2 內容",
-  "",
-  "# Beat 2：委託與程序入口",
-  "beat2 內容",
-  "",
-].join("\n");
-
-const aiBibleContent = [
-  "## 10. 章節總覽",
-  "",
-  mdTable(
-    AI_CHAPTER_HEADERS,
-    Array.from({ length: 8 }, (_, index) => [
-      String(index + 1),
-      index === 0 ? "雨鐘咖啡館殺人事件" : `標題${index + 1}`,
-      "密室",
-      "變體",
-      "誤導",
-    ]),
-  ),
-  "",
-  "## 第 1 章：雨鐘咖啡館殺人事件",
-  "",
-  "第一章主案內容",
-  "",
-  "## 18.5 第一幕 reveal ladder",
-  "",
-  mdTable(AI_AOBA_HEADERS, [["第 1 章", "火災名稱", "不說重演"]]),
-  "",
-].join("\n");
-
-function aiPlanPayload(): WorkbenchPlanWorkspacePayload {
-  return {
-    documents: [
-      {
-        id: "story-bible",
-        kind: "storyBible",
-        path: "docs/stories_plan/final_story_bible.md",
-        chapterNumber: null,
-        content: aiBibleContent,
-      },
-      {
-        id: "chapter-1-plan",
-        kind: "chapterPlan",
-        path: "docs/stories_plan/chapter_1_plan.md",
-        chapterNumber: 1,
-        content: aiChapterPlanContent,
-      },
-    ],
-    storyCharactersMd: {
-      path: "docs/stories_plan/characters.md",
-      content: "### 相馬律（主角）\n台詞風格：結論偏短。\n",
-    },
-  };
-}
-
 const aiIndex: WorkbenchIndex = {
   chapters: [
     {
@@ -2837,69 +2647,13 @@ const aiIndex: WorkbenchIndex = {
           sourcePath: "docs/stories_plan/chapter_1/scene_1.md",
           stageCapable: false,
         },
-        {
-          id: "scene_p0",
-          type: "linear",
-          sourcePath: "docs/stories_plan/chapter_1/scene_p0.md",
-          stageCapable: false,
-        },
-        {
-          id: "investigation_scene_p1",
-          type: "investigation",
-          sourcePath: "docs/stories_plan/chapter_1/investigation_scene_p1.md",
-          stageCapable: false,
-        },
-        {
-          id: "scene_p2",
-          type: "linear",
-          sourcePath: "docs/stories_plan/chapter_1/scene_p2.md",
-          stageCapable: false,
-        },
-        {
-          id: "analysis_scene_p1_5",
-          type: "analysis",
-          sourcePath: "docs/stories_plan/chapter_1/analysis_scene_p1_5.md",
-          stageCapable: false,
-        },
-        {
-          id: "investigation_scene_map_01",
-          type: "investigation",
-          sourcePath:
-            "docs/stories_plan/chapter_1/investigation_scene_map_01.md",
-          stageCapable: false,
-        },
       ],
     },
   ],
 };
 
-function aiBundle(sceneId: string): WorkbenchSceneBundle {
-  return {
-    scene: {
-      type: "linear",
-      id: sceneId,
-      title: sceneId,
-      summary: "Fixture",
-      queue: [
-        {
-          kind: "line",
-          speaker: "相馬律",
-          text: `${sceneId} line`,
-          portrait: null,
-        },
-      ],
-      assetRefs: [],
-    },
-  };
-}
-
 const aiBundles: Record<string, WorkbenchSceneBundle> = {
   ...focusedBundles,
-  scene_p0: aiBundle("scene_p0"),
-  investigation_scene_p1: aiBundle("investigation_scene_p1"),
-  scene_p2: aiBundle("scene_p2"),
-  analysis_scene_p1_5: aiBundle("analysis_scene_p1_5"),
-  investigation_scene_map_01: aiBundle("investigation_scene_map_01"),
 };
 
 function aiAssetsPayload(): WorkbenchAssetWorkspacePayload {
@@ -3060,8 +2814,6 @@ function mockAiBackend(
         }
         return bundle;
       }
-      case "load_plan_workspace":
-        return aiPlanPayload();
       case "load_asset_workspace":
         return aiAssetsPayload();
       case "load_workbench_source_document": {
@@ -3124,12 +2876,6 @@ describe("App AI review context", () => {
     editorState.chapterId = null;
     editorState.sceneId = null;
     editorState.error = null;
-    planState.workspace = null;
-    planState.error = null;
-    planState.loading = false;
-    planState.surface = "overview";
-    planState.selectedDocumentId = "story-bible";
-    planState.selectedAnchor = null;
     vi.clearAllMocks();
     sourceDocuments["scene:chapter_1:scene_1"] = {
       path: "docs/stories_plan/chapter_1/scene_1.md",
@@ -3139,7 +2885,7 @@ describe("App AI review context", () => {
     mockAiBackend();
   });
 
-  it("a numeric Reader scene reviews as Story consistency with Beat/Bible/Aoba context", async () => {
+  it("a Reader scene reviews as Story consistency with its Reader projection", async () => {
     await openAiSceneReview("Scene 1");
     expect(
       within(aiReviewPanel()).getByLabelText("Context chips"),
@@ -3151,67 +2897,11 @@ describe("App AI review context", () => {
     const kinds = (request.context as Array<{ kind: string }>).map(
       (item) => item.kind,
     );
-    expect(kinds).toContain("sceneProjection");
-    expect(kinds).toContain("chapterPlan");
-    expect(kinds).toContain("storyBible");
-    expect(kinds).toContain("revealBoundary");
+    expect(kinds).toEqual(["selection", "sceneProjection"]);
     expect(request.missingContext).toEqual([]);
-    const plan = (request.context as Array<Record<string, string>>).find(
-      (item) => item.kind === "chapterPlan",
-    )!;
-    expect(plan.sourceRef).toBe(
-      "docs/stories_plan/chapter_1_plan.md#beat-1第一章的開始",
-    );
   });
 
-  it.each([
-    ["Scene p0", "Prologue 0：雨中的東京"],
-    ["Investigation Scene p1", "Prologue 1：零號小委託"],
-    ["Scene p2", "Prologue 2：雨鐘咖啡館的普通日"],
-  ])(
-    "%s resolves its Prologue plan section instead of missing context",
-    async (label, heading) => {
-      await openAiSceneReview(label);
-      await runPanelReview();
-
-      const request = aiReviewRequests()[0]!;
-      expect(request.lens).toBe("storyConsistency");
-      expect(request.missingContext).toEqual([]);
-      const plan = (request.context as Array<Record<string, string>>).find(
-        (item) => item.kind === "chapterPlan",
-      )!;
-      expect(plan.sourceRef).toContain("docs/stories_plan/chapter_1_plan.md#");
-      expect(plan.content).toContain(heading);
-    },
-  );
-
-  it.each(["Analysis Scene p1.5", "Investigation Scene map.01"])(
-    "%s keeps the missing parent-plan context visible",
-    async (label) => {
-      const panel = await openAiSceneReview(label);
-
-      // Visible before Run, never guessed.
-      const missing = within(panel).getByLabelText("Missing context");
-      expect(
-        missing.querySelector('[data-missing-kind="chapterPlan"]'),
-      ).not.toBeNull();
-      await runPanelReview();
-
-      const request = aiReviewRequests()[0]!;
-      expect(
-        (request.missingContext as Array<{ kind: string }>).some(
-          (item) => item.kind === "chapterPlan",
-        ),
-      ).toBe(true);
-      expect(
-        (request.context as Array<{ kind: string }>).some(
-          (item) => item.kind === "chapterPlan",
-        ),
-      ).toBe(false);
-    },
-  );
-
-  it("Reader dialogue reviews as Dialogue with the exact voice section and Beat plan", async () => {
+  it("Reader dialogue reviews as Dialogue with the containing group", async () => {
     const user = userEvent.setup();
     render(App);
     await selectSceneByLabel("Scene 1");
@@ -3223,11 +2913,6 @@ describe("App AI review context", () => {
     const request = aiReviewRequests()[0]!;
     expect(request.lens).toBe("dialogue");
     const context = request.context as Array<Record<string, string>>;
-    const voice = context.find((item) => item.kind === "characterVoice")!;
-    expect(voice.sourceRef).toContain("docs/stories_plan/characters.md#");
-    expect(voice.content).toContain("台詞風格：結論偏短。");
-    const plan = context.find((item) => item.kind === "chapterPlan")!;
-    expect(plan.content).toContain("# Beat 1：第一章的開始");
     // Containing Reader group chip (spec Dialogue context).
     expect(context.some((item) => item.ref.startsWith("readerGroup:"))).toBe(
       true,
@@ -3263,39 +2948,6 @@ describe("App AI review context", () => {
     expect(groupChip.content).toContain("九条玲子: second speaker line");
   });
 
-  it("a Plan Aoba section review does not duplicate its own sourceRef as support", async () => {
-    const user = userEvent.setup();
-    render(App);
-
-    await user.click(screen.getByRole("button", { name: "Plan" }));
-    await screen.findByRole("navigation", { name: "Plan documents" });
-    await user.click(screen.getByRole("button", { name: "Story Bible" }));
-    await user.click(
-      within(screen.getByLabelText("Document outline")).getByRole("button", {
-        name: "18.5 第一幕 reveal ladder",
-      }),
-    );
-    await user.click(screen.getByRole("button", { name: "Review section" }));
-    await screen.findByRole("region", { name: "AI review" });
-    await runPanelReview();
-
-    const request = aiReviewRequests()[0]!;
-    expect(request.lens).toBe("storyConsistency");
-    const context = request.context as Array<Record<string, string>>;
-    // The required selection chip is the ONLY item carrying its sourceRef.
-    expect(
-      context.filter((item) => item.sourceRef === request.selectedSourceRef),
-    ).toHaveLength(1);
-    expect(context.some((item) => item.kind === "revealBoundary")).toBe(false);
-    expect(context[0]!.kind).toBe("selection");
-
-    // Findings-only Plan reviews never offer the replacement handoff.
-    expect(await screen.findByText("測試發現")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "Use replacement" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("a scene-owned background prompt is eligible for replacement", async () => {
     const user = userEvent.setup();
     render(App);
@@ -3313,50 +2965,6 @@ describe("App AI review context", () => {
     );
     await screen.findByRole("region", { name: "AI review" });
     await runPanelReview();
-
-    const request = aiReviewRequests()[0]!;
-    expect(request.lens).toBe("promptRefinement");
-    const kinds = (request.context as Array<{ kind: string }>).map(
-      (item) => item.kind,
-    );
-    expect(kinds).toContain("promptLayer");
-    expect(kinds).toContain("usageImpact");
-    expect(request.replacementTargetRef).toBe("asset:background:hall");
-    expect(request.missingContext).toEqual([]);
-  });
-
-  it("an asset Prompt refinement review still opens when the Plan snapshot fails to load", async () => {
-    mockAiBackend(
-      {},
-      {
-        load_plan_workspace: async () => {
-          throw new Error("characters.md missing");
-        },
-      },
-    );
-    const user = userEvent.setup();
-    render(App);
-    await user.click(screen.getByRole("button", { name: "Assets" }));
-    await screen.findByRole("region", { name: "Assets" });
-    await user.click(screen.getByRole("tab", { name: "Library" }));
-    await user.click(
-      screen.getByRole("button", {
-        name: "background.chapter_1.scene_cues.hall",
-      }),
-    );
-    const inspector = screen.getByLabelText("Asset inspector");
-    await user.click(
-      within(inspector).getByRole("button", { name: "Review prompt" }),
-    );
-    await screen.findByRole("region", { name: "AI review" });
-    await runPanelReview();
-
-    // Prompt refinement never consults the Plan loader.
-    expect(
-      mockInvoke.mock.calls.some(
-        ([command]) => command === "load_plan_workspace",
-      ),
-    ).toBe(false);
 
     const request = aiReviewRequests()[0]!;
     expect(request.lens).toBe("promptRefinement");
@@ -3510,12 +3118,6 @@ describe("App AI review mutual exclusion and fencing", () => {
     editorState.chapterId = null;
     editorState.sceneId = null;
     editorState.error = null;
-    planState.workspace = null;
-    planState.error = null;
-    planState.loading = false;
-    planState.surface = "overview";
-    planState.selectedDocumentId = "story-bible";
-    planState.selectedAnchor = null;
     vi.clearAllMocks();
     sourceDocuments["scene:chapter_1:scene_1"] = {
       path: "docs/stories_plan/chapter_1/scene_1.md",
