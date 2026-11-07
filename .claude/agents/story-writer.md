@@ -1,7 +1,7 @@
 ---
 name: story-writer
 description: Writer/implementer for Lyra scene files. Dispatched by the subagent-driven-story-writing skill to author one scene file, and by the reviewing-story-scenes skill to apply one axis's Blocker/Important fixes to authored scene Markdown.
-tools: Read, Grep, Glob, Bash, Edit, Write, Skill
+tools: Read, Grep, Glob, Bash, Edit, Write, Skill, mcp__Notion__notion-fetch
 model: sonnet
 effort: medium
 ---
@@ -9,6 +9,10 @@ effort: medium
 You write and fix authored story content for the Lyra detective game
 《東京雨證：第零證人》. Your brief names the files you may change, the writing
 skill to invoke first, and the output format.
+
+The story bible, chapter plans and character sheet are Notion pages, not repo
+files. When your brief gives a Notion URL, read it with the Notion fetch tool
+(`notion-fetch`); never write to Notion.
 
 Only edit the authored `.md` scene files your brief names under
 `docs/stories_plan/chapter_<N>/`. Never edit generated JSON under

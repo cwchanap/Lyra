@@ -33,29 +33,29 @@ const BUNDLE: AiReviewContextBundle = {
       required: true,
     },
     {
-      ref: "characterVoice",
-      kind: "characterVoice",
-      label: "角色聲音 相馬律",
-      sourceRef: "docs/stories_plan/characters.md#相馬律主角",
-      content: "台詞風格：結論偏短。",
+      ref: "readerGroup:main",
+      kind: "sceneProjection",
+      label: "Reader 群組 Main",
+      sourceRef: "docs/stories_plan/chapter_1/scene_2.md#main",
+      content: "相馬律: 再說一次。",
       approxChars: 10,
       required: false,
     },
     {
-      ref: "chapterPlan",
-      kind: "chapterPlan",
-      label: "章節計畫 Beat 2",
-      sourceRef: "docs/stories_plan/chapter_1_plan.md#beat-2",
-      content: "# Beat 2：委託與程序入口",
-      approxChars: 30,
+      ref: "sceneProjection",
+      kind: "sceneProjection",
+      label: "Reader 場景投影",
+      sourceRef: "docs/stories_plan/chapter_1/scene_2.md",
+      content: "雨中現場",
+      approxChars: 4,
       required: false,
     },
   ],
   missingContext: [
     {
-      kind: "revealBoundary",
-      label: "青葉揭示邊界 第 1 章",
-      reason: "§18.5 必須恰好有一個「第 1 章」列，實際 0 個。",
+      kind: "promptLayer",
+      label: "提示層：全域風格",
+      reason: "資產 manifest 缺少全域風格提示。",
     },
   ],
 };
@@ -66,9 +66,9 @@ const FINDINGS_RESULT: AiReviewResult = {
   findings: [
     {
       severity: "Important",
-      summary: "語氣與角色設定不一致",
-      explanation: "台詞風格要求結論偏短，但選取句子迂迴。",
-      supportingSourceRefs: ["docs/stories_plan/characters.md#相馬律主角"],
+      summary: "語氣與上一句不一致",
+      explanation: "同一群組已重複說明，選取句子迂迴。",
+      supportingSourceRefs: ["docs/stories_plan/chapter_1/scene_2.md#main"],
     },
   ],
   uncertainty: [],
@@ -112,12 +112,12 @@ type PanelProps = {
   onClose: () => void;
 };
 
-/** Story-consistency lens omits the dialogue-only voice chip. */
+/** Story-consistency lens omits the dialogue-only group chip. */
 function rebuildForLens(lens: AiReviewLens): AiReviewContextBundle {
   if (lens === "storyConsistency") {
     return {
       ...BUNDLE,
-      context: BUNDLE.context.filter((item) => item.ref !== "characterVoice"),
+      context: BUNDLE.context.filter((item) => item.ref !== "readerGroup:main"),
     };
   }
   return BUNDLE;
@@ -158,11 +158,11 @@ describe("AiReviewPanel lifecycle", () => {
       within(selectionChip).queryByRole("button", { name: "Remove" }),
     ).toBeNull();
     // Supporting chips stay removable.
-    const voiceChip = within(chips)
+    const groupChip = within(chips)
       .getAllByRole("listitem")
-      .find((item) => item.textContent?.includes("角色聲音"))!;
+      .find((item) => item.textContent?.includes("Reader 群組"))!;
     expect(
-      within(voiceChip).getByRole("button", { name: "Remove" }),
+      within(groupChip).getByRole("button", { name: "Remove" }),
     ).toBeInTheDocument();
   });
 
@@ -172,15 +172,15 @@ describe("AiReviewPanel lifecycle", () => {
 
     // The exact outgoing text is rendered inside the chip's expandable block.
     const chips = chipList();
-    const voiceChip = within(chips)
+    const groupChip = within(chips)
       .getAllByRole("listitem")
-      .find((item) => item.textContent?.includes("角色聲音"))!;
+      .find((item) => item.textContent?.includes("Reader 群組"))!;
     expect(
-      within(voiceChip).getByText("台詞風格：結論偏短。"),
+      within(groupChip).getByText("相馬律: 再說一次。"),
     ).toBeInTheDocument();
 
-    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
-    expect(screen.queryByText("台詞風格：結論偏短。")).not.toBeInTheDocument();
+    await user.click(within(groupChip).getByRole("button", { name: "Remove" }));
+    expect(screen.queryByText("相馬律: 再說一次。")).not.toBeInTheDocument();
   });
 
   it("supporting chip removal changes the provider request", async () => {
@@ -189,22 +189,22 @@ describe("AiReviewPanel lifecycle", () => {
     render(AiReviewPanel, { props: panelProps({ provider }) });
 
     const chips = chipList();
-    const voiceChip = within(chips)
+    const groupChip = within(chips)
       .getAllByRole("listitem")
-      .find((item) => item.textContent?.includes("角色聲音"))!;
-    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
+      .find((item) => item.textContent?.includes("Reader 群組"))!;
+    await user.click(within(groupChip).getByRole("button", { name: "Remove" }));
     await runReview();
 
     expect(provider).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         context: expect.arrayContaining([
-          expect.not.objectContaining({ ref: "characterVoice" }),
+          expect.not.objectContaining({ ref: "readerGroup:main" }),
         ]),
       }),
     );
     const request = provider.mock.calls[0]![0] as AiReviewProviderRequest;
     expect(request.context.map((item) => item.ref)).not.toContain(
-      "characterVoice",
+      "readerGroup:main",
     );
   });
 
@@ -244,15 +244,11 @@ describe("AiReviewPanel lifecycle", () => {
     const finding = await screen.findByLabelText("AI review findings");
     const article = within(finding).getByRole("article");
     expect(article).toHaveAttribute("data-severity", "Important");
+    expect(within(article).getByText("語氣與上一句不一致")).toBeInTheDocument();
     expect(
-      within(article).getByText("語氣與角色設定不一致"),
+      within(article).getByText(/同一群組已重複說明/u),
     ).toBeInTheDocument();
-    expect(
-      within(article).getByText(/台詞風格要求結論偏短/u),
-    ).toBeInTheDocument();
-    expect(
-      within(article).getByText(/characters\.md#相馬律主角/u),
-    ).toBeInTheDocument();
+    expect(within(article).getByText(/scene_2\.md#main/u)).toBeInTheDocument();
   });
 
   it("the provider request contains the currently selected lens", async () => {
@@ -289,8 +285,8 @@ describe("AiReviewPanel lifecycle", () => {
 
     // Visible before Run.
     const missing = screen.getByLabelText("Missing context");
-    expect(missing).toHaveTextContent("青葉揭示邊界 第 1 章");
-    expect(missing).toHaveTextContent(/必須恰好有一個「第 1 章」列/u);
+    expect(missing).toHaveTextContent("提示層：全域風格");
+    expect(missing).toHaveTextContent(/資產 manifest 缺少全域風格提示/u);
     expect(provider).not.toHaveBeenCalled();
 
     await runReview();
@@ -298,9 +294,9 @@ describe("AiReviewPanel lifecycle", () => {
       expect.objectContaining({
         missingContext: [
           {
-            kind: "revealBoundary",
-            label: "青葉揭示邊界 第 1 章",
-            reason: "§18.5 必須恰好有一個「第 1 章」列，實際 0 個。",
+            kind: "promptLayer",
+            label: "提示層：全域風格",
+            reason: "資產 manifest 缺少全域風格提示。",
           },
         ],
       }),
@@ -449,10 +445,10 @@ describe("AiReviewPanel lifecycle", () => {
     ).toBeInTheDocument();
 
     const chips = chipList();
-    const voiceChip = within(chips)
+    const groupChip = within(chips)
       .getAllByRole("listitem")
-      .find((item) => item.textContent?.includes("角色聲音"))!;
-    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
+      .find((item) => item.textContent?.includes("Reader 群組"))!;
+    await user.click(within(groupChip).getByRole("button", { name: "Remove" }));
 
     // The displayed result was produced with the removed chip's content, so
     // it must not remain actionable.
@@ -474,16 +470,16 @@ describe("AiReviewPanel lifecycle", () => {
       await screen.findByLabelText("AI review findings"),
     ).toBeInTheDocument();
 
-    // The dialogue lens carries the voice chip; storyConsistency does not.
+    // The dialogue lens carries the group chip; storyConsistency does not.
     const chips = chipList();
-    const voiceChip = within(chips)
+    const groupChip = within(chips)
       .getAllByRole("listitem")
-      .find((item) => item.textContent?.includes("角色聲音"))!;
-    await user.click(within(voiceChip).getByRole("button", { name: "Remove" }));
+      .find((item) => item.textContent?.includes("Reader 群組"))!;
+    await user.click(within(groupChip).getByRole("button", { name: "Remove" }));
     expect(
       within(chipList())
         .getAllByRole("listitem")
-        .filter((item) => item.textContent?.includes("角色聲音")),
+        .filter((item) => item.textContent?.includes("Reader 群組")),
     ).toHaveLength(0);
 
     const group = screen.getByRole("group", { name: "Review lens" });
@@ -491,11 +487,11 @@ describe("AiReviewPanel lifecycle", () => {
       within(group).getByRole("button", { name: "Story consistency" }),
     );
 
-    // Story-consistency context omits the dialogue-only voice chip.
+    // Story-consistency context omits the dialogue-only group chip.
     expect(
       within(chipList())
         .getAllByRole("listitem")
-        .filter((item) => item.textContent?.includes("角色聲音")),
+        .filter((item) => item.textContent?.includes("Reader 群組")),
     ).toHaveLength(0);
     expect(
       screen.queryByLabelText("AI review findings"),
@@ -507,7 +503,7 @@ describe("AiReviewPanel lifecycle", () => {
     const request = provider.mock.calls[1]![0] as AiReviewProviderRequest;
     expect(request.lens).toBe("storyConsistency");
     expect(request.context.map((item) => item.ref)).not.toContain(
-      "characterVoice",
+      "readerGroup:main",
     );
   });
 

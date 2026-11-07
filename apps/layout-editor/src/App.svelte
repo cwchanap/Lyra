@@ -32,8 +32,6 @@
     type WorkbenchValidationReport,
   } from "./lib/focused-edit";
   import FocusedEditReview from "./lib/FocusedEditReview.svelte";
-  import PlanSidebar from "./lib/PlanSidebar.svelte";
-  import PlanView from "./lib/PlanView.svelte";
   import ReaderView from "./lib/ReaderView.svelte";
   import TargetList from "./lib/TargetList.svelte";
   import {
@@ -45,15 +43,6 @@
     setCharacterLayout,
     setHotspotLayout,
   } from "./lib/layout-store.svelte";
-  import {
-    ensurePlanLoaded,
-    navigatePlanSource,
-    planState,
-    refreshPlan,
-    selectPlanDocument,
-    selectPlanHeading,
-    showPlanOverview,
-  } from "./lib/plan-store.svelte";
   import {
     markAllActionsMultiline,
     markMultilineActions,
@@ -79,7 +68,7 @@
     WorkbenchScenePayload,
   } from "./lib/workbench-types";
 
-  type WorkbenchMode = "reader" | "assets" | "plan" | "stage";
+  type WorkbenchMode = "reader" | "assets" | "stage";
 
   let requestedIndex = false;
   let workbenchIndex = $state<WorkbenchIndex | null>(null);
@@ -479,12 +468,6 @@
       return;
     }
     if (next === "assets") return; // AssetsView owns its own snapshot loading
-    if (next === "plan") {
-      // Plan owns no App state; the store's ensurePlanLoaded is idempotent,
-      // so re-entering Plan reuses the snapshot instead of reloading it.
-      void ensurePlanLoaded();
-      return;
-    }
     const scene = selectedScene;
     if (
       scene &&
@@ -590,9 +573,6 @@
 
   let aiReview = $state<AiReviewPanelState | null>(null);
   let aiReviewError = $state<string | null>(null);
-  // Fences async context/provider work: opening a newer review (or closing
-  // the panel) discards every older in-flight result.
-  let aiReviewGeneration = 0;
 
   function sourceDocumentIdFor(
     selection: PendingFocusedEditSelection,
@@ -840,40 +820,24 @@
   // ---- AI review orchestration (HPA-136) -------------------------------------
 
   function closeAiReview(): void {
-    aiReviewGeneration += 1;
     aiReview = null;
     aiReviewError = null;
   }
 
   /**
    * Entry behavior (plan lock): refuse while a focused apply is in flight,
-   * cancel a non-applying focused edit first, then fence/clear prior AI
-   * state before building deterministic context.
+   * cancel a non-applying focused edit first, then clear prior AI state
+   * before building deterministic context.
    */
-  async function openAiReview(
+  function openAiReview(
     selection: AiReviewSelection,
     selectionLabel: string,
     editSelection: PendingFocusedEditSelection | null,
-  ): Promise<void> {
+  ): void {
     if (reviewState === "applying") return;
     if (reviewState !== "idle") cancelFocusedEditReview();
-    const generation = ++aiReviewGeneration;
     aiReview = null;
     aiReviewError = null;
-    // Prompt refinement builds context from the Assets projection alone, so
-    // only Reader/Plan selections wait on the Plan snapshot.
-    const needsPlanWorkspace = selection.kind !== "assetPrompt";
-    if (needsPlanWorkspace) {
-      await ensurePlanLoaded();
-      if (generation !== aiReviewGeneration) return; // superseded
-    }
-    const workspace = planState.workspace;
-    if (needsPlanWorkspace && !workspace) {
-      aiReviewError =
-        planState.error ??
-        "Plan data could not be loaded; AI review needs the Plan snapshot.";
-      return;
-    }
     const lenses = allowedLensesForSelection(selection);
     // Dialogue reviews default to the Dialogue lens; every other selection
     // kind offers a single lens.
@@ -884,7 +848,7 @@
       selectionLabel,
       lenses,
       initialLens,
-      context: buildAiReviewContext(selection, initialLens, workspace),
+      context: buildAiReviewContext(selection, initialLens),
       editSelection,
     };
   }
@@ -896,7 +860,7 @@
       aiReviewError = `The Reader projection of "${sceneId}" is not loaded; refresh and retry.`;
       return;
     }
-    void openAiReview(
+    openAiReview(
       { kind: "readerScene", chapterId, sceneId, scene },
       scene.title,
       null,
@@ -924,7 +888,7 @@
       aiReviewError = `The projection of "${sceneId}" is not loaded; refresh the Reader and retry.`;
       return;
     }
-    void openAiReview(
+    openAiReview(
       {
         kind: "readerItem",
         chapterId,
@@ -956,7 +920,7 @@
           sceneUsages: selection.usages,
         }
       : null;
-    void openAiReview(
+    openAiReview(
       {
         kind: "assetPrompt",
         assetId: selection.assetId,
@@ -966,14 +930,6 @@
       },
       selection.assetId,
       pending,
-    );
-  }
-
-  function openPlanSectionReview(documentId: string, anchor: string): void {
-    void openAiReview(
-      { kind: "planSection", documentId, anchor },
-      `${documentId}#${anchor}`,
-      null,
     );
   }
 
@@ -1011,75 +967,59 @@
       </p>
     {/if}
 
-    {#if mode === "plan"}
-      <div class="scene-list mt-7 grid content-start gap-2.5">
-        <PlanSidebar
-          workspace={planState.workspace}
-          surface={planState.surface}
-          selectedDocumentId={planState.selectedDocumentId}
-          selectedAnchor={planState.selectedAnchor}
-          onRefresh={refreshPlan}
-          onShowOverview={showPlanOverview}
-          onSelectDocument={selectPlanDocument}
-          onSelectHeading={selectPlanHeading}
-        />
-      </div>
-    {:else}
-      <div
-        class="scene-list mt-7 grid gap-2.5"
-        aria-label="Story workbench scenes"
-      >
-        {#each workbenchIndex?.chapters ?? [] as chapter (chapter.id)}
-          <details class="rounded-md border border-[#e4ded3] bg-[#fffefb]" open>
-            <summary class="grid cursor-pointer gap-1 px-3 py-2.5">
-              <span class="text-[0.78rem] text-[#60706b]">{chapter.id}</span>
-              <strong class="[overflow-wrap:anywhere] text-sm font-bold"
-                >{readableChapterLabel(chapter.id, chapter.title)}</strong
-              >
-            </summary>
-            <div class="chapter-scenes grid gap-2 px-2.5 pb-2.5">
-              {#each chapter.scenes as scene (scene.id)}
-                <div class="scene-entry grid gap-2">
-                  <button
-                    class={[
-                      "grid min-h-11 w-full cursor-pointer gap-1 rounded-md border px-3 py-2.5 text-left text-[#26302e]",
-                      scene.id === selectedSceneId &&
-                      chapter.id === selectedChapterId
-                        ? "selected border-[#57776a] bg-[#edf4f0]"
-                        : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
-                    ].join(" ")}
-                    type="button"
-                    onclick={() =>
-                      selectScene(chapter.id, scene.id, scene.type)}
+    <div
+      class="scene-list mt-7 grid gap-2.5"
+      aria-label="Story workbench scenes"
+    >
+      {#each workbenchIndex?.chapters ?? [] as chapter (chapter.id)}
+        <details class="rounded-md border border-[#e4ded3] bg-[#fffefb]" open>
+          <summary class="grid cursor-pointer gap-1 px-3 py-2.5">
+            <span class="text-[0.78rem] text-[#60706b]">{chapter.id}</span>
+            <strong class="[overflow-wrap:anywhere] text-sm font-bold"
+              >{readableChapterLabel(chapter.id, chapter.title)}</strong
+            >
+          </summary>
+          <div class="chapter-scenes grid gap-2 px-2.5 pb-2.5">
+            {#each chapter.scenes as scene (scene.id)}
+              <div class="scene-entry grid gap-2">
+                <button
+                  class={[
+                    "grid min-h-11 w-full cursor-pointer gap-1 rounded-md border px-3 py-2.5 text-left text-[#26302e]",
+                    scene.id === selectedSceneId &&
+                    chapter.id === selectedChapterId
+                      ? "selected border-[#57776a] bg-[#edf4f0]"
+                      : "border-[#bfc7bf] bg-white hover:border-[#57776a] hover:bg-[#edf4f0]",
+                  ].join(" ")}
+                  type="button"
+                  onclick={() => selectScene(chapter.id, scene.id, scene.type)}
+                >
+                  <strong class="break-words text-sm font-bold"
+                    >{readableSceneLabel(scene.id)}</strong
                   >
-                    <strong class="break-words text-sm font-bold"
-                      >{readableSceneLabel(scene.id)}</strong
-                    >
-                    <small class="text-[0.78rem] text-[#60706b]"
-                      >{readableChapterLabel(chapter.id, chapter.title)}</small
-                    >
-                  </button>
-                  {#if mode === "stage" && editorState.chapterId === chapter.id && editorState.sceneId === scene.id && editorState.scene}
-                    <div
-                      class="scene-sublocations ml-3 border-l-2 border-[#e4ded3] pl-2.5"
-                    >
-                      <TargetList
-                        scene={editorState.scene}
-                        {currentSublocationId}
-                        onSelectSublocation={(sublocationId) =>
-                          (currentSublocationId = sublocationId)}
-                      />
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          </details>
-        {:else}
-          <p class="empty m-0 text-[#7d3c2f]">No scenes loaded.</p>
-        {/each}
-      </div>
-    {/if}
+                  <small class="text-[0.78rem] text-[#60706b]"
+                    >{readableChapterLabel(chapter.id, chapter.title)}</small
+                  >
+                </button>
+                {#if mode === "stage" && editorState.chapterId === chapter.id && editorState.sceneId === scene.id && editorState.scene}
+                  <div
+                    class="scene-sublocations ml-3 border-l-2 border-[#e4ded3] pl-2.5"
+                  >
+                    <TargetList
+                      scene={editorState.scene}
+                      {currentSublocationId}
+                      onSelectSublocation={(sublocationId) =>
+                        (currentSublocationId = sublocationId)}
+                    />
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        </details>
+      {:else}
+        <p class="empty m-0 text-[#7d3c2f]">No scenes loaded.</p>
+      {/each}
+    </div>
   </aside>
 
   <section
@@ -1107,14 +1047,6 @@
           onclick={() => setMode("assets")}
         >
           Assets
-        </button>
-        <button
-          type="button"
-          class={toggleClass(mode === "plan")}
-          aria-pressed={mode === "plan"}
-          onclick={() => setMode("plan")}
-        >
-          Plan
         </button>
         <button
           type="button"
@@ -1374,18 +1306,6 @@
         onReviewPrompt={openAssetPromptReview}
         refreshEpoch={assetsRefreshEpoch}
       />
-    {:else if mode === "plan"}
-      <PlanView
-        workspace={planState.workspace}
-        error={planState.error}
-        loading={planState.loading}
-        surface={planState.surface}
-        selectedDocumentId={planState.selectedDocumentId}
-        selectedAnchor={planState.selectedAnchor}
-        onNavigateSource={navigatePlanSource}
-        onReviewSection={(documentId, anchor) =>
-          void openPlanSectionReview(documentId, anchor)}
-      />
     {:else if editorState.scene}
       <header
         class="detail-header flex items-start justify-between gap-5 max-[800px]:grid"
@@ -1497,15 +1417,8 @@
           lenses={activeReview.lenses}
           initialLens={activeReview.initialLens}
           context={activeReview.context}
-          rebuildContext={(lens) => {
-            const workspace = planState.workspace;
-            if (!workspace) return activeReview.context;
-            return buildAiReviewContext(
-              activeReview.selection,
-              lens,
-              workspace,
-            );
-          }}
+          rebuildContext={(lens) =>
+            buildAiReviewContext(activeReview.selection, lens)}
           provider={tauriAiReviewProvider}
           onReviewReplacement={applyAiReplacement}
           onClose={closeAiReview}

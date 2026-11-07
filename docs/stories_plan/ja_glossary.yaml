@@ -14,7 +14,7 @@ styleRules:
   - Latin text that the Chinese keeps (KAGAMI, REPRINT, K., USB, L 型) stays as written; L 型 becomes L字.
   - Address forms follow each character's `register`. By default, use 〜さん for adults by surname, 先生 for a lawyer (早坂律師 → 早坂先生), 刑事 for Kurose (黑瀨刑警 → 黒瀬刑事), 探偵さん for 偵探先生, お母さん when Hayasaka addresses Miyake's mother (阿姨). Soma, Hayasaka and Kamiya say 三宅さん and 増田さん; Takase, Kurose and narration use the bare surname. Soma and Hayasaka name a suspect bare between themselves (北見) but say 北見さん in the hearing.
   - Keep the restraint of the Chinese. No added jokes, slang, dialect, exclamations or role-language (no ござる, no heavy わ/のよ). Narration (旁白) is terse written Japanese in plain form.
-  - Do not explain or foreshadow beyond the Chinese line; chapter seals in docs/stories_plan/characters.md still apply.
+  - Do not explain or foreshadow beyond the Chinese line; chapter seals in the Notion 角色設定總表 (linked from CLAUDE.md) still apply.
 characters:
   - zh: 相馬律
     ja: 相馬律

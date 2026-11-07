@@ -136,7 +136,7 @@
     if (lens === currentLens) return;
     currentLens = lens;
     // Rebuild the context bundle for the new lens so supporting chips match
-    // (e.g. dialogue adds voice/group chips that storyConsistency omits).
+    // (e.g. dialogue adds a group chip that storyConsistency omits).
     contextBundle = rebuildContext(lens);
     removedRefs = [];
     result = null;

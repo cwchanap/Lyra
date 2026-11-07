@@ -16,10 +16,10 @@ const request: AiReviewProviderRequest = {
   selectedText: "相馬律：先不要急著判斷。",
   context: [
     {
-      ref: "voice-soma",
-      sourceRef: "docs/stories_plan/characters.md#相馬律",
-      kind: "characterVoice",
-      content: "台詞風格：結論偏短。",
+      ref: "group-intro",
+      sourceRef: "docs/stories_plan/chapter_1/scene_2.md#intro",
+      kind: "sceneProjection",
+      content: "相馬律: 再說一次。",
     },
   ],
   missingContext: [],
@@ -27,7 +27,7 @@ const request: AiReviewProviderRequest = {
 };
 
 const SELECTED_REF = request.selectedSourceRef;
-const VOICE_REF = "docs/stories_plan/characters.md#相馬律";
+const GROUP_REF = "docs/stories_plan/chapter_1/scene_2.md#intro";
 
 function result(overrides: Partial<AiReviewResult>): AiReviewResult {
   return {
@@ -46,8 +46,8 @@ function groundedFinding(): AiReviewResult["findings"][number] {
   return {
     severity: "Important",
     summary: "語氣與角色聲音不符",
-    explanation: "供給的 voice 上下文指出結論偏短。",
-    supportingSourceRefs: [VOICE_REF],
+    explanation: "供給的群組上下文已說明過同一件事。",
+    supportingSourceRefs: [GROUP_REF],
   };
 }
 
@@ -98,7 +98,7 @@ describe("lens instructions", () => {
 
   it("appends exactly the lens table row", () => {
     expect(aiReviewInstructions("dialogue")).toBe(
-      `${AI_REVIEW_PREAMBLE}\n\nReview only character voice against supplied voice context, repeated exposition, and local pacing/readability. Keep any replacement local to the selected line/action.`,
+      `${AI_REVIEW_PREAMBLE}\n\nReview only tone consistency within the supplied group, repeated exposition, and local pacing/readability. Keep any replacement local to the selected line/action.`,
     );
   });
 });
@@ -204,7 +204,7 @@ describe("validateAiReviewResult", () => {
     expect(
       validateAiReviewResult(
         request,
-        result({ reviewedSourceRefs: [VOICE_REF] }),
+        result({ reviewedSourceRefs: [GROUP_REF] }),
       ).ok,
     ).toBe(false);
   });

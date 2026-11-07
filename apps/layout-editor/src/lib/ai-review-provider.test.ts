@@ -20,10 +20,10 @@ const request: AiReviewProviderRequest = {
   selectedText: "相馬律：先不要急著判斷。",
   context: [
     {
-      ref: "voice-soma",
-      sourceRef: "docs/stories_plan/characters.md#相馬律",
-      kind: "characterVoice",
-      content: "台詞風格：結論偏短。",
+      ref: "group-intro",
+      sourceRef: "docs/stories_plan/chapter_1/scene_2.md#intro",
+      kind: "sceneProjection",
+      content: "相馬律: 再說一次。",
     },
   ],
   missingContext: [],
