@@ -144,13 +144,17 @@ Each review-agent brief must contain:
    lists). Instruct the subagent to read these files itself. The subagent sees
    the full text and can cite exact lines; you do not curate excerpts.
 3. **Citation requirement:** every Blocker or Important finding must quote the
-   offending text and cite the exact source line it was checked against (file
-   path + line number). For Visual Background findings, cite the authored scene
-   line and the compiled JSON file/field or `scenes:compile` warning that
-   proves the runtime gap.
+   offending text and cite the exact source it was checked against: file path +
+   line number for the authored scene and other repo files, or the page name +
+   section heading for a Notion planning page (those have no line numbers). For
+   Visual Background findings, cite the authored scene line and the compiled
+   JSON file/field or `scenes:compile` warning that proves the runtime gap.
 4. **Output format:**
    - `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` for this axis only.
    - One-line findings: `Severity — file:line — issue — suggested fix`
+     (`file:line` is the location of the offending text in the scene; the
+     planning source it was checked against goes in the issue, as page +
+     section heading when it is a Notion page).
    - A short strengths list.
 5. **Read-only enforcement:** the review agent must not edit any file. It
    produces a findings report only.
@@ -443,7 +447,7 @@ Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
 [One line per finding:
   Severity — file:line — issue — suggested fix — status (FIXED → new file:line / ESCALATED — <kind> / LEFT — MINOR / REGRESSED — needs human / NOT-ADDRESSED — reason)]
 [Blocker / Important findings must include the quoted offending text]
-[Canon/Forbidden findings must cite the source line checked against]
+[Canon/Forbidden findings must cite the source checked against: file:line for repo files, page + section heading for Notion planning pages]
 
 ### Fixes Applied
 
@@ -506,7 +510,7 @@ Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
 |---|---|
 | Reviewing prose quality in a vacuum | Review agents must read bible + construction plan + addendum first; most blockers are canon/forbidden and invisible without them. |
 | Treating a clean compile as done | The compiler can't see a canon contradiction, a flat voice, or whether a scene starts with dialogue before its first background cue — that's the review agents' job. |
-| Asserting canon from memory | Cite the source line; if it's absent, request the source. |
+| Asserting canon from memory | Cite the source line (page + section heading for a Notion page); if it's absent, request the source. |
 | Letting the implementer edit everything | The implementer fixes Blocker + Important only, on authored `.md` scene files only, bounded by the writing-* skill. Minor/Nit and structural findings are escalated, not silently "cleaned up". |
 | Letting the implementer introduce new violations | The implementer must not introduce canon contradictions, forbidden reveals, voice breaks, or format violations. A fix that requires a canon judgment call is escalated, not guessed. |
 | Running axes in parallel | Axes must run sequentially (1 → 9) so each review agent reads the post-fix files from earlier axes. Parallel axes produce conflicting edits and stale evidence. |
