@@ -1,7 +1,6 @@
 # Chapter 2: 澀谷玻璃箱直播失蹤事件
 
 **Summary:** 澀谷二十四小時玻璃箱直播的最後一小時，人氣直播主如月真白在數萬人注視下消失，隨後陳屍附近商業大樓；KAGAMI 摘要與輿論一起指向競爭直播主三枝悠真。
-**Status:** in-progress
 
 ## Scenes
 1. scene_0.md
@@ -34,3 +33,6 @@
 28. analysis_scene_18.md
 29. investigation_scene_map_10.md
 30. interrogation_scene_19.md
+31. scene_20.md
+32. scene_21.md
+33. scene_22.md
