@@ -2885,7 +2885,7 @@ describe("App AI review context", () => {
     mockAiBackend();
   });
 
-  it("a Reader scene reviews as Story consistency with its Reader projection", async () => {
+  it("a Reader scene reviews as In-scene consistency with its Reader projection", async () => {
     await openAiSceneReview("Scene 1");
     expect(
       within(aiReviewPanel()).getByLabelText("Context chips"),

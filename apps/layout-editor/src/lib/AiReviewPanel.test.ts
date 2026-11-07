@@ -214,7 +214,7 @@ describe("AiReviewPanel lifecycle", () => {
     const labels = within(group)
       .getAllByRole("button")
       .map((button) => button.textContent);
-    expect(labels).toEqual(["Story consistency", "Dialogue"]);
+    expect(labels).toEqual(["In-scene consistency", "Dialogue"]);
 
     // Prompt refinement is not offered for reader item selections.
     const promptOnly = panelProps({ lenses: ["promptRefinement"] });
@@ -260,7 +260,7 @@ describe("AiReviewPanel lifecycle", () => {
 
     const group = screen.getByRole("group", { name: "Review lens" });
     await user.click(
-      within(group).getByRole("button", { name: "Story consistency" }),
+      within(group).getByRole("button", { name: "In-scene consistency" }),
     );
     await runReview();
 
@@ -484,7 +484,7 @@ describe("AiReviewPanel lifecycle", () => {
 
     const group = screen.getByRole("group", { name: "Review lens" });
     await user.click(
-      within(group).getByRole("button", { name: "Story consistency" }),
+      within(group).getByRole("button", { name: "In-scene consistency" }),
     );
 
     // Story-consistency context omits the dialogue-only group chip.

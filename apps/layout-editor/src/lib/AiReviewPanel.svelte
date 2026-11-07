@@ -38,7 +38,7 @@
   type Phase = "ready" | "running" | "result" | "failed" | "canceled";
 
   const LENS_LABELS: Record<AiReviewLens, string> = {
-    storyConsistency: "Story consistency",
+    storyConsistency: "In-scene consistency",
     dialogue: "Dialogue",
     promptRefinement: "Prompt refinement",
   };
