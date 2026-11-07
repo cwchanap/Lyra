@@ -363,7 +363,7 @@ const interrogationChallenges: Record<
     {
       phaseId: "p6",
       questionId: "q_p6_door",
-      evidenceId: "sponsor_maintenance_passcode",
+      evidenceId: "m03_door_log",
     },
     {
       phaseId: "p6",
