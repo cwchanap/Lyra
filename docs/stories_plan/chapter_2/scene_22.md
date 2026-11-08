@@ -63,6 +63,12 @@
 
 **早坂茜**：背面有。我照順序排。
 
+[場景：桌燈底下，一張光面的搜索照片。]
+- **Background Prompt:** Close overhead view of a glossy printed photograph lying flat under a warm desk lamp on a dark wooden desk, the photograph showing a narrow Japanese apartment entryway with a low shoe cabinet and a small key tray on it, and at the bottom right an umbrella stand holding exactly one umbrella with only a sliver of its pale blue transparent handle showing, the photo with a thin white print border and a soft glossy sheen filling the center of the frame, the dark desk and the edge of the lamp pool around it, no people, no readable text, no labels, no numbers, calm empty lower third of dark desk surface for dialogue UI, no UI.
+- **Background Asset ID:** background.chapter_2.scene_22.entryway_photo
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_detective_office_night
+
 [她把第一張翻過來，放到桌燈底下。畫面是一間狹窄的玄關：鞋櫃、鑰匙盤，右下角的傘架裡只插著一把傘，一截藍色的透明傘柄露出一個邊。]
 
 **早坂茜**：玄關。
@@ -72,6 +78,12 @@
 **早坂茜**：傘架。歸玄關那一格。
 
 **相馬律**：嗯。
+
+[場景：相馬事務所，深夜。桌燈照著桌面，照片被一張一張排成兩疊。]
+- **Background Prompt:** Small private detective office in Tokyo late at night with thin rain leaving faint streaks on the dark window, a single warm desk lamp over an empty tidy desk holding only a pen and a cooled tea cup, an old broken drip coffee machine on the side cabinet with a small blank sticky note, quiet exhausted mood, same room and camera angle as the earlier office shots, across the desk toward the side cabinet, no people, no boxes, no papers, no photographs, calm empty lower third for dialogue UI, no readable text, no UI.
+- **Background Asset ID:** background.chapter_2.scene_22.tag_001
+- **BGM:** bgm_chapter_close
+- **BGS:** bgs_detective_office_night
 
 [早坂茜把照片放進左手邊那一疊。相馬律低頭繼續排日期。]
 
