@@ -77,6 +77,12 @@
 
 [趨勢排行第一位的影片縮圖，標題寫著「藍傘會標記下一名受害者」。她點開。]
 
+[場景：筆電螢幕裡的剪輯影片。]
+- **Background Prompt:** Close view of a laptop screen filling most of the frame in a dim small office, the screen showing a recorded video cut in two stacked moments side by side: on the left a local-news street scene cropped tight to the corner of an umbrella stand holding one pale blue transparent umbrella, on the right a cut to a room entryway with a umbrella stand holding the same kind of pale blue transparent umbrella beside a shoe cabinet, a thin dark bezel and a faint warm desk lamp glow around the screen, no people, no faces, no readable text, no captions, no logos, no UI chrome, calm empty lower third of dark desk surface for dialogue UI.
+- **Background Asset ID:** background.chapter_2.scene_21.clip_still
+- **BGM:** bgm_city_summary_motif
+- **BGS:** bgs_detective_office_rain
+
 [影片先是一段地方新聞，傘架邊角露出一把藍色的透明傘。畫面一切，換成一間房間的玄關，傘架上有同一類藍傘。]
 
 [接著是一張截圖，只有三個字「別看牆。」，底下署名「雨宮」。]
