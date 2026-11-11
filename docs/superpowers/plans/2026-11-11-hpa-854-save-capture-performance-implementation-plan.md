@@ -2,7 +2,7 @@
 
 > **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** planning only.
 >
-> **Delivery:** **one issue → one Draft PR → one implementation PR (this same PR, promoted when accepted)**. Planning, implementation, tests and verification are commits in **PR #132**. Do not open a second PR for HPA-854.
+> **Delivery:** **one issue → one PR (#132)**. Planning, implementation, tests and verification are commits in this same Draft PR; mark it ready only after acceptance. Do not open a second PR for HPA-854.
 >
 > **Review:** [2026-11-11 design review](https://github.com/cwchanap/Lyra/pull/132#pullrequestreview-5866688218). All five findings accepted after source inspection; no blanket persistence rewrite.
 
