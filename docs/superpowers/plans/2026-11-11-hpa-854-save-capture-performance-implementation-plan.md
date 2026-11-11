@@ -1,80 +1,113 @@
 # HPA-854 — Save Capture Performance: Single-PR Implementation Plan
 
-> **Design:** [HPA-854 performance specification](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** planning only.
+> **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** planning only.
 >
-> **Delivery:** one ticket → **one PR**. This Draft PR contains the design/plan first; commit the implementation and verification in this same branch. Do not open a second implementation PR.
+> **Delivery:** **one issue → one Draft PR → one implementation PR (this same PR, promoted when accepted)**. Planning, implementation, tests and verification are commits in **PR #132**. Do not open a second PR for HPA-854.
 >
-> **Baseline:** inspected `main` on 2026-11-11. The current `capture_checkpoint` already has `SceneCache`; the regression is `validate_inventory_record` repeatedly bypassing it.
+> **Review:** [2026-11-11 design review](https://github.com/cwchanap/Lyra/pull/132#pullrequestreview-5866688218). All five findings accepted after source inspection; no blanket persistence rewrite.
 
-## Task 1 — Pin the regression with a small failing Rust test
+## Review dispositions
+
+| Review finding | Decision and plan change |
+| --- | --- |
+| Existing `GameEngine.story_locations` already holds every packaged scene | **Accept.** Reuse `story_locations.resolve_scene_json`, not capture-local `SceneCache`, for inventory manifest lookups. No `validate_inventory` signature change. |
+| `packaged_acquisition_scene` and its empty-resource test fallback become dead code | **Accept.** Delete the method after updating its two test callers. Correct incomplete hand-built fixture indexes if they are used with inventory; do not retain test-only production fallbacks. |
+| `capture_history` still loads all chapters per capture | **Accept as a documented residual.** Inventory causes zero loads, but `packaged_scene_cursor_exclusive` can load all 60 existing scenes (≈2 MB) per capture, once per occupied save slot on discovery. Profile that first if release latency still fails. Do not preemptively expand this PR. |
+| Focused filters omit storage and cross-module equality tests | **Accept.** Run the full Tauri crate `cargo test` as the final Rust correctness gate. |
+| Release late-game archive source unspecified | **Accept.** Use a verified matching-`contentRevision` copy of the UAT `.e2e`/`.dev` save archive into an isolated release test profile, or regenerate the late-state archive; never overwrite player data. |
+
+## Task 1 — Reproduce zero-load invariant with one failing Rust test
 
 **File:** `apps/game/src-tauri/src/game/save/capture.rs` (existing `#[cfg(test)] mod tests`).
 
-- [ ] Reuse `save_capture_fixture_resources()` / existing investigation scene fixtures and legitimately defined evidence + statement manifests. Seed at least two valid records from the same chapter; do **not** use invalid duplicate inventory as a performance fixture.
-- [ ] Reset `navigation::reset_chapter_scene_load_count_for_test()` *immediately before capture*, then read `navigation::chapter_scene_load_count_for_test()`. Compare equivalent captures with no/one record and multiple records; assert additional records do **not** cause additional whole-chapter scene loads. Also assert the total is bounded by the chapters the capture visits.
-- [ ] Demonstrate the test fails on the old `engine.packaged_acquisition_scene` per-record path (or record the pre-fix counter values), then keep it as a cheap permanent regression test. Use the existing thread-local counter, not timing sleeps or a new load instrumentation system.
-- [ ] Identify existing tests for malformed inventory source, mismatched provenance and exact recapture; extend only where the cache lookup introduces an untested difference.
+- [ ] Use `provenance_save_fixture_resources()` and `GameEngine::new_started`. Acquire at least two distinct valid records (`chain_lead`, `chain_exhibit`, or equivalent) from an indexed Investigation scene using the existing manifest and `inventory.add_evidence_from_def`. This tests real catalog/source validation, not fake IDs or a duplicate inventory.
+- [ ] **After** engine initialization and record seeding, call `navigation::reset_chapter_scene_load_count_for_test()`. Call `validate_inventory(&engine)` directly, then assert `chapter_scene_load_count_for_test() == 0`. This isolates inventory validation from `capture_location` / history; it fails with the old per-record `packaged_acquisition_scene` path.
+- [ ] Record the pre-fix load counter (or demonstrate the red test), then retain the regression with no timing sleeps or new instrumentation.
+- [ ] Keep existing invalid-source and provenance-mismatch capture tests. Inspect any ad-hoc test engine whose `story_locations` does not include its declared scenes; fix the fixture **only if the new borrow path exposes that discrepancy**.
 
-**Done when:** a deterministic test demonstrates the `records × chapter loads` regression, independent of workstation speed.
+**Done when:** the test fails on current code, then proves inventory validation performs **zero** chapter loads after the fix, regardless of record count.
 
-## Task 2 — Share the existing scene cache with inventory validation
+## Task 2 — Switch to the existing indexed source lookup
 
-**Primary file:** `apps/game/src-tauri/src/game/save/capture.rs`.
+**Change only the small lookup boundary:**
 
-- [ ] Change `capture_checkpoint` from `validate_inventory(engine)?` to `validate_inventory(engine, &mut scene_cache)?`. Thread that argument through `validate_inventory` and `validate_inventory_record` for both evidence and statements.
-- [ ] Keep `validate_inventory_record_against_catalog` **before** source-scene manifest lookup. Resolve the unique chapter and unique scene using the `chapter_scenes` cache already shared with `capture_location`, `capture_scene_progress_with_active`, and `capture_history`. Borrow the scene; scan its manifest for the specific record ID, preserving existing evidence/statement and Linear/Analysis behavior.
-- [ ] Preserve `GameError::missing_acquisition_definition`, `duplicate_chapter_target`, `duplicate_scene_target`, and `inventory_record_definition_mismatch` as applicable. Do not turn missing or duplicate definitions into a silently accepted first match. Keep the special test-only empty-resource-root behavior if needed by existing fixtures.
-- [ ] Keep `SceneCache` scoped to the current `capture_checkpoint`; do not add a cache to `GameEngine`, `ApplicationPersistence`, `CurrentDefinitions`, or `navigation.rs`. A linear in-memory scan of a loaded chapter is sufficient; don't build a second index by default.
+- [ ] `apps/game/src-tauri/src/game/story_location.rs`: change `resolve_scene_json` to return `Result<&SceneJson, GameError>`. Keep `story_location_missing` at the index API boundary; return the borrowed scene, without cloning every source scene.
+- [ ] `apps/game/src-tauri/src/game/save/capture.rs`: retain `validate_inventory(engine)` and `validate_inventory_record` signatures. Keep `validate_inventory_record_against_catalog` **first**, then use:
+  
+  ```rust
+  let scene = engine
+      .story_locations
+      .resolve_scene_json(chapter_id, scene_id)
+      .map_err(|_| GameError::missing_acquisition_definition())?;
+  ```
 
-**Expected changed files:** `capture.rs` only for runtime logic and initial tests. Change other files only if a focused confirmed regression requires it.
+  Match `SceneJson::Investigation` / `Interrogation` to the proper record manifest as before. Unsupported types or missing entries still return `inventory_record_definition_mismatch`.
+- [ ] `apps/game/src-tauri/src/game/mod.rs`: in `cached_packaged_acquisition_scene`, clone the borrowed scene **at this existing owning caller**, preserving its `RefCell` value/return behavior. Delete the separate `GameEngine::packaged_acquisition_scene` method and its `#[cfg(test)]` empty-resource-dir fallback after removing its last consumers. Keep `navigation::find_scene_json_by_id` for navigation jumps.
+- [ ] Update only the two direct tests which call the removed method: `capture.rs` provenance test and `save/restore.rs` provenance round-trip test. Use `story_locations.resolve_scene_json`. Check for any other call sites before deletion.
+- [ ] If an existing hand-built fixture has a partial index (`test_support.rs` has a two-ref/one-index example), include the missing scene in that **fixture** only when required by the affected test; don't add a global fallback or retain file reparsing.
+- [ ] Preserve the existing constructor-time duplicate chapter/scene rejection. For capture, missing origin maps to `missing_acquisition_definition`, while incorrect source type/manifest and catalog mismatch still fail with their existing errors.
 
-**Done when:** each chapter is read/deserialized at most once per capture while all inventory/provenance errors retain their meaning.
+**Expected runtime files:** `capture.rs`, `story_location.rs`, `mod.rs`. `restore.rs` changes only its test caller; `test_support.rs` only if a fixture needs correction.
 
-## Task 3 — Check exact persistence semantics
+**Done when:** capture inventory validation uses the existing index, performs no disk chapter loads, and does not weaken the manifest/provenance rules.
 
-- [ ] Run targeted capture/restore/storage/application Rust tests, including the existing exact `build_restore_candidate` recapture equality cases, provenance rejection tests and autosave supersession tests.
-- [ ] Confirm one populated inventory round-trips with the exact same `SaveSnapshot` after save and restore. Do not change the save JSON schema, recap text, source IDs, provenance, or permitted scene types.
-- [ ] Confirm the cached source lookup does not alter Chapter 1 behavior or Chapter 2 data loading. No story/compiler/asset edits are part of this ticket.
-- [ ] Run Rust format and Clippy against the Tauri crate. Treat warnings introduced by this PR as failures.
+## Task 3 — Exact persistence correctness, including cross-module tests
 
-Suggested focused commands from repository root:
+- [ ] Run the new zero-load test, existing capture invalid-origin and provenance tests, and `story_location.rs` pending-acquisition zero-load test.
+- [ ] Confirm `build_restore_candidate` still recaptures and demands exact `SaveSnapshot` equality; do not bypass it. Cover a save containing multiple acquired records and verify its round-trip.
+- [ ] Run focused tests during development, **then the full crate `cargo test`**, not only `save::capture` / `save::restore` / `save::application`. The full run includes `save::storage` / `discover_slot` and:
+  - `case_record_integration_tests.rs` capture–restore cases,
+  - `case_file_integration_tests.rs` capture–restore cases,
+  - `navigation.rs` recapture equality tests.
+- [ ] Run Rust formatting and Clippy; no save schema, chapter content, or resource-generation change.
+
+Suggested commands (repository root):
 
 ```bash
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --lib save::capture
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --lib save::restore
 cargo test --manifest-path apps/game/src-tauri/Cargo.toml --lib save::application
+# Required final Rust correctness gate, beyond the focused filters:
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 bun run rust:fmt
 bun run rust:lint
 ```
 
-**Done when:** the counter regression and correctness tests pass with no changed persistence contract.
+**Done when:** all Rust tests pass, including source/provenance rejections and exact restore equality, and the diff has no new save model or state owner.
 
-## Task 4 — Verify against a late Chapter 2 workload
+## Task 4 — Release-build late-game acceptance on desktop
 
-**Use a release build for time acceptance**; the issue's debug UAT timings are diagnostic, not a fair release benchmark.
+**Source the workload deliberately.** The default release identifier is `com.chanwaichan.lyra`; `tauri.e2e.conf.json` uses `com.chanwaichan.lyra.e2e` and `tauri.dev.conf.json` uses `com.chanwaichan.lyra.dev`. Their save archives are not automatically shared.
 
-- [ ] With Chapter 2 near its final hearing and a representative populated save archive (ideally 8 slots / ~259 total records, with a late save around 83), measure wall time for: manual save, open save list, Continue, restart, and return to title. Record the machine, build type, save count, inventory count and actual timings in this PR. Target **~1 s or less** for manual save, save-list loading and Continue; for the other two operations verify they are no longer minute-scale and document the result.
-- [ ] Advance through a Chapter 2 interrogation while autosaves are enabled. Confirm an autosave **commits to disk during gameplay**, with a usable saved revision—not merely a pending UI state or an end-screen write. Compare the persisted revision/timestamp to the gameplay timeline. Confirm Continue restores that revision.
-- [ ] If autosave is still starved despite fast capture, collect a small trace distinguishing `AUTOSAVE_DEBOUNCE`, thumbnail ticket readiness/supersession and capture/commit. Fix only the demonstrated independent cause inside the **existing** `ApplicationPersistence` owner, and add one deterministic `save/application/tests/autosave.rs` test. Avoid a second writer queue, separate scheduler, global timer architecture, or blanket thumbnail removal.
-- [ ] Prefer one existing packaged save E2E path plus a real playthrough over a new broad E2E matrix. E.g. use the existing `apps/game` save-core E2E suite against a packaged build and measure the late-state path manually. Do not mark unrun checks as passing.
+- [ ] Prefer the existing Chapter 2 UAT archive, if available. Inspect `contentRevision` from its saves and the newly emitted `content_manifest`. If equal, **copy** the UAT archive into an isolated/backed-up release test profile. Do not overwrite the ordinary release player archive. Record source path, destination/profile, build identity and revision in the PR.
+- [ ] If the original UAT saves are missing or the emitted-scene revision is different, replay/regenerate a representative late Chapter 2 state instead of trying to import incompatible saves. Do not make backward compatibility changes.
+- [ ] Use a **release** build on macOS and Windows as available (no manual Android/Linux acceptance). Aim for the reported late-game load (≈74 evidence + 9 statements, about 8 save slots with ≈259 records). Record machine/OS, build type, slot and record counts, and observed wall times:
+  - Manual save, opening save list, Continue: each about **1 s or less** on the measured machine.
+  - Restart and return to title: no minute-scale hangs; record their actual durations.
+  - Save contents and provenance survive Continue unchanged.
+- [ ] Continue ordinary Chapter 2 interrogation with autosave enabled; check a save actually **commits to disk before the hearing ends**, and Continue restores a revision from during play. Record timestamps/revisions, not just UI activity.
+- [ ] If latency still fails, profile `capture_history` / `packaged_scene_cursor_exclusive` / `chapter_scenes` next. A history token currently causes every chapter to be read once per capture, **per occupied slot**; investigate this before suspecting debounce for slow save-list loading.
+- [ ] If captures are fast but autosave still does not commit during normal play, inspect the existing 500 ms trailing debounce, thumbnail-ticket supersession and write gate. Fix only an independently reproduced scheduling problem within `ApplicationPersistence`, with one targeted deterministic `save/application/tests/autosave.rs` regression. No new queue/scheduler or blanket thumbnail removal.
+- [ ] Prefer the existing packaged save-core E2E path and one representative real late-state playthrough to a new E2E matrix. Record what ran and what remains unverified.
 
-**Done when:** the issue's latency and autosave acceptance criteria have recorded release/playtest evidence. If the machine or a suitable save fixture is unavailable, mark the corresponding item unverified; do not claim completion.
+**Done when:** measured release performance and mid-interrogation autosave satisfy HPA-854, or remaining unverified acceptance is stated explicitly without closing the issue.
 
-## Task 5 — Review, close out and keep the same PR
+## Task 5 — One-PR review and closeout
 
-- [ ] Re-read the final diff against this design; confirm it only removes repeated scene-file parsing without changing validation, save ownership, game semantics, or the story.
-- [ ] Update the PR body with measured before/after load counts and timings, tests actually run, and any remaining environment-dependent uncertainty.
-- [ ] Keep HPA-854 as the sole implementation tracker. Link the PR from Linear, and mark the issue complete **only when** the performance and autosave acceptance tests pass. Do not close it when the design-only Draft PR is opened.
-- [ ] Mark the existing Draft PR ready only after tests and runtime verification are complete.
+- [ ] Review source diff: `story_locations` reused, no new cache, no validation bypass, no scene/asset changes.
+- [ ] Update PR body with pre/post chapter-load counts, actual Rust/Clippy test outputs, release timings, archive provenance and autosave result. Mark unrun tests unverified.
+- [ ] Keep **HPA-854** as sole tracker, leave the PR Draft until implementation and verification are ready, and complete Linear only after acceptance.
+- [ ] Handle subsequent review feedback in this **same** PR.
 
-## Explicitly out of scope
+## Out of scope
 
-No Chapter 2 hotspot placement (HPA-853), save-slot keyboard deletion UX (HPA-830), image assets, scene authoring, generic raw-data cache, persisted cross-session schema changes, app-wide persistence rewrite, or preemptive thumbnail/debounce refactor. Those are separate product concerns, not reasons to split HPA-854 into multiple PRs.
+No HPA-853 hotspot layout changes, HPA-830 save-slot keyboard UX, new visuals/SFX, story scripts, global scene memoization, new persistence service, save schema/migration, navigation rewrites, or speculative thumbnail/debounce redesign.
 
 ## Reviewer checklist
 
-- [ ] Can multiple acquired records cause more chapter JSON reloads within one capture? **No.**
-- [ ] Can invalid source/provenance or duplicate definitions pass because of caching? **No.**
-- [ ] Is the performance improvement shared by manual save, list, Continue and autosave without parallel new code paths? **Yes.**
-- [ ] Does at least one autosave land while Chapter 2 interrogation is still progressing? **Verified in a real run.**
-- [ ] Are any unmeasured release timings honestly marked as pending? **Yes.**
+- [ ] Does `validate_inventory` invoke `load_chapter_scene_jsons`? **No.** Counter asserts zero.
+- [ ] Is `story_locations` lookup borrowed, with cloning isolated to the existing pending-acquisition owner? **Yes.**
+- [ ] Are missing source, wrong record kind, bad provenance and corrupted snapshots still rejected? **Yes, proven by full Rust tests.**
+- [ ] Does opening the save list avoid repeated per-record chapter deserialization? **Yes; per-slot history parsing remains a separate measured risk.**
+- [ ] Does a real autosave land during Chapter 2 interrogation? **Confirm with test evidence before calling done.**
+- [ ] Are release archive source, content revision, and observed timings documented? **Yes before merging.**
