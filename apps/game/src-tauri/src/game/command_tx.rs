@@ -58,7 +58,6 @@ impl EngineRollbackSnapshot {
             history,
             durable_revision,
             pending_acquisition_events,
-            cached_pending_acquisition_scene: _,
             transient_feedback: _,
         } = engine;
         Self {
@@ -1211,7 +1210,6 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
-            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
             transient_feedback: None,
         };
         engine.prime_initial_queue().unwrap();
@@ -1371,7 +1369,6 @@ mod tests {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
-            cached_pending_acquisition_scene: std::cell::RefCell::new(None),
             transient_feedback: None,
         };
         engine.prime_initial_queue().unwrap();

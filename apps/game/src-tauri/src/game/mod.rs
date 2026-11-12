@@ -51,7 +51,6 @@ use schema::{
     InterrogationPhaseJson, InventoryTarget, LockStatus, SceneJson, SceneType,
 };
 use state::{ChapterManifest, Inventory};
-use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use story::{AssertionOrigin, StoryCatalog, StoryEventBlockKind, StoryState, StoryStateView};
@@ -83,7 +82,6 @@ pub struct GameEngine {
     history: dialogue::DialogueHistory,
     durable_revision: u64,
     pending_acquisition_events: Vec<save::schema::AcquisitionEventStateV1>,
-    cached_pending_acquisition_scene: RefCell<Option<(String, String, SceneJson)>>,
     /// The reply to the player's last wrong pick: a 推理 prompt option or a
     /// record shown to a character. Not saved and not rollback-tracked, so a
     /// wrong pick can stay an `Unchanged` command; the next `Changed` command
@@ -313,7 +311,6 @@ impl GameEngine {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
-            cached_pending_acquisition_scene: RefCell::new(None),
             transient_feedback: None,
         };
         if let SceneRuntime::Analysis(scene) = &mut engine.scene {
@@ -388,27 +385,14 @@ impl GameEngine {
         (chapter_id, scene_id)
     }
 
-    fn cached_packaged_acquisition_scene(
+    fn packaged_acquisition_scene(
         &self,
         chapter_id: &str,
         scene_id: &str,
-    ) -> Result<SceneJson, GameError> {
-        {
-            let cache = self.cached_pending_acquisition_scene.borrow();
-            if let Some((cached_chapter, cached_scene, scene)) = cache.as_ref() {
-                if cached_chapter == chapter_id && cached_scene == scene_id {
-                    return Ok(scene.clone());
-                }
-            }
-        }
-        let scene = self
-            .story_locations
+    ) -> Result<&SceneJson, GameError> {
+        self.story_locations
             .resolve_scene_json(chapter_id, scene_id)
-            .map_err(|_| GameError::missing_acquisition_definition())?
-            .clone();
-        *self.cached_pending_acquisition_scene.borrow_mut() =
-            Some((chapter_id.to_string(), scene_id.to_string(), scene.clone()));
-        Ok(scene)
+            .map_err(|_| GameError::missing_acquisition_definition())
     }
 
     pub(in crate::game) fn pending_acquisition_view(
@@ -429,11 +413,11 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
-                let scene = self.cached_packaged_acquisition_scene(
+                let scene = self.packaged_acquisition_scene(
                     &record.collected_in_chapter_id,
                     &record.collected_in_scene_id,
                 )?;
-                let (evidence, statements) = match &scene {
+                let (evidence, statements) = match scene {
                     SceneJson::Investigation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
@@ -482,11 +466,11 @@ impl GameEngine {
                     .iter()
                     .find(|record| record.id == event.record_id)
                     .ok_or_else(GameError::unknown_acquisition_event)?;
-                let scene = self.cached_packaged_acquisition_scene(
+                let scene = self.packaged_acquisition_scene(
                     &record.acquired_in_chapter_id,
                     &record.acquired_in_scene_id,
                 )?;
-                let (evidence, statements) = match &scene {
+                let (evidence, statements) = match scene {
                     SceneJson::Investigation(scene) => {
                         (&scene.evidence_manifest, &scene.statement_manifest)
                     }
@@ -4623,7 +4607,6 @@ pub fn view(&mut self) -> Result<GameStateView, GameError> {
             history: dialogue::DialogueHistory::default(),
             durable_revision: 0,
             pending_acquisition_events: Vec::new(),
-            cached_pending_acquisition_scene: RefCell::new(None),
             transient_feedback: None,
         };
 

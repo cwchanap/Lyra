@@ -491,7 +491,6 @@ pub(crate) fn empty_engine_with_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
-        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         transient_feedback: None,
     }
 }
@@ -2620,7 +2619,6 @@ pub(crate) fn empty_engine_with_interrogation_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
-        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         transient_feedback: None,
     }
 }
@@ -2696,7 +2694,6 @@ pub(super) fn completed_interrogation_engine_with_bad_next_scene(
         history: dialogue::DialogueHistory::default(),
         durable_revision: 0,
         pending_acquisition_events: Vec::new(),
-        cached_pending_acquisition_scene: std::cell::RefCell::new(None),
         transient_feedback: None,
     }
 }
