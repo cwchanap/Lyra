@@ -3161,7 +3161,8 @@ mod tests {
         let (_guard, resources) = provenance_save_fixture_resources();
         let mut engine = GameEngine::new_started(resources.clone()).unwrap();
         let SceneJson::Investigation(scene) = engine
-            .packaged_acquisition_scene("chapter_1", "investigation_scene_1")
+            .story_locations
+            .resolve_scene_json("chapter_1", "investigation_scene_1")
             .unwrap()
         else {
             panic!("expected investigation fixture")

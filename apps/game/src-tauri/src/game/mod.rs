@@ -388,38 +388,6 @@ impl GameEngine {
         (chapter_id, scene_id)
     }
 
-    pub(in crate::game) fn packaged_acquisition_scene(
-        &self,
-        chapter_id: &str,
-        scene_id: &str,
-    ) -> Result<SceneJson, GameError> {
-        let mut matching_chapters = self
-            .chapters
-            .iter()
-            .filter(|chapter| chapter.id == chapter_id);
-        let chapter = matching_chapters
-            .next()
-            .ok_or_else(GameError::missing_acquisition_definition)?;
-        if matching_chapters.next().is_some() {
-            return Err(GameError::duplicate_chapter_target(chapter_id));
-        }
-        #[cfg(test)]
-        if self.resources_dir.as_os_str().is_empty() {
-            return match &self.scene {
-                SceneRuntime::Investigation(scene) if scene.def.id == scene_id => {
-                    Ok(SceneJson::Investigation(scene.def.clone()))
-                }
-                SceneRuntime::Interrogation(scene) if scene.def.id == scene_id => {
-                    Ok(SceneJson::Interrogation(scene.def.clone()))
-                }
-                _ => Err(GameError::missing_acquisition_definition()),
-            };
-        }
-        find_scene_json_by_id(&self.resources_dir, &self.story_catalog, chapter, scene_id)?
-            .map(|(_, scene)| scene)
-            .ok_or_else(GameError::missing_acquisition_definition)
-    }
-
     fn cached_packaged_acquisition_scene(
         &self,
         chapter_id: &str,
@@ -436,7 +404,8 @@ impl GameEngine {
         let scene = self
             .story_locations
             .resolve_scene_json(chapter_id, scene_id)
-            .map_err(|_| GameError::missing_acquisition_definition())?;
+            .map_err(|_| GameError::missing_acquisition_definition())?
+            .clone();
         *self.cached_pending_acquisition_scene.borrow_mut() =
             Some((chapter_id.to_string(), scene_id.to_string(), scene.clone()));
         Ok(scene)

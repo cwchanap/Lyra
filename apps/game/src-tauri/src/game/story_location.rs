@@ -162,10 +162,10 @@ impl StoryLocationIndex {
         &self,
         chapter_id: &str,
         scene_id: &str,
-    ) -> Result<SceneJson, GameError> {
+    ) -> Result<&SceneJson, GameError> {
         self.locations
             .get(&(chapter_id.to_owned(), scene_id.to_owned()))
-            .map(|location| location.scene.clone())
+            .map(|location| &location.scene)
             .ok_or_else(|| GameError::story_location_missing(chapter_id, scene_id))
     }
 }
