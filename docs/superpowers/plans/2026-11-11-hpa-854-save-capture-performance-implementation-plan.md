@@ -1,6 +1,6 @@
 # HPA-854 — Save Capture Performance: Single-PR Implementation Plan
 
-> **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** planning only.
+> **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** implementation and Rust correctness verification complete (tasks 1–3); release-build performance and normal-play autosave acceptance (task 4) unverified — HPA-854 remains open.
 >
 > **Delivery:** **one issue → one PR (#132)**. Planning, implementation, tests and verification are commits in this same Draft PR; mark it ready only after acceptance. Do not open a second PR for HPA-854.
 >
