@@ -20,10 +20,10 @@
 
 **File:** `apps/game/src-tauri/src/game/save/capture.rs` (existing `#[cfg(test)] mod tests`).
 
-- [ ] Use `provenance_save_fixture_resources()` and `GameEngine::new_started`. Acquire at least two distinct valid records (`chain_lead`, `chain_exhibit`, or equivalent) from an indexed Investigation scene using the existing manifest and `inventory.add_evidence_from_def`. This tests real catalog/source validation, not fake IDs or a duplicate inventory.
-- [ ] **After** engine initialization and record seeding, call `navigation::reset_chapter_scene_load_count_for_test()`. Call `validate_inventory(&engine)` directly, then assert `chapter_scene_load_count_for_test() == 0`. This isolates inventory validation from `capture_location` / history; it fails with the old per-record `packaged_acquisition_scene` path.
-- [ ] Record the pre-fix load counter (or demonstrate the red test), then retain the regression with no timing sleeps or new instrumentation.
-- [ ] Keep existing invalid-source and provenance-mismatch capture tests. Inspect any ad-hoc test engine whose `story_locations` does not include its declared scenes; fix the fixture **only if the new borrow path exposes that discrepancy**.
+- [x] Use `provenance_save_fixture_resources()` and `GameEngine::new_started`. Acquire at least two distinct valid records (`chain_lead`, `chain_exhibit`, or equivalent) from an indexed Investigation scene using the existing manifest and `inventory.add_evidence_from_def`. This tests real catalog/source validation, not fake IDs or a duplicate inventory.
+- [x] **After** engine initialization and record seeding, call `navigation::reset_chapter_scene_load_count_for_test()`. Call `validate_inventory(&engine)` directly, then assert `chapter_scene_load_count_for_test() == 0`. This isolates inventory validation from `capture_location` / history; it fails with the old per-record `packaged_acquisition_scene` path.
+- [x] Record the pre-fix load counter (or demonstrate the red test), then retain the regression with no timing sleeps or new instrumentation.
+- [x] Keep existing invalid-source and provenance-mismatch capture tests. Inspect any ad-hoc test engine whose `story_locations` does not include its declared scenes; fix the fixture **only if the new borrow path exposes that discrepancy**.
 
 **Done when:** the test fails on current code, then proves inventory validation performs **zero** chapter loads after the fix, regardless of record count.
 
@@ -31,8 +31,8 @@
 
 **Change only the small lookup boundary:**
 
-- [ ] `apps/game/src-tauri/src/game/story_location.rs`: change `resolve_scene_json` to return `Result<&SceneJson, GameError>`. Keep `story_location_missing` at the index API boundary; return the borrowed scene, without cloning every source scene.
-- [ ] `apps/game/src-tauri/src/game/save/capture.rs`: retain `validate_inventory(engine)` and `validate_inventory_record` signatures. Keep `validate_inventory_record_against_catalog` **first**, then use:
+- [x] `apps/game/src-tauri/src/game/story_location.rs`: change `resolve_scene_json` to return `Result<&SceneJson, GameError>`. Keep `story_location_missing` at the index API boundary; return the borrowed scene, without cloning every source scene.
+- [x] `apps/game/src-tauri/src/game/save/capture.rs`: retain `validate_inventory(engine)` and `validate_inventory_record` signatures. Keep `validate_inventory_record_against_catalog` **first**, then use:
   
   ```rust
   let scene = engine
@@ -42,11 +42,11 @@
   ```
 
   Match `SceneJson::Investigation` / `Interrogation` to the proper record manifest as before. Unsupported types or missing entries still return `inventory_record_definition_mismatch`.
-- [ ] `apps/game/src-tauri/src/game/mod.rs`: in `cached_packaged_acquisition_scene`, clone the borrowed scene **at this existing owning caller**, preserving its `RefCell` value/return behavior. Delete the separate `GameEngine::packaged_acquisition_scene` method and its `#[cfg(test)]` empty-resource-dir fallback after removing its last consumers. Keep `navigation::find_scene_json_by_id` for navigation jumps.
-- [ ] Update only the two direct tests which call the removed method: `capture.rs` provenance test and `save/restore.rs` provenance round-trip test. Use `story_locations.resolve_scene_json`. Check for any other call sites before deletion.
-- [ ] If an existing hand-built fixture has a partial index (`test_support.rs` has a two-ref/one-index example), include the missing scene in that **fixture** only when required by the affected test; don't add a global fallback or retain file reparsing.
-- [ ] Preserve the existing constructor-time duplicate chapter/scene rejection. For capture, missing origin maps to `missing_acquisition_definition`, while incorrect source type/manifest and catalog mismatch still fail with their existing errors.
-- [ ] When removing `packaged_acquisition_scene`, update the stale test comment in `save/capture.rs` near line 1321: it currently says invalid Linear/Analysis origins are rejected before `packaged_acquisition_scene` returns one. Keep its defensive-exhaustiveness explanation, but refer to `story_locations.resolve_scene_json` and the existing scene-loading validation instead. Do not leave a reference to the deleted helper.
+- [x] `apps/game/src-tauri/src/game/mod.rs`: resolve the borrowed scene directly at the existing pending-acquisition caller (`packaged_acquisition_scene`) and return a reference; the old `RefCell` memo of the resolved scene was removed as redundant once the lookup became a borrowed `BTreeMap` hit. Delete the separate `GameEngine::packaged_acquisition_scene` disk-reading method and its `#[cfg(test)]` empty-resource-dir fallback after removing its last consumers. Keep `navigation::find_scene_json_by_id` for navigation jumps.
+- [x] Update only the two direct tests which call the removed method: `capture.rs` provenance test and `save/restore.rs` provenance round-trip test. Use `story_locations.resolve_scene_json`. Check for any other call sites before deletion.
+- [x] If an existing hand-built fixture has a partial index (`test_support.rs` has a two-ref/one-index example), include the missing scene in that **fixture** only when required by the affected test; don't add a global fallback or retain file reparsing.
+- [x] Preserve the existing constructor-time duplicate chapter/scene rejection. For capture, missing origin maps to `missing_acquisition_definition`, while incorrect source type/manifest and catalog mismatch still fail with their existing errors.
+- [x] When removing `packaged_acquisition_scene`, update the stale test comment in `save/capture.rs` near line 1321: it currently says invalid Linear/Analysis origins are rejected before `packaged_acquisition_scene` returns one. Keep its defensive-exhaustiveness explanation, but refer to `story_locations.resolve_scene_json` and the existing scene-loading validation instead. Do not leave a reference to the deleted helper.
 
 **Expected runtime files:** `capture.rs`, `story_location.rs`, `mod.rs`. `restore.rs` changes only its test caller; `test_support.rs` only if a fixture needs correction.
 
@@ -54,13 +54,13 @@
 
 ## Task 3 — Exact persistence correctness, including cross-module tests
 
-- [ ] Run the new zero-load test, existing capture invalid-origin and provenance tests, and `story_location.rs` pending-acquisition zero-load test.
-- [ ] Confirm `build_restore_candidate` still recaptures and demands exact `SaveSnapshot` equality; do not bypass it. Cover a save containing multiple acquired records and verify its round-trip.
-- [ ] Run focused tests during development, **then the full crate `cargo test`**, not only `save::capture` / `save::restore` / `save::application`. The full run includes `save::storage` / `discover_slot` and:
+- [x] Run the new zero-load test, existing capture invalid-origin and provenance tests, and `story_location.rs` pending-acquisition zero-load test.
+- [x] Confirm `build_restore_candidate` still recaptures and demands exact `SaveSnapshot` equality; do not bypass it. Cover a save containing multiple acquired records and verify its round-trip.
+- [x] Run focused tests during development, **then the full crate `cargo test`**, not only `save::capture` / `save::restore` / `save::application`. The full run includes `save::storage` / `discover_slot` and:
   - `case_record_integration_tests.rs` capture–restore cases,
   - `case_file_integration_tests.rs` capture–restore cases,
   - `navigation.rs` recapture equality tests.
-- [ ] Run Rust formatting and Clippy; no save schema, chapter content, or resource-generation change.
+- [x] Run Rust formatting and Clippy; no save schema, chapter content, or resource-generation change.
 
 Suggested commands (repository root):
 
@@ -109,9 +109,9 @@ No HPA-853 hotspot layout changes, HPA-830 save-slot keyboard UX, new visuals/SF
 
 ## Reviewer checklist
 
-- [ ] Does `validate_inventory` invoke `load_chapter_scene_jsons`? **No.** Counter asserts zero.
-- [ ] Is `story_locations` lookup borrowed, with cloning isolated to the existing pending-acquisition owner? **Yes.**
-- [ ] Are missing source, wrong record kind, bad provenance and corrupted snapshots still rejected? **Yes, proven by full Rust tests.**
+- [x] Does `validate_inventory` invoke `load_chapter_scene_jsons`? **No.** Counter asserts zero.
+- [x] Is the `story_locations` lookup borrowed everywhere, with no scene clone on the pending-acquisition path? **Yes.**
+- [x] Are missing source, wrong record kind, bad provenance and corrupted snapshots still rejected? **Yes, proven by full Rust tests.**
 - [ ] Does opening the save list avoid repeated per-record chapter deserialization? **Yes; per-slot history parsing remains a separate measured risk.**
 - [ ] Does a real autosave land during Chapter 2 interrogation? **Confirm with test evidence before calling done.**
 - [ ] Are release archive source, content revision, and observed timings documented? **Yes before merging.**
