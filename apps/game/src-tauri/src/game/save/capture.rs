@@ -2911,6 +2911,40 @@ mod tests {
         assert_eq!(error.code, "inventoryRecordDefinitionMismatch");
     }
 
+    #[test]
+    fn validate_inventory_does_not_load_chapter_scenes() {
+        use crate::game::navigation::{
+            chapter_scene_load_count_for_test, reset_chapter_scene_load_count_for_test,
+        };
+
+        let (_guard, resources) = provenance_save_fixture_resources();
+        let mut engine = GameEngine::new_started(resources).unwrap();
+        let SceneJson::Investigation(scene) = engine
+            .story_locations
+            .resolve_scene_json("chapter_1", "investigation_scene_1")
+            .unwrap()
+        else {
+            panic!("expected investigation fixture")
+        };
+        for record_id in ["chain_lead", "chain_exhibit"] {
+            let definition = scene
+                .evidence_manifest
+                .iter()
+                .find(|definition| definition.id == record_id)
+                .unwrap();
+            assert!(engine.inventory.add_evidence_from_def(
+                definition,
+                "chapter_1",
+                "investigation_scene_1",
+            ));
+        }
+
+        reset_chapter_scene_load_count_for_test();
+        validate_inventory(&engine).unwrap();
+
+        assert_eq!(chapter_scene_load_count_for_test(), 0);
+    }
+
     // --- validate_analysis_progress tests ---
 
     use crate::game::scenes::analysis::AnalysisSceneState;
