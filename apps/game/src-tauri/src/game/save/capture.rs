@@ -82,7 +82,6 @@ pub(crate) fn capture_checkpoint(engine: &GameEngine) -> Result<CapturedCheckpoi
         history,
         durable_revision,
         pending_acquisition_events,
-        cached_pending_acquisition_scene: _not_persisted,
         transient_feedback: _not_persisted_feedback,
     } = engine;
 

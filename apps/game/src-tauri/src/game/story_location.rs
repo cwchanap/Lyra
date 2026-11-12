@@ -298,7 +298,6 @@ mod tests {
                 created_by_command_id: 1,
                 ordinal: 0,
             });
-        engine.cached_pending_acquisition_scene.borrow_mut().take();
 
         reset_chapter_scene_load_count_for_test();
         let view = engine.view().unwrap();
