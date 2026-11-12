@@ -46,6 +46,7 @@
 - [ ] Update only the two direct tests which call the removed method: `capture.rs` provenance test and `save/restore.rs` provenance round-trip test. Use `story_locations.resolve_scene_json`. Check for any other call sites before deletion.
 - [ ] If an existing hand-built fixture has a partial index (`test_support.rs` has a two-ref/one-index example), include the missing scene in that **fixture** only when required by the affected test; don't add a global fallback or retain file reparsing.
 - [ ] Preserve the existing constructor-time duplicate chapter/scene rejection. For capture, missing origin maps to `missing_acquisition_definition`, while incorrect source type/manifest and catalog mismatch still fail with their existing errors.
+- [ ] When removing `packaged_acquisition_scene`, update the stale test comment in `save/capture.rs` near line 1321: it currently says invalid Linear/Analysis origins are rejected before `packaged_acquisition_scene` returns one. Keep its defensive-exhaustiveness explanation, but refer to `story_locations.resolve_scene_json` and the existing scene-loading validation instead. Do not leave a reference to the deleted helper.
 
 **Expected runtime files:** `capture.rs`, `story_location.rs`, `mod.rs`. `restore.rs` changes only its test caller; `test_support.rs` only if a fixture needs correction.
 
@@ -86,7 +87,10 @@ bun run rust:lint
   - Restart and return to title: no minute-scale hangs; record their actual durations.
   - Save contents and provenance survive Continue unchanged.
 - [ ] Continue ordinary Chapter 2 interrogation with autosave enabled; check a save actually **commits to disk before the hearing ends**, and Continue restores a revision from during play. Record timestamps/revisions, not just UI activity.
-- [ ] If latency still fails, profile `capture_history` / `packaged_scene_cursor_exclusive` / `chapter_scenes` next. A history token currently causes every chapter to be read once per capture, **per occupied slot**; investigate this before suspecting debounce for slow save-list loading.
+- [ ] If latency still fails, profile the **two separate remaining chapter-load paths** before changing autosave policy:
+  - `capture_history` → `packaged_scene_cursor_exclusive` → capture-local `chapter_scenes`: with a history token, this can parse every chapter once per capture, and save discovery repeats that work per occupied slot.
+  - `validate_packaged_dialogue_candidate` → `GameEngine::restore_active_dialogue_queue` (`dialogue_queue.rs`): when `active_dialogue` is present, its own `loaded_chapters` map may parse the active chapter separately from the capture-local `SceneCache`. A capture with both active dialogue and history may therefore load the active chapter twice and the other chapters once, *even after inventory validation is fixed*.
+  - Record chapter-load counter/timings for each path before making any follow-up optimization; do not add shared cache plumbing or touch debounce/thumbnails speculatively.
 - [ ] If captures are fast but autosave still does not commit during normal play, inspect the existing 500 ms trailing debounce, thumbnail-ticket supersession and write gate. Fix only an independently reproduced scheduling problem within `ApplicationPersistence`, with one targeted deterministic `save/application/tests/autosave.rs` regression. No new queue/scheduler or blanket thumbnail removal.
 - [ ] Prefer the existing packaged save-core E2E path and one representative real late-state playthrough to a new E2E matrix. Record what ran and what remains unverified.
 
