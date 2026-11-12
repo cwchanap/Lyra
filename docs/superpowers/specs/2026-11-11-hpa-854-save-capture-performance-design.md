@@ -1,6 +1,6 @@
 # HPA-854 — Save/Load Performance: Reuse the Engine-Held Story Location Index
 
-> **Status:** design-only Draft PR (runtime fix and verification pending). **Issue:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses). **Baseline:** `main` inspected 2026-11-11. **Review:** [PR #132 design review](https://github.com/cwchanap/Lyra/pull/132#pullrequestreview-5866688218), accepted with scope corrections.
+> **Status:** runtime implementation complete and Rust correctness verified (full Tauri crate `cargo test`, fmt, Clippy); production-release performance and normal-play autosave acceptance **unverified** — HPA-854 remains open. **Issue:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses). **Baseline:** `main` inspected 2026-11-11. **Review:** [PR #132 design review](https://github.com/cwchanap/Lyra/pull/132#pullrequestreview-5866688218), accepted with scope corrections.
 
 ## Problem and player impact
 
@@ -73,4 +73,4 @@ If persistence still stalls after index reuse, measure the next hot path first. 
 
 ## Review and delivery boundary
 
-**One Linear issue, one PR.** This Draft PR contains design/plan revisions; runtime implementation, tests, release measurements, and follow-up review happen in **this same PR**. The PR is not yet a gameplay fix. Keep HPA-854 open until its performance and autosave acceptance criteria are verified.
+**One Linear issue, one PR.** This Draft PR now carries design/plan revisions plus the runtime implementation and Rust tests; release measurements and follow-up review continue in **this same PR**. Keep HPA-854 open: its release performance and autosave acceptance criteria are not yet verified.
