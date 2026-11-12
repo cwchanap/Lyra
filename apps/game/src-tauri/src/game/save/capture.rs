@@ -757,7 +757,10 @@ fn validate_inventory_record(
         target,
         provenance,
     )?;
-    let scene = engine.packaged_acquisition_scene(chapter_id, scene_id)?;
+    let scene = engine
+        .story_locations
+        .resolve_scene_json(chapter_id, scene_id)
+        .map_err(|_| GameError::missing_acquisition_definition())?;
     let found = match scene {
         SceneJson::Investigation(scene) => match target {
             InventoryTarget::Evidence { id } => scene
@@ -1323,8 +1326,8 @@ mod tests {
     // fallback. It is unreachable in practice because
     // validate_scene_records_against_catalog (called during scene loading)
     // rejects any catalog evidence entry pointing to a Linear or Analysis scene
-    // before packaged_acquisition_scene can return one. The arm exists to keep
-    // the match exhaustive, not to be exercised at runtime.
+    // before story_locations.resolve_scene_json can return one. The arm exists
+    // to keep the match exhaustive, not to be exercised at runtime.
 
     #[test]
     fn captures_active_linear_checkpoint_as_exact_wire_value() {
@@ -2888,7 +2891,8 @@ mod tests {
         let (_guard, resources) = provenance_save_fixture_resources();
         let mut engine = GameEngine::new_started(resources).unwrap();
         let SceneJson::Investigation(scene) = engine
-            .packaged_acquisition_scene("chapter_1", "investigation_scene_1")
+            .story_locations
+            .resolve_scene_json("chapter_1", "investigation_scene_1")
             .unwrap()
         else {
             panic!("expected investigation fixture")
