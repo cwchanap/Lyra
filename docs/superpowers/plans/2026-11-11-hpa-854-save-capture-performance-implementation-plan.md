@@ -1,8 +1,8 @@
 # HPA-854 — Save Capture Performance: Single-PR Implementation Plan
 
-> **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** implementation and Rust correctness verification complete (tasks 1–3); release-build performance and normal-play autosave acceptance (task 4) unverified — HPA-854 remains open.
+> **Design:** [HPA-854 performance design](../specs/2026-11-11-hpa-854-save-capture-performance-design.md) · **Tracker:** [HPA-854](https://linear.app/cwchanap/issue/HPA-854/saving-loading-and-autosave-slow-to-minutes-as-the-story-progresses) · **Status:** implementation and Rust correctness verification complete (tasks 1–3); release-build performance and normal-play autosave acceptance (task 4) **waived** by reviewer decision — debug-only functional and timing evidence accepted as sufficient.
 >
-> **Delivery:** **one issue → one PR (#132)**. Planning, implementation, tests and verification are commits in this same Draft PR; mark it ready only after acceptance. Do not open a second PR for HPA-854.
+> **Delivery:** **one issue → one PR (#132)**. Planning, implementation, tests and verification are commits in this same PR; Task 4 acceptance waived, so the PR may be marked ready without release measurements. Do not open a second PR for HPA-854.
 >
 > **Review:** [2026-11-11 design review](https://github.com/cwchanap/Lyra/pull/132#pullrequestreview-5866688218). All five findings accepted after source inspection; no blanket persistence rewrite.
 
@@ -78,6 +78,8 @@ bun run rust:lint
 
 ## Task 4 — Release-build late-game acceptance on desktop
 
+> **Waived** by reviewer decision (2026-11-13): the debug-only functional and timing evidence already recorded in the PR is accepted in place of genuine-release measurements. The unchecked boxes below are left as a record of what was skipped; none gate this PR.
+
 **Source the workload deliberately.** The default release identifier is `com.chanwaichan.lyra`; `tauri.e2e.conf.json` uses `com.chanwaichan.lyra.e2e` and `tauri.dev.conf.json` uses `com.chanwaichan.lyra.dev`. Their save archives are not automatically shared.
 
 - [ ] Prefer the existing Chapter 2 UAT archive, if available. Inspect `contentRevision` from its saves and the newly emitted `content_manifest`. If equal, **copy** the UAT archive into an isolated/backed-up release test profile. Do not overwrite the ordinary release player archive. Record source path, destination/profile, build identity and revision in the PR.
@@ -94,13 +96,13 @@ bun run rust:lint
 - [ ] If captures are fast but autosave still does not commit during normal play, inspect the existing 500 ms trailing debounce, thumbnail-ticket supersession and write gate. Fix only an independently reproduced scheduling problem within `ApplicationPersistence`, with one targeted deterministic `save/application/tests/autosave.rs` regression. No new queue/scheduler or blanket thumbnail removal.
 - [ ] Prefer the existing packaged save-core E2E path and one representative real late-state playthrough to a new E2E matrix. Record what ran and what remains unverified.
 
-**Done when:** measured release performance and mid-interrogation autosave satisfy HPA-854, or remaining unverified acceptance is stated explicitly without closing the issue.
+**Done when:** ~~measured release performance and mid-interrogation autosave satisfy HPA-854, or remaining unverified acceptance is stated explicitly without closing the issue~~ — **waived**; debug-only evidence accepted, unverified acceptance stated explicitly in the PR.
 
 ## Task 5 — One-PR review and closeout
 
 - [ ] Review source diff: `story_locations` reused, no new cache, no validation bypass, no scene/asset changes.
 - [ ] Update PR body with pre/post chapter-load counts, actual Rust/Clippy test outputs, release timings, archive provenance and autosave result. Mark unrun tests unverified.
-- [ ] Keep **HPA-854** as sole tracker, leave the PR Draft until implementation and verification are ready, and complete Linear only after acceptance.
+- [x] Keep **HPA-854** as sole tracker, leave the PR Draft until implementation and verification are ready — Task 4 acceptance waived, so the PR was marked ready — and complete Linear after merge.
 - [ ] Handle subsequent review feedback in this **same** PR.
 
 ## Out of scope
@@ -112,6 +114,6 @@ No HPA-853 hotspot layout changes, HPA-830 save-slot keyboard UX, new visuals/SF
 - [x] Does `validate_inventory` invoke `load_chapter_scene_jsons`? **No.** Counter asserts zero.
 - [x] Is the `story_locations` lookup borrowed everywhere, with no scene clone on the pending-acquisition path? **Yes.**
 - [x] Are missing source, wrong record kind, bad provenance and corrupted snapshots still rejected? **Yes, proven by full Rust tests.**
-- [ ] Does opening the save list avoid repeated per-record chapter deserialization? **Yes; per-slot history parsing remains a separate measured risk.**
-- [ ] Does a real autosave land during Chapter 2 interrogation? **Confirm with test evidence before calling done.**
-- [ ] Are release archive source, content revision, and observed timings documented? **Yes before merging.**
+- [ ] Does opening the save list avoid repeated per-record chapter deserialization? **Yes; per-slot history parsing remains a separate measured risk.** (Release-mode confirmation waived.)
+- [ ] Does a real autosave land during Chapter 2 interrogation? ~~**Confirm with test evidence before calling done.**~~ **Waived** — debug-only autosave observation accepted.
+- [ ] Are release archive source, content revision, and observed timings documented? ~~**Yes before merging.**~~ **Waived** — debug-only timings documented instead.
