@@ -729,10 +729,7 @@ impl GameEngine {
             return Ok(false);
         }
 
-        if outro_already_played {
-            return Ok(true);
-        }
-        Ok(false)
+        Ok(outro_already_played)
     }
 
     fn try_advance_interrogation(
