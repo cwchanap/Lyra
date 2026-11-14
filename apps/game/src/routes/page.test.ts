@@ -1879,9 +1879,11 @@ describe("+page in-game persistence browser", () => {
     });
     expect(saveCalls).toBe(0);
     expect(prepareCalls).toBe(0);
+    // Cancel returns to the name layer; the browser list is not rendered
+    // while the name dialog owns the layer.
     expect(
-      screen.getByRole("region", { name: "存檔瀏覽器" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("region", { name: "存檔瀏覽器" }),
+    ).not.toBeInTheDocument();
     await waitFor(() => {
       const restoredNameDialog = screen.getByRole("dialog", {
         name: "命名存檔",

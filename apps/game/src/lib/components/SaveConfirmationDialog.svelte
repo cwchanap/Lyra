@@ -19,7 +19,6 @@
     slot,
     currentSummary = null,
     pendingDisplayName = null,
-    returnFocusTo = null,
     pending = false,
     onConfirm,
     onCancel,
@@ -28,7 +27,6 @@
     slot: SaveSlotView;
     currentSummary?: SaveSummaryView | null;
     pendingDisplayName?: string | null;
-    returnFocusTo?: HTMLElement | null;
     pending?: boolean;
     onConfirm: (request: SaveConfirmationRequest, opener: HTMLElement) => void;
     onCancel: () => void;
@@ -85,16 +83,9 @@
     return { saveId, modifiedAt: slot.modifiedAt };
   }
 
-  function restoreFocus(): void {
-    queueMicrotask(() => {
-      if (returnFocusTo?.isConnected) returnFocusTo.focus();
-    });
-  }
-
   function cancel(): void {
     if (pending) return;
     onCancel();
-    restoreFocus();
   }
 
   function confirm(event: MouseEvent): void {
@@ -122,25 +113,28 @@
       return;
     }
     if (event.key !== "Tab" || !dialog) return;
+    // Unconditional JavaScript cycling: native traversal cannot be relied on
+    // (jsdom, macOS WebKit with "Keyboard navigation" off), so every Tab is
+    // cancelled and refocused here. Mirrors AcquisitionPopup's handler.
+    event.preventDefault();
     const controls = Array.from(
       dialog.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ),
     );
-    const first = controls[0];
-    const last = controls.at(-1);
-    if (!first || !last) {
-      event.preventDefault();
+    if (controls.length === 0) {
       dialog.focus();
       return;
     }
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    const activeIndex = controls.indexOf(document.activeElement as HTMLElement);
+    const nextIndex =
+      activeIndex < 0
+        ? event.shiftKey
+          ? controls.length - 1
+          : 0
+        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
+          controls.length;
+    controls[nextIndex]?.focus();
   }
 
   onMount(() => {
@@ -149,8 +143,12 @@
       dialog?.focus();
       return;
     }
+    // Dangerous kinds default to 取消 so a stray Return cancels; Load keeps
+    // 確認載入 (unless the slot is invalid, which disables it).
     const initialAction =
-      confirmButton && !confirmButton.disabled ? confirmButton : cancelButton;
+      kind === "load" && !confirmButton?.disabled
+        ? confirmButton
+        : cancelButton;
     initialAction?.focus();
   });
 </script>
