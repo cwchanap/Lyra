@@ -22,6 +22,7 @@ export type SaveBrowserControllerOptions = {
   mode: SaveBrowserMode;
   continueCandidate: SaveSlotRef | null;
   returnFocusTo?: LayerFocusTarget;
+  initialFocus?: LayerFocusTarget;
   onClose: () => void;
 };
 
@@ -47,6 +48,11 @@ export function createSaveBrowserController(
   function restoreFocus(target: LayerFocusTarget | undefined): void {
     focusWhenReady(target);
   }
+
+  // A freshly created browser has one predictable focus owner even before
+  // any layer change; callers pass a locator (not an element) so the tick
+  // deferred query always resolves against the mounted browser.
+  focusWhenReady(options.initialFocus);
 
   function open(
     nextLayer: Exclude<SaveBrowserLayer, "browser">,

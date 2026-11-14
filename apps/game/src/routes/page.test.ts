@@ -457,6 +457,22 @@ function stubAcquisitionAcknowledgement() {
   });
 }
 
+// MainMenu installs its window keydown listeners and 1.5 s auto-focus timer
+// only when its weather canvas provides a 2D context; jsdom returns null.
+// Used with the title describe's canvasGetContextSpy to exercise that code.
+function minimalWeatherCanvasContext(): object {
+  return {
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+    setTransform: () => {},
+    scale: () => {},
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+  };
+}
+
 describe("+page title persistence flows", () => {
   let canvasGetContextSpy: MockInstance<
     typeof HTMLCanvasElement.prototype.getContext
@@ -1007,6 +1023,142 @@ describe("+page title persistence flows", () => {
       // opener from before the dialog unmounted the browser list.
       expect(restoredDelete).not.toBe(deleteButton);
     });
+  });
+
+  // HPA-830: a freshly opened browser must have one predictable focus owner
+  // — the SaveBrowser's own 返回 button, resolved through the scoped
+  // browserBackLocator (never a same-named button behind the overlay).
+  it("focuses the archive browser's own 返回 button when the browser opens", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("initial-focus-id"));
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const back = within(browser).getByRole("button", { name: "返回" });
+
+    await waitFor(() => expect(back).toHaveFocus());
+    expect(document.activeElement).toBe(back);
+  });
+
+  // HPA-830: after a successful deletion the browser is re-created with a
+  // fresh controller stack, so the stale opener locators of the closed
+  // confirmation are gone; the new controller's initialFocus owns focus.
+  it("focuses the reopened browser's 返回 button after a successful title delete", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery();
+    discovery.browser.slots[5] = {
+      reference: { type: "manual", slot: 1 },
+      modifiedAt: "2026-07-27T12:00:01Z",
+      status: validSlotStatus("title-delete-success"),
+    };
+    let deleteSaveCalls = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "delete_save") {
+        deleteSaveCalls += 1;
+        return titleDiscovery();
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "刪除手動存檔 1" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "刪除手動存檔 1",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "確認刪除" }));
+
+    await waitFor(() => expect(deleteSaveCalls).toBe(1));
+    const reopened = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const back = within(reopened).getByRole("button", { name: "返回" });
+    await waitFor(() => expect(back).toHaveFocus());
+  });
+
+  // HPA-830: the covered menu must expose inert and its own early-return
+  // guard so ArrowDown is not hijacked from the archive overlay — the guard
+  // is MainMenu's own inert prop, never event.target.closest('[inert]')
+  // (null here: the overlay is the menu's sibling).
+  it("keeps the main menu inert and its ArrowDown idle while the archive overlay is open", async () => {
+    canvasGetContextSpy.mockReturnValue(
+      minimalWeatherCanvasContext() as unknown as CanvasRenderingContext2D,
+    );
+    const user = userEvent.setup();
+    const discovery = titleDiscovery(validSlotStatus("inert-menu-id"));
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const back = within(browser).getByRole("button", { name: "返回" });
+
+    // jsdom does not reflect the inert property to the attribute; assert the
+    // IDL property like GameShell.test.ts does.
+    expect(document.querySelector<HTMLElement>(".lyra-menu")?.inert).toBe(true);
+    await waitFor(() => expect(back).toHaveFocus());
+    const down = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      cancelable: true,
+    });
+    window.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(back);
+  });
+
+  // Companion guard: with no overlay open, MainMenu keeps its ArrowDown
+  // card navigation (the inert early-return must not be permanently on).
+  it("still drives main-menu card navigation with ArrowDown when no overlay is open", async () => {
+    canvasGetContextSpy.mockReturnValue(
+      minimalWeatherCanvasContext() as unknown as CanvasRenderingContext2D,
+    );
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return titleDiscovery();
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await screen.findByRole("button", { name: "開始新遊戲" });
+
+    const down = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      cancelable: true,
+    });
+    window.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBe(true);
+    expect(screen.getByRole("button", { name: /結束偵查/ })).toHaveFocus();
   });
 
   it("retries the title slot the player selected instead of the initial Continue candidate", async () => {
@@ -1728,6 +1880,57 @@ describe("+page in-game persistence browser", () => {
 
   // HPA-830 red regression: same double-Return safety as the title browser,
   // inside the game, with GameShell staying inert behind the archive.
+  // HPA-830: installGameBrowser must hand the freshly created controller an
+  // initialFocus so both the first open and the post-delete reopen have one
+  // predictable focus owner — the SaveBrowser's own 返回 button.
+  it("focuses the archive browser's 返回 button on open and after a successful in-game delete", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery();
+    discovery.browser.slots[5] = {
+      reference: { type: "manual", slot: 1 },
+      modifiedAt: "2026-07-27T12:00:01Z",
+      status: validSlotStatus("game-delete-success"),
+    };
+    let deleteSaveCalls = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "delete_save") {
+        deleteSaveCalls += 1;
+        return titleDiscovery();
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const initialBack = within(browser).getByRole("button", { name: "返回" });
+    await waitFor(() => expect(initialBack).toHaveFocus());
+
+    await user.click(
+      within(browser).getByRole("button", { name: "刪除手動存檔 1" }),
+    );
+    const dialog = await screen.findByRole("dialog", {
+      name: "刪除手動存檔 1",
+    });
+    await user.click(within(dialog).getByRole("button", { name: "確認刪除" }));
+
+    await waitFor(() => expect(deleteSaveCalls).toBe(1));
+    const reopened = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const back = within(reopened).getByRole("button", { name: "返回" });
+    await waitFor(() => expect(back).toHaveFocus());
+  });
+
   it("keeps a double Return on an in-game delete confirmation cancelling instead of deleting", async () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery();

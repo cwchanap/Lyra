@@ -1,6 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, type MockInstance, vi } from "vitest";
 import type { SaveBrowserOpenResultView } from "$lib/persistence/types";
 
 import MainMenu from "./MainMenu.svelte";
@@ -72,9 +72,32 @@ function titleDiscovery(
   };
 }
 
+// MainMenu installs its card keyboard navigation and the 1.5 s auto-focus
+// timer only when its weather canvas provides a 2D context; jsdom returns
+// null, so hand it a minimal fake (same pattern as InterrogationSubjectArt).
+function stubWeatherCanvasContext(): MockInstance<
+  typeof HTMLCanvasElement.prototype.getContext
+> {
+  const context = {
+    createLinearGradient: () => ({ addColorStop: () => {} }),
+    setTransform: () => {},
+    scale: () => {},
+    clearRect: () => {},
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    stroke: () => {},
+  };
+  return vi
+    .spyOn(HTMLCanvasElement.prototype, "getContext")
+    .mockReturnValue(context as unknown as CanvasRenderingContext2D);
+}
+
 describe("MainMenu", () => {
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
     mocks.readSaveThumbnail.mockReset();
   });
 
@@ -247,5 +270,91 @@ describe("MainMenu", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("無法讀取存檔");
     await user.click(screen.getByRole("button", { name: "重試" }));
     expect(onRetryDiscovery).toHaveBeenCalledOnce();
+  });
+
+  // HPA-830: when the save archive overlay is open, +page passes inert so
+  // the covered menu cannot be reached by Tab/Enter; the attribute must sit
+  // on the existing root node (no extra wrapper).
+  it("marks its root node inert only while the archive overlay owns the screen", async () => {
+    const props = { onNewGame: vi.fn() };
+    const { rerender } = render(MainMenu, props);
+    expect(document.querySelector<HTMLElement>(".lyra-menu")?.inert).toBe(
+      false,
+    );
+
+    await rerender({ ...props, inert: true });
+
+    // jsdom does not reflect the inert property to the attribute, so assert
+    // the IDL property (same convention as GameShell.test.ts).
+    expect(document.querySelector<HTMLElement>(".lyra-menu")?.inert).toBe(true);
+  });
+
+  // HPA-830: window keydown listeners do not become idle when the DOM turns
+  // inert, so the component itself must early-return on its own inert prop.
+  // Dispatching on window (not a menu element) is the point: the guard must
+  // be MainMenu's own state, never a closest('[inert]') lookup, which is
+  // null because the archive overlay is MainMenu's sibling.
+  it("ignores ArrowUp/ArrowDown while inert instead of hijacking overlay keys", () => {
+    stubWeatherCanvasContext();
+    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn(), inert: true });
+
+    const down = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      cancelable: true,
+    });
+    window.dispatchEvent(down);
+    const up = new KeyboardEvent("keydown", {
+      key: "ArrowUp",
+      cancelable: true,
+    });
+    window.dispatchEvent(up);
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(up.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  // HPA-830: the deferred auto-focus timer must route through the guarded
+  // focusCard so it cannot grab focus from an open archive overlay.
+  it("skips the delayed first-card auto-focus while inert", () => {
+    vi.useFakeTimers();
+    stubWeatherCanvasContext();
+    render(MainMenu, { onNewGame: vi.fn(), inert: true });
+
+    vi.advanceTimersByTime(1500);
+
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  // Companion guard: the inert early-return must not disable the keyboard
+  // navigation for the normal (uncovered) menu.
+  it("still drives card navigation with ArrowDown when the menu is not inert", () => {
+    stubWeatherCanvasContext();
+    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
+
+    const down = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      cancelable: true,
+    });
+    window.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /結束偵查/ }),
+    );
+  });
+
+  // Companion guard: focusCard(0) keeps the original timer behavior when
+  // the menu is not inert.
+  it("still auto-focuses the first card after the 1.5s timer when not inert", () => {
+    vi.useFakeTimers();
+    stubWeatherCanvasContext();
+    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
+
+    vi.advanceTimersByTime(1500);
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "開始新遊戲" }),
+    );
   });
 });

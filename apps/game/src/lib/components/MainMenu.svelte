@@ -13,6 +13,8 @@
     onExit?: () => void;
     discovery?: SaveBrowserOpenResultView | null;
     disabled?: boolean;
+    /** Set by +page.svelte while the save archive overlay owns the screen. */
+    inert?: boolean;
   };
 
   const {
@@ -25,6 +27,7 @@
     onExit,
     discovery = null,
     disabled = false,
+    inert = false,
   }: Props = $props();
 
   let clock = $state("— : — : —");
@@ -142,12 +145,17 @@
         ),
       );
     const focusCard = (n: number) => {
+      if (inert) return;
       const currentCards = cards();
       if (currentCards.length === 0) return;
       focusIndex = (n + currentCards.length) % currentCards.length;
       currentCards[focusIndex].focus();
     };
     const onKey = (e: KeyboardEvent) => {
+      // DOM inert does not silence window key listeners, so the menu itself
+      // must go idle while the archive overlay covers it — otherwise it
+      // would preventDefault the Arrow keys the overlay's scrolling needs.
+      if (inert) return;
       // When focus is on an interactive form control (future input,
       // contenteditable, etc.), let the control
       // handle ArrowUp/ArrowDown natively instead of hijacking them for card
@@ -171,7 +179,7 @@
       }
     };
     window.addEventListener("keydown", onKey);
-    const focusTimer = window.setTimeout(() => cards()[0]?.focus(), 1500);
+    const focusTimer = window.setTimeout(() => focusCard(0), 1500);
 
     return () => {
       window.clearInterval(clockTimer);
@@ -183,7 +191,7 @@
   });
 </script>
 
-<div class="lyra-menu">
+<div class="lyra-menu" {inert}>
   <div class="stage" aria-hidden="true">
     <canvas class="weather" bind:this={weather}></canvas>
     <div class="halftone"></div>
