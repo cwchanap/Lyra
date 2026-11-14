@@ -1,6 +1,10 @@
 import { tick } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createSaveBrowserController } from "./save-browser-controller.svelte";
+import {
+  createSaveBrowserController,
+  type LayerFocusTarget,
+  type SaveBrowserControllerOptions,
+} from "./save-browser-controller.svelte";
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -205,5 +209,87 @@ describe("createSaveBrowserController", () => {
 
     expect(controller.layer).toBe("name");
     expect(document.activeElement).toBe(nameSubmit);
+  });
+
+  it("restores a delete opener by locator after cancel remounts the browser list", async () => {
+    const caller = button("caller");
+    let remountedDelete: HTMLButtonElement | null = null;
+    const controller = createSaveBrowserController({
+      mode: "titleLoad",
+      continueCandidate: null,
+      returnFocusTo: () => caller,
+      onClose: vi.fn(),
+    });
+    const deleteButton = button("刪除手動存檔 1");
+    deleteButton.dataset.focusTarget = "delete-manual-1";
+    controller.openConfirmation(() =>
+      document.querySelector<HTMLElement>(
+        '[data-focus-target="delete-manual-1"]',
+      ),
+    );
+    await settleFocus();
+    expect(controller.layer).toBe("confirmation");
+
+    // Cancelling unmounts the confirmation layer and Svelte re-renders the
+    // browser list, so the delete button that opened it is a brand-new
+    // element by the time the controller resolves the opener locator. A
+    // captured element would be stale and leave focus behind the modal.
+    deleteButton.remove();
+    queueMicrotask(() => {
+      remountedDelete = button("刪除手動存檔 1");
+      remountedDelete.dataset.focusTarget = "delete-manual-1";
+    });
+    controller.back();
+    await settleFocus();
+
+    expect(controller.layer).toBe("browser");
+    expect(document.activeElement).toBe(remountedDelete);
+  });
+
+  it("focuses the configured initialFocus target when the browser controller is created", async () => {
+    const backButton = button("返回");
+    // Task 3 adds `initialFocus` to the controller options so a freshly
+    // opened browser has one predictable focus owner; the cast keeps this
+    // red test type-checking until the option lands.
+    const controller = createSaveBrowserController({
+      mode: "titleLoad",
+      continueCandidate: null,
+      initialFocus: () => backButton,
+      onClose: vi.fn(),
+    } as SaveBrowserControllerOptions);
+
+    await settleFocus();
+
+    expect(controller.layer).toBe("browser");
+    expect(document.activeElement).toBe(backButton);
+  });
+
+  it("never moves focus when opening the confirmation layer; the dialog owns autofocus", async () => {
+    const opener = button("刪除手動存檔 1");
+    opener.focus();
+    const stolenConfirm = button("確認刪除");
+    const controller = createSaveBrowserController({
+      mode: "titleLoad",
+      continueCandidate: null,
+      onClose: vi.fn(),
+    });
+
+    // The old API let callers pass a second initialFocus locator whose
+    // last-child query landed on the dangerous confirm button, so a second
+    // Return confirmed immediately. Pin the single-focus-owner API by
+    // casting: opening a confirmation must not move focus even if a caller
+    // still passes the legacy second argument.
+    const legacyOpenConfirmation = controller.openConfirmation as unknown as (
+      opener: LayerFocusTarget,
+      initialFocus?: LayerFocusTarget,
+    ) => void;
+    legacyOpenConfirmation(
+      () => opener,
+      () => stolenConfirm,
+    );
+    await settleFocus();
+
+    expect(controller.layer).toBe("confirmation");
+    expect(document.activeElement).toBe(opener);
   });
 });
