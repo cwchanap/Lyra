@@ -1714,6 +1714,149 @@ describe("DialogueBox", () => {
   });
 });
 
+describe("DialogueBox inner voice (心聲)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    resetEscapeCoordinator();
+  });
+
+  beforeEach(() => {
+    voice.reset();
+  });
+
+  const thought: DialogueItem = {
+    kind: "line",
+    speaker: "相馬律",
+    text: "（……我想相信她。可是「想相信」上不了審查會。）",
+    portrait: {
+      characterId: "soma_ritsu",
+      expression: "shaken",
+      assetId: "portrait.soma_ritsu.shaken",
+    },
+  };
+
+  it("shows a line wholly wrapped in （ ） as 心聲, parentheses kept as authored", () => {
+    const { container } = renderDialogueBox(thought);
+
+    const box = container.querySelector(".box");
+    expect(box).toHaveClass("line", "thought");
+    expect(screen.getByText("心聲 · THOUGHT")).toBeInTheDocument();
+    expect(screen.queryByText("發言 · LINE")).toBeNull();
+    expect(screen.getByText("相馬律")).toBeInTheDocument();
+    expect(container.querySelector(".text-line")).toHaveTextContent(
+      "（……我想相信她。可是「想相信」上不了審查會。）",
+    );
+  });
+
+  it("leaves every other line looking as it does today", async () => {
+    const { container, rerender } = renderDialogueBox({
+      kind: "line",
+      speaker: "相馬律",
+      text: "我知道。（停頓）",
+    });
+    expect(container.querySelector(".box")).not.toHaveClass("thought");
+    expect(screen.getByText("發言 · LINE")).toBeInTheDocument();
+
+    // Narration wholly in parentheses stays narration.
+    await rerender({
+      current: { kind: "action", text: "（沒有新發現。）" },
+      queueToken: { ...token, cursor: 1 },
+    });
+    expect(container.querySelector(".box")).not.toHaveClass("thought");
+    expect(screen.getByText("敘述 · NARRATION")).toBeInTheDocument();
+  });
+
+  it("plays voice for the source line, so the Japanese locale still shows 心聲", async () => {
+    render(DialogueBox, {
+      current: thought,
+      queueToken: token,
+      onAdvance: vi.fn(),
+      history: [],
+      textRevealDurationMs: 0,
+      chapterId: "chapter_1",
+    });
+    await tick();
+
+    // The clip is looked up by the scene's Chinese text; the box keeps
+    // showing (and classifying) that text, never the translation.
+    expect(voice.play).toHaveBeenCalledExactlyOnceWith({
+      chapterId: "chapter_1",
+      speaker: "相馬律",
+      text: thought.kind === "line" ? thought.text : "",
+      expression: "shaken",
+    });
+    expect(screen.getByText("心聲 · THOUGHT")).toBeInTheDocument();
+  });
+
+  it("keeps the portrait, typewriter and advance of a spoken line", async () => {
+    vi.useFakeTimers();
+    const { container, onAdvance } = renderDialogueBox(thought, {
+      textRevealDurationMs: 1500,
+    });
+    const text = container.querySelector(".text-line") as HTMLElement;
+
+    await vi.advanceTimersByTimeAsync(0);
+    expect(
+      container.querySelector('[data-layer="behind-dialogue"]'),
+    ).toBeInTheDocument();
+    expect(text).not.toHaveTextContent("上不了審查會。）");
+
+    // First click finishes the reveal, the second advances.
+    const box = container.querySelector(".box") as HTMLElement;
+    await fireEvent.click(box);
+    expect(text).toHaveTextContent("上不了審查會。）");
+    expect(onAdvance).not.toHaveBeenCalled();
+    await fireEvent.click(box);
+    expect(onAdvance).toHaveBeenCalledTimes(1);
+
+    // Space and Enter from <body>, and repeated (held) activation of the
+    // advance button, advance exactly as on a spoken line.
+    dispatchWindowKeydown({ key: " " });
+    dispatchWindowKeydown({ key: "Enter" });
+    expect(onAdvance).toHaveBeenCalledTimes(3);
+    const advanceButton = screen.getByRole("button", { name: "推進對話" });
+    await fireEvent.click(advanceButton);
+    await fireEvent.click(advanceButton);
+    expect(onAdvance).toHaveBeenCalledTimes(5);
+  });
+
+  it("marks an interrogation loop line in the interrogation stage as 心聲", () => {
+    // Loop Prompt / Wrong Reply lines are ordinary items in the same queue,
+    // played in the interrogation stage outside a testimony.
+    const { container } = renderDialogueBox(
+      { kind: "line", speaker: "相馬律", text: "（她在等我先開口。）" },
+      { interrogationStageActive: true },
+    );
+
+    expect(container.querySelector(".box")).toHaveClass("thought");
+    expect(container.querySelector(".interrogation-kicker")).toHaveTextContent(
+      "心聲 · THOUGHT",
+    );
+    expect(screen.queryByText("證言 · TESTIMONY")).toBeNull();
+  });
+
+  it("styles 心聲 with a dashed muted bar from existing tokens", () => {
+    const source = dialogueBoxSource();
+    const bar = cssRule(source, ".wrapper .box.thought:hover:not(.disabled)");
+    expect(bar).toContain("border-left-style: dashed");
+    expect(bar).toContain("border-left-color: var(--bone-dim)");
+    expect(cssRule(source, ".box.thought .speaker-block")).toContain(
+      "border-right-style: dashed",
+    );
+    expect(cssRule(source, ".box.thought .text-line")).toContain("var(--bone)");
+    // Built from existing colour tokens only: no new colour literals.
+    const thoughtRules = [
+      ".wrapper .box.thought:hover:not(.disabled)",
+      ".box.thought .interrogation-kicker",
+      ".box.thought .speaker",
+      ".box.thought .text-line",
+    ].map((selector) => cssRule(source, selector));
+    expect(thoughtRules.every((rule) => rule.length > 0)).toBe(true);
+    expect(thoughtRules.join("\n")).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(/i);
+  });
+});
+
 describe("DialogueBox inline cross-examination controls", () => {
   afterEach(() => {
     vi.unstubAllGlobals();

@@ -96,6 +96,7 @@ import {
   dialogueLocaleManifestFileName,
 } from "@lyra/dialogue-locale";
 import { scanSourceLineIds } from "./line-ids";
+import { innerVoiceWrapErrors } from "./inner-voice";
 import {
   buildDialogueLocaleManifest,
   type LocaleManifestChapterInput,
@@ -418,6 +419,7 @@ export function compile(opts: CompileOptions): CompileResult {
       );
       const lineIds = scanSourceLineIds(source, sourceFileTag);
       errors.push(...lineIds.errors);
+      errors.push(...innerVoiceWrapErrors(source, sourceFileTag));
       lineIdsByFile.set(sourceFileTag, lineIds.byLine);
       if (file.startsWith("scene_")) {
         const parsed = parseLinearScene(source, sourceFileTag, sceneId);

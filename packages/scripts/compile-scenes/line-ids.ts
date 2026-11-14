@@ -20,7 +20,7 @@ type DialogueToken = Extract<Token, { kind: "dialogue" }>;
  * The spoken line on one token's physical line: a dialogue token itself, or
  * the dialogue inside a metadata value such as `- **On Loop:** **澪**：…`.
  */
-function dialogueOf(token: Token): DialogueToken | null {
+export function dialogueOf(token: Token): DialogueToken | null {
   if (token.kind === "dialogue") return token;
   if (token.kind === "metadata") {
     const inner = tokenize(token.value, token.sourceFile)[0];
