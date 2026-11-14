@@ -336,22 +336,13 @@
     titleBrowserController?.select(slot.reference);
   }
 
-  function handleTitleBrowserDelete(
-    slot: SaveSlotView,
-    opener: HTMLElement,
-  ): void {
+  function handleTitleBrowserDelete(slot: SaveSlotView): void {
     const controller = titleBrowserController;
     if (!controller || slot.status.type === "empty") return;
     controller.select(slot.reference);
     titleDeleteSlot = slot;
     deleteFailure = null;
-    controller.openConfirmation(
-      () => opener,
-      () =>
-        document.querySelector<HTMLElement>(
-          '[role="dialog"][aria-labelledby="save-confirmation-title"] button:not(:disabled):last-child',
-        ),
-    );
+    controller.openConfirmation(slotActionLocator(slot.reference, "delete"));
   }
 
   async function performTitleDelete(
@@ -720,30 +711,17 @@
     deleteFailure = null;
     gameBrowserController.openConfirmation(
       slotActionLocator(slot.reference, "load"),
-      () =>
-        document.querySelector<HTMLElement>(
-          '[role="dialog"][aria-labelledby="save-confirmation-title"] button:not(:disabled):last-child',
-        ),
     );
   }
 
-  function handleSaveBrowserDelete(
-    slot: SaveSlotView,
-    opener: HTMLElement,
-  ): void {
+  function handleSaveBrowserDelete(slot: SaveSlotView): void {
     const controller = gameBrowserController;
     if (!controller || slot.status.type === "empty") return;
     controller.select(slot.reference);
     selectedSaveSlot = slot;
     pendingDeleteSlot = slot;
     deleteFailure = null;
-    controller.openConfirmation(
-      () => opener,
-      () =>
-        document.querySelector<HTMLElement>(
-          '[role="dialog"][aria-labelledby="save-confirmation-title"] button:not(:disabled):last-child',
-        ),
-    );
+    controller.openConfirmation(slotActionLocator(slot.reference, "delete"));
   }
 
   async function performGameDelete(
@@ -852,11 +830,7 @@
     if (gameState.inFlight) return;
     pendingManualSubmission = submission;
     if (submission.expectation.type === "occupied") {
-      gameBrowserController?.openConfirmation(nameSubmitLocator, () =>
-        document.querySelector<HTMLElement>(
-          '[role="dialog"][aria-labelledby="save-confirmation-title"] button:not(:disabled):last-child',
-        ),
-      );
+      gameBrowserController?.openConfirmation(nameSubmitLocator);
       return;
     }
     void performManualSave(submission);

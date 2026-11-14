@@ -12,10 +12,7 @@ export type SaveBrowserController = {
   readonly layer: SaveBrowserLayer;
   select(reference: SaveSlotRef): void;
   openName(opener: LayerFocusTarget, initialFocus?: LayerFocusTarget): void;
-  openConfirmation(
-    opener: LayerFocusTarget,
-    initialFocus?: LayerFocusTarget,
-  ): void;
+  openConfirmation(opener: LayerFocusTarget): void;
   handleKeydown(event: KeyboardEvent): boolean;
   back(): void;
   close(): void;
@@ -95,8 +92,8 @@ export function createSaveBrowserController(
     openName(opener, initialFocus) {
       open("name", opener, initialFocus);
     },
-    openConfirmation(opener, initialFocus) {
-      open("confirmation", opener, initialFocus);
+    openConfirmation(opener) {
+      open("confirmation", opener);
     },
     handleKeydown(event) {
       if (closed) return false;

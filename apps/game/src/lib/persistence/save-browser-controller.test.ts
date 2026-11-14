@@ -45,7 +45,6 @@ describe("createSaveBrowserController", () => {
     nameInput.setAttribute("aria-label", "name");
     document.body.append(nameInput);
     const nameOpener = button("open confirmation");
-    const confirmationButton = button("confirm");
     const onClose = vi.fn();
     const controller = createSaveBrowserController({
       mode: "manualSave",
@@ -64,13 +63,12 @@ describe("createSaveBrowserController", () => {
     expect(document.activeElement).toBe(nameInput);
 
     nameOpener.focus();
-    controller.openConfirmation(
-      () => nameOpener,
-      () => confirmationButton,
-    );
+    controller.openConfirmation(() => nameOpener);
     await settleFocus();
     expect(controller.layer).toBe("confirmation");
-    expect(document.activeElement).toBe(confirmationButton);
+    // The confirmation dialog owns its autofocus; the controller must not
+    // move focus when the layer opens.
+    expect(document.activeElement).toBe(nameOpener);
 
     controller.back();
     await settleFocus();
@@ -91,7 +89,6 @@ describe("createSaveBrowserController", () => {
   it("consumes one non-repeated Escape per layer without focusing behind it", async () => {
     const caller = button("caller");
     const browserOpener = button("open confirmation");
-    const modalButton = button("modal action");
     const onClose = vi.fn();
     const controller = createSaveBrowserController({
       mode: "gameLoad",
@@ -99,10 +96,8 @@ describe("createSaveBrowserController", () => {
       returnFocusTo: () => caller,
       onClose,
     });
-    controller.openConfirmation(
-      () => browserOpener,
-      () => modalButton,
-    );
+    browserOpener.focus();
+    controller.openConfirmation(() => browserOpener);
     await settleFocus();
 
     const repeated = new KeyboardEvent("keydown", {
@@ -112,7 +107,7 @@ describe("createSaveBrowserController", () => {
     });
     expect(controller.handleKeydown(repeated)).toBe(false);
     expect(controller.layer).toBe("confirmation");
-    expect(document.activeElement).toBe(modalButton);
+    expect(document.activeElement).toBe(browserOpener);
 
     const escape = new KeyboardEvent("keydown", {
       key: "Escape",
@@ -172,7 +167,6 @@ describe("createSaveBrowserController", () => {
     document.body.append(nameInput);
     let nameSubmit = button("continue to confirmation");
     nameSubmit.dataset.focusTarget = "name-submit";
-    const confirmationButton = button("confirm");
     const controller = createSaveBrowserController({
       mode: "manualSave",
       continueCandidate: null,
@@ -184,12 +178,8 @@ describe("createSaveBrowserController", () => {
       () => nameInput,
     );
     await settleFocus();
-    controller.openConfirmation(
-      () =>
-        document.querySelector<HTMLElement>(
-          '[data-focus-target="name-submit"]',
-        ),
-      () => confirmationButton,
+    controller.openConfirmation(() =>
+      document.querySelector<HTMLElement>('[data-focus-target="name-submit"]'),
     );
     await settleFocus();
 
