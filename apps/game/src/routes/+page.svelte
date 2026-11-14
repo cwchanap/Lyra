@@ -325,6 +325,7 @@
       continueCandidate: snapshot.continueCandidate,
       returnFocusTo: () =>
         document.querySelector<HTMLElement>('[aria-label="載入遊戲"]'),
+      initialFocus: browserBackLocator,
       onClose: closeTitleBrowser,
     });
     if (snapshot.continueCandidate) {
@@ -539,6 +540,7 @@
       mode,
       continueCandidate: result.continueCandidate,
       returnFocusTo: gameMenuActionLocator(mode),
+      initialFocus: browserBackLocator,
       onClose: closeGameBrowser,
     });
   }
@@ -680,6 +682,13 @@
         `[data-slot-type="${reference.type}"][data-slot-number="${reference.slot}"] .${action}`,
       );
   }
+
+  // Scoped to the SaveBrowser's own 返回 so GameShell's 返回選單 or any other
+  // same-named button behind the overlay can never take this initial focus.
+  const browserBackLocator = (): HTMLElement | null =>
+    document.querySelector<HTMLElement>(
+      '[aria-label="存檔瀏覽器"] button.back',
+    );
 
   function nameSubmitLocator(): HTMLElement | null {
     return document.querySelector<HTMLElement>(
@@ -1764,6 +1773,7 @@
     onExit={handleExit}
     discovery={titleDiscovery}
     disabled={gameState.inFlight}
+    inert={titleBrowserOpen}
   />
   {#if titleBrowserOpen && titleDiscovery && titleBrowserController}
     <div class="persistence-overlay" data-save-thumbnail-exclude="">
