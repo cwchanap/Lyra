@@ -67,7 +67,7 @@
 2. 實測 macOS／Windows 800×600 的槽 1–3 場景標題是否被裁半，僅在重現後調整 `SaveCard` 或 `SaveRecapDetails` 的少量 CSS（wrap/line-height/min-width），不重新設計佈局。
 3. `apps/game/src-tauri/src/game/save/application/mod.rs` 的 `capture_unavailable_activity` 一行英文通知改為繁中「無法產生存檔預覽圖片；存檔仍可使用。」；不在 `+page.svelte` 新增 reason-keyed localization map；不改 thumbnail availability 規則。
 4. **macOS WebKit acceptance gate（先做）**：先記錄測試機「Keyboard navigation」系統設定，測試 native Tab／Shift+Tab 能否走到 cancel／confirm。若 Tab 跳過 button，僅在實際 Save 層沿用 `AcquisitionPopup.svelte:102–120` 的完整 Tab 巡訪迴圈，並增加該平台的回歸；**只有證實需要才增加這段邏輯**。
-5. 文案驗收只涵蓋縮圖提示；其他 Rust persistence errors（例 `Save selection is stale.`）另開小票，不擴大本票。
+5. 文案驗收只涵蓋縮圖提示；其他 Rust persistence errors（例 `Save selection is stale.`）由 [HPA-912](https://linear.app/cwchanap/issue/HPA-912/localization-translate-player-facing-persistence-errors-to-traditional) 獨立追蹤，不擴大本票。
 
 **Done when：** 焦點清晰、場景名稱不被截斷、縮圖通知繁中、macOS 不因 Tab 行為而無法明確操作危險按鈕。若有條件平台差異，將設定及採用 fallback 的理由記在 PR。
 
