@@ -948,6 +948,67 @@ describe("+page title persistence flows", () => {
     });
   });
 
+  // HPA-830 red regression: the confirmation dialog must autofocus 取消 so a
+  // double Return cancels instead of deleting, and cancelling must restore
+  // focus to the remounted delete button of the same slot (the captured
+  // opener element is stale once the dialog unmounts the browser list).
+  it("keeps a double Return on a title delete confirmation cancelling instead of deleting", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery();
+    discovery.browser.slots[5] = {
+      reference: { type: "manual", slot: 1 },
+      modifiedAt: "2026-07-27T12:00:01Z",
+      status: validSlotStatus("title-delete-target"),
+    };
+    let deleteSaveCalls = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "delete_save") {
+        deleteSaveCalls += 1;
+        return titleDiscovery();
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const deleteButton = within(browser).getByRole("button", {
+      name: "刪除手動存檔 1",
+    });
+    deleteButton.focus();
+
+    await user.keyboard("{Enter}{Enter}");
+
+    // Either branch (cancel or accidental confirm) closes the confirmation
+    // layer; wait so the delete pipeline has fully settled before asserting
+    // it never started.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "刪除手動存檔 1" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(deleteSaveCalls).toBe(0);
+    expect(
+      screen.getByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const restored = screen.getByRole("region", { name: "存檔瀏覽器" });
+      const restoredDelete = restored.querySelector<HTMLElement>(
+        '[data-slot-type="manual"][data-slot-number="1"] .delete',
+      );
+      expect(restoredDelete).toBe(document.activeElement);
+      // The restored button must be the remounted one, not the stale captured
+      // opener from before the dialog unmounted the browser list.
+      expect(restoredDelete).not.toBe(deleteButton);
+    });
+  });
+
   it("retries the title slot the player selected instead of the initial Continue candidate", async () => {
     const user = userEvent.setup();
     const discovery = titleDiscovery(validSlotStatus("candidate-save-id"));
@@ -1663,6 +1724,201 @@ describe("+page in-game persistence browser", () => {
     expect(screen.getAllByRole("status", { name: "預覽狀態" })).toHaveLength(1);
     expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
     expect(screen.queryByRole("dialog", { name: "儲存失敗" })).toBeNull();
+  });
+
+  // HPA-830 red regression: same double-Return safety as the title browser,
+  // inside the game, with GameShell staying inert behind the archive.
+  it("keeps a double Return on an in-game delete confirmation cancelling instead of deleting", async () => {
+    const user = userEvent.setup();
+    const discovery = titleDiscovery();
+    discovery.browser.slots[5] = {
+      reference: { type: "manual", slot: 1 },
+      modifiedAt: "2026-07-27T12:00:01Z",
+      status: validSlotStatus("game-delete-target"),
+    };
+    let deleteSaveCalls = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "delete_save") {
+        deleteSaveCalls += 1;
+        return titleDiscovery();
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    const { container } = render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "載入遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const gameplayRoot = container.querySelector("[data-gameplay-root]");
+    const gameplayMain = gameplayRoot?.querySelector("main");
+    expect(gameplayMain?.inert).toBe(true);
+
+    const deleteButton = within(browser).getByRole("button", {
+      name: "刪除手動存檔 1",
+    });
+    deleteButton.focus();
+
+    await user.keyboard("{Enter}{Enter}");
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "刪除手動存檔 1" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(deleteSaveCalls).toBe(0);
+    expect(
+      screen.getByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const restored = screen.getByRole("region", { name: "存檔瀏覽器" });
+      expect(
+        restored.querySelector<HTMLElement>(
+          '[data-slot-type="manual"][data-slot-number="1"] .delete',
+        ),
+      ).toBe(document.activeElement);
+    });
+    expect(gameplayMain?.inert).toBe(true);
+  });
+
+  // HPA-830 red regression: submitting a prefilled name onto an occupied
+  // slot opens the overwrite confirmation; the next Return must cancel it
+  // (autofocus on 取消) instead of confirming, and no thumbnail/save pipeline
+  // may start. Explicitly focusing the confirm afterwards must still save.
+  it("keeps a Return on an overwrite confirmation cancelling instead of saving", async () => {
+    const user = userEvent.setup();
+    const saves = titleDiscovery();
+    saves.browser.slots[5] = {
+      reference: { type: "manual", slot: 1 },
+      modifiedAt: "2026-07-27T12:00:01Z",
+      status: validSlotStatus("occupied-manual-id"),
+    };
+    let prepareCalls = 0;
+    let saveCalls = 0;
+    const saveArgs: Record<string, unknown>[] = [];
+    mocks.invoke.mockImplementation(
+      async (command: string, args?: Record<string, unknown>) => {
+        if (command === "list_saves") return saves;
+        if (command === "list_scenes") return sceneNavigationIndex;
+        if (command === "get_persistence_status") return { type: "healthy" };
+        if (command === "get_thumbnail_activity") return { type: "idle" };
+        if (command === "get_exit_status") return { type: "idle" };
+        if (command === "prepare_save_thumbnail") {
+          prepareCalls += 1;
+          return { ticket: "overwrite-ticket", timeoutMs: 0 };
+        }
+        if (command === "report_save_thumbnail_failure") {
+          return {
+            type: "unavailable",
+            diagnostic: {
+              reason: "captureUnavailable",
+              message: "無法顯示預覽",
+              retryable: false,
+            },
+          };
+        }
+        if (command === "save_manual") {
+          saveCalls += 1;
+          saveArgs.push(args as Record<string, unknown>);
+          return {
+            savedSlot: saves.browser.slots[5],
+            browser: saves.browser,
+            thumbnailActivity: {
+              type: "unavailable",
+              diagnostic: {
+                reason: "captureUnavailable",
+                message: "無法顯示預覽",
+                retryable: false,
+              },
+            },
+          };
+        }
+        return {};
+      },
+    );
+
+    render(Page);
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: "儲存遊戲" }));
+    const browser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    await user.click(
+      within(browser).getByRole("button", { name: "選擇手動存檔 1" }),
+    );
+
+    const nameDialog = await screen.findByRole("dialog", { name: "命名存檔" });
+    const input = within(nameDialog).getByRole("textbox", {
+      name: "存檔名稱",
+    });
+    expect(input).toHaveValue("新的存檔");
+
+    await user.keyboard("{Enter}");
+    const overwriteDialog = await screen.findByRole("dialog", {
+      name: "覆寫手動存檔 1",
+    });
+    expect(overwriteDialog).toBeInTheDocument();
+
+    await user.keyboard("{Enter}");
+
+    // Both branches close the overwrite confirmation; on the accidental
+    // confirm path the browser only closes after save_manual resolved, so
+    // waiting here guarantees the save pipeline has fully settled.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "覆寫手動存檔 1" }),
+      ).not.toBeInTheDocument();
+    });
+    expect(saveCalls).toBe(0);
+    expect(prepareCalls).toBe(0);
+    expect(
+      screen.getByRole("region", { name: "存檔瀏覽器" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const restoredNameDialog = screen.getByRole("dialog", {
+        name: "命名存檔",
+      });
+      expect(
+        within(restoredNameDialog).getByRole("button", { name: "繼續" }),
+      ).toBe(document.activeElement);
+    });
+
+    // The explicit path must still work: resubmit, focus the dangerous
+    // confirm directly, and Return performs the overwrite.
+    await user.keyboard("{Enter}");
+    const overwriteAgain = await screen.findByRole("dialog", {
+      name: "覆寫手動存檔 1",
+    });
+    within(overwriteAgain).getByRole("button", { name: "確認覆寫" }).focus();
+    await user.keyboard("{Enter}");
+
+    await waitFor(() => expect(saveCalls).toBe(1));
+    expect(saveArgs).toHaveLength(1);
+    expect(saveArgs[0]).toEqual({
+      reference: { type: "manual", slot: 1 },
+      displayName: "新的存檔",
+      expectation: {
+        type: "occupied",
+        observation: {
+          saveId: "occupied-manual-id",
+          modifiedAt: "2026-07-27T12:00:01Z",
+        },
+      },
+      preparedThumbnailTicket: "overwrite-ticket",
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("region", { name: "存檔瀏覽器" }),
+      ).not.toBeInTheDocument();
+    });
   });
 
   it.each([

@@ -167,34 +167,74 @@ describe("SaveConfirmationDialog", () => {
     expect(document.activeElement).toBe(cancel);
   });
 
-  it("autofocuses the action, traps Tab, and Escape restores its opener", async () => {
-    const opener = document.createElement("button");
-    opener.textContent = "open";
-    document.body.append(opener);
+  // Red regression for HPA-830: autofocus must land on 取消 for dangerous
+  // kinds so a second Return cancels instead of deleting. The dialog also
+  // owns Tab cycling unconditionally (jsdom/WebKit cannot rely on native
+  // traversal) and no longer restores an opener itself — controllers and
+  // page tests own opener focus restore.
+  it("autofocuses cancel for a delete, cycles Tab in both directions, and Escape cancels once", async () => {
     const onCancel = vi.fn();
     const user = userEvent.setup();
     render(SaveConfirmationDialog, {
       kind: "delete",
       slot: validSlot,
-      returnFocusTo: opener,
       onConfirm: vi.fn(),
       onCancel,
     });
 
     const cancel = screen.getByRole("button", { name: "取消" });
     const confirm = screen.getByRole("button", { name: "確認刪除" });
+    expect(document.activeElement).toBe(cancel);
+
+    await user.keyboard("{Tab}");
     expect(document.activeElement).toBe(confirm);
-    confirm.focus();
+
+    // Tab on the last control wraps back to the first.
     await user.keyboard("{Tab}");
     expect(document.activeElement).toBe(cancel);
-    cancel.focus();
+
     await user.keyboard("{Shift>}{Tab}{/Shift}");
     expect(document.activeElement).toBe(confirm);
+
+    // Shift+Tab on the first control wraps forward to the last.
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(document.activeElement).toBe(cancel);
 
     await user.keyboard("{Escape}");
     await Promise.resolve();
     expect(onCancel).toHaveBeenCalledOnce();
-    expect(document.activeElement).toBe(opener);
+  });
+
+  it("autofocuses cancel for an overwrite so a second Return cannot overwrite", async () => {
+    const user = userEvent.setup();
+    render(SaveConfirmationDialog, {
+      kind: "overwrite",
+      slot: validSlot,
+      currentSummary,
+      pendingDisplayName: "新的名稱",
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const confirm = screen.getByRole("button", { name: "確認覆寫" });
+    expect(document.activeElement).toBe(cancel);
+
+    await user.keyboard("{Tab}");
+    expect(document.activeElement).toBe(confirm);
+  });
+
+  it("keeps a valid Load's confirm as the autofocus so Load stays one Return away", async () => {
+    render(SaveConfirmationDialog, {
+      kind: "load",
+      slot: validSlot,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "確認載入" }),
+    );
   });
 
   it("disables every action and ignores confirm, cancel, and Escape while pending", async () => {
