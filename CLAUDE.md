@@ -279,7 +279,7 @@ Chinese). Narrative content has two kinds — keep them straight:
   - [Chapter 1 plan](https://app.notion.com/p/411586265aa9816283caf49cbc9693c9) and [Chapter 2 plan](https://app.notion.com/p/411586265aa98183843dc16559f093b7) - per-chapter
     construction plans (Beats, evidence order, timecodes). Chapters 3-8 have
     no plan page yet; the Story Bible outlines them.
-  - [角色設定總表](https://app.notion.com/p/411586265aa981878f37d7fc87b564a8) - per-character 設定/性格/台詞風格/禁止; the Story
+  - [角色設定總表](https://app.notion.com/p/411586265aa981878f37d7fc87b564a8) - per-character 設定/性格/台詞風格/必須/禁止; the Story
     Bible wins where they disagree.
 
   Older docs refer to these pages by their former repo names

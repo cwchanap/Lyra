@@ -10,15 +10,16 @@ description: Use when reviewing authored scene files (scene_*.md / investigation
 You are the **semantic gate and remediation loop**. The compiler already proved
 structure (schema, unlock graph, ID resolution); your job is what it cannot
 see: canon, character voice, sealed-lore discipline, cross-beat continuity,
-missing visual background coverage, visual-novel prose economy, and
-interrogation loop naturalness — **and then closing Blocker/Important findings
-in-place before the chapter ships.**
+missing visual background coverage, visual-novel prose economy,
+interrogation loop naturalness, and whether a first-time player feels and
+follows the story — **and then closing Blocker/Important findings in-place
+before the chapter ships.**
 
-**Core principle:** for each of the nine review axes, run **one axis at a
+**Core principle:** for each of the ten review axes, run **one axis at a
 time**, and within that axis run a **review agent** (read-only, produces a
 findings report) followed by an **implementer agent** (write access, addresses
 the Blocker + Important findings the reviewer raised). Axes run **sequentially
-in table order (Axis 1 → Axis 9)** so that an earlier axis's fixes propagate
+in table order (Axis 1 → Axis 10)** so that an earlier axis's fixes propagate
 into the files the next axis reviews. You are a thin orchestrator: you locate
 source file paths, spawn the per-axis review→implement pair, and consolidate
 their reports into one findings-and-fixes report. The review agent reads the
@@ -38,7 +39,7 @@ agent **cites**, never against its own memory of the story.
 Not for: authoring new scene content from scratch (use the `writing-*` skills
 via `subagent-driven-story-writing`); structural/schema validation (that is the
 compiler's job). This skill remediates **existing** authored scenes against the
-nine semantic axes; it does not generate new beats.
+ten semantic axes; it does not generate new beats.
 
 ---
 
@@ -55,7 +56,7 @@ For the chapter under review (under `docs/stories_plan/`), locate these paths (l
 
 - **Story bible** (Notion page) — canon facts.
 - **Character sheet** (Notion 角色設定總表) — per-character
-  設定/性格/台詞風格/禁止 integrated view for writers and reviewers. This is the
+  設定/性格/台詞風格/必須/禁止 integrated view for writers and reviewers. This is the
   primary voice/character reference; the addendum's voice guide supplements it.
   If it conflicts with the bible, the bible wins (per the page's own note).
 - **Global visual speaker catalog** `static/assets/config/characters.yaml` —
@@ -64,7 +65,9 @@ For the chapter under review (under `docs/stories_plan/`), locate these paths (l
   scene list; the chapter-level plan the review checks roster and beat order
   against.
 - **Chapter construction plan** (Notion chapter plan page, the high-level
-  plan) — beat intent; what each scene is supposed to accomplish.
+  plan) — beat intent; what each scene is supposed to accomplish; and, when the
+  plan has one, its emotion table (where the chapter's loud moments and four
+  fixed beats land).
   (Note: `chapter.md` is the chapter *manifest* — a separate file.
   "Construction plan" always means the Notion chapter plan, never `chapter.md`.)
 - **Chapter writing addendum** `*_addendum.md` — per-character voice, Do/Don't,
@@ -106,9 +109,9 @@ findings and fixes separate as the fallback specifies.
 
 ## Phase 2: Sequential per-axis review→implement loop
 
-Do not review all axes yourself in one pass, and do not spawn all nine review
-agents at once. Instead, **iterate the nine axes in table order (Axis 1 →
-Axis 9), one axis at a time.** For each axis, run two subagents in sequence:
+Do not review all axes yourself in one pass, and do not spawn all ten review
+agents at once. Instead, **iterate the ten axes in table order (Axis 1 →
+Axis 10), one axis at a time.** For each axis, run two subagents in sequence:
 
 1. **Review agent** (read-only — use the `story-reviewer` profile) — reads the
    axis's sources, produces a findings report with a per-axis verdict.
@@ -129,7 +132,7 @@ fix would produce conflicting edits to the same lines.
 **Why one implementer per axis (not one big implementer at the end):** each
 axis's fixes are scoped to that axis's concern, bounded by that axis's
 writing-* skill, and checked against that axis's authoritative sources. A
-single monolithic implementer holding all nine axes' findings at once is the
+single monolithic implementer holding all ten axes' findings at once is the
 same failure mode as a monolithic reviewer.
 
 ### Step 2a — Review agent brief (per axis)
@@ -232,23 +235,24 @@ If a host cannot load `.claude/agents/`, dispatch a general-purpose agent with
 `model: "sonnet"` and `effort: "medium"` and copy the profile's rules into the
 brief. Do not raise the model or effort for a single axis unless the user asks.
 
-### The nine axes (run in this order)
+### The ten axes (run in this order)
 
 | Axis | Check | Sources the review agent needs |
 |---|---|---|
 | **1. Canon / factual** | Names, victim, true culprit, times, locations, roster match bible/plan. Verify against the bible line — never assume (e.g. confirm the suspect's exact given name rather than trusting recall). | Bible character sections + character sheet roster/設定 + `chapter.md` summary + scene dialogue mentioning names/roles/times |
-| **2. Forbidden / premature reveals** | Nothing on the addendum 不要做 / 伏筆留白 list surfaces early. A detail allowed to be *shown* must not be *explained*. | Addendum forbidden-reveal list + bible sealed-lore sections + all scene dialogue and evidence descriptions |
-| **3. Voice, style, narration & expression** | Each character matches the character sheet 台詞風格 + addendum voice guide; no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified, no JP-only kanji). Apply the base narration assignment and catalog-bounded expression choreography to all four scene types: visible action/state stays bracketed, present-character judgment stays in dialogue, and a fitting configured expression is used for a meaningful transition without line-by-line flicker. For analysis scenes inspect Intro, every `### Result Dialogue`, and Outro. | character sheet per-character 台詞風格/禁止 + `static/assets/config/characters.yaml` labels/modes/slugs + addendum voice guides + `writing-detective-game-dialogue` format rules + every dialogue carrier in the reviewed scene files |
+| **2. Forbidden / premature reveals** | Nothing on the addendum 不要做 / 伏筆留白 list surfaces early. A detail allowed to be *shown* must not be *explained*. 相馬律's inner-voice lines (`**相馬律**：（...）`) are player-visible text: hold them to the same lists and to the bible's reveal ladder as spoken lines. A thought may show *that* something hurts; it may not say *why* before the ladder allows it. | Addendum forbidden-reveal list + bible sealed-lore sections + all scene dialogue and evidence descriptions |
+| **3. Voice, style, narration & expression** | Each character matches the character sheet 台詞風格 / 必須 / 禁止 + addendum voice guide (a character who carries a scene shows a 必須 trait in it, so that the two leads do not sound alike); no exposition 講義 / system lectures; dialogue lines ≤100 Chinese chars; **Traditional Chinese only** (no Simplified, no JP-only kanji). Apply the base narration assignment and catalog-bounded expression choreography to all four scene types: visible action/state stays bracketed, present-character judgment stays in dialogue, and a fitting configured expression is used for a meaningful transition without line-by-line flicker. Inner voice keeps its form: only 相馬律 has it, the whole text is wrapped in full-width `（ ）`, it never sits in a testimony `##### Line:` body, and no other character reacts to it. For analysis scenes inspect Intro, every `### Result Dialogue`, and Outro. | character sheet per-character 台詞風格/必須/禁止 + `static/assets/config/characters.yaml` labels/modes/slugs + addendum voice guides + `writing-detective-game-dialogue` format rules + every dialogue carrier in the reviewed scene files |
 | **4. Cross-beat continuity** | Hand-offs between scenes land; planted seeds pay off; evidence/statement IDs referenced across files resolve; the chapter's required evidence-package seeds are all present. Dialogue time and history words match the scene order: "today" vs "tomorrow", "daytime" vs a night visit, "last night", and every "first time" / 第一次 claim (a character can't have a first hearing twice, or one the player already saw). Objects keep their state across scenes (sealed evidence stays sealed; a room's props don't jump to another location's `[場景：...]` tag). Within one investigation scene, unlocked hotspots and witness topics can be played in either order: check every hotspot/topic line for presupposed prior conversation (e.g. 「剛才說過」), inspection, or admission unless an explicit unlock gate guarantees it. | Plan evidence-package list + all scene files (outros, intros, evidence manifests, statement manifests, unlock chains) |
 | **5. Visual background coverage** | Keep the existing completeness, compiled-ID, and asset-file checks: every player-visible location change that needs a backdrop has authored `Background Prompt` metadata and compiles to a non-null `backgroundAssetId`; linear queues and investigation/interrogation/analysis intros establish a background before the first dialogue/action unless carry-over is documented; for analysis scenes check the Intro, every `### Result Dialogue`, and the Outro when those dialogue carriers author a visual transition, using their `[場景：...]` + supported asset metadata cues — the analysis board UI itself carries no cue, so do not flag a board panel for a missing background; report `assetFileMissing` separately from a missing prompt. Then check catalog/portrait appropriateness, spatial usability (hotspots plus visible floor/standee clearance), same-location continuity (stable anchors, adjacency, and case props), and purposeful variation. Do not flag a same-view carry-over as missing variation or a duplicate merely because it reuses a materially unchanged view. **Note:** `assetFileMissing` (the PNG does not exist) is not fixable by the implementer — escalate it as `ASSET-MISSING — needs human` (use the `generating-lyra-image-assets` skill). The implementer can fix missing `Background Prompt` metadata and missing `Background Asset ID` references in authored Markdown. | All scene files with `[場景：...]`, `Background Prompt`, `Background Asset ID`, sub-location metadata, interrogation phase metadata, analysis Intro/Result Dialogue/Outro scene tags + `static/assets/config/characters.yaml` + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` + `bun run scenes:compile` warnings |
 | **6. Investigation interaction balance** | The chapter's investigation scenes' interaction points, *in aggregate*, follow the addendum §2.1 ratio guidance: ~45% 破案資訊 (directly support the three evidence packages), ~30% 角色生活資訊 (make characters feel alive), ~20% 氣氛與伏筆 (blue umbrella, osmanthus, rain, shop objects), ~5% 錯誤焦點 / 紅鯡魚 (let players briefly suspect the manager, Katase, or deeper Miyake lies). The ratio is per-chapter, not per-scene — a single scene may legitimately concentrate in one bucket (e.g. a reversal scene mostly 破案). **These percentages are guidance, not hard requirements:** being a few points off, or below a target in any bucket, is never by itself a Blocker or Important finding, and never a reason to add filler interaction points just to move the count. Report the aggregate as context, and flag a bucket only at Minor, and only when it is so thin that a reader would feel it in play (e.g. a whole investigation with no character-life or atmosphere point at all). Flag individual points that leak case-breaking info through a 生活/氣氛 point at the severity the leak deserves; that check is not ratio-based. | Addendum §2.1 ratio table + all `investigation_scene_*.md` hotspot/topic/evidence manifests + evidence-package list from the plan |
 | **7. Natural conversation & situational context** | Every scene has enough natural, non-case dialogue to ground the player before investigation/hearing mechanics begin. Check against addendum §5.4 minimums: linear transitions ≥25% breathing dialogue, investigation scenes need 2–3 lines of pre-investigation dialogue (why we're here, partner check-in, first impression), interrogation/hearing scenes need 2–3 lines of pre-proceeding partner dialogue, breathing points ≥30%. New characters get a natural introduction exchange, not just a Bio field. Flag scenes that open directly into case mechanics with no human grounding, scenes where the 相馬/早坂 partnership has no relational texture (no history, no familiarity, no working dynamic), and breathing points that are actually case summaries in dialogue form. **Motivation and reader context:** every choice a character makes on the page (taking a case, cooperating with the other side, showing up somewhere, handing over evidence) has an on-page reason the player can state; the protagonist and each recurring character are introduced by who they are and why they're here on first appearance, not only by nameplate; each case shows what is at stake for the person involved; arrivals are not unexplained coincidences; a character is not named in dialogue before the player has met or been told about them; and narration that flags an oddity ("這種事，通常不會…") is followed by its answer. Flag a scene where a reader would ask "why would they do that?" or "who is this?" and the text never answers. | Addendum §5.4 ratio table + all scene files' opening dialogue blocks + character sheet voice guides for partnership dynamics |
 | **8. Visual-novel prose economy** | This is a visual novel, not a text-only novel — the background image already shows the location, weather, lighting, and atmosphere; the character portrait already shows appearance, posture, and expression. Narration and bracketed stage directions must not redundantly describe what the visuals already convey. Prose should add only what the visuals cannot: internal state, off-screen sounds, time passage, tactile details, scent. Flag paragraphs of scene-setting description that duplicate the `Background Prompt` / `[場景：...]` cue, character appearance narration that duplicates what the portrait and `characters.yaml` expression slug already show, and atmosphere description that the BGM/BGS channel or the background art already carries. Do not flag concise stage directions that direct a meaningful visual transition (expression change, new character entering) — those are choreography, not redundancy. | All scene files' narration blocks and bracketed stage directions + `static/assets/config/characters.yaml` (what portraits/expressions already convey) + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` `backgroundAssetId` (what background art is shown) + `writing-detective-game-dialogue` format rules |
 | **9. Interrogation loop dialogue naturalness** | Specific to `interrogation_scene_*.md`. The interrogation loop (question selection → testimony → evidence challenge → response) produces dialogue fragments the player assembles in variable order. When the dialogue carriers are read connected together in the order a player would typically encounter them, the exchange should feel like a natural cross-examination — not disjointed menu prompts, not repetitive beats, not testimony that contradicts itself across re-challenges. Check that: locked/unlocked question transitions flow like a coherent line of questioning, testimony lines don't repeat the same denial verbatim across multiple questions, correct challenge responses acknowledge the relevant evidence rather than generic deflection, but shared `On Wrong Evidence` / `Default Wrong` responses fire for **any** incorrect selection and must not name or assume a particular wrong item; the overall arc builds tension rather than circling or resetting. Read the interrogation scene's dialogue carriers in sequence and flag jarring jumps, redundant denials across questions, beats that feel like a menu rather than a conversation, and **correct-answer** challenges that remain generic enough to swap between different evidence. The shared wrong-answer fallback is deliberately evidence-neutral. | All `interrogation_scene_*.md` files (questions, testimony, challenge responses, outro) + character sheet voice guides for the suspect + `writing-interrogation-scene` skill format rules + addendum voice guides |
+| **10. First-time player: emotion, tension & first-read clarity** | Read the chapter in manifest order as a player who has seen none of the planning pages, and check it against the "Emotion and clarity" rules of `writing-detective-game-dialogue`: a feeling lands on screen when its cause happens, the player knows what is at stake, and one read is enough to follow. Covers the chapter's loud moments, the four fixed beats and their guards, the seven dialogue rules, and how 相馬律's inner voice is used. The form of inner voice belongs to Axis 3 and sealed reveals to Axis 2; do not report them again here. Use the checks and the severity guide in "First-time Player Checks (Axis 10)" below, and copy that section into the brief with this row. | `writing-detective-game-dialogue` "Emotion and clarity" + character sheet per-character 必須/台詞風格 + the construction plan's emotion table (or the addendum, where the beats were placed by decision) + from Chapter 3 on, the chapter's row of the bible's escalation table + `chapter.md` + all scene files, read in manifest order |
 
 ### Per-axis loop procedure
 
-For each axis N (1 → 9), in order:
+For each axis N (1 → 10), in order:
 
 1. Spawn the **review agent** (foreground, `story-reviewer` profile) with the
    Step 2a brief. Wait for its findings report.
@@ -276,7 +280,7 @@ For each axis N (1 → 9), in order:
    `COMPILE-FAILED — needs human` (failing file/line + last error) as an
    escalation, do **not** advance to further axes (their reviewers would read
    structurally invalid output), and go straight to Phase 3 — this early stop
-   bypasses the all-nine-loops-complete gate below; the escalation
+   bypasses the all-ten-loops-complete gate below; the escalation
    must never block report generation; it deterministically forces the
    consolidated verdict to `BLOCKERS-PRESENT` while preserving the recorded
    failure details, and Phase 3 **reuses that recorded failure** instead of
@@ -293,7 +297,7 @@ sequential ordering is what keeps each review agent's evidence valid against
 the files it actually reads.
 
 **Serial fallback:** if your environment has no subagent-dispatch tool, run
-each axis yourself in the table order above (Axis 1 → Axis 9): review the
+each axis yourself in the table order above (Axis 1 → Axis 10): review the
 axis's sources and produce findings, then apply fixes. In this mode you
 temporarily assume the **implementer role**: you may apply **Blocker/Important
 fixes only**, only to authored scene `.md` files in the chapter directory, and
@@ -338,11 +342,85 @@ For Axis 5, at minimum check:
 - A deliberately carried same view with no material visual change is valid;
   do not manufacture a variation finding just to increase image count.
 
+### First-time Player Checks (Axis 10)
+
+The reviewer reads as a first-time player first: the scene files in manifest
+order, each dialogue carrier in the order a player would meet it. Only then
+does it open the plan, the addendum and the bible to check what it felt
+against what was intended.
+
+**Emotional landing**
+
+- A feeling happens when its cause happens. A new fact, a plea, an
+  accusation or a reversal gets a human reaction (a spoken line or 相馬律's
+  inner voice) before the sorting-out starts. Flag a key moment that gets
+  only procedure, only a bracket, or a report afterwards (「剛才我慌了。」).
+- An emotional line is not answered by procedure in the very next line.
+- The chapter has its three or four loud moments, and the lines themselves
+  are loud; a bracket saying so does not count. **Quiet is the default: never
+  flag a quiet scene for being quiet.**
+- All four fixed beats exist where the plan's emotion table or the addendum
+  places them, with their guards intact: the proof never rests on what the
+  culprit says, the solution scene stops where the record stops and says so,
+  and the release is acted out rather than bracketed or reported later.
+
+**Tension**
+
+- In every scene that gives the player a task (investigation, interrogation,
+  analysis), one of the first three spoken lines says in plain words what we
+  came to find and what happens if we do not.
+- Someone the player has met stands to lose something concrete, and the text
+  says so before the final hearing.
+- From Chapter 3 on, the chapter delivers its row of the bible's escalation
+  table: the danger to 相馬 and the people around him rises as planned.
+
+**First-read clarity**
+
+- No spoken line the player must follow carries two clock times, or a clock
+  time and a code. The figures belong on the record card.
+- A hedge such as 「這只能證明……」 appears at most once per scene.
+- The first time a system, procedure or product name appears in the chapter,
+  something near it says it in plain words.
+- No serial number reads as a clock time (`1841`).
+- After each scene, could a first-time player say what was learned and what
+  comes next? Flag the scene where they could not, and quote the lines that
+  lose them.
+
+**Inner voice in use**
+
+- No inner-voice line arrives first at a conclusion the player is about to
+  reach through a 推理 prompt, a hotspot, a present, a challenge or an analysis
+  board. Test: delete the line; if the player would now have to work out
+  something it had handed them, it is a finding.
+- It marks key moments. A run of more than two inner-voice lines, or a
+  comment on every other line, is a finding.
+
+**Severity guide**
+
+- **Blocker:** inner voice hands the player a deduction; a fixed beat's guard
+  is broken (the proof rests on the culprit's own words, or the solution
+  scene asserts more than the evidence proves).
+- **Important:** a key emotional moment with no on-screen reaction; a task
+  scene with no stated goal; a term the player needs that is never explained;
+  a line the player must follow that carries two or more times or codes. A
+  missing fixed beat, or a chapter with no loud moment, is also Important,
+  but it needs a new scene or a moved beat: the implementer escalates it as
+  `STRUCTURAL — needs human` and does not invent one.
+- **Minor:** one hedge over budget; an aside that could be cut; a bracket a
+  slug or a line could carry; inner voice a little dense.
+- The counts ("three or four", "first three lines", "more than two in a
+  row") are guidance, as in Axis 6. Being one off is never by itself above
+  Minor, and never a reason to add filler lines.
+- Chapter-level checks (loud moments, fixed beats, the escalation row) apply
+  only when the whole chapter is under review. For a slice of an unfinished
+  chapter, check the beats the plan or addendum places in those scenes and
+  list the rest as not yet in scope, not as missing.
+
 ---
 
 ## Phase 3: Compile and synthesize
 
-After all nine axes' review→implement loops complete, run **one**
+After all ten axes' review→implement loops complete, run **one**
 `bun run scenes:compile` to regenerate runtime JSON from the post-fix authored
 Markdown and verify structural integrity. If Phase 2 instead ended early with
 a recorded `COMPILE-FAILED — needs human` escalation (remaining axes recorded
@@ -435,8 +513,9 @@ finding and fix line verbatim; do not rewrite its evidence.
 **Subagent axes (sequential review→implement):** Canon, Forbidden,
 Voice/style/narration & expression, Continuity, Visual Background,
 Investigation Interaction Balance, Natural Conversation, Visual-novel Prose
-Economy, Interrogation Loop Naturalness — all completed (or early-stopped at
-Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
+Economy, Interrogation Loop Naturalness, First-time Player — all completed
+(or early-stopped at Axis N after `COMPILE-FAILED`; axes after N recorded
+`NOT-RUN`).
 
 **Final compile:** `bun run scenes:compile` — [GREEN / FAILED: <error>]
 
@@ -513,11 +592,11 @@ Axis N after `COMPILE-FAILED`; axes after N recorded `NOT-RUN`).
 | Asserting canon from memory | Cite the source line (page + section heading for a Notion page); if it's absent, request the source. |
 | Letting the implementer edit everything | The implementer fixes Blocker + Important only, on authored `.md` scene files only, bounded by the writing-* skill. Minor/Nit and structural findings are escalated, not silently "cleaned up". |
 | Letting the implementer introduce new violations | The implementer must not introduce canon contradictions, forbidden reveals, voice breaks, or format violations. A fix that requires a canon judgment call is escalated, not guessed. |
-| Running axes in parallel | Axes must run sequentially (1 → 9) so each review agent reads the post-fix files from earlier axes. Parallel axes produce conflicting edits and stale evidence. |
+| Running axes in parallel | Axes must run sequentially (1 → 10) so each review agent reads the post-fix files from earlier axes. Parallel axes produce conflicting edits and stale evidence. |
 | Skipping the implementer when there are Blockers | If the review agent returns Blocker/Important findings, spawn the implementer. Only skip when the verdict is SHIP or findings are all Minor/Nit. |
 | Editing or "fixing" files as the orchestrator | The orchestrator reports and consolidates only. Fixes come from the implementer subagent (or, under serial fallback, from you acting as the per-axis implementer). |
 | Findings without a location or a quote | Every finding: `file:line` + quoted text + suggested fix + fix status. |
-| Monolithic single-agent review | Spawn one review agent and one implementer per axis, sequentially. One brain trying to hold bible, plan, addendum, voice guides, format rules, visual cues, interaction balance, natural conversation, prose economy, interrogation loop flow, and all scene text at once misses things. |
+| Monolithic single-agent review | Spawn one review agent and one implementer per axis, sequentially. One brain trying to hold bible, plan, addendum, voice guides, format rules, visual cues, interaction balance, natural conversation, prose economy, interrogation loop flow, the first-time player's experience, and all scene text at once misses things. |
 | Orchestrator reading source content | When subagents are dispatched, you locate paths and spawn subagents; you do NOT read bible, character sheet, construction plan, addendum, scenes, or JSON yourself. The only file you read is `chapter.md` (to get the scene list). Subagents read everything else directly. Under the serial fallback (no subagent-dispatch tool), this rule is inverted: you must run each axis's review and fixes yourself in table order. |
 | Pasting excerpts into subagent briefs | Give subagents file paths, not pasted content — **except** the implementer brief, which must paste the review agent's findings verbatim (the implementer works from the reviewer's cited findings, not from re-reading the reviewer's mind). Review agents read sources themselves so they see full text and can cite exact lines; pasted excerpts lose context and bloat the orchestrator. |
 | Verifying subagent findings by reading sources yourself | Do not re-read sources to "double-check" a review agent's citation. Quote the review agent's finding verbatim in your consolidated report; trust its citation. If a finding looks wrong, flag it as a question for the human, don't re-verify by reading the source. |

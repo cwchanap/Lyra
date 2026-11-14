@@ -301,6 +301,13 @@ with neither is unreachable (`interrogationLockedBlockUnreachable`).
   body (`promptNotAllowedInTestimony`). Put the prompt in the phase entry
   dialogue, the Intro or the Outro instead (syntax in
   `writing-detective-game-dialogue`).
+- **No inner voice inside a testimony Line.** A `##### Line:` body is what
+  the subject says aloud, and the player may challenge it. 相馬律's inner-voice
+  lines (`**相馬律**：（...）`, see `writing-detective-game-dialogue`) go in the
+  Intro, the phase entry dialogue or the Outro. His `Loop Prompt` and
+  `Wrong Reply` may be inner voice when the line is a private reaction. Keep
+  `Challenge` and `Default Challenge` spoken: the subject answers them, and
+  nobody answers a thought.
 
 Every field value (`On Loop`, `Loop Prompt`, `Default Challenge`,
 `Default Wrong`, `Wrong Reply`, and the per-line fields below) is a single

@@ -54,6 +54,12 @@ existing `ja/` files. Translate only from the authored scene lines that
      explanation, or a spoiler.
    - Keep each line about as short as its source; it shares a dialogue box.
    - Read the scene around the line, not the line alone.
+   - An inner-voice line (the Chinese text is wholly wrapped in `（ ）`, see
+     `writing-detective-game-dialogue`) keeps the full-width parentheses in
+     `ja`, and is translated as a thought: plain form, no polite address to
+     the listener. Once the role is voiced, give it a quiet, close
+     `voice.direction`; if the parentheses audibly change the read, fix that
+     line with `voice.tts`.
 3. For a whole chapter, use one subagent per scene, then do one review pass
    across scene boundaries for consistent names, terms and registers.
 4. A changed line (`localeScriptSourceChanged`): the scene line's speaker,
