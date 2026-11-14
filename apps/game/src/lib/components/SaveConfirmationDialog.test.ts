@@ -205,6 +205,49 @@ describe("SaveConfirmationDialog", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  // HPA-830: cycling between the two controls must be unconditional
+  // JavaScript — WebKit native traversal cannot be relied on. user.keyboard
+  // alone cannot prove this because its default browser-style traversal
+  // moves focus even when the handler ignores the key. So for the two
+  // non-boundary moves we dispatch a cancelable keydown (the no-synthetic-
+  // keydown rule concerns Enter button activation, not the Tab handler) and
+  // assert both defaultPrevented and the handler-driven resulting focus;
+  // jsdom performs no native traversal, so any focus movement is the
+  // handler's own.
+  it("cancels non-boundary Tab key events and moves focus in JavaScript in both directions", () => {
+    render(SaveConfirmationDialog, {
+      kind: "delete",
+      slot: validSlot,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const confirm = screen.getByRole("button", { name: "確認刪除" });
+    cancel.focus();
+
+    const forward = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    cancel.dispatchEvent(forward);
+    expect(forward.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(confirm);
+
+    const reverse = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    confirm.dispatchEvent(reverse);
+    expect(reverse.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(cancel);
+  });
+
   it("autofocuses cancel for an overwrite so a second Return cannot overwrite", async () => {
     const user = userEvent.setup();
     render(SaveConfirmationDialog, {
