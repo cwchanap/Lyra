@@ -1,119 +1,121 @@
-# HPA-830 — Save Archive 鍵盤安全性：單一 PR 實作計劃
+# HPA-830 — Save Archive 鍵盤安全：單一 PR 實作計劃（Review 修訂）
 
-> **設計：** [HPA-830 鍵盤安全規格](../specs/2026-11-13-hpa-830-save-archive-keyboard-safety-design.md) · **Linear：** [HPA-830](https://linear.app/cwchanap/issue/HPA-830/saving-with-the-keyboard-can-accidentally-delete-a-save-slot)
+> **規格：** [HPA-830 安全設計](../specs/2026-11-13-hpa-830-save-archive-keyboard-safety-design.md) · **Linear：** [HPA-830](https://linear.app/cwchanap/issue/HPA-830/saving-with-the-keyboard-can-accidentally-delete-a-save-slot) · **Reviewer：** [PR #133](https://github.com/cwchanap/Lyra/pull/133#pullrequestreview-5900492460) · **main：** f706bb16
 >
-> **狀態：** 待審設計／計劃，尚未進入程式碼實作。**交付：** HPA-830 僅使用目前這個 Draft PR；審閱後同一 PR 補實作、測試及 UAT 結果。基線 main @ f706bb16ef28d33292867482377bc85f1228f0cc。
+> **狀態：** Review feedback 已整合到規劃，產品實作與 E2E 尚未進行。**一張票、一個 PR**：此 Draft PR 後續直接加程式與測試，絕不另開實作 PR。無新 art／SFX。
 
-## 實作策略與依賴
+## Review disposition / Scope
 
-採用 **「先鎖破壞性操作，再收焦點與視覺」** 的最小變更，不做存檔架構改寫。工作依序完成，**不是拆成不同 PR**；沒有外部技術依賴，也不需要新圖片／SFX 任務。
+| 最新意見 | 決策 |
+| --- | --- |
+| Overwrite 和 Delete 都會被連續 Return 誤觸 | **接受**：兩者預設聚焦取消，Load 保持 confirm |
+| Delete opener 是被卸載的 DOM element | **接受**：兩處改用已有 `slotActionLocator`，取消/ Escape 可回焦 |
+| Dialog 自己的 `returnFocusTo` 沒有產品呼叫者 | **接受**：刪 prop／test 中重複 focus owner |
+| 成功刪除後焦點落在 body | **接受**：統一讓新 Browser controller 的初始焦點回到「返回」；不另外加 focus routine |
+| 必須有 page-level Red 而非只有元件測試 | **接受**：`page.test.ts` 必須覆蓋 title Delete、game Delete、game Overwrite |
+| Title 背景 Menu 可用 inert；GameShell 已經 inert | **接受**：沿用而非新增 Tab trap、MainMenu handler |
+| Browser 初始焦點由 controller 一處負責 | **接受**：增加 `initialFocus` option，移除 `openConfirmation` 的 initialFocus 參數 |
+| thumbnail 英文從 Rust 一行產生 | **接受**：改 Rust message，不寫 frontend map；其餘英文 errors 另追蹤 |
+| 舊存檔 mojibake 應先查原始 bytes | **接受**：移除整個診斷 Task，保留證據筆記，無代碼／測試工作 |
+| macOS WebKit 可能不依 native Tab 進入 button | **接受為驗收風險**，先在 macOS 真視窗核驗設定，必要時才複用既有 Tab loop |
+| E2E 重用 `deleteOwnedManual` | **接受**：不造新 seed / suite，明確執行非 smoke 的 save-management |
+| 必要的既有條件 | **保留**：無 Rust save-schema、無額外 modal、`SaveRecapDetails` 僅在實際 clipping 後小修 |
 
-預期主要修改：
-- apps/game/src/lib/components/SaveConfirmationDialog.svelte（危險操作預設焦點）
-- apps/game/src/routes/+page.svelte（移除四個競爭的 confirmation initialFocus、title menu inert、縮圖警告繁中呈現）
-- apps/game/src/lib/components/SaveBrowser.svelte（archive 初始焦點、鍵盤邊界）
-- apps/game/src/lib/components/SaveCard.svelte（聚焦樣式、可見性）
-- apps/game/src/lib/components/SaveRecapDetails.svelte（僅在確認文字裁切後調整）
-- apps/game/src/lib/components/MainMenu.svelte（僅在查證全域鍵盤／延時 focusTimer 會搶焦點時作最小 guard）
-- apps/game/src/lib/components/*.test.ts、apps/game/src/routes/page.test.ts、apps/game/e2e-tauri/save-management.e2e.ts（回歸證據）
+## Task 1 — Red regression 先於修正
 
-Rust 存檔系統只在「亂碼確實可重現且原因指向 Rust」時才有必要改動；勿更動 HPA-854 已合併的捕捉／restore 快路徑。
+**必修測試：** `apps/game/src/routes/page.test.ts`，重用 title/in-game persistence fixtures 與 `userEvent.setup()`，不是只有元件層驗證。
 
-## Task 1 — 重現失敗的鍵盤操作測試（先 Red）
+**測試三個完整用戶路徑：**
 
-**目標：** 讓目前 main 上危險的預設焦點與背景 Tab 漂移被自動測試捕捉。
+1. **Title Delete**：標題畫面 → Load Archive → 聚焦已有資料的手動槽「刪除」→ `await user.keyboard("{Enter}{Enter}")` → 斷言從未調用 `delete_save`、確認層已取消、焦點回到**重掛載的同一槽刪除按鈕**。
+2. **Game Delete**：進入遊戲 → Game Menu → Save/Load Archive → 同樣雙 Return → 斷言零 `delete_save`、正確 slot focus restoration，保留 GameShell inert。
+3. **Game Overwrite**：遊戲內 Save → 已佔用槽「選擇」→ 按 Return 提交預填命名 → 覆寫確認的 Return 應**取消**，斷言未調用 `save_manual`（及不曾開始不必要的 thumbnail/save 流程）；焦點回到重掛載的「繼續」按鈕。明確轉焦／點擊 confirm 的正路徑仍能執行。
 
-1. 在 SaveConfirmationDialog.test.ts 添加測試：delete 對話框開啟後應聚焦取消；連續 Enter 不觸發 onConfirm；只有焦點明確移到「確認刪除」或滑鼠明確點擊時才觸發刪除；Escape 返回觸發者；pending 不能重入。
-2. 修改現有「autofocuses the action」用例，**不要**保留要求 delete 預設聚焦 confirm 的過時斷言。保留 load、overwrite 的既有測試。
-3. 在 SaveBrowser.test.ts 驗證三種模式的穩定 DOM 順序、初始焦點、Tab／Shift+Tab 在 archive 內循環、重開後焦點不飄到背景；測試空槽、損壞槽、無法載入槽仍不變。
-4. 在 page.test.ts（或更合適的現有整合 fixture）驗證 title deletion、game deletion、game load、overwrite 的 focus ownership 不被外層 locator 強制覆蓋。必要時使用明確的微任務／tick，**不用 sleep 來掩蓋競態**。
-5. 把最重要的打字流程加入既有 packaged save-management E2E：以**隔離測試存檔槽**先 seed 已佔用資料，開啟標題／遊戲內瀏覽器，鍵盤啟動 Delete 並連續 Return，直接讀磁碟驗證原檔與另一槽未變。
+- 不用 `fireEvent.keyDown` 假裝觸發按鈕：jsdom 的 keydown 不一定合成 click，會在舊錯誤實作上假綠。用 `userEvent.keyboard` 真正模擬 Enter 按鈕啟用。
+- 補 `SaveConfirmationDialog.test.ts` 三個 kind 的 autofocus regression；原測試若要求 Delete 預設 confirm，改成安全契約。確認 pending、Escape、Tab、load 不退步。
+- `save-browser-controller.test.ts` 添加動態 opener 的 delete return、成功重開 Browser initialFocus、型別 API 更新測試。
+- 先執行 focused unit 並記錄**至少一個在 main 基線會失敗的 Red case**，再改 production code。
 
-**完成條件：** 至少一個焦點測試在原碼上為 Red；它能分辨「只是出現確認框」與「真的落盤刪除」，而非只用文字斷言模擬成功。
+**Done when：** 主測試能在原本的 `last-child` override 與 stale opener 下失敗；不是只證明 dialog 元件自己會 focus cancel。
 
-## Task 2 — 單一安全焦點擁有者
+## Task 2 — 消除雙重 focus owner 與 stale opener
 
-1. 在 SaveConfirmationDialog.svelte 僅針對 kind === "delete"，onMount 優先聚焦 cancelButton；保留 load／overwrite 既有預設按鈕、Tab trap、Escape、pending 禁用及 focus restoration。
-2. 在 +page.svelte 的四個 confirmation 啟動位置（title delete、game delete、game load、manual overwrite）移除「最後一顆可用按鈕」的第二個 initialFocus 參數；controller.openConfirmation 保留原本 opener locator，以便 cancel/back 恢復。
-3. 完成前後逐一驗證：delete 首個 Enter 應取消、不能直接呼叫 delete_save；滑鼠「確認刪除」仍有作用；load／overwrite 的既有流程不改；失敗或過期觀測值仍受原有 Rust expectation 保護。
-4. 檢查重複快速 Enter 不會因兩個 onMount／tick 聚焦者互相覆蓋而誤點。
+限縮修改：
 
-**完成條件：** 刪除必須由玩家第二次**明確選擇危險按鈕**才可成立；不新增額外 modal、輸入槽名、全域 key listener 或 Rust 命令。
+1. `SaveConfirmationDialog.svelte`：`onMount` 使用 `kind === "load" ? confirmButton : cancelButton` 作初始動作（load invalid 仍應 fallback cancel）；刪掉產品未使用的 `returnFocusTo` prop、`restoreFocus` 與對應重複 unit test。
+2. `+page.svelte` 四個 confirmation 入口移除第二個 `initialFocus` locator：`handleTitleBrowserDelete`、`handleSaveBrowserLoad`、`handleSaveBrowserDelete`、`handleManualNameSubmission`。對 Load 的確認按鈕由 dialog 原本 onMount 自行聚焦。
+3. Title／Game Delete 的 opener 均改成 `slotActionLocator(slot.reference, "delete")`，而不是捕獲目前 `opener: HTMLElement`。取消／Escape 後 controller 使用 locator 找**新渲染**的按鈕。
+4. `save-browser-controller.svelte.ts`：刪掉 `openConfirmation(opener, initialFocus?)` 的第二個參數與委派；保留 `openName(opener, initialFocus?)`。不要把不同層的 focus 邏輯搬到新 singleton。
+5. 保留原有 `saveId`/`modifiedAt`/pending guard；不碰 Rust save implementation。
 
-## Task 3 — Save Browser 焦點封閉與返回
+**Done when：** 三條 Red case 轉綠；原本 onMount + tick 雙重搶焦點完全消失；Load／Overwrite／Delete 在取消後均可回到可用焦點。
 
-1. 讓 SaveBrowser.svelte 本身建立適當對話框語意與可聚焦根節點，開啟後固定聚焦安全「返回」按鈕；Tab 只在當前可見且可用的控制中循環，Shift+Tab 方向相反。保留現有按槽號排序與 button aria-label。
-2. title archive 開啟時，將背後 MainMenu 設為 inert 或以現有元件的最小控制關閉焦點入口；驗證其 1.5s focusTimer 和全域 ArrowUp/Down 不會把焦點拉出 archive。若實測需要，僅在 MainMenu 加一個明確的 modal-active guard；不建立通用 focus manager。
-3. 遊戲內 archive 與 GameShell 選單的層級也應維持同樣焦點邊界；關閉後 controller 把焦點送回 Save/Load 入口。保留 Escape 逐層返回與 repeat guard。
-4. 以 browser controller 的現有 tick + opener 設計恢復被卸載／重新渲染的觸發按鈕，避免新建「選中槽」狀態來源。
+## Task 3 — Browser 初始焦點與背景 inert（沿用現成機制）
 
-**完成條件：** titleLoad、gameLoad、manualSave 開兩次的 Tab 路徑穩定，不會跑進底下 title／game UI；取消後能回到原操作，無意外觸發相鄰槽。
+1. 在 `createSaveBrowserController` options 新增可選 `initialFocus: LayerFocusTarget`，在 controller 建立時以現有 `focusWhenReady` 聚焦；`openTitleBrowser` 與 `installGameBrowser` 都傳入同一類的「返回」按鈕 locator（在目前 Browser 層內查詢，避免抓到背景其他同名按鈕）。
+2. **不**在 `SaveBrowser.svelte` 補 onMount focus；避免它與 controller.back 的既有 restoreFocus 互搶。
+3. 在 `MainMenu.svelte` 現有最外層 `.lyra-menu` 套用 `inert`（從 `+page.svelte` 的 `titleBrowserOpen` 傳入簡單 prop），或等價地讓其最外層 DOM inert；避免新增包覆層導致 title 畫面 CSS 改版。
+4. 遊戲內依靠現有 `persistenceLayerOpen → gameplayInert → GameShell`，不重複實作。
+5. 確認原本 1.5s title `focusTimer` 在背景 inert 時不能搶 focus；若全域 ArrowUp／Down 的 `preventDefault` 仍影響 Archive，僅在 MainMenu 當前根節點是 inert 時早退出（重用 `DialogueBox` 的 guard 模式），不添加第二個 keyboard controller。
+6. 刪除成功後 `openTitleBrowser`／`installGameBrowser` 都會使用新 controller 的初始「返回」焦點；取消則使用原 opener locator，兩條流程各有一位 owner。
 
-## Task 4 — 最小視覺及在地化修正
+**Done when：** 重開、取消及成功刪除後的焦點是可預測的，背景主選單不可被 Tab/Enter 操作；不為了這項缺陷加入第七套手寫 Tab trap。
 
-1. 在 SaveCard.svelte 按鈕加入明顯、高對比的 :focus-visible 樣式；必要時用 :focus-within 讓整張卡片顯示焦點所在，但保持 selected 與 keyboard focus 的語意分離。SaveBrowser 的「返回」及確認視窗的取消／確認同樣需清楚。
-2. 以 800×600 真實視窗檢查槽 1–3 的縮圖、場景文字與操作列。只有確認有裁切時才調整 SaveRecapDetails／SaveCard 的尺寸、正常換行、overflow-wrap 或安全捲動；不重新設計 Save Archive。
-3. 在 +page.svelte 以 thumbnailActivity.diagnostic.reason 作 presentation-only 的繁體中文訊息（例如 captureUnavailable →「無法產生存檔預覽圖片；存檔不受影響。」）；未知類別也有安全繁中 fallback。保留原始診斷於資料層，不改後端或預覽策略。
-4. 沒有新圖／SFX／配音需求，不生成或調整素材。
+## Task 4 — 最小 UX CSS、文案和平台核驗
 
-**完成條件：** 在 800×600 肉眼能辨認 focus，場景名稱末字不被裁半，所有玩家可見的縮圖失敗提示為繁體中文且不誤稱存檔已失敗。
+1. 在 `SaveCard.svelte`、`SaveBrowser.svelte`、`SaveConfirmationDialog.svelte` 操作按鈕加入清楚的 `:focus-visible`；可在卡片使用 `:focus-within` 作輕微輔助，但 selected≠focus。沿用現有 CSS tokens。
+2. 實測 macOS／Windows 800×600 的槽 1–3 場景標題是否被裁半，僅在重現後調整 `SaveCard` 或 `SaveRecapDetails` 的少量 CSS（wrap/line-height/min-width），不重新設計佈局。
+3. `apps/game/src-tauri/src/game/save/application/mod.rs` 的 `capture_unavailable_activity` 一行英文通知改為繁中「無法產生存檔預覽圖片；存檔仍可使用。」；不在 `+page.svelte` 新增 reason-keyed localization map；不改 thumbnail availability 規則。
+4. **macOS WebKit acceptance gate（先做）**：先記錄測試機「Keyboard navigation」系統設定，測試 native Tab／Shift+Tab 能否走到 cancel／confirm。若 Tab 跳過 button，僅在實際 Save 層沿用 `AcquisitionPopup.svelte:102–120` 的完整 Tab 巡訪迴圈，並增加該平台的回歸；**只有證實需要才增加這段邏輯**。
+5. 文案驗收只涵蓋縮圖提示；其他 Rust persistence errors（例 `Save selection is stale.`）另開小票，不擴大本票。
 
-## Task 5 — 存檔 JSON 亂碼的限界診斷
+**Done when：** 焦點清晰、場景名稱不被截斷、縮圖通知繁中、macOS 不因 Tab 行為而無法明確操作危險按鈕。若有條件平台差異，將設定及採用 fallback 的理由記在 PR。
 
-1. 若能取得報告中的原 UAT autosave，先**複製到隔離目錄**，檢查 entry 574 的原始 UTF-8 bytes 和實際 Unicode code points，區分「檔案已是 replacement character」與「檢視工具誤解碼」。
-2. 比對該行的 Markdown／locale 與 compiled scene 資源、Rust 對話 history 中的字串，以及 serde_json 輸出的存檔字串，定位第一次發生變化的位置。
-3. 以現行來源加入最小 Unicode 對話 history round-trip 測試，包含繁體中文字與非 ASCII 符號。若可證明當前寫檔會轉壞，修該一處及測試；若不能重現，明列檢查過的邊界和缺失的重現條件，**不要宣稱已修好**。
-4. 如果真正問題是獨立的歷史資料／作者內容污染，另立後續 ticket（如確實需要）而非把整個內容或 persistence 架構納入此一安全修正。
+## Task 5 — Regression、Desktop UAT 及同 PR 收尾
 
-**完成條件：** 亂碼有可檢驗的原因／範圍記錄；沒有猜測性編碼遷移、沒有為舊版存檔加入 compatibility 層。
+### 自動回歸
 
-## Task 6 — 回歸、UI UAT 與同一 PR 收尾
-
-### 自動檢查
-
-在 repo root 執行：
+在 repo root：
 ~~~bash
 bun run check
 bun run test
 bun run lint:all
 bun run --cwd apps/game check:e2e
+cargo test --manifest-path apps/game/src-tauri/Cargo.toml
 ~~~
 
-完成時使用既有 Tauri packaged save E2E（本機 focused runner 加快迭代；CI 照原有 smoke/full 規則）：
+- 延伸現有 `apps/game/e2e-tauri/save-management.e2e.ts` 的 `deleteOwnedManual`，不新增 E2E seed／phase：在既有 `management-corrupt-thumbnail` 的 manual-2 delete 前，先鍵盤開確認 → `Enter`（取消）→ 確認 `manual-2` envelope／sidecar 未變、其他槽仍在 → 重新開確認 → 明確把焦點移到「確認刪除」→ `Enter`；保留原有**檔案消失／其他槽 saveId 與 sidecar SHA 不變**斷言。
+- 在 `page.test.ts` 必含 title Delete、game Delete、game Overwrite，直接攔截並斷言沒有錯誤 IPC，作為 CI 每 PR 的持續護欄。
+- 不把 `save-management` 誤認為 PR smoke：`e2e-suite-registry.mjs` 的 smoke 只跑 `smoke.e2e.ts`。在 Ready 前明確執行：
 ~~~bash
-bun run --cwd apps/game test:e2e:save
+bun run --cwd apps/game test:e2e:save-management:run
 bun run --cwd apps/game test:e2e:smoke
 ~~~
+- 不改全套 E2E CI 分流策略。需要時可另跑 `test:e2e:all`，不作新 CI infrastructure。
 
-不要改 CI 觸發策略來遷就此票；Draft PR 的 CI E2E 可能不自動執行，轉為 Ready 前執行既有驗證。
+### macOS／Windows 真視窗端到端驗收（800×600）
 
-### macOS + Windows E2E 驗收
+| 旅程 | 操作與預期 |
+| --- | --- |
+| Title Browser | 用鍵盤打開／關閉／重開 Load；聚焦「返回」，背景 MainMenu 不可操作，Escape 仍回載入入口 |
+| Game Browser | Save/Load 同樣有穩定初始焦點；取消確認後回到正確槽，沒有 focus 落到 body |
+| Title & Game Delete | 已佔用槽 Delete → 連續 Return → `delete_save` 未呼叫、原檔仍在；明確選擇 confirm 才刪目標槽，其他槽不變 |
+| Game Overwrite | 已佔用槽選擇 → 預填命名 → 連續 Return → `save_manual` 未執行、原存檔不變；明確確認才能覆寫 |
+| Success / Load | 刪除成功聚焦新 Browser 的「返回」；Load 仍可正常選擇，故障與失效槽原有保護不退步 |
+| 視覺與語言 | 3 個手動槽 focus ring、場景尾字、按鈕都看得見；thumbnail unavailable 是繁中且不被當成存檔失敗 |
+| macOS 特別項 | 紀錄 Keyboard navigation 的開關狀態；測試 Tab 是否能到危險確認按鈕；若不可達，驗證小範圍 Tab fallback |
 
-以**獨立測試 profile**與有備份的手動槽 1、2，對 macOS、Windows 各執行以下 end-to-end 動作（Lyra 是桌面遊戲，不要求 iOS）：
+有設計 mockup 時按 Linear ticket mockup 視覺核對；截至此輪 review，HPA-830 未提供 mockup，使用已報 UAT 截圖／真實 packaged 遊玩前後對比。**只要求 macOS 和 Windows 手動 E2E／視覺驗收；Android 和 Linux 不安排手動驗收，Linux 只靠 CI。**
 
-| 路徑 | 玩家端操作 | 驗收 |
-| --- | --- | --- |
-| 標題 Load | 開啟 Archive → Tab 掃描 → 關閉 → 重開 → 重複 | 焦點從返回出發，次序一致，底下 MainMenu 不搶焦點；Escape 回原入口 |
-| 遊戲內 Save/Load | 從 Game Menu 開 archive、移往有資料的手動槽 | 800×600 聚焦明顯、場景全文可讀、可正常選擇儲存／載入 |
-| 最重要破壞性路徑 | 以鍵盤開啟槽 1 Delete → 連按 Return，不切換至危險按鈕 | **槽 1 JSON/內容不變；槽 2 亦不變**；只可能取消／重開確認 |
-| 合法刪除 | 開啟槽 1 Delete → Tab 至「確認刪除」→ Return；再測滑鼠明確點擊 | 只刪除槽 1，槽 2 保留；列表即時更新 |
-| 既有其他操作 | 取消、覆寫、從標題載入、遊戲內載入、刪除無效槽、返回標題 | 原先的 confirmation、保全期待值、檔案載入／覆寫流程正常 |
-| 預覽與字體 | 人為讓 thumbnail unavailable、查看槽 1 場景名稱 | 繁中通知說明預覽失敗不代表存檔失敗；場景末字不裁切 |
-| JSON 診斷 | 取當前真實 Unicode 存檔並重新讀取 | 不能出現新的 replacement characters；原 UAT 亂碼判定依 Task 5 記錄 |
+### 舊 UAT 亂碼筆記（不另設實作 Task）
 
-### 視覺檢查
+主案附帶的「相���點頭」目前未取得原 UAT 檔案；本次 review 確認已檢視的 authored text 為正確 Unicode，未發現本路徑 lossy UTF-8 decode。若日後找回原檔，先查原始 bytes 是否實際有 U+FFFD，否則不改 serde_json、不加遷移或回歸測試。**本 PR 不假稱已修復舊 UAT 檔案。**
 
-- macOS／Windows 都以**預設 800×600** 視覺確認三張手動存檔卡、刪除／取消焦點、archive 內捲動與場景中文文字，不只依靠 jsdom。
-- HPA-830 目前**沒有附帶 UI mockup**。若 ticket 在開工時新增 mockup，以該圖核對焦點、留白與文字可讀性；否則以 UAT 報告中的截圖標記／真實遊玩前後對照，附 PR screenshots 或操作紀錄。
-- Linux 只跑 CI 自動驗證；**不做 Android 或 Linux 手動驗收**。
+## Acceptance checklist／合併前門檻
 
-**完成條件：** 修正後 packaged 版本在 macOS、Windows 的實際鍵盤操作不能再透過連續 Return 刪除存檔；明確確認可正常刪除；手動與自動存檔行為完整，視覺與在地化驗收通過，PR 說明附驗證結果與仍未確認的 UAT 原始亂碼資料限制。
-
-## PR review checklist
-
-- [ ] 此 Draft PR 的兩份文件經 review，範圍沒有超出 HPA-830
-- [ ] Task 1–5 的程式變更、單元／整合／E2E 測試全部追加於**同一 PR**
-- [ ] 真實雙 Return 誤刪案例已用檔案內容／saveId 的 end-to-end 斷言防止復發
-- [ ] macOS、Windows 800×600 UI 視覺驗收與手動鍵盤驗收有記錄
-- [ ] 驗證結果／限制已更新到本 PR；無新圖片音效工作、無 Rust schema migration
-- [ ] 準備合併時才把 PR 改為 Ready；不要先把 Linear ticket 標 Done
+- [ ] 三項 `page.test.ts` Red→Green（title Delete／game Delete／game Overwrite；`userEvent` 和無 IPC 斷言）
+- [ ] SaveConfirmationDialog 及 controller 測試保證安全焦點、動態 opener、取消／成功刪除回焦
+- [ ] Background inert、CSS、縮圖文案與 800×600 視覺檢查有實測
+- [ ] macOS／Windows 真視窗端到端 Save／Load／Delete／Overwrite／Escape 路徑通過，記錄 macOS keyboard-navigation 設定
+- [ ] `bun run check`、`bun run test`、`bun run lint:all`、`check:e2e`、全 Rust cargo test、`test:e2e:save-management:run`、smoke 有明確結果
+- [ ] 刪除／覆寫安全後，再標記同一 PR Ready；不改狀態為 Done 直到驗收滿足
