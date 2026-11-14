@@ -9,6 +9,7 @@
     playDialogueVoice,
     stopDialogueVoice,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
+  import { isInnerVoiceLine } from "$lib/state/inner-voice";
   import CrossfadeImage from "./CrossfadeImage.svelte";
   import DialogueHistoryOverlay from "./DialogueHistoryOverlay.svelte";
   import type {
@@ -103,6 +104,8 @@
     portraitSource ? `${portraitSource}:${portraitPlacement}` : null,
   );
   const isPrompt = $derived(current.kind === "prompt");
+  // 心聲: tested on the scene's own text, which is what `current` carries.
+  const isInnerVoice = $derived(isInnerVoiceLine(current));
   const revealableText = $derived(
     current.kind === "line" || current.kind === "action"
       ? current.text
@@ -648,6 +651,7 @@
     class:scene={current.kind === "sceneTag"}
     class:action={current.kind === "action"}
     class:line={current.kind === "line"}
+    class:thought={isInnerVoice}
     class:prompt={isPrompt}
     class:xexam-presentation={Boolean(crossExam?.presentation)}
     class:disabled
@@ -698,9 +702,13 @@
         <div class="line-grid">
           <div class="speaker-block">
             {#if interrogationStageActive}
-              <span class="interrogation-kicker">證言 · TESTIMONY</span>
+              <span class="interrogation-kicker"
+                >{isInnerVoice ? "心聲 · THOUGHT" : "證言 · TESTIMONY"}</span
+              >
             {/if}
-            <span class="kind">發言 · LINE</span>
+            <span class="kind"
+              >{isInnerVoice ? "心聲 · THOUGHT" : "發言 · LINE"}</span
+            >
             <span class="speaker">{current.speaker}</span>
           </div>
           <div class="line-content">
@@ -1067,6 +1075,34 @@
     align-items: center;
   }
 
+  /* Inner voice (心聲): the spoken-line frame, quieter. A dashed muted left
+     bar and divider, a muted kind label, and the name and text one step
+     dimmer. Layout, portrait, typewriter and advance are unchanged. The
+     `.wrapper` prefix outranks the interrogation stage's solid crimson bar
+     and the hover rim, so the left bar stays muted everywhere. */
+  .wrapper .box.thought,
+  .wrapper .box.thought:hover:not(.disabled) {
+    border-left-style: dashed;
+    border-left-color: var(--bone-dim);
+  }
+
+  .box.thought .kind,
+  .box.thought .interrogation-kicker {
+    color: var(--bone-dim);
+  }
+
+  .box.thought .speaker {
+    color: color-mix(in srgb, var(--bone) 62%, transparent);
+  }
+
+  .box.thought .speaker-block {
+    border-right-style: dashed;
+  }
+
+  .box.thought .text-line {
+    color: color-mix(in srgb, var(--bone) 60%, var(--bone-dim));
+  }
+
   /* Narrow-screen layout. Below ~600px the side-by-side line-grid collapses:
      the fixed 140px speaker block + 22px padding + 24px gap + 130px right
      padding (clears the absolutely-positioned advance pill) leaves the text
@@ -1093,6 +1129,10 @@
       border-right: none;
       border-bottom: 1px solid var(--rule-strong);
       padding-bottom: 8px;
+    }
+    .box.thought .speaker-block {
+      border-right-style: none;
+      border-bottom-style: dashed;
     }
   }
 

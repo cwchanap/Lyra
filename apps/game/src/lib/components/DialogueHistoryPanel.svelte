@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
+  import { isInnerVoiceLine } from "../state/inner-voice";
   import type { DialogueHistoryEntry } from "../state/types";
 
   let {
@@ -112,8 +113,11 @@
       {#each history as entry (entry.id)}
         <li>
           {#if entry.kind === "line"}
-            <p class="speaker">{entry.speaker}</p>
-            <p class="text">{entry.text}</p>
+            {@const thought = isInnerVoiceLine(entry)}
+            <p class="speaker" class:thought>
+              {entry.speaker}{thought ? " · 心聲" : ""}
+            </p>
+            <p class="text" class:thought>{entry.text}</p>
           {:else}
             <p class="speaker narration">敘述</p>
             <p class="text">{entry.text}</p>
@@ -275,6 +279,11 @@
     color: var(--bone-faint);
   }
 
+  /* Inner voice (心聲): muted name, text one step dimmer (as in the box). */
+  .speaker.thought {
+    color: var(--bone-dim);
+  }
+
   .text,
   .empty {
     font-family: var(--serif-jp);
@@ -286,6 +295,10 @@
 
   .empty {
     color: var(--bone-dim);
+  }
+
+  .text.thought {
+    color: color-mix(in srgb, var(--bone) 60%, var(--bone-dim));
   }
 
   @media (max-width: 720px) {

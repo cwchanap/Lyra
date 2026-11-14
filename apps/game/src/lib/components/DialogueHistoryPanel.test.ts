@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { cssRule } from "$lib/test-utils";
 import DialogueHistoryPanel from "./DialogueHistoryPanel.svelte";
 import type { DialogueHistoryEntry } from "../state/types";
 
@@ -50,6 +51,49 @@ describe("DialogueHistoryPanel", () => {
     expect(entries[0]).toHaveTextContent("雨聲太乾淨了。");
     expect(entries[1]).toHaveTextContent("敘述");
     expect(entries[1]).toHaveTextContent("他把錄音筆放回口袋。");
+  });
+
+  it("marks inner-voice rows as 心聲 with a muted name", () => {
+    const { container } = render(DialogueHistoryPanel, {
+      history: [
+        ...history,
+        {
+          id: 3,
+          kind: "line",
+          speaker: "相馬律",
+          text: "（……我想相信她。）",
+          chapterTitle: "雨夜的第一份證詞",
+          sceneTitle: "Opening",
+        },
+        {
+          id: 4,
+          kind: "action",
+          text: "（沒有新發現。）",
+          chapterTitle: "雨夜的第一份證詞",
+          sceneTitle: "Opening",
+        },
+      ],
+      onClose: vi.fn(),
+    });
+
+    const entries = screen.getAllByRole("listitem");
+    expect(entries).toHaveLength(4);
+    // A spoken line stays as it is today.
+    expect(entries[0]?.querySelector(".speaker")).toHaveTextContent(/^相馬律$/);
+    expect(entries[0]?.querySelector(".speaker")).not.toHaveClass("thought");
+    // A thought row carries 「· 心聲」 after the name.
+    expect(entries[2]?.querySelector(".speaker")).toHaveTextContent(
+      "相馬律 · 心聲",
+    );
+    expect(entries[2]?.querySelector(".speaker")).toHaveClass("thought");
+    expect(entries[2]?.querySelector(".text")).toHaveClass("thought");
+    expect(entries[2]).toHaveTextContent("（……我想相信她。）");
+    // Narration wholly in parentheses stays narration.
+    expect(entries[3]).toHaveTextContent("敘述");
+    expect(container.querySelectorAll(".thought")).toHaveLength(2);
+
+    const source = dialogueHistoryPanelSource();
+    expect(cssRule(source, ".speaker.thought")).toContain("var(--bone-dim)");
   });
 
   it("renders an empty state when no entries are available", () => {
