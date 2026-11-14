@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { tick } from "svelte";
@@ -326,5 +328,20 @@ describe("SaveConfirmationDialog", () => {
     expect(confirm).toBeDisabled();
     expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
     expect(dialog).toHaveFocus();
+  });
+
+  it("gives the action buttons a clear keyboard focus ring", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SaveConfirmationDialog.svelte"),
+      "utf8",
+    );
+
+    // HPA-830: 取消／確認刪除／確認覆寫 must show a visible keyboard focus
+    // ring (jsdom does not compute :focus-visible; the source rule is the
+    // authority).
+    expect(source).toMatch(
+      /button:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--cyan/,
+    );
+    expect(source).toMatch(/button:focus-visible\s*\{[^}]*outline-offset:/);
   });
 });

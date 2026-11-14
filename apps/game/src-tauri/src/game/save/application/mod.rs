@@ -1407,7 +1407,7 @@ pub(super) fn capture_unavailable_activity() -> ThumbnailActivityView {
     ThumbnailActivityView::Unavailable {
         diagnostic: ThumbnailDiagnosticView {
             reason: ThumbnailUnavailableReason::CaptureUnavailable,
-            message: "Thumbnail capture is unavailable.".into(),
+            message: "無法產生存檔預覽圖片；存檔仍可使用。".into(),
             retryable: false,
         },
     }

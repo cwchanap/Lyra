@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -375,6 +377,23 @@ describe("SaveCard", () => {
     rendered.unmount();
 
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:save-1");
+  });
+
+  it("gives action buttons a clear keyboard focus ring distinct from selection", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SaveCard.svelte"),
+      "utf8",
+    );
+
+    // HPA-830: keyboard focus must be clearly visible on every action button
+    // (jsdom does not compute :focus-visible; the source rule is the authority).
+    expect(source).toMatch(
+      /button:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--cyan/,
+    );
+    expect(source).toMatch(/button:focus-visible\s*\{[^}]*outline-offset:/);
+    // Selected stays a border-only state while focus is an outline on the
+    // button, so selected ≠ focus.
+    expect(source).toMatch(/article\.selected \{\s*border-color/);
   });
 
   it("revokes a URL and switches to the placeholder on browser decode failure", async () => {

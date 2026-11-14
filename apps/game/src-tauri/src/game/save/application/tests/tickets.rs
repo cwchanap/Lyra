@@ -21,6 +21,20 @@ fn manual(generation: u64, revision: u64) -> ThumbnailCapturePurpose {
     }
 }
 
+#[test]
+fn capture_unavailable_notice_is_traditional_chinese_and_non_retryable() {
+    let activity = super::super::capture_unavailable_activity();
+    let ThumbnailActivityView::Unavailable { diagnostic } = activity else {
+        panic!("capture-unavailable activity must be an unavailable payload");
+    };
+    assert_eq!(diagnostic.message, "無法產生存檔預覽圖片；存檔仍可使用。");
+    assert_eq!(
+        diagnostic.reason,
+        ThumbnailUnavailableReason::CaptureUnavailable
+    );
+    assert!(!diagnostic.retryable);
+}
+
 #[tokio::test(start_paused = true)]
 async fn ticket_is_a_canonical_uuid_v4_with_one_exact_deadline() {
     let coordinator = coordinator();
