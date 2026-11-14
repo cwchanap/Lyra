@@ -48,33 +48,42 @@ load `.claude/agents/`, use a general-purpose agent with `model: "sonnet"` and
    (page links in `CLAUDE.md` → Project domain). Resolve any discrepancy (stale
    names, old examples in a `writing-*` skill) and record the correction — it
    goes in every brief.
-2. **Map beats → scene files and pick granularity.** Linear →
+2. **Place the chapter's emotional beats before mapping files.** From the
+   chapter plan's emotion table (or, when the plan has none, by your own
+   decision recorded in the addendum), fix which scenes carry the chapter's
+   three or four loud moments and its four fixed beats: the victim as a
+   person, the culprit speaking after the proof stands, the solution scene,
+   and the acted-out release (`writing-detective-game-dialogue` → "Emotion and
+   clarity"). When you hold only some of the chapter's beats, make sure none
+   that was placed in them is skipped; a chapter is not finished until all
+   four exist.
+3. **Map beats → scene files and pick granularity.** Linear →
    `scene_<K>.md`; interactive investigation → `investigation_scene_<K>.md`;
    interrogation → `interrogation_scene_<K>.md`; evidence-arrangement
    thought-organization → `analysis_scene_<K>.md`. **One writing subagent per
    scene file** — a file is the smallest independently-validatable unit (a
    linear queue or one unlock graph). Do not split sub-scenes (0A/0B) across
    agents.
-3. **Author the manifest.** Use `writing-chapter-manifest` to write
+4. **Author the manifest.** Use `writing-chapter-manifest` to write
    `chapter.md` listing exactly the scene files you are about to author.
-4. **RED gate.** Run `bun run scenes:compile`. Expect failure naming the missing scene files —
+5. **RED gate.** Run `bun run scenes:compile`. Expect failure naming the missing scene files —
    this proves the manifest + validator are wired before any prose exists.
-5. **Dispatch writing subagents — in parallel when independent.** Two scene
+6. **Dispatch writing subagents — in parallel when independent.** Two scene
    files that share no evidence/statement IDs are independent; dispatch them in
    one message (see superpowers:dispatching-parallel-agents). Each brief MUST be
    self-contained (the agent starts cold) — see the brief contract below. Each
    subagent runs the §2.4 self-review on its own scene before returning.
-6. **GREEN gate.** Re-run `bun run scenes:compile`; expect
+7. **GREEN gate.** Re-run `bun run scenes:compile`; expect
    `OK — N chapter(s), M scene(s)`. If errors, fix the offending file **in
    place** (common: a `Reveals`/`Unlock` target not matching its `{#id}`; a
    locked block with no inbound path; a missing `#### On Collect`; an H2 inside
    a linear scene; a dialogue line >100 chars) and re-run until green. Don't
    edit the compiler.
-7. **REVIEW gate.** Dispatch a separate review subagent (`story-reviewer`) whose
+8. **REVIEW gate.** Dispatch a separate review subagent (`story-reviewer`) whose
    brief's first action is to invoke Skill `reviewing-story-scenes` — see the
    review brief below. Triage findings: fix Blocker/Important (dispatch a
    `story-writer` with the findings pasted in), re-run the GREEN gate, then re-review if needed. Minor/"no change required" can ship.
-8. **Report and stop.** State files written, the `OK` line, and the review
+9. **Report and stop.** State files written, the `OK` line, and the review
    verdict. Commit only if the user asks (branch off `main` first).
 
 ## Writing-subagent brief contract
@@ -105,7 +114,15 @@ Because the agent has none of your context, every brief carries all of:
 - **Asset policy:** if `static/assets/config/policy.yaml` has `enabled: false`,
   "author semantic content only — no `Background Prompt`/`BGM`/`BGS`/`Image
   Prompt`/asset metadata." Writers author intent, never filesystem paths.
-- **The beat's 不要做 list** (forbidden foreshadow / premature reveals).
+- **The beat's 不要做 list** (forbidden foreshadow / premature reveals). It
+  applies to 相馬's inner voice as much as to spoken lines.
+- **This scene's emotional job.** Say whether the scene carries one of the
+  chapter's loud moments or four fixed beats, and which; otherwise say it is a
+  quiet scene. Give the scene's plain goal (what we came here to find, and
+  what happens if we do not) and the terms that appear here for the first
+  time in the chapter. The writer applies the base skill's "Emotion and
+  clarity" rules; do not restate them, but do name the 必須 traits from the
+  character sheet you most want on screen.
 - **For investigation/interrogation: the exact IDs and the full unlock graph.**
   The orchestrator owns IDs so cross-file references resolve. Game-global
   evidence/statement IDs are declared once; hotspot/topic/sublocation IDs are
