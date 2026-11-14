@@ -53,9 +53,41 @@
       onLoad(slot, opener);
     }
   }
+
+  let root: HTMLElement | undefined = $state();
+
+  function keydown(event: KeyboardEvent): void {
+    if (event.key !== "Tab" || !root) return;
+    // Unconditional JavaScript cycling: macOS WebKit with "Keyboard
+    // navigation" off never moves focus between buttons natively (verified
+    // in a real window on 2026-11-14), so every Tab is cancelled and
+    // refocused here. Mirrors AcquisitionPopup's handler; scoped to this
+    // browser section, not a global Tab handler.
+    event.preventDefault();
+    const controls = Array.from(
+      root.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+    );
+    if (controls.length === 0) return;
+    const activeIndex = controls.findIndex(
+      (control) => control === document.activeElement,
+    );
+    const nextIndex =
+      activeIndex < 0
+        ? event.shiftKey
+          ? controls.length - 1
+          : 0
+        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
+          controls.length;
+    controls[nextIndex]?.focus();
+  }
 </script>
 
-<section class="save-browser" aria-label="存檔瀏覽器">
+<section
+  bind:this={root}
+  class="save-browser"
+  aria-label="存檔瀏覽器"
+  onkeydown={keydown}
+>
   <header>
     <div>
       <span class="eyebrow">SAVE ARCHIVE</span>
@@ -192,6 +224,11 @@
     background: transparent;
     color: inherit;
     cursor: pointer;
+  }
+
+  button:focus-visible {
+    outline: 2px solid var(--cyan, #65d8ea);
+    outline-offset: 3px;
   }
 
   @media (max-width: 720px) {

@@ -298,6 +298,11 @@
     opacity: 0.4;
   }
 
+  button:focus-visible {
+    outline: 2px solid var(--cyan, #65d8ea);
+    outline-offset: 3px;
+  }
+
   @media (max-width: 640px) {
     .comparison {
       grid-template-columns: 1fr;

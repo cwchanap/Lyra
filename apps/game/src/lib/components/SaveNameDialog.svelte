@@ -128,25 +128,30 @@
       return;
     }
     if (event.key !== "Tab" || !dialog) return;
+    // Unconditional JavaScript cycling: native traversal cannot be relied on
+    // (jsdom, macOS WebKit with "Keyboard navigation" off — verified in a
+    // real window on 2026-11-14), so every Tab is cancelled and refocused
+    // here. Mirrors AcquisitionPopup and SaveConfirmationDialog's handlers;
+    // scoped to this dialog, not a global Tab handler.
+    event.preventDefault();
     const controls = Array.from(
       dialog.querySelectorAll<HTMLElement>(
         'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ),
     );
-    const first = controls[0];
-    const last = controls.at(-1);
-    if (!first || !last) {
-      event.preventDefault();
+    if (controls.length === 0) {
       dialog.focus();
       return;
     }
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    const activeIndex = controls.indexOf(document.activeElement as HTMLElement);
+    const nextIndex =
+      activeIndex < 0
+        ? event.shiftKey
+          ? controls.length - 1
+          : 0
+        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
+          controls.length;
+    controls[nextIndex]?.focus();
   }
 
   onMount(() => {
@@ -271,5 +276,11 @@
     background: transparent;
     color: inherit;
     cursor: pointer;
+  }
+
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--cyan, #65d8ea);
+    outline-offset: 3px;
   }
 </style>

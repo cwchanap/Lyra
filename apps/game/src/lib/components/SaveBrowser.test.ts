@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
 import type {
@@ -246,5 +248,70 @@ describe("SaveBrowser", () => {
       expect.objectContaining({ reference: { type: "manual", slot: 2 } }),
       expect.any(HTMLElement),
     );
+  });
+
+  it("gives the back and retry buttons a clear keyboard focus ring", () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname!, "SaveBrowser.svelte"),
+      "utf8",
+    );
+
+    // HPA-830: 返回 and 重試 must show a visible keyboard focus ring
+    // (jsdom does not compute :focus-visible; the source rule is the authority).
+    expect(source).toMatch(
+      /button:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--cyan/,
+    );
+    expect(source).toMatch(/button:focus-visible\s*\{[^}]*outline-offset:/);
+  });
+
+  it("cycles Tab from the back button through slot actions and wraps around", async () => {
+    render(SaveBrowser, {
+      view: populatedBrowser(),
+      mode: "gameLoad",
+      continueCandidate: null,
+    });
+
+    // HPA-830: with macOS WebKit "Keyboard navigation" off, native Tab never
+    // moves focus between buttons, so the browser handles every Tab in JS
+    // (AcquisitionPopup pattern, verified unreachable in a real window).
+    // jsdom does not move focus natively either, so the steps below fail
+    // until the browser owns the cycle.
+    const section = screen.getByRole("region", { name: "存檔瀏覽器" });
+    const back = screen.getByRole("button", { name: "返回" });
+    const autoButtons = [
+      ...within(screen.getByRole("group", { name: "自動存檔" })).getAllByRole(
+        "button",
+      ),
+    ].filter((button) => !button.hasAttribute("disabled"));
+    const manualButtons = [
+      ...within(screen.getByRole("group", { name: "手動存檔" })).getAllByRole(
+        "button",
+      ),
+    ].filter((button) => !button.hasAttribute("disabled"));
+    const afterBack = autoButtons[0];
+    const last = manualButtons.at(-1) as HTMLElement;
+    expect(afterBack).toBeDefined();
+
+    const tabFrom = (from: HTMLElement, shiftKey = false) => {
+      from.focus();
+      const event = new KeyboardEvent("keydown", {
+        key: "Tab",
+        code: "Tab",
+        shiftKey,
+        bubbles: true,
+        cancelable: true,
+      });
+      section.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+
+    expect(tabFrom(back)).toBe(true);
+    expect(document.activeElement).toBe(afterBack);
+
+    expect(tabFrom(last)).toBe(true);
+    expect(document.activeElement).toBe(back);
+
+    expect(tabFrom(back, true)).toBe(true);
+    expect(document.activeElement).toBe(last);
   });
 });

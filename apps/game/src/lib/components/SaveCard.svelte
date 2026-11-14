@@ -291,6 +291,11 @@
     opacity: 0.4;
   }
 
+  button:focus-visible {
+    outline: 2px solid var(--cyan, #65d8ea);
+    outline-offset: 3px;
+  }
+
   .delete {
     margin-inline-start: auto;
     color: var(--crimson, #e77c86);
