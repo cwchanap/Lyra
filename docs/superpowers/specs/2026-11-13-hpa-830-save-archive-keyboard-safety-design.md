@@ -70,7 +70,7 @@
 - 不修 HPA-707 thumbnail 產生問題；只修這一則 Rust 顯示文字。
 - 不重做 HPA-852 一般 HUD、HPA-705 審問證物盤、HPA-853 第 2 章定位；不為小說 scene 生成 art/SFX。
 - 不建新 focus manager、Browser 專用 Tab trap（**除非 macOS 先驗證必需**）、MainMenu 鍵盤 guard 或前端通知映射。
-- Persistence error messages 的全面繁中在地化獨立 tracking，不綁定此 PR。
+- Persistence error messages 的全面繁中在地化由 [HPA-912](https://linear.app/cwchanap/issue/HPA-912/localization-translate-player-facing-persistence-errors-to-traditional) 獨立追蹤，不綁定此 PR。
 
 ## 6. 端到端驗收條件（實作階段，尚未完成）
 
