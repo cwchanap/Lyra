@@ -422,19 +422,153 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   if (!target?.envelope || !target.sidecarPath) {
     throw new Error("delete target has no owned sidecar");
   }
+  const targetEnvelope = target.envelope;
+  const targetSidecarPath = target.sidecarPath;
   const sidecarDirectory = dirname(target.sidecarPath);
   const targetSidecarName = basename(target.sidecarPath);
   const sidecarsBeforeDelete = readdirSync(sidecarDirectory).toSorted();
+  // HPA-830: before 確認刪除 is explicitly chosen, neither a cancel of the
+  // delete confirmation nor a reopen of it may delete the owned save or
+  // touch any sidecar (envelope saveId, target sidecar hash, other slots'
+  // saveId/sidecar hashes, and the saves directory listing all pinned).
+  const assertDeleteNotCommitted = (): void => {
+    expect(readSaveE2eEnvelope(fixedSlotName)?.saveId).toBe(
+      targetEnvelope.saveId,
+    );
+    expect(existsSync(targetSidecarPath)).toBe(true);
+    const snapshot = readSaveE2eOwnershipSnapshot();
+    const targetSlot = snapshot.slots.find(
+      (candidate) => candidate.fixedSlotName === fixedSlotName,
+    );
+    expect(targetSlot?.sidecarSha256 ?? null).toBe(target.sidecarSha256);
+    for (const prior of before.slots.filter(
+      (candidate) => candidate.fixedSlotName !== fixedSlotName,
+    )) {
+      const current = snapshot.slots.find(
+        (candidate) => candidate.fixedSlotName === prior.fixedSlotName,
+      );
+      expect(current?.envelope?.saveId ?? null).toBe(
+        prior.envelope?.saveId ?? null,
+      );
+      expect(current?.sidecarSha256 ?? null).toBe(prior.sidecarSha256 ?? null);
+    }
+    expect(readdirSync(sidecarDirectory).toSorted()).toEqual(
+      sidecarsBeforeDelete,
+    );
+  };
+
   await openTitleLoadBrowser();
   await clickSaveCardButton("manual", slot, "刪除");
   await waitForDialog(`刪除手動存檔 ${slot}`);
-  await clickButton(anchors.confirmDelete);
+  // ① The dialog onMount must land on the safe 取消 before anything else can
+  // happen. This focus is set by JS on mount, so it is real in every input
+  // mode — including macOS WebKit with 「Keyboard navigation」 off.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        () =>
+          document.activeElement instanceof HTMLButtonElement &&
+          (document.activeElement.textContent ?? "").trim() === "取消",
+      ),
+    {
+      timeout: 15000,
+      timeoutMsg: "delete confirmation did not focus the safe 取消 button",
+    },
+  );
+  // Input-mode note (HPA-830): this packaged stack's WebDriver keys arrive as
+  // untrusted DOM events (isTrusted=false, verified 2026-11-14 with a
+  // document-level keydown probe), so they can drive only the app's own JS
+  // key handlers — never native Enter activation or traversal. Cancel,
+  // reopen, and confirm therefore use programmatic clicks (the same handlers
+  // a real click or a real keyboard's native Enter activation reaches), and
+  // the only key sent is Tab, which the dialog owns in JS: its unconditional
+  // cycling preventDefaults every Tab and focuses controls itself, so the
+  // assertion below exercises the exact handler path a real keyboard takes.
+  // The trusted-key Enter journey itself remains manual-UAT scope; this test
+  // does not claim it.
+  await clickDialogButton(`刪除手動存檔 ${slot}`, "取消");
+  // ② The cancel must restore focus to the *remounted* opener button.
+  try {
+    await browser.waitUntil(
+      async () =>
+        browser.execute(
+          (slotNumber: number) =>
+            document.activeElement ===
+            document.querySelector(
+              `article[data-slot-type="manual"][data-slot-number="${slotNumber}"] button[aria-label="刪除手動存檔 ${slotNumber}"]`,
+            ),
+          slot,
+        ),
+      {
+        timeout: 15000,
+        timeoutMsg: `cancelled delete did not restore focus to the remounted manual slot ${slot} delete button`,
+      },
+    );
+  } catch (error) {
+    const state = await browser.execute(() => ({
+      activeElement:
+        document.activeElement instanceof HTMLElement
+          ? {
+              tag: document.activeElement.tagName,
+              text: (document.activeElement.textContent ?? "").trim(),
+            }
+          : String(document.activeElement),
+      dialogHeadings: Array.from(
+        document.querySelectorAll('[role="dialog"] h2'),
+      ).map((node) => (node.textContent ?? "").trim()),
+      deleteButtonExists:
+        document.querySelector(
+          'article[data-slot-type="manual"] button.delete, article[data-slot-type="manual"] [aria-label^="刪除手動存檔"]',
+        ) !== null,
+    }));
+    throw new Error(
+      `cancelled delete did not restore focus to the remounted manual slot ${slot} delete button; post-cancel state=${JSON.stringify(state)}`,
+      { cause: error },
+    );
+  }
+  assertDeleteNotCommitted();
+  // ③ Reopening must only bring back the confirmation; it must not delete.
+  await clickSaveCardButton("manual", slot, "刪除");
+  await waitForDialog(`刪除手動存檔 ${slot}`);
+  assertDeleteNotCommitted();
+  // ④ Tab (driven through the dialog's unconditional JS cycling) must land
+  // exactly on 確認刪除; only an explicit activation of it commits. The
+  // automation can deliver a synthesized keydown late or drop it, so Tab is
+  // re-sent only while focus is provably back on the safe 取消, and the focus
+  // trace is reported if it never lands.
+  const focusTrace: string[] = [];
+  await browser.waitUntil(
+    async () => {
+      const state = await browser.execute((confirmLabel: string) => {
+        const active = document.activeElement;
+        const text =
+          active instanceof HTMLElement
+            ? (active.textContent ?? "").trim()
+            : String(active);
+        return {
+          focused: text === confirmLabel,
+          onSafeDefault: text === "取消",
+          text,
+        };
+      }, anchors.confirmDelete);
+      focusTrace.push(state.text);
+      if (state.focused) return true;
+      if (state.onSafeDefault) await browser.keys("Tab");
+      return false;
+    },
+    {
+      timeout: 10000,
+      interval: 200,
+      timeoutMsg: `Tab cycling did not land on 確認刪除 (trace=${JSON.stringify(focusTrace)})`,
+    },
+  );
+  await clickDialogButton(`刪除手動存檔 ${slot}`, anchors.confirmDelete);
   await browser.waitUntil(
     async () => (await saveCardText("manual", slot)).includes("空白存檔"),
     { timeout: 30000, timeoutMsg: `manual slot ${slot} did not become empty` },
   );
   expect(readSaveE2eEnvelope(fixedSlotName)).toBeNull();
-  expect(existsSync(target.sidecarPath)).toBe(false);
+  expect(existsSync(targetSidecarPath)).toBe(false);
   const after = readSaveE2eOwnershipSnapshot();
   for (const prior of before.slots.filter(
     (candidate) => candidate.fixedSlotName !== fixedSlotName,
