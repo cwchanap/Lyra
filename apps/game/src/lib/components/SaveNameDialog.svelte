@@ -128,30 +128,29 @@
       return;
     }
     if (event.key !== "Tab" || !dialog) return;
-    // Unconditional JavaScript cycling: native traversal cannot be relied on
-    // (jsdom, macOS WebKit with "Keyboard navigation" off — verified in a
-    // real window on 2026-11-14), so every Tab is cancelled and refocused
-    // here. Mirrors AcquisitionPopup and SaveConfirmationDialog's handlers;
-    // scoped to this dialog, not a global Tab handler.
-    event.preventDefault();
+    // Boundary-only trap: native Tab traversal is presumed to work (no
+    // trusted-input verification of WebKit behavior yet — HPA-830 fix round
+    // 1), so only the first/last controls are wrapped to keep focus inside
+    // the modal dialog.
     const controls = Array.from(
       dialog.querySelectorAll<HTMLElement>(
         'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
       ),
     );
-    if (controls.length === 0) {
+    const first = controls[0];
+    const last = controls.at(-1);
+    if (!first || !last) {
+      event.preventDefault();
       dialog.focus();
       return;
     }
-    const activeIndex = controls.indexOf(document.activeElement as HTMLElement);
-    const nextIndex =
-      activeIndex < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
-          controls.length;
-    controls[nextIndex]?.focus();
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first?.focus();
+    }
   }
 
   onMount(() => {
