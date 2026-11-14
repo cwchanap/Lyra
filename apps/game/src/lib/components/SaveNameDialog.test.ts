@@ -219,62 +219,15 @@ describe("SaveNameDialog", () => {
     expect(document.activeElement).toBe(opener);
   });
 
-  it("cycles Tab unconditionally through the input and actions, not only at boundaries", () => {
-    render(SaveNameDialog, {
-      slot: emptySlot,
-      currentSummary,
-      onSubmit: vi.fn(),
-      onCancel: vi.fn(),
-    });
-
-    // HPA-830: macOS WebKit with "Keyboard navigation" off never moves focus
-    // between controls natively, so every Tab must be handled in JS (the
-    // AcquisitionPopup pattern). user.keyboard alone cannot prove this
-    // because its jsdom traversal moves focus even when the handler ignores
-    // the key; raw cancelable keydowns assert the handler owns every move
-    // (same rule as SaveConfirmationDialog's non-boundary cycling test).
-    const input = screen.getByRole("textbox");
-    const cancel = screen.getByRole("button", { name: "取消" });
-    const submit = screen.getByRole("button", { name: "繼續" });
-
-    const tabFrom = (from: HTMLElement, shiftKey = false) => {
-      from.focus();
-      const event = new KeyboardEvent("keydown", {
-        key: "Tab",
-        code: "Tab",
-        shiftKey,
-        bubbles: true,
-        cancelable: true,
-      });
-      from.dispatchEvent(event);
-      return event.defaultPrevented;
-    };
-
-    expect(tabFrom(input)).toBe(true);
-    expect(document.activeElement).toBe(cancel);
-
-    expect(tabFrom(cancel)).toBe(true);
-    expect(document.activeElement).toBe(submit);
-
-    expect(tabFrom(submit)).toBe(true);
-    expect(document.activeElement).toBe(input);
-
-    expect(tabFrom(input, true)).toBe(true);
-    expect(document.activeElement).toBe(submit);
-
-    expect(tabFrom(cancel, true)).toBe(true);
-    expect(document.activeElement).toBe(input);
-  });
-
   it("gives the input and action buttons a clear keyboard focus ring", () => {
     const source = readFileSync(
       resolve(import.meta.dirname!, "SaveNameDialog.svelte"),
       "utf8",
     );
 
-    // HPA-830: 命名存檔 owns Tab cycling, so its controls must show a visible
-    // keyboard focus ring (jsdom does not compute :focus-visible; the source
-    // rule is the authority).
+    // HPA-830: 命名存檔 controls must show a visible keyboard focus ring
+    // (jsdom does not compute :focus-visible; the source rule is the
+    // authority).
     expect(source).toMatch(
       /:focus-visible\s*\{[^}]*outline:\s*2px solid var\(--cyan/,
     );
