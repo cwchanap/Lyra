@@ -14,7 +14,9 @@
  *    parent — the WDIO launcher process that onPrepare spawns the app from
  *    (`currentPpid`, the observed embedded-provider topology). An orphan from
  *    a dead earlier run (reparented to launchd) or a concurrent run's app has
- *    a foreign parent and is rejected.
+ *    a foreign parent and is rejected. If the launcher itself has died, the
+ *    worker is likewise reparented to launchd (currentPpid 1), parent-based
+ *    ownership is unprovable, and selection aborts before choosing a target.
  */
 export function selectE2eAppProcessId({
   psOutput,
@@ -22,6 +24,11 @@ export function selectE2eAppProcessId({
   currentPid,
   currentPpid,
 }) {
+  if (currentPpid <= 1) {
+    throw new Error(
+      `WDIO launcher pid ${currentPpid} is invalid — this worker is orphaned (reparented to launchd), so parent-based session ownership cannot be proven; refusing to select a trusted-key target`,
+    );
+  }
   const matches = [];
   for (const line of psOutput.split("\n")) {
     const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/);

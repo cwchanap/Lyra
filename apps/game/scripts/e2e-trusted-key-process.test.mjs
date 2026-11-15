@@ -111,6 +111,25 @@ test("rejects an orphaned same-path process reparented after its run died", () =
   );
 });
 
+test("rejects selection outright when this worker is orphaned and the sole match is an orphan too", () => {
+  // The WDIO launcher died: this worker was reparented to launchd (currentPpid
+  // 1), and the same happened to any leftover same-path app from a dead run.
+  // The parent-equals-launcher branch would spuriously bless the orphan
+  // (both ppids are 1), so selection must abort before choosing a target.
+  const psOutput = psLine(500, 1, CONFIGURED_E2E_PATH);
+
+  assert.throws(
+    () =>
+      selectE2eAppProcessId({
+        psOutput,
+        expectedExecutablePath: CONFIGURED_E2E_PATH,
+        currentPid: 700,
+        currentPpid: 1,
+      }),
+    /launcher pid 1 is invalid/,
+  );
+});
+
 test("rejects a same-path process with an unrelated live parent", () => {
   const psOutput = psLine(500, 999, CONFIGURED_E2E_PATH);
 

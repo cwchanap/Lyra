@@ -51,7 +51,9 @@ export type TrustedMacKeyName = keyof typeof TRUSTED_MAC_KEY_CODES;
  * e2e app, or any path merely containing "target-e2e" never matches — and
  * (b) belong to THIS WebDriver session, meaning its parent is the WDIO
  * launcher (which onPrepare spawns the app from) or this worker (per-worker
- * spawn). If the test app exits, or only a look-alike/orphaned process
+ * spawn); if this worker is itself orphaned (launcher died, reparented to
+ * launchd), the selector aborts before choosing any target. If the test app
+ * exits, or only a look-alike/orphaned process
  * remains, the selector refuses and no key is sent; AppleScript targets the
  * resolved unix id, so a name match alone can never win. The app is then
  * activated and verified frontmost immediately before the keystroke, and the
