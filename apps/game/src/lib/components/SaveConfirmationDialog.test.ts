@@ -250,6 +250,73 @@ describe("SaveConfirmationDialog", () => {
     expect(document.activeElement).toBe(cancel);
   });
 
+  // HPA-830: when focus rests on a non-control (the dialog surface or
+  // anything outside the enabled controls), activeIndex is -1 and cycling
+  // must still land deterministically — Tab on the first control, Shift+Tab
+  // on the last.
+  it("cycles Tab from a non-control focus to the first or last control", () => {
+    render(SaveConfirmationDialog, {
+      kind: "delete",
+      slot: validSlot,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const dialog = screen.getByRole("dialog");
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const confirm = screen.getByRole("button", { name: "確認刪除" });
+    dialog.focus();
+    expect(document.activeElement).toBe(dialog);
+
+    const forward = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    dialog.dispatchEvent(forward);
+    expect(forward.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(cancel);
+
+    dialog.focus();
+    const reverse = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    dialog.dispatchEvent(reverse);
+    expect(reverse.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(confirm);
+  });
+
+  // HPA-830: while pending every control is disabled and the dialog itself
+  // carries tabindex="-1" (excluded from the cycle list), so the cycle list
+  // is empty — Tab must be cancelled and focus must stay on the dialog.
+  it("cancels Tab and keeps dialog focus while pending leaves no enabled control", () => {
+    render(SaveConfirmationDialog, {
+      kind: "delete",
+      slot: validSlot,
+      pending: true,
+      onConfirm: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveFocus();
+
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      code: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    dialog.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    expect(document.activeElement).toBe(dialog);
+  });
+
   it("autofocuses cancel for an overwrite so a second Return cannot overwrite", async () => {
     const user = userEvent.setup();
     render(SaveConfirmationDialog, {
