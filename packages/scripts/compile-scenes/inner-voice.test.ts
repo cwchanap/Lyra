@@ -8,6 +8,7 @@ describe("innerVoiceWrapErrors", () => {
       "[場景：雨夜。]",
       "**相馬律**：（……我想相信她。）",
       "**相馬律**[shaken]：（……） {#L004}",
+      "**相馬律**：（她說（大概）不會來。）",
       "**早坂茜**：你（又）在想什麼？",
       "**早坂茜**：我知道。（停頓）",
       "[（沒有新發現。）]",
@@ -16,18 +17,22 @@ describe("innerVoiceWrapErrors", () => {
     expect(innerVoiceWrapErrors(source, "chapter_1/scene_1.md")).toEqual([]);
   });
 
-  it("rejects a spoken line that opens with （ but does not close, with its file and line", () => {
+  it("rejects a spoken line that opens with （ but is not one whole （…） group, with its file and line", () => {
     const source = [
       "# Scene 1: 接案",
       "**相馬律**：（……我想相信她。",
       "**相馬律**[shaken]：（低聲）我想相信她。 {#L003}",
       "- **Loop Prompt:** **相馬律**：（再問一次。",
+      "**相馬律**：（低聲）我知道。（停頓）",
+      "**相馬律**：（（還沒說完）",
     ].join("\n");
     const errors = innerVoiceWrapErrors(source, "chapter_1/scene_1.md");
     expect(errors.map((error) => [error.code, error.line])).toEqual([
       ["innerVoiceUnclosed", 2],
       ["innerVoiceUnclosed", 3],
       ["innerVoiceUnclosed", 4],
+      ["innerVoiceUnclosed", 5],
+      ["innerVoiceUnclosed", 6],
     ]);
     expect(errors[0]?.sourceFile).toBe("chapter_1/scene_1.md");
     expect(errors[0]?.message).toContain("chapter_1/scene_1.md:2:");

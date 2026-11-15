@@ -2,6 +2,8 @@
 // packages/dialogue-locale/src/index.ts
 //
 // Shared contract for translated dialogue between the compiler and the game.
+// It also owns the inner-voice (心聲) text convention for spoken lines
+// (./inner-voice.ts), which both sides must read the same way.
 //
 // Single source of truth for the key that ties a translated line to the
 // emitted Chinese line it translates, and for the locale manifest the compiler
@@ -11,6 +13,8 @@
 //   - packages/scripts/voice/                     (locale scripts, manifest)
 //   - apps/game/src/lib/audio/dialogue-voice.ts   (runtime voice lookup)
 // =============================================================================
+
+export { isInnerVoiceText, opensWithInnerVoiceParen } from "./inner-voice";
 
 /**
  * The expression every character config must define (enforced by the asset

@@ -200,8 +200,11 @@ that is what prevents silent drift in the emitted JSON/wire contract:
   NOT shared (the editor keeps a narrower rendering view).
 - `@lyra/dialogue-locale` - the translated-dialogue contract shared by the
   compiler and the game: the line key that matches a spoken line to its
-  translation (speaker, Chinese text, expression), the supported locales, and
-  the `dialogue_locale.<locale>.json` manifest types.
+  translation (speaker, Chinese text, expression), the supported locales, the
+  `dialogue_locale.<locale>.json` manifest types, and the inner-voice (心聲)
+  rule: a spoken line whose whole text is one full-width `（…）` group. The
+  game shows it as a thought; the compiler rejects a spoken line that opens
+  with `（` but is not wholly wrapped.
 - `@lyra/scripts` - the compile-scenes pipeline plus audio tooling (formerly the
   root `scripts/` directory). The root `scenes:*`, `audio:*`, and
   `evidence-sources:audit` scripts delegate here via
