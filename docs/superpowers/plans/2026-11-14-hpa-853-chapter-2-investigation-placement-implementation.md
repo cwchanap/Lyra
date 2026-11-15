@@ -14,11 +14,11 @@
 
 ## 0. 前置檢查及基準
 
-- [ ] 確認 `main` 現行 Scene 4/5 sidecar 格式與 Scene 8/10/12/14/16/17 的 Markdown IDs 沒有被後續 PR 更動。
-- [ ] 執行 `bun run scenes:compile`，確認現有場景／資產都能載入；記錄原有 warnings、scene content hash，避免本票改出不相關的變動。
-- [ ] 以 `bun run dev:editor` 開啟 Chapter 2 六個 scene，確認所有 17 個 sublocation 背景 ID 和圖片可顯示；核對 Scene 10/14 人物是否仍未入鏡。
-- [ ] 等待 HPA-1033 補圖並合併前，可以先做 **69 個**現有可辨識目標；**不得為尚未畫出的 3 個角色寫假 baked layout**。
-- [ ] 以 HPA-852 記錄的 800×600 問題作交叉檢查，特別注意上方地點列、PROGRESS 與玩家可操作中心。
+- [ ] 在最新 `main` 確認已編譯的 Chapter 2 Scene 8/10/12/14/16/17、原稿 IDs 與兩份 Scene 4/5 sidecar 範例仍相符。Editor 直接從 compiled scene 選取 ID；編譯器拒絕未知 ID，後續 live-corpus gate 檢查漏配 ID，不重做人工 ID validator。
+- [ ] 執行 `bun run scenes:compile` 記錄現有 warning／編譯狀態。**Layout 變動預期會改 `contentRevision`、live-corpus snapshot 及既有開發存檔的相容狀態**；不要以「content hash 不變」當作本票成功條件。
+- [ ] 用 `bun run dev:editor` 載入六個場景的 17 張背景，確認 Sub-location 及原圖；檢查 HPA-1033 尚未交付的兩張背景中可視角色的狀態。
+- [ ] **先配置 62 個目標**：`ramen_backdoor`（3 hotspot + 2 character）與 `disaster_center`（3 hotspot + 2 character）這兩個將由 HPA-1033 重畫的子場景，**全部 10 個目標先不配置**，避免因背景構圖改變而重做。
+- [ ] 參照 HPA-852 的既有視窗問題；本票測試新增中心點與 NAV 遮擋斷言，但不重構遊戲 HUD 或新建跨平台 E2E harness。
 
 ### ID／位置逐一核對清單
 
@@ -46,66 +46,62 @@
 
 合計：17 sublocation、59 hotspot、13 character。具體 normalized 座標以**實際圖片和 Editor 疊圖**為準，不以此清單或 Background Prompt 硬編數字。
 
-## 1. Scene 8、10、12：先配置可見部分
+**ID 表是 Inventory，不是額外的人工核對流程。**現有 sidecar parser／compiler 會拒絕不存在的 ID；加入 Chapter 2 至 live-corpus gate 後，漏配任何 target 也會失敗。
 
-- [ ] 在 `docs/stories_plan/chapter_2/` 新增：
-  - `investigation_scene_8.layout.json`
-  - `investigation_scene_10.layout.json`
-  - `investigation_scene_12.layout.json`
-- [ ] 在 Editor 逐圖拖拉 hotspot rectangle 至真正物件，測試 800×600 的裁切／HUD 安全區／標記位置；被隱藏的 hotspot 仍需有 layout。
-- [ ] Scene 8：`leaked_clip_thread` 的平板上 `clip_player`、`mirrored_caption`、`uploader_header`、`comment_fight` 需各有可辨認可點區；天橋 `saegusa` 只能覆蓋已畫入背景的人物。
-- [ ] Scene 10：`rider_spot` 定在乾燥等單區而非柚木本人；`yuzuki` 點擊區與取餐架／後門不搶點；`ramen_owner` 等美術交付。
-- [ ] Scene 12：畫面中的導播、技術員、黑瀨使用 baked；逐一確認熱門畫面和人身不重疊，特別留意低窄角落 `slit_silhouette`。
+## 1. Scene 8、10、12：先配置不依賴補圖的部分
 
-輸出：三個 sidecar 的所有其他目標可由圖中操作；不得額外改寫劇情、圖片或案件解鎖條件。
+- [ ] 新增 `docs/stories_plan/chapter_2/investigation_scene_{8,10,12}.layout.json`，沿用 sidecar v1。
+- [ ] 在既有 Editor 逐圖將 hotspot rect 與 baked 人物覆在真正物件上；正規化座標以實際圖片為準，**目標中心 x ∈ [0.125, 0.875]**（800×600 下 16:9 cover 可視區）。y 的下限以實際 `.explore-hud nav` 底部和其他 HUD 命中區量度，不寫死數值。
+- [ ] Scene 8：平板中的 `clip_player`、`mirrored_caption`、`uploader_header`、`comment_fight` 各有可辨認區域；`saegusa` baked 對準背景中的三枝。
+- [ ] Scene 10：先只放 `alley_mouth` 的 4 個 hotspot；**不配置 `ramen_backdoor`**，連 `pickup_shelf`、`exhaust_steam`、`rider_spot`、已入鏡的 `yuzuki` 也等 HPA-1033 重畫後再放。
+- [ ] Scene 12：四個 sublocation 的物件及導播、技術員、黑瀨 baked 區域；重點檢查螢幕、人物與狹窄區的 `slit_silhouette` 不搶點。
+- [ ] 完成本批可配置場景後，執行 `bun run scenes:compile` + `bun run --cwd apps/game test:e2e:gameplay` 作早期回歸；**Chapter 2 gate 尚未開啟**，兩張待補圖 sublocation 暫時缺失屬施工中狀態。
 
-## 2. Scene 14、16、17：補齊後半調查
+## 2. Scene 14、16、17：補齊後半調查，等圖後完成 10 個目標
 
-- [ ] 新增：
-  - `investigation_scene_14.layout.json`
-  - `investigation_scene_16.layout.json`
-  - `investigation_scene_17.layout.json`
-- [ ] Scene 14：先配置後場、通道、防災中心三個物件、七樓四個門／窗，以及原本已 baked 的 event_security、kurose；確認 `logistics_board`、`m03_door`、`access_terminal`、`alarm_panel` 是**不同來源物件**。
-- [ ] **HPA-1033 合併後**，重新用 Editor 看 `ramen_backdoor` 與 `disaster_center` 新背景：以 `kind: "baked"` 為 `ramen_owner`、`building_guard`、`building_cleaner` 配置各自明確可見的人物區，避開取餐架、門禁終端與防災面板。
-- [ ] Scene 16：`comment_phone`、`voice_memo`、`desk_drawer`、`planning_board`、`board_underlayer` 各有來源可對應；如有依序解鎖／揭露，保留現有劇情邏輯，僅調整區域，不以互蓋方式掩飾。
-- [ ] Scene 17：確認蓮見、工作手冊、等身立牌、白板等實際圖像位置；大樓門口黑瀨仍可點，`building_awning` 不落到人物身上。
+- [ ] 新增 `docs/stories_plan/chapter_2/investigation_scene_{14,16,17}.layout.json`。
+- [ ] Scene 14：先配置 `backstage_rear`、`sponsor_corridor`、`seventh_floor_core` 的所有可見熱點及已 baked 人物；**`disaster_center` 的 3 hotspot + 2 character 全部等 HPA-1033 後再放**。
+- [ ] Scene 16：`comment_phone`／`voice_memo`、`desk_drawer`、`planning_board`／`board_underlayer` 依實際圖像作可辨識區域；保留原來的 Unlock/Reveal／話題順序，不靠整塊重疊的 hit rect 應付。
+- [ ] Scene 17：`hasumi`、`kurose` 的 baked 命中區與手冊、立牌、白板、雨棚分開；不讓 `building_awning` 搶到黑瀨點擊。
+- [ ] 完成本批後同樣執行 `scenes:compile` 和 `test:e2e:gameplay`，逐個排除 HUD／viewport 中心點問題。
+- [ ] **HPA-1033 美術 PR 合併後**，重新載入 `ramen_backdoor` 與 `disaster_center` 的最新兩張背景，分別一次配置 5 個目標（含老闆／樓宇保全／清潔員 baked）；截圖與新圖對照，確認必需物件沒有被人物遮住。
+- [ ] 最終 6 個 sidecar 共有 17 sublocation、59 hotspot、13 character，不能用畫面外假座標或隱藏 fallback 作填表。
 
-輸出：另三個 sidecar 與前述三個形成完整 72 目標布局；所有互動點繼承現有 story IDs、evidence source、reveal、角色話題及狀態。
+## 3. 沿用並微幅擴充既有驗證
 
-## 3. 在原有測試上增加完成門檻
-
-- [ ] 修改 `packages/scripts/compile-scenes.test.ts` 現有 live-corpus placement gate：在全部 sidecar 補齊後，將 `RELEASE_GATED_CHAPTERS` 擴為 Chapter 1 + Chapter 2；只檢查原有已編譯 `layout: null`，不另造 validator／新 compiler error。
-- [ ] 既有 `apps/game/e2e-tauri/investigation-layout.e2e.ts` 已針對所有已配置的場景測試 800×600 裁切與 pending cue；保留該路徑。若只靠原測試無法發現 HUD 覆蓋／目標被 fallback reroute，**最少量**加一條實際 packaged gameplay 回歸：Chapter 2 六個 scene 的 17 子場景，核對實際未出現 off-scene 清單、主要 hotspot / witness 可用滑鼠或鍵盤觸發，無必需互動被 HUD 擋住。
-- [ ] 如仍有 hotspot overlap warning，優先修改 layout，不新增 `intentionalOverlaps` 來繞過真正錯位；如有本已刻意重疊者，記錄兩個點位的可用交互證據。
-- [ ] 確認沒有誤改 `*.md` 劇情、編譯 scene IDs、證物取得、存檔格式、人物出場狀態。
+- [ ] **配置完整度**：全部 72 個目標完成後，修改 `packages/scripts/compile-scenes.test.ts` 內 `RELEASE_GATED_CHAPTERS` 為 Chapter 1 + Chapter 2。既有 compiler 驗證未知 ID；本 gate 驗證 `layout: null`，不新增全域 compiler hard error。
+- [ ] **重疊與 snapshot**：既有 live-corpus test 已要求 warnings 只有 story catalog 那一項，所以新增 hotspot overlap warning 本來會失敗；不新增另一個 overlap analyzer。更新 live-corpus snapshot 以承認 layout 參與 emitted chapters 及 `contentRevision` 的**預期變更**；開發存檔可以依 pre-release 政策不相容，無須 schema migration。
+- [ ] **viewport 中心點（所有已配置 chapter）**：在 `apps/game/e2e-tauri/investigation-layout.e2e.ts` 現有 `shippedPlacements()` 檢查中，新增 800×600 目標中心點在 viewport 範圍內的 assertion；保留原有 44px 可見跨度、compact variants 和 pending cue 檢查。若少數既有 HPA-852 sidecar 會失敗，允許在本 PR 補最小的 Sidecar rect 調整並在 PR 註明；不得藉此開展 HUD 重寫。
+- [ ] **NAV／HUD 命中（只針對 HPA-853 六場景）**：重用**同一個 E2E 檔**及已有 scene jump/checkpoint 工具，在真實調查畫面及最高可見地點數的狀態量度 `.explore-hud nav` 的 DOM rect；比對本票 17 個 sublocation 中各目標的中心（必要時 `document.elementFromPoint`），確認不在地點列與 PROGRESS 的遮擋／命中區，沒有 fallback reroute。不要另建 E2E suite 或視窗工具。
+- [ ] Scene 8、16 的相鄰小物件與 Scene 12、14 的上緣目標特別注意；若 live NAV 實際存在 4 地點換行，先調 Sidecar 落在安全區。五地點 Scene 4 的整體 HUD 問題仍屬 HPA-852。
 
 ## 4. 驗證與交付紀錄
 
 - [ ] `bun run scenes:compile`
-- [ ] `bun run test:scripts`（含擴充 production-corpus gate）
-- [ ] `bun run check:scripts`、`bun run check`、`bun run format:check`
-- [ ] `bun run --cwd apps/game test:e2e:smoke`（使用專案現有 packaged Tauri E2E；必要時增開針對性 Chapter 2 layout journey）
-- [ ] **macOS 800×600**：以 packaged game 在六個 scene / 17 個子場景跑可見性、命中、對話／話題；至少留存每個子場景的 editor overlay 與對應 game viewport，異常點截圖標出覆蓋源。
-- [ ] **Windows 800×600**：相同端到端巡檢；確保最低視窗、字體與 HUD 行為沒有導致 fallback 回流。平台可由自動化測試與截圖記錄完成，**不以人工簽收為驗收條件**。
-- [ ] 選 800×600 外另一個較大視窗跑簡短煙霧，以防大小改變時目標被擠回 fallback。
-- [ ] 視覺檢查對照**實際場景圖片**與 17 張 Editor overlay；本票沒有額外 UI mockup。Scene 10、14 補圖由 HPA-1033 的對照驗證完成後，再核對 baked 命中位置。
-- [ ] 同步確認六個 scene 均無「OFF-SCENE TARGETS / UNPLACED」面板，不是單純未開啟面板或點擊仍能通關。
-- [ ] 無需 Android/Linux 手動或端到端驗收；Linux 依現有 CI 即可。
+- [ ] `bun run test:scripts`（Chapter 1 + Chapter 2 live-corpus gate / snapshot）
+- [ ] `bun run check:scripts`、`bun run check`、`bun run --cwd apps/game check:e2e`、`bun run format:check`
+- [ ] **每批 sidecar 後：** `bun run --cwd apps/game test:e2e:gameplay`。這是包含 `investigation-layout.e2e.ts` 的 suite；`test:e2e:smoke` 不包含此測試，僅作一般回歸。
+- [ ] **PR ready 前**在 GitHub Actions 啟動既有 `E2E Full` workflow 並確認結果；不為 HPA-853 新建 runner。
+- [ ] **17 個 Editor overlays** 對應真實背景圖，核對每個 hit rect 是否對準物件／已入鏡人物。HPA-853 沒有 Linear UI mockup；使用原圖與編輯器疊圖為視覺基準。HPA-1033 合併後再檢查補圖的 2 個子場景。
+- [ ] **macOS／Windows 800×600 畫面驗收**：至少保留 Scene 12、14（4 地點列）的場景截圖，比較 NAV 是否因字體差異換行、是否遮到目標；不新增 Windows packaged E2E harness、不要求兩平台逐一操作 72 個點，也沒有人工簽核。
+- [ ] 由既有 `gameplay` suite 驗證 800×600 全目標中心／可點性／HUD 與提示；不重跑較大視窗的額外 smoke。新 sidecar 引起的必要測試差異需記錄在本 PR。
+- [ ] 確認無 `OFF-SCENE TARGETS / UNPLACED`，且案件 Markdown、證物、解鎖狀態、角色話題、存檔 schema 不變。
+- [ ] 不列 Android/Linux 端到端驗收；既有 CI 照常執行。
 
-以上指令與巡檢是**後續實作驗收**，本 Draft PR 目前僅新增計劃，**尚未聲稱測試通過**。
+**這張 PR 目前仍只有規劃文件；上述 E2E 與美術驗收是後續實作要求，並非本次已通過的測試。**
 
-## 5. Acceptance Criteria（完成 HPA-853 時必須全部成立）
+## 5. Acceptance Criteria（HPA-853 完成時全部成立）
 
-1. [ ] 六個 `.layout.json` 存在、scene/sublocation/hotspot/character ID 皆與編譯內容相符，**59/59 hotspot 與 13/13 character** 都有合法布局且具可視來源；不再渲染 off-scene fallback。
-2. [ ] macOS 與 Windows 的 packaged game 在 800×600 下，17 個子場景可逐一到達，畫面物件與角色可見，所有必要互動均能被滑鼠點擊與鍵盤焦點啟動，沒有 HUD 覆蓋或互相搶點。
-3. [ ] 17 個子場景視覺疊圖／截圖核對現有素材；Scene 10、14 三名人物在 HPA-1033 補圖後可見、可點、位置準確；與 Linear 相關的 HPA-852 HUD 問題若未屬本票可調範圍，有清楚記錄而不是假稱全域修好。
-4. [ ] Chapter 1/2 existing live-corpus placement test、場景編譯、必要靜態檢查及 packaged smoke 通過，無新重疊／無配置錯誤；原案件與證據邏輯未改。
-5. [ ] **一張 HPA-853 PR** 完成設計、配置及驗證；HPA-1033 的圖片由其**獨立單一 PR**交付，不混入這張 PR。
+1. [ ] **單一 HPA-853 PR** 中六個 sidecar 存在，17/17 sublocation、59/59 hotspot、13/13 character 全部配置；兩張重畫背景的 10 個目標在獨立 HPA-1033 PR 合併後一次完成。
+2. [ ] 800×600 的既有 packaged `gameplay` E2E 證明：已配置目標中心位於 viewport，六個場景的真實 NAV／HUD 未遮住必要命中區，提示點在正確可點區內；滑鼠及鍵盤操作能觸發正確的調查／話題。
+3. [ ] macOS／Windows 的 800×600 UI 截圖確認四地點 Scene 12、14 不因字體或地點列換行而遮住物件／人臉；17 張 Editor overlay 與真實背景圖（包括 HPA-1033 的兩張新圖）完成視覺核對，無須人工簽收或 Windows E2E runner。
+4. [ ] `scenes:compile`、scripts 靜態檢查／單元測試、`test:e2e:gameplay` 及 PR ready 前 `E2E Full` 通過；Chapter 1/2 release-gated placement gate 無漏配或新重疊 warning。
+5. [ ] live-corpus snapshot 反映預期 `contentRevision` 變更；沒有修改故事推理、Reveal/Unlock、schema 或新增相容性機制。HPA-852 全域 HUD 改版仍獨立。
 
 ## 6. 不應做的事
 
 - 不修改 `InvestigationSceneSurface.svelte` 以「自動猜」熱點或隱藏 fallback 警示。
 - 不更動 `InvestigationLayoutSidecar` v1、Scene schema、故事存檔、Chapter 2 的調查關卡／證物／主線伏筆。
-- 不建立第二套布局工具、圖片座標產生器、泛用碰撞引擎或大量相似 E2E。
+- 不建立第二套布局工具、圖片座標產生器、泛用碰撞引擎、大量相似 E2E 或新的 Windows E2E harness。
 - 不在 HPA-853 生成圖片或音效，不把藝術缺口誤當「加一個透明可點框」來完成。
 - 不把 HPA-852 的所有 800×600 HUD/標題/結算頁問題納入本票。
