@@ -81,7 +81,8 @@ jobs:
           node --test \
             apps/game/scripts/e2e-suite-registry.test.mjs \
             apps/game/scripts/e2e-runner-lifecycle.test.mjs \
-            apps/game/scripts/save-e2e-paths.test.mjs
+            apps/game/scripts/save-e2e-paths.test.mjs \
+            apps/game/scripts/e2e-trusted-key-process.test.mjs
 
       - name: Type-check scripts (tsc)
         run: bun run check:scripts

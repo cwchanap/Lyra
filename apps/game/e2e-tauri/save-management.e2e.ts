@@ -45,7 +45,7 @@ import {
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import { createHash } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import type {
   ManualSaveResultView,
@@ -434,6 +434,12 @@ async function waitUntilFocused(
   );
 }
 
+// Hash the slot file's RAW bytes, not the decoded UTF-8 text: a byte-level
+// change that survives a UTF-8 round-trip must still fail the digest pin.
+function sha256FileBytes(filePath: string): string {
+  return `sha256:${createHash("sha256").update(readFileSync(filePath)).digest("hex")}`;
+}
+
 async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   await waitForShell();
   const before = readSaveE2eOwnershipSnapshot();
@@ -455,13 +461,11 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   // parsed envelope of the target (a regression could alter saved game
   // state, metadata, or summary while keeping the saveId), the entire
   // ownership snapshot of every slot (parsed envelopes + sidecar hashes),
-  // the raw bytes of every slot file, and the saves directory listing.
+  // the raw bytes of every slot file (hashed from readFileSync bytes, NOT
+  // the decoded UTF-8 text), and the saves directory listing.
   const slotFileDigestsBeforeDelete = readSaveE2eSlots().map((slotFile) => ({
     fixedSlotName: slotFile.fixedSlotName,
-    digest:
-      slotFile.text === null
-        ? "absent"
-        : `sha256:${createHash("sha256").update(slotFile.text).digest("hex")}`,
+    digest: slotFile.text === null ? "absent" : sha256FileBytes(slotFile.path),
   }));
   const assertDeleteNotCommitted = (): void => {
     expect(readSaveE2eEnvelope(fixedSlotName)).toEqual(targetEnvelope);
@@ -473,7 +477,7 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
       const digest =
         slotFile?.text === null || slotFile === undefined
           ? "absent"
-          : `sha256:${createHash("sha256").update(slotFile.text).digest("hex")}`;
+          : sha256FileBytes(slotFile.path);
       expect(digest).toBe(prior.digest);
     }
     expect(existsSync(targetSidecarPath)).toBe(true);

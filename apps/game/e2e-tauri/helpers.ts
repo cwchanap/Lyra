@@ -2,6 +2,9 @@ import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { resolveE2eBinaryPath } from "../scripts/e2e-binary-path.mjs";
+import { selectE2eAppProcessId } from "../scripts/e2e-trusted-key-process.mjs";
 import {
   anchors,
   DIALOGUE_DRAIN_CAP,
@@ -25,6 +28,11 @@ import {
   soleMapDestinationId,
 } from "$lib/e2e/pending-acquisition-drain";
 
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+);
+
 const TRUSTED_MAC_KEY_CODES = { Enter: 36, Tab: 48 } as const;
 
 export type TrustedMacKeyName = keyof typeof TRUSTED_MAC_KEY_CODES;
@@ -36,37 +44,34 @@ export type TrustedMacKeyName = keyof typeof TRUSTED_MAC_KEY_CODES;
  * native default actions like focused-button Enter activation — System Events
  * keystrokes are the trusted channel on macOS.
  *
- * Safety guards: the target process is resolved from `ps` and must be the one
- * packaged e2e binary (executable named `lyra` under `target-e2e`), so a dev
- * or production Lyra process is never activated or keyed even when it is the
- * only `lyra`-named process alive; AppleScript targets that unix id, so a
- * look-alike name alone can never win. The app is activated and verified
- * frontmost immediately before the keystroke, and the frontmost check repeats
- * after delivery so a focus race fails the test loudly. These checks narrow
- * the race window but cannot make wrong-app delivery impossible (the
- * pre-delivery check can be beaten and the post-delivery check fires after
- * the fact) — run packaged E2E on an idle desktop.
+ * Safety guards: the target process is resolved from `ps` by the shared
+ * selector (`scripts/e2e-trusted-key-process.mjs`) and must (a) be running
+ * the EXACT configured e2e binary — the same `resolveE2eBinaryPath` value
+ * `wdio.conf.ts` hands to tauri-service, so a dev binary, another checkout's
+ * e2e app, or any path merely containing "target-e2e" never matches — and
+ * (b) belong to THIS WebDriver session, meaning its parent is the WDIO
+ * launcher (which onPrepare spawns the app from) or this worker (per-worker
+ * spawn). If the test app exits, or only a look-alike/orphaned process
+ * remains, the selector refuses and no key is sent; AppleScript targets the
+ * resolved unix id, so a name match alone can never win. The app is then
+ * activated and verified frontmost immediately before the keystroke, and the
+ * frontmost check repeats after delivery so a focus race fails the test
+ * loudly. These checks narrow the race window but cannot make wrong-app
+ * delivery impossible (the pre-delivery check can be beaten and the
+ * post-delivery check fires after the fact) — run packaged E2E on an idle
+ * desktop.
  */
-async function resolveE2eLyraProcessId(): Promise<number> {
-  const { stdout } = await promisify(execFile)("ps", ["-axo", "pid=,comm="]);
-  const e2eProcesses: number[] = [];
-  for (const line of stdout.split("\n")) {
-    const match = line.match(/^\s*(\d+)\s+(.+)$/);
-    if (!match) continue;
-    const [, pidText, executablePath] = match;
-    if (
-      path.basename(executablePath) === "lyra" &&
-      executablePath.includes("target-e2e")
-    ) {
-      e2eProcesses.push(Number(pidText));
-    }
-  }
-  if (e2eProcesses.length !== 1) {
-    throw new Error(
-      `expected exactly one packaged e2e lyra process (executable under target-e2e), found ${e2eProcesses.length} [${e2eProcesses.join(", ")}]; refusing to send keys on guesses`,
-    );
-  }
-  return e2eProcesses[0];
+export async function resolveE2eLyraProcessId(): Promise<number> {
+  const { stdout } = await promisify(execFile)("ps", [
+    "-axo",
+    "pid=,ppid=,comm=",
+  ]);
+  return selectE2eAppProcessId({
+    psOutput: stdout,
+    expectedExecutablePath: resolveE2eBinaryPath(appRoot),
+    currentPid: process.pid,
+    currentPpid: process.ppid,
+  });
 }
 
 export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {

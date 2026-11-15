@@ -5,5 +5,11 @@
     "checkJs": false,
     "noEmit": true
   },
-  "include": ["e2e-tauri/**/*.ts", "scripts/save-e2e-paths.mjs", "wdio.conf.ts"]
+  "include": [
+    "e2e-tauri/**/*.ts",
+    "scripts/save-e2e-paths.mjs",
+    "scripts/e2e-binary-path.mjs",
+    "scripts/e2e-trusted-key-process.mjs",
+    "wdio.conf.ts"
+  ]
 }
