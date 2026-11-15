@@ -7,6 +7,7 @@ import {
   clickSaveCardButton,
   closePersistenceBrowserToGameplay,
   currentPackagedDocumentIdentity,
+  e2eTrustedKeysEnabled,
   elementExists,
   getPackagedGameState,
   invokePackagedCommand,
@@ -505,21 +506,29 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
     },
   );
   // Input-mode note (HPA-830): the spec journey is Enter cancel → focus
-  // restore → Enter reopen → Tab → Enter commit on real keyboard input. On
-  // macOS this suite delivers exactly that: WebDriver `browser.keys` arrives
-  // in this stack as untrusted DOM events (isTrusted=false — proven with a
-  // document-level keydown probe), so the macOS branch sends real HID-level
-  // keys via System Events `key code` (sendTrustedKey), which natively
-  // activate focused buttons. The first Enter doubles as a trust probe: a
-  // capture-phase keydown listener records isTrusted, and the journey fails
-  // immediately if the channel ever degrades to untrusted events. Non-macOS
-  // CI runners have no trusted keyboard channel in this repo (System Events
-  // is macOS-only; adding Linux input tooling is new CI infrastructure and
-  // out of scope), so their fallback branch cancels, reopens, and confirms
-  // through the same JS click handlers a real click reaches and keeps the
-  // single Tab (the dialog owns Tab cycling in JS); that reduced shape is
-  // CI-only coverage, not equivalent to the trusted journey.
-  const trustedKeys = process.platform === "darwin";
+  // restore → Enter reopen → Tab → Enter commit on real keyboard input.
+  // Real HID-level keys (sendTrustedKey via System Events, natively
+  // activating focused buttons) are an explicit opt-in: macOS plus
+  // LYRA_E2E_TRUSTED_KEYS=1 in the environment. This is because they can
+  // steal focus and — in a focus race — type into another application, and
+  // need macOS Accessibility permission on an idle desktop; run only when
+  // those conditions hold. The first trusted Enter doubles as a trust probe:
+  // a capture-phase keydown listener records isTrusted, and the journey
+  // fails immediately if the channel ever degrades to untrusted events. The
+  // default on every platform is the reduced fallback: cancels, reopens, and
+  // confirms through the same JS click handlers a real click reaches and
+  // keeps the single Tab (the dialog owns Tab cycling in JS, so the
+  // synthetic WebDriver Tab still exercises it); that reduced shape is
+  // CI-only coverage, not equivalent to the trusted journey, and absence of
+  // native-keyboard coverage stays explicit.
+  const trustedKeys = e2eTrustedKeysEnabled();
+  console.log(
+    `[save-management] delete-journey input mode: ${
+      trustedKeys
+        ? "trusted macOS OS keys (LYRA_E2E_TRUSTED_KEYS=1 opt-in; idle desktop required)"
+        : "reduced fallback (JS clicks + synthetic Tab; no OS-global key injection)"
+    }`,
+  );
   if (trustedKeys) {
     await browser.execute(() => {
       (window as unknown as Record<string, unknown>).__deleteJourneyKeyProbe =

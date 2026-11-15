@@ -3,7 +3,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createSaveBrowserController,
   type LayerFocusTarget,
-  type SaveBrowserControllerOptions,
 } from "./save-browser-controller.svelte";
 
 afterEach(() => {
@@ -238,15 +237,12 @@ describe("createSaveBrowserController", () => {
 
   it("focuses the configured initialFocus target when the browser controller is created", async () => {
     const backButton = button("返回");
-    // Task 3 adds `initialFocus` to the controller options so a freshly
-    // opened browser has one predictable focus owner; the cast keeps this
-    // red test type-checking until the option lands.
     const controller = createSaveBrowserController({
       mode: "titleLoad",
       continueCandidate: null,
       initialFocus: () => backButton,
       onClose: vi.fn(),
-    } as SaveBrowserControllerOptions);
+    });
 
     await settleFocus();
 

@@ -6,6 +6,10 @@ import { fileURLToPath } from "node:url";
 import { resolveE2eBinaryPath } from "../scripts/e2e-binary-path.mjs";
 import { selectE2eAppProcessId } from "../scripts/e2e-trusted-key-process.mjs";
 import {
+  assertTrustedKeysAllowed,
+  trustedKeysOptIn,
+} from "../scripts/e2e-trusted-keys.mjs";
+import {
   anchors,
   DIALOGUE_DRAIN_CAP,
   STORY_CLEARED_STORAGE_KEY,
@@ -38,11 +42,25 @@ const TRUSTED_MAC_KEY_CODES = { Enter: 36, Tab: 48 } as const;
 export type TrustedMacKeyName = keyof typeof TRUSTED_MAC_KEY_CODES;
 
 /**
+ * True only when this run explicitly opted into trusted OS-global keys via
+ * `LYRA_E2E_TRUSTED_KEYS=1` on macOS. Every suite must derive its input mode
+ * from this and print the selected mode; the default on every platform is the
+ * reduced fallback (JS clicks + synthetic Tab) that sends no global keys.
+ */
+export function e2eTrustedKeysEnabled(): boolean {
+  return trustedKeysOptIn({ platform: process.platform, env: process.env });
+}
+
+/**
  * Deliver a real HID-level keyboard event to the packaged e2e app via
  * AppleScript System Events `key code`. WebDriver `browser.keys` arrives in
  * this stack as untrusted DOM events (isTrusted=false), so WebKit never runs
  * native default actions like focused-button Enter activation — System Events
  * keystrokes are the trusted channel on macOS.
+ *
+ * Opt-in guard: this is an explicit `LYRA_E2E_TRUSTED_KEYS=1` tool, never a
+ * default path — invoking it without the opt-in (or off macOS) throws before
+ * touching any process, so accidental calls fail closed.
  *
  * Safety guards: the target process is resolved from `ps` by the shared
  * selector (`scripts/e2e-trusted-key-process.mjs`) and must (a) be running
@@ -77,11 +95,7 @@ export async function resolveE2eLyraProcessId(): Promise<number> {
 }
 
 export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
-  if (process.platform !== "darwin") {
-    throw new Error(
-      `sendTrustedKey(${key}) requires macOS System Events; non-macOS runners have no trusted keyboard channel in this repo and must use their documented reduced-coverage fallback`,
-    );
-  }
+  assertTrustedKeysAllowed({ platform: process.platform, env: process.env });
   const keyCode = TRUSTED_MAC_KEY_CODES[key];
   const pid = await resolveE2eLyraProcessId();
   const script = [
