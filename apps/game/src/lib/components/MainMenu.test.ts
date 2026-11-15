@@ -357,4 +357,56 @@ describe("MainMenu", () => {
       screen.getByRole("button", { name: "開始新遊戲" }),
     );
   });
+
+  it("steps ArrowDown/ArrowUp from the currently focused card instead of a stale index", () => {
+    stubWeatherCanvasContext();
+    render(MainMenu, {
+      onNewGame: vi.fn(),
+      onContinue: vi.fn(),
+      onLoad: vi.fn(),
+      onExit: vi.fn(),
+      discovery: titleDiscovery("invalid"),
+    });
+
+    const loadButton = screen.getByRole("button", { name: "載入遊戲" });
+    const newGameButton = screen.getByRole("button", { name: "開始新遊戲" });
+    const continueButton = screen.getByRole("button", { name: "繼續遊戲" });
+    loadButton.focus();
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", cancelable: true }),
+    );
+    expect(document.activeElement).toBe(newGameButton);
+
+    loadButton.focus();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowUp", cancelable: true }),
+    );
+    expect(document.activeElement).toBe(continueButton);
+  });
+
+  it("cancels the 1.5s auto-focus timer when the menu becomes inert and returns within 1.5s", async () => {
+    vi.useFakeTimers();
+    stubWeatherCanvasContext();
+    const props = {
+      onNewGame: vi.fn(),
+      onContinue: vi.fn(),
+      onLoad: vi.fn(),
+      onExit: vi.fn(),
+      discovery: titleDiscovery("invalid"),
+      inert: false,
+    };
+    const { rerender } = render(MainMenu, props);
+
+    vi.advanceTimersByTime(200);
+    await rerender({ ...props, inert: true });
+    vi.advanceTimersByTime(400);
+    await rerender({ ...props, inert: false });
+
+    const loadButton = screen.getByRole("button", { name: "載入遊戲" });
+    loadButton.focus();
+    vi.advanceTimersByTime(1000);
+
+    expect(document.activeElement).toBe(loadButton);
+  });
 });

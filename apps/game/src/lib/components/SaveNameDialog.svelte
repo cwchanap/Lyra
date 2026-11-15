@@ -4,6 +4,7 @@
     suggestManualDisplayName,
     validateManualDisplayName,
   } from "$lib/persistence/manual-name";
+  import { trapDialogTabKey } from "$lib/state/tab-focus-trap";
   import type {
     ManualSlotExpectationView,
     SaveSlotView,
@@ -18,14 +19,12 @@
   let {
     slot,
     currentSummary,
-    returnFocusTo = null,
     pending = false,
     onSubmit,
     onCancel,
   }: {
     slot: SaveSlotView;
     currentSummary: SaveSummaryView;
-    returnFocusTo?: HTMLElement | null;
     pending?: boolean;
     onSubmit: (submission: SaveNameSubmission, opener: HTMLElement) => void;
     onCancel: () => void;
@@ -91,16 +90,9 @@
     };
   }
 
-  function restoreFocus(): void {
-    queueMicrotask(() => {
-      if (returnFocusTo?.isConnected) returnFocusTo.focus();
-    });
-  }
-
   function cancel(): void {
     if (pending) return;
     onCancel();
-    restoreFocus();
   }
 
   function submit(event: SubmitEvent): void {
@@ -127,29 +119,10 @@
       cancel();
       return;
     }
-    if (event.key !== "Tab" || !dialog) return;
-    // Boundary-only trap: native Tab traversal inside the dialog is not yet
-    // verified with trusted input on macOS WebKit, so only the first/last
-    // controls are wrapped to keep focus inside the modal dialog.
-    const controls = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
+    trapDialogTabKey(event, dialog, {
+      selector:
         'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-    const first = controls[0];
-    const last = controls.at(-1);
-    if (!first || !last) {
-      event.preventDefault();
-      dialog.focus();
-      return;
-    }
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    });
   }
 
   onMount(() => {

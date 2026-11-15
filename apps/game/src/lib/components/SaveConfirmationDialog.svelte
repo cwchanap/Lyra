@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import SaveCard from "./SaveCard.svelte";
+  import { trapDialogTabKey } from "$lib/state/tab-focus-trap";
   import type {
     OccupiedSlotExpectationView,
     SaveSlotView,
@@ -112,29 +113,7 @@
       cancel();
       return;
     }
-    if (event.key !== "Tab" || !dialog) return;
-    // Unconditional JavaScript cycling: native traversal cannot be relied on
-    // (jsdom, macOS WebKit with "Keyboard navigation" off), so every Tab is
-    // cancelled and refocused here. Mirrors AcquisitionPopup's handler.
-    event.preventDefault();
-    const controls = Array.from(
-      dialog.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      ),
-    );
-    if (controls.length === 0) {
-      dialog.focus();
-      return;
-    }
-    const activeIndex = controls.indexOf(document.activeElement as HTMLElement);
-    const nextIndex =
-      activeIndex < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
-          controls.length;
-    controls[nextIndex]?.focus();
+    trapDialogTabKey(event, dialog);
   }
 
   onMount(() => {

@@ -81,6 +81,7 @@
     ManualSaveResultView,
     OccupiedSlotExpectationView,
     SaveBrowserOpenResultView,
+    SaveBrowserView,
     SaveSlotRef,
     SaveSlotView,
     SaveSummaryView,
@@ -202,6 +203,7 @@
   let recoveryReturnFocus = $state<HTMLElement | null>(null);
   let gameplayRoot: HTMLDivElement | null = $state(null);
   let titleDiscovery = $state<SaveBrowserOpenResultView | null>(null);
+  let titleDiscoveryGeneration = 0;
   let titleBrowserOpen = $state(false);
   let titleBrowserController = $state<SaveBrowserController | null>(null);
   let titleDeleteSlot = $state<SaveSlotView | null>(null);
@@ -209,6 +211,14 @@
   let continueFailure = $state<GameError | null>(null);
   let newGameFailure = $state<GameError | null>(null);
   let confirmingNewGameWithoutSaving = $state(false);
+  let titleLayerOpen = $derived(
+    titleBrowserOpen ||
+      titleLoadFailure !== null ||
+      continueFailure !== null ||
+      newGameFailure !== null ||
+      persistenceStore.exitStatus.type === "saving" ||
+      persistenceStore.exitStatus.type === "failed",
+  );
   let persistenceStoreCleanup: (() => Promise<void>) | null = null;
   let gameBrowserMode = $state<Extract<
     SaveBrowserMode,
@@ -297,15 +307,43 @@
     };
   }
 
+  const LOADING_SAVE_BROWSER_VIEW: SaveBrowserView = {
+    discovery: { type: "loading" },
+    slots: [],
+  };
+
   async function refreshTitleDiscovery(): Promise<SaveBrowserOpenResultView> {
+    const generation = ++titleDiscoveryGeneration;
     titleDiscovery = null;
+    let next: SaveBrowserOpenResultView;
     try {
-      titleDiscovery =
+      next =
         await invokePersistenceCommand<SaveBrowserOpenResultView>("list_saves");
     } catch (error) {
-      titleDiscovery = unavailableTitleDiscovery(asGameError(error));
+      next = unavailableTitleDiscovery(asGameError(error));
     }
-    return titleDiscovery;
+    if (generation === titleDiscoveryGeneration) {
+      titleDiscovery = next;
+    }
+    return next;
+  }
+
+  async function retryTitleBrowser(): Promise<void> {
+    const generation = titleDiscoveryGeneration + 1;
+    // The unavailable view's 重試 button unmounts as soon as loading begins;
+    // keep focus inside the overlay on 返回 while discovery reloads.
+    void tick().then(() => {
+      if (titleBrowserOpen) browserBackLocator()?.focus();
+    });
+    const refreshed = await refreshTitleDiscovery();
+    if (
+      generation !== titleDiscoveryGeneration ||
+      !titleBrowserOpen ||
+      gameState.value !== null
+    ) {
+      return;
+    }
+    openTitleBrowser(refreshed);
   }
 
   function closeTitleBrowser(): void {
@@ -934,6 +972,7 @@
     closeTitleBrowser();
     gameMenuOpen = false;
     acquisitionController.clear();
+    titleDiscoveryGeneration += 1;
     titleDiscovery = snapshot;
     resetFrontendForTitle();
     await tick();
@@ -1773,20 +1812,20 @@
     onExit={handleExit}
     discovery={titleDiscovery}
     disabled={gameState.inFlight}
-    inert={titleBrowserOpen}
+    inert={titleLayerOpen}
   />
-  {#if titleBrowserOpen && titleDiscovery && titleBrowserController}
+  {#if titleBrowserOpen && titleBrowserController}
     <div class="persistence-overlay" data-save-thumbnail-exclude="">
       {#if titleBrowserController.layer === "browser"}
         <SaveBrowser
-          view={titleDiscovery.browser}
+          view={titleDiscovery?.browser ?? LOADING_SAVE_BROWSER_VIEW}
           mode="titleLoad"
-          continueCandidate={titleDiscovery.continueCandidate}
+          continueCandidate={titleDiscovery?.continueCandidate ?? null}
           selected={titleBrowserController.selected}
           onSelect={handleTitleBrowserSelect}
           onLoad={handleTitleLoad}
           onDelete={handleTitleBrowserDelete}
-          onRetry={refreshTitleDiscovery}
+          onRetry={retryTitleBrowser}
           onBack={titleBrowserController.close}
         />
       {:else if titleBrowserController.layer === "confirmation" && titleDeleteSlot}

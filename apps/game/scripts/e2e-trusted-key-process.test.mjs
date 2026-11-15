@@ -177,3 +177,39 @@ test("rejection messages name the configured executable path", () => {
     (error) => error.message.includes(CONFIGURED_E2E_PATH),
   );
 });
+
+test("selects this session's app even when an orphaned or foreign same-path process is also running", () => {
+  const psOutput = [
+    psLine(400, 1, CONFIGURED_E2E_PATH),
+    psLine(450, 999, CONFIGURED_E2E_PATH),
+    psLine(500, 42, CONFIGURED_E2E_PATH),
+  ].join("\n");
+
+  assert.equal(
+    selectE2eAppProcessId({
+      psOutput,
+      expectedExecutablePath: CONFIGURED_E2E_PATH,
+      currentPid: 700,
+      currentPpid: 42,
+    }),
+    500,
+  );
+});
+
+test("rejects when multiple same-path processes exist and none belong to this session", () => {
+  const psOutput = [
+    psLine(400, 1, CONFIGURED_E2E_PATH),
+    psLine(450, 999, CONFIGURED_E2E_PATH),
+  ].join("\n");
+
+  assert.throws(
+    () =>
+      selectE2eAppProcessId({
+        psOutput,
+        expectedExecutablePath: CONFIGURED_E2E_PATH,
+        currentPid: 700,
+        currentPpid: 42,
+      }),
+    /none of the 2 processes running the configured e2e binary.*\[400 \(parent 1\), 450 \(parent 999\)\] are owned by this WebDriver session/,
+  );
+});

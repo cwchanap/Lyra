@@ -451,59 +451,42 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   if (!target?.envelope || !target.sidecarPath) {
     throw new Error("delete target has no owned sidecar");
   }
-  const targetEnvelope = target.envelope;
   const targetSidecarPath = target.sidecarPath;
   const sidecarDirectory = dirname(target.sidecarPath);
   const targetSidecarName = basename(target.sidecarPath);
   const sidecarsBeforeDelete = readdirSync(sidecarDirectory).toSorted();
   // HPA-830: before 確認刪除 is explicitly chosen, neither a cancel of the
   // delete confirmation nor a reopen of it may delete the owned save or
-  // touch any save data. Pin the complete picture, not IDs alone: the whole
-  // parsed envelope of the target (a regression could alter saved game
-  // state, metadata, or summary while keeping the saveId), the entire
-  // ownership snapshot of every slot (parsed envelopes + sidecar hashes),
-  // the raw bytes of every slot file (hashed from readFileSync bytes, NOT
-  // the decoded UTF-8 text), and the saves directory listing.
-  const slotFileDigestsBeforeDelete = readSaveE2eSlots().map((slotFile) => ({
-    fixedSlotName: slotFile.fixedSlotName,
-    digest: slotFile.text === null ? "absent" : sha256FileBytes(slotFile.path),
-  }));
+  // touch any save data. Pin the complete picture, not IDs alone: the entire
+  // ownership snapshot of every slot (parsed envelopes, modifiedAt, sidecar
+  // presence + hashes), the raw bytes of every slot file (hashed from
+  // readFileSync bytes, NOT the decoded UTF-8 text), and the saves directory
+  // listing.
+  const readSlotFileDigests = () =>
+    readSaveE2eSlots().map((slotFile) => ({
+      fixedSlotName: slotFile.fixedSlotName,
+      digest:
+        slotFile.text === null ? "absent" : sha256FileBytes(slotFile.path),
+    }));
+  const slotFileDigestsBeforeDelete = readSlotFileDigests();
   const assertDeleteNotCommitted = (): void => {
-    expect(readSaveE2eEnvelope(fixedSlotName)).toEqual(targetEnvelope);
     expect(readSaveE2eOwnershipSnapshot()).toEqual(before);
-    for (const prior of slotFileDigestsBeforeDelete) {
-      const slotFile = readSaveE2eSlots().find(
-        (candidate) => candidate.fixedSlotName === prior.fixedSlotName,
-      );
-      const digest =
-        slotFile?.text === null || slotFile === undefined
-          ? "absent"
-          : sha256FileBytes(slotFile.path);
-      expect(digest).toBe(prior.digest);
-    }
-    expect(existsSync(targetSidecarPath)).toBe(true);
+    expect(readSlotFileDigests()).toEqual(slotFileDigestsBeforeDelete);
     expect(readdirSync(sidecarDirectory).toSorted()).toEqual(
       sidecarsBeforeDelete,
     );
   };
 
+  const deleteDialogHeading = anchors.deleteManualSlotDialogHeading(slot);
   await openTitleLoadBrowser();
-  await clickSaveCardButton("manual", slot, "刪除");
-  await waitForDialog(`刪除手動存檔 ${slot}`);
+  await clickSaveCardButton("manual", slot, anchors.deleteSaveAction);
+  await waitForDialog(deleteDialogHeading);
   // ① The dialog onMount must land on the safe 取消 before anything else can
   // happen. This focus is set by JS on mount, so it is real in every input
   // mode — including macOS WebKit with 「Keyboard navigation」 off.
-  await browser.waitUntil(
-    async () =>
-      browser.execute(
-        () =>
-          document.activeElement instanceof HTMLButtonElement &&
-          (document.activeElement.textContent ?? "").trim() === "取消",
-      ),
-    {
-      timeout: 15000,
-      timeoutMsg: "delete confirmation did not focus the safe 取消 button",
-    },
+  await waitUntilFocused(
+    anchors.cancel,
+    `delete confirmation did not focus the safe ${anchors.cancel} button`,
   );
   // Input-mode note (HPA-830): the spec journey is Enter cancel → focus
   // restore → Enter reopen → Tab → Enter commit on real keyboard input.
@@ -562,19 +545,17 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
     expect(probe).toContainEqual({ key: "Enter", trusted: true });
   } else {
     // Reduced fallback: programmatic click on the same 取消 handler.
-    await clickDialogButton(`刪除手動存檔 ${slot}`, "取消");
+    await clickDialogButton(deleteDialogHeading, anchors.cancel);
   }
   // ② The cancel must restore focus to the *remounted* opener button.
+  const openerSelector = anchors.manualSlotDeleteButtonSelector(slot);
   try {
     await browser.waitUntil(
       async () =>
         browser.execute(
-          (slotNumber: number) =>
-            document.activeElement ===
-            document.querySelector(
-              `article[data-slot-type="manual"][data-slot-number="${slotNumber}"] button[aria-label="刪除手動存檔 ${slotNumber}"]`,
-            ),
-          slot,
+          (selector: string) =>
+            document.activeElement === document.querySelector(selector),
+          openerSelector,
         ),
       {
         timeout: 15000,
@@ -582,22 +563,23 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
       },
     );
   } catch (error) {
-    const state = await browser.execute(() => ({
-      activeElement:
-        document.activeElement instanceof HTMLElement
-          ? {
-              tag: document.activeElement.tagName,
-              text: (document.activeElement.textContent ?? "").trim(),
-            }
-          : String(document.activeElement),
-      dialogHeadings: Array.from(
-        document.querySelectorAll('[role="dialog"] h2'),
-      ).map((node) => (node.textContent ?? "").trim()),
-      deleteButtonExists:
-        document.querySelector(
-          'article[data-slot-type="manual"] button.delete, article[data-slot-type="manual"] [aria-label^="刪除手動存檔"]',
-        ) !== null,
-    }));
+    const state = await browser.execute(
+      (headingSelector: string, anyDeleteSelector: string) => ({
+        activeElement:
+          document.activeElement instanceof HTMLElement
+            ? {
+                tag: document.activeElement.tagName,
+                text: (document.activeElement.textContent ?? "").trim(),
+              }
+            : String(document.activeElement),
+        dialogHeadings: Array.from(
+          document.querySelectorAll(headingSelector),
+        ).map((node) => (node.textContent ?? "").trim()),
+        deleteButtonExists: document.querySelector(anyDeleteSelector) !== null,
+      }),
+      anchors.dialogHeadingSelector,
+      anchors.anyManualDeleteButtonSelector,
+    );
     throw new Error(
       `cancelled delete did not restore focus to the remounted manual slot ${slot} delete button; post-cancel state=${JSON.stringify(state)}`,
       { cause: error },
@@ -609,16 +591,16 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   if (trustedKeys) {
     await sendTrustedKey("Enter");
   } else {
-    await clickSaveCardButton("manual", slot, "刪除");
+    await clickSaveCardButton("manual", slot, anchors.deleteSaveAction);
   }
-  await waitForDialog(`刪除手動存檔 ${slot}`);
+  await waitForDialog(deleteDialogHeading);
   assertDeleteNotCommitted();
   // The reopened dialog must again default to the safe 取消 — asserted
   // before the Tab is sent, so the single-Tab proof below cannot pass merely
   // because 確認刪除 happened to be pre-focused on reopen.
   await waitUntilFocused(
-    "取消",
-    "reopened delete confirmation did not focus the safe 取消 button",
+    anchors.cancel,
+    `reopened delete confirmation did not focus the safe ${anchors.cancel} button`,
   );
   // ④ Exactly one Tab press must land focus on 確認刪除; the poll below only
   // samples focus and never re-sends input, so a single-Tab regression fails
@@ -649,7 +631,7 @@ async function deleteOwnedManual(slot: 1 | 2): Promise<void> {
   if (trustedKeys) {
     await sendTrustedKey("Enter");
   } else {
-    await clickDialogButton(`刪除手動存檔 ${slot}`, anchors.confirmDelete);
+    await clickDialogButton(deleteDialogHeading, anchors.confirmDelete);
   }
   await browser.waitUntil(
     async () => (await saveCardText("manual", slot)).includes("空白存檔"),
