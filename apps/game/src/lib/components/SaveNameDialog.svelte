@@ -128,10 +128,9 @@
       return;
     }
     if (event.key !== "Tab" || !dialog) return;
-    // Boundary-only trap: native Tab traversal is presumed to work (no
-    // trusted-input verification of WebKit behavior yet — HPA-830 fix round
-    // 1), so only the first/last controls are wrapped to keep focus inside
-    // the modal dialog.
+    // Boundary-only trap: native Tab traversal inside the dialog is not yet
+    // verified with trusted input on macOS WebKit, so only the first/last
+    // controls are wrapped to keep focus inside the modal dialog.
     const controls = Array.from(
       dialog.querySelectorAll<HTMLElement>(
         'input:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])',

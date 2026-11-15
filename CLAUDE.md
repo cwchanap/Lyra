@@ -138,6 +138,21 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   frontend bridge are absent from ordinary builds; do not use `dev:game` as
   checkpoint evidence. The packaged checkpoint contract must travel through the
   frontend's normal game-state application path.
+- Packaged E2E keyboard input modes (save-management delete journey): by
+  default every platform uses the reduced fallback — JS click handlers plus a
+  synthetic WebDriver Tab that the dialog's JS cycling handles — which sends
+  no OS-global input and is CI-only coverage, not trusted proof. Real
+  HID-level keys (`sendTrustedKey`, macOS System Events) are an explicit
+  opt-in: set `LYRA_E2E_TRUSTED_KEYS=1` in the environment and run on macOS
+  only; without it the helper refuses before touching any process. The
+  opt-in requires macOS Accessibility permission for `osascript`/System
+  Events, an idle desktop (no human actively using the machine), and still
+  carries a residual unavoidable focus race: the app is activated and keys
+  are posted system-wide, and while PID/binary/frontmost checks narrow the
+  window, they cannot make wrong-app delivery impossible — process isolation
+  is best-effort, never guaranteed. Suites print the selected input mode;
+  trusted-input macOS UAT and final packaged coverage gaps stay explicitly
+  disclosed, never claimed as trusted proof.
 - Each run writes
   `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json` plus guarded
   per-attempt output directories; CI uploads a single `tauri-e2e-smoke` or
