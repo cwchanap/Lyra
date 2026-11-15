@@ -1758,10 +1758,23 @@ describe("DialogueBox inner voice (心聲)", () => {
     expect(container.querySelector(".box")).not.toHaveClass("thought");
     expect(screen.getByText("發言 · LINE")).toBeInTheDocument();
 
+    // Opens and ends with parentheses, but the first pair closes early:
+    // speech with stage directions, not a thought.
+    await rerender({
+      current: {
+        kind: "line",
+        speaker: "相馬律",
+        text: "（低聲）我知道。（停頓）",
+      },
+      queueToken: { ...token, cursor: 1 },
+    });
+    expect(container.querySelector(".box")).not.toHaveClass("thought");
+    expect(screen.getByText("發言 · LINE")).toBeInTheDocument();
+
     // Narration wholly in parentheses stays narration.
     await rerender({
       current: { kind: "action", text: "（沒有新發現。）" },
-      queueToken: { ...token, cursor: 1 },
+      queueToken: { ...token, cursor: 2 },
     });
     expect(container.querySelector(".box")).not.toHaveClass("thought");
     expect(screen.getByText("敘述 · NARRATION")).toBeInTheDocument();
