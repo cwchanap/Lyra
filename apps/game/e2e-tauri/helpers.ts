@@ -1,4 +1,6 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import path from "node:path";
 import {
   anchors,
@@ -22,6 +24,83 @@ import {
   drainPendingAcquisitionsWithinCap,
   soleMapDestinationId,
 } from "$lib/e2e/pending-acquisition-drain";
+
+const TRUSTED_MAC_KEY_CODES = { Enter: 36, Tab: 48 } as const;
+
+export type TrustedMacKeyName = keyof typeof TRUSTED_MAC_KEY_CODES;
+
+/**
+ * Deliver a real HID-level keyboard event to the packaged e2e app via
+ * AppleScript System Events `key code`. WebDriver `browser.keys` arrives in
+ * this stack as untrusted DOM events (isTrusted=false), so WebKit never runs
+ * native default actions like focused-button Enter activation — System Events
+ * keystrokes are the trusted channel on macOS.
+ *
+ * Safety guards: the target process is resolved from `ps` and must be the one
+ * packaged e2e binary (executable named `lyra` under `target-e2e`), so a dev
+ * or production Lyra process is never activated or keyed even when it is the
+ * only `lyra`-named process alive; AppleScript targets that unix id, so a
+ * look-alike name alone can never win. The app is activated and verified
+ * frontmost immediately before the keystroke, and the frontmost check repeats
+ * after delivery so a focus race fails the test loudly. These checks narrow
+ * the race window but cannot make wrong-app delivery impossible (the
+ * pre-delivery check can be beaten and the post-delivery check fires after
+ * the fact) — run packaged E2E on an idle desktop.
+ */
+async function resolveE2eLyraProcessId(): Promise<number> {
+  const { stdout } = await promisify(execFile)("ps", ["-axo", "pid=,comm="]);
+  const e2eProcesses: number[] = [];
+  for (const line of stdout.split("\n")) {
+    const match = line.match(/^\s*(\d+)\s+(.+)$/);
+    if (!match) continue;
+    const [, pidText, executablePath] = match;
+    if (
+      path.basename(executablePath) === "lyra" &&
+      executablePath.includes("target-e2e")
+    ) {
+      e2eProcesses.push(Number(pidText));
+    }
+  }
+  if (e2eProcesses.length !== 1) {
+    throw new Error(
+      `expected exactly one packaged e2e lyra process (executable under target-e2e), found ${e2eProcesses.length} [${e2eProcesses.join(", ")}]; refusing to send keys on guesses`,
+    );
+  }
+  return e2eProcesses[0];
+}
+
+export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
+  if (process.platform !== "darwin") {
+    throw new Error(
+      `sendTrustedKey(${key}) requires macOS System Events; non-macOS runners have no trusted keyboard channel in this repo and must use their documented reduced-coverage fallback`,
+    );
+  }
+  const keyCode = TRUSTED_MAC_KEY_CODES[key];
+  const pid = await resolveE2eLyraProcessId();
+  const script = [
+    'tell application "System Events"',
+    `  set appProcess to first application process whose unix id is ${pid}`,
+    "  set frontmost of appProcess to true",
+    "  delay 0.3",
+    `  if frontmost of appProcess is not true then error "lyra e2e app did not become frontmost; refusing to send trusted ${key}"`,
+    `  key code ${keyCode}`,
+    "  delay 0.2",
+    `  if frontmost of appProcess is not true then error "frontmost application changed while delivering trusted ${key}; aborting"`,
+    "end tell",
+  ].join("\n");
+  try {
+    await promisify(execFile)("osascript", ["-e", script]);
+  } catch (error) {
+    const err = error as { message?: string; stderr?: string };
+    const detail = [err.message, err.stderr]
+      .filter((part) => typeof part === "string" && part.length > 0)
+      .join(" | ");
+    throw new Error(
+      `trusted ${key} delivery to lyra pid ${pid} failed (System Events permission or process/window state); refusing to fake the journey with untrusted input — osascript: ${detail}`,
+      { cause: error },
+    );
+  }
+}
 
 type TauriInternals = {
   invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
