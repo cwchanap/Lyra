@@ -52,6 +52,22 @@ export function e2eTrustedKeysEnabled(): boolean {
 }
 
 /**
+ * Resolve the unix PID of THIS WebDriver session's packaged e2e app process.
+ */
+export async function resolveE2eLyraProcessId(): Promise<number> {
+  const { stdout } = await promisify(execFile)("ps", [
+    "-axo",
+    "pid=,ppid=,comm=",
+  ]);
+  return selectE2eAppProcessId({
+    psOutput: stdout,
+    expectedExecutablePath: resolveE2eBinaryPath(appRoot),
+    currentPid: process.pid,
+    currentPpid: process.ppid,
+  });
+}
+
+/**
  * Deliver a real HID-level keyboard event to the packaged e2e app via
  * AppleScript System Events `key code`. WebDriver `browser.keys` arrives in
  * this stack as untrusted DOM events (isTrusted=false), so WebKit never runs
@@ -81,19 +97,6 @@ export function e2eTrustedKeysEnabled(): boolean {
  * post-delivery check fires after the fact) — run packaged E2E on an idle
  * desktop.
  */
-export async function resolveE2eLyraProcessId(): Promise<number> {
-  const { stdout } = await promisify(execFile)("ps", [
-    "-axo",
-    "pid=,ppid=,comm=",
-  ]);
-  return selectE2eAppProcessId({
-    psOutput: stdout,
-    expectedExecutablePath: resolveE2eBinaryPath(appRoot),
-    currentPid: process.pid,
-    currentPpid: process.ppid,
-  });
-}
-
 export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
   assertTrustedKeysAllowed({ platform: process.platform, env: process.env });
   const keyCode = TRUSTED_MAC_KEY_CODES[key];

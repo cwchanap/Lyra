@@ -1216,6 +1216,109 @@ describe("+page title persistence flows", () => {
       },
     ]);
   });
+
+  it("keeps the title menu inert and idle behind continue failure dialogs", async () => {
+    canvasGetContextSpy.mockReturnValue(
+      minimalWeatherCanvasContext() as unknown as CanvasRenderingContext2D,
+    );
+    const user = userEvent.setup();
+    const discovery = titleDiscovery({
+      type: "invalid",
+      metadata: null,
+      diagnostic: { code: "saveCorrupt", message: "存檔損毀" },
+    });
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") return discovery;
+      if (command === "continue_game") {
+        throw { code: "saveCorrupt", message: "無法讀取最新存檔" };
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "繼續遊戲" }));
+    const dialog = await screen.findByRole("dialog", { name: "無法繼續遊戲" });
+    const retry = within(dialog).getByRole("button", { name: "重試" });
+    await waitFor(() => expect(retry).toHaveFocus());
+
+    expect(document.querySelector<HTMLElement>(".lyra-menu")?.inert).toBe(true);
+    const down = new KeyboardEvent("keydown", {
+      key: "ArrowDown",
+      cancelable: true,
+    });
+    window.dispatchEvent(down);
+
+    expect(down.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(retry);
+  });
+
+  it("keeps the title save archive visible while retrying and returns focus to 返回", async () => {
+    const user = userEvent.setup();
+    const initial = titleDiscovery({
+      type: "invalid",
+      metadata: null,
+      diagnostic: { code: "saveCorrupt", message: "存檔損毀" },
+    });
+    const recovered = titleDiscovery(validSlotStatus("recovered-save-id"));
+    let listCalls = 0;
+    let resolveRetry!: (value: SaveBrowserOpenResultView) => void;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "list_saves") {
+        listCalls += 1;
+        if (listCalls === 1) return initial;
+        if (listCalls === 2) {
+          throw {
+            code: "saveDiscoveryUnavailable",
+            message: "存檔目錄暫時無法存取",
+          };
+        }
+        return await new Promise<SaveBrowserOpenResultView>((resolve) => {
+          resolveRetry = resolve;
+        });
+      }
+      if (command === "continue_game") {
+        throw { code: "saveCorrupt", message: "無法讀取最新存檔" };
+      }
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+
+    render(Page);
+    await user.click(await screen.findByRole("button", { name: "繼續遊戲" }));
+    const failure = await screen.findByRole("dialog", { name: "無法繼續遊戲" });
+    await user.click(within(failure).getByRole("button", { name: "載入遊戲" }));
+
+    const browser = await screen.findByRole("region", { name: "存檔瀏覽器" });
+    const retry = within(browser).getByRole("button", { name: "重試" });
+    await user.click(retry);
+
+    // During loading, the archive remains mounted with 返回 focusable.
+    const loadingBrowser = await screen.findByRole("region", {
+      name: "存檔瀏覽器",
+    });
+    const back = within(loadingBrowser).getByRole("button", { name: "返回" });
+    expect(within(loadingBrowser).getByRole("status")).toHaveTextContent(
+      "讀取存檔中…",
+    );
+    await waitFor(() => expect(back).toHaveFocus());
+
+    resolveRetry(recovered);
+    await waitFor(() =>
+      expect(
+        within(loadingBrowser).queryByRole("status"),
+      ).not.toBeInTheDocument(),
+    );
+    await waitFor(() =>
+      expect(
+        within(loadingBrowser).getByRole("button", { name: "返回" }),
+      ).toHaveFocus(),
+    );
+  });
 });
 
 describe("+page acquisition popup integration", () => {

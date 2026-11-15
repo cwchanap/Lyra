@@ -7,16 +7,10 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { resolveE2eBinaryPath } from "./e2e-binary-path.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// Cargo emits `lyra.exe` on Windows; the extensionless path only exists on
-// macOS/Linux. Derive the suffix from the platform so the guard resolves the
-// real binary instead of rejecting a freshly built one.
-const exeSuffix = process.platform === "win32" ? ".exe" : "";
-const binaryPath = path.resolve(
-  __dirname,
-  `../src-tauri/target-e2e/debug/lyra${exeSuffix}`,
-);
+const binaryPath = resolveE2eBinaryPath(path.resolve(__dirname, ".."));
 
 if (!existsSync(binaryPath)) {
   console.error(

@@ -188,16 +188,12 @@ describe("SaveNameDialog", () => {
     },
   );
 
-  it("traps Tab and Escape cancels one layer then restores the opener", async () => {
-    const opener = document.createElement("button");
-    opener.textContent = "open";
-    document.body.append(opener);
+  it("traps Tab and Escape cancels one layer", async () => {
     const onCancel = vi.fn();
     const user = userEvent.setup();
     render(SaveNameDialog, {
       slot: emptySlot,
       currentSummary,
-      returnFocusTo: opener,
       onSubmit: vi.fn(),
       onCancel,
     });
@@ -216,7 +212,48 @@ describe("SaveNameDialog", () => {
     await user.keyboard("{Escape}");
     await Promise.resolve();
     expect(onCancel).toHaveBeenCalledOnce();
-    expect(document.activeElement).toBe(opener);
+  });
+
+  // HPA-830: cycling between all dialog controls (including input -> buttons)
+  // must be unconditional JavaScript so macOS WebKit with Keyboard navigation
+  // off cannot skip the buttons and leave the dialog from the name input.
+  it("cycles non-boundary Tab in JavaScript across input, cancel, and submit in both directions", () => {
+    render(SaveNameDialog, {
+      slot: emptySlot,
+      currentSummary,
+      onSubmit: vi.fn(),
+      onCancel: vi.fn(),
+    });
+
+    const input = screen.getByRole("textbox", { name: "存檔名稱" });
+    const cancel = screen.getByRole("button", { name: "取消" });
+    const submit = screen.getByRole("button", { name: "繼續" });
+    input.focus();
+
+    for (const expected of [cancel, submit, input]) {
+      const forward = new KeyboardEvent("keydown", {
+        key: "Tab",
+        code: "Tab",
+        bubbles: true,
+        cancelable: true,
+      });
+      (document.activeElement ?? input).dispatchEvent(forward);
+      expect(forward.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(expected);
+    }
+
+    for (const expected of [submit, cancel, input]) {
+      const reverse = new KeyboardEvent("keydown", {
+        key: "Tab",
+        code: "Tab",
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      (document.activeElement ?? input).dispatchEvent(reverse);
+      expect(reverse.defaultPrevented).toBe(true);
+      expect(document.activeElement).toBe(expected);
+    }
   });
 
   it("gives the input and action buttons a clear keyboard focus ring", () => {

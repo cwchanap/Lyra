@@ -7,6 +7,7 @@
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
   import { claimEscape } from "$lib/state/escape-coordinator";
+  import { trapDialogTabKey } from "$lib/state/tab-focus-trap";
   import type { PendingAcquisitionView } from "$lib/state/types";
 
   let {
@@ -100,32 +101,10 @@
   }
 
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key !== "Tab" || !acquisitionCard) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-
-    const controls = Array.from(
-      acquisitionCard.querySelectorAll<HTMLButtonElement>(
-        "button:not(:disabled)",
-      ),
-    );
-    if (controls.length === 0) {
-      acquisitionCard.focus();
-      return;
-    }
-
-    const activeIndex = controls.findIndex(
-      (control) => control === document.activeElement,
-    );
-    const nextIndex =
-      activeIndex < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
-          controls.length;
-    controls[nextIndex]?.focus();
+    trapDialogTabKey(event, acquisitionCard, {
+      selector: "button:not(:disabled)",
+      stopPropagation: true,
+    });
   }
 
   function handleImageError() {

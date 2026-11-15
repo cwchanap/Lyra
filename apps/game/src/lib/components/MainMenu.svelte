@@ -31,7 +31,22 @@
   }: Props = $props();
 
   let clock = $state("— : — : —");
+  let menuRoot: HTMLDivElement | undefined = $state();
   let weather: HTMLCanvasElement | undefined = $state();
+  let focusTimer: number | undefined;
+  let autoFocusCancelled = false;
+
+  function cancelAutoFocus(): void {
+    autoFocusCancelled = true;
+    if (focusTimer !== undefined) {
+      window.clearTimeout(focusTimer);
+      focusTimer = undefined;
+    }
+  }
+
+  $effect(() => {
+    if (inert) cancelAutoFocus();
+  });
   let diskActionsAvailable = $derived(
     discovery?.browser.discovery.type === "available" &&
       discovery.browser.slots.some((slot) => slot.status.type !== "empty"),
@@ -170,20 +185,37 @@
       ) {
         return;
       }
-      if (e.key === "ArrowDown") {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
-        focusCard(focusIndex + 1);
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        focusCard(focusIndex - 1);
+        cancelAutoFocus();
+        const currentCards = cards();
+        const activeIndex =
+          document.activeElement instanceof HTMLButtonElement
+            ? currentCards.indexOf(document.activeElement)
+            : -1;
+        const baseIndex = activeIndex >= 0 ? activeIndex : focusIndex;
+        focusCard(baseIndex + (e.key === "ArrowDown" ? 1 : -1));
       }
     };
     window.addEventListener("keydown", onKey);
-    const focusTimer = window.setTimeout(() => focusCard(0), 1500);
+    if (!inert && !autoFocusCancelled) {
+      focusTimer = window.setTimeout(() => {
+        focusTimer = undefined;
+        if (inert || autoFocusCancelled) return;
+        if (
+          menuRoot &&
+          document.activeElement instanceof HTMLElement &&
+          menuRoot.contains(document.activeElement)
+        ) {
+          return;
+        }
+        focusCard(0);
+      }, 1500);
+    }
 
     return () => {
       window.clearInterval(clockTimer);
-      window.clearTimeout(focusTimer);
+      cancelAutoFocus();
       window.removeEventListener("resize", resize);
       window.removeEventListener("keydown", onKey);
       if (raf) window.cancelAnimationFrame(raf);
@@ -191,7 +223,7 @@
   });
 </script>
 
-<div class="lyra-menu" {inert}>
+<div class="lyra-menu" bind:this={menuRoot} {inert}>
   <div class="stage" aria-hidden="true">
     <canvas class="weather" bind:this={weather}></canvas>
     <div class="halftone"></div>

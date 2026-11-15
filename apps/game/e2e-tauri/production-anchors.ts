@@ -25,7 +25,15 @@ export const anchors = {
   continueName: "繼續",
   confirmOverwrite: "確認覆寫",
   confirmDelete: "確認刪除",
+  cancel: "取消",
+  deleteSaveAction: "刪除",
   previewUnavailable: "無法顯示預覽",
+  dialogHeadingSelector: '[role="dialog"] h2',
+  deleteManualSlotDialogHeading: (slot: number) => `刪除手動存檔 ${slot}`,
+  manualSlotDeleteButtonSelector: (slot: number) =>
+    `article[data-slot-type="manual"][data-slot-number="${slot}"] button[aria-label="刪除手動存檔 ${slot}"]`,
+  anyManualDeleteButtonSelector:
+    'article[data-slot-type="manual"] button.delete, article[data-slot-type="manual"] [aria-label^="刪除手動存檔"]',
   advanceDialogue: "推進對話",
   advanceTestimony: "推進證詞",
   deductionOptions: "推理選項",
