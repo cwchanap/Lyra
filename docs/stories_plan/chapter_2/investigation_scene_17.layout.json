@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_17",
+  "sublocations": {
+    "agency_office": {
+      "hotspots": {
+        "production_book": {
+          "kind": "rect",
+          "x": 0.44,
+          "y": 0.432,
+          "w": 0.15,
+          "h": 0.082
+        },
+        "standee": {
+          "kind": "rect",
+          "x": 0.05,
+          "y": 0.04,
+          "w": 0.172,
+          "h": 0.81
+        },
+        "whiteboard": {
+          "kind": "rect",
+          "x": 0.348,
+          "y": 0.105,
+          "w": 0.235,
+          "h": 0.25
+        },
+        "office_window": {
+          "kind": "rect",
+          "x": 0.766,
+          "y": 0.0,
+          "w": 0.187,
+          "h": 0.485
+        }
+      },
+      "characters": {
+        "hasumi": {
+          "kind": "baked",
+          "x": 0.688,
+          "y": 0.032,
+          "w": 0.118,
+          "h": 0.783
+        }
+      }
+    },
+    "agency_entrance": {
+      "hotspots": {
+        "building_awning": {
+          "kind": "rect",
+          "x": 0.357,
+          "y": 0.468,
+          "w": 0.313,
+          "h": 0.055
+        }
+      },
+      "characters": {
+        "kurose": {
+          "kind": "baked",
+          "x": 0.575,
+          "y": 0.525,
+          "w": 0.065,
+          "h": 0.26
+        }
+      }
+    }
+  }
+}

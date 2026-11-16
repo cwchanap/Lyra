@@ -1,0 +1,106 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_16",
+  "sublocations": {
+    "studio_entry": {
+      "hotspots": {
+        "umbrella_stand": {
+          "kind": "rect",
+          "x": 0.794,
+          "y": 0.255,
+          "w": 0.112,
+          "h": 0.69
+        },
+        "fan_letter_box": {
+          "kind": "rect",
+          "x": 0.695,
+          "y": 0.21,
+          "w": 0.145,
+          "h": 0.18
+        },
+        "kitchen_counter": {
+          "kind": "rect",
+          "x": 0.323,
+          "y": 0.135,
+          "w": 0.352,
+          "h": 0.425
+        }
+      },
+      "characters": {}
+    },
+    "studio_room": {
+      "hotspots": {
+        "stream_desk": {
+          "kind": "rect",
+          "x": 0.328,
+          "y": 0.185,
+          "w": 0.357,
+          "h": 0.593
+        },
+        "comment_phone": {
+          "kind": "rect",
+          "x": 0.69,
+          "y": 0.395,
+          "w": 0.04,
+          "h": 0.105
+        },
+        "voice_memo": {
+          "kind": "rect",
+          "x": 0.615,
+          "y": 0.295,
+          "w": 0.105,
+          "h": 0.117
+        },
+        "desk_drawer": {
+          "kind": "rect",
+          "x": 0.356,
+          "y": 0.415,
+          "w": 0.125,
+          "h": 0.165
+        },
+        "planning_board": {
+          "kind": "rect",
+          "x": 0.745,
+          "y": 0.009,
+          "w": 0.234,
+          "h": 0.445
+        },
+        "board_underlayer": {
+          "kind": "rect",
+          "x": 0.815,
+          "y": 0.285,
+          "w": 0.062,
+          "h": 0.115
+        },
+        "printed_schedule": {
+          "kind": "rect",
+          "x": 0.635,
+          "y": 0.095,
+          "w": 0.09,
+          "h": 0.195
+        },
+        "studio_window": {
+          "kind": "rect",
+          "x": 0.223,
+          "y": 0.01,
+          "w": 0.334,
+          "h": 0.337
+        }
+      },
+      "characters": {
+        "kurose": {
+          "kind": "baked",
+          "x": 0.148,
+          "y": 0.03,
+          "w": 0.145,
+          "h": 0.855
+        }
+      },
+      "intentionalOverlaps": [
+        { "hotspots": ["stream_desk", "desk_drawer"] },
+        { "hotspots": ["stream_desk", "voice_memo"] },
+        { "hotspots": ["planning_board", "board_underlayer"] }
+      ]
+    }
+  }
+}
