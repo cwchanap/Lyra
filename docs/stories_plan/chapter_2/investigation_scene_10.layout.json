@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_10",
+  "sublocations": {
+    "alley_mouth": {
+      "hotspots": {
+        "gap_view": {
+          "kind": "rect",
+          "x": 0.83,
+          "y": 0.217,
+          "w": 0.048,
+          "h": 0.42
+        },
+        "screen_glow": {
+          "kind": "rect",
+          "x": 0.45,
+          "y": 0.55,
+          "w": 0.245,
+          "h": 0.23
+        },
+        "konbini_side_door": {
+          "kind": "rect",
+          "x": 0.227,
+          "y": 0.265,
+          "w": 0.068,
+          "h": 0.25
+        },
+        "stray_cat": {
+          "kind": "rect",
+          "x": 0.26,
+          "y": 0.475,
+          "w": 0.05,
+          "h": 0.075
+        }
+      },
+      "characters": {}
+    }
+  }
+}
