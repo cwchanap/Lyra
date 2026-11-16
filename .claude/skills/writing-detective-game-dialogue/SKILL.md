@@ -86,9 +86,14 @@ say aloud.
 **相馬律**：（……我想相信她。可是「想相信」上不了審查會。）
 ```
 
-- Use full-width `（` and `）`, and wrap the **whole** text: it starts with `（`
-  and ends with `）`. Never wrap only part of a line; write a spoken line and a
-  separate inner-voice line instead.
+- Use full-width `（` and `）`, and wrap the **whole** text: the `（` that opens
+  the line is closed by the `）` at its very end. Pairs nested inside are fine.
+  Never wrap only part of a line; write a spoken line and a separate
+  inner-voice line instead.
+- A spoken line must not open with a parenthetical stage direction such as
+  `（低聲）我知道。`: the compiler rejects any spoken line that opens with `（`
+  but is not wholly wrapped (`innerVoiceUnclosed`). Put the direction on its
+  own `[ ]` line.
 - Everything else is as for any spoken line: at most 100 characters, an
   optional expression slug (`**相馬律**[shaken]：（……）`), a line ID at the very
   end, a Japanese translation, a voice clip.
