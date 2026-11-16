@@ -1,0 +1,107 @@
+{
+  "version": 1,
+  "sceneId": "investigation_scene_14",
+  "sublocations": {
+    "backstage_rear": {
+      "hotspots": {
+        "logistics_board": {
+          "kind": "rect",
+          "x": 0.057,
+          "y": 0.23,
+          "w": 0.143,
+          "h": 0.315
+        },
+        "rear_safety_spot": {
+          "kind": "rect",
+          "x": 0.375,
+          "y": 0.505,
+          "w": 0.338,
+          "h": 0.26
+        }
+      },
+      "characters": {
+        "event_security": {
+          "kind": "baked",
+          "x": 0.707,
+          "y": 0.15,
+          "w": 0.138,
+          "h": 0.68
+        }
+      }
+    },
+    "sponsor_corridor": {
+      "hotspots": {
+        "roof_leak": {
+          "kind": "rect",
+          "x": 0.096,
+          "y": 0.128,
+          "w": 0.089,
+          "h": 0.697
+        },
+        "m03_door": {
+          "kind": "rect",
+          "x": 0.396,
+          "y": 0.24,
+          "w": 0.124,
+          "h": 0.335
+        },
+        "vendor_cabinet": {
+          "kind": "rect",
+          "x": 0.572,
+          "y": 0.225,
+          "w": 0.162,
+          "h": 0.555
+        },
+        "corridor_doorway": {
+          "kind": "rect",
+          "x": 0.817,
+          "y": 0.0,
+          "w": 0.114,
+          "h": 0.52
+        }
+      },
+      "characters": {
+        "kurose": {
+          "kind": "baked",
+          "x": 0.242,
+          "y": 0.08,
+          "w": 0.136,
+          "h": 0.75
+        }
+      }
+    },
+    "seventh_floor_core": {
+      "hotspots": {
+        "elevator_b_door": {
+          "kind": "rect",
+          "x": 0.07,
+          "y": 0.005,
+          "w": 0.182,
+          "h": 0.905
+        },
+        "fire_door": {
+          "kind": "rect",
+          "x": 0.36,
+          "y": 0.155,
+          "w": 0.195,
+          "h": 0.585
+        },
+        "core_window": {
+          "kind": "rect",
+          "x": 0.582,
+          "y": 0.175,
+          "w": 0.147,
+          "h": 0.355
+        },
+        "stair_door": {
+          "kind": "rect",
+          "x": 0.841,
+          "y": 0.1,
+          "w": 0.0675,
+          "h": 0.75
+        }
+      },
+      "characters": {}
+    }
+  }
+}
