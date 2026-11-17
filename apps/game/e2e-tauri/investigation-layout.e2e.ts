@@ -56,7 +56,7 @@ const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 /**
  * Targets the compiled sidecars still leave unplaced only because their art
  * is pending: the two HPA-1033 backdrop sublocations (ramen_backdoor,
- * disaster_center) plus the four named blocker targets. The final
+ * disaster_center) plus the five named blocker targets. The final
  * zero-fallback / 72-of-72 gate activates only once this list is empty;
  * until then it pins the exact pending set so completion cannot drift
  * silently. Update — do not delete — when HPA-1033 lands.
@@ -76,6 +76,7 @@ const ART_BLOCKED_UNPLACED_TARGETS = [
   "chapter_2/investigation_scene_14/disaster_center/building_guard",
   "chapter_2/investigation_scene_14/disaster_center/building_cleaner",
   "chapter_2/investigation_scene_14/seventh_floor_core/stair_door",
+  "chapter_2/investigation_scene_8/leaked_clip_thread/uploader_header",
 ];
 
 /**

@@ -20,9 +20,9 @@
         },
         "big_screen_ads": {
           "kind": "rect",
-          "x": 0.729,
+          "x": 0.8,
           "y": 0.037,
-          "w": 0.198,
+          "w": 0.127,
           "h": 0.231
         },
         "saegusa_rig": {
@@ -37,9 +37,9 @@
         "saegusa": {
           "kind": "baked",
           "x": 0.19,
-          "y": 0.234,
+          "y": 0.329,
           "w": 0.084,
-          "h": 0.711
+          "h": 0.616
         }
       }
     },
@@ -73,24 +73,17 @@
       "hotspots": {
         "clip_player": {
           "kind": "rect",
-          "x": 0.312,
-          "y": 0.152,
-          "w": 0.213,
-          "h": 0.26
+          "x": 0.342,
+          "y": 0.228,
+          "w": 0.183,
+          "h": 0.184
         },
         "mirrored_caption": {
           "kind": "rect",
           "x": 0.408,
-          "y": 0.21,
+          "y": 0.228,
           "w": 0.053,
-          "h": 0.077
-        },
-        "uploader_header": {
-          "kind": "rect",
-          "x": 0.307,
-          "y": 0.105,
-          "w": 0.197,
-          "h": 0.05
+          "h": 0.059
         },
         "comment_fight": {
           "kind": "rect",
@@ -102,7 +95,12 @@
       },
       "characters": {},
       "intentionalOverlaps": [
-        { "hotspots": ["clip_player", "mirrored_caption"] }
+        {
+          "hotspots": [
+            "clip_player",
+            "mirrored_caption"
+          ]
+        }
       ]
     }
   }
