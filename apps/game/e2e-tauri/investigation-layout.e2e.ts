@@ -127,6 +127,10 @@ type TargetMeasurement = {
   probeVisible: boolean;
   hitIsSelfOrDescendant: boolean;
   hitDescription: string;
+  /** Authored-center probe ran (authored center inside the viewport). */
+  authoredCenterProbed: boolean;
+  authoredHitIsSelfOrDescendant: boolean;
+  authoredHitDescription: string;
 };
 
 type SublocationMeasurement = {
@@ -405,9 +409,25 @@ async function expectHpa853SublocationSurface(
         const element = document.querySelector(selector);
         return element ? box(element.getBoundingClientRect()) : null;
       };
+      const describeHit = (hit: Element | null): string =>
+        hit === null
+          ? "null"
+          : `${hit.tagName.toLowerCase()}${
+              typeof hit.className === "string" && hit.className.trim() !== ""
+                ? `.${hit.className.trim().split(/\s+/).join(".")}`
+                : ""
+            }`;
       const viewport = {
         width: window.innerWidth,
         height: window.innerHeight,
+      };
+      // The authored box's own center: cover math mirrored from
+      // targetViewportRect, fed by the inline style's unitless ratios —
+      // clamp/compaction only reshape the button box, so the ratios are
+      // the placement a player aims at from the sidecar.
+      const plane = {
+        w: Math.max(viewport.width, (16 / 9) * viewport.height),
+        h: Math.max(viewport.height, (9 / 16) * viewport.width),
       };
       const hud = {
         nav: rectOf(".explore-hud nav"),
@@ -439,15 +459,40 @@ async function expectHpa853SublocationSurface(
             (visible.top + visible.bottom) / 2,
           );
           hitIsSelfOrDescendant = hit !== null && target.contains(hit);
-          hitDescription =
-            hit === null
-              ? "null"
-              : `${hit.tagName.toLowerCase()}${
-                  typeof hit.className === "string" &&
-                  hit.className.trim() !== ""
-                    ? `.${hit.className.trim().split(/\s+/).join(".")}`
-                    : ""
-                }`;
+          hitDescription = describeHit(hit);
+        }
+        const cs = getComputedStyle(target);
+        const ratioX = parseFloat(cs.getPropertyValue("--x-ratio"));
+        const ratioY = parseFloat(cs.getPropertyValue("--y-ratio"));
+        const w = parseFloat(cs.getPropertyValue("--w")) / 100;
+        const h = parseFloat(cs.getPropertyValue("--h")) / 100;
+        let authoredCenter: { x: number; y: number } | null = null;
+        if (![ratioX, ratioY, w, h].some((value) => Number.isNaN(value))) {
+          const left = ratioX * plane.w - (plane.w - viewport.width) / 2;
+          const top = ratioY * plane.h - (plane.h - viewport.height) / 2;
+          const cx = left + (w * plane.w) / 2;
+          const cy = top + (h * plane.h) / 2;
+          if (
+            cx >= 0 &&
+            cx <= viewport.width &&
+            cy >= 0 &&
+            cy <= viewport.height
+          ) {
+            authoredCenter = { x: cx, y: cy };
+          }
+        }
+        const authoredCenterProbed = authoredCenter !== null;
+        let authoredHitIsSelfOrDescendant = false;
+        let authoredHitDescription = authoredCenterProbed
+          ? "no element"
+          : "authored center outside the viewport";
+        if (authoredCenter !== null) {
+          const hit = document.elementFromPoint(
+            authoredCenter.x,
+            authoredCenter.y,
+          );
+          authoredHitIsSelfOrDescendant = hit !== null && target.contains(hit);
+          authoredHitDescription = describeHit(hit);
         }
         return {
           id: target.getAttribute("data-target-id") ?? "",
@@ -456,6 +501,9 @@ async function expectHpa853SublocationSurface(
           probeVisible,
           hitIsSelfOrDescendant,
           hitDescription,
+          authoredCenterProbed,
+          authoredHitIsSelfOrDescendant,
+          authoredHitDescription,
         };
       });
       const projectedLocked: Array<{ id: string; rect: Box }> = [];
@@ -580,6 +628,25 @@ async function expectHpa853SublocationSurface(
     )
     .map((target) => `${target.id} was hit at ${target.hitDescription}`);
   expect(misrouted).toEqual([]);
+
+  // Authored-center routing: the sidecar's own center must receive that
+  // click too, not just the visible-rect center. Declared intentional
+  // overlaps bypass collision compaction, so once a later-defined target
+  // renders (e.g. the board_underlayer page revealed over the planning
+  // board), same-z DOM order decides the winner at any shared point — an
+  // authored center landing inside a later partner's box silently hands
+  // that click to the partner.
+  const authoredMisrouted = measurement.targets
+    .filter(
+      (target) =>
+        !target.routed &&
+        target.authoredCenterProbed &&
+        !target.authoredHitIsSelfOrDescendant,
+    )
+    .map(
+      (target) => `${target.id} was hit at ${target.authoredHitDescription}`,
+    );
+  expect(authoredMisrouted).toEqual([]);
 }
 
 /** Fresh setup that parks gameplay on the first map wrapper's pending map. */
@@ -1160,4 +1227,109 @@ describe("investigation layout surface", () => {
       expect(measuredSublocationIds.toSorted()).toEqual(compiledSublocationIds);
     });
   }
+
+  it("keeps the revealed board_underlayer from stealing planning_board's center in studio_room", async () => {
+    const sceneId = "investigation_scene_16";
+    await loadPackagedCheckpoint(HPA853_LAYOUT_CHECKPOINTS[16]);
+    await waitForPackagedGameState(
+      (state) =>
+        isExploreInScene(state, sceneId) &&
+        state.scene.kind === "investigation" &&
+        state.scene.currentSublocationId !== null,
+      30000,
+      "layout-ready checkpoint for investigation_scene_16 did not land in Explore",
+    );
+    await ensureMinimumWindowViewport();
+
+    const isStudioRoom = (sub: SublocationView) => sub.id === "studio_room";
+    let state = await getPackagedGameState();
+    if (
+      !isExploreInScene(state, sceneId) ||
+      state.scene.kind !== "investigation"
+    ) {
+      throw new Error(
+        "packaged state left investigation_scene_16 during setup",
+      );
+    }
+    const initial = state.scene;
+    const sublocation = initial.visibleSublocations.find(isStudioRoom);
+    if (!sublocation) {
+      throw new Error(
+        "studio_room missing from scene 16's visible sublocations",
+      );
+    }
+    if (initial.currentSublocationId !== sublocation.id) {
+      await enterSublocationThroughNav(sceneId, sublocation);
+      await waitForSceneSurface(sublocation);
+    }
+
+    const scenePlacements = shippedPlacements().filter((placement) =>
+      placement.id.startsWith(`chapter_2/${sceneId}/`),
+    );
+    const outroTotal = initial.outroProgress?.total ?? 0;
+
+    // The page beneath the printout is authored locked behind the planning
+    // board: before the reveal it is projected-only and claims no routing.
+    // Every strict gate still runs on this first pass.
+    await expectHpa853SublocationSurface(
+      sceneId,
+      sublocation,
+      scenePlacements,
+      outroTotal,
+    );
+
+    // Reveal through the real player UI: inspect 企劃板 (planning_board),
+    // drain its dialogue, then dismiss the deferred evidence acquisition.
+    const boardSel = 'button[data-target-id="planning_board"]';
+    await browser.waitUntil(() => elementExists(boardSel), {
+      timeout: 15000,
+      timeoutMsg: "planning_board button did not render in studio_room",
+    });
+    await jsClick(boardSel);
+    await advanceDialogueUntil(async () => {
+      const current = await getPackagedGameState();
+      return (
+        isExploreInScene(current, sceneId) &&
+        current.scene.kind === "investigation" &&
+        current.scene.currentSublocationId === "studio_room"
+      );
+    });
+    await dismissAllPendingAcquisitions();
+
+    state = await getPackagedGameState();
+    if (
+      !isExploreInScene(state, sceneId) ||
+      state.scene.kind !== "investigation"
+    ) {
+      throw new Error("inspecting planning_board left investigation_scene_16");
+    }
+    const revealed = state.scene;
+    const revealedSublocation = revealed.visibleSublocations.find(isStudioRoom);
+    if (!revealedSublocation) {
+      throw new Error("studio_room missing after the planning_board reveal");
+    }
+    // The reveal is live: the runtime view now carries both pages, and one
+    // inspection cannot have completed the auto outro (Explore is intact).
+    const revealedIds = revealedSublocation.hotspots.map(
+      (hotspot) => hotspot.id,
+    );
+    expect(revealedIds).toContain("planning_board");
+    expect(revealedIds).toContain("board_underlayer");
+    expect(revealed.outroProgress?.done ?? 0).toBeLessThan(
+      revealed.outroProgress?.total ?? Number.POSITIVE_INFINITY,
+    );
+
+    // The same strict gates re-measured with both pages live at once: HUD
+    // disjointness, fallback accounting, visible-center routing and the
+    // authored-center routing — planning_board must keep its own center hit
+    // point next to the revealed page (declared intentional overlap keeps
+    // both boxes whole; same-z DOM order gives later-defined shared points
+    // to board_underlayer).
+    await expectHpa853SublocationSurface(
+      sceneId,
+      revealedSublocation,
+      scenePlacements,
+      outroTotal,
+    );
+  });
 });
