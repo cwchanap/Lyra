@@ -2552,8 +2552,9 @@ describe("compile (global story catalog)", () => {
 });
 
 // Each test here compiles the whole live corpus, which grows with every
-// authored beat: about 3s locally and over 5s on CI runners at Ch2 Beat 8,
-// past Vitest's 5s default, so the block gets its own timeout.
+// authored beat: now 20-30s per test on 4-core dev boxes and slower on CI
+// (HPA-853: chapter-2 layout batches pushed the old 30s block timeout past
+// its limit under suite parallelism), so the block gets its own timeout.
 describe("compile (tracked production corpus compatibility)", () => {
   it("compiles the canonical HPA-265 Analysis scene with only the requested outputs", () => {
     // Break caught: the production manifest can keep the superseded linear
@@ -3579,7 +3580,7 @@ describe("compile (tracked production corpus compatibility)", () => {
       rmSync(outRoot, { recursive: true, force: true });
     }
   });
-}, 30_000);
+}, 120_000);
 
 describe("compile (layout warning wiring)", () => {
   // End-to-end test for the orchestrator's non-blocking warning path:
