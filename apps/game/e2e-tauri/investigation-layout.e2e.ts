@@ -353,6 +353,11 @@ async function expectHpa853SublocationSurface(
   outroTotal: number,
 ): Promise<void> {
   const subPrefix = `chapter_2/${sceneId}/${sublocation.id}/`;
+  // Every target the runtime exposes for this sublocation, placed or not.
+  const runtimeTargetIds = new Set([
+    ...sublocation.hotspots.map((hotspot) => hotspot.id),
+    ...sublocation.characters.map((character) => character.id),
+  ]);
   const placedIds = new Set([
     ...sublocation.hotspots.flatMap((hotspot) =>
       hotspot.layout ? [hotspot.id] : [],
@@ -365,9 +370,21 @@ async function expectHpa853SublocationSurface(
     sublocation.hotspots.length +
     sublocation.characters.length -
     placedIds.size;
+  // The sublocation's compiled placements must split exactly into the live
+  // buttons (runtime-visible placed targets) and the individually locked
+  // ones the runtime view filters out. Both halves are asserted against the
+  // real DOM below, so the HUD-disjointness and hit-routing passes cannot
+  // be vacuous: a target production stops rendering shows up as a missing
+  // button instead of silently vanishing from both sets.
+  const compiledSubPlacementIds = scenePlacements
+    .filter((placement) => placement.id.startsWith(subPrefix))
+    .map((placement) => placement.id.slice(subPrefix.length));
   const lockedStyles = scenePlacements
     .filter((placement) => placement.id.startsWith(subPrefix))
-    .filter((placement) => !placedIds.has(placement.id.slice(subPrefix.length)))
+    .filter(
+      (placement) =>
+        !runtimeTargetIds.has(placement.id.slice(subPrefix.length)),
+    )
     .map((placement) => ({ id: placement.id, style: placement.style }));
 
   const measurement: SublocationMeasurement = await browser.execute(
@@ -476,6 +493,25 @@ async function expectHpa853SublocationSurface(
     .map((target) => target.id);
   expect(routedIds).toEqual([]);
 
+  // Coverage is asserted, not assumed: the live buttons must be exactly the
+  // runtime's placed targets, the projected rects exactly the locked ones
+  // (which also fails when no hotspot template exists to project through),
+  // and together they must account for every compiled placement in the
+  // sublocation. An empty overlap/misrouting list therefore means something:
+  // every placed target was actually measured, live or projected.
+  const liveIds = measurement.targets.map((target) => target.id).toSorted();
+  expect(liveIds).toEqual([...placedIds].toSorted());
+  const projectedIds = measurement.projectedLocked
+    .map((entry) => entry.id)
+    .toSorted();
+  expect(projectedIds).toEqual(
+    lockedStyles.map((entry) => entry.id).toSorted(),
+  );
+  const coveredIds = new Set([...liveIds, ...projectedIds]);
+  expect(compiledSubPlacementIds.filter((id) => !coveredIds.has(id))).toEqual(
+    [],
+  );
+
   // The OFF-SCENE panel must carry exactly the sidecar's unplaced targets —
   // the art-blocker accounting, not a silent zero-fallback claim.
   expect(measurement.fallbackCount ?? 0).toBe(unplacedCount);
@@ -521,6 +557,13 @@ async function expectHpa853SublocationSurface(
     }
   }
   expect(overlaps).toEqual([]);
+
+  // Every expected live button must keep a usable viewport intersection —
+  // probeVisible=false on a placed target is a finding, never a skip.
+  const invisibleIds = measurement.targets
+    .filter((target) => !target.probeVisible)
+    .map((target) => target.id);
+  expect(invisibleIds).toEqual([]);
 
   // Hit routing only: a real visible button must receive its own center
   // click; a target not actually shown claims no routing.
@@ -984,8 +1027,11 @@ describe("investigation layout surface", () => {
       ),
     );
     // Design contract: 17 sublocations carrying 59 hotspots + 13 characters.
+    // Target ids have four segments (chapter/scene/sublocation/target), so
+    // the sublocation key is the first three — slicing four would keep the
+    // target segment and the set would just count all 72 targets.
     const sublocationIds = new Set(
-      hpa853Targets.map((target) => target.id.split("/").slice(0, 4).join("/")),
+      hpa853Targets.map((target) => target.id.split("/").slice(0, 3).join("/")),
     );
     expect(sublocationIds.size).toBe(17);
     expect(hpa853Targets.length).toBe(72);
@@ -1089,12 +1135,18 @@ describe("investigation layout surface", () => {
         );
         measuredSublocationIds.push(sublocation.id);
       }
-      // Every sublocation measured through the live surface — 17 of 17
-      // across the six scenes, every target accounted for (live or declared
-      // pending art). Nothing here claims the final zero-fallback gate.
-      expect(measuredSublocationIds).toEqual(
-        investigation.visibleSublocations.map((sublocation) => sublocation.id),
-      );
+      // Every compiled sublocation in the scene was measured through the
+      // live surface — 17 of 17 across the six scenes — not merely the
+      // ones the runtime chose to expose. Per-sublocation coverage above
+      // then accounts for every compiled placement (live button or locked
+      // projection) and every unplaced target (OFF-SCENE panel + the
+      // sidecar-level exact-set pin). Nothing here claims the final
+      // zero-fallback gate.
+      const compiledSublocationIds = shippedTargets()
+        .filter((target) => target.id.startsWith(`chapter_2/${sceneId}/`))
+        .map((target) => target.id.split("/").slice(2, 3).join("/"))
+        .toSorted();
+      expect(measuredSublocationIds.toSorted()).toEqual(compiledSublocationIds);
     });
   }
 });
