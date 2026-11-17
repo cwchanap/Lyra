@@ -385,7 +385,12 @@ async function expectHpa853SublocationSurface(
       (placement) =>
         !runtimeTargetIds.has(placement.id.slice(subPrefix.length)),
     )
-    .map((placement) => ({ id: placement.id, style: placement.style }));
+    // Local ids only (the runtime renders local data-target-id attributes),
+    // so the coverage union below compares like with like.
+    .map((placement) => ({
+      id: placement.id.slice(subPrefix.length),
+      style: placement.style,
+    }));
 
   const measurement: SublocationMeasurement = await browser.execute(
     (locked: Array<{ id: string; style: string }>): SublocationMeasurement => {
@@ -1142,10 +1147,15 @@ describe("investigation layout surface", () => {
       // projection) and every unplaced target (OFF-SCENE panel + the
       // sidecar-level exact-set pin). Nothing here claims the final
       // zero-fallback gate.
-      const compiledSublocationIds = shippedTargets()
-        .filter((target) => target.id.startsWith(`chapter_2/${sceneId}/`))
-        .map((target) => target.id.split("/").slice(2, 3).join("/"))
-        .toSorted();
+      // One entry per sublocation, not per target — multi-target
+      // sublocations must not duplicate the expected id.
+      const compiledSublocationIds = [
+        ...new Set(
+          shippedTargets()
+            .filter((target) => target.id.startsWith(`chapter_2/${sceneId}/`))
+            .map((target) => target.id.split("/").slice(2, 3).join("/")),
+        ),
+      ].toSorted();
       expect(measuredSublocationIds.toSorted()).toEqual(compiledSublocationIds);
     });
   }
