@@ -22,11 +22,13 @@ import {
   caseFileViewportNativeSize,
   validDevicePixelRatio,
 } from "$lib/e2e/case-file-viewport";
+import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
   targetLayoutStyle,
+  targetViewportRect,
   type TargetLayout,
 } from "$lib/investigation/target-layout";
-import type { GameStateView } from "$lib/state/types";
+import type { GameStateView, SublocationView } from "$lib/state/types";
 
 /** The game window's default and minimum size (tauri.conf.json). */
 const MINIMUM_WINDOW = { width: 800, height: 600 } as const;
@@ -40,13 +42,109 @@ const MIN_USABLE_TARGET_PX = 44;
 type ShippedPlacement = {
   id: string;
   kind: "hotspot" | "character";
+  layout: TargetLayout;
   style: string;
 };
 
 type Box = { left: number; top: number; right: number; bottom: number };
 
-/** Every placed hotspot and witness in the compiled scenes the app ships. */
-function shippedPlacements(): ShippedPlacement[] {
+// --- HPA-853 chapter-2 packaged placement surface (design §4.2) ------------
+
+/** The six HPA-853 scenes carrying the strict center gate and live HUD checks. */
+const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
+
+/**
+ * Targets the compiled sidecars still leave unplaced only because their art
+ * is pending: the two HPA-1033 backdrop sublocations (ramen_backdoor,
+ * disaster_center) plus the four named blocker targets. The final
+ * zero-fallback / 72-of-72 gate activates only once this list is empty;
+ * until then it pins the exact pending set so completion cannot drift
+ * silently. Update — do not delete — when HPA-1033 lands.
+ */
+const ART_BLOCKED_UNPLACED_TARGETS = [
+  "chapter_2/investigation_scene_10/ramen_backdoor/pickup_shelf",
+  "chapter_2/investigation_scene_10/ramen_backdoor/exhaust_steam",
+  "chapter_2/investigation_scene_10/ramen_backdoor/rider_spot",
+  "chapter_2/investigation_scene_10/ramen_backdoor/ramen_owner",
+  "chapter_2/investigation_scene_10/ramen_backdoor/yuzuki",
+  "chapter_2/investigation_scene_12/truck_console/coffee_cans",
+  "chapter_2/investigation_scene_12/box_left_side/stair_gap",
+  "chapter_2/investigation_scene_14/backstage_rear/heat_pack_crate",
+  "chapter_2/investigation_scene_14/disaster_center/access_terminal",
+  "chapter_2/investigation_scene_14/disaster_center/alarm_panel",
+  "chapter_2/investigation_scene_14/disaster_center/cctv_monitors",
+  "chapter_2/investigation_scene_14/disaster_center/building_guard",
+  "chapter_2/investigation_scene_14/disaster_center/building_cleaner",
+  "chapter_2/investigation_scene_14/seventh_floor_core/stair_door",
+];
+
+/**
+ * Authored sublocation count per HPA-853 scene: the max location bar must
+ * show every chip at once — the 4-chip NAV of scenes 12/14 included — not
+ * the initial 1-chip state a fresh playthrough would give.
+ */
+const HPA853_SUBLOCATION_COUNTS = {
+  investigation_scene_8: 3,
+  investigation_scene_10: 2,
+  investigation_scene_12: 4,
+  investigation_scene_14: 4,
+  investigation_scene_16: 2,
+  investigation_scene_17: 2,
+} as const satisfies Record<
+  `investigation_scene_${(typeof HPA853_SCENE_NUMBERS)[number]}`,
+  number
+>;
+
+/** The fixed layout-ready checkpoint per HPA-853 scene (e2e_checkpoints.rs whitelist). */
+const HPA853_LAYOUT_CHECKPOINTS = {
+  8: "chapter-2-investigation-layout-scene-8",
+  10: "chapter-2-investigation-layout-scene-10",
+  12: "chapter-2-investigation-layout-scene-12",
+  14: "chapter-2-investigation-layout-scene-14",
+  16: "chapter-2-investigation-layout-scene-16",
+  17: "chapter-2-investigation-layout-scene-17",
+} as const satisfies Record<
+  (typeof HPA853_SCENE_NUMBERS)[number],
+  E2eCheckpointId
+>;
+
+/** Center-gate tolerance for authored decimal coordinates. */
+const CENTER_EPSILON = 1e-6;
+
+type HudRects = {
+  nav: Box | null;
+  progress: Box | null;
+  primaryObjective: Box | null;
+  sceneLabel: Box | null;
+};
+
+type TargetMeasurement = {
+  id: string;
+  /** Production routed this placed target into the fallback list. */
+  routed: boolean;
+  rect: Box;
+  probeVisible: boolean;
+  hitIsSelfOrDescendant: boolean;
+  hitDescription: string;
+};
+
+type SublocationMeasurement = {
+  viewport: { width: number; height: number };
+  hud: HudRects;
+  targets: TargetMeasurement[];
+  projectedLocked: Array<{ id: string; rect: Box }>;
+  /** OFF-SCENE TARGETS eyebrow count; null when the panel is not rendered. */
+  fallbackCount: number | null;
+};
+
+type ShippedTarget = {
+  id: string;
+  kind: "hotspot" | "character";
+  layout: TargetLayout | null;
+};
+
+/** Every hotspot and witness in the compiled scenes the app ships, placed or not. */
+function shippedTargets(): ShippedTarget[] {
   type PlacedTarget = { id: string; layout: TargetLayout | null };
   type CompiledInvestigation = {
     sublocations: Array<{
@@ -61,7 +159,7 @@ function shippedPlacements(): ShippedPlacement[] {
     "resources",
     "scenes",
   );
-  const placements: ShippedPlacement[] = [];
+  const targets: ShippedTarget[] = [];
   const chapters = readdirSync(scenesDir)
     .filter((name) => name.startsWith("chapter_"))
     .toSorted();
@@ -79,20 +177,34 @@ function shippedPlacements(): ShippedPlacement[] {
           ["hotspot", sublocation.hotspots],
           ["character", sublocation.characters],
         ] as const;
-        for (const [kind, targets] of groups) {
-          for (const target of targets) {
-            if (!target.layout) continue;
-            placements.push({
+        for (const [kind, group] of groups) {
+          for (const target of group) {
+            targets.push({
               id: `${sceneId}/${sublocation.id}/${target.id}`,
               kind,
-              style: targetLayoutStyle(target.layout),
+              layout: target.layout,
             });
           }
         }
       }
     }
   }
-  return placements;
+  return targets;
+}
+
+/** Every placed hotspot and witness in the compiled scenes the app ships. */
+function shippedPlacements(): ShippedPlacement[] {
+  return shippedTargets()
+    .filter(
+      (target): target is ShippedTarget & { layout: TargetLayout } =>
+        target.layout !== null,
+    )
+    .map(({ id, kind, layout }) => ({
+      id,
+      kind,
+      layout,
+      style: targetLayoutStyle(layout),
+    }));
 }
 
 async function ensureMinimumWindowViewport(): Promise<void> {
@@ -151,6 +263,274 @@ function isPendingFirstMapGate(state: GameStateView): boolean {
     state.scene.currentSublocationId === null &&
     state.scene.map !== null
   );
+}
+
+/** Explore parked inside `sceneId`'s investigation surface. */
+function isExploreInScene(state: GameStateView, sceneId: string): boolean {
+  return (
+    state.mode.type === "explore" &&
+    state.scene.kind === "investigation" &&
+    state.scene.id === sceneId
+  );
+}
+
+function intersectsBox(a: Box, b: Box): boolean {
+  return (
+    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+  );
+}
+
+/**
+ * Switches through the real sublocation nav chip; a first entry plays the
+ * sublocation's transition dialogue, so drain it back into Explore.
+ */
+async function enterSublocationThroughNav(
+  sceneId: string,
+  sublocation: { id: string; label: string },
+): Promise<void> {
+  const clicked = await browser.execute((chipLabel: string) => {
+    const chip = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(
+        ".explore-hud nav .chips button",
+      ),
+    ).find(
+      (candidate) =>
+        (candidate.querySelector(".label")?.textContent ?? "").trim() ===
+        chipLabel,
+    );
+    if (!chip || chip.disabled) return false;
+    chip.click();
+    return true;
+  }, sublocation.label);
+  if (!clicked) {
+    throw new Error(
+      `sublocation chip ${sublocation.label} (${sublocation.id}) was missing or disabled`,
+    );
+  }
+  await advanceDialogueUntil(async () => {
+    const state = await getPackagedGameState();
+    return (
+      isExploreInScene(state, sceneId) &&
+      state.scene.kind === "investigation" &&
+      state.scene.currentSublocationId === sublocation.id
+    );
+  });
+}
+
+/** The keyed surface re-rendered for the newly entered sublocation. */
+async function waitForSceneSurface(sublocation: {
+  id: string;
+  label: string;
+}): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (label: string) =>
+          document.querySelector(".scene-label strong")?.textContent === label,
+        sublocation.label,
+      ),
+    {
+      timeout: 15000,
+      interval: 100,
+      timeoutMsg: `scene surface did not switch to ${sublocation.id}`,
+    },
+  );
+}
+
+/**
+ * One packaged 800×600 measurement pass over a live HPA-853 sublocation:
+ * real HUD DOM rects vs every target rect (visual occlusion), and real
+ * elementFromPoint hit routing for the buttons that are actually shown.
+ * Individually locked targets never render, so their authored geometry is
+ * projected through the existing compiled-sidecar style contract instead of
+ * inventing state that would change game semantics — those projections get
+ * the HUD disjointness check but no hit-routing claim.
+ */
+async function expectHpa853SublocationSurface(
+  sceneId: string,
+  sublocation: SublocationView,
+  scenePlacements: ShippedPlacement[],
+  outroTotal: number,
+): Promise<void> {
+  const subPrefix = `chapter_2/${sceneId}/${sublocation.id}/`;
+  const placedIds = new Set([
+    ...sublocation.hotspots.flatMap((hotspot) =>
+      hotspot.layout ? [hotspot.id] : [],
+    ),
+    ...sublocation.characters.flatMap((character) =>
+      character.layout ? [character.id] : [],
+    ),
+  ]);
+  const unplacedCount =
+    sublocation.hotspots.length +
+    sublocation.characters.length -
+    placedIds.size;
+  const lockedStyles = scenePlacements
+    .filter((placement) => placement.id.startsWith(subPrefix))
+    .filter((placement) => !placedIds.has(placement.id.slice(subPrefix.length)))
+    .map((placement) => ({ id: placement.id, style: placement.style }));
+
+  const measurement: SublocationMeasurement = await browser.execute(
+    (locked: Array<{ id: string; style: string }>): SublocationMeasurement => {
+      const box = (rect: DOMRect) => ({
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+      });
+      const rectOf = (selector: string): Box | null => {
+        const element = document.querySelector(selector);
+        return element ? box(element.getBoundingClientRect()) : null;
+      };
+      const viewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+      const hud = {
+        nav: rectOf(".explore-hud nav"),
+        progress: rectOf(".investigation-progress"),
+        primaryObjective: rectOf(".primary-objective-hud"),
+        sceneLabel: rectOf(".scene-label"),
+      };
+      const targets: TargetMeasurement[] = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          "button.hotspot-target, button.character-target",
+        ),
+      ).map((target) => {
+        const rect = target.getBoundingClientRect();
+        const visible = {
+          left: Math.max(rect.left, 0),
+          top: Math.max(rect.top, 0),
+          right: Math.min(rect.right, viewport.width),
+          bottom: Math.min(rect.bottom, viewport.height),
+        };
+        const probeVisible =
+          visible.right > visible.left && visible.bottom > visible.top;
+        let hitIsSelfOrDescendant = false;
+        let hitDescription = probeVisible
+          ? "no element"
+          : "outside the viewport";
+        if (probeVisible) {
+          const hit = document.elementFromPoint(
+            (visible.left + visible.right) / 2,
+            (visible.top + visible.bottom) / 2,
+          );
+          hitIsSelfOrDescendant = hit !== null && target.contains(hit);
+          hitDescription =
+            hit === null
+              ? "null"
+              : `${hit.tagName.toLowerCase()}${
+                  typeof hit.className === "string" &&
+                  hit.className.trim() !== ""
+                    ? `.${hit.className.trim().split(/\s+/).join(".")}`
+                    : ""
+                }`;
+        }
+        return {
+          id: target.getAttribute("data-target-id") ?? "",
+          routed: target.hasAttribute("inert"),
+          rect: box(rect),
+          probeVisible,
+          hitIsSelfOrDescendant,
+          hitDescription,
+        };
+      });
+      const projectedLocked: Array<{ id: string; rect: Box }> = [];
+      const template = document.querySelector<HTMLElement>(
+        "button.hotspot-target",
+      );
+      if (template) {
+        const savedStyle = template.getAttribute("style");
+        const savedClass = template.className;
+        for (const entry of locked) {
+          template.setAttribute("style", entry.style);
+          template.classList.remove("compact", "compact-x", "compact-y");
+          projectedLocked.push({
+            id: entry.id,
+            rect: box(template.getBoundingClientRect()),
+          });
+        }
+        if (savedStyle === null) template.removeAttribute("style");
+        else template.setAttribute("style", savedStyle);
+        template.className = savedClass;
+      }
+      const fallbackEyebrow = document.querySelector(
+        ".fallback-controls .fallback-toggle .eyebrow",
+      );
+      const fallbackCount =
+        fallbackEyebrow === null
+          ? null
+          : Number((fallbackEyebrow.textContent ?? "").split("·")[1]?.trim()) ||
+            0;
+      return { viewport, hud, targets, projectedLocked, fallbackCount };
+    },
+    lockedStyles,
+  );
+
+  expect(measurement.viewport).toEqual(MINIMUM_WINDOW);
+
+  // A placed target production routed into the fallback list means the crop
+  // or the panel band ate its hit box — never acceptable for these scenes.
+  const routedIds = measurement.targets
+    .filter((target) => target.routed)
+    .map((target) => target.id);
+  expect(routedIds).toEqual([]);
+
+  // The OFF-SCENE panel must carry exactly the sidecar's unplaced targets —
+  // the art-blocker accounting, not a silent zero-fallback claim.
+  expect(measurement.fallbackCount ?? 0).toBe(unplacedCount);
+
+  // HUD presence: nav and scene label always; progress when the auto outro
+  // is live; the primary objective is authored-optional and may be absent.
+  const missingHud: string[] = [];
+  if (measurement.hud.nav === null) missingHud.push(".explore-hud nav");
+  if (measurement.hud.sceneLabel === null) missingHud.push(".scene-label");
+  if (outroTotal > 0 && measurement.hud.progress === null) {
+    missingHud.push(".investigation-progress");
+  }
+  expect(missingHud).toEqual([]);
+
+  // Visual occlusion is decided from the DOM rects: PROGRESS, PRIMARY
+  // OBJECTIVE and the scene label are pointer-events:none, so no hit test
+  // can discover them covering a target. Not nav.bottom/600 as a full-width
+  // floor — flex-wrap can move PROGRESS under the nav.
+  const hudCandidates = [
+    { name: ".explore-hud nav", rect: measurement.hud.nav },
+    { name: ".investigation-progress", rect: measurement.hud.progress },
+    { name: ".primary-objective-hud", rect: measurement.hud.primaryObjective },
+    { name: ".scene-label", rect: measurement.hud.sceneLabel },
+  ];
+  const hudRects: Array<{ name: string; rect: Box }> = [];
+  for (const candidate of hudCandidates) {
+    if (candidate.rect !== null) {
+      hudRects.push({ name: candidate.name, rect: candidate.rect });
+    }
+  }
+  const measuredTargets: Array<{ id: string; rect: Box }> = [
+    ...measurement.targets.map(({ id, rect }) => ({ id, rect })),
+    ...measurement.projectedLocked,
+  ];
+  const overlaps: string[] = [];
+  for (const target of measuredTargets) {
+    for (const { name, rect } of hudRects) {
+      if (intersectsBox(target.rect, rect)) {
+        overlaps.push(
+          `${target.id} overlaps ${name}: ${JSON.stringify(target.rect)} ∩ ${JSON.stringify(rect)}`,
+        );
+      }
+    }
+  }
+  expect(overlaps).toEqual([]);
+
+  // Hit routing only: a real visible button must receive its own center
+  // click; a target not actually shown claims no routing.
+  const misrouted = measurement.targets
+    .filter(
+      (target) =>
+        !target.routed && target.probeVisible && !target.hitIsSelfOrDescendant,
+    )
+    .map((target) => `${target.id} was hit at ${target.hitDescription}`);
+  expect(misrouted).toEqual([]);
 }
 
 /** Fresh setup that parks gameplay on the first map wrapper's pending map. */
@@ -594,4 +974,127 @@ describe("investigation layout surface", () => {
     }
     await expectCrossedToRainBellInvestigation();
   });
+
+  // --- HPA-853 chapter-2 placement surface ---------------------------------
+
+  it("pins the 72-target completeness and centers every placed HPA-853 target in the 800x600 crop", () => {
+    const hpa853Targets = shippedTargets().filter((target) =>
+      HPA853_SCENE_NUMBERS.some((scene) =>
+        target.id.startsWith(`chapter_2/investigation_scene_${scene}/`),
+      ),
+    );
+    // Design contract: 17 sublocations carrying 59 hotspots + 13 characters.
+    const sublocationIds = new Set(
+      hpa853Targets.map((target) => target.id.split("/").slice(0, 4).join("/")),
+    );
+    expect(sublocationIds.size).toBe(17);
+    expect(hpa853Targets.length).toBe(72);
+
+    // The final zero-fallback gate stays clearly pending until HPA-1033 art
+    // lands: the unplaced set must be exactly the declared art blockers — no
+    // target may silently join or leave that list.
+    const unplacedIds = hpa853Targets
+      .filter((target) => target.layout === null)
+      .map((target) => target.id)
+      .toSorted();
+    expect(unplacedIds).toEqual([...ART_BLOCKED_UNPLACED_TARGETS].toSorted());
+
+    // Strict center gate for the six new scenes only (design §4.2): the
+    // normalized center x stays in the middle 3/4 of the cover plane, and
+    // the shared CSS-cover math must land that center inside the 800x600
+    // viewport. Existing chapter-1 and chapter-2 scene-4 edge placements are
+    // deliberately out of scope and are not moved.
+    const viewport = { w: MINIMUM_WINDOW.width, h: MINIMUM_WINDOW.height };
+    const offCenter: string[] = [];
+    const cropped: string[] = [];
+    for (const target of hpa853Targets) {
+      if (target.layout === null) continue;
+      const centerX = target.layout.x + target.layout.w / 2;
+      if (
+        centerX < 0.125 - CENTER_EPSILON ||
+        centerX > 0.875 + CENTER_EPSILON
+      ) {
+        offCenter.push(
+          `${target.id}: center x ${centerX.toFixed(4)} outside [0.125, 0.875]`,
+        );
+        continue;
+      }
+      const rect = targetViewportRect(target.layout, viewport);
+      const centerXInView = (rect.left + rect.right) / 2;
+      const centerYInView = (rect.top + rect.bottom) / 2;
+      if (
+        centerXInView < 0 ||
+        centerXInView > viewport.w ||
+        centerYInView < 0 ||
+        centerYInView > viewport.h
+      ) {
+        cropped.push(
+          `${target.id}: center ${centerXInView.toFixed(1)},${centerYInView.toFixed(1)} outside ${viewport.w}x${viewport.h}`,
+        );
+      }
+    }
+    expect(offCenter).toEqual([]);
+    expect(cropped).toEqual([]);
+  });
+
+  for (const sceneNumber of HPA853_SCENE_NUMBERS) {
+    const sceneId: `investigation_scene_${(typeof HPA853_SCENE_NUMBERS)[number]}` = `investigation_scene_${sceneNumber}`;
+    it(`measures HUD rects, hit routing and the full location bar across every ${sceneId} sublocation at 800x600`, async () => {
+      await loadPackagedCheckpoint(HPA853_LAYOUT_CHECKPOINTS[sceneNumber]);
+      await waitForPackagedGameState(
+        (state) =>
+          isExploreInScene(state, sceneId) &&
+          state.scene.kind === "investigation" &&
+          state.scene.currentSublocationId !== null,
+        30000,
+        `layout-ready checkpoint for ${sceneId} did not land in Explore`,
+      );
+      await ensureMinimumWindowViewport();
+
+      const state = await getPackagedGameState();
+      if (
+        !isExploreInScene(state, sceneId) ||
+        state.scene.kind !== "investigation"
+      ) {
+        throw new Error(`packaged state left ${sceneId} during setup`);
+      }
+      const investigation = state.scene;
+
+      // The fixture's whole point: the location bar shows every authored
+      // chip at once (scenes 12/14 with 4 chips included), because the
+      // fixture unlocked every sublocation without doing any puzzle work.
+      const expectedChips = HPA853_SUBLOCATION_COUNTS[sceneId];
+      expect(investigation.visibleSublocations.length).toBe(expectedChips);
+      expect(
+        await browser.execute(
+          () =>
+            document.querySelectorAll(".explore-hud nav .chips button").length,
+        ),
+      ).toBe(expectedChips);
+
+      const scenePlacements = shippedPlacements().filter((placement) =>
+        placement.id.startsWith(`chapter_2/${sceneId}/`),
+      );
+      const measuredSublocationIds: string[] = [];
+      for (const sublocation of investigation.visibleSublocations) {
+        if (sublocation.id !== investigation.currentSublocationId) {
+          await enterSublocationThroughNav(sceneId, sublocation);
+          await waitForSceneSurface(sublocation);
+        }
+        await expectHpa853SublocationSurface(
+          sceneId,
+          sublocation,
+          scenePlacements,
+          investigation.outroProgress?.total ?? 0,
+        );
+        measuredSublocationIds.push(sublocation.id);
+      }
+      // Every sublocation measured through the live surface — 17 of 17
+      // across the six scenes, every target accounted for (live or declared
+      // pending art). Nothing here claims the final zero-fallback gate.
+      expect(measuredSublocationIds).toEqual(
+        investigation.visibleSublocations.map((sublocation) => sublocation.id),
+      );
+    });
+  }
 });
