@@ -1,4 +1,5 @@
 use super::analysis::AnalysisDraft;
+use super::scenes::SceneRuntime;
 use super::schema::DialogueItem;
 use super::{GameEngine, GameError, ModeView, SceneView};
 use serde::{Deserialize, Serialize};
@@ -20,6 +21,18 @@ pub(crate) enum CheckpointId {
     SceneNavigationEligible,
     #[serde(rename = "chapter-1-analysis-beat-85-ready")]
     Chapter1AnalysisBeat85Ready,
+    #[serde(rename = "chapter-2-investigation-layout-scene-8")]
+    Chapter2InvestigationLayoutScene8,
+    #[serde(rename = "chapter-2-investigation-layout-scene-10")]
+    Chapter2InvestigationLayoutScene10,
+    #[serde(rename = "chapter-2-investigation-layout-scene-12")]
+    Chapter2InvestigationLayoutScene12,
+    #[serde(rename = "chapter-2-investigation-layout-scene-14")]
+    Chapter2InvestigationLayoutScene14,
+    #[serde(rename = "chapter-2-investigation-layout-scene-16")]
+    Chapter2InvestigationLayoutScene16,
+    #[serde(rename = "chapter-2-investigation-layout-scene-17")]
+    Chapter2InvestigationLayoutScene17,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -181,6 +194,17 @@ fn build_checkpoint_with_limit(
                 advance_dialogue_bounded(&mut engine, view, &mut operations, replay_limit)?;
             }
         }
+        CheckpointId::Chapter2InvestigationLayoutScene8
+        | CheckpointId::Chapter2InvestigationLayoutScene10
+        | CheckpointId::Chapter2InvestigationLayoutScene12
+        | CheckpointId::Chapter2InvestigationLayoutScene14
+        | CheckpointId::Chapter2InvestigationLayoutScene16
+        | CheckpointId::Chapter2InvestigationLayoutScene17 => {
+            let Some((chapter_id, scene_id)) = chapter2_layout_ready_scene(id) else {
+                return Err(GameError::e2e_checkpoint_unreachable());
+            };
+            chapter2_layout_ready_checkpoint(engine, chapter_id, scene_id, replay_limit)
+        }
         CheckpointId::Chapter1AnalysisBeat85Ready => {
             let mut operations = 0;
             engine.jump_to_scene("chapter_1", "analysis_scene_8_5")?;
@@ -203,6 +227,84 @@ fn build_checkpoint_with_limit(
                 engine,
             })
         }
+    }
+}
+
+/// Wire-ID → chapter-qualified scene whitelist of the chapter-2
+/// layout-ready checkpoint fixture (HPA-853). Scene IDs overlap across
+/// chapters, so each fixed checkpoint ID binds to exactly one chapter_2
+/// investigation scene; there is deliberately no scene-id parameter and no
+/// generic story-unlock API behind this fixture.
+fn chapter2_layout_ready_scene(id: CheckpointId) -> Option<(&'static str, &'static str)> {
+    match id {
+        CheckpointId::Chapter2InvestigationLayoutScene8 => {
+            Some(("chapter_2", "investigation_scene_8"))
+        }
+        CheckpointId::Chapter2InvestigationLayoutScene10 => {
+            Some(("chapter_2", "investigation_scene_10"))
+        }
+        CheckpointId::Chapter2InvestigationLayoutScene12 => {
+            Some(("chapter_2", "investigation_scene_12"))
+        }
+        CheckpointId::Chapter2InvestigationLayoutScene14 => {
+            Some(("chapter_2", "investigation_scene_14"))
+        }
+        CheckpointId::Chapter2InvestigationLayoutScene16 => {
+            Some(("chapter_2", "investigation_scene_16"))
+        }
+        CheckpointId::Chapter2InvestigationLayoutScene17 => {
+            Some(("chapter_2", "investigation_scene_17"))
+        }
+        _ => None,
+    }
+}
+
+/// Builds the max-location-bar Explore state for one whitelisted chapter-2
+/// investigation scene: jump into the chapter-qualified scene, make every
+/// authored sublocation visible through the runtime's existing
+/// `unlock_override("sublocation:<id>")` mechanism, then walk the normal
+/// intro/enter flow into Explore. It never inspects hotspots, discusses
+/// topics, transports evidence or presents records, so no Auto Outro can
+/// trigger and no investigation progress is prefilled; the packaged E2E
+/// suite clears the session through the existing checkpoint pathway.
+fn chapter2_layout_ready_checkpoint(
+    mut engine: GameEngine,
+    chapter_id: &str,
+    scene_id: &str,
+    replay_limit: usize,
+) -> Result<BuiltCheckpoint, GameError> {
+    engine.jump_to_scene(chapter_id, scene_id)?;
+    let SceneRuntime::Investigation(inv) = &mut engine.scene else {
+        return Err(GameError::e2e_checkpoint_unreachable());
+    };
+    let sublocation_ids: Vec<String> = inv
+        .def
+        .sublocations
+        .iter()
+        .map(|sublocation| sublocation.id.clone())
+        .collect();
+    for sublocation_id in &sublocation_ids {
+        inv.unlock_override(&format!("sublocation:{sublocation_id}"));
+    }
+    let mut operations = 0;
+    loop {
+        let view = engine.view()?;
+        let at_target = matches!(
+            (&view.scene, &view.mode),
+            (SceneView::Investigation { .. }, ModeView::Explore { .. })
+        );
+        if at_target {
+            return Ok(BuiltCheckpoint {
+                projection: project(&engine, &view, false),
+                engine,
+            });
+        }
+        let ModeView::Dialogue { queue_token, .. } = &view.mode else {
+            return Err(GameError::e2e_checkpoint_unreachable());
+        };
+        ensure_operation_available(operations, replay_limit)?;
+        engine.advance_dialogue(queue_token.clone())?;
+        operations += 1;
     }
 }
 
@@ -509,6 +611,30 @@ mod tests {
                 CheckpointId::Chapter1AnalysisBeat85Ready,
                 "chapter-1-analysis-beat-85-ready",
             ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene8,
+                "chapter-2-investigation-layout-scene-8",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene10,
+                "chapter-2-investigation-layout-scene-10",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene12,
+                "chapter-2-investigation-layout-scene-12",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene14,
+                "chapter-2-investigation-layout-scene-14",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene16,
+                "chapter-2-investigation-layout-scene-16",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene17,
+                "chapter-2-investigation-layout-scene-17",
+            ),
         ];
 
         for (id, wire) in cases {
@@ -520,6 +646,59 @@ mod tests {
         }
 
         assert!(serde_json::from_value::<CheckpointId>(json!("chapter-1-unknown")).is_err());
+        let unknown_layout_id = "chapter-2-investigation-layout-scene-9";
+        assert!(serde_json::from_value::<CheckpointId>(json!(unknown_layout_id)).is_err());
+        let unknown_layout_id = "chapter-2-investigation-layout-scene-18";
+        assert!(serde_json::from_value::<CheckpointId>(json!(unknown_layout_id)).is_err());
+    }
+
+    #[test]
+    fn chapter2_layout_ready_whitelist_is_closed_and_chapter_qualified() {
+        let whitelisted = [
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene8,
+                "investigation_scene_8",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene10,
+                "investigation_scene_10",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene12,
+                "investigation_scene_12",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene14,
+                "investigation_scene_14",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene16,
+                "investigation_scene_16",
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene17,
+                "investigation_scene_17",
+            ),
+        ];
+        for (id, scene_id) in whitelisted {
+            assert_eq!(
+                chapter2_layout_ready_scene(id),
+                Some(("chapter_2", scene_id)),
+                "layout-ready whitelist must bind {scene_id} to chapter_2"
+            );
+        }
+        // The whitelist is closed: chapter-1 checkpoints and every other
+        // variant must not resolve to a layout-ready scene.
+        for id in [
+            CheckpointId::RightPortraitDialogue,
+            CheckpointId::InvestigationExplore,
+            CheckpointId::InvestigationWithKagamiSummary,
+            CheckpointId::SceneNavigationLocked,
+            CheckpointId::SceneNavigationEligible,
+            CheckpointId::Chapter1AnalysisBeat85Ready,
+        ] {
+            assert_eq!(chapter2_layout_ready_scene(id), None);
+        }
     }
 
     #[test]
@@ -831,5 +1010,129 @@ mod tests {
             MAX_REPLAY_OPERATIONS,
         ));
         assert_eq!(unreachable.code, "e2eCheckpointUnreachable");
+    }
+
+    #[test]
+    fn chapter2_layout_ready_checkpoints_open_the_max_location_bar_in_explore() {
+        let expected = [
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene8,
+                "investigation_scene_8",
+                &["overpass_deck", "konbini_front", "leaked_clip_thread"][..],
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene10,
+                "investigation_scene_10",
+                &["alley_mouth", "ramen_backdoor"][..],
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene12,
+                "investigation_scene_12",
+                &[
+                    "truck_console",
+                    "building_exterior",
+                    "box_left_side",
+                    "alley_pickup_spot",
+                ][..],
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene14,
+                "investigation_scene_14",
+                &[
+                    "backstage_rear",
+                    "sponsor_corridor",
+                    "disaster_center",
+                    "seventh_floor_core",
+                ][..],
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene16,
+                "investigation_scene_16",
+                &["studio_entry", "studio_room"][..],
+            ),
+            (
+                CheckpointId::Chapter2InvestigationLayoutScene17,
+                "investigation_scene_17",
+                &["agency_office", "agency_entrance"][..],
+            ),
+        ];
+
+        for (id, scene_id, sublocation_ids) in expected {
+            let checkpoint =
+                build_checkpoint_with_limit(production_resources(), id, MAX_REPLAY_OPERATIONS)
+                    .unwrap();
+
+            // Chapter-qualified: scene IDs overlap across chapters, so the
+            // projection must name chapter_2 and the exact whitelisted scene.
+            assert_eq!(checkpoint.projection.chapter_id, "chapter_2", "{scene_id}");
+            assert_eq!(checkpoint.projection.scene_id, scene_id);
+            assert_eq!(
+                checkpoint.projection.mode,
+                CheckpointMode::Explore,
+                "{scene_id}"
+            );
+            assert_eq!(
+                checkpoint.projection.pending_acquisition, None,
+                "{scene_id}"
+            );
+            assert!(
+                !checkpoint.projection.scene_navigation_eligible,
+                "{scene_id}"
+            );
+
+            let view = checkpoint.engine.view().unwrap();
+            let ModeView::Explore { .. } = view.mode else {
+                panic!("{scene_id} layout-ready checkpoint must stand in Explore");
+            };
+            let SceneView::Investigation {
+                visible_sublocations,
+                outro_progress,
+                ..
+            } = view.scene
+            else {
+                panic!("{scene_id} layout-ready checkpoint must load an investigation scene");
+            };
+            let visible_ids: Vec<&str> = visible_sublocations
+                .iter()
+                .map(|sublocation| sublocation.id.as_str())
+                .collect();
+            assert_eq!(
+                visible_ids, sublocation_ids,
+                "{scene_id} must expose every authored sublocation at once"
+            );
+
+            // No investigation progress may be prefilled: nothing inspected,
+            // nothing discussed, and no Auto Outro work done.
+            assert!(
+                visible_sublocations.iter().all(|sublocation| sublocation
+                    .hotspots
+                    .iter()
+                    .all(|hotspot| !hotspot.inspected)),
+                "{scene_id} must not prefill hotspot inspections"
+            );
+            assert!(
+                visible_sublocations.iter().all(|sublocation| sublocation
+                    .characters
+                    .iter()
+                    .all(|character| character.topics.iter().all(|topic| !topic.discussed))),
+                "{scene_id} must not prefill topic discussions"
+            );
+            if let Some(progress) = outro_progress {
+                assert_eq!(progress.done, 0, "{scene_id} auto outro must start at zero");
+                assert!(
+                    progress.total > 0,
+                    "{scene_id} must keep reachable outro targets"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn layout_ready_checkpoints_exist_only_in_debug_e2e_builds() {
+        // The whole checkpoint module lives behind `#[cfg(feature = "e2e")]`
+        // and lib.rs turns `e2e` combined with a release build into a
+        // compile_error. Reaching this test therefore proves both halves of
+        // the production compile gating this fixture relies on.
+        assert!(cfg!(debug_assertions));
     }
 }
