@@ -12,7 +12,13 @@ type ExpectedCheckpointId =
   | "chapter-1-investigation-with-kagami-summary"
   | "chapter-1-scene-navigation-locked"
   | "chapter-1-scene-navigation-eligible"
-  | "chapter-1-analysis-beat-85-ready";
+  | "chapter-1-analysis-beat-85-ready"
+  | "chapter-2-investigation-layout-scene-8"
+  | "chapter-2-investigation-layout-scene-10"
+  | "chapter-2-investigation-layout-scene-12"
+  | "chapter-2-investigation-layout-scene-14"
+  | "chapter-2-investigation-layout-scene-16"
+  | "chapter-2-investigation-layout-scene-17";
 
 describe("packaged E2E checkpoint contract", () => {
   it("exposes exactly the Rust checkpoint wire IDs", () => {
@@ -23,6 +29,12 @@ describe("packaged E2E checkpoint contract", () => {
       "chapter-1-scene-navigation-locked",
       "chapter-1-scene-navigation-eligible",
       "chapter-1-analysis-beat-85-ready",
+      "chapter-2-investigation-layout-scene-8",
+      "chapter-2-investigation-layout-scene-10",
+      "chapter-2-investigation-layout-scene-12",
+      "chapter-2-investigation-layout-scene-14",
+      "chapter-2-investigation-layout-scene-16",
+      "chapter-2-investigation-layout-scene-17",
     ]);
     expectTypeOf<E2eCheckpointId>().toEqualTypeOf<ExpectedCheckpointId>();
   });
