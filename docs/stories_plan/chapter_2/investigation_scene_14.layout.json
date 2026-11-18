@@ -95,6 +95,47 @@
         }
       },
       "characters": {}
+    },
+    "disaster_center": {
+      "hotspots": {
+        "alarm_panel": {
+          "kind": "rect",
+          "x": 0.125,
+          "y": 0.381,
+          "w": 0.029,
+          "h": 0.274
+        },
+        "access_terminal": {
+          "kind": "rect",
+          "x": 0.414,
+          "y": 0.375,
+          "w": 0.1615,
+          "h": 0.1575
+        },
+        "cctv_monitors": {
+          "kind": "rect",
+          "x": 0.8284,
+          "y": 0.2795,
+          "w": 0.0466,
+          "h": 0.117
+        }
+      },
+      "characters": {
+        "building_guard": {
+          "kind": "baked",
+          "x": 0.1578,
+          "y": 0.381,
+          "w": 0.1026,
+          "h": 0.4894
+        },
+        "building_cleaner": {
+          "kind": "baked",
+          "x": 0.704,
+          "y": 0.3515,
+          "w": 0.1085,
+          "h": 0.4448
+        }
+      }
     }
   }
 }
