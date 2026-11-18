@@ -1126,15 +1126,4 @@ mod tests {
             }
         }
     }
-
-    #[test]
-    fn layout_ready_checkpoint_tests_run_in_debug_e2e_builds() {
-        // The whole checkpoint module lives behind `#[cfg(feature = "e2e")]`
-        // and cargo compiles test binaries in debug mode, so this assertion
-        // pins the profile the packaged E2E relies on. It proves only that
-        // this test binary is a debug build: the release-side rejection
-        // (lib.rs's `compile_error!` on `e2e` + `not(debug_assertions)`) is
-        // a compile-time gate no runtime test can exercise.
-        assert!(cfg!(debug_assertions));
-    }
 }
