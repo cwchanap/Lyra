@@ -1,7 +1,7 @@
 # HPA-853 — 第二章六個調查場景配置：實作計劃
 
 **日期：** 2026-11-14  
-**狀態：** Draft implementation plan（尚未實作）  
+**狀態：** Draft implementation plan（2026-11-14 規劃當時的施工順序基準，非實作宣告。現況：HPA-853 已部分實作——72 個目標已配置 67 個，其餘 5 個由 [HPA-1143](https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud) 追蹤；§5 acceptance 尚未全部成立）  
 **設計：** [HPA-853 設計規格](../specs/2026-11-14-hpa-853-chapter-2-investigation-placement-design.md)  
 **主票：** https://linear.app/cwchanap/issue/HPA-853/chapter-2-investigations-8-17-show-hotspots-in-the-off-scene-fallback  
 **獨立美術票：** https://linear.app/cwchanap/issue/HPA-1033/art-add-three-visible-chapter-2-investigation-witnesses-to-existing
@@ -93,7 +93,7 @@
 - [ ] **macOS／Windows 800×600 畫面驗收**：保存 Scene 12、14（fixture 開啟四地點列）的場景截圖，檢查 NAV 因字體差異換行及其與角色／熱點的遮擋。無需雙 OS 重跑 72 次 E2E、不得新增 Windows packaged runner、沒有人工簽核。
 - [ ] 確認全 72 目標最後沒有 `OFF-SCENE TARGETS / UNPLACED`，且案件 Markdown、證物來源、Unlock/Reveal／話題狀態與 save schema 不變；不列 Android/Linux 端到端驗收，既有 CI 照常執行。
 
-**本 Draft PR 仍只有規劃文件；以上為之後的 acceptance／測試要求，本次不宣稱測試已執行。**
+**現況（部分交付）：本 PR 已含規劃文件與部分實作——六個 sidecar、限用 e2e checkpoint 夾具與測試擴充均已提交，pre-art 與 post-art 批次已配置 67/72 目標，且 `scenes:compile`、`test:scripts` 與 packaged gameplay E2E 已實際執行通過。但以上 acceptance／測試要求尚未全部成立：其餘 5 個目標由 HPA-1143 追蹤，Chapter 2 零 fallback gate 仍未開啟，macOS／Windows 截圖與 E2E Full 仍待完成；§5 條件全文維持不變，為最終驗收基準。**
 
 ## 5. Acceptance Criteria（HPA-853 完成時全部成立）
 
