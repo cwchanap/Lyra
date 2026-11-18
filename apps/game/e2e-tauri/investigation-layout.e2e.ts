@@ -54,13 +54,14 @@ type Box = { left: number; top: number; right: number; bottom: number };
 const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 
 /**
- * Targets the compiled sidecars still leave unplaced only because their art
- * blocks an honest placement: the named blocker targets whose subjects sit
- * outside the 800x600 cover-crop band (or under the HUD with too little
- * HUD-free span). The final zero-fallback / 72-of-72 gate activates only
- * once this list is empty; until then it pins the exact pending set so
- * completion cannot drift silently. Update — do not delete — when the art
- * recompositions land.
+ * Targets the compiled sidecars still leave unplaced, tracked by HPA-1143
+ * (https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud):
+ * four whose art sits outside the 800x600 cover-crop band, plus scene 8's
+ * uploader_header, which is HUD-blocked — its only HUD-free strip is below
+ * the 44px hit-size floor. The final zero-fallback / 72-of-72 gate
+ * activates only once this list is empty; until then it pins the exact
+ * pending set so completion cannot drift silently. Update — do not delete —
+ * when the blockers are resolved.
  */
 const ART_BLOCKED_UNPLACED_TARGETS = [
   "chapter_2/investigation_scene_12/truck_console/coffee_cans",
@@ -1084,7 +1085,7 @@ describe("investigation layout surface", () => {
 
   // --- HPA-853 chapter-2 placement surface ---------------------------------
 
-  it("pins the 72-target completeness and centers every placed HPA-853 target in the 800x600 crop", () => {
+  it("pins the 72-target inventory (five still pending under HPA-1143) and centers every placed HPA-853 target in the 800x600 crop", () => {
     const hpa853Targets = shippedTargets().filter((target) =>
       HPA853_SCENE_NUMBERS.some((scene) =>
         target.id.startsWith(`chapter_2/investigation_scene_${scene}/`),
@@ -1101,9 +1102,9 @@ describe("investigation layout surface", () => {
     expect(hpa853Targets.length).toBe(72);
 
     // The final zero-fallback gate stays clearly pending until the five
-    // named art blockers are recomposed: the unplaced set must be exactly
-    // the declared art blockers — no target may silently join or leave
-    // that list.
+    // named HPA-1143 blockers are resolved: the unplaced set must be
+    // exactly the declared pending list — no target may silently join or
+    // leave that list.
     const unplacedIds = hpa853Targets
       .filter((target) => target.layout === null)
       .map((target) => target.id)

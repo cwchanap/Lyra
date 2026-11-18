@@ -1,7 +1,7 @@
 # HPA-853 — 第二章調查熱點／證人場景配置：設計規格
 
 **日期：** 2026-11-14  
-**狀態：** Draft design（僅供規劃，不代表已實作或測試）  
+**狀態：** Draft design（2026-11-14 規劃當時的設計基準，非實作宣告。現況：HPA-853 已部分實作——72 個目標已配置 67 個，其餘 5 個由 [HPA-1143](https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud) 追蹤；最終驗收尚未通過，Chapter 2 零 fallback gate 仍未開啟）  
 **Linear：** https://linear.app/cwchanap/issue/HPA-853/chapter-2-investigations-8-17-show-hotspots-in-the-off-scene-fallback  
 **美術依賴：** https://linear.app/cwchanap/issue/HPA-1033/art-add-three-visible-chapter-2-investigation-witnesses-to-existing
 
