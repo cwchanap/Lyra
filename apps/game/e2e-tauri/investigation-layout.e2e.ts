@@ -55,26 +55,17 @@ const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 
 /**
  * Targets the compiled sidecars still leave unplaced only because their art
- * is pending: the two HPA-1033 backdrop sublocations (ramen_backdoor,
- * disaster_center) plus the five named blocker targets. The final
- * zero-fallback / 72-of-72 gate activates only once this list is empty;
- * until then it pins the exact pending set so completion cannot drift
- * silently. Update — do not delete — when HPA-1033 lands.
+ * blocks an honest placement: the named blocker targets whose subjects sit
+ * outside the 800x600 cover-crop band (or under the HUD with too little
+ * HUD-free span). The final zero-fallback / 72-of-72 gate activates only
+ * once this list is empty; until then it pins the exact pending set so
+ * completion cannot drift silently. Update — do not delete — when the art
+ * recompositions land.
  */
 const ART_BLOCKED_UNPLACED_TARGETS = [
-  "chapter_2/investigation_scene_10/ramen_backdoor/pickup_shelf",
-  "chapter_2/investigation_scene_10/ramen_backdoor/exhaust_steam",
-  "chapter_2/investigation_scene_10/ramen_backdoor/rider_spot",
-  "chapter_2/investigation_scene_10/ramen_backdoor/ramen_owner",
-  "chapter_2/investigation_scene_10/ramen_backdoor/yuzuki",
   "chapter_2/investigation_scene_12/truck_console/coffee_cans",
   "chapter_2/investigation_scene_12/box_left_side/stair_gap",
   "chapter_2/investigation_scene_14/backstage_rear/heat_pack_crate",
-  "chapter_2/investigation_scene_14/disaster_center/access_terminal",
-  "chapter_2/investigation_scene_14/disaster_center/alarm_panel",
-  "chapter_2/investigation_scene_14/disaster_center/cctv_monitors",
-  "chapter_2/investigation_scene_14/disaster_center/building_guard",
-  "chapter_2/investigation_scene_14/disaster_center/building_cleaner",
   "chapter_2/investigation_scene_14/seventh_floor_core/stair_door",
   "chapter_2/investigation_scene_8/leaked_clip_thread/uploader_header",
 ];
@@ -1109,9 +1100,10 @@ describe("investigation layout surface", () => {
     expect(sublocationIds.size).toBe(17);
     expect(hpa853Targets.length).toBe(72);
 
-    // The final zero-fallback gate stays clearly pending until HPA-1033 art
-    // lands: the unplaced set must be exactly the declared art blockers — no
-    // target may silently join or leave that list.
+    // The final zero-fallback gate stays clearly pending until the five
+    // named art blockers are recomposed: the unplaced set must be exactly
+    // the declared art blockers — no target may silently join or leave
+    // that list.
     const unplacedIds = hpa853Targets
       .filter((target) => target.layout === null)
       .map((target) => target.id)

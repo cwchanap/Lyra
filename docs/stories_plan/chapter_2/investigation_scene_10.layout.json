@@ -34,6 +34,47 @@
         }
       },
       "characters": {}
+    },
+    "ramen_backdoor": {
+      "hotspots": {
+        "pickup_shelf": {
+          "kind": "rect",
+          "x": 0.448,
+          "y": 0.2824,
+          "w": 0.2786,
+          "h": 0.4167
+        },
+        "exhaust_steam": {
+          "kind": "rect",
+          "x": 0.484,
+          "y": 0.001,
+          "w": 0.148,
+          "h": 0.1233
+        },
+        "rider_spot": {
+          "kind": "rect",
+          "x": 0.7365,
+          "y": 0.665,
+          "w": 0.1385,
+          "h": 0.145
+        }
+      },
+      "characters": {
+        "ramen_owner": {
+          "kind": "baked",
+          "x": 0.373,
+          "y": 0.257,
+          "w": 0.039,
+          "h": 0.392
+        },
+        "yuzuki": {
+          "kind": "baked",
+          "x": 0.0745,
+          "y": 0.229,
+          "w": 0.126,
+          "h": 0.6506
+        }
+      }
     }
   }
 }
