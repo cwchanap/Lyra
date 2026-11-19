@@ -1,13 +1,13 @@
 <script module lang="ts">
-  import { SvelteSet as CollapseSet } from "svelte/reactivity";
+  import { SvelteMap as CollapseMap } from "svelte/reactivity";
 
-  // Remember a player's expansion choice across explore remounts, per location.
-  const expandedFallbackKeys = new CollapseSet<string>();
+  // Remember a player's collapse choice across explore remounts, per location.
+  const fallbackCollapseChoices = new CollapseMap<string, boolean>();
 
   /** Test hook: module state survives component unmounts, so suites must
       clear it between cases. */
   export function resetFallbackCollapseForTests() {
-    expandedFallbackKeys.clear();
+    fallbackCollapseChoices.clear();
   }
 </script>
 
@@ -395,9 +395,17 @@
       unplacedCharacters.length +
       clippedCharacters.length,
   );
+  let unplacedEntryCount = $derived(
+    unplacedHotspots.length + unplacedCharacters.length,
+  );
   let collapseKey = $derived(surfaceKey ?? sublocation.id);
-  // A closed panel leaves the smaller scene viewport usable until requested.
-  let fallbackCollapsed = $derived(!expandedFallbackKeys.has(collapseKey));
+  // A panel holding layout-less targets is their only reachability path —
+  // collapsing it to a pill hides them outright, so it starts expanded.
+  // A clipped-only panel stays collapsed so the smaller viewport band
+  // remains usable until requested. Either way the player's choice wins.
+  let fallbackCollapsed = $derived(
+    fallbackCollapseChoices.get(collapseKey) ?? unplacedEntryCount === 0,
+  );
   let activeCharacter = $derived(
     placedCharacters.find((character) => character.id === activeCharacterId) ??
       null,
@@ -879,8 +887,7 @@
         aria-expanded={!fallbackCollapsed}
         {disabled}
         onclick={() => {
-          if (fallbackCollapsed) expandedFallbackKeys.add(collapseKey);
-          else expandedFallbackKeys.delete(collapseKey);
+          fallbackCollapseChoices.set(collapseKey, !fallbackCollapsed);
         }}
       >
         <span class="eyebrow">OFF-SCENE TARGETS · {fallbackEntryCount}</span>
