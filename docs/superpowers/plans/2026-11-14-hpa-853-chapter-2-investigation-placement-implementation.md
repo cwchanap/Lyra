@@ -1,7 +1,7 @@
 # HPA-853 — 第二章六個調查場景配置：實作計劃
 
 **日期：** 2026-11-14  
-**狀態：** Draft implementation plan（2026-11-14 規劃當時的施工順序基準，非實作宣告。現況：HPA-853 已部分實作——72 個目標已配置 67 個，其餘 5 個由 [HPA-1143](https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud) 追蹤；§5 acceptance 尚未全部成立）  
+**狀態：** Draft implementation plan（2026-11-14 規劃當時的施工順序基準，非實作宣告。現況：72/72 目標全部配置——[HPA-1143](https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud) 五個目標在共享表頭縮小 cover 後落入可視帶，已配置並啟用 Chapter 2 零 fallback gate；packaged gameplay E2E 複驗、Editor overlay、macOS／Windows 截圖與 E2E Full 仍待完成）  
 **設計：** [HPA-853 設計規格](../specs/2026-11-14-hpa-853-chapter-2-investigation-placement-design.md)  
 **主票：** https://linear.app/cwchanap/issue/HPA-853/chapter-2-investigations-8-17-show-hotspots-in-the-off-scene-fallback  
 **獨立美術票：** https://linear.app/cwchanap/issue/HPA-1033/art-add-three-visible-chapter-2-investigation-witnesses-to-existing
@@ -72,7 +72,7 @@
 - [ ] **配置完整度**：全部 72 個目標完成後，修改 `packages/scripts/compile-scenes.test.ts` 內 `RELEASE_GATED_CHAPTERS` 為 Chapter 1 + Chapter 2。既有 compiler 驗證未知 ID；本 gate 驗證 `layout: null`，不新增全域 compiler hard error。**在 HPA-1033 合併前不要打開此 gate**。
 - [ ] **重疊與 snapshot**：既有 live-corpus test 已要求 warnings 只有 story catalog 那一項，所以新增 hotspot overlap warning 本來會失敗；不新增另一個 overlap analyzer。更新 live-corpus snapshot 以承認 layout 參與 emitted chapters 及 `contentRevision` 的預期變更；開發存檔可依 pre-release 政策不相容，無須 schema migration。
 - [ ] **800×600 裁切／提示點（沿用全章現有契約）**：`apps/game/e2e-tauri/investigation-layout.e2e.ts` 的 `shippedPlacements()` 已掃描所有已配置的章節，保留 `MIN_USABLE_TARGET_PX = 44`、compact variants 與 pending cue 測試。已驗證現有 **8 個**邊緣點中心在 [0.125, 0.875] 外（Chapter 1 五個、Chapter 2 Scene 4 三個），但仍滿足可見跨度；**不擴大全章 center gate，也不為此搬動舊 sidecar**。
-- [ ] **本票六個 scene 專用中心點**：僅 `chapter_2/investigation_scene_{8,10,12,14,16,17}` 新增中心 `x ∈ [0.125, 0.875]`（及 800×600 viewport y）檢查。與既有 `shippedPlacements()` CSS cover 計算共用同一 helper，不再造一個人工驗證器。
+- [ ] **本票六個 scene 專用中心點**：僅 `chapter_2/investigation_scene_{8,10,12,14,16,17}` 新增中心點檢查，帶由 stage-relative cover 推導（六場景最短表頭 120px 下限 → 480px stage → 853×480 cover → `x ∈ [0.031, 0.969]`），取代原稿固定 `[0.125, 0.875]`——後者沿用全視窗 cover 假設，會誤擋四個誠實貼圖緣的 HPA-1143 目標。與既有 `shippedPlacements()` CSS cover 計算共用同一 helper，不再造一個人工驗證器。
 - [ ] **決定性最大地點列測試入口：採「最小 e2e-only checkpoint」方案**，而非在 layout E2E 重新編寫六個案件的全部解鎖／Present 鏈：
   - `apps/game/e2e-tauri/helpers.ts` 的普通 `jumpToProductionScene` 只用於 Chapter 1，同名 scene ID 會衝突；Chapter 2 通常須 `jumpToProductionChapterScene("chapter_2", sceneId)`。
   - 為避免 Scene 12、14 初始僅 **1/4** 地點可見、Scene 8/10/17 亦含 locked 地點，以及各場景 `Auto Outro` 因多做調查而退出，沿用 `apps/game/src-tauri/src/game/e2e_checkpoints.rs` 的 `#[cfg(feature = "e2e")]` 測試夾具。**只為白名單枚舉的 scene IDs** 建立一個共用 layout-ready fixture helper（枚舉固定 checkpoint ID，不新增通用故事解鎖命令）：本票六場景，另加 Scene 4 作共享 `.scene-hud` 表頭的迴歸檢查面。
@@ -93,7 +93,7 @@
 - [ ] **macOS／Windows 800×600 畫面驗收**：保存 Scene 12、14（fixture 開啟四地點列）的場景截圖，檢查 NAV 因字體差異換行及其與角色／熱點的遮擋。無需雙 OS 重跑 72 次 E2E、不得新增 Windows packaged runner、沒有人工簽核。
 - [ ] 確認全 72 目標最後沒有 `OFF-SCENE TARGETS / UNPLACED`，且案件 Markdown、證物來源、Unlock/Reveal／話題狀態與 save schema 不變；不列 Android/Linux 端到端驗收，既有 CI 照常執行。
 
-**現況（部分交付）：本 PR 已含規劃文件與部分實作——六個 sidecar、限用 e2e checkpoint 夾具（白名單含 Scene 4 共享表頭迴歸檢查）與測試擴充均已提交，pre-art 與 post-art 批次已配置 67/72 目標，且 `scenes:compile`、`test:scripts` 與 packaged gameplay E2E 已實際執行通過。但以上 acceptance／測試要求尚未全部成立：其餘 5 個目標由 HPA-1143 追蹤，Chapter 2 零 fallback gate 仍未開啟，macOS／Windows 截圖與 E2E Full 仍待完成；§5 條件全文維持不變，為最終驗收基準。PR 於審查期間維持 Draft，待上述檢查完成後再轉 ready。**
+**現況：本 PR 已含規劃文件與實作——六個 sidecar 全部 72 目標完成配置（含 HPA-1143 五個：共享表頭縮小 cover 後四個圖緣物件落入可視帶、`uploader_header` 亦離開 NAV 遮擋，中心點 gate 已改為 stage-relative 推導帶）、Chapter 2 `RELEASE_GATED_CHAPTERS` gate 已開啟、限用 e2e checkpoint 夾具（白名單含 Scene 4 共享表頭迴歸檢查）與測試擴充均已提交，且 `scenes:compile`、`test:scripts`（含 snapshot 更新）已實際執行通過。但以上 acceptance／測試要求尚未全部成立：packaged gameplay E2E 複驗、17 張 Editor overlay、macOS／Windows 截圖與 E2E Full 仍待完成；§5 條件全文維持不變，為最終驗收基準。PR 於審查期間維持 Draft，待上述檢查完成後再轉 ready。**
 
 ## 5. Acceptance Criteria（HPA-853 完成時全部成立）
 

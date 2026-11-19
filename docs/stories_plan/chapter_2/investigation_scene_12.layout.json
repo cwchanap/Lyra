@@ -24,8 +24,23 @@
           "y": 0.381,
           "w": 0.103,
           "h": 0.077
+        },
+        "coffee_cans": {
+          "kind": "rect",
+          "x": 0.0,
+          "y": 0.42,
+          "w": 0.138,
+          "h": 0.345
         }
       },
+      "intentionalOverlaps": [
+        {
+          "hotspots": [
+            "coffee_cans",
+            "truck_window"
+          ]
+        }
+      ],
       "characters": {
         "director": {
           "kind": "baked",
@@ -85,6 +100,13 @@
           "y": 0.4,
           "w": 0.252,
           "h": 0.34
+        },
+        "stair_gap": {
+          "kind": "rect",
+          "x": 0.928,
+          "y": 0.335,
+          "w": 0.05,
+          "h": 0.112
         }
       },
       "characters": {

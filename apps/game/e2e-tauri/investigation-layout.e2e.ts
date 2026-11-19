@@ -24,6 +24,7 @@ import {
 } from "$lib/e2e/case-file-viewport";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
+  coverPlaneSize,
   targetLayoutStyle,
   targetViewportRect,
   type TargetLayout,
@@ -56,22 +57,14 @@ type Box = { left: number; top: number; right: number; bottom: number };
 const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 
 /**
- * Targets the compiled sidecars still leave unplaced, tracked by HPA-1143
- * (https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud):
- * four whose art sits outside the 800x600 cover-crop band, plus scene 8's
- * uploader_header, which is HUD-blocked — its only HUD-free strip is below
- * the 44px hit-size floor. The final zero-fallback / 72-of-72 gate
- * activates only once this list is empty; until then it pins the exact
- * pending set so completion cannot drift silently. Update — do not delete —
- * when the blockers are resolved.
+ * The pinned unplaced set: empty since HPA-1143's five targets shipped —
+ * the stage-relative header shrinks the 800x600 cover enough that all
+ * five objects sit inside the revealed band (scene 8's uploader_header
+ * clears the nav outright; the four edge objects survive the ~3% side
+ * crop). The gate below requires this set to stay empty — any compiled
+ * target losing its layout fails loudly here.
  */
-const ART_BLOCKED_UNPLACED_TARGETS = [
-  "chapter_2/investigation_scene_12/truck_console/coffee_cans",
-  "chapter_2/investigation_scene_12/box_left_side/stair_gap",
-  "chapter_2/investigation_scene_14/backstage_rear/heat_pack_crate",
-  "chapter_2/investigation_scene_14/seventh_floor_core/stair_door",
-  "chapter_2/investigation_scene_8/leaked_clip_thread/uploader_header",
-];
+const EXPECTED_UNPLACED_TARGETS: string[] = [];
 
 /**
  * Authored sublocation count per HPA-853 scene: the max location bar must
@@ -1134,7 +1127,7 @@ describe("investigation layout surface", () => {
 
   // --- HPA-853 chapter-2 placement surface ---------------------------------
 
-  it("pins the 72-target inventory (five still pending under HPA-1143) and centers every placed HPA-853 target in the 800x600 crop", () => {
+  it("pins the fully-placed 72-target inventory and keeps every HPA-853 target center inside the stage-relative crop band", () => {
     const hpa853Targets = shippedTargets().filter((target) =>
       HPA853_SCENE_NUMBERS.some((scene) =>
         target.id.startsWith(`chapter_2/investigation_scene_${scene}/`),
@@ -1150,47 +1143,56 @@ describe("investigation layout surface", () => {
     expect(sublocationIds.size).toBe(17);
     expect(hpa853Targets.length).toBe(72);
 
-    // The final zero-fallback gate stays clearly pending until the five
-    // named HPA-1143 blockers are resolved: the unplaced set must be
-    // exactly the declared pending list — no target may silently join or
-    // leave that list.
+    // The zero-fallback gate is armed: the unplaced set must be exactly
+    // the declared pending list — now empty — so any target silently
+    // losing its layout fails here.
     const unplacedIds = hpa853Targets
       .filter((target) => target.layout === null)
       .map((target) => target.id)
       .toSorted();
-    expect(unplacedIds).toEqual([...ART_BLOCKED_UNPLACED_TARGETS].toSorted());
+    expect(unplacedIds).toEqual([...EXPECTED_UNPLACED_TARGETS].toSorted());
 
-    // Strict center gate for the six new scenes only (design §4.2): the
-    // normalized center x stays in the middle 3/4 of the cover plane, and
-    // the shared CSS-cover math must land that center inside the 800x600
-    // viewport. Existing chapter-1 and chapter-2 scene-4 edge placements are
-    // deliberately out of scope and are not moved.
-    const viewport = { w: MINIMUM_WINDOW.width, h: MINIMUM_WINDOW.height };
+    // Strict center gate for the six new scenes only (design §4.2),
+    // derived from the stage-relative cover rather than a fixed band:
+    // the visible x-range is the centered cover minus its symmetric
+    // crop. The worst case is the widest cover, which the shortest
+    // .scene-hud produces — every measured header at 800x600 across
+    // these scenes is >= ~129px (nav bottom), so bounding it at 120px
+    // gives a 480px stage -> 853x480 cover -> ~3.1% side crops. That
+    // tighter cover is what moved HPA-1143's four edge objects inside
+    // the revealed band. Existing chapter-1 and chapter-2 scene-4 edge
+    // placements are deliberately out of scope and are not moved.
+    const stageViewport = {
+      w: MINIMUM_WINDOW.width,
+      h: MINIMUM_WINDOW.height - 120,
+    };
+    const cover = coverPlaneSize(stageViewport);
+    const cropFraction = (cover.w - stageViewport.w) / 2 / cover.w;
     const offCenter: string[] = [];
     const cropped: string[] = [];
     for (const target of hpa853Targets) {
       if (target.layout === null) continue;
       const centerX = target.layout.x + target.layout.w / 2;
       if (
-        centerX < 0.125 - CENTER_EPSILON ||
-        centerX > 0.875 + CENTER_EPSILON
+        centerX < cropFraction - CENTER_EPSILON ||
+        centerX > 1 - cropFraction + CENTER_EPSILON
       ) {
         offCenter.push(
-          `${target.id}: center x ${centerX.toFixed(4)} outside [0.125, 0.875]`,
+          `${target.id}: center x ${centerX.toFixed(4)} outside [${cropFraction.toFixed(4)}, ${(1 - cropFraction).toFixed(4)}]`,
         );
         continue;
       }
-      const rect = targetViewportRect(target.layout, viewport);
+      const rect = targetViewportRect(target.layout, stageViewport);
       const centerXInView = (rect.left + rect.right) / 2;
       const centerYInView = (rect.top + rect.bottom) / 2;
       if (
         centerXInView < 0 ||
-        centerXInView > viewport.w ||
+        centerXInView > stageViewport.w ||
         centerYInView < 0 ||
-        centerYInView > viewport.h
+        centerYInView > stageViewport.h
       ) {
         cropped.push(
-          `${target.id}: center ${centerXInView.toFixed(1)},${centerYInView.toFixed(1)} outside ${viewport.w}x${viewport.h}`,
+          `${target.id}: center ${centerXInView.toFixed(1)},${centerYInView.toFixed(1)} outside ${stageViewport.w}x${stageViewport.h}`,
         );
       }
     }
