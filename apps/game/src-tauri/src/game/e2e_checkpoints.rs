@@ -21,6 +21,8 @@ pub(crate) enum CheckpointId {
     SceneNavigationEligible,
     #[serde(rename = "chapter-1-analysis-beat-85-ready")]
     Chapter1AnalysisBeat85Ready,
+    #[serde(rename = "chapter-2-investigation-layout-scene-4")]
+    Chapter2InvestigationLayoutScene4,
     #[serde(rename = "chapter-2-investigation-layout-scene-8")]
     Chapter2InvestigationLayoutScene8,
     #[serde(rename = "chapter-2-investigation-layout-scene-10")]
@@ -194,7 +196,8 @@ fn build_checkpoint_with_limit(
                 advance_dialogue_bounded(&mut engine, view, &mut operations, replay_limit)?;
             }
         }
-        CheckpointId::Chapter2InvestigationLayoutScene8
+        CheckpointId::Chapter2InvestigationLayoutScene4
+        | CheckpointId::Chapter2InvestigationLayoutScene8
         | CheckpointId::Chapter2InvestigationLayoutScene10
         | CheckpointId::Chapter2InvestigationLayoutScene12
         | CheckpointId::Chapter2InvestigationLayoutScene14
@@ -231,12 +234,16 @@ fn build_checkpoint_with_limit(
 }
 
 /// Wire-ID → chapter-qualified scene whitelist of the chapter-2
-/// layout-ready checkpoint fixture (HPA-853). Scene IDs overlap across
-/// chapters, so each fixed checkpoint ID binds to exactly one chapter_2
-/// investigation scene; there is deliberately no scene-id parameter and no
-/// generic story-unlock API behind this fixture.
+/// layout-ready checkpoint fixture (HPA-853, plus the existing scene 4
+/// the shared stage header now also has to keep on the art). Scene IDs
+/// overlap across chapters, so each fixed checkpoint ID binds to exactly
+/// one chapter_2 investigation scene; there is deliberately no scene-id
+/// parameter and no generic story-unlock API behind this fixture.
 fn chapter2_layout_ready_scene(id: CheckpointId) -> Option<(&'static str, &'static str)> {
     match id {
+        CheckpointId::Chapter2InvestigationLayoutScene4 => {
+            Some(("chapter_2", "investigation_scene_4"))
+        }
         CheckpointId::Chapter2InvestigationLayoutScene8 => {
             Some(("chapter_2", "investigation_scene_8"))
         }

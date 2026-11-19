@@ -53,7 +53,7 @@ Chapter 2 調查 Scene 8、10、12、14、16、17 都有有效的劇情、熱點
 
 ### 4.2 800×600 可視區、最大地點列與 HUD 遮擋
 
-背景以 16:9 cover 顯示在 800×600（4:3）視窗：影像約為 1066.7×600px，左右各裁去約 133.3px。以**背景本身的 normalized 座標**計，**本票六個新增場景**的目標中心 x 應位於 **[0.125, 0.875]** 內；座標仍以實際圖片／Editor 為準。**此更嚴格的中心點規則只適用 HPA-853 六場景，不回溯修改既有 Chapter 1 或 Chapter 2 Scene 4/5 配置。**現有全章 `shippedPlacements()` 測試的 **44px 可用跨度（`MIN_USABLE_TARGET_PX`）及 pending cue** 是全章共用回歸契約：既有 8 個目標的中心雖在上述區間外，仍可用部分裁切的矩形點選；不能為了讓新 assertion 綠燈而搬離原圖物件。
+背景以 16:9 cover 顯示在扣除 `.scene-hud` 表頭實測高度後的 `.scene-stage` 區域：800×600（4:3）視窗下 stage 為 800×（600 − headerHeight），cover 影像寬度為 max(800, stage 高 × 16⁄9)，左右裁切量隨表頭高度變動——表頭越高，影像越窄、水平可見範圍越寬，stage 下緣同時上移。此表頭為**全調查場景共用**，不只本票六場景：既有 Scene 4 等場景的可視區同樣縮短，故 packaged e2e 以 Scene 4 五地點狀態加設「已配置目標不得改路由 OFF-SCENE」的迴歸檢查；Scene 4 既有 HUD 問題仍屬 HPA-852。以**背景本身的 normalized 座標**計，**本票六個新增場景**的目標中心 x 應位於 **[0.125, 0.875]** 內；座標仍以實際圖片／Editor 為準。**此更嚴格的中心點規則只適用 HPA-853 六場景，不回溯修改既有 Chapter 1 或 Chapter 2 Scene 4/5 配置。**現有全章 `shippedPlacements()` 測試的 **44px 可用跨度（`MIN_USABLE_TARGET_PX`）及 pending cue** 是全章共用回歸契約：既有 8 個目標的中心雖在上述區間外，仍可用部分裁切的矩形點選；不能為了讓新 assertion 綠燈而搬離原圖物件。
 
 **不可使用 `y > nav.bottom / 600` 當成全寬安全線。** `ExploreView.svelte` 的 `.explore-hud` 是 flex-wrap；nav 與右側 `hud-side` 可換行並移到不同位置，且 `PROGRESS`、`PRIMARY OBJECTIVE`、`.scene-label` 雖設有 `pointer-events: none`，仍會實際蓋住美術／提示。唯一可靠方式是**在 800×600 的真實遊戲畫面量測每個正在顯示的 HUD 元素 DOM rect**，與目標可點矩形逐一檢查不相交。至少涵蓋：
 
@@ -64,9 +64,9 @@ Chapter 2 調查 Scene 8、10、12、14、16、17 都有有效的劇情、熱點
 
 對本票六個場景，使用既有 `investigation-layout.e2e.ts`、`targetLayoutStyle` 與 packaged WebView，建立每場景的**最大地點列狀態**再量測；視覺遮擋用 DOM rect 相交判定，**只將 `document.elementFromPoint(cx, cy)` 用於確認目標按鈕（或其內部元素）能接收點擊**，不可用它判斷 `pointer-events: none` HUD 是否遮住畫面。必要時檢查其他互動按鈕／fallback 層是否搶點。
 
-**最大地點列的最小測試入口：** Chapter 2 scene IDs 與 Chapter 1 重複，既有 `jumpToProductionScene` 不能用於跳 Chapter 2；須使用 `jumpToProductionChapterScene("chapter_2", sceneId)`。Scene 8、10、12、14、17（以及其他需要的場景）有鎖定的 sublocation，Scene 12／14 初始只有一地點可見；兩者後續解鎖牽涉 `Present`，且六場景都有 Auto Outro。**不要把六段案件推理／出示順序複製進 layout E2E**。採用既有 `e2e_checkpoints.rs` 模式，僅在 `#[cfg(feature = "e2e")]` 下新增**一套限於這六個 scene 的 layout-ready checkpoint helper**（依明確枚舉的 scene ID），由 `engine.jump_to_scene("chapter_2", sceneId)` 起步、透過現有 `InvestigationSceneState::unlock_override("sublocation:…")` 解鎖當前 scene 的所有子地點、進入 Explore；**不預先 inspect／討論任何目標**，避免觸發 Auto Outro。這是測試夾具，不是新的生產功能、schema 或故事 state 改動。E2E 可在不跑謎題的情況下於 17 個 sublocation 切換並量測真實 NAV/HUD；不可新增通用「解鎖全故事」API。
+**最大地點列的最小測試入口：** Chapter 2 scene IDs 與 Chapter 1 重複，既有 `jumpToProductionScene` 不能用於跳 Chapter 2；須使用 `jumpToProductionChapterScene("chapter_2", sceneId)`。Scene 8、10、12、14、17（以及其他需要的場景）有鎖定的 sublocation，Scene 12／14 初始只有一地點可見；兩者後續解鎖牽涉 `Present`，且六場景都有 Auto Outro。**不要把六段案件推理／出示順序複製進 layout E2E**。採用既有 `e2e_checkpoints.rs` 模式，僅在 `#[cfg(feature = "e2e")]` 下新增**一套依明確枚舉 scene ID 的 layout-ready checkpoint helper**（本票六場景，另加 Scene 4 作共享表頭迴歸檢查），由 `engine.jump_to_scene("chapter_2", sceneId)` 起步、透過現有 `InvestigationSceneState::unlock_override("sublocation:…")` 解鎖當前 scene 的所有子地點、進入 Explore；**不預先 inspect／討論任何目標**，避免觸發 Auto Outro。這是測試夾具，不是新的生產功能、schema 或故事 state 改動。E2E 可在不跑謎題的情況下於 17 個 sublocation 切換並量測真實 NAV/HUD；不可新增通用「解鎖全故事」API。
 
-- 本票六個場景每個只有 2～4 個 sublocation；特別量測 Scene 12／14 的**四地點**狀態，不能只量初始的一地點並宣稱檢查了換行。Scene 4 的五地點 HUD 問題屬 HPA-852。
+- 本票六個場景每個只有 2～4 個 sublocation；特別量測 Scene 12／14 的**四地點**狀態，不能只量初始的一地點並宣稱檢查了換行。Scene 4 的五地點狀態是本票**共享表頭**改動的最大 nav 迴歸面：同一 checkpoint fixture 解鎖其全部五個 sublocation，檢查所有已配置目標維持 on-art（無新增 OFF-SCENE 路由）；其 HUD 整體改版仍屬 HPA-852。
 - `shippedPlacements()` 仍照現有方式檢查全部已配置章節的 **44px 裁切、compact 與 cue**；中心點與上述 live HUD rect／中心命中補充**只針對六個新增場景**。不修改 5 個既有 Chapter 1 和 3 個 Chapter 2 Scene 4 的 edge-of-frame 點位來滿足新規則。
 - 兩張待補圖場景 `ramen_backdoor`、`disaster_center` 在 HPA-1033 合併前尚未有 layout；**批次測試允許這兩處仍有 OFF-SCENE fallback**，不得在此階段宣稱全場景通過。等 72 個目標都完成才啟動「零 fallback」正式 gate。
 - 熱點與熱點、熱點與 baked 人物不得搶點。先縮到實際物件輪廓；`intentionalOverlaps` 僅限可同時操作的刻意重疊，不用來掩蓋真實誤放。Scene 8 平板／字幕及 Scene 16 手機／錄音、企劃板／底頁，用不同來源區與既有解鎖時序呈現。
