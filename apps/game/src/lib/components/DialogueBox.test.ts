@@ -1846,6 +1846,9 @@ describe("DialogueBox inner voice (心聲)", () => {
     expect(container.querySelector(".interrogation-kicker")).toHaveTextContent(
       "心聲 · THOUGHT",
     );
+    // The kicker already carries the thought mark — the kind chip stays the
+    // generic line type so the label does not render twice.
+    expect(container.querySelector(".kind")).toHaveTextContent("發言 · LINE");
     expect(screen.queryByText("證言 · TESTIMONY")).toBeNull();
   });
 
