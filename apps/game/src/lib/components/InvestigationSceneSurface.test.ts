@@ -1012,17 +1012,22 @@ describe("InvestigationSceneSurface", () => {
     expect(onInterview).toHaveBeenCalledWith("witness", "alibi");
   });
 
-  it("renders unplaced hotspot fallback controls", async () => {
+  it("expands unplaced hotspot fallback controls by default", () => {
     render(InvestigationSceneSurface, {
       sublocation,
       onInspect: vi.fn(),
       onInterview: vi.fn(),
     });
 
-    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
+    // The panel is the only reachability path for layout-less targets, so
+    // it starts expanded instead of hiding them behind the OFF-SCENE pill.
     expect(
       screen.getByRole("button", { name: /未放置：櫃子/ }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /收合/ })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
 
   it("renders unplaced character fallback controls with bio and topics", async () => {
@@ -1060,7 +1065,6 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
     expect(screen.getByText("路人")).toBeInTheDocument();
     expect(screen.getByText("旁觀者")).toBeInTheDocument();
     expect(screen.getByText("站在門外看熱鬧。")).toBeInTheDocument();
@@ -1135,7 +1139,7 @@ describe("InvestigationSceneSurface", () => {
     expect(
       screen.getByRole("button", { name: /詢問：對面店主/ }),
     ).toHaveProperty("inert", true);
-    await user.click(screen.getByRole("button", { name: /展開/ }));
+    // The unplaced 櫃子 starts the panel expanded — no 展開 click needed.
     await user.click(screen.getByRole("button", { name: /畫面外：帳本/ }));
     expect(onInspect).toHaveBeenCalledWith("ledger");
     // Reachable targets stay on the plane and interactive.
@@ -1183,6 +1187,12 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
+    // A clipped-only panel still starts collapsed: every entry has a
+    // placed copy the plane may reclaim, so the viewport band wins by
+    // default.
+    expect(container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
     await user.click(screen.getByRole("button", { name: /展開/ }));
     const toggle = screen.getByRole("button", { name: /收合/ });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
@@ -1289,6 +1299,32 @@ describe("InvestigationSceneSurface", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the collapse choice after the surface unmounts and remounts", async () => {
+    // The unplaced 櫃子 defaults the panel open; a deliberate collapse is
+    // the remembered choice, not the layout-less default.
+    const props = {
+      sublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    };
+    const user = userEvent.setup();
+    const first = render(InvestigationSceneSurface, props);
+
+    await user.click(screen.getByRole("button", { name: /收合/ }));
+    expect(first.container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+
+    first.unmount();
+    const second = render(InvestigationSceneSurface, props);
+    expect(second.container.querySelector(".fallback-controls")).toHaveClass(
+      "collapsed",
+    );
+    expect(
+      screen.queryByRole("button", { name: /未放置：櫃子/ }),
+    ).not.toBeInTheDocument();
+  });
+
   it("routes a placed target the fallback panel itself occludes into the list", async () => {
     // The expanded panel is a fixed bottom band: a target can clear the
     // cover-plane crop yet still sit under the panel. A mocked panel rect
@@ -1338,7 +1374,8 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
+    // The unplaced 櫃子 starts the panel expanded — the mocked band already
+    // covers the viewport bottom without a toggle click.
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: /調查：地板夾層/ }),
@@ -1396,11 +1433,8 @@ describe("InvestigationSceneSurface", () => {
         "--scene-header-height": "120px",
       });
     });
-    expect(
-      screen.getByRole("button", { name: /調查：地板夾層/ }),
-    ).toHaveProperty("inert", false);
-
-    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
+    // The unplaced 櫃子 starts the panel expanded, so the low target is
+    // already routed into the list under the full-width band.
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: /調查：地板夾層/ }),
@@ -1409,6 +1443,15 @@ describe("InvestigationSceneSurface", () => {
     expect(
       screen.getByRole("button", { name: /畫面外：地板夾層/ }),
     ).toBeInTheDocument();
+
+    // Collapsed back to the corner pill, the band no longer occludes the
+    // target and it returns to the plane.
+    await userEvent.setup().click(screen.getByRole("button", { name: /收合/ }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /調查：地板夾層/ }),
+      ).toHaveProperty("inert", false);
+    });
   });
 
   it("keeps the fallback toggle outside the panel's scroll area", () => {
@@ -1421,7 +1464,7 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    const toggle = screen.getByRole("button", { name: /展開/ });
+    const toggle = screen.getByRole("button", { name: /OFF-SCENE TARGETS/ });
     expect(toggle.closest(".fallback-controls")).not.toBeNull();
     expect(toggle.closest(".fallback-grid")).toBeNull();
   });
