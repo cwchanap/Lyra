@@ -2556,80 +2556,530 @@ describe("compile (global story catalog)", () => {
 // (HPA-853: chapter-2 layout batches pushed the old 30s block timeout past
 // its limit under suite parallelism), so the block gets its own timeout.
 describe("compile (tracked production corpus compatibility)", () => {
+  // The live corpus costs ~30s per compile; these tests used to pay that
+  // four times behind a 120s suite timeout. Compile the two variants once —
+  // the plain docs corpus, plus the asset-enabled static+docs corpus the
+  // provenance test needs.
+  const repoRoot = resolve(".");
+  let liveOutRoot = "";
+  let liveAssetOutRoot = "";
+  let liveWarnings: Extract<
+    ReturnType<typeof compile>,
+    { ok: true }
+  >["warnings"] = [];
+
+  beforeAll(() => {
+    liveOutRoot = mkdtempSync(resolve(tmpdir(), "scene-compile-live-"));
+    const plain = compile({
+      sourceRoot: resolve(repoRoot, "docs/stories_plan"),
+      outputRoot: liveOutRoot,
+      assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+      repoRoot,
+    });
+    if (!plain.ok) {
+      throw new Error(
+        "Live corpus compile failed:\n" + formatErrors(plain.errors),
+      );
+    }
+    liveWarnings = plain.warnings;
+
+    liveAssetOutRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-assets-"),
+    );
+    const assets = compile({
+      sourceRoot: [
+        resolve(repoRoot, "static/stories_plan"),
+        resolve(repoRoot, "docs/stories_plan"),
+      ],
+      outputRoot: liveAssetOutRoot,
+      assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+      assetOutputRoot: resolve(liveAssetOutRoot, "assets"),
+      repoRoot,
+    });
+    if (!assets.ok) {
+      throw new Error(
+        "Live corpus compile failed:\n" + formatErrors(assets.errors),
+      );
+    }
+  }, 120_000);
+
+  afterAll(() => {
+    for (const root of [liveOutRoot, liveAssetOutRoot]) {
+      if (root) rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("compiles the canonical HPA-265 Analysis scene with only the requested outputs", () => {
     // Break caught: the production manifest can keep the superseded linear
     // scene (or drift from the canonical three-board contract) while the
     // compiler's generic Analysis fixture remains green.
-    const outRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-live-hpa-265-analysis-"),
-    );
+    const outRoot = liveOutRoot;
     const readJson = (path: string) =>
       JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
-    try {
-      const repoRoot = resolve(".");
-      const result = compile({
-        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
-        outputRoot: outRoot,
-        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+
+    const chapter = readJson("chapters.json").chapters.find(
+      (entry: { id: string }) => entry.id === "chapter_1",
+    );
+    expect(chapter.scenes).toContainEqual({
+      type: "analysis",
+      file: "chapter_1/analysis_scene_8_5.json",
+    });
+    expect(chapter.scenes).not.toContainEqual({
+      type: "linear",
+      file: "chapter_1/scene_8_5.json",
+    });
+
+    const analysis = readJson("chapter_1/analysis_scene_8_5.json");
+    const investigation = readJson("chapter_1/investigation_scene_8.json");
+    const miyakeInterrogation = readJson(
+      "chapter_1/interrogation_scene_4.json",
+    );
+    const motherCallLead = miyakeInterrogation.evidenceManifest.find(
+      (record: { id: string }) => record.id === "miyake_mother_call_log",
+    );
+    const motherCallConfirmation = investigation.evidenceManifest.find(
+      (record: { id: string }) =>
+        record.id === "miyake_mother_call_confirmation",
+    );
+    const fixedPanel = investigation.sublocations.find(
+      (sublocation: { id: string }) => sublocation.id === "fixed_panel",
+    );
+    assert.ok(
+      fixedPanel,
+      "fixed_panel sublocation should exist in investigation_scene_8",
+    );
+    const fixedRecordCarrier = fixedPanel.hotspots.find(
+      (hotspot: { id: string }) => hotspot.id === "fixed_record",
+    );
+    assert.ok(
+      fixedRecordCarrier,
+      "fixed_record hotspot should exist under fixed_panel",
+    );
+
+    expect(motherCallLead).toMatchObject({
+      id: "miyake_mother_call_log",
+      details: expect.stringContaining("待確認項目"),
+      provenance: {
+        proceduralStatus: "unspecified",
+        supersedesRecordId: null,
+      },
+    });
+    expect(motherCallConfirmation).toMatchObject({
+      id: "miyake_mother_call_confirmation",
+      sourceSublocationId: "fixed_panel",
+      provenance: {
+        sourceKind: "digital",
+        representationLayer: "summary",
+        proceduralStatus: "exhibit",
+        completeness: "complete",
+        confidence: "corroborated",
+        sourceGroupId: null,
+        sourceLabel: "電信方通聯核實回覆",
+        proofCapabilities: ["time", "source", "procedure"],
+        supersedesRecordId: "evidence:miyake_mother_call_log",
+      },
+    });
+    expect(fixedRecordCarrier.reveals).toContainEqual({
+      kind: "evidence",
+      id: "miyake_mother_call_confirmation",
+    });
+    expect(analysis.intro[0]).toMatchObject({
+      kind: "sceneTag",
+      text: expect.stringContaining("雨鐘咖啡館後場的保全鏈固定區"),
+      assetCue: {
+        backgroundAssetId:
+          "background.chapter_1.investigation_scene_8.fixed_panel",
+      },
+    });
+    expect(
+      analysis.boards.map((board: { kind: string }) => board.kind),
+    ).toEqual(["classify", "order", "threshold"]);
+    expect(
+      analysis.boards.map(
+        (board: { common: { id: string } }) => board.common.id,
+      ),
+    ).toEqual([
+      "evidence_packages",
+      "local_event_sequence",
+      "narrow_request_basis",
+    ]);
+
+    expect(analysis.boards[0]).toMatchObject({
+      common: {
+        reveals: [
+          {
+            kind: "assertFact",
+            factId: "miyake_known_lies_are_unrelated_to_murder",
+          },
+          { kind: "assertFact", factId: "earlier_external_entry_exists" },
+        ],
+      },
+      groups: [{ id: "miyake_small_lies" }, { id: "earlier_third_party" }],
+    });
+    expect(
+      analysis.boards[0].common.cards.map(
+        (card: { id: string; source: unknown }) => ({
+          id: card.id,
+          source: card.source,
+        }),
+      ),
+    ).toEqual([
+      {
+        id: "miyake_call",
+        source: {
+          kind: "evidence",
+          id: "miyake_mother_call_confirmation",
+        },
+      },
+      {
+        id: "miyake_pov_replay",
+        source: { kind: "evidence", id: "miyake_pov_replay" },
+      },
+      {
+        id: "external_credential_event",
+        source: { kind: "evidence", id: "external_maintenance_credential" },
+      },
+    ]);
+    expect(analysis.boards[0].acceptedGroupByCard).toEqual({
+      miyake_call: "miyake_small_lies",
+      miyake_pov_replay: "earlier_third_party",
+      external_credential_event: "earlier_third_party",
+    });
+
+    expect(analysis.boards[1]).toMatchObject({
+      acceptedOrder: ["event_1841", "event_1842", "event_1843", "event_1844"],
+      fixedAnchors: [{ cardId: "event_1841", position: 1 }],
+      common: {
+        reveals: [
+          { kind: "assertFact", factId: "merge_time_is_not_event_time" },
+        ],
+      },
+    });
+    expect(
+      analysis.boards[1].common.cards.every(
+        (card: { source: unknown }) =>
+          JSON.stringify(card.source) ===
+          JSON.stringify({ kind: "evidence", id: "local_sequence_record" }),
+      ),
+    ).toBe(true);
+
+    expect(analysis.boards[2]).toMatchObject({
+      minimumSelected: 2,
+      common: {
+        reveals: [
+          {
+            kind: "assertFact",
+            factId: "two_independent_lock_contradictions_identified",
+          },
+          {
+            kind: "completeObjective",
+            objectiveId: "prepare_narrow_lock_request",
+          },
+        ],
+      },
+    });
+    expect(
+      analysis.boards[2].common.cards.map(
+        (card: { id: string; source: unknown }) => ({
+          id: card.id,
+          source: card.source,
+        }),
+      ),
+    ).toEqual([
+      {
+        id: "lock_sequence",
+        source: { kind: "evidence", id: "local_sequence_record" },
+      },
+      {
+        id: "external_credential",
+        source: { kind: "evidence", id: "external_maintenance_credential" },
+      },
+      {
+        id: "phone_notification",
+        source: { kind: "evidence", id: "victim_phone_notification" },
+      },
+    ]);
+    expect(analysis.boards[2].acceptedSelections).toEqual([
+      ["external_credential", "lock_sequence", "phone_notification"],
+      ["external_credential", "phone_notification"],
+      ["lock_sequence", "phone_notification"],
+    ]);
+    expect(analysis.boards[2]).toMatchObject({
+      common: {
+        feedback: {
+          incorrectSelections: [
+            {
+              cards: ["external_credential", "lock_sequence"],
+            },
+          ],
+        },
+      },
+    });
+    expect(readJson("story_catalog.json").authorizations).toEqual([
+      {
+        id: "narrow_lock_export",
+        label: "有限門鎖匯出",
+        summary: "允許調閱有限門鎖匯出片段。",
+        grantingAuthority: "KAGAMI 證據摘要審查會主理",
+      },
+    ]);
+    expect(JSON.stringify(analysis)).not.toContain("grantAuthorization");
+    expect(JSON.stringify(analysis)).not.toContain("narrow_lock_export");
+  });
+
+  it("keeps the HPA-265 hearing gate objective, authority, atomic grant, and p4 authorization fence", () => {
+    const outRoot = liveOutRoot;
+    const readJson = (path: string) =>
+      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
+
+    const interrogation = readJson("chapter_1/interrogation_scene_10.json");
+    const gate = interrogation.phases.find(
+      (phase: { id: string }) => phase.id === "gate",
+    );
+    const p4 = interrogation.phases.find(
+      (phase: { id: string }) => phase.id === "p4",
+    );
+    const p1 = interrogation.phases.find(
+      (phase: { id: string }) => phase.id === "p1",
+    );
+    const p1CorrectLine = p1.questions
+      .find((question: { id: string }) => question.id === "q_p2")
+      .testimony.lines.find(
+        (line: { id: string }) => line.id === "summary_death_after_miyake",
+      );
+    expect(p1CorrectLine.onCorrect[0].text).toBe(
+      "手機最後一次操作在 22:58，掛鐘被撞停在 22:59，都早於三宅進場。摘要沒交代這一段，主時間線不能只靠他的動線。",
+    );
+    expect(gate).toMatchObject({
+      id: "gate",
+      status: "locked",
+      representedAuthority: "KAGAMI 證據摘要審查會主理",
+      unlock: {
+        op: "and",
+        left: { predicate: "phase_completed", id: "p1" },
+        right: {
+          predicate: "objective_completed",
+          id: "prepare_narrow_lock_request",
+        },
+      },
+    });
+    expect(gate.questions[0].testimony.lines[0].reveals).toEqual([
+      {
+        kind: "grantAuthorization",
+        authorizationId: "narrow_lock_export",
+      },
+      { kind: "evidence", id: "approved_clip" },
+    ]);
+    expect(p4).toMatchObject({
+      id: "p4",
+      status: "locked",
+      unlock: {
+        op: "and",
+        left: { predicate: "phase_completed", id: "gate" },
+        right: {
+          predicate: "authorization_granted",
+          id: "narrow_lock_export",
+        },
+      },
+    });
+
+    // Regression: p4's contradiction is the gate-granted approved_clip, not
+    // local_sequence_record. The Challenge text ("對照核准片段") and the On
+    // Wrong Evidence reply ("本機順序沒有被動過手腳") both require this proof
+    // order; presenting local_sequence_record must be the wrong path that
+    // does not complete p4.
+    const p4Line = p4.questions[0].testimony.lines.find(
+      (line: { id: string }) => line.id === "summary_doorlock_authentic",
+    );
+    expect(p4Line.contradiction).toEqual({
+      kind: "evidence",
+      id: "approved_clip",
+    });
+    expect(p4Line.contradiction).not.toEqual({
+      kind: "evidence",
+      id: "local_sequence_record",
+    });
+
+    const source = readFileSync(
+      resolve(
         repoRoot,
-      });
-      if (!result.ok) {
-        throw new Error(
-          "Live corpus compile failed:\n" + formatErrors(result.errors),
+        "docs/stories_plan/chapter_1/interrogation_scene_10.md",
+      ),
+      "utf-8",
+    );
+    expect(source).not.toContain("authorization_granted");
+  });
+
+  it("keeps the Chapter 1 warning and save-content manifest baseline", () => {
+    const outRoot = liveOutRoot;
+
+    expect(hpa257DiagnosticCodes(liveWarnings)).toEqual([]);
+    expect(liveWarnings).toHaveLength(1);
+    expect(liveWarnings[0]?.sourceFile).toBe(
+      resolve(repoRoot, "docs/stories_plan/story_catalog.md"),
+    );
+
+    expect({
+      warnings: liveWarnings.map(({ code, line, message }) => ({
+        code,
+        line,
+        message,
+      })),
+      manifest: JSON.parse(
+        readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
+      ),
+    }).toMatchSnapshot();
+
+    // Live-content gate: every compiled investigation target must carry a
+    // layout placement. `layout: null` renders as the player-visible
+    // UNPLACED HOTSPOTS/WITNESSES fallback panel in production, which must
+    // never ship on required exploration paths. Scenes without a sidecar
+    // compile with `layout: null` for every target, so this catches both a
+    // missing sidecar file and missing entries. The gate is scoped to
+    // release-gated chapters so an in-progress chapter can still compile
+    // and place targets incrementally in the layout editor.
+    const RELEASE_GATED_CHAPTERS = new Set(["chapter_1"]);
+    const investigationFiles = readdirSync(outRoot)
+      .filter((name) => RELEASE_GATED_CHAPTERS.has(name))
+      .flatMap((name) =>
+        readdirSync(resolve(outRoot, name))
+          .filter((file) => /^investigation_scene_.*\.json$/.test(file))
+          .map((file) => resolve(outRoot, name, file)),
+      );
+    expect(
+      investigationFiles.length,
+      "expected at least one compiled investigation scene to gate on placements",
+    ).toBeGreaterThan(0);
+    const unplaced: string[] = [];
+    for (const file of investigationFiles) {
+      const scene = JSON.parse(readFileSync(file, "utf-8")) as {
+        id: string;
+        sublocations: Array<{
+          id: string;
+          hotspots: Array<{ id: string; layout: unknown }>;
+          characters: Array<{ id: string; layout: unknown }>;
+        }>;
+      };
+      for (const sublocation of scene.sublocations) {
+        for (const hotspot of sublocation.hotspots) {
+          if (hotspot.layout === null) {
+            unplaced.push(
+              `${scene.id}/${sublocation.id}/hotspot:${hotspot.id}`,
+            );
+          }
+        }
+        for (const character of sublocation.characters) {
+          if (character.layout === null) {
+            unplaced.push(
+              `${scene.id}/${sublocation.id}/character:${character.id}`,
+            );
+          }
+        }
+      }
+    }
+    expect(
+      unplaced,
+      "every live investigation target must have a layout placement; " +
+        "unplaced targets render as the production UNPLACED fallback panel",
+    ).toEqual([]);
+  });
+
+  it("preserves neutral provenance outside the approved production migration", () => {
+    const outRoot = liveAssetOutRoot;
+
+    const chapters = JSON.parse(
+      readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
+    ) as {
+      chapters: Array<{
+        scenes: Array<{ type: string; file: string }>;
+      }>;
+    };
+    const sceneRecords: Array<{
+      kind: "evidence" | "statement";
+      id: string;
+      provenance: unknown;
+    }> = [];
+    for (const chapter of chapters.chapters) {
+      for (const descriptor of chapter.scenes) {
+        if (
+          descriptor.type !== "investigation" &&
+          descriptor.type !== "interrogation"
+        ) {
+          continue;
+        }
+        const scene = JSON.parse(
+          readFileSync(resolve(outRoot, descriptor.file), "utf-8"),
+        ) as {
+          evidenceManifest: Array<{ id: string; provenance: unknown }>;
+          statementManifest: Array<{ id: string; provenance: unknown }>;
+        };
+        sceneRecords.push(
+          ...scene.evidenceManifest.map(({ id, provenance }) => ({
+            kind: "evidence" as const,
+            id,
+            provenance,
+          })),
+          ...scene.statementManifest.map(({ id, provenance }) => ({
+            kind: "statement" as const,
+            id,
+            provenance,
+          })),
         );
       }
+    }
 
-      const chapter = readJson("chapters.json").chapters.find(
-        (entry: { id: string }) => entry.id === "chapter_1",
-      );
-      expect(chapter.scenes).toContainEqual({
-        type: "analysis",
-        file: "chapter_1/analysis_scene_8_5.json",
-      });
-      expect(chapter.scenes).not.toContainEqual({
-        type: "linear",
-        file: "chapter_1/scene_8_5.json",
-      });
+    const catalog = JSON.parse(
+      readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
+    ) as {
+      sourceGroups: unknown[];
+      evidenceIndex: Array<{ id: string; provenance: unknown }>;
+      statementsIndex: Array<{ id: string; provenance: unknown }>;
+    };
+    const catalogRecords = [
+      ...catalog.evidenceIndex.map(({ id, provenance }) => ({
+        kind: "evidence" as const,
+        id,
+        provenance,
+      })),
+      ...catalog.statementsIndex.map(({ id, provenance }) => ({
+        kind: "statement" as const,
+        id,
+        provenance,
+      })),
+    ];
 
-      const analysis = readJson("chapter_1/analysis_scene_8_5.json");
-      const investigation = readJson("chapter_1/investigation_scene_8.json");
-      const miyakeInterrogation = readJson(
-        "chapter_1/interrogation_scene_4.json",
-      );
-      const motherCallLead = miyakeInterrogation.evidenceManifest.find(
-        (record: { id: string }) => record.id === "miyake_mother_call_log",
-      );
-      const motherCallConfirmation = investigation.evidenceManifest.find(
-        (record: { id: string }) =>
-          record.id === "miyake_mother_call_confirmation",
-      );
-      const fixedPanel = investigation.sublocations.find(
-        (sublocation: { id: string }) => sublocation.id === "fixed_panel",
-      );
-      assert.ok(
-        fixedPanel,
-        "fixed_panel sublocation should exist in investigation_scene_8",
-      );
-      const fixedRecordCarrier = fixedPanel.hotspots.find(
-        (hotspot: { id: string }) => hotspot.id === "fixed_record",
-      );
-      assert.ok(
-        fixedRecordCarrier,
-        "fixed_record hotspot should exist under fixed_panel",
-      );
-
-      expect(motherCallLead).toMatchObject({
-        id: "miyake_mother_call_log",
-        details: expect.stringContaining("待確認項目"),
-        provenance: {
-          proceduralStatus: "unspecified",
-          supersedesRecordId: null,
+    expect(sceneRecords.length).toBeGreaterThan(0);
+    expect(sceneRecords.map(({ kind, id }) => `${kind}:${id}`).sort()).toEqual(
+      catalogRecords.map(({ kind, id }) => `${kind}:${id}`).sort(),
+    );
+    const migratedProvenance = new Map([
+      [
+        "evidence:victim_phone_notification",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceGroupId: "victim_phone_device",
+          proofCapabilities: ["time"],
         },
-      });
-      expect(motherCallConfirmation).toMatchObject({
-        id: "miyake_mother_call_confirmation",
-        sourceSublocationId: "fixed_panel",
-        provenance: {
+      ],
+      [
+        "evidence:local_sequence_record",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceGroupId: "door_lock_fixed_record",
+          proofCapabilities: ["order"],
+        },
+      ],
+      [
+        "evidence:external_maintenance_credential",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceGroupId: "door_lock_fixed_record",
+          proofCapabilities: ["order", "access"],
+        },
+      ],
+      [
+        "evidence:miyake_mother_call_confirmation",
+        {
           sourceKind: "digital",
           representationLayer: "summary",
           proceduralStatus: "exhibit",
@@ -2640,947 +3090,474 @@ describe("compile (tracked production corpus compatibility)", () => {
           proofCapabilities: ["time", "source", "procedure"],
           supersedesRecordId: "evidence:miyake_mother_call_log",
         },
-      });
-      expect(fixedRecordCarrier.reveals).toContainEqual({
-        kind: "evidence",
-        id: "miyake_mother_call_confirmation",
-      });
-      expect(analysis.intro[0]).toMatchObject({
-        kind: "sceneTag",
-        text: expect.stringContaining("雨鐘咖啡館後場的保全鏈固定區"),
-        assetCue: {
-          backgroundAssetId:
-            "background.chapter_1.investigation_scene_8.fixed_panel",
-        },
-      });
-      expect(
-        analysis.boards.map((board: { kind: string }) => board.kind),
-      ).toEqual(["classify", "order", "threshold"]);
-      expect(
-        analysis.boards.map(
-          (board: { common: { id: string } }) => board.common.id,
-        ),
-      ).toEqual([
-        "evidence_packages",
-        "local_event_sequence",
-        "narrow_request_basis",
-      ]);
-
-      expect(analysis.boards[0]).toMatchObject({
-        common: {
-          reveals: [
-            {
-              kind: "assertFact",
-              factId: "miyake_known_lies_are_unrelated_to_murder",
-            },
-            { kind: "assertFact", factId: "earlier_external_entry_exists" },
-          ],
-        },
-        groups: [{ id: "miyake_small_lies" }, { id: "earlier_third_party" }],
-      });
-      expect(
-        analysis.boards[0].common.cards.map(
-          (card: { id: string; source: unknown }) => ({
-            id: card.id,
-            source: card.source,
-          }),
-        ),
-      ).toEqual([
+      ],
+      // Chapter 2 Phase A records are authored with provenance from the
+      // start rather than migrated.
+      [
+        "evidence:mashiro_phone_dock",
         {
-          id: "miyake_call",
-          source: {
-            kind: "evidence",
-            id: "miyake_mother_call_confirmation",
-          },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
         },
+      ],
+      [
+        "evidence:sponsor_mode_signboard",
         {
-          id: "miyake_pov_replay",
-          source: { kind: "evidence", id: "miyake_pov_replay" },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
         },
+      ],
+      [
+        "evidence:press_camera_limits",
         {
-          id: "external_credential_event",
-          source: { kind: "evidence", id: "external_maintenance_credential" },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
         },
-      ]);
-      expect(analysis.boards[0].acceptedGroupByCard).toEqual({
-        miyake_call: "miyake_small_lies",
-        miyake_pov_replay: "earlier_third_party",
-        external_credential_event: "earlier_third_party",
-      });
-
-      expect(analysis.boards[1]).toMatchObject({
-        acceptedOrder: ["event_1841", "event_1842", "event_1843", "event_1844"],
-        fixedAnchors: [{ cardId: "event_1841", position: 1 }],
-        common: {
-          reveals: [
-            { kind: "assertFact", factId: "merge_time_is_not_event_time" },
-          ],
-        },
-      });
-      expect(
-        analysis.boards[1].common.cards.every(
-          (card: { source: unknown }) =>
-            JSON.stringify(card.source) ===
-            JSON.stringify({ kind: "evidence", id: "local_sequence_record" }),
-        ),
-      ).toBe(true);
-
-      expect(analysis.boards[2]).toMatchObject({
-        minimumSelected: 2,
-        common: {
-          reveals: [
-            {
-              kind: "assertFact",
-              factId: "two_independent_lock_contradictions_identified",
-            },
-            {
-              kind: "completeObjective",
-              objectiveId: "prepare_narrow_lock_request",
-            },
-          ],
-        },
-      });
-      expect(
-        analysis.boards[2].common.cards.map(
-          (card: { id: string; source: unknown }) => ({
-            id: card.id,
-            source: card.source,
-          }),
-        ),
-      ).toEqual([
+      ],
+      [
+        "evidence:program_composite_label",
         {
-          id: "lock_sequence",
-          source: { kind: "evidence", id: "local_sequence_record" },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "composite",
+          sourceLabel: "轉播車監看畫面",
         },
+      ],
+      [
+        "evidence:silent_challenge_runsheet",
         {
-          id: "external_credential",
-          source: { kind: "evidence", id: "external_maintenance_credential" },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
         },
+      ],
+      [
+        "evidence:platform_archive_rule",
         {
-          id: "phone_notification",
-          source: { kind: "evidence", id: "victim_phone_notification" },
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
         },
-      ]);
-      expect(analysis.boards[2].acceptedSelections).toEqual([
-        ["external_credential", "lock_sequence", "phone_notification"],
-        ["external_credential", "phone_notification"],
-        ["lock_sequence", "phone_notification"],
-      ]);
-      expect(analysis.boards[2]).toMatchObject({
-        common: {
-          feedback: {
-            incorrectSelections: [
-              {
-                cards: ["external_credential", "lock_sequence"],
-              },
-            ],
-          },
-        },
-      });
-      expect(readJson("story_catalog.json").authorizations).toEqual([
+      ],
+      [
+        "evidence:raw_buffer_rule",
         {
-          id: "narrow_lock_export",
-          label: "有限門鎖匯出",
-          summary: "允許調閱有限門鎖匯出片段。",
-          grantingAuthority: "KAGAMI 證據摘要審查會主理",
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
         },
-      ]);
-      expect(JSON.stringify(analysis)).not.toContain("grantAuthorization");
-      expect(JSON.stringify(analysis)).not.toContain("narrow_lock_export");
-    } finally {
-      rmSync(outRoot, { recursive: true, force: true });
+      ],
+      [
+        "evidence:safety_briefing_record",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+        },
+      ],
+      [
+        "evidence:togawa_phone_video",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "raw",
+          proceduralStatus: "lead",
+          completeness: "partial",
+          confidence: "unverified",
+          sourceLabel: "粉絲手機錄影",
+        },
+      ],
+      [
+        "evidence:togawa_video_position_check",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          sourceLabel: "相馬現場對照",
+        },
+      ],
+      [
+        "evidence:glass_box_kagami_summary",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "summary",
+          sourceLabel: "KAGAMI 證據摘要",
+        },
+      ],
+      [
+        "evidence:police_footage_source_list",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+        },
+      ],
+      [
+        "evidence:saegusa_stream_dashboard",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "summary",
+          proceduralStatus: "lead",
+          confidence: "unverified",
+          sourceLabel: "三枝帳號後台",
+        },
+      ],
+      [
+        "evidence:saegusa_studio_window",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          sourceLabel: "相馬現場觀察",
+        },
+      ],
+      [
+        "evidence:plaza_sightline_map",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          sourceLabel: "相馬現場觀察",
+        },
+      ],
+      [
+        "evidence:staff_leaked_clip",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "raw",
+          proceduralStatus: "lead",
+          completeness: "partial",
+          confidence: "unverified",
+          sourceLabel: "匿名轉貼帳號",
+        },
+      ],
+      [
+        "evidence:leaked_clip_caption_timing",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          representationLayer: "composite",
+          proceduralStatus: "lead",
+          sourceLabel: "早坂比對（平台節目輸出副本）",
+        },
+      ],
+      // Chapter 2 Beat 7 (side alley) records are all leads until the
+      // rider's formal statement and the platform confirm them.
+      [
+        "evidence:rider_deleted_comment",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          completeness: "cropped",
+          confidence: "unverified",
+          sourceLabel: "拉麵店評論區的轉貼截圖",
+        },
+      ],
+      [
+        "evidence:rider_order_record",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          representationLayer: "summary",
+          proceduralStatus: "lead",
+          completeness: "partial",
+          confidence: "unverified",
+          sourceLabel: "柚木的外送 App 訂單紀錄",
+        },
+      ],
+      [
+        "evidence:alley_side_view_check",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          proceduralStatus: "lead",
+          sourceLabel: "相馬現場觀察",
+        },
+      ],
+      [
+        "statement:rider_side_view_account",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "testimony",
+          proceduralStatus: "lead",
+          confidence: "unverified",
+          sourceLabel: "柚木陸口述（非正式）",
+        },
+      ],
+      // Chapter 2 Beat 8 (control room and building exterior) records are
+      // leads: the defense only photographed or watched them with the
+      // police present.
+      [
+        "evidence:sponsor_audio_routing",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "轉播車音訊機架上的路由表（警方在場拍攝）",
+        },
+      ],
+      [
+        "evidence:projection_silhouette_board",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "玻璃箱內投影輪廓板（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:silhouette_side_view_check",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "subjective",
+          proceduralStatus: "lead",
+          sourceLabel: "相馬現場觀察",
+        },
+      ],
+      [
+        "statement:vendor_projection_setup",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "testimony",
+          proceduralStatus: "lead",
+          confidence: "unverified",
+          sourceLabel: "設備商技術員口述",
+        },
+      ],
+      [
+        "evidence:venue_logistics_board",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "後場隔板上的後勤配置板（警方在場拍攝）",
+        },
+      ],
+      [
+        "evidence:sponsor_maintenance_passcode",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:qa_snapshot_frames",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "設備商提交的低幀率 QA 快照（黑瀨提供副本）",
+        },
+      ],
+      [
+        "evidence:m03_door_log",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:mashiro_watch_ping",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "真白手錶帳號的定位紀錄（黑瀨提供副本）",
+        },
+      ],
+      [
+        "evidence:service_elevator_b_log",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:fire_door_alarm_log",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:building_night_access_log",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:vacant_floor_traces",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "七樓空置樓層地面（警方現場照片，黑瀨提供）",
+        },
+      ],
+      [
+        "statement:cleaner_elevator_account",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "testimony",
+          proceduralStatus: "lead",
+          confidence: "unverified",
+          sourceLabel: "商業大樓清潔員口述",
+        },
+      ],
+      [
+        "evidence:backup_account_scheduled_statement",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "真白留言用的舊手機（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:mashiro_cloud_activity",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "真白留言用的舊手機（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:mashiro_revenue_table",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:accountant_engagement",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
+        },
+      ],
+      [
+        "evidence:aoba_viral_screenshot",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          completeness: "cropped",
+          sourceLabel: "真白工作室的企劃板",
+        },
+      ],
+      [
+        "evidence:aoba_official_database_page",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          completeness: "complete",
+          sourceLabel: "真白工作室的企劃板",
+        },
+      ],
+      [
+        "evidence:hasumi_schedule_cancellations",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "真白工作室牆上的行程表列印",
+        },
+      ],
+      [
+        "evidence:mashiro_exit_message",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          completeness: "partial",
+          sourceLabel: "警方抽出的真白手機對話紀錄（黑瀨提供一頁）",
+        },
+      ],
+      [
+        "evidence:process_channel_roster",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "physical",
+          proceduralStatus: "lead",
+          sourceLabel: "活動製作手冊（蓮見出借，辯方拍照）",
+        },
+      ],
+      [
+        "evidence:incident_comms_log",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "活動方整理的事故通訊紀錄影本（蓮見提供）",
+        },
+      ],
+      [
+        "statement:hasumi_after_project_account",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "testimony",
+          proceduralStatus: "lead",
+          confidence: "unverified",
+          sourceLabel: "蓮見透的口述",
+        },
+      ],
+      [
+        "evidence:sr2307_submission_record",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "贊助商回覆警方的書面資料（黑瀨提供副本）",
+        },
+      ],
+      [
+        "evidence:saegusa_access_check",
+        {
+          ...NEUTRAL_CASE_RECORD_PROVENANCE,
+          sourceKind: "digital",
+          proceduralStatus: "lead",
+          sourceLabel: "警方向活動方、贊助商與大樓的查核結果（黑瀨提供）",
+        },
+      ],
+    ]);
+    for (const record of [...sceneRecords, ...catalogRecords]) {
+      const key = `${record.kind}:${record.id}`;
+      expect(record.provenance).toEqual(
+        migratedProvenance.get(key) ?? NEUTRAL_CASE_RECORD_PROVENANCE,
+      );
     }
+    expect(catalog.sourceGroups).toEqual([
+      {
+        id: "door_lock_fixed_record",
+        label: "門鎖固定紀錄",
+        summary: "依程序固定的同一門鎖本機事件紀錄。",
+        members: [
+          { kind: "evidence", id: "external_maintenance_credential" },
+          { kind: "evidence", id: "local_sequence_record" },
+        ],
+      },
+      {
+        id: "victim_phone_device",
+        label: "死者手機裝置",
+        summary: "從死者手機裝置重新取得的通知紀錄。",
+        members: [{ kind: "evidence", id: "victim_phone_notification" }],
+      },
+    ]);
   });
-
-  it("keeps the HPA-265 hearing gate objective, authority, atomic grant, and p4 authorization fence", () => {
-    const outRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-live-hpa-265-hearing-gate-"),
-    );
-    const readJson = (path: string) =>
-      JSON.parse(readFileSync(resolve(outRoot, path), "utf-8"));
-    try {
-      const repoRoot = resolve(".");
-      const result = compile({
-        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
-        outputRoot: outRoot,
-        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
-        repoRoot,
-      });
-      if (!result.ok) {
-        throw new Error(
-          "Live corpus compile failed:\n" + formatErrors(result.errors),
-        );
-      }
-
-      const interrogation = readJson("chapter_1/interrogation_scene_10.json");
-      const gate = interrogation.phases.find(
-        (phase: { id: string }) => phase.id === "gate",
-      );
-      const p4 = interrogation.phases.find(
-        (phase: { id: string }) => phase.id === "p4",
-      );
-      const p1 = interrogation.phases.find(
-        (phase: { id: string }) => phase.id === "p1",
-      );
-      const p1CorrectLine = p1.questions
-        .find((question: { id: string }) => question.id === "q_p2")
-        .testimony.lines.find(
-          (line: { id: string }) => line.id === "summary_death_after_miyake",
-        );
-      expect(p1CorrectLine.onCorrect[0].text).toBe(
-        "手機最後一次操作在 22:58，掛鐘被撞停在 22:59，都早於三宅進場。摘要沒交代這一段，主時間線不能只靠他的動線。",
-      );
-      expect(gate).toMatchObject({
-        id: "gate",
-        status: "locked",
-        representedAuthority: "KAGAMI 證據摘要審查會主理",
-        unlock: {
-          op: "and",
-          left: { predicate: "phase_completed", id: "p1" },
-          right: {
-            predicate: "objective_completed",
-            id: "prepare_narrow_lock_request",
-          },
-        },
-      });
-      expect(gate.questions[0].testimony.lines[0].reveals).toEqual([
-        {
-          kind: "grantAuthorization",
-          authorizationId: "narrow_lock_export",
-        },
-        { kind: "evidence", id: "approved_clip" },
-      ]);
-      expect(p4).toMatchObject({
-        id: "p4",
-        status: "locked",
-        unlock: {
-          op: "and",
-          left: { predicate: "phase_completed", id: "gate" },
-          right: {
-            predicate: "authorization_granted",
-            id: "narrow_lock_export",
-          },
-        },
-      });
-
-      // Regression: p4's contradiction is the gate-granted approved_clip, not
-      // local_sequence_record. The Challenge text ("對照核准片段") and the On
-      // Wrong Evidence reply ("本機順序沒有被動過手腳") both require this proof
-      // order; presenting local_sequence_record must be the wrong path that
-      // does not complete p4.
-      const p4Line = p4.questions[0].testimony.lines.find(
-        (line: { id: string }) => line.id === "summary_doorlock_authentic",
-      );
-      expect(p4Line.contradiction).toEqual({
-        kind: "evidence",
-        id: "approved_clip",
-      });
-      expect(p4Line.contradiction).not.toEqual({
-        kind: "evidence",
-        id: "local_sequence_record",
-      });
-
-      const source = readFileSync(
-        resolve(
-          repoRoot,
-          "docs/stories_plan/chapter_1/interrogation_scene_10.md",
-        ),
-        "utf-8",
-      );
-      expect(source).not.toContain("authorization_granted");
-    } finally {
-      rmSync(outRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("keeps the Chapter 1 warning and save-content manifest baseline", () => {
-    const outRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-live-baseline-"),
-    );
-    try {
-      const repoRoot = resolve(".");
-      const result = compile({
-        sourceRoot: resolve(repoRoot, "docs/stories_plan"),
-        outputRoot: outRoot,
-        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
-        repoRoot,
-      });
-      if (!result.ok) {
-        throw new Error(
-          "Live corpus compile failed:\n" + formatErrors(result.errors),
-        );
-      }
-
-      expect(hpa257DiagnosticCodes(result.warnings)).toEqual([]);
-      expect(result.warnings).toHaveLength(1);
-      expect(result.warnings[0]?.sourceFile).toBe(
-        resolve(repoRoot, "docs/stories_plan/story_catalog.md"),
-      );
-
-      expect({
-        warnings: result.warnings.map(({ code, line, message }) => ({
-          code,
-          line,
-          message,
-        })),
-        manifest: JSON.parse(
-          readFileSync(resolve(outRoot, "save_content_manifest.json"), "utf-8"),
-        ),
-      }).toMatchSnapshot();
-
-      // Live-content gate: every compiled investigation target must carry a
-      // layout placement. `layout: null` renders as the player-visible
-      // UNPLACED HOTSPOTS/WITNESSES fallback panel in production, which must
-      // never ship on required exploration paths. Scenes without a sidecar
-      // compile with `layout: null` for every target, so this catches both a
-      // missing sidecar file and missing entries. The gate is scoped to
-      // release-gated chapters so an in-progress chapter can still compile
-      // and place targets incrementally in the layout editor.
-      const RELEASE_GATED_CHAPTERS = new Set(["chapter_1"]);
-      const investigationFiles = readdirSync(outRoot)
-        .filter((name) => RELEASE_GATED_CHAPTERS.has(name))
-        .flatMap((name) =>
-          readdirSync(resolve(outRoot, name))
-            .filter((file) => /^investigation_scene_.*\.json$/.test(file))
-            .map((file) => resolve(outRoot, name, file)),
-        );
-      expect(
-        investigationFiles.length,
-        "expected at least one compiled investigation scene to gate on placements",
-      ).toBeGreaterThan(0);
-      const unplaced: string[] = [];
-      for (const file of investigationFiles) {
-        const scene = JSON.parse(readFileSync(file, "utf-8")) as {
-          id: string;
-          sublocations: Array<{
-            id: string;
-            hotspots: Array<{ id: string; layout: unknown }>;
-            characters: Array<{ id: string; layout: unknown }>;
-          }>;
-        };
-        for (const sublocation of scene.sublocations) {
-          for (const hotspot of sublocation.hotspots) {
-            if (hotspot.layout === null) {
-              unplaced.push(
-                `${scene.id}/${sublocation.id}/hotspot:${hotspot.id}`,
-              );
-            }
-          }
-          for (const character of sublocation.characters) {
-            if (character.layout === null) {
-              unplaced.push(
-                `${scene.id}/${sublocation.id}/character:${character.id}`,
-              );
-            }
-          }
-        }
-      }
-      expect(
-        unplaced,
-        "every live investigation target must have a layout placement; " +
-          "unplaced targets render as the production UNPLACED fallback panel",
-      ).toEqual([]);
-    } finally {
-      rmSync(outRoot, { recursive: true, force: true });
-    }
-  });
-
-  it("preserves neutral provenance outside the approved production migration", () => {
-    const outRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-live-provenance-"),
-    );
-    try {
-      const repoRoot = resolve(".");
-      const result = compile({
-        sourceRoot: [
-          resolve(repoRoot, "static/stories_plan"),
-          resolve(repoRoot, "docs/stories_plan"),
-        ],
-        outputRoot: outRoot,
-        assetConfigRoot: resolve(repoRoot, "static/assets/config"),
-        assetOutputRoot: resolve(outRoot, "assets"),
-        repoRoot,
-      });
-      if (!result.ok) {
-        throw new Error(
-          "Live corpus compile failed:\n" + formatErrors(result.errors),
-        );
-      }
-
-      const chapters = JSON.parse(
-        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
-      ) as {
-        chapters: Array<{
-          scenes: Array<{ type: string; file: string }>;
-        }>;
-      };
-      const sceneRecords: Array<{
-        kind: "evidence" | "statement";
-        id: string;
-        provenance: unknown;
-      }> = [];
-      for (const chapter of chapters.chapters) {
-        for (const descriptor of chapter.scenes) {
-          if (
-            descriptor.type !== "investigation" &&
-            descriptor.type !== "interrogation"
-          ) {
-            continue;
-          }
-          const scene = JSON.parse(
-            readFileSync(resolve(outRoot, descriptor.file), "utf-8"),
-          ) as {
-            evidenceManifest: Array<{ id: string; provenance: unknown }>;
-            statementManifest: Array<{ id: string; provenance: unknown }>;
-          };
-          sceneRecords.push(
-            ...scene.evidenceManifest.map(({ id, provenance }) => ({
-              kind: "evidence" as const,
-              id,
-              provenance,
-            })),
-            ...scene.statementManifest.map(({ id, provenance }) => ({
-              kind: "statement" as const,
-              id,
-              provenance,
-            })),
-          );
-        }
-      }
-
-      const catalog = JSON.parse(
-        readFileSync(resolve(outRoot, "story_catalog.json"), "utf-8"),
-      ) as {
-        sourceGroups: unknown[];
-        evidenceIndex: Array<{ id: string; provenance: unknown }>;
-        statementsIndex: Array<{ id: string; provenance: unknown }>;
-      };
-      const catalogRecords = [
-        ...catalog.evidenceIndex.map(({ id, provenance }) => ({
-          kind: "evidence" as const,
-          id,
-          provenance,
-        })),
-        ...catalog.statementsIndex.map(({ id, provenance }) => ({
-          kind: "statement" as const,
-          id,
-          provenance,
-        })),
-      ];
-
-      expect(sceneRecords.length).toBeGreaterThan(0);
-      expect(
-        sceneRecords.map(({ kind, id }) => `${kind}:${id}`).sort(),
-      ).toEqual(catalogRecords.map(({ kind, id }) => `${kind}:${id}`).sort());
-      const migratedProvenance = new Map([
-        [
-          "evidence:victim_phone_notification",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceGroupId: "victim_phone_device",
-            proofCapabilities: ["time"],
-          },
-        ],
-        [
-          "evidence:local_sequence_record",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceGroupId: "door_lock_fixed_record",
-            proofCapabilities: ["order"],
-          },
-        ],
-        [
-          "evidence:external_maintenance_credential",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceGroupId: "door_lock_fixed_record",
-            proofCapabilities: ["order", "access"],
-          },
-        ],
-        [
-          "evidence:miyake_mother_call_confirmation",
-          {
-            sourceKind: "digital",
-            representationLayer: "summary",
-            proceduralStatus: "exhibit",
-            completeness: "complete",
-            confidence: "corroborated",
-            sourceGroupId: null,
-            sourceLabel: "電信方通聯核實回覆",
-            proofCapabilities: ["time", "source", "procedure"],
-            supersedesRecordId: "evidence:miyake_mother_call_log",
-          },
-        ],
-        // Chapter 2 Phase A records are authored with provenance from the
-        // start rather than migrated.
-        [
-          "evidence:mashiro_phone_dock",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:sponsor_mode_signboard",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:press_camera_limits",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:program_composite_label",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "composite",
-            sourceLabel: "轉播車監看畫面",
-          },
-        ],
-        [
-          "evidence:silent_challenge_runsheet",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:platform_archive_rule",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-          },
-        ],
-        [
-          "evidence:raw_buffer_rule",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-          },
-        ],
-        [
-          "evidence:safety_briefing_record",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:togawa_phone_video",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "raw",
-            proceduralStatus: "lead",
-            completeness: "partial",
-            confidence: "unverified",
-            sourceLabel: "粉絲手機錄影",
-          },
-        ],
-        [
-          "evidence:togawa_video_position_check",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            sourceLabel: "相馬現場對照",
-          },
-        ],
-        [
-          "evidence:glass_box_kagami_summary",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "summary",
-            sourceLabel: "KAGAMI 證據摘要",
-          },
-        ],
-        [
-          "evidence:police_footage_source_list",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-          },
-        ],
-        [
-          "evidence:saegusa_stream_dashboard",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "summary",
-            proceduralStatus: "lead",
-            confidence: "unverified",
-            sourceLabel: "三枝帳號後台",
-          },
-        ],
-        [
-          "evidence:saegusa_studio_window",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            sourceLabel: "相馬現場觀察",
-          },
-        ],
-        [
-          "evidence:plaza_sightline_map",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            sourceLabel: "相馬現場觀察",
-          },
-        ],
-        [
-          "evidence:staff_leaked_clip",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "raw",
-            proceduralStatus: "lead",
-            completeness: "partial",
-            confidence: "unverified",
-            sourceLabel: "匿名轉貼帳號",
-          },
-        ],
-        [
-          "evidence:leaked_clip_caption_timing",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            representationLayer: "composite",
-            proceduralStatus: "lead",
-            sourceLabel: "早坂比對（平台節目輸出副本）",
-          },
-        ],
-        // Chapter 2 Beat 7 (side alley) records are all leads until the
-        // rider's formal statement and the platform confirm them.
-        [
-          "evidence:rider_deleted_comment",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            completeness: "cropped",
-            confidence: "unverified",
-            sourceLabel: "拉麵店評論區的轉貼截圖",
-          },
-        ],
-        [
-          "evidence:rider_order_record",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            representationLayer: "summary",
-            proceduralStatus: "lead",
-            completeness: "partial",
-            confidence: "unverified",
-            sourceLabel: "柚木的外送 App 訂單紀錄",
-          },
-        ],
-        [
-          "evidence:alley_side_view_check",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            proceduralStatus: "lead",
-            sourceLabel: "相馬現場觀察",
-          },
-        ],
-        [
-          "statement:rider_side_view_account",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "testimony",
-            proceduralStatus: "lead",
-            confidence: "unverified",
-            sourceLabel: "柚木陸口述（非正式）",
-          },
-        ],
-        // Chapter 2 Beat 8 (control room and building exterior) records are
-        // leads: the defense only photographed or watched them with the
-        // police present.
-        [
-          "evidence:sponsor_audio_routing",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "轉播車音訊機架上的路由表（警方在場拍攝）",
-          },
-        ],
-        [
-          "evidence:projection_silhouette_board",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "玻璃箱內投影輪廓板（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:silhouette_side_view_check",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "subjective",
-            proceduralStatus: "lead",
-            sourceLabel: "相馬現場觀察",
-          },
-        ],
-        [
-          "statement:vendor_projection_setup",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "testimony",
-            proceduralStatus: "lead",
-            confidence: "unverified",
-            sourceLabel: "設備商技術員口述",
-          },
-        ],
-        [
-          "evidence:venue_logistics_board",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "後場隔板上的後勤配置板（警方在場拍攝）",
-          },
-        ],
-        [
-          "evidence:sponsor_maintenance_passcode",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:qa_snapshot_frames",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "設備商提交的低幀率 QA 快照（黑瀨提供副本）",
-          },
-        ],
-        [
-          "evidence:m03_door_log",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:mashiro_watch_ping",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "真白手錶帳號的定位紀錄（黑瀨提供副本）",
-          },
-        ],
-        [
-          "evidence:service_elevator_b_log",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:fire_door_alarm_log",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:building_night_access_log",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "大樓防災中心的紀錄（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:vacant_floor_traces",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "七樓空置樓層地面（警方現場照片，黑瀨提供）",
-          },
-        ],
-        [
-          "statement:cleaner_elevator_account",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "testimony",
-            proceduralStatus: "lead",
-            confidence: "unverified",
-            sourceLabel: "商業大樓清潔員口述",
-          },
-        ],
-        [
-          "evidence:backup_account_scheduled_statement",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "真白留言用的舊手機（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:mashiro_cloud_activity",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "真白留言用的舊手機（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:mashiro_revenue_table",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:accountant_engagement",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "真白工作室抽屜裡的資料夾（警方在場檢視）",
-          },
-        ],
-        [
-          "evidence:aoba_viral_screenshot",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            completeness: "cropped",
-            sourceLabel: "真白工作室的企劃板",
-          },
-        ],
-        [
-          "evidence:aoba_official_database_page",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            completeness: "complete",
-            sourceLabel: "真白工作室的企劃板",
-          },
-        ],
-        [
-          "evidence:hasumi_schedule_cancellations",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "真白工作室牆上的行程表列印",
-          },
-        ],
-        [
-          "evidence:mashiro_exit_message",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            completeness: "partial",
-            sourceLabel: "警方抽出的真白手機對話紀錄（黑瀨提供一頁）",
-          },
-        ],
-        [
-          "evidence:process_channel_roster",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "physical",
-            proceduralStatus: "lead",
-            sourceLabel: "活動製作手冊（蓮見出借，辯方拍照）",
-          },
-        ],
-        [
-          "evidence:incident_comms_log",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "活動方整理的事故通訊紀錄影本（蓮見提供）",
-          },
-        ],
-        [
-          "statement:hasumi_after_project_account",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "testimony",
-            proceduralStatus: "lead",
-            confidence: "unverified",
-            sourceLabel: "蓮見透的口述",
-          },
-        ],
-        [
-          "evidence:sr2307_submission_record",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "贊助商回覆警方的書面資料（黑瀨提供副本）",
-          },
-        ],
-        [
-          "evidence:saegusa_access_check",
-          {
-            ...NEUTRAL_CASE_RECORD_PROVENANCE,
-            sourceKind: "digital",
-            proceduralStatus: "lead",
-            sourceLabel: "警方向活動方、贊助商與大樓的查核結果（黑瀨提供）",
-          },
-        ],
-      ]);
-      for (const record of [...sceneRecords, ...catalogRecords]) {
-        const key = `${record.kind}:${record.id}`;
-        expect(record.provenance).toEqual(
-          migratedProvenance.get(key) ?? NEUTRAL_CASE_RECORD_PROVENANCE,
-        );
-      }
-      expect(catalog.sourceGroups).toEqual([
-        {
-          id: "door_lock_fixed_record",
-          label: "門鎖固定紀錄",
-          summary: "依程序固定的同一門鎖本機事件紀錄。",
-          members: [
-            { kind: "evidence", id: "external_maintenance_credential" },
-            { kind: "evidence", id: "local_sequence_record" },
-          ],
-        },
-        {
-          id: "victim_phone_device",
-          label: "死者手機裝置",
-          summary: "從死者手機裝置重新取得的通知紀錄。",
-          members: [{ kind: "evidence", id: "victim_phone_notification" }],
-        },
-      ]);
-    } finally {
-      rmSync(outRoot, { recursive: true, force: true });
-    }
-  });
-}, 120_000);
+});
 
 describe("compile (layout warning wiring)", () => {
   // End-to-end test for the orchestrator's non-blocking warning path:
