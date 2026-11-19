@@ -684,6 +684,10 @@
               "compact-x"}
             class:compact-y={targetRouting.compactClasses.get(hotspot.id) ===
               "compact-y"}
+            class:label-align-left={hotspot.layout.x + hotspot.layout.w / 2 >=
+              0.9}
+            class:label-align-right={hotspot.layout.x + hotspot.layout.w / 2 <=
+              0.1}
             type="button"
             aria-label={`調查：${hotspot.label}`}
             data-target-id={hotspot.id}
@@ -1117,10 +1121,19 @@
     transform: translateY(-1px);
   }
 
+  .hotspot-target.label-align-left .hotspot-content {
+    --label-offset-x: -50%;
+    flex-direction: row-reverse;
+  }
+
+  .hotspot-target.label-align-right .hotspot-content {
+    --label-offset-x: 50%;
+  }
+
   .hotspot-target:hover:not(:disabled) .hotspot-content,
   .hotspot-target:focus-visible:not(:disabled) .hotspot-content {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(var(--label-offset-x), 0);
   }
 
   .hotspot-target.inspected {
@@ -1128,12 +1141,13 @@
   }
 
   .hotspot-content {
+    --label-offset-x: 0%;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
     opacity: 0;
-    transform: translateY(2px);
+    transform: translate(var(--label-offset-x), 2px);
     transition:
       opacity 0.18s,
       transform 0.18s;
