@@ -1,5 +1,8 @@
 {
   "build": {
     "beforeDevCommand": null
+  },
+  "app": {
+    "withGlobalTauri": true
   }
 }
