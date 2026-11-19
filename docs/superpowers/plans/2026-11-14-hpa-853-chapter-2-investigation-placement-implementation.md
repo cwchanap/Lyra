@@ -75,12 +75,12 @@
 - [ ] **本票六個 scene 專用中心點**：僅 `chapter_2/investigation_scene_{8,10,12,14,16,17}` 新增中心 `x ∈ [0.125, 0.875]`（及 800×600 viewport y）檢查。與既有 `shippedPlacements()` CSS cover 計算共用同一 helper，不再造一個人工驗證器。
 - [ ] **決定性最大地點列測試入口：採「最小 e2e-only checkpoint」方案**，而非在 layout E2E 重新編寫六個案件的全部解鎖／Present 鏈：
   - `apps/game/e2e-tauri/helpers.ts` 的普通 `jumpToProductionScene` 只用於 Chapter 1，同名 scene ID 會衝突；Chapter 2 通常須 `jumpToProductionChapterScene("chapter_2", sceneId)`。
-  - 為避免 Scene 12、14 初始僅 **1/4** 地點可見、Scene 8/10/17 亦含 locked 地點，以及各場景 `Auto Outro` 因多做調查而退出，沿用 `apps/game/src-tauri/src/game/e2e_checkpoints.rs` 的 `#[cfg(feature = "e2e")]` 測試夾具。**只為本票六個白名單 scene IDs** 建立一個共用 layout-ready fixture helper（枚舉固定 checkpoint ID，不新增通用故事解鎖命令）。
-  - fixture 使用 `engine.jump_to_scene("chapter_2", sceneId)` 載入正確章節，僅對當前 investigation runtime 的既有 `unlock_override("sublocation:<id>")` 設定六場景各自所有 sublocation 的可見性，照原本 intro/enter flow 進入 Explore。**不能預先 inspect hotspot、討論 topic 或搬運證物**；這樣地點列會有最大 chip 數，卻不觸發 `Auto Outro`。測試後隨現有 E2E fixture 清除，不改 schema、正式進度或 save。
+  - 為避免 Scene 12、14 初始僅 **1/4** 地點可見、Scene 8/10/17 亦含 locked 地點，以及各場景 `Auto Outro` 因多做調查而退出，沿用 `apps/game/src-tauri/src/game/e2e_checkpoints.rs` 的 `#[cfg(feature = "e2e")]` 測試夾具。**只為白名單枚舉的 scene IDs** 建立一個共用 layout-ready fixture helper（枚舉固定 checkpoint ID，不新增通用故事解鎖命令）：本票六場景，另加 Scene 4 作共享 `.scene-hud` 表頭的迴歸檢查面。
+  - fixture 使用 `engine.jump_to_scene("chapter_2", sceneId)` 載入正確章節，僅對當前 investigation runtime 的既有 `unlock_override("sublocation:<id>")` 設定該白名單場景所有 sublocation 的可見性，照原本 intro/enter flow 進入 Explore。**不能預先 inspect hotspot、討論 topic 或搬運證物**；這樣地點列會有最大 chip 數，卻不觸發 `Auto Outro`。測試後隨現有 E2E fixture 清除，不改 schema、正式進度或 save。
   - 於 test 用既有 sublocation nav 切換各地點並量測真實 UI。未解鎖的個別 hotspot/topic 在 fixture 中仍可保持正常狀態；幾何檢查沿用已編譯 sidecar 與 `targetLayoutStyle`，必要時用現有 E2E 的 layout 投射方式處理未顯示項，不為證物重做完整 Present 流程。**最終測試須涵蓋 17 個 sublocation 的 72 個配置，特別確認 Scene 12／14 的 4-chip NAV，而非初始 1-chip 狀態。**
 - [ ] **真實 HUD 矩形及點擊**：在同一個 `investigation-layout.e2e.ts` 延伸現有 packaged 800×600 測量；對六場景所有新目標區域，判斷與 live `.explore-hud nav`、`.investigation-progress`、`.primary-objective-hud`（若有）、`.scene-label` 的 **DOM rect disjointness**。`PROGRESS`、`PRIMARY OBJECTIVE`、scene label 使用 `pointer-events: none`，不能靠 `elementFromPoint` 發現其視覺遮擋；`elementFromPoint(cx,cy)` **只用於確認真正接收點擊的是當前目標按鈕或其子節點**（不是另一熱點、NAV 或 fallback）。不以 `nav.bottom / 600` 當全寬 y 下限，因 flex-wrap 可能把 PROGRESS 放到 nav 下一行。
 - [ ] **批次例外**：`ramen_backdoor` 及 `disaster_center` 的 10 目標仍未配置時，只作已完成 62 個的裁切／HUD 檢查，**不要斷言這兩個 sublocation 沒有 fallback**；HPA-1033 交圖後才執行全六場景「零 fallback」及 Chapter 2 完整度 gate。
-- [ ] Scene 8、16 的相鄰小物件及 Scene 12、14 上緣區重點檢查；若 4-chip NAV 實際換行，先把新 sidecar 安全對準原圖。Scene 4 五地點 HUD 整體改版仍屬 HPA-852。
+- [ ] Scene 8、16 的相鄰小物件及 Scene 12、14 上緣區重點檢查；若 4-chip NAV 實際換行，先把新 sidecar 安全對準原圖。Scene 4 五地點狀態以同一 fixture 加設共享表頭迴歸檢查（全部五個 sublocation、所有已配置目標不得改路由 OFF-SCENE）；其 HUD 整體改版仍屬 HPA-852。
 
 ## 4. 驗證與交付紀錄
 
@@ -93,7 +93,7 @@
 - [ ] **macOS／Windows 800×600 畫面驗收**：保存 Scene 12、14（fixture 開啟四地點列）的場景截圖，檢查 NAV 因字體差異換行及其與角色／熱點的遮擋。無需雙 OS 重跑 72 次 E2E、不得新增 Windows packaged runner、沒有人工簽核。
 - [ ] 確認全 72 目標最後沒有 `OFF-SCENE TARGETS / UNPLACED`，且案件 Markdown、證物來源、Unlock/Reveal／話題狀態與 save schema 不變；不列 Android/Linux 端到端驗收，既有 CI 照常執行。
 
-**現況（部分交付）：本 PR 已含規劃文件與部分實作——六個 sidecar、限用 e2e checkpoint 夾具與測試擴充均已提交，pre-art 與 post-art 批次已配置 67/72 目標，且 `scenes:compile`、`test:scripts` 與 packaged gameplay E2E 已實際執行通過。但以上 acceptance／測試要求尚未全部成立：其餘 5 個目標由 HPA-1143 追蹤，Chapter 2 零 fallback gate 仍未開啟，macOS／Windows 截圖與 E2E Full 仍待完成；§5 條件全文維持不變，為最終驗收基準。**
+**現況（部分交付）：本 PR 已含規劃文件與部分實作——六個 sidecar、限用 e2e checkpoint 夾具（白名單含 Scene 4 共享表頭迴歸檢查）與測試擴充均已提交，pre-art 與 post-art 批次已配置 67/72 目標，且 `scenes:compile`、`test:scripts` 與 packaged gameplay E2E 已實際執行通過。但以上 acceptance／測試要求尚未全部成立：其餘 5 個目標由 HPA-1143 追蹤，Chapter 2 零 fallback gate 仍未開啟，macOS／Windows 截圖與 E2E Full 仍待完成；§5 條件全文維持不變，為最終驗收基準。PR 於審查期間維持 Draft，待上述檢查完成後再轉 ready。**
 
 ## 5. Acceptance Criteria（HPA-853 完成時全部成立）
 
@@ -107,6 +107,6 @@
 
 - 不修改 `InvestigationSceneSurface.svelte` 以「自動猜」熱點或隱藏 fallback 警示。
 - 不更動 `InvestigationLayoutSidecar` v1、Scene schema、故事存檔、Chapter 2 的調查關卡／證物／主線伏筆。
-- 不建立第二套布局工具、圖片座標產生器、泛用碰撞引擎、大量相似 E2E、完整 Chapter 2 Present puzzle 的重複腳本或新的 Windows E2E harness；e2e-only checkpoint 僅為六個白名單場景準備可視地點，不影響產品行為。
+- 不建立第二套布局工具、圖片座標產生器、泛用碰撞引擎、大量相似 E2E、完整 Chapter 2 Present puzzle 的重複腳本或新的 Windows E2E harness；e2e-only checkpoint 僅為白名單場景（本票六場景與 Scene 4 迴歸檢查）準備可視地點，不影響產品行為。
 - 不在 HPA-853 生成圖片或音效，不把藝術缺口誤當「加一個透明可點框」來完成。
 - 不把 HPA-852 的所有 800×600 HUD/標題/結算頁問題納入本票。

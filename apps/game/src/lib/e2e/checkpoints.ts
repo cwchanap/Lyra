@@ -10,6 +10,7 @@ export const E2E_CHECKPOINT_IDS = [
   "chapter-1-scene-navigation-locked",
   "chapter-1-scene-navigation-eligible",
   "chapter-1-analysis-beat-85-ready",
+  "chapter-2-investigation-layout-scene-4",
   "chapter-2-investigation-layout-scene-8",
   "chapter-2-investigation-layout-scene-10",
   "chapter-2-investigation-layout-scene-12",

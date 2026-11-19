@@ -1270,6 +1270,62 @@ describe("investigation layout surface", () => {
     });
   }
 
+  // Scene 4 is the shared-header regression guard, not an HPA-853 scene:
+  // its five-chip location bar is the widest existing nav, so the measured
+  // .scene-hud header it produces is the tallest any shipped scene gets.
+  // The stage subtracts that header from the 800x600 window for every
+  // scene — this pins that none of scene 4's already-placed targets gets
+  // rerouted into the OFF-SCENE panel by the shorter stage. The broader
+  // HUD rework for this scene stays with HPA-852.
+  it("keeps existing scene 4 placements on the art under the shared stage header at 800x600", async () => {
+    const sceneId = "investigation_scene_4";
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await waitForPackagedGameState(
+      (state) =>
+        isExploreInScene(state, sceneId) &&
+        state.scene.kind === "investigation" &&
+        state.scene.currentSublocationId !== null,
+      30000,
+      `layout-ready checkpoint for ${sceneId} did not land in Explore`,
+    );
+    await ensureMinimumWindowViewport();
+
+    const state = await getPackagedGameState();
+    if (
+      !isExploreInScene(state, sceneId) ||
+      state.scene.kind !== "investigation"
+    ) {
+      throw new Error(`packaged state left ${sceneId} during setup`);
+    }
+    const investigation = state.scene;
+
+    // All five authored chips at once, unlocked by the checkpoint fixture
+    // — the max-width nav the shared header has to accommodate.
+    expect(investigation.visibleSublocations.length).toBe(5);
+    expect(
+      await browser.execute(
+        () =>
+          document.querySelectorAll(".explore-hud nav .chips button").length,
+      ),
+    ).toBe(5);
+
+    const scenePlacements = shippedPlacements().filter((placement) =>
+      placement.id.startsWith(`chapter_2/${sceneId}/`),
+    );
+    for (const sublocation of investigation.visibleSublocations) {
+      if (sublocation.id !== investigation.currentSublocationId) {
+        await enterSublocationThroughNav(sceneId, sublocation);
+        await waitForSceneSurface(sublocation);
+      }
+      await expectHpa853SublocationSurface(
+        sceneId,
+        sublocation,
+        scenePlacements,
+        investigation.outroProgress?.total ?? 0,
+      );
+    }
+  });
+
   // Normalized bounds of the baked heads in the original background artwork.
   const faceChecks: Array<
     [
