@@ -707,7 +707,9 @@
               >
             {/if}
             <span class="kind"
-              >{isInnerVoice ? "心聲 · THOUGHT" : "發言 · LINE"}</span
+              >{isInnerVoice && !interrogationStageActive
+                ? "心聲 · THOUGHT"
+                : "發言 · LINE"}</span
             >
             <span class="speaker">{current.speaker}</span>
           </div>
