@@ -20,7 +20,7 @@
 1. **SEARCH／SHOW：** 以 `presentTo` 入口輸入名稱片語，只出現符合證物；改搜來源或 description/details 能找對目標；英文字母大小寫不影響；清除後所有證物回復原順序。無結果顯示空結果訊息。
 2. **SEARCH／PRESENT：** `crossExam` 入口同樣篩選。點擊結果仍以原 kind/id 呼叫 `onPresent`；有相同 id 的 statement/evidence 仍保持 kind 區別。
 3. **定位與狀態：** 先模擬格子捲到下方，再輸入搜尋字詞，預期 `scrollTop===0`；搜尋掉先前 hover/focus 的紀錄後詳情不殘留；卸載、重開（新 render）時無舊查詢、從頂端開始。
-4. **鍵盤：** 初始 Escape button 保持獲焦；下一步 Tab 可達搜尋，Shift+Tab 反向成立；input 到卡片及底部動作按鈕的 Tab trap 成立。上層 Game Menu 開啟時，原 `topLayerOpen` 仍不截走 Tab。搜尋輸入 disabled 時不可改可見紀錄或呼叫 onPresent，Escape／收回仍按既有 pending guard。
+4. **鍵盤：** 初始 Escape button 保持獲焦；搜尋輸入框可經 Tab／Shift+Tab 循環到達（依 DOM 順序，從 ESC 可用 Shift+Tab 回到搜尋）；input、卡片及底部動作按鈕的 Tab trap 皆成立。上層 Game Menu 開啟時，原 `topLayerOpen` 仍不截走 Tab。搜尋輸入 disabled 時不可改可見紀錄或呼叫 onPresent，Escape／收回仍按既有 pending guard。
 5. **無答題邏輯改變：** 搜尋只改可見列表，`presentableRecords` 與源 inventory 不變，既有 hover detail、image error placeholder、Escape／return-focus regression 全保留。
 
 先在原 main 行為上確認新增測試有意義地失敗，記錄至少一個 Red case；**不得以快照文字存在代替可操作的使用者事件測試**。
