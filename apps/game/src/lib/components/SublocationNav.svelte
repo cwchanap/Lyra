@@ -55,7 +55,8 @@
 
   .nav.scene {
     max-width: min(760px, 100%);
-    padding: 10px 12px;
+    gap: 8px;
+    padding: 6px 10px;
     border: 1px solid var(--rule-strong);
     background: rgba(20, 20, 31, 0.72);
     backdrop-filter: blur(2px);
@@ -76,6 +77,19 @@
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+  }
+
+  .scene .eyebrow {
+    padding-right: 8px;
+    border-right: 0;
+    letter-spacing: 0.18em;
+  }
+
+  .scene button {
+    min-height: 44px;
+    gap: 4px;
+    padding: 6px 7px;
+    letter-spacing: 0.02em;
   }
 
   button {

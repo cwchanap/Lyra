@@ -1,5 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 
+if (typeof ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Several behaviors persist to localStorage (story clearance
 // `lyra.storyClearedOnce.v1`, audio preferences), and the behavioral tests
 // assert against the persisted value, so they need a working Storage.
