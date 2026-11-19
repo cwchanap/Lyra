@@ -2568,9 +2568,10 @@ describe("compile (global story catalog)", () => {
 // its limit under suite parallelism), so the block gets its own timeout.
 describe("compile (tracked production corpus compatibility)", () => {
   // The live corpus costs ~30s per compile; these tests used to pay that
-  // four times behind a 120s suite timeout. Compile the two variants once —
-  // the plain docs corpus, plus the asset-enabled static+docs corpus the
-  // provenance test needs.
+  // four times behind a 120s suite timeout. Compile the plain docs corpus
+  // once in shared setup; the provenance test compiles its own asset-enabled
+  // static+docs variant so a static/stories_plan failure cannot block the
+  // docs-only assertions here.
   const repoRoot = resolve(".");
   let liveOutRoot = "";
   let liveAssetOutRoot = "";
@@ -2593,25 +2594,6 @@ describe("compile (tracked production corpus compatibility)", () => {
       );
     }
     liveWarnings = plain.warnings;
-
-    liveAssetOutRoot = mkdtempSync(
-      resolve(tmpdir(), "scene-compile-live-assets-"),
-    );
-    const assets = compile({
-      sourceRoot: [
-        resolve(repoRoot, "static/stories_plan"),
-        resolve(repoRoot, "docs/stories_plan"),
-      ],
-      outputRoot: liveAssetOutRoot,
-      assetConfigRoot: resolve(repoRoot, "static/assets/config"),
-      assetOutputRoot: resolve(liveAssetOutRoot, "assets"),
-      repoRoot,
-    });
-    if (!assets.ok) {
-      throw new Error(
-        "Live corpus compile failed:\n" + formatErrors(assets.errors),
-      );
-    }
   }, 120_000);
 
   afterAll(() => {
@@ -2950,6 +2932,35 @@ describe("compile (tracked production corpus compatibility)", () => {
     // release-gated chapters so an in-progress chapter can still compile
     // and place targets incrementally in the layout editor.
     const RELEASE_GATED_CHAPTERS = new Set(["chapter_1", "chapter_2"]);
+    // Every investigation scene the manifest declares for a release-gated
+    // chapter must exist as a compiled file on disk — otherwise its targets
+    // silently skip the placement gate below.
+    const expectedInvestigationFiles = (
+      JSON.parse(
+        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
+      ) as {
+        chapters: Array<{
+          id: string;
+          scenes: Array<{ type: string; file: string }>;
+        }>;
+      }
+    ).chapters
+      .filter((chapter) => RELEASE_GATED_CHAPTERS.has(chapter.id))
+      .flatMap((chapter) =>
+        chapter.scenes
+          .filter((scene) => scene.type === "investigation")
+          .map((scene) => resolve(outRoot, scene.file)),
+      );
+    expect(
+      expectedInvestigationFiles.length,
+      "expected release-gated chapters to declare investigation scenes",
+    ).toBeGreaterThan(0);
+    for (const file of expectedInvestigationFiles) {
+      expect(
+        existsSync(file),
+        `chapters.json lists this investigation scene but its compiled file is missing: ${file}`,
+      ).toBe(true);
+    }
     const investigationFiles = readdirSync(outRoot)
       .filter((name) => RELEASE_GATED_CHAPTERS.has(name))
       .flatMap((name) =>
@@ -2957,10 +2968,6 @@ describe("compile (tracked production corpus compatibility)", () => {
           .filter((file) => /^investigation_scene_.*\.json$/.test(file))
           .map((file) => resolve(outRoot, name, file)),
       );
-    expect(
-      investigationFiles.length,
-      "expected at least one compiled investigation scene to gate on placements",
-    ).toBeGreaterThan(0);
     const unplaced: string[] = [];
     for (const file of investigationFiles) {
       const scene = JSON.parse(readFileSync(file, "utf-8")) as {
@@ -2996,6 +3003,27 @@ describe("compile (tracked production corpus compatibility)", () => {
   });
 
   it("preserves neutral provenance outside the approved production migration", () => {
+    // The combined static+docs corpus stays out of the shared beforeAll: a
+    // static/stories_plan failure must only fail this test, not the
+    // docs-only assertions above.
+    liveAssetOutRoot = mkdtempSync(
+      resolve(tmpdir(), "scene-compile-live-assets-"),
+    );
+    const assets = compile({
+      sourceRoot: [
+        resolve(repoRoot, "static/stories_plan"),
+        resolve(repoRoot, "docs/stories_plan"),
+      ],
+      outputRoot: liveAssetOutRoot,
+      assetConfigRoot: resolve(repoRoot, "static/assets/config"),
+      assetOutputRoot: resolve(liveAssetOutRoot, "assets"),
+      repoRoot,
+    });
+    if (!assets.ok) {
+      throw new Error(
+        "Live corpus compile failed:\n" + formatErrors(assets.errors),
+      );
+    }
     const outRoot = liveAssetOutRoot;
 
     const chapters = JSON.parse(
@@ -3544,6 +3572,17 @@ describe("compile (tracked production corpus compatibility)", () => {
         },
       ],
     ]);
+    // A pin for a record missing from both compiled outputs would never be
+    // exercised by the loop below; every named record must exist.
+    const recordKeys = new Set(
+      sceneRecords.map(({ kind, id }) => `${kind}:${id}`),
+    );
+    for (const key of migratedProvenance.keys()) {
+      expect(
+        recordKeys.has(key),
+        `migrated provenance pin has no compiled record: ${key}`,
+      ).toBe(true);
+    }
     for (const record of [...sceneRecords, ...catalogRecords]) {
       const key = `${record.kind}:${record.id}`;
       expect(record.provenance).toEqual(
@@ -3567,7 +3606,7 @@ describe("compile (tracked production corpus compatibility)", () => {
         members: [{ kind: "evidence", id: "victim_phone_notification" }],
       },
     ]);
-  });
+  }, 120_000);
 });
 
 describe("compile (layout warning wiring)", () => {
