@@ -2,7 +2,9 @@ import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetEscapeCoordinator } from "$lib/state/escape-coordinator";
-import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
+import InvestigationSceneSurface, {
+  resetFallbackCollapseForTests,
+} from "./InvestigationSceneSurface.svelte";
 import type {
   CharacterView,
   FeedbackLine,
@@ -75,6 +77,7 @@ function renderSurface(
 
 afterEach(() => {
   resetEscapeCoordinator();
+  resetFallbackCollapseForTests();
 });
 
 describe("InvestigationSceneSurface 出示紀錄", () => {
@@ -98,6 +101,7 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
     const user = userEvent.setup();
     const { onPresent } = renderSurface(clerk(null));
 
+    await user.click(screen.getByRole("button", { name: /展開/ }));
     await user.click(screen.getByRole("button", { name: /出示紀錄/ }));
     const tray = screen.getByRole("dialog", { name: "出示紀錄" });
     expect(tray).toHaveTextContent("店員");
@@ -117,6 +121,7 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
     const user = userEvent.setup();
     renderSurface(clerk(null));
 
+    await user.click(screen.getByRole("button", { name: /展開/ }));
     const show = screen.getByRole("button", { name: /出示紀錄/ });
     await user.click(show);
     await user.click(screen.getByRole("button", { name: /收回/ }));
@@ -127,7 +132,7 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
     await waitFor(() => expect(show).toHaveFocus());
   });
 
-  it("lists a discussed Present topic for re-examination and shows the wrong-pick reply", () => {
+  it("lists a discussed Present topic for re-examination and shows the wrong-pick reply", async () => {
     const character = clerk(null);
     character.topics[1]!.discussed = true;
     renderSurface(character, {
@@ -135,6 +140,7 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
       line: { speaker: "店員", text: "這跟我無關吧。" },
     });
 
+    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
     expect(screen.getByRole("button", { name: /那張收據/ })).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent("店員這跟我無關吧。");
   });

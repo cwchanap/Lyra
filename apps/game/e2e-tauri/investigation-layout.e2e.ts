@@ -44,6 +44,8 @@ type ShippedPlacement = {
   kind: "hotspot" | "character";
   layout: TargetLayout;
   style: string;
+  /** Authored `status: locked`; characters carry no status and are never locked. */
+  locked: boolean;
 };
 
 type Box = { left: number; top: number; right: number; bottom: number };
@@ -138,11 +140,16 @@ type ShippedTarget = {
   id: string;
   kind: "hotspot" | "character";
   layout: TargetLayout | null;
+  locked: boolean;
 };
 
 /** Every hotspot and witness in the compiled scenes the app ships, placed or not. */
 function shippedTargets(): ShippedTarget[] {
-  type PlacedTarget = { id: string; layout: TargetLayout | null };
+  type PlacedTarget = {
+    id: string;
+    layout: TargetLayout | null;
+    status?: string;
+  };
   type CompiledInvestigation = {
     sublocations: Array<{
       id: string;
@@ -180,6 +187,7 @@ function shippedTargets(): ShippedTarget[] {
               id: `${sceneId}/${sublocation.id}/${target.id}`,
               kind,
               layout: target.layout,
+              locked: target.status === "locked",
             });
           }
         }
@@ -196,11 +204,12 @@ function shippedPlacements(): ShippedPlacement[] {
       (target): target is ShippedTarget & { layout: TargetLayout } =>
         target.layout !== null,
     )
-    .map(({ id, kind, layout }) => ({
+    .map(({ id, kind, layout, locked }) => ({
       id,
       kind,
       layout,
       style: targetLayoutStyle(layout),
+      locked,
     }));
 }
 
@@ -389,8 +398,45 @@ async function expectHpa853SublocationSurface(
       style: placement.style,
     }));
 
+  // Locked-ness is pinned to the authored `status: locked`, not inferred
+  // from runtime absence: an unlocked placement the runtime fails to expose
+  // (e.g. scene 8's comment_fight) must fail here instead of sliding into
+  // the projected-locked set and passing without a usable button.
+  const unexpectedProjections = scenePlacements
+    .filter((placement) => placement.id.startsWith(subPrefix))
+    .filter(
+      (placement) =>
+        !placement.locked &&
+        !runtimeTargetIds.has(placement.id.slice(subPrefix.length)),
+    )
+    .map((placement) => placement.id);
+  expect(unexpectedProjections).toEqual([]);
+
+  // Authored hit points derive from the compiled layout ratios — the same
+  // numbers targetViewportRect consumes — measured against the real rendered
+  // plane inside the page, not from each element's --x-ratio style vars, so
+  // a style that loses a var cannot silently skip the authored-center probe.
+  const authoredLayouts = scenePlacements
+    .filter((placement) => placement.id.startsWith(subPrefix))
+    .map((placement) => ({
+      id: placement.id.slice(subPrefix.length),
+      x: placement.layout.x,
+      y: placement.layout.y,
+      w: placement.layout.w,
+      h: placement.layout.h,
+    }));
+
   const measurement: SublocationMeasurement = await browser.execute(
-    (locked: Array<{ id: string; style: string }>): SublocationMeasurement => {
+    (
+      locked: Array<{ id: string; style: string }>,
+      authored: Array<{
+        id: string;
+        x: number;
+        y: number;
+        w: number;
+        h: number;
+      }>,
+    ): SublocationMeasurement => {
       const box = (rect: DOMRect) => ({
         left: rect.left,
         top: rect.top,
@@ -413,32 +459,33 @@ async function expectHpa853SublocationSurface(
         width: window.innerWidth,
         height: window.innerHeight,
       };
-      // The authored box's own center: cover math mirrored from
-      // targetViewportRect, fed by the inline style's unitless ratios —
-      // clamp/compaction only reshape the button box, so the ratios are
-      // the placement a player aims at from the sidecar.
-      const plane = {
-        w: Math.max(viewport.width, (16 / 9) * viewport.height),
-        h: Math.max(viewport.height, (9 / 16) * viewport.width),
-      };
+      const stageElement = document.querySelector(".scene-stage");
+      const planeElement = document.querySelector(".scene-coordinate-plane");
+      if (!stageElement || !planeElement)
+        throw new Error("Scene stage missing");
+      const stage = stageElement.getBoundingClientRect();
+      const plane = planeElement.getBoundingClientRect();
+      const clipped = (rect: DOMRect): Box => ({
+        left: Math.max(rect.left, stage.left),
+        top: Math.max(rect.top, stage.top),
+        right: Math.min(rect.right, stage.right),
+        bottom: Math.min(rect.bottom, stage.bottom),
+      });
       const hud = {
         nav: rectOf(".explore-hud nav"),
         progress: rectOf(".investigation-progress"),
         primaryObjective: rectOf(".primary-objective-hud"),
         sceneLabel: rectOf(".scene-label"),
       };
+      const authoredById = new Map(authored.map((entry) => [entry.id, entry]));
       const targets: TargetMeasurement[] = Array.from(
         document.querySelectorAll<HTMLElement>(
           "button.hotspot-target, button.character-target",
         ),
       ).map((target) => {
+        const id = target.getAttribute("data-target-id") ?? "";
         const rect = target.getBoundingClientRect();
-        const visible = {
-          left: Math.max(rect.left, 0),
-          top: Math.max(rect.top, 0),
-          right: Math.min(rect.right, viewport.width),
-          bottom: Math.min(rect.bottom, viewport.height),
-        };
+        const visible = clipped(rect);
         const probeVisible =
           visible.right > visible.left && visible.bottom > visible.top;
         let hitIsSelfOrDescendant = false;
@@ -453,22 +500,20 @@ async function expectHpa853SublocationSurface(
           hitIsSelfOrDescendant = hit !== null && target.contains(hit);
           hitDescription = describeHit(hit);
         }
-        const cs = getComputedStyle(target);
-        const ratioX = parseFloat(cs.getPropertyValue("--x-ratio"));
-        const ratioY = parseFloat(cs.getPropertyValue("--y-ratio"));
-        const w = parseFloat(cs.getPropertyValue("--w")) / 100;
-        const h = parseFloat(cs.getPropertyValue("--h")) / 100;
+        const authoredLayout = authoredById.get(id);
         let authoredCenter: { x: number; y: number } | null = null;
-        if (![ratioX, ratioY, w, h].some((value) => Number.isNaN(value))) {
-          const left = ratioX * plane.w - (plane.w - viewport.width) / 2;
-          const top = ratioY * plane.h - (plane.h - viewport.height) / 2;
-          const cx = left + (w * plane.w) / 2;
-          const cy = top + (h * plane.h) / 2;
+        if (authoredLayout) {
+          const cx =
+            plane.left +
+            (authoredLayout.x + authoredLayout.w / 2) * plane.width;
+          const cy =
+            plane.top +
+            (authoredLayout.y + authoredLayout.h / 2) * plane.height;
           if (
-            cx >= 0 &&
-            cx <= viewport.width &&
-            cy >= 0 &&
-            cy <= viewport.height
+            cx >= stage.left &&
+            cx <= stage.right &&
+            cy >= stage.top &&
+            cy <= stage.bottom
           ) {
             authoredCenter = { x: cx, y: cy };
           }
@@ -487,9 +532,9 @@ async function expectHpa853SublocationSurface(
           authoredHitDescription = describeHit(hit);
         }
         return {
-          id: target.getAttribute("data-target-id") ?? "",
+          id,
           routed: target.hasAttribute("inert"),
-          rect: box(rect),
+          rect: visible,
           probeVisible,
           hitIsSelfOrDescendant,
           hitDescription,
@@ -510,7 +555,7 @@ async function expectHpa853SublocationSurface(
           template.classList.remove("compact", "compact-x", "compact-y");
           projectedLocked.push({
             id: entry.id,
-            rect: box(template.getBoundingClientRect()),
+            rect: clipped(template.getBoundingClientRect()),
           });
         }
         if (savedStyle === null) template.removeAttribute("style");
@@ -528,6 +573,7 @@ async function expectHpa853SublocationSurface(
       return { viewport, hud, targets, projectedLocked, fallbackCount };
     },
     lockedStyles,
+    authoredLayouts,
   );
 
   expect(measurement.viewport).toEqual(MINIMUM_WINDOW);
@@ -829,8 +875,11 @@ describe("investigation layout surface", () => {
           else target.setAttribute("style", style);
           target.className = className;
         }
+        const stage = document.querySelector(".scene-stage");
+        if (!stage) throw new Error("Scene stage missing");
         return {
           viewport: { width: window.innerWidth, height: window.innerHeight },
+          stage: box(stage.getBoundingClientRect()),
           results,
         };
       },
@@ -848,10 +897,10 @@ describe("investigation layout surface", () => {
     const misplaced: string[] = [];
     for (const { id, target, cue } of measured.results) {
       const visible: Box = {
-        left: Math.max(target.left, 0),
-        top: Math.max(target.top, 0),
-        right: Math.min(target.right, measured.viewport.width),
-        bottom: Math.min(target.bottom, measured.viewport.height),
+        left: Math.max(target.left, measured.stage.left),
+        top: Math.max(target.top, measured.stage.top),
+        right: Math.min(target.right, measured.stage.right),
+        bottom: Math.min(target.bottom, measured.stage.bottom),
       };
       const needWidth = Math.min(
         target.right - target.left,
@@ -1221,6 +1270,193 @@ describe("investigation layout surface", () => {
     });
   }
 
+  // Normalized bounds of the baked heads in the original background artwork.
+  const faceChecks: Array<
+    [
+      12 | 14,
+      Array<{
+        id: string;
+        left: number;
+        top: number;
+        right: number;
+        bottom: number;
+      }>,
+    ]
+  > = [
+    [
+      12,
+      [
+        {
+          id: "truck_console",
+          left: 0.237,
+          top: 0.17,
+          right: 0.326,
+          bottom: 0.404,
+        },
+        {
+          id: "box_left_side",
+          left: 0.68,
+          top: 0.155,
+          right: 0.73,
+          bottom: 0.26,
+        },
+      ],
+    ],
+    [
+      14,
+      [
+        {
+          id: "backstage_rear",
+          left: 0.744,
+          top: 0.16,
+          right: 0.795,
+          bottom: 0.27,
+        },
+        {
+          id: "sponsor_corridor",
+          left: 0.29,
+          top: 0.08,
+          right: 0.345,
+          bottom: 0.21,
+        },
+        {
+          id: "disaster_center",
+          left: 0.182,
+          top: 0.145,
+          right: 0.238,
+          bottom: 0.26,
+        },
+      ],
+    ],
+  ];
+  for (const [sceneNumber, faces] of faceChecks) {
+    it(`keeps baked faces clear of the HUD in scene ${sceneNumber} at 800x600`, async () => {
+      const sceneId = `investigation_scene_${sceneNumber}`;
+      await loadPackagedCheckpoint(HPA853_LAYOUT_CHECKPOINTS[sceneNumber]);
+      await waitForPackagedGameState(
+        (state) =>
+          isExploreInScene(state, sceneId) &&
+          state.scene.kind === "investigation" &&
+          state.scene.currentSublocationId !== null,
+        30000,
+      );
+      await ensureMinimumWindowViewport();
+      const state = await getPackagedGameState();
+      if (state.scene.kind !== "investigation")
+        throw new Error("Not investigating");
+      const scene = state.scene;
+      let currentSublocationId = scene.currentSublocationId;
+      const chipTops = await browser.execute(() =>
+        Array.from(
+          document.querySelectorAll(".explore-hud nav .chips button"),
+          (chip) => chip.getBoundingClientRect().top,
+        ),
+      );
+      expect(chipTops).toHaveLength(4);
+      expect(new Set(chipTops).size).toBe(1);
+
+      for (const face of faces) {
+        const sublocation = scene.visibleSublocations.find(
+          (sub) => sub.id === face.id,
+        );
+        if (!sublocation) throw new Error(`Missing sublocation ${face.id}`);
+        if (face.id !== currentSublocationId) {
+          await enterSublocationThroughNav(sceneId, sublocation);
+          currentSublocationId = face.id;
+        }
+        await waitForSceneSurface(sublocation);
+        await browser.waitUntil(
+          () =>
+            browser.execute((id: string) => {
+              const image = document.querySelector<HTMLImageElement>(
+                `img.background-image[src*="/${id}.png"]`,
+              );
+              return !!image && image.complete && image.naturalWidth > 0;
+            }, face.id),
+          { timeout: 30000, timeoutMsg: `Background ${face.id} did not load` },
+        );
+        const measurement = await browser.execute((bounds) => {
+          const image = document.querySelector<HTMLImageElement>(
+            `img.background-image[src*="/${bounds.id}.png"]`,
+          );
+          if (!image) throw new Error(`Background ${bounds.id} missing`);
+          const rect = image.getBoundingClientRect();
+          const scale = Math.max(
+            rect.width / image.naturalWidth,
+            rect.height / image.naturalHeight,
+          );
+          const width = image.naturalWidth * scale;
+          const height = image.naturalHeight * scale;
+          const left = rect.left + (rect.width - width) / 2;
+          const top = rect.top + (rect.height - height) / 2;
+          const faceRect = {
+            left: left + bounds.left * width,
+            top: top + bounds.top * height,
+            right: left + bounds.right * width,
+            bottom: top + bounds.bottom * height,
+          };
+          const hud = Array.from(
+            document.querySelectorAll(
+              ".explore-hud nav, .investigation-progress, .primary-objective-hud, .scene-label",
+            ),
+            (element) => {
+              const box = element.getBoundingClientRect();
+              return {
+                left: box.left,
+                top: box.top,
+                right: box.right,
+                bottom: box.bottom,
+              };
+            },
+          );
+          const panel = document.querySelector(".scene-hud");
+          if (panel) {
+            const background = getComputedStyle(panel).backgroundColor;
+            if (
+              background !== "transparent" &&
+              background !== "rgba(0, 0, 0, 0)"
+            ) {
+              const box = panel.getBoundingClientRect();
+              hud.push({
+                left: box.left,
+                top: box.top,
+                right: box.right,
+                bottom: box.bottom,
+              });
+            }
+          }
+          return {
+            face: faceRect,
+            image: {
+              left: rect.left,
+              top: rect.top,
+              right: rect.right,
+              bottom: rect.bottom,
+            },
+            hud,
+          };
+        }, face);
+        expect(measurement.face.left).toBeGreaterThanOrEqual(
+          measurement.image.left,
+        );
+        expect(measurement.face.top).toBeGreaterThanOrEqual(
+          measurement.image.top,
+        );
+        expect(measurement.face.right).toBeLessThanOrEqual(
+          measurement.image.right,
+        );
+        expect(measurement.face.bottom).toBeLessThanOrEqual(
+          measurement.image.bottom,
+        );
+        expect(
+          measurement.hud.filter((rect) =>
+            intersectsBox(rect, measurement.face),
+          ),
+        ).toEqual([]);
+      }
+    });
+  }
+
   it("keeps the revealed board_underlayer from stealing planning_board's center in studio_room", async () => {
     const sceneId = "investigation_scene_16";
     await loadPackagedCheckpoint(HPA853_LAYOUT_CHECKPOINTS[16]);
@@ -1271,6 +1507,16 @@ describe("investigation layout surface", () => {
       outroTotal,
     );
 
+    // The reveal must be a real state change: pre-inspection the underlayer
+    // is absent from both the runtime view and the live surface, so its
+    // presence afterwards cannot pass vacuously.
+    expect(sublocation.hotspots.map((hotspot) => hotspot.id)).not.toContain(
+      "board_underlayer",
+    );
+    expect(
+      await elementExists('button[data-target-id="board_underlayer"]'),
+    ).toBe(false);
+
     // Reveal through the real player UI: inspect 企劃板 (planning_board),
     // drain its dialogue, then dismiss the deferred evidence acquisition.
     const boardSel = 'button[data-target-id="planning_board"]';
@@ -1279,6 +1525,15 @@ describe("investigation layout surface", () => {
       timeoutMsg: "planning_board button did not render in studio_room",
     });
     await jsClick(boardSel);
+    // jsClick only dispatches the click while inspect_hotspot is still
+    // awaiting IPC — wait for it to leave Explore before draining, else the
+    // drain's predicate is already true in the pre-inspection state and it
+    // returns without advancing the planning_board dialogue.
+    await waitForPackagedGameState(
+      (current) => current.mode.type === "dialogue",
+      15000,
+      "inspecting planning_board did not open its dialogue",
+    );
     await advanceDialogueUntil(async () => {
       const current = await getPackagedGameState();
       return (

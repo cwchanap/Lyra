@@ -243,13 +243,7 @@ describe("ExploreView", () => {
   });
 
   it("anchors the navigator and objective in a shared container instead of pinning each at the same top offset", async () => {
-    // Regression guard for the exploration HUD overlap: the navigator and
-    // the primary objective must share one positioned container (`.explore-hud`,
-    // laid out as a wrapping flex row) so they can never independently pin the
-    // same `top` and collide. With many locations the navigator wraps taller;
-    // the objective flows after it instead of overlapping. jsdom does not
-    // compute stylesheet layout, so this asserts the DOM contract the CSS
-    // depends on: both HUDs share a single `.explore-hud` host, in order.
+    // Both HUDs remain in one host so the scene header can lay them out together.
     const manySublocations: SublocationView[] = Array.from(
       { length: 8 },
       (_, index) => ({

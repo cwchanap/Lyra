@@ -1,18 +1,13 @@
 <script module lang="ts">
   import { SvelteSet as CollapseSet } from "svelte/reactivity";
 
-  // Collapse choices outlive the surface: +page.svelte renders this
-  // component only while the mode is "explore", so every inspect or
-  // interview unmounts it and component-local state would forget the
-  // collapse — re-covering the bottom-band targets the pill exists to
-  // free. Keyed per scene+sublocation: collapsing one location's panel
-  // must never hide a different location's off-scene targets.
-  const collapsedFallbackKeys = new CollapseSet<string>();
+  // Remember a player's expansion choice across explore remounts, per location.
+  const expandedFallbackKeys = new CollapseSet<string>();
 
   /** Test hook: module state survives component unmounts, so suites must
       clear it between cases. */
   export function resetFallbackCollapseForTests() {
-    collapsedFallbackKeys.clear();
+    expandedFallbackKeys.clear();
   }
 </script>
 
@@ -139,8 +134,7 @@
     sublocation.characters.filter((character) => character.layout === null),
   );
 
-  // The cover plane overhangs every non-16:9 viewport (133px each side at
-  // 800×600, more as the window grows taller), and whenever the fallback
+  // The cover plane overhangs every non-16:9 scene viewport, and whenever the fallback
   // panel has entries it paints a fixed band over the viewport bottom
   // (Chapter 1 scene 7's masuda_paperback sits at y≈785–829 under the
   // expanded panel at 800×900). Either can leave a placed target fully
@@ -152,7 +146,11 @@
   // so they drop out of the collision set below.
   let viewportW = $state(800);
   let viewportH = $state(600);
-  let viewport = $derived({ w: viewportW, h: viewportH });
+  let headerHeight = $state(0);
+  let viewport = $derived({
+    w: viewportW,
+    h: Math.max(0, viewportH - headerHeight),
+  });
   let surfaceEl = $state<HTMLElement | undefined>();
   let fallbackControlsEl = $state<HTMLDivElement | undefined>();
   // The fixed panel's painted rect — the viewport band it can swallow
@@ -175,14 +173,10 @@
   // sidecar declared them in intentionalOverlaps, which keeps the minimum
   // size as authored intent. Characters (z-index 2, never expanded) can only
   // be stolen from, so the hotspot side compacts.
-  // Expansion is evaluated at the minimum window (tauri.conf.json
-  // minWidth/minHeight), where the cover plane is ~1067×600px;
-  // clamp-induced collisions are monotonic in viewport size, so a pair safe
-  // there is safe larger. Only ACTIVE targets join the collision set: an
-  // inert box can't steal clicks or be stolen from, so a neighbour routed
-  // to the fallback list must not shrink a visible target's clamp.
+  // The smallest cover plane at the minimum window width is 800×450px.
+  // Only active targets join the collision set: inert boxes cannot steal clicks.
   const MIN_TARGET_PX = { w: 72, h: 44 };
-  const MIN_VIEWPORT_PX = { w: 800, h: 600 };
+  const MIN_VIEWPORT_PX = { w: 800, h: 450 };
 
   type CompactAxis = "x" | "y";
   type CompactClass = "compact" | "compact-x" | "compact-y";
@@ -320,7 +314,13 @@
   // the button does not have). Dropping a neighbour can only un-compact —
   // grow — a box, so the bounded loop converges quickly.
   let targetRouting = $derived.by(() => {
-    const occlusion = occludedRect;
+    const occlusion = occludedRect
+      ? {
+          ...occludedRect,
+          top: occludedRect.top - headerHeight,
+          bottom: occludedRect.bottom - headerHeight,
+        }
+      : null;
     const activeCharacters = placedCharacters.filter((character) =>
       isTargetReachable(character.layout, viewport, 0, 0, occlusion),
     );
@@ -396,7 +396,8 @@
       clippedCharacters.length,
   );
   let collapseKey = $derived(surfaceKey ?? sublocation.id);
-  let fallbackCollapsed = $derived(collapsedFallbackKeys.has(collapseKey));
+  // A closed panel leaves the smaller scene viewport usable until requested.
+  let fallbackCollapsed = $derived(!expandedFallbackKeys.has(collapseKey));
   let activeCharacter = $derived(
     placedCharacters.find((character) => character.id === activeCharacterId) ??
       null,
@@ -638,6 +639,7 @@
 <section
   class="surface-shell"
   aria-label={`${sublocation.label}調查場景`}
+  style:--scene-header-height={`${headerHeight}px`}
   bind:this={surfaceEl}
   onfocusin={handleSurfaceFocusIn}
 >
@@ -652,89 +654,90 @@
   />
 
   <div class="scene-surface">
-    <div class="scene-label">
-      <span class="eyebrow">INVESTIGATION</span>
-      <strong>{sublocation.label}</strong>
-    </div>
-
-    <div class="scene-coordinate-plane">
-      {#each placedHotspots as hotspot (hotspot.id)}
-        <button
-          class="hotspot-target"
-          class:inspected={hotspot.inspected}
-          class:compact={targetRouting.compactClasses.get(hotspot.id) ===
-            "compact"}
-          class:compact-x={targetRouting.compactClasses.get(hotspot.id) ===
-            "compact-x"}
-          class:compact-y={targetRouting.compactClasses.get(hotspot.id) ===
-            "compact-y"}
-          type="button"
-          aria-label={`調查：${hotspot.label}`}
-          data-target-id={hotspot.id}
-          inert={!targetRouting.activeHotspotIds.has(hotspot.id)}
-          style={targetLayoutStyle(hotspot.layout)}
-          {disabled}
-          onclick={() => onInspect(hotspot.id)}
-        >
-          <span class="hotspot-content">
-            <span class="hotspot-dot"></span>
-            <span class="target-label">{hotspot.label}</span>
-          </span>
-          {#if hotspot.inspected}
-            <span class="hotspot-check" aria-label="已調查">✓</span>
-          {:else}
-            <span class="target-pending" aria-hidden="true"></span>
-          {/if}
-        </button>
-      {/each}
-
-      {#each placedCharacters as character (character.id)}
-        <button
-          class="character-target"
-          type="button"
-          aria-label={`詢問：${character.name}`}
-          aria-expanded={activeCharacterId === character.id}
-          aria-haspopup="dialog"
-          data-target-id={character.id}
-          inert={!targetRouting.activeCharacterIds.has(character.id)}
-          style={targetLayoutStyle(character.layout)}
-          {disabled}
-          onclick={() => toggleCharacter(character.id)}
-        >
-          <span class="character-highlight"></span>
-          {#if character.layout.kind === "sprite"}
-            {#if portraits[character.id]}
-              {@const portrait = portraits[character.id]!}
-              <div class="character-preview-crop">
-                <CrossfadeImage
-                  src={portrait.url}
-                  imageClass=""
-                  imageStyle={cropStyleForAsset(portrait.assetId)}
-                  alt=""
-                  ariaHidden={true}
-                  onImageLoad={(event) =>
-                    loadCharacterCrop(portrait.assetId, event)}
-                  onImageError={() => handlePortraitError(character.id)}
-                />
-              </div>
-            {:else}
-              <span class="portrait-loading">{character.name}</span>
-            {/if}
-          {/if}
-          {#if undiscussedTopicCount(character) > 0}
-            <span class="target-pending character-pending" aria-hidden="true"
-            ></span>
-          {/if}
-          <span class="character-name">{character.name}</span>
-        </button>
-      {/each}
-    </div>
-
-    {#if hud}
-      <div class="scene-hud">
-        {@render hud()}
+    <div class="scene-hud" bind:offsetHeight={headerHeight}>
+      <div class="scene-label">
+        <span class="eyebrow">INVESTIGATION</span>
+        <strong>{sublocation.label}</strong>
       </div>
-    {/if}
+      {#if hud}
+        {@render hud()}
+      {/if}
+    </div>
+
+    <div class="scene-stage">
+      <div class="scene-coordinate-plane">
+        {#each placedHotspots as hotspot (hotspot.id)}
+          <button
+            class="hotspot-target"
+            class:inspected={hotspot.inspected}
+            class:compact={targetRouting.compactClasses.get(hotspot.id) ===
+              "compact"}
+            class:compact-x={targetRouting.compactClasses.get(hotspot.id) ===
+              "compact-x"}
+            class:compact-y={targetRouting.compactClasses.get(hotspot.id) ===
+              "compact-y"}
+            type="button"
+            aria-label={`調查：${hotspot.label}`}
+            data-target-id={hotspot.id}
+            inert={!targetRouting.activeHotspotIds.has(hotspot.id)}
+            style={targetLayoutStyle(hotspot.layout)}
+            {disabled}
+            onclick={() => onInspect(hotspot.id)}
+          >
+            <span class="hotspot-content">
+              <span class="hotspot-dot"></span>
+              <span class="target-label">{hotspot.label}</span>
+            </span>
+            {#if hotspot.inspected}
+              <span class="hotspot-check" aria-label="已調查">✓</span>
+            {:else}
+              <span class="target-pending" aria-hidden="true"></span>
+            {/if}
+          </button>
+        {/each}
+
+        {#each placedCharacters as character (character.id)}
+          <button
+            class="character-target"
+            type="button"
+            aria-label={`詢問：${character.name}`}
+            aria-expanded={activeCharacterId === character.id}
+            aria-haspopup="dialog"
+            data-target-id={character.id}
+            inert={!targetRouting.activeCharacterIds.has(character.id)}
+            style={targetLayoutStyle(character.layout)}
+            {disabled}
+            onclick={() => toggleCharacter(character.id)}
+          >
+            <span class="character-highlight"></span>
+            {#if character.layout.kind === "sprite"}
+              {#if portraits[character.id]}
+                {@const portrait = portraits[character.id]!}
+                <div class="character-preview-crop">
+                  <CrossfadeImage
+                    src={portrait.url}
+                    imageClass=""
+                    imageStyle={cropStyleForAsset(portrait.assetId)}
+                    alt=""
+                    ariaHidden={true}
+                    onImageLoad={(event) =>
+                      loadCharacterCrop(portrait.assetId, event)}
+                    onImageError={() => handlePortraitError(character.id)}
+                  />
+                </div>
+              {:else}
+                <span class="portrait-loading">{character.name}</span>
+              {/if}
+            {/if}
+            {#if undiscussedTopicCount(character) > 0}
+              <span class="target-pending character-pending" aria-hidden="true"
+              ></span>
+            {/if}
+            <span class="character-name">{character.name}</span>
+          </button>
+        {/each}
+      </div>
+    </div>
   </div>
 
   {#if activeCharacter}
@@ -876,8 +879,8 @@
         aria-expanded={!fallbackCollapsed}
         {disabled}
         onclick={() => {
-          if (fallbackCollapsed) collapsedFallbackKeys.delete(collapseKey);
-          else collapsedFallbackKeys.add(collapseKey);
+          if (fallbackCollapsed) expandedFallbackKeys.add(collapseKey);
+          else expandedFallbackKeys.delete(collapseKey);
         }}
       >
         <span class="eyebrow">OFF-SCENE TARGETS · {fallbackEntryCount}</span>
@@ -952,8 +955,6 @@
   }
 
   .scene-surface {
-    --investigation-hud-top: 22px;
-    --investigation-hud-inline: clamp(20px, 3vw, 40px);
     position: fixed;
     inset: 0;
     /* Below .fallback-controls so placed hotspot/character targets
@@ -971,9 +972,17 @@
     pointer-events: none;
   }
 
+  .scene-stage {
+    position: absolute;
+    inset: var(--scene-header-height) 0 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
   .scene-coordinate-plane {
-    --scene-cover-width: max(100vw, 177.77777778vh);
-    --scene-cover-height: max(100vh, 56.25vw);
+    --scene-area-height: calc(100vh - var(--scene-header-height));
+    --scene-cover-width: max(100vw, var(--scene-area-height) * 1.777777778);
+    --scene-cover-height: max(var(--scene-area-height), 56.25vw);
     position: absolute;
     left: 50%;
     top: 50%;
@@ -985,19 +994,17 @@
 
   .surface-shell > :global(img.background-image) {
     position: fixed;
-    inset: 0;
+    inset: var(--scene-header-height) 0 0;
     z-index: -1;
     width: 100vw;
-    height: 100vh;
+    height: calc(100vh - var(--scene-header-height));
     object-fit: cover;
     pointer-events: none;
   }
 
   .scene-label {
-    position: absolute;
-    left: var(--investigation-hud-inline);
-    top: var(--investigation-hud-top);
-    z-index: 5;
+    grid-column: 1;
+    grid-row: 1;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1023,9 +1030,15 @@
   }
 
   .scene-hud {
-    position: fixed;
-    inset: 0;
+    position: absolute;
+    inset: 0 0 auto;
     z-index: 9;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    box-sizing: border-box;
+    padding: 12px clamp(20px, 3vw, 40px);
+    background: var(--ink);
     pointer-events: none;
   }
 
@@ -1182,7 +1195,7 @@
     );
     --pending-target-top: calc(
       var(--y-ratio) * var(--scene-cover-height) -
-        (var(--scene-cover-height) - 100vh) / 2
+        (var(--scene-cover-height) - var(--scene-area-height)) / 2
     );
     position: absolute;
     left: clamp(
@@ -1202,8 +1215,8 @@
       min(
         calc(100% - var(--pending-size)),
         calc(
-          100vh - var(--pending-target-top) - var(--pending-inset) -
-            var(--pending-size)
+          var(--scene-area-height) - var(--pending-target-top) -
+            var(--pending-inset) - var(--pending-size)
         )
       )
     );

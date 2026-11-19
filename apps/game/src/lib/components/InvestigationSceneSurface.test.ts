@@ -161,9 +161,11 @@ describe("InvestigationSceneSurface", () => {
 
     expect(source).toContain('class="scene-coordinate-plane"');
     expect(planeRule).toContain(
-      "--scene-cover-width: max(100vw, 177.77777778vh)",
+      "--scene-cover-width: max(100vw, var(--scene-area-height) * 1.777777778)",
     );
-    expect(planeRule).toContain("--scene-cover-height: max(100vh, 56.25vw)");
+    expect(planeRule).toContain(
+      "--scene-cover-height: max(var(--scene-area-height), 56.25vw)",
+    );
     expect(planeRule).toContain("left: 50%");
     expect(planeRule).toContain("top: 50%");
     expect(planeRule).toContain("width: var(--scene-cover-width)");
@@ -171,17 +173,11 @@ describe("InvestigationSceneSurface", () => {
     expect(planeRule).toContain("transform: translate(-50%, -50%)");
   });
 
-  it("uses the hidden chapter HUD area for the investigation HUD", () => {
+  it("reserves the measured HUD height above the scene", () => {
     const source = surfaceSource();
-    const surfaceRule = cssRule(source, ".scene-surface");
-    const labelRule = cssRule(source, ".scene-label");
-    const hudRule = cssRule(source, ".scene-hud");
-
-    expect(surfaceRule).toContain("--investigation-hud-top: 22px");
-    expect(surfaceRule).not.toContain("--investigation-top-safe");
-    expect(labelRule).toContain("top: var(--investigation-hud-top)");
-    expect(hudRule).toContain("position: fixed");
-    expect(hudRule).toContain("inset: 0");
+    const stageRule = cssRule(source, ".scene-stage");
+    expect(source).toContain("bind:offsetHeight={headerHeight}");
+    expect(stageRule).toContain("inset: var(--scene-header-height) 0 0");
   });
 
   it("keeps investigation overlays out of document flow so the scene does not scroll", () => {
@@ -363,7 +359,9 @@ describe("InvestigationSceneSurface", () => {
     expect(backgroundRule).toContain("position: fixed");
     expect(backgroundRule).toContain("z-index: -1");
     expect(backgroundRule).toContain("width: 100vw");
-    expect(backgroundRule).toContain("height: 100vh");
+    expect(backgroundRule).toContain(
+      "height: calc(100vh - var(--scene-header-height))",
+    );
   });
 
   it("scopes the background selector to the surface shell", () => {
@@ -992,8 +990,9 @@ describe("InvestigationSceneSurface", () => {
       minWidth,
       minHeight,
     });
+    if (minWidth === undefined) throw new Error("Minimum window width missing");
     expect(source).toContain(
-      `MIN_VIEWPORT_PX = { w: ${minWidth}, h: ${minHeight} }`,
+      `MIN_VIEWPORT_PX = { w: ${minWidth}, h: ${(minWidth * 9) / 16} }`,
     );
   });
 
@@ -1013,19 +1012,20 @@ describe("InvestigationSceneSurface", () => {
     expect(onInterview).toHaveBeenCalledWith("witness", "alibi");
   });
 
-  it("renders unplaced hotspot fallback controls", () => {
+  it("renders unplaced hotspot fallback controls", async () => {
     render(InvestigationSceneSurface, {
       sublocation,
       onInspect: vi.fn(),
       onInterview: vi.fn(),
     });
 
+    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
     expect(
       screen.getByRole("button", { name: /未放置：櫃子/ }),
     ).toBeInTheDocument();
   });
 
-  it("renders unplaced character fallback controls with bio and topics", () => {
+  it("renders unplaced character fallback controls with bio and topics", async () => {
     const withUnplaced: SublocationView = {
       ...sublocation,
       characters: [
@@ -1060,6 +1060,7 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
+    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
     expect(screen.getByText("路人")).toBeInTheDocument();
     expect(screen.getByText("旁觀者")).toBeInTheDocument();
     expect(screen.getByText("站在門外看熱鬧。")).toBeInTheDocument();
@@ -1134,6 +1135,7 @@ describe("InvestigationSceneSurface", () => {
     expect(
       screen.getByRole("button", { name: /詢問：對面店主/ }),
     ).toHaveProperty("inert", true);
+    await user.click(screen.getByRole("button", { name: /展開/ }));
     await user.click(screen.getByRole("button", { name: /畫面外：帳本/ }));
     expect(onInspect).toHaveBeenCalledWith("ledger");
     // Reachable targets stay on the plane and interactive.
@@ -1181,6 +1183,7 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
+    await user.click(screen.getByRole("button", { name: /展開/ }));
     const toggle = screen.getByRole("button", { name: /收合/ });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(
@@ -1205,7 +1208,7 @@ describe("InvestigationSceneSurface", () => {
     ).toBeInTheDocument();
   });
 
-  it("re-expands the fallback panel when the sublocation changes", async () => {
+  it("does not carry an expanded fallback panel to another sublocation", async () => {
     window.innerWidth = 800;
     window.innerHeight = 720;
     const clippedView: SublocationView = {
@@ -1228,13 +1231,8 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    await user.click(screen.getByRole("button", { name: /收合/ }));
-    expect(container.querySelector(".fallback-controls")).toHaveClass(
-      "collapsed",
-    );
+    await user.click(screen.getByRole("button", { name: /展開/ }));
 
-    // A different sublocation's hidden targets surface expanded — the
-    // collapse from the previous location must not hide them silently.
     const otherSublocation: SublocationView = {
       ...clippedView,
       id: "alley",
@@ -1245,19 +1243,14 @@ describe("InvestigationSceneSurface", () => {
       onInspect: vi.fn(),
       onInterview: vi.fn(),
     });
-    expect(container.querySelector(".fallback-controls")).not.toHaveClass(
+    expect(container.querySelector(".fallback-controls")).toHaveClass(
       "collapsed",
     );
-    expect(
-      screen.getByRole("button", { name: /畫面外：帳本/ }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /畫面外：帳本/ })).toBeNull();
   });
 
-  it("keeps the collapse choice after the surface unmounts and remounts", async () => {
-    // +page.svelte only renders the surface while the mode is "explore":
-    // every inspect/interview unmounts it. The collapse must survive that
-    // remount or the re-expanded panel covers the same bottom-band targets
-    // the player just freed.
+  it("keeps the expansion choice after the surface unmounts and remounts", async () => {
+    // Inspect/interview unmounts the surface; the player's choice must survive.
     window.innerWidth = 800;
     window.innerHeight = 720;
     const clippedView: SublocationView = {
@@ -1281,19 +1274,19 @@ describe("InvestigationSceneSurface", () => {
     const user = userEvent.setup();
     const first = render(InvestigationSceneSurface, props);
 
-    await user.click(screen.getByRole("button", { name: /收合/ }));
-    expect(first.container.querySelector(".fallback-controls")).toHaveClass(
+    await user.click(screen.getByRole("button", { name: /展開/ }));
+    expect(first.container.querySelector(".fallback-controls")).not.toHaveClass(
       "collapsed",
     );
 
     first.unmount();
     const second = render(InvestigationSceneSurface, props);
-    expect(second.container.querySelector(".fallback-controls")).toHaveClass(
-      "collapsed",
-    );
     expect(
-      screen.queryByRole("button", { name: /畫面外：帳本/ }),
-    ).not.toBeInTheDocument();
+      second.container.querySelector(".fallback-controls"),
+    ).not.toHaveClass("collapsed");
+    expect(
+      screen.getByRole("button", { name: /畫面外：帳本/ }),
+    ).toBeInTheDocument();
   });
 
   it("routes a placed target the fallback panel itself occludes into the list", async () => {
@@ -1345,6 +1338,7 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
+    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
     await waitFor(() => {
       expect(
         screen.getByRole("button", { name: /調查：地板夾層/ }),
@@ -1360,6 +1354,63 @@ describe("InvestigationSceneSurface", () => {
     );
   });
 
+  it("routes panel occlusion relative to the measured HUD height", async () => {
+    window.innerWidth = 800;
+    window.innerHeight = 600;
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(
+      function (this: HTMLElement) {
+        return this.classList.contains("scene-hud") ? 120 : 0;
+      },
+    );
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: Element) {
+        if (this.classList.contains("fallback-controls")) {
+          return this.classList.contains("collapsed")
+            ? new DOMRect(0, 560, 180, 40)
+            : new DOMRect(0, 480, 800, 120);
+        }
+        return new DOMRect();
+      },
+    );
+    const view: SublocationView = {
+      ...sublocation,
+      characters: [],
+      hotspots: [
+        ...sublocation.hotspots,
+        {
+          id: "floor_safe",
+          label: "地板夾層",
+          description: "地毯下的暗格。",
+          inspected: false,
+          layout: { kind: "rect", x: 0.5, y: 0.8, w: 0.08, h: 0.1 },
+        },
+      ],
+    };
+    const { container } = render(InvestigationSceneSurface, {
+      sublocation: view,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+    await waitFor(() => {
+      expect(container.querySelector(".surface-shell")).toHaveStyle({
+        "--scene-header-height": "120px",
+      });
+    });
+    expect(
+      screen.getByRole("button", { name: /調查：地板夾層/ }),
+    ).toHaveProperty("inert", false);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: /展開/ }));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /調查：地板夾層/ }),
+      ).toHaveProperty("inert", true);
+    });
+    expect(
+      screen.getByRole("button", { name: /畫面外：地板夾層/ }),
+    ).toBeInTheDocument();
+  });
+
   it("keeps the fallback toggle outside the panel's scroll area", () => {
     // A list long enough to scroll must not carry the collapse control
     // away — it is the only way back to covered scene targets. Assert the
@@ -1370,7 +1421,7 @@ describe("InvestigationSceneSurface", () => {
       onInterview: vi.fn(),
     });
 
-    const toggle = screen.getByRole("button", { name: /收合/ });
+    const toggle = screen.getByRole("button", { name: /展開/ });
     expect(toggle.closest(".fallback-controls")).not.toBeNull();
     expect(toggle.closest(".fallback-grid")).toBeNull();
   });

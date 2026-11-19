@@ -109,38 +109,25 @@
   }
 
   .explore-hud {
-    position: absolute;
-    top: 76px;
-    left: clamp(20px, 3vw, 40px);
-    right: clamp(20px, 3vw, 40px);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 10px;
-    pointer-events: none;
+    display: contents;
   }
 
-  /* Keep the scene objective compact so it sits beside (wide viewports) or
-     wraps below (narrow viewports) the location navigator without the two
-     independently pinning the same top offset. */
+  .explore-hud :global(nav) {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
   .explore-hud :global(.primary-objective-hud) {
-    max-width: min(360px, 100%);
+    max-width: min(280px, 100%);
   }
 
   .hud-side {
-    display: grid;
-    justify-items: end;
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 8px;
-    max-width: min(360px, 100%);
-  }
-
-  @media (max-width: 720px) {
-    /* lyra-mobile-breakpoint — see tokens.css. */
-    .explore-hud {
-      top: 72px;
-      left: 12px;
-      right: 12px;
-    }
+    max-width: min(600px, 100%);
   }
 </style>
