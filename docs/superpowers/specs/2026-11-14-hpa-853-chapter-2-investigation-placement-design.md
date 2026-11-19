@@ -1,7 +1,7 @@
 # HPA-853 — 第二章調查熱點／證人場景配置：設計規格
 
 **日期：** 2026-11-14  
-**狀態：** Draft design（2026-11-14 規劃當時的設計基準，非實作宣告。現況：HPA-853 已部分實作——72 個目標已配置 67 個，其餘 5 個由 [HPA-1143](https://linear.app/cwchanap/issue/HPA-1143/complete-five-chapter-2-investigation-targets-blocked-by-crop-and-hud) 追蹤；最終驗收尚未通過，Chapter 2 零 fallback gate 仍未開啟）  
+**狀態：** Draft design（2026-11-14 規劃當時的設計基準，非實作宣告。現況：72/72 目標全部配置——HPA-1143 五個目標在共享表頭的 stage-relative 裁切下已可視並完成配置，Chapter 2 零 fallback gate 已開啟；packaged gameplay E2E 複驗、Editor overlay、macOS／Windows 截圖與 E2E Full 仍待完成）  
 **Linear：** https://linear.app/cwchanap/issue/HPA-853/chapter-2-investigations-8-17-show-hotspots-in-the-off-scene-fallback  
 **美術依賴：** https://linear.app/cwchanap/issue/HPA-1033/art-add-three-visible-chapter-2-investigation-witnesses-to-existing
 
@@ -53,7 +53,7 @@ Chapter 2 調查 Scene 8、10、12、14、16、17 都有有效的劇情、熱點
 
 ### 4.2 800×600 可視區、最大地點列與 HUD 遮擋
 
-背景以 16:9 cover 顯示在扣除 `.scene-hud` 表頭實測高度後的 `.scene-stage` 區域：800×600（4:3）視窗下 stage 為 800×（600 − headerHeight），cover 影像寬度為 max(800, stage 高 × 16⁄9)，左右裁切量隨表頭高度變動——表頭越高，影像越窄、水平可見範圍越寬，stage 下緣同時上移。此表頭為**全調查場景共用**，不只本票六場景：既有 Scene 4 等場景的可視區同樣縮短，故 packaged e2e 以 Scene 4 五地點狀態加設「已配置目標不得改路由 OFF-SCENE」的迴歸檢查；Scene 4 既有 HUD 問題仍屬 HPA-852。以**背景本身的 normalized 座標**計，**本票六個新增場景**的目標中心 x 應位於 **[0.125, 0.875]** 內；座標仍以實際圖片／Editor 為準。**此更嚴格的中心點規則只適用 HPA-853 六場景，不回溯修改既有 Chapter 1 或 Chapter 2 Scene 4/5 配置。**現有全章 `shippedPlacements()` 測試的 **44px 可用跨度（`MIN_USABLE_TARGET_PX`）及 pending cue** 是全章共用回歸契約：既有 8 個目標的中心雖在上述區間外，仍可用部分裁切的矩形點選；不能為了讓新 assertion 綠燈而搬離原圖物件。
+背景以 16:9 cover 顯示在扣除 `.scene-hud` 表頭實測高度後的 `.scene-stage` 區域：800×600（4:3）視窗下 stage 為 800×（600 − headerHeight），cover 影像寬度為 max(800, stage 高 × 16⁄9)，左右裁切量隨表頭高度變動——表頭越高，影像越窄、水平可見範圍越寬，stage 下緣同時上移。此表頭為**全調查場景共用**，不只本票六場景：既有 Scene 4 等場景的可視區同樣縮短，故 packaged e2e 以 Scene 4 五地點狀態加設「已配置目標不得改路由 OFF-SCENE」的迴歸檢查；Scene 4 既有 HUD 問題仍屬 HPA-852。以**背景本身的 normalized 座標**計，**本票六個新增場景**的目標中心 x 應位於 stage-relative cover 實際顯示的帶內——測試以這六場景最短表頭（實測 ≥129px，取下限 120px）的最寬 cover 推導：480px stage → 853×480 cover → 帶約 **[0.031, 0.969]**。此推導帶取代了原稿的固定 [0.125, 0.875]：後者沿用全視窗 1066×600 cover 的假設，會把四個誠實落在圖緣物件上的目標（HPA-1143）擋在門外；共享表頭縮小 cover 後這些物件已在可視區內。**此中心點規則只適用 HPA-853 六場景，不回溯修改既有 Chapter 1 或 Chapter 2 Scene 4/5 配置。**現有全章 `shippedPlacements()` 測試的 **44px 可用跨度（`MIN_USABLE_TARGET_PX`）及 pending cue** 是全章共用回歸契約：既有 8 個目標的中心雖在舊 [0.125, 0.875] 區間外，仍可用部分裁切的矩形點選；不能為了讓新 assertion 綠燈而搬離原圖物件。
 
 **不可使用 `y > nav.bottom / 600` 當成全寬安全線。** `ExploreView.svelte` 的 `.explore-hud` 是 flex-wrap；nav 與右側 `hud-side` 可換行並移到不同位置，且 `PROGRESS`、`PRIMARY OBJECTIVE`、`.scene-label` 雖設有 `pointer-events: none`，仍會實際蓋住美術／提示。唯一可靠方式是**在 800×600 的真實遊戲畫面量測每個正在顯示的 HUD 元素 DOM rect**，與目標可點矩形逐一檢查不相交。至少涵蓋：
 
@@ -68,7 +68,7 @@ Chapter 2 調查 Scene 8、10、12、14、16、17 都有有效的劇情、熱點
 
 - 本票六個場景每個只有 2～4 個 sublocation；特別量測 Scene 12／14 的**四地點**狀態，不能只量初始的一地點並宣稱檢查了換行。Scene 4 的五地點狀態是本票**共享表頭**改動的最大 nav 迴歸面：同一 checkpoint fixture 解鎖其全部五個 sublocation，檢查所有已配置目標維持 on-art（無新增 OFF-SCENE 路由）；其 HUD 整體改版仍屬 HPA-852。
 - `shippedPlacements()` 仍照現有方式檢查全部已配置章節的 **44px 裁切、compact 與 cue**；中心點與上述 live HUD rect／中心命中補充**只針對六個新增場景**。不修改 5 個既有 Chapter 1 和 3 個 Chapter 2 Scene 4 的 edge-of-frame 點位來滿足新規則。
-- 兩張待補圖場景 `ramen_backdoor`、`disaster_center` 在 HPA-1033 合併前尚未有 layout；**批次測試允許這兩處仍有 OFF-SCENE fallback**，不得在此階段宣稱全場景通過。等 72 個目標都完成才啟動「零 fallback」正式 gate。
+- `ramen_backdoor`、`disaster_center` 兩個 sublocation 的 layout 已在 HPA-1033 補圖合併後完成；「零 fallback」gate 隨 72 個目標全部配置啟動（HPA-1143 五個目標同批完成）。
 - 熱點與熱點、熱點與 baked 人物不得搶點。先縮到實際物件輪廓；`intentionalOverlaps` 僅限可同時操作的刻意重疊，不用來掩蓋真實誤放。Scene 8 平板／字幕及 Scene 16 手機／錄音、企劃板／底頁，用不同來源區與既有解鎖時序呈現。
 
 ### 4.3 編譯、測試與內容版本沿用既有路徑
@@ -98,7 +98,7 @@ Chapter 2 調查 Scene 8、10、12、14、16、17 都有有效的劇情、熱點
 ## 6. 驗收契約（端到端，不要求人工簽收）
 
 - **6 個 scene、17 個 sublocation、59 個 hotspot + 13 個 character** 全部配置完成。編譯後 72 個目標都具合法 layout，不再落入 `OFF-SCENE TARGETS / UNPLACED` 回退清單。
-- **800×600 E2E（現有 `gameplay` suite）**：全章保留 44px hit span、compact 與 cue 既有回歸；只有 HPA-853 六場景新增中心位於 viewport [x = 0.125–0.875]、最大地點列的實際 NAV/PROGRESS/PRIMARY OBJECTIVE/scene-label DOM rect 無遮擋，以及 `elementFromPoint` 的目標按鈕命中檢查。使用受限 e2e-only checkpoint，不複製案件 Present／Auto Outro 解鎖鏈；HPA-1033 補圖前的兩個 sublocation 暫緩零 fallback 驗收。
+- **800×600 E2E（現有 `gameplay` suite）**：全章保留 44px hit span、compact 與 cue 既有回歸；只有 HPA-853 六場景新增中心位於 stage-relative 推導帶（§4.2）、最大地點列的實際 NAV/PROGRESS/PRIMARY OBJECTIVE/scene-label DOM rect 無遮擋，以及 `elementFromPoint` 的目標按鈕命中檢查。使用受限 e2e-only checkpoint，不複製案件 Present／Auto Outro 解鎖鏈。
 - **macOS / Windows 畫面檢查**：以 800×600 截圖至少核對 Scene 12、14 的四地點列、主要 HUD 與人物／熱點有無重疊；同時將全部 17 張 Editor overlay 與對應場景背景圖片做視覺比對（包含 HPA-1033 的三名人物）。沒有 Linear UI mockup，以既有原圖為準；不要求 Windows packaged E2E runner 或人工作為 acceptance gate。
 - `scenes:compile`、`test:scripts`（Chapter 1 + 2 placement gate）、`check:scripts`、`check`、`check:e2e`、`lint`、`format:check`、`evidence-sources:audit`、Layout Editor 三項 real-content checks、`test:e2e:gameplay` 與 PR ready 前一輪 E2E Full 通過；`smoke` 僅作一般回歸檢查。
 - `compile-scenes.test.ts` 的 live-corpus snapshot 更新，以反映預期的 `contentRevision` 改變；既有開發存檔可依 pre-release 策略失效。無新增 overlap warning、無證據／故事語義更動、不新增第二套驗證框架。

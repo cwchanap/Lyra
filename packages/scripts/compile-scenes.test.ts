@@ -2938,7 +2938,7 @@ describe("compile (tracked production corpus compatibility)", () => {
     // missing sidecar file and missing entries. The gate is scoped to
     // release-gated chapters so an in-progress chapter can still compile
     // and place targets incrementally in the layout editor.
-    const RELEASE_GATED_CHAPTERS = new Set(["chapter_1"]);
+    const RELEASE_GATED_CHAPTERS = new Set(["chapter_1", "chapter_2"]);
     const investigationFiles = readdirSync(outRoot)
       .filter((name) => RELEASE_GATED_CHAPTERS.has(name))
       .flatMap((name) =>
