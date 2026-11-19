@@ -603,6 +603,55 @@ describe("InvestigationSceneSurface", () => {
     );
   });
 
+  it("assigns inward label alignment to hotspots near horizontal edges", () => {
+    window.innerWidth = 1920;
+    window.innerHeight = 1080;
+    const edgeSublocation: SublocationView = {
+      ...sublocation,
+      hotspots: [
+        {
+          id: "left-edge",
+          label: "Left edge",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.05, y: 0.2, w: 0.1, h: 0.1 },
+        },
+        {
+          id: "right-edge",
+          label: "Right edge",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.85, y: 0.2, w: 0.1, h: 0.1 },
+        },
+        {
+          id: "center",
+          label: "Center",
+          description: "",
+          inspected: false,
+          layout: { kind: "rect", x: 0.45, y: 0.2, w: 0.1, h: 0.1 },
+        },
+      ],
+      characters: [],
+    };
+
+    render(InvestigationSceneSurface, {
+      sublocation: edgeSublocation,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+    });
+
+    expect(screen.getByRole("button", { name: /Left edge/ })).toHaveClass(
+      "label-align-right",
+    );
+    expect(screen.getByRole("button", { name: /Right edge/ })).toHaveClass(
+      "label-align-left",
+    );
+    expect(screen.getByRole("button", { name: /Center/ })).not.toHaveClass(
+      "label-align-left",
+      "label-align-right",
+    );
+  });
+
   it("highlights placed characters on hover and keyboard focus", () => {
     const source = surfaceSource();
     const highlightRule = cssRule(source, ".character-highlight");
@@ -840,6 +889,100 @@ describe("InvestigationSceneSurface", () => {
     expect(screen.getByRole("button", { name: /調查：時鐘/ })).not.toHaveClass(
       "compact",
     );
+  });
+
+  it("routes Scene 16 phone reexamination and memo through disjoint targets", async () => {
+    window.innerWidth = 800;
+    window.innerHeight = 600;
+    const phoneLayout = {
+      kind: "rect" as const,
+      x: 0.69,
+      y: 0.395,
+      w: 0.04,
+      h: 0.05,
+    };
+    const memoLayout = {
+      kind: "rect" as const,
+      x: 0.69,
+      y: 0.45,
+      w: 0.04,
+      h: 0.05,
+    };
+    const streamDesk = {
+      id: "stream_desk",
+      label: "直播桌",
+      description: "",
+      inspected: false,
+      layout: {
+        kind: "rect" as const,
+        x: 0.328,
+        y: 0.228,
+        w: 0.357,
+        h: 0.55,
+      },
+    };
+    const phone = {
+      id: "comment_phone",
+      label: "留言用的舊手機",
+      description: "",
+      inspected: false,
+      layout: phoneLayout,
+    };
+    const studioRoom: SublocationView = {
+      ...sublocation,
+      id: "studio_room",
+      intentionalOverlaps: [],
+      hotspots: [streamDesk, phone],
+      characters: [],
+    };
+    const onInspect = vi.fn();
+    const onInterview = vi.fn();
+    const user = userEvent.setup();
+    const { rerender } = render(InvestigationSceneSurface, {
+      sublocation: studioRoom,
+      onInspect,
+      onInterview,
+    });
+
+    const phoneTarget = screen.getByRole("button", {
+      name: "調查：留言用的舊手機",
+    });
+    expect(phoneTarget).not.toHaveAttribute("inert");
+    await user.click(phoneTarget);
+    expect(onInspect).toHaveBeenNthCalledWith(1, "comment_phone");
+
+    rerender({
+      sublocation: {
+        ...studioRoom,
+        hotspots: [
+          streamDesk,
+          { ...phone, inspected: true },
+          {
+            id: "voice_memo",
+            label: "手機裡的錄音",
+            description: "",
+            inspected: false,
+            layout: memoLayout,
+          },
+        ],
+      },
+      onInspect,
+      onInterview,
+    });
+    const reexaminedPhoneTarget = screen.getByRole("button", {
+      name: "調查：留言用的舊手機",
+    });
+    expect(reexaminedPhoneTarget).not.toHaveAttribute("inert");
+    expect(reexaminedPhoneTarget).toHaveClass("compact-y");
+    await user.click(reexaminedPhoneTarget);
+    expect(onInspect).toHaveBeenNthCalledWith(2, "comment_phone");
+
+    const memo = screen.getByRole("button", {
+      name: "調查：手機裡的錄音",
+    });
+    expect(memo).not.toHaveAttribute("inert");
+    await user.click(memo);
+    expect(onInspect).toHaveBeenNthCalledWith(3, "voice_memo");
   });
 
   it("renders compact targets at authored size without the minimum-target clamp", () => {

@@ -1056,11 +1056,15 @@ function replaceFixtureText(
   after: string,
 ): void {
   const path = resolve(sourceRoot, relativePath);
-  const source = readFileSync(path, "utf-8");
-  if (!source.includes(before)) {
+  const source = normalizeFixtureLineEndings(readFileSync(path, "utf-8"));
+  const normalizedBefore = normalizeFixtureLineEndings(before);
+  if (!source.includes(normalizedBefore)) {
     throw new Error(`Fixture mutation target missing from ${relativePath}.`);
   }
-  writeFileSync(path, source.replace(before, after));
+  writeFileSync(
+    path,
+    source.replace(normalizedBefore, normalizeFixtureLineEndings(after)),
+  );
 }
 
 function replaceFixtureTail(
@@ -1070,12 +1074,19 @@ function replaceFixtureTail(
   replacement: string,
 ): void {
   const path = resolve(sourceRoot, relativePath);
-  const source = readFileSync(path, "utf-8");
-  const markerIndex = source.indexOf(marker);
+  const source = normalizeFixtureLineEndings(readFileSync(path, "utf-8"));
+  const markerIndex = source.indexOf(normalizeFixtureLineEndings(marker));
   if (markerIndex === -1) {
     throw new Error(`Fixture tail marker missing from ${relativePath}.`);
   }
-  writeFileSync(path, source.slice(0, markerIndex) + replacement);
+  writeFileSync(
+    path,
+    source.slice(0, markerIndex) + normalizeFixtureLineEndings(replacement),
+  );
+}
+
+function normalizeFixtureLineEndings(value: string): string {
+  return value.replace(/\r\n/g, "\n");
 }
 
 describe("snapshot: valid fixture JSON output", () => {

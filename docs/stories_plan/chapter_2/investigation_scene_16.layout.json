@@ -42,14 +42,14 @@
           "x": 0.69,
           "y": 0.395,
           "w": 0.04,
-          "h": 0.105
+          "h": 0.05
         },
         "voice_memo": {
           "kind": "rect",
-          "x": 0.615,
-          "y": 0.295,
-          "w": 0.105,
-          "h": 0.095
+          "x": 0.69,
+          "y": 0.45,
+          "w": 0.04,
+          "h": 0.05
         },
         "desk_drawer": {
           "kind": "rect",
@@ -98,22 +98,10 @@
       },
       "intentionalOverlaps": [
         {
-          "hotspots": [
-            "stream_desk",
-            "desk_drawer"
-          ]
+          "hotspots": ["stream_desk", "desk_drawer"]
         },
         {
-          "hotspots": [
-            "stream_desk",
-            "voice_memo"
-          ]
-        },
-        {
-          "hotspots": [
-            "planning_board",
-            "board_underlayer"
-          ]
+          "hotspots": ["planning_board", "board_underlayer"]
         }
       ]
     }
