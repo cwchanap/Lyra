@@ -1,7 +1,7 @@
 # HPA-853 — 第二章調查熱點／證人場景配置：設計規格
 
 **日期：** 2026-11-14  
-**狀態：** Draft design（2026-11-14 規劃當時的設計基準，非實作宣告。現況：72/72 目標全部配置——HPA-1143 五個目標在共享表頭的 stage-relative 裁切下已可視並完成配置，Chapter 2 零 fallback gate 已開啟；packaged gameplay E2E 複驗、Editor overlay、macOS／Windows 截圖與 E2E Full 仍待完成）  
+**狀態：** Draft design（2026-11-14 規劃當時的設計基準，非實作宣告。現況：72/72 個目標皆已配置，Chapter 2 零 fallback compile gate 已啟用；Scene 4 迴歸已記錄；17 個 Editor overlay 已檢查，修正後的配置已於 `df4949a` 重新檢查；Windows 原生截圖檢查 PASS。macOS 截圖與手動 E2E Full 依請求者明確豁免，未執行（不代表通過）；一般必要 CI 與 PR 審查仍適用，PR 已依縮減範圍標記為 Ready for review。）<br>
 **Linear：** https://linear.app/cwchanap/issue/HPA-853/chapter-2-investigations-8-17-show-hotspots-in-the-off-scene-fallback  
 **美術依賴：** https://linear.app/cwchanap/issue/HPA-1033/art-add-three-visible-chapter-2-investigation-witnesses-to-existing
 
