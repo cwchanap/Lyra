@@ -1539,7 +1539,7 @@ fn collect_regular_files(
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
 
-    #[cfg(debug_assertions)]
+    #[cfg(feature = "mcp-bridge")]
     let builder = builder.plugin(
         tauri_plugin_mcp_bridge::Builder::new()
             .bind_address("127.0.0.1")

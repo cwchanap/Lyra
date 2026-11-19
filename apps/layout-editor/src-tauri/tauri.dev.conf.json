@@ -1,6 +1,7 @@
 {
   "build": {
-    "beforeDevCommand": null
+    "beforeDevCommand": null,
+    "features": ["mcp-bridge"]
   },
   "app": {
     "withGlobalTauri": true,
@@ -9,7 +10,7 @@
         "default",
         {
           "identifier": "mcp-debug",
-          "description": "Debug-only MCP bridge capability (debug_assertions)",
+          "description": "Debug-only MCP bridge capability (mcp-bridge feature)",
           "windows": ["main"],
           "permissions": ["mcp-bridge:default"]
         }
