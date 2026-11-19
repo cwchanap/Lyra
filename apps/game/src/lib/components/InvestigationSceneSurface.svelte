@@ -1196,6 +1196,11 @@
     pointer-events: none;
   }
 
+  .hotspot-target:hover:not(:disabled) .hotspot-check,
+  .hotspot-target:focus-visible:not(:disabled) .hotspot-check {
+    opacity: 0;
+  }
+
   /* Always-visible cue on targets the player has not finished, so the auto
      outro's remaining work can be found without hovering every prop. It
      sits where the inspected check appears and, like it, never extends the
