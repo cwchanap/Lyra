@@ -258,6 +258,7 @@
         bind:value={query}
         oninput={handleSearchInput}
       />
+      <p class="record-count">{recordCountText}</p>
       <button
         type="button"
         class="tray-escape"
@@ -287,7 +288,6 @@
       aria-label="可提出的紀錄"
       bind:this={recordGrid}
     >
-      <p class="record-count">{recordCountText}</p>
       {#if visibleRecords.length === 0}
         <p class="record-empty">沒有符合的紀錄，請修改搜尋字詞</p>
       {/if}
@@ -490,6 +490,37 @@
     border-color: var(--crimson);
     color: var(--bone);
     outline: none;
+  }
+
+  .record-search {
+    flex: 0 1 auto;
+    min-width: 140px;
+    padding: 6px 10px;
+    border: 1px solid rgba(236, 228, 207, 0.2);
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--bone);
+    font: inherit;
+  }
+
+  .record-search:focus-visible {
+    border-color: var(--crimson);
+    outline: none;
+  }
+
+  .record-count {
+    margin: 0;
+    color: var(--bone-dim);
+    font-family: var(--impact);
+    font-size: 10px;
+    letter-spacing: 0.22em;
+  }
+
+  .record-empty {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--bone-dim);
+    font-family: var(--serif-jp);
+    font-size: 12px;
   }
 
   .line-record {
@@ -711,6 +742,56 @@
     background: transparent;
     color: var(--bone);
     outline: none;
+  }
+
+  @media (max-height: 650px) {
+    .interrogation-evidence-tray {
+      padding: 14px;
+      gap: 8px;
+    }
+
+    header {
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: none;
+    }
+
+    .record-grid {
+      gap: 8px;
+      align-content: start;
+    }
+
+    .record-tile {
+      gap: 6px;
+      padding: 8px;
+    }
+
+    .record-visual {
+      height: 48px;
+    }
+
+    .record-copy strong {
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .line-record {
+      max-height: 112px;
+      padding: 10px 12px;
+      overflow-y: auto;
+    }
+
+    .target-text {
+      line-height: 1.5;
+    }
+
+    .record-detail {
+      max-height: 112px;
+      min-height: 64px;
+    }
   }
 
   @media (max-width: 720px) {

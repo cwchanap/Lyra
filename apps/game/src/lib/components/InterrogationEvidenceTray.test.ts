@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   cleanup,
   fireEvent,
@@ -370,6 +372,61 @@ describe("InterrogationEvidenceTray", () => {
     ).toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "提出證據" })).toHaveTextContent(
       "顯示 0 / 2",
+    );
+  });
+
+  it("keeps the record count in the header beside the search, not inside the record grid", () => {
+    // The compact (max-height) layout pins the count into the header row
+    // (h2 / search / count / ESC) per the 800×600 wireframe; the grid holds
+    // tiles and the empty-state hint only. The count is not focusable, so
+    // this move does not affect the Tab-order contract.
+    render(InterrogationEvidenceTray, props());
+
+    const count = screen.getByText(/顯示 \d+ \/ \d+/);
+    expect(count.closest("header")).not.toBeNull();
+    expect(count.closest("[data-interrogation-evidence-grid]")).toBeNull();
+  });
+
+  it("pins the single max-height compact budget for 800×600 readability", () => {
+    // jsdom cannot evaluate media queries or resolve component styles at
+    // runtime, so this pins the declared compact rules in the component
+    // source — the same approach used by InterrogationView.test.ts and
+    // AcquisitionPopup.test.ts for CSS jsdom cannot resolve.
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "src/lib/components/InterrogationEvidenceTray.svelte",
+      ),
+      "utf8",
+    );
+    expect(source.match(/@media \(max-height: 650px\)/g)?.length).toBe(1);
+    const compact = source
+      .slice(source.indexOf("@media (max-height: 650px)"))
+      .replace(/\s+/g, " ");
+
+    // Tray padding/gap budget reclaims ~60px at 800×600.
+    expect(compact).toContain(
+      ".interrogation-evidence-tray { padding: 14px; gap: 8px;",
+    );
+    // Header wraps and centers; the duplicate eyebrow is always hidden.
+    expect(compact).toContain("header { flex-wrap: wrap; align-items: center;");
+    expect(compact).toContain(".eyebrow { display: none;");
+    // Tighter grid gap and no stretched lone row when 1–5 records match.
+    expect(compact).toContain(".record-grid { gap: 8px; align-content: start;");
+    // Tiles: 48px visual, tighter padding/gap, readable naturally wrapped titles.
+    expect(compact).toContain(".record-visual { height: 48px;");
+    expect(compact).toContain(".record-tile { gap: 6px; padding: 8px;");
+    expect(compact).toContain(
+      ".record-copy strong { font-size: 14px; line-height: 1.35;",
+    );
+    // Long testimony/detail scroll locally instead of swallowing the first
+    // full card row.
+    expect(compact).toContain(
+      ".line-record { max-height: 112px; padding: 10px 12px; overflow-y: auto;",
+    );
+    expect(compact).toContain(".target-text { line-height: 1.5;");
+    expect(compact).toContain(
+      ".record-detail { max-height: 112px; min-height: 64px;",
     );
   });
 
