@@ -205,9 +205,6 @@
     releaseEscapeClaim = claimEscape(resume);
     window.addEventListener("keydown", handleKeydown, { capture: true });
     void tick().then(() => {
-      // First focus lands on ESC unless keyboard interaction already moved
-      // focus into the tray during the mount tick — never steal it back.
-      if (tray?.contains(document.activeElement)) return;
       tray?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     });
   });
