@@ -679,13 +679,15 @@ function expectEvidenceTrayCompactGeometry(
     }
   }
 
-  // Compact media query proofs: hidden eyebrow (style) and 48px thumbnails
-  // (geometry), not just a small window with the regular layout.
+  // Compact media query proofs: hidden eyebrow (style) and compact
+  // thumbnails (geometry), not just a small window with the regular layout.
+  // The 48px budget renders 48-50px depending on box-sizing vs the 1px
+  // border; the regular layout renders 106-108px.
   expect(snapshot.eyebrowDisplay).toBe("none");
   const visual = snapshot.firstTileVisualHeight;
-  if (visual === null || Math.abs(visual - 48) > 1.5) {
+  if (visual === null || visual < 46 || visual > 56) {
     throw fail(
-      `compact 48px thumbnails not active (first tile visual ${String(visual)}px)`,
+      `compact ~48px thumbnails not active (first tile visual ${String(visual)}px)`,
     );
   }
   // The header may wrap (flex-wrap: wrap) but must never squeeze out.
