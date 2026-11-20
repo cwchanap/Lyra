@@ -750,31 +750,47 @@ describe("InterrogationEvidenceTray", () => {
   });
 
   it("focuses the first or last control when Tab arrives from outside the tray", async () => {
-    render(InterrogationEvidenceTray, props());
+    // A genuinely focusable element outside the tray: both jsdom and real
+    // browsers treat document.body.focus() as a no-op, so <body> cannot act
+    // as the focus owner a Tab would arrive from.
+    const outside = document.createElement("button");
+    outside.textContent = "tray-external control";
+    document.body.append(outside);
 
-    const search = searchInput();
-    const withdraw = screen.getByRole("button", { name: "收回" });
+    try {
+      render(InterrogationEvidenceTray, props());
 
-    // Focus is on <body>, outside the tray's controls (activeIndex < 0).
-    expect(document.activeElement).toBe(document.body);
+      const search = searchInput();
+      const escape = screen.getByRole("button", { name: "ESC" });
+      const withdraw = screen.getByRole("button", { name: "收回" });
 
-    // Forward Tab from outside lands on the first control: the search
-    // input, which sits before ESC in DOM order.
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
-    );
-    await waitFor(() => expect(search).toHaveFocus());
+      // The mount's first focus lands on ESC; only once that settled do we
+      // move focus outside, so the mount focus can't race the simulation.
+      await waitFor(() => expect(escape).toHaveFocus());
 
-    // Shift+Tab from outside wraps to the last control.
-    document.body.focus();
-    window.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Tab",
-        shiftKey: true,
-        bubbles: true,
-      }),
-    );
-    await waitFor(() => expect(withdraw).toHaveFocus());
+      outside.focus();
+      expect(outside).toHaveFocus();
+
+      // Forward Tab from outside lands on the first control: the search
+      // input, which sits before ESC in DOM order.
+      outside.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
+      );
+      await waitFor(() => expect(search).toHaveFocus());
+
+      // Shift+Tab from outside wraps to the last control.
+      outside.focus();
+      outside.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Tab",
+          shiftKey: true,
+          bubbles: true,
+        }),
+      );
+      await waitFor(() => expect(withdraw).toHaveFocus());
+    } finally {
+      outside.remove();
+    }
   });
 
   it("focuses the enabled search input when Tab arrives while the command buttons are disabled", async () => {
