@@ -70,6 +70,25 @@ export function interrogationLineText(items: DialogueItem[]): string {
     .join("");
 }
 
+export function filterPresentableRecords(
+  records: PresentableRecord[],
+  query: string,
+): PresentableRecord[] {
+  const normalizedQuery = query.normalize("NFKC").trim().toLocaleLowerCase();
+  if (normalizedQuery === "") return records;
+
+  return records.filter((record) =>
+    [
+      record.shortName,
+      record.sourceTag,
+      record.description,
+      record.details ?? "",
+    ].some((field) =>
+      field.normalize("NFKC").toLocaleLowerCase().includes(normalizedQuery),
+    ),
+  );
+}
+
 export function presentableRecords(inventory: Inventory): PresentableRecord[] {
   return [
     ...inventory.evidence.map((record) => ({
