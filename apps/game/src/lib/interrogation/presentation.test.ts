@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   brokenQuestionProgress,
   currentInterrogationPhase,
+  filterPresentableRecords,
   interrogationLineText,
   isInterrogationPresentationActive,
   presentableRecords,
+  type PresentableRecord,
 } from "./presentation";
 import type { Mode, SceneView } from "../state/types";
 import {
@@ -238,5 +240,107 @@ describe("interrogation presentation helpers", () => {
         statements: [],
       })[0]?.sourceTag,
     ).toBe("物證 / EVIDENCE");
+  });
+});
+
+describe("filterPresentableRecords", () => {
+  function presentable(
+    overrides: Partial<PresentableRecord> = {},
+  ): PresentableRecord {
+    return {
+      kind: "evidence",
+      id: "record",
+      shortName: "",
+      typeLabel: "物證 / EVIDENCE",
+      sourceTag: "",
+      description: "",
+      details: null,
+      imageAssetId: null,
+      ...overrides,
+    };
+  }
+
+  const searchRecords: PresentableRecord[] = [
+    presentable({
+      id: "receipt",
+      shortName: "咖啡收據",
+      sourceTag: "店內收銀匯出",
+      description: "十七點四十二分的消費紀錄。",
+      details: "付款末四碼 0192。",
+    }),
+    presentable({
+      kind: "statement",
+      id: "witness",
+      typeLabel: "證言 / STATEMENT",
+      shortName: "目擊者",
+      sourceTag: "雨夜巷口",
+      description: "我看見她走進巷子。",
+    }),
+    presentable({
+      id: "maintenance",
+      shortName: "維修單",
+      sourceTag: "SR-2307 維修單",
+      description: "冷氣主機的維修紀錄。",
+      details: "型號 SR-2307。",
+    }),
+    presentable({
+      id: "full-width",
+      shortName: "全形編號",
+      sourceTag: "檔案室",
+      description: "編號ＳＲ－２３０７的影本。",
+    }),
+    presentable({
+      id: "latin",
+      shortName: "Coffee Receipt",
+      sourceTag: "Store Ledger",
+      description: "Printed At 21:17",
+    }),
+  ];
+
+  it.each([
+    ["by shortName", "收據", ["receipt"]],
+    ["by sourceTag", "收銀", ["receipt"]],
+    ["by description", "走進巷子", ["witness"]],
+    ["by details", "0192", ["receipt"]],
+    [
+      "with a full-width query against half-width text via NFKC",
+      "ＳＲ－２３０７",
+      ["maintenance", "full-width"],
+    ],
+    [
+      "with a half-width query against full-width text via NFKC",
+      "sr-2307",
+      ["maintenance", "full-width"],
+    ],
+    ["case-insensitively from a lowercase query", "coffee receipt", ["latin"]],
+    ["case-insensitively from an uppercase query", "COFFEE RECEIPT", ["latin"]],
+    ["with surrounding whitespace trimmed", "  目擊  ", ["witness"]],
+    ["to no record", "不存在的關鍵字", []],
+  ])("filters records %s", (_case, query, expectedIds) => {
+    expect(
+      filterPresentableRecords(searchRecords, query).map((record) => record.id),
+    ).toEqual(expectedIds);
+  });
+
+  it("returns the same records array for an empty query", () => {
+    expect(filterPresentableRecords(searchRecords, "")).toBe(searchRecords);
+    expect(filterPresentableRecords(searchRecords, "   ")).toBe(searchRecords);
+  });
+
+  it("keeps the original order and kind/id of matches without mutating the source", () => {
+    const filtered = filterPresentableRecords(searchRecords, "ＳＲ－２３０７");
+
+    expect(filtered.map((record) => [record.kind, record.id])).toEqual([
+      ["evidence", "maintenance"],
+      ["evidence", "full-width"],
+    ]);
+    expect(filtered[0]).toBe(searchRecords[2]);
+    expect(searchRecords.map((record) => record.id)).toEqual([
+      "receipt",
+      "witness",
+      "maintenance",
+      "full-width",
+      "latin",
+    ]);
   });
 });

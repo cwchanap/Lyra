@@ -70,13 +70,16 @@ function props(
     topLayerOpen: boolean;
     returnFocusTo: HTMLElement | null;
     fallbackFocusTarget: HTMLElement | null;
+    crossExam: CrossExamView | null;
+    presentTo: { name: string } | null;
     onPresent: (kind: "evidence" | "statement", itemId: string) => void;
     onResume: () => void;
     onOpenGameMenu: (trigger: HTMLElement) => void;
   }> = {},
 ) {
   return {
-    crossExam,
+    crossExam: overrides.crossExam ?? crossExam,
+    presentTo: overrides.presentTo ?? null,
     inventory: overrides.inventory ?? inventory,
     disabled: overrides.disabled ?? false,
     topLayerOpen: overrides.topLayerOpen ?? false,
@@ -86,6 +89,10 @@ function props(
     onResume: overrides.onResume ?? vi.fn(),
     onOpenGameMenu: overrides.onOpenGameMenu ?? vi.fn(),
   };
+}
+
+function searchInput() {
+  return screen.getByRole("searchbox", { name: "搜尋紀錄" });
 }
 
 afterEach(() => {
@@ -305,10 +312,165 @@ describe("InterrogationEvidenceTray", () => {
     ).toBeInTheDocument();
   });
 
+  it("mounts the tray with an empty query and the record grid scrolled to the top", () => {
+    // Regression guard: the tray is conditionally mounted, so a fresh SHOW /
+    // PRESENT open must never inherit a previous query or scroll offset.
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    expect(searchInput()).toHaveValue("");
+    expect(
+      container.querySelector("[data-interrogation-evidence-grid]")?.scrollTop,
+    ).toBe(0);
+  });
+
+  it("filters records from the search input and shows the hit count", async () => {
+    const user = userEvent.setup();
+    render(InterrogationEvidenceTray, props());
+
+    const dialog = screen.getByRole("dialog", { name: "提出證據" });
+    expect(dialog).toHaveTextContent("顯示 2 / 2");
+
+    await user.type(searchInput(), "收據");
+
+    expect(
+      screen.getByRole("button", { name: /咖啡收據/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /目擊者/ })).toBeNull();
+    expect(dialog).toHaveTextContent("顯示 1 / 2");
+  });
+
+  it("filters records from the SHOW tray search input the same way", async () => {
+    const user = userEvent.setup();
+    render(
+      InterrogationEvidenceTray,
+      props({ crossExam: null, presentTo: { name: "遊丸" } }),
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "出示紀錄" });
+    expect(dialog).toHaveTextContent("顯示 2 / 2");
+
+    await user.type(searchInput(), "目擊");
+
+    expect(screen.queryByRole("button", { name: /咖啡收據/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /目擊者/ })).toBeInTheDocument();
+    expect(dialog).toHaveTextContent("顯示 1 / 2");
+  });
+
+  it("shows the empty-state hint when no record matches the query", async () => {
+    const user = userEvent.setup();
+    render(InterrogationEvidenceTray, props());
+
+    await user.type(searchInput(), "不存在的字詞");
+
+    expect(screen.queryByRole("button", { name: /咖啡收據/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /目擊者/ })).toBeNull();
+    expect(
+      screen.getByText("沒有符合的紀錄，請修改搜尋字詞"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "提出證據" })).toHaveTextContent(
+      "顯示 0 / 2",
+    );
+  });
+
+  it("resets the record grid scroll to the top when the query changes", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+    const grid = container.querySelector("[data-interrogation-evidence-grid]");
+
+    // jsdom has no layout engine, so intercept scrollTop assignments on the
+    // grid element to verify the input handler scrolls back to the top.
+    const assignments: number[] = [];
+    Object.defineProperty(grid, "scrollTop", {
+      get: () => 120,
+      set: (value: number) => assignments.push(value),
+      configurable: true,
+    });
+
+    await user.type(searchInput(), "收據");
+
+    expect(assignments.length).toBeGreaterThan(0);
+    expect(assignments.every((value) => value === 0)).toBe(true);
+  });
+
+  it("clears a filtered-out record's hover detail when the query changes", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
+    const evidenceTile = screen.getByRole("button", {
+      name: /咖啡收據.*店內收銀匯出/,
+    });
+
+    await user.hover(evidenceTile);
+    expect(detail).toHaveTextContent("付款末四碼 0192。");
+
+    await user.type(searchInput(), "目擊");
+
+    expect(screen.queryByRole("button", { name: /咖啡收據/ })).toBeNull();
+    expect(detail).not.toHaveTextContent("付款末四碼 0192。");
+    expect(detail).toHaveTextContent(
+      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+    );
+
+    // Bringing the record back must not resurrect the stale detail.
+    await user.clear(searchInput());
+    expect(
+      screen.getByRole("button", { name: /咖啡收據.*店內收銀匯出/ }),
+    ).toBeInTheDocument();
+    expect(detail).toHaveTextContent(
+      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+    );
+  });
+
+  it("passes the original kind and id when clicking a record found via search", async () => {
+    const user = userEvent.setup();
+    const onPresent = vi.fn();
+    const sharedId = "shared-record";
+    const collisionInventory: Inventory = {
+      evidence: [
+        neutralEvidenceRecordView({
+          id: sharedId,
+          name: "同名物證",
+          description: "物證詳情。",
+          details: "物證補充。",
+          imageAssetId: null,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [
+        neutralStatementRecordView({
+          id: sharedId,
+          speaker: "同名證言",
+          content: "證言詳情。",
+          onReexamine: null,
+          acquiredInChapterId: "chapter_1",
+          acquiredInSceneId: "scene_1",
+        }),
+      ],
+    };
+    render(
+      InterrogationEvidenceTray,
+      props({ inventory: collisionInventory, onPresent }),
+    );
+
+    await user.type(searchInput(), "物證");
+    await user.click(screen.getByRole("button", { name: /同名物證/ }));
+    expect(onPresent).toHaveBeenCalledWith("evidence", sharedId);
+
+    await user.clear(searchInput());
+    await user.type(searchInput(), "證言");
+    await user.click(screen.getByRole("button", { name: /同名證言/ }));
+    expect(onPresent).toHaveBeenCalledWith("statement", sharedId);
+  });
+
   it("traps tab focus among its active controls", async () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
 
+    const search = searchInput();
     const escape = screen.getByRole("button", { name: "ESC" });
     const evidence = screen.getByRole("button", { name: /咖啡收據/ });
     const statement = screen.getByRole("button", { name: /目擊者/ });
@@ -324,6 +486,10 @@ describe("InterrogationEvidenceTray", () => {
     expect(gameMenu).toHaveFocus();
     await user.tab();
     expect(withdraw).toHaveFocus();
+    // The search input sits before ESC in DOM order, so Tab wraps from the
+    // last button to the search input before returning to ESC.
+    await user.tab();
+    expect(search).toHaveFocus();
     await user.tab();
     expect(escape).toHaveFocus();
   });
@@ -568,32 +734,35 @@ describe("InterrogationEvidenceTray", () => {
     }
   });
 
-  it("wraps shift+Tab from the first control to the last", async () => {
+  it("wraps shift+Tab from the escape button back to the search input", async () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
 
+    const search = searchInput();
     const escape = screen.getByRole("button", { name: "ESC" });
-    const withdraw = screen.getByRole("button", { name: "收回" });
 
     await waitFor(() => expect(escape).toHaveFocus());
+    // The search input sits before ESC in DOM order, so Shift+Tab from the
+    // tray's initial focus target lands on it.
     await user.tab({ shift: true });
-    expect(withdraw).toHaveFocus();
+    expect(search).toHaveFocus();
   });
 
   it("focuses the first or last control when Tab arrives from outside the tray", async () => {
     render(InterrogationEvidenceTray, props());
 
-    const escape = screen.getByRole("button", { name: "ESC" });
+    const search = searchInput();
     const withdraw = screen.getByRole("button", { name: "收回" });
 
     // Focus is on <body>, outside the tray's controls (activeIndex < 0).
     expect(document.activeElement).toBe(document.body);
 
-    // Forward Tab from outside lands on the first control.
+    // Forward Tab from outside lands on the first control: the search
+    // input, which sits before ESC in DOM order.
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
     );
-    await waitFor(() => expect(escape).toHaveFocus());
+    await waitFor(() => expect(search).toHaveFocus());
 
     // Shift+Tab from outside wraps to the last control.
     document.body.focus();
@@ -607,18 +776,16 @@ describe("InterrogationEvidenceTray", () => {
     await waitFor(() => expect(withdraw).toHaveFocus());
   });
 
-  it("focuses the tray itself when Tab arrives and all controls are disabled", async () => {
+  it("focuses the enabled search input when Tab arrives while the command buttons are disabled", async () => {
     render(InterrogationEvidenceTray, props({ disabled: true }));
 
-    // All buttons are disabled, so controls.length === 0. The Tab handler
-    // must focus the tray container rather than crashing or doing nothing.
+    // Every button is disabled, but the search input stays enabled
+    // (filtering never sends a game command), so the trap must cycle to it
+    // instead of focusing the tray container or assuming zero controls.
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "Tab", bubbles: true }),
     );
-    await waitFor(() => {
-      const tray = screen.getByRole("dialog", { name: "提出證據" });
-      expect(tray).toHaveFocus();
-    });
+    await waitFor(() => expect(searchInput()).toHaveFocus());
   });
 
   it("ignores non-Tab keys in the focus trap handler", async () => {
