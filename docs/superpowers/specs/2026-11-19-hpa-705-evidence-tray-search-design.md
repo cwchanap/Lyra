@@ -1,77 +1,98 @@
-# HPA-705 — 大量證物下的 SHOW／PRESENT 紀錄盤可搜尋性（設計規格）
+# HPA-705 — SHOW／PRESENT 證物盤搜尋與 800×600 可讀性（設計規格）
 
-> 狀態：設計草案，**尚未實作／尚未驗收**。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)；基線為 2026-11-19 的 `main` 原始碼。**單一任務、單一 PR**：本 Draft PR 先放設計與計劃，後續在同一分支加入程式與測試，不另開 implementation PR。
+> **狀態：** Draft design，程式尚未實作／驗收。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)、[Draft PR #138](https://github.com/cwchanap/Lyra/pull/138)。依 [2026-11-19 設計審閱](https://github.com/cwchanap/Lyra/pull/138#pullrequestreview-5900000000) 修正（review URL 若 GitHub 分配的 ID 不一致，改由 PR Reviews 頁讀取）。**單一任務、單一 PR**：本 PR 先放規劃，後續同一 PR 實作，不另開 implementation PR。
 
-## 1. 現況與問題
+## 1. 問題、既有能力與原因邊界
 
-2026-11-11 的 800×600 packaged Tauri UAT 記錄：第 2 章最終審查會約有 74 筆紀錄，使用者必須在 SHOW／出示紀錄盤反覆進行大量盲目捲動（回報約 29 個畫面）；卡片標題落在可視區下緣、重新開啟時仍停在舊位置。Linear 附有 **現況截圖，不是目標 UI mockup**。
+2026-11-11 的 packaged Tauri UAT（800×600）記錄第 2 章最終審查會約 **74 筆**，SHOW／出示紀錄盤要捲動約 29 個畫面，卡片標題容易被 grid 下緣裁切。Linear 的 `show-tray-800x600.png` 是修前截圖，不是目標設計 mockup。
 
-已核對現行原始碼：
+已在 `main` 核實：
 
-- `apps/game/src/lib/components/InterrogationEvidenceTray.svelte` 同時服務訊問 PRESENT 與調查 SHOW。它透過 `presentableRecords(inventory)` 列出所有紀錄；`.record-grid` 固定五欄、每張卡有 106px 影像和 padding，在 600px 高視窗僅能顯示少量卡片。
-- 目前沒有搜尋或篩選。既有 `present(kind, itemId)`、`resume()`、Escape claim、頂層 dialog 的 Tab trap 與 detail preview 都可重用。
-- `apps/game/src/lib/interrogation/presentation.ts` 的輸出已包含 shortName、sourceTag、description、details、kind、id；**不需要新資料結構、索引或 Rust API**。
-- `InvestigationSceneSurface.svelte` 與 `InterrogationStage.svelte` 都重用這個元件；改動必須同時驗證兩種入口。
-- 現有 Tab trap 只搜尋 `button:not(:disabled)`。加搜尋輸入框後，**必須同步納入可聚焦 input**，不能只加 UI。
+- `apps/game/src/lib/components/InterrogationEvidenceTray.svelte` 供 **SHOW + PRESENT** 共用：五欄 `.record-grid`、106px 縮圖、hover/focus 詳情、`onPresent(kind,id)`、Escape claim 及 Tab trap。
+- `apps/game/src/lib/interrogation/presentation.ts` 的 `PresentableRecord` 已有 `shortName/sourceTag/description/details/kind/id`，不需新 model、Rust 或索引。
+- `apps/game/src/lib/state/tab-focus-trap.ts` 已有可自訂 selector、`stopPropagation` 的 `trapDialogTabKey`；證物盤目前重複實作同一循環。
+- 原始碼的 SHOW 與 PRESENT 都透過條件渲染掛載證物盤，關閉即卸載，新開自然取得空 query 和新 DOM 的 `scrollTop=0`。票面「重新打開停在舊捲動」**目前未由原始碼證實**；應列回歸測試，而非預設新 mount reset。
+- `production-journey.e2e.ts` 會使用 `ensureCaseFileViewport()` 取得至少 **1280×720 CSS px**；未先改為 800×600 就新增 geometry 斷言將測錯 viewport。
 
-## 2. 決議：單一文字搜尋 + 800×600 緊湊排版
+## 2. 一個本地搜尋，保留原盤
 
-保留現有格狀證物盤、縮圖、hover/focus 詳情、原本的出示動作與順序；只加一個局部的「搜尋紀錄」欄位。**不新增分類 tab、章節索引、排序規則、最近使用、分頁、虛擬列表或外部搜尋套件**。
+不建分類 tabs、近期項目、分頁、虛擬捲動、共用搜尋服務或另一份 inventory；只加一個暫態 `type="search"` 輸入欄及命中數字，保留原有紀錄順序、縮圖、詳情與出示語義。
 
-### 2.1 搜尋語義
+### 2.1 搜尋語義與責任
 
-1. Header 加一個清楚標示的輸入框 `搜尋紀錄`，placeholder 為「名稱／來源／內容」，旁邊顯示「顯示 N / 總數」。不必額外占用一整行。
-2. 前端僅在目前 inventory 中即時篩選；以 `trim().toLocaleLowerCase()` 做不區分英文字母大小寫的 **substring match**，搜尋 shortName、sourceTag、description、details。中文可直接搜文字；不加模糊搜尋或新 metadata。
-3. 空查詢顯示原始全部紀錄，維持既有順序與 kind/id；沒有結果時顯示「沒有符合的紀錄，請修改搜尋字詞」，而非空黑板。提供直接清除輸入值的方式（瀏覽器 search-input 清除功能，若 WebKit 不可靠則本元件一個小「清除」按鈕），不能增加第二個彈窗。
-4. 每次修改查詢，紀錄格捲動回頂部；關閉再開新證物盤也從頂部開始。搜索狀態是 component-local 的暫態 UI，不寫入存檔或引擎。若被隱藏的卡先前有 hover／focus／inspected 狀態，詳情不可繼續顯示已被篩掉的紀錄。
-5. 篩選只改可見選項；按下符合的證物仍傳原來的 `kind, id`，不改答案判斷、資料來源、解鎖或 wrong-evidence feedback。
+- `presentation.ts` 新增純函數 `filterPresentableRecords(records, query)`；先對查詢 `trim()`，對查詢和候選欄位都執行 `normalize("NFKC").toLocaleLowerCase()`，再做 substring match，涵蓋 `shortName`、`sourceTag`、`description`、`details ?? ""`。例如全形 `ＳＲ－２３０７` 能命中 `SR-2307`。不加拼音或模糊演算法。
+- 空 query **直接回傳原 records 參考及順序**，搜尋不修改原 inventory；無結果顯示「沒有符合的紀錄，請修改搜尋字詞」。
+- 元件僅保留 `query = $state("")` 與 `visibleRecords = $derived(filterPresentableRecords(records, query))`。輸入框 `aria-label="搜尋紀錄"`，旁顯示 `顯示 N / 總數`；卡片使用 `visibleRecords`，詳情只從可見結果找，以免之前 hover/focus 的已篩除紀錄繼續顯示。
+- **不新增清除按鈕**：選取全文 + Delete 可清空；關閉再開會自動清空。不要依賴 WebKit 專有搜尋取消 icon 作核心操作。
+- 每次輸入／修改 query 將 `.record-grid.scrollTop` 歸零；**不加 mount-time 歸零程式碼**。原 `onPresent(kind,id)` 原樣傳遞。
+- `evidenceImages` 的 `$effect` 繼續只依賴**完整 records**。不可改成 `visibleRecords`，否則打字會反覆清掉圖片，縮圖閃回「證」。
 
-### 2.2 緊湊排版
+### 2.2 Tab、鍵盤與 busy 邊界
 
-- 800×600 時，先縮小 dialog 間距／上下 padding、卡片中的圖片與卡片內距，保留至少一整列可見；標題可換行、**不得 line-clamp、ellipsis 或被滾動容器底緣截斷**。來源文字可降低字級但仍可辨識。
-- 搜尋與數量放在 header 右側；PRESENT 的證詞進度、ESC、SHOW 的對象文字仍可見。保持可操作的卡片點擊區與鍵盤 focus ring。
-- 不改既有 details panel 的資料來源或 `resolveStoryAsset()`；不靠隱藏縮圖解決空間問題。若短視窗要縮短 detail panel，必須依然能捲動看完整內容。
-- 僅用局部 media query（尤其 `max-height: 650px`），不要全域改 `tokens.css`、其他 modal 或背景 HUD。
+- 現有 `handleKeydown` 改為委派 `trapDialogTabKey(event, tray, { selector: "input:not(:disabled), button:not(:disabled)", stopPropagation: true })`；`topLayerOpen` 時先 return，保留原本上層 Game Menu／Save Browser 的焦點主導權。
+- 初始聚焦仍是 ESC（目前 onMount 只找第一個 button）；搜尋框可經 Tab／Shift+Tab 到達。Svelte `oninput` 更新查詢，元素不因 filter 而留在已卸載的 button 上。
+- **搜尋 input 不受 `disabled/inFlight` 禁用**：篩選不送遊戲命令，禁用正在獲焦的 input 反會把焦點丟回 body；既有證物卡、ESC／收回／選單的 `disabled` guard 仍擋命令。
+- `DialogueBox` 既有輸入控件快捷鍵保護及 GameShell Escape owner 保持不變。關閉後 `returnFocusTo`／fallback 還焦照舊。
 
-### 2.3 800×600 文字 wireframe（目標，供實作截圖對照）
+### 2.3 800×600 高度預算（先定尺寸，不靠盲目 screenshot 調參）
+
+現有 800×600 最多 552px 的 dialog（`100dvh - 48px`），大致預算：
+
+| 舊版預算項 | 約消耗 |
+| --- | ---: |
+| 上下 padding + 四道 gap | 48 + 72 = 120px |
+| Header | 32px |
+| SHOW／PRESENT 證詞區 | 80～135px |
+| 詳情區最低高度 | 96px |
+| Footer | 43px |
+| **留給 grid** | **約 125～180px** |
+
+既有單張卡約 184px（106px 圖 + 上下 padding + 文字）；五欄下較長標題換到 3 行，可能超過 220px，故「僅微調間距」不足以保證首列完整。
+
+**固定採用僅本元件的 `@media (max-height: 650px)`：**
+
+| 局部尺寸 | Compact 目標 | 理由 |
+| --- | --- | --- |
+| 外層 padding/gap | 14px / 8px | 回收約 60px；保持 800×600 有可見 margin |
+| `.record-visual` | 約 48px 高 | 保留真正縮圖，不改為文字清單 |
+| `.record-tile` | 約 8px padding，6px gap | 單卡高度接近 120～165px（依標題行數） |
+| `.record-copy strong` | 13～14px，line-height 約 1.35 | 名稱允許換行，不使用 line-clamp／ellipsis |
+| `.record-grid` gap | 約 8px | 保持五欄，不重構 |
+| `.record-detail` | min-height 約 64px，內容可獨立捲動 | 詳情完整可看，但首列優先 |
+| `.line-record` | 緊湊 padding，文字 line-height 約 1.5 | PRESENT 證詞偏長時可在局部區域捲動，不遮住卡片 |
+| Header | 搜尋框、結果數、ESC 併排 | 若太擠，優先隱藏重複的 eyebrow（h2 已提供標題），不是隱藏搜尋或 ESC |
+
+以上為實作起點，不是精確像素驗收值。**長標題完整可讀、第一排完整可見**優先於維持原縮圖尺寸；若仍不夠先減少重複裝飾文字，再調局部間距，不導入新版面架構。
+
+### 2.4 800×600 緊湊版文字 wireframe
 
 ~~~text
-┌────────────────────────────────────────────────────────────────────┐
-│ SHOW / 出示紀錄    搜尋紀錄 [ 維修____________ × ] 顯示 3 / 74  ESC │
-├────────────────────────────────────────────────────────────────────┤
-│ 出示對象 · SHOW TO    三宅蒼太                                 │
-├────────────────────────────────────────────────────────────────────┤
-│ [縮圖]        [縮圖]        [縮圖]        [縮圖]        [縮圖]    │
-│ 完整名稱      完整名稱      完整名稱      完整名稱      完整名稱  │
-│ 來源文字      來源文字      來源文字      來源文字      來源文字  │
-│                 （只有紀錄格可獨立捲動）                       │
-├────────────────────────────────────────────────────────────────────┤
-│ 目前指向的紀錄：名稱、來源、說明及細節（必要時可捲動）        │
-├────────────────────────────────────────────────────────────────────┤
-│ 選擇紀錄出示                                      遊戲選單 收回 │
-└────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│ 出示紀錄    搜尋紀錄 [ 維修________ ]   顯示 3 / 74       ESC │
+├──────────────────────────────────────────────────────────────────┤
+│ 出示對象：三宅蒼太                                              │
+├──────────────────────────────────────────────────────────────────┤
+│ [縮圖]      [縮圖]      [縮圖]      [縮圖]      [縮圖]            │
+│ 完整標題    完整標題    完整標題    完整標題    完整標題          │
+│ 來源        來源        來源        來源        來源              │
+│             （只有這個 grid 可捲動）                            │
+├──────────────────────────────────────────────────────────────────┤
+│ 目前紀錄詳情：名稱、來源、說明（過長則此區內捲動）              │
+├──────────────────────────────────────────────────────────────────┤
+│ 選擇紀錄出示                                遊戲選單    收回 │
+└──────────────────────────────────────────────────────────────────┘
 ~~~
 
-wireframe 是資訊層次與空間優先級，不是精確 px；實作須尊重既有 Lyra 視覺 token。PRESENT 同一位置顯示「提出證據／鎖定證詞／證詞進度」，不可被搜尋功能蓋住。
+PRESENT 同一位置保留「提出證據／鎖定證詞／證詞進度」；此圖為資訊層次 mockup，不是另做 UI 產品。Linear 只有修前截圖，沒有現成目標 mockup。
 
-## 3. 鍵盤、焦點及狀態邊界
+## 3. 明確非目標
 
-- Tab／Shift+Tab 必須在搜尋輸入框、卡片、ESC、遊戲選單、收回之間正向與反向循環。原 `handleKeydown` 改為只查目前 tray 中可用的 input 與 button；頂層 Game Menu／Save Browser 開啟時仍尊重 `topLayerOpen`，不得攔截其 Tab。
-- 保留原本首次開啟時聚焦 ESC 的契約，搜尋可由 Tab 到達，也可滑鼠點擊。不改 Escape claim：按 Escape 仍收回證物盤；搜尋輸入狀態不得令玩家卡在盤內。
-- 搜尋後若原本 focused/hovered item 被隱藏，顯示空詳情或新 focus item 的詳情，不顯示失效殘影；搜尋結果切換不應把焦點送進 `display:none` 元素。
-- 載入中（`disabled`）搜尋及出示操作不可產生額外遊戲命令；既有 onPresent callback 不改。關閉後仍依原有 returnFocusTo / fallbackFocusTarget 還焦。
-- 不強行更動排序或 `presentableRecords` 定義；測試以足夠長的既有 inventory 骨架驗證，不建立新的搜尋 service。
+HPA-852/HPA-832 熱點與 HUD、HPA-706 Analysis board、HPA-831 黑色證物圖片或跨場景藍線均不屬此 PR。不改 Rust、存檔 schema、scene 內容、答題邏輯、背景圖、SFX、語音或全域 token。保留 **一張票、一個 PR**。
 
-## 4. 明確非目標與相鄰票
+## 4. End-to-end 驗收契約（均為自動化）
 
-- 不處理 HPA-852、HPA-832 的場景熱點、HUD、證據清單以外的 UI；不處理 HPA-706 的 Analysis 板。
-- 不修 HPA-831 的證物圖片黑框或跨場景藍色焦點框；那是不同的驗證／修復路徑。
-- 不改 scene、story canon、證物內容、出示解題規則、引擎、Rust、儲存 schema、語音、美術或 SFX。
-- 不為單一搜尋欄位做通用搜尋引擎、前端全域狀態或另一套 UI 元件庫。
-
-## 5. 可機器判定的完成標準
-
-1. Packaged Tauri **800×600**、含至少 74 筆紀錄：搜尋一個已知名稱／來源片語可在一個可見格畫面找出目標；空查詢回復全部；零結果顯示提示。保留縮圖和原始順序。
-2. 800×600 截圖證明 Header、搜尋、對象／證詞、至少第一整排完整卡片標題、detail、收回都在 viewport 內且無互蓋。以本 wireframe 與 Linear 原 UAT 截圖比較，不能只看 jsdom。
-3. 在 SHOW 和 PRESENT 中，以真實滑鼠／鍵盤選擇紀錄後，正確的 kind/id 進入原本的出示流程；錯誤證物可恢復；Escape 收回、重新進盤從頭開始，沒有舊捲動位置。
-4. MCP 驅動的 packaged E2E（含 screenshot 與 DOM 幾何／鍵盤檢查）通過；元件測試、Svelte check、lint／format 和既有 smoke E2E 通過。**不得用人手驗收取代自動驗收**。
+1. `presentation.test.ts` 純函數 table test：四欄、NFKC 全形查詢、英文字母大小寫、空 query identity、穩定順序、零結果；`InterrogationEvidenceTray.test.ts` 驗證 UI wiring、空結果、卷軸重設、Tab/Shift+Tab、SHOW/PRESENT 原 `kind,id`。重新開啟自動從頂端是 regression guard，**不需要先在 main 上失敗**。
+2. 對 **packaged Tauri 的真實 Chapter 2 inventory ≥74**，使用既有 WDIO `production-journey` 運行搜尋。重用原 route，不做假的 evidence fixture。將原本 module-local `ensureMinimumWindowViewport` 抽成 `e2e-tauri/helpers.ts` 共用，確實量度 **800×600 CSS px**，而不是 `ensureCaseFileViewport()` 的 1280×720。
+3. 800×600 **DOM bounds** 自動判定搜尋輸入、Header、首列完整標題、grid、detail、Footer 和 ESC 在可視區內且不互蓋。由 WDIO 存 screenshot 為 PR artifact，MCP agent 據截圖作可讀性視覺檢查並記錄觀察；**截圖不是獨立、主觀 pass/fail gate**，以具體 DOM 幾何與操作斷言為準，不要求人手認收。
+4. 在變更後的 `clickRecordTile` 以實際 WebDriver 輸入紀錄名稱，確認命中卡出現在首個可見結果畫面、原始 `onPresent` 正常運作；不重演完整 wrong-evidence、Game Menu 疊層及 Escape E2E，這些由既有元件回歸覆蓋。需要後續 Analysis 時先恢復 `ensureCaseFileViewport()`。
+5. 完成 Svelte check、focused unit、lint/format、WDIO E2E typecheck、packaged smoke（不是 production-journey）以及獨立 `--suite production-journey` 執行紀錄；**未跑完不得標成已驗收**。
