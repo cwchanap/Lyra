@@ -6,11 +6,13 @@
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
   import {
+    filterPresentableRecords,
     interrogationLineText,
     presentableRecords,
     type PresentableRecord,
   } from "$lib/interrogation/presentation";
   import { claimEscape } from "$lib/state/escape-coordinator";
+  import { trapDialogTabKey } from "$lib/state/tab-focus-trap";
   import type { CrossExamView, Inventory } from "../state/types";
 
   // The record picker, opened either against a cross-examined testimony line
@@ -60,8 +62,15 @@
   }
 
   let tray: HTMLDivElement | undefined = $state();
+  let recordGrid: HTMLElement | undefined = $state();
   let evidenceImages = $state<Record<string, ResolvedStoryAsset | null>>({});
   let records = $derived(presentableRecords(inventory));
+  let query = $state("");
+  let visibleRecords = $derived(filterPresentableRecords(records, query));
+  let recordCountText = $derived(
+    /* v8 ignore next -- template concatenation artifact */
+    `顯示 ${visibleRecords.length} / ${records.length}`,
+  );
   let hoveredRecordKey = $state<PresentableRecordKey | null>(null);
   let focusedRecordKey = $state<PresentableRecordKey | null>(null);
   let inspectedRecordKey = $state<PresentableRecordKey | null>(null);
@@ -69,7 +78,7 @@
     const activeRecordKey =
       hoveredRecordKey ?? focusedRecordKey ?? inspectedRecordKey;
     return (
-      records.find(
+      visibleRecords.find(
         (record) => presentableRecordKey(record) === activeRecordKey,
       ) ?? null
     );
@@ -157,37 +166,27 @@
     }
   }
 
+  function handleSearchInput() {
+    // A record card removed by {#each visibleRecords} is not guaranteed to
+    // fire mouseleave/blur, so clear the detail keys here — otherwise an old
+    // detail could resurface when the search term is cleared again.
+    if (recordGrid) recordGrid.scrollTop = 0;
+    hoveredRecordKey = null;
+    focusedRecordKey = null;
+    inspectedRecordKey = null;
+  }
+
   function handleKeydown(event: KeyboardEvent) {
-    if (event.key !== "Tab" || !tray) return;
     // Suspend the trap while an upper layer (Game Menu / Save Browser /
     // acquisition popup) is open above this tray. The tray remains mounted
     // but must not intercept Tab — the upper dialog owns keyboard navigation
-    // while it is the topmost modal. stopImmediatePropagation below would
-    // otherwise kill the event before the upper dialog's handler runs.
+    // while it is the topmost modal. The trap's stopImmediatePropagation
+    // would otherwise kill the event before the upper dialog's handler runs.
     if (topLayerOpen) return;
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-
-    const controls = Array.from(
-      tray.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
-    );
-    if (controls.length === 0) {
-      tray.focus();
-      return;
-    }
-
-    const activeIndex = controls.findIndex(
-      (control) => control === document.activeElement,
-    );
-    const nextIndex =
-      activeIndex < 0
-        ? event.shiftKey
-          ? controls.length - 1
-          : 0
-        : (activeIndex + (event.shiftKey ? -1 : 1) + controls.length) %
-          controls.length;
-    controls[nextIndex]?.focus();
+    trapDialogTabKey(event, tray, {
+      selector: "input:not(:disabled), button:not(:disabled)",
+      stopPropagation: true,
+    });
   }
 
   function handleEvidenceImageError(itemId: string) {
@@ -206,6 +205,9 @@
     releaseEscapeClaim = claimEscape(resume);
     window.addEventListener("keydown", handleKeydown, { capture: true });
     void tick().then(() => {
+      // First focus lands on ESC unless keyboard interaction already moved
+      // focus into the tray during the mount tick — never steal it back.
+      if (tray?.contains(document.activeElement)) return;
       tray?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
     });
   });
@@ -252,6 +254,13 @@
           {crossExamProgressText}
         </p>
       {/if}
+      <input
+        class="record-search"
+        type="search"
+        aria-label="搜尋紀錄"
+        bind:value={query}
+        oninput={handleSearchInput}
+      />
       <button
         type="button"
         class="tray-escape"
@@ -279,8 +288,13 @@
       class="record-grid"
       data-interrogation-evidence-grid=""
       aria-label="可提出的紀錄"
+      bind:this={recordGrid}
     >
-      {#each records as record (record.kind + ":" + record.id)}
+      <p class="record-count">{recordCountText}</p>
+      {#if visibleRecords.length === 0}
+        <p class="record-empty">沒有符合的紀錄，請修改搜尋字詞</p>
+      {/if}
+      {#each visibleRecords as record (record.kind + ":" + record.id)}
         <button
           class:statement-card={record.kind === "statement"}
           class:evidence-card={record.kind === "evidence"}
