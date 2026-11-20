@@ -45,6 +45,8 @@ export const anchors = {
   caseFile: "案件檔案",
   caseFileEvidenceTab: "證物",
   caseFileReexamine: "重新檢視",
+  // InterrogationEvidenceTray: the SHOW/PRESENT tray's search input (HPA-705).
+  evidenceTraySearch: "搜尋紀錄",
 
   // investigation_scene_p1: hotspots have authored layouts and render as
   // placed InvestigationSceneSurface targets (調查：<label>).

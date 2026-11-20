@@ -6,11 +6,12 @@ import {
   dismissAllPendingAcquisitions,
   elementExists,
   enabledMapDestinationIds,
+  ensureMinimumWindowViewport,
   getPackagedGameState,
   jsClick,
   jumpToProductionScene,
   loadPackagedCheckpoint,
-  observedCssViewport,
+  MINIMUM_WINDOW,
   openGameMenu,
   resetE2eStorage,
   seedStoryCleared,
@@ -18,10 +19,6 @@ import {
   waitForPackagedGameState,
 } from "./helpers";
 import { anchors } from "./production-anchors";
-import {
-  caseFileViewportNativeSize,
-  validDevicePixelRatio,
-} from "$lib/e2e/case-file-viewport";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
   coverPlaneSize,
@@ -30,9 +27,6 @@ import {
   type TargetLayout,
 } from "$lib/investigation/target-layout";
 import type { GameStateView, SublocationView } from "$lib/state/types";
-
-/** The game window's default and minimum size (tauri.conf.json). */
-const MINIMUM_WINDOW = { width: 800, height: 600 } as const;
 
 /**
  * The least of each axis a cropped target must keep inside the window: the
@@ -204,53 +198,6 @@ function shippedPlacements(): ShippedPlacement[] {
       style: targetLayoutStyle(layout),
       locked,
     }));
-}
-
-async function ensureMinimumWindowViewport(): Promise<void> {
-  const matches = (viewport: { width: number; height: number }) =>
-    viewport.width === MINIMUM_WINDOW.width &&
-    viewport.height === MINIMUM_WINDOW.height;
-  let viewport = await observedCssViewport();
-  if (matches(viewport)) return;
-  const requested = caseFileViewportNativeSize(
-    viewport.devicePixelRatio,
-    MINIMUM_WINDOW,
-  );
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    await browser.setWindowSize(requested.width, requested.height);
-    try {
-      await browser.waitUntil(
-        async () => matches((viewport = await observedCssViewport())),
-        {
-          timeout: 10000,
-          interval: 100,
-          timeoutMsg: "viewport did not settle at the 800x600 minimum window",
-        },
-      );
-    } catch (error) {
-      // Keep the retry tolerance — a slow-clamping WM may need a corrected
-      // request — but hang on to the failure for the final error instead of
-      // dropping it.
-      lastError = error;
-    }
-    if (matches(viewport)) return;
-    const scale = validDevicePixelRatio(viewport.devicePixelRatio);
-    // Signed correction: the WM can clamp a request in either direction, so
-    // overshoots must shrink as well as shortfalls grow.
-    requested.width += Math.ceil(
-      (MINIMUM_WINDOW.width - viewport.width) * scale,
-    );
-    requested.height += Math.ceil(
-      (MINIMUM_WINDOW.height - viewport.height) * scale,
-    );
-  }
-  const detail =
-    lastError instanceof Error ? lastError.message : String(lastError);
-  throw new Error(
-    `viewport did not settle at the 800x600 minimum window (last observed ${viewport.width}x${viewport.height})`,
-    { cause: detail === "null" ? undefined : detail },
-  );
 }
 
 /** Explore parked on investigation_scene_map_01's city map (HPA-601 §7). */
