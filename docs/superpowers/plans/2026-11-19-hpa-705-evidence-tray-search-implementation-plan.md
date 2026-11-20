@@ -8,8 +8,8 @@
 
 | Review 意見 | 決定 |
 | --- | --- |
-| `production-journey` 以 `ensureCaseFileViewport` 轉到 1280×720，會讓 800×600 測試假綠 | **接受**：共用原 `ensureMinimumWindowViewport`，在真正的 74-record tray 斷言前切到 800×600，後續 Analysis 前再放大 |
-| 原盤高度留不足一整列，光靠 CSS 微調可能不可行 | **接受**：規格預算表先定 compact 縮圖 ~48、卡字 13–14px、detail ~64、gap ~8px；必要時去重複 eyebrow |
+| `production-journey` 以 `ensureCaseFileViewport` 轉到 1280×720，會讓 800×600 測試假綠 | **接受**：共用原 `ensureMinimumWindowViewport`，於 Chapter 2 `interrogation_scene_19` 的 74+ record tray 轉至 800×600；先前 Analysis 13／15／18 維持大視窗，檢查後還原僅作隔離 |
+| 原盤高度留不足一整列，光靠 CSS 微調可能不可行 | **接受**：規格預算表先定 compact 縮圖 ~48、卡字 13–14px、detail ~64、gap ~8px；compact 下直接隱藏重複 eyebrow |
 | 搜尋函數放在 Svelte component 而非可純測的 presentation 層 | **接受**：`presentation.ts` 新增純 `filterPresentableRecords`，NFKC + case-fold，測試集中到 `presentation.test.ts` |
 | 手寫 Tab trap 和共享 `trapDialogTabKey` 重複 | **接受**：調用既有 helper，selector 包含 input + button，保留 `topLayerOpen` 早退 |
 | 每次重開要額外設 `scrollTop=0` | **刪除**：現有條件掛載自然從頂部開始；只保留回歸 guard，若新實測不符另查原因 |
