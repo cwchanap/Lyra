@@ -1,6 +1,6 @@
 # HPA-705 — SHOW／PRESENT 證物盤搜尋與 800×600 可讀性（設計規格）
 
-> **狀態：** Draft design，程式尚未實作／驗收。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)、[Draft PR #138](https://github.com/cwchanap/Lyra/pull/138)。依 [2026-11-19 設計審閱](https://github.com/cwchanap/Lyra/pull/138#pullrequestreview-5900000000) 修正（review URL 若 GitHub 分配的 ID 不一致，改由 PR Reviews 頁讀取）。**單一任務、單一 PR**：本 PR 先放規劃，後續同一 PR 實作，不另開 implementation PR。
+> **狀態：** Draft design，程式尚未實作／驗收。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)、[Draft PR #138](https://github.com/cwchanap/Lyra/pull/138)。依 [PR #138 的最新設計審閱](https://github.com/cwchanap/Lyra/pull/138) 修正。**單一任務、單一 PR**：本 PR 先放規劃，後續同一 PR 實作，不另開 implementation PR。
 
 ## 1. 問題、既有能力與原因邊界
 
