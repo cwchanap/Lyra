@@ -200,6 +200,63 @@ export async function ensureCaseFileViewport(): Promise<ObservedCssViewport> {
   );
 }
 
+/** The game window's default and minimum size (tauri.conf.json). */
+export const MINIMUM_WINDOW = { width: 800, height: 600 } as const;
+
+/**
+ * Shrinks the window to the game's real 800x600 minimum and waits for the CSS
+ * viewport to settle exactly there (DPR-compensated, retrying against
+ * window-manager clamps in either direction). Shared by the placement suites
+ * and the HPA-705 evidence-tray geometry gate so there is only one resize
+ * algorithm.
+ */
+export async function ensureMinimumWindowViewport(): Promise<void> {
+  const matches = (viewport: { width: number; height: number }) =>
+    viewport.width === MINIMUM_WINDOW.width &&
+    viewport.height === MINIMUM_WINDOW.height;
+  let viewport = await observedCssViewport();
+  if (matches(viewport)) return;
+  const requested = caseFileViewportNativeSize(
+    viewport.devicePixelRatio,
+    MINIMUM_WINDOW,
+  );
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await browser.setWindowSize(requested.width, requested.height);
+    try {
+      await browser.waitUntil(
+        async () => matches((viewport = await observedCssViewport())),
+        {
+          timeout: 10000,
+          interval: 100,
+          timeoutMsg: "viewport did not settle at the 800x600 minimum window",
+        },
+      );
+    } catch (error) {
+      // Keep the retry tolerance — a slow-clamping WM may need a corrected
+      // request — but hang on to the failure for the final error instead of
+      // dropping it.
+      lastError = error;
+    }
+    if (matches(viewport)) return;
+    const scale = validDevicePixelRatio(viewport.devicePixelRatio);
+    // Signed correction: the WM can clamp a request in either direction, so
+    // overshoots must shrink as well as shortfalls grow.
+    requested.width += Math.ceil(
+      (MINIMUM_WINDOW.width - viewport.width) * scale,
+    );
+    requested.height += Math.ceil(
+      (MINIMUM_WINDOW.height - viewport.height) * scale,
+    );
+  }
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(
+    `viewport did not settle at the 800x600 minimum window (last observed ${viewport.width}x${viewport.height})`,
+    { cause: detail === "null" ? undefined : detail },
+  );
+}
+
 export type MockupCaptureResult = {
   requested: CssViewportSize;
   observed: ObservedCssViewport;

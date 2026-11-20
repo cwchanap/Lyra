@@ -1,3 +1,5 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import {
   acknowledgeAcquisitionDomFirst,
   advanceDialogueUntil,
@@ -10,12 +12,14 @@ import {
   elementExists,
   enabledMapDestinationIds,
   ensureCaseFileViewport,
+  ensureMinimumWindowViewport,
   forgetStoryCleared,
   getPackagedGameState,
   jumpToProductionChapterScene,
   jumpToProductionScene,
   lastVisibleDialogueText,
   loadTitleSlot,
+  observedCssViewport,
   openGameMenu,
   resetE2eStorage,
   returnToTitle,
@@ -432,14 +436,582 @@ function actionableTopic(
   );
 }
 
-/** Clicks the enabled record tile showing `recordName` in the open tray. */
+// --- HPA-705 evidence tray: searched SHOW/PRESENT route + 800x600 gate ----
+
+/** Chapter 2's final hearing — the only tray carrying the full inventory. */
+const FINAL_HEARING_SCENE_ID = "interrogation_scene_19";
+
+/**
+ * The 2026-11-11 packaged UAT measured ~74 records at the final hearing's
+ * tray (HPA-705 design §1); at that size the board needed ~29 screens of
+ * scrolling at 800x600, which is exactly what search + compact CSS fix.
+ */
+const FINAL_HEARING_MIN_RECORDS = 74;
+
+/** Screenshots are PR artifacts: CI uploads all of apps/game/e2e-artifacts/. */
+const EVIDENCE_TRAY_SCREENSHOT_DIR = path.join(
+  process.cwd(),
+  "e2e-artifacts",
+  "save-e2e",
+  "evidence-tray-800x600",
+);
+
+type BoxRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+/** One DOM snapshot of the open SHOW/PRESENT tray (HPA-705 800x600 gate). */
+type EvidenceTraySnapshot = {
+  viewport: { width: number; height: number };
+  tray: BoxRect | null;
+  header: BoxRect | null;
+  headerFlexWrap: string;
+  headerClientWidth: number;
+  headerScrollWidth: number;
+  searchInput: BoxRect | null;
+  eyebrowDisplay: string | null;
+  lineRecord: BoxRect | null;
+  grid: BoxRect | null;
+  gridClientWidth: number;
+  gridScrollWidth: number;
+  gridScrollTop: number;
+  detail: BoxRect | null;
+  footer: BoxRect | null;
+  escapeButton: BoxRect | null;
+  withdrawButton: BoxRect | null;
+  firstRowStrong: { text: string; rect: BoxRect } | null;
+  firstTileVisualHeight: number | null;
+  tileCount: number;
+  countText: string;
+  searchValue: string;
+  targetTile: { strong: string; rect: BoxRect; height: number } | null;
+};
+
+/**
+ * Set once the 800x600 gate has actually executed; the final Chapter 2 leg
+ * asserts it, so a shorter inventory fails loudly instead of silently
+ * skipping the geometry proof.
+ */
+let evidenceTrayGeometryGateDone = false;
+
+const evidenceTraySearchSelector = (): string =>
+  `input[aria-label="${anchors.evidenceTraySearch}"]`;
+
+const RECT_TOLERANCE_PX = 0.5;
+
+function requireRect(rect: BoxRect | null, label: string): BoxRect {
+  if (!rect) {
+    throw new Error(`evidence tray 800x600 gate: ${label} rect missing`);
+  }
+  return rect;
+}
+
+function expectRectWithin(inner: BoxRect, outer: BoxRect): void {
+  expect(inner.left).toBeGreaterThanOrEqual(outer.left - RECT_TOLERANCE_PX);
+  expect(inner.top).toBeGreaterThanOrEqual(outer.top - RECT_TOLERANCE_PX);
+  expect(inner.right).toBeLessThanOrEqual(outer.right + RECT_TOLERANCE_PX);
+  expect(inner.bottom).toBeLessThanOrEqual(outer.bottom + RECT_TOLERANCE_PX);
+}
+
+function rectsOverlap(a: BoxRect, b: BoxRect): boolean {
+  return (
+    a.left < b.right - RECT_TOLERANCE_PX &&
+    b.left < a.right - RECT_TOLERANCE_PX &&
+    a.top < b.bottom - RECT_TOLERANCE_PX &&
+    b.top < a.bottom - RECT_TOLERANCE_PX
+  );
+}
+
+/**
+ * Reads one DOM snapshot of the open tray: viewport, per-section rects,
+ * compact-CSS markers, and (for `targetName`) the rect and height of the
+ * first tile whose FULL record title matches exactly.
+ */
+async function measureEvidenceTray(
+  targetName: string | null,
+): Promise<EvidenceTraySnapshot> {
+  return browser.execute(
+    (target: string | null, searchSelector: string): EvidenceTraySnapshot => {
+      const boxRect = (box: DOMRect): BoxRect => ({
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      });
+      const rectOf = (element: Element | null): BoxRect | null =>
+        element ? boxRect(element.getBoundingClientRect()) : null;
+      const tray = document.querySelector<HTMLElement>(
+        "[data-interrogation-present-tray]",
+      );
+      const grid = document.querySelector<HTMLElement>(
+        "[data-interrogation-evidence-grid]",
+      );
+      const tiles = Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+      );
+      const strongOf = (tile: HTMLButtonElement): string =>
+        (tile.querySelector(".record-copy strong")?.textContent ?? "").trim();
+      const targetMatches = tiles.filter((tile) => strongOf(tile) === target);
+      const targetBox = targetMatches[0]?.getBoundingClientRect();
+      const firstTile = tiles.length > 0 ? tiles[0] : null;
+      const firstStrong = firstTile?.querySelector(".record-copy strong");
+      const firstVisual = firstTile?.querySelector(".record-visual");
+      const header = tray?.querySelector("header") ?? null;
+      const eyebrow = header?.querySelector(".eyebrow") ?? null;
+      const searchInput =
+        document.querySelector<HTMLInputElement>(searchSelector);
+      return {
+        viewport: {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        },
+        tray: rectOf(tray),
+        header: rectOf(header),
+        headerFlexWrap: header ? getComputedStyle(header).flexWrap : "",
+        headerClientWidth: header?.clientWidth ?? 0,
+        headerScrollWidth: header?.scrollWidth ?? 0,
+        searchInput: rectOf(searchInput),
+        eyebrowDisplay: eyebrow ? getComputedStyle(eyebrow).display : null,
+        lineRecord: rectOf(
+          tray?.querySelector("blockquote.line-record") ?? null,
+        ),
+        grid: rectOf(grid),
+        gridClientWidth: grid?.clientWidth ?? 0,
+        gridScrollWidth: grid?.scrollWidth ?? 0,
+        gridScrollTop: grid?.scrollTop ?? 0,
+        detail: rectOf(tray?.querySelector(".record-detail") ?? null),
+        footer: rectOf(tray?.querySelector("footer") ?? null),
+        escapeButton: rectOf(tray?.querySelector(".tray-escape") ?? null),
+        withdrawButton: rectOf(tray?.querySelector("button.withdraw") ?? null),
+        firstRowStrong:
+          firstTile && firstStrong
+            ? {
+                text: (firstStrong.textContent ?? "").trim(),
+                rect: boxRect(firstStrong.getBoundingClientRect()),
+              }
+            : null,
+        firstTileVisualHeight: firstVisual
+          ? firstVisual.getBoundingClientRect().height
+          : null,
+        tileCount: tiles.length,
+        countText: (
+          tray?.querySelector(".record-count")?.textContent ?? ""
+        ).trim(),
+        searchValue: searchInput?.value ?? "",
+        targetTile:
+          targetMatches[0] && targetBox
+            ? {
+                strong: strongOf(targetMatches[0]),
+                rect: boxRect(targetBox),
+                height: targetBox.height,
+              }
+            : null,
+      };
+    },
+    targetName,
+    evidenceTraySearchSelector(),
+  );
+}
+
+/**
+ * The 800x600 compact-tray geometry assertions (HPA-705 task 4): every
+ * section present, visible and inside the viewport/tray, the five rows never
+ * mutually overlapping, the compact media query provably active (48px
+ * thumbnails, hidden eyebrow), header allowed to wrap without horizontal
+ * squeeze-out, grid not clipping horizontally, first-row title fully
+ * visible, and the grid scrolled to its top.
+ */
+function expectEvidenceTrayCompactGeometry(
+  snapshot: EvidenceTraySnapshot,
+  label: string,
+): void {
+  const fail = (message: string): Error =>
+    new Error(`evidence tray 800x600 gate (${label}): ${message}`);
+
+  expect(snapshot.viewport.width).toBe(800);
+  expect(snapshot.viewport.height).toBe(600);
+
+  const tray = requireRect(snapshot.tray, "tray");
+  const sections: Array<[string, BoxRect]> = [
+    ["header", requireRect(snapshot.header, "header")],
+    ["search input", requireRect(snapshot.searchInput, "search input")],
+    ["line record", requireRect(snapshot.lineRecord, "line record")],
+    ["grid", requireRect(snapshot.grid, "grid")],
+    ["detail", requireRect(snapshot.detail, "detail")],
+    ["footer", requireRect(snapshot.footer, "footer")],
+    ["ESC button", requireRect(snapshot.escapeButton, "ESC button")],
+    [
+      "withdraw button",
+      requireRect(snapshot.withdrawButton, "withdraw button"),
+    ],
+  ];
+  const viewportRect: BoxRect = {
+    left: 0,
+    top: 0,
+    right: 800,
+    bottom: 600,
+    width: 800,
+    height: 600,
+  };
+  if (tray.width <= 0 || tray.height <= 0) throw fail("tray has an empty rect");
+  expectRectWithin(tray, viewportRect);
+  for (const [name, rect] of sections) {
+    if (rect.width <= 0 || rect.height <= 0) {
+      throw fail(`${name} has an empty rect`);
+    }
+    expectRectWithin(rect, viewportRect);
+    expectRectWithin(rect, tray);
+  }
+  for (let i = 0; i < sections.length; i += 1) {
+    for (let j = i + 1; j < sections.length; j += 1) {
+      const [aName, aRect] = sections[i];
+      const [bName, bRect] = sections[j];
+      if (rectsOverlap(aRect, bRect)) {
+        throw fail(`${aName} overlaps ${bName}`);
+      }
+    }
+  }
+
+  // Compact media query proofs: hidden eyebrow (style) and 48px thumbnails
+  // (geometry), not just a small window with the regular layout.
+  expect(snapshot.eyebrowDisplay).toBe("none");
+  const visual = snapshot.firstTileVisualHeight;
+  if (visual === null || Math.abs(visual - 48) > 1.5) {
+    throw fail(
+      `compact 48px thumbnails not active (first tile visual ${String(visual)}px)`,
+    );
+  }
+  // The header may wrap (flex-wrap: wrap) but must never squeeze out.
+  expect(snapshot.headerFlexWrap).toBe("wrap");
+  expect(snapshot.headerScrollWidth).toBeLessThanOrEqual(
+    snapshot.headerClientWidth + RECT_TOLERANCE_PX,
+  );
+  expect(snapshot.gridScrollWidth).toBeLessThanOrEqual(
+    snapshot.gridClientWidth + RECT_TOLERANCE_PX,
+  );
+  expect(snapshot.gridScrollTop).toBe(0);
+
+  const firstStrong = snapshot.firstRowStrong;
+  if (!firstStrong || firstStrong.text === "") {
+    throw fail("first-row tile title missing");
+  }
+  expectRectWithin(firstStrong.rect, requireRect(snapshot.grid, "grid"));
+}
+
+/** The tile count + full-title list currently rendered in the tray. */
+async function evidenceTrayTileState(): Promise<{
+  count: number;
+  titles: string;
+}> {
+  return browser.execute(() => {
+    const tiles = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+    );
+    return {
+      count: tiles.length,
+      titles: tiles
+        .map(
+          (tile) =>
+            tile.querySelector(".record-copy strong")?.textContent?.trim() ??
+            "",
+        )
+        .join("\u0000"),
+    };
+  });
+}
+
+/** Waits for the open tray's search input (SHOW or PRESENT mount). */
+async function waitForEvidenceTraySearch(): Promise<void> {
+  await browser.waitUntil(() => elementExists(evidenceTraySearchSelector()), {
+    timeout: 30000,
+    interval: 100,
+    timeoutMsg: "evidence tray search input did not appear",
+  });
+}
+
+type EvidenceTraySearchTransport = "setValue" | "valueAndInputEvent";
+
+/**
+ * Types `query` into the open tray's search input and verifies the Svelte
+ * filter really applied (the visible tile set must change). WebDriver
+ * `setValue` — real key events through tauri-plugin-wdio/WebKit — is tried
+ * first; only when it fails to update the component does this helper fall
+ * back to the repo-standard `input.value` + `input` event dispatch. The
+ * chosen transport is logged so CJK input reliability stays traceable.
+ */
+async function typeEvidenceTrayQuery(
+  query: string,
+): Promise<EvidenceTraySearchTransport> {
+  const selector = evidenceTraySearchSelector();
+  const before = await evidenceTrayTileState();
+  const waitUntilApplied = (transport: EvidenceTraySearchTransport) =>
+    browser.waitUntil(
+      async () => {
+        const after = await evidenceTrayTileState();
+        return after.count !== before.count || after.titles !== before.titles;
+      },
+      {
+        timeout: 5000,
+        interval: 100,
+        timeoutMsg: `evidence tray search via ${transport} did not update the record list`,
+      },
+    );
+
+  let transport: EvidenceTraySearchTransport = "setValue";
+  try {
+    const input = await browser.$(selector);
+    await input.setValue(query);
+    await waitUntilApplied("setValue");
+  } catch {
+    transport = "valueAndInputEvent";
+    const value = await browser.execute(
+      (inputSelector: string, name: string) => {
+        const input = document.querySelector<HTMLInputElement>(inputSelector);
+        if (!input) return null;
+        input.value = name;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return input.value;
+      },
+      selector,
+      query,
+    );
+    if (value !== query) {
+      throw new Error("evidence tray search input is missing");
+    }
+    await waitUntilApplied("valueAndInputEvent");
+  }
+  console.log(`[EvidenceTray] searched "${query}" via ${transport}`);
+  return transport;
+}
+
+/** Resets the tray search to the unfiltered list (Svelte input-event path). */
+async function clearEvidenceTrayQuery(unfilteredCount: number): Promise<void> {
+  const selector = evidenceTraySearchSelector();
+  const cleared = await browser.execute((inputSelector: string) => {
+    const input = document.querySelector<HTMLInputElement>(inputSelector);
+    if (!input) return false;
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    return input.value === "";
+  }, selector);
+  if (!cleared) throw new Error("evidence tray search input is missing");
+  await browser.waitUntil(
+    async () => (await evidenceTrayTileState()).count === unfilteredCount,
+    {
+      timeout: 5000,
+      interval: 100,
+      timeoutMsg: "cleared search did not restore the unfiltered record list",
+    },
+  );
+}
+
+/**
+ * HPA-705 task 4: the one-shot 800x600 geometry gate. At the final hearing's
+ * first ≥74-record tray it shrinks to the game's real 800x600 minimum
+ * window, asserts the compact tray geometry, searches a real record name to
+ * prove the hit stays on the first visible page without stretching the row,
+ * saves initial + hit screenshots, then restores the larger viewport purely
+ * as test isolation for the rest of the journey (there is no analysis step
+ * after the final hearing).
+ */
+async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
+  console.log(
+    `[EvidenceTrayGate] first ≥${FINAL_HEARING_MIN_RECORDS}-record tray in ${FINAL_HEARING_SCENE_ID}; shrinking to the 800x600 minimum window`,
+  );
+  await ensureMinimumWindowViewport();
+  const viewport = await observedCssViewport();
+  expect(viewport.width).toBe(800); // the compact gate, NOT the 1280x720 case-file viewport
+  expect(viewport.height).toBe(600);
+  mkdirSync(EVIDENCE_TRAY_SCREENSHOT_DIR, { recursive: true });
+
+  // Unfiltered tray at 800x600: the full ≥74-record board.
+  const initial = await measureEvidenceTray(recordName);
+  expect(initial.tileCount).toBeGreaterThanOrEqual(FINAL_HEARING_MIN_RECORDS);
+  expect(initial.searchValue).toBe("");
+  expectEvidenceTrayCompactGeometry(initial, "initial tray");
+  const initialScreenshot = path.join(
+    EVIDENCE_TRAY_SCREENSHOT_DIR,
+    "evidence-tray-800x600-initial.png",
+  );
+  await browser.saveScreenshot(initialScreenshot);
+
+  // Real-name search at 800x600: the hit stays on the first visible page and
+  // keeps its natural height — the row must not stretch to the grid track
+  // when only a few results remain (align-content: start).
+  await typeEvidenceTrayQuery(recordName);
+  const filtered = await measureEvidenceTray(recordName);
+  expect(filtered.searchValue).toBe(recordName);
+  expect(filtered.tileCount).toBeGreaterThanOrEqual(1);
+  expect(filtered.tileCount).toBeLessThan(initial.tileCount);
+  expectEvidenceTrayCompactGeometry(filtered, `search "${recordName}"`);
+  const grid = requireRect(filtered.grid, "grid");
+  const target = filtered.targetTile;
+  if (!target) {
+    throw new Error(`search hit tile ${recordName} not found in the tray`);
+  }
+  expect(target.strong).toBe(recordName);
+  expectRectWithin(target.rect, grid);
+  const unfilteredHeight = initial.targetTile?.height;
+  if (unfilteredHeight === undefined) {
+    throw new Error(`record ${recordName} missing from the unfiltered tray`);
+  }
+  expect(target.height).toBeLessThanOrEqual(unfilteredHeight + 2);
+  expect(target.height).toBeGreaterThanOrEqual(unfilteredHeight - 2);
+  if (filtered.tileCount === 1) {
+    // The only result leaves the rest of the grid empty below the row.
+    expect(grid.bottom - target.rect.bottom).toBeGreaterThan(24);
+  }
+  const hitScreenshot = path.join(
+    EVIDENCE_TRAY_SCREENSHOT_DIR,
+    "evidence-tray-800x600-search-hit.png",
+  );
+  await browser.saveScreenshot(hitScreenshot);
+  const metadataPath = path.join(
+    EVIDENCE_TRAY_SCREENSHOT_DIR,
+    "evidence-tray-800x600.json",
+  );
+  writeFileSync(
+    metadataPath,
+    `${JSON.stringify(
+      {
+        scene: FINAL_HEARING_SCENE_ID,
+        viewport,
+        tileCount: {
+          unfiltered: initial.tileCount,
+          filtered: filtered.tileCount,
+        },
+        countText: {
+          unfiltered: initial.countText,
+          filtered: filtered.countText,
+        },
+        searchTarget: recordName,
+        tileHeight: { unfiltered: unfilteredHeight, filtered: target.height },
+        screenshots: [initialScreenshot, hitScreenshot],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
+  // Clear the probe search before the journey's own presentation continues.
+  await clearEvidenceTrayQuery(initial.tileCount);
+
+  await ensureCaseFileViewport();
+  evidenceTrayGeometryGateDone = true;
+  console.log(
+    `[EvidenceTrayGate] 800x600 geometry passed (${initial.tileCount} records; hit ${filtered.tileCount}); viewport restored; PNG=${initialScreenshot},${hitScreenshot}; JSON=${metadataPath}`,
+  );
+}
+
+/**
+ * Searches the open SHOW/PRESENT tray for `recordName`, then clicks the
+ * first enabled tile whose FULL record title (`button.record-tile .record-copy
+ * strong`) matches exactly — never the whole tile text, so a source column
+ * that merely contains the name can never win. Asserts the card sits on the
+ * grid's first visible page (scrollTop 0, fully visible) before clicking.
+ * One searched route serves both the SHOW and PRESENT trays.
+ */
 async function clickRecordTile(recordName: string): Promise<void> {
+  await waitForEvidenceTraySearch();
+  if (!evidenceTrayGeometryGateDone) {
+    const state = await getPackagedGameState();
+    const totalRecords = (await evidenceTrayTileState()).count;
+    if (
+      state.scene.id === FINAL_HEARING_SCENE_ID &&
+      totalRecords >= FINAL_HEARING_MIN_RECORDS
+    ) {
+      await runEvidenceTrayGeometryGate(recordName);
+    }
+  }
+  await typeEvidenceTrayQuery(recordName);
+  await browser.waitUntil(
+    async () => {
+      const found = await browser.execute((name: string) => {
+        const tile = Array.from(
+          document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+        ).find(
+          (candidate) =>
+            !candidate.disabled &&
+            (
+              candidate.querySelector(".record-copy strong")?.textContent ?? ""
+            ).trim() === name,
+        );
+        return tile !== undefined;
+      }, recordName);
+      return found;
+    },
+    {
+      timeout: 15000,
+      interval: 100,
+      timeoutMsg: `enabled record tile ${recordName} did not appear in the searched tray`,
+    },
+  );
+  const located = await browser.execute((name: string) => {
+    const grid = document.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-grid]",
+    );
+    const tile = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+    ).find(
+      (candidate) =>
+        !candidate.disabled &&
+        (
+          candidate.querySelector(".record-copy strong")?.textContent ?? ""
+        ).trim() === name,
+    );
+    if (!grid || !tile) return null;
+    const gridBox = grid.getBoundingClientRect();
+    const tileBox = tile.getBoundingClientRect();
+    return {
+      scrollTop: grid.scrollTop,
+      grid: {
+        left: gridBox.left,
+        top: gridBox.top,
+        right: gridBox.right,
+        bottom: gridBox.bottom,
+      },
+      tile: {
+        left: tileBox.left,
+        top: tileBox.top,
+        right: tileBox.right,
+        bottom: tileBox.bottom,
+      },
+    };
+  }, recordName);
+  if (!located) {
+    throw new Error(`record tile ${recordName} was not clickable`);
+  }
+  // The searched hit must be on the grid's first visible page: fully visible
+  // with no scrolling (HPA-705 acceptance).
+  expect(located.scrollTop).toBe(0);
+  expect(located.tile.top).toBeGreaterThanOrEqual(
+    located.grid.top - RECT_TOLERANCE_PX,
+  );
+  expect(located.tile.bottom).toBeLessThanOrEqual(
+    located.grid.bottom + RECT_TOLERANCE_PX,
+  );
+  expect(located.tile.left).toBeGreaterThanOrEqual(
+    located.grid.left - RECT_TOLERANCE_PX,
+  );
+  expect(located.tile.right).toBeLessThanOrEqual(
+    located.grid.right + RECT_TOLERANCE_PX,
+  );
   const clicked = await browser.execute((name: string) => {
     const tile = Array.from(
       document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
     ).find(
       (candidate) =>
-        !candidate.disabled && (candidate.textContent ?? "").includes(name),
+        !candidate.disabled &&
+        (
+          candidate.querySelector(".record-copy strong")?.textContent ?? ""
+        ).trim() === name,
     );
     if (!tile) return false;
     tile.click();
@@ -1313,6 +1885,10 @@ describe("fresh production journey", () => {
     );
     expect(cleared).toBe("true");
     expect(crossedWrappers).toEqual(leg.gates.map((gate) => gate.wrapper));
+    // HPA-705: the 800x600 tray gate must have actually executed at the
+    // final hearing's ≥74-record tray — a shorter inventory must fail here,
+    // never silently skip the geometry proof.
+    expect(evidenceTrayGeometryGateDone).toBe(true);
   });
 
   it("keeps the drain deterministic when several destinations are enabled", async () => {
