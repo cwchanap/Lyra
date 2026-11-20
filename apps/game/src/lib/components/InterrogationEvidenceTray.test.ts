@@ -78,7 +78,8 @@ function props(
   }> = {},
 ) {
   return {
-    crossExam: overrides.crossExam ?? crossExam,
+    crossExam:
+      overrides.crossExam !== undefined ? overrides.crossExam : crossExam,
     presentTo: overrides.presentTo ?? null,
     inventory: overrides.inventory ?? inventory,
     disabled: overrides.disabled ?? false,
