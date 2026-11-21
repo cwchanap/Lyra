@@ -679,6 +679,11 @@ describe("InterrogationEvidenceTray", () => {
       expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。"),
     );
 
+    // Other keys on the tile leave focus where it is — only ArrowDown
+    // triggers the detail jump.
+    await fireEvent.keyDown(evidence, { key: "ArrowUp" });
+    expect(evidence).toHaveFocus();
+
     // ArrowDown reaches this tile's scrollable detail directly — without
     // presenting the record and without tabbing past the statement tile,
     // whose focus handler would swap the inspected record.
@@ -692,6 +697,33 @@ describe("InterrogationEvidenceTray", () => {
     expect(evidence).toHaveFocus();
     expect(statement).not.toHaveFocus();
     expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+  });
+
+  it("suspends the ArrowDown detail jump while an upper layer is open", async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(InterrogationEvidenceTray, props());
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    evidence.focus();
+
+    // While an upper dialog owns keyboard navigation, ArrowDown on the tile
+    // must not steal focus back into the tray.
+    await rerender(props({ topLayerOpen: true }));
+    await user.keyboard("{ArrowDown}");
+    expect(detail).not.toHaveFocus();
+    expect(evidence).toHaveFocus();
+
+    // Once it closes, the shortcut works again.
+    await rerender(props({ topLayerOpen: false }));
+    await user.keyboard("{ArrowDown}");
+    expect(detail).toHaveFocus();
   });
 
   it("returns focus to a connected trigger when the tray unmounts", async () => {
