@@ -473,7 +473,8 @@ type EvidenceTraySnapshot = {
   headerFlexWrap: string;
   headerClientWidth: number;
   headerScrollWidth: number;
-  searchInput: BoxRect | null;
+  /** Every visible flex item of the header, with a debug label. */
+  headerChildren: Array<{ label: string; rect: BoxRect }>;
   eyebrowDisplay: string | null;
   lineRecord: BoxRect | null;
   grid: BoxRect | null;
@@ -482,9 +483,8 @@ type EvidenceTraySnapshot = {
   gridScrollTop: number;
   detail: BoxRect | null;
   footer: BoxRect | null;
-  escapeButton: BoxRect | null;
   withdrawButton: BoxRect | null;
-  firstRowStrong: { text: string; rect: BoxRect } | null;
+  firstRowTitles: Array<{ text: string; rect: BoxRect }>;
   firstTileVisualHeight: number | null;
   tileCount: number;
   countText: string;
@@ -561,12 +561,57 @@ async function measureEvidenceTray(
       const targetMatches = tiles.filter((tile) => strongOf(tile) === target);
       const targetBox = targetMatches[0]?.getBoundingClientRect();
       const firstTile = tiles.length > 0 ? tiles[0] : null;
-      const firstStrong = firstTile?.querySelector(".record-copy strong");
       const firstVisual = firstTile?.querySelector(".record-visual");
+      // First ROW, not just the first tile: a longer title in any other
+      // column can clip or overlap without the first tile ever showing it.
+      const firstRowTop = firstTile?.getBoundingClientRect().top ?? null;
+      const firstRowTolerancePx = 2;
+      const strongEntryOf = (tile: HTMLButtonElement) => {
+        const strong = tile.querySelector(".record-copy strong");
+        return strong
+          ? {
+              text: (strong.textContent ?? "").trim(),
+              rect: boxRect(strong.getBoundingClientRect()),
+            }
+          : null;
+      };
+      const firstRowTitles =
+        firstRowTop === null
+          ? []
+          : tiles
+              .filter(
+                (tile) =>
+                  Math.abs(tile.getBoundingClientRect().top - firstRowTop) <=
+                  firstRowTolerancePx,
+              )
+              .map(strongEntryOf)
+              .filter(
+                (entry): entry is { text: string; rect: BoxRect } =>
+                  entry !== null,
+              );
       const header = tray?.querySelector("header") ?? null;
       const eyebrow = header?.querySelector(".eyebrow") ?? null;
       const searchInput =
         document.querySelector<HTMLInputElement>(searchSelector);
+      // The header's own flex items: heading/progress copy, search input,
+      // record count and the ESC button. Mutual overlap between these is
+      // what a wrapped-but-squeezed header hides from the row-level checks.
+      const headerChildren = header
+        ? Array.from(header.children)
+            .filter(
+              (child): child is HTMLElement =>
+                child instanceof HTMLElement &&
+                getComputedStyle(child).display !== "none",
+            )
+            .map((child) => ({
+              label:
+                child.tagName.toLowerCase() +
+                (child.classList.length > 0
+                  ? `.${String(child.classList[0])}`
+                  : ""),
+              rect: boxRect(child.getBoundingClientRect()),
+            }))
+        : [];
       return {
         viewport: {
           width: window.innerWidth,
@@ -577,7 +622,7 @@ async function measureEvidenceTray(
         headerFlexWrap: header ? getComputedStyle(header).flexWrap : "",
         headerClientWidth: header?.clientWidth ?? 0,
         headerScrollWidth: header?.scrollWidth ?? 0,
-        searchInput: rectOf(searchInput),
+        headerChildren,
         eyebrowDisplay: eyebrow ? getComputedStyle(eyebrow).display : null,
         lineRecord: rectOf(
           tray?.querySelector("blockquote.line-record") ?? null,
@@ -588,15 +633,8 @@ async function measureEvidenceTray(
         gridScrollTop: grid?.scrollTop ?? 0,
         detail: rectOf(tray?.querySelector(".record-detail") ?? null),
         footer: rectOf(tray?.querySelector("footer") ?? null),
-        escapeButton: rectOf(tray?.querySelector(".tray-escape") ?? null),
         withdrawButton: rectOf(tray?.querySelector("button.withdraw") ?? null),
-        firstRowStrong:
-          firstTile && firstStrong
-            ? {
-                text: (firstStrong.textContent ?? "").trim(),
-                rect: boxRect(firstStrong.getBoundingClientRect()),
-              }
-            : null,
+        firstRowTitles,
         firstTileVisualHeight: firstVisual
           ? firstVisual.getBoundingClientRect().height
           : null,
@@ -625,8 +663,9 @@ async function measureEvidenceTray(
  * section present, visible and inside the viewport/tray, the five rows never
  * mutually overlapping, the compact media query provably active (48px
  * thumbnails, hidden eyebrow), header allowed to wrap without horizontal
- * squeeze-out, grid not clipping horizontally, first-row title fully
- * visible, and the grid scrolled to its top.
+ * squeeze-out and with its own controls (heading/progress, search input,
+ * count, ESC) contained and non-overlapping, grid not clipping horizontally,
+ * every first-row title fully visible, and the grid scrolled to its top.
  */
 function expectEvidenceTrayCompactGeometry(
   snapshot: EvidenceTraySnapshot,
@@ -653,8 +692,6 @@ function expectEvidenceTrayCompactGeometry(
     ["footer", footer],
   ];
   const nested: Array<[string, BoxRect, BoxRect]> = [
-    ["search input", requireRect(snapshot.searchInput, "search input"), header],
-    ["ESC button", requireRect(snapshot.escapeButton, "ESC button"), header],
     [
       "withdraw button",
       requireRect(snapshot.withdrawButton, "withdraw button"),
@@ -680,6 +717,32 @@ function expectEvidenceTrayCompactGeometry(
   }
   for (const [, rect, parent] of nested) {
     expectRectWithin(rect, parent);
+  }
+  // Header controls are row-contained by the loop above, but that says
+  // nothing about THEMSELVES: search input and ESC may overlap each other —
+  // or the heading, progress or count — while staying inside the header and
+  // passing every row assertion. In the wrapped PRESENT layout,
+  // flex-wrap: wrap proves a CSS declaration, not a laid-out header, so the
+  // header's own visible flex items are measured: each must be non-empty,
+  // contained in the header, and pairwise non-overlapping.
+  const headerChildren = snapshot.headerChildren;
+  if (headerChildren.length === 0) {
+    throw fail("header has no measurable visible children");
+  }
+  for (const { label: childName, rect: childRect } of headerChildren) {
+    if (childRect.width <= 0 || childRect.height <= 0) {
+      throw fail(`header child ${childName} has an empty rect`);
+    }
+    expectRectWithin(childRect, header);
+  }
+  for (let i = 0; i < headerChildren.length; i += 1) {
+    for (let j = i + 1; j < headerChildren.length; j += 1) {
+      const a = headerChildren[i];
+      const b = headerChildren[j];
+      if (rectsOverlap(a.rect, b.rect)) {
+        throw fail(`header child ${a.label} overlaps header child ${b.label}`);
+      }
+    }
   }
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
@@ -712,11 +775,23 @@ function expectEvidenceTrayCompactGeometry(
   );
   expect(snapshot.gridScrollTop).toBe(0);
 
-  const firstStrong = snapshot.firstRowStrong;
-  if (!firstStrong || firstStrong.text === "") {
-    throw fail("first-row tile title missing");
+  // Every FIRST-ROW title, not just the first tile's: a longer title in
+  // any other column can clip, extend below the visible grid, or overlap a
+  // neighbour while the first tile stays clean.
+  const firstRowTitles = snapshot.firstRowTitles;
+  if (firstRowTitles.length === 0) {
+    throw fail("first-row tile titles missing");
   }
-  expectRectWithin(firstStrong.rect, requireRect(snapshot.grid, "grid"));
+  const gridRect = requireRect(snapshot.grid, "grid");
+  for (const entry of firstRowTitles) {
+    if (entry.text === "") {
+      throw fail("first-row tile title is empty");
+    }
+    if (entry.rect.width <= 0 || entry.rect.height <= 0) {
+      throw fail(`first-row title "${entry.text}" has an empty rect`);
+    }
+    expectRectWithin(entry.rect, gridRect);
+  }
 }
 
 /** The number of record tiles currently rendered in the open tray. */
@@ -727,19 +802,39 @@ async function evidenceTrayTileCount(): Promise<number> {
   );
 }
 
-/** True once a tile whose FULL record title equals `query` is rendered. */
-async function evidenceTrayShowsFullTitle(query: string): Promise<boolean> {
+/**
+ * Observable proof that the tray's Svelte search applied to the COMPLETE
+ * `query`: the input holds the full value (partial CJK key sequences fail
+ * here), the record-count text left its pre-search value (a no-op setValue
+ * on the already-matching unfiltered tray can never do that), and the exact
+ * full-title tile renders.
+ */
+async function evidenceTrayFilterApplied(
+  query: string,
+  baselineCountText: string,
+): Promise<boolean> {
   return browser.execute(
-    (name: string) =>
-      Array.from(
+    (searchSelector: string, name: string, baseline: string) => {
+      const input = document.querySelector<HTMLInputElement>(searchSelector);
+      if (!input || input.value !== name) return false;
+      const countText = (
+        document.querySelector(
+          "[data-interrogation-present-tray] .record-count",
+        )?.textContent ?? ""
+      ).trim();
+      if (countText === "" || countText === baseline) return false;
+      return Array.from(
         document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
       ).some(
         (candidate) =>
           (
             candidate.querySelector(".record-copy strong")?.textContent ?? ""
           ).trim() === name,
-      ),
+      );
+    },
+    evidenceTraySearchSelector(),
     query,
+    baselineCountText,
   );
 }
 
@@ -756,23 +851,36 @@ type EvidenceTraySearchTransport = "setValue" | "valueAndInputEvent";
 
 /**
  * Types `query` into the open tray's search input and verifies the Svelte
- * filter really applied — the exact full-title tile must render, so a
- * half-delivered key sequence can never pass for a working search. WebDriver
- * `setValue` — real key events through tauri-plugin-wdio/WebKit — is tried
- * first; only when it fails to update the component does this helper fall
- * back to the repo-standard `input.value` + `input` event dispatch. The
- * chosen transport is logged so CJK input reliability stays traceable.
+ * filter really applied before crediting the transport: the COMPLETE input
+ * value plus an observable filter update (count text changed from the
+ * pre-search baseline AND the exact full-title tile rendered) — the tile
+ * alone proves nothing because it already exists in the unfiltered tray, so
+ * a no-op setValue, a dropped Svelte input update, or a partially delivered
+ * CJK key sequence can never pass. WebDriver `setValue` — real key events
+ * through tauri-plugin-wdio/WebKit — is tried first; only when it fails to
+ * update the component does this helper fall back to the repo-standard
+ * `input.value` + `input` event dispatch. The chosen transport is logged so
+ * CJK input reliability stays traceable.
  */
 async function typeEvidenceTrayQuery(
   query: string,
 ): Promise<EvidenceTraySearchTransport> {
   const selector = evidenceTraySearchSelector();
+  const baselineCountText = await browser.execute(() =>
+    (
+      document.querySelector("[data-interrogation-present-tray] .record-count")
+        ?.textContent ?? ""
+    ).trim(),
+  );
   const waitUntilApplied = (transport: EvidenceTraySearchTransport) =>
-    browser.waitUntil(() => evidenceTrayShowsFullTitle(query), {
-      timeout: 5000,
-      interval: 100,
-      timeoutMsg: `evidence tray search via ${transport} did not update the record list`,
-    });
+    browser.waitUntil(
+      () => evidenceTrayFilterApplied(query, baselineCountText),
+      {
+        timeout: 5000,
+        interval: 100,
+        timeoutMsg: `evidence tray search via ${transport} did not update the record list`,
+      },
+    );
 
   let transport: EvidenceTraySearchTransport = "setValue";
   try {
@@ -824,6 +932,8 @@ async function clearEvidenceTrayQuery(unfilteredCount: number): Promise<void> {
 
 type EvidenceTraySingleResultProbe = {
   query: string;
+  /** The probe tile's own height while the tray was still unfiltered. */
+  unfilteredHeight: number;
   strong: string;
   rect: BoxRect;
   height: number;
@@ -831,16 +941,18 @@ type EvidenceTraySingleResultProbe = {
 
 /**
  * Hunts for a rendered full title whose search isolates exactly one tile
- * (bounded candidate list, taken while the tray is unfiltered). Probe
- * queries go through the tray's own input-event path: the real CJK setValue
- * verification already happened on the primary search, and probes only need
- * deterministic filter results for the 1-result geometry proof.
+ * (bounded candidate list, collected while the tray is unfiltered, each
+ * carrying its own unfiltered tile height so the no-stretch bound compares
+ * the probe against ITSELF — never against an unrelated journey record).
+ * Probe queries go through the tray's own input-event path: the real CJK
+ * setValue verification already happened on the primary search, and probes
+ * only need deterministic filter results for the 1-result geometry proof.
  */
 async function probeSingleResultSearch(
-  candidates: string[],
+  candidates: Array<{ title: string; unfilteredHeight: number }>,
 ): Promise<EvidenceTraySingleResultProbe | null> {
   const selector = evidenceTraySearchSelector();
-  for (const query of candidates) {
+  for (const candidate of candidates) {
     await browser.execute(
       (inputSelector: string, value: string) => {
         const input = document.querySelector<HTMLInputElement>(inputSelector);
@@ -849,7 +961,7 @@ async function probeSingleResultSearch(
         input.dispatchEvent(new Event("input", { bubbles: true }));
       },
       selector,
-      query,
+      candidate.title,
     );
     try {
       await browser.waitUntil(
@@ -882,7 +994,13 @@ async function probeSingleResultSearch(
         height: tileBox.height,
       };
     });
-    if (lone) return { query, ...lone };
+    if (lone) {
+      return {
+        query: candidate.title,
+        unfilteredHeight: candidate.unfilteredHeight,
+        ...lone,
+      };
+    }
   }
   return null;
 }
@@ -907,17 +1025,20 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   mkdirSync(EVIDENCE_TRAY_SCREENSHOT_DIR, { recursive: true });
 
   // Single-result probe candidates must come from the UNFILTERED board:
-  // after the primary search only the (few) matching titles remain.
+  // after the primary search only the (few) matching titles remain. Each
+  // candidate remembers its own unfiltered tile height for the later
+  // like-for-like no-stretch comparison.
   const probeCandidates = await browser.execute(() =>
     Array.from(
       document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
     )
       .slice(0, 12)
-      .map(
-        (tile) =>
+      .map((tile) => ({
+        title:
           tile.querySelector(".record-copy strong")?.textContent?.trim() ?? "",
-      )
-      .filter((title) => title !== ""),
+        unfilteredHeight: tile.getBoundingClientRect().height,
+      }))
+      .filter((candidate) => candidate.title !== ""),
   );
 
   // Unfiltered tray at 800x600: the full ≥74-record board.
@@ -986,7 +1107,9 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
       );
     }
     expect(probe.strong).toBe(probe.query);
-    expect(probe.height).toBeLessThanOrEqual(unfilteredHeight + 2);
+    // Like-for-like: the probe tile against ITS OWN unfiltered height — the
+    // journey record's height belongs to a different title.
+    expect(probe.height).toBeLessThanOrEqual(probe.unfilteredHeight + 2);
     singleResult = { query: probe.query, height: probe.height };
     const probeScreenshot = path.join(
       EVIDENCE_TRAY_SCREENSHOT_DIR,
