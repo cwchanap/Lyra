@@ -526,7 +526,7 @@ type EvidenceTraySnapshot = {
 let evidenceTrayGeometryGateDone = false;
 
 const evidenceTraySearchSelector = (): string =>
-  `input[aria-label="${anchors.evidenceTraySearch}"]`;
+  `input[aria-label="${anchors.evidenceTray.searchLabel}"]`;
 
 const RECT_TOLERANCE_PX = 0.5;
 
@@ -583,7 +583,11 @@ async function measureEvidenceTray(
   targetName: string,
 ): Promise<EvidenceTraySnapshot> {
   return browser.execute(
-    (target: string, searchSelector: string): EvidenceTraySnapshot => {
+    (
+      target: string,
+      searchSelector: string,
+      sel: typeof anchors.evidenceTray,
+    ): EvidenceTraySnapshot => {
       const boxRect = (box: DOMRect): BoxRect => ({
         left: box.left,
         top: box.top,
@@ -594,27 +598,23 @@ async function measureEvidenceTray(
       });
       const rectOf = (element: Element | null): BoxRect | null =>
         element ? boxRect(element.getBoundingClientRect()) : null;
-      const tray = document.querySelector<HTMLElement>(
-        "[data-interrogation-present-tray]",
-      );
-      const grid = document.querySelector<HTMLElement>(
-        "[data-interrogation-evidence-grid]",
-      );
+      const tray = document.querySelector<HTMLElement>(sel.root);
+      const grid = document.querySelector<HTMLElement>(sel.grid);
       const tiles = Array.from(
-        document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+        document.querySelectorAll<HTMLButtonElement>(sel.tile),
       );
       const strongOf = (tile: HTMLButtonElement): string =>
-        (tile.querySelector(".record-copy strong")?.textContent ?? "").trim();
+        (tile.querySelector(sel.tileTitle)?.textContent ?? "").trim();
       const targetMatches = tiles.filter((tile) => strongOf(tile) === target);
       const targetBox = targetMatches[0]?.getBoundingClientRect();
       const firstTile = tiles.length > 0 ? tiles[0] : null;
-      const firstVisual = firstTile?.querySelector(".record-visual");
+      const firstVisual = firstTile?.querySelector(sel.visual);
       // First ROW, not just the first tile: a longer title in any other
       // column can clip or overlap without the first tile ever showing it.
       const firstRowTop = firstTile?.getBoundingClientRect().top ?? null;
       const firstRowTolerancePx = 2;
       const strongEntryOf = (tile: HTMLButtonElement) => {
-        const strong = tile.querySelector(".record-copy strong");
+        const strong = tile.querySelector(sel.tileTitle);
         if (!strong) return null;
         return {
           text: (strong.textContent ?? "").trim(),
@@ -642,7 +642,7 @@ async function measureEvidenceTray(
                   entry !== null,
               );
       const header = tray?.querySelector("header") ?? null;
-      const eyebrow = header?.querySelector(".eyebrow") ?? null;
+      const eyebrow = header?.querySelector(sel.eyebrow) ?? null;
       const searchInput =
         document.querySelector<HTMLInputElement>(searchSelector);
       // The header's own flex items: heading/progress copy, search input,
@@ -676,23 +676,21 @@ async function measureEvidenceTray(
         headerScrollWidth: header?.scrollWidth ?? 0,
         headerChildren,
         eyebrowDisplay: eyebrow ? getComputedStyle(eyebrow).display : null,
-        lineRecord: rectOf(
-          tray?.querySelector("blockquote.line-record") ?? null,
-        ),
+        lineRecord: rectOf(tray?.querySelector(sel.lineRecord) ?? null),
         grid: rectOf(grid),
         gridClientWidth: grid?.clientWidth ?? 0,
         gridScrollWidth: grid?.scrollWidth ?? 0,
         gridScrollTop: grid?.scrollTop ?? 0,
-        detail: rectOf(tray?.querySelector(".record-detail") ?? null),
+        detail: rectOf(tray?.querySelector(sel.detail) ?? null),
         footer: rectOf(tray?.querySelector("footer") ?? null),
-        withdrawButton: rectOf(tray?.querySelector("button.withdraw") ?? null),
+        withdrawButton: rectOf(tray?.querySelector(sel.withdraw) ?? null),
         firstRowTitles,
         firstTileVisualHeight: firstVisual
           ? firstVisual.getBoundingClientRect().height
           : null,
         tileCount: tiles.length,
         countText: (
-          tray?.querySelector(".record-count")?.textContent ?? ""
+          tray?.querySelector(sel.countText)?.textContent ?? ""
         ).trim(),
         searchValue: searchInput?.value ?? "",
         targetTile:
@@ -707,6 +705,7 @@ async function measureEvidenceTray(
     },
     targetName,
     evidenceTraySearchSelector(),
+    anchors.evidenceTray,
   );
 }
 
@@ -737,10 +736,11 @@ function expectEvidenceTrayCompactGeometry(
   // INSIDE a row (search input + ESC in the header, 收回 in the footer) are
   // nested children, not overlapping siblings — a child always sits inside
   // its parent's rect — so they are checked against their own row instead.
+  const grid = requireRect(snapshot.grid, "grid");
   const rows: Array<[string, BoxRect]> = [
     ["header", header],
     ["line record", requireRect(snapshot.lineRecord, "line record")],
-    ["grid", requireRect(snapshot.grid, "grid")],
+    ["grid", grid],
     ["detail", requireRect(snapshot.detail, "detail")],
     ["footer", footer],
   ];
@@ -849,6 +849,10 @@ function expectEvidenceTrayCompactGeometry(
       throw fail(`first-row title "${entry.text}" has an empty rect`);
     }
     expectRectWithin(entry.rect, entry.tileRect);
+    // Within-tile alone still permits a title hanging below the grid's
+    // visible edge — the scrollable grid clips it while every per-tile
+    // check passes.
+    expectRectWithin(entry.rect, grid);
     if (entry.clipped) {
       throw fail(`first-row title "${entry.text}" is clipped`);
     }
@@ -878,9 +882,9 @@ type EvidenceTrayHeaderWrapProbe = {
  * data fails afterwards.
  */
 async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProbe | null> {
-  return browser.execute(() => {
+  return browser.execute((traySelector: string) => {
     const header = document.querySelector<HTMLElement>(
-      "[data-interrogation-present-tray] header",
+      `${traySelector} header`,
     );
     if (!header) return null;
     const visibleChildren = () =>
@@ -940,7 +944,7 @@ async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProb
     header.style.maxWidth = "";
     void header.offsetHeight; // force the restored reflow before measuring
     return { ...clamped, restoredRows: rowCount(visibleChildren()) };
-  });
+  }, anchors.evidenceTray.root);
 }
 
 /**
@@ -986,8 +990,9 @@ function expectEvidenceTrayHeaderWraps(
 /** The number of record tiles currently rendered in the open tray. */
 async function evidenceTrayTileCount(): Promise<number> {
   return browser.execute(
-    () =>
-      document.querySelectorAll<HTMLButtonElement>("button.record-tile").length,
+    (tileSelector: string) =>
+      document.querySelectorAll<HTMLButtonElement>(tileSelector).length,
+    anchors.evidenceTray.tile,
   );
 }
 
@@ -1005,33 +1010,34 @@ async function readEvidenceTraySearchState(
     (
       searchSelector: string,
       target: string,
+      sel: typeof anchors.evidenceTray,
     ): EvidenceTraySearchState | null => {
       const input = document.querySelector<HTMLInputElement>(searchSelector);
       const countText = (
-        document.querySelector(
-          "[data-interrogation-present-tray] .record-count",
-        )?.textContent ?? ""
+        document.querySelector(`${sel.root} ${sel.countText}`)?.textContent ??
+        ""
       ).trim();
       const tiles = Array.from(
-        document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+        document.querySelectorAll<HTMLButtonElement>(sel.tile),
       );
       return {
         value: input?.value ?? null,
         countText,
         tileCount: tiles.length,
         titles: tiles.map((tile) =>
-          (tile.querySelector(".record-copy strong")?.textContent ?? "").trim(),
+          (tile.querySelector(sel.tileTitle)?.textContent ?? "").trim(),
         ),
         targetRendered: tiles.some(
           (candidate) =>
             (
-              candidate.querySelector(".record-copy strong")?.textContent ?? ""
+              candidate.querySelector(sel.tileTitle)?.textContent ?? ""
             ).trim() === target,
         ),
       };
     },
     evidenceTraySearchSelector(),
     name,
+    anchors.evidenceTray,
   );
 }
 
@@ -1083,11 +1089,10 @@ async function typeEvidenceTrayQuery(
   query: string,
 ): Promise<EvidenceTraySearchTransport> {
   const selector = evidenceTraySearchSelector();
-  const baselineCountText = await browser.execute(() =>
-    (
-      document.querySelector("[data-interrogation-present-tray] .record-count")
-        ?.textContent ?? ""
-    ).trim(),
+  const baselineCountText = await browser.execute(
+    (countSelector: string) =>
+      (document.querySelector(countSelector)?.textContent ?? "").trim(),
+    `${anchors.evidenceTray.root} ${anchors.evidenceTray.countText}`,
   );
   // The tile set the COMPLETE query must render: the same pure filter the
   // tray binds, over the live inventory. Without it, a trailing keystroke
@@ -1248,7 +1253,7 @@ async function probeSingleResultSearch(
       // This title also matches other records' hidden fields — try the next.
       continue;
     }
-    const lone = await browser.execute(() => {
+    const lone = await browser.execute((sel: typeof anchors.evidenceTray) => {
       const boxRect = (box: DOMRect) => ({
         left: box.left,
         top: box.top,
@@ -1257,15 +1262,10 @@ async function probeSingleResultSearch(
         width: box.width,
         height: box.height,
       });
-      const grid = document.querySelector<HTMLElement>(
-        "[data-interrogation-evidence-grid]",
-      );
-      const tray = document.querySelector<HTMLElement>(
-        "[data-interrogation-present-tray]",
-      );
-      const tile =
-        document.querySelector<HTMLButtonElement>("button.record-tile");
-      const strong = tile?.querySelector(".record-copy strong");
+      const grid = document.querySelector<HTMLElement>(sel.grid);
+      const tray = document.querySelector<HTMLElement>(sel.root);
+      const tile = document.querySelector<HTMLButtonElement>(sel.tile);
+      const strong = tile?.querySelector(sel.tileTitle);
       if (!grid || !tray || !tile || !strong) return null;
       const tileBox = tile.getBoundingClientRect();
       return {
@@ -1275,7 +1275,7 @@ async function probeSingleResultSearch(
         grid: boxRect(grid.getBoundingClientRect()),
         tray: boxRect(tray.getBoundingClientRect()),
       };
-    });
+    }, anchors.evidenceTray);
     if (lone) {
       return {
         query: candidate.title,
@@ -1300,20 +1300,20 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   console.log(
     `[EvidenceTrayGate] first ≥${FINAL_HEARING_MIN_RECORDS}-record tray in ${FINAL_HEARING_SCENE_ID}; shrinking to the 800x600 minimum window`,
   );
-  await ensureMinimumWindowViewport();
-  const viewport = await observedCssViewport();
-  expect(viewport.width).toBe(800); // the compact gate, NOT the 1280x720 case-file viewport
-  expect(viewport.height).toBe(600);
-  mkdirSync(EVIDENCE_TRAY_SCREENSHOT_DIR, { recursive: true });
-
-  // Everything after the 800x600 resize runs under a viewport-restore
-  // guarantee: a failed assertion must not leave the window at 800x600 for
-  // the rest of this browser session — later journey legs do not reset it.
-  // When the gate itself throws, its exception propagates through the
+  // Everything from the 800x600 resize onward runs under a viewport-restore
+  // guarantee: a resize that throws after changing the window, a failed
+  // setup step or a failed assertion must not leave the window at 800x600
+  // for the rest of this browser session — later journey legs do not reset
+  // it. When the gate itself throws, its exception propagates through the
   // finally and the restore error is only logged; when the gate passes,
   // a restore failure becomes the reported error.
   let restoreError: unknown;
   try {
+    await ensureMinimumWindowViewport();
+    const viewport = await observedCssViewport();
+    expect(viewport.width).toBe(800); // the compact gate, NOT the 1280x720 case-file viewport
+    expect(viewport.height).toBe(600);
+    mkdirSync(EVIDENCE_TRAY_SCREENSHOT_DIR, { recursive: true });
     await runEvidenceTrayGeometryChecks(recordName, viewport);
   } finally {
     try {
@@ -1347,14 +1347,15 @@ async function runEvidenceTrayGeometryChecks(
   const gateTrayState = await getPackagedGameState();
   const gateTrayRecords = presentableRecords(gateTrayState.inventory);
   const probeCandidates = (
-    await browser.execute(() =>
-      Array.from(
-        document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-      ).map((tile) => ({
-        title:
-          tile.querySelector(".record-copy strong")?.textContent?.trim() ?? "",
-        unfilteredHeight: tile.getBoundingClientRect().height,
-      })),
+    await browser.execute(
+      (sel: typeof anchors.evidenceTray) =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>(sel.tile)).map(
+          (tile) => ({
+            title: tile.querySelector(sel.tileTitle)?.textContent?.trim() ?? "",
+            unfilteredHeight: tile.getBoundingClientRect().height,
+          }),
+        ),
+      anchors.evidenceTray,
     )
   ).filter(
     (candidate) =>
@@ -1541,18 +1542,22 @@ async function clickRecordTile(recordName: string): Promise<void> {
   await typeEvidenceTrayQuery(recordName);
   await browser.waitUntil(
     async () => {
-      const found = await browser.execute((name: string) => {
-        const tile = Array.from(
-          document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-        ).find(
-          (candidate) =>
-            !candidate.disabled &&
-            (
-              candidate.querySelector(".record-copy strong")?.textContent ?? ""
-            ).trim() === name,
-        );
-        return tile !== undefined;
-      }, recordName);
+      const found = await browser.execute(
+        (name: string, sel: typeof anchors.evidenceTray) => {
+          const tile = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(sel.tile),
+          ).find(
+            (candidate) =>
+              !candidate.disabled &&
+              (
+                candidate.querySelector(sel.tileTitle)?.textContent ?? ""
+              ).trim() === name,
+          );
+          return tile !== undefined;
+        },
+        recordName,
+        anchors.evidenceTray,
+      );
       return found;
     },
     {
@@ -1561,38 +1566,39 @@ async function clickRecordTile(recordName: string): Promise<void> {
       timeoutMsg: `enabled record tile ${recordName} did not appear in the searched tray`,
     },
   );
-  const located = await browser.execute((name: string) => {
-    const grid = document.querySelector<HTMLElement>(
-      "[data-interrogation-evidence-grid]",
-    );
-    const tile = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-    ).find(
-      (candidate) =>
-        !candidate.disabled &&
-        (
-          candidate.querySelector(".record-copy strong")?.textContent ?? ""
-        ).trim() === name,
-    );
-    if (!grid || !tile) return null;
-    const gridBox = grid.getBoundingClientRect();
-    const tileBox = tile.getBoundingClientRect();
-    return {
-      scrollTop: grid.scrollTop,
-      grid: {
-        left: gridBox.left,
-        top: gridBox.top,
-        right: gridBox.right,
-        bottom: gridBox.bottom,
-      },
-      tile: {
-        left: tileBox.left,
-        top: tileBox.top,
-        right: tileBox.right,
-        bottom: tileBox.bottom,
-      },
-    };
-  }, recordName);
+  const located = await browser.execute(
+    (name: string, sel: typeof anchors.evidenceTray) => {
+      const grid = document.querySelector<HTMLElement>(sel.grid);
+      const tile = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(sel.tile),
+      ).find(
+        (candidate) =>
+          !candidate.disabled &&
+          (candidate.querySelector(sel.tileTitle)?.textContent ?? "").trim() ===
+            name,
+      );
+      if (!grid || !tile) return null;
+      const gridBox = grid.getBoundingClientRect();
+      const tileBox = tile.getBoundingClientRect();
+      return {
+        scrollTop: grid.scrollTop,
+        grid: {
+          left: gridBox.left,
+          top: gridBox.top,
+          right: gridBox.right,
+          bottom: gridBox.bottom,
+        },
+        tile: {
+          left: tileBox.left,
+          top: tileBox.top,
+          right: tileBox.right,
+          bottom: tileBox.bottom,
+        },
+      };
+    },
+    recordName,
+    anchors.evidenceTray,
+  );
   if (!located) {
     throw new Error(`record tile ${recordName} was not clickable`);
   }
@@ -1611,20 +1617,23 @@ async function clickRecordTile(recordName: string): Promise<void> {
   expect(located.tile.right).toBeLessThanOrEqual(
     located.grid.right + RECT_TOLERANCE_PX,
   );
-  const clicked = await browser.execute((name: string) => {
-    const tile = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-    ).find(
-      (candidate) =>
-        !candidate.disabled &&
-        (
-          candidate.querySelector(".record-copy strong")?.textContent ?? ""
-        ).trim() === name,
-    );
-    if (!tile) return false;
-    tile.click();
-    return true;
-  }, recordName);
+  const clicked = await browser.execute(
+    (name: string, sel: typeof anchors.evidenceTray) => {
+      const tile = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(sel.tile),
+      ).find(
+        (candidate) =>
+          !candidate.disabled &&
+          (candidate.querySelector(sel.tileTitle)?.textContent ?? "").trim() ===
+            name,
+      );
+      if (!tile) return false;
+      tile.click();
+      return true;
+    },
+    recordName,
+    anchors.evidenceTray,
+  );
   if (!clicked) {
     throw new Error(`record tile ${recordName} was not clickable`);
   }

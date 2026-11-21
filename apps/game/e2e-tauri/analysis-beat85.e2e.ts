@@ -18,6 +18,7 @@ import {
   waitForClassifyDraft,
   waitForPackagedGameState,
 } from "./helpers";
+import { anchors } from "./production-anchors";
 import type { GameStateView } from "$lib/state/types";
 
 const ANALYSIS_SCENE_ID = "analysis_scene_8_5";
@@ -143,7 +144,7 @@ async function refreshTestimonyArtGeometry(): Promise<void> {
 async function snapshotPresentGeometry(): Promise<void> {
   const [stage, tray] = await Promise.all([
     elementRect(".interrogation-stage.active"),
-    elementRect("[data-interrogation-present-tray]"),
+    elementRect(anchors.evidenceTray.root),
   ]);
   if (stage && tray) geometry.present = { stage, tray };
 }
@@ -306,39 +307,33 @@ async function assertInterrogationTestimonySemantics(): Promise<void> {
 
 async function assertInterrogationPresentSemantics(): Promise<void> {
   expect(await $$(INTERROGATION_STAGE_CONTROLS)).toHaveLength(0);
-  const gridColumns = await browser.execute(() => {
-    const grid = document.querySelector<HTMLElement>(
-      "[data-interrogation-evidence-grid]",
-    );
+  const gridColumns = await browser.execute((gridSelector: string) => {
+    const grid = document.querySelector<HTMLElement>(gridSelector);
     if (!grid) return 0;
     return getComputedStyle(grid)
       .gridTemplateColumns.split(/ (?![^()]*\))/)
       .filter(Boolean).length;
-  });
+  }, anchors.evidenceTray.grid);
   expect(gridColumns).toBe(5);
 
-  const escapeButtons = await $$("[data-interrogation-tray-escape]");
+  const escapeButtons = await $$(anchors.evidenceTray.escape);
   expect(escapeButtons).toHaveLength(1);
   const escapeButton = escapeButtons[0];
   if (!escapeButton) throw new Error("Present ESC button is missing");
   expect(await escapeButton.isDisplayed()).toBe(true);
 
-  const detailPanels = await $$("[data-interrogation-evidence-detail]");
+  const detailPanels = await $$(anchors.evidenceTray.detail);
   expect(detailPanels).toHaveLength(1);
   expect(
-    await browser.execute(() => {
-      const grid = document.querySelector("[data-interrogation-evidence-grid]");
-      const detail = document.querySelector(
-        "[data-interrogation-evidence-detail]",
-      );
+    await browser.execute((sel: typeof anchors.evidenceTray) => {
+      const grid = document.querySelector(sel.grid);
+      const detail = document.querySelector(sel.detail);
       return grid !== null && detail !== null && !grid.contains(detail);
-    }),
+    }, anchors.evidenceTray),
   ).toBe(true);
 
-  const warningLayer = await browser.execute(() => {
-    const modal = document.querySelector<HTMLElement>(
-      ".interrogation-tray-scrim",
-    );
+  const warningLayer = await browser.execute((scrimSelector: string) => {
+    const modal = document.querySelector<HTMLElement>(scrimSelector);
     const warning = document.querySelector<HTMLElement>(".thumbnail-warning");
     if (!modal) {
       return {
@@ -376,7 +371,7 @@ async function assertInterrogationPresentSemantics(): Promise<void> {
         Number.parseInt(modalStyle.zIndex, 10),
       receivesPointerInput: topmost === warning || warning.contains(topmost),
     };
-  });
+  }, anchors.evidenceTray.scrim);
   expect(warningLayer).toMatchObject({
     modalPresent: true,
     pointerEvents: "none",
@@ -388,37 +383,38 @@ async function assertInterrogationPresentSemantics(): Promise<void> {
 async function clickPresentRecordWithPointer(
   recordName: string,
 ): Promise<void> {
-  const tiles = await $$(
-    "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
-  );
+  const enabledTileSelector = `${anchors.evidenceTray.grid} ${anchors.evidenceTray.tile}:not(:disabled)`;
+  const tiles = await $$(enabledTileSelector);
   const tileTexts = await tiles.map((candidate) => candidate.getText());
   const tile = tiles[tileTexts.findIndex((text) => text.includes(recordName))];
   if (!tile) {
     throw new Error(`Present record ${recordName} was not available`);
   }
 
-  const hitTest = await browser.execute((name: string) => {
-    const target = Array.from(
-      document.querySelectorAll<HTMLButtonElement>(
-        "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
-      ),
-    ).find((candidate) => (candidate.textContent ?? "").includes(name));
-    if (!target) return null;
-    // A Scene Select jump carries earlier evidence forward, so the grid can
-    // overflow. Scroll the grid itself: WDIO's scrollIntoView only moves the
-    // page viewport, which leaves a tile clipped below the grid.
-    target.scrollIntoView({ block: "center", inline: "nearest" });
-    const rect = target.getBoundingClientRect();
-    const hit = document.elementFromPoint(
-      rect.left + rect.width / 2,
-      rect.top + rect.height / 2,
-    );
-    return {
-      sameTile: hit?.closest("button") === target,
-      interceptedBy:
-        hit?.closest("button")?.className ?? hit?.className ?? null,
-    };
-  }, recordName);
+  const hitTest = await browser.execute(
+    (name: string, tileSelector: string) => {
+      const target = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(tileSelector),
+      ).find((candidate) => (candidate.textContent ?? "").includes(name));
+      if (!target) return null;
+      // A Scene Select jump carries earlier evidence forward, so the grid can
+      // overflow. Scroll the grid itself: WDIO's scrollIntoView only moves the
+      // page viewport, which leaves a tile clipped below the grid.
+      target.scrollIntoView({ block: "center", inline: "nearest" });
+      const rect = target.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return {
+        sameTile: hit?.closest("button") === target,
+        interceptedBy:
+          hit?.closest("button")?.className ?? hit?.className ?? null,
+      };
+    },
+    recordName,
+    enabledTileSelector,
+  );
   if (!hitTest?.sameTile) {
     throw new Error(
       `Present record ${recordName} is blocked from pointer input: ${JSON.stringify(hitTest)}`,
@@ -427,36 +423,40 @@ async function clickPresentRecordWithPointer(
 
   const tileCount = await tiles.length;
   for (let attempt = 0; attempt < tileCount; attempt += 1) {
-    const focused = await browser.execute((name: string) => {
-      const target = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
-        ),
-      ).find((candidate) => (candidate.textContent ?? "").includes(name));
-      return document.activeElement === target;
-    }, recordName);
+    const focused = await browser.execute(
+      (name: string, tileSelector: string) => {
+        const target = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(tileSelector),
+        ).find((candidate) => (candidate.textContent ?? "").includes(name));
+        return document.activeElement === target;
+      },
+      recordName,
+      enabledTileSelector,
+    );
     if (focused) break;
     await browser.keys("Tab");
   }
   expect(
-    await browser.execute((name: string) => {
-      const target = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          "[data-interrogation-evidence-grid] button.record-tile:not(:disabled)",
-        ),
-      ).find((candidate) => (candidate.textContent ?? "").includes(name));
-      return document.activeElement === target;
-    }, recordName),
+    await browser.execute(
+      (name: string, tileSelector: string) => {
+        const target = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(tileSelector),
+        ).find((candidate) => (candidate.textContent ?? "").includes(name));
+        return document.activeElement === target;
+      },
+      recordName,
+      enabledTileSelector,
+    ),
   ).toBe(true);
   await browser.waitUntil(
     async () =>
       browser.execute(
-        (name: string) =>
-          (
-            document.querySelector("[data-interrogation-evidence-detail]")
-              ?.textContent ?? ""
-          ).includes(name),
+        (name: string, detailSelector: string) =>
+          (document.querySelector(detailSelector)?.textContent ?? "").includes(
+            name,
+          ),
         recordName,
+        anchors.evidenceTray.detail,
       ),
     {
       timeout: 5000,

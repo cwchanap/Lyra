@@ -45,8 +45,24 @@ export const anchors = {
   caseFile: "案件檔案",
   caseFileEvidenceTab: "證物",
   caseFileReexamine: "重新檢視",
-  // InterrogationEvidenceTray: the SHOW/PRESENT tray's search input (HPA-705).
-  evidenceTraySearch: "搜尋紀錄",
+  // InterrogationEvidenceTray (HPA-705): the SHOW/PRESENT tray's search
+  // aria label plus every DOM selector the journey's 800x600 gate, search
+  // probes and tile clicks use against the tray.
+  evidenceTray: {
+    searchLabel: "搜尋紀錄",
+    root: "[data-interrogation-present-tray]",
+    scrim: ".interrogation-tray-scrim",
+    escape: "[data-interrogation-tray-escape]",
+    lineRecord: "[data-interrogation-line-record]",
+    grid: "[data-interrogation-evidence-grid]",
+    detail: "[data-interrogation-evidence-detail]",
+    tile: "button.record-tile",
+    tileTitle: ".record-copy strong",
+    visual: ".record-visual",
+    countText: ".record-count",
+    eyebrow: ".eyebrow",
+    withdraw: "button.withdraw",
+  },
 
   // investigation_scene_p1: hotspots have authored layouts and render as
   // placed InvestigationSceneSurface targets (調查：<label>).
