@@ -684,6 +684,11 @@ describe("InterrogationEvidenceTray", () => {
     await fireEvent.keyDown(evidence, { key: "ArrowUp" });
     expect(evidence).toHaveFocus();
 
+    // A competing pointer hover previews a different record — ArrowDown on
+    // the FOCUSED tile must open that tile's record, not the hovered one.
+    await user.hover(statement);
+    expect(detail).toHaveTextContent("我看見她走進巷子。");
+
     // ArrowDown reaches this tile's scrollable detail directly — without
     // presenting the record and without tabbing past the statement tile,
     // whose focus handler would swap the inspected record.
@@ -691,12 +696,94 @@ describe("InterrogationEvidenceTray", () => {
     expect(detail).toHaveFocus();
     expect(detail).toHaveTextContent("咖啡收據");
     expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+    expect(detail).not.toHaveTextContent("我看見她走進巷子。");
 
-    // Shift+Tab returns to the inspected tile — not the grid's last tile.
+    // Shift+Tab returns to the inspected tile — not the grid's last tile,
+    // and not the hovered record the preview had pinned.
     await user.tab({ shift: true });
     expect(evidence).toHaveFocus();
     expect(statement).not.toHaveFocus();
     expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+  });
+
+  it("lets the focused detail panel scroll an overflowing record by keyboard without presenting", async () => {
+    const user = userEvent.setup();
+    const onPresent = vi.fn();
+    const overflowingInventory: Inventory = {
+      evidence: [
+        coffeeReceipt,
+        neutralEvidenceRecordView({
+          id: "ledger",
+          name: "手寫帳本",
+          description: "影印費逐筆記錄。",
+          details:
+            "一月到三月，每頁都是影印費。四月改記收銀紙卷。五月之後只剩一行：老闆自己抄。",
+          imageAssetId: null,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+        neutralEvidenceRecordView({
+          id: "monitor",
+          name: "監視器截圖",
+          description: "店內監視器定格。",
+          details: "",
+          imageAssetId: null,
+          onReexamine: null,
+          collectedInChapterId: "chapter_1",
+          collectedInSceneId: "scene_1",
+        }),
+      ],
+      statements: [],
+    };
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ onPresent, inventory: overflowingInventory }),
+    );
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    if (!detail) throw new Error("detail panel missing");
+    const ledger = screen.getByRole("button", { name: /手寫帳本/ });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    ledger.focus();
+    await waitFor(() => expect(detail).toHaveTextContent("手寫帳本"));
+
+    // ArrowDown jumps straight to the middle tile's scrollable detail: Tab
+    // would have to pass the monitor tile, whose focus handler would swap
+    // the inspected record before the panel is reached.
+    await user.keyboard("{ArrowDown}");
+    expect(detail).toHaveFocus();
+    expect(detail).toHaveTextContent("影印費逐筆記錄。");
+
+    // jsdom has no layout engine, so "scrolls by keyboard" is pinned as the
+    // DOM contract: the panel is a scrollable focus region (tabindex, and
+    // the component's .record-detail overflow-y: auto) and nothing hijacks
+    // its scroll keys, so the browser's native scroll proceeds.
+    for (const key of ["ArrowDown", "PageDown", "End"]) {
+      expect(await fireEvent.keyDown(detail, { key })).toBe(true);
+    }
+    expect(detail).toHaveFocus();
+    expect(detail).toHaveTextContent("手寫帳本");
+    expect(onPresent).not.toHaveBeenCalled();
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "src/lib/components/InterrogationEvidenceTray.svelte",
+      ),
+      "utf8",
+    ).replace(/\s+/g, " ");
+    expect(source).toContain(
+      ".record-detail { box-sizing: border-box; min-height: 96px; padding: 14px 18px; overflow-y: auto;",
+    );
+
+    // Shift+Tab returns to the middle tile, not the grid's last tile.
+    await user.tab({ shift: true });
+    expect(ledger).toHaveFocus();
   });
 
   it("suspends the ArrowDown detail jump while an upper layer is open", async () => {

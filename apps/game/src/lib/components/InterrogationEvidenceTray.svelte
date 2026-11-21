@@ -225,12 +225,18 @@
   // non-final card's overflowing detail (Tab would have to pass every later
   // tile, each refocusing the panel on a different record). Suspended like
   // the Tab trap while an upper layer owns keyboard navigation.
-  function handleTileKeydown(event: KeyboardEvent) {
+  function handleTileKeydown(event: KeyboardEvent, record: PresentableRecord) {
     if (topLayerOpen) return;
     /* v8 ignore next -- defensive: the detail panel binds on the same render path as the tiles, so a focused tile always has a bound panel. */
     if (!detailPanel) return;
     if (event.key !== "ArrowDown") return;
     event.preventDefault();
+    // The shortcut opens the record whose tile received the key, not a
+    // competing hover preview (activeRecord gives hover priority): pin the
+    // inspected record and drop the hover so the panel — and the Shift+Tab
+    // return target — match the pressed tile.
+    hoveredRecordKey = null;
+    inspectedRecordKey = presentableRecordKey(record);
     detailPanel.focus();
   }
 
@@ -361,7 +367,7 @@
           onmouseleave={() => clearHoveredRecordDetail(record)}
           onfocus={() => showFocusedRecordDetail(record)}
           onblur={() => clearFocusedRecordDetail(record)}
-          onkeydown={handleTileKeydown}
+          onkeydown={(event) => handleTileKeydown(event, record)}
           onclick={() => present(record.kind, record.id)}
         >
           <span class="record-visual" aria-hidden="true">
