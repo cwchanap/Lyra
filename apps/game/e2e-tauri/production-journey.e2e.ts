@@ -34,6 +34,12 @@ import {
   DIALOGUE_DRAIN_CAP,
   STORY_CLEARED_STORAGE_KEY,
 } from "./production-anchors";
+import {
+  type EvidenceTraySearchState,
+  evidenceTraySearchExactQueryRendered,
+  evidenceTraySearchFilterApplied,
+  evidenceTraySearchProbeObserved,
+} from "../src/lib/e2e/evidence-tray-search-verify";
 import type {
   CharacterView,
   GameStateView,
@@ -940,47 +946,43 @@ async function evidenceTrayTileCount(): Promise<number> {
 }
 
 /**
- * Observable proof that the tray's Svelte search applied to the COMPLETE
- * `query`: the input holds the full value (partial CJK key sequences fail
- * here), the record-count text left its pre-search value (a no-op setValue
- * on the already-matching unfiltered tray can never do that), and the exact
- * full-title tile renders.
+ * In-page snapshot of the open tray's search state, fed to the pure
+ * verification helpers in `src/lib/e2e/evidence-tray-search-verify.ts`:
+ * input value, trimmed record-count text, rendered tile count, and whether
+ * a tile whose full title equals `name` is rendered. `null` = the search
+ * input is missing (tray not open); every helper then rejects.
  */
-async function evidenceTrayFilterApplied(
-  query: string,
-  baselineCountText: string,
-): Promise<boolean> {
+async function readEvidenceTraySearchState(
+  name: string,
+): Promise<EvidenceTraySearchState | null> {
   return browser.execute(
-    (searchSelector: string, name: string, baseline: string) => {
+    (
+      searchSelector: string,
+      target: string,
+    ): EvidenceTraySearchState | null => {
       const input = document.querySelector<HTMLInputElement>(searchSelector);
-      if (!input || input.value !== name) return false;
       const countText = (
         document.querySelector(
           "[data-interrogation-present-tray] .record-count",
         )?.textContent ?? ""
       ).trim();
-      const tileRendered = Array.from(
+      const tiles = Array.from(
         document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-      ).some(
-        (candidate) =>
-          (
-            candidate.querySelector(".record-copy strong")?.textContent ?? ""
-          ).trim() === name,
       );
-      if (!tileRendered) return false;
-      if (countText !== "" && countText !== baseline) return true;
-      // An unchanged count is still success when the count shows the full
-      // list ("顯示 N / N"): a query that matches every record legitimately
-      // leaves the text identical to the baseline instead of failing the
-      // whole helper. A no-op setValue on exactly such a query is
-      // indistinguishable from the DOM alone, but the caller's first-page
-      // placement + click assertions still fail loudly on a dropped update.
-      const shown = /^顯示 (\d+) \/ (\d+)$/.exec(countText);
-      return shown?.[1] !== undefined && shown[1] === shown[2];
+      return {
+        value: input?.value ?? null,
+        countText,
+        tileCount: tiles.length,
+        targetRendered: tiles.some(
+          (candidate) =>
+            (
+              candidate.querySelector(".record-copy strong")?.textContent ?? ""
+            ).trim() === target,
+        ),
+      };
     },
     evidenceTraySearchSelector(),
-    query,
-    baselineCountText,
+    name,
   );
 }
 
@@ -996,16 +998,36 @@ async function waitForEvidenceTraySearch(): Promise<void> {
 type EvidenceTraySearchTransport = "setValue" | "valueAndInputEvent";
 
 /**
+ * Probe suffixes for the fallback's liveness proof: NFKC-stable symbols that
+ * match no record field. Each probe attempt must EMPTY the grid to count as
+ * observed (evidenceTraySearchProbeObserved), so an accidentally matching
+ * suffix is rejected and the next one tried — never silently accepted.
+ */
+const EVIDENCE_TRAY_PROBE_SUFFIXES = ["☂", "♪"];
+
+/**
  * Types `query` into the open tray's search input and verifies the Svelte
- * filter really applied before crediting the transport: the COMPLETE input
- * value plus an observable filter update (count text changed from the
- * pre-search baseline AND the exact full-title tile rendered) — the tile
- * alone proves nothing because it already exists in the unfiltered tray, so
- * a no-op setValue, a dropped Svelte input update, or a partially delivered
- * CJK key sequence can never pass. WebDriver `setValue` — real key events
- * through tauri-plugin-wdio/WebKit — is tried first; only when it fails to
- * update the component does this helper fall back to the repo-standard
- * `input.value` + `input` event dispatch. The chosen transport is logged so
+ * filter really applied before crediting the transport.
+ *
+ * WebDriver `setValue` — real key events through tauri-plugin-wdio/WebKit —
+ * is tried first under STRICT verification (evidenceTraySearchFilterApplied):
+ * the COMPLETE value, a record-count text that has LEFT the pre-search
+ * baseline, and the exact full-title tile. The tile alone proves nothing (it
+ * already exists in the unfiltered tray), and neither does an unchanged
+ * count — the unfiltered baseline is itself an "顯示 N / N" text, which is
+ * exactly what a no-op setValue (value filled, Svelte input event dropped)
+ * looks like.
+ *
+ * A query that matches EVERY record legitimately returns the count to the
+ * baseline, where the DOM alone cannot distinguish it from a dropped update.
+ * The fallback therefore proves liveness FIRST: via the repo-standard
+ * `input.value` + `input` event dispatch, a probe value (query + a no-match
+ * suffix) must move the count and empty the grid; only then is the exact
+ * query accepted (evidenceTraySearchExactQueryRendered) — its count may
+ * lawfully sit back on the baseline, because the probe transition proved the
+ * binding processes this input's events. If even the synthetic events cannot
+ * move the count, the search binding is broken and the helper fails loudly
+ * instead of crediting a dead transport. The chosen transport is logged so
  * CJK input reliability stays traceable.
  */
 async function typeEvidenceTrayQuery(
@@ -1018,38 +1040,81 @@ async function typeEvidenceTrayQuery(
         ?.textContent ?? ""
     ).trim(),
   );
-  const waitUntilApplied = (transport: EvidenceTraySearchTransport) =>
-    browser.waitUntil(
-      () => evidenceTrayFilterApplied(query, baselineCountText),
-      {
-        timeout: 5000,
-        interval: 100,
-        timeoutMsg: `evidence tray search via ${transport} did not update the record list`,
-      },
+  const filterApplied = async () =>
+    evidenceTraySearchFilterApplied(
+      await readEvidenceTraySearchState(query),
+      query,
+      baselineCountText,
     );
 
   let transport: EvidenceTraySearchTransport = "setValue";
   try {
     const input = await browser.$(selector);
     await input.setValue(query);
-    await waitUntilApplied("setValue");
+    await browser.waitUntil(filterApplied, {
+      timeout: 5000,
+      interval: 100,
+      timeoutMsg:
+        "evidence tray search via setValue did not update the record list",
+    });
   } catch {
     transport = "valueAndInputEvent";
-    const value = await browser.execute(
-      (inputSelector: string, name: string) => {
-        const input = document.querySelector<HTMLInputElement>(inputSelector);
-        if (!input) return null;
-        input.value = name;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        return input.value;
-      },
-      selector,
-      query,
-    );
-    if (value !== query) {
+    const syntheticSet = (value: string) =>
+      browser.execute(
+        (inputSelector: string, next: string) => {
+          const input = document.querySelector<HTMLInputElement>(inputSelector);
+          if (!input) return false;
+          input.value = next;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          return true;
+        },
+        selector,
+        value,
+      );
+    let probeApplied = false;
+    for (const suffix of EVIDENCE_TRAY_PROBE_SUFFIXES) {
+      const probeValue = query + suffix;
+      if (!(await syntheticSet(probeValue))) {
+        throw new Error("evidence tray search input is missing");
+      }
+      try {
+        await browser.waitUntil(
+          async () =>
+            evidenceTraySearchProbeObserved(
+              await readEvidenceTraySearchState(query),
+              probeValue,
+              baselineCountText,
+            ),
+          { timeout: 2000, interval: 100 },
+        );
+        probeApplied = true;
+        break;
+      } catch {
+        // No liveness proof for this suffix (dead binding, or the suffix
+        // matched records — probeObserved rejects both). Try the next one.
+      }
+    }
+    if (!probeApplied) {
+      throw new Error(
+        "evidence tray search binding did not respond to synthetic input events; suspected WebKit input failure left no working fallback",
+      );
+    }
+    if (!(await syntheticSet(query))) {
       throw new Error("evidence tray search input is missing");
     }
-    await waitUntilApplied("valueAndInputEvent");
+    await browser.waitUntil(
+      async () =>
+        evidenceTraySearchExactQueryRendered(
+          await readEvidenceTraySearchState(query),
+          query,
+        ),
+      {
+        timeout: 5000,
+        interval: 100,
+        timeoutMsg:
+          "evidence tray search did not render the exact query result after the liveness probe",
+      },
+    );
   }
   console.log(`[EvidenceTray] searched "${query}" via ${transport}`);
   return transport;
