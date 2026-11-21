@@ -475,8 +475,6 @@ type EvidenceTraySnapshot = {
   headerScrollWidth: number;
   /** Every visible flex item of the header, with a debug label. */
   headerChildren: Array<{ label: string; rect: BoxRect }>;
-  /** Measured flex-line count of the header (distinct row centers). */
-  headerRows: number;
   eyebrowDisplay: string | null;
   lineRecord: BoxRect | null;
   grid: BoxRect | null;
@@ -549,21 +547,6 @@ async function measureEvidenceTray(
       });
       const rectOf = (element: Element | null): BoxRect | null =>
         element ? boxRect(element.getBoundingClientRect()) : null;
-      // Flex lines of a wrapped container, counted from laid-out rects: the
-      // compact header uses align-items: center, so items on the same line
-      // share their vertical center (2px tolerance for subpixel rounding).
-      const distinctRowCount = (
-        rects: Array<{ top: number; bottom: number }>,
-      ): number => {
-        const rows: number[] = [];
-        for (const rect of rects) {
-          const center = (rect.top + rect.bottom) / 2;
-          if (!rows.some((seen) => Math.abs(seen - center) <= 2)) {
-            rows.push(center);
-          }
-        }
-        return rows.length;
-      };
       const tray = document.querySelector<HTMLElement>(
         "[data-interrogation-present-tray]",
       );
@@ -640,7 +623,6 @@ async function measureEvidenceTray(
         headerClientWidth: header?.clientWidth ?? 0,
         headerScrollWidth: header?.scrollWidth ?? 0,
         headerChildren,
-        headerRows: distinctRowCount(headerChildren.map((child) => child.rect)),
         eyebrowDisplay: eyebrow ? getComputedStyle(eyebrow).display : null,
         lineRecord: rectOf(
           tray?.querySelector("blockquote.line-record") ?? null,
@@ -763,16 +745,9 @@ function expectEvidenceTrayCompactGeometry(
       }
     }
   }
-  // Measured wrap state at 800x600: the compact header lays out on exactly
-  // ONE flex line, so the wrap requirement cannot be asserted against the
-  // natural layout — it is protected as a capability probe instead
-  // (probeEvidenceTrayHeaderWrap). This also fails loudly if a CSS/font
-  // change ever makes the natural header wrap at this width.
-  if (snapshot.headerRows !== 1) {
-    throw fail(
-      `compact header lays out on ${snapshot.headerRows} rows at 800x600; expected the single natural line`,
-    );
-  }
+  // The natural header row count is NOT asserted: any count passes as long
+  // as the items stay contained and pairwise non-overlapping (above); wrap
+  // capability itself is proven by probeEvidenceTrayHeaderWrap.
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
       const [aName, aRect] = rows[i];
@@ -835,12 +810,11 @@ type EvidenceTrayHeaderWrapProbe = {
 };
 
 /**
- * At 800x600 the compact PRESENT header fits on one line (asserted in
- * expectEvidenceTrayCompactGeometry), so the required flex-wrap behaviour is
- * proven as a CAPABILITY: clamp the header's inline max-width below its
- * measured single-line requirement — the sum of item widths plus column
- * gaps, NOT the laid-out left/right span (justify-content: space-between
- * spreads items across the full row). The flex line must then break into ≥2
+ * The required flex-wrap behaviour is proven as a CAPABILITY: clamp the
+ * header's inline max-width below its measured single-line requirement —
+ * the sum of item widths plus column gaps, NOT the laid-out left/right span
+ * (justify-content: space-between spreads items across the full row). The
+ * flex line must then break into ≥2
  * measured rows without overflowing. One atomic browser.execute clamps,
  * measures, removes the inline style and re-measures, so the style can never
  * leak into the rest of the journey — even if an assertion on the returned
@@ -917,7 +891,7 @@ async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProb
  * requirement, the header breaks into at least two measured flex rows
  * WITHOUT horizontal squeeze-out, its items stay contained and pairwise
  * non-overlapping on every line, and removing the clamp restores the
- * natural single-line layout.
+ * original natural row count.
  */
 function expectEvidenceTrayHeaderWraps(
   probe: EvidenceTrayHeaderWrapProbe,
@@ -926,7 +900,6 @@ function expectEvidenceTrayHeaderWraps(
   const fail = (message: string): Error =>
     new Error(`evidence tray 800x600 wrap probe (${label}): ${message}`);
 
-  expect(probe.naturalRows).toBe(1);
   expect(probe.clampedRows).toBeGreaterThanOrEqual(2);
   expect(probe.clampedScrollWidth).toBeLessThanOrEqual(
     probe.clampedClientWidth + RECT_TOLERANCE_PX,
@@ -1211,10 +1184,11 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   );
   await browser.saveScreenshot(initialScreenshot);
 
-  // Wrap capability (review round 2): the natural compact header fits ONE
-  // line at 800x600 (asserted in the geometry gate), so the explicit wrap
-  // requirement is proven by clamping the header's inline width in-page: it
-  // must break into ≥2 flex rows without overflowing, then restore. No
+  // Wrap capability (review round 2): the natural compact header is not
+  // required to stay on one line (a fully contained multi-row header also
+  // satisfies the brief), so the explicit wrap requirement is proven by
+  // clamping the header's inline width in-page: it must break into ≥2 flex
+  // rows without overflowing, then restore its original row count. No
   // window resize, no production layout change, no style leakage (atomic
   // single execute).
   const wrapProbe = await probeEvidenceTrayHeaderWrap();
@@ -1226,7 +1200,7 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
     `initial tray (${initial.tileCount} records)`,
   );
   console.log(
-    `[EvidenceTrayGate] header wrap probe: natural ${wrapProbe.naturalRows} row, clamped ${wrapProbe.clampedRows} rows`,
+    `[EvidenceTrayGate] header wrap probe: natural ${wrapProbe.naturalRows} rows, clamped ${wrapProbe.clampedRows} rows`,
   );
 
   // Real-name search at 800x600: the hit stays on the first visible page and
