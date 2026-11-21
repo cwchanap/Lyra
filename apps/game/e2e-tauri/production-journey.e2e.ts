@@ -475,6 +475,8 @@ type EvidenceTraySnapshot = {
   headerScrollWidth: number;
   /** Every visible flex item of the header, with a debug label. */
   headerChildren: Array<{ label: string; rect: BoxRect }>;
+  /** Measured flex-line count of the header (distinct row centers). */
+  headerRows: number;
   eyebrowDisplay: string | null;
   lineRecord: BoxRect | null;
   grid: BoxRect | null;
@@ -547,6 +549,21 @@ async function measureEvidenceTray(
       });
       const rectOf = (element: Element | null): BoxRect | null =>
         element ? boxRect(element.getBoundingClientRect()) : null;
+      // Flex lines of a wrapped container, counted from laid-out rects: the
+      // compact header uses align-items: center, so items on the same line
+      // share their vertical center (2px tolerance for subpixel rounding).
+      const distinctRowCount = (
+        rects: Array<{ top: number; bottom: number }>,
+      ): number => {
+        const rows: number[] = [];
+        for (const rect of rects) {
+          const center = (rect.top + rect.bottom) / 2;
+          if (!rows.some((seen) => Math.abs(seen - center) <= 2)) {
+            rows.push(center);
+          }
+        }
+        return rows.length;
+      };
       const tray = document.querySelector<HTMLElement>(
         "[data-interrogation-present-tray]",
       );
@@ -623,6 +640,7 @@ async function measureEvidenceTray(
         headerClientWidth: header?.clientWidth ?? 0,
         headerScrollWidth: header?.scrollWidth ?? 0,
         headerChildren,
+        headerRows: distinctRowCount(headerChildren.map((child) => child.rect)),
         eyebrowDisplay: eyebrow ? getComputedStyle(eyebrow).display : null,
         lineRecord: rectOf(
           tray?.querySelector("blockquote.line-record") ?? null,
@@ -664,7 +682,8 @@ async function measureEvidenceTray(
  * mutually overlapping, the compact media query provably active (48px
  * thumbnails, hidden eyebrow), header allowed to wrap without horizontal
  * squeeze-out and with its own controls (heading/progress, search input,
- * count, ESC) contained and non-overlapping, grid not clipping horizontally,
+ * count, ESC) contained, non-overlapping and measured on exactly ONE natural
+ * flex line, grid not clipping horizontally,
  * every first-row title fully visible, and the grid scrolled to its top.
  */
 function expectEvidenceTrayCompactGeometry(
@@ -744,6 +763,16 @@ function expectEvidenceTrayCompactGeometry(
       }
     }
   }
+  // Measured wrap state at 800x600: the compact header lays out on exactly
+  // ONE flex line, so the wrap requirement cannot be asserted against the
+  // natural layout — it is protected as a capability probe instead
+  // (probeEvidenceTrayHeaderWrap). This also fails loudly if a CSS/font
+  // change ever makes the natural header wrap at this width.
+  if (snapshot.headerRows !== 1) {
+    throw fail(
+      `compact header lays out on ${snapshot.headerRows} rows at 800x600; expected the single natural line`,
+    );
+  }
   for (let i = 0; i < rows.length; i += 1) {
     for (let j = i + 1; j < rows.length; j += 1) {
       const [aName, aRect] = rows[i];
@@ -792,6 +821,136 @@ function expectEvidenceTrayCompactGeometry(
     }
     expectRectWithin(entry.rect, gridRect);
   }
+}
+
+/** Result of the in-page header wrap-capability probe. */
+type EvidenceTrayHeaderWrapProbe = {
+  naturalRows: number;
+  clampedRows: number;
+  clampedScrollWidth: number;
+  clampedClientWidth: number;
+  clampedHeader: BoxRect | null;
+  clampedChildren: Array<{ label: string; rect: BoxRect }>;
+  restoredRows: number;
+};
+
+/**
+ * At 800x600 the compact PRESENT header fits on one line (asserted in
+ * expectEvidenceTrayCompactGeometry), so the required flex-wrap behaviour is
+ * proven as a CAPABILITY: clamp the header's inline max-width below its
+ * measured single-line requirement — the sum of item widths plus column
+ * gaps, NOT the laid-out left/right span (justify-content: space-between
+ * spreads items across the full row). The flex line must then break into ≥2
+ * measured rows without overflowing. One atomic browser.execute clamps,
+ * measures, removes the inline style and re-measures, so the style can never
+ * leak into the rest of the journey — even if an assertion on the returned
+ * data fails afterwards.
+ */
+async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProbe | null> {
+  return browser.execute(() => {
+    const header = document.querySelector<HTMLElement>(
+      "[data-interrogation-present-tray] header",
+    );
+    if (!header) return null;
+    const visibleChildren = () =>
+      Array.from(header.children).filter(
+        (child): child is HTMLElement =>
+          child instanceof HTMLElement &&
+          getComputedStyle(child).display !== "none",
+      );
+    const rowCount = (children: HTMLElement[]): number => {
+      const rows: number[] = [];
+      for (const child of children) {
+        const rect = child.getBoundingClientRect();
+        const center = (rect.top + rect.bottom) / 2;
+        if (!rows.some((seen) => Math.abs(seen - center) <= 2)) {
+          rows.push(center);
+        }
+      }
+      return rows.length;
+    };
+    const rectOf = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return {
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      };
+    };
+    const labelOf = (child: HTMLElement): string =>
+      child.tagName.toLowerCase() +
+      (child.classList.length > 0 ? `.${String(child.classList[0])}` : "");
+    const children = visibleChildren();
+    const naturalRows = rowCount(children);
+    const columnGap = parseFloat(getComputedStyle(header).columnGap) || 0;
+    const requiredSingleLineWidth =
+      children.reduce(
+        (sum, child) => sum + child.getBoundingClientRect().width,
+        0,
+      ) +
+      columnGap * Math.max(0, children.length - 1);
+    header.style.maxWidth = `${Math.max(requiredSingleLineWidth - 24, 0)}px`;
+    void header.offsetHeight; // force the clamped reflow before measuring
+    const clampedChildren = visibleChildren().map((child) => ({
+      label: labelOf(child),
+      rect: rectOf(child),
+    }));
+    const clamped = {
+      naturalRows,
+      clampedRows: rowCount(visibleChildren()),
+      clampedScrollWidth: header.scrollWidth,
+      clampedClientWidth: header.clientWidth,
+      clampedHeader: rectOf(header),
+      clampedChildren,
+    };
+    header.style.maxWidth = "";
+    void header.offsetHeight; // force the restored reflow before measuring
+    return { ...clamped, restoredRows: rowCount(visibleChildren()) };
+  });
+}
+
+/**
+ * Asserts the wrap-capability probe: clamped below its single-line
+ * requirement, the header breaks into at least two measured flex rows
+ * WITHOUT horizontal squeeze-out, its items stay contained and pairwise
+ * non-overlapping on every line, and removing the clamp restores the
+ * natural single-line layout.
+ */
+function expectEvidenceTrayHeaderWraps(
+  probe: EvidenceTrayHeaderWrapProbe,
+  label: string,
+): void {
+  const fail = (message: string): Error =>
+    new Error(`evidence tray 800x600 wrap probe (${label}): ${message}`);
+
+  expect(probe.naturalRows).toBe(1);
+  expect(probe.clampedRows).toBeGreaterThanOrEqual(2);
+  expect(probe.clampedScrollWidth).toBeLessThanOrEqual(
+    probe.clampedClientWidth + RECT_TOLERANCE_PX,
+  );
+  const clampedHeader = requireRect(probe.clampedHeader, "clamped header");
+  if (probe.clampedChildren.length === 0) {
+    throw fail("clamped header has no measurable visible children");
+  }
+  for (const { label: childName, rect: childRect } of probe.clampedChildren) {
+    if (childRect.width <= 0 || childRect.height <= 0) {
+      throw fail(`clamped header child ${childName} has an empty rect`);
+    }
+    expectRectWithin(childRect, clampedHeader);
+  }
+  for (let i = 0; i < probe.clampedChildren.length; i += 1) {
+    for (let j = i + 1; j < probe.clampedChildren.length; j += 1) {
+      const a = probe.clampedChildren[i];
+      const b = probe.clampedChildren[j];
+      if (rectsOverlap(a.rect, b.rect)) {
+        throw fail(`clamped header child ${a.label} overlaps ${b.label}`);
+      }
+    }
+  }
+  expect(probe.restoredRows).toBe(probe.naturalRows);
 }
 
 /** The number of record tiles currently rendered in the open tray. */
@@ -1052,6 +1211,24 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   );
   await browser.saveScreenshot(initialScreenshot);
 
+  // Wrap capability (review round 2): the natural compact header fits ONE
+  // line at 800x600 (asserted in the geometry gate), so the explicit wrap
+  // requirement is proven by clamping the header's inline width in-page: it
+  // must break into ≥2 flex rows without overflowing, then restore. No
+  // window resize, no production layout change, no style leakage (atomic
+  // single execute).
+  const wrapProbe = await probeEvidenceTrayHeaderWrap();
+  if (!wrapProbe) {
+    throw new Error("evidence tray 800x600 wrap probe: tray header not found");
+  }
+  expectEvidenceTrayHeaderWraps(
+    wrapProbe,
+    `initial tray (${initial.tileCount} records)`,
+  );
+  console.log(
+    `[EvidenceTrayGate] header wrap probe: natural ${wrapProbe.naturalRows} row, clamped ${wrapProbe.clampedRows} rows`,
+  );
+
   // Real-name search at 800x600: the hit stays on the first visible page and
   // keeps its natural height — the row must not stretch to the grid track
   // when only a few results remain (align-content: start).
@@ -1138,6 +1315,10 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
         },
         searchTarget: recordName,
         searchTransport,
+        headerRows: {
+          natural: wrapProbe.naturalRows,
+          clamped: wrapProbe.clampedRows,
+        },
         singleResult,
         tileHeight: { unfiltered: unfilteredHeight, filtered: target.height },
         screenshots,
