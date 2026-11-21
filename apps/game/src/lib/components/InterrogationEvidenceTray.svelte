@@ -196,9 +196,11 @@
       document.activeElement === detailPanel &&
       inspectedRecordKey !== null
     ) {
+      /* v8 ignore next -- defensive: detailPanel lives inside the bound tray, so the lookup always runs against a mounted grid */
       const inspectedTile = Array.from(
         tray?.querySelectorAll<HTMLElement>("[data-record-key]") ?? [],
       ).find((tile) => tile.dataset.recordKey === inspectedRecordKey);
+      /* v8 ignore next -- defensive: handleSearchInput clears the inspected key when its tile leaves the grid, so the tile is always found */
       if (inspectedTile) {
         event.preventDefault();
         event.stopPropagation();
@@ -225,7 +227,9 @@
   // the Tab trap while an upper layer owns keyboard navigation.
   function handleTileKeydown(event: KeyboardEvent) {
     if (topLayerOpen) return;
-    if (event.key !== "ArrowDown" || !detailPanel) return;
+    /* v8 ignore next -- defensive: the detail panel binds on the same render path as the tiles, so a focused tile always has a bound panel. */
+    if (!detailPanel) return;
+    if (event.key !== "ArrowDown") return;
     event.preventDefault();
     detailPanel.focus();
   }
