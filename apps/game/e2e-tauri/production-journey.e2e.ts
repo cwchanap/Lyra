@@ -40,6 +40,10 @@ import {
   evidenceTraySearchFilterApplied,
   evidenceTraySearchProbeObserved,
 } from "../src/lib/e2e/evidence-tray-search-verify";
+import {
+  filterPresentableRecords,
+  presentableRecords,
+} from "$lib/interrogation/presentation";
 import type {
   CharacterView,
   GameStateView,
@@ -454,18 +458,22 @@ const FINAL_HEARING_SCENE_ID = "interrogation_scene_19";
  */
 const FINAL_HEARING_MIN_RECORDS = 74;
 
-/** Screenshots are PR artifacts: CI uploads all of apps/game/e2e-artifacts/. */
-const EVIDENCE_TRAY_SCREENSHOT_DIR = path.join(
-  process.cwd(),
-  "e2e-artifacts",
-  "save-e2e",
-  // One directory per runner attempt (--attempts retries): a retry must not
-  // overwrite the previous attempt's evidence. Manual runs without the
-  // runner keep the original directory name.
-  process.env.LYRA_E2E_ATTEMPT
-    ? `evidence-tray-800x600-attempt-${process.env.LYRA_E2E_ATTEMPT}`
-    : "evidence-tray-800x600",
-);
+/**
+ * Screenshots are PR artifacts: CI uploads all of apps/game/e2e-artifacts/.
+ * The runner hands each phase+attempt a run-scoped LYRA_E2E_OUTPUT_DIR
+ * (runs/<runId>/outputs/attempt-N/<root>/<phase>, still under
+ * e2e-artifacts) — a flat attempt-N directory would collide across separate
+ * runner invocations and overwrite the previous run's evidence. Manual
+ * runs without the runner keep the original directory name.
+ */
+const EVIDENCE_TRAY_SCREENSHOT_DIR =
+  process.env.LYRA_E2E_OUTPUT_DIR ??
+  path.join(
+    process.cwd(),
+    "e2e-artifacts",
+    "save-e2e",
+    "evidence-tray-800x600",
+  );
 
 type BoxRect = {
   left: number;
@@ -495,7 +503,14 @@ type EvidenceTraySnapshot = {
   detail: BoxRect | null;
   footer: BoxRect | null;
   withdrawButton: BoxRect | null;
-  firstRowTitles: Array<{ text: string; rect: BoxRect }>;
+  firstRowTitles: Array<{
+    text: string;
+    rect: BoxRect;
+    tileRect: BoxRect;
+    /** True when the title's scroll box exceeds its client box — the line
+     * clamp/ellipsis signature a clean getBoundingClientRect cannot show. */
+    clipped: boolean;
+  }>;
   firstTileVisualHeight: number | null;
   tileCount: number;
   countText: string;
@@ -535,6 +550,27 @@ function rectsOverlap(a: BoxRect, b: BoxRect): boolean {
     b.left < a.right - RECT_TOLERANCE_PX &&
     a.top < b.bottom - RECT_TOLERANCE_PX &&
     b.top < a.bottom - RECT_TOLERANCE_PX
+  );
+}
+
+/**
+ * The compact tray pins its height, so filtering must not move or resize
+ * it: every side of the current tray rect stays within tolerance of the
+ * unfiltered reference. Applied to the primary search AND the single-result
+ * probe.
+ */
+function expectTrayStable(current: BoxRect, reference: BoxRect): void {
+  expect(Math.abs(current.top - reference.top)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(Math.abs(current.left - reference.left)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(Math.abs(current.width - reference.width)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(Math.abs(current.height - reference.height)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
   );
 }
 
@@ -579,12 +615,15 @@ async function measureEvidenceTray(
       const firstRowTolerancePx = 2;
       const strongEntryOf = (tile: HTMLButtonElement) => {
         const strong = tile.querySelector(".record-copy strong");
-        return strong
-          ? {
-              text: (strong.textContent ?? "").trim(),
-              rect: boxRect(strong.getBoundingClientRect()),
-            }
-          : null;
+        if (!strong) return null;
+        return {
+          text: (strong.textContent ?? "").trim(),
+          rect: boxRect(strong.getBoundingClientRect()),
+          tileRect: boxRect(tile.getBoundingClientRect()),
+          clipped:
+            strong.scrollWidth > strong.clientWidth + firstRowTolerancePx ||
+            strong.scrollHeight > strong.clientHeight + firstRowTolerancePx,
+        };
       };
       const firstRowTitles =
         firstRowTop === null
@@ -597,7 +636,9 @@ async function measureEvidenceTray(
               )
               .map(strongEntryOf)
               .filter(
-                (entry): entry is { text: string; rect: BoxRect } =>
+                (
+                  entry,
+                ): entry is NonNullable<ReturnType<typeof strongEntryOf>> =>
                   entry !== null,
               );
       const header = tray?.querySelector("header") ?? null;
@@ -792,12 +833,14 @@ function expectEvidenceTrayCompactGeometry(
 
   // Every FIRST-ROW title, not just the first tile's: a longer title in
   // any other column can clip, extend below the visible grid, or overlap a
-  // neighbour while the first tile stays clean.
+  // neighbour while the first tile stays clean. Each title must sit inside
+  // ITS OWN tile — within-grid alone still permits a title bleeding into a
+  // neighbour — and its scroll box must not exceed its client box, the
+  // signature of a line clamp hiding text behind a clean rect.
   const firstRowTitles = snapshot.firstRowTitles;
   if (firstRowTitles.length === 0) {
     throw fail("first-row tile titles missing");
   }
-  const gridRect = requireRect(snapshot.grid, "grid");
   for (const entry of firstRowTitles) {
     if (entry.text === "") {
       throw fail("first-row tile title is empty");
@@ -805,7 +848,10 @@ function expectEvidenceTrayCompactGeometry(
     if (entry.rect.width <= 0 || entry.rect.height <= 0) {
       throw fail(`first-row title "${entry.text}" has an empty rect`);
     }
-    expectRectWithin(entry.rect, gridRect);
+    expectRectWithin(entry.rect, entry.tileRect);
+    if (entry.clipped) {
+      throw fail(`first-row title "${entry.text}" is clipped`);
+    }
   }
 }
 
@@ -973,6 +1019,9 @@ async function readEvidenceTraySearchState(
         value: input?.value ?? null,
         countText,
         tileCount: tiles.length,
+        titles: tiles.map((tile) =>
+          (tile.querySelector(".record-copy strong")?.textContent ?? "").trim(),
+        ),
         targetRendered: tiles.some(
           (candidate) =>
             (
@@ -1040,11 +1089,21 @@ async function typeEvidenceTrayQuery(
         ?.textContent ?? ""
     ).trim(),
   );
+  // The tile set the COMPLETE query must render: the same pure filter the
+  // tray binds, over the live inventory. Without it, a trailing keystroke
+  // the browser applied but whose input event never reached Svelte would
+  // pass verification under a prefix-filtered grid.
+  const trayState = await getPackagedGameState();
+  const expectedTitles = filterPresentableRecords(
+    presentableRecords(trayState.inventory),
+    query,
+  ).map((record) => record.shortName.trim());
   const filterApplied = async () =>
     evidenceTraySearchFilterApplied(
       await readEvidenceTraySearchState(query),
       query,
       baselineCountText,
+      expectedTitles,
     );
 
   let transport: EvidenceTraySearchTransport = "setValue";
@@ -1148,16 +1207,22 @@ type EvidenceTraySingleResultProbe = {
   strong: string;
   rect: BoxRect;
   height: number;
+  /** Fresh post-probe geometry so the lone result gets the same
+   * containment/stability assertions as the primary search path. */
+  grid: BoxRect;
+  tray: BoxRect;
 };
 
 /**
- * Hunts for a rendered full title whose search isolates exactly one tile
- * (bounded candidate list, collected while the tray is unfiltered, each
- * carrying its own unfiltered tile height so the no-stretch bound compares
- * the probe against ITSELF — never against an unrelated journey record).
- * Probe queries go through the tray's own input-event path: the real CJK
- * setValue verification already happened on the primary search, and probes
- * only need deterministic filter results for the 1-result geometry proof.
+ * Applies each pre-filtered candidate title through the tray's own
+ * input-event path and snapshots the lone result's geometry (tile, grid,
+ * tray) after the query settles. Candidates arrive already filtered by the
+ * spec to titles whose full query isolates exactly one record across the
+ * tray's searchable fields, so the first candidate normally wins — the
+ * retry loop only absorbs DOM-level surprises. Probe queries go through
+ * the tray's own input-event path: the real CJK setValue verification
+ * already happened on the primary search, and probes only need
+ * deterministic filter results for the 1-result geometry proof.
  */
 async function probeSingleResultSearch(
   candidates: Array<{ title: string; unfilteredHeight: number }>,
@@ -1184,25 +1249,31 @@ async function probeSingleResultSearch(
       continue;
     }
     const lone = await browser.execute(() => {
+      const boxRect = (box: DOMRect) => ({
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      });
       const grid = document.querySelector<HTMLElement>(
         "[data-interrogation-evidence-grid]",
+      );
+      const tray = document.querySelector<HTMLElement>(
+        "[data-interrogation-present-tray]",
       );
       const tile =
         document.querySelector<HTMLButtonElement>("button.record-tile");
       const strong = tile?.querySelector(".record-copy strong");
-      if (!grid || !tile || !strong) return null;
+      if (!grid || !tray || !tile || !strong) return null;
       const tileBox = tile.getBoundingClientRect();
       return {
         strong: (strong.textContent ?? "").trim(),
-        rect: {
-          left: tileBox.left,
-          top: tileBox.top,
-          right: tileBox.right,
-          bottom: tileBox.bottom,
-          width: tileBox.width,
-          height: tileBox.height,
-        },
+        rect: boxRect(tileBox),
         height: tileBox.height,
+        grid: boxRect(grid.getBoundingClientRect()),
+        tray: boxRect(tray.getBoundingClientRect()),
       };
     });
     if (lone) {
@@ -1235,21 +1306,60 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   expect(viewport.height).toBe(600);
   mkdirSync(EVIDENCE_TRAY_SCREENSHOT_DIR, { recursive: true });
 
+  // Everything after the 800x600 resize runs under a viewport-restore
+  // guarantee: a failed assertion must not leave the window at 800x600 for
+  // the rest of this browser session — later journey legs do not reset it.
+  // When the gate itself throws, its exception propagates through the
+  // finally and the restore error is only logged; when the gate passes,
+  // a restore failure becomes the reported error.
+  let restoreError: unknown;
+  try {
+    await runEvidenceTrayGeometryChecks(recordName, viewport);
+  } finally {
+    try {
+      await ensureCaseFileViewport();
+    } catch (error) {
+      restoreError = error;
+      console.error(
+        "[EvidenceTrayGate] case-file viewport restore failed:",
+        error,
+      );
+    }
+  }
+  if (restoreError !== undefined) throw restoreError;
+  evidenceTrayGeometryGateDone = true;
+}
+
+/** The gate's checks, run inside runEvidenceTrayGeometryGate's restore
+ * guarantee after the window has already shrunk to 800x600. */
+async function runEvidenceTrayGeometryChecks(
+  recordName: string,
+  viewport: { width: number; height: number },
+): Promise<void> {
   // Single-result probe candidates must come from the UNFILTERED board:
-  // after the primary search only the (few) matching titles remain. Each
-  // candidate remembers its own unfiltered tile height for the later
-  // like-for-like no-stretch comparison.
-  const probeCandidates = await browser.execute(() =>
-    Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
-    )
-      .slice(0, 12)
-      .map((tile) => ({
+  // after the primary search only the (few) matching titles remain. Every
+  // rendered title is considered — not a positional prefix — and only
+  // titles whose full query provably isolates one record across the
+  // tray's searchable fields (the same filter the tray binds) are kept,
+  // so the probe verifies a deterministic candidate instead of burning
+  // timeouts on guesses. Each candidate remembers its own unfiltered
+  // tile height for the later like-for-like no-stretch comparison.
+  const gateTrayState = await getPackagedGameState();
+  const gateTrayRecords = presentableRecords(gateTrayState.inventory);
+  const probeCandidates = (
+    await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
+      ).map((tile) => ({
         title:
           tile.querySelector(".record-copy strong")?.textContent?.trim() ?? "",
         unfilteredHeight: tile.getBoundingClientRect().height,
-      }))
-      .filter((candidate) => candidate.title !== ""),
+      })),
+    )
+  ).filter(
+    (candidate) =>
+      candidate.title !== "" &&
+      filterPresentableRecords(gateTrayRecords, candidate.title).length === 1,
   );
 
   // Unfiltered tray at 800x600: the full ≥74-record board.
@@ -1302,18 +1412,7 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
     filtered.tray,
     `search "${recordName}" tray`,
   );
-  expect(Math.abs(filteredTray.top - initialTray.top)).toBeLessThanOrEqual(
-    RECT_TOLERANCE_PX,
-  );
-  expect(Math.abs(filteredTray.left - initialTray.left)).toBeLessThanOrEqual(
-    RECT_TOLERANCE_PX,
-  );
-  expect(Math.abs(filteredTray.width - initialTray.width)).toBeLessThanOrEqual(
-    RECT_TOLERANCE_PX,
-  );
-  expect(
-    Math.abs(filteredTray.height - initialTray.height),
-  ).toBeLessThanOrEqual(RECT_TOLERANCE_PX);
+  expectTrayStable(filteredTray, initialTray);
   const grid = requireRect(filtered.grid, "grid");
   const target = filtered.targetTile;
   if (!target) {
@@ -1364,6 +1463,11 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
     // Like-for-like: the probe tile against ITS OWN unfiltered height — the
     // journey record's height belongs to a different title.
     expect(probe.height).toBeLessThanOrEqual(probe.unfilteredHeight + 2);
+    // The lone result gets the primary path's containment and stable-tray
+    // guarantees too — a probe tile outside the grid, or a tray that moved
+    // when the board collapsed to one tile, must not pass.
+    expectRectWithin(probe.rect, probe.grid);
+    expectTrayStable(probe.tray, initialTray);
     singleResult = { query: probe.query, height: probe.height };
     const probeScreenshot = path.join(
       EVIDENCE_TRAY_SCREENSHOT_DIR,
@@ -1409,10 +1513,8 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   // Clear the probe search before the journey's own presentation continues.
   await clearEvidenceTrayQuery(initial.tileCount);
 
-  await ensureCaseFileViewport();
-  evidenceTrayGeometryGateDone = true;
   console.log(
-    `[EvidenceTrayGate] 800x600 geometry passed (${initial.tileCount} records; hit ${filtered.tileCount}); viewport restored; PNG=${initialScreenshot},${hitScreenshot}; JSON=${metadataPath}`,
+    `[EvidenceTrayGate] 800x600 geometry passed (${initial.tileCount} records; hit ${filtered.tileCount}); PNG=${initialScreenshot},${hitScreenshot}; JSON=${metadataPath}`,
   );
 }
 

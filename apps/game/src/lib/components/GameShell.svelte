@@ -310,6 +310,14 @@
         return;
       }
 
+      // A composing Escape belongs to the focused field's IME, not to the
+      // layer stack: it cancels the in-flight composition (e.g. a CJK term
+      // in the evidence tray search) and must reach the input untouched —
+      // cancelling it here would close the tray and discard the query.
+      if (event.isComposing) {
+        return;
+      }
+
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();

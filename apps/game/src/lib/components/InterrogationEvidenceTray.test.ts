@@ -124,7 +124,7 @@ describe("InterrogationEvidenceTray", () => {
     );
     expect(detail).not.toBeNull();
     expect(detail).toHaveTextContent(
-      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+      "將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。",
     );
 
     const evidenceTile = screen.getByRole("button", {
@@ -278,7 +278,9 @@ describe("InterrogationEvidenceTray", () => {
     );
     expect(
       container.querySelector("[data-interrogation-evidence-detail]"),
-    ).toHaveTextContent("將游標移至紀錄，或以 Tab 選取以查看詳情。");
+    ).toHaveTextContent(
+      "將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。",
+    );
 
     await user.click(screen.getByRole("button", { name: /咖啡收據/ }));
     await user.click(screen.getByRole("button", { name: /目擊者/ }));
@@ -497,7 +499,7 @@ describe("InterrogationEvidenceTray", () => {
     expect(screen.queryByRole("button", { name: /咖啡收據/ })).toBeNull();
     expect(detail).not.toHaveTextContent("付款末四碼 0192。");
     expect(detail).toHaveTextContent(
-      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+      "將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。",
     );
 
     // Bringing the record back must not resurrect the stale detail.
@@ -506,7 +508,7 @@ describe("InterrogationEvidenceTray", () => {
       screen.getByRole("button", { name: /咖啡收據.*店內收銀匯出/ }),
     ).toBeInTheDocument();
     expect(detail).toHaveTextContent(
-      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+      "將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。",
     );
   });
 
@@ -559,6 +561,9 @@ describe("InterrogationEvidenceTray", () => {
 
     const search = searchInput();
     const escape = screen.getByRole("button", { name: "ESC" });
+    const lineRecord = container.querySelector(
+      "[data-interrogation-line-record]",
+    );
     const evidence = screen.getByRole("button", { name: /咖啡收據/ });
     const statement = screen.getByRole("button", { name: /目擊者/ });
     const detail = container.querySelector(
@@ -568,6 +573,11 @@ describe("InterrogationEvidenceTray", () => {
     const withdraw = screen.getByRole("button", { name: "收回" });
 
     await waitFor(() => expect(escape).toHaveFocus());
+    // The testimony blockquote is a focusable scrollable region: compact
+    // max-height clips long lines, so it joins the trap between the header
+    // controls and the record tiles.
+    await user.tab();
+    expect(lineRecord).toHaveFocus();
     await user.tab();
     expect(evidence).toHaveFocus();
     await user.tab();
@@ -614,7 +624,7 @@ describe("InterrogationEvidenceTray", () => {
     // Focusing the panel must not surface a stale record detail; the hint
     // stays until a record is hovered/focused.
     expect(detail).toHaveTextContent(
-      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+      "將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。",
     );
   });
 
@@ -635,6 +645,53 @@ describe("InterrogationEvidenceTray", () => {
     expect(detail).toHaveFocus();
     await user.tab();
     expect(searchInput()).toHaveFocus();
+  });
+
+  it("keeps the testimony line keyboard-focusable so clipped text can scroll", () => {
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    // A focusable scrollable region (WCAG 2.1): the compact max-height
+    // clips overflowing testimony, so keyboard users must be able to focus
+    // and scroll the blockquote itself — same contract as the detail panel.
+    const lineRecord = container.querySelector(
+      "[data-interrogation-line-record]",
+    );
+    expect(lineRecord).not.toBeNull();
+    expect(lineRecord).toHaveAttribute("tabindex", "0");
+  });
+
+  it("moves from a focused tile to its detail with ArrowDown and returns to that tile with Shift+Tab", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    if (!detail) throw new Error("detail panel missing");
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+    const statement = screen.getByRole("button", { name: /目擊者/ });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    evidence.focus();
+    await waitFor(() =>
+      expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。"),
+    );
+
+    // ArrowDown reaches this tile's scrollable detail directly — without
+    // presenting the record and without tabbing past the statement tile,
+    // whose focus handler would swap the inspected record.
+    await user.keyboard("{ArrowDown}");
+    expect(detail).toHaveFocus();
+    expect(detail).toHaveTextContent("咖啡收據");
+    expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
+
+    // Shift+Tab returns to the inspected tile — not the grid's last tile.
+    await user.tab({ shift: true });
+    expect(evidence).toHaveFocus();
+    expect(statement).not.toHaveFocus();
+    expect(detail).toHaveTextContent("十七點四十二分的消費紀錄。");
   });
 
   it("returns focus to a connected trigger when the tray unmounts", async () => {

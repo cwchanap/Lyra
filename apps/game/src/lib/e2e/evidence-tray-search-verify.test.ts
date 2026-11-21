@@ -8,6 +8,9 @@ import {
 
 const BASELINE = "顯示 83 / 83";
 const QUERY = "咖啡收據";
+// The rendered title set the COMPLETE query should produce (the real
+// filter over the real inventory, computed by the spec).
+const EXPECTED_TITLES = [QUERY];
 
 function state(
   overrides: Partial<EvidenceTraySearchState> = {},
@@ -16,6 +19,7 @@ function state(
     value: QUERY,
     countText: BASELINE,
     tileCount: 83,
+    titles: [...EXPECTED_TITLES],
     targetRendered: true,
     ...overrides,
   };
@@ -27,9 +31,14 @@ describe("evidence tray search verification", () => {
       // The baseline is itself an N/N text, so an unchanged N/N count proves
       // nothing: a no-op setValue that never reached Svelte looks identical.
       // This is the regression guard for the review finding.
-      expect(evidenceTraySearchFilterApplied(state(), QUERY, BASELINE)).toBe(
-        false,
-      );
+      expect(
+        evidenceTraySearchFilterApplied(
+          state(),
+          QUERY,
+          BASELINE,
+          EXPECTED_TITLES,
+        ),
+      ).toBe(false);
     });
 
     it("accepts a real filter update: count left the baseline", () => {
@@ -38,8 +47,29 @@ describe("evidence tray search verification", () => {
           state({ countText: "顯示 1 / 83" }),
           QUERY,
           BASELINE,
+          EXPECTED_TITLES,
         ),
       ).toBe(true);
+    });
+
+    it("rejects a prefix-filtered grid under a complete input value", () => {
+      // A trailing keystroke the browser applied but whose input event
+      // never reached Svelte: `value` holds the full name while the grid
+      // still shows the PREFIX-filtered set. The full value, a moved count
+      // and the rendered target all pass the old checks — only the exact
+      // expected title set rejects it.
+      expect(
+        evidenceTraySearchFilterApplied(
+          state({
+            countText: "顯示 2 / 83",
+            tileCount: 2,
+            titles: [QUERY, "咖啡店會員卡"],
+          }),
+          QUERY,
+          BASELINE,
+          EXPECTED_TITLES,
+        ),
+      ).toBe(false);
     });
 
     it("rejects an incomplete input value", () => {
@@ -48,6 +78,7 @@ describe("evidence tray search verification", () => {
           state({ value: "咖啡", countText: "顯示 2 / 83" }),
           QUERY,
           BASELINE,
+          EXPECTED_TITLES,
         ),
       ).toBe(false);
     });
@@ -58,6 +89,7 @@ describe("evidence tray search verification", () => {
           state({ targetRendered: false, countText: "顯示 1 / 83" }),
           QUERY,
           BASELINE,
+          EXPECTED_TITLES,
         ),
       ).toBe(false);
     });
@@ -65,17 +97,23 @@ describe("evidence tray search verification", () => {
     it("rejects an empty count text", () => {
       expect(
         evidenceTraySearchFilterApplied(
-          state({ countText: "", tileCount: 0, targetRendered: false }),
+          state({
+            countText: "",
+            tileCount: 0,
+            titles: [],
+            targetRendered: false,
+          }),
           QUERY,
           BASELINE,
+          EXPECTED_TITLES,
         ),
       ).toBe(false);
     });
 
     it("rejects a missing search input", () => {
-      expect(evidenceTraySearchFilterApplied(null, QUERY, BASELINE)).toBe(
-        false,
-      );
+      expect(
+        evidenceTraySearchFilterApplied(null, QUERY, BASELINE, EXPECTED_TITLES),
+      ).toBe(false);
     });
   });
 

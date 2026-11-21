@@ -63,6 +63,7 @@
 
   let tray: HTMLDivElement | undefined = $state();
   let recordGrid: HTMLElement | undefined = $state();
+  let detailPanel: HTMLElement | undefined = $state();
   let evidenceImages = $state<Record<string, ResolvedStoryAsset | null>>({});
   let records = $derived(presentableRecords(inventory));
   let query = $state("");
@@ -183,15 +184,50 @@
     // while it is the topmost modal. The trap's stopImmediatePropagation
     // would otherwise kill the event before the upper dialog's handler runs.
     if (topLayerOpen) return;
+    // Shift+Tab off the detail panel returns to the tile whose record is
+    // being inspected, not to the grid's last tile: the panel is reached
+    // either by tabbing through every later tile or by ArrowDown from an
+    // earlier tile, and in both cases the inspected tile is the one the
+    // user was reading. Focusing it re-sets the same inspected key, so the
+    // detail stays consistent.
+    if (
+      event.key === "Tab" &&
+      event.shiftKey &&
+      document.activeElement === detailPanel &&
+      inspectedRecordKey !== null
+    ) {
+      const inspectedTile = Array.from(
+        tray?.querySelectorAll<HTMLElement>("[data-record-key]") ?? [],
+      ).find((tile) => tile.dataset.recordKey === inspectedRecordKey);
+      if (inspectedTile) {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+        inspectedTile.focus();
+        return;
+      }
+    }
     // The detail panel is a focusable scrollable region: its compact
     // max-height clips overflowing record detail, so it must be a Tab stop
     // inside the trap for keyboard access. One compound selector (not a
     // comma list) keeps document order stable across selector engines.
     trapDialogTabKey(event, tray, {
       selector:
-        ":is(input, button, [data-interrogation-evidence-detail]):not(:disabled)",
+        ":is(input, button, [data-interrogation-line-record], [data-interrogation-evidence-detail]):not(:disabled)",
       stopPropagation: true,
     });
+  }
+
+  // ArrowDown on a tile jumps straight to its scrollable detail panel
+  // without presenting the record — the keyboard-only path for reading a
+  // non-final card's overflowing detail (Tab would have to pass every later
+  // tile, each refocusing the panel on a different record). Suspended like
+  // the Tab trap while an upper layer owns keyboard navigation.
+  function handleTileKeydown(event: KeyboardEvent) {
+    if (topLayerOpen) return;
+    if (event.key !== "ArrowDown" || !detailPanel) return;
+    event.preventDefault();
+    detailPanel.focus();
   }
 
   function handleEvidenceImageError(itemId: string) {
@@ -276,7 +312,16 @@
       </button>
     </header>
 
-    <blockquote id="interrogation-evidence-line" class="line-record">
+    <!-- Focusable scrollable region (WCAG): the compact max-height clips
+    overflowing testimony, so keyboard users must be able to focus and
+    scroll the blockquote itself. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <blockquote
+      id="interrogation-evidence-line"
+      class="line-record"
+      data-interrogation-line-record=""
+      tabindex="0"
+    >
       {#if crossExam}
         <span class="target-kicker">鎖定證詞 · TARGET LINE</span>
         <span class="target-text"
@@ -305,11 +350,14 @@
             inspectedRecordKey}
           class="record-tile"
           type="button"
+          data-record-key={presentableRecordKey(record)}
+          aria-keyshortcuts="ArrowDown"
           {disabled}
           onmouseenter={() => showHoveredRecordDetail(record)}
           onmouseleave={() => clearHoveredRecordDetail(record)}
           onfocus={() => showFocusedRecordDetail(record)}
           onblur={() => clearFocusedRecordDetail(record)}
+          onkeydown={handleTileKeydown}
           onclick={() => present(record.kind, record.id)}
         >
           <span class="record-visual" aria-hidden="true">
@@ -343,6 +391,7 @@
       aria-live="polite"
       aria-label="紀錄詳情"
       tabindex="0"
+      bind:this={detailPanel}
     >
       {#if activeRecord}
         <div class="record-detail-copy">
@@ -354,7 +403,9 @@
           {#if activeRecord.details}<p>{activeRecord.details}</p>{/if}
         </div>
       {:else}
-        <p>將游標移至紀錄，或以 Tab 選取以查看詳情。</p>
+        <p>
+          將游標移至紀錄，或以 Tab 選取以查看詳情；在紀錄上按 ↓ 直接捲動詳情。
+        </p>
       {/if}
     </section>
 
