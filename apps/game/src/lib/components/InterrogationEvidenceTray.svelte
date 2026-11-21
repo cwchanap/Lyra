@@ -183,8 +183,13 @@
     // while it is the topmost modal. The trap's stopImmediatePropagation
     // would otherwise kill the event before the upper dialog's handler runs.
     if (topLayerOpen) return;
+    // The detail panel is a focusable scrollable region: its compact
+    // max-height clips overflowing record detail, so it must be a Tab stop
+    // inside the trap for keyboard access. One compound selector (not a
+    // comma list) keeps document order stable across selector engines.
     trapDialogTabKey(event, tray, {
-      selector: "input:not(:disabled), button:not(:disabled)",
+      selector:
+        ":is(input, button, [data-interrogation-evidence-detail]):not(:disabled)",
       stopPropagation: true,
     });
   }
@@ -255,10 +260,11 @@
         class="record-search"
         type="search"
         aria-label="搜尋紀錄"
+        placeholder="搜尋紀錄"
         bind:value={query}
         oninput={handleSearchInput}
       />
-      <p class="record-count">{recordCountText}</p>
+      <p class="record-count" role="status">{recordCountText}</p>
       <button
         type="button"
         class="tray-escape"
@@ -327,11 +333,16 @@
       {/each}
     </section>
 
+    <!-- Focusable scrollable region (WCAG): the compact max-height clips
+    overflowing detail text, so keyboard users must be able to focus and
+    scroll the panel itself. -->
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <section
       class="record-detail"
       data-interrogation-evidence-detail=""
       aria-live="polite"
       aria-label="紀錄詳情"
+      tabindex="0"
     >
       {#if activeRecord}
         <div class="record-detail-copy">
@@ -746,6 +757,12 @@
 
   @media (max-height: 650px) {
     .interrogation-evidence-tray {
+      /* Pinned height: filtering shrinks the grid contents, and a
+      content-sized centered tray would shrink and re-center with it,
+      dragging the search input out from under the typing/IME focus. The
+      fixed height lets the grid's 1fr track absorb every content change
+      (align-content: start keeps a lone result row un-stretched). */
+      height: min(760px, calc(100dvh - 48px));
       padding: 14px;
       gap: 8px;
     }

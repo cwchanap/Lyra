@@ -326,6 +326,33 @@ describe("InterrogationEvidenceTray", () => {
     ).toBe(0);
   });
 
+  it("announces result counts through a single polite status region", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("顯示 2 / 2");
+    // Exactly one results-status live region: the count and the empty-state
+    // hint must never be announced twice for one query change.
+    expect(container.querySelectorAll("[role='status']")).toHaveLength(1);
+
+    await user.type(searchInput(), "收據");
+    expect(status).toHaveTextContent("顯示 1 / 2");
+
+    await user.type(searchInput(), "不存在的字詞");
+    expect(status).toHaveTextContent("顯示 0 / 2");
+    // The visible empty-state hint stays a plain paragraph inside the grid —
+    // reachable by screen-reader navigation, not a second live region.
+    const emptyHint = screen.getByText("沒有符合的紀錄，請修改搜尋字詞");
+    expect(emptyHint.closest("[role='status']")).toBeNull();
+  });
+
+  it("exposes a visible search cue through the input placeholder", () => {
+    render(InterrogationEvidenceTray, props());
+
+    expect(searchInput()).toHaveAttribute("placeholder", "搜尋紀錄");
+  });
+
   it("filters records from the search input and shows the hit count", async () => {
     const user = userEvent.setup();
     render(InterrogationEvidenceTray, props());
@@ -404,9 +431,11 @@ describe("InterrogationEvidenceTray", () => {
       .slice(source.indexOf("@media (max-height: 650px)"))
       .replace(/\s+/g, " ");
 
-    // Tray padding/gap budget reclaims ~60px at 800×600.
+    // Tray padding/gap budget reclaims ~60px at 800×600; the pinned height
+    // keeps the centered tray — and the search input under it — from jumping
+    // while filtering shrinks the grid contents.
     expect(compact).toContain(
-      ".interrogation-evidence-tray { padding: 14px; gap: 8px;",
+      "height: min(760px, calc(100dvh - 48px)); padding: 14px; gap: 8px;",
     );
     // Header wraps and centers; the duplicate eyebrow is always hidden.
     expect(compact).toContain("header { flex-wrap: wrap; align-items: center;");
@@ -526,12 +555,15 @@ describe("InterrogationEvidenceTray", () => {
 
   it("traps tab focus among its active controls", async () => {
     const user = userEvent.setup();
-    render(InterrogationEvidenceTray, props());
+    const { container } = render(InterrogationEvidenceTray, props());
 
     const search = searchInput();
     const escape = screen.getByRole("button", { name: "ESC" });
     const evidence = screen.getByRole("button", { name: /咖啡收據/ });
     const statement = screen.getByRole("button", { name: /目擊者/ });
+    const detail = container.querySelector(
+      "[data-interrogation-evidence-detail]",
+    );
     const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
     const withdraw = screen.getByRole("button", { name: "收回" });
 
@@ -540,6 +572,11 @@ describe("InterrogationEvidenceTray", () => {
     expect(evidence).toHaveFocus();
     await user.tab();
     expect(statement).toHaveFocus();
+    // The scrollable detail panel sits between the record tiles and the
+    // footer actions so keyboard users can reach detail text that overflows
+    // the compact max-height (the panel itself is keyboard-scrollable).
+    await user.tab();
+    expect(detail).toHaveFocus();
     await user.tab();
     expect(gameMenu).toHaveFocus();
     await user.tab();
@@ -550,6 +587,54 @@ describe("InterrogationEvidenceTray", () => {
     expect(search).toHaveFocus();
     await user.tab();
     expect(escape).toHaveFocus();
+  });
+
+  it("keeps the scrollable record detail keyboard-accessible for overflowing text", async () => {
+    const user = userEvent.setup();
+    const { container } = render(InterrogationEvidenceTray, props());
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    if (!detail) throw new Error("detail panel missing");
+    // A focusable scrollable region (WCAG 2.1): compact max-height clips
+    // overflowing detail text, so keyboard users must be able to focus and
+    // scroll the panel itself.
+    expect(detail).toHaveAttribute("tabindex", "0");
+
+    const gameMenu = screen.getByRole("button", { name: "遊戲選單" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+
+    gameMenu.focus();
+    await user.tab({ shift: true });
+    expect(detail).toHaveFocus();
+
+    // Focusing the panel must not surface a stale record detail; the hint
+    // stays until a record is hovered/focused.
+    expect(detail).toHaveTextContent(
+      "將游標移至紀錄，或以 Tab 選取以查看詳情。",
+    );
+  });
+
+  it("keeps the record detail in the trap cycle while the game command is in flight", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      InterrogationEvidenceTray,
+      props({ disabled: true }),
+    );
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    if (!detail) throw new Error("detail panel missing");
+    // Pending disables every command button but never the search input or
+    // the detail panel, so the trap must keep cycling through both.
+    detail.focus();
+    expect(detail).toHaveFocus();
+    await user.tab();
+    expect(searchInput()).toHaveFocus();
   });
 
   it("returns focus to a connected trigger when the tray unmounts", async () => {

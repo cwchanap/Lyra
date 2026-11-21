@@ -453,7 +453,12 @@ const EVIDENCE_TRAY_SCREENSHOT_DIR = path.join(
   process.cwd(),
   "e2e-artifacts",
   "save-e2e",
-  "evidence-tray-800x600",
+  // One directory per runner attempt (--attempts retries): a retry must not
+  // overwrite the previous attempt's evidence. Manual runs without the
+  // runner keep the original directory name.
+  process.env.LYRA_E2E_ATTEMPT
+    ? `evidence-tray-800x600-attempt-${process.env.LYRA_E2E_ATTEMPT}`
+    : "evidence-tray-800x600",
 );
 
 type BoxRect = {
@@ -954,8 +959,7 @@ async function evidenceTrayFilterApplied(
           "[data-interrogation-present-tray] .record-count",
         )?.textContent ?? ""
       ).trim();
-      if (countText === "" || countText === baseline) return false;
-      return Array.from(
+      const tileRendered = Array.from(
         document.querySelectorAll<HTMLButtonElement>("button.record-tile"),
       ).some(
         (candidate) =>
@@ -963,6 +967,16 @@ async function evidenceTrayFilterApplied(
             candidate.querySelector(".record-copy strong")?.textContent ?? ""
           ).trim() === name,
       );
+      if (!tileRendered) return false;
+      if (countText !== "" && countText !== baseline) return true;
+      // An unchanged count is still success when the count shows the full
+      // list ("顯示 N / N"): a query that matches every record legitimately
+      // leaves the text identical to the baseline instead of failing the
+      // whole helper. A no-op setValue on exactly such a query is
+      // indistinguishable from the DOM alone, but the caller's first-page
+      // placement + click assertions still fail loudly on a dropped update.
+      const shown = /^顯示 (\d+) \/ (\d+)$/.exec(countText);
+      return shown?.[1] !== undefined && shown[1] === shown[2];
     },
     evidenceTraySearchSelector(),
     query,
@@ -1212,6 +1226,29 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   expect(filtered.tileCount).toBeGreaterThanOrEqual(1);
   expect(filtered.tileCount).toBeLessThan(initial.tileCount);
   expectEvidenceTrayCompactGeometry(filtered, `search "${recordName}"`);
+
+  // Stable centered tray (final-review fix): filtering shrinks the grid
+  // contents, and a content-sized centered tray would shrink and re-center
+  // with it (measured header top y≈60 → y≈130 before the fix), dragging the
+  // search input out from under the typing/IME focus. The compact tray pins
+  // its height, so the whole rect — and the header with it — must stay put.
+  const initialTray = requireRect(initial.tray, "initial tray");
+  const filteredTray = requireRect(
+    filtered.tray,
+    `search "${recordName}" tray`,
+  );
+  expect(Math.abs(filteredTray.top - initialTray.top)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(Math.abs(filteredTray.left - initialTray.left)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(Math.abs(filteredTray.width - initialTray.width)).toBeLessThanOrEqual(
+    RECT_TOLERANCE_PX,
+  );
+  expect(
+    Math.abs(filteredTray.height - initialTray.height),
+  ).toBeLessThanOrEqual(RECT_TOLERANCE_PX);
   const grid = requireRect(filtered.grid, "grid");
   const target = filtered.targetTile;
   if (!target) {
@@ -1246,9 +1283,10 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
   const screenshots = [initialScreenshot, hitScreenshot];
   let singleResult: { query: string; height: number };
   if (filtered.tileCount === 1) {
-    // The tray is content-sized at 800x600 (the 1fr grid track collapses),
-    // so "not stretched" is exactly the natural-height bound asserted above;
-    // the lone result also keeps its first-page placement (clickRecordTile).
+    // The compact tray keeps its pinned height at 800x600 and align-content:
+    // start leaves the leftover grid space empty, so "not stretched" is
+    // exactly the natural-height bound asserted above; the lone result also
+    // keeps its first-page placement (clickRecordTile).
     singleResult = { query: recordName, height: target.height };
   } else {
     const probe = await probeSingleResultSearch(probeCandidates);
@@ -1295,6 +1333,7 @@ async function runEvidenceTrayGeometryGate(recordName: string): Promise<void> {
         },
         singleResult,
         tileHeight: { unfiltered: unfilteredHeight, filtered: target.height },
+        trayRect: { unfiltered: initialTray, filtered: filteredTray },
         screenshots,
       },
       null,
