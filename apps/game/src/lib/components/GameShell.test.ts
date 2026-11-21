@@ -844,6 +844,46 @@ describe("GameShell", () => {
     }
   });
 
+  it("leaves a composing Escape to the IME, then resumes normal handling after composition", async () => {
+    const testName =
+      "leaves a composing Escape to the IME, then resumes normal handling after composition";
+
+    try {
+      // A composing Escape cancels the IME's candidate window (e.g. a CJK
+      // term in the evidence tray search). The capture handler must leave
+      // it untouched — claiming it would close the tray and drop the query.
+      const claimCloser = vi.fn();
+      const releaseClaim = claimEscape(claimCloser);
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+      });
+
+      const composing = new KeyboardEvent("keydown", {
+        key: "Escape",
+        bubbles: true,
+        cancelable: true,
+        isComposing: true,
+      });
+
+      const propagated = window.dispatchEvent(composing);
+
+      expect(propagated).toBe(true);
+      expect(composing.defaultPrevented).toBe(false);
+      expect(claimCloser).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      releaseClaim();
+
+      // Once composition ends, a plain Escape behaves exactly as before.
+      window.dispatchEvent(escapeKeydown());
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("traps focus inside the game menu, including menu-slot focusables, and restores focus on close", async () => {
     const testName =
       "traps focus inside the game menu, including menu-slot focusables, and restores focus on close";

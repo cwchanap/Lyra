@@ -20,28 +20,40 @@ export type EvidenceTraySearchState = {
   countText: string;
   /** Number of record tiles currently rendered in the grid. */
   tileCount: number;
+  /** Full titles of every rendered tile, in grid order. */
+  titles: string[];
   /** Whether a tile whose full title equals the searched name is rendered. */
   targetRendered: boolean;
 };
 
 /**
  * Strict transport verification: the COMPLETE query sits in the input, the
- * record-count text has LEFT the pre-search baseline, and the exact
- * full-title tile is rendered. An unchanged count is never acceptance here —
+ * record-count text has LEFT the pre-search baseline, the exact full-title
+ * tile is rendered, AND the rendered tiles are exactly the records the
+ * complete query should match. An unchanged count is never acceptance here —
  * the baseline is itself an N/N text, so unchanged N/N is exactly what a
- * dropped (no-op) setValue looks like.
+ * dropped (no-op) setValue looks like. The exact title set is what rejects a
+ * subtler failure: `value` reads the DOM value, so a trailing keystroke that
+ * the browser applied but whose input event never reached Svelte would still
+ * show the full name while the grid renders a PREFIX-filtered result set.
+ * Comparing against `expectedTitles` (the real filter over the real
+ * inventory) accepts only the result the complete query produces; an
+ * identical prefix result is then sound acceptance, never a false pass.
  */
 export function evidenceTraySearchFilterApplied(
   state: EvidenceTraySearchState | null,
   name: string,
   baselineCountText: string,
+  expectedTitles: readonly string[],
 ): boolean {
   return (
     state !== null &&
     state.value === name &&
     state.targetRendered &&
     state.countText !== "" &&
-    state.countText !== baselineCountText
+    state.countText !== baselineCountText &&
+    state.titles.length === expectedTitles.length &&
+    state.titles.every((title, index) => title === expectedTitles[index])
   );
 }
 
