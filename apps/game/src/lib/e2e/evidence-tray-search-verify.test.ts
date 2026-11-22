@@ -196,7 +196,9 @@ describe("evidence tray search verification", () => {
     it("accepts the exact query whose count lawfully returned to the baseline", () => {
       // A query matching every record puts the count back on the baseline;
       // that is only accepted AFTER the probe observed a real transition.
-      expect(evidenceTraySearchExactQueryRendered(state(), QUERY)).toBe(true);
+      expect(
+        evidenceTraySearchExactQueryRendered(state(), QUERY, EXPECTED_TITLES),
+      ).toBe(true);
     });
 
     it("accepts the exact query with a filtered count", () => {
@@ -204,8 +206,36 @@ describe("evidence tray search verification", () => {
         evidenceTraySearchExactQueryRendered(
           state({ countText: "顯示 1 / 83", tileCount: 1 }),
           QUERY,
+          EXPECTED_TITLES,
         ),
       ).toBe(true);
+    });
+
+    it("rejects a grid rendering an extra result beyond the expected titles", () => {
+      // The probe only proved SOME input event reached Svelte; a grid that
+      // still shows a prefix-filtered (or otherwise stale) result set
+      // renders the target under the full input value and must not pass.
+      expect(
+        evidenceTraySearchExactQueryRendered(
+          state({
+            countText: "顯示 2 / 83",
+            tileCount: 2,
+            titles: [QUERY, "咖啡店會員卡"],
+          }),
+          QUERY,
+          EXPECTED_TITLES,
+        ),
+      ).toBe(false);
+    });
+
+    it("rejects a grid missing an expected result", () => {
+      expect(
+        evidenceTraySearchExactQueryRendered(
+          state({ countText: "顯示 1 / 83", tileCount: 1 }),
+          QUERY,
+          [QUERY, "咖啡店會員卡"],
+        ),
+      ).toBe(false);
     });
 
     it("rejects a wrong value", () => {
@@ -213,6 +243,7 @@ describe("evidence tray search verification", () => {
         evidenceTraySearchExactQueryRendered(
           state({ value: `${QUERY}☂`, countText: "顯示 0 / 83", tileCount: 0 }),
           QUERY,
+          EXPECTED_TITLES,
         ),
       ).toBe(false);
     });
@@ -222,18 +253,25 @@ describe("evidence tray search verification", () => {
         evidenceTraySearchExactQueryRendered(
           state({ targetRendered: false }),
           QUERY,
+          EXPECTED_TITLES,
         ),
       ).toBe(false);
     });
 
     it("rejects an empty count text", () => {
       expect(
-        evidenceTraySearchExactQueryRendered(state({ countText: "" }), QUERY),
+        evidenceTraySearchExactQueryRendered(
+          state({ countText: "" }),
+          QUERY,
+          EXPECTED_TITLES,
+        ),
       ).toBe(false);
     });
 
     it("rejects a missing search input", () => {
-      expect(evidenceTraySearchExactQueryRendered(null, QUERY)).toBe(false);
+      expect(
+        evidenceTraySearchExactQueryRendered(null, QUERY, EXPECTED_TITLES),
+      ).toBe(false);
     });
   });
 });
