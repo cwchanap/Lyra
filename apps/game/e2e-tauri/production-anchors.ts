@@ -52,6 +52,8 @@ export const anchors = {
     searchLabel: "搜尋紀錄",
     root: "[data-interrogation-present-tray]",
     scrim: ".interrogation-tray-scrim",
+    header: "header",
+    footer: "footer",
     escape: "[data-interrogation-tray-escape]",
     lineRecord: "[data-interrogation-line-record]",
     grid: "[data-interrogation-evidence-grid]",

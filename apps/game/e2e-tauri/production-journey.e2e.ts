@@ -641,7 +641,7 @@ async function measureEvidenceTray(
                 ): entry is NonNullable<ReturnType<typeof strongEntryOf>> =>
                   entry !== null,
               );
-      const header = tray?.querySelector("header") ?? null;
+      const header = tray?.querySelector(sel.header) ?? null;
       const eyebrow = header?.querySelector(sel.eyebrow) ?? null;
       const searchInput =
         document.querySelector<HTMLInputElement>(searchSelector);
@@ -682,7 +682,7 @@ async function measureEvidenceTray(
         gridScrollWidth: grid?.scrollWidth ?? 0,
         gridScrollTop: grid?.scrollTop ?? 0,
         detail: rectOf(tray?.querySelector(sel.detail) ?? null),
-        footer: rectOf(tray?.querySelector("footer") ?? null),
+        footer: rectOf(tray?.querySelector(sel.footer) ?? null),
         withdrawButton: rectOf(tray?.querySelector(sel.withdraw) ?? null),
         firstRowTitles,
         firstTileVisualHeight: firstVisual
@@ -882,9 +882,9 @@ type EvidenceTrayHeaderWrapProbe = {
  * data fails afterwards.
  */
 async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProbe | null> {
-  return browser.execute((traySelector: string) => {
+  return browser.execute((sel: typeof anchors.evidenceTray) => {
     const header = document.querySelector<HTMLElement>(
-      `${traySelector} header`,
+      `${sel.root} ${sel.header}`,
     );
     if (!header) return null;
     const visibleChildren = () =>
@@ -944,7 +944,7 @@ async function probeEvidenceTrayHeaderWrap(): Promise<EvidenceTrayHeaderWrapProb
     header.style.maxWidth = "";
     void header.offsetHeight; // force the restored reflow before measuring
     return { ...clamped, restoredRows: rowCount(visibleChildren()) };
-  }, anchors.evidenceTray.root);
+  }, anchors.evidenceTray);
 }
 
 /**

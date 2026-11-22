@@ -214,6 +214,49 @@ describe("SaveNameDialog", () => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 
+  it("leaves composing and WebKit keyCode-229 Escape keydowns to the IME", async () => {
+    const onCancel = vi.fn();
+    render(SaveNameDialog, {
+      slot: emptySlot,
+      currentSummary,
+      onSubmit: vi.fn(),
+      onCancel,
+    });
+
+    const input = screen.getByRole("textbox", { name: "存檔名稱" });
+    input.focus();
+
+    const composingEscape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(input.dispatchEvent(composingEscape)).toBe(true);
+    expect(composingEscape.defaultPrevented).toBe(false);
+
+    const webkitImeEscape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      keyCode: 229,
+      isComposing: false,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(input.dispatchEvent(webkitImeEscape)).toBe(true);
+    expect(webkitImeEscape.defaultPrevented).toBe(false);
+    expect(onCancel).not.toHaveBeenCalled();
+
+    const plainEscape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    input.dispatchEvent(plainEscape);
+    await Promise.resolve();
+    expect(plainEscape.defaultPrevented).toBe(true);
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+
   // HPA-830: cycling between all dialog controls (including input -> buttons)
   // must be unconditional JavaScript so macOS WebKit with Keyboard navigation
   // off cannot skip the buttons and leave the dialog from the name input.

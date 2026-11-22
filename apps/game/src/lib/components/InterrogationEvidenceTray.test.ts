@@ -416,11 +416,11 @@ describe("InterrogationEvidenceTray", () => {
     expect(count.closest("[data-interrogation-evidence-grid]")).toBeNull();
   });
 
-  it("pins the single max-height compact budget for 800×600 readability", () => {
+  it("pins the base fixed-height/wrap rules and max-height compact budget for 800×600 readability", () => {
     // jsdom cannot evaluate media queries or resolve component styles at
-    // runtime, so this pins the declared compact rules in the component
-    // source — the same approach used by InterrogationView.test.ts and
-    // AcquisitionPopup.test.ts for CSS jsdom cannot resolve.
+    // runtime, so this pins the declared base and compact rules in the
+    // component source — the same approach used by InterrogationView.test.ts
+    // and AcquisitionPopup.test.ts for CSS jsdom cannot resolve.
     const source = readFileSync(
       join(
         process.cwd(),
@@ -429,21 +429,24 @@ describe("InterrogationEvidenceTray", () => {
       "utf8",
     );
     expect(source.match(/@media \(max-height: 650px\)/g)?.length).toBe(1);
-    const compact = source
-      .slice(source.indexOf("@media (max-height: 650px)"))
-      .replace(/\s+/g, " ");
+    const mediaStart = source.indexOf("@media (max-height: 650px)");
+    const base = source.slice(0, mediaStart).replace(/\s+/g, " ");
+    const compact = source.slice(mediaStart).replace(/\s+/g, " ");
 
-    // Tray padding/gap budget reclaims ~60px at 800×600; the pinned height
-    // keeps the centered tray — and the search input under it — from jumping
-    // while filtering shrinks the grid contents.
-    expect(compact).toContain(
-      "height: min(760px, calc(100dvh - 48px)); padding: 14px; gap: 8px;",
-    );
-    // Header wraps and centers; the duplicate eyebrow is always hidden.
-    expect(compact).toContain("header { flex-wrap: wrap; align-items: center;");
+    // Base tray pins its height at every viewport size so filtering never
+    // shrinks and re-centers the tray; header wraps in narrow/tall windows;
+    // grid keeps a lone result row un-stretched.
+    expect(base).toContain("height: min(760px, calc(100dvh - 48px));");
+    expect(base).toContain("header { flex-wrap: wrap; align-items: baseline;");
+    expect(base).toContain("align-content: start;");
+
+    // Tray padding/gap budget reclaims ~60px at 800×600.
+    expect(compact).toContain("padding: 14px; gap: 8px;");
+    // Header centers on compact height; the duplicate eyebrow is hidden.
+    expect(compact).toContain("header { align-items: center;");
     expect(compact).toContain(".eyebrow { display: none;");
-    // Tighter grid gap and no stretched lone row when 1–5 records match.
-    expect(compact).toContain(".record-grid { gap: 8px; align-content: start;");
+    // Tighter grid gap.
+    expect(compact).toContain(".record-grid { gap: 8px;");
     // Tiles: 48px visual, tighter padding/gap, readable naturally wrapped titles.
     expect(compact).toContain(".record-visual { height: 48px;");
     expect(compact).toContain(".record-tile { gap: 6px; padding: 8px;");
@@ -1254,5 +1257,132 @@ describe("InterrogationEvidenceTray", () => {
     // The detail must still show the statement record, not revert to empty
     // or the evidence record — the blur guard protected the new focus.
     expect(detail).toHaveTextContent("目擊者");
+  });
+
+  it("shows an empty-inventory message instead of search-mismatch guidance when inventory has no records", () => {
+    render(
+      InterrogationEvidenceTray,
+      props({ inventory: { evidence: [], statements: [] } }),
+    );
+
+    expect(screen.getByText("目前沒有可提出的紀錄")).toBeInTheDocument();
+    expect(screen.queryByText("沒有符合的紀錄，請修改搜尋字詞")).toBeNull();
+    expect(screen.getByRole("status")).toHaveTextContent("顯示 0 / 0");
+  });
+
+  it("waits for IME composition to end before filtering or announcing counts, and lets composing Tab through", async () => {
+    render(InterrogationEvidenceTray, props());
+    const search = searchInput() as HTMLInputElement;
+    const status = screen.getByRole("status");
+
+    expect(status).toHaveTextContent("顯示 2 / 2");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    search.focus();
+
+    // Begin IME composition: half-typed phonetic input must not empty the grid
+    // or announce 0 results on each keystroke.
+    await fireEvent.compositionStart(search);
+    search.value = "sh";
+    await fireEvent.input(search);
+    expect(status).toHaveTextContent("顯示 2 / 2");
+    expect(
+      screen.getByRole("button", { name: /咖啡收據/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /目擊者/ })).toBeInTheDocument();
+
+    // Tab during composition belongs to the IME (candidate/segment selection),
+    // not to the dialog focus trap.
+    const composingTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      isComposing: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(search.dispatchEvent(composingTab)).toBe(true);
+    expect(composingTab.defaultPrevented).toBe(false);
+    expect(search).toHaveFocus();
+
+    const webkitTab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      keyCode: 229,
+      isComposing: false,
+      bubbles: true,
+      cancelable: true,
+    });
+    expect(search.dispatchEvent(webkitTab)).toBe(true);
+    expect(webkitTab.defaultPrevented).toBe(false);
+    expect(search).toHaveFocus();
+
+    // Commit the composed text: now the grid filters and announces.
+    search.value = "收據";
+    await fireEvent.compositionEnd(search);
+    expect(status).toHaveTextContent("顯示 1 / 2");
+    expect(
+      screen.getByRole("button", { name: /咖啡收據/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /目擊者/ })).toBeNull();
+  });
+
+  it("moves Shift+Tab off the detail panel to the previous enabled trap stop instead of a disabled tile while in flight", async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(InterrogationEvidenceTray, props());
+
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    const lineRecord = container.querySelector<HTMLElement>(
+      "[data-interrogation-line-record]",
+    );
+    if (!detail || !lineRecord) {
+      throw new Error("detail panel or line record missing");
+    }
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    evidence.focus();
+    await user.keyboard("{ArrowDown}");
+    expect(detail).toHaveFocus();
+
+    // Command goes in flight while the user is reading the detail panel.
+    await rerender(props({ disabled: true }));
+    expect(evidence).toBeDisabled();
+
+    await user.tab({ shift: true });
+    expect(lineRecord).toHaveFocus();
+  });
+
+  it("ignores ArrowDown on a tile when a modifier key is held", async () => {
+    const { container } = render(InterrogationEvidenceTray, props());
+    const detail = container.querySelector<HTMLElement>(
+      "[data-interrogation-evidence-detail]",
+    );
+    const evidence = screen.getByRole("button", { name: /咖啡收據/ });
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "ESC" })).toHaveFocus(),
+    );
+    evidence.focus();
+
+    for (const modifier of [
+      "altKey",
+      "ctrlKey",
+      "metaKey",
+      "shiftKey",
+    ] as const) {
+      const event = new KeyboardEvent("keydown", {
+        key: "ArrowDown",
+        [modifier]: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      evidence.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(evidence).toHaveFocus();
+      expect(detail).not.toHaveFocus();
+    }
   });
 });

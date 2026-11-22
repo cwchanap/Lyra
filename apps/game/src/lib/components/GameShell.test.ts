@@ -884,6 +884,43 @@ describe("GameShell", () => {
     }
   });
 
+  it("leaves a WebKit keyCode-229 Escape to the IME even when isComposing is false", async () => {
+    const testName =
+      "leaves a WebKit keyCode-229 Escape to the IME even when isComposing is false";
+
+    try {
+      const claimCloser = vi.fn();
+      const releaseClaim = claimEscape(claimCloser);
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+      });
+
+      const webkitImeCancel = new KeyboardEvent("keydown", {
+        key: "Escape",
+        keyCode: 229,
+        bubbles: true,
+        cancelable: true,
+        isComposing: false,
+      });
+
+      const propagated = window.dispatchEvent(webkitImeCancel);
+
+      expect(propagated).toBe(true);
+      expect(webkitImeCancel.defaultPrevented).toBe(false);
+      expect(claimCloser).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      releaseClaim();
+
+      window.dispatchEvent(escapeKeydown());
+      expect(
+        await screen.findByRole("dialog", { name: "遊戲選單" }),
+      ).toBeInTheDocument();
+    } catch (error) {
+      reportAsyncTestFailure(testName, error);
+    }
+  });
+
   it("traps focus inside the game menu, including menu-slot focusables, and restores focus on close", async () => {
     const testName =
       "traps focus inside the game menu, including menu-slot focusables, and restores focus on close";

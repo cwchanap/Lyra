@@ -17,6 +17,9 @@ export function trapDialogTabKey(
   options?: TrapDialogTabOptions,
 ): boolean {
   if (event.key !== "Tab" || !container) return false;
+  // An IME may use Tab during composition (candidate / segment navigation);
+  // stealing focus mid-composition would break the active input session.
+  if (event.isComposing || event.keyCode === 229) return false;
   event.preventDefault();
   if (options?.stopPropagation) {
     event.stopPropagation();
