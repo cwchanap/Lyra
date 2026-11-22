@@ -1,8 +1,8 @@
 # HPA-705 — SHOW／PRESENT 證物盤搜尋：單一 PR 實作計劃（Review 修訂）
 
-> **Linear：** [HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄) · **設計規格：** [HPA-705 design](../specs/2026-11-19-hpa-705-evidence-tray-search-design.md) · **PR：** [#138](https://github.com/cwchanap/Lyra/pull/138) · **狀態：** planning only。已整合 PR #138 兩輪「Ship with changes」review（第二輪核對 head `fa323aa`），程式與驗收尚未執行。
+> **Linear：** [HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄) · **設計規格：** [HPA-705 design](../specs/2026-11-19-hpa-705-evidence-tray-search-design.md) · **PR：** [#138](https://github.com/cwchanap/Lyra/pull/138) · **狀態：** 已實作並隨同一 PR 驗收——CI 全綠，packaged smoke 及 Chapter 2 最終聽證 800×600 孤立段（83 筆真實紀錄）通過；head `e7ae7b34` 的 canonical E2E Full 仍在執行，完成前不標已驗收。歷史：原為 planning only，已整合 PR #138 兩輪「Ship with changes」review（第二輪核對 head `fa323aa`）。
 >
-> 一張 Linear ticket、一個 PR：**在此 Draft PR 後續直接加入程式與測試**，不要再開 implementation PR。沒有新圖、BGM、SFX 或語音工作。
+> 一張 Linear ticket、一個 PR：**程式與測試已加入同一 PR**，沒有另開 implementation PR。沒有新圖、BGM、SFX 或語音工作。
 
 ## 0. Review disposition：有效意見及收斂決定
 
