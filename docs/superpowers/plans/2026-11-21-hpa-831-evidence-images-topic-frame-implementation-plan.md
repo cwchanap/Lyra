@@ -1,83 +1,86 @@
-# HPA-831 — 證物圖片與調查話題焦點框：單一 PR 實作計劃
+# HPA-831 — 證物黑框與焦點框殘留：單一 PR 實作計劃（review 修訂）
 
-> Linear：[HPA-831](https://linear.app/cwchanap/issue/HPA-831/evidence-images-show-as-empty-black-frames-and-the-focus-frame-sticks) · [Design spec](../specs/2026-11-21-hpa-831-evidence-images-topic-frame-design.md)  
-> **狀態：Planning only。** 本 Draft PR 後續**直接加入實作與測試**，不再開 implementation PR；不新增 art、SFX、劇情內容。
->
-> 觀察到的兩個症狀尚未證明同一根因；以**兩個彼此獨立、可驗證的最小修補**處理，嚴禁為了合併這張 ticket 造共享狀態架構。
+> Linear：[HPA-831](https://linear.app/cwchanap/issue/HPA-831/evidence-images-show-as-empty-black-frames-and-the-focus-frame-sticks) · [Design spec](../specs/2026-11-21-hpa-831-evidence-images-topic-frame-design.md) · [PR #140 review](https://github.com/cwchanap/Lyra/pull/140#pullrequestreview-6011002349)  
+> **狀態：Planning only。** 後續程式與測試加入**同一 Draft PR #140**，不拆第二個 PR；未執行 packaged E2E，不能宣稱已修復。無新 art/SFX。
 
-## 0. Current-main code pins／可重用資產
+## 0. 審查採納結果（F1–F8）
 
-- Chapter 1 `investigation_scene_3.md` 的 `evidence:cctv_screenshot`、`evidence:timecard_record` 與對照 `evidence:doorlock_summary_timetable` 都有同名 PNG 位於 `static/assets/evidence/`。
-- `packages/asset-paths/src/index.ts` 為 public URL 單一 owner；`apps/game/svelte.config.js` 設定靜態素材來源，勿在元件複製映射邏輯。
-- 取得視窗：`apps/game/src/lib/components/AcquisitionPopup.svelte`，既有 `resolveStoryAsset`、`onerror` 與取消過期 Promise guard；案件檔案：`apps/game/src/lib/components/case-file/CaseFileRecordDetail.svelte`。
-- 轉場入口：`apps/game/src/routes/+page.svelte` 依 mode 選擇 `ExploreView`／`DialogueBox`；`InvestigationSceneSurface.svelte` 管理話題 popover。不要先假定是哪一層的藍線。
-- 測試沿用 `AcquisitionPopup.test.ts`、`CaseFileRecordDetail.test.ts`、`apps/game/e2e-tauri/helpers.ts`、`production-journey.e2e.ts` 或既有最貼近的 packaged journey。現有 `ensureMinimumWindowViewport`／`browser.saveScreenshot` 可重用。
-- 與正在進行的 HPA-712 / [PR #139](https://github.com/cwchanap/Lyra/pull/139) 不共用故事正文變更；若之後 main 更新，重讀最新 scene/測試 pins，不改該 PR 的文本。
+| Review | 決定 |
+| --- | --- |
+| **F1** 原計劃的 macOS 與 Xvfb 混變數 | **接受**：首測 Linux packaged WebKitGTK + Xvfb（原 UAT 環境），800×600 CSS viewport；同引擎實窗僅作可選對照 |
+| **F2** 新 Tauri MCP server 與已有 WDIO 重複 | **接受重用、不接受取消 MCP 驗收本身**：由 MCP agent **執行／核驗既有 WDIO packaged suite**，不依賴獨立 Tauri MCP server；客觀 WDIO 斷言是自動化 gate，截圖由 MCP agent 做視覺核對，無人工 gate |
+| **F3** 三張圖片逐張手動檢查重複 | **接受**：把 image 等待／decode／非空像素檢查放入共用 \`startAcquisitionAcknowledgement\`，所有有圖片的 pending acquisition 自然覆蓋；保留已知兩張＋doorlock 對照的失敗定位 |
+| **F4** PNG／manifest 內容與 ID 已可靜態排除 | **接受**：不再預設路徑/美術錯；重點移到第一張 popup 的 time-to-decode 與 WebKitGTK paint。生成 manifest/report 未提交在 repo，編譯時只做一次常規檢查 |
+| **F5** 重複 async/null-ID 單元測試 | **接受**：重用 \`AcquisitionPopup.test.ts\`、\`CaseFileRecordDetail.test.ts\`；只在定位出前端錯誤時增補 red unit |
+| **F6** Topic UI 的 owner 推測太廣 | **接受部分並標記假說**：\`ExploreView\` 在 dialogue 模式已卸載；優先查跨場景持續掛載的 \`DialogueBox\` 和 UA focus outline，不在確認前認定就是 browser default focus |
+| **F7** smoke 不走受影響路徑 | **接受**：focused gate 是 \`production-journey\`（兩條場景路徑）、\`gameplay\`（Case File），smoke 僅保留既有 CI |
+| **F8** Task 1 是不可重複的診斷文字 | **接受**：第一個交付物直接是可運行的 packaged E2E 斷言，先 Red-first；若兩次 Green 則寫「原環境未重現」，不猜修、不再人手重播 |
 
-## Task 1 — 診斷並留下真正的 baseline（先於任何修補）
+補充防假綠：\`decode()\` 只證明來源圖片有效，未必證明 WebKitGTK 最終 compositor 畫得出來；保留 screenshot 及 MCP 視覺／像素檢查，不讓測試等待 decode 意外遮掉剛開窗時的黑框。
 
-1. 以 repo 最新 main 打包並用 MCP 操作 Tauri UI，固定 800×600；記錄實際平台、CSS viewport、執行模式（真視窗或 Xvfb）、main SHA。
-2. 到第 1 章咖啡館 `investigation_scene_3`，依序取得 `閉店監視器截圖`、`三宅打卡紀錄`、`門鎖摘要合併時間表`，各保存 screenshot。對取得彈窗與案件檔案，讀取 DOM 中的 `src/currentSrc`、`complete`、`naturalWidth/Height`、元素 rect、computed `visibility/opacity`；核對 build 輸出的 PNG 是否存在且有可見非黑像素。
-3. 比較同場正常證物，分辨：路徑或打包問題、PNG 自身問題、WebKit 解碼／繪製、前端 stale promise／overlay，**不以 headless 畫面直接定性產品 bug**。
-4. 從 `investigation_scene_1` 早坂「委託內容」話題進入 `scene_2`，至少三次測一般推進與一次快速推進；在第一句、中段、尾段及下一地圖截圖並檢查 DOM/styling。量測哪個 DOM/偽元素造成上下藍線；僅將已有的話題專屬裝飾列為可清除對象。
-5. 在 PR 描述追加可重現命令、表格和截圖位置。不能重現就標明，不要自行宣稱根因。
+## 1. Reuse pins（current main）
 
-**Done when：** 有兩條獨立結果與可追溯 screenshot/DOM 證據，才能進 Task 2／3。若某症狀已在 main 正常，該條只保留回歸保護，不加入臆測產品修正。
+- \`static/assets/evidence/cctv_screenshot.png\`、\`timecard_record.png\`、\`doorlock_summary_timetable.png\` 都存在；其 ID 在 \`docs/stories_plan/chapter_1/investigation_scene_3.md\`。
+- \`packages/asset-paths/src/index.ts\` 是 URL 單一 owner；\`AcquisitionPopup.svelte\` 的 \`evidenceImage=null\` 會讓暗底 \`.visual\` 在圖尚未 resolve 時看起來像空黑框。
+- \`apps/game/e2e-tauri/helpers.ts:1536\` 的 \`startAcquisitionAcknowledgement\` 是 popup 共用入口；\`capture-proof.e2e.ts\` 既有 \`decode + canvas.getImageData\` 思路，\`observedCssViewport\`、\`captureMockupViewport\` 和 screenshot helper 已存在。
+- \`production-journey.e2e.ts\` 已有 \`commission\` topic → \`scene_2\` → map，亦會依 Chapter 1 真實流程取得 inv3 證物；\`case-file.e2e.ts\` 已驗證 Case File 流程，但其既有 checkpoint **不是**兩張問題圖，不能單靠那套測試宣稱兩張圖在 Case File 都已可見。
+- \`+page.svelte\` 中 dialogue mode 不渲染 \`ExploreView\`，\`DialogueBox\` 持續掛載直到退出 dialogue mode。藍線可能是聚焦元素的 UA outline，但**未經實測確認**。
+- HPA-712 / [PR #139](https://github.com/cwchanap/Lyra/pull/139) 不在本 ticket 範圍；若 main 更新，只校正測試錨點，不改故事文本。
 
-## Task 2 — 證物黑框：Red-first 回歸 + 最小 image fix
+## Task 1 — 最小 Red-first E2E，直接驗證原始環境
 
-1. 在 `AcquisitionPopup.test.ts` 與 `CaseFileRecordDetail.test.ts` 補針對 `evidence.cctv_screenshot`／`evidence.timecard_record` 的 image ID → URL、元素切換、error fallback、快速換紀錄時 stale resolution 不反蓋的測試；沿用既有 mocks。注意 **jsdom 的 `img` 不會像真 WebKit 解碼 PNG**，單元測試不充當圖片成功顯示的驗收。
-2. 若 baseline 證實 URL／檔案輸出錯，修正原有 asset ID/manifest/public path 的一個事實來源。若真是 effect 或 image event 問題，僅改 `AcquisitionPopup.svelte`／`CaseFileRecordDetail.svelte` 的現有 state handling。需要改 `story-assets.ts` 時，必須證明共用映射本身錯；不新增 resolver、fetch retry、圖片全域 cache。
-3. 不更改證物名稱、描述、ID、unlock 或 acquisition order。不在此 PR 重新產生 PNG；若圖片已損壞或畫面不符合內容，另建**純 art task** 並在此記錄 blockers。
-4. 修復後 packaged UI 在取得視窗及 Case File 都要有可辨識的圖像；`doorlock_summary_timetable` 對照維持正常。
+**修改：** \`apps/game/e2e-tauri/helpers.ts\`、\`production-journey.e2e.ts\`（必要時 \`case-file.e2e.ts\`）；必要時只重用 \`capture-proof\` 檢查方法，不新建 suite、checkpoint 或 framework。
 
-**Done when：** 失敗路徑單元測試轉綠；packaged UI 的兩張真實 PNG 可見且與文字相符；並非僅 `<img>` 存在。
+1. 在 \`startAcquisitionAcknowledgement\` 先驗證 current card ID/title，並對 recordKind=\`evidence\` 且 imageAssetId 非空的彈窗，等 \`img.evidence-image\` 挂載、\`decode()\`、斷言非 placeholder、\`naturalWidth/Height > 0\`；canvas 縮小 sample 能辨識透明／全黑圖片。先確認呼叫方已有完整 \`PendingAcquisitionView\`，需要時以最小方式擴充 type；statement/null-image 的既有合法 placeholder 不應誤紅。
+2. 在**同一段** popup 流程記錄 first-frame（\`img\` 尚未出現前）與 decode-ready 狀態，以及 time-to-decode。特別記錄 inv3 CCTV（單獨第一張）、timecard（hotspot 一組證物的第一張）與 doorlock（同組下一張）比較；避免測試只在圖載完後截圖而掩蓋「空黑框停太久」。
+3. 取 \`capture-proof.e2e.ts\` 的 \`drawImage/getImageData\` 做輕量樣本；**保留原生暗色圖片的容許度**，不為所有 image 硬設任意高亮比例。對已知三張可用明確非黑／非透明＋像素差異斷言。
+4. 在 \`production-journey\` 的 inv1 \`hayasaka@commission\` → \`scene_2\` 有機旅程加觀測點：首句、中段、尾段（以 \`scene.id\` 與 queue 位置辨識），查 \`document.activeElement\` 的 tag/class、computed outline、rect，並保存 800×600 screenshots。只有**不合理大的 UA focus 邊框／殘留話題框**才算 Red；不能 assert 整頁沒有青色。
+5. Linux packaged E2E 在 \`xvfb-run\` 下實跑（記錄 main SHA、WebKitGTK、viewport \`innerWidth/innerHeight\`、測試結果）。利用既有 runner \`--attempts 2\` 重複。若環境允許，同 Linux engine 實窗只換 window mode 對照，非必需。
 
-## Task 3 — 跨場景焦點框：擁有者清除，不加全域 workaround
+**Done when：** 可運行的 E2E assertions 已進同一 PR；Red/Green、截圖、load timing 和 focus DOM 證據均可追溯。**不是**先寫一份無法反覆執行的人工診斷報告才開始。
 
-1. 用 Task 1 定位後，在**產生該裝飾的單一現有元件**加 scene/mode／話題 beat lifetime cleanup。先查看 `InvestigationSceneSurface` popover、`DialogueBox`、`GameShell` 的現有條件 render 與 CSS；不要預先把清理散到三個元件。
-2. 新增元件回歸：話題開啟時合法顯示；由話題直接轉入 scene_2 後舊焦點線已清除；正常返回調查、開選單、保存／讀取或下一地圖也不復活。測試必須 assert **舊 frame 身分／特定 class**，不可泛化成「頁面不能有藍色元素」。
-3. 若只有特殊 WebKit/快速推進競態才發生，在相同元件加最小 cleanup/取消舊 callback。不要透過 setTimeout、全域 CSS `display:none` 或刷新整頁強制掩蓋。
-4. 若 main 在多次真實 UI 測試皆無重現、找不到 stale owner，保留能判定跨場景狀態不殘留的回歸測試，標記原始問題未重現，不做虛假修復。
+## Task 2 — 只修真正的根因（有 Red 才改產品）
 
-**Done when：** 不同 scene tag 中人物對白與紅框維持正常；舊話題藍色橫線不跨到 scene_2。
+- **圖片**：若發現解碼前暗底長時間可見，先在現有 \`AcquisitionPopup.svelte\` 給清楚的 loading affordance 或沿用 placeholder，不建新 loading service；若 decode 後有像素但 packaged screenshot 仍黑，針對單一 WebKitGTK render/compositing path 做最小修。若全程正常，保留 E2E regression，不改圖片邏輯。
+- **藍線**：若 \`activeElement\` outline 的 rect 正對上異常橫線，在 \`DialogueBox.svelte\` 的對應聚焦控制項加 authored \`:focus-visible\` 或於 scene 轉換時移動 focus（**仍保留鍵盤可見 focus**）。若另有明確 owner，才改那個元件的最小 cleanup；禁全域 CSS 隱藏、setTimeout workaround、全域 state manager。
+- 新增紅單元測試**只有**在實際改動的 Svelte state/render path 可用元件測試捕捉時；既有 \`AcquisitionPopup.test.ts\` 與 \`CaseFileRecordDetail.test.ts\` 已覆蓋 null、async、stale、error fallback，勿再換兩個 ID 重寫相同測試。
+- 不碰 story、evidence schema、save format、原有圖片生成與字體；若發現資源真的損壞，另評估獨立 art task，**不把美術混入此 coding PR**。
 
-## Task 4 — MCP packaged E2E + screenshot visual acceptance
+**Done when：** 被確證的 Red 已轉 Green；若兩次同環境都 Green，記錄「未重現」並停止猜修。
 
-由 agent **經 MCP 操作**封裝版 Tauri，在單一平台做端到端驗收；既有 WebDriver packaged test 充當可重複自動回歸。若當前環境無可控制 Tauri 的 MCP，則 PR **維持 Draft 並列出未完成的 MCP UI gate**；不可把 DOM unit tests 說成已完成 E2E。
+## Task 3 — MCP 操作既有 packaged E2E 的最終驗收
 
-- 旅程 A：第 1 章 `investigation_scene_3` 取得 CCTV → timecard → doorlock 對照，檢查取得彈窗各 `img.complete && naturalWidth > 0`、URL、非空可見圖片、文字未遮蔽；再從案件檔案重開至少前兩張，內容仍可辨識。保存每步 800×600 screenshot。
-- 旅程 B：`investigation_scene_1` 完成早坂「委託內容」→ 直接進 `scene_2`，截第一句／中段／最後一句及進入 `investigation_scene_3` 的畫面；不得有上一話題的藍線跨過人物眼睛，對白可繼續、正常紅框不消失。跑一般與快速推進，並有可追溯的完成／重複次數。
-- 以 `apps/game/e2e-tauri/helpers.ts` 的現有 viewport、checkpoint、保存 screenshot 機制實作最小回歸；盡量在現有 `production-journey.e2e.ts` 或最合適的既存 suite 增補，不建重複 runner。需要新 checkpoint 時僅建立真正必要的**一個**，且不得只測 synthetic fixture 而未走生產 UI。
-- 無 Linear mockup：由 MCP 檢查 UI 截圖對照 UAT 描述／修前圖，客觀檢查圖片有效像素與 frame 的所屬狀態；不設人工批准條件。不要將 screenshot PNG 誤 commit 到 repo（只留 E2E artifact）。
+由**MCP agent**驅動現有 WDIO／查看所產 artifacts（不是要求額外 Tauri MCP server）；**E2E 以現有 packaged WDIO asserts 為機器判準**，不設定任何 human acceptance。無 mockup：MCP agent 檢查實際 800×600 screenshot 是否仍有空黑框、圖像是否被 UI 遮住、話題藍線是否跨 scene；若需像素可重現門檻，在既有 WDIO screenshot 基礎上加入局部像素判斷，且與源圖 canvas 檢查分開。
 
-## Task 5 — 自動測試與合併前門檻
+固定兩個 user journey：
+1. Chapter 1 真實 inv3：兩張問題圖及 doorlock 對照逐一取得、popup 首幀/decoded 幀、Case File 再打開兩張（必要時在相同 organic journey 添加 Case File 打開動作；**既有 gameplay suite 的 Kagami summary re-examine 不替代指定兩張**），圖可辨識且無空黑框；正常 CONTINUE 和後續案件照走。
+2. Chapter 1 inv1 \`commission\` 直接走 \`scene_2\`：首句／中段／末句／map 的 focus probe 與 screenshot 都無舊藍線；保留合法 crimson 對白框、鍵盤 focus 可見、故事可推進。
 
-在原 repo 執行既有檢查（可按實際 package script 調整，保留結果）：
+重用 \`observedCssViewport\` 驗證當前測試位置為 **800×600 CSS viewport**（而非只信 native window size）；若 production journey 為 Analysis 先擴至 1280×720，**只在受影響區段縮至 800×600，必要時恢復以免破壞既有拖曳 gate**。E2E screenshots 存作 artifact，勿提交到 Git。
 
-```bash
+## Task 4 — 檢查命令、測試門檻與狀態
+
+在 repo root：
+
+\`\`\`bash
 bun run scenes:compile
 bun run check
 bun run test
 bun run lint:all
 bun run --cwd apps/game check:e2e
-bun run --cwd apps/game test:e2e:smoke
-# 已打包後用現有 runner 執行所擴充的 packaged journey / focused suite。
-```
+# 先建 packaged binary；同一 build 不必每個 suite 重建
+node apps/game/scripts/build-e2e.mjs
+xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite production-journey --attempts 2
+xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite gameplay --attempts 2
+\`\`\`
 
-### End-to-end acceptance（不可標人手驗收）
+若 runner 實際的 flags/platform 有限制，以 \`run-save-e2e.mjs\` 的 CLI 契約為準並記錄等價命令；smoke 是已有的 PR CI，但**不是**此問題的 focused gate。
 
-- [ ] Task 1 有真視窗 packaged baseline：問題重現／未重現、環境與原因信心寫清楚，不能憑舊 headless 圖說已證實。
-- [ ] `cctv_screenshot` 和 `timecard_record` 在 acquisition modal 與 Case File 都可見，`doorlock_summary_timetable` 仍可見；失敗時會顯示既有 fallback，不出現無說明空黑框。
-- [ ] 800×600 的 MCP UI screenshot 視覺檢查通過；PNG 的圖像內容確實呈現，不能只靠 network 200 或 `naturalWidth` 假綠。
-- [ ] `hayasaka@commission` 話題直接進 `scene_2`，第一句、中段、尾段與下一地圖都沒有舊話題藍色焦點線；快速推進和一般推進可完成，不誤刪紅色話題框或新場景合法 focus。
-- [ ] 原有圖片載入／error fallback、Svelte reactive cleanup 與相關 unit regression 綠燈；MCP packaged E2E 覆蓋真實 scene 旅程，並保存 screenshot artifact。
-- [ ] 編譯、check、測試、lint、e2e smoke、focused packaged journey 有明確 pass/fail 紀錄；**MCP E2E gate 未完成時 PR 不標 Ready**。
-- [ ] 無故事/證物 schema、save format、rendering framework 大改；無新圖片/SFX。**HPA-831 只使用這一個 PR**，完成驗收後才標 Done。
+### End-to-end acceptance criteria（單一平台、MCP、無人工驗收）
 
-## Review pointers
-
-- 先問「兩個症狀各自有真實根因嗎？」再討論抽象共用元件。
-- 不將「資源檔存在」寫成「圖片在真視窗已可見」。
-- 不把 intermittent 焦點殘留誤判成全域藍框問題。
-- 僅保留有驗證價值的 regression；不為這兩個症狀新增大型 E2E architecture。
+- [ ] MCP agent 在 **Linux WebKitGTK + Xvfb packaged** 重用既有 WDIO E2E；報告實測 engine/window/viewport 與 head SHA，且 \`innerWidth = 800\`、\`innerHeight = 600\` 的 screenshot/DOM assertions 在受影響區段真有執行。
+- [ ] 共用 \`startAcquisitionAcknowledgement\` 對**具 real imageAssetId** 的 popup 等待 decode、非 placeholder、非空 canvas sample；兩張問題圖、doorlock 對照必須被測到，首次載入時間也被記錄（不能靠只測 decoded frame 假綠）。
+- [ ] 指定兩張證物在取得視窗、Case File 重看都確實顯示；圖片載入前不是長時間無說明的空黑框，且不存在被 UI 遮蓋或後來變黑的情形；失敗載入仍顯示既有 fallback。
+- [ ] \`commission\` → \`scene_2\` 首／中／末句 → map 的焦點 owner、rect 和 screenshot gate 完成，舊藍色 UA／話題框不殘留；紅色對白框、正常鍵盤 focus 和對話進度不退步。
+- [ ] \`production-journey\` 和 \`gameplay\` 以 packaged E2E 通過且 MCP agent 對截圖完成**視覺檢查**，不把單元／smoke 代替本次 E2E；headless 原問題若未復現則寫清楚，不假稱已修。
+- [ ] \`scenes:compile\`、check、unit、lint、check:e2e 有明確 pass/fail；不改故事/儲存格式、不加新 art/SFX、不另外開實作 PR。直到驗收全部達成，PR 保留 Draft。
