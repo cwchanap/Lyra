@@ -435,8 +435,11 @@ describe("InterrogationEvidenceTray", () => {
 
     // Base tray pins its height at every viewport size so filtering never
     // shrinks and re-centers the tray; header wraps in narrow/tall windows;
-    // grid keeps a lone result row un-stretched.
-    expect(base).toContain("height: min(760px, calc(100dvh - 48px));");
+    // grid keeps a lone result row un-stretched. The height+max-height pair
+    // is asserted together so the check cannot match inside `max-height`.
+    expect(base).toContain(
+      "height: min(760px, calc(100dvh - 48px)); max-height: min(760px, calc(100dvh - 48px));",
+    );
     expect(base).toContain("header { flex-wrap: wrap; align-items: baseline;");
     expect(base).toContain("align-content: start;");
 
