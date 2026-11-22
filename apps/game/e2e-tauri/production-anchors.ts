@@ -45,6 +45,10 @@ export const anchors = {
   caseFile: "案件檔案",
   caseFileEvidenceTab: "證物",
   caseFileReexamine: "重新檢視",
+  // GameShell submenu back control (返回選單/BACK) — the only navigation
+  // while a submenu like 案件檔案 is open; 繼續調查 exists solely on the
+  // main-menu branch, so closing a submenu requires this step first.
+  submenuBackButton: "返回選單",
   // InterrogationEvidenceTray (HPA-705): the SHOW/PRESENT tray's search
   // aria label plus every DOM selector the journey's 800x600 gate, search
   // probes and tile clicks use against the tray.
