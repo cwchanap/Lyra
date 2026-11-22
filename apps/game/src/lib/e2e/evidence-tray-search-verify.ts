@@ -26,6 +26,16 @@ export type EvidenceTraySearchState = {
   targetRendered: boolean;
 };
 
+function renderedTitlesMatchExpected(
+  titles: readonly string[],
+  expectedTitles: readonly string[],
+): boolean {
+  return (
+    titles.length === expectedTitles.length &&
+    titles.every((title, index) => title === expectedTitles[index])
+  );
+}
+
 /**
  * Strict transport verification: the COMPLETE query sits in the input, the
  * record-count text has LEFT the pre-search baseline, the exact full-title
@@ -52,8 +62,7 @@ export function evidenceTraySearchFilterApplied(
     state.targetRendered &&
     state.countText !== "" &&
     state.countText !== baselineCountText &&
-    state.titles.length === expectedTitles.length &&
-    state.titles.every((title, index) => title === expectedTitles[index])
+    renderedTitlesMatchExpected(state.titles, expectedTitles)
   );
 }
 
@@ -81,19 +90,26 @@ export function evidenceTraySearchProbeObserved(
 
 /**
  * Final acceptance after an observed probe transition: the exact query sits
- * in the input and the exact full-title tile is rendered. The count may
- * lawfully have returned to the baseline (a query that matches every
- * record); that is sound ONLY on this path, because the preceding probe
- * transition proved the binding processes this input's events.
+ * in the input, the exact full-title tile is rendered, AND the rendered
+ * tiles are exactly the records the complete query should match — the same
+ * title-set contract as the strict verifier, because the probe only proved
+ * that SOME input event reached Svelte, not that the last one did (a grid
+ * filtered by a prefix or a dropped trailing update still renders the target
+ * under the full input value). The count may lawfully have returned to the
+ * baseline (a query that matches every record); that is sound ONLY on this
+ * path, because the preceding probe transition proved the binding processes
+ * this input's events.
  */
 export function evidenceTraySearchExactQueryRendered(
   state: EvidenceTraySearchState | null,
   name: string,
+  expectedTitles: readonly string[],
 ): boolean {
   return (
     state !== null &&
     state.value === name &&
     state.targetRendered &&
-    state.countText !== ""
+    state.countText !== "" &&
+    renderedTitlesMatchExpected(state.titles, expectedTitles)
   );
 }

@@ -1171,6 +1171,7 @@ async function typeEvidenceTrayQuery(
         evidenceTraySearchExactQueryRendered(
           await readEvidenceTraySearchState(query),
           query,
+          expectedTitles,
         ),
       {
         timeout: 5000,
