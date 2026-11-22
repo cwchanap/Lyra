@@ -166,9 +166,9 @@ Each review-agent brief must contain:
 6. **Review scope:** say whether the files are the **whole chapter** or a
    slice of an unfinished one, copied from the request; if the request does not
    say, write "slice". Axis 10 checks that the chapter as a whole has its loud
-   moments, all four fixed beats and its escalation row only on a whole
-   chapter; on a slice it checks only the beats the plan places in those
-   scenes.
+   moments, all four fixed beats, its character beats and its escalation row
+   only on a whole chapter; on a slice it checks only the beats the plan
+   places in those scenes.
 
 Use the `story-reviewer` profile so the review agent is hard-blocked from
 editing (see "Subagent profiles" below).
@@ -256,7 +256,7 @@ brief. Do not raise the model or effort for a single axis unless the user asks.
 | **7. Natural conversation & situational context** | Every scene has enough natural, non-case dialogue to ground the player before investigation/hearing mechanics begin. Check against addendum §5.4 minimums: linear transitions ≥25% breathing dialogue, investigation scenes need 2–3 lines of pre-investigation dialogue (why we're here, partner check-in, first impression), interrogation/hearing scenes need 2–3 lines of pre-proceeding partner dialogue, breathing points ≥30%. New characters get a natural introduction exchange, not just a Bio field. Flag scenes that open directly into case mechanics with no human grounding, scenes where the 相馬/早坂 partnership has no relational texture (no history, no familiarity, no working dynamic), and breathing points that are actually case summaries in dialogue form. **Motivation and reader context:** every choice a character makes on the page (taking a case, cooperating with the other side, showing up somewhere, handing over evidence) has an on-page reason the player can state; the protagonist and each recurring character are introduced by who they are and why they're here on first appearance, not only by nameplate; each case shows what is at stake for the person involved; arrivals are not unexplained coincidences; a character is not named in dialogue before the player has met or been told about them; and narration that flags an oddity ("這種事，通常不會…") is followed by its answer. Flag a scene where a reader would ask "why would they do that?" or "who is this?" and the text never answers. | Addendum §5.4 ratio table + all scene files' opening dialogue blocks + character sheet voice guides for partnership dynamics |
 | **8. Visual-novel prose economy** | This is a visual novel, not a text-only novel — the background image already shows the location, weather, lighting, and atmosphere; the character portrait already shows appearance, posture, and expression. Narration and bracketed stage directions must not redundantly describe what the visuals already convey. Prose should add only what the visuals cannot: internal state, off-screen sounds, time passage, tactile details, scent. Flag paragraphs of scene-setting description that duplicate the `Background Prompt` / `[場景：...]` cue, character appearance narration that duplicates what the portrait and `characters.yaml` expression slug already show, and atmosphere description that the BGM/BGS channel or the background art already carries. Do not flag concise stage directions that direct a meaningful visual transition (expression change, new character entering) — those are choreography, not redundancy. | All scene files' narration blocks and bracketed stage directions + `static/assets/config/characters.yaml` (what portraits/expressions already convey) + compiled `src-tauri/resources/scenes/chapter_<N>/*.json` `backgroundAssetId` (what background art is shown) + `writing-detective-game-dialogue` format rules |
 | **9. Interrogation loop dialogue naturalness** | Specific to `interrogation_scene_*.md`. The interrogation loop (question selection → testimony → evidence challenge → response) produces dialogue fragments the player assembles in variable order. When the dialogue carriers are read connected together in the order a player would typically encounter them, the exchange should feel like a natural cross-examination — not disjointed menu prompts, not repetitive beats, not testimony that contradicts itself across re-challenges. Check that: locked/unlocked question transitions flow like a coherent line of questioning, testimony lines don't repeat the same denial verbatim across multiple questions, correct challenge responses acknowledge the relevant evidence rather than generic deflection, but shared `On Wrong Evidence` / `Default Wrong` responses fire for **any** incorrect selection and must not name or assume a particular wrong item; the overall arc builds tension rather than circling or resetting. Read the interrogation scene's dialogue carriers in sequence and flag jarring jumps, redundant denials across questions, beats that feel like a menu rather than a conversation, and **correct-answer** challenges that remain generic enough to swap between different evidence. The shared wrong-answer fallback is deliberately evidence-neutral. | All `interrogation_scene_*.md` files (questions, testimony, challenge responses, outro) + character sheet voice guides for the suspect + `writing-interrogation-scene` skill format rules + addendum voice guides |
-| **10. First-time player: emotion, tension & first-read clarity** | Read the chapter in manifest order as a player who has seen none of the planning pages, and check it against the "Emotion and clarity" rules of `writing-detective-game-dialogue`: a feeling lands on screen when its cause happens, the player knows what is at stake, and one read is enough to follow. Covers the chapter's loud moments, the four fixed beats and their guards, the seven dialogue rules, and how 相馬律's inner voice is used. The form of inner voice belongs to Axis 3 and sealed reveals to Axis 2; do not report them again here. Use the checks and the severity guide in "First-time Player Checks (Axis 10)" below, and copy that section into the brief with this row. | `writing-detective-game-dialogue` "Emotion and clarity" + character sheet per-character 必須/台詞風格 + the construction plan's emotion table (or the addendum, where the beats were placed by decision) + from Chapter 3 on, the chapter's row of the bible's escalation table + `chapter.md` + all scene files, read in manifest order |
+| **10. First-time player: emotion, tension & first-read clarity** | Read the chapter in manifest order as a player who has seen none of the planning pages, and check it against the "Emotion and clarity" rules of `writing-detective-game-dialogue`: a feeling lands on screen when its cause happens, the player knows what is at stake, and one read is enough to follow. Covers the chapter's loud moments, the four fixed beats and their guards, the character beats of Bible §19.2, the seven dialogue rules, and how 相馬律's inner voice is used. The form of inner voice belongs to Axis 3 and sealed reveals to Axis 2; do not report them again here. Use the checks and the severity guide in "First-time Player Checks (Axis 10)" below, and copy that section into the brief with this row. | `writing-detective-game-dialogue` "Emotion and clarity" + character sheet per-character 必須/台詞風格 + the construction plan's emotion table (or the addendum, where the beats were placed by decision) + the Bible's §19.2 tables + from Chapter 3 on, the chapter's row of the bible's escalation table + `chapter.md` + all scene files, read in manifest order |
 
 ### Per-axis loop procedure
 
@@ -371,6 +371,11 @@ against what was intended.
   places them, with their guards intact: the proof never rests on what the
   culprit says, the solution scene stops where the record stops and says so,
   and the release is acted out rather than bracketed or reported later.
+- The chapter pays off the applicable rows of the Bible's §19.2 character
+  table: the weakness each character must show once per chapter, with that
+  table's exceptions (for example 早坂 in Chapter 1). Check the rows for the
+  characters who appear in this chapter, reading them from the Bible rather
+  than from memory, and never ask for a filler appearance.
 
 **Tension**
 
@@ -413,7 +418,8 @@ against what was intended.
 - **Important:** a key emotional moment with no on-screen reaction; a task
   scene with no stated goal; a term the player needs that is never explained;
   a line the player must follow that carries two or more times or codes. A
-  missing fixed beat, or a chapter with no loud moment, is also Important,
+  missing fixed beat, a missing §19.2 character beat, or a chapter with no
+  loud moment, is also Important,
   but it needs a new scene or a moved beat: the implementer escalates it as
   `STRUCTURAL — needs human` and does not invent one. Something that is
   missing has no offending line to quote: cite the scene where the plan or
@@ -425,7 +431,8 @@ against what was intended.
   row") are guidance, as in Axis 6. Being one off is never by itself above
   Minor, and never a reason to add filler lines.
 - Chapter-level completeness checks (the chapter has its loud moments, all
-  four fixed beats and its escalation row) apply only when the review brief
+  four fixed beats, its character beats and its escalation row) apply only
+  when the review brief
   says the files are the whole chapter. Without that statement, treat them as
   a slice of an unfinished chapter: check the beats the plan or addendum
   places in those scenes, guards included, and list the rest as not yet in
