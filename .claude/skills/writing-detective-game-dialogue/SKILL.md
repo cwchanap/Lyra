@@ -511,7 +511,7 @@ When asked to write any part of a chapter:
 
 This is a multi-chapter mystery with deliberately staged reveals. Before placing any clue or hint, check the Notion Story Bible and the current chapter plan.
 
-**The spine question (Bible V7.1).** The whole game follows one question in 相馬's own voice: 「那一晚，我到底看見了什麼？」 Each chapter's ending returns to it with one new answer and one sharper question, through inner voice and the 「未解事項」 note. The Bible lists each chapter's line; never answer more than that chapter's row allows.
+**The spine question (Bible V7.1).** The whole game follows one question: 「那一晚，我到底看見了什麼？」 The player asks it before 相馬 does. In Chapters 1–3 he is still too sure of himself, so he does not question his own view of that night, and the exact question is not his before Chapter 4 (the Bible leaves the scene to each chapter plan). Each chapter's ending still returns to it with one new answer and one sharper question, through the 「未解事項」 note and the chapter's own facts, with 相馬's inner voice carrying only what that chapter's row allows. The Bible lists each chapter's line; never answer more than that chapter's row allows.
 
 For Chapter 1 specifically:
 - **Prologue 0–2:** do not name 青葉, A-90, 雨宮, `ZW_A16.lock`, or 相馬's old-case identity.
