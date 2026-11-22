@@ -11,6 +11,7 @@
     "scripts/e2e-binary-path.mjs",
     "scripts/e2e-trusted-keys.mjs",
     "scripts/e2e-trusted-key-process.mjs",
+    "scripts/e2e-x11-trusted-input.mjs",
     "wdio.conf.ts"
   ]
 }
