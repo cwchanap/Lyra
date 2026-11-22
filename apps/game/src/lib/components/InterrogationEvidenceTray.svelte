@@ -66,7 +66,9 @@
   let detailPanel: HTMLElement | undefined = $state();
   let evidenceImages = $state<Record<string, ResolvedStoryAsset | null>>({});
   let records = $derived(presentableRecords(inventory));
+  let inputValue = $state("");
   let query = $state("");
+  let isComposing = $state(false);
   let visibleRecords = $derived(filterPresentableRecords(records, query));
   let recordCountText = $derived(
     /* v8 ignore next -- template concatenation artifact */
@@ -167,7 +169,8 @@
     }
   }
 
-  function handleSearchInput() {
+  function applySearchQuery(nextQuery: string) {
+    query = nextQuery;
     // A record card removed by {#each visibleRecords} is not guaranteed to
     // fire mouseleave/blur, so clear the detail keys here — otherwise an old
     // detail could resurface when the search term is cleared again.
@@ -175,6 +178,28 @@
     hoveredRecordKey = null;
     focusedRecordKey = null;
     inspectedRecordKey = null;
+  }
+
+  function handleSearchInput(
+    event: Event & { currentTarget: HTMLInputElement },
+  ) {
+    inputValue = event.currentTarget.value;
+    if (isComposing || (event instanceof InputEvent && event.isComposing)) {
+      return;
+    }
+    applySearchQuery(inputValue);
+  }
+
+  function handleSearchCompositionStart() {
+    isComposing = true;
+  }
+
+  function handleSearchCompositionEnd(
+    event: CompositionEvent & { currentTarget: HTMLInputElement },
+  ) {
+    isComposing = false;
+    inputValue = event.currentTarget.value;
+    applySearchQuery(inputValue);
   }
 
   function handleKeydown(event: KeyboardEvent) {
@@ -189,16 +214,22 @@
     // either by tabbing through every later tile or by ArrowDown from an
     // earlier tile, and in both cases the inspected tile is the one the
     // user was reading. Focusing it re-sets the same inspected key, so the
-    // detail stays consistent.
+    // detail stays consistent. Skip while disabled so Shift+Tab falls through
+    // to the Tab trap instead of trying to focus a disabled tile.
     if (
+      !disabled &&
       event.key === "Tab" &&
       event.shiftKey &&
+      !event.isComposing &&
+      event.keyCode !== 229 &&
       document.activeElement === detailPanel &&
       inspectedRecordKey !== null
     ) {
       /* v8 ignore next -- defensive: detailPanel lives inside the bound tray, so the lookup always runs against a mounted grid */
       const inspectedTile = Array.from(
-        tray?.querySelectorAll<HTMLElement>("[data-record-key]") ?? [],
+        tray?.querySelectorAll<HTMLElement>(
+          "[data-record-key]:not(:disabled)",
+        ) ?? [],
       ).find((tile) => tile.dataset.recordKey === inspectedRecordKey);
       /* v8 ignore next -- defensive: handleSearchInput clears the inspected key when its tile leaves the grid, so the tile is always found */
       if (inspectedTile) {
@@ -229,7 +260,17 @@
     if (topLayerOpen) return;
     /* v8 ignore next -- defensive: the detail panel binds on the same render path as the tiles, so a focused tile always has a bound panel. */
     if (!detailPanel) return;
-    if (event.key !== "ArrowDown") return;
+    if (
+      event.key !== "ArrowDown" ||
+      event.altKey ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.shiftKey ||
+      event.isComposing ||
+      event.keyCode === 229
+    ) {
+      return;
+    }
     event.preventDefault();
     // The shortcut opens the record whose tile received the key, not a
     // competing hover preview (activeRecord gives hover priority): pin the
@@ -307,8 +348,10 @@
         type="search"
         aria-label="搜尋紀錄"
         placeholder="搜尋紀錄"
-        bind:value={query}
+        value={inputValue}
         oninput={handleSearchInput}
+        oncompositionstart={handleSearchCompositionStart}
+        oncompositionend={handleSearchCompositionEnd}
       />
       <p class="record-count" role="status">{recordCountText}</p>
       <button
@@ -349,7 +392,9 @@
       aria-label="可提出的紀錄"
       bind:this={recordGrid}
     >
-      {#if visibleRecords.length === 0}
+      {#if records.length === 0}
+        <p class="record-empty">目前沒有可提出的紀錄</p>
+      {:else if visibleRecords.length === 0}
         <p class="record-empty">沒有符合的紀錄，請修改搜尋字詞</p>
       {/if}
       {#each visibleRecords as record (record.kind + ":" + record.id)}
@@ -470,6 +515,11 @@
     grid-template-rows: auto auto minmax(0, 1fr) auto auto;
     gap: 18px;
     width: min(900px, calc(100vw - 48px));
+    /* Pinned height: filtering shrinks the grid contents, and a content-sized
+    centered tray would shrink and re-center with it, dragging the search input
+    out from under the typing/IME focus. The fixed height lets the grid's 1fr
+    track absorb every content change. */
+    height: min(760px, calc(100dvh - 48px));
     max-height: min(760px, calc(100dvh - 48px));
     padding: clamp(20px, 3vw, 32px);
     overflow: hidden;
@@ -498,6 +548,7 @@
   }
 
   header {
+    flex-wrap: wrap;
     align-items: baseline;
   }
 
@@ -624,6 +675,7 @@
   .record-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-content: start;
     gap: 12px;
     min-height: 0;
     overflow-y: auto;
@@ -818,18 +870,11 @@
 
   @media (max-height: 650px) {
     .interrogation-evidence-tray {
-      /* Pinned height: filtering shrinks the grid contents, and a
-      content-sized centered tray would shrink and re-center with it,
-      dragging the search input out from under the typing/IME focus. The
-      fixed height lets the grid's 1fr track absorb every content change
-      (align-content: start keeps a lone result row un-stretched). */
-      height: min(760px, calc(100dvh - 48px));
       padding: 14px;
       gap: 8px;
     }
 
     header {
-      flex-wrap: wrap;
       align-items: center;
     }
 
@@ -839,7 +884,6 @@
 
     .record-grid {
       gap: 8px;
-      align-content: start;
     }
 
     .record-tile {

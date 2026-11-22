@@ -314,7 +314,9 @@
       // layer stack: it cancels the in-flight composition (e.g. a CJK term
       // in the evidence tray search) and must reach the input untouched —
       // cancelling it here would close the tray and discard the query.
-      if (event.isComposing) {
+      // macOS WebKit can deliver that cancelling Escape with
+      // isComposing === false and keyCode === 229, so guard both.
+      if (event.isComposing || event.keyCode === 229) {
         return;
       }
 

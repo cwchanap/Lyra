@@ -421,8 +421,14 @@ async function clickPresentRecordWithPointer(
     );
   }
 
-  const tileCount = await tiles.length;
-  for (let attempt = 0; attempt < tileCount; attempt += 1) {
+  const tabStopCount = await browser.execute((traySelector: string) => {
+    const tray = document.querySelector(traySelector);
+    if (!tray) return 0;
+    return tray.querySelectorAll(
+      ":is(input, button, [data-interrogation-line-record], [data-interrogation-evidence-detail]):not(:disabled)",
+    ).length;
+  }, anchors.evidenceTray.root);
+  for (let attempt = 0; attempt <= tabStopCount; attempt += 1) {
     const focused = await browser.execute(
       (name: string, tileSelector: string) => {
         const target = Array.from(

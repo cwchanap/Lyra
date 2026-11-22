@@ -113,6 +113,9 @@
 
   function keydown(event: KeyboardEvent): void {
     if (event.key === "Escape" && !event.repeat) {
+      // Leave a composing Escape (or WebKit's keyCode 229 IME-cancel keydown)
+      // to the IME so cancelling a candidate window does not discard the name.
+      if (event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       event.stopPropagation();
       if (pending) return;
