@@ -2936,9 +2936,7 @@ describe("compile (tracked production corpus compatibility)", () => {
     // chapter must exist as a compiled file on disk — otherwise its targets
     // silently skip the placement gate below.
     const expectedInvestigationFiles = (
-      JSON.parse(
-        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
-      ) as {
+      JSON.parse(readFileSync(resolve(outRoot, "chapters.json"), "utf-8")) as {
         chapters: Array<{
           id: string;
           scenes: Array<{ type: string; file: string }>;
