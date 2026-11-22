@@ -1612,10 +1612,25 @@ export function setAcquisitionCompositorGate(
   acquisitionCompositorGate = gate;
 }
 
+type CssRectLike = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 export type ScreenshotRegionPaintResult = {
   screenshotPath: string;
   metricsPath: string;
-  cssRect: { left: number; top: number; width: number; height: number };
+  cssRect: CssRectLike;
+  /** Nearest y-scrollable ancestor's CSS rect (`null` when the element is
+   * not inside a scrollport) — the crop is intersected with it because the
+   * scrollport clips those pixels away; sampling them would read unrelated
+   * painted content, not the image. */
+  scrollportRect: CssRectLike | null;
+  /** cssRect ∩ scrollportRect ∩ viewport — the only pixels actually painted
+   * for the element; the crop is taken from this, never the raw DOM rect. */
+  visibleCssRect: CssRectLike;
   cssViewport: { width: number; height: number };
   devicePixelRatio: number;
   /** Actual screenshotSize ÷ cssViewportSize on each axis — recorded so a
@@ -1626,6 +1641,19 @@ export type ScreenshotRegionPaintResult = {
   metrics: RegionPixelMetrics;
 };
 
+function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.left + a.width, b.left + b.width);
+  const bottom = Math.min(a.top + a.height, b.top + b.height);
+  return {
+    left,
+    top,
+    width: Math.max(0, right - left),
+    height: Math.max(0, bottom - top),
+  };
+}
+
 /**
  * The shared compositor proof: save a WDIO screenshot, decode the PNG in the
  * Node test process, map `selector`'s CSS rect into image pixels by the real
@@ -1634,6 +1662,12 @@ export type ScreenshotRegionPaintResult = {
  * BEFORE the assertion so a failing paint keeps its evidence on disk.
  * Callers pass the painted element: `.acquisition-card .visual` for the
  * popup, `img.case-file-record-image` for Case File.
+ *
+ * `scrollIntoView` is for elements inside a scrollable container (the Case
+ * File submenu's `.game-menu-extra` at 800x600): the element is scrolled
+ * into view, its rect is re-read until stable, and the crop is intersected
+ * with the nearest scrollport's rect — the only painted image area — so a
+ * below-the-fold record can't sample clipped-away or unrelated pixels.
  */
 export async function assertScreenshotRegionPainted(input: {
   selector: string;
@@ -1641,22 +1675,56 @@ export async function assertScreenshotRegionPainted(input: {
   screenshotPath: string;
   /** CSS px to shave off each side (skips 1px borders + AA fringe). */
   insetCssPx?: number;
+  /** Scroll the element into view and intersect the crop with its nearest
+   * y-scrollable ancestor. Required for elements inside a scrollport. */
+  scrollIntoView?: boolean;
 }): Promise<ScreenshotRegionPaintResult> {
-  const target = await browser.execute((sel: string) => {
-    const element = document.querySelector(sel);
-    if (!element) return null;
-    const rect = element.getBoundingClientRect();
-    return {
-      rect: {
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
+  const readTarget = () =>
+    browser.execute(
+      (sel: string, doScroll: boolean) => {
+        const element = document.querySelector(sel);
+        if (!element) return null;
+        if (doScroll) {
+          element.scrollIntoView({ block: "center", inline: "nearest" });
+        }
+        const rectOf = (candidate: Element) => {
+          const r = candidate.getBoundingClientRect();
+          return {
+            left: r.left,
+            top: r.top,
+            width: r.width,
+            height: r.height,
+          };
+        };
+        // Nearest y-scrollable ancestor: the scrollport clips the element's
+        // painted area, so the crop must intersect with it (not just the
+        // viewport) or it can read pixels the scrollport never paints.
+        let scrollport: Element | null = element.parentElement;
+        while (scrollport) {
+          const style = getComputedStyle(scrollport);
+          if (
+            (style.overflowY === "auto" || style.overflowY === "scroll") &&
+            scrollport.scrollHeight > scrollport.clientHeight + 1
+          ) {
+            break;
+          }
+          scrollport = scrollport.parentElement;
+        }
+        return {
+          rect: rectOf(element),
+          scrollport: scrollport ? rectOf(scrollport) : null,
+          viewport: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+          },
+          devicePixelRatio: window.devicePixelRatio,
+        };
       },
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      devicePixelRatio: window.devicePixelRatio,
-    };
-  }, input.selector);
+      input.selector,
+      input.scrollIntoView === true,
+    );
+
+  let target = await readTarget();
   if (!target) {
     throw new Error(
       `${input.label}: element ${input.selector} is not mounted for the screenshot crop`,
@@ -1667,6 +1735,43 @@ export async function assertScreenshotRegionPainted(input: {
       `${input.label}: ${input.selector} has an empty rect ${JSON.stringify(target.rect)}`,
     );
   }
+  if (input.scrollIntoView === true) {
+    // scrollIntoView scrolls every clipped ancestor synchronously, but the
+    // layout can settle over a frame or two — re-read until the geometry is
+    // stable so the crop maps the painted pixels, not a mid-scroll frame.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      await browser.pause(150);
+      const next = await readTarget();
+      if (!next) {
+        throw new Error(
+          `${input.label}: element ${input.selector} unmounted while scrolling into view`,
+        );
+      }
+      const stable =
+        JSON.stringify(next.rect) === JSON.stringify(target.rect) &&
+        JSON.stringify(next.scrollport) === JSON.stringify(target.scrollport);
+      target = next;
+      if (stable) break;
+    }
+  }
+  const viewportRect: CssRectLike = {
+    left: 0,
+    top: 0,
+    width: target.viewport.width,
+    height: target.viewport.height,
+  };
+  const visibleCssRect = intersectCssRects(
+    intersectCssRects(target.rect, target.scrollport ?? viewportRect),
+    viewportRect,
+  );
+  if (visibleCssRect.width <= 0 || visibleCssRect.height <= 0) {
+    throw new Error(
+      `${input.label}: ${input.selector} has no painted area inside its ` +
+        `scrollport/viewport (rect=${JSON.stringify(target.rect)}, ` +
+        `scrollport=${JSON.stringify(target.scrollport)}, ` +
+        `viewport=${JSON.stringify(target.viewport)})`,
+    );
+  }
   mkdirSync(path.dirname(input.screenshotPath), { recursive: true });
   await browser.saveScreenshot(input.screenshotPath);
   const png = decodePng(readFileSync(input.screenshotPath));
@@ -1675,7 +1780,7 @@ export async function assertScreenshotRegionPainted(input: {
     y: png.height / target.viewport.height,
   };
   const region = cssRectToImageRegion(
-    target.rect,
+    visibleCssRect,
     target.viewport,
     { width: png.width, height: png.height },
     input.insetCssPx ?? 0,
@@ -1689,6 +1794,8 @@ export async function assertScreenshotRegionPainted(input: {
         label: input.label,
         selector: input.selector,
         cssRect: target.rect,
+        scrollportRect: target.scrollport,
+        visibleCssRect,
         cssViewport: target.viewport,
         devicePixelRatio: target.devicePixelRatio,
         screenshotScale,
@@ -1702,13 +1809,15 @@ export async function assertScreenshotRegionPainted(input: {
     )}\n`,
   );
   console.log(
-    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
+    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} scrollport=${JSON.stringify(target.scrollport)} visible=${JSON.stringify(visibleCssRect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
   );
   expectPaintedRegion(metrics, input.label);
   return {
     screenshotPath: input.screenshotPath,
     metricsPath,
     cssRect: target.rect,
+    scrollportRect: target.scrollport,
+    visibleCssRect,
     cssViewport: target.viewport,
     devicePixelRatio: target.devicePixelRatio,
     screenshotScale,
