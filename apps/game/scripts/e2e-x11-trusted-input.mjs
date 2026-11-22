@@ -9,19 +9,24 @@
  * below must pass before any key is sent:
  *
  *   1. DISPLAY/XAUTHORITY are set, and DISPLAY is a local `:<n>` number.
- *   2. An `xvfb-run` process is a strict ANCESTOR of this WDIO worker — an
+ *   2. XAUTHORITY names a securely permissioned run-private authority
+ *      file — a regular file owned by this user with no group/other
+ *      access, inside an equally private directory.
+ *   3. An `xvfb-run` process is a strict ANCESTOR of this WDIO worker — an
  *      Xvfb process merely serving the same display elsewhere in the table
  *      proves nothing about privacy.
- *   3. Exactly one Xvfb child of that xvfb-run serves the current DISPLAY
- *      (its `:<n>` argv token) AND is bound to the current XAUTHORITY via
- *      its `-auth` argv or its process environment — the xvfb-run private
- *      auth file this run inherited.
- *   4. The app process matches the shared owned-process selector (exact
+ *   4. Exactly one Xvfb child of that xvfb-run serves the current DISPLAY
+ *      (its `:<n>` argv token), does NOT run `-ac` (X access control
+ *      disabled), and carries exactly one `-auth` argument equal to the
+ *      current XAUTHORITY. Server authentication evidence lives in argv:
+ *      an inherited XAUTHORITY environment alone does not enforce cookies
+ *      (a run with XAUTHORITY=/dev/null still accepts connections).
+ *   5. The app process matches the shared owned-process selector (exact
  *      configured e2e binary via /proc/<pid>/exe, parented by this worker
  *      or the WDIO launcher).
- *   5. xdotool finds exactly one visible window owned by that app pid, and
+ *   6. xdotool finds exactly one visible window owned by that app pid, and
  *      both `_NET_WM_PID` and `getwindowpid` agree with it.
- *   6. The X input focus sits on that window before and after each key.
+ *   7. The X input focus sits on that window before and after each key.
  *
  * Every function throws rather than guess: the caller must surface the
  * failure as inconclusive coverage and must NOT fall back to OS-global
@@ -86,21 +91,47 @@ function xvfbServedDisplayNumber(entry) {
 }
 
 /**
- * Evidence that this Xvfb reads the run's private auth file: an `-auth`
- * argv value (some xvfb-run variants) or the XAUTHORITY recorded in the
- * Xvfb process's own environment (Debian-derived scripts export it).
+ * The `-auth <file>` values on an Xvfb command line, in order. `-auth` is
+ * the server's authoritative authentication file; `-ac` disables access
+ * control outright. An inherited XAUTHORITY environment variable is NOT
+ * evidence — the server only reads it when no `-auth` is given, and a run
+ * with XAUTHORITY=/dev/null still accepts read-only connections, so
+ * environment alone can never prove cookie enforcement.
  */
-function xvfbAuthorityBinding(entry) {
+function xvfbAuthArguments(entry) {
   const argv = entry.argv ?? [];
-  const authIndex = argv.indexOf("-auth");
-  const authArg = authIndex === -1 ? null : (argv[authIndex + 1] ?? null);
-  const envEntry = (entry.environ ?? []).find((pair) =>
-    pair.startsWith("XAUTHORITY="),
-  );
-  return {
-    authArg,
-    envAuthority: envEntry?.slice("XAUTHORITY=".length) ?? null,
-  };
+  const values = [];
+  for (let index = 0; index < argv.length; index += 1) {
+    if (argv[index] === "-auth") values.push(argv[index + 1] ?? null);
+  }
+  return values;
+}
+
+/**
+ * The run-private authority file evidence, gathered by the caller from
+ * fs.stat: a regular file owned by this user with no group/other
+ * permission bits, inside a directory equally owned and permissioned.
+ * Anything else (missing, foreign-owned, group/world-readable, or a
+ * loosely permissioned parent directory another principal could replace
+ * files in) leaves the "private" authority forgeable — fail closed.
+ */
+function assertSecureAuthorityFile({ authorityFile, xauthority }) {
+  const evidence = authorityFile ?? {};
+  const describe = `file(isFile=${evidence.isFile ?? "?"},mode=${typeof evidence.mode === "number" ? `0${(evidence.mode & 0o777).toString(8)}` : "?"},uid=${evidence.uid ?? "?"}) dir(isDirectory=${evidence.dirIsDirectory ?? "?"},mode=${typeof evidence.dirMode === "number" ? `0${(evidence.dirMode & 0o777).toString(8)}` : "?"},uid=${evidence.dirUid ?? "?"}) euid=${evidence.euid ?? "?"}`;
+  if (
+    evidence.isFile !== true ||
+    evidence.dirIsDirectory !== true ||
+    typeof evidence.mode !== "number" ||
+    typeof evidence.dirMode !== "number" ||
+    (evidence.mode & 0o077) !== 0 ||
+    (evidence.dirMode & 0o077) !== 0 ||
+    evidence.uid !== evidence.euid ||
+    evidence.dirUid !== evidence.euid
+  ) {
+    throw new Error(
+      `XAUTHORITY ${xauthority} is not a securely permissioned run-private authority file (${describe}) — display privacy cannot be proven; refusing XTEST keys`,
+    );
+  }
 }
 
 /** `:<n>` or `:<n>.<screen>` -> n; anything else (remote/host forms) -> null. */
@@ -112,7 +143,8 @@ export function parseLocalDisplayNumber(display) {
 /**
  * Prove this worker runs under a private xvfb-run display owned by this
  * test-run ancestry. `processes` is the live `/proc` table
- * (`{pid, ppid, comm, argv, exe, environ}`). Returns the verified
+ * (`{pid, ppid, comm, argv, exe}`) and `authorityFile` the caller-gathered
+ * fs.stat evidence for XAUTHORITY. Returns the verified
  * `{xvfbRunPid, xvfbPid}` pair or throws — uncertainty always fails closed.
  */
 export function verifyPrivateXvfbAncestry({
@@ -120,6 +152,7 @@ export function verifyPrivateXvfbAncestry({
   currentPid,
   display,
   xauthority,
+  authorityFile,
 }) {
   if (typeof display !== "string" || display.length === 0) {
     throw new Error(
@@ -137,6 +170,7 @@ export function verifyPrivateXvfbAncestry({
       `trusted XTEST keys require the xvfb-run private auth file but XAUTHORITY is unset for DISPLAY ${display}; refusing OS-global keys on an unverified display`,
     );
   }
+  assertSecureAuthorityFile({ authorityFile, xauthority });
 
   const byPid = new Map();
   for (const entry of processes) byPid.set(entry.pid, entry);
@@ -195,10 +229,19 @@ export function verifyPrivateXvfbAncestry({
   }
 
   const xvfb = serving[0];
-  const { authArg, envAuthority } = xvfbAuthorityBinding(xvfb);
-  if (authArg !== xauthority && envAuthority !== xauthority) {
+  if ((xvfb.argv ?? []).includes("-ac")) {
     throw new Error(
-      `Xvfb pid ${xvfb.pid} serving DISPLAY ${display} is not bound to this run's XAUTHORITY ${xauthority} (-auth argv: ${authArg ?? "absent"}, environ: ${envAuthority ?? "absent"}) — display privacy cannot be proven; refusing XTEST keys`,
+      `Xvfb pid ${xvfb.pid} serving DISPLAY ${display} runs with -ac — X access control is disabled and any client may connect; display privacy cannot be proven; refusing XTEST keys`,
+    );
+  }
+  const authArguments = xvfbAuthArguments(xvfb);
+  if (authArguments.length !== 1 || authArguments[0] !== xauthority) {
+    const found =
+      authArguments.length === 0
+        ? "no -auth — an inherited XAUTHORITY environment alone does not prove server cookie enforcement"
+        : `${authArguments.length} -auth arguments [${authArguments.map((value) => value ?? "missing value").join(", ")}]`;
+    throw new Error(
+      `Xvfb pid ${xvfb.pid} serving DISPLAY ${display} does not bind this run's XAUTHORITY ${xauthority} through exactly one -auth argument (${found}) — display privacy cannot be proven; refusing XTEST keys`,
     );
   }
   return { xvfbRunPid: xvfbRun.pid, xvfbPid: xvfb.pid };
@@ -255,4 +298,86 @@ export function parseXdotoolDecimal(output) {
   const value = output.trim();
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * `_NET_WM_PID` and `xdotool getwindowpid` must BOTH equal the verified app
+ * pid. `xdotool search --pid` already filtered on the first, but a stale
+ * window id, a reparented/foreign window, or a racing map can still slip
+ * one probe — a mismatch on either fails closed rather than keying an
+ * unverified window.
+ */
+export function assertX11WindowOwnership({
+  windowId,
+  netWmPid,
+  windowOwnerPid,
+  appPid,
+}) {
+  if (netWmPid !== appPid) {
+    throw new Error(
+      `window ${windowId} reports _NET_WM_PID ${netWmPid ?? "absent"}, expected verified e2e app pid ${appPid} — refusing XTEST keys to an unverified window`,
+    );
+  }
+  if (windowOwnerPid !== appPid) {
+    throw new Error(
+      `xdotool getwindowpid ${windowId} reports ${windowOwnerPid ?? "unparseable"}, expected verified e2e app pid ${appPid} — refusing XTEST keys to an unverified window`,
+    );
+  }
+}
+
+/**
+ * The preflight -> focus -> key -> post-focus delivery sequence, shared by
+ * production (`sendXvfbTrustedKey` in helpers.ts) and the orchestration
+ * tests — never mirrored. `resolveTarget` performs all private-display,
+ * process, and window verification and may throw before ANY xdotool
+ * command runs; `run` executes one bounded `xdotool` argv call and returns
+ * stdout. The X input focus must belong to the verified window before the
+ * key is sent (`windowfocus --sync` reasserts it in the no-WM
+ * environment) and is re-checked after delivery; any failure aborts
+ * before `key` is delivered and a post-delivery focus loss still fails
+ * inconclusive. The checks narrow but cannot eliminate the focus race
+ * (another client could take focus between the check and the XTEST
+ * event), so the opt-in stays limited to the private xvfb-run runner.
+ */
+export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
+  const keyName = X11_TRUSTED_KEY_NAMES[key];
+  if (typeof keyName !== "string") {
+    throw new Error(
+      `unsupported trusted X11 key ${JSON.stringify(key)} — refusing to send XTEST keys`,
+    );
+  }
+  const { appPid, windowId } = await resolveTarget();
+  const xdotool = async (args) => {
+    try {
+      return await run(args);
+    } catch (error) {
+      const err = error ?? {};
+      const detail = [err.message, err.stderr]
+        .filter((part) => typeof part === "string" && part.length > 0)
+        .join(" | ");
+      throw new Error(
+        `trusted ${key} delivery to window ${windowId} (e2e app pid ${appPid}) failed — xdotool ${args[0]}: ${detail || String(error)}; keyboard coverage is inconclusive`,
+        { cause: error },
+      );
+    }
+  };
+  const focusedWindow = async () =>
+    parseXdotoolDecimal(await xdotool(["getwindowfocus"]));
+
+  if ((await focusedWindow()) !== windowId) {
+    await xdotool(["windowfocus", "--sync", String(windowId)]);
+    const focused = await focusedWindow();
+    if (focused !== windowId) {
+      throw new Error(
+        `X input focus did not move to verified window ${windowId} (focused: ${focused ?? "unparseable"}) — refusing trusted ${key}; keyboard coverage is inconclusive`,
+      );
+    }
+  }
+  await xdotool(["key", keyName]);
+  const focusedAfter = await focusedWindow();
+  if (focusedAfter !== windowId) {
+    throw new Error(
+      `X input focus left verified window ${windowId} (now ${focusedAfter ?? "unparseable"}) while delivering trusted ${key}; keyboard coverage is inconclusive`,
+    );
+  }
 }
