@@ -2,12 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { selectOwnedE2eAppProcessId } from "./e2e-trusted-key-process.mjs";
 import {
+  EMPTY_XAUTHORITY_PROBE,
   TRUSTED_XVFB_KEYS_ENV,
   assertTrustedXvfbKeysAllowed,
+  assertUsableAuthorityCookies,
+  assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
   deliverXvfbTrustedKey,
   parseLocalDisplayNumber,
   parseNetWmPid,
+  parseXauthorityRecords,
   parseXdotoolDecimal,
   selectUniqueX11WindowId,
   trustedXvfbKeysOptIn,
@@ -24,8 +28,38 @@ const XAUTHORITY = "/tmp/xvfb-run.Abc123/Xauthority.dEf456";
 const CONFIGURED_E2E_PATH =
   "/checkouts/lyra/apps/game/src-tauri/target-e2e/debug/lyra";
 
-/** The fs.stat evidence a real xvfb-run mktemp file/dir pair produces:
- * 0600 file inside a 0700 directory, both owned by the run's user. */
+/** One Xau record: CARD16 family + four length-prefixed big-endian fields
+ * (address, number, name, data) — the exact wire shape xvfb-run writes
+ * through xauth. `data` is the cookie itself; tests assert it is never
+ * retained in parsed output. */
+function xauthRecord({
+  family = 256,
+  address = "run-host",
+  number = "99",
+  name = "MIT-MAGIC-COOKIE-1",
+  data = Buffer.alloc(16, 0x5a),
+} = {}) {
+  const u16 = (value) => {
+    const bytes = Buffer.alloc(2);
+    bytes.writeUInt16BE(value);
+    return bytes;
+  };
+  return Buffer.concat([
+    u16(family),
+    u16(Buffer.byteLength(address)),
+    Buffer.from(address, "utf8"),
+    u16(Buffer.byteLength(number)),
+    Buffer.from(number, "utf8"),
+    u16(Buffer.byteLength(name)),
+    Buffer.from(name, "utf8"),
+    u16(data.length),
+    data,
+  ]);
+}
+
+/** The fs.stat + content evidence a real xvfb-run mktemp file/dir pair
+ * produces: 0600 file inside a 0700 directory, both owned by the run's
+ * user, holding one usable cookie record for the served display. */
 const PRIVATE_AUTHORITY_FILE = {
   isFile: true,
   mode: 0o600,
@@ -34,6 +68,7 @@ const PRIVATE_AUTHORITY_FILE = {
   dirMode: 0o700,
   dirUid: 1000,
   euid: 1000,
+  content: xauthRecord(),
 };
 
 function proc(pid, ppid, comm, argv = [], extra = {}) {
@@ -322,6 +357,207 @@ for (const [name, evidence] of [
     );
   });
 }
+
+for (const [name, content] of [
+  // The reviewer's round-2 reproduction: a size-0 regular file with
+  // 0600/0700 evidence loaded ZERO Xorg records — Xorg then accepts any
+  // local client. Stat-shape checks alone must never be enough.
+  ["an empty file", Buffer.alloc(0)],
+  ["a truncated record header", Buffer.from([0x00, 0x01, 0x00])],
+  [
+    "a field that overruns the file",
+    Buffer.concat([Buffer.from([0x00, 0x01, 0x00, 0x04]), Buffer.from("ab")]),
+  ],
+  ["a record for a different display only", xauthRecord({ number: "100" })],
+  ["a record with an unnamed auth scheme", xauthRecord({ name: "" })],
+  ["a record with an empty cookie", xauthRecord({ data: Buffer.alloc(0) })],
+  ["non-byte content", "not an Xauthority file"],
+]) {
+  test(`rejects unusable cookie evidence: ${name}`, () => {
+    const evidence = { ...PRIVATE_AUTHORITY_FILE, content };
+    assert.throws(
+      () => verify(privateXvfbTable(), { authorityFile: evidence }),
+      /no provable cookie records|no usable cookie/,
+    );
+  });
+}
+
+test("accepts cookie evidence when a usable record for the display exists", () => {
+  for (const content of [
+    xauthRecord(),
+    Buffer.concat([xauthRecord({ number: "100" }), xauthRecord()]),
+    Buffer.concat([xauthRecord({ name: "XDM-AUTHORIZATION-1" })]),
+  ]) {
+    assert.deepEqual(
+      verify(privateXvfbTable(), {
+        authorityFile: { ...PRIVATE_AUTHORITY_FILE, content },
+      }),
+      { xvfbRunPid: 20, xvfbPid: 25 },
+    );
+  }
+});
+
+test("parseXauthorityRecords never retains cookie bytes", () => {
+  const records = parseXauthorityRecords(xauthRecord());
+  assert.equal(records.length, 1);
+  // Only dataLength is exposed — the record object must not carry the
+  // cookie itself (or any raw field bytes) into a loggable shape.
+  assert.deepEqual(records[0], {
+    family: 256,
+    address: "run-host",
+    number: "99",
+    name: "MIT-MAGIC-COOKIE-1",
+    dataLength: 16,
+  });
+  assert.equal("data" in records[0], false);
+});
+
+test("assertUsableAuthorityCookies wraps malformed bytes with file context", () => {
+  assert.throws(
+    () =>
+      assertUsableAuthorityCookies({
+        authorityFile: {
+          ...PRIVATE_AUTHORITY_FILE,
+          content: Buffer.from([0xff]),
+        },
+        displayNumber: 99,
+        xauthority: XAUTHORITY,
+      }),
+    new RegExp(
+      `XAUTHORITY ${XAUTHORITY.replace(/[/.]/g, (c) => `\\${c}`)} yields no provable cookie records`,
+    ),
+  );
+});
+
+// --- Live enforcement proof: assertX11AuthenticationEnforced drives the
+// same positive-then-negative probe sequence helpers.ts wires to bounded
+// xdpyinfo calls. The ordering is what makes a negative failure mean
+// "authentication rejected" rather than "server/tool missing".
+
+function scriptedProbe(outcomes) {
+  const calls = [];
+  const probe = async (xauthorityPath) => {
+    calls.push(xauthorityPath);
+    const outcome = outcomes.shift();
+    if (outcome instanceof Error) throw outcome;
+    return "connected";
+  };
+  return { calls, probe };
+}
+
+const displayOpenRejection = () => {
+  const error = new Error(
+    `Command failed: xdpyinfo\nxdpyinfo: unable to open display ":99".`,
+  );
+  error.code = 1;
+  return error;
+};
+
+test("enforcement proof requires the authorized connection to succeed first", async () => {
+  const { calls, probe } = scriptedProbe([
+    new Error("spawn xdpyinfo ENOENT"),
+    displayOpenRejection(),
+  ]);
+  await assert.rejects(
+    () =>
+      assertX11AuthenticationEnforced({
+        display: DISPLAY,
+        xauthority: XAUTHORITY,
+        probe,
+      }),
+    /authorized X connection to DISPLAY :99 failed.*cannot be established/,
+  );
+  assert.deepEqual(
+    calls,
+    [XAUTHORITY],
+    "the negative probe must never run when the authorized one fails",
+  );
+});
+
+test("enforcement proof rejects an accepted unauthenticated connection", async () => {
+  const { calls, probe } = scriptedProbe(["ok", "ok"]);
+  await assert.rejects(
+    () =>
+      assertX11AuthenticationEnforced({
+        display: DISPLAY,
+        xauthority: XAUTHORITY,
+        probe,
+      }),
+    /was ACCEPTED — the server does not enforce/,
+  );
+  assert.deepEqual(calls, [XAUTHORITY, EMPTY_XAUTHORITY_PROBE]);
+});
+
+test("enforcement proof accepts only a connection-level negative rejection", async () => {
+  const { calls, probe } = scriptedProbe(["ok", displayOpenRejection()]);
+  await assertX11AuthenticationEnforced({
+    display: DISPLAY,
+    xauthority: XAUTHORITY,
+    probe,
+  });
+  assert.deepEqual(
+    calls,
+    [XAUTHORITY, EMPTY_XAUTHORITY_PROBE],
+    "positive probe must run before the unauthenticated one",
+  );
+});
+
+test("enforcement proof rejects a timed-out/killed negative probe", async () => {
+  for (const outcome of [
+    Object.assign(new Error("Command timed out after 10000ms"), {
+      killed: true,
+      signal: "SIGTERM",
+    }),
+    Object.assign(new Error("Command was killed"), {
+      killed: true,
+    }),
+  ]) {
+    const { probe } = scriptedProbe(["ok", outcome]);
+    await assert.rejects(
+      () =>
+        assertX11AuthenticationEnforced({
+          display: DISPLAY,
+          xauthority: XAUTHORITY,
+          probe,
+        }),
+      /did not fail.*enforcement is unproven/,
+    );
+  }
+});
+
+test("enforcement proof rejects an indistinguishable negative failure", async () => {
+  const { probe } = scriptedProbe([
+    "ok",
+    new Error("xdpyinfo: some unrelated failure"),
+  ]);
+  await assert.rejects(
+    () =>
+      assertX11AuthenticationEnforced({
+        display: DISPLAY,
+        xauthority: XAUTHORITY,
+        probe,
+      }),
+    /failed for an indistinguishable reason/,
+  );
+});
+
+test("enforcement proof guards unset DISPLAY/XAUTHORITY", async () => {
+  for (const overrides of [
+    { display: undefined },
+    { display: "" },
+    { xauthority: undefined },
+    { xauthority: "" },
+  ]) {
+    await assert.rejects(() =>
+      assertX11AuthenticationEnforced({
+        display: DISPLAY,
+        xauthority: XAUTHORITY,
+        probe: async () => "ok",
+        ...overrides,
+      }),
+    );
+  }
+});
 
 test("accepts the expected private ancestry (container -auth argv + private file)", () => {
   assert.deepEqual(verify(privateXvfbTable()), {
@@ -651,4 +887,87 @@ test("delivery wraps an xdotool failure with key/window context", async () => {
       }),
     /trusted Enter delivery to window 2097155 \(e2e app pid 583\) failed — xdotool key:.*no such window.*inconclusive/,
   );
+});
+
+// --- End-to-end orchestration: the real resolve-side asserts run inside
+// deliverXvfbTrustedKey's resolveTarget, so a failed authority or
+// enforcement check can never reach a single xdotool command.
+
+test("delivery sends no xdotool command on empty/malformed authority evidence", async () => {
+  for (const content of [Buffer.alloc(0), Buffer.from([0x00, 0x01])]) {
+    const { calls, run } = recordingRun([TARGET_WINDOW]);
+    await assert.rejects(
+      () =>
+        deliverXvfbTrustedKey({
+          key: "Tab",
+          resolveTarget: async () => {
+            // The same verifyPrivateXvfbAncestry helpers.ts runs — with
+            // the reviewer's size-0 / malformed authority shapes.
+            verifyPrivateXvfbAncestry({
+              processes: privateXvfbTable(),
+              currentPid: 700,
+              display: DISPLAY,
+              xauthority: XAUTHORITY,
+              authorityFile: { ...PRIVATE_AUTHORITY_FILE, content },
+            });
+            return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+          },
+          run,
+        }),
+      /no provable cookie records|no usable cookie/,
+    );
+    assert.deepEqual(
+      calls,
+      [],
+      "no XTEST/key command may run when cookie evidence is unusable",
+    );
+  }
+});
+
+test("delivery sends no xdotool command when auth enforcement is unproven", async () => {
+  const { calls, run } = recordingRun([TARGET_WINDOW]);
+  const { probe } = scriptedProbe(["ok", "ok"]); // negative ACCEPTED
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedKey({
+        key: "Enter",
+        resolveTarget: async () => {
+          await assertX11AuthenticationEnforced({
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            probe,
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /was ACCEPTED — the server does not enforce/,
+  );
+  assert.deepEqual(
+    calls,
+    [],
+    "no XTEST/key command may run when authentication is unenforced",
+  );
+});
+
+test("delivery sends no xdotool command when the authorized probe fails", async () => {
+  const { calls, run } = recordingRun([TARGET_WINDOW]);
+  const { probe } = scriptedProbe([new Error("spawn xdpyinfo ENOENT")]);
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedKey({
+        key: "Tab",
+        resolveTarget: async () => {
+          await assertX11AuthenticationEnforced({
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            probe,
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /authorized X connection to DISPLAY :99 failed/,
+  );
+  assert.deepEqual(calls, []);
 });
