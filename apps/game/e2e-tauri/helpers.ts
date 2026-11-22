@@ -1,7 +1,9 @@
 import {
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
+  readlinkSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -10,11 +12,23 @@ import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveE2eBinaryPath } from "../scripts/e2e-binary-path.mjs";
-import { selectE2eAppProcessId } from "../scripts/e2e-trusted-key-process.mjs";
+import {
+  selectE2eAppProcessId,
+  selectOwnedE2eAppProcessId,
+} from "../scripts/e2e-trusted-key-process.mjs";
 import {
   assertTrustedKeysAllowed,
   trustedKeysOptIn,
 } from "../scripts/e2e-trusted-keys.mjs";
+import {
+  X11_TRUSTED_KEY_NAMES,
+  assertTrustedXvfbKeysAllowed,
+  parseNetWmPid,
+  parseXdotoolDecimal,
+  selectUniqueX11WindowId,
+  trustedXvfbKeysOptIn,
+  verifyPrivateXvfbAncestry,
+} from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   anchors,
   DIALOGUE_DRAIN_CAP,
@@ -146,6 +160,237 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
     throw new Error(
       `trusted ${key} delivery to lyra pid ${pid} failed (System Events permission or process/window state); refusing to fake the journey with untrusted input — osascript: ${detail}`,
       { cause: error },
+    );
+  }
+}
+
+// --- HPA-831 scoped Linux/Xvfb trusted keyboard transport -----------------
+//
+// On the packaged Linux runner the embedded WebDriver reaches the app only
+// as synthetic DOM KeyboardEvents (tauri-plugin-wdio-webdriver executor.rs
+// dispatches keydown/keyup), so Tab/Enter can never run native focus
+// traversal or trusted activation — run c0da417f showed six WebDriver Tabs
+// leave focus on body. The narrow fix for the commission -> scene_2 focus
+// segment is real XTEST keys via xdotool, gated as hard as the macOS path:
+//
+//   * explicit opt-in: linux AND LYRA_E2E_XVFB_TRUSTED_KEYS=1;
+//   * a PRIVATE xvfb-run display owned by this run's ancestry — verified
+//     from /proc, never inferred from a matching display number;
+//   * the app process running the exact configured e2e binary
+//     (/proc/<pid>/exe; `ps comm` on Linux is only a basename) and spawned
+//     by this WDIO worker or launcher — the shared selector's exact rules;
+//   * exactly one visible window whose _NET_WM_PID and getwindowpid both
+//     equal that app pid;
+//   * the X input focus on that verified window before and after each key.
+//
+// xdotool `key` (no --window) uses XTEST — the same channel hardware input
+// takes — whereas `--window` would be XSendEvent, which WebKitGTK may
+// distrust the same way it distrusts the embedded transport. Every check
+// fails closed: any uncertainty throws, the segment reports inconclusive,
+// and no key is ever sent to a shared or unverified display/window.
+// External commands run through execFile with a timeout and argument
+// arrays — no shell, no string interpolation.
+
+export type TrustedX11KeyName = keyof typeof X11_TRUSTED_KEY_NAMES;
+
+const X11_EXTERNAL_COMMAND_TIMEOUT_MS = 10_000;
+
+type LinuxProcEntry = {
+  pid: number;
+  ppid: number;
+  comm: string;
+  argv: string[];
+  exe: string | null;
+  environ: string[];
+};
+
+/**
+ * True only when this run explicitly opted into the scoped XTEST path via
+ * `LYRA_E2E_XVFB_TRUSTED_KEYS=1` on Linux. Callers must still send through
+ * sendXvfbTrustedKey, which re-verifies the private display, process, and
+ * window ownership before every key.
+ */
+export function e2eXvfbTrustedKeysEnabled(): boolean {
+  return trustedXvfbKeysOptIn({ platform: process.platform, env: process.env });
+}
+
+/** Bounded, shell-free external probe used for every xdotool/xprop call. */
+async function execBounded(file: string, args: string[]): Promise<string> {
+  const { stdout } = await promisify(execFile)(file, args, {
+    timeout: X11_EXTERNAL_COMMAND_TIMEOUT_MS,
+  });
+  return stdout;
+}
+
+/**
+ * The live Linux process table from /proc: pid/ppid from stat (parsed after
+ * the final ')' so a comm containing parentheses cannot shift the fields),
+ * argv/environ from their NUL-separated files, and the kernel-resolved
+ * executable target of /proc/<pid>/exe — the robust executable identity
+ * `ps comm` cannot provide on Linux. Processes that exit mid-scan or deny
+ * a read contribute only the fields that could be proven.
+ */
+function linuxProcessTable(): LinuxProcEntry[] {
+  const entries: LinuxProcEntry[] = [];
+  for (const name of readdirSync("/proc")) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const stat = readFileSync(`/proc/${name}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen === -1) continue;
+      const fields = stat
+        .slice(closeParen + 1)
+        .trim()
+        .split(/\s+/);
+      const ppid = Number(fields[1]);
+      if (!Number.isInteger(ppid)) continue;
+      const comm = readFileSync(`/proc/${name}/comm`, "utf8").trim();
+      const argv = readFileSync(`/proc/${name}/cmdline`, "utf8")
+        .split("\0")
+        .filter((part) => part.length > 0);
+      let exe: string | null = null;
+      try {
+        exe = readlinkSync(`/proc/${name}/exe`);
+        if (exe.endsWith(" (deleted)")) {
+          exe = exe.slice(0, -" (deleted)".length);
+        }
+      } catch {
+        // Unreadable or exited — a null exe can never equal the configured
+        // e2e binary path, so the entry fails closed on its own.
+      }
+      let environ: string[] = [];
+      try {
+        environ = readFileSync(`/proc/${name}/environ`, "utf8")
+          .split("\0")
+          .filter((part) => part.length > 0);
+      } catch {
+        // Denied or exited — an absent XAUTHORITY binding fails the private
+        // display check rather than guessing.
+      }
+      entries.push({ pid: Number(name), ppid, comm, argv, exe, environ });
+    } catch {
+      // Process exited between readdir and the reads; skip it.
+    }
+  }
+  return entries;
+}
+
+/**
+ * Resolve and fully verify the XTEST target for THIS key: the private
+ * xvfb-run display owned by this run's ancestry, this session's exact e2e
+ * app process, and the unique visible window it owns. Throws on any
+ * uncertainty — the checks are re-run per key because the app, its window,
+ * or the focus can change between keys.
+ */
+async function resolveXvfbTrustedTarget(): Promise<{
+  appPid: number;
+  windowId: number;
+}> {
+  assertTrustedXvfbKeysAllowed({
+    platform: process.platform,
+    env: process.env,
+  });
+  const processes = linuxProcessTable();
+  verifyPrivateXvfbAncestry({
+    processes,
+    currentPid: process.pid,
+    display: process.env.DISPLAY,
+    xauthority: process.env.XAUTHORITY,
+  });
+  const appPid = selectOwnedE2eAppProcessId({
+    entries: processes.flatMap((entry) =>
+      entry.exe === null
+        ? []
+        : [
+            {
+              pid: entry.pid,
+              ppid: entry.ppid,
+              executablePath: entry.exe,
+            },
+          ],
+    ),
+    expectedExecutablePath: resolveE2eBinaryPath(appRoot),
+    currentPid: process.pid,
+    currentPpid: process.ppid,
+  });
+  const windowId = selectUniqueX11WindowId({
+    searchOutput: await execBounded("xdotool", [
+      "search",
+      "--onlyvisible",
+      "--pid",
+      String(appPid),
+    ]),
+    appPid,
+  });
+  // `xdotool search --pid` already filters by _NET_WM_PID; confirm it (and
+  // the independent getwindowpid answer) anyway so a stale or racing window
+  // id can never be keyed.
+  const netWmPid = parseNetWmPid(
+    await execBounded("xprop", ["-id", String(windowId), "_NET_WM_PID"]),
+  );
+  if (netWmPid !== appPid) {
+    throw new Error(
+      `window ${windowId} reports _NET_WM_PID ${netWmPid ?? "absent"}, expected verified e2e app pid ${appPid} — refusing XTEST keys to an unverified window`,
+    );
+  }
+  const windowOwnerPid = parseXdotoolDecimal(
+    await execBounded("xdotool", ["getwindowpid", String(windowId)]),
+  );
+  if (windowOwnerPid !== appPid) {
+    throw new Error(
+      `xdotool getwindowpid ${windowId} reports ${windowOwnerPid ?? "unparseable"}, expected verified e2e app pid ${appPid} — refusing XTEST keys to an unverified window`,
+    );
+  }
+  return { appPid, windowId };
+}
+
+/**
+ * Deliver one real XTEST key (Tab/Enter) to the verified e2e window on the
+ * private xvfb-run display. The X input focus must belong to the exact
+ * target window before the key is sent — `xdotool windowfocus --sync`
+ * reasserts it in this no-WM environment — and is re-checked after
+ * delivery; any focus or ownership loss fails inconclusive rather than
+ * keying an unverified window. These checks narrow but cannot eliminate
+ * the focus race (another client could take focus between the check and
+ * the XTEST event), so the opt-in must stay limited to the private
+ * xvfb-run runner this path was built for.
+ */
+export async function sendXvfbTrustedKey(
+  key: TrustedX11KeyName,
+): Promise<void> {
+  const keyName = X11_TRUSTED_KEY_NAMES[key];
+  const { appPid, windowId } = await resolveXvfbTrustedTarget();
+  const xdotool = async (args: string[]): Promise<string> => {
+    try {
+      return await execBounded("xdotool", args);
+    } catch (error) {
+      const err = error as { message?: string; stderr?: string };
+      const detail = [err.message, err.stderr]
+        .filter((part) => typeof part === "string" && part.length > 0)
+        .join(" | ");
+      throw new Error(
+        `trusted ${key} delivery to window ${windowId} (e2e app pid ${appPid}) failed — xdotool ${args[0]}: ${detail}; keyboard coverage is inconclusive`,
+        { cause: error },
+      );
+    }
+  };
+  const focusedWindow = async (): Promise<number | null> =>
+    parseXdotoolDecimal(await xdotool(["getwindowfocus"]));
+
+  if ((await focusedWindow()) !== windowId) {
+    await xdotool(["windowfocus", "--sync", String(windowId)]);
+    const focused = await focusedWindow();
+    if (focused !== windowId) {
+      throw new Error(
+        `X input focus did not move to verified window ${windowId} (focused: ${focused ?? "unparseable"}) — refusing trusted ${key}; keyboard coverage is inconclusive`,
+      );
+    }
+  }
+  await xdotool(["key", keyName]);
+  const focusedAfter = await focusedWindow();
+  if (focusedAfter !== windowId) {
+    throw new Error(
+      `X input focus left verified window ${windowId} (now ${focusedAfter ?? "unparseable"}) while delivering trusted ${key}; keyboard coverage is inconclusive`,
     );
   }
 }

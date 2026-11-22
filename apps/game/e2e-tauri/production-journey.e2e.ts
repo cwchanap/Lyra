@@ -12,6 +12,7 @@ import {
   collectKagamiSummaryEvidence,
   completeP1PracticeTutorial,
   drainDialogueFast,
+  e2eXvfbTrustedKeysEnabled,
   elementExists,
   enabledMapDestinationIds,
   ensureCaseFileViewport,
@@ -31,11 +32,13 @@ import {
   returnToTitle,
   saveManualSlot,
   seedStoryCleared,
+  sendXvfbTrustedKey,
   setAcquisitionCompositorGate,
   startFromMenu,
   waitForButton,
   waitForNoDialog,
   waitForPackagedGameState,
+  type TrustedX11KeyName,
 } from "./helpers";
 import { publicPathForAssetId } from "@lyra/asset-paths";
 import {
@@ -2717,12 +2720,36 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   // activation left — DialogueBox deliberately advances on Enter from
   // that fallback without auto-focusing its advance button, so a trusted
   // Enter could reach scene_2 with no keyboard-modality owner and fail
-  // the required hooks. Establish one before any Enter: WebDriver Tab
-  // (the supported keyboard transport here — never OS-global input onto
-  // an unverified desktop) onto .advance-button, the stable
-  // Tab-reachable control whose own trusted Enter activation advances
-  // the same dialogue. A transport that cannot land real DOM focus on it
-  // leaves keyboard coverage unestablished: inconclusive, never green.
+  // the required hooks. Establish one before any Enter: Tab input onto
+  // .advance-button, the stable Tab-reachable control whose own trusted
+  // Enter activation advances the same dialogue. A transport that cannot
+  // land real DOM focus on it leaves keyboard coverage unestablished:
+  // inconclusive, never green.
+  //
+  // HPA-831 scoped transport selection: the embedded WebDriver keys
+  // channel delivers only synthetic DOM KeyboardEvents on Linux (run
+  // c0da417f: six Tabs never moved focus off body), so an explicit
+  // opt-in (LYRA_E2E_XVFB_TRUSTED_KEYS=1 on the xvfb-run runner) routes
+  // Tab/Enter through sendXvfbTrustedKey — real XTEST keys delivered
+  // only after the private-display, app-process, window-ownership, and
+  // per-key focus checks all pass. Without the opt-in this segment
+  // keeps the documented WebDriver transport and its inconclusive
+  // guarantees unchanged; OS-global keys are never sent implicitly.
+  const xvfbTrustedKeys = e2eXvfbTrustedKeysEnabled();
+  console.log(
+    `[FocusProbe] segment key transport: ${
+      xvfbTrustedKeys
+        ? "trusted XTEST via verified private xvfb-run display (LYRA_E2E_XVFB_TRUSTED_KEYS=1)"
+        : "WebDriver synthetic keys (default; no OS-global input)"
+    }`,
+  );
+  const sendSegmentKey = async (key: TrustedX11KeyName): Promise<void> => {
+    if (xvfbTrustedKeys) {
+      await sendXvfbTrustedKey(key);
+    } else {
+      await browser.keys(key);
+    }
+  };
   const advanceFocusSelector = ".advance-button";
   await browser.waitUntil(async () => elementExists(advanceFocusSelector), {
     timeout: 15000,
@@ -2741,7 +2768,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   };
   let advanceFocusLanded = await probeAdvanceFocus();
   for (let attempt = 0; attempt < 6 && !advanceFocusLanded; attempt += 1) {
-    await browser.keys("Tab");
+    await sendSegmentKey("Tab");
     // Focus moves on the driver's own cadence — poll briefly so a fast
     // transport does not stack Tabs before the owner settles.
     for (let poll = 0; poll < 12 && !advanceFocusLanded; poll += 1) {
@@ -2752,11 +2779,12 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   if (!advanceFocusLanded) {
     const stalled = await captureFocusProbe("advance-focus-missing");
     throw new Error(
-      `WebDriver Tab transport did not move DOM focus to the dialogue ` +
-        `advance control after 6 Tabs (last owner: ` +
-        `${lastFocusOwner ?? "null"}) — the positive keyboard-modality ` +
-        `control cannot be established, so focus/keyboard coverage is ` +
-        `inconclusive (screenshot ${stalled.screenshotPath})`,
+      `the ${xvfbTrustedKeys ? "XTEST" : "WebDriver"} Tab transport did ` +
+        `not move DOM focus to the dialogue advance control after 6 ` +
+        `Tabs (last owner: ${lastFocusOwner ?? "null"}) — the positive ` +
+        `keyboard-modality control cannot be established, so ` +
+        `focus/keyboard coverage is inconclusive (screenshot ` +
+        `${stalled.screenshotPath})`,
     );
   }
   await probeAndAssert("advance-focus", {
@@ -2766,7 +2794,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
 
   let sentEnters = 0;
   const sendEnter = async (): Promise<void> => {
-    await browser.keys("Enter");
+    await sendSegmentKey("Enter");
     sentEnters += 1;
   };
   const scene2Taken = { first: false, middle: false, last: false };
@@ -2863,7 +2891,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       if (!(await waitForJourneyProgress(token, 1500))) {
         const stalled = await captureFocusProbe("enter-stalled");
         throw new Error(
-          `browser.keys("Enter") did not advance dialogue at step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) — the real keyboard path is inconclusive (activeElement=${stalled.activeElement?.descriptor ?? "null"})`,
+          `${xvfbTrustedKeys ? "XTEST" : 'browser.keys("Enter")'} did not advance dialogue at step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) — the real keyboard path is inconclusive (activeElement=${stalled.activeElement?.descriptor ?? "null"})`,
         );
       }
     }
