@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   acknowledgeAcquisitionDomFirst,
+  acquisitionCompositorReceipts,
   advanceDialogueUntil,
   assertInspectedImage,
   assertScreenshotRegionPainted,
@@ -49,11 +50,13 @@ import {
   evidenceTraySearchProbeObserved,
 } from "../src/lib/e2e/evidence-tray-search-verify";
 import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "../src/lib/e2e/focus-owner";
+import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor-gate";
 import {
   checkFocusOwner,
   focusOutlineViolations,
   installFocusTrajectoryScript,
   probeFocusStateDom,
+  probeKeyboardFocusTargetDom,
   readFocusTrajectoryScript,
   type FocusOwnerRequirement,
   type FocusProbeSnapshot,
@@ -2273,13 +2276,15 @@ async function drainOrganicRoute(
 //
 //   C. inv1 commission topic -> outro -> scene_2 -> first map, driven by real
 //      WebDriver element clicks (the embedded WebDriver runs el.click() then
-//      el.focus(), moving DOM focus) and browser.keys("Enter") advances
-//      through the app's real keydown path — never synthetic el.click() — with
+//      el.focus(), moving DOM focus), a WebDriver-Tab-established
+//      .advance-button focus, and browser.keys("Enter") advances through
+//      the app's real keydown path — never synthetic el.click() — with
 //      focus/outline probes at scene_2's first/middle/last lines and the map.
 //   B+D. inv3's three evidence acquisitions get the gated screenshot-crop
-//      compositor proof (via setAcquisitionCompositorGate), then the Case
-//      File reopens 閉店監視器截圖 and 三宅打卡紀錄 for the same crop on
-//      img.case-file-record-image — all before crossing map_02.
+//      compositor proof (via setAcquisitionCompositorGate, scoped by
+//      recordId with receipts required before the leg may continue), then
+//      the Case File reopens 閉店監視器截圖 and 三宅打卡紀錄 for the same
+//      crop on img.case-file-record-image — all before crossing map_02.
 
 /** Screenshots + metrics JSON for this run (LYRA_E2E_OUTPUT_DIR under the
  * runner; a stable e2e-artifacts path for manual runs). */
@@ -2301,11 +2306,15 @@ const hpa831CaseFileTargets = [
   },
 ] as const;
 
-/** The affected records plus the doorlock comparison — the only popups that
- * pay for a screenshot-crop compositor proof. */
-const HPA831_GATED_ASSET_IDS = new Set<string>([
-  ...hpa831CaseFileTargets.map((target) => target.assetId),
-  "evidence.doorlock_summary_timetable",
+/** Scoped compositor expectations: recordId -> the authored imageAssetId
+ * its popup must carry (the two affected records plus the doorlock
+ * comparison). Keyed by recordId so a null or wrong asset id fails loudly
+ * instead of silently skipping the screenshot proof. */
+const HPA831_GATED_RECORDS = new Map<string, string>([
+  ...hpa831CaseFileTargets.map(
+    (target) => [target.id, target.assetId] as const,
+  ),
+  ["doorlock_summary_timetable", "evidence.doorlock_summary_timetable"],
 ]);
 
 /** Surfaces a focused element may legitimately live in during the
@@ -2365,7 +2374,7 @@ async function captureFocusProbe(label: string): Promise<FocusProbe> {
  *       container is never a legitimate ring owner: the reported bug is a
  *       root-sized frame, and a focused root may NOT paint one, so the
  *       "focused root with a visible outline" regression case is covered
- *       here (also exercised directly by the scene_2-root-focus probe);
+ *       here (and exercised directly by the focus-probe unit regression);
  *   (c) an oversized outline covering a character portrait — the
  *       root-spanning frame over the character visuals. Portraits are
  *       fixed to the viewport edges behind the UI, so the bar is >25% of
@@ -2567,11 +2576,15 @@ async function waitForJourneyProgress(
  * first/middle/last line, and on the parked map; every probe saves an
  * 800x600 screenshot, asserts no painted outline sits on an invalid
  * owner, and enforces the hook's expected owner contract — the scene_2
- * and map hooks additionally require :focus-visible keyboard modality
- * (reached via trusted Enter advances). If the WebDriver/WebKitGTK
- * transport cannot move real DOM focus, the modality is unestablished, or
- * Enter cannot advance dialogue, this fails as inconclusive rather than
- * reporting a false Green.
+ * and map hooks additionally require :focus-visible keyboard modality.
+ * Because the topic control's unmount drops focus to the browser fallback
+ * and DialogueBox deliberately advances on Enter from that fallback
+ * without auto-focusing its advance button, the drain first establishes a
+ * positive keyboard-modality owner: WebDriver Tab input onto the stable
+ * .advance-button, verified before any Enter is sent. If the
+ * WebDriver/WebKitGTK transport cannot move real DOM focus, the modality
+ * is unestablished, or Enter cannot advance dialogue, this fails as
+ * inconclusive rather than reporting a false Green.
  */
 async function runCommissionScene2FocusSegment(): Promise<void> {
   const probeAndAssert = async (
@@ -2698,13 +2711,65 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
     );
   }
   await installKeyDeliveryProbe();
+
+  // Positive keyboard-modality control (final-review finding): the
+  // topic-click probe recorded whichever unmount-fallback owner the
+  // activation left — DialogueBox deliberately advances on Enter from
+  // that fallback without auto-focusing its advance button, so a trusted
+  // Enter could reach scene_2 with no keyboard-modality owner and fail
+  // the required hooks. Establish one before any Enter: WebDriver Tab
+  // (the supported keyboard transport here — never OS-global input onto
+  // an unverified desktop) onto .advance-button, the stable
+  // Tab-reachable control whose own trusted Enter activation advances
+  // the same dialogue. A transport that cannot land real DOM focus on it
+  // leaves keyboard coverage unestablished: inconclusive, never green.
+  const advanceFocusSelector = ".advance-button";
+  await browser.waitUntil(async () => elementExists(advanceFocusSelector), {
+    timeout: 15000,
+    interval: 100,
+    timeoutMsg:
+      "the dialogue advance control did not mount after the commission topic — keyboard focus cannot be established",
+  });
+  let lastFocusOwner: string | null = null;
+  const probeAdvanceFocus = async (): Promise<boolean> => {
+    const focusTarget = await browser.execute(
+      probeKeyboardFocusTargetDom,
+      advanceFocusSelector,
+    );
+    lastFocusOwner = focusTarget.descriptor;
+    return focusTarget.onTarget;
+  };
+  let advanceFocusLanded = await probeAdvanceFocus();
+  for (let attempt = 0; attempt < 6 && !advanceFocusLanded; attempt += 1) {
+    await browser.keys("Tab");
+    // Focus moves on the driver's own cadence — poll briefly so a fast
+    // transport does not stack Tabs before the owner settles.
+    for (let poll = 0; poll < 12 && !advanceFocusLanded; poll += 1) {
+      advanceFocusLanded = await probeAdvanceFocus();
+      if (!advanceFocusLanded) await browser.pause(100);
+    }
+  }
+  if (!advanceFocusLanded) {
+    const stalled = await captureFocusProbe("advance-focus-missing");
+    throw new Error(
+      `WebDriver Tab transport did not move DOM focus to the dialogue ` +
+        `advance control after 6 Tabs (last owner: ` +
+        `${lastFocusOwner ?? "null"}) — the positive keyboard-modality ` +
+        `control cannot be established, so focus/keyboard coverage is ` +
+        `inconclusive (screenshot ${stalled.screenshotPath})`,
+    );
+  }
+  await probeAndAssert("advance-focus", {
+    owner: "control",
+    requireKeyboardModality: true,
+  });
+
   let sentEnters = 0;
   const sendEnter = async (): Promise<void> => {
     await browser.keys("Enter");
     sentEnters += 1;
   };
   const scene2Taken = { first: false, middle: false, last: false };
-  let rootFocusRegressionTaken = false;
   const finishIfMapParked = async (): Promise<boolean> => {
     if (!(await elementExists(anchors.cityMapSelector))) return false;
     await probeAndAssert("map-pending", {
@@ -2714,11 +2779,6 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
     if (!scene2Taken.first || !scene2Taken.middle || !scene2Taken.last) {
       throw new Error(
         `scene_2 focus probes incomplete before the map parked: ${JSON.stringify(scene2Taken)}`,
-      );
-    }
-    if (!rootFocusRegressionTaken) {
-      throw new Error(
-        "the focused-root-with-visible-outline regression case was never exercised before the map parked",
       );
     }
     return true;
@@ -2771,30 +2831,12 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
           requireKeyboardModality: true,
         });
       }
-      // Regression case: the app's focus-restore path focuses
-      // [data-gameplay-root] programmatically after acquisition popups. A
-      // visible outline on the actively-focused root — spanning the scene
-      // and covering the character visuals — is the reported frame; the
-      // shared prohibited-state gate now fails on it (isGameplayRoot is
-      // banned outright; the portrait-cover check is belt-and-suspenders),
-      // while a silently-focused root passes.
-      if (!rootFocusRegressionTaken) {
-        const rootFocused = await browser.execute(() => {
-          const root = document.querySelector<HTMLElement>(
-            "[data-gameplay-root]",
-          );
-          if (!root) return false;
-          root.focus();
-          return document.activeElement === root;
-        });
-        if (!rootFocused) {
-          throw new Error(
-            "[data-gameplay-root] could not take DOM focus — the focused-root regression case is unexercisable and coverage is inconclusive",
-          );
-        }
-        await probeAndAssert("scene_2-root-focus", { owner: "gameplay-root" });
-        rootFocusRegressionTaken = true;
-      }
+      // The organic checkpoints stay observational: the focused-root
+      // regression detection lives in the shared probe's prohibited-state
+      // gate (a painted outline on [data-gameplay-root] fails every hook,
+      // exercised directly by the focus-probe unit regression) — forcing
+      // root.focus() here would replace the commission-produced focus
+      // trajectory the middle/last/map checkpoints exist to observe.
       if (!scene2Taken.middle && total > 0 && cursor >= Math.floor(total / 2)) {
         scene2Taken.middle = true;
         await probeAndAssert("scene_2-middle", {
@@ -2916,10 +2958,12 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
 
 /**
  * The inv3 evidence/Case-File gate (plan E): shrink to the exact 800x600
- * minimum window, arm the compositor gate so the three affected/comparison
- * popups each get a screenshot-crop proof while visible, drain the authored
- * inv3 route to its pending map, run the organic Case File re-open proof,
- * and restore the Case File viewport in `finally` even on failure.
+ * minimum window, arm the recordId-scoped compositor gate so the three
+ * affected/comparison popups each get a screenshot-crop proof while
+ * visible, drain the authored inv3 route to its pending map, require a
+ * successful crop receipt for every scoped record, run the organic Case
+ * File re-open proof, and restore the Case File viewport in `finally`
+ * even on failure.
  */
 async function runInv3EvidenceAndCaseFileGate(
   gate: MapGate,
@@ -2936,13 +2980,28 @@ async function runInv3EvidenceAndCaseFileGate(
     expect(viewport.height).toBe(600);
     mkdirSync(HPA831_ARTIFACT_DIR, { recursive: true });
     setAcquisitionCompositorGate({
-      imageAssetIds: HPA831_GATED_ASSET_IDS,
+      expectedAssetIds: HPA831_GATED_RECORDS,
       outputDirectory: HPA831_ARTIFACT_DIR,
     });
     await drainOrganicRoute(
       (state) => isPendingMapGate(state, gate.wrapper),
       `${gate.wrapper} pending city map`,
     );
+    // Popup coverage cannot silently disappear: every record the gate
+    // scoped must hold a successful compositor-crop receipt — a popup
+    // that reported a null/wrong asset id already failed inside the
+    // acknowledgement, and a popup that never appeared leaves no
+    // receipt, so inv3 cannot leave green on partial coverage.
+    const receipts = acquisitionCompositorReceipts();
+    const missing = missingCompositorReceipts(HPA831_GATED_RECORDS, receipts);
+    if (missing.length > 0) {
+      throw new Error(
+        `${gate.wrapper}: no compositor-crop proof for ${missing.join(", ")} ` +
+          `— each gated record's popup must report its authored ` +
+          `imageAssetId and pass the screenshot crop before inv3 may ` +
+          `continue (receipts: ${JSON.stringify(Object.fromEntries(receipts))})`,
+      );
+    }
     await verifyHpa831CaseFileRecords(gate);
   } finally {
     setAcquisitionCompositorGate(null);

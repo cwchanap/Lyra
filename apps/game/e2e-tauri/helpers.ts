@@ -39,6 +39,10 @@ import {
 } from "$lib/e2e/pending-acquisition-drain";
 import { publicPathForAssetId } from "@lyra/asset-paths";
 import {
+  gatedAcquisitionViolation,
+  type CompositorGateExpectations,
+} from "../src/lib/e2e/acquisition-compositor-gate";
+import {
   cssRectToImageRegion,
   decodePng,
   expectPaintedRegion,
@@ -46,6 +50,11 @@ import {
   type ImageRegion,
   type RegionPixelMetrics,
 } from "../src/lib/e2e/screenshot-pixels";
+import {
+  probeScrollGeometryDom,
+  scrollGeometrySettled,
+  type ScrollGeometrySample,
+} from "../src/lib/e2e/scroll-geometry";
 
 const appRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -1556,7 +1565,7 @@ export async function waitForAcquisitionOrdinal(
 //       evidence acquisition with a non-empty imageAssetId.
 //   (B) COMPOSITED — decode the WDIO screenshot PNG in THIS Node process and
 //       sample the painted `.acquisition-card .visual` region. Only runs for
-//       the imageAssetIds the journey opts into (the two HPA-831 records plus
+//       the recordIds the journey opts into (the two HPA-831 records plus
 //       the doorlock comparison) because a screenshot per popup is expensive.
 //       Source success alone can never catch the WebKitGTK/Xvfb empty-frame
 //       paint failure; the screenshot crop is the objective gate.
@@ -1595,10 +1604,15 @@ export type AcquisitionImageInspection = {
 };
 
 export type AcquisitionCompositorGate = {
-  /** imageAssetIds (e.g. "evidence.cctv_screenshot") whose popup gets the
-   * screenshot-crop compositor proof in addition to the source checks. */
-  imageAssetIds: ReadonlySet<string>;
+  /** recordId -> the authored imageAssetId its popup must report —
+   * scoped by record (not by whatever imageAssetId the pending view
+   * happens to carry) so a null or wrong asset id fails loudly instead
+   * of silently skipping the screenshot proof. */
+  expectedAssetIds: CompositorGateExpectations;
   outputDirectory: string;
+  /** recordId -> crop screenshot path, recorded only AFTER a crop proof
+   * passes — a thrown proof must never count as coverage. */
+  receipts: Map<string, string>;
 };
 
 let acquisitionCompositorGate: AcquisitionCompositorGate | null = null;
@@ -1607,9 +1621,19 @@ let acquisitionCompositorGate: AcquisitionCompositorGate | null = null;
  * journey scopes it to the affected acquisitions and always clears it in
  * `finally` so unrelated popups keep the cheap source-only path. */
 export function setAcquisitionCompositorGate(
-  gate: AcquisitionCompositorGate | null,
+  gate: {
+    expectedAssetIds: CompositorGateExpectations;
+    outputDirectory: string;
+  } | null,
 ): void {
-  acquisitionCompositorGate = gate;
+  acquisitionCompositorGate =
+    gate === null ? null : { ...gate, receipts: new Map() };
+}
+
+/** recordId -> crop screenshot path for every gated record whose
+ * compositor proof already passed under the armed gate. */
+export function acquisitionCompositorReceipts(): ReadonlyMap<string, string> {
+  return new Map(acquisitionCompositorGate?.receipts ?? []);
 }
 
 type CssRectLike = {
@@ -1679,47 +1703,11 @@ export async function assertScreenshotRegionPainted(input: {
    * y-scrollable ancestor. Required for elements inside a scrollport. */
   scrollIntoView?: boolean;
 }): Promise<ScreenshotRegionPaintResult> {
+  // The serialized page script lives in src/lib/e2e/scroll-geometry.ts so
+  // the identical function WebDriver serializes is exercised by vitest.
   const readTarget = () =>
     browser.execute(
-      (sel: string, doScroll: boolean) => {
-        const element = document.querySelector(sel);
-        if (!element) return null;
-        if (doScroll) {
-          element.scrollIntoView({ block: "center", inline: "nearest" });
-        }
-        const rectOf = (candidate: Element) => {
-          const r = candidate.getBoundingClientRect();
-          return {
-            left: r.left,
-            top: r.top,
-            width: r.width,
-            height: r.height,
-          };
-        };
-        // Nearest y-scrollable ancestor: the scrollport clips the element's
-        // painted area, so the crop must intersect with it (not just the
-        // viewport) or it can read pixels the scrollport never paints.
-        let scrollport: Element | null = element.parentElement;
-        while (scrollport) {
-          const style = getComputedStyle(scrollport);
-          if (
-            (style.overflowY === "auto" || style.overflowY === "scroll") &&
-            scrollport.scrollHeight > scrollport.clientHeight + 1
-          ) {
-            break;
-          }
-          scrollport = scrollport.parentElement;
-        }
-        return {
-          rect: rectOf(element),
-          scrollport: scrollport ? rectOf(scrollport) : null,
-          viewport: {
-            width: window.innerWidth,
-            height: window.innerHeight,
-          },
-          devicePixelRatio: window.devicePixelRatio,
-        };
-      },
+      probeScrollGeometryDom,
       input.selector,
       input.scrollIntoView === true,
     );
@@ -1737,9 +1725,16 @@ export async function assertScreenshotRegionPainted(input: {
   }
   if (input.scrollIntoView === true) {
     // scrollIntoView scrolls every clipped ancestor synchronously, but the
-    // layout can settle over a frame or two — re-read until the geometry is
-    // stable so the crop maps the painted pixels, not a mid-scroll frame.
-    for (let attempt = 0; attempt < 6; attempt += 1) {
+    // layout can settle over a frame or two — re-read until two consecutive
+    // samples agree so the crop maps the painted pixels, not a mid-scroll
+    // frame. A still-moving element when the bounded wait expires is NOT a
+    // usable anchor: fail with the geometry trail instead of cropping
+    // whatever the last rectangle happened to cover.
+    const samples: ScrollGeometrySample[] = [
+      { rect: target.rect, scrollport: target.scrollport },
+    ];
+    let settled = false;
+    for (let attempt = 0; attempt < 6 && !settled; attempt += 1) {
       await browser.pause(150);
       const next = await readTarget();
       if (!next) {
@@ -1747,11 +1742,16 @@ export async function assertScreenshotRegionPainted(input: {
           `${input.label}: element ${input.selector} unmounted while scrolling into view`,
         );
       }
-      const stable =
-        JSON.stringify(next.rect) === JSON.stringify(target.rect) &&
-        JSON.stringify(next.scrollport) === JSON.stringify(target.scrollport);
       target = next;
-      if (stable) break;
+      samples.push({ rect: next.rect, scrollport: next.scrollport });
+      settled = scrollGeometrySettled(samples);
+    }
+    if (!settled) {
+      throw new Error(
+        `${input.label}: ${input.selector} geometry never stabilized during ` +
+          `the scroll-into-view wait — a still-moving rect cannot anchor ` +
+          `the screenshot crop (samples: ${JSON.stringify(samples)})`,
+      );
     }
   }
   const viewportRect: CssRectLike = {
@@ -2079,12 +2079,12 @@ export function assertInspectedImage(
 
 /**
  * (A) Source proof for one evidence acquisition whose popup is still open,
- * then (B) the gated compositor crop when the journey armed this
- * imageAssetId. Everything runs BEFORE the popup's CONTINUE click so the
- * screenshot catches the visible popup.
+ * then (B) the gated compositor crop when the journey armed this recordId.
+ * Everything runs BEFORE the popup's CONTINUE click so the screenshot
+ * catches the visible popup.
  */
 async function verifyAcquisitionEvidenceImage(
-  current: Pick<PendingAcquisitionView, "id" | "title" | "imageAssetId"> & {
+  current: Pick<PendingAcquisitionView, "id" | "recordId" | "title"> & {
     imageAssetId: string;
   },
 ): Promise<void> {
@@ -2102,25 +2102,31 @@ async function verifyAcquisitionEvidenceImage(
   );
   assertInspectedImage(inspection, label);
 
-  // (B) Composited-paint proof, only for the gated records.
-  if (acquisitionCompositorGate?.imageAssetIds.has(imageAssetId)) {
+  // (B) Composited-paint proof, scoped by recordId: the gate keys on the
+  // record, and the asset mapping was already asserted by the caller, so
+  // a gated record can never quietly skip its crop.
+  if (acquisitionCompositorGate?.expectedAssetIds.has(current.recordId)) {
     const safeName = imageAssetId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const screenshotPath = path.join(
+      acquisitionCompositorGate.outputDirectory,
+      `acquisition-${safeName}-popup.png`,
+    );
     await assertScreenshotRegionPainted({
       selector: ".acquisition-card .visual",
       label: `acquisition popup ${imageAssetId} (${current.id})`,
-      screenshotPath: path.join(
-        acquisitionCompositorGate.outputDirectory,
-        `acquisition-${safeName}-popup.png`,
-      ),
+      screenshotPath,
       insetCssPx: 2,
     });
+    // The receipt lands only after a passing crop — a thrown proof above
+    // must never count this record as covered.
+    acquisitionCompositorGate.receipts.set(current.recordId, screenshotPath);
   }
 }
 
 export async function startAcquisitionAcknowledgement(
   current: Pick<
     PendingAcquisitionView,
-    "id" | "title" | "recordKind" | "imageAssetId"
+    "id" | "recordId" | "title" | "recordKind" | "imageAssetId"
   >,
 ): Promise<void> {
   await waitForButton("CONTINUE", 90000);
@@ -2136,12 +2142,24 @@ export async function startAcquisitionAcknowledgement(
       `acquisition ${current.id} was not the current DOM notification`,
     );
   }
+  // HPA-831: a recordId the armed compositor gate scoped must carry its
+  // authored imageAssetId — a null or wrong id fails here instead of
+  // silently skipping the crop proof; ungated records (including
+  // legitimate null-asset ones) stay exempt.
+  const gateViolation = gatedAcquisitionViolation(
+    acquisitionCompositorGate?.expectedAssetIds ?? null,
+    current,
+  );
+  if (gateViolation !== null) {
+    throw new Error(gateViolation);
+  }
   // HPA-831: evidence popups carrying a real image asset get the source
   // decode/canvas proof (and the gated screenshot-crop proof) while the popup
   // is still visible — statements and null-asset evidence keep the fast path.
   if (current.recordKind === "evidence" && current.imageAssetId) {
     await verifyAcquisitionEvidenceImage({
       id: current.id,
+      recordId: current.recordId,
       title: current.title,
       imageAssetId: current.imageAssetId,
     });
@@ -2181,7 +2199,7 @@ export async function waitForAcquisitionDomSettlement(
 export async function acknowledgeAcquisitionDomFirst(
   current: Pick<
     PendingAcquisitionView,
-    "id" | "title" | "recordKind" | "imageAssetId"
+    "id" | "recordId" | "title" | "recordKind" | "imageAssetId"
   >,
 ): Promise<void> {
   await startAcquisitionAcknowledgement(current);
