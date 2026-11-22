@@ -195,9 +195,9 @@ and the edit-nothing rule. Your job is to hand it what that skill needs — do n
 restate the axes, verdict, or finding format in the brief, the skill owns them:
 
 - The exact files under review, and the chapter id. Say whether they are the
-  whole chapter or a slice of an unfinished one: `reviewing-story-scenes` runs
-  its chapter-level checks (Axis 10: loud moments, fixed beats, the escalation
-  row) only on a whole chapter.
+  whole chapter or a slice of an unfinished one: `reviewing-story-scenes`
+  checks that the chapter has all its loud moments, fixed beats and its
+  escalation row (Axis 10) only on a whole chapter.
 - The authoritative sources to check against: the Notion story bible and
   chapter construction plan (URLs), and the writing addendum (under
   `docs/stories_plan/`).
