@@ -48,10 +48,16 @@ import {
   evidenceTraySearchFilterApplied,
   evidenceTraySearchProbeObserved,
 } from "../src/lib/e2e/evidence-tray-search-verify";
+import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "../src/lib/e2e/focus-owner";
 import {
-  EXPECTED_FOCUS_CONTROL_SELECTOR,
-  isExpectedFocusOwner,
-} from "../src/lib/e2e/focus-owner";
+  checkFocusOwner,
+  focusOutlineViolations,
+  installFocusTrajectoryScript,
+  probeFocusStateDom,
+  readFocusTrajectoryScript,
+  type FocusOwnerRequirement,
+  type FocusProbeSnapshot,
+} from "../src/lib/e2e/focus-probe";
 import {
   filterPresentableRecords,
   presentableRecords,
@@ -2307,45 +2313,13 @@ const HPA831_GATED_ASSET_IDS = new Set<string>([
  * identity only (they are ancestors of everything — an ancestor match
  * admits any element, the wrong-owner signature this gate exists to
  * catch), plus the narrow interactive controls in
- * EXPECTED_FOCUS_CONTROL_SELECTOR (shared with focus-owner.ts tests). */
+ * EXPECTED_FOCUS_CONTROL_SELECTOR (shared with focus-owner.ts tests).
+ * The probe snapshot element/snapshot types and the serialized page
+ * script itself live in src/lib/e2e/focus-probe.ts so vitest exercises the
+ * identical function WebDriver serializes. */
 
-type FocusElementProbe = {
-  descriptor: string;
-  tag: string;
-  isActiveElement: boolean;
-  /** `element === document.body` — exact identity fallback owner. */
-  isBody: boolean;
-  isGameplayRoot: boolean;
-  /** The element itself matches EXPECTED_FOCUS_CONTROL_SELECTOR — a
-   * narrow interactive control, never an ancestor match. */
-  matchesExpectedControl: boolean;
-  focusVisible: boolean;
-  matchesFocus: boolean;
-  outlineStyle: string;
-  outlineColor: string;
-  outlineWidth: string;
-  outlineOffset: string;
-  /** True when the element's computed outline is actually painted
-   * (non-none style, positive width, nonzero geometry). */
-  paintsOutline: boolean;
-  rect: BoxRect;
-  /** Diagnostic: the outline rect intersects a character portrait rect at
-   * all (portraits are fixed to the viewport edges, so a legitimate small
-   * control ring can touch an edge — intersection alone is not the bug). */
-  crossesPortraitRegion: boolean;
-  /** Largest fraction of any portrait rect the outline covers (0–1). The
-   * oversized/root-spanning regression frame covers the character visual;
-   * a legitimate control ring covering a sliver of an edge stays near 0. */
-  portraitCoverFraction: number;
-};
-
-type FocusProbe = {
+type FocusProbe = FocusProbeSnapshot & {
   label: string;
-  viewport: { width: number; height: number };
-  activeElement: FocusElementProbe | null;
-  gameplayRoot: FocusElementProbe | null;
-  outlinedElements: FocusElementProbe[];
-  portraitRegionCount: number;
   screenshotPath: string;
 };
 
@@ -2357,124 +2331,12 @@ type FocusProbe = {
  * character portrait region — plus an 800x600 evidence screenshot.
  */
 async function captureFocusProbe(label: string): Promise<FocusProbe> {
-  const probe = await browser.execute((controlSelector: string) => {
-    const rectOf = (element: Element) => {
-      const r = element.getBoundingClientRect();
-      return {
-        left: r.left,
-        top: r.top,
-        right: r.right,
-        bottom: r.bottom,
-        width: r.width,
-        height: r.height,
-      };
-    };
-    const portraitRects = Array.from(document.querySelectorAll("img.portrait"))
-      .map(rectOf)
-      .filter((r) => r.width > 0 && r.height > 0);
-    const crossesPortrait = (r: {
-      left: number;
-      top: number;
-      right: number;
-      bottom: number;
-    }) =>
-      portraitRects.some(
-        (p) =>
-          r.left < p.right - 0.5 &&
-          r.right > p.left + 0.5 &&
-          r.top < p.bottom - 0.5 &&
-          r.bottom > p.top + 0.5,
-      );
-    const portraitCover = (r: {
-      left: number;
-      top: number;
-      right: number;
-      bottom: number;
-    }) =>
-      portraitRects.reduce((max, p) => {
-        const w = Math.min(r.right, p.right) - Math.max(r.left, p.left);
-        const h = Math.min(r.bottom, p.bottom) - Math.max(r.top, p.top);
-        if (w <= 0 || h <= 0) return max;
-        const area = p.width * p.height;
-        return area > 0 ? Math.max(max, (w * h) / area) : max;
-      }, 0);
-    const describe = (
-      element: Element | null,
-      active: Element | null,
-    ): FocusElementProbe | null => {
-      if (!element) return null;
-      const styles = getComputedStyle(element);
-      const rect = rectOf(element);
-      const classes =
-        typeof element.className === "string"
-          ? element.className.trim().split(/\s+/).slice(0, 3).join(".")
-          : "";
-      const ariaLabel = element.getAttribute("aria-label");
-      const paintsOutline =
-        styles.outlineStyle !== "none" &&
-        parseFloat(styles.outlineWidth) > 0 &&
-        styles.display !== "none" &&
-        styles.visibility !== "hidden" &&
-        rect.width > 0.5 &&
-        rect.height > 0.5;
-      return {
-        descriptor:
-          element.tagName.toLowerCase() +
-          (element.id ? `#${element.id}` : "") +
-          (classes ? `.${classes}` : "") +
-          (ariaLabel ? `[${ariaLabel}]` : "") +
-          (element.hasAttribute("data-gameplay-root")
-            ? "[data-gameplay-root]"
-            : ""),
-        tag: element.tagName.toLowerCase(),
-        isActiveElement: element === active,
-        // body/root admit descendants by identity check only; controls are
-        // matched on the element itself — closest() through body or the
-        // root would pass every gameplay descendant (the review finding).
-        isBody: element === document.body,
-        isGameplayRoot: element.hasAttribute("data-gameplay-root"),
-        matchesExpectedControl: element.matches(controlSelector),
-        focusVisible:
-          element instanceof HTMLElement
-            ? element.matches(":focus-visible")
-            : false,
-        matchesFocus:
-          element instanceof HTMLElement ? element.matches(":focus") : false,
-        outlineStyle: styles.outlineStyle,
-        outlineColor: styles.outlineColor,
-        outlineWidth: styles.outlineWidth,
-        outlineOffset: styles.outlineOffset,
-        paintsOutline,
-        rect,
-        crossesPortraitRegion: crossesPortrait(rect),
-        portraitCoverFraction: portraitCover(rect),
-      };
-    };
-    const active = document.activeElement;
-    const outlined = Array.from(document.querySelectorAll("*"))
-      .filter((element) => {
-        const styles = getComputedStyle(element);
-        if (styles.outlineStyle === "none") return false;
-        if (!(parseFloat(styles.outlineWidth) > 0)) return false;
-        if (styles.display === "none" || styles.visibility === "hidden") {
-          return false;
-        }
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0.5 && rect.height > 0.5;
-      })
-      .map((element) => describe(element, active))
-      .filter((entry): entry is FocusElementProbe => entry !== null);
-    return {
-      viewport: { width: window.innerWidth, height: window.innerHeight },
-      activeElement: describe(active, active),
-      gameplayRoot: describe(
-        document.querySelector("[data-gameplay-root]"),
-        active,
-      ),
-      outlinedElements: outlined,
-      portraitRegionCount: portraitRects.length,
-    };
-  }, EXPECTED_FOCUS_CONTROL_SELECTOR);
+  // The serialized page script lives in src/lib/e2e/focus-probe.ts so the
+  // identical function WebDriver serializes is exercised by vitest.
+  const probe = await browser.execute(
+    probeFocusStateDom,
+    EXPECTED_FOCUS_CONTROL_SELECTOR,
+  );
   const screenshotPath = path.join(HPA831_ARTIFACT_DIR, `focus-${label}.png`);
   await browser.saveScreenshot(screenshotPath);
   writeFileSync(
@@ -2514,12 +2376,7 @@ async function captureFocusProbe(label: string): Promise<FocusProbe> {
  * rings without keyboard modality.
  */
 function expectNoStaleFocusRing(probe: FocusProbe): void {
-  const violations = probe.outlinedElements.filter(
-    (entry) =>
-      !entry.isActiveElement ||
-      entry.isGameplayRoot ||
-      entry.portraitCoverFraction > 0.25,
-  );
+  const violations = focusOutlineViolations(probe);
   if (violations.length > 0) {
     throw new Error(
       `focus probe "${probe.label}": prohibited outline state on ` +
@@ -2541,49 +2398,35 @@ function expectNoStaleFocusRing(probe: FocusProbe): void {
 }
 
 /**
- * The expected-owner gate. document.activeElement must be an element the
- * segment expects to own focus: `body` or `[data-gameplay-root]` by exact
- * identity (the browser/app fallback owners), or the element itself
- * matching EXPECTED_FOCUS_CONTROL_SELECTOR — the narrow interactive
- * controls. A descendant anywhere else (e.g. a stale hotspot or a
- * non-interactive container) is the wrong-owner signature even when no
- * outline is painted. A null activeElement means the owner cannot be
- * established at all — inconclusive, never silently green.
- * `requireGameplayRoot` additionally enforces the intended owner for the
- * scene_2-root-focus regression hook: the probe focused the root, so
- * anything else owning focus means the intended state was not established.
+ * Per-hook owner/modality gate (round-3 finding): each probe declares the
+ * owner contract its hook expects via FocusOwnerRequirement and, at hooks
+ * reached through trusted Enter advances, requireKeyboardModality — the
+ * observed owner must itself match :focus-visible or keyboard focus state
+ * is unestablished. checkFocusOwner distinguishes inconclusive outcomes
+ * (owner/modality cannot be established) from violations (a definite
+ * unexpected owner — the wrong-owner bug signature); both fail the hook,
+ * but only the latter is reported as a regression.
  */
 function expectAllowedFocusOwner(
   probe: FocusProbe,
-  options?: { requireGameplayRoot?: boolean },
+  requirement: FocusOwnerRequirement,
 ): void {
+  const check = checkFocusOwner(probe.activeElement, requirement);
+  if (check.ok) return;
   const owner = probe.activeElement;
-  if (owner === null) {
-    throw new Error(
-      `focus probe "${probe.label}": document.activeElement is null — ` +
-        `the focus owner cannot be established; coverage is inconclusive ` +
-        `(screenshot ${probe.screenshotPath})`,
-    );
-  }
-  if (options?.requireGameplayRoot === true && !owner.isGameplayRoot) {
-    throw new Error(
-      `focus probe "${probe.label}": expected [data-gameplay-root] to ` +
-        `hold focus but activeElement is ${owner.descriptor} — the ` +
-        `intended focus state was not established; coverage is ` +
-        `inconclusive (screenshot ${probe.screenshotPath})`,
-    );
-  }
-  if (isExpectedFocusOwner(owner)) return;
+  const detail =
+    owner === null
+      ? "null"
+      : JSON.stringify({
+          descriptor: owner.descriptor,
+          tag: owner.tag,
+          focusVisible: owner.focusVisible,
+          rect: owner.rect,
+        });
   throw new Error(
-    `focus probe "${probe.label}": unexpected focus owner ` +
-      JSON.stringify({
-        descriptor: owner.descriptor,
-        tag: owner.tag,
-        focusVisible: owner.focusVisible,
-        rect: owner.rect,
-      }) +
-      ` — expected body, [data-gameplay-root], or an element matching ` +
-      `${EXPECTED_FOCUS_CONTROL_SELECTOR}; screenshot ${probe.screenshotPath}`,
+    `focus probe "${probe.label}": ${check.reason} ` +
+      `(owner ${detail}${check.inconclusive ? " — inconclusive" : ""}; ` +
+      `screenshot ${probe.screenshotPath})`,
   );
 }
 
@@ -2722,19 +2565,22 @@ async function waitForJourneyProgress(
  * driven by real WebDriver element clicks and Enter keys at 800x600. Focus
  * probes run before the clicks, after each click, at scene_2's
  * first/middle/last line, and on the parked map; every probe saves an
- * 800x600 screenshot and asserts no painted outline sits on an invalid
- * owner. If the WebDriver/WebKitGTK transport cannot move real DOM focus or
+ * 800x600 screenshot, asserts no painted outline sits on an invalid
+ * owner, and enforces the hook's expected owner contract — the scene_2
+ * and map hooks additionally require :focus-visible keyboard modality
+ * (reached via trusted Enter advances). If the WebDriver/WebKitGTK
+ * transport cannot move real DOM focus, the modality is unestablished, or
  * Enter cannot advance dialogue, this fails as inconclusive rather than
  * reporting a false Green.
  */
 async function runCommissionScene2FocusSegment(): Promise<void> {
   const probeAndAssert = async (
     label: string,
-    options?: { requireGameplayRoot?: boolean },
+    requirement: FocusOwnerRequirement,
   ): Promise<FocusProbe> => {
     const probe = await captureFocusProbe(label);
     expectNoStaleFocusRing(probe);
-    expectAllowedFocusOwner(probe, options);
+    expectAllowedFocusOwner(probe, requirement);
     return probe;
   };
 
@@ -2769,7 +2615,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
         "WebDriver element click did not move DOM focus to the interview button — focus/keyboard coverage is inconclusive",
     },
   );
-  await probeAndAssert("interview-click");
+  await probeAndAssert("interview-click", { owner: "control" });
 
   const popoverSelector = `[aria-label="${anchors.topicPopoverName}"]`;
   await browser.waitUntil(async () => elementExists(popoverSelector), {
@@ -2794,33 +2640,51 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       `topic button ${anchors.firstTopic} not found in ${popoverSelector}`,
     );
   }
+  // Focus-capture across activation (round-3 finding): the WebDriver
+  // click's real focus move lands on the topic control inside the same
+  // driver call, then successful activation transitions into dialogue and
+  // unmounts ExploreView — taking the control, and its focus state, with
+  // it. A post-hoc "is it focused" check can never observe that, so a
+  // capture-phase recorder proves the focusin landed during activation;
+  // afterwards the post-transition owner (the unmount fallback) is probed.
+  const trajectoryInstalled = await browser.execute(
+    installFocusTrajectoryScript,
+    popoverSelector,
+    anchors.firstTopic,
+  );
+  if (!trajectoryInstalled.installed) {
+    throw new Error(
+      `topic button ${anchors.firstTopic} not mounted when installing the focus trajectory — coverage is inconclusive`,
+    );
+  }
   await topicButton.click();
-  // Same coverage gate as the interview click: DOM focus must land on the
-  // exact topic button or the focus probes below are inconclusive.
   await browser.waitUntil(
     async () =>
       browser.execute(
-        (popoverSel: string, topicLabel: string) => {
-          const button = Array.from(
-            document.querySelectorAll<HTMLButtonElement>(
-              `${popoverSel} .topic-actions button`,
-            ),
-          ).find((candidate) =>
-            (candidate.textContent ?? "").includes(topicLabel),
-          );
-          return button !== undefined && document.activeElement === button;
-        },
+        (popoverSel: string) => document.querySelector(popoverSel) === null,
         popoverSelector,
-        anchors.firstTopic,
       ),
     {
-      timeout: 5000,
+      timeout: 15000,
       interval: 100,
-      timeoutMsg:
-        "WebDriver element click did not move DOM focus to the topic button — focus/keyboard coverage is inconclusive",
+      timeoutMsg: `${popoverSelector} did not close after the topic was activated`,
     },
   );
-  await probeAndAssert("topic-click");
+  const trajectory = await browser.execute(readFocusTrajectoryScript);
+  if (
+    trajectory === null ||
+    !(trajectory.sawExpectedFocusIn || trajectory.wasAlreadyFocused)
+  ) {
+    throw new Error(
+      `the WebDriver click never moved DOM focus to the topic control ` +
+        `(trajectory: ${JSON.stringify(trajectory)}) — focus/keyboard ` +
+        `coverage is inconclusive`,
+    );
+  }
+  // Post-transition owner: the clicked control is unmounted by design, so
+  // the expected owner is the unmount fallback (body/root) or whatever the
+  // app legitimately restores — enforced by the any-expected gate.
+  await probeAndAssert("topic-click", { owner: "any-expected" });
 
   // Enter-drain inv1's outro into scene_2 and the first map wrapper. The
   // probes split scene_2 into first/middle/last line by queue cursor; the
@@ -2843,7 +2707,10 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   let rootFocusRegressionTaken = false;
   const finishIfMapParked = async (): Promise<boolean> => {
     if (!(await elementExists(anchors.cityMapSelector))) return false;
-    await probeAndAssert("map-pending");
+    await probeAndAssert("map-pending", {
+      owner: "any-expected",
+      requireKeyboardModality: true,
+    });
     if (!scene2Taken.first || !scene2Taken.middle || !scene2Taken.last) {
       throw new Error(
         `scene_2 focus probes incomplete before the map parked: ${JSON.stringify(scene2Taken)}`,
@@ -2899,7 +2766,10 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       const total = cursor + state.mode.queueRemaining;
       if (!scene2Taken.first) {
         scene2Taken.first = true;
-        await probeAndAssert("scene_2-first");
+        await probeAndAssert("scene_2-first", {
+          owner: "any-expected",
+          requireKeyboardModality: true,
+        });
       }
       // Regression case: the app's focus-restore path focuses
       // [data-gameplay-root] programmatically after acquisition popups. A
@@ -2922,18 +2792,22 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
             "[data-gameplay-root] could not take DOM focus — the focused-root regression case is unexercisable and coverage is inconclusive",
           );
         }
-        await probeAndAssert("scene_2-root-focus", {
-          requireGameplayRoot: true,
-        });
+        await probeAndAssert("scene_2-root-focus", { owner: "gameplay-root" });
         rootFocusRegressionTaken = true;
       }
       if (!scene2Taken.middle && total > 0 && cursor >= Math.floor(total / 2)) {
         scene2Taken.middle = true;
-        await probeAndAssert("scene_2-middle");
+        await probeAndAssert("scene_2-middle", {
+          owner: "any-expected",
+          requireKeyboardModality: true,
+        });
       }
       if (!scene2Taken.last && state.mode.queueRemaining === 0) {
         scene2Taken.last = true;
-        await probeAndAssert("scene_2-last");
+        await probeAndAssert("scene_2-last", {
+          owner: "any-expected",
+          requireKeyboardModality: true,
+        });
       }
     }
     const token = journeyProgressToken(state);
