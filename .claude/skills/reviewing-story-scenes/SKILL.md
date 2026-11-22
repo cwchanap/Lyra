@@ -152,6 +152,8 @@ Each review-agent brief must contain:
    section heading for a Notion planning page (those have no line numbers). For
    Visual Background findings, cite the authored scene line and the compiled
    JSON file/field or `scenes:compile` warning that proves the runtime gap.
+   For something that is missing there is nothing to quote: cite where it
+   belongs, as Axis 10's severity guide says.
 4. **Output format:**
    - `BLOCKERS-PRESENT` / `FIX-RECOMMENDED` / `SHIP` for this axis only.
    - One-line findings: `Severity — file:line — issue — suggested fix`
@@ -161,6 +163,10 @@ Each review-agent brief must contain:
    - A short strengths list.
 5. **Read-only enforcement:** the review agent must not edit any file. It
    produces a findings report only.
+6. **Review scope:** say whether the files are the **whole chapter** or a
+   slice of an unfinished one, copied from the request; if the request does not
+   say, write "slice". Axis 10 runs its chapter-level checks (loud moments,
+   fixed beats, the escalation row) only on a whole chapter.
 
 Use the `story-reviewer` profile so the review agent is hard-blocked from
 editing (see "Subagent profiles" below).
