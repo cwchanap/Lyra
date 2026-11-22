@@ -11,7 +11,7 @@
 
 [清晨的雨打在窗上，細而均勻。相馬律拉開窗簾，光線落在一排排排好的文件上——他習慣把每樣東西擺到該在的位置。]
 
-**相馬律**：雨聲也有它的節奏。資料排好了，人就不會慌。 {#L001}
+**相馬律**：今天先做一件事：把早坂送來的三宅案資料看完。沒人核對，明天審查會就照它起訴他。 {#L001}
 
 [他把昨晚整理到一半的卷宗合上，邊角對齊桌沿。]
 
@@ -74,6 +74,10 @@
 - **Scene Source Prompt:** Old leather case folder on the detective office desk as the visible source object for the KAGAMI summary copy, with no readable KAGAMI pages or text visible in the background.
 
 [相馬律低頭逐行看那份摘要，手指順著三欄紀錄滑下去。]
+
+**相馬律**：（摘要，就是系統把門禁、鏡頭和打卡時間的紀錄，整理成乾乾淨淨的一頁。） {#L030}
+
+**相馬律**：（三欄都整整齊齊，沒有一處缺口。有這麼一頁能靠著，胸口繃了一整夜的地方，鬆了一點。） {#L031}
 
 **相馬律**：時間、門、鏡頭，三條線都對上了。 {#L013}
 

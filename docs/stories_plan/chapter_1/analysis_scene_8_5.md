@@ -106,22 +106,22 @@
 ### Card: 員工憑證開門 {#event_1843}
 
 - **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1843，員工憑證開啟後走廊。
+- **Summary:** 第 43 筆，員工憑證開啟後走廊。
 
 ### Card: 維護模式開啟 {#event_1841}
 
 - **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1841，維護模式開啟。
+- **Summary:** 第 41 筆，維護模式開啟。
 
 ### Card: 維護同步完成 {#event_1844}
 
 - **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1844，維護同步完成。
+- **Summary:** 第 44 筆，維護同步完成。
 
 ### Card: 外包憑證開門 {#event_1842}
 
 - **Source:** evidence:local_sequence_record
-- **Summary:** 本機事件 1842，外部維護憑證開啟後門。
+- **Summary:** 第 42 筆，外部維護憑證開啟後門。
 
 ### Result Dialogue
 

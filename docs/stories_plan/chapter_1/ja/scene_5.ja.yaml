@@ -103,6 +103,7 @@ lines:
       clip: ch1_kamiya_mio_0006
   - id: L017
     speaker: 相馬律
+    expression: determined
     zh: 可是——
     ja: ですが――
     voice:
@@ -133,24 +134,28 @@ lines:
       clip: ch1_hayasaka_akane_0197
   - id: L021
     speaker: 相馬律
+    expression: determined
     zh: 他買錯飲料那一下，先想的是母親能不能喝。
     ja: 飲み物を買い間違えたとき、彼がまず考えたのは、母親が飲めるかどうかでした。
     voice:
       clip: ch1_soma_ritsu_0125
   - id: L022
     speaker: 相馬律
+    expression: determined
     zh: 這個細節，不像會動手的人會有的。
     ja: そういう細やかさは、手を下すような人間のものとは思えません。
     voice:
       clip: ch1_soma_ritsu_0126
   - id: L023
     speaker: 神谷澪
+    expression: skeptical
     zh: 嫌疑人的態度不是證據。
     ja: 被疑者の態度は証拠ではありません。
     voice:
       clip: ch1_kamiya_mio_0010
   - id: L024
     speaker: 神谷澪
+    expression: skeptical
     zh: 我不接受「他看起來不像兇手」這種反駁。
     ja: 「彼は犯人には見えない」という類の反論は、受け入れません。
     voice:
@@ -163,8 +168,8 @@ lines:
       clip: ch1_soma_ritsu_0127
   - id: L026
     speaker: 相馬律
-    zh: 還有一個蛋糕盒的事，他怕被誤會。
-    ja: それに、ケーキの箱の件もあります。誤解されるのが怖かったんです。
+    zh: 還有蛋糕盒，他怕被誤會，所以才——
+    ja: それにケーキの箱も、誤解されるのが怖くて、だから――
     voice:
       clip: ch1_soma_ritsu_0128
   - id: L027
@@ -199,8 +204,8 @@ lines:
       clip: ch1_soma_ritsu_0130
   - id: L032
     speaker: 相馬律
-    zh: 那代表現場還有另一個人。
-    ja: つまり、現場にはもう一人いたということです。
+    zh: 現場還有另一個人！
+    ja: 現場には、もう一人いたんです！
     voice:
       clip: ch1_soma_ritsu_0131
   - id: L033
@@ -221,20 +226,36 @@ lines:
     ja: 曖昧すぎます。互いに整合する三つの記録を覆すことはできません。
     voice:
       clip: ch1_kamiya_mio_0017
+  - id: L058
+    speaker: 神谷澪
+    zh: 哪一句站不住，你指出來。
+    ja: どの一文が成り立たないのか、指摘してください。
+    note: Recurring Kamiya beat, also in interrogation_scene_10 (哪一句站不住，你指出來 / 換一句); keep the wording identical there. 一句 is echoed as 一文, 換一句 as 別の一文を.
+  - id: L059
+    speaker: 相馬律
+    zh: 那就是——不對，我是說——
+    ja: それは――いえ、僕が言いたいのは――
+  - id: L060
+    speaker: 神谷澪
+    zh: 換一句。
+    ja: 別の一文を。
   - id: L036
     speaker: 相馬律
-    zh: 摘要裡那筆外包維護紀錄，很可疑。
-    ja: サマリーにある外注のメンテナンス記録。あれは疑わしいです。
+    expression: determined
+    zh: 外包那筆維護紀錄！
+    ja: 外注のメンテナンス記録です！
     voice:
       clip: ch1_soma_ritsu_0132
   - id: L037
     speaker: 相馬律
-    zh: 那段時間，店裡的系統並不單純。
-    ja: あの時間帯、店のシステムは単純な状態ではありませんでした。
+    expression: determined
+    zh: 那段時間店裡的系統根本不單純，為什麼沒有人查！
+    ja: あの時間帯、店のシステムはまったく単純な状態ではありませんでした。どうして誰も調べなかったんですか！
     voice:
       clip: ch1_soma_ritsu_0133
   - id: L038
     speaker: 神谷澪
+    expression: skeptical
     zh: 那筆紀錄的憑證，沒有核實。
     ja: その記録の認証は、確認が取れていません。
     voice:
@@ -245,10 +266,15 @@ lines:
     ja: 防犯カメラにも、該当する人影は映っていません。
     voice:
       clip: ch1_kamiya_mio_0019
+  - id: L061
+    speaker: 神谷澪
+    zh: 這一點，我記下。
+    ja: この点は、書き留めておきます。
+    note: Recurring Kamiya beat, also in interrogation_scene_10 (……這一點，我記下); keep the wording identical there.
   - id: L040
     speaker: 神谷澪
-    zh: 在摘要裡，它只是一項低權重的旁註。
-    ja: サマリーの中では、重みの低い注記にすぎません。
+    zh: 但在摘要裡，它只是一項低權重的旁註。
+    ja: ですが、サマリーの中では、重みの低い注記にすぎません。
     voice:
       clip: ch1_kamiya_mio_0020
   - id: L041
@@ -275,6 +301,14 @@ lines:
     ja: 私に、どちらを採れと言うのですか？
     voice:
       clip: ch1_kamiya_mio_0024
+  - id: L062
+    speaker: 相馬律
+    zh: （我想相信三宅。可是我手上，沒有一樣東西能讓神谷點頭。）
+    ja: （三宅さんを信じたい。でも手元には、神谷検事にうなずいてもらえるものが一つもない。）
+  - id: L063
+    speaker: 相馬律
+    zh: （……她還坐在後面。我連一句讓她安心的話都沒有。）
+    ja: （……あの人は、まだ後ろに座っている。安心させる言葉の一つも、僕にはない。）
   - id: L045
     speaker: 相馬律
     expression: shaken

@@ -2841,7 +2841,7 @@ describe("compile (tracked production corpus compatibility)", () => {
         (line: { id: string }) => line.id === "summary_death_after_miyake",
       );
     expect(p1CorrectLine.onCorrect[0].text).toBe(
-      "手機最後一次操作在 22:58，掛鐘被撞停在 22:59，都早於三宅進場。摘要沒交代這一段，主時間線不能只靠他的動線。",
+      "看這裡！手機最後一次操作，還在三宅進場之前，連掛鐘都早早被撞停了。主時間線不能只靠他的動線。",
     );
     expect(gate).toMatchObject({
       id: "gate",
@@ -2936,9 +2936,7 @@ describe("compile (tracked production corpus compatibility)", () => {
     // chapter must exist as a compiled file on disk — otherwise its targets
     // silently skip the placement gate below.
     const expectedInvestigationFiles = (
-      JSON.parse(
-        readFileSync(resolve(outRoot, "chapters.json"), "utf-8"),
-      ) as {
+      JSON.parse(readFileSync(resolve(outRoot, "chapters.json"), "utf-8")) as {
         chapters: Array<{
           id: string;
           scenes: Array<{ type: string; file: string }>;

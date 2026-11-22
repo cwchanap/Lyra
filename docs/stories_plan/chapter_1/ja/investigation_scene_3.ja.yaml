@@ -15,8 +15,8 @@ lines:
       clip: ch1_soma_ritsu_0057
   - id: L002
     speaker: 相馬律
-    zh: 先把現場記下來。從前場開始，一個一個看。
-    ja: まず現場を記録する。店内から、ひとつずつ見ていこう。
+    zh: 今晚的任務，是把現場完整記下來。從前場開始，一個一個看。
+    ja: 今夜の仕事は、現場をすべて記録することだ。店内から、ひとつずつ見ていこう。
     voice:
       clip: ch1_soma_ritsu_0058
   - id: L003
@@ -25,18 +25,6 @@ lines:
     ja: 見落とさないで。今日を逃したら、また入れるとは限らない。
     voice:
       clip: ch1_hayasaka_akane_0020
-  - id: L004
-    speaker: 相馬律
-    zh: 這麼安靜。我還沒在這種時候進過現場。
-    ja: こんなに静かなのか。こういう時間に現場に入るのは初めてだ。
-    voice:
-      clip: ch1_soma_ritsu_0059
-  - id: L005
-    speaker: 早坂茜
-    zh: 閉店後的現場都是這樣。安靜才正常。
-    ja: 閉店後の現場は、どこもこう。静かなのが普通。
-    voice:
-      clip: ch1_hayasaka_akane_0021
   - id: L006
     speaker: 早坂茜
     zh: 等一下。店長在裡面等嗎？
@@ -112,16 +100,20 @@ lines:
       clip: ch1_hayasaka_akane_0026
   - id: L096
     speaker: 相馬律
-    zh: 嗯。表面上是這樣。
-    ja: うん。表向きはね。
+    zh: 嗯。三宅可疑，這點我同意。
+    ja: うん。三宅さんが怪しいという点は、同意する。
     voice:
       clip: ch1_soma_ritsu_0063
   - id: L097
     speaker: 相馬律
-    zh: 好。黑瀨刑警安排了警署詢問。先聽三宅怎麼說，不急著下結論。
-    ja: よし。黒瀬刑事が署での聴取を手配してくれた。まず三宅さんの話を聞こう。結論は急がない。
+    zh: 好。黑瀨刑警安排了警署詢問。先聽三宅自己怎麼說。
+    ja: よし。黒瀬刑事が署での聴取を手配してくれた。まず三宅さん本人の話を聞こう。
     voice:
       clip: ch1_soma_ritsu_0064
+  - id: L100
+    speaker: 相馬律
+    zh: （……人不在了，咖啡的味道還留著。這種安靜，我不習慣。）
+    ja: （……人はもういないのに、コーヒーの匂いは残ってる。この静けさには、慣れない。）
   - id: L016
     speaker: 店長高瀨
     expression: tired
@@ -436,11 +428,20 @@ lines:
     ja: ケーキの箱もここに積んでます。売れ残った切れ端、三宅がよく持って帰っていいかって聞くんです。
   - id: L076
     speaker: 相馬律
-    zh: 二十二點五十，閉店流程開始。二十二點五十二，維護模式開啟。
-    ja: 二十二時五十分、閉店作業開始。二十二時五十二分、メンテナンスモード、オン。
+    zh: 二十二點五十，閉店流程開始。
+    ja: 二十二時五十分、閉店作業開始。
     note: Read off the closing-routine checklist board on the corridor wall.
     voice:
       clip: ch1_soma_ritsu_0088
+  - id: L101
+    speaker: 相馬律
+    zh: 二十二點五十二，維護模式開啟。
+    ja: 二十二時五十二分、メンテナンスモード、オン。
+    note: Next row of the closing-routine checklist board.
+  - id: L102
+    speaker: 相馬律
+    zh: （閉店流程，就是關門前每晚照著做的清單。維護模式，是清單上讓門鎖進入檢修的那一格。）
+    ja: （閉店作業は、閉める前に毎晩その通りにやるチェックリスト。メンテナンスモードは、そのリストの中でドアロックを点検状態にする一項目だ。）
   - id: L077
     speaker: 相馬律
     zh: 收銀關帳，小額差額確認中，清潔回收，蛋糕盒紙杯箱整理。
@@ -454,12 +455,6 @@ lines:
     ja: メンテナンス記録簿に判が押されてない。メンテナンスモードも、まだオフになってない。
     voice:
       clip: ch1_soma_ritsu_0090
-  - id: L079
-    speaker: 早坂茜
-    zh: 流程沒走完就停下了。
-    ja: 作業が途中で止まってる。
-    voice:
-      clip: ch1_hayasaka_akane_0038
   - id: L080
     speaker: 相馬律
     zh: 這道門半開著，正好擋住裡面的視線。
@@ -520,8 +515,8 @@ lines:
       clip: ch1_soma_ritsu_0097
   - id: L090
     speaker: 相馬律
-    zh: 進後場是工作的一部分。先記著，別急著下結論。
-    ja: バックヤードに入るのは仕事のうちだ。覚えておこう。結論は急がない。
+    zh: 進後場是工作的一部分。這幾趟，都是閉店該走的路。
+    ja: バックヤードに入るのは仕事のうちだ。この数回は、どれも閉店のときに通って当然の道だ。
     voice:
       clip: ch1_soma_ritsu_0098
   - id: L091
