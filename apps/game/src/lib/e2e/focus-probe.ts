@@ -192,9 +192,9 @@ export function probeFocusStateDom(
  *  - "control": the focused element itself must match the control
  *    selector — the WebDriver-click hooks (interview/topic), where the
  *    intended owner is the clicked control;
- *  - "gameplay-root": the scene_2-root-focus regression hook, which
- *    programmatically focused the root — anything else owning focus means
- *    the intended state was never established.
+ *  - "gameplay-root": the focused-root regression contract, asserting
+ *    [data-gameplay-root] itself owns focus — anything else owning focus
+ *    means the intended state was never established.
  * `requireKeyboardModality` additionally demands the owner match
  * :focus-visible. At hooks reached via trusted Enter advances a truly
  * keyboard-modality focus state is expected; body (or any owner) without
@@ -281,7 +281,7 @@ export function checkFocusOwner(
  *       container is never a legitimate ring owner: the reported bug is a
  *       root-sized frame, and a focused root may NOT paint one, so the
  *       "focused root with a visible outline" regression case is covered
- *       here (also exercised directly by the scene_2-root-focus probe);
+ *       here (and exercised directly by the unit regression below);
  *   (c) an oversized outline covering a character portrait — the
  *       root-spanning frame over the character visuals. Portraits are
  *       fixed to the viewport edges behind the UI, so the bar is >25% of
@@ -361,6 +361,38 @@ export function installFocusTrajectoryScript(
   window.addEventListener("focusin", record, true);
   window.addEventListener("focusout", record, true);
   return { installed: expected !== null };
+}
+
+export type KeyboardFocusTargetProbe = {
+  /** document.activeElement IS the named control. */
+  onTarget: boolean;
+  /** Diagnostic descriptor of the current owner (tag + first classes). */
+  descriptor: string | null;
+};
+
+/**
+ * Serialized verbatim into the page for the bounded
+ * establish-keyboard-focus wait (HPA-831 final review): after the topic
+ * control's unmount drops focus to the browser fallback, WebDriver Tab
+ * input must move DOM focus to the stable advance control before the
+ * Enter drain begins. This poll proves only the owner — keyboard
+ * modality (:focus-visible) is enforced separately by the shared probe
+ * gate (`requireKeyboardModality`) once the owner lands.
+ * Self-contained: parameters + DOM globals only.
+ */
+export function probeKeyboardFocusTargetDom(
+  selector: string,
+): KeyboardFocusTargetProbe {
+  const active = document.activeElement;
+  if (!active) return { onTarget: false, descriptor: null };
+  const classes =
+    typeof active.className === "string"
+      ? active.className.trim().split(/\s+/).slice(0, 3).join(".")
+      : "";
+  return {
+    onTarget: active.matches(selector),
+    descriptor: active.tagName.toLowerCase() + (classes ? `.${classes}` : ""),
+  };
 }
 
 export type FocusTrajectoryResult = {

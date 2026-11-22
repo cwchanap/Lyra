@@ -5,6 +5,7 @@ import {
   focusOutlineViolations,
   installFocusTrajectoryScript,
   probeFocusStateDom,
+  probeKeyboardFocusTargetDom,
   readFocusTrajectoryScript,
   type FocusElementProbe,
 } from "./focus-probe";
@@ -283,6 +284,32 @@ describe("checkFocusOwner — per-hook owner/modality requirements", () => {
       requireKeyboardModality: true,
     });
     expect(check).toMatchObject({ ok: false, inconclusive: true });
+  });
+});
+
+describe("probeKeyboardFocusTargetDom — the actual serialized poll", () => {
+  // The bounded establish-keyboard-focus wait the journey runs before the
+  // Enter drain: WebDriver Tab input must land DOM focus on the stable
+  // advance control, or the positive keyboard-modality owner is
+  // unestablished and coverage is inconclusive.
+  it("reports the unmount fallback (body) as off-target", () => {
+    const result = probeKeyboardFocusTargetDom(".advance-button");
+    expect(result.onTarget).toBe(false);
+    expect(result.descriptor).toBe("body");
+  });
+
+  it("reports focus on the advance control as on-target", () => {
+    query(".advance-button").focus();
+    const result = probeKeyboardFocusTargetDom(".advance-button");
+    expect(result.onTarget).toBe(true);
+    expect(result.descriptor).toBe("button.advance-button");
+  });
+
+  it("rejects a different control — the poll is exact-owner only", () => {
+    query(".log-button").focus();
+    const result = probeKeyboardFocusTargetDom(".advance-button");
+    expect(result.onTarget).toBe(false);
+    expect(result.descriptor).toBe("button.log-button");
   });
 });
 
