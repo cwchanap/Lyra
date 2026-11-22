@@ -201,6 +201,22 @@ describe("evidence tray search verification", () => {
       ).toBe(true);
     });
 
+    it("accepts a complete multi-record grid at the baseline count", () => {
+      // A query matching every record renders the full 83-tile tray at the
+      // baseline count; the whole ordered list must still match exactly.
+      const allTitles = [
+        QUERY,
+        ...Array.from({ length: 82 }, (_, i) => `記錄${i + 1}`),
+      ];
+      expect(
+        evidenceTraySearchExactQueryRendered(
+          state({ titles: allTitles }),
+          QUERY,
+          allTitles,
+        ),
+      ).toBe(true);
+    });
+
     it("accepts the exact query with a filtered count", () => {
       expect(
         evidenceTraySearchExactQueryRendered(
