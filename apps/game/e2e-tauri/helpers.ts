@@ -23,6 +23,7 @@ import {
 import {
   X11_TRUSTED_KEY_NAMES,
   assertTrustedXvfbKeysAllowed,
+  assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
   deliverXvfbTrustedKey,
   parseNetWmPid,
@@ -183,6 +184,12 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
 //     no `-ac`, and XAUTHORITY must name a securely permissioned
 //     run-private authority file (an inherited env value alone proves no
 //     cookie enforcement);
+//   * PROOF that authority is enforced: the file must parse to at least
+//     one usable cookie record for this display (an empty/malformed file
+//     loads zero records and Xorg then accepts local clients), and two
+//     bounded xdpyinfo probes must show an authorized connection
+//     succeeding while an unauthenticated one is actively rejected — a
+//     cookie file alone is not enforcement;
 //   * the app process running the exact configured e2e binary
 //     (/proc/<pid>/exe; `ps comm` on Linux is only a basename) and spawned
 //     by this WDIO worker or launcher — the shared selector's exact rules;
@@ -210,8 +217,10 @@ type LinuxProcEntry = {
   exe: string | null;
 };
 
-/** fs.stat evidence for the run-private authority file, evaluated by
- * assertSecureAuthorityFile in e2e-x11-trusted-input.mjs. */
+/** fs.stat + content evidence for the run-private authority file,
+ * evaluated by assertSecureAuthorityFile/assertUsableAuthorityCookies in
+ * e2e-x11-trusted-input.mjs. `content` holds the Xauthority bytes — the
+ * verifier never logs cookie data. */
 type X11AuthorityFileEvidence = {
   isFile: boolean;
   mode: number;
@@ -220,6 +229,7 @@ type X11AuthorityFileEvidence = {
   dirMode: number;
   dirUid: number;
   euid: number;
+  content: Uint8Array;
 };
 
 /**
@@ -232,10 +242,16 @@ export function e2eXvfbTrustedKeysEnabled(): boolean {
   return trustedXvfbKeysOptIn({ platform: process.platform, env: process.env });
 }
 
-/** Bounded, shell-free external probe used for every xdotool/xprop call. */
-async function execBounded(file: string, args: string[]): Promise<string> {
+/** Bounded, shell-free external probe used for every xdotool/xprop/
+ * xdpyinfo call; `env` lets the auth probes pin XAUTHORITY per attempt. */
+async function execBounded(
+  file: string,
+  args: string[],
+  options: { env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
   const { stdout } = await promisify(execFile)(file, args, {
     timeout: X11_EXTERNAL_COMMAND_TIMEOUT_MS,
+    env: options.env ?? process.env,
   });
   return stdout;
 }
@@ -285,11 +301,14 @@ function linuxProcessTable(): LinuxProcEntry[] {
 }
 
 /**
- * fs.stat evidence for the run-private authority file xvfb-run created for
- * this display: a regular file owned by this user with no group/other
- * access, inside an equally private directory — an Xauthority another
- * principal could read or replace leaves the "private" display forgeable.
- * An unreadable path is itself unprovable privacy: throw, never guess.
+ * fs.stat + content evidence for the run-private authority file xvfb-run
+ * created for this display: a regular file owned by this user with no
+ * group/other access, inside an equally private directory, whose bytes
+ * parse to usable Xau cookie records — an Xauthority another principal
+ * could read or replace, or one loading zero records, leaves the
+ * "private" display forgeable or unenforced. An unreadable path is itself
+ * unprovable privacy: throw, never guess. The bytes are evidence only —
+ * cookie contents are never logged.
  */
 function readAuthorityFileEvidence(
   xauthority: string,
@@ -305,6 +324,7 @@ function readAuthorityFileEvidence(
       dirMode: dirStat.mode & 0o777,
       dirUid: dirStat.uid,
       euid: process.geteuid?.() ?? -1,
+      content: readFileSync(xauthority),
     };
   } catch (error) {
     throw new Error(
@@ -340,6 +360,19 @@ async function resolveXvfbTrustedTarget(): Promise<{
       typeof xauthority === "string" && xauthority.length > 0
         ? readAuthorityFileEvidence(xauthority)
         : undefined,
+  });
+  // The ancestry/-auth/cookie checks above prove the authority SHOULD be
+  // in force; these two bounded xdpyinfo probes prove it IS — the
+  // authorized connection succeeds, then an unauthenticated one is
+  // actively rejected for a connection-level reason (never a timeout or
+  // unrelated failure). An authority file Xorg ignores is not enforcement.
+  await assertX11AuthenticationEnforced({
+    display: process.env.DISPLAY,
+    xauthority,
+    probe: (probeXauthority: string) =>
+      execBounded("xdpyinfo", [], {
+        env: { ...process.env, XAUTHORITY: probeXauthority },
+      }),
   });
   const appPid = selectOwnedE2eAppProcessId({
     entries: processes.flatMap((entry) =>

@@ -12,21 +12,28 @@
  *   2. XAUTHORITY names a securely permissioned run-private authority
  *      file — a regular file owned by this user with no group/other
  *      access, inside an equally private directory.
- *   3. An `xvfb-run` process is a strict ANCESTOR of this WDIO worker — an
+ *   3. That file contains at least one USABLE cookie record for this
+ *      display (parsed Xau records, non-empty name+data). An empty or
+ *      malformed authority file passes steps 2 but leaves Xorg accepting
+ *      local connections without credentials.
+ *   4. Live enforcement proof: an authorized X connection must succeed
+ *      AND an unauthenticated one must be actively rejected (bounded
+ *      probes, no key material logged).
+ *   5. An `xvfb-run` process is a strict ANCESTOR of this WDIO worker — an
  *      Xvfb process merely serving the same display elsewhere in the table
  *      proves nothing about privacy.
- *   4. Exactly one Xvfb child of that xvfb-run serves the current DISPLAY
+ *   6. Exactly one Xvfb child of that xvfb-run serves the current DISPLAY
  *      (its `:<n>` argv token), does NOT run `-ac` (X access control
  *      disabled), and carries exactly one `-auth` argument equal to the
  *      current XAUTHORITY. Server authentication evidence lives in argv:
  *      an inherited XAUTHORITY environment alone does not enforce cookies
  *      (a run with XAUTHORITY=/dev/null still accepts connections).
- *   5. The app process matches the shared owned-process selector (exact
+ *   7. The app process matches the shared owned-process selector (exact
  *      configured e2e binary via /proc/<pid>/exe, parented by this worker
  *      or the WDIO launcher).
- *   6. xdotool finds exactly one visible window owned by that app pid, and
+ *   8. xdotool finds exactly one visible window owned by that app pid, and
  *      both `_NET_WM_PID` and `getwindowpid` agree with it.
- *   7. The X input focus sits on that window before and after each key.
+ *   9. The X input focus sits on that window before and after each key.
  *
  * Every function throws rather than guess: the caller must surface the
  * failure as inconclusive coverage and must NOT fall back to OS-global
@@ -134,6 +141,100 @@ function assertSecureAuthorityFile({ authorityFile, xauthority }) {
   }
 }
 
+/**
+ * Parse an Xauthority file's Xau records. Each record is big-endian:
+ * CARD16 family, CARD16 address-length + bytes, CARD16 number-length +
+ * bytes, CARD16 name-length + bytes, CARD16 data-length + bytes — packed,
+ * no padding. The cookie `data` is skipped, never retained or returned:
+ * only `dataLength` is exposed, so cookie bytes can never reach a log or
+ * error message. A trailing partial record makes the whole file malformed
+ * (throws) — a file Xorg could not fully load is not proof of enforcement.
+ */
+export function parseXauthorityRecords(content) {
+  if (!(content instanceof Uint8Array)) {
+    throw new Error(
+      `authority file content is not bytes (${typeof content}) — cannot prove usable cookie records`,
+    );
+  }
+  const records = [];
+  let offset = 0;
+  const u16 = () => {
+    if (offset + 2 > content.length) {
+      throw new Error(
+        `authority file is malformed: truncated field at offset ${offset} of ${content.length} bytes`,
+      );
+    }
+    const value = (content[offset] << 8) | content[offset + 1];
+    offset += 2;
+    return value;
+  };
+  const field = () => {
+    const length = u16();
+    if (offset + length > content.length) {
+      throw new Error(
+        `authority file is malformed: field of ${length} bytes overruns ${content.length}-byte file`,
+      );
+    }
+    const value = content.slice(offset, offset + length);
+    offset += length;
+    return value;
+  };
+  while (offset < content.length) {
+    const family = u16();
+    const address = Buffer.from(field()).toString("utf8");
+    const number = Buffer.from(field()).toString("utf8");
+    const name = Buffer.from(field()).toString("utf8");
+    const data = field();
+    records.push({ family, address, number, name, dataLength: data.length });
+  }
+  return records;
+}
+
+/**
+ * `assertSecureAuthorityFile` proves the file is private; this proves it
+ * is USEFUL — at least one well-formed Xau record for this display with a
+ * non-empty auth name and cookie data. An empty file (the reviewer's
+ * 0600/0700 size-0 reproduction), a truncated record, or records that
+ * cover no display we connect to all leave Xorg accepting unauthenticated
+ * local clients — fail closed on every one.
+ */
+export function assertUsableAuthorityCookies({
+  authorityFile,
+  displayNumber,
+  xauthority,
+}) {
+  let records;
+  try {
+    records = parseXauthorityRecords(authorityFile?.content);
+  } catch (error) {
+    const err = error ?? {};
+    throw new Error(
+      `XAUTHORITY ${xauthority} yields no provable cookie records (${typeof err.message === "string" ? err.message : String(error)}) — Xorg treats an unloadable authority file as no enforcement; refusing XTEST keys`,
+      { cause: error },
+    );
+  }
+  const usable = records.filter(
+    (record) =>
+      record.number === String(displayNumber) &&
+      record.name.length > 0 &&
+      record.dataLength > 0,
+  );
+  if (usable.length === 0) {
+    const seen =
+      records.length === 0
+        ? "no cookie records at all"
+        : `records only for [${records
+            .map(
+              (record) =>
+                `display ${JSON.stringify(record.number)}, ${record.name.length ? "named" : "unnamed"} auth, ${record.dataLength}-byte cookie`,
+            )
+            .join("; ")}]`;
+    throw new Error(
+      `XAUTHORITY ${xauthority} holds no usable cookie for display :${displayNumber} (${seen}) — Xorg treats zero supported records as no enforcement; refusing XTEST keys`,
+    );
+  }
+}
+
 /** `:<n>` or `:<n>.<screen>` -> n; anything else (remote/host forms) -> null. */
 export function parseLocalDisplayNumber(display) {
   const match = /^:(\d+)(?:\.\d+)?$/.exec(display ?? "");
@@ -144,7 +245,7 @@ export function parseLocalDisplayNumber(display) {
  * Prove this worker runs under a private xvfb-run display owned by this
  * test-run ancestry. `processes` is the live `/proc` table
  * (`{pid, ppid, comm, argv, exe}`) and `authorityFile` the caller-gathered
- * fs.stat evidence for XAUTHORITY. Returns the verified
+ * fs.stat + content evidence for XAUTHORITY. Returns the verified
  * `{xvfbRunPid, xvfbPid}` pair or throws — uncertainty always fails closed.
  */
 export function verifyPrivateXvfbAncestry({
@@ -171,6 +272,7 @@ export function verifyPrivateXvfbAncestry({
     );
   }
   assertSecureAuthorityFile({ authorityFile, xauthority });
+  assertUsableAuthorityCookies({ authorityFile, displayNumber, xauthority });
 
   const byPid = new Map();
   for (const entry of processes) byPid.set(entry.pid, entry);
@@ -378,6 +480,105 @@ export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
   if (focusedAfter !== windowId) {
     throw new Error(
       `X input focus left verified window ${windowId} (now ${focusedAfter ?? "unparseable"}) while delivering trusted ${key}; keyboard coverage is inconclusive`,
+    );
+  }
+}
+
+/**
+ * A guaranteed-empty authority file: connecting with it presents no
+ * credentials, exactly the controller's `XAUTHORITY=/dev/null xdpyinfo`
+ * probe inside the acceptance image.
+ */
+export const EMPTY_XAUTHORITY_PROBE = "/dev/null";
+
+/**
+ * Live proof the verified display actually ENFORCES the authority file —
+ * the only check that distinguishes a real cookie requirement from an
+ * `-auth` pointing at a file Xorg ignored (empty/malformed authority loads
+ * zero records, and Xorg then accepts local clients unconditionally).
+ *
+ * `probe(xauthorityPath)` performs ONE bounded X connection attempt and
+ * resolves on success (production: `xdpyinfo` under an env with the given
+ * XAUTHORITY — no shell, no key material in the command line). Sequence:
+ *
+ *   1. `probe(xauthority)` must succeed. If the authorized connection
+ *      fails, the display/tooling state is unproven (absent server,
+ *      missing binary, and timeout are indistinguishable here) — fail
+ *      closed before even attempting the negative check.
+ *   2. `probe(EMPTY_XAUTHORITY_PROBE)` must be ACTIVELY REJECTED with a
+ *      connection-level failure (a display-open error such as xdpyinfo's
+ *      "unable to open display"). An ACCEPTED unauthenticated connection
+ *      means zero enforcement — fail. A killed/timed-out/crashed probe or
+ *      an unrelated error means rejection was never observed — also fail
+ *      closed, because an unauthenticated client that hangs was not
+ *      refused.
+ *
+ * The positive-then-negative ordering is what makes the negative failure
+ * attributable to authentication: the server was proven reachable by the
+ * immediately preceding authorized connection.
+ */
+export async function assertX11AuthenticationEnforced({
+  display,
+  xauthority,
+  probe,
+}) {
+  if (typeof display !== "string" || display.length === 0) {
+    throw new Error(
+      "cannot prove X authentication enforcement: DISPLAY is unset; refusing XTEST keys",
+    );
+  }
+  if (typeof xauthority !== "string" || xauthority.length === 0) {
+    throw new Error(
+      "cannot prove X authentication enforcement: XAUTHORITY is unset; refusing XTEST keys",
+    );
+  }
+  try {
+    await probe(xauthority);
+  } catch (error) {
+    const err = error ?? {};
+    const detail = [err.message, err.stderr]
+      .filter((part) => typeof part === "string" && part.length > 0)
+      .join(" | ");
+    throw new Error(
+      `authorized X connection to DISPLAY ${display} failed (${detail || String(error)}) — server reachability and probe health are unproven, so authentication enforcement cannot be established; refusing XTEST keys`,
+      { cause: error },
+    );
+  }
+
+  let negativeError = null;
+  try {
+    await probe(EMPTY_XAUTHORITY_PROBE);
+  } catch (error) {
+    negativeError = error;
+  }
+  if (negativeError === null) {
+    throw new Error(
+      `unauthenticated X connection to DISPLAY ${display} (empty authority ${EMPTY_XAUTHORITY_PROBE}) was ACCEPTED — the server does not enforce this run's authority file; refusing XTEST keys`,
+    );
+  }
+
+  const err = negativeError ?? {};
+  const detail = [err.message, err.stderr]
+    .filter((part) => typeof part === "string" && part.length > 0)
+    .join(" | ");
+  const killedOrTimedOut =
+    err.killed === true ||
+    (typeof err.signal === "string" && err.signal.length > 0) ||
+    /timed? ?out/i.test(detail);
+  if (killedOrTimedOut) {
+    throw new Error(
+      `unauthenticated X connection to DISPLAY ${display} did not fail (${detail || "killed/timed out"}) — a rejected connection must fail, not hang or die; enforcement is unproven, refusing XTEST keys`,
+      { cause: negativeError },
+    );
+  }
+  if (
+    !/unable to open display|authorization required|authentication|access denied/i.test(
+      detail,
+    )
+  ) {
+    throw new Error(
+      `unauthenticated X connection to DISPLAY ${display} failed for an indistinguishable reason (${detail || String(negativeError)}) — only a connection-level rejection proves authentication is enforced; refusing XTEST keys`,
+      { cause: negativeError },
     );
   }
 }
