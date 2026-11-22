@@ -380,7 +380,9 @@ against what was intended.
   time and a code. The figures belong on the record card.
 - A hedge such as 「這只能證明……」 appears at most once per scene.
 - The first time a system, procedure or product name appears in the chapter,
-  something near it says it in plain words.
+  something near it says it in plain words. Where hotspots can be opened in
+  any order, "first time" holds on every path: a term explained in only one of
+  them is unexplained for a player who opens another one first.
 - No serial number reads as a clock time (`1841`).
 - After each scene, could a first-time player say what was learned and what
   comes next? Flag the scene where they could not, and quote the lines that
@@ -405,16 +407,20 @@ against what was intended.
   a line the player must follow that carries two or more times or codes. A
   missing fixed beat, or a chapter with no loud moment, is also Important,
   but it needs a new scene or a moved beat: the implementer escalates it as
-  `STRUCTURAL — needs human` and does not invent one.
+  `STRUCTURAL — needs human` and does not invent one. Something that is
+  missing has no offending line to quote: cite the scene where the plan or
+  addendum places it (`chapter.md` for a chapter-level miss) as `file:line`,
+  and put the page and section it was checked against in the issue.
 - **Minor:** one hedge over budget; an aside that could be cut; a bracket a
   slug or a line could carry; inner voice a little dense.
 - The counts ("three or four", "first three lines", "more than two in a
   row") are guidance, as in Axis 6. Being one off is never by itself above
   Minor, and never a reason to add filler lines.
 - Chapter-level checks (loud moments, fixed beats, the escalation row) apply
-  only when the whole chapter is under review. For a slice of an unfinished
-  chapter, check the beats the plan or addendum places in those scenes and
-  list the rest as not yet in scope, not as missing.
+  only when the review brief says the files are the whole chapter. Without
+  that statement, treat them as a slice of an unfinished chapter: check the
+  beats the plan or addendum places in those scenes and list the rest as not
+  yet in scope, not as missing.
 
 ---
 
