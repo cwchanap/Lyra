@@ -1,6 +1,6 @@
 # HPA-705 — SHOW／PRESENT 證物盤搜尋與 800×600 可讀性（設計規格）
 
-> **狀態：** Draft design，程式尚未實作／驗收。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)、[Draft PR #138](https://github.com/cwchanap/Lyra/pull/138)。已整合 [PR #138 的兩輪設計審閱](https://github.com/cwchanap/Lyra/pull/138)，其中第二輪核對 head `fa323aa` 的 UI 測試、CSS 與 WDIO 細節。**單一任務、單一 PR**：本 PR 先放規劃，後續同一 PR 實作，不另開 implementation PR。
+> **狀態：** 已於 [PR #138](https://github.com/cwchanap/Lyra/pull/138) 完成實作——CI 全綠（含 Tauri E2E smoke），packaged smoke 及 Chapter 2 最終聽證 800×600 孤立段（83 筆真實紀錄）已通過；head `e7ae7b34` 的 canonical E2E Full 仍在執行，完成前不標已驗收。對應 [Linear HPA-705](https://linear.app/cwchanap/issue/HPA-705/evidence-tray-is-hard-to-use-with-dozens-of-records-show-出示紀錄)。歷史記錄：原為 Draft design，已整合 [PR #138 的兩輪設計審閱](https://github.com/cwchanap/Lyra/pull/138)，其中第二輪核對 head `fa323aa` 的 UI 測試、CSS 與 WDIO 細節。**單一任務、單一 PR**：規劃與實作同在此 PR，不另開 implementation PR。
 
 ## 1. 問題、既有能力與原因邊界
 
