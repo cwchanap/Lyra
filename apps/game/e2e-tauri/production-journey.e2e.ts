@@ -49,6 +49,10 @@ import {
   evidenceTraySearchProbeObserved,
 } from "../src/lib/e2e/evidence-tray-search-verify";
 import {
+  EXPECTED_FOCUS_CONTROL_SELECTOR,
+  isExpectedFocusOwner,
+} from "../src/lib/e2e/focus-owner";
+import {
   filterPresentableRecords,
   presentableRecords,
 } from "$lib/interrogation/presentation";
@@ -2299,29 +2303,22 @@ const HPA831_GATED_ASSET_IDS = new Set<string>([
 ]);
 
 /** Surfaces a focused element may legitimately live in during the
- * commission -> map segment: the gameplay root (the app's own focus-restore
- * owner), the DialogueBox, the topic popover/character controls, and the
- * city map. A focus owner anywhere else is the wrong-owner signature. */
-const EXPECTED_FOCUS_SURFACES = [
-  "body",
-  "[data-gameplay-root]",
-  ".box",
-  ".advance-button",
-  ".topic-popover",
-  ".character-target",
-  '[aria-label="城市地圖"]',
-  "[data-map-destination]",
-  "[data-map-region]",
-].join(",");
+ * commission -> map segment: `body` and `[data-gameplay-root]` by EXACT
+ * identity only (they are ancestors of everything — an ancestor match
+ * admits any element, the wrong-owner signature this gate exists to
+ * catch), plus the narrow interactive controls in
+ * EXPECTED_FOCUS_CONTROL_SELECTOR (shared with focus-owner.ts tests). */
 
 type FocusElementProbe = {
   descriptor: string;
   tag: string;
   isActiveElement: boolean;
+  /** `element === document.body` — exact identity fallback owner. */
+  isBody: boolean;
   isGameplayRoot: boolean;
-  /** True when the element sits inside one of EXPECTED_FOCUS_SURFACES —
-   * the only allowed focus owners during this segment. */
-  insideExpectedSurface: boolean;
+  /** The element itself matches EXPECTED_FOCUS_CONTROL_SELECTOR — a
+   * narrow interactive control, never an ancestor match. */
+  matchesExpectedControl: boolean;
   focusVisible: boolean;
   matchesFocus: boolean;
   outlineStyle: string;
@@ -2360,7 +2357,7 @@ type FocusProbe = {
  * character portrait region — plus an 800x600 evidence screenshot.
  */
 async function captureFocusProbe(label: string): Promise<FocusProbe> {
-  const probe = await browser.execute((focusSurfaces: string) => {
+  const probe = await browser.execute((controlSelector: string) => {
     const rectOf = (element: Element) => {
       const r = element.getBoundingClientRect();
       return {
@@ -2431,10 +2428,12 @@ async function captureFocusProbe(label: string): Promise<FocusProbe> {
             : ""),
         tag: element.tagName.toLowerCase(),
         isActiveElement: element === active,
+        // body/root admit descendants by identity check only; controls are
+        // matched on the element itself — closest() through body or the
+        // root would pass every gameplay descendant (the review finding).
+        isBody: element === document.body,
         isGameplayRoot: element.hasAttribute("data-gameplay-root"),
-        insideExpectedSurface:
-          element instanceof HTMLElement &&
-          element.closest(focusSurfaces) !== null,
+        matchesExpectedControl: element.matches(controlSelector),
         focusVisible:
           element instanceof HTMLElement
             ? element.matches(":focus-visible")
@@ -2475,7 +2474,7 @@ async function captureFocusProbe(label: string): Promise<FocusProbe> {
       outlinedElements: outlined,
       portraitRegionCount: portraitRects.length,
     };
-  }, EXPECTED_FOCUS_SURFACES);
+  }, EXPECTED_FOCUS_CONTROL_SELECTOR);
   const screenshotPath = path.join(HPA831_ARTIFACT_DIR, `focus-${label}.png`);
   await browser.saveScreenshot(screenshotPath);
   writeFileSync(
@@ -2542,16 +2541,39 @@ function expectNoStaleFocusRing(probe: FocusProbe): void {
 }
 
 /**
- * The expected-owner gate: document.activeElement must be null or an
- * element inside EXPECTED_FOCUS_SURFACES (gameplay root, DialogueBox,
- * topic popover/character controls, city map). Focus parked anywhere else —
- * e.g. on a detached/stale control — is the wrong-owner signature even when
- * no outline is painted.
+ * The expected-owner gate. document.activeElement must be an element the
+ * segment expects to own focus: `body` or `[data-gameplay-root]` by exact
+ * identity (the browser/app fallback owners), or the element itself
+ * matching EXPECTED_FOCUS_CONTROL_SELECTOR — the narrow interactive
+ * controls. A descendant anywhere else (e.g. a stale hotspot or a
+ * non-interactive container) is the wrong-owner signature even when no
+ * outline is painted. A null activeElement means the owner cannot be
+ * established at all — inconclusive, never silently green.
+ * `requireGameplayRoot` additionally enforces the intended owner for the
+ * scene_2-root-focus regression hook: the probe focused the root, so
+ * anything else owning focus means the intended state was not established.
  */
-function expectAllowedFocusOwner(probe: FocusProbe): void {
+function expectAllowedFocusOwner(
+  probe: FocusProbe,
+  options?: { requireGameplayRoot?: boolean },
+): void {
   const owner = probe.activeElement;
-  if (owner === null) return;
-  if (owner.isGameplayRoot || owner.insideExpectedSurface) return;
+  if (owner === null) {
+    throw new Error(
+      `focus probe "${probe.label}": document.activeElement is null — ` +
+        `the focus owner cannot be established; coverage is inconclusive ` +
+        `(screenshot ${probe.screenshotPath})`,
+    );
+  }
+  if (options?.requireGameplayRoot === true && !owner.isGameplayRoot) {
+    throw new Error(
+      `focus probe "${probe.label}": expected [data-gameplay-root] to ` +
+        `hold focus but activeElement is ${owner.descriptor} — the ` +
+        `intended focus state was not established; coverage is ` +
+        `inconclusive (screenshot ${probe.screenshotPath})`,
+    );
+  }
+  if (isExpectedFocusOwner(owner)) return;
   throw new Error(
     `focus probe "${probe.label}": unexpected focus owner ` +
       JSON.stringify({
@@ -2560,7 +2582,8 @@ function expectAllowedFocusOwner(probe: FocusProbe): void {
         focusVisible: owner.focusVisible,
         rect: owner.rect,
       }) +
-      ` — expected an element inside ${EXPECTED_FOCUS_SURFACES}; screenshot ${probe.screenshotPath}`,
+      ` — expected body, [data-gameplay-root], or an element matching ` +
+      `${EXPECTED_FOCUS_CONTROL_SELECTOR}; screenshot ${probe.screenshotPath}`,
   );
 }
 
@@ -2705,10 +2728,13 @@ async function waitForJourneyProgress(
  * reporting a false Green.
  */
 async function runCommissionScene2FocusSegment(): Promise<void> {
-  const probeAndAssert = async (label: string): Promise<FocusProbe> => {
+  const probeAndAssert = async (
+    label: string,
+    options?: { requireGameplayRoot?: boolean },
+  ): Promise<FocusProbe> => {
     const probe = await captureFocusProbe(label);
     expectNoStaleFocusRing(probe);
-    expectAllowedFocusOwner(probe);
+    expectAllowedFocusOwner(probe, options);
     return probe;
   };
 
@@ -2769,6 +2795,31 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
     );
   }
   await topicButton.click();
+  // Same coverage gate as the interview click: DOM focus must land on the
+  // exact topic button or the focus probes below are inconclusive.
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (popoverSel: string, topicLabel: string) => {
+          const button = Array.from(
+            document.querySelectorAll<HTMLButtonElement>(
+              `${popoverSel} .topic-actions button`,
+            ),
+          ).find((candidate) =>
+            (candidate.textContent ?? "").includes(topicLabel),
+          );
+          return button !== undefined && document.activeElement === button;
+        },
+        popoverSelector,
+        anchors.firstTopic,
+      ),
+    {
+      timeout: 5000,
+      interval: 100,
+      timeoutMsg:
+        "WebDriver element click did not move DOM focus to the topic button — focus/keyboard coverage is inconclusive",
+    },
+  );
   await probeAndAssert("topic-click");
 
   // Enter-drain inv1's outro into scene_2 and the first map wrapper. The
@@ -2871,7 +2922,9 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
             "[data-gameplay-root] could not take DOM focus — the focused-root regression case is unexercisable and coverage is inconclusive",
           );
         }
-        await probeAndAssert("scene_2-root-focus");
+        await probeAndAssert("scene_2-root-focus", {
+          requireGameplayRoot: true,
+        });
         rootFocusRegressionTaken = true;
       }
       if (!scene2Taken.middle && total > 0 && cursor >= Math.floor(total / 2)) {
