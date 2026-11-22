@@ -7,6 +7,34 @@ schemaVersion: 1
 locale: ja
 source: docs/stories_plan/chapter_1/scene_p0.md
 lines:
+  - id: L009
+    speaker: 旁白
+    zh: 吉祥寺的一間咖啡館，後場有人死了。
+    ja: 吉祥寺のあるカフェのバックヤードで、人が死んだ。
+  - id: L010
+    speaker: 旁白
+    zh: 摘要系統只用了一夜，就替這件事找好了兇手。
+    ja: サマリーシステムは、たった一晩で、この件の犯人を割り出した。
+  - id: L011
+    speaker: 旁白
+    zh: 一名咖啡館店員。
+    ja: カフェの店員、一人。
+  - id: L012
+    speaker: 旁白
+    zh: 每一條紀錄都對得上，沒有一行對不起來。
+    ja: どの記録も合っていて、合わない行は一行もなかった。
+  - id: L013
+    speaker: 旁白
+    zh: 只有一個人不信。一位母親。
+    ja: 信じなかったのは、ただ一人。ある母親。
+  - id: L014
+    speaker: 旁白
+    zh: 這是之後才會發生的事。
+    ja: これは、あとになって起きることだ。
+  - id: L015
+    speaker: 旁白
+    zh: 在那之前，城市還在下雨。
+    ja: それより前、街にはまだ雨が降っている。
   - id: L001
     speaker: 旁白
     zh: 東京，下雨的傍晚。

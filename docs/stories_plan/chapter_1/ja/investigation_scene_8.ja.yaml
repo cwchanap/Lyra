@@ -79,9 +79,8 @@ lines:
     ja: あのドアがメンテナンス中だったって、それを証明したかっただけです。ほかに意味はないんです。
   - id: L011
     speaker: 相馬律
-    zh: 四條：1841 維護模式，1842 外部憑證開後門，1843 員工憑證開後走廊，1844 同步完成。
-    ja: 四件。1841、メンテナンスモード。1842、外部認証で裏口を解錠。1843、従業員認証で裏の廊下を解錠。1844、同期完了。
-    note: Reading the event list off the phone screenshot; 1841-1844 are event numbers, not years or clock times.
+    zh: 四條，依序是維護模式、外部憑證開後門、員工憑證開後走廊、同步完成。
+    ja: 四件。順に、メンテナンスモード、外部認証で裏口を解錠、従業員認証で裏の廊下を解錠、同期完了。
     voice:
       clip: ch1_soma_ritsu_0187
   - id: L012
@@ -283,19 +282,57 @@ lines:
     ja: 覚えておいて。これは本体の記録順で、承認済み抜粋じゃない。
     voice:
       clip: ch1_hayasaka_akane_0105
+  - id: L075
+    speaker: 相馬律
+    zh: （本機順序，就是這扇門自己記下的先後。只有誰在前、誰在後，上面沒有時鐘。）
+    ja: （本体の記録順は、このドアが自分で記した前後だ。あるのは誰が先で誰があとかだけで、時計はない。）
   - id: L051
     speaker: 相馬律
-    zh: 1842 是外包憑證開後門，排在 1843 的三宅憑證前面。
-    ja: 1842は外注認証での裏口の解錠。1843の三宅さんの認証より前に並んでる。
-    note: 1842 and 1843 are event numbers, not years.
+    expression: determined
+    zh: 欸，等一下！第 42 筆是外包憑證開後門，比三宅的憑證還早！
+    ja: あれ、ちょっと待って！42番のイベントは外注認証での裏口の解錠で、三宅さんの認証より早い！
     voice:
       clip: ch1_soma_ritsu_0201
   - id: L052
     speaker: 相馬律
-    zh: 那就是兇手吧？
-    ja: じゃあ、これが犯人だろう？
+    expression: determined
+    zh: 有人先進去了——那就是兇手吧！
+    ja: 誰かが先に入ってた――それが犯人だろう！
     voice:
       clip: ch1_soma_ritsu_0202
+  - id: L076
+    speaker: 早坂茜
+    expression: stern
+    zh: 停。你剛才說什麼？
+    ja: 待って。今、何て言った？
+  - id: L077
+    speaker: 相馬律
+    expression: determined
+    zh: 兇手！先進去的人，不就是——
+    ja: 犯人だ！先に入った人間が、そうなんじゃ――
+  - id: L078
+    speaker: 早坂茜
+    expression: stern
+    zh: 所以呢？你拿什麼證明他動了手？
+    ja: それで？その人間が手を出したと、何で証明する？
+  - id: L079
+    speaker: 相馬律
+    expression: determined
+    zh: 三宅還關在裡面，我們手上就只有這個！
+    ja: 三宅さんはまだ中に入れられたままだ。手元にあるのは、これだけなんだ！
+  - id: L080
+    speaker: 早坂茜
+    expression: stern
+    zh: 就因為只有這個，才不准亂叫名字！先給名字、再補證據，摘要就是這樣抓到三宅的！
+    ja: これしかないからこそ、軽々しく名指しするな！先に名前を出して、あとから証拠を足す。サマリーはそうやって三宅さんを捕まえた！
+  - id: L081
+    speaker: 相馬律
+    zh: 可惡……
+    ja: くそ……
+  - id: L082
+    speaker: 相馬律
+    zh: （……她說得對。我只是不想再等了。）
+    ja: （……早坂さんの言うとおりだ。僕はただ、もう待ちたくなかっただけだ。）
   - id: L053
     speaker: 早坂茜
     zh: 只能說有外部憑證比三宅早。還沒對到人。

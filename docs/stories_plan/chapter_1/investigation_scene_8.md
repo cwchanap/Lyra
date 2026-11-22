@@ -51,7 +51,7 @@
 
 [相馬律接過手機，放大那張截圖。]
 
-**相馬律**：四條：1841 維護模式，1842 外部憑證開後門，1843 員工憑證開後走廊，1844 同步完成。 {#L011}
+**相馬律**：四條，依序是維護模式、外部憑證開後門、員工憑證開後走廊、同步完成。 {#L011}
 
 [早坂茜湊近看，眉頭微皺。]
 
@@ -183,11 +183,31 @@
 
 **早坂茜**：記住，這是本機順序，不是核准片段。 {#L050}
 
-[相馬律用筆尖點著紀錄表上的兩條事件。]
+**相馬律**：（本機順序，就是這扇門自己記下的先後。只有誰在前、誰在後，上面沒有時鐘。） {#L075}
 
-**相馬律**：1842 是外包憑證開後門，排在 1843 的三宅憑證前面。 {#L051}
+[相馬律用筆尖點著紀錄表上的兩條事件，筆尖敲得越來越快。]
 
-**相馬律**：那就是兇手吧？ {#L052}
+**相馬律**[determined]：欸，等一下！第 42 筆是外包憑證開後門，比三宅的憑證還早！ {#L051}
+
+**相馬律**[determined]：有人先進去了——那就是兇手吧！ {#L052}
+
+[黑瀨徹抱著手臂站在一旁，沒有出聲。]
+
+**早坂茜**[stern]：停。你剛才說什麼？ {#L076}
+
+**相馬律**[determined]：兇手！先進去的人，不就是—— {#L077}
+
+**早坂茜**[stern]：所以呢？你拿什麼證明他動了手？ {#L078}
+
+**相馬律**[determined]：三宅還關在裡面，我們手上就只有這個！ {#L079}
+
+**早坂茜**[stern]：就因為只有這個，才不准亂叫名字！先給名字、再補證據，摘要就是這樣抓到三宅的！ {#L080}
+
+**相馬律**：可惡…… {#L081}
+
+[相馬律的筆停在紀錄表上，過了一會，才慢慢放下。]
+
+**相馬律**：（……她說得對。我只是不想再等了。） {#L082}
 
 **早坂茜**：只能說有外部憑證比三宅早。還沒對到人。 {#L053}
 
@@ -217,7 +237,7 @@
 ### evidence:local_sequence_record {#local_sequence_record}
 - **Name:** 本機順序程序固定紀錄
 - **Description:** 鑑識依程序固定的後場門鎖面板紀錄，含本機事件順序。
-- **Details:** 含門鎖設備識別碼、機身編號、頁面版本號與當前畫面時間，底下是事件 1841 至 1844 的本機順序，只有先後，沒有秒數。這是本機自己存的順序，不是 KAGAMI 的核准片段。
+- **Details:** 含門鎖設備識別碼、機身編號、頁面版本號與當前畫面時間，底下是第 41 至 44 筆的本機順序，只有先後，沒有秒數。這是本機自己存的順序，不是 KAGAMI 的核准片段。
 - **Source Sublocation:** fixed_panel
 - **Image Prompt:** Formal doorlock panel sequence record with four ordered event blocks, device-photo strip, unreadable fields, isolated evidence icon.
 - **Source Group:** door_lock_fixed_record
@@ -243,7 +263,7 @@
 ### evidence:external_maintenance_credential {#external_maintenance_credential}
 - **Name:** 外包維護憑證
 - **Description:** 本機順序裡那條排在員工憑證之前的外部維護憑證事件。
-- **Details:** 事件 1842，外部維護憑證、後門開啟，排在三宅的員工憑證事件 1843 之前。目前只知道有這麼一個外部憑證的事件，還沒對應到任何一個人。
+- **Details:** 第 42 筆，外部維護憑證、後門開啟，排在三宅的員工憑證事件（第 43 筆）之前。目前只知道有這麼一個外部憑證的事件，還沒對應到任何一個人。
 - **Source Sublocation:** fixed_panel
 - **Image Prompt:** External maintenance credential event card with keycard silhouette and ordered event row, all codes unreadable, isolated evidence icon.
 - **Source Group:** door_lock_fixed_record
