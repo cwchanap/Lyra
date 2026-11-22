@@ -418,11 +418,13 @@ against what was intended.
 - **Important:** a key emotional moment with no on-screen reaction; a task
   scene with no stated goal; a term the player needs that is never explained;
   a line the player must follow that carries two or more times or codes. A
-  missing fixed beat, a missing §19.2 character beat, or a chapter with no
-  loud moment, is also Important,
+  missing fixed beat, or a chapter with no loud moment, is also Important,
   but it needs a new scene or a moved beat: the implementer escalates it as
-  `STRUCTURAL — needs human` and does not invent one. Something that is
-  missing has no offending line to quote: cite the scene where the plan or
+  `STRUCTURAL — needs human` and does not invent one. A missing §19.2
+  character beat is Important too; the implementer may write it into an
+  exchange that already exists, and escalates only when it would need a new
+  scene or a moved beat. Something that is missing has no offending line to
+  quote: cite the scene where the plan or
   addendum places it (`chapter.md` for a chapter-level miss) as `file:line`,
   and put the page and section it was checked against in the issue.
 - **Minor:** one hedge over budget; an aside that could be cut; a bracket a
