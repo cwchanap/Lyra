@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -31,6 +37,15 @@ import {
   drainPendingAcquisitionsWithinCap,
   soleMapDestinationId,
 } from "$lib/e2e/pending-acquisition-drain";
+import { publicPathForAssetId } from "@lyra/asset-paths";
+import {
+  cssRectToImageRegion,
+  decodePng,
+  expectPaintedRegion,
+  regionPixelMetrics,
+  type ImageRegion,
+  type RegionPixelMetrics,
+} from "../src/lib/e2e/screenshot-pixels";
 
 const appRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -1533,8 +1548,471 @@ export async function waitForAcquisitionOrdinal(
   );
 }
 
+// --- HPA-831 Task 1: acquisition evidence-image diagnostics + compositor gate
+//
+// Two independent proofs per affected record while its popup is still open:
+//   (A) SOURCE — `img.decode()` + canvas pixel sample of `img.evidence-image`
+//       proves the served bytes decode to real pixels. Universal for every
+//       evidence acquisition with a non-empty imageAssetId.
+//   (B) COMPOSITED — decode the WDIO screenshot PNG in THIS Node process and
+//       sample the painted `.acquisition-card .visual` region. Only runs for
+//       the imageAssetIds the journey opts into (the two HPA-831 records plus
+//       the doorlock comparison) because a screenshot per popup is expensive.
+//       Source success alone can never catch the WebKitGTK/Xvfb empty-frame
+//       paint failure; the screenshot crop is the objective gate.
+
+export type AcquisitionImageTiming =
+  | { status: "unavailable" }
+  | { status: "recorded"; entries: Array<{ duration: number }> };
+
+export type AcquisitionImageCanvasMetrics =
+  | {
+      alphaPixels: number;
+      distinctBuckets: number;
+      luminanceMean: number;
+      luminanceStdDev: number;
+      minLuminance: number;
+      maxLuminance: number;
+    }
+  | { error: string };
+
+export type AcquisitionImageInspection = {
+  preDecode: {
+    complete: boolean;
+    currentSrc: string;
+    naturalWidth: number;
+    naturalHeight: number;
+  };
+  resourceTiming: AcquisitionImageTiming;
+  decode: { ok: true; decodeMs: number } | { ok: false; error: string };
+  postDecode: {
+    complete: boolean;
+    currentSrc: string;
+    naturalWidth: number;
+    naturalHeight: number;
+  };
+  canvas: AcquisitionImageCanvasMetrics;
+};
+
+export type AcquisitionCompositorGate = {
+  /** imageAssetIds (e.g. "evidence.cctv_screenshot") whose popup gets the
+   * screenshot-crop compositor proof in addition to the source checks. */
+  imageAssetIds: ReadonlySet<string>;
+  outputDirectory: string;
+};
+
+let acquisitionCompositorGate: AcquisitionCompositorGate | null = null;
+
+/** Arms (or disarms with null) the expensive compositor crop check. The
+ * journey scopes it to the affected acquisitions and always clears it in
+ * `finally` so unrelated popups keep the cheap source-only path. */
+export function setAcquisitionCompositorGate(
+  gate: AcquisitionCompositorGate | null,
+): void {
+  acquisitionCompositorGate = gate;
+}
+
+export type ScreenshotRegionPaintResult = {
+  screenshotPath: string;
+  metricsPath: string;
+  cssRect: { left: number; top: number; width: number; height: number };
+  cssViewport: { width: number; height: number };
+  devicePixelRatio: number;
+  /** Actual screenshotSize ÷ cssViewportSize on each axis — recorded so a
+   * non-1x device scale can never silently corrupt the crop mapping. */
+  screenshotScale: { x: number; y: number };
+  pngSize: { width: number; height: number };
+  region: ImageRegion;
+  metrics: RegionPixelMetrics;
+};
+
+/**
+ * The shared compositor proof: save a WDIO screenshot, decode the PNG in the
+ * Node test process, map `selector`'s CSS rect into image pixels by the real
+ * scale ratio, and assert the cropped region has distinguishable,
+ * non-single-color content. The screenshot and its metrics JSON are written
+ * BEFORE the assertion so a failing paint keeps its evidence on disk.
+ * Callers pass the painted element: `.acquisition-card .visual` for the
+ * popup, `img.case-file-record-image` for Case File.
+ */
+export async function assertScreenshotRegionPainted(input: {
+  selector: string;
+  label: string;
+  screenshotPath: string;
+  /** CSS px to shave off each side (skips 1px borders + AA fringe). */
+  insetCssPx?: number;
+}): Promise<ScreenshotRegionPaintResult> {
+  const target = await browser.execute((sel: string) => {
+    const element = document.querySelector(sel);
+    if (!element) return null;
+    const rect = element.getBoundingClientRect();
+    return {
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      devicePixelRatio: window.devicePixelRatio,
+    };
+  }, input.selector);
+  if (!target) {
+    throw new Error(
+      `${input.label}: element ${input.selector} is not mounted for the screenshot crop`,
+    );
+  }
+  if (target.rect.width <= 0 || target.rect.height <= 0) {
+    throw new Error(
+      `${input.label}: ${input.selector} has an empty rect ${JSON.stringify(target.rect)}`,
+    );
+  }
+  mkdirSync(path.dirname(input.screenshotPath), { recursive: true });
+  await browser.saveScreenshot(input.screenshotPath);
+  const png = decodePng(readFileSync(input.screenshotPath));
+  const screenshotScale = {
+    x: png.width / target.viewport.width,
+    y: png.height / target.viewport.height,
+  };
+  const region = cssRectToImageRegion(
+    target.rect,
+    target.viewport,
+    { width: png.width, height: png.height },
+    input.insetCssPx ?? 0,
+  );
+  const metrics = regionPixelMetrics(png, region);
+  const metricsPath = input.screenshotPath.replace(/\.png$/, ".json");
+  writeFileSync(
+    metricsPath,
+    `${JSON.stringify(
+      {
+        label: input.label,
+        selector: input.selector,
+        cssRect: target.rect,
+        cssViewport: target.viewport,
+        devicePixelRatio: target.devicePixelRatio,
+        screenshotScale,
+        pngSize: { width: png.width, height: png.height },
+        region,
+        metrics,
+        screenshotPath: input.screenshotPath,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(
+    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
+  );
+  expectPaintedRegion(metrics, input.label);
+  return {
+    screenshotPath: input.screenshotPath,
+    metricsPath,
+    cssRect: target.rect,
+    cssViewport: target.viewport,
+    devicePixelRatio: target.devicePixelRatio,
+    screenshotScale,
+    pngSize: { width: png.width, height: png.height },
+    region,
+    metrics,
+  };
+}
+
+export type ImageElementInspection = {
+  mountWaitMs: number;
+  inspection: AcquisitionImageInspection;
+};
+
+/**
+ * The shared source-image proof (plan B.4): wait for the image matching
+ * `expectedPathFragment` under `selector`, then inspect it — pre-decode
+ * `complete`/`currentSrc`, resource-timing entries (absence is reported as
+ * `unavailable`, never fatal), `img.decode()`, post-decode dimensions and a
+ * capture-proof-style canvas pixel sample. Used by the acquisition popup
+ * (`.acquisition-card img.evidence-image`) and Case File
+ * (`img.case-file-record-image`).
+ */
+export async function inspectImageElement(input: {
+  selector: string;
+  expectedPathFragment: string;
+  label: string;
+  timeoutMs?: number;
+}): Promise<ImageElementInspection> {
+  const mountStart = Date.now();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (sel: string, pathFragment: string) => {
+          return Array.from(
+            document.querySelectorAll<HTMLImageElement>(sel),
+          ).some((image) =>
+            (image.currentSrc || image.src).includes(pathFragment),
+          );
+        },
+        input.selector,
+        input.expectedPathFragment,
+      ),
+    {
+      timeout: input.timeoutMs ?? 30000,
+      interval: 100,
+      timeoutMsg: `${input.label}: image ${input.selector} for ${input.expectedPathFragment} did not mount`,
+    },
+  );
+  const mountWaitMs = Date.now() - mountStart;
+
+  const inspection = await browser.executeAsync<
+    AcquisitionImageInspection | { error: string },
+    [string, string]
+  >(
+    async (
+      sel: string,
+      pathFragment: string,
+      done: (result: AcquisitionImageInspection | { error: string }) => void,
+    ) => {
+      const image = Array.from(
+        document.querySelectorAll<HTMLImageElement>(sel),
+      ).find((candidate) =>
+        (candidate.currentSrc || candidate.src).includes(pathFragment),
+      );
+      if (!image) {
+        done({
+          error: `image ${sel} for ${pathFragment} unmounted before inspection`,
+        });
+        return;
+      }
+      const currentSrc = image.currentSrc || image.src;
+      let resourceTiming: AcquisitionImageTiming;
+      try {
+        const entries = performance.getEntriesByName(currentSrc);
+        resourceTiming =
+          entries.length === 0
+            ? { status: "unavailable" }
+            : {
+                status: "recorded",
+                entries: entries.map((entry) => ({
+                  duration: Math.round(entry.duration),
+                })),
+              };
+      } catch {
+        resourceTiming = { status: "unavailable" };
+      }
+      const preDecode = {
+        complete: image.complete,
+        currentSrc,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+      };
+      let decode: AcquisitionImageInspection["decode"];
+      const decodeStart = performance.now();
+      try {
+        await Promise.race([
+          image.decode(),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error("img.decode() timed out")),
+              30000,
+            ),
+          ),
+        ]);
+        decode = {
+          ok: true,
+          decodeMs: Math.round(performance.now() - decodeStart),
+        };
+      } catch (error) {
+        decode = {
+          ok: false,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      const postDecode = {
+        complete: image.complete,
+        currentSrc: image.currentSrc || image.src,
+        naturalWidth: image.naturalWidth,
+        naturalHeight: image.naturalHeight,
+      };
+      let canvas: AcquisitionImageCanvasMetrics;
+      try {
+        const surface = document.createElement("canvas");
+        surface.width = image.naturalWidth;
+        surface.height = image.naturalHeight;
+        const context = surface.getContext("2d", { willReadFrequently: true });
+        if (!context) throw new Error("canvas 2d context unavailable");
+        context.drawImage(image, 0, 0);
+        const pixels = context.getImageData(
+          0,
+          0,
+          surface.width,
+          surface.height,
+        ).data;
+        let alphaPixels = 0;
+        for (let offset = 3; offset < pixels.length; offset += 4) {
+          if ((pixels[offset] ?? 0) > 0) alphaPixels += 1;
+        }
+        const buckets = new Set<number>();
+        let sampleCount = 0;
+        let lumSum = 0;
+        let lumSq = 0;
+        let lumMin = 0;
+        let lumMax = 0;
+        // Every 64th byte = every 16th pixel, the capture-proof sample stride.
+        for (let offset = 0; offset < pixels.length; offset += 64) {
+          const r = pixels[offset] ?? 0;
+          const g = pixels[offset + 1] ?? 0;
+          const b = pixels[offset + 2] ?? 0;
+          buckets.add(((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5));
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          sampleCount += 1;
+          lumSum += lum;
+          lumSq += lum * lum;
+          if (sampleCount === 1 || lum < lumMin) lumMin = lum;
+          if (lum > lumMax) lumMax = lum;
+        }
+        const mean = sampleCount === 0 ? 0 : lumSum / sampleCount;
+        const variance =
+          sampleCount === 0 ? 0 : lumSq / sampleCount - mean * mean;
+        canvas = {
+          alphaPixels,
+          distinctBuckets: buckets.size,
+          luminanceMean: mean,
+          luminanceStdDev: Math.sqrt(Math.max(0, variance)),
+          minLuminance: lumMin,
+          maxLuminance: lumMax,
+        };
+      } catch (error) {
+        canvas = {
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+      done({ preDecode, resourceTiming, decode, postDecode, canvas });
+    },
+    input.selector,
+    input.expectedPathFragment,
+  );
+
+  if ("error" in inspection) {
+    throw new Error(`${input.label}: ${inspection.error}`);
+  }
+  return { mountWaitMs, inspection };
+}
+
+/** One-line diagnostics for an inspected image — every log carries the full
+ * timing source, so the affected records can be compared in the run log. */
+export function formatImageInspection(
+  label: string,
+  mountWaitMs: number,
+  inspection: AcquisitionImageInspection,
+): string {
+  const timing =
+    inspection.resourceTiming.status === "unavailable"
+      ? "unavailable"
+      : `entries=${JSON.stringify(inspection.resourceTiming.entries.map((entry) => entry.duration))}ms`;
+  return (
+    `${label} mountWait=${mountWaitMs}ms ` +
+    `preDecode={complete:${inspection.preDecode.complete},natural:${inspection.preDecode.naturalWidth}x${inspection.preDecode.naturalHeight}} ` +
+    `timing=${timing} ` +
+    (inspection.decode.ok
+      ? `decode=${inspection.decode.decodeMs}ms`
+      : `decodeError=${inspection.decode.error}`) +
+    ` postDecode={complete:${inspection.postDecode.complete},natural:${inspection.postDecode.naturalWidth}x${inspection.postDecode.naturalHeight}} ` +
+    `src=${inspection.postDecode.currentSrc} ` +
+    ("error" in inspection.canvas
+      ? `canvasError=${inspection.canvas.error}`
+      : `canvas={alphaPx:${inspection.canvas.alphaPixels},buckets:${inspection.canvas.distinctBuckets},lumMean:${inspection.canvas.luminanceMean.toFixed(1)},lumStd:${inspection.canvas.luminanceStdDev.toFixed(2)},lumRange:${inspection.canvas.minLuminance.toFixed(0)}-${inspection.canvas.maxLuminance.toFixed(0)}}`)
+  );
+}
+
+/**
+ * The shared source asserts (plan A.3 / B): decode succeeded, `complete` held
+ * after decode, natural dimensions are non-zero, the src is NOT the SVG
+ * missing-asset placeholder, and the canvas sample proves the source carries
+ * real non-single-color pixels — without any universal brightness threshold
+ * (a legitimately dark evidence image must not fail).
+ */
+export function assertInspectedImage(
+  inspection: AcquisitionImageInspection,
+  label: string,
+): void {
+  if (!inspection.decode.ok) {
+    throw new Error(
+      `${label}: img.decode() rejected — ${inspection.decode.error}`,
+    );
+  }
+  if (!inspection.postDecode.complete) {
+    throw new Error(`${label}: img.complete is still false after decode()`);
+  }
+  if (
+    inspection.postDecode.naturalWidth <= 0 ||
+    inspection.postDecode.naturalHeight <= 0
+  ) {
+    throw new Error(
+      `${label}: decoded image has no dimensions (${inspection.postDecode.naturalWidth}x${inspection.postDecode.naturalHeight})`,
+    );
+  }
+  if (inspection.postDecode.currentSrc.startsWith("data:image/svg")) {
+    throw new Error(
+      `${label}: img resolved to the SVG missing-asset placeholder (${inspection.postDecode.currentSrc.slice(0, 120)})`,
+    );
+  }
+  if ("error" in inspection.canvas) {
+    throw new Error(
+      `${label}: source canvas sample failed — ${inspection.canvas.error}`,
+    );
+  }
+  if (
+    inspection.canvas.alphaPixels === 0 ||
+    inspection.canvas.distinctBuckets < 4
+  ) {
+    throw new Error(
+      `${label}: decoded source has no real pixels (alphaPixels=${inspection.canvas.alphaPixels}, distinctBuckets=${inspection.canvas.distinctBuckets}, luminanceStdDev=${inspection.canvas.luminanceStdDev.toFixed(2)})`,
+    );
+  }
+}
+
+/**
+ * (A) Source proof for one evidence acquisition whose popup is still open,
+ * then (B) the gated compositor crop when the journey armed this
+ * imageAssetId. Everything runs BEFORE the popup's CONTINUE click so the
+ * screenshot catches the visible popup.
+ */
+async function verifyAcquisitionEvidenceImage(
+  current: Pick<PendingAcquisitionView, "id" | "title" | "imageAssetId"> & {
+    imageAssetId: string;
+  },
+): Promise<void> {
+  const imageAssetId = current.imageAssetId;
+  const expectedPath = publicPathForAssetId(imageAssetId, "evidence");
+  const label = `acquisition ${current.id} (${imageAssetId})`;
+  const { mountWaitMs, inspection } = await inspectImageElement({
+    selector: ".acquisition-card img.evidence-image",
+    expectedPathFragment: expectedPath,
+    label,
+  });
+  console.log(
+    `[AcquisitionImage] ${imageAssetId} record=${current.id} title="${current.title}" ` +
+      formatImageInspection(label, mountWaitMs, inspection),
+  );
+  assertInspectedImage(inspection, label);
+
+  // (B) Composited-paint proof, only for the gated records.
+  if (acquisitionCompositorGate?.imageAssetIds.has(imageAssetId)) {
+    const safeName = imageAssetId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    await assertScreenshotRegionPainted({
+      selector: ".acquisition-card .visual",
+      label: `acquisition popup ${imageAssetId} (${current.id})`,
+      screenshotPath: path.join(
+        acquisitionCompositorGate.outputDirectory,
+        `acquisition-${safeName}-popup.png`,
+      ),
+      insetCssPx: 2,
+    });
+  }
+}
+
 export async function startAcquisitionAcknowledgement(
-  current: Pick<PendingAcquisitionView, "id" | "title">,
+  current: Pick<
+    PendingAcquisitionView,
+    "id" | "title" | "recordKind" | "imageAssetId"
+  >,
 ): Promise<void> {
   await waitForButton("CONTINUE", 90000);
   const currentCardMatches = await browser.execute((currentTitle: string) => {
@@ -1548,6 +2026,16 @@ export async function startAcquisitionAcknowledgement(
     throw new Error(
       `acquisition ${current.id} was not the current DOM notification`,
     );
+  }
+  // HPA-831: evidence popups carrying a real image asset get the source
+  // decode/canvas proof (and the gated screenshot-crop proof) while the popup
+  // is still visible — statements and null-asset evidence keep the fast path.
+  if (current.recordKind === "evidence" && current.imageAssetId) {
+    await verifyAcquisitionEvidenceImage({
+      id: current.id,
+      title: current.title,
+      imageAssetId: current.imageAssetId,
+    });
   }
   await clickButton("CONTINUE");
 }
@@ -1582,7 +2070,10 @@ export async function waitForAcquisitionDomSettlement(
 }
 
 export async function acknowledgeAcquisitionDomFirst(
-  current: Pick<PendingAcquisitionView, "id" | "title">,
+  current: Pick<
+    PendingAcquisitionView,
+    "id" | "title" | "recordKind" | "imageAssetId"
+  >,
 ): Promise<void> {
   await startAcquisitionAcknowledgement(current);
   await waitForAcquisitionDomSettlement(current);

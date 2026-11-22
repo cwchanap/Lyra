@@ -3,6 +3,8 @@ import path from "node:path";
 import {
   acknowledgeAcquisitionDomFirst,
   advanceDialogueUntil,
+  assertInspectedImage,
+  assertScreenshotRegionPainted,
   clickButton,
   clickSoleMapDestination,
   closePersistenceBrowserToGameplay,
@@ -14,7 +16,10 @@ import {
   ensureCaseFileViewport,
   ensureMinimumWindowViewport,
   forgetStoryCleared,
+  formatImageInspection,
   getPackagedGameState,
+  inspectImageElement,
+  jsClickButtonContaining,
   jumpToProductionChapterScene,
   jumpToProductionScene,
   lastVisibleDialogueText,
@@ -25,10 +30,13 @@ import {
   returnToTitle,
   saveManualSlot,
   seedStoryCleared,
+  setAcquisitionCompositorGate,
   startFromMenu,
   waitForButton,
+  waitForNoDialog,
   waitForPackagedGameState,
 } from "./helpers";
+import { publicPathForAssetId } from "@lyra/asset-paths";
 import {
   anchors,
   DIALOGUE_DRAIN_CAP,
@@ -2248,6 +2256,533 @@ async function drainOrganicRoute(
   );
 }
 
+// --- HPA-831 Task 1: evidence-image compositor + topic-focus regression ----
+//
+// Two regression proofs run inside THIS organic journey at the real 800x600
+// minimum window (never the larger Case File viewport):
+//
+//   C. inv1 commission topic -> outro -> scene_2 -> first map, driven by real
+//      WebDriver element clicks (the embedded WebDriver runs el.click() then
+//      el.focus(), moving DOM focus) and browser.keys("Enter") advances
+//      through the app's real keydown path — never synthetic el.click() — with
+//      focus/outline probes at scene_2's first/middle/last lines and the map.
+//   B+D. inv3's three evidence acquisitions get the gated screenshot-crop
+//      compositor proof (via setAcquisitionCompositorGate), then the Case
+//      File reopens 閉店監視器截圖 and 三宅打卡紀錄 for the same crop on
+//      img.case-file-record-image — all before crossing map_02.
+
+/** Screenshots + metrics JSON for this run (LYRA_E2E_OUTPUT_DIR under the
+ * runner; a stable e2e-artifacts path for manual runs). */
+const HPA831_ARTIFACT_DIR =
+  process.env.LYRA_E2E_OUTPUT_DIR ??
+  path.join(process.cwd(), "e2e-artifacts", "save-e2e", "hpa831-focus-images");
+
+/** The two records HPA-831 reports as empty black frames. */
+const hpa831CaseFileTargets = [
+  {
+    id: "cctv_screenshot",
+    assetId: "evidence.cctv_screenshot",
+    name: "閉店監視器截圖",
+  },
+  {
+    id: "timecard_record",
+    assetId: "evidence.timecard_record",
+    name: "三宅打卡紀錄",
+  },
+] as const;
+
+/** The affected records plus the doorlock comparison — the only popups that
+ * pay for a screenshot-crop compositor proof. */
+const HPA831_GATED_ASSET_IDS = new Set<string>([
+  ...hpa831CaseFileTargets.map((target) => target.assetId),
+  "evidence.doorlock_summary_timetable",
+]);
+
+type FocusElementProbe = {
+  descriptor: string;
+  isActiveElement: boolean;
+  isGameplayRoot: boolean;
+  focusVisible: boolean;
+  matchesFocus: boolean;
+  outlineStyle: string;
+  outlineColor: string;
+  outlineWidth: string;
+  outlineOffset: string;
+  rect: BoxRect;
+  crossesPortraitRegion: boolean;
+};
+
+type FocusProbe = {
+  label: string;
+  viewport: { width: number; height: number };
+  activeElement: FocusElementProbe | null;
+  gameplayRoot: FocusElementProbe | null;
+  outlinedElements: FocusElementProbe[];
+  portraitRegionCount: number;
+  screenshotPath: string;
+};
+
+/**
+ * One whole-document focus snapshot: whoever document.activeElement is
+ * (including a [data-gameplay-root] restored by an earlier acquisition
+ * popup), every element painting a computed outline, each owner's
+ * focus-visible state, bounding rect, and whether the rect crosses the
+ * character portrait region — plus an 800x600 evidence screenshot.
+ */
+async function captureFocusProbe(label: string): Promise<FocusProbe> {
+  const probe = await browser.execute(() => {
+    const rectOf = (element: Element) => {
+      const r = element.getBoundingClientRect();
+      return {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+        width: r.width,
+        height: r.height,
+      };
+    };
+    const portraitRects = Array.from(document.querySelectorAll("img.portrait"))
+      .map(rectOf)
+      .filter((r) => r.width > 0 && r.height > 0);
+    const crossesPortrait = (r: {
+      left: number;
+      top: number;
+      right: number;
+      bottom: number;
+    }) =>
+      portraitRects.some(
+        (p) =>
+          r.left < p.right - 0.5 &&
+          r.right > p.left + 0.5 &&
+          r.top < p.bottom - 0.5 &&
+          r.bottom > p.top + 0.5,
+      );
+    const describe = (
+      element: Element | null,
+      active: Element | null,
+    ): FocusElementProbe | null => {
+      if (!element) return null;
+      const styles = getComputedStyle(element);
+      const rect = rectOf(element);
+      const classes =
+        typeof element.className === "string"
+          ? element.className.trim().split(/\s+/).slice(0, 3).join(".")
+          : "";
+      const ariaLabel = element.getAttribute("aria-label");
+      return {
+        descriptor:
+          element.tagName.toLowerCase() +
+          (element.id ? `#${element.id}` : "") +
+          (classes ? `.${classes}` : "") +
+          (ariaLabel ? `[${ariaLabel}]` : "") +
+          (element.hasAttribute("data-gameplay-root")
+            ? "[data-gameplay-root]"
+            : ""),
+        isActiveElement: element === active,
+        isGameplayRoot: element.hasAttribute("data-gameplay-root"),
+        focusVisible:
+          element instanceof HTMLElement
+            ? element.matches(":focus-visible")
+            : false,
+        matchesFocus:
+          element instanceof HTMLElement ? element.matches(":focus") : false,
+        outlineStyle: styles.outlineStyle,
+        outlineColor: styles.outlineColor,
+        outlineWidth: styles.outlineWidth,
+        outlineOffset: styles.outlineOffset,
+        rect,
+        crossesPortraitRegion: crossesPortrait(rect),
+      };
+    };
+    const active = document.activeElement;
+    const outlined = Array.from(document.querySelectorAll("*"))
+      .filter((element) => {
+        const styles = getComputedStyle(element);
+        if (styles.outlineStyle === "none") return false;
+        if (!(parseFloat(styles.outlineWidth) > 0)) return false;
+        if (styles.display === "none" || styles.visibility === "hidden") {
+          return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0.5 && rect.height > 0.5;
+      })
+      .map((element) => describe(element, active))
+      .filter((entry): entry is FocusElementProbe => entry !== null);
+    return {
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      activeElement: describe(active, active),
+      gameplayRoot: describe(
+        document.querySelector("[data-gameplay-root]"),
+        active,
+      ),
+      outlinedElements: outlined,
+      portraitRegionCount: portraitRects.length,
+    };
+  });
+  const screenshotPath = path.join(HPA831_ARTIFACT_DIR, `focus-${label}.png`);
+  await browser.saveScreenshot(screenshotPath);
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify({ label, ...probe }, null, 2)}\n`,
+  );
+  const outlinedSummary =
+    probe.outlinedElements
+      .map(
+        (o) =>
+          `${o.descriptor}{${o.outlineStyle} ${o.outlineWidth} ${o.outlineColor},active:${o.isActiveElement},fv:${o.focusVisible},crossesPortrait:${o.crossesPortraitRegion}}`,
+      )
+      .join(" | ") || "none";
+  console.log(
+    `[FocusProbe] ${label}: active=${probe.activeElement?.descriptor ?? "null"} fv=${probe.activeElement?.focusVisible} root=${probe.gameplayRoot?.isActiveElement === true ? "focused" : "not-focused"} portraits=${probe.portraitRegionCount} outlined=${outlinedSummary}`,
+  );
+  return { label, ...probe, screenshotPath };
+}
+
+/**
+ * A painted outline is legitimate ONLY on document.activeElement itself.
+ * Whether that owner also matches :focus-visible is recorded as a
+ * diagnostic (WebKitGTK may paint a focus ring for script-driven :focus
+ * without keyboard modality), but a ring on ANY non-focused element is the
+ * stale/misplaced focus frame HPA-831 reports — the outline list is
+ * asserted owner-by-owner instead of banning every cyan style.
+ */
+function expectNoStaleFocusRing(probe: FocusProbe): void {
+  const invalidOwners = probe.outlinedElements.filter(
+    (entry) => !entry.isActiveElement,
+  );
+  if (invalidOwners.length > 0) {
+    throw new Error(
+      `focus probe "${probe.label}": painted outline on invalid owner(s) ` +
+        JSON.stringify(
+          invalidOwners.map((entry) => ({
+            descriptor: entry.descriptor,
+            isActiveElement: entry.isActiveElement,
+            focusVisible: entry.focusVisible,
+            outline: `${entry.outlineStyle} ${entry.outlineWidth} ${entry.outlineColor}`,
+            rect: entry.rect,
+            crossesPortraitRegion: entry.crossesPortraitRegion,
+          })),
+        ) +
+        ` — screenshot ${probe.screenshotPath}`,
+    );
+  }
+}
+
+/** Scene/mode/queue token an Enter advance must change to count as progress. */
+function journeyProgressToken(state: GameStateView): string {
+  const mode =
+    state.mode.type === "dialogue"
+      ? {
+          type: state.mode.type,
+          queueToken: state.mode.queueToken,
+          queueRemaining: state.mode.queueRemaining,
+        }
+      : { type: state.mode.type };
+  return JSON.stringify({
+    chapter: state.chapter.id,
+    scene: state.scene.id,
+    mode,
+    pendingAcquisition: state.pendingAcquisition?.id ?? null,
+  });
+}
+
+/**
+ * Bounded wait for the last Enter to produce an observable state change
+ * (queue advance, mode/scene transition, or a pending acquisition).
+ */
+async function waitForJourneyProgress(
+  token: string,
+  timeoutMs: number,
+): Promise<boolean> {
+  try {
+    await browser.waitUntil(
+      async () => {
+        try {
+          const next = await getPackagedGameState();
+          if (next.pendingAcquisition !== null) return true;
+          return journeyProgressToken(next) !== token;
+        } catch {
+          return false;
+        }
+      },
+      { timeout: timeoutMs, interval: 100 },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * HPA-831 Task 1 C: the reported commission -> scene_2 -> map transition,
+ * driven by real WebDriver element clicks and Enter keys at 800x600. Focus
+ * probes run before the clicks, after each click, at scene_2's
+ * first/middle/last line, and on the parked map; every probe saves an
+ * 800x600 screenshot and asserts no painted outline sits on an invalid
+ * owner. If the WebDriver/WebKitGTK transport cannot move real DOM focus or
+ * Enter cannot advance dialogue, this fails as inconclusive rather than
+ * reporting a false Green.
+ */
+async function runCommissionScene2FocusSegment(): Promise<void> {
+  const probeAndAssert = async (label: string): Promise<FocusProbe> => {
+    const probe = await captureFocusProbe(label);
+    expectNoStaleFocusRing(probe);
+    return probe;
+  };
+
+  // Whichever element holds focus entering the transition is recorded —
+  // [data-gameplay-root] may legitimately hold the popup-restored focus.
+  await probeAndAssert("pre-commission");
+
+  // WebDriver element click: the embedded WebDriver's click_element runs
+  // el.click() then el.focus(), so real DOM focus must land on the control.
+  const interviewSelector = `button[aria-label="${anchors.character.label}"]`;
+  await browser.waitUntil(async () => elementExists(interviewSelector), {
+    timeout: 90000,
+    interval: 100,
+    timeoutMsg: `${interviewSelector} did not appear`,
+  });
+  const interviewButton = await browser.$(interviewSelector);
+  await interviewButton.click();
+  // Coverage gate: without a real focus move the outline probes are
+  // inconclusive — fail rather than counting "no ring" as Green.
+  await browser.waitUntil(
+    async () =>
+      browser.execute((sel: string) => {
+        const element = document.querySelector(sel);
+        return element !== null && document.activeElement === element;
+      }, interviewSelector),
+    {
+      timeout: 5000,
+      interval: 100,
+      timeoutMsg:
+        "WebDriver element click did not move DOM focus to the interview button — focus/keyboard coverage is inconclusive",
+    },
+  );
+  await probeAndAssert("interview-click");
+
+  const popoverSelector = `[aria-label="${anchors.topicPopoverName}"]`;
+  await browser.waitUntil(async () => elementExists(popoverSelector), {
+    timeout: 15000,
+    interval: 100,
+    timeoutMsg: `${popoverSelector} did not appear`,
+  });
+  // CSS-only lookup plus a text filter: the embedded WebKitGTK WebDriver is
+  // not guaranteed to support xpath locators.
+  const topicCandidates = await browser.$$(
+    `${popoverSelector} .topic-actions button`,
+  );
+  let topicButton: WebdriverIO.Element | null = null;
+  for (const candidate of topicCandidates) {
+    if ((await candidate.getText()).includes(anchors.firstTopic)) {
+      topicButton = candidate;
+      break;
+    }
+  }
+  if (!topicButton) {
+    throw new Error(
+      `topic button ${anchors.firstTopic} not found in ${popoverSelector}`,
+    );
+  }
+  await topicButton.click();
+  await probeAndAssert("topic-click");
+
+  // Enter-drain inv1's outro into scene_2 and the first map wrapper. The
+  // probes split scene_2 into first/middle/last line by queue cursor; the
+  // map probe fires when the pending city map parks.
+  const scene2Taken = { first: false, middle: false, last: false };
+  const finishIfMapParked = async (): Promise<boolean> => {
+    if (!(await elementExists(anchors.cityMapSelector))) return false;
+    await probeAndAssert("map-pending");
+    if (!scene2Taken.first || !scene2Taken.middle || !scene2Taken.last) {
+      throw new Error(
+        `scene_2 focus probes incomplete before the map parked: ${JSON.stringify(scene2Taken)}`,
+      );
+    }
+    return true;
+  };
+  const FOCUS_DRAIN_CAP = 160;
+  for (let step = 0; step < FOCUS_DRAIN_CAP; step += 1) {
+    let state: GameStateView;
+    try {
+      state = await getPackagedGameState();
+    } catch {
+      await browser.pause(200);
+      continue;
+    }
+    if (state.pendingAcquisition) {
+      // Unexpected popup mid-drain: acknowledge through the shared helper
+      // (its image checks run too) and resume.
+      await acknowledgeAcquisitionDomFirst(state.pendingAcquisition);
+      continue;
+    }
+    if (await finishIfMapParked()) return;
+    // The map wrapper can enter explore a frame before its DOM mounts —
+    // Enter does nothing in explore, so wait for the surface instead of
+    // counting that frame as a keyboard stall.
+    if (state.mode.type === "explore") {
+      await browser
+        .waitUntil(async () => elementExists(anchors.cityMapSelector), {
+          timeout: 5000,
+          interval: 100,
+        })
+        .catch(() => {});
+      if (await finishIfMapParked()) return;
+      throw new Error(
+        `focus drain reached explore in ${state.scene.id} but the city map never rendered`,
+      );
+    }
+    if (state.scene.id === "scene_2" && state.mode.type === "dialogue") {
+      const cursor = state.mode.queueToken.cursor;
+      const total = cursor + state.mode.queueRemaining;
+      if (!scene2Taken.first) {
+        scene2Taken.first = true;
+        await probeAndAssert("scene_2-first");
+      } else if (
+        !scene2Taken.middle &&
+        total > 0 &&
+        cursor >= Math.floor(total / 2)
+      ) {
+        scene2Taken.middle = true;
+        await probeAndAssert("scene_2-middle");
+      }
+      if (!scene2Taken.last && state.mode.queueRemaining === 0) {
+        scene2Taken.last = true;
+        await probeAndAssert("scene_2-last");
+      }
+    }
+    const token = journeyProgressToken(state);
+    await browser.keys("Enter");
+    if (!(await waitForJourneyProgress(token, 1500))) {
+      // One retry: an Enter may only complete a typewriter reveal (no state
+      // change). A second Enter then performs the advance — and can never
+      // skip an extra item, because it only fires after a silent first.
+      // Two silent Enters means the real-keyboard path cannot advance here.
+      await browser.keys("Enter");
+      if (!(await waitForJourneyProgress(token, 1500))) {
+        const stalled = await captureFocusProbe("enter-stalled");
+        throw new Error(
+          `browser.keys("Enter") did not advance dialogue at step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) — the real keyboard path is inconclusive (activeElement=${stalled.activeElement?.descriptor ?? "null"})`,
+        );
+      }
+    }
+  }
+  throw new Error(
+    `focus drain exceeded ${FOCUS_DRAIN_CAP} Enters before scene_2 reached the map`,
+  );
+}
+
+/**
+ * HPA-831 Task 1 D: after the inv3 acquisitions are organically acquired and
+ * before the next map gate is crossed, open 遊戲選單 -> 案件檔案 -> 證物 and
+ * re-open the two affected records; each `img.case-file-record-image` gets
+ * the source decode/canvas proof and the screenshot-crop compositor proof.
+ * The menu then closes and the pending-map state must still hold.
+ */
+async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
+  const state = await waitForPackagedGameState(
+    (candidate) => isPendingMapGate(candidate, gate.wrapper),
+    30000,
+    `${gate.wrapper} did not park on its pending city map before the Case File gate`,
+  );
+  for (const target of hpa831CaseFileTargets) {
+    const record = state.inventory.evidence.find(
+      (candidate) => candidate.id === target.id,
+    );
+    if (!record) {
+      throw new Error(
+        `Case File gate reached ${gate.wrapper} without organically acquiring ${target.id} (${target.name})`,
+      );
+    }
+    if (record.imageAssetId !== target.assetId) {
+      throw new Error(
+        `${target.id} imageAssetId is ${String(record.imageAssetId)}, expected ${target.assetId}`,
+      );
+    }
+  }
+  await openGameMenu();
+  await jsClickButtonContaining(anchors.caseFileMenuEntry);
+  await jsClickButtonContaining(anchors.caseFileEvidenceTab);
+  for (const target of hpa831CaseFileTargets) {
+    await jsClickButtonContaining(target.name);
+    const expectedPath = publicPathForAssetId(target.assetId, "evidence");
+    const label = `Case File ${target.id} (${target.name})`;
+    const { mountWaitMs, inspection } = await inspectImageElement({
+      selector: "img.case-file-record-image",
+      expectedPathFragment: expectedPath,
+      label,
+    });
+    console.log(
+      `[CaseFileImage] ${target.id} ` +
+        formatImageInspection(label, mountWaitMs, inspection),
+    );
+    assertInspectedImage(inspection, label);
+    await assertScreenshotRegionPainted({
+      selector: "img.case-file-record-image",
+      label,
+      screenshotPath: path.join(
+        HPA831_ARTIFACT_DIR,
+        `case-file-${target.id}.png`,
+      ),
+      insetCssPx: 1,
+    });
+  }
+  await clickButton(anchors.continueInvestigation);
+  await waitForNoDialog(anchors.gameMenu);
+  await waitForPackagedGameState(
+    (candidate) => isPendingMapGate(candidate, gate.wrapper),
+    30000,
+    `${gate.wrapper} did not stay parked on its pending city map after Case File closed`,
+  );
+  console.log(
+    `[HPA831Gate] Case File reopened ${hpa831CaseFileTargets.map((t) => t.id).join(", ")}; menu closed, organic journey continues`,
+  );
+}
+
+/**
+ * The inv3 evidence/Case-File gate (plan E): shrink to the exact 800x600
+ * minimum window, arm the compositor gate so the three affected/comparison
+ * popups each get a screenshot-crop proof while visible, drain the authored
+ * inv3 route to its pending map, run the organic Case File re-open proof,
+ * and restore the Case File viewport in `finally` even on failure.
+ */
+async function runInv3EvidenceAndCaseFileGate(
+  gate: MapGate,
+  crossedWrappers: string[],
+): Promise<void> {
+  console.log(
+    `[HPA831Gate] shrinking to 800x600 for inv3 acquisitions + Case File at ${gate.wrapper}`,
+  );
+  let restoreError: unknown;
+  try {
+    await ensureMinimumWindowViewport();
+    const viewport = await observedCssViewport();
+    expect(viewport.width).toBe(800);
+    expect(viewport.height).toBe(600);
+    mkdirSync(HPA831_ARTIFACT_DIR, { recursive: true });
+    setAcquisitionCompositorGate({
+      imageAssetIds: HPA831_GATED_ASSET_IDS,
+      outputDirectory: HPA831_ARTIFACT_DIR,
+    });
+    await drainOrganicRoute(
+      (state) => isPendingMapGate(state, gate.wrapper),
+      `${gate.wrapper} pending city map`,
+    );
+    await verifyHpa831CaseFileRecords(gate);
+  } finally {
+    setAcquisitionCompositorGate(null);
+    try {
+      await ensureCaseFileViewport();
+    } catch (error) {
+      restoreError = error;
+      console.error("[HPA831Gate] case-file viewport restore failed:", error);
+    }
+  }
+  if (restoreError !== undefined) throw restoreError;
+  await crossGate(gate, crossedWrappers);
+}
+
 describe("fresh production journey", () => {
   it("plays the organic Chapter 1 route from the menu to its second-half city-map gate", async function () {
     this.timeout(1_200_000);
@@ -2311,14 +2846,41 @@ describe("fresh production journey", () => {
       );
     }
     await waitForButton(anchors.character.label, 90000);
-    await clickButton(anchors.character.label);
-    await clickButton(anchors.firstTopic);
-    // The outro chains automatically; the city map renders once the pending
-    // map parks. Predicate-first ordering keeps the drain from clicking the
+    // HPA-831 Task 1 C: the reported commission -> outro -> scene_2 -> map
+    // transition runs at the real 800x600 minimum window with WebDriver
+    // element clicks and Enter advances (real DOM focus + the app's real
+    // keydown path, never synthetic clicks). Focus probes at scene_2's
+    // first/middle/last lines and the parked map assert no painted outline
+    // sits on an invalid owner; every probe saves an evidence screenshot.
+    // The finally guarantees the normal viewport returns for the rest of
+    // the journey even when a probe fails.
+    let focusRestoreError: unknown;
+    try {
+      await ensureMinimumWindowViewport();
+      const focusViewport = await observedCssViewport();
+      expect(focusViewport.width).toBe(800);
+      expect(focusViewport.height).toBe(600);
+      mkdirSync(HPA831_ARTIFACT_DIR, { recursive: true });
+      await runCommissionScene2FocusSegment();
+    } finally {
+      try {
+        await ensureCaseFileViewport();
+      } catch (error) {
+        focusRestoreError = error;
+        console.error(
+          "[ProductionJourney] case-file viewport restore after the focus segment failed:",
+          error,
+        );
+      }
+    }
+    if (focusRestoreError !== undefined) throw focusRestoreError;
+    // The outro chain parks on the first map wrapper's pending city map;
+    // predicate-first ordering keeps the drain from clicking the
     // destination pin — crossGate owns that step.
-    await advanceDialogueUntil(
-      () => elementExists(anchors.cityMapSelector),
-      DIALOGUE_DRAIN_CAP,
+    await waitForPackagedGameState(
+      (state) => isPendingMapGate(state, anchors.firstMapWrapper),
+      30000,
+      `${anchors.firstMapWrapper} did not park on its pending city map after the focus segment`,
     );
 
     // The organic Chapter 1 route crosses each gate in authored order up to
@@ -2331,6 +2893,14 @@ describe("fresh production journey", () => {
     const crossedWrappers: string[] = [];
     await crossGate(anchors.mapGates[0], crossedWrappers);
     for (const gate of firstHalf.slice(1)) {
+      // HPA-831 Task 1 B+D: inv3 is crossed by the map_02 gate, so that
+      // leg runs the gated 800x600 evidence-image compositor proofs and
+      // the organic Case File re-open of the two affected records before
+      // the gate is crossed.
+      if (gate.wrapper === anchors.mapGates[1].wrapper) {
+        await runInv3EvidenceAndCaseFileGate(gate, crossedWrappers);
+        continue;
+      }
       await drainOrganicRoute(
         (state) => isPendingMapGate(state, gate.wrapper),
         `${gate.wrapper} pending city map`,
