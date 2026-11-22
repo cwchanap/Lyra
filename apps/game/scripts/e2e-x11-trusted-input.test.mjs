@@ -811,9 +811,9 @@ test("delivery refuses the key when focus never reaches the verified window", as
   assert.deepEqual(
     calls,
     [
-      ["getwindowfocus"],
+      ["getwindowfocus", "-f"],
       ["windowfocus", "--sync", String(TARGET_WINDOW)],
-      ["getwindowfocus"],
+      ["getwindowfocus", "-f"],
     ],
     "no key command may be delivered while focus is unverified",
   );
@@ -831,9 +831,9 @@ test("delivery rejects after post-delivery focus loss", async () => {
     /focus left verified window 2097155 \(now 42\)/,
   );
   assert.deepEqual(calls, [
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
     ["key", "Return"],
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
   ]);
 });
 
@@ -845,13 +845,16 @@ test("delivery runs focus-check, key, focus-recheck when already focused", async
     run,
   });
   assert.deepEqual(calls, [
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
     ["key", "Tab"],
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
   ]);
 });
 
 test("delivery reasserts focus with windowfocus --sync before the key", async () => {
+  // Packaged-run 9662855e reproduced this path: a bare `getwindowfocus`
+  // errors BadWindow at PointerRoot; `-f` prints 1 (a legitimate
+  // non-target focus), so focus is reasserted and the key delivered.
   const { calls, run } = recordingRun([42, TARGET_WINDOW, TARGET_WINDOW]);
   await deliverXvfbTrustedKey({
     key: "Enter",
@@ -859,12 +862,54 @@ test("delivery reasserts focus with windowfocus --sync before the key", async ()
     run,
   });
   assert.deepEqual(calls, [
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
     ["windowfocus", "--sync", String(TARGET_WINDOW)],
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
     ["key", "Return"],
-    ["getwindowfocus"],
+    ["getwindowfocus", "-f"],
   ]);
+});
+
+test("delivery treats initial PointerRoot focus (id 1) as non-target", async () => {
+  // The exact observed packaged failure: initial getwindowfocus -f
+  // prints 1 (PointerRoot, no window focused). The sequence must be
+  // focus-probe -> windowfocus --sync -> recheck -> key -> recheck, with
+  // no key until the recheck proves the verified window has focus.
+  const { calls, run } = recordingRun([1, TARGET_WINDOW, TARGET_WINDOW]);
+  await deliverXvfbTrustedKey({
+    key: "Tab",
+    resolveTarget: okResolver(),
+    run,
+  });
+  assert.deepEqual(calls, [
+    ["getwindowfocus", "-f"],
+    ["windowfocus", "--sync", String(TARGET_WINDOW)],
+    ["getwindowfocus", "-f"],
+    ["key", "Tab"],
+    ["getwindowfocus", "-f"],
+  ]);
+});
+
+test("delivery sends no key when PointerRoot persists after windowfocus", async () => {
+  const { calls, run } = recordingRun([1, 1]);
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedKey({
+        key: "Enter",
+        resolveTarget: okResolver(),
+        run,
+      }),
+    /focus did not move to verified window 2097155 \(focused: 1\)/,
+  );
+  assert.deepEqual(
+    calls,
+    [
+      ["getwindowfocus", "-f"],
+      ["windowfocus", "--sync", String(TARGET_WINDOW)],
+      ["getwindowfocus", "-f"],
+    ],
+    "no key may be sent while the verified window is unfocused",
+  );
 });
 
 test("delivery wraps an xdotool failure with key/window context", async () => {

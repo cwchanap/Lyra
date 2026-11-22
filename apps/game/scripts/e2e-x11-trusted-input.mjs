@@ -437,9 +437,14 @@ export function assertX11WindowOwnership({
  * key is sent (`windowfocus --sync` reasserts it in the no-WM
  * environment) and is re-checked after delivery; any failure aborts
  * before `key` is delivered and a post-delivery focus loss still fails
- * inconclusive. The checks narrow but cannot eliminate the focus race
- * (another client could take focus between the check and the XTEST
- * event), so the opt-in stays limited to the private xvfb-run runner.
+ * inconclusive. Focus probes use `getwindowfocus -f`: at the legitimate
+ * initial PointerRoot state a bare `getwindowfocus` exits non-zero with
+ * "XGetInputFocus ... BadWindow" (observed in the packaged image), while
+ * `-f` prints the PointerRoot id and exits 0 — a non-target id still
+ * drives `windowfocus --sync`, never the key. The checks narrow but
+ * cannot eliminate the focus race (another client could take focus
+ * between the check and the XTEST event), so the opt-in stays limited to
+ * the private xvfb-run runner.
  */
 export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
   const keyName = X11_TRUSTED_KEY_NAMES[key];
@@ -464,7 +469,7 @@ export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
     }
   };
   const focusedWindow = async () =>
-    parseXdotoolDecimal(await xdotool(["getwindowfocus"]));
+    parseXdotoolDecimal(await xdotool(["getwindowfocus", "-f"]));
 
   if ((await focusedWindow()) !== windowId) {
     await xdotool(["windowfocus", "--sync", String(windowId)]);
