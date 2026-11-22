@@ -165,8 +165,10 @@ Each review-agent brief must contain:
    produces a findings report only.
 6. **Review scope:** say whether the files are the **whole chapter** or a
    slice of an unfinished one, copied from the request; if the request does not
-   say, write "slice". Axis 10 runs its chapter-level checks (loud moments,
-   fixed beats, the escalation row) only on a whole chapter.
+   say, write "slice". Axis 10 checks that the chapter as a whole has its loud
+   moments, all four fixed beats and its escalation row only on a whole
+   chapter; on a slice it checks only the beats the plan places in those
+   scenes.
 
 Use the `story-reviewer` profile so the review agent is hard-blocked from
 editing (see "Subagent profiles" below).
@@ -422,11 +424,12 @@ against what was intended.
 - The counts ("three or four", "first three lines", "more than two in a
   row") are guidance, as in Axis 6. Being one off is never by itself above
   Minor, and never a reason to add filler lines.
-- Chapter-level checks (loud moments, fixed beats, the escalation row) apply
-  only when the review brief says the files are the whole chapter. Without
-  that statement, treat them as a slice of an unfinished chapter: check the
-  beats the plan or addendum places in those scenes and list the rest as not
-  yet in scope, not as missing.
+- Chapter-level completeness checks (the chapter has its loud moments, all
+  four fixed beats and its escalation row) apply only when the review brief
+  says the files are the whole chapter. Without that statement, treat them as
+  a slice of an unfinished chapter: check the beats the plan or addendum
+  places in those scenes, guards included, and list the rest as not yet in
+  scope, not as missing.
 
 ---
 
