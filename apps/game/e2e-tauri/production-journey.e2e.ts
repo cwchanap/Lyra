@@ -6,6 +6,7 @@ import {
   advanceDialogueUntil,
   assertInspectedImage,
   assertScreenshotRegionPainted,
+  captureImageFailureDiagnostics,
   clickButton,
   clickSoleMapDestination,
   closePersistenceBrowserToGameplay,
@@ -54,6 +55,8 @@ import {
 } from "../src/lib/e2e/evidence-tray-search-verify";
 import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "../src/lib/e2e/focus-owner";
 import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor-gate";
+import { runImageEvidenceProof } from "../src/lib/e2e/image-evidence-proof";
+import { drainEnterToMap } from "../src/lib/e2e/journey-enter-drain";
 import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
@@ -2345,7 +2348,10 @@ type FocusProbe = FocusProbeSnapshot & {
  * focus-visible state, bounding rect, and whether the rect crosses the
  * character portrait region — plus an 800x600 evidence screenshot.
  */
-async function captureFocusProbe(label: string): Promise<FocusProbe> {
+async function captureFocusProbe(
+  label: string,
+  diagnostics?: Record<string, unknown>,
+): Promise<FocusProbe> {
   // The serialized page script lives in src/lib/e2e/focus-probe.ts so the
   // identical function WebDriver serializes is exercised by vitest.
   const probe = await browser.execute(
@@ -2356,8 +2362,21 @@ async function captureFocusProbe(label: string): Promise<FocusProbe> {
   await browser.saveScreenshot(screenshotPath);
   writeFileSync(
     screenshotPath.replace(/\.png$/, ".json"),
-    `${JSON.stringify({ label, ...probe }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        label,
+        ...(diagnostics !== undefined ? { diagnostics } : {}),
+        ...probe,
+      },
+      null,
+      2,
+    )}\n`,
   );
+  if (diagnostics !== undefined) {
+    console.log(
+      `[FocusProbe] ${label} diagnostics: ${JSON.stringify(diagnostics)}`,
+    );
+  }
   const outlinedSummary =
     probe.outlinedElements
       .map(
@@ -2486,51 +2505,6 @@ async function verifyTrustedEnterDelivery(sentEnters: number): Promise<void> {
   );
 }
 
-/** Scene/mode/queue token an Enter advance must change to count as progress. */
-function journeyProgressToken(state: GameStateView): string {
-  const mode =
-    state.mode.type === "dialogue"
-      ? {
-          type: state.mode.type,
-          queueToken: state.mode.queueToken,
-          queueRemaining: state.mode.queueRemaining,
-        }
-      : { type: state.mode.type };
-  return JSON.stringify({
-    chapter: state.chapter.id,
-    scene: state.scene.id,
-    mode,
-    pendingAcquisition: state.pendingAcquisition?.id ?? null,
-  });
-}
-
-/**
- * Bounded wait for the last Enter to produce an observable state change
- * (queue advance, mode/scene transition, or a pending acquisition).
- */
-async function waitForJourneyProgress(
-  token: string,
-  timeoutMs: number,
-): Promise<boolean> {
-  try {
-    await browser.waitUntil(
-      async () => {
-        try {
-          const next = await getPackagedGameState();
-          if (next.pendingAcquisition !== null) return true;
-          return journeyProgressToken(next) !== token;
-        } catch {
-          return false;
-        }
-      },
-      { timeout: timeoutMs, interval: 100 },
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * HPA-831 Task 1 C: the reported commission -> scene_2 -> map transition,
  * driven by real WebDriver element clicks and Enter keys at 800x600. Focus
@@ -2556,8 +2530,9 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   const probeAndAssert = async (
     label: string,
     requirement: FocusOwnerRequirement,
+    diagnostics?: Record<string, unknown>,
   ): Promise<FocusProbe> => {
-    const probe = await captureFocusProbe(label);
+    const probe = await captureFocusProbe(label, diagnostics);
     expectNoStaleFocusRing(probe);
     expectAllowedFocusOwner(probe, requirement);
     return probe;
@@ -2756,128 +2731,40 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
     requireKeyboardModality: true,
   });
 
-  let sentEnters = 0;
-  const sendEnter = async (): Promise<void> => {
-    await sendSegmentKey("Enter");
-    sentEnters += 1;
-  };
-  const scene2Taken = { first: false, middle: false, last: false };
-  const finishIfMapParked = async (): Promise<boolean> => {
-    if (!(await elementExists(anchors.cityMapSelector))) return false;
-    // Observe first, then gate acceptance on keyboard proof (evidence run
-    // a0f60ac6): the last Enter's advance unmounts the focused
-    // .advance-button together with the DialogueBox, so the browser
-    // legitimately falls back to body with no ring — the same unmount
-    // fallback the topic-click hook already records. The map hook
-    // therefore enforces the any-expected owner contract plus the shared
-    // stale-outline gate, keeping :focus-visible diagnostic rather than
-    // required on the transition-fallback owner. The keyboard proof for
-    // the crossing is trusted Enter delivery: queue progress alone is
-    // not proof, and an undelivered/untrusted Enter fails inconclusive —
-    // never silently green.
-    await probeAndAssert("map-pending", { owner: "any-expected" });
-    await verifyTrustedEnterDelivery(sentEnters);
-    if (!scene2Taken.first || !scene2Taken.middle || !scene2Taken.last) {
-      throw new Error(
-        `scene_2 focus probes incomplete before the map parked: ${JSON.stringify(scene2Taken)}`,
-      );
-    }
-    return true;
-  };
   const FOCUS_DRAIN_CAP = 160;
-  let mapReached = false;
-  for (let step = 0; step < FOCUS_DRAIN_CAP; step += 1) {
-    let state: GameStateView;
-    try {
-      state = await getPackagedGameState();
-    } catch {
-      await browser.pause(200);
-      continue;
-    }
-    if (state.pendingAcquisition) {
-      // Unexpected popup mid-drain: acknowledge through the shared helper
-      // (its image checks run too) and resume.
-      await acknowledgeAcquisitionDomFirst(state.pendingAcquisition);
-      continue;
-    }
-    if (await finishIfMapParked()) {
-      mapReached = true;
-      break;
-    }
-    // The map wrapper can enter explore a frame before its DOM mounts —
-    // Enter does nothing in explore, so wait for the surface instead of
-    // counting that frame as a keyboard stall.
-    if (state.mode.type === "explore") {
-      await browser
-        .waitUntil(async () => elementExists(anchors.cityMapSelector), {
-          timeout: 5000,
-          interval: 100,
-        })
-        .catch(() => {});
-      if (await finishIfMapParked()) {
-        mapReached = true;
-        break;
-      }
-      throw new Error(
-        `focus drain reached explore in ${state.scene.id} but the city map never rendered`,
-      );
-    }
-    if (state.scene.id === "scene_2" && state.mode.type === "dialogue") {
-      const cursor = state.mode.queueToken.cursor;
-      const total = cursor + state.mode.queueRemaining;
-      if (!scene2Taken.first) {
-        scene2Taken.first = true;
-        await probeAndAssert("scene_2-first", {
-          owner: "any-expected",
-          requireKeyboardModality: true,
-        });
-      }
-      // The organic checkpoints stay observational: the focused-root
-      // regression detection lives in the shared probe's prohibited-state
-      // gate (a painted outline on [data-gameplay-root] fails every hook,
-      // exercised directly by the focus-probe unit regression) — forcing
-      // root.focus() here would replace the commission-produced focus
-      // trajectory the middle/last/map checkpoints exist to observe.
-      if (!scene2Taken.middle && total > 0 && cursor >= Math.floor(total / 2)) {
-        scene2Taken.middle = true;
-        await probeAndAssert("scene_2-middle", {
-          owner: "any-expected",
-          requireKeyboardModality: true,
-        });
-      }
-      if (!scene2Taken.last && state.mode.queueRemaining === 0) {
-        scene2Taken.last = true;
-        await probeAndAssert("scene_2-last", {
-          owner: "any-expected",
-          requireKeyboardModality: true,
-        });
-      }
-    }
-    const token = journeyProgressToken(state);
-    await sendEnter();
-    if (!(await waitForJourneyProgress(token, 1500))) {
-      // One retry: an Enter may only complete a typewriter reveal (no state
-      // change). A second Enter then performs the advance — and can never
-      // skip an extra item, because it only fires after a silent first.
-      // Two silent Enters means the real-keyboard path cannot advance here.
-      await sendEnter();
-      if (!(await waitForJourneyProgress(token, 1500))) {
-        const stalled = await captureFocusProbe("enter-stalled");
-        throw new Error(
-          `${xvfbTrustedKeys ? "XTEST" : 'browser.keys("Enter")'} did not advance dialogue at step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) — the real keyboard path is inconclusive (activeElement=${stalled.activeElement?.descriptor ?? "null"})`,
-        );
-      }
-    }
-  }
-  if (!mapReached) {
-    throw new Error(
-      `focus drain exceeded ${FOCUS_DRAIN_CAP} Enters before scene_2 reached the map`,
-    );
-  }
-  // The trusted-Enter coverage gate (Task 1 C) already ran inside
-  // finishIfMapParked: queue progress alone is not proof, so the parked
-  // map is only accepted after every sent Enter is verified to have
-  // arrived as a trusted keydown.
+  // The drain orchestration lives in src/lib/e2e/journey-enter-drain.ts so
+  // vitest exercises the identical sequencing WebDriver drives: a retry
+  // Enter fires only on PROVEN "unchanged" state (a reveal-only first
+  // Enter), an unobservable post-Enter state fails inconclusively without
+  // another key, and scene_2's first credited item must be its proven
+  // authored queue entry — never a later item reached through an
+  // observation gap. The parked map is accepted only after every sent
+  // Enter is verified to have arrived as a trusted keydown.
+  await drainEnterToMap({
+    sceneId: "scene_2",
+    cap: FOCUS_DRAIN_CAP,
+    transportName: xvfbTrustedKeys ? "XTEST" : 'browser.keys("Enter")',
+    hooks: {
+      readState: () => getPackagedGameState(),
+      pause: (ms) => browser.pause(ms),
+      waitUntil: (condition, options) => browser.waitUntil(condition, options),
+      sendEnter: () => sendSegmentKey("Enter"),
+      acknowledgeAcquisition: (current) =>
+        acknowledgeAcquisitionDomFirst(current),
+      mapMounted: () => elementExists(anchors.cityMapSelector),
+      probeHook: async (label, requirement, diagnostics) => {
+        await probeAndAssert(label, requirement, diagnostics);
+      },
+      verifyKeyDelivery: verifyTrustedEnterDelivery,
+      captureStallProbe: async (label) => {
+        const probe = await captureFocusProbe(label);
+        return {
+          activeElementDescriptor: probe.activeElement?.descriptor ?? null,
+          screenshotPath: probe.screenshotPath,
+        };
+      },
+    },
+  });
 }
 
 /**
@@ -2912,33 +2799,60 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
   await jsClickButtonContaining(anchors.caseFileMenuEntry);
   await jsClickButtonContaining(anchors.caseFileEvidenceTab);
   for (const target of hpa831CaseFileTargets) {
-    await jsClickButtonContaining(target.name);
     const expectedPath = publicPathForAssetId(target.assetId, "evidence");
     const label = `Case File ${target.id} (${target.name})`;
-    const { mountWaitMs, inspection } = await inspectImageElement({
-      selector: "img.case-file-record-image",
-      expectedPathFragment: expectedPath,
-      label,
-    });
-    console.log(
-      `[CaseFileImage] ${target.id} ` +
-        formatImageInspection(label, mountWaitMs, inspection),
-    );
-    assertInspectedImage(inspection, label);
-    // The 800x600 Case File stacks rail/list/detail inside the
-    // .game-menu-extra scrollport: scroll the record image into view, wait
-    // for stable geometry, and crop image-rect ∩ scrollport ∩ viewport —
-    // sampling the raw DOM rect could read pixels the scrollport clips or
-    // unrelated menu furniture (review: image-only painted region).
-    await assertScreenshotRegionPainted({
-      selector: "img.case-file-record-image",
-      label,
-      screenshotPath: path.join(
-        HPA831_ARTIFACT_DIR,
-        `case-file-${target.id}.png`,
-      ),
-      insetCssPx: 1,
-      scrollIntoView: true,
+    // The shared proof sequencing lives in
+    // src/lib/e2e/image-evidence-proof.ts so vitest exercises the identical
+    // orchestration: mount/source/identity failures capture the required
+    // 800x600 failure evidence (viewport screenshot + diagnostics JSON)
+    // BEFORE the outer finally restores the window, and the original error
+    // is rethrown even when capture itself fails.
+    await runImageEvidenceProof({
+      prepare: () => jsClickButtonContaining(target.name),
+      inspect: () =>
+        inspectImageElement({
+          selector: "img.case-file-record-image",
+          expectedPathFragment: expectedPath,
+          label,
+        }),
+      report: ({ mountWaitMs, inspection }) =>
+        console.log(
+          `[CaseFileImage] ${target.id} ` +
+            formatImageInspection(label, mountWaitMs, inspection),
+        ),
+      assert: ({ inspection }) => assertInspectedImage(inspection, label),
+      // The 800x600 Case File stacks rail/list/detail inside the
+      // .game-menu-extra scrollport: scroll the record image into view, wait
+      // for stable geometry, and crop image-rect ∩ scrollport ∩ viewport —
+      // sampling the raw DOM rect could read pixels the scrollport clips or
+      // unrelated menu furniture (review: image-only painted region).
+      provePainted: async () => {
+        await assertScreenshotRegionPainted({
+          selector: "img.case-file-record-image",
+          label,
+          screenshotPath: path.join(
+            HPA831_ARTIFACT_DIR,
+            `case-file-${target.id}.png`,
+          ),
+          insetCssPx: 1,
+          scrollIntoView: true,
+        });
+      },
+      captureFailure: ({ error, inspection }) =>
+        captureImageFailureDiagnostics({
+          label,
+          selector: "img.case-file-record-image",
+          screenshotPath: path.join(
+            HPA831_ARTIFACT_DIR,
+            `case-file-${target.id}-failure.png`,
+          ),
+          error,
+          diagnostics: {
+            recordId: target.id,
+            assetId: target.assetId,
+            inspection,
+          },
+        }),
     });
   }
   // 繼續調查 exists only on GameShell's main-menu branch; while the Case

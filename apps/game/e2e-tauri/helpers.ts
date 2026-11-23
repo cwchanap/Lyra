@@ -72,6 +72,10 @@ import {
   scrollGeometrySettled,
   type ScrollGeometrySample,
 } from "../src/lib/e2e/scroll-geometry";
+import {
+  probeImagePresenceDom,
+  runImageEvidenceProof,
+} from "../src/lib/e2e/image-evidence-proof";
 
 const appRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -2360,10 +2364,85 @@ export function assertInspectedImage(
 }
 
 /**
+ * Failure evidence for the HPA-831 image proofs (round-4 review finding):
+ * mount, decode, placeholder, source-canvas, and wrong/null-asset failures
+ * all throw BEFORE the gated screenshot, which would lose the exact frame
+ * the plan requires preserved. While the 800x600 window is still up, save a
+ * full viewport screenshot (raw — the missing image is often the failure
+ * itself, so nothing depends on its geometry) plus a structured
+ * diagnostics JSON with whatever inspection state was collected, then let
+ * the original error propagate. Never throws: every capture step is
+ * guarded so failure evidence can never hide the real failure.
+ */
+export async function captureImageFailureDiagnostics(input: {
+  label: string;
+  /** Selector probed for presence/state diagnostics only. */
+  selector: string;
+  screenshotPath: string;
+  error: unknown;
+  diagnostics?: Record<string, unknown>;
+}): Promise<void> {
+  const message =
+    input.error instanceof Error ? input.error.message : String(input.error);
+  // The serialized page script lives in
+  // src/lib/e2e/image-evidence-proof.ts so vitest exercises the identical
+  // function WebDriver serializes.
+  let imageProbe: unknown;
+  try {
+    imageProbe = await browser.execute(probeImagePresenceDom, input.selector);
+  } catch (probeError) {
+    imageProbe = {
+      probeError:
+        probeError instanceof Error ? probeError.message : String(probeError),
+    };
+  }
+  try {
+    mkdirSync(path.dirname(input.screenshotPath), { recursive: true });
+    await browser.saveScreenshot(input.screenshotPath);
+  } catch (screenshotError) {
+    console.error(
+      `[ImageFailure] ${input.label}: viewport screenshot capture failed:`,
+      screenshotError,
+    );
+  }
+  const diagnosticsPath = input.screenshotPath.replace(/\.png$/, ".json");
+  try {
+    writeFileSync(
+      diagnosticsPath,
+      `${JSON.stringify(
+        {
+          label: input.label,
+          error: message,
+          selector: input.selector,
+          image: imageProbe ?? null,
+          screenshotPath: input.screenshotPath,
+          diagnostics: input.diagnostics ?? null,
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  } catch (writeError) {
+    console.error(
+      `[ImageFailure] ${input.label}: diagnostics write failed:`,
+      writeError,
+    );
+  }
+  console.log(
+    `[ImageFailure] ${input.label}: ${message} — viewport screenshot ` +
+      `${input.screenshotPath}; diagnostics ${diagnosticsPath}`,
+  );
+}
+
+/**
  * (A) Source proof for one evidence acquisition whose popup is still open,
  * then (B) the gated compositor crop when the journey armed this recordId.
  * Everything runs BEFORE the popup's CONTINUE click so the screenshot
- * catches the visible popup.
+ * catches the visible popup. The sequencing lives in
+ * src/lib/e2e/image-evidence-proof.ts so vitest exercises the identical
+ * orchestration: a scoped record's mount/source/identity failure saves the
+ * required failure evidence before the journey restores the viewport, and
+ * a thrown crop can never produce a compositor receipt.
  */
 async function verifyAcquisitionEvidenceImage(
   current: Pick<PendingAcquisitionView, "id" | "recordId" | "title"> & {
@@ -2373,36 +2452,66 @@ async function verifyAcquisitionEvidenceImage(
   const imageAssetId = current.imageAssetId;
   const expectedPath = publicPathForAssetId(imageAssetId, "evidence");
   const label = `acquisition ${current.id} (${imageAssetId})`;
-  const { mountWaitMs, inspection } = await inspectImageElement({
-    selector: ".acquisition-card img.evidence-image",
-    expectedPathFragment: expectedPath,
-    label,
-  });
-  console.log(
-    `[AcquisitionImage] ${imageAssetId} record=${current.id} title="${current.title}" ` +
-      formatImageInspection(label, mountWaitMs, inspection),
-  );
-  assertInspectedImage(inspection, label);
-
+  const gate = acquisitionCompositorGate;
   // (B) Composited-paint proof, scoped by recordId: the gate keys on the
   // record, and the asset mapping was already asserted by the caller, so
   // a gated record can never quietly skip its crop.
-  if (acquisitionCompositorGate?.expectedAssetIds.has(current.recordId)) {
-    const safeName = imageAssetId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const screenshotPath = path.join(
-      acquisitionCompositorGate.outputDirectory,
-      `acquisition-${safeName}-popup.png`,
-    );
-    await assertScreenshotRegionPainted({
-      selector: ".acquisition-card .visual",
-      label: `acquisition popup ${imageAssetId} (${current.id})`,
-      screenshotPath,
-      insetCssPx: 2,
-    });
-    // The receipt lands only after a passing crop — a thrown proof above
-    // must never count this record as covered.
-    acquisitionCompositorGate.receipts.set(current.recordId, screenshotPath);
-  }
+  const scoped = gate?.expectedAssetIds.has(current.recordId) === true;
+  const safeName = imageAssetId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  const screenshotPath =
+    gate === null
+      ? ""
+      : path.join(gate.outputDirectory, `acquisition-${safeName}-popup.png`);
+  await runImageEvidenceProof({
+    inspect: () =>
+      inspectImageElement({
+        selector: ".acquisition-card img.evidence-image",
+        expectedPathFragment: expectedPath,
+        label,
+      }),
+    report: ({ mountWaitMs, inspection }) =>
+      console.log(
+        `[AcquisitionImage] ${imageAssetId} record=${current.id} title="${current.title}" ` +
+          formatImageInspection(label, mountWaitMs, inspection),
+      ),
+    assert: ({ inspection }) => assertInspectedImage(inspection, label),
+    provePainted: scoped
+      ? async () => {
+          await assertScreenshotRegionPainted({
+            selector: ".acquisition-card .visual",
+            label: `acquisition popup ${imageAssetId} (${current.id})`,
+            screenshotPath,
+            insetCssPx: 2,
+          });
+        }
+      : undefined,
+    // The receipt lands only after a passing crop — a thrown proof must
+    // never count this record as covered.
+    onReceipt: scoped
+      ? () => {
+          gate?.receipts.set(current.recordId, screenshotPath);
+        }
+      : undefined,
+    captureFailure: async ({ error, inspection }) => {
+      // Failure evidence is required for the records this ticket scopes;
+      // ungated records keep the plain error path.
+      if (!scoped || gate === null) return;
+      await captureImageFailureDiagnostics({
+        label,
+        selector: ".acquisition-card img.evidence-image",
+        screenshotPath: path.join(
+          gate.outputDirectory,
+          `acquisition-${safeName}-failure.png`,
+        ),
+        error,
+        diagnostics: {
+          recordId: current.recordId,
+          imageAssetId,
+          inspection,
+        },
+      });
+    },
+  });
 }
 
 export async function startAcquisitionAcknowledgement(
@@ -2433,6 +2542,27 @@ export async function startAcquisitionAcknowledgement(
     current,
   );
   if (gateViolation !== null) {
+    // A wrong/null assetId on a gated record is the same required-failure
+    // evidence case as a mount/source failure — save the 800x600 frame and
+    // structured diagnostics before the viewport restore, then throw.
+    if (acquisitionCompositorGate !== null) {
+      const safeId = current.recordId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      await captureImageFailureDiagnostics({
+        label: `acquisition ${current.id} (imageAssetId ${String(current.imageAssetId)})`,
+        selector: ".acquisition-card img.evidence-image",
+        screenshotPath: path.join(
+          acquisitionCompositorGate.outputDirectory,
+          `acquisition-${safeId}-identity-failure.png`,
+        ),
+        error: new Error(gateViolation),
+        diagnostics: {
+          recordId: current.recordId,
+          imageAssetId: current.imageAssetId,
+          recordKind: current.recordKind,
+          title: current.title,
+        },
+      });
+    }
     throw new Error(gateViolation);
   }
   // HPA-831: evidence popups carrying a real image asset get the source
