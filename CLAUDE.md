@@ -153,6 +153,28 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   is best-effort, never guaranteed. Suites print the selected input mode;
   trusted-input macOS UAT and final packaged coverage gaps stay explicitly
   disclosed, never claimed as trusted proof.
+- Packaged E2E keyboard input on Linux (production-journey commission →
+  scene_2 focus segment, HPA-831): the embedded WebDriver `browser.keys`
+  reaches the app only as synthetic DOM KeyboardEvents (no native focus
+  traversal), so a second, separately scoped opt-in routes that segment's
+  Tab/Enter through real XTEST keys via `xdotool`. Run it only inside a
+  private `xvfb-run` display:
+
+  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a bun run --cwd apps/game test:e2e:all`
+
+  Prerequisites: `xvfb` (provides `xvfb-run`/`Xvfb`; pulls `xauth`),
+  `xdotool`, and `x11-utils` (`xprop`, `xdpyinfo`). Even with the opt-in,
+  every key still requires the full verifier chain — `xvfb-run` as a
+  strict ancestor of the WDIO worker, exactly one `-auth`-bound Xvfb child
+  serving `DISPLAY`, a securely permissioned `XAUTHORITY` with usable
+  cookies plus live authorized/rejected `xdpyinfo` probes, the exact e2e
+  binary as the app process, one visible window it owns, and X input
+  focus on it before and after the key. Any uncertainty fails
+  inconclusive; keys are never sent to a shared or unverified display.
+  The manual `E2E Full` workflow sets this opt-in on its full-registry
+  step only; every other suite and desktop stays on the default synthetic
+  WebDriver keys.
+
 - Each run writes
   `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json` plus guarded
   per-attempt output directories; CI uploads a single `tauri-e2e-smoke` or
