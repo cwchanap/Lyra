@@ -56,11 +56,14 @@ import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "../src/lib/e2e/focus-owner";
 import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor-gate";
 import {
   checkFocusOwner,
+  checkTrustedEnterDelivery,
   focusOutlineViolations,
   installFocusTrajectoryScript,
+  installKeyDeliveryRecorderScript,
   probeFocusStateDom,
   probeKeyboardFocusTargetDom,
   readFocusTrajectoryScript,
+  readKeyDeliveryEventsScript,
   type FocusOwnerRequirement,
   type FocusProbeSnapshot,
 } from "../src/lib/e2e/focus-probe";
@@ -2412,9 +2415,13 @@ function expectNoStaleFocusRing(probe: FocusProbe): void {
 /**
  * Per-hook owner/modality gate (round-3 finding): each probe declares the
  * owner contract its hook expects via FocusOwnerRequirement and, at hooks
- * reached through trusted Enter advances, requireKeyboardModality — the
- * observed owner must itself match :focus-visible or keyboard focus state
- * is unestablished. checkFocusOwner distinguishes inconclusive outcomes
+ * reached through trusted Enter advances while a stable control still
+ * holds focus, requireKeyboardModality — the observed owner must itself
+ * match :focus-visible or keyboard focus state is unestablished. The
+ * parked-map hook is the documented exception: its control legitimately
+ * unmounts with the dialogue, so it enforces the owner contract and
+ * verifies trusted Enter delivery instead (see finishIfMapParked).
+ * checkFocusOwner distinguishes inconclusive outcomes
  * (owner/modality cannot be established) from violations (a definite
  * unexpected owner — the wrong-owner bug signature); both fail the hook,
  * but only the latter is reported as a regression.
@@ -2448,32 +2455,11 @@ function expectAllowedFocusOwner(
  * to produce trusted input; synthetic dispatchEvent would arrive untrusted,
  * and an embedded transport that injects untrusted DOM events (the macOS
  * fallback documented in helpers.ts) is caught the same way.
+ * The serialized page script lives in src/lib/e2e/focus-probe.ts so vitest
+ * exercises the identical function WebDriver serializes.
  */
 async function installKeyDeliveryProbe(): Promise<void> {
-  await browser.execute(() => {
-    const w = window as unknown as {
-      __hpa831KeyEvents?: Array<{
-        key: string;
-        isTrusted: boolean;
-        target: string;
-      }>;
-    };
-    w.__hpa831KeyEvents = [];
-    window.addEventListener(
-      "keydown",
-      (event) => {
-        w.__hpa831KeyEvents?.push({
-          key: event.key,
-          isTrusted: event.isTrusted,
-          target:
-            event.target instanceof Element
-              ? event.target.tagName.toLowerCase()
-              : "window",
-        });
-      },
-      true,
-    );
-  });
+  await browser.execute(installKeyDeliveryRecorderScript);
 }
 
 /**
@@ -2482,48 +2468,21 @@ async function installKeyDeliveryProbe(): Promise<void> {
  * transport dropped input; any untrusted event means the delivery is not
  * real keyboard modality — either way the keyboard coverage is
  * inconclusive and the journey must NOT pass on queue progress alone.
+ * The recorded events are always written to focus-key-delivery.json
+ * first so a failed gate keeps its evidence.
  */
 async function verifyTrustedEnterDelivery(sentEnters: number): Promise<void> {
-  const events = await browser.execute(
-    () =>
-      (
-        window as unknown as {
-          __hpa831KeyEvents?: Array<{
-            key: string;
-            isTrusted: boolean;
-            target: string;
-          }>;
-        }
-      ).__hpa831KeyEvents ?? [],
-  );
+  const events = await browser.execute(readKeyDeliveryEventsScript);
   writeFileSync(
     path.join(HPA831_ARTIFACT_DIR, "focus-key-delivery.json"),
     `${JSON.stringify({ sentEnters, events }, null, 2)}\n`,
   );
-  const untrusted = events.filter((event) => !event.isTrusted);
-  if (untrusted.length > 0) {
-    throw new Error(
-      `${untrusted.length}/${events.length} keydown events arrived untrusted ` +
-        `(isTrusted=false) — the embedded transport cannot establish real ` +
-        `keyboard modality; focus/keyboard coverage is inconclusive ` +
-        `(events: ${JSON.stringify(untrusted.slice(0, 5))})`,
-    );
-  }
-  const receivedEnters = events.filter((event) => event.key === "Enter").length;
-  if (receivedEnters < sentEnters) {
-    throw new Error(
-      `only ${receivedEnters}/${sentEnters} Enter keydowns reached the page — ` +
-        `the embedded transport dropped keyboard input; focus/keyboard ` +
-        `coverage is inconclusive`,
-    );
-  }
-  if (receivedEnters === 0) {
-    throw new Error(
-      `no Enter keydown reached the page — keyboard coverage is inconclusive`,
-    );
+  const check = checkTrustedEnterDelivery(events, sentEnters);
+  if (!check.ok) {
+    throw new Error(check.reason);
   }
   console.log(
-    `[FocusProbe] trusted key delivery verified: ${receivedEnters}/${sentEnters} Enter keydowns, all isTrusted=true`,
+    `[FocusProbe] trusted key delivery verified: ${check.receivedEnters}/${sentEnters} Enter keydowns, all isTrusted=true`,
   );
 }
 
@@ -2579,7 +2538,11 @@ async function waitForJourneyProgress(
  * first/middle/last line, and on the parked map; every probe saves an
  * 800x600 screenshot, asserts no painted outline sits on an invalid
  * owner, and enforces the hook's expected owner contract — the scene_2
- * and map hooks additionally require :focus-visible keyboard modality.
+ * hooks additionally require :focus-visible keyboard modality, while the
+ * map hook observes the legitimate unmount fallback (the focused
+ * .advance-button unmounts with the DialogueBox, dropping focus to body
+ * with no ring) under the any-expected owner contract and instead gates
+ * map acceptance on verified trusted Enter delivery.
  * Because the topic control's unmount drops focus to the browser fallback
  * and DialogueBox deliberately advances on Enter from that fallback
  * without auto-focusing its advance button, the drain first establishes a
@@ -2705,7 +2668,8 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   // Enter-drain inv1's outro into scene_2 and the first map wrapper. The
   // probes split scene_2 into first/middle/last line by queue cursor; the
   // map probe fires when the pending city map parks. The keydown probe +
-  // per-Enter counter prove trusted key delivery at the end; if the window
+  // per-Enter counter prove trusted key delivery before the parked map is
+  // accepted; if the window
   // does not even hold OS focus, the keys go nowhere and the keyboard path
   // is inconclusive rather than falsely green.
   if (!(await browser.execute(() => document.hasFocus()))) {
@@ -2800,10 +2764,19 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   const scene2Taken = { first: false, middle: false, last: false };
   const finishIfMapParked = async (): Promise<boolean> => {
     if (!(await elementExists(anchors.cityMapSelector))) return false;
-    await probeAndAssert("map-pending", {
-      owner: "any-expected",
-      requireKeyboardModality: true,
-    });
+    // Observe first, then gate acceptance on keyboard proof (evidence run
+    // a0f60ac6): the last Enter's advance unmounts the focused
+    // .advance-button together with the DialogueBox, so the browser
+    // legitimately falls back to body with no ring — the same unmount
+    // fallback the topic-click hook already records. The map hook
+    // therefore enforces the any-expected owner contract plus the shared
+    // stale-outline gate, keeping :focus-visible diagnostic rather than
+    // required on the transition-fallback owner. The keyboard proof for
+    // the crossing is trusted Enter delivery: queue progress alone is
+    // not proof, and an undelivered/untrusted Enter fails inconclusive —
+    // never silently green.
+    await probeAndAssert("map-pending", { owner: "any-expected" });
+    await verifyTrustedEnterDelivery(sentEnters);
     if (!scene2Taken.first || !scene2Taken.middle || !scene2Taken.last) {
       throw new Error(
         `scene_2 focus probes incomplete before the map parked: ${JSON.stringify(scene2Taken)}`,
@@ -2901,10 +2874,10 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       `focus drain exceeded ${FOCUS_DRAIN_CAP} Enters before scene_2 reached the map`,
     );
   }
-  // Coverage gate (Task 1 C): queue progress alone is not proof — every
-  // Enter must have arrived as a trusted keydown or the keyboard half of
-  // this regression is inconclusive, never silently Green.
-  await verifyTrustedEnterDelivery(sentEnters);
+  // The trusted-Enter coverage gate (Task 1 C) already ran inside
+  // finishIfMapParked: queue progress alone is not proof, so the parked
+  // map is only accepted after every sent Enter is verified to have
+  // arrived as a trusted keydown.
 }
 
 /**
