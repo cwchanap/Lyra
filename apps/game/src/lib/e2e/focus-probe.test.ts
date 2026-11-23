@@ -2,11 +2,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "./focus-owner";
 import {
   checkFocusOwner,
+  checkTrustedEnterDelivery,
   focusOutlineViolations,
   installFocusTrajectoryScript,
+  installKeyDeliveryRecorderScript,
   probeFocusStateDom,
   probeKeyboardFocusTargetDom,
   readFocusTrajectoryScript,
+  readKeyDeliveryEventsScript,
   type FocusElementProbe,
 } from "./focus-probe";
 
@@ -362,5 +365,157 @@ describe("focus trajectory scripts — actual serialized lifecycle", () => {
     (window as unknown as Record<string, unknown>)["__hpa831FocusTrajectory"] =
       undefined;
     expect(readFocusTrajectoryScript()).toBeNull();
+  });
+});
+
+describe("map-pending gate — the contract the parked-map hook applies", () => {
+  // Evidence run a0f60ac6 (focus-map-pending.json): the last Enter's
+  // advance unmounts the focused .advance-button with the DialogueBox,
+  // so activeElement falls back to body — focusVisible=false, no painted
+  // outline anywhere. That legitimate transition state is the contract
+  // this block pins.
+  it("accepts the legitimate unmount fallback: body, no ring, fv=false", () => {
+    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+    expect(snapshot.activeElement?.isBody).toBe(true);
+    expect(snapshot.activeElement?.focusVisible).toBe(false);
+    expect(snapshot.outlinedElements).toHaveLength(0);
+    // The owner contract the map hook enforces: an expected transition
+    // owner and zero stale outlines.
+    expect(
+      checkFocusOwner(snapshot.activeElement, { owner: "any-expected" }),
+    ).toEqual({ ok: true });
+    expect(focusOutlineViolations(snapshot)).toHaveLength(0);
+    // …and the same observed state is inconclusive under
+    // requireKeyboardModality — which is exactly why the map hook's
+    // keyboard proof is trusted Enter delivery, not owner modality.
+    const modality = checkFocusOwner(snapshot.activeElement, {
+      owner: "any-expected",
+      requireKeyboardModality: true,
+    });
+    expect(modality.ok).toBe(false);
+    if (!modality.ok) expect(modality.inconclusive).toBe(true);
+  });
+
+  it("still fails a stale outline painted during the body fallback", () => {
+    // The map hook must keep catching the reported bug even while the
+    // fallback owner itself is legitimate.
+    const stale = query(".unrelated-panel .hotspot");
+    setRect(stale, { left: 10, top: 10, width: 40, height: 20 });
+    paintOutline(stale);
+    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+    expect(snapshot.activeElement?.isBody).toBe(true);
+    expect(focusOutlineViolations(snapshot).map((v) => v.descriptor)).toContain(
+      "button.hotspot",
+    );
+  });
+
+  it("still fails an unexpected transition owner as a violation", () => {
+    // A focused non-control descendant is the wrong-owner signature —
+    // reported as a violation (inconclusive=false), not an unestablished
+    // state.
+    query(".unrelated-panel .hotspot").focus();
+    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+    const check = checkFocusOwner(snapshot.activeElement, {
+      owner: "any-expected",
+    });
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.inconclusive).toBe(false);
+  });
+});
+
+describe("key-delivery scripts — actual serialized recorder", () => {
+  // jsdom-dispatched events are never trusted, which doubles as proof the
+  // untrusted path through the real recorder is observable.
+  it("records dispatched keydowns with key, isTrusted and target tag", () => {
+    installKeyDeliveryRecorderScript();
+    query(".advance-button").dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab" }));
+    expect(readKeyDeliveryEventsScript()).toEqual([
+      { key: "Enter", isTrusted: false, target: "button" },
+      { key: "Tab", isTrusted: false, target: "window" },
+    ]);
+  });
+
+  it("resets the buffer on re-install without double-recording", () => {
+    installKeyDeliveryRecorderScript();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    installKeyDeliveryRecorderScript();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    expect(readKeyDeliveryEventsScript()).toEqual([
+      { key: "Enter", isTrusted: false, target: "window" },
+    ]);
+  });
+
+  it("returns an empty list when the recorder was never installed", () => {
+    (window as unknown as Record<string, unknown>)["__hpa831KeyEvents"] =
+      undefined;
+    expect(readKeyDeliveryEventsScript()).toEqual([]);
+  });
+
+  it("feeds recorded synthetic events into the delivery gate as untrusted", () => {
+    installKeyDeliveryRecorderScript();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    const check = checkTrustedEnterDelivery(readKeyDeliveryEventsScript(), 1);
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toContain("untrusted");
+  });
+});
+
+describe("checkTrustedEnterDelivery — the map-crossing keyboard proof", () => {
+  const trustedEnter = { key: "Enter", isTrusted: true, target: "button" };
+
+  it("passes when every sent Enter arrived as a trusted keydown", () => {
+    expect(
+      checkTrustedEnterDelivery(
+        [trustedEnter, trustedEnter, { ...trustedEnter }],
+        3,
+      ),
+    ).toEqual({ ok: true, receivedEnters: 3 });
+  });
+
+  it("fails inconclusive when the transport dropped sent Enters", () => {
+    const check = checkTrustedEnterDelivery([trustedEnter], 3);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.reason).toContain("1/3");
+      expect(check.reason).toContain("inconclusive");
+    }
+  });
+
+  it("fails when any recorded event arrived untrusted", () => {
+    // One synthetic event anywhere — including a non-Enter key — means
+    // the transport cannot establish real keyboard modality.
+    const check = checkTrustedEnterDelivery(
+      [trustedEnter, { key: "Tab", isTrusted: false, target: "body" }],
+      1,
+    );
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toContain("untrusted");
+  });
+
+  it("fails when no Enter keydown ever reached the page", () => {
+    const check = checkTrustedEnterDelivery(
+      [{ key: "Tab", isTrusted: true, target: "body" }],
+      0,
+    );
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toContain("no Enter keydown");
+  });
+
+  it("counts only Enter keys toward sent Enters", () => {
+    // Trusted Tab presses from the establish-focus phase are recorded but
+    // do not count; extra delivered Enters do not reduce the proof.
+    expect(
+      checkTrustedEnterDelivery(
+        [
+          { key: "Tab", isTrusted: true, target: "body" },
+          trustedEnter,
+          { ...trustedEnter },
+        ],
+        2,
+      ),
+    ).toEqual({ ok: true, receivedEnters: 2 });
   });
 });

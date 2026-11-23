@@ -199,7 +199,12 @@ export function probeFocusStateDom(
  * :focus-visible. At hooks reached via trusted Enter advances a truly
  * keyboard-modality focus state is expected; body (or any owner) without
  * :focus-visible is NOT established focus — inconclusive, never silently
- * green (the round-3 review finding).
+ * green (the round-3 review finding). The parked-map hook deliberately
+ * omits it: the last Enter's advance unmounts the focused dialogue
+ * control with the DialogueBox, so the browser legitimately falls back
+ * to body with no ring — the same unmount fallback as topic-click —
+ * and the keyboard proof there is trusted Enter delivery, not the
+ * fallback owner's modality (evidence run a0f60ac6).
  */
 export type FocusOwnerRequirement = {
   owner: "any-expected" | "control" | "gameplay-root";
@@ -431,4 +436,101 @@ export function readFocusTrajectoryScript(): FocusTrajectoryResult | null {
     activeDescriptor: describe(document.activeElement),
     events: state.events,
   };
+}
+
+export type KeyDeliveryEvent = {
+  key: string;
+  isTrusted: boolean;
+  target: string;
+};
+
+/**
+ * Serialized verbatim into the page: records each keydown the page
+ * actually receives (key + DOM isTrusted + target tag) on
+ * window.__hpa831KeyEvents. WebDriver key actions are spec'd to produce
+ * trusted input; synthetic dispatchEvent would arrive untrusted, and an
+ * embedded transport that injects untrusted DOM events is caught the
+ * same way. Parameters + DOM globals only — nothing module-scoped
+ * survives WebDriver serialization.
+ * Re-installing removes the previous listener and resets the buffer, so
+ * a second install never double-records.
+ */
+export function installKeyDeliveryRecorderScript(): void {
+  const w = window as unknown as {
+    __hpa831KeyEvents?: KeyDeliveryEvent[];
+    __hpa831KeyDeliveryListener?: (event: KeyboardEvent) => void;
+  };
+  if (w.__hpa831KeyDeliveryListener) {
+    window.removeEventListener("keydown", w.__hpa831KeyDeliveryListener, true);
+  }
+  w.__hpa831KeyEvents = [];
+  const record = (event: KeyboardEvent) => {
+    w.__hpa831KeyEvents?.push({
+      key: event.key,
+      isTrusted: event.isTrusted,
+      target:
+        event.target instanceof Element
+          ? event.target.tagName.toLowerCase()
+          : "window",
+    });
+  };
+  w.__hpa831KeyDeliveryListener = record;
+  window.addEventListener("keydown", record, true);
+}
+
+/** Serialized verbatim into the page: reads back the recorded keydowns. */
+export function readKeyDeliveryEventsScript(): KeyDeliveryEvent[] {
+  const w = window as unknown as {
+    __hpa831KeyEvents?: KeyDeliveryEvent[];
+  };
+  return w.__hpa831KeyEvents ?? [];
+}
+
+export type TrustedEnterDeliveryCheck =
+  | { ok: true; receivedEnters: number }
+  | { ok: false; reason: string };
+
+/**
+ * Node-side decision of the objective trusted-delivery gate the journey
+ * applies: every Enter the test sent must have reached the page as a
+ * trusted keydown. Fewer recorded Enters means the transport dropped
+ * input; any untrusted event means the delivery is not real keyboard
+ * modality — either way the keyboard coverage is inconclusive and the
+ * journey must NOT pass on queue progress alone.
+ */
+export function checkTrustedEnterDelivery(
+  events: KeyDeliveryEvent[],
+  sentEnters: number,
+): TrustedEnterDeliveryCheck {
+  const untrusted = events.filter((event) => !event.isTrusted);
+  if (untrusted.length > 0) {
+    return {
+      ok: false,
+      reason:
+        `${untrusted.length}/${events.length} keydown events arrived ` +
+        `untrusted (isTrusted=false) — the embedded transport cannot ` +
+        `establish real keyboard modality; focus/keyboard coverage is ` +
+        `inconclusive ` +
+        `(events: ${JSON.stringify(untrusted.slice(0, 5))})`,
+    };
+  }
+  const receivedEnters = events.filter((event) => event.key === "Enter").length;
+  if (receivedEnters < sentEnters) {
+    return {
+      ok: false,
+      reason:
+        `only ${receivedEnters}/${sentEnters} Enter keydowns reached the ` +
+        `page — the embedded transport dropped keyboard input; ` +
+        `focus/keyboard coverage is inconclusive`,
+    };
+  }
+  if (receivedEnters === 0) {
+    return {
+      ok: false,
+      reason:
+        `no Enter keydown reached the page — keyboard coverage is ` +
+        `inconclusive`,
+    };
+  }
+  return { ok: true, receivedEnters };
 }
