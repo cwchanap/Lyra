@@ -42,10 +42,11 @@ export const config: WebdriverIO.Config = {
     // `this.timeout(...)` calls inside it() bodies execute after that read,
     // so they cannot raise the deadline — a bigger per-test budget must be
     // declared at registration via `it(...).timeout(ms)`, which is what the
-    // production-journey spec's organic first leg does. The spec splits
-    // Chapter 1 in two tests and Chapter 2 into legs (production-anchors.ts)
-    // so every test fits in 20m on a slow runner; only the organic first
-    // leg registers 30m for the HPA-831 focus/image proofs. The outer hang
+    // production-journey spec's two organic Chapter 1 legs do. The spec
+    // splits Chapter 1 in two tests and Chapter 2 into legs
+    // (production-anchors.ts) so every test fits in 20m on a slow runner;
+    // only the two organic Chapter 1 legs register 30m (focus/image proofs
+    // on the first, the five-gate second half on the second). The outer hang
     // guard stays the CI job timeout-minutes.
     timeout: 1200000,
   },
