@@ -55,7 +55,10 @@ import {
 } from "../src/lib/e2e/evidence-tray-search-verify";
 import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "../src/lib/e2e/focus-owner";
 import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor-gate";
-import { runImageEvidenceProof } from "../src/lib/e2e/image-evidence-proof";
+import {
+  runCaseFileRecordGate,
+  runImageEvidenceProof,
+} from "../src/lib/e2e/image-evidence-proof";
 import { drainEnterToMap } from "../src/lib/e2e/journey-enter-drain";
 import {
   checkFocusOwner,
@@ -2780,21 +2783,34 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
     30000,
     `${gate.wrapper} did not park on its pending city map before the Case File gate`,
   );
-  for (const target of hpa831CaseFileTargets) {
-    const record = state.inventory.evidence.find(
-      (candidate) => candidate.id === target.id,
-    );
-    if (!record) {
-      throw new Error(
-        `Case File gate reached ${gate.wrapper} without organically acquiring ${target.id} (${target.name})`,
-      );
-    }
-    if (record.imageAssetId !== target.assetId) {
-      throw new Error(
-        `${target.id} imageAssetId is ${String(record.imageAssetId)}, expected ${target.assetId}`,
-      );
-    }
-  }
+  // The record/assetId gate shares the failure-evidence contract via
+  // src/lib/e2e/image-evidence-proof.ts (review-fix-3): a missing record or
+  // a wrong/null assetId must attempt the required 800x600 evidence —
+  // a raw viewport screenshot (the record's image is not mounted yet) plus
+  // structured diagnostics — while the window is still up, then rethrow
+  // the original error even when capture itself fails.
+  await runCaseFileRecordGate({
+    targets: hpa831CaseFileTargets,
+    gateWrapper: gate.wrapper,
+    findRecord: (target) =>
+      state.inventory.evidence.find((candidate) => candidate.id === target.id),
+    captureFailure: async ({ target, error }) => {
+      await captureImageFailureDiagnostics({
+        label: `Case File ${target.id} (${target.name})`,
+        selector: "img.case-file-record-image",
+        screenshotPath: path.join(
+          HPA831_ARTIFACT_DIR,
+          `case-file-${target.id}-failure.png`,
+        ),
+        error,
+        diagnostics: {
+          recordId: target.id,
+          assetId: target.assetId,
+          stage: "inventory-gate",
+        },
+      });
+    },
+  });
   await openGameMenu();
   await jsClickButtonContaining(anchors.caseFileMenuEntry);
   await jsClickButtonContaining(anchors.caseFileEvidenceTab);

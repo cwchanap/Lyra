@@ -9,7 +9,10 @@ export default defineConfig(async () => ({
   plugins: [sveltekit(), svelteTesting()],
 
   test: {
-    include: ["src/**/*.test.ts"],
+    // e2e-tauri tests exercise the WebDriver-facing helpers with a stubbed
+    // `browser` global; they live there so the app tsconfig never pulls the
+    // WDIO-typed harness into `bun run check` (review-fix-3 Finding A).
+    include: ["src/**/*.test.ts", "e2e-tauri/**/*.test.ts"],
     environment: "jsdom",
     // jsdom defaults to about:blank. Give it a real origin so window.location
     // resolves sensibly. jsdom 29.1.1 exposes a native window.localStorage;
