@@ -18,11 +18,11 @@
     },
     "test:e2e": {
       "cache": false,
-      "passThroughEnv": ["TMPDIR", "TMP", "TEMP"]
+      "passThroughEnv": ["TMPDIR", "TMP", "TEMP", "LYRA_E2E_XVFB_TRUSTED_KEYS"]
     },
     "test:e2e:run": {
       "cache": false,
-      "passThroughEnv": ["TMPDIR", "TMP", "TEMP"]
+      "passThroughEnv": ["TMPDIR", "TMP", "TEMP", "LYRA_E2E_XVFB_TRUSTED_KEYS"]
     },
     "dev:frontend": {
       "cache": false,

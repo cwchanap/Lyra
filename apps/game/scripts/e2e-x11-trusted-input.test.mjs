@@ -453,6 +453,17 @@ const displayOpenRejection = () => {
   return error;
 };
 
+// What a real xdpyinfo negative probe emits on a cookie-protected private
+// display: Xlib prints the server's auth-rejection reason to stderr before
+// the tool's own open failure line.
+const credentialRejection = () => {
+  const error = new Error(
+    `Command failed: xdpyinfo\nNo protocol specified\nxdpyinfo: unable to open display ":99".`,
+  );
+  error.code = 1;
+  return error;
+};
+
 test("enforcement proof requires the authorized connection to succeed first", async () => {
   const { calls, probe } = scriptedProbe([
     new Error("spawn xdpyinfo ENOENT"),
@@ -488,8 +499,8 @@ test("enforcement proof rejects an accepted unauthenticated connection", async (
   assert.deepEqual(calls, [XAUTHORITY, EMPTY_XAUTHORITY_PROBE]);
 });
 
-test("enforcement proof accepts only a connection-level negative rejection", async () => {
-  const { calls, probe } = scriptedProbe(["ok", displayOpenRejection()]);
+test("enforcement proof accepts only a credential-level negative rejection", async () => {
+  const { calls, probe } = scriptedProbe(["ok", credentialRejection()]);
   await assertX11AuthenticationEnforced({
     display: DISPLAY,
     xauthority: XAUTHORITY,
@@ -499,6 +510,21 @@ test("enforcement proof accepts only a connection-level negative rejection", asy
     calls,
     [XAUTHORITY, EMPTY_XAUTHORITY_PROBE],
     "positive probe must run before the unauthenticated one",
+  );
+});
+
+test("enforcement proof rejects a bare display-open failure", async () => {
+  // "unable to open display" without a credential-specific rejection is
+  // indistinguishable from a display that died between the two probes.
+  const { probe } = scriptedProbe(["ok", displayOpenRejection()]);
+  await assert.rejects(
+    () =>
+      assertX11AuthenticationEnforced({
+        display: DISPLAY,
+        xauthority: XAUTHORITY,
+        probe,
+      }),
+    /failed for an indistinguishable reason/,
   );
 });
 
@@ -542,19 +568,30 @@ test("enforcement proof rejects an indistinguishable negative failure", async ()
 });
 
 test("enforcement proof guards unset DISPLAY/XAUTHORITY", async () => {
-  for (const overrides of [
-    { display: undefined },
-    { display: "" },
-    { xauthority: undefined },
-    { xauthority: "" },
+  for (const [overrides, matcher] of [
+    [{ display: undefined }, /DISPLAY is unset/],
+    [{ display: "" }, /DISPLAY is unset/],
+    [{ xauthority: undefined }, /XAUTHORITY is unset/],
+    [{ xauthority: "" }, /XAUTHORITY is unset/],
   ]) {
-    await assert.rejects(() =>
-      assertX11AuthenticationEnforced({
-        display: DISPLAY,
-        xauthority: XAUTHORITY,
-        probe: async () => "ok",
-        ...overrides,
-      }),
+    let probeCalls = 0;
+    await assert.rejects(
+      () =>
+        assertX11AuthenticationEnforced({
+          display: DISPLAY,
+          xauthority: XAUTHORITY,
+          probe: async () => {
+            probeCalls += 1;
+            return "ok";
+          },
+          ...overrides,
+        }),
+      matcher,
+    );
+    assert.equal(
+      probeCalls,
+      0,
+      `missing input must stop before any probe: ${JSON.stringify(overrides)}`,
     );
   }
 });
@@ -597,6 +634,31 @@ test("owned-process selector rejects a wrong binary (dev path basename match)", 
     executablePath:
       entry.pid === 583
         ? "/checkouts/lyra/apps/game/src-tauri/target/debug/lyra"
+        : (entry.exe ?? `/unrelated/${entry.comm}`),
+  }));
+  assert.throws(
+    () =>
+      selectOwnedE2eAppProcessId({
+        entries,
+        expectedExecutablePath: CONFIGURED_E2E_PATH,
+        currentPid: 700,
+        currentPpid: 42,
+      }),
+    /no process is running the configured e2e binary/,
+  );
+});
+
+test("owned-process selector rejects a stale binary whose exe was unlinked", () => {
+  // A rebuild replacing the configured binary leaves the still-running
+  // process's /proc/<pid>/exe target suffixed with " (deleted)". That
+  // process must fail the exact-path check, or the journey would send
+  // trusted keys to — and report evidence from — the previous build.
+  const entries = privateXvfbTable().map((entry) => ({
+    pid: entry.pid,
+    ppid: entry.ppid,
+    executablePath:
+      entry.pid === 583
+        ? `${CONFIGURED_E2E_PATH} (deleted)`
         : (entry.exe ?? `/unrelated/${entry.comm}`),
   }));
   assert.throws(

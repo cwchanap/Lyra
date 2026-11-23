@@ -332,6 +332,26 @@ export const anchors = {
     "investigation_scene_map_08",
     "investigation_scene_map_10",
   ],
+  // HPA-831 evidence-image compositor + topic-focus proofs: the DOM
+  // selectors shared by the acquisition-popup and Case File reopen paths
+  // (success and failure), the keyboard focus control, and the two
+  // authored records reported as empty black frames.
+  advanceButtonSelector: ".advance-button",
+  acquisitionVisualSelector: ".acquisition-card .visual",
+  acquisitionEvidenceImageSelector: ".acquisition-card img.evidence-image",
+  caseFileRecordImageSelector: "img.case-file-record-image",
+  hpa831CaseFileRecords: [
+    {
+      id: "cctv_screenshot",
+      assetId: "evidence.cctv_screenshot",
+      name: "閉店監視器截圖",
+    },
+    {
+      id: "timecard_record",
+      assetId: "evidence.timecard_record",
+      name: "三宅打卡紀錄",
+    },
+  ],
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",

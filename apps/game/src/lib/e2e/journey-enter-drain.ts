@@ -1,4 +1,5 @@
 import type {
+  DialogueItem,
   GameStateView,
   PendingAcquisitionView,
   QueueToken,
@@ -32,11 +33,13 @@ export function journeyProgressToken(state: GameStateView): string {
 
 /**
  * Three-way observation result for one Enter. `unchanged` is reserved for a
- * successful read that PROVES the token still matches — the only evidence
- * that justifies a retry Enter (the first only completed a typewriter
- * reveal). `unknown` means the state could not be read at all: the Enter
- * may already have advanced, so sending another key could silently skip a
- * queue item — the drain must stop inconclusively instead.
+ * successful read that PROVES the token still matches — evidence that
+ * justifies a retry Enter only after the command channel has also settled
+ * (a still-pending first Enter can otherwise masquerade as a reveal-only
+ * Enter and double-advance). `unknown` means the state could not be read
+ * at all: the Enter may already have advanced, so sending another key
+ * could silently skip a queue item — the drain must stop inconclusively
+ * instead.
  */
 export type JourneyProgressOutcome = "progressed" | "unchanged" | "unknown";
 
@@ -183,6 +186,17 @@ export type EnterDrainHooks = {
     activeElementDescriptor: string | null;
     screenshotPath: string;
   }>;
+  /** Bounded wait for the packaged app's command channel to settle — the
+   * advance control's aria-disabled clears when a dispatched command has
+   * finished applying. Resolves false on timeout; the retry gate treats
+   * unproven settlement as inconclusive rather than sending a blind Enter. */
+  commandSettled: () => Promise<boolean>;
+  /** Bounded wait for the rendered dialogue surface to display the state's
+   * current item. The packaged get_state read and the Svelte render are
+   * independent, so a checkpoint screenshot can otherwise sample the
+   * preceding line. Resolves false on timeout; the drain fails
+   * inconclusively rather than labelling a stale frame. */
+  renderedItemSettled: (current: DialogueItem) => Promise<boolean>;
 };
 
 export type EnterDrainOptions = {
@@ -202,12 +216,15 @@ export type EnterDrainOptions = {
  * Enter-drain the outro into `sceneId` and the first map wrapper, probing
  * focus at the scene's first/middle/last items. Every Enter is sent only
  * after a successful state read, and a retry Enter fires only on PROVEN
- * "unchanged" (a reveal-only first Enter): one Enter can never advance more
- * than one queue item and no key is ever sent while the state is unknown,
- * so the first observed `sceneId` dialogue item is guaranteed to be its
- * authored entry — additionally proven by proveSceneQueueEntry before it
- * is credited. The parked map is accepted only after trusted key delivery
- * is verified; queue progress alone is not proof.
+ * "unchanged" after the app's command channel has settled and a re-read
+ * still shows the same token (a reveal-only first Enter): one Enter can
+ * never advance more than one queue item and no key is ever sent while
+ * the state is unknown, so the first observed `sceneId` dialogue item is
+ * guaranteed to be its authored entry — additionally proven by
+ * proveSceneQueueEntry before it is credited. Each checkpoint also waits
+ * for the rendered line to match the state's current item before the
+ * screenshot is taken. The parked map is accepted only after trusted key
+ * delivery is verified; queue progress alone is not proof.
  */
 export async function drainEnterToMap(
   options: EnterDrainOptions,
@@ -298,11 +315,30 @@ export async function drainEnterToMap(
     if (state.scene.id === sceneId && state.mode.type === "dialogue") {
       const cursor = state.mode.queueToken.cursor;
       const total = cursor + state.mode.queueRemaining;
+      // Every checkpoint's screenshot must show the item the packaged
+      // state reports — the get_state read and the Svelte render are
+      // independent, so a frame sampled mid-apply could capture the
+      // preceding line. Wait for the rendered line to match, and fail
+      // inconclusively rather than labelling a stale frame.
+      const requireRenderedItem = async (label: string): Promise<void> => {
+        if (state.mode.type !== "dialogue") return;
+        if (await hooks.renderedItemSettled(state.mode.current)) return;
+        const stalled = await hooks.captureStallProbe(`${label}-stale`);
+        throw new Error(
+          `${transportName} could not verify the rendered line for ${label} ` +
+            `at step ${step} (queue cursor ${state.mode.type === "dialogue" ? state.mode.queueToken.cursor : "?"}) ` +
+            `— the checkpoint would sample the preceding line, so focus ` +
+            `coverage is inconclusive ` +
+            `(activeElement=${stalled.activeElementDescriptor ?? "null"}, ` +
+            `screenshot ${stalled.screenshotPath})`,
+        );
+      };
       if (!taken.first) {
         // Prove this is the authored queue entry before crediting it: a
         // later item observed after an observation gap must fail
         // inconclusively, not be labelled "first".
         const entry = proveSceneQueueEntry(state);
+        await requireRenderedItem(`${sceneId}-first`);
         await hooks.probeHook(
           `${sceneId}-first`,
           { owner: "any-expected", requireKeyboardModality: true },
@@ -317,6 +353,7 @@ export async function drainEnterToMap(
       // root.focus() here would replace the commission-produced focus
       // trajectory the middle/last/map checkpoints exist to observe.
       if (!taken.middle && total > 0 && cursor >= Math.floor(total / 2)) {
+        await requireRenderedItem(`${sceneId}-middle`);
         await hooks.probeHook(`${sceneId}-middle`, {
           owner: "any-expected",
           requireKeyboardModality: true,
@@ -324,6 +361,7 @@ export async function drainEnterToMap(
         taken.middle = true;
       }
       if (!taken.last && state.mode.queueRemaining === 0) {
+        await requireRenderedItem(`${sceneId}-last`);
         await hooks.probeHook(`${sceneId}-last`, {
           owner: "any-expected",
           requireKeyboardModality: true,
@@ -346,9 +384,45 @@ export async function drainEnterToMap(
           `screenshot ${stalled.screenshotPath})`,
       );
     }
-    // "unchanged" is proven evidence the first Enter only completed a
-    // typewriter reveal — exactly one retry is then justified and can
-    // never skip an extra item.
+    // An "unchanged" verdict alone does not prove the first Enter only
+    // completed a reveal: the packaged get_state read and the
+    // keyboard-dispatched advance are independent, so a read can return
+    // the pre-commit token while the first command is still in flight —
+    // a retry sent then double-advances past an item the drain must
+    // observe. Wait for the command channel to settle, then re-read: a
+    // changed token is late "progressed"; a still-matching token on a
+    // settled channel is the proven reveal-only case justifying one retry.
+    if (!(await hooks.commandSettled())) {
+      const stalled = await hooks.captureStallProbe("enter-unsettled");
+      throw new Error(
+        `${transportName} left the command channel unsettled after Enter at ` +
+          `step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) ` +
+          `— command settlement cannot be proven, so no retry Enter is ` +
+          `sent; the real keyboard path is inconclusive ` +
+          `(activeElement=${stalled.activeElementDescriptor ?? "null"}, ` +
+          `screenshot ${stalled.screenshotPath})`,
+      );
+    }
+    let verified: GameStateView;
+    try {
+      verified = await hooks.readState();
+    } catch {
+      const stalled = await hooks.captureStallProbe("enter-unobserved");
+      throw new Error(
+        `${transportName} produced an unobservable state after Enter at ` +
+          `step ${step} (scene ${state.scene.id}, mode ${state.mode.type}) ` +
+          `— progress cannot be proven, so no retry Enter is sent; the ` +
+          `real keyboard path is inconclusive ` +
+          `(activeElement=${stalled.activeElementDescriptor ?? "null"}, ` +
+          `screenshot ${stalled.screenshotPath})`,
+      );
+    }
+    if (
+      verified.pendingAcquisition !== null ||
+      journeyProgressToken(verified) !== token
+    ) {
+      continue;
+    }
     await sendEnter();
     const retryOutcome = await observeProgress(token);
     if (retryOutcome === "progressed") continue;
