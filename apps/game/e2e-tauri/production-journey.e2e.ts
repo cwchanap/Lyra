@@ -3021,12 +3021,14 @@ describe("fresh production journey", () => {
   // WDIO's testFnWrapper snapshots each runnable's _timeout before the test
   // body runs (see wdio.conf.ts), so an in-body this.timeout() can never
   // raise the armed cap — a bigger budget must be declared at registration
-  // via the .timeout() chained on it() below. The organic first leg carries
+  // via .timeout() chained on it(). Both organic Chapter 1 legs register 30
+  // minutes (their in-body calls restate the same budget): the first carries
   // the HPA-831 focus segment plus the gated inv3 acquisition and Case File
-  // compositor proofs: in run 4b96c4ac it consumed the shared 20-minute cap
-  // reaching scene_5 with the map_04 and map_05 legs still ahead, so this
-  // test alone registers 30 minutes; the in-body call below restates the
-  // same budget like every other leg. Those other legs keep 20 minutes.
+  // compositor proofs and consumed the shared 20-minute cap reaching scene_5
+  // in run 4b96c4ac; the second covers the five remaining Chapter 1 gates
+  // into the Chapter 2 opening and hit the same cap at scene_11_2's last
+  // drain step in runs 8cf2ad54 and 4928e51a. Every other leg keeps 20
+  // minutes.
   it("plays the organic Chapter 1 route from the menu to its second-half city-map gate", async function () {
     this.timeout(1_800_000);
     await resetE2eStorage();
@@ -3161,7 +3163,7 @@ describe("fresh production journey", () => {
   }).timeout(1_800_000);
 
   it("plays Chapter 1 from its second-half city-map gate into Chapter 2", async function () {
-    this.timeout(1_200_000);
+    this.timeout(1_800_000);
     await resetE2eStorage();
     // Scene Select is production replay, unlocked by a story clear; seed it
     // so the run can start at the second half's travel wrapper. Scene Select
@@ -3210,7 +3212,7 @@ describe("fresh production journey", () => {
     // With the first half, all nine gates, in order, no extras (spec §11
     // Draft-exit evidence).
     expect(crossedWrappers).toEqual(secondHalf.map((gate) => gate.wrapper));
-  });
+  }).timeout(1_800_000);
 
   it("plays the Chapter 2 opening from scene_0 to its first city-map gate", async function () {
     this.timeout(1_200_000);
