@@ -30,7 +30,7 @@
 - **BGM:** none
 - **BGS:** bgs_shopping_street_rain_dusk
 
-**相馬律**：增田先生那晚，約了一個人在雨鐘見面。備忘裡只寫了一個字母：K。 {#L008}
+**相馬律**：增田先生那晚，約了一個人在雨鐘見面。備忘裡，對方只寫了一個字母：K。 {#L008}
 
 **相馬律**：增田先生有一份檢舉北見的草稿，沒寫完。 {#L009}
 
@@ -96,7 +96,7 @@
 - **BGM:** none
 - **BGS:** bgs_cafe_backroom_corridor
 
-**相馬律**：後來，店長走了另一條路，才發現他。那已經是很晚的事了。 {#L029}
+**相馬律**：後來，店長走了另一條路，才發現增田先生。那已經是很晚的事了。 {#L029}
 
 [場景：審查會桌面，白日。核准的門鎖片段，與印出來的摘要時間表並排。]
 - **Background Prompt:** Hearing table with approved doorlock excerpt beside a printed summary timetable, two parallel record stacks, precise procedural mood, no readable rows.

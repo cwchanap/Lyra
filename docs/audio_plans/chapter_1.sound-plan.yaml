@@ -204,7 +204,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 5,
+          line: 25,
           note: 吉祥寺車站月台與城市資訊螢幕的冷雨開場
         }
       - {
@@ -577,12 +577,12 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 5,
+          line: 25,
           note: 吉祥寺車站月台傍晚細雨，通勤人潮撐傘
         }
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 18,
+          line: 39,
           note: 吉祥寺商店街騎樓下，傍晚，雨勢轉小
         }
       - {
@@ -612,7 +612,7 @@ entries:
     evidence:
       - {
           file: docs/stories_plan/chapter_1/scene_p0.md,
-          line: 42,
+          line: 65,
           note: 法律扶助協會外電子看板，傍晚轉夜，雨
         }
   - id: bgs_stationery_copy_shop
@@ -856,30 +856,38 @@ entries:
           note: 相馬把隨身碟插上筆電，螢幕跳出一行目錄
         }
 cues:
-  # scene_p0 — prologue opening. tag_001 is the corpus-first visual unit; it
-  # explicitly starts the city/system motif over the rainy-street bed.
+  # scene_p0 — cold open. tag_001 is the KAGAMI summary-interface teaser that
+  # opens the game; it starts the city/system motif over the rainy-street bed.
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
       visualUnit: tag_001,
       bgm: bgm_city_summary_motif,
       bgs: bgs_shopping_street_rain_dusk
     }
-  # scene_p0 — tag_002 inherits BGM; shopping-street arcade awning.
+  # scene_p0 — tag_002 station platform; the prologue proper resumes the same
+  # city/system motif over the rainy-street bed.
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
       visualUnit: tag_002,
+      bgm: bgm_city_summary_motif,
       bgs: bgs_shopping_street_rain_dusk
     }
-  # scene_p0 — tag_003 pedestrian crossing, rainy dusk.
+  # scene_p0 — tag_003 inherits BGM; shopping-street arcade awning.
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
       visualUnit: tag_003,
       bgs: bgs_shopping_street_rain_dusk
     }
-  # scene_p0 — tag_004 legal-aid billboard, dusk shifting to night.
+  # scene_p0 — tag_004 pedestrian crossing, rainy dusk.
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
       visualUnit: tag_004,
+      bgs: bgs_shopping_street_rain_dusk
+    }
+  # scene_p0 — tag_005 legal-aid billboard, dusk shifting to night.
+  - {
+      file: docs/stories_plan/chapter_1/scene_p0.md,
+      visualUnit: tag_005,
       bgs: bgs_shopping_street_rain_night
     }
   # scene_p1 — zero-case opening, shopping street at rainy dusk.
@@ -1187,7 +1195,7 @@ cues:
 rejected:
   - {
       file: docs/stories_plan/chapter_1/scene_p0.md,
-      line: 5,
+      line: 25,
       sound: 遠處電車進站的低鳴,
       reason: incidental environmental texture,
       covered by shopping-street rain BGS
