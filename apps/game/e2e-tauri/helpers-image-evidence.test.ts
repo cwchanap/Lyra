@@ -2,7 +2,10 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runImageEvidenceProof } from "../src/lib/e2e/image-evidence-proof";
+import {
+  runImageEvidenceProof,
+  withImageFailureEvidence,
+} from "../src/lib/e2e/image-evidence-proof";
 import * as helpers from "./helpers";
 
 /**
@@ -274,5 +277,121 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
     expect(diagnostics.error).toContain("did not mount");
     expect(diagnostics.image.mounted).toBe(false);
     expect(diagnostics.diagnostics.recordId).toBe("cctv_screenshot");
+  });
+
+  it("Case File navigation boundary: the real capture writes viewport evidence when the game menu never opens", async () => {
+    // verifyHpa831CaseFileRecords wraps openGameMenu + the 案件檔案 entry and
+    // 證物 tab clicks in withImageFailureEvidence; this drives the identical
+    // composition — the same boundary plus the real
+    // captureImageFailureDiagnostics — so a failed menu open produces the
+    // required viewport frame + diagnostics before the outer finally
+    // restores the window.
+    const screenshotPath = path.join(
+      outputDir,
+      "case-file-navigation-failure.png",
+    );
+    const menuError = new Error("enabled button 遊戲選單 did not appear");
+    const failure = await withImageFailureEvidence(
+      async () => {
+        throw menuError;
+      },
+      (error) =>
+        helpers.captureImageFailureDiagnostics({
+          label: "Case File menu navigation at inv_3_wrap",
+          selector: "img.case-file-record-image",
+          screenshotPath,
+          error,
+          diagnostics: { stage: "menu-navigation", gateWrapper: "inv_3_wrap" },
+        }),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBe(menuError);
+    expect(screenshots).toEqual([screenshotPath]);
+    const diagnostics = JSON.parse(
+      readFileSync(screenshotPath.replace(/\.png$/, ".json"), "utf8"),
+    ) as { error: string; diagnostics: { stage: string } };
+    expect(diagnostics.error).toContain("遊戲選單");
+    expect(diagnostics.diagnostics.stage).toBe("menu-navigation");
+  });
+
+  it("Case File navigation boundary: evidence-tab click failure writes evidence and rethrows the original error", async () => {
+    const screenshotPath = path.join(
+      outputDir,
+      "case-file-navigation-failure.png",
+    );
+    const tabError = new Error("button containing 證物 not found");
+    await expect(
+      withImageFailureEvidence(
+        async () => {
+          throw tabError;
+        },
+        (error) =>
+          helpers.captureImageFailureDiagnostics({
+            label: "Case File menu navigation at inv_3_wrap",
+            selector: "img.case-file-record-image",
+            screenshotPath,
+            error,
+            diagnostics: {
+              stage: "menu-navigation",
+              gateWrapper: "inv_3_wrap",
+            },
+          }),
+      ),
+    ).rejects.toBe(tabError);
+    expect(screenshots).toEqual([screenshotPath]);
+    expect(
+      JSON.parse(
+        readFileSync(screenshotPath.replace(/\.png$/, ".json"), "utf8"),
+      ),
+    ).toMatchObject({ error: "button containing 證物 not found" });
+  });
+
+  it("missing compositor-receipt rejection: boundary writes viewport evidence and rethrows the original error", async () => {
+    // runInv3EvidenceAndCaseFileGate wraps the missing-receipt throw in
+    // withImageFailureEvidence — drive the identical composition with the
+    // real capture helper: PNG + JSON (missing list + receipts) written,
+    // original error rethrown, and no receipt can ever be created.
+    const screenshotPath = path.join(
+      outputDir,
+      "acquisition-missing-receipts-failure.png",
+    );
+    const missing = ["cctv_screenshot"];
+    const receiptError = new Error(
+      `inv_3_wrap: no compositor-crop proof for ${missing.join(", ")}`,
+    );
+    const failure = await withImageFailureEvidence(
+      async () => {
+        throw receiptError;
+      },
+      (error) =>
+        helpers.captureImageFailureDiagnostics({
+          label: "compositor receipts missing at inv_3_wrap",
+          selector: ".acquisition-card img.evidence-image",
+          screenshotPath,
+          error,
+          diagnostics: {
+            stage: "compositor-receipts",
+            gateWrapper: "inv_3_wrap",
+            missing,
+            receipts: {},
+          },
+        }),
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBe(receiptError);
+    expect(screenshots).toEqual([screenshotPath]);
+    const diagnostics = JSON.parse(
+      readFileSync(screenshotPath.replace(/\.png$/, ".json"), "utf8"),
+    ) as {
+      error: string;
+      diagnostics: { missing: string[]; stage: string };
+    };
+    expect(diagnostics.diagnostics.missing).toEqual(["cctv_screenshot"]);
+    expect(diagnostics.diagnostics.stage).toBe("compositor-receipts");
+    expect(helpers.acquisitionCompositorReceipts().size).toBe(0);
   });
 });

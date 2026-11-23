@@ -58,6 +58,7 @@ import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor
 import {
   runCaseFileRecordGate,
   runImageEvidenceProof,
+  withImageFailureEvidence,
 } from "../src/lib/e2e/image-evidence-proof";
 import { drainEnterToMap } from "../src/lib/e2e/journey-enter-drain";
 import {
@@ -2811,9 +2812,33 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       });
     },
   });
-  await openGameMenu();
-  await jsClickButtonContaining(anchors.caseFileMenuEntry);
-  await jsClickButtonContaining(anchors.caseFileEvidenceTab);
+  // Menu/section navigation shares the failure-evidence contract
+  // (review-fix-4): a failed menu open, 案件檔案 entry, or 證物 tab click
+  // throws while the 800x600 window is still up — capture the raw viewport
+  // frame + structured diagnostics, then rethrow the original error.
+  // Per-record failures keep their own record-specific captures below, so
+  // nothing is captured twice.
+  await withImageFailureEvidence(
+    async () => {
+      await openGameMenu();
+      await jsClickButtonContaining(anchors.caseFileMenuEntry);
+      await jsClickButtonContaining(anchors.caseFileEvidenceTab);
+    },
+    (error) =>
+      captureImageFailureDiagnostics({
+        label: `Case File menu navigation at ${gate.wrapper}`,
+        selector: "img.case-file-record-image",
+        screenshotPath: path.join(
+          HPA831_ARTIFACT_DIR,
+          "case-file-navigation-failure.png",
+        ),
+        error,
+        diagnostics: {
+          stage: "menu-navigation",
+          gateWrapper: gate.wrapper,
+        },
+      }),
+  );
   for (const target of hpa831CaseFileTargets) {
     const expectedPath = publicPathForAssetId(target.assetId, "evidence");
     const label = `Case File ${target.id} (${target.name})`;
@@ -2873,14 +2898,35 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
   }
   // 繼續調查 exists only on GameShell's main-menu branch; while the Case
   // File submenu is open the only navigation is 返回選單 — go back first,
-  // then resume, or the journey can never leave the submenu.
-  await jsClickButtonContaining(anchors.submenuBackButton);
-  await clickButton(anchors.continueInvestigation);
-  await waitForNoDialog(anchors.gameMenu);
-  await waitForPackagedGameState(
-    (candidate) => isPendingMapGate(candidate, gate.wrapper),
-    30000,
-    `${gate.wrapper} did not stay parked on its pending city map after Case File closed`,
+  // then resume, or the journey can never leave the submenu. Same
+  // failure-evidence contract as the open navigation above: a failed
+  // close or a lost map park captures the viewport frame + diagnostics,
+  // then rethrows (review-fix-4).
+  await withImageFailureEvidence(
+    async () => {
+      await jsClickButtonContaining(anchors.submenuBackButton);
+      await clickButton(anchors.continueInvestigation);
+      await waitForNoDialog(anchors.gameMenu);
+      await waitForPackagedGameState(
+        (candidate) => isPendingMapGate(candidate, gate.wrapper),
+        30000,
+        `${gate.wrapper} did not stay parked on its pending city map after Case File closed`,
+      );
+    },
+    (error) =>
+      captureImageFailureDiagnostics({
+        label: `Case File menu close at ${gate.wrapper}`,
+        selector: "img.case-file-record-image",
+        screenshotPath: path.join(
+          HPA831_ARTIFACT_DIR,
+          "case-file-close-failure.png",
+        ),
+        error,
+        diagnostics: {
+          stage: "menu-close",
+          gateWrapper: gate.wrapper,
+        },
+      }),
   );
   console.log(
     `[HPA831Gate] Case File reopened ${hpa831CaseFileTargets.map((t) => t.id).join(", ")}; menu closed, organic journey continues`,
@@ -2905,10 +2951,32 @@ async function runInv3EvidenceAndCaseFileGate(
   );
   let restoreError: unknown;
   try {
-    await ensureMinimumWindowViewport();
-    const viewport = await observedCssViewport();
-    expect(viewport.width).toBe(800);
-    expect(viewport.height).toBe(600);
+    // The viewport arm itself can fail before the gate dir exists
+    // (review-fix-4): capture honest evidence of whatever the real frame is
+    // — no 800x600 claim — plus diagnostics, then rethrow the original
+    // error.
+    await withImageFailureEvidence(
+      async () => {
+        await ensureMinimumWindowViewport();
+        const viewport = await observedCssViewport();
+        expect(viewport.width).toBe(800);
+        expect(viewport.height).toBe(600);
+      },
+      (error) =>
+        captureImageFailureDiagnostics({
+          label: `inv3 gate viewport arm at ${gate.wrapper}`,
+          selector: ".acquisition-card img.evidence-image",
+          screenshotPath: path.join(
+            HPA831_ARTIFACT_DIR,
+            "inv3-viewport-arm-failure.png",
+          ),
+          error,
+          diagnostics: {
+            stage: "viewport-arm",
+            gateWrapper: gate.wrapper,
+          },
+        }),
+    );
     mkdirSync(HPA831_ARTIFACT_DIR, { recursive: true });
     setAcquisitionCompositorGate({
       expectedAssetIds: HPA831_GATED_RECORDS,
@@ -2923,16 +2991,42 @@ async function runInv3EvidenceAndCaseFileGate(
     // that reported a null/wrong asset id already failed inside the
     // acknowledgement, and a popup that never appeared leaves no
     // receipt, so inv3 cannot leave green on partial coverage.
-    const receipts = acquisitionCompositorReceipts();
-    const missing = missingCompositorReceipts(HPA831_GATED_RECORDS, receipts);
-    if (missing.length > 0) {
-      throw new Error(
-        `${gate.wrapper}: no compositor-crop proof for ${missing.join(", ")} ` +
-          `— each gated record's popup must report its authored ` +
-          `imageAssetId and pass the screenshot crop before inv3 may ` +
-          `continue (receipts: ${JSON.stringify(Object.fromEntries(receipts))})`,
-      );
-    }
+    let receipts: ReadonlyMap<string, string> = new Map();
+    let missing: string[] = [];
+    // A missing receipt is required failure evidence too (review-fix-4):
+    // capture the viewport frame + diagnostics naming the uncovered
+    // records and the actual receipts, then rethrow — a failure can never
+    // be minted into a receipt.
+    await withImageFailureEvidence(
+      async () => {
+        receipts = acquisitionCompositorReceipts();
+        missing = missingCompositorReceipts(HPA831_GATED_RECORDS, receipts);
+        if (missing.length > 0) {
+          throw new Error(
+            `${gate.wrapper}: no compositor-crop proof for ${missing.join(", ")} ` +
+              `— each gated record's popup must report its authored ` +
+              `imageAssetId and pass the screenshot crop before inv3 may ` +
+              `continue (receipts: ${JSON.stringify(Object.fromEntries(receipts))})`,
+          );
+        }
+      },
+      (error) =>
+        captureImageFailureDiagnostics({
+          label: `compositor receipts missing at ${gate.wrapper}`,
+          selector: ".acquisition-card img.evidence-image",
+          screenshotPath: path.join(
+            HPA831_ARTIFACT_DIR,
+            "acquisition-missing-receipts-failure.png",
+          ),
+          error,
+          diagnostics: {
+            stage: "compositor-receipts",
+            gateWrapper: gate.wrapper,
+            missing,
+            receipts: Object.fromEntries(receipts),
+          },
+        }),
+    );
     await verifyHpa831CaseFileRecords(gate);
   } finally {
     setAcquisitionCompositorGate(null);
