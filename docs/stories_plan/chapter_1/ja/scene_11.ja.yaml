@@ -91,18 +91,9 @@ lines:
     ja: おいしいよ。
     voice:
       clip: ch1_soma_ritsu_0302
-  - id: L030
-    speaker: 三宅蒼太
-    zh: 其實……不是我糖放錯。增田先生每次都說糖少，最後自己再加兩包。
-    ja: 実は……砂糖を入れ間違えたんじゃないんです。増田さん、毎回砂糖少なめって言うのに、最後は自分でスティックシュガーを二本足してたんです。
-    note: 兩包 = two stick sugars (糖包 is スティックシュガー in investigation_scene_3); 「二本」 in the next lines is the same thing. 足す / 砂糖少なめ echo scene_p2.
-  - id: L031
-    speaker: 三宅蒼太
-    zh: 我做著做著，就變成……先替他放進去了。
-    ja: 作ってるうちに、いつの間にか……増田さんの分は、先に入れておくようになってて。
   - id: L032
     speaker: 店長高瀨
-    zh: 他被我念過好幾次。每次都回我一句「今天不會」，結果還是兩包。
+    zh: 增田被我念過好幾次。每次都回我一句「今天不會」，結果還是兩包。
     ja: 増田には、何度も小言を言ったんだけどね。そのたびに「今日は足しません」って返されて、結局やっぱり二本だった。
     note: 「今日は足しません」 repeats Masuda's own line in scene_p2 (……今日は足しません。).
   - id: L033

@@ -39,8 +39,8 @@ lines:
     ja: はい。まだ雨鐘が開いていたときから、話します。
   - id: L008
     speaker: 相馬律
-    zh: 增田先生那晚，約了一個人在雨鐘見面。備忘裡只寫了一個字母：K。
-    ja: 増田さんはあの夜、雨鐘で人と会う約束をしていました。メモに書かれていたのは、アルファベット一文字、Kだけです。
+    zh: 增田先生那晚，約了一個人在雨鐘見面。備忘裡，對方只寫了一個字母：K。
+    ja: 増田さんはあの夜、雨鐘で人と会う約束をしていました。メモに相手として書かれていたのは、アルファベット一文字、Kだけです。
   - id: L009
     speaker: 相馬律
     zh: 增田先生有一份檢舉北見的草稿，沒寫完。
@@ -125,9 +125,9 @@ lines:
     ja: はい。彼には見えませんでした。
   - id: L029
     speaker: 相馬律
-    zh: 後來，店長走了另一條路，才發現他。那已經是很晚的事了。
+    zh: 後來，店長走了另一條路，才發現增田先生。那已經是很晚的事了。
     ja: そのあと、店長が別の道を通って、増田さんを見つけました。ずいぶん遅くなってからのことです。
-    note: The 他 who was found is 増田 (the manager found him at 23:20), not Miyake, so the name is spelled out.
+    note: The manager found 増田 at 23:20, not Miyake. The Chinese names 增田先生 so the sentence cannot be read as being about Miyake.
   - id: L030
     speaker: 相馬律
     zh: 門鎖最後一格，是同步完成。那是電腦把各段紀錄合在一起的時間。
@@ -206,7 +206,7 @@ lines:
   - id: L046
     speaker: 相馬律
     zh: （最後，什麼證據都用不上。她等的，只是這個人走出來。）
-    ja: （最後は、どんな証拠も役に立たなかった。彼女が待っていたのは、ただ、この人が出てくることだけだ。）
+    ja: （最後は、どんな証拠もいらなかった。彼女が待っていたのは、ただ、この人が出てくることだけだ。）
   - id: L047
     speaker: 早坂茜
     expression: softened

@@ -230,7 +230,7 @@ lines:
     speaker: 神谷澪
     zh: 哪一句站不住，你指出來。
     ja: どの一文が成り立たないのか、指摘してください。
-    note: Recurring Kamiya beat, also in interrogation_scene_10 (哪一句站不住，你指出來 / 換一句); keep the wording identical there. 一句 is echoed as 一文, 換一句 as 別の一文を.
+    note: Recurring Kamiya beat, also in interrogation_scene_10 L016 (哪一句站不住，你指出來); keep the wording identical there. 一句 is echoed as 一文. The 換一句 in L060 stays in this scene only, since the hearing retry hints say 換個東西 or 換一個 (a hearing question has just one statement).
   - id: L059
     speaker: 相馬律
     zh: 那就是——不對，我是說——
