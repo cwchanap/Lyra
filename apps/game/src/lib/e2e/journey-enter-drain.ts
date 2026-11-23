@@ -164,6 +164,30 @@ export function proveSceneQueueEntry(
   };
 }
 
+/** The DOM surface DialogueBox renders a dialogue item into, plus the
+ * full text an exact match proves (sceneTag renders a fixed placeholder
+ * with no distinguishing text, so presence alone is the contract). A
+ * checkpoint's screenshot must wait for this match or it can sample the
+ * preceding item — the packaged get_state read and the Svelte render are
+ * independent (applyGameplayCommandResult -> tick). Lives here, not in
+ * the .e2e file, so vitest pins the per-kind selector/text contract the
+ * WebDriver renderedItemSettled hook asserts against the real DOM. */
+export function renderedItemSurface(current: DialogueItem): {
+  selector: string;
+  text: string | null;
+} {
+  switch (current.kind) {
+    case "line":
+      return { selector: "p.text-line", text: current.text };
+    case "action":
+      return { selector: "p.text-action", text: current.text };
+    case "prompt":
+      return { selector: "p.text-prompt", text: current.question };
+    case "sceneTag":
+      return { selector: "p.text-scene", text: null };
+  }
+}
+
 /** WebDriver seams the drain orchestration needs; tests inject scripted
  * doubles and production-journey wires the real browser helpers. */
 export type EnterDrainHooks = {

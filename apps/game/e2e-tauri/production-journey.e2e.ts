@@ -60,7 +60,10 @@ import {
   runImageEvidenceProof,
   withImageFailureEvidence,
 } from "../src/lib/e2e/image-evidence-proof";
-import { drainEnterToMap } from "../src/lib/e2e/journey-enter-drain";
+import {
+  drainEnterToMap,
+  renderedItemSurface,
+} from "../src/lib/e2e/journey-enter-drain";
 import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
@@ -80,7 +83,6 @@ import {
 } from "$lib/interrogation/presentation";
 import type {
   CharacterView,
-  DialogueItem,
   GameStateView,
   HotspotView,
   TopicView,
@@ -2335,28 +2337,6 @@ type FocusProbe = FocusProbeSnapshot & {
   label: string;
   screenshotPath: string;
 };
-
-/** The DOM surface DialogueBox renders a dialogue item into, plus the
- * full text an exact match proves (sceneTag renders a fixed placeholder
- * with no distinguishing text, so presence alone is the contract). A
- * checkpoint's screenshot must wait for this match or it can sample the
- * preceding item — the packaged get_state read and the Svelte render are
- * independent (applyGameplayCommandResult -> tick). */
-function renderedItemSurface(current: DialogueItem): {
-  selector: string;
-  text: string | null;
-} {
-  switch (current.kind) {
-    case "line":
-      return { selector: "p.text-line", text: current.text };
-    case "action":
-      return { selector: "p.text-action", text: current.text };
-    case "prompt":
-      return { selector: "p.text-prompt", text: current.question };
-    case "sceneTag":
-      return { selector: "p.text-scene", text: null };
-  }
-}
 
 /**
  * One whole-document focus snapshot: whoever document.activeElement is

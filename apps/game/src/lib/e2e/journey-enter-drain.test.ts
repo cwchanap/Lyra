@@ -5,6 +5,7 @@ import {
   journeyProgressToken,
   observeJourneyProgress,
   proveSceneQueueEntry,
+  renderedItemSurface,
   type EnterDrainHooks,
   type JourneyWaitUntil,
 } from "./journey-enter-drain";
@@ -571,5 +572,45 @@ describe("proveSceneQueueEntry", () => {
     expect(() => proveSceneQueueEntry(state)).toThrow(
       /queue owned by investigation_scene_1/,
     );
+  });
+});
+
+describe("renderedItemSurface", () => {
+  // The selectors/text this pins are the exact surfaces DialogueBox.svelte
+  // renders each DialogueItem kind into (p.text-line inside .line-content,
+  // p.text-action, p.text-prompt, p.text-scene) — the contract
+  // DialogueBox.test.ts asserts from the component side. The WebDriver
+  // renderedItemSettled hook exact-matches getText() against `text`.
+
+  it("maps a line item to p.text-line carrying the item text", () => {
+    expect(
+      renderedItemSurface({ kind: "line", speaker: "茜", text: "台詞" }),
+    ).toEqual({ selector: "p.text-line", text: "台詞" });
+  });
+
+  it("maps an action item to p.text-action carrying the item text", () => {
+    expect(renderedItemSurface({ kind: "action", text: "敘述" })).toEqual({
+      selector: "p.text-action",
+      text: "敘述",
+    });
+  });
+
+  it("maps a prompt item to p.text-prompt carrying the question", () => {
+    expect(
+      renderedItemSurface({
+        kind: "prompt",
+        question: "問題",
+        options: [{ label: "甲" }, { label: "乙" }],
+      }),
+    ).toEqual({ selector: "p.text-prompt", text: "問題" });
+  });
+
+  it("maps a sceneTag item to p.text-scene with presence-only contract", () => {
+    // DialogueBox renders a fixed （場景切換） placeholder with no item text,
+    // so an exact text match can never hold — presence is the contract.
+    expect(renderedItemSurface({ kind: "sceneTag", text: "任何字" })).toEqual({
+      selector: "p.text-scene",
+      text: null,
+    });
   });
 });
