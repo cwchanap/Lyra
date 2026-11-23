@@ -93,14 +93,73 @@ export async function runImageEvidenceProof<Inspection>(
       options.onReceipt?.();
     }
   } catch (error) {
-    try {
-      await options.captureFailure({ error, inspection });
-    } catch (captureError) {
-      console.error(
-        "[ImageEvidenceProof] failure-evidence capture failed — preserving the original error:",
-        captureError,
-      );
-    }
+    await capturePreservingError(() =>
+      options.captureFailure({ error, inspection }),
+    );
     throw error;
+  }
+}
+
+/** Run the failure-evidence capture without ever masking the real error:
+ * a rejected capture is logged, never propagated. */
+async function capturePreservingError(
+  capture: () => Promise<void>,
+): Promise<void> {
+  try {
+    await capture();
+  } catch (captureError) {
+    console.error(
+      "[ImageEvidenceProof] failure-evidence capture failed — preserving the original error:",
+      captureError,
+    );
+  }
+}
+
+/** One scoped Case File record the early gate must prove. */
+export type CaseFileRecordTarget = {
+  id: string;
+  name: string;
+  assetId: string;
+};
+
+/**
+ * Early gate for the Case File proof (review-fix-3 Finding B): every scoped
+ * target must have been organically acquired and carry its authored
+ * imageAssetId BEFORE the menu is opened. A missing record or a wrong/null
+ * asset id is required failure evidence — captureFailure runs while the
+ * 800x600 window is still up (a raw viewport screenshot; the record's image
+ * is not mounted yet by definition), then the ORIGINAL error is rethrown
+ * even when capture itself fails.
+ */
+export async function runCaseFileRecordGate(options: {
+  targets: readonly CaseFileRecordTarget[];
+  gateWrapper: string;
+  findRecord: (
+    target: CaseFileRecordTarget,
+  ) => { imageAssetId: string | null } | undefined;
+  captureFailure: (input: {
+    target: CaseFileRecordTarget;
+    error: unknown;
+  }) => Promise<void>;
+}): Promise<void> {
+  for (const target of options.targets) {
+    try {
+      const record = options.findRecord(target);
+      if (!record) {
+        throw new Error(
+          `Case File gate reached ${options.gateWrapper} without organically acquiring ${target.id} (${target.name})`,
+        );
+      }
+      if (record.imageAssetId !== target.assetId) {
+        throw new Error(
+          `${target.id} imageAssetId is ${String(record.imageAssetId)}, expected ${target.assetId}`,
+        );
+      }
+    } catch (error) {
+      await capturePreservingError(() =>
+        options.captureFailure({ target, error }),
+      );
+      throw error;
+    }
   }
 }

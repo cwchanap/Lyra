@@ -2520,18 +2520,48 @@ export async function startAcquisitionAcknowledgement(
     "id" | "recordId" | "title" | "recordKind" | "imageAssetId"
   >,
 ): Promise<void> {
-  await waitForButton("CONTINUE", 90000);
-  const currentCardMatches = await browser.execute((currentTitle: string) => {
-    const card = document.querySelector(".acquisition-card");
-    return (
-      (card?.querySelector(".item-title")?.textContent ?? "").trim() ===
-      currentTitle
-    );
-  }, current.title);
-  if (!currentCardMatches) {
-    throw new Error(
-      `acquisition ${current.id} was not the current DOM notification`,
-    );
+  const scoped =
+    acquisitionCompositorGate?.expectedAssetIds.has(current.recordId) === true;
+  try {
+    await waitForButton("CONTINUE", 90000);
+    const currentCardMatches = await browser.execute((currentTitle: string) => {
+      const card = document.querySelector(".acquisition-card");
+      return (
+        (card?.querySelector(".item-title")?.textContent ?? "").trim() ===
+        currentTitle
+      );
+    }, current.title);
+    if (!currentCardMatches) {
+      throw new Error(
+        `acquisition ${current.id} was not the current DOM notification`,
+      );
+    }
+  } catch (error) {
+    // (review-fix-3) A CONTINUE wait or card-identity failure on a gated
+    // record is required failure evidence too: both used to throw before
+    // any screenshot existed, and the window restore then lost the exact
+    // frame. Capture the raw 800x600 viewport + diagnostics while the
+    // window is still up (the probe tolerates an absent card/image), then
+    // rethrow. Ungated records keep the plain error path.
+    if (scoped && acquisitionCompositorGate !== null) {
+      const safeId = current.recordId.replace(/[^a-zA-Z0-9_-]/g, "_");
+      await captureImageFailureDiagnostics({
+        label: `acquisition ${current.id} (acknowledgement of ${current.recordId})`,
+        selector: ".acquisition-card img.evidence-image",
+        screenshotPath: path.join(
+          acquisitionCompositorGate.outputDirectory,
+          `acquisition-${safeId}-ack-failure.png`,
+        ),
+        error,
+        diagnostics: {
+          recordId: current.recordId,
+          imageAssetId: current.imageAssetId,
+          recordKind: current.recordKind,
+          title: current.title,
+        },
+      });
+    }
+    throw error;
   }
   // HPA-831: a recordId the armed compositor gate scoped must carry its
   // authored imageAssetId — a null or wrong id fails here instead of
