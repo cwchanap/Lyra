@@ -3,6 +3,7 @@ import {
   probeImagePresenceDom,
   runCaseFileRecordGate,
   runImageEvidenceProof,
+  withImageFailureEvidence,
   type CaseFileRecordTarget,
 } from "./image-evidence-proof";
 
@@ -270,6 +271,60 @@ describe("runCaseFileRecordGate", () => {
     ]);
     const captured: { target: { id: string }; error: unknown }[] = [];
     await runCaseFileRecordGate(gate(evidence, captured));
+    expect(captured).toEqual([]);
+  });
+});
+
+/**
+ * Caller-level coverage for the generic failure-evidence boundary the spec
+ * wraps around the operations that are not per-record image proofs: the
+ * Case File menu/section navigation, the missing compositor-receipt
+ * rejection, and the 800x600 viewport arm (review-fix-4). Any throw inside
+ * the boundary must attempt evidence capture exactly once and rethrow the
+ * ORIGINAL error — including when capture itself rejects.
+ */
+describe("withImageFailureEvidence", () => {
+  it("attempts evidence capture once and rethrows the original error", async () => {
+    const navError = new Error("enabled button 遊戲選單 did not appear");
+    const captured: unknown[] = [];
+    const failure = await withImageFailureEvidence(
+      async () => {
+        throw navError;
+      },
+      async (error) => {
+        captured.push(error);
+      },
+    ).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(failure).toBe(navError);
+    expect(captured).toEqual([navError]);
+  });
+
+  it("rethrows the original error even when evidence capture rejects", async () => {
+    const missing = new Error("no compositor-crop proof for cctv_screenshot");
+    await expect(
+      withImageFailureEvidence(
+        async () => {
+          throw missing;
+        },
+        async () => {
+          throw new Error("saveScreenshot failed");
+        },
+      ),
+    ).rejects.toBe(missing);
+  });
+
+  it("returns the run result and never captures on success", async () => {
+    const captured: unknown[] = [];
+    const result = await withImageFailureEvidence(
+      async () => 42,
+      async (error) => {
+        captured.push(error);
+      },
+    );
+    expect(result).toBe(42);
     expect(captured).toEqual([]);
   });
 });

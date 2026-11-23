@@ -115,6 +115,29 @@ async function capturePreservingError(
   }
 }
 
+/**
+ * Generic failure-evidence boundary for the operations that are not
+ * per-record image proofs (review-fix-4): Case File menu/section
+ * navigation, the missing compositor-receipt rejection, and the 800x600
+ * viewport arm all throw while the window is still up — `run` executes the
+ * operation, and on ANY throw `capture` saves the required evidence
+ * (a raw viewport screenshot plus structured diagnostics, honest about
+ * whatever the actual viewport is), then the ORIGINAL error is rethrown
+ * even when capture itself rejects. The run result passes through
+ * unchanged on success.
+ */
+export async function withImageFailureEvidence<T>(
+  run: () => Promise<T>,
+  capture: (error: unknown) => Promise<void>,
+): Promise<T> {
+  try {
+    return await run();
+  } catch (error) {
+    await capturePreservingError(() => capture(error));
+    throw error;
+  }
+}
+
 /** One scoped Case File record the early gate must prove. */
 export type CaseFileRecordTarget = {
   id: string;
