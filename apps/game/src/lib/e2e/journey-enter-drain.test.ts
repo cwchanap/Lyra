@@ -206,6 +206,8 @@ function fakeHooks(world: FakeWorld) {
       activeElementDescriptor: `stalled:${label}`,
       screenshotPath: `/tmp/${label}.png`,
     }),
+    commandSettled: async () => true,
+    renderedItemSettled: async () => true,
   };
   return { sent, probes, verifiedCounts, acked, hooks };
 }
@@ -346,6 +348,80 @@ describe("drainEnterToMap", () => {
     expect(verifiedCounts).toEqual([sent.length]);
   });
 
+  it("sends no retry when the first Enter commits during settlement, then drains normally", async () => {
+    // The reviewed race: a get_state read can return the pre-commit token
+    // while the Enter's advance is still in flight — "unchanged" alone is
+    // not proof of a reveal-only Enter. Here every Enter stays pending
+    // until commandSettled commits it, so the settlement re-read must
+    // classify late progress instead of sending a blind retry.
+    const world = fakeWorld([
+      dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 1,
+        remaining: 0,
+        queueGen: 7,
+        history: [historyEntry(1, OUTRO_TITLE), historyEntry(2, SCENE2_TITLE)],
+      }),
+      exploreState(),
+    ]);
+    let pending = false;
+    world.onEnter = () => {
+      pending = true;
+    };
+    let settleCalls = 0;
+    const { sent, probes, hooks } = fakeHooks(world);
+    hooks.commandSettled = async () => {
+      settleCalls += 1;
+      if (pending) {
+        world.advance();
+        pending = false;
+      }
+      return true;
+    };
+    await drainEnterToMap({ ...DRAIN, hooks });
+    // Two loop-sent Enters total; neither iteration sent a blind retry.
+    expect(sent).toHaveLength(2);
+    expect(settleCalls).toBe(2);
+    expect(probes.map((probe) => probe.label)).toContain("scene_2-first");
+  });
+
+  it("fails inconclusively without a retry when the command channel never settles", async () => {
+    const world = fakeWorld([
+      dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
+      exploreState(),
+    ]);
+    world.onEnter = () => {};
+    const { sent, hooks } = fakeHooks(world);
+    hooks.commandSettled = async () => false;
+    await expect(drainEnterToMap({ ...DRAIN, hooks })).rejects.toThrow(
+      /unsettled.*inconclusive|inconclusive/,
+    );
+    expect(sent).toHaveLength(1);
+  });
+
+  it("fails inconclusively when the rendered line never matches the packaged item", async () => {
+    const world = fakeWorld([
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 1,
+        remaining: 4,
+        queueGen: 7,
+        history: [historyEntry(1, OUTRO_TITLE), historyEntry(2, SCENE2_TITLE)],
+      }),
+      exploreState(),
+    ]);
+    const { sent, probes, hooks } = fakeHooks(world);
+    hooks.renderedItemSettled = async () => false;
+    await expect(drainEnterToMap({ ...DRAIN, hooks })).rejects.toThrow(
+      /could not verify the rendered line.*inconclusive/,
+    );
+    expect(probes.map((probe) => probe.label)).not.toContain("scene_2-first");
+    expect(sent).toHaveLength(0);
+  });
+
   it("fails inconclusively when the retry Enter's state is also unobservable", async () => {
     const world = fakeWorld(
       [
@@ -354,9 +430,10 @@ describe("drainEnterToMap", () => {
         exploreState(),
       ],
       // loop ok; first wait reads fail; arbiter fails? No — keep first
-      // outcome "unchanged" by letting reads succeed, then fail everything
-      // after the retry.
+      // outcome "unchanged" by letting reads succeed (including the
+      // settlement re-read), then fail everything after the retry.
       [
+        "ok",
         "ok",
         "ok",
         "ok",

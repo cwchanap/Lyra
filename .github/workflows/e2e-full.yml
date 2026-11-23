@@ -14,10 +14,13 @@ jobs:
   tauri-e2e-full:
     name: Tauri E2E
     runs-on: ubuntu-latest
-    # Must cover the measured cold path plus the configured retry: ~24 min
-    # cold target-e2e build + setup + two ~34-38 min sequential passes +
-    # artifact upload (~100 min worst case), with headroom.
-    timeout-minutes: 120
+    # HPA-831 lengthened the production journey: two accepted local runs
+    # took 2h20m-2h26m for that suite alone (ARM, software rendering). The
+    # hosted budget must also cover setup, the cold target-e2e build, the
+    # remaining suites, the configured retry, and artifact upload — 120 min
+    # cannot fit it. 360 is the GitHub-hosted job ceiling; whether hosted
+    # capacity suffices stays unverified until a run lands.
+    timeout-minutes: 360
     permissions:
       contents: read
     env:

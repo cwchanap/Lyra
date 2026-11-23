@@ -74,9 +74,10 @@ bun run test
 bun run lint:all
 bun run --cwd apps/game check:e2e
 node apps/game/scripts/build-e2e.mjs
+# 前置：xvfb（含 xvfb-run/xauth）、xdotool、x11-utils（xprop、xdpyinfo）
 # 兩個不同 runId / output directories；任何一次 red 都當 failure
-xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite production-journey --attempts 1
-xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite production-journey --attempts 1
+LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite production-journey --attempts 1
+LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite production-journey --attempts 1
 # 若產品層改到 CaseFileRecordDetail.svelte，才要求額外完整 gameplay suite
 xvfb-run -a node apps/game/scripts/run-save-e2e.mjs --suite gameplay --attempts 1
 ```

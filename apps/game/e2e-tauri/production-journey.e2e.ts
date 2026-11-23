@@ -80,6 +80,7 @@ import {
 } from "$lib/interrogation/presentation";
 import type {
   CharacterView,
+  DialogueItem,
   GameStateView,
   HotspotView,
   TopicView,
@@ -2305,19 +2306,9 @@ const HPA831_ARTIFACT_DIR =
   process.env.LYRA_E2E_OUTPUT_DIR ??
   path.join(process.cwd(), "e2e-artifacts", "save-e2e", "hpa831-focus-images");
 
-/** The two records HPA-831 reports as empty black frames. */
-const hpa831CaseFileTargets = [
-  {
-    id: "cctv_screenshot",
-    assetId: "evidence.cctv_screenshot",
-    name: "閉店監視器截圖",
-  },
-  {
-    id: "timecard_record",
-    assetId: "evidence.timecard_record",
-    name: "三宅打卡紀錄",
-  },
-] as const;
+/** The two records HPA-831 reports as empty black frames (authored
+ * coupling lives in production-anchors). */
+const hpa831CaseFileTargets = anchors.hpa831CaseFileRecords;
 
 /** Scoped compositor expectations: recordId -> the authored imageAssetId
  * its popup must carry (the two affected records plus the doorlock
@@ -2344,6 +2335,28 @@ type FocusProbe = FocusProbeSnapshot & {
   label: string;
   screenshotPath: string;
 };
+
+/** The DOM surface DialogueBox renders a dialogue item into, plus the
+ * full text an exact match proves (sceneTag renders a fixed placeholder
+ * with no distinguishing text, so presence alone is the contract). A
+ * checkpoint's screenshot must wait for this match or it can sample the
+ * preceding item — the packaged get_state read and the Svelte render are
+ * independent (applyGameplayCommandResult -> tick). */
+function renderedItemSurface(current: DialogueItem): {
+  selector: string;
+  text: string | null;
+} {
+  switch (current.kind) {
+    case "line":
+      return { selector: "p.text-line", text: current.text };
+    case "action":
+      return { selector: "p.text-action", text: current.text };
+    case "prompt":
+      return { selector: "p.text-prompt", text: current.question };
+    case "sceneTag":
+      return { selector: "p.text-scene", text: null };
+  }
+}
 
 /**
  * One whole-document focus snapshot: whoever document.activeElement is
@@ -2693,7 +2706,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       await browser.keys(key);
     }
   };
-  const advanceFocusSelector = ".advance-button";
+  const advanceFocusSelector = anchors.advanceButtonSelector;
   await browser.waitUntil(async () => elementExists(advanceFocusSelector), {
     timeout: 15000,
     interval: 100,
@@ -2753,6 +2766,50 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       pause: (ms) => browser.pause(ms),
       waitUntil: (condition, options) => browser.waitUntil(condition, options),
       sendEnter: () => sendSegmentKey("Enter"),
+      // The packaged command channel's settle signal: .advance-button
+      // carries aria-disabled mirroring gameState.inFlight (+page.svelte
+      // DialogueBox wiring). Cleared/unmounted means every dispatched
+      // command has finished applying, so a subsequent get_state re-read
+      // cannot be a stale pre-commit snapshot.
+      commandSettled: () =>
+        browser
+          .waitUntil(
+            async () => {
+              const control = await $(anchors.advanceButtonSelector);
+              if (!(await control.isExisting())) return true;
+              return (await control.getAttribute("aria-disabled")) !== "true";
+            },
+            {
+              timeout: 5000,
+              interval: 100,
+              timeoutMsg:
+                "the dialogue advance control stayed aria-disabled — the packaged command channel never settled",
+            },
+          )
+          .then(() => true)
+          .catch(() => false),
+      // A checkpoint must screenshot the item the packaged state reports.
+      // DialogueBox reveals the item's full text in its per-kind surface;
+      // an exact match means the DOM caught up with the state read.
+      renderedItemSettled: (current) =>
+        browser
+          .waitUntil(
+            async () => {
+              const surface = renderedItemSurface(current);
+              const element = await $(surface.selector);
+              if (!(await element.isExisting())) return false;
+              if (surface.text === null) return true;
+              return (await element.getText()).trim() === surface.text;
+            },
+            {
+              timeout: 8000,
+              interval: 100,
+              timeoutMsg:
+                "the rendered dialogue line never matched the packaged state's current item",
+            },
+          )
+          .then(() => true)
+          .catch(() => false),
       acknowledgeAcquisition: (current) =>
         acknowledgeAcquisitionDomFirst(current),
       mapMounted: () => elementExists(anchors.cityMapSelector),
@@ -2798,7 +2855,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
     captureFailure: async ({ target, error }) => {
       await captureImageFailureDiagnostics({
         label: `Case File ${target.id} (${target.name})`,
-        selector: "img.case-file-record-image",
+        selector: anchors.caseFileRecordImageSelector,
         screenshotPath: path.join(
           HPA831_ARTIFACT_DIR,
           `case-file-${target.id}-failure.png`,
@@ -2827,7 +2884,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
     (error) =>
       captureImageFailureDiagnostics({
         label: `Case File menu navigation at ${gate.wrapper}`,
-        selector: "img.case-file-record-image",
+        selector: anchors.caseFileRecordImageSelector,
         screenshotPath: path.join(
           HPA831_ARTIFACT_DIR,
           "case-file-navigation-failure.png",
@@ -2852,7 +2909,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       prepare: () => jsClickButtonContaining(target.name),
       inspect: () =>
         inspectImageElement({
-          selector: "img.case-file-record-image",
+          selector: anchors.caseFileRecordImageSelector,
           expectedPathFragment: expectedPath,
           label,
         }),
@@ -2869,7 +2926,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       // unrelated menu furniture (review: image-only painted region).
       provePainted: async () => {
         await assertScreenshotRegionPainted({
-          selector: "img.case-file-record-image",
+          selector: anchors.caseFileRecordImageSelector,
           label,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
@@ -2882,7 +2939,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       captureFailure: ({ error, inspection }) =>
         captureImageFailureDiagnostics({
           label,
-          selector: "img.case-file-record-image",
+          selector: anchors.caseFileRecordImageSelector,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
             `case-file-${target.id}-failure.png`,
@@ -2916,7 +2973,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
     (error) =>
       captureImageFailureDiagnostics({
         label: `Case File menu close at ${gate.wrapper}`,
-        selector: "img.case-file-record-image",
+        selector: anchors.caseFileRecordImageSelector,
         screenshotPath: path.join(
           HPA831_ARTIFACT_DIR,
           "case-file-close-failure.png",
@@ -2965,7 +3022,7 @@ async function runInv3EvidenceAndCaseFileGate(
       (error) =>
         captureImageFailureDiagnostics({
           label: `inv3 gate viewport arm at ${gate.wrapper}`,
-          selector: ".acquisition-card img.evidence-image",
+          selector: anchors.acquisitionEvidenceImageSelector,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
             "inv3-viewport-arm-failure.png",
@@ -3013,7 +3070,7 @@ async function runInv3EvidenceAndCaseFileGate(
       (error) =>
         captureImageFailureDiagnostics({
           label: `compositor receipts missing at ${gate.wrapper}`,
-          selector: ".acquisition-card img.evidence-image",
+          selector: anchors.acquisitionEvidenceImageSelector,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
             "acquisition-missing-receipts-failure.png",

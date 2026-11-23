@@ -288,10 +288,10 @@ function linuxProcessTable(): LinuxProcEntry[] {
         .filter((part) => part.length > 0);
       let exe: string | null = null;
       try {
+        // A " (deleted)" suffix is kept verbatim: a binary replaced since
+        // launch can never equal the configured e2e path, so the entry
+        // fails the exact-path check instead of matching a stale process.
         exe = readlinkSync(`/proc/${name}/exe`);
-        if (exe.endsWith(" (deleted)")) {
-          exe = exe.slice(0, -" (deleted)".length);
-        }
       } catch {
         // Unreadable or exited — a null exe can never equal the configured
         // e2e binary path, so the entry fails closed on its own.
@@ -2465,7 +2465,7 @@ async function verifyAcquisitionEvidenceImage(
   await runImageEvidenceProof({
     inspect: () =>
       inspectImageElement({
-        selector: ".acquisition-card img.evidence-image",
+        selector: anchors.acquisitionEvidenceImageSelector,
         expectedPathFragment: expectedPath,
         label,
       }),
@@ -2478,7 +2478,7 @@ async function verifyAcquisitionEvidenceImage(
     provePainted: scoped
       ? async () => {
           await assertScreenshotRegionPainted({
-            selector: ".acquisition-card .visual",
+            selector: anchors.acquisitionVisualSelector,
             label: `acquisition popup ${imageAssetId} (${current.id})`,
             screenshotPath,
             insetCssPx: 2,
@@ -2498,7 +2498,7 @@ async function verifyAcquisitionEvidenceImage(
       if (!scoped || gate === null) return;
       await captureImageFailureDiagnostics({
         label,
-        selector: ".acquisition-card img.evidence-image",
+        selector: anchors.acquisitionEvidenceImageSelector,
         screenshotPath: path.join(
           gate.outputDirectory,
           `acquisition-${safeName}-failure.png`,
@@ -2547,7 +2547,7 @@ export async function startAcquisitionAcknowledgement(
       const safeId = current.recordId.replace(/[^a-zA-Z0-9_-]/g, "_");
       await captureImageFailureDiagnostics({
         label: `acquisition ${current.id} (acknowledgement of ${current.recordId})`,
-        selector: ".acquisition-card img.evidence-image",
+        selector: anchors.acquisitionEvidenceImageSelector,
         screenshotPath: path.join(
           acquisitionCompositorGate.outputDirectory,
           `acquisition-${safeId}-ack-failure.png`,
@@ -2579,7 +2579,7 @@ export async function startAcquisitionAcknowledgement(
       const safeId = current.recordId.replace(/[^a-zA-Z0-9_-]/g, "_");
       await captureImageFailureDiagnostics({
         label: `acquisition ${current.id} (imageAssetId ${String(current.imageAssetId)})`,
-        selector: ".acquisition-card img.evidence-image",
+        selector: anchors.acquisitionEvidenceImageSelector,
         screenshotPath: path.join(
           acquisitionCompositorGate.outputDirectory,
           `acquisition-${safeId}-identity-failure.png`,

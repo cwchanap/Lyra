@@ -511,12 +511,14 @@ export const EMPTY_XAUTHORITY_PROBE = "/dev/null";
  *      missing binary, and timeout are indistinguishable here) — fail
  *      closed before even attempting the negative check.
  *   2. `probe(EMPTY_XAUTHORITY_PROBE)` must be ACTIVELY REJECTED with a
- *      connection-level failure (a display-open error such as xdpyinfo's
- *      "unable to open display"). An ACCEPTED unauthenticated connection
- *      means zero enforcement — fail. A killed/timed-out/crashed probe or
- *      an unrelated error means rejection was never observed — also fail
- *      closed, because an unauthenticated client that hangs was not
- *      refused.
+ *      credential-specific failure — the server's auth rejection reason
+ *      ("No protocol specified" on this MIT-MAGIC-COOKIE Xvfb, verified
+ *      live via xdotool; Xorg's "Authorization required" on others). An
+ *      ACCEPTED unauthenticated connection means zero enforcement — fail.
+ *      A killed/timed-out/crashed probe, an unrelated error, or a generic
+ *      display-open failure (e.g. a bare "unable to open display", which a
+ *      display that died between the two probes also produces) means a
+ *      credential rejection was never observed — also fail closed.
  *
  * The positive-then-negative ordering is what makes the negative failure
  * attributable to authentication: the server was proven reachable by the
@@ -577,12 +579,12 @@ export async function assertX11AuthenticationEnforced({
     );
   }
   if (
-    !/unable to open display|authorization required|authentication|access denied/i.test(
+    !/no protocol specified|authorization required|authentication|access denied/i.test(
       detail,
     )
   ) {
     throw new Error(
-      `unauthenticated X connection to DISPLAY ${display} failed for an indistinguishable reason (${detail || String(negativeError)}) — only a connection-level rejection proves authentication is enforced; refusing XTEST keys`,
+      `unauthenticated X connection to DISPLAY ${display} failed for an indistinguishable reason (${detail || String(negativeError)}) — only a credential-level rejection proves authentication is enforced; refusing XTEST keys`,
       { cause: negativeError },
     );
   }

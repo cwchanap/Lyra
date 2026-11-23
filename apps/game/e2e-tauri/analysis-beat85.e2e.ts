@@ -109,7 +109,7 @@ async function snapshotTestimonyGeometry(): Promise<void> {
       elementRect("button.xexam-challenge"),
       elementRect("button.testimony-log"),
       elementRect("button.xexam-withdraw"),
-      elementRect("button.advance-button"),
+      elementRect(`button${anchors.advanceButtonSelector}`),
     ]);
   if (
     stage &&
