@@ -3018,8 +3018,17 @@ async function runInv3EvidenceAndCaseFileGate(
 }
 
 describe("fresh production journey", () => {
+  // WDIO's testFnWrapper snapshots each runnable's _timeout before the test
+  // body runs (see wdio.conf.ts), so an in-body this.timeout() can never
+  // raise the armed cap — a bigger budget must be declared at registration
+  // via the .timeout() chained on it() below. The organic first leg carries
+  // the HPA-831 focus segment plus the gated inv3 acquisition and Case File
+  // compositor proofs: in run 4b96c4ac it consumed the shared 20-minute cap
+  // reaching scene_5 with the map_04 and map_05 legs still ahead, so this
+  // test alone registers 30 minutes; the in-body call below restates the
+  // same budget like every other leg. Those other legs keep 20 minutes.
   it("plays the organic Chapter 1 route from the menu to its second-half city-map gate", async function () {
-    this.timeout(1_200_000);
+    this.timeout(1_800_000);
     await resetE2eStorage();
     // The 800×600 packaged default window squeezes the analysis workbench;
     // the synthetic pointer transport (like analysis-beat85) is proven at a
@@ -3149,7 +3158,7 @@ describe("fresh production journey", () => {
     );
     expect(await enabledMapDestinationIds()).toEqual([stopGate.destination]);
     expect(crossedWrappers).toEqual(firstHalf.map((gate) => gate.wrapper));
-  });
+  }).timeout(1_800_000);
 
   it("plays Chapter 1 from its second-half city-map gate into Chapter 2", async function () {
     this.timeout(1_200_000);

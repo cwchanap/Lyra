@@ -40,11 +40,13 @@ export const config: WebdriverIO.Config = {
     // `this._runnable._timeout` BEFORE the user's test function runs, then
     // arms a setTimeout race that rejects with `Error: Timeout`. Per-test
     // `this.timeout(...)` calls inside it() bodies execute after that read,
-    // so they cannot raise the deadline — the global value here is the only
-    // effective per-test cap. The production-journey spec splits Chapter 1
-    // in two tests and Chapter 2 into legs (production-anchors.ts) so each
-    // test fits in 20m on a slow runner, which stays under the gameplay
-    // chain's 25m step-level timeout (the outer hang guard).
+    // so they cannot raise the deadline — a bigger per-test budget must be
+    // declared at registration via `it(...).timeout(ms)`, which is what the
+    // production-journey spec's organic first leg does. The spec splits
+    // Chapter 1 in two tests and Chapter 2 into legs (production-anchors.ts)
+    // so every test fits in 20m on a slow runner; only the organic first
+    // leg registers 30m for the HPA-831 focus/image proofs. The outer hang
+    // guard stays the CI job timeout-minutes.
     timeout: 1200000,
   },
   services: [
