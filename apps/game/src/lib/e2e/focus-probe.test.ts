@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   anchors,
   EXPECTED_FOCUS_CONTROL_SELECTOR,
@@ -6,6 +9,7 @@ import {
 import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
+  evidenceArtifactLanded,
   focusOutlineViolations,
   focusProbeEvidenceMissing,
   installFocusTrajectoryScript,
@@ -572,5 +576,55 @@ describe("focusProbeEvidenceMissing — the credited-checkpoint artifact gate", 
     expect(
       focusProbeEvidenceMissing({ screenshot: false, diagnostics: false }),
     ).toEqual(["screenshot", "diagnostics"]);
+  });
+});
+
+describe("evidenceArtifactLanded — the write-path half of the artifact gate", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "hpa831-evidence-"));
+  const missing = path.join(dir, "never-written.png");
+  const empty = path.join(dir, "empty.json");
+  const landed = path.join(dir, "landed.png");
+  writeFileSync(empty, "");
+  writeFileSync(landed, "png");
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("is false when the artifact write never landed", () => {
+    expect(evidenceArtifactLanded(missing)).toBe(false);
+  });
+
+  it("is false when the write produced a zero-byte file", () => {
+    expect(evidenceArtifactLanded(empty)).toBe(false);
+  });
+
+  it("is true only when the artifact exists and is nonempty", () => {
+    expect(evidenceArtifactLanded(landed)).toBe(true);
+  });
+
+  it("feeds failed and empty writes into the checkpoint gate as missing", () => {
+    // Round-4 contract end to end: the real fs outcomes — not literal
+    // booleans — must reach focusProbeEvidenceMissing, so a credited
+    // checkpoint whose write failed or produced an empty file is flagged
+    // rather than counted.
+    expect(
+      focusProbeEvidenceMissing({
+        screenshot: evidenceArtifactLanded(missing),
+        diagnostics: evidenceArtifactLanded(landed),
+      }),
+    ).toEqual(["screenshot"]);
+    expect(
+      focusProbeEvidenceMissing({
+        screenshot: evidenceArtifactLanded(empty),
+        diagnostics: evidenceArtifactLanded(landed),
+      }),
+    ).toEqual(["screenshot"]);
+    expect(
+      focusProbeEvidenceMissing({
+        screenshot: evidenceArtifactLanded(landed),
+        diagnostics: evidenceArtifactLanded(landed),
+      }),
+    ).toEqual([]);
   });
 });

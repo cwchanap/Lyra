@@ -1,4 +1,4 @@
-import { mkdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   acknowledgeAcquisitionDomFirst,
@@ -66,6 +66,7 @@ import {
 import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
+  evidenceArtifactLanded,
   focusOutlineViolations,
   focusProbeEvidenceMissing,
   installFocusTrajectoryScript,
@@ -2377,7 +2378,7 @@ async function captureFocusProbe(
   let screenshotSaved = false;
   try {
     await browser.saveScreenshot(screenshotPath);
-    screenshotSaved = statSync(screenshotPath).size > 0;
+    screenshotSaved = evidenceArtifactLanded(screenshotPath);
   } catch (error) {
     console.error(
       `[FocusProbe] ${label}: screenshot capture failed — continuing without it:`,
@@ -2398,7 +2399,7 @@ async function captureFocusProbe(
         2,
       )}\n`,
     );
-    diagnosticsSaved = statSync(diagnosticsPath).size > 0;
+    diagnosticsSaved = evidenceArtifactLanded(diagnosticsPath);
   } catch (error) {
     console.error(
       `[FocusProbe] ${label}: diagnostics write failed — continuing without it:`,

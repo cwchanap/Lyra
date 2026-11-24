@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { isExpectedFocusOwner } from "./focus-owner";
 
 export type FocusRect = {
@@ -319,7 +320,21 @@ export function focusOutlineViolations(
  * the artifact names whose writes did not land (failed or empty file);
  * the caller fails inconclusive on any entry rather than crediting a
  * checkpoint without its evidence.
+ *
+ * `evidenceArtifactLanded` is the per-artifact half of that gate,
+ * extracted from the e2e capture so vitest pins it against real files:
+ * true only when the artifact exists AND is nonempty — a swallowed write
+ * failure (no file) and a zero-byte write both report as missing
+ * evidence. Never serialized into the page.
  */
+export function evidenceArtifactLanded(artifactPath: string): boolean {
+  try {
+    return statSync(artifactPath).size > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function focusProbeEvidenceMissing(evidence: {
   screenshot: boolean;
   diagnostics: boolean;
