@@ -1,7 +1,7 @@
 # HPA-831 — 證物黑框與跨場景焦點框：設計規格（Round 2 修訂）
 
 > Linear：[HPA-831](https://linear.app/cwchanap/issue/HPA-831/evidence-images-show-as-empty-black-frames-and-the-focus-frame-sticks) · [Implementation plan](../plans/2026-11-21-hpa-831-evidence-images-topic-frame-implementation-plan.md) · [第一輪 Review](https://github.com/cwchanap/Lyra/pull/140#pullrequestreview-6011002349) · [第二輪 Review](https://github.com/cwchanap/Lyra/pull/140#pullrequestreview-6013786888)  
-> **Implemented in PR #140**；可執行 packaged regression coverage 已落地。原環境兩次獨立 `--attempts 1` run（`58ff41a8`）未重現，故無產品修復；最終 head 的 packaged 驗證 pending（見 plan §3 gate）。不動故事、save schema、美術或 SFX。
+> **Implemented in PR #140**；可執行 packaged regression coverage 已落地。原環境兩次獨立 `--attempts 1` run（`58ff41a8`）未重現，故無產品修復；最終 head 的 packaged 驗證由 requester 明示 waiver 收斂（cwchanap, 2026-11-24；見 plan §3 gate）。不動故事、save schema、美術或 SFX。
 
 ## 1. 問題與已知界線
 
