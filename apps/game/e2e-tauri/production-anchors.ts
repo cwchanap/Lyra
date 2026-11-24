@@ -352,6 +352,33 @@ export const anchors = {
       name: "三宅打卡紀錄",
     },
   ],
+  // The doorlock record the compositor gate crops as the flat-art
+  // comparison case alongside the two black-frame records.
+  doorlockComparisonRecord: {
+    id: "doorlock_summary_timetable",
+    assetId: "evidence.doorlock_summary_timetable",
+  },
+  // HPA-831 commission -> scene_2 -> map focus segment: every production
+  // selector the focus probes, the topic trajectory recorder, the rendered
+  // surface wait, and the popup key-acknowledge touch. The src/lib/e2e
+  // functions take these as parameters — production code imports them, so
+  // they cannot import this file back.
+  logButtonSelector: ".log-button",
+  characterTargetSelector: ".character-target",
+  topicPopoverButtonSelector: ".topic-popover button",
+  topicActionButtonSelector: ".topic-actions button",
+  portraitImageSelector: "img.portrait",
+  gameplayRootAttribute: "data-gameplay-root",
+  acquisitionCardSelector: ".acquisition-card",
+  acquisitionContinueLabel: "CONTINUE",
+  // The surface DialogueBox paints each DialogueItem kind into; consumed
+  // by renderedItemSurface in src/lib/e2e/journey-enter-drain.ts.
+  dialogueItemSurfaceSelectors: {
+    line: "p.text-line",
+    action: "p.text-action",
+    prompt: "p.text-prompt",
+    sceneTag: "p.text-scene",
+  },
   unicodeSave: {
     unicodeName: "雨の証拠 🕵🏽‍♀️ é",
     compositeSceneId: "investigation_scene_7",
@@ -385,3 +412,18 @@ export const anchors = {
 export function dialogByHeading(heading: string): string {
   return `//div[@role="dialog"][.//h2[contains(normalize-space(.), "${heading}")]]`;
 }
+
+/** Descendant-matched focus owners the HPA-831 segment's probes admit as
+ * narrow interactive controls (body and [data-gameplay-root] are matched by
+ * exact identity only, never through this selector). Built from the same
+ * anchors the journey uses so there is one coupling point; the src/lib/e2e
+ * focus functions receive it as a parameter. */
+export const EXPECTED_FOCUS_CONTROL_SELECTOR = [
+  anchors.advanceButtonSelector,
+  anchors.logButtonSelector,
+  anchors.characterTargetSelector,
+  anchors.topicPopoverButtonSelector,
+  anchors.mapDestinationSelector,
+  anchors.mapRegionSelector,
+  anchors.mapOverviewSelector,
+].join(",");

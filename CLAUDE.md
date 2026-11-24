@@ -115,8 +115,12 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   are used. This is the exact command non-draft PRs and the nightly schedule
   run in CI.
 - `bun run --cwd apps/game test:e2e:all` - packaged E2E **full** proof: same
-  build, then every suite in the canonical registry (`--attempts 2`). This is
-  the exact command the manual `E2E Full` workflow runs.
+  build, then every suite in the canonical registry (`--attempts 2`). The
+  manual `E2E Full` workflow runs the same registry split across two steps
+  so the ~2.5h production-journey can never burn a retry inside the
+  360-minute job ceiling: every suite except production-journey with
+  `--attempts 2`, then production-journey alone with `--attempts 1` under
+  the XTEST trusted-keys opt-in.
 - Focused packaged E2E commands (`test:e2e:gameplay`, `test:e2e:capture-proof`,
   `test:e2e:save`, or a bare `test:e2e:<suite>:run` /
   `node apps/game/scripts/run-save-e2e.mjs --suite <id>`) are for **local
@@ -171,17 +175,23 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   binary as the app process, one visible window it owns, and X input
   focus on it before and after the key. Any uncertainty fails
   inconclusive; keys are never sent to a shared or unverified display.
-  The manual `E2E Full` workflow sets this opt-in on its full-registry
-  step only; every other suite and desktop stays on the default synthetic
-  WebDriver keys.
+  The manual `E2E Full` workflow sets this opt-in on its
+  production-journey step only; every other suite and desktop stays on
+  the default synthetic WebDriver keys. Without the opt-in the focus
+  segment still runs its click-transition probes, records the
+  keyboard-modality coverage gap (`focus-coverage-gap.json`), and drains
+  the transition through the WebDriver click path so the organic route
+  continues.
 
 - Each run writes
   `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json` plus guarded
   per-attempt output directories; CI uploads a single `tauri-e2e-smoke` or
   `tauri-e2e-full` artifact. To reproduce a CI failure, run the same command
-  locally (`test:e2e:smoke`, or `test:e2e:all` for a full-job failure) and
-  inspect its `run-result.json` and failure artifacts under
-  `e2e-artifacts/save-e2e/runs/`.
+  locally (`test:e2e:smoke`, or `test:e2e:all` for a full-job failure —
+  the workflow's production-journey step additionally needs the
+  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for its
+  keyboard coverage) and inspect its `run-result.json` and failure
+  artifacts under `e2e-artifacts/save-e2e/runs/`.
 - `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and
   `wdio.conf.ts` via `tsconfig.e2e.json` (separate from svelte-check, which
   excludes `e2e-tauri/**`). Wired into CI after svelte-check.

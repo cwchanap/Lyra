@@ -285,12 +285,14 @@ export function verifyPrivateXvfbAncestry({
 
   // Walk strict ancestors of the worker until an xvfb-run process appears.
   // A matching Xvfb anywhere else in the table is not evidence of privacy.
+  // Every ancestor present in the table is checked — including PID 1, which
+  // IS xvfb-run in a container whose entrypoint is `xvfb-run -a ...`.
   let xvfbRun = null;
   const visited = new Set([currentPid]);
   let cursor = self;
-  while (cursor.ppid > 1 && !visited.has(cursor.ppid)) {
+  for (;;) {
     const parent = byPid.get(cursor.ppid);
-    if (parent === undefined) break;
+    if (parent === undefined || visited.has(parent.pid)) break;
     visited.add(parent.pid);
     if (isXvfbRunProcess(parent)) {
       xvfbRun = parent;
