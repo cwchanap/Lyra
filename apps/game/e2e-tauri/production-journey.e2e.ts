@@ -2884,7 +2884,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       // click, which this segment forbids. The popup's own focus restore
       // then lands off .advance-button, so re-establish it or the later
       // requireKeyboardModality hooks would fail inconclusive.
-      acknowledgeAcquisition: async (current) => {
+      acknowledgeAcquisition: async (current, sendEnter) => {
         await browser.waitUntil(
           async () =>
             browser.execute((continueLabel: string) => {
@@ -2901,7 +2901,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
             timeoutMsg: `acquisition ${current.id} (${current.recordId}) popup never focused its CONTINUE control — the segment Enter cannot acknowledge it`,
           },
         );
-        await sendXvfbTrustedKey("Enter");
+        await sendEnter();
         await waitForPackagedGameState(
           (next) => next.pendingAcquisition?.id !== current.id,
           30000,

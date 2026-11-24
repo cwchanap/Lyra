@@ -43,10 +43,10 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
 export function probeScrollGeometryDom(
   selector: string,
   scrollIntoView: boolean,
-  srcFragment?: string,
+  srcFragment?: string | null,
 ): ScrollGeometryProbe | null {
   const element =
-    srcFragment === undefined
+    typeof srcFragment !== "string"
       ? document.querySelector(selector)
       : (Array.from(document.querySelectorAll(selector)).find(
           (candidate) =>

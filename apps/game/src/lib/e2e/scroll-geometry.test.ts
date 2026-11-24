@@ -130,6 +130,26 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     ).toBeNull();
   });
 
+  it("resolves a non-img wrapper when WebDriver JSON-round-trips omitted srcFragment as null", () => {
+    // WebDriver serializes browser.execute(fn, sel, false, undefined) as
+    // [sel, false, null]; the acquisition popup crops .acquisition-card .visual
+    // (a wrapper div, not an <img>) without expectedPathFragment.
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    if (!visual) throw new Error("fixture missing visual wrapper");
+    setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    const [selector, scrollIntoView, srcFragment] = JSON.parse(
+      JSON.stringify([".acquisition-card .visual", false, undefined]),
+    ) as [string, boolean, string | null];
+    expect(srcFragment).toBeNull();
+    const probe = probeScrollGeometryDom(selector, scrollIntoView, srcFragment);
+    expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+  });
+
   it("skips an overflowY:auto ancestor that does not actually overflow", () => {
     document.body.innerHTML = `
       <div class="game-menu-extra"><img class="record-image"></div>
