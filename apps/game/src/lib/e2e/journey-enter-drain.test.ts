@@ -194,8 +194,9 @@ function fakeHooks(world: FakeWorld) {
       sent.push("Enter");
       world.onEnter();
     },
-    acknowledgeAcquisition: async (current) => {
+    acknowledgeAcquisition: async (current, sendEnter) => {
       acked.push(current.id);
+      await sendEnter();
     },
     mapMounted: async () => world.atLastFrame(),
     probeHook: async (label, requirement, diagnostics) => {
@@ -461,6 +462,72 @@ describe("drainEnterToMap", () => {
     );
     expect(sent).toHaveLength(2);
     expect(enters).toBe(2);
+  });
+
+  it("counts popup-acknowledgement Enters in sentEnters so verifyKeyDelivery cannot miss a dropped dialogue Enter", async () => {
+    const world = fakeWorld([
+      dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 1,
+        remaining: 2,
+        queueGen: 7,
+        history: [historyEntry(1, OUTRO_TITLE), historyEntry(2, SCENE2_TITLE)],
+        pendingAcquisition: {
+          id: "acq-1",
+          recordKind: "evidence",
+          recordId: "kagami_summary",
+          title: "KAGAMI 摘要副本",
+          description: "",
+          details: "",
+          imageAssetId: null,
+          createdByCommandId: 1,
+          ordinal: 0,
+        },
+      }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 1,
+        remaining: 2,
+        queueGen: 7,
+        history: [historyEntry(1, OUTRO_TITLE), historyEntry(2, SCENE2_TITLE)],
+      }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 2,
+        remaining: 1,
+        queueGen: 7,
+        history: [
+          historyEntry(1, OUTRO_TITLE),
+          historyEntry(2, SCENE2_TITLE),
+          historyEntry(3, SCENE2_TITLE),
+        ],
+      }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 3,
+        remaining: 0,
+        queueGen: 7,
+        history: [
+          historyEntry(1, OUTRO_TITLE),
+          historyEntry(2, SCENE2_TITLE),
+          historyEntry(3, SCENE2_TITLE),
+          historyEntry(4, SCENE2_TITLE),
+        ],
+      }),
+      exploreState(),
+    ]);
+    const { sent, acked, verifiedCounts, hooks } = fakeHooks(world);
+    const result = await drainEnterToMap({ ...DRAIN, hooks });
+    expect(acked).toEqual(["acq-1"]);
+    // 1 outro Enter + 1 popup-ack Enter + 3 scene_2 Enters = 5 total.
+    expect(sent).toHaveLength(5);
+    expect(result.sentEnters).toBe(5);
+    expect(verifiedCounts).toEqual([5]);
   });
 });
 

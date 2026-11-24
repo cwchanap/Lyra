@@ -181,3 +181,13 @@ test("runner validates selected suite definitions before its binary guard or roo
     true,
   );
 });
+
+test("e2e-full workflow derives non-journey suites from E2E_SUITE_IDS rather than duplicating the list", () => {
+  const workflowSource = readFileSync(
+    new URL("../../../.github/workflows/e2e-full.yml", import.meta.url),
+    "utf8",
+  );
+  assert.match(workflowSource, /E2E_SUITE_IDS/);
+  assert.match(workflowSource, /steps\.non_journey_suites\.outputs\.flags/);
+  assert.match(workflowSource, /--suite production-journey/);
+});

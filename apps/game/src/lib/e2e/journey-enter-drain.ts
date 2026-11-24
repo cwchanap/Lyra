@@ -202,7 +202,13 @@ export type EnterDrainHooks = {
   waitUntil: JourneyWaitUntil;
   /** Send one Enter through the segment's real key transport. */
   sendEnter: () => Promise<void>;
-  acknowledgeAcquisition: (current: PendingAcquisitionView) => Promise<void>;
+  /** Dismiss a mid-drain acquisition popup using the drain's counted
+   * `sendEnter` callback so popup Enters are included in `sentEnters` and
+   * cannot mask a dropped dialogue Enter at `verifyKeyDelivery`. */
+  acknowledgeAcquisition: (
+    current: PendingAcquisitionView,
+    sendEnter: () => Promise<void>,
+  ) => Promise<void>;
   mapMounted: () => Promise<boolean>;
   probeHook: (
     label: string,
@@ -315,9 +321,9 @@ export async function drainEnterToMap(
     }
     if (state.pendingAcquisition) {
       // Unexpected popup mid-drain: acknowledge through the injected hook
-      // (the segment acknowledges via its key transport, never a synthetic
-      // click) and resume.
-      await hooks.acknowledgeAcquisition(state.pendingAcquisition);
+      // using the drain's counted sendEnter so popup Enters are included in
+      // sentEnters (never a synthetic click or an uncounted key).
+      await hooks.acknowledgeAcquisition(state.pendingAcquisition, sendEnter);
       continue;
     }
     if (await finishIfMapParked()) {

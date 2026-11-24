@@ -72,14 +72,25 @@ jobs:
       - name: Build the packaged E2E binary
         run: node apps/game/scripts/build-e2e.mjs
 
+      - name: Resolve non-journey suites from registry
+        id: non_journey_suites
+        run: |
+          node --input-type=module -e '
+            import { appendFileSync } from "node:fs";
+            import { E2E_SUITE_IDS } from "./apps/game/scripts/e2e-suite-registry.mjs";
+            const flags = E2E_SUITE_IDS
+              .filter((id) => id !== "production-journey")
+              .flatMap((id) => ["--suite", id])
+              .join(" ");
+            appendFileSync(process.env.GITHUB_OUTPUT, `flags=${flags}\n`);
+          '
+
       - name: Run packaged E2E suites (production-journey excluded)
-        # Keep this suite list in sync with scripts/e2e-suite-registry.mjs —
-        # every id except production-journey, which runs once below.
+        # Derived from apps/game/scripts/e2e-suite-registry.mjs — every id
+        # except production-journey, which runs once below.
         run: >-
           xvfb-run -a node apps/game/scripts/run-save-e2e.mjs
-          --suite smoke --suite gameplay --suite analysis-beat85
-          --suite capture-proof --suite save-core --suite save-management
-          --suite exit-lifecycle --attempts 2
+          ${{ steps.non_journey_suites.outputs.flags }} --attempts 2
 
       - name: Run the production journey once
         # always(): an earlier suite's Red must not skip the journey — its
