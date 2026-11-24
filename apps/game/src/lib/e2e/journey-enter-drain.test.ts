@@ -432,10 +432,11 @@ describe("drainEnterToMap", () => {
     // The flagged ordering: receipt must be proven before settlement or
     // a re-read is trusted. Here the first Enter's keydown is still in
     // transit through the progress window and lands only when the drain
-    // consults the delivery probe — its command applying on the NEXT
-    // state read, so a gate that already settled and re-read before
-    // delivery holds a pre-arrival token and would stack a retry behind
-    // the in-flight command, double-advancing past scene_2's entry.
+    // consults the delivery probe — the command it dispatches stays in
+    // flight until a settle discharges it, so a settle consulted before
+    // delivery observes an idle channel and the pre-commit re-read would
+    // stack a retry behind the in-flight command, double-advancing past
+    // scene_2's entry.
     const world = fakeWorld([
       dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
       dialogueState({
@@ -461,21 +462,25 @@ describe("drainEnterToMap", () => {
     };
     const { sent, hooks } = fakeHooks(world);
     let delivered = false;
-    let applying = false;
-    const baseRead = hooks.readState;
-    hooks.readState = async () => {
-      if (applying) {
-        applying = false;
-        world.advance(); // the in-flight command commits
-      }
-      return baseRead();
-    };
+    let inFlight = false;
     hooks.receivedEnters = async () => {
+      // The delayed keydown reaches the page — and its command enters
+      // flight — when the delivery probe first records it.
       if (!delivered) {
         delivered = true;
-        applying = true;
+        inFlight = true;
       }
       return sent.length;
+    };
+    // A real settle waits for a dispatched command to finish applying;
+    // consulted before the keydown lands it observes an idle channel and
+    // cannot cover the late command.
+    hooks.commandSettled = async () => {
+      if (inFlight) {
+        inFlight = false;
+        world.advance(); // the in-flight command commits
+      }
+      return true;
     };
     await drainEnterToMap({ ...DRAIN, hooks });
     // The landed first Enter committed as late progress at the
