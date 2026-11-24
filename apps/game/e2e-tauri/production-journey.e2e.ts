@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   acknowledgeAcquisitionDomFirst,
@@ -67,6 +67,7 @@ import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
   focusOutlineViolations,
+  focusProbeEvidenceMissing,
   installFocusTrajectoryScript,
   installKeyDeliveryRecorderScript,
   probeFocusStateDom,
@@ -2338,6 +2339,11 @@ const HPA831_GATED_RECORDS = new Map<string, string>([
 type FocusProbe = FocusProbeSnapshot & {
   label: string;
   screenshotPath: string;
+  /** Per-artifact write outcome: true only when the write succeeded AND
+   * produced a nonempty file. Record-only and stall probes may carry
+   * false; a checkpoint that passes its owner/outline gate requires both
+   * artifacts before it can be credited (round-4 review). */
+  evidence: { screenshot: boolean; diagnostics: boolean };
 };
 
 /**
@@ -2361,20 +2367,27 @@ async function captureFocusProbe(
     anchors.gameplayRootAttribute,
   );
   const screenshotPath = path.join(HPA831_ARTIFACT_DIR, `focus-${label}.png`);
+  const diagnosticsPath = screenshotPath.replace(/\.png$/, ".json");
   // Evidence writes are best-effort: a wedged session or gone window must
   // not let the capture error mask the probe result or the failure the
-  // caller was about to report (the stall hooks especially).
+  // caller was about to report (the stall hooks especially). The landed/
+  // nonempty outcome is still recorded so a PASSING checkpoint can be
+  // held to the strict artifact contract — only best-effort contexts
+  // (record-only, stall captures) ignore it.
+  let screenshotSaved = false;
   try {
     await browser.saveScreenshot(screenshotPath);
+    screenshotSaved = statSync(screenshotPath).size > 0;
   } catch (error) {
     console.error(
       `[FocusProbe] ${label}: screenshot capture failed — continuing without it:`,
       error,
     );
   }
+  let diagnosticsSaved = false;
   try {
     writeFileSync(
-      screenshotPath.replace(/\.png$/, ".json"),
+      diagnosticsPath,
       `${JSON.stringify(
         {
           label,
@@ -2385,6 +2398,7 @@ async function captureFocusProbe(
         2,
       )}\n`,
     );
+    diagnosticsSaved = statSync(diagnosticsPath).size > 0;
   } catch (error) {
     console.error(
       `[FocusProbe] ${label}: diagnostics write failed — continuing without it:`,
@@ -2406,7 +2420,12 @@ async function captureFocusProbe(
   console.log(
     `[FocusProbe] ${label}: active=${probe.activeElement?.descriptor ?? "null"} fv=${probe.activeElement?.focusVisible} root=${probe.gameplayRoot?.isActiveElement === true ? "focused" : "not-focused"} portraits=${probe.portraitRegionCount} outlined=${outlinedSummary}`,
   );
-  return { label, ...probe, screenshotPath };
+  return {
+    label,
+    ...probe,
+    screenshotPath,
+    evidence: { screenshot: screenshotSaved, diagnostics: diagnosticsSaved },
+  };
 }
 
 /**
@@ -2566,6 +2585,21 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
     const probe = await captureFocusProbe(label, diagnostics);
     expectNoStaleFocusRing(probe);
     expectAllowedFocusOwner(probe, requirement);
+    // Round-4 review: a checkpoint that passes its owner/outline gate is
+    // credited ONLY when its required evidence actually landed — a
+    // swallowed write failure must not let the scene entry,
+    // first/middle/last, or map checkpoints count as covered. Best-effort
+    // probes (record-only pre-commission, stall captures) never reach
+    // this check.
+    const missingEvidence = focusProbeEvidenceMissing(probe.evidence);
+    if (missingEvidence.length > 0) {
+      throw new Error(
+        `focus probe "${label}" passed its owner/outline checks but the ` +
+          `required evidence did not land (${missingEvidence.join(" + ")} ` +
+          `missing or empty under ${HPA831_ARTIFACT_DIR}) — the checkpoint ` +
+          `cannot be credited; focus coverage is inconclusive`,
+      );
+    }
     return probe;
   };
 

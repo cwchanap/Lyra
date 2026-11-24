@@ -7,6 +7,7 @@ import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
   focusOutlineViolations,
+  focusProbeEvidenceMissing,
   installFocusTrajectoryScript,
   installKeyDeliveryRecorderScript,
   probeFocusStateDom,
@@ -551,5 +552,25 @@ describe("checkTrustedEnterDelivery — the map-crossing keyboard proof", () => 
         2,
       ),
     ).toEqual({ ok: true, receivedEnters: 2 });
+  });
+});
+
+describe("focusProbeEvidenceMissing — the credited-checkpoint artifact gate", () => {
+  it("returns nothing when both artifacts landed", () => {
+    expect(
+      focusProbeEvidenceMissing({ screenshot: true, diagnostics: true }),
+    ).toEqual([]);
+  });
+
+  it("names each artifact whose write did not land", () => {
+    expect(
+      focusProbeEvidenceMissing({ screenshot: false, diagnostics: true }),
+    ).toEqual(["screenshot"]);
+    expect(
+      focusProbeEvidenceMissing({ screenshot: true, diagnostics: false }),
+    ).toEqual(["diagnostics"]);
+    expect(
+      focusProbeEvidenceMissing({ screenshot: false, diagnostics: false }),
+    ).toEqual(["screenshot", "diagnostics"]);
   });
 });
