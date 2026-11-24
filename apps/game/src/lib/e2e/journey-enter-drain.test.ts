@@ -428,6 +428,62 @@ describe("drainEnterToMap", () => {
     expect(sent).toHaveLength(1);
   });
 
+  it("classifies a first Enter whose keydown lands after the re-read with its command still in flight as late progress — never a retry", async () => {
+    // The flagged ordering: receipt must be proven before settlement or
+    // a re-read is trusted. Here the first Enter's keydown is still in
+    // transit through the progress window and lands only when the drain
+    // consults the delivery probe — its command applying on the NEXT
+    // state read, so a gate that already settled and re-read before
+    // delivery holds a pre-arrival token and would stack a retry behind
+    // the in-flight command, double-advancing past scene_2's entry.
+    const world = fakeWorld([
+      dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
+      dialogueState({
+        sceneId: "scene_2",
+        sceneTitle: SCENE2_TITLE,
+        cursor: 1,
+        remaining: 0,
+        queueGen: 7,
+        history: [historyEntry(1, OUTRO_TITLE), historyEntry(2, SCENE2_TITLE)],
+      }),
+      exploreState(),
+    ]);
+    let firstEnter = true;
+    world.onEnter = () => {
+      // Sent, but the keydown travels: it reaches the page (and its
+      // command enters flight) only when the drain checks receipt —
+      // later Enters deliver and apply normally.
+      if (firstEnter) {
+        firstEnter = false;
+        return;
+      }
+      world.advance();
+    };
+    const { sent, hooks } = fakeHooks(world);
+    let delivered = false;
+    let applying = false;
+    const baseRead = hooks.readState;
+    hooks.readState = async () => {
+      if (applying) {
+        applying = false;
+        world.advance(); // the in-flight command commits
+      }
+      return baseRead();
+    };
+    hooks.receivedEnters = async () => {
+      if (!delivered) {
+        delivered = true;
+        applying = true;
+      }
+      return sent.length;
+    };
+    await drainEnterToMap({ ...DRAIN, hooks });
+    // The landed first Enter committed as late progress at the
+    // post-settle re-read — no retry stacked behind it: outro Enter +
+    // the normal scene_2 advance Enter.
+    expect(sent).toHaveLength(2);
+  });
+
   it("fails inconclusively when the rendered line never matches the packaged item", async () => {
     const world = fakeWorld([
       dialogueState({
