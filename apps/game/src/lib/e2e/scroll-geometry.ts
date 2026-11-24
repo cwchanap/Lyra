@@ -24,7 +24,8 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
 
 /**
  * THE serialized WDIO page script — passed verbatim to
- * `browser.execute(probeScrollGeometryDom, selector, scrollIntoView)`,
+ * `browser.execute(probeScrollGeometryDom, selector, scrollIntoView,
+ * srcFragment?)`,
  * so it must stay self-contained (parameters + DOM globals only; module
  * scope does not survive WebDriver serialization). Unit tests invoke the
  * identical function against jsdom.
@@ -33,12 +34,25 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
  * (the scrollport that clips the painted area); `scrollIntoView` scrolls
  * every clipped ancestor synchronously first, matching the pre-extraction
  * inline script byte for byte.
+ *
+ * When `srcFragment` is passed the target is resolved the same way
+ * inspectImageElement resolves it — the matched element must be an
+ * <img> whose src contains the fragment — so a crop can never measure a
+ * different (e.g. stale or sibling) element than the one inspected.
  */
 export function probeScrollGeometryDom(
   selector: string,
   scrollIntoView: boolean,
+  srcFragment?: string,
 ): ScrollGeometryProbe | null {
-  const element = document.querySelector(selector);
+  const element =
+    srcFragment === undefined
+      ? document.querySelector(selector)
+      : (Array.from(document.querySelectorAll(selector)).find(
+          (candidate) =>
+            candidate instanceof HTMLImageElement &&
+            (candidate.currentSrc || candidate.src).includes(srcFragment),
+        ) ?? null);
   if (!element) return null;
   if (scrollIntoView) {
     element.scrollIntoView({ block: "center", inline: "nearest" });

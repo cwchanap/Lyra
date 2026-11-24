@@ -99,6 +99,37 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     });
   });
 
+  it("picks the img whose src matches the fragment, not the first selector match", () => {
+    // The crop must measure the element inspectImageElement inspected —
+    // a stale or sibling record image earlier in the DOM cannot stand in.
+    document.body.innerHTML = `
+      <img class="record-image" src="/assets/evidence/stale.png">
+      <img class="record-image" src="/assets/evidence/expected.png">
+    `;
+    const stale = document.querySelector(".record-image");
+    const expected = document.querySelectorAll(".record-image")[1];
+    if (!stale || !expected) throw new Error("fixture missing images");
+    setRect(stale, { left: 0, top: 0, width: 10, height: 10 });
+    setRect(expected, { left: 10, top: 20, width: 300, height: 200 });
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      "/assets/evidence/expected.png",
+    );
+    expect(probe?.rect).toEqual({ left: 10, top: 20, width: 300, height: 200 });
+  });
+
+  it("returns null when the fragment matches no mounted image", () => {
+    document.body.innerHTML = `<img class="record-image" src="/assets/evidence/stale.png">`;
+    expect(
+      probeScrollGeometryDom(
+        ".record-image",
+        false,
+        "/assets/evidence/expected.png",
+      ),
+    ).toBeNull();
+  });
+
   it("skips an overflowY:auto ancestor that does not actually overflow", () => {
     document.body.innerHTML = `
       <div class="game-menu-extra"><img class="record-image"></div>

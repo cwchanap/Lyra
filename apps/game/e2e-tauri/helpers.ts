@@ -4,6 +4,7 @@ import {
   readdirSync,
   readFileSync,
   readlinkSync,
+  realpathSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -390,7 +391,10 @@ async function resolveXvfbTrustedTarget(): Promise<{
             },
           ],
     ),
-    expectedExecutablePath: resolveE2eBinaryPath(appRoot),
+    // readlink(/proc/<pid>/exe) hands back the kernel-resolved path, so the
+    // configured path must be resolved the same way — a symlink anywhere in
+    // the checkout or target-e2e path otherwise rejects every process.
+    expectedExecutablePath: realpathSync(resolveE2eBinaryPath(appRoot)),
     currentPid: process.pid,
     currentPpid: process.ppid,
   });
@@ -1988,6 +1992,10 @@ export async function assertScreenshotRegionPainted(input: {
   /** Scroll the element into view and intersect the crop with its nearest
    * y-scrollable ancestor. Required for elements inside a scrollport. */
   scrollIntoView?: boolean;
+  /** When set, resolve the target as the <img> whose src contains this
+   * fragment (the same predicate inspectImageElement uses) so the crop
+   * measures the inspected element, not the selector's first match. */
+  expectedPathFragment?: string;
 }): Promise<ScreenshotRegionPaintResult> {
   // The serialized page script lives in src/lib/e2e/scroll-geometry.ts so
   // the identical function WebDriver serializes is exercised by vitest.
@@ -1996,6 +2004,7 @@ export async function assertScreenshotRegionPainted(input: {
       probeScrollGeometryDom,
       input.selector,
       input.scrollIntoView === true,
+      input.expectedPathFragment,
     );
 
   let target = await readTarget();
@@ -2200,12 +2209,16 @@ export async function inspectImageElement(input: {
       let decode: AcquisitionImageInspection["decode"];
       const decodeStart = performance.now();
       try {
+        // 20 s, not the session's 30 s script timeout: the WebDriver timeout
+        // starts when executeAsync is dispatched, so a matching-length race
+        // would lose the structured decode result to a generic script
+        // timeout and strip every diagnostic below.
         await Promise.race([
           image.decode(),
           new Promise<never>((_, reject) =>
             setTimeout(
               () => reject(new Error("img.decode() timed out")),
-              30000,
+              20000,
             ),
           ),
         ]);
@@ -2595,10 +2608,13 @@ export async function startAcquisitionAcknowledgement(
     }
     throw new Error(gateViolation);
   }
-  // HPA-831: evidence popups carrying a real image asset get the source
-  // decode/canvas proof (and the gated screenshot-crop proof) while the popup
-  // is still visible — statements and null-asset evidence keep the fast path.
-  if (current.recordKind === "evidence" && current.imageAssetId) {
+  // HPA-831: the source decode/canvas proof (and the screenshot-crop proof
+  // inside it) runs ONLY for the records the armed compositor gate scoped.
+  // Ungated evidence keeps the fast path — the compiler treats missing asset
+  // files as warnings and the popup swaps to an SVG placeholder, so a
+  // non-gated record with an absent or flat authored image would fail a
+  // proof it was never scoped for.
+  if (scoped && current.recordKind === "evidence" && current.imageAssetId) {
     await verifyAcquisitionEvidenceImage({
       id: current.id,
       recordId: current.recordId,

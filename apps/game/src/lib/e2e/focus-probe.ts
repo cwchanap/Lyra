@@ -1,7 +1,4 @@
-import {
-  EXPECTED_FOCUS_CONTROL_SELECTOR,
-  isExpectedFocusOwner,
-} from "./focus-owner";
+import { isExpectedFocusOwner } from "./focus-owner";
 
 export type FocusRect = {
   left: number;
@@ -19,7 +16,7 @@ export type FocusElementProbe = {
   /** `element === document.body` — exact identity fallback owner. */
   isBody: boolean;
   isGameplayRoot: boolean;
-  /** The element itself matches EXPECTED_FOCUS_CONTROL_SELECTOR — a
+  /** The element itself matches the caller-supplied control selector — a
    * narrow interactive control, never an ancestor match. */
   matchesExpectedControl: boolean;
   focusVisible: boolean;
@@ -52,20 +49,24 @@ export type FocusProbeSnapshot = {
 
 /**
  * THE serialized WDIO page script — passed verbatim to
- * `browser.execute(probeFocusStateDom, controlSelector)`, so it must stay
- * self-contained (parameters + DOM globals only; module-scope bindings do
- * not survive WebDriver serialization). Unit tests invoke the very same
- * function against jsdom, covering the actual shipped probe rather than a
- * mirror of it.
+ * `browser.execute(probeFocusStateDom, controlSelector, portraitSelector,
+ * gameplayRootAttribute)`, so it must stay self-contained (parameters +
+ * DOM globals only; module-scope bindings do not survive WebDriver
+ * serialization). The production selector/attribute values are authored
+ * in e2e-tauri/production-anchors.ts and passed in by the caller — unit
+ * tests invoke the very same function against jsdom, covering the actual
+ * shipped probe rather than a mirror of it.
  *
  * Snapshots the focus/outline state relevant to HPA-831: the focused
  * element (identity, descriptor, :focus/:focus-visible, outline, rect,
- * portrait crossing), the [data-gameplay-root] element's focus state, and
- * every element in the DOM currently painting a visible outline — the
- * "frame" the bug report describes.
+ * portrait crossing), the gameplay-root element's focus state, and every
+ * element in the DOM currently painting a visible outline — the "frame"
+ * the bug report describes.
  */
 export function probeFocusStateDom(
   controlSelector: string,
+  portraitSelector: string,
+  gameplayRootAttribute: string,
 ): FocusProbeSnapshot {
   const rectOf = (element: Element) => {
     const r = element.getBoundingClientRect();
@@ -78,7 +79,7 @@ export function probeFocusStateDom(
       height: r.height,
     };
   };
-  const portraitRects = Array.from(document.querySelectorAll("img.portrait"))
+  const portraitRects = Array.from(document.querySelectorAll(portraitSelector))
     .map(rectOf)
     .filter((r) => r.width > 0 && r.height > 0);
   const crossesPortrait = (r: {
@@ -132,8 +133,8 @@ export function probeFocusStateDom(
         (element.id ? `#${element.id}` : "") +
         (classes ? `.${classes}` : "") +
         (ariaLabel ? `[${ariaLabel}]` : "") +
-        (element.hasAttribute("data-gameplay-root")
-          ? "[data-gameplay-root]"
+        (element.hasAttribute(gameplayRootAttribute)
+          ? `[${gameplayRootAttribute}]`
           : ""),
       tag: element.tagName.toLowerCase(),
       isActiveElement: element === active,
@@ -141,7 +142,7 @@ export function probeFocusStateDom(
       // matched on the element itself — closest() through body or the
       // root would pass every gameplay descendant (the review finding).
       isBody: element === document.body,
-      isGameplayRoot: element.hasAttribute("data-gameplay-root"),
+      isGameplayRoot: element.hasAttribute(gameplayRootAttribute),
       matchesExpectedControl: element.matches(controlSelector),
       focusVisible:
         element instanceof HTMLElement
@@ -177,7 +178,7 @@ export function probeFocusStateDom(
     viewport: { width: window.innerWidth, height: window.innerHeight },
     activeElement: describe(active, active),
     gameplayRoot: describe(
-      document.querySelector("[data-gameplay-root]"),
+      document.querySelector(`[${gameplayRootAttribute}]`),
       active,
     ),
     outlinedElements: outlined,
@@ -218,6 +219,7 @@ export type FocusOwnerCheck =
 export function checkFocusOwner(
   owner: FocusElementProbe | null,
   requirement: FocusOwnerRequirement,
+  controlSelector: string,
 ): FocusOwnerCheck {
   if (owner === null) {
     return {
@@ -234,7 +236,7 @@ export function checkFocusOwner(
           ok: false,
           inconclusive: true,
           reason:
-            `expected [data-gameplay-root] to hold focus but ` +
+            `expected the gameplay root to hold focus but ` +
             `activeElement is ${owner.descriptor} — the intended focus ` +
             `state was not established`,
         };
@@ -247,7 +249,7 @@ export function checkFocusOwner(
           inconclusive: true,
           reason:
             `expected a focused control matching ` +
-            `${EXPECTED_FOCUS_CONTROL_SELECTOR} but activeElement is ` +
+            `${controlSelector} but activeElement is ` +
             `${owner.descriptor} — the intended focus state was not ` +
             `established`,
         };
@@ -260,8 +262,8 @@ export function checkFocusOwner(
           inconclusive: false,
           reason:
             `unexpected focus owner ${owner.descriptor} — expected body, ` +
-            `[data-gameplay-root], or an element matching ` +
-            `${EXPECTED_FOCUS_CONTROL_SELECTOR}`,
+            `the gameplay root, or an element matching ` +
+            `${controlSelector}`,
         };
       }
   }
@@ -320,6 +322,7 @@ export function focusOutlineViolations(
  */
 export function installFocusTrajectoryScript(
   popoverSelector: string,
+  topicButtonSelector: string,
   topicLabel: string,
 ): { installed: boolean } {
   const w = window as unknown as {
@@ -341,7 +344,7 @@ export function installFocusTrajectoryScript(
   const expected =
     Array.from(
       document.querySelectorAll<HTMLButtonElement>(
-        `${popoverSelector} .topic-actions button`,
+        `${popoverSelector} ${topicButtonSelector}`,
       ),
     ).find((candidate) => (candidate.textContent ?? "").includes(topicLabel)) ??
     null;

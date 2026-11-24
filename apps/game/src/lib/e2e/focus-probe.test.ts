@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { EXPECTED_FOCUS_CONTROL_SELECTOR } from "./focus-owner";
+import {
+  anchors,
+  EXPECTED_FOCUS_CONTROL_SELECTOR,
+} from "../../../e2e-tauri/production-anchors";
 import {
   checkFocusOwner,
   checkTrustedEnterDelivery,
@@ -59,6 +62,21 @@ function paintOutline(element: HTMLElement): void {
 
 const TOPIC_LABEL = "委託內容";
 const POPOVER_SELECTOR = ".topic-popover";
+const TOPIC_BUTTON_SELECTOR = anchors.topicActionButtonSelector;
+
+// The serialized page scripts take the authored selectors/attributes as
+// parameters (production coupling lives in production-anchors); these
+// wrappers pass exactly what the journey passes.
+const probeFocusState = () =>
+  probeFocusStateDom(
+    EXPECTED_FOCUS_CONTROL_SELECTOR,
+    anchors.portraitImageSelector,
+    anchors.gameplayRootAttribute,
+  );
+const checkOwner = (
+  owner: Parameters<typeof checkFocusOwner>[0],
+  requirement: Parameters<typeof checkFocusOwner>[1],
+) => checkFocusOwner(owner, requirement, EXPECTED_FOCUS_CONTROL_SELECTOR);
 
 function mountGameplayDom(): void {
   document.body.innerHTML = `
@@ -98,13 +116,13 @@ beforeEach(() => {
 });
 
 describe("probeFocusStateDom — the actual serialized WDIO page script", () => {
-  const probe = () => probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+  const probe = () => probeFocusState();
 
   it("records body as an exact-identity owner", () => {
     const snapshot = probe();
     expect(snapshot.activeElement?.isBody).toBe(true);
     expect(
-      checkFocusOwner(snapshot.activeElement, { owner: "any-expected" }),
+      checkOwner(snapshot.activeElement, { owner: "any-expected" }),
     ).toEqual({ ok: true });
   });
 
@@ -115,7 +133,7 @@ describe("probeFocusStateDom — the actual serialized WDIO page script", () => 
     expect(snapshot.activeElement?.isGameplayRoot).toBe(true);
     expect(snapshot.activeElement?.isActiveElement).toBe(true);
     expect(
-      checkFocusOwner(snapshot.activeElement, { owner: "gameplay-root" }),
+      checkOwner(snapshot.activeElement, { owner: "gameplay-root" }),
     ).toEqual({ ok: true });
   });
 
@@ -123,9 +141,9 @@ describe("probeFocusStateDom — the actual serialized WDIO page script", () => 
     query(".advance-button").focus();
     const snapshot = probe();
     expect(snapshot.activeElement?.matchesExpectedControl).toBe(true);
-    expect(
-      checkFocusOwner(snapshot.activeElement, { owner: "control" }),
-    ).toEqual({ ok: true });
+    expect(checkOwner(snapshot.activeElement, { owner: "control" })).toEqual({
+      ok: true,
+    });
   });
 
   it("flags an unexpected gameplay descendant as no expected owner", () => {
@@ -137,7 +155,7 @@ describe("probeFocusStateDom — the actual serialized WDIO page script", () => 
     expect(owner?.isBody).toBe(false);
     expect(owner?.isGameplayRoot).toBe(false);
     expect(owner?.matchesExpectedControl).toBe(false);
-    const check = checkFocusOwner(owner, { owner: "any-expected" });
+    const check = checkOwner(owner, { owner: "any-expected" });
     expect(check.ok).toBe(false);
     if (!check.ok) expect(check.inconclusive).toBe(false); // violation, not inconclusive
   });
@@ -199,7 +217,7 @@ describe("probeFocusStateDom — the actual serialized WDIO page script", () => 
     expect(ring?.portraitCoverFraction ?? 1).toBeLessThanOrEqual(0.25);
     expect(focusOutlineViolations(snapshot)).toHaveLength(0);
     expect(
-      checkFocusOwner(snapshot.activeElement, { owner: "any-expected" }),
+      checkOwner(snapshot.activeElement, { owner: "any-expected" }),
     ).toEqual({ ok: true });
   });
 
@@ -211,7 +229,7 @@ describe("probeFocusStateDom — the actual serialized WDIO page script", () => 
     const snapshot = probe();
     expect(snapshot.activeElement?.isBody).toBe(true);
     expect(snapshot.activeElement?.focusVisible).toBe(false);
-    const check = checkFocusOwner(snapshot.activeElement, {
+    const check = checkOwner(snapshot.activeElement, {
       owner: "any-expected",
       requireKeyboardModality: true,
     });
@@ -242,19 +260,19 @@ describe("checkFocusOwner — per-hook owner/modality requirements", () => {
   });
 
   it("is inconclusive when activeElement is null", () => {
-    const check = checkFocusOwner(null, { owner: "any-expected" });
+    const check = checkOwner(null, { owner: "any-expected" });
     expect(check).toMatchObject({ ok: false, inconclusive: true });
   });
 
   it("is inconclusive when a 'control' hook finds a non-control owner", () => {
-    const check = checkFocusOwner(owner({ isBody: true }), {
+    const check = checkOwner(owner({ isBody: true }), {
       owner: "control",
     });
     expect(check).toMatchObject({ ok: false, inconclusive: true });
   });
 
   it("is inconclusive when the root-focus hook finds another owner", () => {
-    const check = checkFocusOwner(owner({ isBody: true }), {
+    const check = checkOwner(owner({ isBody: true }), {
       owner: "gameplay-root",
     });
     expect(check).toMatchObject({ ok: false, inconclusive: true });
@@ -263,7 +281,7 @@ describe("checkFocusOwner — per-hook owner/modality requirements", () => {
   it("passes a keyboard-modality hook only when the owner is :focus-visible", () => {
     const visibleBody = owner({ isBody: true, focusVisible: true });
     expect(
-      checkFocusOwner(visibleBody, {
+      checkOwner(visibleBody, {
         owner: "any-expected",
         requireKeyboardModality: true,
       }),
@@ -273,7 +291,7 @@ describe("checkFocusOwner — per-hook owner/modality requirements", () => {
       focusVisible: true,
     });
     expect(
-      checkFocusOwner(visibleControl, {
+      checkOwner(visibleControl, {
         owner: "any-expected",
         requireKeyboardModality: true,
       }),
@@ -282,7 +300,7 @@ describe("checkFocusOwner — per-hook owner/modality requirements", () => {
 
   it("rejects an invisible-modality owner even when it is expected", () => {
     const control = owner({ matchesExpectedControl: true });
-    const check = checkFocusOwner(control, {
+    const check = checkOwner(control, {
       owner: "any-expected",
       requireKeyboardModality: true,
     });
@@ -319,15 +337,23 @@ describe("probeKeyboardFocusTargetDom — the actual serialized poll", () => {
 describe("focus trajectory scripts — actual serialized lifecycle", () => {
   it("reports installed:false when the topic button is absent", () => {
     document.body.innerHTML = `<div class="topic-popover"></div>`;
-    expect(installFocusTrajectoryScript(POPOVER_SELECTOR, TOPIC_LABEL)).toEqual(
-      { installed: false },
-    );
+    expect(
+      installFocusTrajectoryScript(
+        POPOVER_SELECTOR,
+        TOPIC_BUTTON_SELECTOR,
+        TOPIC_LABEL,
+      ),
+    ).toEqual({ installed: false });
   });
 
   it("captures the focusin landing on the topic control during activation", () => {
-    expect(installFocusTrajectoryScript(POPOVER_SELECTOR, TOPIC_LABEL)).toEqual(
-      { installed: true },
-    );
+    expect(
+      installFocusTrajectoryScript(
+        POPOVER_SELECTOR,
+        TOPIC_BUTTON_SELECTOR,
+        TOPIC_LABEL,
+      ),
+    ).toEqual({ installed: true });
     // The WebDriver click's el.focus() equivalent — synchronous, inside
     // the same task as activation.
     query(".topic-actions button").focus();
@@ -339,9 +365,13 @@ describe("focus trajectory scripts — actual serialized lifecycle", () => {
   });
 
   it("proves inconclusive when activation never focused the control", () => {
-    expect(installFocusTrajectoryScript(POPOVER_SELECTOR, TOPIC_LABEL)).toEqual(
-      { installed: true },
-    );
+    expect(
+      installFocusTrajectoryScript(
+        POPOVER_SELECTOR,
+        TOPIC_BUTTON_SELECTOR,
+        TOPIC_LABEL,
+      ),
+    ).toEqual({ installed: true });
     // A click path that moves focus somewhere else entirely.
     query(".hotspot").focus();
     document.querySelector(POPOVER_SELECTOR)?.remove();
@@ -353,9 +383,13 @@ describe("focus trajectory scripts — actual serialized lifecycle", () => {
 
   it("accepts focus already on the control at install time", () => {
     query(".topic-actions button").focus();
-    expect(installFocusTrajectoryScript(POPOVER_SELECTOR, TOPIC_LABEL)).toEqual(
-      { installed: true },
-    );
+    expect(
+      installFocusTrajectoryScript(
+        POPOVER_SELECTOR,
+        TOPIC_BUTTON_SELECTOR,
+        TOPIC_LABEL,
+      ),
+    ).toEqual({ installed: true });
     const result = readFocusTrajectoryScript();
     expect(result?.wasAlreadyFocused).toBe(true);
   });
@@ -375,20 +409,20 @@ describe("map-pending gate — the contract the parked-map hook applies", () => 
   // outline anywhere. That legitimate transition state is the contract
   // this block pins.
   it("accepts the legitimate unmount fallback: body, no ring, fv=false", () => {
-    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+    const snapshot = probeFocusState();
     expect(snapshot.activeElement?.isBody).toBe(true);
     expect(snapshot.activeElement?.focusVisible).toBe(false);
     expect(snapshot.outlinedElements).toHaveLength(0);
     // The owner contract the map hook enforces: an expected transition
     // owner and zero stale outlines.
     expect(
-      checkFocusOwner(snapshot.activeElement, { owner: "any-expected" }),
+      checkOwner(snapshot.activeElement, { owner: "any-expected" }),
     ).toEqual({ ok: true });
     expect(focusOutlineViolations(snapshot)).toHaveLength(0);
     // …and the same observed state is inconclusive under
     // requireKeyboardModality — which is exactly why the map hook's
     // keyboard proof is trusted Enter delivery, not owner modality.
-    const modality = checkFocusOwner(snapshot.activeElement, {
+    const modality = checkOwner(snapshot.activeElement, {
       owner: "any-expected",
       requireKeyboardModality: true,
     });
@@ -402,7 +436,7 @@ describe("map-pending gate — the contract the parked-map hook applies", () => 
     const stale = query(".unrelated-panel .hotspot");
     setRect(stale, { left: 10, top: 10, width: 40, height: 20 });
     paintOutline(stale);
-    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
+    const snapshot = probeFocusState();
     expect(snapshot.activeElement?.isBody).toBe(true);
     expect(focusOutlineViolations(snapshot).map((v) => v.descriptor)).toContain(
       "button.hotspot",
@@ -414,8 +448,8 @@ describe("map-pending gate — the contract the parked-map hook applies", () => 
     // reported as a violation (inconclusive=false), not an unestablished
     // state.
     query(".unrelated-panel .hotspot").focus();
-    const snapshot = probeFocusStateDom(EXPECTED_FOCUS_CONTROL_SELECTOR);
-    const check = checkFocusOwner(snapshot.activeElement, {
+    const snapshot = probeFocusState();
+    const check = checkOwner(snapshot.activeElement, {
       owner: "any-expected",
     });
     expect(check.ok).toBe(false);

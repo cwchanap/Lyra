@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
+  anchors,
   EXPECTED_FOCUS_CONTROL_SELECTOR,
-  focusOwnerFacts,
-  isExpectedFocusOwner,
-} from "./focus-owner";
+} from "../../../e2e-tauri/production-anchors";
+import { focusOwnerFacts, isExpectedFocusOwner } from "./focus-owner";
+
+const ownerFacts = (element: Element) =>
+  focusOwnerFacts(
+    element,
+    EXPECTED_FOCUS_CONTROL_SELECTOR,
+    anchors.gameplayRootAttribute,
+  );
 
 function buildDom(innerHtml: string): {
   doc: Document;
@@ -82,13 +89,13 @@ describe("isExpectedFocusOwner", () => {
 describe("focusOwnerFacts + isExpectedFocusOwner over DOM", () => {
   it("allows document.body by exact identity", () => {
     const { doc } = buildDom(GAMEPLAY_DOM);
-    expect(isExpectedFocusOwner(focusOwnerFacts(doc.body))).toBe(true);
+    expect(isExpectedFocusOwner(ownerFacts(doc.body))).toBe(true);
   });
 
   it("allows [data-gameplay-root] by exact identity", () => {
     const { query } = buildDom(GAMEPLAY_DOM);
     const root = query("[data-gameplay-root]");
-    expect(isExpectedFocusOwner(focusOwnerFacts(root))).toBe(true);
+    expect(isExpectedFocusOwner(ownerFacts(root))).toBe(true);
   });
 
   it.each([
@@ -102,7 +109,7 @@ describe("focusOwnerFacts + isExpectedFocusOwner over DOM", () => {
     "[data-map-overview]",
   ])("allows the narrow control %s", (selector) => {
     const { query } = buildDom(GAMEPLAY_DOM);
-    expect(isExpectedFocusOwner(focusOwnerFacts(query(selector)))).toBe(true);
+    expect(isExpectedFocusOwner(ownerFacts(query(selector)))).toBe(true);
   });
 
   it("rejects an unexpected descendant admitted only through the gameplay root", () => {
@@ -111,28 +118,28 @@ describe("focusOwnerFacts + isExpectedFocusOwner over DOM", () => {
     // returned the root (and body) for ANY descendant, so this unrelated
     // button wrongly passed as an expected owner.
     const hotspot = query(".unrelated-panel .hotspot");
-    const facts = focusOwnerFacts(hotspot);
+    const facts = ownerFacts(hotspot);
     expect(facts.matchesExpectedControl).toBe(false);
     expect(isExpectedFocusOwner(facts)).toBe(false);
   });
 
   it("rejects a non-control descendant inside .box", () => {
     const { query } = buildDom(GAMEPLAY_DOM);
-    expect(
-      isExpectedFocusOwner(focusOwnerFacts(query(".box .text-line"))),
-    ).toBe(false);
+    expect(isExpectedFocusOwner(ownerFacts(query(".box .text-line")))).toBe(
+      false,
+    );
   });
 
   it("rejects the .topic-popover container itself (not a control)", () => {
     const { query } = buildDom(GAMEPLAY_DOM);
-    expect(isExpectedFocusOwner(focusOwnerFacts(query(".topic-popover")))).toBe(
+    expect(isExpectedFocusOwner(ownerFacts(query(".topic-popover")))).toBe(
       false,
     );
   });
 
   it("rejects a non-focusable .box container", () => {
     const { query } = buildDom(GAMEPLAY_DOM);
-    expect(isExpectedFocusOwner(focusOwnerFacts(query(".box")))).toBe(false);
+    expect(isExpectedFocusOwner(ownerFacts(query(".box")))).toBe(false);
   });
 
   it("keeps the control selector free of ancestor-only surfaces", () => {

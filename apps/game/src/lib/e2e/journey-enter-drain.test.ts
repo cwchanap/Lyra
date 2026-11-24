@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { anchors } from "../../../e2e-tauri/production-anchors";
 import type { DialogueHistoryEntry, GameStateView } from "$lib/state/types";
 import {
   drainEnterToMap,
@@ -576,20 +577,25 @@ describe("proveSceneQueueEntry", () => {
 });
 
 describe("renderedItemSurface", () => {
-  // The selectors/text this pins are the exact surfaces DialogueBox.svelte
-  // renders each DialogueItem kind into (p.text-line inside .line-content,
-  // p.text-action, p.text-prompt, p.text-scene) — the contract
-  // DialogueBox.test.ts asserts from the component side. The WebDriver
-  // renderedItemSettled hook exact-matches getText() against `text`.
+  // The kind -> surface mapping pins DialogueBox.svelte's contract (the
+  // selector strings themselves come from production-anchors — the same
+  // map the journey passes). The WebDriver renderedItemSettled hook
+  // exact-matches getText() against `text`.
+  const SURFACES = anchors.dialogueItemSurfaceSelectors;
 
   it("maps a line item to p.text-line carrying the item text", () => {
     expect(
-      renderedItemSurface({ kind: "line", speaker: "茜", text: "台詞" }),
+      renderedItemSurface(
+        { kind: "line", speaker: "茜", text: "台詞" },
+        SURFACES,
+      ),
     ).toEqual({ selector: "p.text-line", text: "台詞" });
   });
 
   it("maps an action item to p.text-action carrying the item text", () => {
-    expect(renderedItemSurface({ kind: "action", text: "敘述" })).toEqual({
+    expect(
+      renderedItemSurface({ kind: "action", text: "敘述" }, SURFACES),
+    ).toEqual({
       selector: "p.text-action",
       text: "敘述",
     });
@@ -597,18 +603,23 @@ describe("renderedItemSurface", () => {
 
   it("maps a prompt item to p.text-prompt carrying the question", () => {
     expect(
-      renderedItemSurface({
-        kind: "prompt",
-        question: "問題",
-        options: [{ label: "甲" }, { label: "乙" }],
-      }),
+      renderedItemSurface(
+        {
+          kind: "prompt",
+          question: "問題",
+          options: [{ label: "甲" }, { label: "乙" }],
+        },
+        SURFACES,
+      ),
     ).toEqual({ selector: "p.text-prompt", text: "問題" });
   });
 
   it("maps a sceneTag item to p.text-scene with presence-only contract", () => {
     // DialogueBox renders a fixed （場景切換） placeholder with no item text,
     // so an exact text match can never hold — presence is the contract.
-    expect(renderedItemSurface({ kind: "sceneTag", text: "任何字" })).toEqual({
+    expect(
+      renderedItemSurface({ kind: "sceneTag", text: "任何字" }, SURFACES),
+    ).toEqual({
       selector: "p.text-scene",
       text: null,
     });

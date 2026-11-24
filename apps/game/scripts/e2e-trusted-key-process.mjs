@@ -32,7 +32,7 @@ export function selectOwnedE2eAppProcessId({
 }) {
   if (currentPpid <= 1) {
     throw new Error(
-      `WDIO launcher pid ${currentPpid} is invalid — this worker is orphaned (reparented to launchd), so parent-based session ownership cannot be proven; refusing to select a trusted-key target`,
+      `WDIO launcher pid ${currentPpid} is invalid — this worker is orphaned (reparented to init/launchd), so parent-based session ownership cannot be proven; refusing to select a trusted-key target`,
     );
   }
   const pathMatches = entries.filter(

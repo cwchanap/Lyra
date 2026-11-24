@@ -169,22 +169,27 @@ export function proveSceneQueueEntry(
  * with no distinguishing text, so presence alone is the contract). A
  * checkpoint's screenshot must wait for this match or it can sample the
  * preceding item — the packaged get_state read and the Svelte render are
- * independent (applyGameplayCommandResult -> tick). Lives here, not in
- * the .e2e file, so vitest pins the per-kind selector/text contract the
- * WebDriver renderedItemSettled hook asserts against the real DOM. */
-export function renderedItemSurface(current: DialogueItem): {
+ * independent (applyGameplayCommandResult -> tick). The per-kind
+ * selectors are authored in production-anchors (this module is imported
+ * by the app bundle and cannot import that file back); this pins the
+ * per-kind mapping the WebDriver renderedItemSettled hook asserts against
+ * the real DOM. */
+export function renderedItemSurface(
+  current: DialogueItem,
+  surfaceSelectors: Record<DialogueItem["kind"], string>,
+): {
   selector: string;
   text: string | null;
 } {
   switch (current.kind) {
     case "line":
-      return { selector: "p.text-line", text: current.text };
+      return { selector: surfaceSelectors.line, text: current.text };
     case "action":
-      return { selector: "p.text-action", text: current.text };
+      return { selector: surfaceSelectors.action, text: current.text };
     case "prompt":
-      return { selector: "p.text-prompt", text: current.question };
+      return { selector: surfaceSelectors.prompt, text: current.question };
     case "sceneTag":
-      return { selector: "p.text-scene", text: null };
+      return { selector: surfaceSelectors.sceneTag, text: null };
   }
 }
 
@@ -309,8 +314,9 @@ export async function drainEnterToMap(
       continue;
     }
     if (state.pendingAcquisition) {
-      // Unexpected popup mid-drain: acknowledge through the shared helper
-      // (its image checks run too) and resume.
+      // Unexpected popup mid-drain: acknowledge through the injected hook
+      // (the segment acknowledges via its key transport, never a synthetic
+      // click) and resume.
       await hooks.acknowledgeAcquisition(state.pendingAcquisition);
       continue;
     }

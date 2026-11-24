@@ -610,6 +610,38 @@ test("accepts the private ancestry on a DISPLAY with an explicit screen", () => 
   });
 });
 
+test("accepts xvfb-run itself running as PID 1 (container entrypoint)", () => {
+  // A container whose entrypoint is `xvfb-run -a ...` has no init layer —
+  // xvfb-run IS pid 1 and still owns both the Xvfb and the runner subtree.
+  const table = [
+    proc(1, 0, "xvfb-run", [
+      "/usr/bin/sh",
+      "/usr/bin/xvfb-run",
+      "-a",
+      "node",
+      "apps/game/scripts/run-save-e2e.mjs",
+    ]),
+    proc(25, 1, "Xvfb", [
+      "Xvfb",
+      ":99",
+      "-screen",
+      "0",
+      "640x480x24",
+      "-nolisten",
+      "tcp",
+      "-auth",
+      XAUTHORITY,
+    ]),
+    proc(30, 1, "node", ["node", "apps/game/scripts/run-save-e2e.mjs"]),
+    proc(42, 30, "node", ["node", "wdio-launcher"]),
+    proc(700, 42, "node", ["node", "wdio-worker"], { exe: "/usr/bin/node" }),
+    proc(583, 42, "lyra", [CONFIGURED_E2E_PATH], {
+      exe: CONFIGURED_E2E_PATH,
+    }),
+  ];
+  assert.deepEqual(verify(table), { xvfbRunPid: 1, xvfbPid: 25 });
+});
+
 test("owned-process selector accepts the session app by exact exe and parent", () => {
   const entries = privateXvfbTable().map((entry) => ({
     pid: entry.pid,
