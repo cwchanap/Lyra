@@ -1,7 +1,7 @@
 # HPA-831 — 證物圖片與焦點框：單一 PR 實作計劃（Round 2 Review 修訂）
 
 > [HPA-831](https://linear.app/cwchanap/issue/HPA-831/evidence-images-show-as-empty-black-frames-and-the-focus-frame-sticks) · [Design spec](../specs/2026-11-21-hpa-831-evidence-images-topic-frame-design.md) · [Round 2 review](https://github.com/cwchanap/Lyra/pull/140#pullrequestreview-6013786888)  
-> **狀態：Planning only**；只有文件改動，尚未執行產品修復／packaged E2E。後續在**同一 Draft PR #140** 加入程式碼與測試，單一 ticket 單一 PR，無新 art／SFX。
+> **狀態：Implemented（PR #140）**；regression coverage 與文件已落地，無產品修復（原環境未重現）。已驗證：兩次獨立 `--attempts 1` packaged run（`58ff41a8`，各 12/12 tests、71/71 trusted Enters）＋ head 的 scenes:compile/check/test/lint:all/check:e2e。**Pending：** 最終 head 的一次 trusted-key `--attempts 1` packaged journey——hosted `e2e-full` workflow 可滿足，或 requester 明示 waiver（round-4 review）。無新 art／SFX。
 
 ## 0. Round 2 review disposition（逐項對照真實程式）
 

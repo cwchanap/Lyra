@@ -310,6 +310,27 @@ export function focusOutlineViolations(
 }
 
 /**
+ * Round-4 review gate: the probe evidence writes are deliberately
+ * best-effort — a wedged session or gone window must not let a capture
+ * error mask the probe result or the failure a stall hook was about to
+ * report. But a probe that PASSED its owner/outline checks is a credited
+ * checkpoint, and the plan requires each credited checkpoint's
+ * screenshot + diagnostics artifacts to actually exist on disk. Returns
+ * the artifact names whose writes did not land (failed or empty file);
+ * the caller fails inconclusive on any entry rather than crediting a
+ * checkpoint without its evidence.
+ */
+export function focusProbeEvidenceMissing(evidence: {
+  screenshot: boolean;
+  diagnostics: boolean;
+}): string[] {
+  const missing: string[] = [];
+  if (!evidence.screenshot) missing.push("screenshot");
+  if (!evidence.diagnostics) missing.push("diagnostics");
+  return missing;
+}
+
+/**
  * Focus-trajectory recorder for the topic-activation transition (finding
  * 2): WebDriver's click_element runs el.click() then el.focus() — the
  * focus lands on the topic control synchronously during the same driver
