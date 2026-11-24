@@ -2738,7 +2738,10 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       `${JSON.stringify(
         {
           segment: "commission -> scene_2 -> map",
-          transport: 'browser.keys("Enter")',
+          keyboardTransport: null,
+          fallbackTransport:
+            "WebDriver element clicks via advanceDialogueUntil — no " +
+            "keyboard input is sent on this branch",
           reason:
             "LYRA_E2E_XVFB_TRUSTED_KEYS is not enabled — the trusted " +
             "XTEST transport is unavailable, so the keyboard-modality " +
@@ -2852,7 +2855,8 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   const FOCUS_DRAIN_CAP = 160;
   // The drain orchestration lives in src/lib/e2e/journey-enter-drain.ts so
   // vitest exercises the identical sequencing WebDriver drives: a retry
-  // Enter fires only on PROVEN "unchanged" state (a reveal-only first
+  // Enter fires only on PROVEN "unchanged" state after the first Enter's
+  // keydown is recorded as delivered (a reveal-only first
   // Enter), an unobservable post-Enter state fails inconclusively without
   // another key, and scene_2's first credited item must be its proven
   // authored queue entry — never a later item reached through an
@@ -2889,6 +2893,15 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
           )
           .then(() => true)
           .catch(() => false),
+      // Enter keydowns the delivery probe has recorded so far. The
+      // drain's retry gate requires every sent Enter to have provably
+      // reached the page: an idle DOM resolves commandSettled while a
+      // delayed keydown is still in transit, and a retry must never
+      // stack behind it and double-advance.
+      receivedEnters: async () =>
+        (await browser.execute(readKeyDeliveryEventsScript)).filter(
+          (event) => event.key === "Enter",
+        ).length,
       // A checkpoint must screenshot the item the packaged state reports.
       // DialogueBox reveals the item's full text in its per-kind surface;
       // an exact match means the DOM caught up with the state read.
