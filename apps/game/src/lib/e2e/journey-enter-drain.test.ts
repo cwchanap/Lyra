@@ -210,6 +210,10 @@ function fakeHooks(world: FakeWorld) {
       screenshotPath: `/tmp/${label}.png`,
     }),
     commandSettled: async () => true,
+    // The default delivery model: every sent Enter's keydown reaches the
+    // page immediately. Tests simulating a delayed/dropped transport
+    // override this hook.
+    receivedEnters: async () => sent.length,
     renderedItemSettled: async () => true,
   };
   return { sent, probes, verifiedCounts, acked, hooks };
@@ -400,6 +404,26 @@ describe("drainEnterToMap", () => {
     hooks.commandSettled = async () => false;
     await expect(drainEnterToMap({ ...DRAIN, hooks })).rejects.toThrow(
       /unsettled.*inconclusive|inconclusive/,
+    );
+    expect(sent).toHaveLength(1);
+  });
+
+  it("sends no retry when the first Enter's keydown was never delivered — an idle DOM settles trivially", async () => {
+    // The reviewed gap: commandSettled reads aria-disabled, which is
+    // already clear before a delayed keydown is even dispatched, so
+    // settlement cannot prove the first Enter arrived. A retry sent
+    // then stacks a second Enter behind the late first one and
+    // double-advances — the drain must fail inconclusively instead.
+    const world = fakeWorld([
+      dialogueState({ history: [historyEntry(1, OUTRO_TITLE)] }),
+      exploreState(),
+    ]);
+    world.onEnter = () => {};
+    const { sent, hooks } = fakeHooks(world);
+    hooks.commandSettled = async () => true; // idle DOM, no command ever ran
+    hooks.receivedEnters = async () => 0; // keydown still in transit
+    await expect(drainEnterToMap({ ...DRAIN, hooks })).rejects.toThrow(
+      /never delivered.*inconclusive|inconclusive.*never delivered/,
     );
     expect(sent).toHaveLength(1);
   });

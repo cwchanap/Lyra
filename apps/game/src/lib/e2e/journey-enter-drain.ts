@@ -226,6 +226,12 @@ export type EnterDrainHooks = {
    * finished applying. Resolves false on timeout; the retry gate treats
    * unproven settlement as inconclusive rather than sending a blind Enter. */
   commandSettled: () => Promise<boolean>;
+  /** Count of Enter keydowns the page's delivery probe has recorded so
+   * far. The retry gate compares it against `sentEnters`: fewer means a
+   * sent Enter's keydown never arrived, which settlement cannot rule
+   * out — an idle DOM resolves `commandSettled` before a delayed keydown
+   * is even dispatched, so a retry must wait on delivery proof. */
+  receivedEnters: () => Promise<number>;
   /** Bounded wait for the rendered dialogue surface to display the state's
    * current item. The packaged get_state read and the Svelte render are
    * independent, so a checkpoint screenshot can otherwise sample the
@@ -251,8 +257,9 @@ export type EnterDrainOptions = {
  * Enter-drain the outro into `sceneId` and the first map wrapper, probing
  * focus at the scene's first/middle/last items. Every Enter is sent only
  * after a successful state read, and a retry Enter fires only on PROVEN
- * "unchanged" after the app's command channel has settled and a re-read
- * still shows the same token (a reveal-only first Enter): one Enter can
+ * "unchanged" after the app's command channel has settled, a re-read
+ * still shows the same token, and the delivery probe has recorded every
+ * sent Enter's keydown (a reveal-only first Enter): one Enter can
  * never advance more than one queue item and no key is ever sent while
  * the state is unknown, so the first observed `sceneId` dialogue item is
  * guaranteed to be its authored entry — additionally proven by
@@ -458,6 +465,25 @@ export async function drainEnterToMap(
       journeyProgressToken(verified) !== token
     ) {
       continue;
+    }
+    // Settlement proves no command is still applying, not that the first
+    // Enter's keydown ever arrived: an idle DOM resolves commandSettled
+    // before a delayed keydown is even dispatched, and a retry sent then
+    // stacks a second Enter behind the late one and double-advances.
+    // Require the delivery probe to have recorded every sent Enter.
+    const receivedEnters = await hooks.receivedEnters();
+    if (receivedEnters < sentEnters) {
+      const stalled = await hooks.captureStallProbe("enter-undelivered");
+      throw new Error(
+        `${transportName} recorded only ${receivedEnters}/${sentEnters} ` +
+          `Enter keydowns at step ${step} (scene ${state.scene.id}, ` +
+          `mode ${state.mode.type}) — the first Enter's keydown was ` +
+          `never delivered, so a retry could stack behind a late ` +
+          `arrival and double-advance; the real keyboard path is ` +
+          `inconclusive ` +
+          `(activeElement=${stalled.activeElementDescriptor ?? "null"}, ` +
+          `screenshot ${stalled.screenshotPath})`,
+      );
     }
     await sendEnter();
     const retryOutcome = await observeProgress(token);
