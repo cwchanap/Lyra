@@ -180,8 +180,8 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   the default synthetic WebDriver keys. Without the opt-in the focus
   segment still runs its click-transition probes, records the
   keyboard-modality coverage gap (`focus-coverage-gap.json`), and drains
-  the transition through the WebDriver click path so the organic route
-  continues.
+  the transition through the scripted DOM-click path so the organic
+  route continues.
 
 - Each run writes
   `apps/game/e2e-artifacts/save-e2e/runs/<run-id>/run-result.json` plus guarded

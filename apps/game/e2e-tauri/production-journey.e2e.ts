@@ -2740,7 +2740,9 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
           segment: "commission -> scene_2 -> map",
           keyboardTransport: null,
           fallbackTransport:
-            "WebDriver element clicks via advanceDialogueUntil — no " +
+            "scripted HTMLElement.click() via advanceDialogueUntil " +
+            "(browser.execute DOM click — no pointer events, no focus " +
+            "move, unlike the driver's click_element path) — no " +
             "keyboard input is sent on this branch",
           reason:
             "LYRA_E2E_XVFB_TRUSTED_KEYS is not enabled — the trusted " +
@@ -2755,7 +2757,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       )}\n`,
     );
     console.log(
-      "[FocusProbe] no trusted key transport — keyboard-modality coverage is inconclusive by construction; draining the transition via the WebDriver click path (focus-coverage-gap.json)",
+      "[FocusProbe] no trusted key transport — keyboard-modality coverage is inconclusive by construction; draining the transition via the scripted DOM-click path (focus-coverage-gap.json)",
     );
     await advanceDialogueUntil(
       () => elementExists(anchors.cityMapSelector),
@@ -2856,7 +2858,8 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   // The drain orchestration lives in src/lib/e2e/journey-enter-drain.ts so
   // vitest exercises the identical sequencing WebDriver drives: a retry
   // Enter fires only on PROVEN "unchanged" state after the first Enter's
-  // keydown is recorded as delivered (a reveal-only first
+  // keydown is recorded as delivered AND the settled-channel re-read
+  // still matches (a reveal-only first
   // Enter), an unobservable post-Enter state fails inconclusively without
   // another key, and scene_2's first credited item must be its proven
   // authored queue entry — never a later item reached through an
@@ -2895,9 +2898,10 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
           .catch(() => false),
       // Enter keydowns the delivery probe has recorded so far. The
       // drain's retry gate requires every sent Enter to have provably
-      // reached the page: an idle DOM resolves commandSettled while a
-      // delayed keydown is still in transit, and a retry must never
-      // stack behind it and double-advance.
+      // reached the page BEFORE settlement or a re-read is trusted:
+      // an idle DOM resolves commandSettled while a delayed keydown is
+      // still in transit, and a retry must never stack behind it and
+      // double-advance.
       receivedEnters: async () =>
         (await browser.execute(readKeyDeliveryEventsScript)).filter(
           (event) => event.key === "Enter",
