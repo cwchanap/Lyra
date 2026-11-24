@@ -316,3 +316,9 @@ export function e2eSuiteForPhase(phaseId) {
   if (!suite) throw new Error(`Unknown e2e phase: ${String(phaseId)}`);
   return suite.id;
 }
+
+export function e2eNonJourneySuiteFlags() {
+  return E2E_SUITE_IDS.filter((id) => id !== "production-journey")
+    .flatMap((id) => ["--suite", id])
+    .join(" ");
+}
