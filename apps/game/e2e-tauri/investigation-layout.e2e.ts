@@ -98,6 +98,7 @@ type HudRects = {
   progress: Box | null;
   primaryObjective: Box | null;
   sceneLabel: Box | null;
+  menu: Box | null;
 };
 
 type TargetMeasurement = {
@@ -116,6 +117,10 @@ type TargetMeasurement = {
 
 type SublocationMeasurement = {
   viewport: { width: number; height: number };
+  hudHeight: number;
+  stageHeight: number;
+  rowOneHeight: number;
+  rowTwoHeight: number;
   hud: HudRects;
   targets: TargetMeasurement[];
   projectedLocked: Array<{ id: string; rect: Box }>;
@@ -404,6 +409,8 @@ async function expectHpa853SublocationSurface(
       if (!stageElement || !planeElement)
         throw new Error("Scene stage missing");
       const stage = stageElement.getBoundingClientRect();
+      const header = document.querySelector(".scene-hud");
+      if (!header) throw new Error("Scene HUD missing");
       const plane = planeElement.getBoundingClientRect();
       const clipped = (rect: DOMRect): Box => ({
         left: Math.max(rect.left, stage.left),
@@ -416,7 +423,13 @@ async function expectHpa853SublocationSurface(
         progress: rectOf(".investigation-progress"),
         primaryObjective: rectOf(".primary-objective-hud"),
         sceneLabel: rectOf(".scene-label"),
+        menu: rectOf(".scene-hud [data-game-menu-trigger]"),
       };
+      const rowOneHeight = Math.max(
+        ...[hud.progress, hud.primaryObjective, hud.sceneLabel, hud.menu].map(
+          (rect) => (rect ? rect.bottom - rect.top : 0),
+        ),
+      );
       const authoredById = new Map(authored.map((entry) => [entry.id, entry]));
       const targets: TargetMeasurement[] = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -510,13 +523,27 @@ async function expectHpa853SublocationSurface(
           ? null
           : Number((fallbackEyebrow.textContent ?? "").split("·")[1]?.trim()) ||
             0;
-      return { viewport, hud, targets, projectedLocked, fallbackCount };
+      return {
+        viewport,
+        hudHeight: header.getBoundingClientRect().height,
+        stageHeight: stage.height,
+        rowOneHeight,
+        rowTwoHeight: hud.nav ? hud.nav.bottom - hud.nav.top : 0,
+        hud,
+        targets,
+        projectedLocked,
+        fallbackCount,
+      };
     },
     lockedStyles,
     authoredLayouts,
   );
 
   expect(measurement.viewport).toEqual(MINIMUM_WINDOW);
+  expect(measurement.hudHeight).toBeLessThanOrEqual(150);
+  expect(measurement.stageHeight).toBeGreaterThanOrEqual(450);
+  expect(measurement.rowOneHeight).toBeLessThanOrEqual(74);
+  expect(measurement.rowTwoHeight).toBeLessThanOrEqual(54);
 
   // A placed target production routed into the fallback list means the crop
   // or the panel band ate its hit box — never acceptable for these scenes.
@@ -553,6 +580,8 @@ async function expectHpa853SublocationSurface(
   const missingHud: string[] = [];
   if (measurement.hud.nav === null) missingHud.push(".explore-hud nav");
   if (measurement.hud.sceneLabel === null) missingHud.push(".scene-label");
+  if (measurement.hud.menu === null)
+    missingHud.push("[data-game-menu-trigger]");
   if (outroTotal > 0 && measurement.hud.progress === null) {
     missingHud.push(".investigation-progress");
   }
@@ -567,6 +596,7 @@ async function expectHpa853SublocationSurface(
     { name: ".investigation-progress", rect: measurement.hud.progress },
     { name: ".primary-objective-hud", rect: measurement.hud.primaryObjective },
     { name: ".scene-label", rect: measurement.hud.sceneLabel },
+    { name: "[data-game-menu-trigger]", rect: measurement.hud.menu },
   ];
   const hudRects: Array<{ name: string; rect: Box }> = [];
   for (const candidate of hudCandidates) {
@@ -1015,13 +1045,13 @@ describe("investigation layout surface", () => {
     // starting point inside the gameplay focus order first; the acceptance
     // stays on the native path: Tab must still reach the pin, Enter activate
     // it.
-    await browser.execute(() => {
-      document
-        .querySelector<HTMLButtonElement>(
-          "[data-gameplay-root] button:not(:disabled)",
-        )
-        ?.focus();
-    });
+    const seeded = await browser.execute((selector: string) => {
+      const control = document.querySelector<HTMLButtonElement>(selector);
+      if (!control || control.disabled) return false;
+      control.focus();
+      return document.activeElement === control;
+    }, anchors.mapOverviewSelector);
+    expect(seeded).toBe(true);
 
     // Tab until the map pin itself holds focus, then activate with Enter so
     // the journey stays on the native keyboard path.
@@ -1257,6 +1287,13 @@ describe("investigation layout surface", () => {
           document.querySelectorAll(".explore-hud nav .chips button").length,
       ),
     ).toBe(5);
+    const chipTops = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll(".explore-hud nav .chips button"),
+        (chip) => chip.getBoundingClientRect().top,
+      ),
+    );
+    expect(new Set(chipTops).size).toBe(1);
 
     const scenePlacements = shippedPlacements().filter((placement) =>
       placement.id.startsWith(`chapter_2/${sceneId}/`),

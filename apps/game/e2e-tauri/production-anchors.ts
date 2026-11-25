@@ -117,6 +117,7 @@ export const anchors = {
   // HPA-601 city-map surface (InvestigationMapView a11y/DOM contract).
   cityMap: "城市地圖",
   cityMapSelector: '[aria-label="城市地圖"]',
+  gameMenuTriggerSelector: "[data-game-menu-trigger]",
   mapBackgroundSelector: "img.map-background",
   mapDestinationSelector: "[data-map-destination]",
   // Regional v2 planes (presentation-only plane switching; neither control
@@ -426,4 +427,5 @@ export const EXPECTED_FOCUS_CONTROL_SELECTOR = [
   anchors.mapDestinationSelector,
   anchors.mapRegionSelector,
   anchors.mapOverviewSelector,
+  anchors.gameMenuTriggerSelector,
 ].join(",");

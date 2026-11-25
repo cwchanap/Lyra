@@ -7,6 +7,7 @@ import {
 } from "@testing-library/svelte";
 import userEvent from "@testing-library/user-event";
 import { createRawSnippet } from "svelte";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import InterrogationStageHarness from "$lib/test-harnesses/InterrogationStageHarness.svelte";
 import InterrogationStage from "./InterrogationStage.svelte";
@@ -23,6 +24,7 @@ import type {
   SceneView,
 } from "../state/types";
 import { neutralEvidenceRecordView } from "../state/test-fixtures";
+import { cssRule } from "$lib/test-utils";
 
 type InterrogationSceneView = Extract<SceneView, { kind: "interrogation" }>;
 
@@ -207,6 +209,57 @@ function isInert(element: HTMLElement): boolean {
 }
 
 describe("InterrogationStage", () => {
+  it("applies LOG typography only to the LOG control, not the first toolbar button", () => {
+    const source = readFileSync(
+      import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
+      "utf8",
+    );
+    expect(
+      cssRule(
+        source,
+        ".interrogation-menu-toolbar button[data-interrogation-stage-log]",
+      ),
+    ).toContain("font-size: 10px");
+    expect(
+      cssRule(source, ".interrogation-menu-toolbar button:first-child"),
+    ).toBe("");
+  });
+
+  it.each([
+    { name: "interrogation", mode: interrogationMode },
+    { name: "testimony dialogue", mode: ordinaryDialogue },
+  ])("offers a shared menu trigger during $name", async ({ mode }) => {
+    const onOpenGameMenu = vi.fn();
+    render(InterrogationStageHarness, props({ mode, onOpenGameMenu }));
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    expect(trigger).toHaveAttribute("data-game-menu-trigger");
+    await userEvent.setup().click(trigger);
+    expect(onOpenGameMenu).toHaveBeenCalledExactlyOnceWith(trigger);
+    if (mode.type === "dialogue") {
+      expect(screen.queryByRole("button", { name: "LOG" })).toBeNull();
+      expect(
+        document.querySelector("[data-interrogation-case-file-objective]"),
+      ).toBeNull();
+    }
+  });
+
+  it("keeps the Present tray menu as the only trigger and marks its bypass", async () => {
+    const onOpenGameMenu = vi.fn();
+    render(
+      InterrogationStageHarness,
+      props({ scene: scene(true), inventory: menuInventory, onOpenGameMenu }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "提出證據" });
+    const trigger = dialog.querySelector<HTMLButtonElement>(
+      "[data-interrogation-game-menu]",
+    )!;
+    expect(document.querySelector("[data-game-menu-trigger]")).toBeNull();
+    await userEvent.setup().click(trigger);
+    expect(onOpenGameMenu).toHaveBeenCalledExactlyOnceWith(trigger, {
+      allowWhileEscapeClaimed: true,
+    });
+  });
+
   it("keeps its child mounted with menu-only controls and live subject progress", async () => {
     const user = userEvent.setup();
     const onOpenCaseFile = vi.fn();

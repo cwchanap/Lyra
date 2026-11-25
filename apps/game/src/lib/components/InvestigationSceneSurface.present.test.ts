@@ -104,6 +104,8 @@ describe("InvestigationSceneSurface 出示紀錄", () => {
     await user.click(screen.getByRole("button", { name: /出示紀錄/ }));
     const tray = screen.getByRole("dialog", { name: "出示紀錄" });
     expect(tray).toHaveTextContent("店員");
+    expect(tray.querySelector("[data-game-menu-trigger]")).toBeNull();
+    expect(tray.querySelector("[data-interrogation-game-menu]")).toBeNull();
     await user.click(within(tray).getByRole("button", { name: /收據/ }));
 
     expect(onPresent).toHaveBeenCalledExactlyOnceWith(

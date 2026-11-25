@@ -123,6 +123,7 @@
   let gameMenuRequest = $state<{
     id: number;
     returnFocusTo: HTMLElement | null;
+    allowWhileEscapeClaimed?: boolean;
   } | null>(null);
   let observedCaseFileEpoch = presentationState.sessionEpoch;
 
@@ -1292,11 +1293,15 @@
     };
   }
 
-  function openInterrogationGameMenu(trigger: HTMLElement) {
+  function requestGameMenu(
+    trigger: HTMLElement,
+    options: { allowWhileEscapeClaimed?: boolean } = {},
+  ) {
     gameMenuRequestId += 1;
     gameMenuRequest = {
       id: gameMenuRequestId,
       returnFocusTo: trigger,
+      ...options,
     };
   }
 
@@ -1379,7 +1384,7 @@
           history={gameState.value.dialogueHistory}
           onPresent={presentInterrogationEvidence}
           onResume={resumeInterrogationTestimony}
-          onOpenGameMenu={openInterrogationGameMenu}
+          onOpenGameMenu={requestGameMenu}
           onOpenCaseFile={openInterrogationCaseFile}
           {activePrimaryObjective}
           disabled={gameState.inFlight}
@@ -1423,6 +1428,7 @@
               onEnterSublocation={enterSublocation}
               inventory={gameState.value.inventory}
               onPresent={presentToCharacter}
+              onOpenGameMenu={requestGameMenu}
               presentFeedback={gameState.value.mode.presentFeedback}
               disabled={gameState.inFlight}
             >
@@ -1449,6 +1455,7 @@
               onSelectBoard={selectAnalysisBoard}
               onUpdateDraft={updateAnalysisDraft}
               onSubmit={submitAnalysisBoard}
+              onOpenGameMenu={requestGameMenu}
               disabled={gameState.inFlight}
             />
           {:else if gameState.value.mode.type === "gameComplete"}

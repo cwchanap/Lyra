@@ -54,9 +54,11 @@
   }
 
   .nav.scene {
-    max-width: min(760px, 100%);
+    min-width: 0;
+    max-width: 100%;
     gap: 8px;
-    padding: 6px 10px;
+    padding: 2px 10px;
+    flex-wrap: nowrap;
     border: 1px solid var(--rule-strong);
     background: rgba(20, 20, 31, 0.72);
     backdrop-filter: blur(2px);
@@ -80,16 +82,33 @@
   }
 
   .scene .eyebrow {
+    flex: none;
     padding-right: 8px;
     border-right: 0;
     letter-spacing: 0.18em;
   }
 
   .scene button {
+    flex: none;
     min-height: 44px;
     gap: 4px;
     padding: 6px 7px;
     letter-spacing: 0.02em;
+  }
+
+  .scene .chips {
+    flex-wrap: nowrap;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .scene .chips::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  .scene .chips::-webkit-scrollbar-thumb {
+    background: var(--bone-faint);
   }
 
   button {

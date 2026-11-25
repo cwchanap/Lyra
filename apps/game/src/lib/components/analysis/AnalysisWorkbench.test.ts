@@ -83,6 +83,7 @@ function renderWorkbench(
       draft: AnalysisDraft,
     ) => Promise<GameStateView | null>;
     onSubmit?: (token: AnalysisActionToken) => Promise<GameStateView | null>;
+    onOpenGameMenu?: (trigger: HTMLElement) => void;
     disabled?: boolean;
   } = {},
 ) {
@@ -93,6 +94,7 @@ function renderWorkbench(
     onSelectBoard: callbacks.onSelectBoard ?? vi.fn().mockResolvedValue(state),
     onUpdateDraft: callbacks.onUpdateDraft ?? vi.fn().mockResolvedValue(state),
     onSubmit: callbacks.onSubmit ?? vi.fn().mockResolvedValue(state),
+    onOpenGameMenu: callbacks.onOpenGameMenu,
     disabled: callbacks.disabled ?? false,
   });
 }
@@ -124,6 +126,16 @@ afterEach(() => {
 });
 
 describe("AnalysisWorkbench", () => {
+  it("offers the game menu from the board header", async () => {
+    const onOpenGameMenu = vi.fn();
+    renderWorkbench(analysisState(), { onOpenGameMenu });
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    expect(trigger).toHaveAttribute("data-game-menu-trigger");
+    expect(trigger.closest(".board-header-actions")).not.toBeNull();
+    await userEvent.setup().click(trigger);
+    expect(onOpenGameMenu).toHaveBeenCalledExactlyOnceWith(trigger);
+  });
+
   it("celebrates fully confirmed practice with the All Confirmed badge", () => {
     const state = analysisState({
       scene: analysisSceneWith({

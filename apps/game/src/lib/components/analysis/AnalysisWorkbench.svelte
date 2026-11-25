@@ -18,6 +18,7 @@
   import ClassifyBoard from "./ClassifyBoard.svelte";
   import OrderBoard from "./OrderBoard.svelte";
   import ThresholdBoard from "./ThresholdBoard.svelte";
+  import MenuTrigger from "../MenuTrigger.svelte";
 
   type AnalysisSceneView = Extract<SceneView, { kind: "analysis" }>;
   type AnalysisModeView = Extract<Mode, { type: "analysis" }>;
@@ -30,6 +31,7 @@
     onSelectBoard,
     onUpdateDraft,
     onSubmit,
+    onOpenGameMenu,
     disabled = false,
   }: {
     scene: SceneView;
@@ -46,6 +48,7 @@
     onSubmit: (
       actionToken: AnalysisActionToken,
     ) => Promise<GameStateView | null>;
+    onOpenGameMenu?: (trigger: HTMLElement) => void;
     disabled?: boolean;
   } = $props();
 
@@ -593,6 +596,10 @@
           </div>
 
           <div class="board-header-actions">
+            <MenuTrigger
+              disabled={disabled || mutationInFlight}
+              onOpen={onOpenGameMenu}
+            />
             {#if board.completed}
               <p class="board-status completed" role="status">
                 <span class="board-status-diamond" aria-hidden="true"></span>

@@ -3803,6 +3803,7 @@ describe("+page active primary objective HUD", () => {
   });
 
   it("shows only the active uncompleted primary objective in the exploration HUD", async () => {
+    const user = userEvent.setup();
     const state = currentState();
     state.scene = {
       kind: "investigation",
@@ -3816,7 +3817,7 @@ describe("+page active primary objective HUD", () => {
       visibleSublocations: [
         {
           id: "coffee_shop",
-          label: "喫茶店",
+          label: "KAGAMI 證據摘要審查室",
           sceneTag: "雨夜喫茶店",
           hotspots: [],
           characters: [],
@@ -3834,7 +3835,7 @@ describe("+page active primary objective HUD", () => {
     state.story.objectives = [
       {
         id: "objective_follow_witness",
-        label: "追查雨夜目擊者",
+        label: "追查雨夜目擊者並確認每份證詞與現場紀錄之間的矛盾",
         summary: "找出目擊者隱瞞的證詞。",
         kind: "primary",
         sortOrder: 10,
@@ -3858,12 +3859,21 @@ describe("+page active primary objective HUD", () => {
     const objectiveHud = await screen.findByRole("status", {
       name: "主要目標",
     });
-    expect(objectiveHud).toHaveTextContent("追查雨夜目擊者");
+    expect(objectiveHud).toHaveTextContent(
+      "追查雨夜目擊者並確認每份證詞與現場紀錄之間的矛盾",
+    );
+    expect(screen.getAllByText("KAGAMI 證據摘要審查室")).toHaveLength(2);
     expect(objectiveHud).not.toHaveTextContent("已完成的舊目標");
     expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
     expect(
       screen.getByRole("navigation", { name: "地點導航" }),
     ).toBeInTheDocument();
+
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    await user.click(trigger);
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /繼續調查/ }));
+    await waitFor(() => expect(trigger).toHaveFocus());
   });
 });
 

@@ -56,6 +56,71 @@ function investigationScene(
 }
 
 describe("ExploreView", () => {
+  it.each([
+    { name: "scene HUD", scene: investigationScene() },
+    { name: "map header", scene: investigationScene(null, cityMap) },
+  ])(
+    "offers the game menu in the $name with its trigger as focus origin",
+    async ({ scene }) => {
+      const onOpenGameMenu = vi.fn();
+      render(ExploreView, {
+        scene,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+        onEnterSublocation: vi.fn(),
+        onOpenGameMenu,
+      });
+      const trigger = screen.getByRole("button", { name: "遊戲選單" });
+      expect(trigger).toHaveAttribute("data-game-menu-trigger");
+      expect(
+        trigger.closest(
+          scene.currentSublocationId ? ".scene-hud" : ".map-objective",
+        ),
+      ).not.toBeNull();
+      await userEvent.setup().click(trigger);
+      expect(onOpenGameMenu).toHaveBeenCalledExactlyOnceWith(trigger);
+    },
+  );
+
+  it("keeps the HUD menu inaccessible behind the SHOW tray until it is closed", async () => {
+    const user = userEvent.setup();
+    const onOpenGameMenu = vi.fn();
+    const scene = investigationScene();
+    scene.visibleSublocations = [
+      {
+        ...sublocation,
+        characters: [
+          {
+            id: "clerk",
+            name: "店員",
+            role: "證人",
+            bio: "",
+            acceptsPresent: true,
+            layout: null,
+            topics: [],
+          },
+        ],
+      },
+    ];
+    render(ExploreView, {
+      scene,
+      onInspect: vi.fn(),
+      onInterview: vi.fn(),
+      onEnterSublocation: vi.fn(),
+      onOpenGameMenu,
+    });
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    const hud = trigger.closest<HTMLElement>(".scene-hud")!;
+    await user.click(screen.getByRole("button", { name: /出示紀錄/ }));
+    expect(hud.inert || hud.hasAttribute("inert")).toBe(true);
+    const tray = screen.getByRole("dialog", { name: "出示紀錄" });
+    expect(tray.querySelector("[data-game-menu-trigger]")).toBeNull();
+    await user.click(within(tray).getByRole("button", { name: /收回/ }));
+    expect(hud.inert || hud.hasAttribute("inert")).toBe(false);
+    await user.click(trigger);
+    expect(onOpenGameMenu).toHaveBeenCalledExactlyOnceWith(trigger);
+  });
+
   it("renders InvestigationSceneSurface when investigation scene has a current sublocation", async () => {
     render(ExploreView, {
       scene: investigationScene(),

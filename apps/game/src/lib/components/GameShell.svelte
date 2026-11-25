@@ -6,10 +6,14 @@
     updateAudioPreferences,
   } from "$lib/audio/gameplay-audio-runtime.svelte";
   import type { GameStateView, ObjectiveView } from "../state/types";
-  import { closeTopmostEscapeClaim } from "$lib/state/escape-coordinator";
+  import {
+    closeTopmostEscapeClaim,
+    escapeClaimed,
+  } from "$lib/state/escape-coordinator";
   import AudioSettings from "./AudioSettings.svelte";
   import GameAtmosphere from "./GameAtmosphere.svelte";
   import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
+  import MenuTrigger from "./MenuTrigger.svelte";
 
   let {
     gameState,
@@ -60,7 +64,11 @@
     activePrimaryObjective?: ObjectiveView | null;
     interrogationPresentation?: boolean;
     analysisPresentation?: boolean;
-    gameMenuRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    gameMenuRequest?: {
+      id: number;
+      returnFocusTo: HTMLElement | null;
+      allowWhileEscapeClaimed?: boolean;
+    } | null;
     onGameMenuRequestHandled?: (id: number) => void;
     caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
     onCaseFileRequestHandled?: (id: number) => void;
@@ -159,6 +167,31 @@
     }
   }
 
+  function tryOpenGameMenu(
+    focusOrigin: HTMLElement | null = null,
+    {
+      allowWhileEscapeClaimed = false,
+    }: { allowWhileEscapeClaimed?: boolean } = {},
+  ) {
+    if (
+      disabled ||
+      topLayerOpen ||
+      gameplayInert ||
+      open ||
+      (focusOrigin &&
+        (!focusOrigin.isConnected ||
+          focusOrigin.closest("[inert]") ||
+          focusOrigin.matches(":disabled"))) ||
+      (allowWhileEscapeClaimed &&
+        !focusOrigin?.matches("[data-interrogation-game-menu]")) ||
+      (escapeClaimed() && !allowWhileEscapeClaimed)
+    ) {
+      return;
+    }
+    void reassertFullscreenIfActive();
+    void openGameMenu(focusOrigin);
+  }
+
   function closeGameMenu() {
     if (!open) {
       return;
@@ -213,11 +246,12 @@
     onCaseFileRequestHandled?.(request.id);
   }
 
-  async function openRequestedGameMenu(request: {
+  function openRequestedGameMenu(request: {
     id: number;
     returnFocusTo: HTMLElement | null;
+    allowWhileEscapeClaimed?: boolean;
   }) {
-    await openGameMenu(request.returnFocusTo);
+    tryOpenGameMenu(request.returnFocusTo, request);
     onGameMenuRequestHandled?.(request.id);
   }
 
@@ -359,14 +393,7 @@
         return;
       }
 
-      // disabled mirrors gameState.inFlight: swallow Escape while a command
-      // is mid-flight so the menu can't open/race against a pending invoke.
-      if (disabled) {
-        return;
-      }
-
-      void reassertFullscreenIfActive();
-      void openGameMenu();
+      tryOpenGameMenu();
     };
 
     window.addEventListener("keydown", handleKeydown, { capture: true });
@@ -430,6 +457,7 @@
           <PrimaryObjectiveHud objective={activePrimaryObjective} />
         {/if}
       </div>
+      <MenuTrigger {disabled} onOpen={tryOpenGameMenu} />
     </header>
 
     <div class="rule"></div>

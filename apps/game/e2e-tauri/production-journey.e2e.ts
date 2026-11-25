@@ -2804,7 +2804,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
   const establishAdvanceFocus = async (): Promise<void> => {
     let advanceFocusLanded = await probeAdvanceFocus();
     let osFocusChecked = false;
-    for (let attempt = 0; attempt < 6 && !advanceFocusLanded; attempt += 1) {
+    for (let attempt = 0; attempt < 7 && !advanceFocusLanded; attempt += 1) {
       await sendXvfbTrustedKey("Tab");
       // document.hasFocus() is only meaningful once X input focus sits
       // on the verified window — the windowfocus --sync inside the first
@@ -2841,7 +2841,7 @@ async function runCommissionScene2FocusSegment(): Promise<void> {
       }
       throw new Error(
         `the XTEST Tab transport did not move DOM focus to the dialogue ` +
-          `advance control after 6 Tabs (last owner: ` +
+          `advance control after 7 Tabs (last owner: ` +
           `${lastFocusOwner ?? "null"}) — the positive keyboard-modality ` +
           `control cannot be established, so focus/keyboard coverage is ` +
           `inconclusive (screenshot ${stalledShot})`,

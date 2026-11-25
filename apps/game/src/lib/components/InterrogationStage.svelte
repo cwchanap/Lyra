@@ -19,6 +19,7 @@
   import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
   import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
   import SceneBackdrop from "./SceneBackdrop.svelte";
+  import MenuTrigger from "./MenuTrigger.svelte";
 
   let {
     active,
@@ -45,7 +46,10 @@
       itemId: string,
     ) => void | Promise<void>;
     onResume: () => void | Promise<void>;
-    onOpenGameMenu: (trigger: HTMLElement) => void;
+    onOpenGameMenu: (
+      trigger: HTMLElement,
+      options?: { allowWhileEscapeClaimed?: boolean },
+    ) => void;
     onOpenCaseFile: (
       section: Extract<CaseFileSection, "objective" | "evidence">,
       trigger: HTMLElement,
@@ -195,33 +199,39 @@
         {/if}
       </div>
 
-      {#if menuChromeVisible}
+      {#if !presenting}
         <div class="interrogation-menu-toolbar" aria-label="訊問工具">
-          <button
-            bind:this={stageLogButton}
-            data-interrogation-stage-log=""
-            type="button"
-            {disabled}
-            onclick={openStageHistory}
-          >
-            LOG
-          </button>
-          <button
-            data-interrogation-case-file-objective=""
-            type="button"
-            {disabled}
-            onclick={(event) => openCaseFile("objective", event)}
-          >
-            案件檔案
-          </button>
-          <button
-            data-interrogation-evidence-locker=""
-            type="button"
-            {disabled}
-            onclick={(event) => openCaseFile("evidence", event)}
-          >
-            證物櫃 {String(inventory.evidence.length).padStart(2, "0")}
-          </button>
+          {#if menuChromeVisible}
+            <button
+              bind:this={stageLogButton}
+              data-interrogation-stage-log=""
+              type="button"
+              {disabled}
+              onclick={openStageHistory}
+            >
+              LOG
+            </button>
+            <button
+              data-interrogation-case-file-objective=""
+              type="button"
+              {disabled}
+              onclick={(event) => openCaseFile("objective", event)}
+            >
+              案件檔案
+            </button>
+            <button
+              data-interrogation-evidence-locker=""
+              type="button"
+              {disabled}
+              onclick={(event) => openCaseFile("evidence", event)}
+            >
+              證物櫃 {String(inventory.evidence.length).padStart(2, "0")}
+            </button>
+          {/if}
+          <MenuTrigger
+            disabled={disabled || stageHistoryOpen || topLayerOpen}
+            onOpen={onOpenGameMenu}
+          />
         </div>
       {/if}
     </section>
@@ -246,7 +256,8 @@
       {inventory}
       onPresent={(kind, itemId) => onPresent(crossExam.lineId, kind, itemId)}
       {onResume}
-      {onOpenGameMenu}
+      onOpenGameMenu={(trigger) =>
+        onOpenGameMenu(trigger, { allowWhileEscapeClaimed: true })}
       {disabled}
       {topLayerOpen}
       returnFocusTo={trayReturnFocus}
@@ -439,7 +450,7 @@
       background 0.18s ease;
   }
 
-  .interrogation-menu-toolbar button:first-child {
+  .interrogation-menu-toolbar button[data-interrogation-stage-log] {
     color: var(--crimson);
     font-family: var(--impact);
     font-size: 10px;

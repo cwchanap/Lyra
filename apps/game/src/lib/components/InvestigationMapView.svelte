@@ -1,5 +1,6 @@
 <script lang="ts">
   import CrossfadeImage from "./CrossfadeImage.svelte";
+  import MenuTrigger from "./MenuTrigger.svelte";
   import {
     placeholderForMissingStoryAsset,
     resolveStoryAsset,
@@ -13,12 +14,14 @@
     sublocations,
     summary,
     onTravel,
+    onOpenGameMenu,
     disabled = false,
   }: {
     map: InvestigationMapView;
     sublocations: SublocationView[];
     summary: string;
     onTravel: (id: string) => void;
+    onOpenGameMenu?: (trigger: HTMLElement) => void;
     disabled?: boolean;
   } = $props();
 
@@ -142,6 +145,7 @@
   <header class="map-objective">
     <span class="eyebrow">目的地 · DESTINATION</span>
     <p>{summary}</p>
+    <MenuTrigger {disabled} onOpen={onOpenGameMenu} />
   </header>
 
   <!-- Spec §8: the plane is the single 16:9 coordinate plane; the background
@@ -244,6 +248,11 @@
     font-family: var(--impact);
     font-size: 10px;
     letter-spacing: 0.18em;
+  }
+
+  .map-objective :global([data-game-menu-trigger]) {
+    grid-column: 2;
+    grid-row: 1 / span 2;
   }
 
   .map-objective p {

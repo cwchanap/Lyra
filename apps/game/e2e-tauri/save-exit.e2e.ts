@@ -4,6 +4,9 @@ import {
   advanceDialogueOnce,
   assertSaveE2ePhase,
   clickButton,
+  clickDialogButton,
+  clickSaveCardButton,
+  closePersistenceBrowserToGameplay,
   continueFromTitle,
   currentPackagedDocumentIdentity,
   dialogueFingerprint,
@@ -14,17 +17,21 @@ import {
   invokePackagedCommand,
   jsClick,
   jumpToProductionScene,
+  openGameMenu,
   requestApplicationQuit,
   requestWindowClose,
   resetE2eStorageWithStoryClearance,
+  saveManualSlot,
   settlePackagedCommand,
   startFromMenu,
   waitForAcquisitionOrdinal,
+  waitForButton,
   waitForDialog,
   waitForNoDialog,
   waitForPackagedDisconnect,
   waitForPackagedGameState,
   waitForPersistenceIdle,
+  waitForPersistenceLayersClosed,
   waitForShell,
 } from "./helpers";
 import {
@@ -36,6 +43,7 @@ import {
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import type { ExitStatusView } from "$lib/persistence/types";
+import path from "node:path";
 
 const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitCloseSeed,
@@ -202,6 +210,57 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
     30000,
     "acknowledged event did not clear in memory before quit",
   );
+  const beforeSave = await drainCurrentDialogue("explore");
+  await waitForPersistenceIdle();
+  const menuTrigger = await $(anchors.gameMenuTriggerSelector);
+  await menuTrigger.waitForClickable({ timeout: 30000 });
+  await menuTrigger.click();
+  await waitForDialog(anchors.gameMenu);
+  await browser.saveScreenshot(
+    path.join(
+      process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+      "explore-game-menu.png",
+    ),
+  );
+  await saveManualSlot(1, "探索選單保存");
+  await closePersistenceBrowserToGameplay();
+
+  await jumpToProductionScene("scene_2");
+  await openGameMenu();
+  await clickButton(anchors.loadGame);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="存檔瀏覽器"]'),
+    {
+      timeout: 30000,
+      timeoutMsg: "gameplay load browser did not open",
+    },
+  );
+  await clickSaveCardButton("manual", 1, "載入");
+  await waitForDialog("載入手動存檔 1");
+  await clickDialogButton("載入手動存檔 1", "確認載入");
+  await waitForPersistenceLayersClosed();
+  const loaded = await waitForPackagedGameState(
+    (state) =>
+      state.scene.id === beforeSave.scene.id && state.mode.type === "explore",
+    30000,
+    "Explore menu save did not load the original scene and mode",
+  );
+  expect(loaded.scene).toEqual(beforeSave.scene);
+  expect(loaded.inventory).toEqual(beforeSave.inventory);
+  expect(loaded.mode).toEqual(beforeSave.mode);
+  // A loaded snapshot is clean; an ordinary inspection makes it the next
+  // autosave before the existing fresh-process exit assertion.
+  await waitForButton(anchors.firstInvestigationHotspots[0], 30000);
+  await jsClick(
+    `button[aria-label="${anchors.firstInvestigationHotspots[0]}"]`,
+  );
+  await waitForPackagedGameState(
+    (state) => state.mode.type === "dialogue",
+    30000,
+    "post-load inspection did not start its dialogue",
+  );
+  await drainCurrentDialogue("explore");
+  await waitForPersistenceIdle();
   await requestAndFinish("quit");
 }
 

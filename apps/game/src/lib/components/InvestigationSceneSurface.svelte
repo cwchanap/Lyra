@@ -662,7 +662,11 @@
   />
 
   <div class="scene-surface">
-    <div class="scene-hud" bind:offsetHeight={headerHeight}>
+    <div
+      class="scene-hud"
+      bind:offsetHeight={headerHeight}
+      inert={presentingCharacter !== null}
+    >
       <div class="scene-label">
         <span class="eyebrow">INVESTIGATION</span>
         <strong>{sublocation.label}</strong>
@@ -1016,6 +1020,7 @@
   .scene-label {
     grid-column: 1;
     grid-row: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     gap: 4px;
@@ -1045,10 +1050,10 @@
     inset: 0 0 auto;
     z-index: 9;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: minmax(120px, 1fr) minmax(0, auto);
+    gap: 6px;
     box-sizing: border-box;
-    padding: 12px clamp(20px, 3vw, 40px);
+    padding: 8px clamp(20px, 3vw, 40px);
     background: var(--ink);
     pointer-events: none;
   }
