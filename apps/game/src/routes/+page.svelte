@@ -6,7 +6,6 @@
     loadPersistedGameDiscardingCurrent,
     startPersistedGame,
     startGameWithoutSaving,
-    resetGame,
     resetFrontendForTitle,
     returnPersistedToTitle,
     returnPersistedToTitleWithoutSaving,
@@ -652,9 +651,14 @@
       void cancelPersistenceChallenge(failureToken, () => {
         returnToTitleFailure = null;
         void tick().then(() => {
-          document
-            .querySelector<HTMLElement>('[data-focus-target="return-to-title"]')
-            ?.focus();
+          (
+            document.querySelector<HTMLElement>(
+              '.game-menu-scrim [data-focus-target="return-to-title"]',
+            ) ??
+            document.querySelector<HTMLElement>(
+              '[data-focus-target="return-to-title"]',
+            )
+          )?.focus();
         });
       });
       return;
@@ -980,7 +984,7 @@
       document.querySelector<HTMLElement>(
         '[aria-label="繼續遊戲"]:not(:disabled)',
       ) ?? document.querySelector<HTMLElement>('[aria-label="開始新遊戲"]');
-    focusTarget?.focus();
+    focusTarget?.focus({ preventScroll: true });
   }
 
   async function handleReturnToTitle(
@@ -1255,14 +1259,6 @@
     void loadSceneNavigationIndex();
   }
 
-  async function handleReset() {
-    await resetGame();
-    if (gameState.error) {
-      return;
-    }
-    gameState.error = null;
-  }
-
   // Reexamine from the dossier (inside the Escape menu) installs a dialogue
   // queue and flips the mode to dialogue. If the menu stayed mounted, its
   // scrim (z-index 40) would hide the dialogue (z-index 30, in <main inert>)
@@ -1458,7 +1454,7 @@
           {:else if gameState.value.mode.type === "gameComplete"}
             <GameComplete
               storyCleared={gameState.value.mode.storyCleared}
-              onReset={handleReset}
+              onReturnToTitle={() => handleReturnToTitle()}
               disabled={gameState.inFlight}
             />
           {/if}

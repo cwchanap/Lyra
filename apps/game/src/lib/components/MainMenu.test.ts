@@ -331,6 +331,8 @@ describe("MainMenu", () => {
   it("still drives card navigation with ArrowDown when the menu is not inert", () => {
     stubWeatherCanvasContext();
     render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
+    const exit = screen.getByRole("button", { name: /結束偵查/ });
+    const focus = vi.spyOn(exit, "focus");
 
     const down = new KeyboardEvent("keydown", {
       key: "ArrowDown",
@@ -339,24 +341,38 @@ describe("MainMenu", () => {
     window.dispatchEvent(down);
 
     expect(down.defaultPrevented).toBe(true);
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: /結束偵查/ }),
-    );
+    expect(document.activeElement).toBe(exit);
+    expect(focus).toHaveBeenCalledWith();
   });
 
-  // Companion guard: focusCard(0) keeps the original timer behavior when
-  // the menu is not inert.
-  it("still auto-focuses the first card after the 1.5s timer when not inert", () => {
-    vi.useFakeTimers();
-    stubWeatherCanvasContext();
-    render(MainMenu, { onNewGame: vi.fn(), onExit: vi.fn() });
+  it.each([
+    { slotStatus: "empty" as const, firstCard: "開始新遊戲" },
+    { slotStatus: "invalid" as const, firstCard: "繼續遊戲" },
+  ])(
+    "auto-focuses $firstCard without scrolling after 1.5s",
+    ({ slotStatus, firstCard }) => {
+      vi.useFakeTimers();
+      stubWeatherCanvasContext();
+      render(MainMenu, {
+        onNewGame: vi.fn(),
+        onContinue: vi.fn(),
+        onExit: vi.fn(),
+        discovery: titleDiscovery(slotStatus),
+      });
+      const menu = document.querySelector<HTMLElement>(".lyra-menu")!;
+      const firstButton = screen.getByRole("button", { name: firstCard });
+      const focus = vi.spyOn(firstButton, "focus");
 
-    vi.advanceTimersByTime(1500);
+      expect(menu.scrollTop).toBe(0);
+      vi.advanceTimersByTime(1499);
+      expect(firstButton).not.toHaveFocus();
+      vi.advanceTimersByTime(1);
 
-    expect(document.activeElement).toBe(
-      screen.getByRole("button", { name: "開始新遊戲" }),
-    );
-  });
+      expect(firstButton).toHaveFocus();
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+      expect(menu.scrollTop).toBe(0);
+    },
+  );
 
   it("steps ArrowDown/ArrowUp from the currently focused card instead of a stale index", () => {
     stubWeatherCanvasContext();
@@ -397,16 +413,24 @@ describe("MainMenu", () => {
       inert: false,
     };
     const { rerender } = render(MainMenu, props);
+    const menu = document.querySelector<HTMLElement>(".lyra-menu")!;
+    menu.scrollTop = 64;
 
     vi.advanceTimersByTime(200);
     await rerender({ ...props, inert: true });
+    const overlayControl = document.createElement("button");
+    document.body.appendChild(overlayControl);
+    overlayControl.focus();
     vi.advanceTimersByTime(400);
+    expect(overlayControl).toHaveFocus();
     await rerender({ ...props, inert: false });
-
+    expect(menu.scrollTop).toBe(64);
     const loadButton = screen.getByRole("button", { name: "載入遊戲" });
     loadButton.focus();
     vi.advanceTimersByTime(1000);
 
     expect(document.activeElement).toBe(loadButton);
+    expect(menu.scrollTop).toBe(64);
+    overlayControl.remove();
   });
 });

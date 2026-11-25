@@ -159,12 +159,16 @@
           ".lyra-menu .card:not(:disabled)",
         ),
       );
-    const focusCard = (n: number) => {
+    const focusCard = (n: number, preventScroll = false) => {
       if (inert) return;
       const currentCards = cards();
       if (currentCards.length === 0) return;
       focusIndex = (n + currentCards.length) % currentCards.length;
-      currentCards[focusIndex].focus();
+      if (preventScroll) {
+        currentCards[focusIndex].focus({ preventScroll: true });
+      } else {
+        currentCards[focusIndex].focus();
+      }
     };
     const onKey = (e: KeyboardEvent) => {
       // DOM inert does not silence window key listeners, so the menu itself
@@ -209,7 +213,7 @@
         ) {
           return;
         }
-        focusCard(0);
+        focusCard(0, true);
       }, 1500);
     }
 
