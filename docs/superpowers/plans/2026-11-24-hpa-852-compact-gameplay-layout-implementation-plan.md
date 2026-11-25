@@ -1,87 +1,66 @@
 # HPA-852 — 800×600 Gameplay UI 實作計劃
 
-**狀態：Draft / 尚未實作。**  
+**狀態：Draft / 尚未實作（第一輪 review 修訂）**  
 **基準：** main @ `1349831b8ab56db1c025c2ea360a0bef9bc82ac8`  
 **設計：** [HPA-852 design](../specs/2026-11-24-hpa-852-compact-gameplay-layout-design.md)  
-**Linear：** [HPA-852](https://linear.app/cwchanap/issue/HPA-852/targets-and-faces-hidden-off-screen-or-under-the-hud-at-the-default)
+**Linear：** [HPA-852](https://linear.app/cwchanap/issue/HPA-852/targets-and-faces-hidden-off-screen-or-under-the-hud-at-the-default)  
+**Review：** [第一輪設計審閱](https://github.com/cwchanap/Lyra/pull/141#pullrequestreview-6050179714)
 
-一個 Linear ticket → 一個 PR（即本 draft PR）。下列工作是同一分支內的實作/測試次序，不是拆成多個 PR 或新 ticket。此計劃不改現有 story canon，不產新美術/SFX。
+一個 ticket → **同一個 Draft PR #141**。先做便宜且獨立的 end/title/menu，再處理 geometry；每一段先通過自己的 checks，最後所有驗收通過才 ready。以下不是多個 PR。Contain 已定案，不先全面重跑兩章來選方案。
 
-## Task 1 — Baseline：重現並固定驗收矩陣
+## Task 1 — End-card CTA / Title scroll（先完成）
 
-- [ ] 讀 `AGENTS.md`、HPA-853 已合併設計/實作文件、HPA-831/HPA-705 regression contract。若 main 已更新，先核對合併差異與 HPA-712 是否改動真實 dialogue anchors；不要覆蓋其他 PR。
-- [ ] 安裝 workspace dependencies，依 repo 規格建立 e2e-feature + VITE_E2E packaged app（`apps/game/scripts/build-e2e.mjs`）。在 MCP 可用 desktop/browser/terminal 環境用既有 WDIO helpers 及 `ensureMinimumWindowViewport()` 設實際 800×600 viewport。先跑 `bun run --cwd apps/game test:e2e:gameplay`；保存原有結果，不跳過已存在失敗。
-- [ ] 建立同一份 before/after 報告：從 compiled story corpus 取得已配置目標清單、實際場景與最大 visible sublocations；用 production UI 測 `.scene-hud`、`.scene-stage`、nav/進度/目標/scene-label、target rect、authored center、elementFromPoint、cue、face 與 scroll，不以 UAT 舊座標代替現況。既有 `investigation-layout.e2e.ts` 的 HPA-853 scene 4 與六場景 checkpoint 優先重用。
-- [ ] Ch1 inv7/8/9、Ch2 inv4 五地點、Ch1 testimony/scene 11/神谷 hearing、Ch2 三枝、complete/title/menu 逐項標成 reproduced / already fixed with evidence / blocked。逐條保留 Linear acceptance；已修項不再改 runtime，但加/保留合適回歸。若所有現有調查場景在真實最大地點列與較大 viewport 都滿足 spec，保留原 cover，Task 2 只補必要的 nav/命中修正；否則採 Task 2 的 contain 方案。
-- [ ] 先確定 `MainMenu` 真正的 scroll owner（≤980px 的 .lyra-menu 或 document）及初始 focus/延遲 focus 何時造成跳動；不假定 HPA-830 或 reset 路徑已解決這個報告。保存截圖於 ignored E2E artifacts；PR 記錄路徑與結果，不 commit build/screenshot binaries。
+Files: `GameComplete.svelte` / `GameComplete.test.ts`、`MainMenu.svelte` / `MainMenu.test.ts`、`GameShell.svelte`、`apps/game/src/routes/+page.svelte` 及既有 route/persistence tests。
 
-## Task 2 — Explore stage 與 nav：對齊、可見、可點
+- [ ] 兩種 storyCleared 的 component tests 固定 stamp、文案與 CTA。改「返回標題畫面 / RETURN TO TITLE」、onReturnToTitle callback，+page 接既有 handleReturnToTitle；確認唯一舊 caller 移除後刪 handleReset 與 resetGame import。保留既有 persistence recovery、inFlight，不清手動存檔、不直接 new game。
+- [ ] 壓縮 GameComplete min-height/padding/gap，若必要只縮 complete mode 的 shell header，使首屏 CTA 完整可點。無新 end-state、無 HPA-708 變更。
+- [ ] MainMenu 的 focusCard(:167) 由 1.5s timer(:202–212) 呼叫時使用 preventScroll；+page finishReturnToTitle(:983) 自動 focus 同樣加 preventScroll。保留 keyboard 主動 navigation 的原生 scroll；驗證 .lyra-menu 首次 mount/return 於 top，不重新設計 title layout 或 reset 玩家已選 scroll。
+- [ ] Component tests（包含 timer、Continue 有/無、overlay focus），重用 save-exit/save-management、既有 shipped production-journey 終點驗證 complete → title。兩種 end-state component tests；packaged 不造假終章或新增 engine checkpoint。以同次 WDIO 800×600 title/CTA 截圖與 scroll rect 證明；實際尚未測者記錄在 Task 5 最終 gate。
 
-主要 files:
-- `apps/game/src/lib/components/InvestigationSceneSurface.svelte` / `InvestigationSceneSurface.test.ts` / `InvestigationSceneSurface.present.test.ts`
-- `apps/game/src/lib/investigation/target-layout.ts` / `target-layout.test.ts`
-- `apps/game/src/lib/components/ExploreView.svelte` / `ExploreView.test.ts`
-- `apps/game/src/lib/components/SublocationNav.svelte` / `SublocationNav.test.ts`
+## Task 2 — 同一 GameShell menu 的滑鼠入口
 
-- [ ] 先寫失敗測試：非 16:9 stage 的 plane 尺寸、letterbox 偏移、靠圖緣目標、窄 viewport clamp 衝突、stage/header/fallback rect、pending cue。確認原有 cover 行為的 tests 是特定呈現假設還是必要 usability invariant；保存後者。
-- [ ] 如果 Task 1 需要 contain：將 `coverPlaneSize` 與唯一 `targetViewportRect` 投影 seam 改成實際 fit plane 的尺寸/偏移（若其他 caller 確實仍需要 cover，才保留明確 fit mode；不要留無用 helper）。CSS geometry 與 TS 數學使用同一規則；調查背景 object-fit/coordinate-plane/standee/cue/thumbnail layer 的呈現都匹配。針對 800×600 + header、800×900、較寬 16:9，驗證 full-image 對位與全部 edges。沿用 `headerHeight` 量測並確認 fallback rect 轉成 stage-relative 座標；不新增 viewport state owner。
-- [ ] 重新檢查 `computeCompactClasses`：固定 800×450 的 collision basis 若不再是實際最小 plane，不可沿用。由目前實際 viewport/plane 判斷 clamp overlap；保留現有單軸/雙軸 compact、intentionalOverlaps、locked targets 與 focus transfer。測試 resize + clamp/routing 變更不會形成 fallback oscillation、偷點或失焦；不改 target IDs、unlock 或回退功能。現有 shipped placement 與 HPA-853 baked face 測試的幾何 helper/expected band 改為與新 plane 一致的真實 stage assertion；保留 72-target count、min visible span、cue、HUD、actual hit、locked/overlap 原契約。
-- [ ] `SublocationNav` scene variant 改單列可水平捲動且有溢出提示，`ExploreView` header grid 的 flex children min-width 正確；維持 44px button、active、remaining count、focus-visible、disabled、長中文字與鍵盤定位。驗證第五 chip pointer/keyboard 到達及 map variant 不誤顯示 nav。避免為了不換行把按鈕裁切。新增 DOM tests 與 packaged scene 4 證據。
-- [ ] 實測 Ch1 inv8/9 舊 sidecar 的 edge targets、相鄰工單與名單；需要時才在 `docs/stories_plan/chapter_1/investigation_scene_{8,9}.layout.json`（以及其他有證實問題的既有 sidecar）用 Layout Editor 改原圖對位。若物件根本不存在或需重畫，獨立美術 task 並報 blocked；不在本 PR 產圖或擴散改故事。若 sidecar 改動，`bun run scenes:compile` + live-corpus tests/snapshot，核對 only expected layout/revision diff。既有 dev save 可失效，不加 migration。
+Files: `GameShell.svelte`、新增小型 `MenuTrigger.svelte`、`+page.svelte`、`ExploreView.svelte`（含 map header）、`InterrogationStage.svelte`、`analysis/AnalysisWorkbench.svelte` 及相關 tests。
 
-## Task 3 — 普通對話 / interrogation face-safe chrome
+- [ ] MenuTrigger 共用文字「遊戲選單」與 disabled/focus-origin callback，放入現有 chrome。普通 dialogue/complete header 直接使用 GameShell opener；+page 將 openInterrogationGameMenu 改名 requestGameMenu，使用既有 gameMenuRequest/openRequestedGameMenu。Explore 的 investigation HUD 與 map 分支使用同一 callback（向 InvestigationMapView 現有 header 傳遞）；不新增 floating overlay，HUD button pointer-events:auto。Analysis 放 board-header actions，不改分析板佈局。
+- [ ] 訊問 mode 的工具列加 menu；active testimony/dialogue 也有入口，即使 menuChromeVisible 目前只含 interrogation。不要連帶擴張 LOG/Case File。Present tray 保留原 data-interrogation-game-menu（其合法入口不得被普通 overlay guard 擋掉）；modal 背後不得有另一個可聚焦 menu trigger。
+- [ ] 既有 GameShell openGameMenu/closeGameMenu/focus restoration：共用 opener guard 與 fullscreen reassert；尊重 inFlight/topLayerOpen/inert/普通 escapeClaimed（不以 click 代替 Escape），保留 Present path、IME 與一個 Escape 關一層。無新 store/IPC/listener。保留 save success 的 Present focus special case、load、Case File/Scene Select gating。
+- [ ] 各 placement 用 component tests，GameShell test opener/Resume/focus/guards；**一條** packaged 新 trigger → Save → Load → 原 scene/inventory/mode；沿用 save-management / exit-lifecycle suite，避免 8 個 mode 重複同一 packaged opener。記錄 menu 截圖。Task 1–2 的 Vitest/check 與相關 persistence tests 先執行，不等 geometry。
 
-主要 files:
-- `apps/game/src/lib/components/GameShell.svelte` / `GameShell.test.ts`
-- `apps/game/src/lib/components/DialogueBox.svelte` / `DialogueBox.test.ts`
-- `apps/game/src/lib/components/InterrogationStage.svelte` / `InterrogationStage.test.ts` / `InterrogationChrome.test.ts`
-- `apps/game/src/lib/components/InterrogationSubjectArt.svelte` / `InterrogationSubjectArt.test.ts`
+## Task 3 — Contain 與 compact nav（保留固定 compaction）
 
-- [ ] 對投訴的 named subjects 實測 portrait 與 painted chrome bounds，取得現有圖片頭部區域（可沿用 HPA-853 normalized head-box 測試的方式，fixture only）。普通 dialogue 需同時測 left/right portrait；interrogation 需測初始、質問、testimony line、Present 退出。
-- [ ] 僅在確有重疊的 owner 調整：compact chapter/scene title、interrogation stage 左 stack/工具列、portrait vertical space，令頭部區域與資訊 chrome/底部對話實際分離。用 CSS grid/flex 或現有 owner 的量測 seam，不以 z-index 遮掉文字、降低 opacity、全域 face detector 或 scene-specific hard-coded portrait offsets 掩蓋。保持 alpha crop、CrossfadeImage、原左右角色位置語義、證物影像/thumbnail layers。
-- [ ] 保留 analysis/interrogation presentation gating、HPA-831 focus/evidence image regression、dialogue history 與 HPA-711 inner voice 樣式。對長中文標題/目標/subject record，避免因換行讓頭重新被覆蓋。實際 screenshot/DOM rect 證明臉部而非整個透明 image box 的可視性。
+Files: `target-layout.ts` / `target-layout.test.ts`、`InvestigationSceneSurface.svelte` / tests、`ExploreView.svelte` / tests、`SublocationNav.svelte` / tests、`investigation-layout.e2e.ts`。
 
-## Task 4 — 結案 CTA 與標題初始 scroll
+- [ ] 寫 focused geometry regression：修改既有 shippedPlacements sweep（原 :716），在真實 plane rect 以 compiled layout 算**未擴張 authored center**（不使用 clamp button centre）、stage inside、44px span、12px cue。使用已存在 Ch2 inv4 五地點 checkpoint，有 pending hotspot/witness 的既有 sublocation 作 template。先在舊 cover 執行 focused regression / screenshot；若當前最大 header 剛好已滿足中心 gate，不謊稱失敗，可用既有短 header/較大 aspect fixture 顯示 cover 裁切差異。不要求先跑全 corpus live journey 才寫 code。
+- [ ] `coverPlaneSize` → `scenePlaneSize`，max → min；既有 targetViewportRect signed offsets 不變。Surface 的 --scene-cover-width/height → --scene-plane-width/height、max → min、background object-fit:contain；pending cue 只同步變數名稱，保留公式。既有 headerHeight、stage inset、中心 transform、alpha crop、thumbnail layer 不變。不留 fit mode、不建新投影器。
+- [ ] 改 target-layout.test.ts（tall 800×720、wide 1920×800、minimum stage、原 offscreen edge ledger/CCTV 變 on-art）；既有 Surface.test.ts :158 等 CSS contract 與 :1218 crop-to-fallback 測試應改為 contain-on-art。保留真正 fallback-panel occlusion、focus transfer、visibleSpans、locked/overlap assertions；修正依舊投影假設的 occlusion fixture 座標，不能直接刪掉 regression。所有 callers/stale comments 一起更新。
+- [ ] SublocationNav scene variant chips 單列 overflow-x:auto、flex-shrink:0、可見 overflow affordance；保留 44px 高度、full labels、counts、active/disabled。active chip mount/必要的切換 scrollIntoView({inline:"nearest",block:"nearest"})；鍵盤 focus 用原生 scroll。Explore HUD grid min-width 與第一列（含 menu）收斂；不改 city map/page variant。
+- [ ] **固定 MIN_VIEWPORT_PX=800×450 不變，computeCompactClasses 不新增 viewport dependency。** 保守性以前置 stage height ≥450px @800×600 為必要條件（header ≤150px）。用既有五地點 checkpoint 及六個 HPA-853 live checkpoints 的各 sublocation、長 title/objective header fixture 驗證；不能只假定五地點必然是最高 header。若失敗，最小調整既有 HUD 排列/間距，資訊不得隱藏，保持 44px control；較大 viewport 不縮破此下限。若不能滿足，回報設計 blocker，不自行換成動態 compaction 或放寬 gate。
+- [ ] 更新 HPA-853 的 baked face scale Math.max→Math.min（原 :1389）；其 72-target/17-sublocation/zero-placement-loss inventory gate 保留，只移除 obsolete cover crop-band 規則，中心由既有 sweep 驗證。Live `expectHpa853SublocationSurface` 的 HUD/target hit/locked/intentional overlap regressions 繼續保留，offstage authored center 不可 silent skip。五 chip 真實 pointer/keyboard scroll 到最後一個並切換；各 live header ≥450px floor（stage，非整個 viewport）以及較大 aspect 另驗一次。
+- [ ] 截圖比對 800×600 與較大 viewport 的原圖完整性/暗邊/座標；100px header 例線性縮小約 10%，不要為填滿窗口回退 cover。
 
-主要 files:
-- `apps/game/src/lib/components/GameComplete.svelte` / `GameComplete.test.ts`
-- `apps/game/src/lib/components/MainMenu.svelte` / `MainMenu.test.ts`
-- `apps/game/src/lib/components/GameShell.svelte` / `GameShell.test.ts`
-- `apps/game/src/routes/+page.svelte` 與既有 route/persistence tests
+## Task 4 — Face-safe portrait 與 inv9 sidecar（局部修正）
 
-- [ ] 先測兩種 storyCleared 值：原 stamp、title 與既有文案留存；CTA 改「返回標題畫面 / RETURN TO TITLE」，callback 語義改 onReturnToTitle。於 +page 接現有 handleReturnToTitle，移除僅供舊 CTA 的 handleReset/import（若另有 caller 則保留它的既有用途）；不得 resetGame/new game。已存在 recovery 的 retry、discard、cancel 與 inFlight 防重入同樣適用。
-- [ ] 調整 complete layout 及必要 compact header，800×600 不捲動就看見、可點 CTA。維持兩種 end-state，不改 HPA-708、不插新的 chapter transition。
-- [ ] MainMenu compact 佈局及實際 scroll owner 初始位置：fresh mount/return to title at top；初始化 focus preventScroll，並避免將初始焦點放在視窗外；針對 +page 的 finishReturnToTitle focus 與 MainMenu delayed focusCard(0) 一起修。鍵盤主動移動可 scroll into view；save archive 關閉/焦點回復不觸發無關 scroll reset，Continue discovery 更新不抹除玩家 scroll。測 Continue enabled/disabled/long recap、QUIT、延遲 timer 後的 title screenshot。
-- [ ] 用既有 `save-exit.e2e.ts` / `save-management.e2e.ts` 或合適 existing persistence suite 驗證 return-to-title 真實保存/恢復（包含故障恢復路徑）。新增有界 e2e-only complete checkpoint 若現有 public scene navigation/fixture 無法可靠到達 end state；使用 engine 正常 mode/transition 及 checkpoint projection，不寫假 UI mode、也不新增 production IPC。
+Files: `GameShell.svelte`、`DialogueBox.svelte`、`SceneBackdrop.svelte`、`InterrogationStage.svelte`、`InterrogationSubjectArt.svelte` 及現有 tests；`docs/stories_plan/chapter_1/investigation_scene_9.layout.json`。
 
-## Task 5 — 滑鼠入口復用 GameShell
+- [ ] 普通對話採 GameShell 既有 header 的 bind:offsetHeight → --shell-header-height（無 header=0），portrait capped by viewport minus top chrome。**SceneBackdrop 的 SCENE stamp 在 main 內且 z-index 25>portrait 20**；故應把實際 backdrop/stamp 與 normal-flow rule 的 clearance 計入，而非只驗 header bottom。使用局部量測 normal-flow wrapper / CSS rule，portrait top ≥ 實際 chrome bottom（包含 stamp），原左右角色、畫風、CrossfadeImage/thumbnail 保留。測兩側、長標題、header 不存在等，不做逐 speaker offsets。
+- [ ] InterrogationStage 同樣預留 stack/toolbar/stamp 與 portrait 的不相交區，InterrogationSubjectArt alpha-crop 可見框受限，現有 min-height 不得覆蓋上方 chrome。優先共同空間分配，非逐角色 head-box、改透明度或縮字。以 measured rect separation 及代表三宅、神谷、三枝畫面驗證；保留 HPA-831 evidence/focus 與 HPA-711 inner voice / presentation gating。
+- [ ] **必做** Ch1 inv9 contractor_desk 的 workorder/access_permission_list 編輯：在 Layout Editor 對照現有原圖，擴至各自實際可辨識範圍；第三個鄰接 material_kit_list 也需檢查與必要的同批校正。三者均可獨立點、無新增未聲明 overlap、不把 clamp 強行放大、不移離物件。若原圖不足，記錄最大可用範圍；任何需新圖的工作獨立 art ticket、不得用假位置通過。
+- [ ] Ch1 inv8 ledger 與 inv9 to_confront 因 contain 解 crop，預設不改其 sidecar；只有真實 hit regression 才局部修。必跑 scenes:compile、test:scripts、check:scripts、live-corpus snapshots，只允許預期 layout/contentRevision diff，無 save migration。
+- [ ] Real pointer 針對 Ch1 inv8 帳本、inv9 三份鄰接文件及前往質問北見、Ch2 inv4 悼念卡/監看螢幕；使用現有 production jump/helper、已存在 checkpoint 或既有 journey 局部 route，正確 evidence/topic/acquisition 推進。黑瀨、高瀨、戶川美羽看實際 screenshot；HPA-853 原 baked face checks 維持，不新增 head-box fixtures。無新增逐場景 checkpoint/Rust production change。
 
-主要 files:
-- `GameShell.svelte` / `GameShell.test.ts`；`+page.svelte`（現有 gameMenuRequest）
-- `ExploreView.svelte` / `InvestigationMapView.svelte` / `InterrogationStage.svelte` / `analysis/AnalysisWorkbench.svelte` 及其現有 tests
-- 若重用樣式有需要，新增一個小型 MenuTrigger.svelte，不新增 store/controller
+## Task 5 — 單一 WDIO acceptance harness / MCP 執行驗收
 
-- [ ] 設定最小 props/snippet API，普通對話使用 GameShell chapter header 的 button；Explore nav/header、city-map header、interrogation toolbar（提問與 live dialogue）、analysis board-header actions 提供同樣文字按鈕。Present modal 沿用既有 `data-interrogation-game-menu`；不在其背後新增 focusable trigger；complete 的 header 入口同樣可用。不得改分析板布局演算法。
-- [ ] +page 泛化既有 request handler（保留現有 Present 呼叫路徑），GameShell 讓新 click 與 Escape 同樣通往同一 openGameMenu、fullscreen reassert、close/focus restore。按鈕由 existing disabled/inFlight/top-layer/inert 狀態控制；nested topic/history/Present/modal 的 escape claim / click ordering 不破壞。「遊戲選單」入口不消費 gameplay dialogue click，不奪焦，不新增 Escape listener。重新檢查 menu-trigger 的 focus restore：Resume、save success（原 Present special-case）、load、title return、submenu 回退不應指向已 unmounted/hidden control。
-- [ ] GameShell tests：同一 menu、gating、初始 Resume focus、原 trigger 回焦、Escape / IME、modal & in-flight、沒有重複 trigger；各 mode component tests 驗證按鈕在安全 chrome 內且事件只觸發一次。保留 HPA-830 save archive 安全、HPA-705 searchable tray、HPA-831 focus evidence tests。
+- [ ] 以 MCP 執行既有 packaged WDIO 環境並讀取同次 `browser.saveScreenshot` artifacts（例如隔離 Linux Xvfb；不另建 MCP 操作 harness/新平台 runner）。確認實際 innerWidth=800/innerHeight=600、commit/run id。保留 repo 既有 trusted keys policy；無 trusted input 時不把 synthetic keys 宣稱真實 OS keyboard proof。
+- [ ] Task 1–2：兩種 complete component coverage + 實際 shipped complete CTA → title，fresh/return title 在 autofocus 後 top=0、logo 可見、QUIT 可經原有 navigation 找到。Persistence recovery、手動 save/Continue 不退化。各 trigger component tests、GameShell focus/guard tests、一次 packaged save→load。已有 save/exit suite，不做逐 mode 完整 E2E。
+- [ ] Task 3–4：既有 `investigation-layout.e2e.ts` 全 shipped placements style sweep（中心/跨度/cue）、五地點與 HPA-853 六個 live checkpoints（stage floor/HUD/actual hit/locked & overlap/72-target/face checks），named complaint target real pointer、portrait frame separation、較大 aspect regression。Sweep 只證明 geometry，不宣稱全場景 live clicks；named targets 與 existing live regression 補足。
+- [ ] **視覺驗收**：Linear 無 mockup，MCP 直接讀 WDIO 同次 before/after 代表 screenshots：Ch2 inv4 五 chip/直播牆/轉播車、Ch1 inv7/8/9（含三份相鄰文件）、三宅/神谷/三枝代表 dialogue/hearing、end/title、menu、一張較大 viewport。對照原圖及現有 UI，確認原圖與 hit/cue 一致、臉清楚、控制可達；無全章逐圖矩陣或人工簽收。若現有 fixture 不直接到某畫面，用既有 game navigation/journey，不擴充逐場景 checkpoints；有實際未驗項就記錄，不能用 mock/靜態 DOM 宣稱成功。
+- [ ] 相關 Vitest、`bun run check`、`bun run --cwd apps/game check:e2e`、lint/format、scenes:compile/test:scripts/check:scripts、packaged gameplay suite；save-management/exit-lifecycle 用既有 scripts（同一 e2e binary）。例如 `xvfb-run -a bun run --cwd apps/game test:e2e:gameplay`；PR smoke / ready 前手動 E2E Full 遵照 AGENTS.md，不額外引入 CI suite。MCP/packaged 無法執行則誠實記為 blocker。
+- [ ] PR #141 逐項記錄結果、artifact 路徑、baseline 已解決/本次新增修正/未驗事項；單一 PR 全部 gates 完成才 ready。不做第二平台 native acceptance。
 
-## Task 6 — 全章 packaged MCP 驗收
+## Self-review（第一輪）
 
-- [ ] 以 `apps/game/e2e-tauri/investigation-layout.e2e.ts` 為唯一 layout E2E 主軸。保留現有 HPA853_LAYOUT_CHECKPOINTS 與 `enterSublocationThroughNav`、`waitForSceneSurface`。在必要時泛化現有測量 helper 加章節 ID（不能以重複 sceneId 當 chapter key）；依實際 manifest 枚舉兩章其餘 shipped investigations，擴充 `apps/game/src-tauri/src/game/e2e_checkpoints.rs` / `apps/game/src/lib/e2e/checkpoints.ts` 有界 layout-ready 白名單及 tests。fixture 只允許指定真實場景之全部 sublocations 解鎖、保留目標未檢查、不觸發 Auto Outro；不得新建通用 unlock-anything IPC。MCP 操作透過現有 packaged state application / UI。對所有目標，以 live DOM 實測 + corpus inventory 對帳；每個場景覆蓋最大地點列與必要的解鎖變體（尤其會同時可點的重疊目標）。已配置 on-art 不准路由 fallback；確認 authored center、實際可用 hit、cue、HUD rect、face bounding。不用 DOM synthetic clicks 取代投訴目標的真實 pointer hit 證據。
-- [ ] 在原報告所列場景實際滑鼠點擊投訴 target/witness，斷言正確 ID/對話/線索與必要推進；若 acquisition popup 出現，正常操作確認。保留 existing real pointer、keyboard navigation、focus/Escape、HPA-853 locked and overlap invariants，不能只驗 count。五地點尾端以 UI scroll/Tab 觸達，選取並返回。
-- [ ] 新入口在 dialogue/explore/city map/interrogation (question/live testimony/Present)/analysis/complete 真實開啟既有 menu，再 Resume/Escape 回原 mode；以其中一條走 real manual save、load，驗 inventory/mode/scene 保留。用 existing `app.e2e.ts`、`save-management.e2e.ts`、`save-exit.e2e.ts`、`analysis-beat85.e2e.ts`、`scene-navigation-gate.e2e.ts` 或現有相關 suite，避免額外 test framework。兩種 complete → title 確認不是直接新遊戲、手動存檔未消失，Title 首次渲染與延遲 1.5s autofocus 之後 scroll top/Logo/QUIT 仍符合 spec。
-- [ ] **MCP 視覺驗收**：使用執行 agent 能使用的 MCP desktop/browser/terminal 控制真實 packaged app + screenshot artifacts，逐項比對 before/after。Linear 無獨立 mockup，依本設計與原圖：Ch2 inv4 直播牆/轉播車/五 chips、Ch1 inv7/8/9、三宅普通對話與 testimony、神谷 hearing、三枝、兩種 end card、返回後 title、遊戲選單及較大 viewport 至少各取相應證據。記錄 viewport、stage bounds、圖片/人物、按鈕/焦點狀況、結果及 artifact 路徑。不可用 DOM-only/靜態 CSS/code review 代替 screenshot；不要求人為簽收。若無 MCP/packaged 能力，標為 blocked 並保留待驗事項，不假裝完成。
-- [ ] 執行既有 checks（依 package scripts）：
-  - 相關 Vitest component/target-layout tests；`bun run check`、`bun run --cwd apps/game check:e2e`、`bun run lint`、`bun run format:check`。
-  - 若改 sidecar，`bun run scenes:compile`、`bun run test:scripts`、`bun run check:scripts`、corpus snapshot review，必要時 `bun run evidence-sources:audit`。
-  - 若擴充 Rust e2e-only checkpoint：現有 checkpoint contract tests、`cargo test --manifest-path apps/game/src-tauri/Cargo.toml`（含對應 e2e feature）、`bun run rust:lint`。
-  - `xvfb-run -a bun run --cwd apps/game test:e2e:gameplay`（或 MCP 控制的現有等價 packaged desktop）；save-management/exit-lifecycle 以現有 `test:e2e:save-management:run`、`test:e2e:exit-lifecycle:run`（同一次已建 e2e binary）確認 shared persistence flow；PR smoke 與手動 E2E Full 依 AGENTS 現有 workflow 規格。使用既有 trusted key policy，僅在明確支援隔離環境執行真實 OS keys；沒有 trusted input 時不能把合成 Tab 宣稱為真實 keyboard proof。
-- [ ] 更新 PR description 逐項列出 Linear acceptance 對應證據、test results、visual screenshots、baseline 已解決/新增修正/尚未驗證項。只有 spec 的 gate 通過才 ready for review；不為本跨平台共用 UI 建第二個 native runner。
-
-## Self-review 與風險控制
-
-- HPA-853 main 已把 HUD 從畫面剝離，因此不重建 HUD 架構；保留新 stage/header 分界。contain 是保留原圖與全中心可見的產品選擇，非自動套用；若 cover baseline 已達標不改投影。若採 contain，必須同步改 background、hit/cue、collision projection、existing E2E，避免兩套座標。
-- 把緊密熱點全域放大只會再搶點；以既有 compact algorithm + 真實 viewport + 少量 sidecar 修正，不用新 schema、假位置、全面 tooltip overhaul。
-- 直接 resetGame 是產品風險，返回標題是 ticket 已允許的選項；重用持久化流程而非手寫 confirmation/clear save。Menu button 只是一個新入口，不是新 menu state owner。
-- 一張 PR，無 art/SFX 工作；如現有圖無法支撐場景合理位置，記錄獨立依賴。舊 HPA-853 有多平台 gate 的歷史，不在本票重啟已豁免的跨平台要求；同一支援平台的 MCP packaged acceptance 即可。
-- 規劃階段只讀 main 與 Linear，未執行 packaged UAT；需以 Task 1 真實結果確認 residual、最合適 compact portrait/scroll layout 與最小必要 sidecar 範圍。無 mockup，不宣稱 pixel parity 已驗證。
+- Review 1–3：contain 確定，四處 fit token/變數改名，保留原 signed offsets 及固定 collision basis；實際 stage floor 必須成立。修正舊 cover-specific test fixtures，保留 genuine occlusion。
+- Review 4–5：使用現有 sweep/fixtures，不建立全章 checkpoint；分清全 corpus authored geometry 與實際 named hits。以 measured chrome clearance 規則取代逐人物 head boxes，普通對話額外算 SCENE stamp。
+- Review 6–7：只修兩個自動 focus；MenuTrigger 選定，per-mode component tests + 一條 packaged persistence journey；仍保留 Present 與 modal guards。
+- Review 8–9：獨立小修先做，同一 PR 不拆分；WDIO 是唯一 acceptance harness，由 MCP 執行/檢查截圖。inv9 相鄰三個物件須一併檢查，兩個小框必做校正且不可造假擴大。
+- 規劃階段未跑 packaged app 或 tests；review 的縮減不等同修復已完成。Scope 不含 HPA-706/832/851/708/707/912、story、art/SFX、save schema 或 native feature。
