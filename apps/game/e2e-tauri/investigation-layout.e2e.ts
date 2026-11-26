@@ -4,8 +4,12 @@ import { pathToFileURL } from "node:url";
 import { compile } from "svelte/compiler";
 import { render } from "svelte/server";
 import {
+  assertSceneNavPointerEvents,
   assertSceneNavTabProgress,
   assertSceneNavWheelProgress,
+  assertX11DisplaySafe,
+  describeX11InputError,
+  deliverX11PointerPair,
 } from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   advanceDialogueUntil,
@@ -28,6 +32,7 @@ import {
   sendXvfbTrustedSceneNavPointer,
   startFromMenu,
   waitForPackagedGameState,
+  xvfbPointerState,
 } from "./helpers";
 import { anchors } from "./production-anchors";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
@@ -711,9 +716,22 @@ async function expectCrossedToRainBellInvestigation(): Promise<void> {
   expect(await elementExists(anchors.cityMapSelector)).toBe(false);
 }
 
+function assertSafeXvfbDisplay(context: Mocha.Context): void {
+  if (!e2eXvfbTrustedKeysEnabled()) return;
+  assertX11DisplaySafe(xvfbPointerState, () => {
+    const suite = (context.currentTest ?? context.test)?.parent;
+    if (!suite) process.exit(1);
+    suite.bail(true);
+  });
+}
+
 describe("investigation layout surface", () => {
-  beforeEach(async () => {
+  beforeEach(async function () {
+    assertSafeXvfbDisplay(this);
     await resetE2eStorage();
+  });
+  afterEach(function () {
+    assertSafeXvfbDisplay(this);
   });
 
   it("collects a placed investigation hotspot through the real player UI", async () => {
@@ -1512,16 +1530,23 @@ describe("investigation layout surface", () => {
     await browser.execute(() => {
       const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
       chips.scrollLeft = 0;
-      chips.dataset.hpa852Wheels = "[]";
-      chips.addEventListener("wheel", (event) => {
-        const events = JSON.parse(chips.dataset.hpa852Wheels ?? "[]");
-        events.push({
-          trusted: event.isTrusted,
-          deltaX: event.deltaX,
-          deltaY: event.deltaY,
-        });
-        chips.dataset.hpa852Wheels = JSON.stringify(events);
-      });
+      document.documentElement.dataset.hpa852Wheels = "[]";
+      document.addEventListener(
+        "wheel",
+        (event) => {
+          const root = document.documentElement;
+          const events = JSON.parse(root.dataset.hpa852Wheels ?? "[]");
+          events.push({
+            trusted: event.isTrusted,
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            targetInChips:
+              event.target instanceof Node && chips.contains(event.target),
+          });
+          root.dataset.hpa852Wheels = JSON.stringify(events);
+        },
+        { capture: true },
+      );
     });
     const wheelState = () =>
       browser.execute(() => {
@@ -1533,10 +1558,13 @@ describe("investigation layout surface", () => {
         const lastBounds = last.getBoundingClientRect();
         return {
           position: chips.scrollLeft,
-          events: JSON.parse(chips.dataset.hpa852Wheels ?? "[]") as Array<{
+          events: JSON.parse(
+            document.documentElement.dataset.hpa852Wheels ?? "[]",
+          ) as Array<{
             trusted: boolean;
             deltaX: number;
             deltaY: number;
+            targetInChips: boolean;
           }>,
           lastVisible:
             lastBounds.left >= bounds.left - 1 &&
@@ -1552,14 +1580,27 @@ describe("investigation layout surface", () => {
       const before = wheel;
       try {
         transport.push(await sendXvfbTrustedSceneNavPointer("move", "chips"));
-        transport.push(
-          await sendXvfbTrustedSceneNavPointer("wheel-press", "chips"),
-        );
-        transport.push(
-          await sendXvfbTrustedSceneNavPointer("wheel-release", "chips"),
-        );
+        await deliverX11PointerPair({
+          pointerState: xvfbPointerState(),
+          button: "wheel",
+          press: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("wheel-press", "chips"),
+            );
+          },
+          release: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("wheel-release", "chips"),
+            );
+          },
+        });
       } catch (error) {
-        pointerError = error instanceof Error ? error.message : String(error);
+        pointerError = describeX11InputError(error);
+        writeFileSync(
+          path.join(outputDir, "scene-nav-pointer-events.json"),
+          JSON.stringify({ wheel, pointerError, transport }, null, 2),
+        );
+        assertSafeXvfbDisplay(this);
       }
       await browser
         .waitUntil(
@@ -1587,9 +1628,11 @@ describe("investigation layout surface", () => {
         before.position,
         wheel.position,
       );
+      if (trusted && pointerError) throw new Error(pointerError);
       if (pointerError || !trusted) break;
     }
     const pointerDelivered = wheel.events.some((event) => event.trusted);
+    if (pointerError && pointerDelivered) throw new Error(pointerError);
     if (pointerError || !pointerDelivered) {
       console.warn(
         `[SceneNav] pointer delivery is inconclusive: ${JSON.stringify({ pointerError, wheel })}`,
@@ -1612,17 +1655,40 @@ describe("investigation layout surface", () => {
         path.join(outputDir, "scene-nav-scrolled.png"),
       );
       await browser.execute(() => {
-        const last = document.querySelector<HTMLButtonElement>(
-          ".explore-hud .chips button:last-child",
-        )!;
         document.documentElement.dataset.hpa852PointerEvents = "[]";
         for (const type of ["pointerdown", "pointerup", "click"]) {
-          last.addEventListener(type, (event) => {
-            const root = document.documentElement;
-            const events = JSON.parse(root.dataset.hpa852PointerEvents ?? "[]");
-            events.push({ type, trusted: event.isTrusted });
-            root.dataset.hpa852PointerEvents = JSON.stringify(events);
-          });
+          document.addEventListener(
+            type,
+            (event) => {
+              const root = document.documentElement;
+              const last = document.querySelector<HTMLButtonElement>(
+                ".explore-hud .chips button:last-child",
+              );
+              const chips = document.querySelector<HTMLElement>(
+                ".explore-hud .chips",
+              );
+              const lastBounds = last?.getBoundingClientRect();
+              const bounds = chips?.getBoundingClientRect();
+              const events = JSON.parse(
+                root.dataset.hpa852PointerEvents ?? "[]",
+              );
+              events.push({
+                type,
+                trusted: event.isTrusted,
+                targetIsLast:
+                  !!last &&
+                  event.target instanceof Node &&
+                  last.contains(event.target),
+                lastVisible:
+                  !!lastBounds &&
+                  !!bounds &&
+                  lastBounds.left >= bounds.left - 1 &&
+                  lastBounds.right <= bounds.right + 1,
+              });
+              root.dataset.hpa852PointerEvents = JSON.stringify(events);
+            },
+            { capture: true },
+          );
         }
       });
       let clickError = "";
@@ -1630,14 +1696,30 @@ describe("investigation layout surface", () => {
         transport.push(
           await sendXvfbTrustedSceneNavPointer("move", "last-chip"),
         );
-        transport.push(
-          await sendXvfbTrustedSceneNavPointer("click-press", "last-chip"),
-        );
-        transport.push(
-          await sendXvfbTrustedSceneNavPointer("click-release", "last-chip"),
-        );
+        await deliverX11PointerPair({
+          pointerState: xvfbPointerState(),
+          button: "click",
+          press: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("click-press", "last-chip"),
+            );
+          },
+          release: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer(
+                "click-release",
+                "last-chip",
+              ),
+            );
+          },
+        });
       } catch (error) {
-        clickError = error instanceof Error ? error.message : String(error);
+        clickError = describeX11InputError(error);
+        writeFileSync(
+          path.join(outputDir, "scene-nav-pointer-events.json"),
+          JSON.stringify({ wheel, clickError, transport }, null, 2),
+        );
+        assertSafeXvfbDisplay(this);
       }
       const pointerEvents = await browser.execute(
         () =>
@@ -1646,10 +1728,9 @@ describe("investigation layout surface", () => {
           ) as Array<{
             type: string;
             trusted: boolean;
+            targetIsLast: boolean;
+            lastVisible: boolean;
           }>,
-      );
-      const delivered = ["pointerdown", "pointerup"].every((type) =>
-        pointerEvents.some((event) => event.type === type && event.trusted),
       );
       writeFileSync(
         path.join(outputDir, "scene-nav-pointer-events.json"),
@@ -1659,12 +1740,8 @@ describe("investigation layout surface", () => {
           2,
         ),
       );
-      if (delivered) {
-        expect(
-          pointerEvents.some(
-            (event) => event.type === "click" && event.trusted,
-          ),
-        ).toBe(true);
+      const delivered = assertSceneNavPointerEvents(pointerEvents);
+      if ((delivered.down && delivered.up) || delivered.click) {
         await advanceDialogueUntil(async () => {
           const state = await getPackagedGameState();
           return (
@@ -1675,7 +1752,10 @@ describe("investigation layout surface", () => {
           );
         });
       }
-      const measured = delivered && !clickError;
+      if (clickError && (delivered.down || delivered.up || delivered.click)) {
+        throw new Error(clickError);
+      }
+      const measured = delivered.down && delivered.up && delivered.click;
       writeFileSync(
         path.join(
           outputDir,
@@ -1733,8 +1813,19 @@ describe("investigation layout surface", () => {
           const events = JSON.parse(root.dataset.hpa852Keys ?? "[]") as Array<{
             key: string;
             trusted: boolean;
+            targetIndex: number;
           }>;
-          events.push({ key: event.key, trusted: event.isTrusted });
+          const buttons = Array.from(
+            document.querySelectorAll(".explore-hud .chips button"),
+          );
+          events.push({
+            key: event.key,
+            trusted: event.isTrusted,
+            targetIndex: buttons.findIndex(
+              (button) =>
+                event.target instanceof Node && button.contains(event.target),
+            ),
+          });
           root.dataset.hpa852Keys = JSON.stringify(events);
         },
         { capture: true },
@@ -1760,6 +1851,7 @@ describe("investigation layout surface", () => {
           ) as Array<{
             key: string;
             trusted: boolean;
+            targetIndex: number;
           }>,
         };
       });
@@ -1771,13 +1863,13 @@ describe("investigation layout surface", () => {
       activeIndex: number;
       scrollLeft: number;
       lastVisible: boolean;
-      event: { key: string; trusted: boolean } | undefined;
+      event: { key: string; trusted: boolean; targetIndex: number } | undefined;
     }> = [];
     for (let index = 0; index < 4; index += 1) {
       try {
         await sendXvfbTrustedKey("Tab");
       } catch (error) {
-        keyError = error instanceof Error ? error.message : String(error);
+        keyError = describeX11InputError(error);
       }
       await browser
         .waitUntil(async () => (await keyboardState()).events.length > index, {
@@ -1790,7 +1882,13 @@ describe("investigation layout surface", () => {
       if (event?.trusted && event.key === "Tab") {
         await browser
           .waitUntil(
-            async () => (await keyboardState()).activeIndex === index + 1,
+            async () => {
+              const current = await keyboardState();
+              return (
+                current.activeIndex === index + 1 &&
+                (index !== 3 || current.lastVisible)
+              );
+            },
             { timeout: 2000, interval: 50 },
           )
           .catch(() => {});
@@ -1811,7 +1909,9 @@ describe("investigation layout surface", () => {
         event,
         index + 1,
         keyboard.activeIndex,
+        keyboard.lastVisible,
       );
+      if (trusted && keyError) throw new Error(keyError);
       if (keyError || !trusted) break;
     }
     const tabsDelivered =
@@ -1839,7 +1939,7 @@ describe("investigation layout surface", () => {
     try {
       await sendXvfbTrustedKey("Enter");
     } catch (error) {
-      keyError = error instanceof Error ? error.message : String(error);
+      keyError = describeX11InputError(error);
     }
     await browser
       .waitUntil(
@@ -1859,16 +1959,18 @@ describe("investigation layout surface", () => {
       () =>
         JSON.parse(
           document.documentElement.dataset.hpa852Keys ?? "[]",
-        ) as Array<{ key: string; trusted: boolean }>,
+        ) as Array<{ key: string; trusted: boolean; targetIndex: number }>,
     );
-    const enterTrusted = events.some(
+    const enterEvent = events.find(
       (event) => event.key === "Enter" && event.trusted,
     );
+    const enterTrusted = !!enterEvent;
     writeFileSync(
       path.join(outputDir, "scene-nav-keyboard-events.json"),
       JSON.stringify({ keyboard, traversal, events, keyError }, null, 2),
     );
     if (enterTrusted) {
+      expect(enterEvent.targetIndex).toBe(4);
       await advanceDialogueUntil(async () => {
         const state = await getPackagedGameState();
         return (
@@ -1877,6 +1979,7 @@ describe("investigation layout surface", () => {
           state.mode.type === "explore"
         );
       });
+      if (keyError) throw new Error(keyError);
     }
     const measured = enterTrusted && !keyError;
     const evidence = {

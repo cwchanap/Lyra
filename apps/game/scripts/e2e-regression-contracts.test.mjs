@@ -55,7 +55,7 @@ test("scene-nav trusted input is scoped and separates delivery from behavior", (
   ]) {
     assert.match(
       pointer,
-      new RegExp(`sendXvfbTrustedSceneNavPointer\\("${action}"`),
+      new RegExp(`sendXvfbTrustedSceneNavPointer\\(\\s*"${action}"`),
     );
   }
   assert.match(
@@ -63,18 +63,15 @@ test("scene-nav trusted input is scoped and separates delivery from behavior", (
     /assertSceneNavWheelProgress\([\s\S]*?before\.position[\s\S]*?wheel\.position/,
   );
   assert.match(pointer, /expect\(wheel\.lastVisible\)\.toBe\(true\)/);
+  assert.match(pointer, /assertSceneNavPointerEvents\(pointerEvents\)/);
   assert.match(
     pointer,
-    /if \(delivered\)[\s\S]*?expect\(\s*pointerEvents\.some/,
-  );
-  assert.match(
-    pointer,
-    /if \(delivered\)[\s\S]*?await advanceDialogueUntil[\s\S]*?currentSublocationId === "police_review_van"/,
+    /delivered\.down && delivered\.up[\s\S]*?await advanceDialogueUntil[\s\S]*?currentSublocationId === "police_review_van"/,
   );
   assert.match(keyboard, /sendXvfbTrustedKey\("Tab"\)/);
   assert.match(
     keyboard,
-    /assertSceneNavTabProgress\(\s*event,\s*index \+ 1,\s*keyboard\.activeIndex,?\s*\)/,
+    /assertSceneNavTabProgress\(\s*event,\s*index \+ 1,\s*keyboard\.activeIndex,\s*keyboard\.lastVisible,?\s*\)/,
   );
   assert.match(keyboard, /expect\(keyboard\.lastVisible\)\.toBe\(true\)/);
   assert.match(keyboard, /sendXvfbTrustedKey\("Enter"\)/);
@@ -113,6 +110,83 @@ test("scene-nav trusted input is scoped and separates delivery from behavior", (
     /deliverXvfbTrustedPointer\(\{[\s\S]*?resolveTarget: resolveXvfbTrustedTarget/,
   );
   assert.match(helper, /readRootPointer:[\s\S]*?XQueryPointer/);
+});
+
+test("scene-nav observes pointer delivery at document capture", () => {
+  const source = readFileSync(
+    new URL("../e2e-tauri/investigation-layout.e2e.ts", import.meta.url),
+    "utf8",
+  );
+  const pointer = source.slice(
+    source.indexOf(
+      'it("exercises the real five-chip scene navigation overflow"',
+    ),
+    source.indexOf('it("traverses and activates the last scene chip'),
+  );
+  const clicks = pointer.slice(pointer.indexOf("hpa852PointerEvents"));
+  assert.match(clicks, /document\.addEventListener\([\s\S]*?capture:\s*true/);
+  assert.match(clicks, /targetIsLast/);
+  assert.ok(
+    clicks.indexOf("assertSceneNavPointerEvents(pointerEvents)") <
+      clicks.indexOf("if (clickError &&"),
+  );
+  assert.ok(
+    clicks.indexOf("await advanceDialogueUntil") <
+      clicks.indexOf("if (clickError &&"),
+  );
+  const keyboard = source.slice(
+    source.indexOf('it("traverses and activates the last scene chip'),
+    source.indexOf("for (const sceneNumber of HPA853_SCENE_NUMBERS)"),
+  );
+  assert.ok(
+    keyboard.indexOf("assertSceneNavTabProgress(") <
+      keyboard.indexOf("if (trusted && keyError)"),
+  );
+  assert.match(keyboard, /targetIndex/);
+  assert.match(keyboard, /expect\(enterEvent\.targetIndex\)\.toBe\(4\)/);
+});
+
+test("poisoned X11 state prevents later test bodies and runner retries", () => {
+  const source = readFileSync(
+    new URL("../e2e-tauri/investigation-layout.e2e.ts", import.meta.url),
+    "utf8",
+  );
+  const config = readFileSync(
+    new URL("../wdio.conf.ts", import.meta.url),
+    "utf8",
+  );
+  const helper = readFileSync(
+    new URL("../e2e-tauri/helpers.ts", import.meta.url),
+    "utf8",
+  );
+  const runner = readFileSync(
+    new URL("./run-save-e2e.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    source,
+    /beforeEach\(async function[\s\S]*?assertSafeXvfbDisplay\(this\)[\s\S]*?resetE2eStorage/,
+  );
+  assert.match(
+    source,
+    /afterEach\(function[\s\S]*?assertSafeXvfbDisplay\(this\)/,
+  );
+  assert.match(source, /suite\.bail\(true\)/);
+  assert.match(config, /maxInstances:\s*1/);
+  assert.match(config, /specFileRetries:\s*0/);
+  assert.match(
+    config,
+    /bail:[\s\S]*?LYRA_E2E_RUNNER_PHASE[\s\S]*?LYRA_E2E_XVFB_TRUSTED_KEYS/,
+  );
+  assert.match(
+    helper,
+    /deliverXvfbTrustedKey\(\{[\s\S]*?pointerState:\s*xvfbPointerState\(\)/,
+  );
+  assert.match(
+    helper,
+    /pointerState\.assertAllowed\(action\)[\s\S]*?browser\.execute/,
+  );
+  assert.match(runner, /LYRA_E2E_X11_POINTER_STATE:\s*pointerStatePath/);
 });
 
 test("exit acquisition is acknowledged and quit without a later save or mutation", () => {

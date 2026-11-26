@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { lstatSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
 /**
  * Scoped Linux/Xvfb trusted input transport — pure, testable
  * verification logic. `e2e-tauri/helpers.ts` supplies the live `/proc`
@@ -44,6 +48,148 @@
  */
 
 export const TRUSTED_XVFB_KEYS_ENV = "LYRA_E2E_XVFB_TRUSTED_KEYS";
+export const X11_POINTER_STATE_FILENAME = "x11-pointer-state.json";
+
+export function createX11PointerState(statePath) {
+  if (typeof statePath !== "string" || !path.isAbsolute(statePath)) {
+    throw new Error("A runner-owned X11 pointer state path is required.");
+  }
+  const read = () => {
+    const metadata = lstatSync(statePath);
+    const directory = lstatSync(path.dirname(statePath));
+    if (
+      !metadata.isFile() ||
+      metadata.isSymbolicLink() ||
+      !directory.isDirectory() ||
+      directory.isSymbolicLink() ||
+      (process.geteuid &&
+        (metadata.uid !== process.geteuid() ||
+          directory.uid !== process.geteuid() ||
+          (metadata.mode & 0o077) !== 0 ||
+          (directory.mode & 0o022) !== 0))
+    ) {
+      throw new Error(
+        "X11 pointer state is not a securely owned regular file.",
+      );
+    }
+    const state = JSON.parse(readFileSync(statePath, "utf8"));
+    if (
+      !state ||
+      !["safe", "possible", "held", "poisoned"].includes(state.status) ||
+      (state.status !== "safe" && !["wheel", "click"].includes(state.button))
+    ) {
+      throw new Error("X11 pointer state is invalid.");
+    }
+    return state;
+  };
+  const write = (state) => {
+    const temporary = `${statePath}.${process.pid}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, JSON.stringify(state), {
+      flag: "wx",
+      mode: 0o600,
+    });
+    renameSync(temporary, statePath);
+  };
+  const assertAllowed = (action) => {
+    const state = read();
+    if (
+      (state.status === "safe" && !action.endsWith("-release")) ||
+      (["possible", "held"].includes(state.status) &&
+        action === `${state.button}-release`)
+    ) {
+      return;
+    }
+    throw new Error(`X11 display is unsafe for ${action}: ${state.status}`);
+  };
+  return {
+    initialize() {
+      writeFileSync(statePath, JSON.stringify({ status: "safe" }), {
+        flag: "wx",
+        mode: 0o600,
+      });
+    },
+    read,
+    isSafe() {
+      try {
+        return read().status === "safe";
+      } catch {
+        return false;
+      }
+    },
+    assertAllowed,
+    beginPress(button) {
+      assertAllowed(`${button}-press`);
+      write({ status: "possible", button });
+    },
+    confirmPress(button) {
+      const state = read();
+      if (state.status !== "possible" || state.button !== button) {
+        throw new Error("X11 pointer press state changed unexpectedly.");
+      }
+      write({ status: "held", button });
+    },
+    confirmRelease(button) {
+      const state = read();
+      if (
+        !["possible", "held"].includes(state.status) ||
+        state.button !== button
+      ) {
+        throw new Error("X11 pointer release state changed unexpectedly.");
+      }
+      write(
+        state.status === "held"
+          ? { status: "safe" }
+          : { status: "poisoned", button },
+      );
+    },
+  };
+}
+
+export async function deliverX11PointerPair({
+  pointerState,
+  button,
+  press,
+  release,
+}) {
+  pointerState.assertAllowed(`${button}-press`);
+  let pressFailed = false;
+  let pressError;
+  try {
+    await press();
+  } catch (error) {
+    pressFailed = true;
+    pressError = error;
+  }
+  const state = pointerState.read();
+  if (["possible", "held"].includes(state.status)) {
+    if (state.button !== button) {
+      throw new Error("A different X11 pointer button may be held.");
+    }
+    await release();
+  } else if (!pressFailed) {
+    throw new Error("X11 pointer press was not tracked.");
+  }
+  if (pressFailed) throw pressError;
+  if (!pointerState.isSafe()) {
+    throw new Error("X11 pointer release was not verified.");
+  }
+}
+
+export function describeX11InputError(error) {
+  return (
+    (error instanceof Error ? error.message : String(error)) ||
+    "Unknown X11 input error"
+  );
+}
+
+export function assertX11DisplaySafe(getPointerState, bail) {
+  try {
+    getPointerState().assertAllowed("key");
+  } catch (error) {
+    bail();
+    throw error;
+  }
+}
 
 /** DOM key name -> the keysym xdotool sends through XTEST. */
 export const X11_TRUSTED_KEY_NAMES = { Enter: "Return", Tab: "Tab" };
@@ -451,7 +597,13 @@ export function assertX11WindowOwnership({
  * between the check and the XTEST event), so the opt-in stays limited to
  * the private xvfb-run runner.
  */
-export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
+export async function deliverXvfbTrustedKey({
+  key,
+  resolveTarget,
+  run,
+  pointerState,
+}) {
+  pointerState.assertAllowed("key");
   const keyName = X11_TRUSTED_KEY_NAMES[key];
   if (typeof keyName !== "string") {
     throw new Error(
@@ -505,6 +657,9 @@ const SCENE_NAV_POINTER_ACTIONS = {
 export function assertSceneNavWheelProgress(events, before, after) {
   const trusted = events.filter((event) => event.trusted);
   if (trusted.length === 0) return false;
+  if (trusted.some((event) => !event.targetInChips)) {
+    throw new Error("trusted scene-nav wheel reached the wrong target");
+  }
   if (!trusted.some((event) => event.deltaX > 0)) {
     throw new Error("trusted scene-nav wheel delivered the wrong direction");
   }
@@ -514,12 +669,41 @@ export function assertSceneNavWheelProgress(events, before, after) {
   return true;
 }
 
-export function assertSceneNavTabProgress(event, expectedIndex, actualIndex) {
+export function assertSceneNavTabProgress(
+  event,
+  expectedIndex,
+  actualIndex,
+  lastVisible,
+) {
   if (!event?.trusted) return false;
-  if (event.key !== "Tab" || expectedIndex !== actualIndex) {
+  if (
+    event.key !== "Tab" ||
+    event.targetIndex !== expectedIndex - 1 ||
+    expectedIndex !== actualIndex
+  ) {
     throw new Error("trusted scene-nav Tab did not reach the expected focus");
   }
+  if (expectedIndex === 4 && !lastVisible) {
+    throw new Error("trusted scene-nav Tab did not make the last chip visible");
+  }
   return true;
+}
+
+export function assertSceneNavPointerEvents(events) {
+  const trusted = events.filter((event) => event.trusted);
+  if (trusted.some((event) => !event.targetIsLast)) {
+    throw new Error("trusted scene-nav pointer event reached the wrong target");
+  }
+  if (trusted.some((event) => !event.lastVisible)) {
+    throw new Error("trusted scene-nav pointer target was not visible");
+  }
+  const down = trusted.some((event) => event.type === "pointerdown");
+  const up = trusted.some((event) => event.type === "pointerup");
+  const click = trusted.some((event) => event.type === "click");
+  if ((down || up || click) && !(down && up && click)) {
+    throw new Error("trusted scene-nav pointer sequence is incomplete");
+  }
+  return { down, up, click };
 }
 
 function xdotoolShellNumbers(output, keys) {
@@ -554,7 +738,9 @@ export async function deliverXvfbTrustedPointer({
   resolveTarget,
   run,
   readRootPointer,
+  pointerState,
 }) {
+  pointerState.assertAllowed(action);
   if (!Object.hasOwn(SCENE_NAV_POINTER_ACTIONS, action)) {
     throw new Error(
       `unsupported scene-nav pointer action ${JSON.stringify(action)}`,
@@ -641,17 +827,21 @@ export async function deliverXvfbTrustedPointer({
       );
     }
   }
+  const button = action.split("-")[0];
+  if (action.endsWith("-press")) pointerState.beginPress(button);
   // xdotool's --sync can hang when the pointer is already at the target.
   await run(
     action === "move"
       ? ["mousemove", String(x), String(y)]
       : SCENE_NAV_POINTER_ACTIONS[action],
   );
+  if (action.endsWith("-press")) pointerState.confirmPress(button);
   if ((await focusedWindow()) !== windowId) {
     throw new Error(
       `focus left verified scene-nav window ${windowId} during ${action}`,
     );
   }
+  if (action.endsWith("-release")) pointerState.confirmRelease(button);
   return {
     action,
     appPid,

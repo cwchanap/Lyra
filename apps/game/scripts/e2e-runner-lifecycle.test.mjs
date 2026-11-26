@@ -302,6 +302,111 @@ test("runner retry preserves a failed attempt while using fresh roots and output
   for (const root of roots) assert.equal(existsSync(root), false);
 });
 
+test("runner refuses later phases and retries when a pointer press may remain held", async () => {
+  const runDirectory = holder();
+  const phases = [];
+  const runner = await runE2eRunner({
+    suiteIds: ["gameplay"],
+    attempts: 2,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["gameplay"],
+    createRoot: createSaveE2eAppDataDir,
+    buildPhasePlan(_suiteIds, directories) {
+      return [
+        { id: "ordinary", root: "gameplay", appDataDir: directories.gameplay },
+        { id: "later", root: "gameplay", appDataDir: directories.gameplay },
+      ];
+    },
+    suiteForPhase: () => "gameplay",
+    applyCheckpoint() {},
+    async runPhase(phase) {
+      phases.push(phase.id);
+      writeFileSync(
+        path.join(runDirectory, "x11-pointer-state.json"),
+        JSON.stringify({ status: "possible", button: "click" }),
+      );
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+  });
+
+  assert.notEqual(runner.exitCode, 0);
+  assert.deepEqual(phases, ["ordinary"]);
+  assert.equal(runner.result.attempts.used, 1);
+  assert.equal(runner.result.displayPoisoned, true);
+});
+
+test("runner treats a missing or corrupt pointer state as unsafe even after a child error", async () => {
+  for (const mode of ["missing", "corrupt"]) {
+    const runDirectory = holder();
+    let calls = 0;
+    const runner = await runE2eRunner({
+      suiteIds: ["gameplay"],
+      attempts: 2,
+      runDirectory,
+      supervisor: { cancelledSignal: null },
+      runGuard: async () => ({ exitCode: 0 }),
+      rootKeys: ["gameplay"],
+      createRoot: createSaveE2eAppDataDir,
+      buildPhasePlan(_suiteIds, directories) {
+        return [
+          {
+            id: "ordinary",
+            root: "gameplay",
+            appDataDir: directories.gameplay,
+          },
+        ];
+      },
+      suiteForPhase: () => "gameplay",
+      applyCheckpoint() {},
+      async runPhase() {
+        calls += 1;
+        const statePath = path.join(runDirectory, "x11-pointer-state.json");
+        if (mode === "missing") rmSync(statePath);
+        else writeFileSync(statePath, "not-json");
+        throw new Error("worker stopped");
+      },
+      captureFailureArtifacts() {},
+    });
+    assert.notEqual(runner.exitCode, 0);
+    assert.equal(runner.result.displayPoisoned, true);
+    assert.equal(runner.result.attempts.used, 1);
+    assert.equal(calls, 1);
+  }
+});
+
+test("outer runner refuses success or retry when an attempt leaves X11 state unsafe", async () => {
+  const runDirectory = holder();
+  let attempts = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["gameplay"],
+    attempts: 2,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["gameplay"],
+    createRoot: createSaveE2eAppDataDir,
+    buildPhasePlan: () => [],
+    suiteForPhase: () => "gameplay",
+    applyCheckpoint() {},
+    runPhase: async () => ({ exitCode: 0 }),
+    captureFailureArtifacts() {},
+    async runAttempt({ pointerStatePath }) {
+      attempts += 1;
+      writeFileSync(
+        pointerStatePath,
+        JSON.stringify({ status: "held", button: "click" }),
+      );
+      return 0;
+    },
+  });
+  assert.notEqual(runner.exitCode, 0);
+  assert.equal(runner.result.displayPoisoned, true);
+  assert.equal(attempts, 1);
+});
+
 test("runner applies an external mutation before starting its fresh discovery child", async () => {
   const runDirectory = holder();
   const roots = [];

@@ -26,6 +26,7 @@ import {
   assertTrustedXvfbKeysAllowed,
   assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
+  createX11PointerState,
   deliverXvfbTrustedKey,
   deliverXvfbTrustedPointer,
   parseNetWmPid,
@@ -216,6 +217,10 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
 export type TrustedX11KeyName = keyof typeof X11_TRUSTED_KEY_NAMES;
 
 const X11_EXTERNAL_COMMAND_TIMEOUT_MS = 10_000;
+
+export function xvfbPointerState() {
+  return createX11PointerState(process.env.LYRA_E2E_X11_POINTER_STATE);
+}
 
 type LinuxProcEntry = {
   pid: number;
@@ -440,6 +445,7 @@ export async function sendXvfbTrustedKey(
     key,
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
+    pointerState: xvfbPointerState(),
   });
 }
 
@@ -460,6 +466,8 @@ export async function sendXvfbTrustedSceneNavPointer(
   y: number;
   pointerSource?: string;
 }> {
+  const pointerState = xvfbPointerState();
+  pointerState.assertAllowed(action);
   if (
     (action.startsWith("wheel-") && region !== "chips") ||
     (action.startsWith("click-") && region !== "last-chip")
@@ -506,6 +514,7 @@ export async function sendXvfbTrustedSceneNavPointer(
     target,
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
+    pointerState,
     readRootPointer: () =>
       execBounded("python3", [
         "-c",

@@ -17,6 +17,12 @@ export const config: WebdriverIO.Config = {
   // revalidates the app-data directory lifecycle.
   specs: [...E2E_SMOKE_SPECS],
   maxInstances: 1,
+  // A held X11 button must not reach another spec worker on this display.
+  bail:
+    process.env.LYRA_E2E_RUNNER_PHASE === "ordinary" &&
+    process.env.LYRA_E2E_XVFB_TRUSTED_KEYS === "1"
+      ? 1
+      : 0,
   // Runner-managed retries allocate a fresh guarded root, retain first-attempt
   // diagnostics, and never let WDIO retry against contaminated app data.
   specFileRetries: 0,

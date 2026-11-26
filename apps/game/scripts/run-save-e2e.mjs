@@ -110,7 +110,7 @@ async function main() {
       buildPhasePlan: buildE2ePhasePlan,
       suiteForPhase: e2eSuiteForPhase,
       applyCheckpoint: applyCheckpointAction,
-      async runPhase(phase, { attempt, outputDirectory }) {
+      async runPhase(phase, { attempt, outputDirectory, pointerStatePath }) {
         console.log(`save e2e phase: ${phase.id} (attempt ${attempt})`);
         return supervisor.run({
           command: "bun",
@@ -130,6 +130,7 @@ async function main() {
               }),
               LYRA_E2E_RUNNER_PHASE: phase.id,
               LYRA_E2E_ATTEMPT: String(attempt),
+              LYRA_E2E_X11_POINTER_STATE: pointerStatePath,
               LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
             },
             stdio: "inherit",

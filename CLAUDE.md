@@ -181,8 +181,12 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   focus on it before and after the event. Pointer events also require current
   hit-tested scene-nav bounds, matching window/viewport geometry, and, for
   presses/releases, the verified window and coordinates under the pointer.
-  Any uncertainty fails inconclusive; input is never sent to a shared or
-  unverified display. These checks cannot eliminate races between probes.
+  Unproven delivery is inconclusive; input is never sent to a shared or
+  unverified display. A press is tracked before its command is sent; cleanup
+  releases use the full verifier. If a release cannot be verified, or press
+  delivery remains ambiguous, the run fails and neither later tests nor
+  retries may use that display. These checks cannot eliminate races between
+  probes.
   The manual `E2E Full` workflow sets this opt-in separately on its
   gameplay and production-journey steps; the other suites and desktops never
   send this trusted input. Without the opt-in the map keyboard case is

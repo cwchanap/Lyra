@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import Mocha from "mocha";
 import { selectOwnedE2eAppProcessId } from "./e2e-trusted-key-process.mjs";
 import * as x11 from "./e2e-x11-trusted-input.mjs";
 import {
@@ -9,7 +13,6 @@ import {
   assertUsableAuthorityCookies,
   assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
-  deliverXvfbTrustedKey,
   parseLocalDisplayNumber,
   parseNetWmPid,
   parseXauthorityRecords,
@@ -18,6 +21,18 @@ import {
   trustedXvfbKeysOptIn,
   verifyPrivateXvfbAncestry,
 } from "./e2e-x11-trusted-input.mjs";
+
+const untrackedPointerState = {
+  assertAllowed() {},
+  beginPress() {},
+  confirmPress() {},
+  confirmRelease() {},
+};
+const deliverXvfbTrustedKey = (options) =>
+  x11.deliverXvfbTrustedKey({
+    pointerState: untrackedPointerState,
+    ...options,
+  });
 
 // Security gate regression (HPA-831): the scoped Linux/Xvfb XTEST path must
 // fail closed on every unverifiable shape — missing/shared display, wrong
@@ -1119,8 +1134,21 @@ const POINTER_TARGET = {
   devicePixelRatio: 1,
 };
 
+function trackedPointerState(t) {
+  const directory = mkdtempSync(path.join(tmpdir(), "lyra-pointer-state-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const state = x11.createX11PointerState(
+    path.join(directory, "x11-pointer-state.json"),
+  );
+  state.initialize();
+  return state;
+}
+
 const deliverXvfbTrustedPointer = (options) =>
-  x11.deliverXvfbTrustedPointer(options);
+  x11.deliverXvfbTrustedPointer({
+    pointerState: untrackedPointerState,
+    ...options,
+  });
 
 function pointerRun({
   geometry = `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n`,
@@ -1425,15 +1453,29 @@ test("trusted scene-nav input failures are not reported as unavailable", () => {
     false,
   );
   assert.throws(
-    () => x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 1 }], 0, 0),
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 1, targetInChips: true }],
+        0,
+        0,
+      ),
     /trusted.*scroll/i,
   );
   assert.throws(
-    () => x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 0 }], 0, 5),
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 0, targetInChips: true }],
+        0,
+        5,
+      ),
     /trusted.*direction/i,
   );
   assert.equal(
-    x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 1 }], 0, 5),
+    x11.assertSceneNavWheelProgress(
+      [{ trusted: true, deltaX: 1, targetInChips: true }],
+      0,
+      5,
+    ),
     true,
   );
   assert.equal(
@@ -1441,11 +1483,514 @@ test("trusted scene-nav input failures are not reported as unavailable", () => {
     false,
   );
   assert.throws(
-    () => x11.assertSceneNavTabProgress({ key: "Tab", trusted: true }, 1, 0),
+    () =>
+      x11.assertSceneNavTabProgress(
+        { key: "Tab", trusted: true, targetIndex: 0 },
+        1,
+        0,
+      ),
     /trusted.*focus/i,
   );
   assert.equal(
-    x11.assertSceneNavTabProgress({ key: "Tab", trusted: true }, 1, 1),
+    x11.assertSceneNavTabProgress(
+      { key: "Tab", trusted: true, targetIndex: 0 },
+      1,
+      1,
+    ),
     true,
   );
+});
+
+test("a delivered fourth Tab must reveal the final scene chip", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavTabProgress(
+        { key: "Tab", trusted: true, targetIndex: 3 },
+        4,
+        4,
+        false,
+      ),
+    /trusted.*visib/i,
+  );
+});
+
+test("trusted pointer release retargeted away from the last chip fails", () => {
+  assert.equal(typeof x11.assertSceneNavPointerEvents, "function");
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerdown",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: false,
+          lastVisible: true,
+        },
+      ]),
+    /trusted.*target/i,
+  );
+});
+
+test("a partially delivered trusted click cannot be marked inconclusive", () => {
+  for (const type of ["pointerdown", "pointerup", "click"]) {
+    assert.throws(
+      () =>
+        x11.assertSceneNavPointerEvents([
+          { type, trusted: true, targetIsLast: true, lastVisible: true },
+        ]),
+      /incomplete|missing/i,
+    );
+  }
+});
+
+test("trusted wheel and click delivery cannot hide wrong targets or a missing click", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 86, targetInChips: false }],
+        0,
+        86,
+      ),
+    /target/i,
+  );
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerdown",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+      ]),
+    /incomplete/i,
+  );
+  assert.deepEqual(
+    x11.assertSceneNavPointerEvents([
+      {
+        type: "pointerdown",
+        trusted: true,
+        targetIsLast: true,
+        lastVisible: true,
+      },
+      {
+        type: "pointerup",
+        trusted: true,
+        targetIsLast: true,
+        lastVisible: true,
+      },
+      { type: "click", trusted: true, targetIsLast: true, lastVisible: true },
+      { type: "click", trusted: false, targetIsLast: false },
+    ]),
+    { down: true, up: true, click: true },
+  );
+});
+
+test("trusted pointer delivery requires the last chip to be visible", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: false,
+        },
+      ]),
+    /visible/i,
+  );
+});
+
+test("press postcheck failure attempts only a fully verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  const release = pointerRun();
+  let releasePreflights = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              releasePreflights += 1;
+              return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /focus left/,
+  );
+  assert.equal(releasePreflights, 1);
+  assert.ok(release.calls.some(([command]) => command === "getmouselocation"));
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.read().status, "safe");
+});
+
+test("a falsy press error is not swallowed after a verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let focusChecks = 0;
+  let rejected = false;
+  try {
+    await x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-press",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            if (args[0] === "getwindowfocus" && ++focusChecks === 2) {
+              throw undefined;
+            }
+            return press.run(args);
+          },
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-release",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: release.run,
+          pointerState,
+        }),
+    });
+  } catch {
+    rejected = true;
+  }
+  assert.equal(pointerState.read().status, "safe");
+  assert.equal(rejected, true);
+});
+
+test("empty trusted-input errors remain classifiable as errors", () => {
+  assert.equal(x11.describeX11InputError(""), "Unknown X11 input error");
+  assert.equal(
+    x11.describeX11InputError(new Error("")),
+    "Unknown X11 input error",
+  );
+  assert.equal(
+    x11.describeX11InputError(new Error("focus lost")),
+    "focus lost",
+  );
+});
+
+test("press precheck failure never attempts a cleanup release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  let releases = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "wheel",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-press",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              throw new Error("press target unverified");
+            },
+            run: press.run,
+            pointerState,
+          }),
+        release: async () => {
+          releases += 1;
+        },
+      }),
+    /press target unverified/,
+  );
+  assert.equal(releases, 0);
+  assert.deepEqual(press.calls, []);
+  assert.equal(pointerState.read().status, "safe");
+});
+
+test("release precheck failure blocks all later pointer and keyboard input", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  const release = pointerRun();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              throw new Error("release target unverified");
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /release target unverified/,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Tab",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
+});
+
+test("ambiguous press delivery stays poisoned even after verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let releasePreflights = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "wheel",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: async (args) => {
+              await press.run(args);
+              if (args[0] === "mousedown") throw new Error("press timed out");
+              return args[0] === "getwindowgeometry"
+                ? `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n`
+                : args[0] === "getmouselocation"
+                  ? `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`
+                  : args[0] === "getwindowfocus"
+                    ? String(TARGET_WINDOW)
+                    : "";
+            },
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              releasePreflights += 1;
+              return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /press timed out/,
+  );
+  assert.equal(releasePreflights, 1);
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.read().status, "poisoned");
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Enter",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
+});
+
+test("release postcheck failure leaves the display unsafe", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /focus left/,
+  );
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.isSafe(), false);
+  assert.throws(() => pointerState.assertAllowed("key"), /unsafe/);
+});
+
+test("a release callback that does not clear tracked state cannot succeed", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: async () => {},
+      }),
+    /release.*verified/i,
+  );
+  assert.equal(pointerState.isSafe(), false);
+});
+
+test("a new pointer pair never attempts cleanup on an already unsafe display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  pointerState.beginPress("click");
+  let presses = 0;
+  let releases = 0;
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: async () => {
+        presses += 1;
+        throw new Error("blocked press");
+      },
+      release: async () => {
+        releases += 1;
+      },
+    }),
+  );
+  assert.equal(presses, 0);
+  assert.equal(releases, 0);
+});
+
+test(
+  "foreign-writable pointer state is not trusted",
+  { skip: !process.geteuid },
+  (t) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lyra-pointer-mode-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const statePath = path.join(directory, "x11-pointer-state.json");
+    const pointerState = x11.createX11PointerState(statePath);
+    pointerState.initialize();
+    chmodSync(statePath, 0o666);
+    assert.equal(pointerState.isSafe(), false);
+    assert.throws(() => pointerState.assertAllowed("key"));
+  },
+);
+
+test("a poisoned display bails before later Mocha tests can send input", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const mocha = new Mocha({ reporter: class {} });
+  const suite = Mocha.Suite.create(mocha.suite, "private display");
+  let laterActions = 0;
+  suite.addTest(
+    new Mocha.Test("detect poisoned display", function () {
+      pointerState.beginPress("click");
+      x11.assertX11DisplaySafe(
+        () => pointerState,
+        () => this.test.parent.bail(true),
+      );
+    }),
+  );
+  suite.addTest(
+    new Mocha.Test("later pointer and keyboard", () => {
+      laterActions += 1;
+    }),
+  );
+  const failures = await new Promise((resolve) => mocha.run(resolve));
+  assert.equal(failures, 1);
+  assert.equal(laterActions, 0);
+});
+
+test("the afterEach poison guard also prevents later Mocha test bodies", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const mocha = new Mocha({ reporter: class {} });
+  const suite = Mocha.Suite.create(mocha.suite, "private display");
+  let laterActions = 0;
+  suite.afterEach("check held pointer", function () {
+    x11.assertX11DisplaySafe(
+      () => pointerState,
+      () => this.currentTest.parent.bail(true),
+    );
+  });
+  suite.addTest(
+    new Mocha.Test("leave an uncertain press", () => {
+      pointerState.beginPress("wheel");
+    }),
+  );
+  suite.addTest(
+    new Mocha.Test("later pointer and keyboard", () => {
+      laterActions += 1;
+    }),
+  );
+  const failures = await new Promise((resolve) => mocha.run(resolve));
+  assert.equal(failures, 1);
+  assert.equal(laterActions, 0);
 });
