@@ -138,6 +138,7 @@
     grid-row: 1;
     display: flex;
     min-width: 0;
+    max-height: 74px;
     flex-wrap: nowrap;
     justify-content: flex-end;
     gap: 8px;

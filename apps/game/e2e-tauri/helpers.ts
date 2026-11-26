@@ -179,7 +179,8 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
 // dispatches keydown/keyup), so Tab/Enter can never run native focus
 // traversal or trusted activation — run c0da417f showed six WebDriver Tabs
 // leave focus on body. The narrow fix for the commission -> scene_2 focus
-// segment is real XTEST keys via xdotool, gated as hard as the macOS path:
+// segment and first-map Tab/Enter proof is real XTEST keys via xdotool,
+// gated as hard as the macOS path:
 //
 //   * explicit opt-in: linux AND LYRA_E2E_XVFB_TRUSTED_KEYS=1;
 //   * a PRIVATE xvfb-run display owned by this run's ancestry — verified

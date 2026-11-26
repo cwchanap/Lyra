@@ -54,8 +54,10 @@
   }
 
   .nav.scene {
+    box-sizing: border-box;
     min-width: 0;
     max-width: 100%;
+    max-height: 54px;
     gap: 8px;
     padding: 2px 10px;
     flex-wrap: nowrap;
@@ -86,6 +88,7 @@
     padding-right: 8px;
     border-right: 0;
     letter-spacing: 0.18em;
+    white-space: nowrap;
   }
 
   .scene button {
@@ -94,11 +97,13 @@
     gap: 4px;
     padding: 6px 7px;
     letter-spacing: 0.02em;
+    white-space: nowrap;
   }
 
   .scene .chips {
     flex-wrap: nowrap;
     min-width: 0;
+    max-height: 48px;
     overflow-x: auto;
     scrollbar-width: thin;
   }

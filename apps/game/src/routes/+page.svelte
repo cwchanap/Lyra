@@ -1433,7 +1433,10 @@
               disabled={gameState.inFlight}
             >
               {#snippet hud()}
-                <PrimaryObjectiveHud objective={activePrimaryObjective} />
+                <PrimaryObjectiveHud
+                  objective={activePrimaryObjective}
+                  compact
+                />
               {/snippet}
             </ExploreView>
           {:else if gameState.value.mode.type === "interrogation"}

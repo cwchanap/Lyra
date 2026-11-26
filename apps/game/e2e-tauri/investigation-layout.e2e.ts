@@ -1,9 +1,10 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   advanceDialogueUntil,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
+  e2eXvfbTrustedKeysEnabled,
   elementExists,
   enabledMapDestinationIds,
   ensureMinimumWindowViewport,
@@ -15,6 +16,7 @@ import {
   openGameMenu,
   resetE2eStorage,
   seedStoryCleared,
+  sendXvfbTrustedKey,
   startFromMenu,
   waitForPackagedGameState,
 } from "./helpers";
@@ -1034,7 +1036,23 @@ describe("investigation layout surface", () => {
     await expectCrossedToRainBellInvestigation();
   });
 
-  it("crosses the same first destination with Tab and Enter from fresh setup", async () => {
+  it("crosses the same first destination with Tab and Enter from fresh setup", async function () {
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      const reason =
+        "Map keyboard coverage is inconclusive: verified private-Xvfb XTEST is not opted in or unavailable.";
+      console.warn(`[MapKeyboard] ${reason}`);
+      if (process.env.LYRA_E2E_OUTPUT_DIR) {
+        writeFileSync(
+          path.join(
+            process.env.LYRA_E2E_OUTPUT_DIR,
+            "map-keyboard-coverage-gap.json",
+          ),
+          `${JSON.stringify({ coverage: "inconclusive", reason }, null, 2)}\n`,
+        );
+      }
+      this.skip();
+      return;
+    }
     await setupAtFirstMapGate();
     expect(await enabledMapDestinationIds()).toEqual([
       anchors.firstMapDestination,
@@ -1047,59 +1065,94 @@ describe("investigation layout surface", () => {
     // it.
     const seeded = await browser.execute((selector: string) => {
       const control = document.querySelector<HTMLButtonElement>(selector);
-      if (!control || control.disabled) return false;
+      if (
+        !control ||
+        control.disabled ||
+        control.hasAttribute("data-map-destination")
+      )
+        return false;
       control.focus();
       return document.activeElement === control;
     }, anchors.mapOverviewSelector);
     expect(seeded).toBe(true);
 
-    // Tab until the map pin itself holds focus, then activate with Enter so
-    // the journey stays on the native keyboard path.
-    await browser.waitUntil(
-      async () => {
-        await browser.keys("Tab");
-        return browser.execute(
+    await browser.execute(() => {
+      const observed = window as Window & {
+        mapKeyEvents?: {
+          key: string;
+          trusted: boolean;
+          destination: string | null;
+        }[];
+      };
+      observed.mapKeyEvents = [];
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Tab" || event.key === "Enter") {
+            observed.mapKeyEvents?.push({
+              key: event.key,
+              trusted: event.isTrusted,
+              destination:
+                (event.target as HTMLElement | null)?.getAttribute(
+                  "data-map-destination",
+                ) ?? null,
+            });
+          }
+        },
+        { capture: true },
+      );
+    });
+
+    const deliverMapKey = async (key: "Tab" | "Enter") => {
+      try {
+        await sendXvfbTrustedKey(key);
+      } catch (cause) {
+        throw new Error(
+          `[MapKeyboard] verified ${key} delivery failed; keyboard coverage is inconclusive`,
+          { cause },
+        );
+      }
+    };
+    let focused = false;
+    for (let attempt = 0; attempt < 7 && !focused; attempt += 1) {
+      await deliverMapKey("Tab");
+      for (let poll = 0; poll < 12 && !focused; poll += 1) {
+        focused = await browser.execute(
           (destinationId: string) =>
             (document.activeElement as HTMLElement | null)?.getAttribute(
               "data-map-destination",
             ) === destinationId,
           anchors.firstMapDestination,
         );
-      },
-      {
-        timeout: 30000,
-        interval: 100,
-        timeoutMsg: "Tab never focused the sole city-map destination",
-      },
-    );
-    await browser.keys("Enter");
-    try {
-      await waitForPackagedGameState(
-        (state) =>
-          state.scene.kind === "investigation" &&
-          state.scene.id === anchors.firstGateSuccessor,
-        5000,
-        "Enter did not activate the destination",
-      );
-    } catch {
-      // WebKit's WebDriver synthesizes key events without running default
-      // actions: Tab focus traversal is special-cased (and worked above), but
-      // Enter cannot produce the button's activation click. A native button
-      // focused by Tab activates on Enter in real browsers; click the focused
-      // pin to stand in for that default activation behavior.
-      const activated = await browser.execute((destinationId: string) => {
-        const element = document.activeElement as HTMLButtonElement | null;
-        if (element?.getAttribute("data-map-destination") !== destinationId) {
-          return false;
-        }
-        element.click();
-        return true;
-      }, anchors.firstMapDestination);
-      if (!activated) {
-        throw new Error("Enter lost focus of the sole destination pin");
+        if (!focused) await browser.pause(100);
       }
     }
+    if (!focused) {
+      throw new Error("Tab never focused the sole city-map destination");
+    }
+    await deliverMapKey("Enter");
     await expectCrossedToRainBellInvestigation();
+    const keys = await browser.execute(() => {
+      const observed = window as Window & {
+        mapKeyEvents?: {
+          key: string;
+          trusted: boolean;
+          destination: string | null;
+        }[];
+      };
+      return observed.mapKeyEvents ?? [];
+    });
+    expect(keys.some((event) => event.key === "Tab" && event.trusted)).toBe(
+      true,
+    );
+    expect(
+      keys.some(
+        (event) =>
+          event.key === "Enter" &&
+          event.trusted &&
+          event.destination === anchors.firstMapDestination,
+      ),
+    ).toBe(true);
   });
 
   // --- HPA-853 chapter-2 placement surface ---------------------------------

@@ -464,6 +464,11 @@
   {/if}
 
   <main data-save-thumbnail-layout="main" inert={open || gameplayInert}>
+    {#if analysisPresentation && gameState.mode.type === "dialogue"}
+      <div class="analysis-dialogue-menu">
+        <MenuTrigger {disabled} onOpen={tryOpenGameMenu} />
+      </div>
+    {/if}
     {@render children()}
   </main>
 
@@ -723,6 +728,13 @@
   main {
     position: relative;
     z-index: 2;
+  }
+
+  .analysis-dialogue-menu {
+    position: fixed;
+    top: 12px;
+    right: clamp(20px, 3vw, 40px);
+    z-index: 27;
   }
 
   .shell.analysis-presentation > main,

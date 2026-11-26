@@ -116,11 +116,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   run in CI.
 - `bun run --cwd apps/game test:e2e:all` - packaged E2E **full** proof: same
   build, then every suite in the canonical registry (`--attempts 2`). The
-  manual `E2E Full` workflow runs the same registry split across two steps
-  so the ~2.5h production-journey can never burn a retry inside the
-  360-minute job ceiling: every suite except production-journey with
-  `--attempts 2`, then production-journey alone with `--attempts 1` under
-  the XTEST trusted-keys opt-in.
+  manual `E2E Full` workflow runs the same registry split across three
+  steps: unopted suites with `--attempts 2`, gameplay with `--attempts 2`
+  and scoped XTEST opt-in, then production-journey with `--attempts 1`
+  and scoped XTEST opt-in. The journey cannot burn a retry inside the
+  360-minute job ceiling.
 - Focused packaged E2E commands (`test:e2e:gameplay`, `test:e2e:capture-proof`,
   `test:e2e:save`, or a bare `test:e2e:<suite>:run` /
   `node apps/game/scripts/run-save-e2e.mjs --suite <id>`) are for **local
@@ -158,10 +158,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   trusted-input macOS UAT and final packaged coverage gaps stay explicitly
   disclosed, never claimed as trusted proof.
 - Packaged E2E keyboard input on Linux (production-journey commission →
-  scene_2 focus segment, HPA-831): the embedded WebDriver `browser.keys`
+  scene_2 focus segment, HPA-831, and gameplay's first-map Tab/Enter
+  proof, HPA-852): the embedded WebDriver `browser.keys`
   reaches the app only as synthetic DOM KeyboardEvents (no native focus
-  traversal), so a second, separately scoped opt-in routes that segment's
-  Tab/Enter through real XTEST keys via `xdotool`. Run it only inside a
+  traversal), so a second, separately scoped opt-in routes only those
+  proofs' Tab/Enter through real XTEST keys via `xdotool`. Run it only inside a
   private `xvfb-run` display:
 
   `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a bun run --cwd apps/game test:e2e:all`
@@ -175,9 +176,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   binary as the app process, one visible window it owns, and X input
   focus on it before and after the key. Any uncertainty fails
   inconclusive; keys are never sent to a shared or unverified display.
-  The manual `E2E Full` workflow sets this opt-in on its
-  production-journey step only; every other suite and desktop stays on
-  the default synthetic WebDriver keys. Without the opt-in the focus
+  The manual `E2E Full` workflow sets this opt-in separately on its
+  gameplay and production-journey steps; the other suites and desktops never
+  send these trusted keys. Without the opt-in the map keyboard case is
+  skipped and explicitly reported as inconclusive; it never falls back to a
+  click or claims a keyboard pass. Without the opt-in the journey's focus
   segment still runs its click-transition probes, records the
   keyboard-modality coverage gap (`focus-coverage-gap.json`), and drains
   the transition through the scripted DOM-click path so the organic
@@ -188,8 +191,8 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   per-attempt output directories; CI uploads a single `tauri-e2e-smoke` or
   `tauri-e2e-full` artifact. To reproduce a CI failure, run the same command
   locally (`test:e2e:smoke`, or `test:e2e:all` for a full-job failure —
-  the workflow's production-journey step additionally needs the
-  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for its
+  the workflow's gameplay and production-journey steps additionally need the
+  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for their
   keyboard coverage) and inspect its `run-result.json` and failure
   artifacts under `e2e-artifacts/save-e2e/runs/`.
 - `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and

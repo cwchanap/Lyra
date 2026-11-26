@@ -317,8 +317,10 @@ export function e2eSuiteForPhase(phaseId) {
   return suite.id;
 }
 
-export function e2eNonJourneySuiteFlags() {
-  return E2E_SUITE_IDS.filter((id) => id !== "production-journey")
+export function e2eUnoptedSuiteFlags() {
+  return E2E_SUITE_IDS.filter(
+    (id) => id !== "production-journey" && id !== "gameplay",
+  )
     .flatMap((id) => ["--suite", id])
     .join(" ");
 }

@@ -667,7 +667,8 @@
       bind:offsetHeight={headerHeight}
       inert={presentingCharacter !== null}
     >
-      <div class="scene-label">
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="scene-label" role="region" aria-label="目前地點" tabindex="0">
         <span class="eyebrow">INVESTIGATION</span>
         <strong>{sublocation.label}</strong>
       </div>
@@ -1021,12 +1022,21 @@
     grid-column: 1;
     grid-row: 1;
     min-width: 0;
+    max-height: 74px;
     display: flex;
     flex-direction: column;
     gap: 4px;
     color: var(--bone);
     text-shadow: 0 1px 10px var(--cell);
-    pointer-events: none;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    pointer-events: auto;
+    scrollbar-width: thin;
+  }
+
+  .scene-label:focus-visible {
+    outline: 1px solid var(--cyan);
+    outline-offset: -1px;
   }
 
   .eyebrow {

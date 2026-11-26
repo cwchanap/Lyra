@@ -3859,6 +3859,9 @@ describe("+page active primary objective HUD", () => {
     const objectiveHud = await screen.findByRole("status", {
       name: "主要目標",
     });
+    expect(
+      within(objectiveHud).getByRole("region", { name: "主要目標內容" }),
+    ).toHaveAttribute("tabindex", "0");
     expect(objectiveHud).toHaveTextContent(
       "追查雨夜目擊者並確認每份證詞與現場紀錄之間的矛盾",
     );
@@ -3874,6 +3877,74 @@ describe("+page active primary objective HUD", () => {
     const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
     await user.click(within(menu).getByRole("button", { name: /繼續調查/ }));
     await waitFor(() => expect(trigger).toHaveFocus());
+  });
+});
+
+describe("+page Analysis dialogue menu", () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    seedGameState();
+  });
+
+  afterEach(() => {
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("opens and restores focus from a same-scene Analysis intro dialogue", async () => {
+    const state = currentState();
+    state.scene = {
+      kind: "analysis",
+      id: "analysis_scene_8_5",
+      title: "分析工作台",
+      summary: "",
+      index: 0,
+      total: 1,
+      activeBoardId: "board_1",
+      actionToken: {
+        sceneId: "analysis_scene_8_5",
+        activeBoardId: "board_1",
+        durableRevision: 0,
+      },
+      availableBoardIds: ["board_1"],
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      visibleBoards: [],
+    };
+    if (state.mode.type !== "dialogue") throw new Error("expected dialogue");
+    state.mode.queueToken.sceneId = state.scene.id;
+    gameState.value = state;
+
+    const user = userEvent.setup();
+    render(Page);
+    expect(
+      document.querySelector(".shell.analysis-presentation"),
+    ).not.toBeNull();
+    expect(document.querySelector(".shell > header")).toBeNull();
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    await user.click(trigger);
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /繼續調查/ }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    for (const key of ["{Enter}", " "]) {
+      await user.keyboard(key);
+      const reopened = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(reopened).getByRole("button", { name: /繼續調查/ }),
+      );
+      await waitFor(() => expect(trigger).toHaveFocus());
+    }
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) => command === "advance_dialogue",
+      ),
+    ).toBe(false);
   });
 });
 

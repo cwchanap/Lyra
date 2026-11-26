@@ -25,7 +25,6 @@ import {
   settlePackagedCommand,
   startFromMenu,
   waitForAcquisitionOrdinal,
-  waitForButton,
   waitForDialog,
   waitForNoDialog,
   waitForPackagedDisconnect,
@@ -169,49 +168,8 @@ async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
   expect(dialogueFingerprint(state)).toBe(expected.currentDialogueFingerprint);
 }
 
-async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
-  const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
-  await jumpToProductionScene(anchors.investigationSceneId);
-  await drainCurrentDialogue("explore");
-  await waitForPersistenceIdle();
-  const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
-  await browser.waitUntil(async () => elementExists(hotspot), {
-    timeout: 30000,
-    timeoutMsg: "acknowledged-exit hotspot did not appear",
-  });
-  await jsClick(hotspot);
-  await advanceDialogueUntil(async () => {
-    try {
-      return (await getPackagedGameState()).pendingAcquisition !== null;
-    } catch {
-      return false;
-    }
-  }, 80);
-  const acquisition = await waitForAcquisitionOrdinal(0);
-  const current = acquisition.pendingAcquisition;
-  if (!current) {
-    throw new Error("acknowledged-exit event is missing");
-  }
-  writeSaveE2eExpectation("exit-state", {
-    ...inherited,
-    acknowledgedExit: {
-      sceneId: acquisition.scene.id,
-      recordKind: current.recordKind,
-      recordId: current.recordId,
-    },
-  } satisfies ExitControl);
-
-  // Ordinary acknowledgement, then an ordinary quit: the exit flush must
-  // persist the acknowledged revision, and the next process must resume
-  // without the popup and with the record granted exactly once.
-  await acknowledgeAcquisitionDomFirst(current);
-  await waitForPackagedGameState(
-    (state) => state.pendingAcquisition === null,
-    30000,
-    "acknowledged event did not clear in memory before quit",
-  );
-  const beforeSave = await drainCurrentDialogue("explore");
-  await waitForPersistenceIdle();
+async function proveExploreMenuSaveLoad(): Promise<void> {
+  const beforeSave = await getPackagedGameState();
   const menuTrigger = await $(anchors.gameMenuTriggerSelector);
   await menuTrigger.waitForClickable({ timeout: 30000 });
   await menuTrigger.click();
@@ -248,19 +206,48 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   expect(loaded.scene).toEqual(beforeSave.scene);
   expect(loaded.inventory).toEqual(beforeSave.inventory);
   expect(loaded.mode).toEqual(beforeSave.mode);
-  // A loaded snapshot is clean; an ordinary inspection makes it the next
-  // autosave before the existing fresh-process exit assertion.
-  await waitForButton(anchors.firstInvestigationHotspots[0], 30000);
-  await jsClick(
-    `button[aria-label="${anchors.firstInvestigationHotspots[0]}"]`,
-  );
-  await waitForPackagedGameState(
-    (state) => state.mode.type === "dialogue",
-    30000,
-    "post-load inspection did not start its dialogue",
-  );
+}
+
+async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
+  const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
+  await jumpToProductionScene(anchors.investigationSceneId);
   await drainCurrentDialogue("explore");
   await waitForPersistenceIdle();
+  await proveExploreMenuSaveLoad();
+  const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
+  await browser.waitUntil(async () => elementExists(hotspot), {
+    timeout: 30000,
+    timeoutMsg: "acknowledged-exit hotspot did not appear",
+  });
+  await jsClick(hotspot);
+  await advanceDialogueUntil(async () => {
+    try {
+      return (await getPackagedGameState()).pendingAcquisition !== null;
+    } catch {
+      return false;
+    }
+  }, 80);
+  const acquisition = await waitForAcquisitionOrdinal(0);
+  const current = acquisition.pendingAcquisition;
+  if (!current) {
+    throw new Error("acknowledged-exit event is missing");
+  }
+  writeSaveE2eExpectation("exit-state", {
+    ...inherited,
+    acknowledgedExit: {
+      sceneId: acquisition.scene.id,
+      recordKind: current.recordKind,
+      recordId: current.recordId,
+    },
+  } satisfies ExitControl);
+
+  // The acknowledgement is the last mutation before the ordinary quit.
+  await acknowledgeAcquisitionDomFirst(current);
+  await waitForPackagedGameState(
+    (state) => state.pendingAcquisition === null,
+    30000,
+    "acknowledged event did not clear in memory before quit",
+  );
   await requestAndFinish("quit");
 }
 
@@ -289,17 +276,44 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   await waitForPersistenceIdle();
   const documentIdentity = await currentPackagedDocumentIdentity();
   const authoritativeState = await getPackagedGameState();
+  const authoritativeCheckpoint = checkpoint(
+    documentIdentity,
+    authoritativeState,
+  );
+  // Healthy status alone does not mean the jump's debounced autosave is written.
+  await browser.waitUntil(
+    async () => {
+      const snapshot = newestAutosaveSlot()?.envelope?.snapshot;
+      if (!snapshot) return false;
+      const records =
+        acknowledgedExit.recordKind === "evidence"
+          ? snapshot.inventory.evidence
+          : snapshot.inventory.statements;
+      return (
+        snapshot.sceneId === authoritativeCheckpoint.sceneId &&
+        snapshot.activeDialogue?.queueGen ===
+          authoritativeCheckpoint.queueGen &&
+        records.filter(
+          (record) => record.recordId === acknowledgedExit.recordId,
+        ).length === 1
+      );
+    },
+    {
+      timeout: 90000,
+      interval: 100,
+      timeoutMsg: "scene jump did not reach the authoritative autosave",
+    },
+  );
   const authoritativeSlot = newestAutosaveSlot();
   if (!authoritativeSlot?.envelope) {
     throw new Error("authoritative pre-bypass autosave is missing");
   }
   const authoritative = {
-    ...checkpoint(documentIdentity, authoritativeState),
+    ...authoritativeCheckpoint,
     saveId: authoritativeSlot.envelope.saveId,
   };
-  const unsaved = await mutateBeforeDebounce();
-
   await setNextPersistenceFault("exitFlush");
+  const unsaved = await mutateBeforeDebounce();
   await requestWindowClose();
   await waitForDialog("無法結束遊戲", 30000);
   const failed = await invokePackagedCommand<ExitStatusView>("get_exit_status");
@@ -322,6 +336,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   }
   expect(staleRejection.error.code).toBe("stalePersistenceFailureToken");
 
+  expect(newestAutosaveSlot()?.envelope?.saveId).toBe(authoritative.saveId);
   await setNextPersistenceFault("exitFlush");
   await requestWindowClose();
   await waitForDialog("無法結束遊戲", 30000);

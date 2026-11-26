@@ -5,7 +5,7 @@ import {
   E2E_SUITE_IDS,
   E2E_SUITE_DEFINITIONS,
   buildE2ePhasePlan,
-  e2eNonJourneySuiteFlags,
+  e2eUnoptedSuiteFlags,
   e2eSuiteGuardedRoots,
   normalizeE2eSuiteIds,
   resolveE2eSuiteSelection,
@@ -183,24 +183,29 @@ test("runner validates selected suite definitions before its binary guard or roo
   );
 });
 
-test("non-journey flags select every suite except the production journey once", () => {
+test("ordinary full-run flags exclude both explicitly opted-in suites", () => {
   assert.equal(
-    e2eNonJourneySuiteFlags(),
-    "--suite smoke --suite gameplay --suite analysis-beat85 " +
+    e2eUnoptedSuiteFlags(),
+    "--suite smoke --suite analysis-beat85 " +
       "--suite capture-proof --suite save-core " +
       "--suite save-management --suite exit-lifecycle",
   );
 });
 
-test("e2e-full workflow derives non-journey suites from the registry rather than duplicating the list", () => {
+test("e2e-full workflow derives unopted suites from the registry rather than duplicating the list", () => {
   const workflowSource = readFileSync(
     new URL("../../../.github/workflows/e2e-full.yml", import.meta.url),
     "utf8",
   );
-  assert.match(workflowSource, /e2eNonJourneySuiteFlags/);
+  assert.match(workflowSource, /e2eUnoptedSuiteFlags/);
   assert.match(
     workflowSource,
-    /\$\{\{ steps\.non_journey_suites\.outputs\.flags \}\} --attempts 2/,
+    /\$\{\{ steps\.unopted_suites\.outputs\.flags \}\} --attempts 2/,
   );
   assert.match(workflowSource, /--suite production-journey --attempts 1/);
+  assert.match(workflowSource, /--suite gameplay --attempts 2/);
+  assert.match(
+    workflowSource,
+    /LYRA_E2E_XVFB_TRUSTED_KEYS: "1"[\s\S]*?--suite gameplay --attempts 2/,
+  );
 });
