@@ -52,6 +52,8 @@ const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitFinalVerification,
 ] as const;
 
+const KAGAMI_SUMMARY_RECORD_ID = "kagami_summary";
+
 type ExitCheckpoint = {
   documentIdentity: string;
   sceneId: string;
@@ -170,6 +172,16 @@ async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
 
 async function proveExploreMenuSaveLoad(): Promise<void> {
   const beforeSave = await getPackagedGameState();
+  expect(beforeSave.scene.id).toBe(anchors.firstGateSuccessor);
+  expect(beforeSave.mode.type).toBe("explore");
+  expect(
+    beforeSave.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(1);
+  console.log(
+    `[ExploreSaveLoad] before save: ${beforeSave.scene.id}/${beforeSave.mode.type}, evidence=${beforeSave.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
   const menuTrigger = await $(anchors.gameMenuTriggerSelector);
   await menuTrigger.waitForClickable({ timeout: 30000 });
   await menuTrigger.click();
@@ -183,7 +195,17 @@ async function proveExploreMenuSaveLoad(): Promise<void> {
   await saveManualSlot(1, "探索選單保存");
   await closePersistenceBrowserToGameplay();
 
-  await jumpToProductionScene("scene_2");
+  await jumpToProductionScene("scene_0");
+  const displaced = await getPackagedGameState();
+  expect(displaced.scene.id).toBe("scene_0");
+  expect(
+    displaced.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(0);
+  console.log(
+    `[ExploreSaveLoad] displaced: ${displaced.scene.id}/${displaced.mode.type}, evidence=${displaced.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
   await openGameMenu();
   await clickButton(anchors.loadGame);
   await browser.waitUntil(
@@ -206,14 +228,30 @@ async function proveExploreMenuSaveLoad(): Promise<void> {
   expect(loaded.scene).toEqual(beforeSave.scene);
   expect(loaded.inventory).toEqual(beforeSave.inventory);
   expect(loaded.mode).toEqual(beforeSave.mode);
+  expect(
+    loaded.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(1);
+  console.log(
+    `[ExploreSaveLoad] after load: ${loaded.scene.id}/${loaded.mode.type}, evidence=${loaded.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
 }
 
 async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
-  await jumpToProductionScene(anchors.investigationSceneId);
+  await jumpToProductionScene(anchors.firstGateSuccessor);
   await drainCurrentDialogue("explore");
   await waitForPersistenceIdle();
   await proveExploreMenuSaveLoad();
+  await jumpToProductionScene(anchors.investigationSceneId);
+  const reacquisitionState = await drainCurrentDialogue("explore");
+  expect(
+    reacquisitionState.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(0);
+  await waitForPersistenceIdle();
   const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
   await browser.waitUntil(async () => elementExists(hotspot), {
     timeout: 30000,
@@ -232,6 +270,8 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   if (!current) {
     throw new Error("acknowledged-exit event is missing");
   }
+  expect(current.recordKind).toBe("evidence");
+  expect(current.recordId).toBe(KAGAMI_SUMMARY_RECORD_ID);
   writeSaveE2eExpectation("exit-state", {
     ...inherited,
     acknowledgedExit: {
