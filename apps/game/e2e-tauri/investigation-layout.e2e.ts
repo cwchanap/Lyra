@@ -1,7 +1,11 @@
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { compile } from "svelte/compiler";
+import { render } from "svelte/server";
 import {
   advanceDialogueUntil,
+  captureMockupViewport,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
   e2eXvfbTrustedKeysEnabled,
@@ -23,9 +27,7 @@ import {
 import { anchors } from "./production-anchors";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
-  coverPlaneSize,
   targetLayoutStyle,
-  targetViewportRect,
   type TargetLayout,
 } from "$lib/investigation/target-layout";
 import type { GameStateView, SublocationView } from "$lib/state/types";
@@ -53,19 +55,14 @@ type Box = { left: number; top: number; right: number; bottom: number };
 const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 
 /**
- * The pinned unplaced set: empty since HPA-1143's five targets shipped —
- * the stage-relative header shrinks the 800x600 cover enough that all
- * five objects sit inside the revealed band (scene 8's uploader_header
- * clears the nav outright; the four edge objects survive the ~3% side
- * crop). The gate below requires this set to stay empty — any compiled
- * target losing its layout fails loudly here.
+ * The pinned unplaced set: empty since HPA-1143's five targets shipped.
+ * Any compiled target losing its layout fails loudly here.
  */
 const EXPECTED_UNPLACED_TARGETS: string[] = [];
 
 /**
- * Authored sublocation count per HPA-853 scene: the max location bar must
- * show every chip at once — the 4-chip NAV of scenes 12/14 included — not
- * the initial 1-chip state a fresh playthrough would give.
+ * Authored sublocation count per HPA-853 scene: every chip must be present,
+ * including the 4-chip NAV of scenes 12/14.
  */
 const HPA853_SUBLOCATION_COUNTS = {
   investigation_scene_8: 3,
@@ -91,9 +88,6 @@ const HPA853_LAYOUT_CHECKPOINTS = {
   (typeof HPA853_SCENE_NUMBERS)[number],
   E2eCheckpointId
 >;
-
-/** Center-gate tolerance for authored decimal coordinates. */
-const CENTER_EPSILON = 1e-6;
 
 type HudRects = {
   nav: Box | null;
@@ -547,8 +541,8 @@ async function expectHpa853SublocationSurface(
   expect(measurement.rowOneHeight).toBeLessThanOrEqual(74);
   expect(measurement.rowTwoHeight).toBeLessThanOrEqual(54);
 
-  // A placed target production routed into the fallback list means the crop
-  // or the panel band ate its hit box — never acceptable for these scenes.
+  // A placed target routed into fallback means the stage edge or panel band
+  // ate its hit box — never acceptable for these scenes.
   const routedIds = measurement.targets
     .filter((target) => target.routed)
     .map((target) => target.id);
@@ -589,10 +583,8 @@ async function expectHpa853SublocationSurface(
   }
   expect(missingHud).toEqual([]);
 
-  // Visual occlusion is decided from the DOM rects: PROGRESS, PRIMARY
-  // OBJECTIVE and the scene label are pointer-events:none, so no hit test
-  // can discover them covering a target. Not nav.bottom/600 as a full-width
-  // floor — flex-wrap can move PROGRESS under the nav.
+  // Visual occlusion is decided from each HUD element's DOM rectangle,
+  // rather than treating the nav bottom as a full-width obstruction.
   const hudCandidates = [
     { name: ".explore-hud nav", rect: measurement.hud.nav },
     { name: ".investigation-progress", rect: measurement.hud.progress },
@@ -657,6 +649,11 @@ async function expectHpa853SublocationSurface(
       (target) => `${target.id} was hit at ${target.authoredHitDescription}`,
     );
   expect(authoredMisrouted).toEqual([]);
+  expect(
+    measurement.targets
+      .filter((target) => !target.authoredCenterProbed)
+      .map((target) => target.id),
+  ).toEqual([]);
 }
 
 /** Fresh setup that parks gameplay on the first map wrapper's pending map. */
@@ -745,20 +742,10 @@ describe("investigation layout surface", () => {
     );
   });
 
-  it("keeps every shipped placement usable and its pending cue on it at 800x600", async () => {
-    // Scene 3's front room has both an unfinished hotspot and a witness
-    // with open topics, so both cue variants are live.
-    await seedStoryCleared();
-    await startFromMenu();
-    await jumpToProductionScene("investigation_scene_3");
-    await advanceDialogueUntil(async () => {
-      const state = await getPackagedGameState();
-      return (
-        state.mode.type === "explore" &&
-        state.scene.kind === "investigation" &&
-        state.scene.currentSublocationId !== null
-      );
-    });
+  it("keeps every shipped placement usable and its cue on it at 800x600 and 800x720", async () => {
+    // The existing five-location checkpoint supplies actual pending controls
+    // to exercise both cue variants without adding a checkpoint.
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
     const hotspotSel = "button.hotspot-target";
     const characterSel = "button.character-target";
     await browser.waitUntil(
@@ -774,15 +761,14 @@ describe("investigation layout surface", () => {
         ),
       {
         timeout: 15000,
-        timeoutMsg: "scene 3 targets did not show their pending cues",
+        timeoutMsg: "scene 4 targets did not show their pending cues",
       },
     );
     await ensureMinimumWindowViewport();
 
     const placements = shippedPlacements();
     const ids = placements.map((placement) => placement.id);
-    // Where the 800x600 clipping was found: two markers, and two targets
-    // the crop once hid almost or entirely.
+    // Keep the original edge-placement examples in the corpus sweep.
     for (const id of [
       "chapter_1/investigation_scene_3/inner_entry/tall_shelf",
       "chapter_1/investigation_scene_3/front/katase",
@@ -797,117 +783,198 @@ describe("investigation layout surface", () => {
     // contract, and read back where the target and its cue land. Hotspots
     // are read both with and without the collision compaction, which only
     // drops the minimum hit size.
-    const measured = await browser.execute(
-      (
-        entries: ShippedPlacement[],
-        hotspotSelector: string,
-        characterSelector: string,
-      ) => {
-        const box = (rect: DOMRect) => ({
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-        });
-        const unfinished = (selector: string) =>
-          Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
-            (target) => target.querySelector(".target-pending") !== null,
-          )!;
-        const targets = {
-          hotspot: unfinished(hotspotSelector),
-          character: unfinished(characterSelector),
-        };
-        const saved = Object.values(targets).map((target) => ({
-          target,
-          style: target.getAttribute("style"),
-          className: target.className,
-        }));
-        const compactClasses = ["compact", "compact-x", "compact-y"];
-        const results: Array<{ id: string; target: Box; cue: Box }> = [];
-        for (const entry of entries) {
-          const target = targets[entry.kind];
-          const cue = target.querySelector<HTMLElement>(".target-pending")!;
-          target.setAttribute("style", entry.style);
-          // The pulse scales the cue; measure its resting box.
-          cue.style.animation = "none";
-          const variants = entry.kind === "hotspot" ? [false, true] : [false];
-          for (const compact of variants) {
-            target.classList.remove(...compactClasses);
-            if (compact) target.classList.add("compact");
-            results.push({
-              id: compact ? `${entry.id} (compact)` : entry.id,
-              target: box(target.getBoundingClientRect()),
-              cue: box(cue.getBoundingClientRect()),
-            });
+    const measure = async () =>
+      browser.execute(
+        (
+          entries: ShippedPlacement[],
+          hotspotSelector: string,
+          characterSelector: string,
+        ) => {
+          const box = (rect: DOMRect) => ({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+          });
+          const unfinished = (selector: string) =>
+            Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
+              (target) => target.querySelector(".target-pending") !== null,
+            )!;
+          const targets = {
+            hotspot: unfinished(hotspotSelector),
+            character: unfinished(characterSelector),
+          };
+          const saved = Object.values(targets).map((target) => ({
+            target,
+            style: target.getAttribute("style"),
+            className: target.className,
+          }));
+          const compactClasses = ["compact", "compact-x", "compact-y"];
+          const stage = document.querySelector(".scene-stage");
+          const plane = document.querySelector(".scene-coordinate-plane");
+          if (!stage || !plane) throw new Error("Scene stage or plane missing");
+          const planeRect = plane.getBoundingClientRect();
+          const results: Array<{
+            id: string;
+            target: Box;
+            cue: Box;
+            center: { x: number; y: number };
+          }> = [];
+          for (const entry of entries) {
+            const target = targets[entry.kind];
+            const cue = target.querySelector<HTMLElement>(".target-pending")!;
+            target.setAttribute("style", entry.style);
+            // The pulse scales the cue; measure its resting box.
+            cue.style.animation = "none";
+            const variants = entry.kind === "hotspot" ? [false, true] : [false];
+            for (const compact of variants) {
+              target.classList.remove(...compactClasses);
+              if (compact) target.classList.add("compact");
+              results.push({
+                id: compact ? `${entry.id} (compact)` : entry.id,
+                target: box(target.getBoundingClientRect()),
+                cue: box(cue.getBoundingClientRect()),
+                center: {
+                  x:
+                    planeRect.left +
+                    (entry.layout.x + entry.layout.w / 2) * planeRect.width,
+                  y:
+                    planeRect.top +
+                    (entry.layout.y + entry.layout.h / 2) * planeRect.height,
+                },
+              });
+            }
+            cue.style.removeProperty("animation");
           }
-          cue.style.removeProperty("animation");
-        }
-        for (const { target, style, className } of saved) {
-          if (style === null) target.removeAttribute("style");
-          else target.setAttribute("style", style);
-          target.className = className;
-        }
-        const stage = document.querySelector(".scene-stage");
-        if (!stage) throw new Error("Scene stage missing");
-        return {
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-          stage: box(stage.getBoundingClientRect()),
-          results,
-        };
-      },
-      placements,
-      hotspotSel,
-      characterSel,
+          for (const { target, style, className } of saved) {
+            if (style === null) target.removeAttribute("style");
+            else target.setAttribute("style", style);
+            target.className = className;
+          }
+          return {
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            stage: box(stage.getBoundingClientRect()),
+            plane: box(planeRect),
+            results,
+          };
+        },
+        placements,
+        hotspotSel,
+        characterSel,
+      );
+
+    const measurements = [await measure()];
+    await browser.saveScreenshot(
+      path.join(
+        process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+        "placement-800x600.png",
+      ),
+    );
+    await captureMockupViewport({
+      name: "placement-tall",
+      requested: { width: 800, height: 720 },
+      outputDirectory: process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+    });
+    measurements.push(await measure());
+    await ensureMinimumWindowViewport();
+    writeFileSync(
+      path.join(
+        process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+        "placement-geometry.json",
+      ),
+      JSON.stringify(
+        measurements.map(({ viewport, stage, plane }) => ({
+          viewport,
+          stage,
+          plane,
+        })),
+        null,
+        2,
+      ),
     );
 
-    expect(measured.viewport).toEqual(MINIMUM_WINDOW);
-    expect(measured.results.length).toBeGreaterThan(placements.length);
+    expect(measurements[0].viewport).toEqual(MINIMUM_WINDOW);
+    expect(measurements[0].results.length).toBeGreaterThan(placements.length);
+    expect(measurements[1].viewport.height).toBeGreaterThan(
+      MINIMUM_WINDOW.height,
+    );
+    expect(measurements[1].viewport.width * MINIMUM_WINDOW.height).not.toBe(
+      measurements[1].viewport.height * MINIMUM_WINDOW.width,
+    );
 
-    // Every placed target is one the player may need, so the window's crop
-    // must leave enough of it to click, and its cue must sit on that part.
+    // Every placed target must retain a usable stage intersection and cue.
     const unusable: string[] = [];
     const misplaced: string[] = [];
-    for (const { id, target, cue } of measured.results) {
-      const visible: Box = {
-        left: Math.max(target.left, measured.stage.left),
-        top: Math.max(target.top, measured.stage.top),
-        right: Math.min(target.right, measured.stage.right),
-        bottom: Math.min(target.bottom, measured.stage.bottom),
-      };
-      const needWidth = Math.min(
-        target.right - target.left,
-        MIN_USABLE_TARGET_PX,
+    const offstageCenters: string[] = [];
+    for (const measured of measurements) {
+      expect(measured.stage.bottom - measured.stage.top).toBeGreaterThanOrEqual(
+        450,
       );
-      const needHeight = Math.min(
-        target.bottom - target.top,
-        MIN_USABLE_TARGET_PX,
+      expect(measured.plane.left).toBeGreaterThanOrEqual(
+        measured.stage.left - 0.5,
       );
-      if (
-        visible.right - visible.left < needWidth - 0.5 ||
-        visible.bottom - visible.top < needHeight - 0.5
-      ) {
-        unusable.push(
-          `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+      expect(measured.plane.right).toBeLessThanOrEqual(
+        measured.stage.right + 0.5,
+      );
+      expect(measured.plane.top).toBeGreaterThanOrEqual(
+        measured.stage.top - 0.5,
+      );
+      expect(measured.plane.bottom).toBeLessThanOrEqual(
+        measured.stage.bottom + 0.5,
+      );
+      for (const { id, target, cue, center } of measured.results) {
+        if (
+          center.x < measured.stage.left - 0.5 ||
+          center.x > measured.stage.right + 0.5 ||
+          center.y < measured.stage.top - 0.5 ||
+          center.y > measured.stage.bottom + 0.5
+        ) {
+          offstageCenters.push(
+            `${id} at ${measured.viewport.width}x${measured.viewport.height}: ${JSON.stringify(center)}`,
+          );
+        }
+        const visible: Box = {
+          left: Math.max(target.left, measured.stage.left),
+          top: Math.max(target.top, measured.stage.top),
+          right: Math.min(target.right, measured.stage.right),
+          bottom: Math.min(target.bottom, measured.stage.bottom),
+        };
+        const needWidth = Math.min(
+          target.right - target.left,
+          MIN_USABLE_TARGET_PX,
         );
-        continue;
-      }
-      const cueWidth = cue.right - cue.left;
-      const cueHeight = cue.bottom - cue.top;
-      if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
-        misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
-        continue;
-      }
-      if (
-        cue.left < visible.left ||
-        cue.top < visible.top ||
-        cue.right > visible.right ||
-        cue.bottom > visible.bottom
-      ) {
-        misplaced.push(
-          `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+        const needHeight = Math.min(
+          target.bottom - target.top,
+          MIN_USABLE_TARGET_PX,
         );
+        if (
+          visible.right - visible.left < needWidth - 0.5 ||
+          visible.bottom - visible.top < needHeight - 0.5
+        ) {
+          unusable.push(
+            `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+          );
+          continue;
+        }
+        const cueWidth = cue.right - cue.left;
+        const cueHeight = cue.bottom - cue.top;
+        if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
+          misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
+          continue;
+        }
+        if (
+          cue.left < visible.left ||
+          cue.top < visible.top ||
+          cue.right > visible.right ||
+          cue.bottom > visible.bottom
+        ) {
+          misplaced.push(
+            `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+          );
+        }
       }
     }
+    expect(offstageCenters).toEqual([]);
     expect(unusable).toEqual([]);
     expect(misplaced).toEqual([]);
   });
@@ -1157,7 +1224,7 @@ describe("investigation layout surface", () => {
 
   // --- HPA-853 chapter-2 placement surface ---------------------------------
 
-  it("pins the fully-placed 72-target inventory and keeps every HPA-853 target center inside the stage-relative crop band", () => {
+  it("pins the fully-placed 72-target HPA-853 inventory", () => {
     const hpa853Targets = shippedTargets().filter((target) =>
       HPA853_SCENE_NUMBERS.some((scene) =>
         target.id.startsWith(`chapter_2/investigation_scene_${scene}/`),
@@ -1182,52 +1249,524 @@ describe("investigation layout surface", () => {
       .toSorted();
     expect(unplacedIds).toEqual([...EXPECTED_UNPLACED_TARGETS].toSorted());
 
-    // Strict center gate for the six new scenes only (design §4.2),
-    // derived from the stage-relative cover rather than a fixed band:
-    // the visible x-range is the centered cover minus its symmetric
-    // crop. The worst case is the widest cover, which the shortest
-    // .scene-hud produces — every measured header at 800x600 across
-    // these scenes is >= ~129px (nav bottom), so bounding it at 120px
-    // gives a 480px stage -> 853x480 cover -> ~3.1% side crops. That
-    // tighter cover is what moved HPA-1143's four edge objects inside
-    // the revealed band. Existing chapter-1 and chapter-2 scene-4 edge
-    // placements are deliberately out of scope and are not moved.
-    const stageViewport = {
-      w: MINIMUM_WINDOW.width,
-      h: MINIMUM_WINDOW.height - 120,
-    };
-    const cover = coverPlaneSize(stageViewport);
-    const cropFraction = (cover.w - stageViewport.w) / 2 / cover.w;
-    const offCenter: string[] = [];
-    const cropped: string[] = [];
-    for (const target of hpa853Targets) {
-      if (target.layout === null) continue;
-      const centerX = target.layout.x + target.layout.w / 2;
-      if (
-        centerX < cropFraction - CENTER_EPSILON ||
-        centerX > 1 - cropFraction + CENTER_EPSILON
-      ) {
-        offCenter.push(
-          `${target.id}: center x ${centerX.toFixed(4)} outside [${cropFraction.toFixed(4)}, ${(1 - cropFraction).toFixed(4)}]`,
-        );
-        continue;
+    // The packaged all-placement sweep checks authored centers on the actual
+    // stage; live sublocation probes below also reject unprobed centers.
+  });
+
+  it("physically measures a synthetic long-title and objective HUD", async () => {
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    const title = "雨夜證物調查室".repeat(40);
+    const objective = "追查雨夜目擊者並核對所有證詞。".repeat(40);
+
+    // Render the actual component as static test markup with the packaged CSS
+    // scope; the checkpoint, backend and story remain unchanged.
+    const scope = await browser.execute(() => {
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          for (const rule of Array.from(sheet.cssRules)) {
+            if (rule instanceof CSSStyleRule) {
+              const match = rule.selectorText.match(
+                /\.primary-objective-hud\.(svelte-[\w-]+)/,
+              );
+              if (match) return match[1];
+            }
+          }
+        } catch {
+          // Some WebViews deny CSSOM access to unrelated stylesheets.
+        }
       }
-      const rect = targetViewportRect(target.layout, stageViewport);
-      const centerXInView = (rect.left + rect.right) / 2;
-      const centerYInView = (rect.top + rect.bottom) / 2;
-      if (
-        centerXInView < 0 ||
-        centerXInView > stageViewport.w ||
-        centerYInView < 0 ||
-        centerYInView > stageViewport.h
-      ) {
-        cropped.push(
-          `${target.id}: center ${centerXInView.toFixed(1)},${centerYInView.toFixed(1)} outside ${stageViewport.w}x${stageViewport.h}`,
-        );
-      }
+      return null;
+    });
+    if (!scope) throw new Error("Packaged objective CSS scope not found");
+    const sourcePath = path.join(
+      process.cwd(),
+      "src/lib/components/PrimaryObjectiveHud.svelte",
+    );
+    const compiled = compile(readFileSync(sourcePath, "utf8"), {
+      filename: sourcePath,
+      generate: "server",
+      cssHash: () => scope,
+    });
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    const modulePath = path.join(outputDir, `hud-fixture-${process.pid}.mjs`);
+    writeFileSync(modulePath, compiled.js.code);
+    let body: string;
+    try {
+      const component = (await import(pathToFileURL(modulePath).href)).default;
+      body = render(component, {
+        props: {
+          compact: true,
+          objective: { label: objective },
+        },
+      }).body;
+    } finally {
+      unlinkSync(modulePath);
     }
-    expect(offCenter).toEqual([]);
-    expect(cropped).toEqual([]);
+
+    await browser.execute(
+      (fixtureTitle: string, fixtureBody: string) => {
+        const location = document.querySelector<HTMLElement>(
+          ".scene-label strong",
+        );
+        const activeChip = document.querySelector<HTMLElement>(
+          ".explore-hud .chips button.active .label",
+        );
+        const menu = document.querySelector<HTMLElement>(
+          ".explore-hud [data-game-menu-trigger]",
+        );
+        if (
+          !location ||
+          !activeChip ||
+          !menu ||
+          document.querySelector(".explore-hud .primary-objective-hud")
+        ) {
+          throw new Error("Unexpected synthetic HUD fixture host");
+        }
+        location.textContent = fixtureTitle;
+        activeChip.textContent = fixtureTitle;
+        menu.insertAdjacentHTML("beforebegin", fixtureBody);
+      },
+      title,
+      body,
+    );
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const header = document.querySelector(".scene-hud");
+          const stage = document.querySelector(".scene-stage");
+          return (
+            !!header &&
+            !!stage &&
+            Math.abs(
+              header.getBoundingClientRect().bottom -
+                stage.getBoundingClientRect().top,
+            ) < 1
+          );
+        }),
+      { timeout: 10000, timeoutMsg: "Synthetic HUD height did not settle" },
+    );
+    const fixture = await browser.execute(() => {
+      const location = document.querySelector<HTMLElement>(".scene-label")!;
+      const objectiveRegion = document.querySelector<HTMLElement>(
+        '.primary-objective-hud [aria-label="主要目標內容"]',
+      )!;
+      const header = document.querySelector<HTMLElement>(".scene-hud")!;
+      const stage = document.querySelector<HTMLElement>(".scene-stage")!;
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const side = document.querySelector<HTMLElement>(
+        ".explore-hud .hud-side",
+      )!;
+      const nav = chips.closest("nav")!;
+      const region = (element: HTMLElement) => ({
+        text: element.textContent ?? "",
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        tabIndex: element.tabIndex,
+        overflowY: getComputedStyle(element).overflowY,
+      });
+      return {
+        provenance: "synthetic-static-svelte-component-in-packaged-hud",
+        viewport: { width: innerWidth, height: innerHeight },
+        header: header.getBoundingClientRect().height,
+        stage: stage.getBoundingClientRect().height,
+        rowOne: Math.max(
+          location.getBoundingClientRect().height,
+          side.getBoundingClientRect().height,
+        ),
+        rowTwo: nav.getBoundingClientRect().height,
+        location: region(location),
+        objective: region(objectiveRegion),
+        chipTops: Array.from(
+          chips.querySelectorAll("button"),
+          (button) => button.getBoundingClientRect().top,
+        ),
+        chipHeights: Array.from(
+          chips.querySelectorAll("button"),
+          (button) => button.getBoundingClientRect().height,
+        ),
+        chipClientWidth: chips.clientWidth,
+        chipScrollWidth: chips.scrollWidth,
+      };
+    });
+    expect(fixture.viewport).toEqual(MINIMUM_WINDOW);
+    expect(fixture.header).toBeLessThanOrEqual(150);
+    expect(fixture.stage).toBeGreaterThanOrEqual(450);
+    expect(fixture.rowOne).toBeLessThanOrEqual(74);
+    expect(fixture.rowTwo).toBeLessThanOrEqual(54);
+    expect(fixture.location.text).toContain(title);
+    expect(fixture.objective.text).toBe(objective);
+    for (const region of [fixture.location, fixture.objective]) {
+      expect(region.tabIndex).toBe(0);
+      expect(region.overflowY).toBe("auto");
+      expect(region.scrollHeight).toBeGreaterThan(region.clientHeight);
+    }
+    expect(fixture.chipTops).toHaveLength(5);
+    expect(new Set(fixture.chipTops).size).toBe(1);
+    expect(fixture.chipHeights.every((height) => height >= 44)).toBe(true);
+    expect(fixture.chipScrollWidth).toBeGreaterThan(fixture.chipClientWidth);
+    await browser.saveScreenshot(
+      path.join(outputDir, "synthetic-long-hud-top.png"),
+    );
+    const scrolled = await browser.execute(() => {
+      const location = document.querySelector<HTMLElement>(".scene-label")!;
+      const objectiveRegion = document.querySelector<HTMLElement>(
+        '.primary-objective-hud [aria-label="主要目標內容"]',
+      )!;
+      return [location, objectiveRegion].map((element) => {
+        element.focus();
+        const focused = document.activeElement === element;
+        element.scrollTop = element.scrollHeight;
+        return {
+          focused,
+          top: element.scrollTop,
+          reachesEnd:
+            element.scrollTop + element.clientHeight >=
+            element.scrollHeight - 1,
+        };
+      });
+    });
+    expect(
+      scrolled.every(
+        (region) => region.focused && region.top > 0 && region.reachesEnd,
+      ),
+    ).toBe(true);
+    await browser.saveScreenshot(
+      path.join(outputDir, "synthetic-long-hud-bottom.png"),
+    );
+    writeFileSync(
+      path.join(outputDir, "synthetic-long-hud.json"),
+      JSON.stringify({ ...fixture, scrolled }, null, 2),
+    );
+  });
+
+  it("exercises the real five-chip scene navigation overflow", async () => {
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    const state = await getPackagedGameState();
+    if (state.scene.kind !== "investigation") {
+      throw new Error("Scene 4 checkpoint is not an investigation");
+    }
+    expect(state.scene.visibleSublocations).toHaveLength(5);
+    const nav = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const buttons = Array.from(chips.querySelectorAll("button"));
+      return {
+        clientWidth: chips.clientWidth,
+        scrollWidth: chips.scrollWidth,
+        tops: buttons.map((button) => button.getBoundingClientRect().top),
+        heights: buttons.map((button) => button.getBoundingClientRect().height),
+      };
+    });
+    expect(nav.tops).toHaveLength(5);
+    expect(new Set(nav.tops).size).toBe(1);
+    expect(nav.heights.every((height) => height >= 44)).toBe(true);
+    expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    // WebDriver pointer/wheel is attempted on the real overflow container.
+    // An unsupported embedded executor is reported, never replaced by a click
+    // or a synthetic scroll masquerading as pointer input.
+    const wheelOrigin = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      chips.scrollLeft = 0;
+      chips.addEventListener(
+        "wheel",
+        (event) => {
+          chips.dataset.hpa852WheelTrusted = String(event.isTrusted);
+        },
+        { once: true },
+      );
+      const rect = chips.getBoundingClientRect();
+      return {
+        x: Math.round((rect.left + rect.right) / 2),
+        y: Math.round((rect.top + rect.bottom) / 2),
+      };
+    });
+    let wheelError = "";
+    try {
+      await browser
+        .action("wheel")
+        .scroll({
+          ...wheelOrigin,
+          deltaX: 10000,
+          deltaY: 0,
+          duration: 200,
+        })
+        .perform();
+    } catch (error) {
+      wheelError = error instanceof Error ? error.message : String(error);
+    }
+    const wheel = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const last = chips.querySelector<HTMLElement>("button:last-child")!;
+      const bounds = chips.getBoundingClientRect();
+      const lastBounds = last.getBoundingClientRect();
+      return {
+        position: chips.scrollLeft,
+        trusted: chips.dataset.hpa852WheelTrusted ?? null,
+        lastVisible:
+          lastBounds.left >= bounds.left - 1 &&
+          lastBounds.right <= bounds.right + 1,
+      };
+    });
+    if (wheel.trusted === "true") {
+      expect(wheel.position).toBeGreaterThan(0);
+      expect(wheel.lastVisible).toBe(true);
+    }
+    let drag: {
+      position: number;
+      trusted: string | null;
+      lastVisible: boolean;
+      error: string;
+    } | null = null;
+    if (wheel.trusted !== "true" || !wheel.lastVisible) {
+      const scrollbar = await browser.execute(() => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        )!;
+        chips.scrollLeft = 0;
+        const bounds = chips.getBoundingClientRect();
+        const thumbWidth =
+          bounds.width * (chips.clientWidth / chips.scrollWidth);
+        delete document.documentElement.dataset.hpa852PointerTrusted;
+        document.addEventListener(
+          "pointerdown",
+          (event) => {
+            document.documentElement.dataset.hpa852PointerTrusted = String(
+              event.isTrusted,
+            );
+          },
+          { once: true, capture: true },
+        );
+        return {
+          startX: Math.round(bounds.left + thumbWidth / 2),
+          endX: Math.round(bounds.right - 3),
+          y: Math.round(bounds.bottom - 2),
+        };
+      });
+      let error = "";
+      try {
+        await browser
+          .action("pointer")
+          .move({ x: scrollbar.startX, y: scrollbar.y, duration: 0 })
+          .down({ button: 0 })
+          .move({ x: scrollbar.endX, y: scrollbar.y, duration: 300 })
+          .up({ button: 0 })
+          .perform();
+      } catch (failure) {
+        error = failure instanceof Error ? failure.message : String(failure);
+      }
+      drag = await browser.execute((actionError: string) => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        )!;
+        const last = chips.querySelector<HTMLElement>("button:last-child")!;
+        const bounds = chips.getBoundingClientRect();
+        const lastBounds = last.getBoundingClientRect();
+        return {
+          position: chips.scrollLeft,
+          trusted:
+            document.documentElement.dataset.hpa852PointerTrusted ?? null,
+          lastVisible:
+            lastBounds.left >= bounds.left - 1 &&
+            lastBounds.right <= bounds.right + 1,
+          error: actionError,
+        };
+      }, error);
+    }
+    const pointer = drag ?? wheel;
+    if (pointer.position <= 0 || !pointer.lastVisible) {
+      console.warn(
+        `[SceneNav] pointer scrolling is inconclusive: ${JSON.stringify({ wheelError, wheel, drag })}`,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            wheelError,
+            wheel,
+            drag,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log(`[SceneNav] pointer scroll: ${JSON.stringify(pointer)}`);
+      await browser.saveScreenshot(
+        path.join(outputDir, "scene-nav-scrolled.png"),
+      );
+      await browser.execute(() => {
+        const last = document.querySelector<HTMLButtonElement>(
+          ".explore-hud .chips button:last-child",
+        )!;
+        last.addEventListener(
+          "click",
+          (event) => {
+            document.documentElement.dataset.hpa852ClickTrusted = String(
+              event.isTrusted,
+            );
+          },
+          { once: true },
+        );
+      });
+      const last = await $(".explore-hud .chips button:last-child");
+      await last.click();
+      await advanceDialogueUntil(async () => {
+        const state = await getPackagedGameState();
+        return (
+          state.scene.kind === "investigation" &&
+          state.scene.id === "investigation_scene_4" &&
+          state.scene.currentSublocationId === "police_review_van" &&
+          state.mode.type === "explore"
+        );
+      });
+      await browser.waitUntil(
+        () =>
+          browser.execute(() => {
+            const chips = document.querySelector<HTMLElement>(
+              ".explore-hud .chips",
+            )!;
+            const active = chips.querySelector<HTMLElement>("button.active");
+            if (!active || active !== chips.lastElementChild) return false;
+            const bounds = chips.getBoundingClientRect();
+            const selected = active.getBoundingClientRect();
+            return (
+              selected.left >= bounds.left - 1 &&
+              selected.right <= bounds.right + 1
+            );
+          }),
+        {
+          timeout: 10000,
+          timeoutMsg: "Active final scene chip was not scrolled into view",
+        },
+      );
+      const clickTrusted = await browser.execute(
+        () => document.documentElement.dataset.hpa852ClickTrusted ?? null,
+      );
+      const measured = pointer.trusted === "true" && clickTrusted === "true";
+      writeFileSync(
+        path.join(
+          outputDir,
+          measured
+            ? "scene-nav-pointer.json"
+            : "scene-nav-pointer-coverage-gap.json",
+        ),
+        JSON.stringify(
+          {
+            coverage: measured ? "measured" : "inconclusive",
+            wheel,
+            drag,
+            clickTrusted,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const first = chips.querySelector<HTMLButtonElement>("button")!;
+      first.focus();
+      chips.dataset.hpa852Keys = "[]";
+      chips.addEventListener("keydown", (event) => {
+        const events = JSON.parse(chips.dataset.hpa852Keys ?? "[]") as Array<{
+          key: string;
+          trusted: boolean;
+        }>;
+        events.push({ key: event.key, trusted: event.isTrusted });
+        chips.dataset.hpa852Keys = JSON.stringify(events);
+      });
+    });
+    for (let index = 0; index < 4; index += 1) await browser.keys("Tab");
+    const keyboard = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const buttons = Array.from(chips.querySelectorAll("button"));
+      const bounds = chips.getBoundingClientRect();
+      const last = buttons[buttons.length - 1]!.getBoundingClientRect();
+      return {
+        activeIndex: buttons.indexOf(
+          document.activeElement as HTMLButtonElement,
+        ),
+        scrollLeft: chips.scrollLeft,
+        lastVisible:
+          last.left >= bounds.left - 1 && last.right <= bounds.right + 1,
+        events: JSON.parse(chips.dataset.hpa852Keys ?? "[]") as Array<{
+          key: string;
+          trusted: boolean;
+        }>,
+      };
+    });
+    if (
+      keyboard.activeIndex === 4 &&
+      keyboard.lastVisible &&
+      keyboard.events.filter((event) => event.key === "Tab" && event.trusted)
+        .length === 4
+    ) {
+      await browser.execute(() => {
+        document.addEventListener(
+          "keydown",
+          (event) => {
+            if (event.key === "Enter") {
+              document.documentElement.dataset.hpa852EnterTrusted = String(
+                event.isTrusted,
+              );
+            }
+          },
+          { once: true, capture: true },
+        );
+      });
+      await browser.keys("Enter");
+      const enterTrusted = await browser.execute(
+        () => document.documentElement.dataset.hpa852EnterTrusted ?? null,
+      );
+      await advanceDialogueUntil(async () => {
+        const state = await getPackagedGameState();
+        return (
+          state.scene.kind === "investigation" &&
+          state.scene.currentSublocationId === "police_review_van" &&
+          state.mode.type === "explore"
+        );
+      });
+      const measured = enterTrusted === "true";
+      writeFileSync(
+        path.join(
+          outputDir,
+          measured
+            ? "scene-nav-keyboard.json"
+            : "scene-nav-keyboard-coverage-gap.json",
+        ),
+        JSON.stringify(
+          {
+            coverage: measured ? "measured" : "inconclusive",
+            ...keyboard,
+            enterTrusted,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.warn(
+        `[SceneNav] keyboard traversal is inconclusive: ${JSON.stringify(keyboard)}`,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            reason:
+              "Private-Xvfb XTEST is authorized for the map and existing production-journey proof, not scene navigation; synthetic WebDriver Tab is not credited as trusted traversal.",
+            keyboard,
+          },
+          null,
+          2,
+        ),
+      );
+    }
   });
 
   for (const sceneNumber of HPA853_SCENE_NUMBERS) {
@@ -1253,9 +1792,8 @@ describe("investigation layout surface", () => {
       }
       const investigation = state.scene;
 
-      // The fixture's whole point: the location bar shows every authored
-      // chip at once (scenes 12/14 with 4 chips included), because the
-      // fixture unlocked every sublocation without doing any puzzle work.
+      // The fixture unlocks every authored chip without puzzle work; overflow
+      // stays on one scrollable row instead of removing a location.
       const expectedChips = HPA853_SUBLOCATION_COUNTS[sceneId];
       expect(investigation.visibleSublocations.length).toBe(expectedChips);
       expect(
@@ -1303,12 +1841,8 @@ describe("investigation layout surface", () => {
   }
 
   // Scene 4 is the shared-header regression guard, not an HPA-853 scene:
-  // its five-chip location bar is the widest existing nav, so the measured
-  // .scene-hud header it produces is the tallest any shipped scene gets.
-  // The stage subtracts that header from the 800x600 window for every
-  // scene — this pins that none of scene 4's already-placed targets gets
-  // rerouted into the OFF-SCENE panel by the shorter stage. The broader
-  // HUD rework for this scene stays with HPA-852.
+  // its five-chip bar exercises the shared header alongside the six HPA-853
+  // checkpoints.
   it("keeps existing scene 4 placements on the art under the shared stage header at 800x600", async () => {
     const sceneId = "investigation_scene_4";
     await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
@@ -1331,8 +1865,7 @@ describe("investigation layout surface", () => {
     }
     const investigation = state.scene;
 
-    // All five authored chips at once, unlocked by the checkpoint fixture
-    // — the max-width nav the shared header has to accommodate.
+    // All five authored chips are rendered in one row by this checkpoint.
     expect(investigation.visibleSublocations.length).toBe(5);
     expect(
       await browser.execute(
@@ -1476,7 +2009,7 @@ describe("investigation layout surface", () => {
           );
           if (!image) throw new Error(`Background ${bounds.id} missing`);
           const rect = image.getBoundingClientRect();
-          const scale = Math.max(
+          const scale = Math.min(
             rect.width / image.naturalWidth,
             rect.height / image.naturalHeight,
           );

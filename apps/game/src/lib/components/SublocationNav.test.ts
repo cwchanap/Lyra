@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/svelte";
+import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import SublocationNav from "./SublocationNav.svelte";
@@ -118,6 +118,42 @@ describe("SublocationNav", () => {
     expect(container.querySelector("nav")).toHaveClass("scene");
   });
 
+  it("brings the active scene chip into view on mount and selection change", async () => {
+    const scroll = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    try {
+      const { rerender } = render(SublocationNav, {
+        sublocations,
+        currentId: "coffee_shop",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      await waitFor(() =>
+        expect(scroll).toHaveBeenCalledWith({
+          inline: "nearest",
+          block: "nearest",
+        }),
+      );
+      expect(scroll.mock.instances[0]).toBe(
+        screen.getByRole("button", { name: /喫茶店/ }),
+      );
+      scroll.mockClear();
+      await rerender({
+        sublocations,
+        currentId: "office",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      await waitFor(() => expect(scroll).toHaveBeenCalledOnce());
+      expect(scroll.mock.instances[0]).toBe(
+        screen.getByRole("button", { name: /事務所/ }),
+      );
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
   it("does not add scene class when placement is page", () => {
     const { container } = render(SublocationNav, {
       sublocations,
@@ -127,6 +163,24 @@ describe("SublocationNav", () => {
     });
 
     expect(container.querySelector("nav")).not.toHaveClass("scene");
+  });
+
+  it("does not auto-scroll the page variant", async () => {
+    const scroll = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    try {
+      render(SublocationNav, {
+        sublocations,
+        currentId: "office",
+        onEnter: vi.fn(),
+        placement: "page",
+      });
+      await Promise.resolve();
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
   });
 
   it("renders no active button when currentId is null", () => {

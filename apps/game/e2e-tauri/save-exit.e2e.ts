@@ -36,6 +36,7 @@ import {
 import {
   SAVE_E2E_PHASE_NAMES,
   newestAutosaveSlot,
+  readSaveE2eOwnershipSnapshot,
   readSaveE2eExpectation,
   setNextPersistenceFault,
   writeSaveE2eExpectation,
@@ -43,6 +44,7 @@ import {
 import { anchors } from "./production-anchors";
 import type { ExitStatusView } from "$lib/persistence/types";
 import path from "node:path";
+import { copyFileSync, writeFileSync } from "node:fs";
 
 const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitCloseSeed,
@@ -182,6 +184,61 @@ async function proveExploreMenuSaveLoad(): Promise<void> {
   console.log(
     `[ExploreSaveLoad] before save: ${beforeSave.scene.id}/${beforeSave.mode.type}, evidence=${beforeSave.inventory.evidence.map((record) => record.id).join(",")}`,
   );
+  const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const image = document.querySelector<HTMLImageElement>(
+          '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+        );
+        return (
+          !!image &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          document.querySelector("button:not([inert]) .target-pending") !== null
+        );
+      }),
+    {
+      timeout: 30000,
+      timeoutMsg: "Explore artwork or pending cue did not settle",
+    },
+  );
+  const captureGeometry = await browser.execute(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing ${selector}`);
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const image = document.querySelector<HTMLImageElement>(
+      '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+    )!;
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      root: rect("[data-save-thumbnail-root]"),
+      stage: rect(".scene-stage"),
+      plane: rect(".scene-coordinate-plane"),
+      background: rect(
+        '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+      ),
+      natural: { width: image.naturalWidth, height: image.naturalHeight },
+      source: image.src,
+      objectFit: getComputedStyle(image).objectFit,
+      cue: rect("button:not([inert]) .target-pending"),
+    };
+  });
+  expect(captureGeometry.viewport).toEqual({ width: 800, height: 600 });
+  expect(captureGeometry.objectFit).toBe("contain");
+  writeFileSync(
+    path.join(outputDir, "explore-save-geometry.json"),
+    JSON.stringify(captureGeometry, null, 2),
+  );
+  await browser.saveScreenshot(path.join(outputDir, "explore-save-live.png"));
   const menuTrigger = await $(anchors.gameMenuTriggerSelector);
   await menuTrigger.waitForClickable({ timeout: 30000 });
   await menuTrigger.click();
@@ -193,6 +250,30 @@ async function proveExploreMenuSaveLoad(): Promise<void> {
     ),
   );
   await saveManualSlot(1, "探索選單保存");
+  const saved = readSaveE2eOwnershipSnapshot().slots.find(
+    (slot) => slot.fixedSlotName === "manual-1",
+  );
+  expect(saved?.envelope?.thumbnail.type).toBe("available");
+  if (!saved?.sidecarPath)
+    throw new Error("Explore save thumbnail sidecar missing");
+  copyFileSync(
+    saved.sidecarPath,
+    path.join(outputDir, "explore-save-thumbnail.png"),
+  );
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const img = document.querySelector<HTMLImageElement>(
+          'article[data-slot-type="manual"][data-slot-number="1"] .thumbnail-frame img',
+        );
+        return !!img && img.complete && img.naturalWidth > 0;
+      }),
+    {
+      timeout: 30000,
+      timeoutMsg: "Saved Explore thumbnail card did not decode",
+    },
+  );
+  await browser.saveScreenshot(path.join(outputDir, "explore-save-card.png"));
   await closePersistenceBrowserToGameplay();
 
   await jumpToProductionScene("scene_0");

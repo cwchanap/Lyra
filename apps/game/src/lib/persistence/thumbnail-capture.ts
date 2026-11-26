@@ -1057,8 +1057,10 @@ function gameplayCaptureAssetLayers(
       fitted.width,
       fitted.height,
     );
+    const style = getComputedStyle(winner);
+    const contained = role === "background" && style.objectFit === "contain";
     const targetOpacity = Number.parseFloat(
-      getComputedStyle(winner).getPropertyValue("--crossfade-visible-opacity"),
+      style.getPropertyValue("--crossfade-visible-opacity"),
     );
     const opacity = Math.max(
       0,
@@ -1076,7 +1078,7 @@ function gameplayCaptureAssetLayers(
       opacity,
       role,
       source:
-        role === "background"
+        role === "background" && !contained
           ? coverSourceRect(
               winner.naturalWidth,
               winner.naturalHeight,
@@ -1090,7 +1092,7 @@ function gameplayCaptureAssetLayers(
               height: winner.naturalHeight,
             },
       destination:
-        role === "background"
+        role === "background" && !contained
           ? mappedBounds
           : containDestinationRect(
               winner.naturalWidth,

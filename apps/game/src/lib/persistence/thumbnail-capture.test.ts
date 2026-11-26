@@ -1060,6 +1060,50 @@ describe("html-to-image gameplay capture", () => {
     ]);
   });
 
+  it("maps a contained background below the header without cropping or moving its overlays", async () => {
+    const root = captureRoot();
+    const background = loadedImage({
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "1",
+      "data-save-crossfade-order": "1",
+      "data-save-crossfade-state": "visible",
+      "data-save-thumbnail-asset-role": "background",
+    });
+    Object.defineProperties(background, {
+      naturalWidth: { configurable: true, value: 1600 },
+      naturalHeight: { configurable: true, value: 900 },
+    });
+    background.style.objectFit = "contain";
+    background.style.setProperty("--crossfade-visible-opacity", "0.52");
+    vi.spyOn(background, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 120, 800, 480),
+    );
+    root.append(background);
+    installFontsReady();
+    const renderToBlob = vi.fn(
+      async (..._args: unknown[]) => new Blob(["png"]),
+    );
+    const request = { ticket: "capture-contained", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+
+    const result = await createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      renderToBlob,
+    }).capture(request);
+
+    expect(result.type).toBe("available");
+    expect(renderToBlob.mock.calls[0]?.[2]).toEqual([
+      {
+        image: background,
+        opacity: 0.52,
+        role: "background",
+        source: { x: 0, y: 0, width: 1600, height: 900 },
+        destination: { x: 0, y: 81, width: 480, height: 270 },
+      },
+    ]);
+  });
+
   it("captures an immediate no-image state while excluding every leaving asset", async () => {
     const root = captureRoot();
     const portraitGroup = document.createElement("div");

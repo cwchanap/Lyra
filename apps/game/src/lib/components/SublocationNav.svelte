@@ -19,15 +19,20 @@
   } = $props();
 </script>
 
-<nav class="nav" class:scene={placement === "scene"} aria-label="地點導航">
+<nav class={["nav", { scene: placement === "scene" }]} aria-label="地點導航">
   <span class="eyebrow">地點 · LOCATIONS</span>
   <div class="chips">
     {#each sublocations as sub, i (sub.id)}
       <button
-        class:active={sub.id === currentId}
+        class={{ active: sub.id === currentId }}
         {disabled}
         onclick={() => onEnter(sub.id)}
         type="button"
+        {@attach (button) => {
+          if (placement === "scene" && sub.id === currentId) {
+            button.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+          }
+        }}
       >
         <span class="idx">{String(i + 1).padStart(2, "0")}</span>
         <span class="label">{sub.label}</span>

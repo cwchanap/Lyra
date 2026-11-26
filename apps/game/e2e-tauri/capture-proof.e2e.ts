@@ -772,52 +772,89 @@ describe("packaged gameplay thumbnail proof", () => {
       await waitForPersistenceIdle();
       const captureBeforeSwap = await captureWrapperStatus();
       const autosaveIdsBeforeSwap = autosaveSaveIds();
-      await advanceCaptureProofDialogueOnce();
-      let exposed: boolean;
-      try {
-        exposed = await browser.waitUntil(
-          async () => {
-            const observed = await browser.execute(
-              (oldFragment: string, newestFragment: string) => {
-                const layers = Array.from(
-                  document.querySelectorAll(
-                    ".portrait-shell [data-save-crossfade-layer]",
-                  ),
-                ) as HTMLImageElement[];
-                return {
-                  leaving: layers.some(
-                    (layer) =>
-                      layer.src.includes(oldFragment) &&
-                      layer.dataset.saveCrossfadeState === "leaving",
-                  ),
-                  newest: layers.some(
-                    (layer) =>
-                      layer.src.includes(newestFragment) &&
-                      layer.dataset.saveCrossfadeState === "visible" &&
-                      layer.dataset.saveCrossfadeOrder ===
-                        layer.dataset.saveCrossfadeRequest,
-                  ),
-                };
-              },
-              anchors.captureProof.leavingPortrait,
-              anchors.captureProof.newestPortrait,
+      // Observe before advancing: waiting for the owning command to settle can
+      // outlast the portrait transition on software-rendered WebKit.
+      await browser.execute(
+        (oldFragment: string, newestFragment: string, probe: string) => {
+          const host = window as unknown as {
+            __captureOverlap?: {
+              seen: boolean;
+              duringCommand: boolean;
+              observer: MutationObserver;
+            };
+          };
+          const sample = () => {
+            const layers = Array.from(
+              document.querySelectorAll<HTMLImageElement>(
+                ".portrait-shell [data-save-crossfade-layer]",
+              ),
             );
-            return observed.leaving && observed.newest;
-          },
-          {
-            timeout: 1400,
-            interval: 25,
-            timeoutMsg:
-              "production portrait swap never exposed leaving + newest metadata",
-          },
-        );
-      } catch {
-        exposed = false;
+            const leaving = layers.some(
+              (layer) =>
+                layer.src.includes(oldFragment) &&
+                layer.dataset.saveCrossfadeState === "leaving",
+            );
+            const newest = layers.some(
+              (layer) =>
+                layer.src.includes(newestFragment) &&
+                layer.dataset.saveCrossfadeState === "visible" &&
+                layer.dataset.saveCrossfadeOrder ===
+                  layer.dataset.saveCrossfadeRequest,
+            );
+            const tracker = host.__captureOverlap;
+            if (tracker) {
+              tracker.seen ||= leaving && newest;
+              tracker.duringCommand ||=
+                leaving &&
+                newest &&
+                document
+                  .querySelector(probe)
+                  ?.getAttribute("data-capture-proof-command-status") ===
+                  "capturing";
+            }
+          };
+          const observer = new MutationObserver(sample);
+          host.__captureOverlap = {
+            seen: false,
+            duringCommand: false,
+            observer,
+          };
+          observer.observe(document.body, {
+            subtree: true,
+            childList: true,
+            attributes: true,
+          });
+          sample();
+        },
+        anchors.captureProof.leavingPortrait,
+        anchors.captureProof.newestPortrait,
+        anchors.captureProof.probe,
+      );
+      let overlap: { seen: boolean; duringCommand: boolean };
+      try {
+        await advanceCaptureProofDialogueOnce();
+      } finally {
+        overlap = await browser.execute(() => {
+          const host = window as unknown as {
+            __captureOverlap?: {
+              seen: boolean;
+              duringCommand: boolean;
+              observer: MutationObserver;
+            };
+          };
+          const tracker = host.__captureOverlap;
+          tracker?.observer.disconnect();
+          delete host.__captureOverlap;
+          return {
+            seen: tracker?.seen ?? false,
+            duringCommand: tracker?.duringCommand ?? false,
+          };
+        });
       }
-      if (!exposed) {
+      if (!overlap.duringCommand) {
         crossfadeFailures.push(attempt);
         console.warn(
-          `[capture proof] attempt ${attempt} never exposed leaving + newest metadata; replaying the same capture transition once`,
+          `[capture proof] attempt ${attempt} did not expose leaving + newest metadata while the command was active (seen=${overlap.seen}); replaying the same capture transition once`,
         );
         continue;
       }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  coverPlaneSize,
+  scenePlaneSize,
   isTargetReachable,
   targetCounterpart,
   targetViewportRect,
@@ -8,45 +8,40 @@ import {
   type ViewportRect,
 } from "./target-layout";
 
-// The ledger hotspot from investigation_scene_p1.layout.json — the case that
-// motivated reachability routing: at a tall 800×720 window it is fully
-// offscreen despite having an authored placement.
+// Formerly cropped edge placements from the investigation layout.
 const LEDGER = { x: 0.815, y: 0.32, w: 0.105, h: 0.19 };
 const CCTV = { x: 0.81, y: 0.52, w: 0.18, h: 0.2 };
 const RECEIPT = { x: 0.63, y: 0.678, w: 0.075, h: 0.04 };
 
-describe("coverPlaneSize", () => {
-  it("matches the CSS cover vars at the minimum window", () => {
-    // --scene-cover-width: max(100vw, 177.77777778vh) etc.
-    const plane = coverPlaneSize({ w: 800, h: 600 });
-    expect(plane.w).toBeCloseTo((16 / 9) * 600);
-    expect(plane.h).toBe(600);
+describe("scene plane size", () => {
+  it("keeps the whole scene inside tall and wide stages", () => {
+    expect(scenePlaneSize({ w: 800, h: 720 })).toEqual({ w: 800, h: 450 });
+    const wide = scenePlaneSize({ w: 1920, h: 800 });
+    expect(wide.w).toBeCloseTo(1422.222222);
+    expect(wide.h).toBe(800);
   });
 
-  it("overhangs horizontally on taller windows", () => {
-    const plane = coverPlaneSize({ w: 800, h: 720 });
-    expect(plane.w).toBeCloseTo(1280);
-    expect(plane.h).toBe(720);
+  it("fits the full 16:9 artwork at the minimum window", () => {
+    const plane = scenePlaneSize({ w: 800, h: 600 });
+    expect(plane).toEqual({ w: 800, h: 450 });
   });
 
-  it("overhangs vertically on wider windows", () => {
-    const plane = coverPlaneSize({ w: 1920, h: 800 });
-    expect(plane.w).toBe(1920);
-    expect(plane.h).toBeCloseTo(1080);
+  it("fills the minimum 800×450 stage", () => {
+    expect(scenePlaneSize({ w: 800, h: 450 })).toEqual({ w: 800, h: 450 });
   });
 });
 
 describe("targetViewportRect", () => {
   it("centers the plane and places the target by ratio", () => {
     const rect = targetViewportRect(RECEIPT, { w: 800, h: 600 });
-    const plane = coverPlaneSize({ w: 800, h: 600 });
-    const offset = (plane.w - 800) / 2;
-    expect(rect.left).toBeCloseTo(RECEIPT.x * plane.w - offset);
+    const plane = scenePlaneSize({ w: 800, h: 600 });
+    expect(rect.left).toBeCloseTo(504);
+    expect(rect.top).toBeCloseTo(380.1);
     expect(rect.right - rect.left).toBeCloseTo(RECEIPT.w * plane.w);
   });
 
   it("expands small targets right/down to the minimum hit box", () => {
-    // ~21px authored at 800×600 — the 72×44 floor widens it right/down.
+    // A tiny authored box is widened right/down by the 72×44 floor.
     const tiny = { x: 0.4, y: 0.4, w: 0.02, h: 0.02 };
     const rect = targetViewportRect(tiny, { w: 800, h: 600 }, 72, 44);
     expect(rect.right - rect.left).toBe(72);
@@ -59,64 +54,56 @@ describe("isTargetReachable", () => {
     expect(isTargetReachable(RECEIPT, { w: 800, h: 600 }, 72, 44)).toBe(true);
   });
 
-  it("keeps partially cropped targets reachable while ≥44px shows", () => {
-    // At 800×600 the ledger shows ~64px of its width: cropped but usable.
+  it("keeps the ledger reachable at 800×600", () => {
     expect(isTargetReachable(LEDGER, { w: 800, h: 600 }, 72, 44)).toBe(true);
   });
 
-  it("rejects a fully offscreen target at 800×720", () => {
-    expect(isTargetReachable(LEDGER, { w: 800, h: 720 }, 72, 44)).toBe(false);
+  it("keeps the former offscreen ledger on art at 800×720", () => {
+    expect(isTargetReachable(LEDGER, { w: 800, h: 720 }, 72, 44)).toBe(true);
   });
 
-  it("rejects a target leaving only an undiscoverable sliver", () => {
-    // At 800×720 the cctv box keeps ~3px of its left edge onscreen.
-    expect(isTargetReachable(CCTV, { w: 800, h: 720 }, 72, 44)).toBe(false);
+  it("keeps the former edge sliver CCTV on art at 800×720", () => {
+    expect(isTargetReachable(CCTV, { w: 800, h: 720 }, 72, 44)).toBe(true);
   });
 
   it("still counts the minimum-target expansion as visible area", () => {
-    // A tiny authored box clipped off the left edge has its painted rect
-    // fully offscreen, but the 72px min-target expansion pokes back into
-    // the viewport — so without the expansion it is unreachable.
-    const edge = { x: 0.18, y: 0.4, w: 0.005, h: 0.05 };
+    // Synthetic out-of-bounds box: the clamp reaches into the stage.
+    const edge = { x: -0.03, y: 0.4, w: 0.005, h: 0.05 };
     expect(isTargetReachable(edge, { w: 800, h: 720 }, 72, 44)).toBe(true);
     expect(isTargetReachable(edge, { w: 800, h: 720 }, 0, 0)).toBe(false);
   });
 
   it("requires full visibility from boxes smaller than the floor", () => {
     const viewport = { w: 800, h: 600 };
-    // 10.7px-wide box straddling the right crop line at 800×600: only ~5px
-    // shows, and 5 < min(44, 10.7) — unreachable.
-    const sliver = { x: 0.87, y: 0.4, w: 0.01, h: 0.05 };
+    // A synthetic 8px box straddles the stage edge: only 2px shows.
+    const sliver = { x: 0.9975, y: 0.4, w: 0.01, h: 0.05 };
     expect(isTargetReachable(sliver, viewport, 0, 0)).toBe(false);
-    // The same box fully inside the viewport shows its whole 10.7px.
-    const visible = { x: 0.85, y: 0.4, w: 0.01, h: 0.05 };
+    const visible = { x: 0.98, y: 0.4, w: 0.01, h: 0.05 };
     expect(isTargetReachable(visible, viewport, 0, 0)).toBe(true);
   });
 
   it("rejects a target fully under the fallback panel band", () => {
-    // Reachable by crop alone, but the fixed panel paints over it — its
+    // Reachable on art, but the fixed panel paints over it — its
     // clicks land on the panel.
     const viewport = { w: 800, h: 600 };
-    const low = { x: 0.5, y: 0.85, w: 0.08, h: 0.08 };
+    const low = { x: 0.5, y: 0.92, w: 0.08, h: 0.08 };
     expect(isTargetReachable(low, viewport, 72, 44)).toBe(true);
     const panel: ViewportRect = { left: 0, top: 480, right: 800, bottom: 600 };
     expect(isTargetReachable(low, viewport, 72, 44, panel)).toBe(false);
   });
 
   it("keeps a target reachable on a residual span beside the panel", () => {
-    // Viewport rect [200,500]–[700,580]: fully inside the pill's vertical
-    // band, but a 400×80 span survives to the pill's left.
+    // The target sits in the pill's band with a wide residual to its left.
     const viewport = { w: 800, h: 600 };
-    const wide = { x: 0.3125, y: 0.8333, w: 0.4688, h: 0.1333 };
+    const wide = { x: 0.25, y: 0.92, w: 0.5, h: 0.08 };
     const pill: ViewportRect = { left: 600, top: 480, right: 800, bottom: 600 };
     expect(isTargetReachable(wide, viewport, 72, 44, pill)).toBe(true);
   });
 
   it("rejects a target left with only a sliver beside the panel", () => {
-    // Viewport rect [600,510]–[700,558]: only a 30×48 span peeks left of
-    // the pill — under the 44px floor.
+    // Only a 30px span peeks left of the pill — under the 44px floor.
     const viewport = { w: 800, h: 600 };
-    const peek = { x: 0.6875, y: 0.85, w: 0.09375, h: 0.08 };
+    const peek = { x: 0.75, y: 0.9, w: 0.125, h: 0.1 };
     const pill: ViewportRect = { left: 630, top: 480, right: 800, bottom: 600 };
     expect(isTargetReachable(peek, viewport, 0, 0, pill)).toBe(false);
   });

@@ -1,4 +1,4 @@
-/** A target's normalized box on the scene's 16:9 cover plane. */
+/** A target's normalized box on the scene's 16:9 plane. */
 export type TargetLayout = { x: number; y: number; w: number; h: number };
 
 /** A CSS viewport size in px. */
@@ -17,20 +17,18 @@ function percent(value: number) {
 }
 
 /**
- * Cover-plane size in px for a viewport. Mirrors the component's
- * --scene-cover-width/--scene-cover-height vars exactly: the plane is the
- * smallest 16:9 box that covers the viewport, so it overhangs on one axis
- * whenever the window is not 16:9.
+ * Contained plane size in px for a stage. Mirrors the component's
+ * --scene-plane-width/--scene-plane-height vars.
  */
-export function coverPlaneSize(viewport: ViewportSize): ViewportSize {
+export function scenePlaneSize(viewport: ViewportSize): ViewportSize {
   return {
-    w: Math.max(viewport.w, (16 / 9) * viewport.h),
-    h: Math.max(viewport.h, (9 / 16) * viewport.w),
+    w: Math.min(viewport.w, (16 / 9) * viewport.h),
+    h: Math.min(viewport.h, (9 / 16) * viewport.w),
   };
 }
 
 /**
- * A target's hit box in viewport px: the authored box on the centered cover
+ * A target's hit box in viewport px: the authored box on the centered
  * plane, expanded right/down to at least `minW`×`minH` px (the .hotspot-target
  * 72×44 minimum-target clamp; characters pass 0 to keep the authored box).
  */
@@ -40,7 +38,7 @@ export function targetViewportRect(
   minW = 0,
   minH = 0,
 ): ViewportRect {
-  const plane = coverPlaneSize(viewport);
+  const plane = scenePlaneSize(viewport);
   const left = layout.x * plane.w - (plane.w - viewport.w) / 2;
   const top = layout.y * plane.h - (plane.h - viewport.h) / 2;
   return {
@@ -160,7 +158,7 @@ export function targetCounterpart(
 }
 
 /**
- * Inline style that places a hotspot or witness on the cover plane. The
+ * Inline style that places a hotspot or witness on the scene plane. The
  * unitless ratios let the target's own descendants (the pending cue) find
  * where the target sits in the viewport; a percentage there would resolve
  * against the target instead of the plane.
