@@ -204,6 +204,11 @@ test("e2e-full workflow derives unopted suites from the registry rather than dup
   );
   assert.match(workflowSource, /--suite production-journey --attempts 1/);
   assert.match(workflowSource, /--suite gameplay --attempts 2/);
+  assert.match(workflowSource, /newly authorized scene-nav proof only/);
+  assert.match(
+    workflowSource,
+    /Scene-nav pointer events also require verified target coordinates/,
+  );
   assert.match(
     workflowSource,
     /LYRA_E2E_XVFB_TRUSTED_KEYS: "1"[\s\S]*?--suite gameplay --attempts 2/,

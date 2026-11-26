@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { selectOwnedE2eAppProcessId } from "./e2e-trusted-key-process.mjs";
+import * as x11 from "./e2e-x11-trusted-input.mjs";
 import {
   EMPTY_XAUTHORITY_PROBE,
   TRUSTED_XVFB_KEYS_ENV,
@@ -1109,4 +1110,342 @@ test("delivery sends no xdotool command when the authorized probe fails", async 
     /authorized X connection to DISPLAY :99 failed/,
   );
   assert.deepEqual(calls, []);
+});
+
+const POINTER_TARGET = {
+  point: { x: 100, y: 100 },
+  bounds: { left: 90, top: 90, right: 130, bottom: 130 },
+  viewport: { width: 800, height: 600 },
+  devicePixelRatio: 1,
+};
+
+const deliverXvfbTrustedPointer = (options) =>
+  x11.deliverXvfbTrustedPointer(options);
+
+function pointerRun({
+  geometry = `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n`,
+  pointer = `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+  focus = [TARGET_WINDOW, TARGET_WINDOW],
+} = {}) {
+  const calls = [];
+  const remaining = [...focus];
+  return {
+    calls,
+    run: async (args) => {
+      calls.push(args);
+      if (args[0] === "getwindowgeometry") return geometry;
+      if (args[0] === "getmouselocation") return pointer;
+      if (args[0] === "getwindowfocus")
+        return String(remaining.shift() ?? TARGET_WINDOW);
+      return "";
+    },
+  };
+}
+
+test("pointer preflight failure sends no XTEST commands", async () => {
+  const { run, calls } = pointerRun();
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          throw new Error("unverified display");
+        },
+        run,
+      }),
+    /unverified display/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer sends no XTEST commands when private authority cannot be proven", async () => {
+  const { run, calls } = pointerRun();
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          verifyPrivateXvfbAncestry({
+            processes: privateXvfbTable(),
+            currentPid: 700,
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            authorityFile: {
+              ...PRIVATE_AUTHORITY_FILE,
+              content: Buffer.alloc(0),
+            },
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /no usable cookie/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer sends no XTEST commands when X authentication is unenforced", async () => {
+  const { run, calls } = pointerRun();
+  const { probe } = scriptedProbe(["ok", "ok"]);
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          await assertX11AuthenticationEnforced({
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            probe,
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /was ACCEPTED/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer refuses coordinates outside the verified window or target", async () => {
+  for (const target of [
+    { ...POINTER_TARGET, point: { x: 801, y: 100 } },
+    { ...POINTER_TARGET, point: { x: 85, y: 100 } },
+    { ...POINTER_TARGET, point: { x: NaN, y: 100 } },
+    { ...POINTER_TARGET, devicePixelRatio: 2 },
+  ]) {
+    const { run, calls } = pointerRun();
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses malformed or foreign window geometry", async () => {
+  for (const geometry of [
+    "X=10\nY=20\nWIDTH=800\nHEIGHT=600\n",
+    "WINDOW=999\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n",
+    `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=801\nHEIGHT=600\nSCREEN=0\n`,
+  ]) {
+    const { run, calls } = pointerRun({ geometry });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses presses when pointer location or ownership changed", async () => {
+  for (const pointer of [
+    "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    "X=110\nY=120\nSCREEN=0\nWINDOW=999\n",
+    `X=111\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+    "malformed",
+  ]) {
+    const { run, calls } = pointerRun({ pointer });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer can verify the raw root child when xdotool reports no client window", async () => {
+  const { run, calls } = pointerRun({
+    pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+  });
+  const result = await deliverXvfbTrustedPointer({
+    action: "wheel-press",
+    target: POINTER_TARGET,
+    resolveTarget: okResolver(),
+    run,
+    readRootPointer: async () =>
+      `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+  });
+  assert.deepEqual(calls.at(-2), ["mousedown", "7"]);
+  assert.equal(result.pointerSource, "xquerypointer");
+});
+
+test("pointer refuses a foreign or mismatched raw root-child result", async () => {
+  for (const raw of [
+    "X=110\nY=120\nSCREEN=0\nWINDOW=999\n",
+    "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    `X=111\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+    "malformed",
+  ]) {
+    const { run, calls } = pointerRun({
+      pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "wheel-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+        readRootPointer: async () => raw,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses a failed raw probe and never uses it for a foreign client", async () => {
+  for (const reported of [0, 999]) {
+    const { run, calls } = pointerRun({
+      pointer: `X=110\nY=120\nSCREEN=0\nWINDOW=${reported}\n`,
+    });
+    let probes = 0;
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+        readRootPointer: async () => {
+          probes += 1;
+          throw new Error("raw query unavailable");
+        },
+      }),
+    );
+    assert.equal(probes, reported === 0 ? 1 : 0);
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer checks focus before and after every injected event", async () => {
+  const before = pointerRun({ focus: [42, 42] });
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: before.run,
+    }),
+  );
+  assert.equal(
+    before.calls.some(([command]) => command === "mousemove"),
+    false,
+  );
+
+  const after = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "click-press",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: after.run,
+    }),
+  );
+  assert.equal(
+    after.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+});
+
+test("pointer delivers only verified scene-nav actions to the owned window", async () => {
+  const move = pointerRun();
+  const verifiedMove = await deliverXvfbTrustedPointer({
+    action: "move",
+    target: POINTER_TARGET,
+    resolveTarget: okResolver(),
+    run: move.run,
+  });
+  assert.deepEqual(verifiedMove, {
+    action: "move",
+    appPid: TARGET_PID,
+    windowId: TARGET_WINDOW,
+    x: 110,
+    y: 120,
+  });
+  assert.deepEqual(move.calls.at(-2), ["mousemove", "110", "120"]);
+  for (const [action, expected] of [
+    ["wheel-press", ["mousedown", "7"]],
+    ["wheel-release", ["mouseup", "7"]],
+    ["click-press", ["mousedown", "1"]],
+    ["click-release", ["mouseup", "1"]],
+  ]) {
+    const { run, calls } = pointerRun();
+    await deliverXvfbTrustedPointer({
+      action,
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run,
+    });
+    assert.deepEqual(calls.at(-2), expected);
+    assert.deepEqual(calls.at(-1), ["getwindowfocus", "-f"]);
+  }
+  const bad = pointerRun();
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "anything-else",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: bad.run,
+    }),
+  );
+  assert.deepEqual(bad.calls, []);
+});
+
+test("trusted scene-nav input failures are not reported as unavailable", () => {
+  assert.equal(
+    x11.assertSceneNavWheelProgress([{ trusted: false, deltaX: 1 }], 0, 0),
+    false,
+  );
+  assert.throws(
+    () => x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 1 }], 0, 0),
+    /trusted.*scroll/i,
+  );
+  assert.throws(
+    () => x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 0 }], 0, 5),
+    /trusted.*direction/i,
+  );
+  assert.equal(
+    x11.assertSceneNavWheelProgress([{ trusted: true, deltaX: 1 }], 0, 5),
+    true,
+  );
+  assert.equal(
+    x11.assertSceneNavTabProgress({ key: "Tab", trusted: false }, 1, 0),
+    false,
+  );
+  assert.throws(
+    () => x11.assertSceneNavTabProgress({ key: "Tab", trusted: true }, 1, 0),
+    /trusted.*focus/i,
+  );
+  assert.equal(
+    x11.assertSceneNavTabProgress({ key: "Tab", trusted: true }, 1, 1),
+    true,
+  );
 });

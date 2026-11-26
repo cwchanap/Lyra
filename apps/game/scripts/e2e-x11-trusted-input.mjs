@@ -1,12 +1,12 @@
 /**
- * HPA-831 scoped Linux/Xvfb trusted keyboard transport — pure, testable
+ * Scoped Linux/Xvfb trusted input transport — pure, testable
  * verification logic. `e2e-tauri/helpers.ts` supplies the live `/proc`
  * process table and runs the bounded `xdotool`/`xprop` probes; this module
- * decides whether real XTEST keys may be sent at all.
+ * decides whether real XTEST input may be sent at all.
  *
- * Never implicit: XTEST keys require BOTH Linux and an explicit
+ * Never implicit: XTEST input requires BOTH Linux and an explicit
  * `LYRA_E2E_XVFB_TRUSTED_KEYS=1` environment opt-in. Even then every check
- * below must pass before any key is sent:
+ * below must pass before any event is sent:
  *
  *   1. DISPLAY/XAUTHORITY are set, and DISPLAY is a local `:<n>` number.
  *   2. XAUTHORITY names a securely permissioned run-private authority
@@ -33,11 +33,14 @@
  *      or the WDIO launcher).
  *   8. xdotool finds exactly one visible window owned by that app pid, and
  *      both `_NET_WM_PID` and `getwindowpid` agree with it.
- *   9. The X input focus sits on that window before and after each key.
+ *   9. The X input focus sits on that window before and after each event.
+ *  10. Scene-nav pointer events additionally require a hit-tested target,
+ *      matching native window geometry and verified pointer ownership.
  *
  * Every function throws rather than guess: the caller must surface the
  * failure as inconclusive coverage and must NOT fall back to OS-global
- * keys on a shared or unverified display.
+ * input on a shared or unverified display. The newly authorized scene-nav
+ * pointer/keyboard proof is not permission to expand other XTEST scopes.
  */
 
 export const TRUSTED_XVFB_KEYS_ENV = "LYRA_E2E_XVFB_TRUSTED_KEYS";
@@ -489,6 +492,174 @@ export async function deliverXvfbTrustedKey({ key, resolveTarget, run }) {
       `X input focus left verified window ${windowId} (now ${focusedAfter ?? "unparseable"}) while delivering trusted ${key}; keyboard coverage is inconclusive`,
     );
   }
+}
+
+const SCENE_NAV_POINTER_ACTIONS = {
+  move: null,
+  "wheel-press": ["mousedown", "7"],
+  "wheel-release": ["mouseup", "7"],
+  "click-press": ["mousedown", "1"],
+  "click-release": ["mouseup", "1"],
+};
+
+export function assertSceneNavWheelProgress(events, before, after) {
+  const trusted = events.filter((event) => event.trusted);
+  if (trusted.length === 0) return false;
+  if (!trusted.some((event) => event.deltaX > 0)) {
+    throw new Error("trusted scene-nav wheel delivered the wrong direction");
+  }
+  if (!(after > before)) {
+    throw new Error("trusted scene-nav wheel did not scroll");
+  }
+  return true;
+}
+
+export function assertSceneNavTabProgress(event, expectedIndex, actualIndex) {
+  if (!event?.trusted) return false;
+  if (event.key !== "Tab" || expectedIndex !== actualIndex) {
+    throw new Error("trusted scene-nav Tab did not reach the expected focus");
+  }
+  return true;
+}
+
+function xdotoolShellNumbers(output, keys) {
+  const values = {};
+  for (const line of output.trim().split("\n")) {
+    const match = /^([A-Z]+)=(-?\d+)$/.exec(line.trim());
+    if (!match || Object.hasOwn(values, match[1])) {
+      throw new Error("unparseable or ambiguous xdotool geometry");
+    }
+    const value = Number(match[2]);
+    if (!Number.isSafeInteger(value)) {
+      throw new Error("unparseable or ambiguous xdotool geometry");
+    }
+    values[match[1]] = value;
+  }
+  if (keys.some((key) => !Object.hasOwn(values, key))) {
+    throw new Error("incomplete xdotool geometry");
+  }
+  return values;
+}
+
+/**
+ * Inject one narrowly scoped scene-nav pointer event after the same full
+ * private-display/process/window preflight used by keys. `target` is a fresh
+ * DOM hit-tested viewport sample; no event is sent if its CSS coordinates,
+ * native window geometry or focus cannot be proven. Presses/releases also
+ * require the current pointer position and owner to match.
+ */
+export async function deliverXvfbTrustedPointer({
+  action,
+  target,
+  resolveTarget,
+  run,
+  readRootPointer,
+}) {
+  if (!Object.hasOwn(SCENE_NAV_POINTER_ACTIONS, action)) {
+    throw new Error(
+      `unsupported scene-nav pointer action ${JSON.stringify(action)}`,
+    );
+  }
+  const { appPid, windowId } = await resolveTarget();
+  const geometry = xdotoolShellNumbers(
+    await run(["getwindowgeometry", "--shell", String(windowId)]),
+    ["WINDOW", "X", "Y", "WIDTH", "HEIGHT", "SCREEN"],
+  );
+  const { point, bounds, viewport, devicePixelRatio } = target ?? {};
+  const values = [
+    point?.x,
+    point?.y,
+    bounds?.left,
+    bounds?.top,
+    bounds?.right,
+    bounds?.bottom,
+    viewport?.width,
+    viewport?.height,
+    devicePixelRatio,
+  ];
+  if (
+    values.some((value) => !Number.isFinite(value)) ||
+    geometry.WINDOW !== windowId ||
+    geometry.SCREEN !== 0 ||
+    geometry.X < 0 ||
+    geometry.Y < 0 ||
+    devicePixelRatio <= 0 ||
+    geometry.WIDTH !== Math.round(viewport.width * devicePixelRatio) ||
+    geometry.HEIGHT !== Math.round(viewport.height * devicePixelRatio) ||
+    bounds.left < 0 ||
+    bounds.top < 0 ||
+    bounds.right > viewport.width ||
+    bounds.bottom > viewport.height ||
+    bounds.left >= bounds.right ||
+    bounds.top >= bounds.bottom ||
+    point.x < bounds.left ||
+    point.x >= bounds.right ||
+    point.y < bounds.top ||
+    point.y >= bounds.bottom
+  ) {
+    throw new Error(
+      `unverified scene-nav pointer coordinates for window ${windowId} (pid ${appPid}): ${JSON.stringify({ geometry, target })}`,
+    );
+  }
+  const x = geometry.X + Math.floor(point.x * devicePixelRatio);
+  const y = geometry.Y + Math.floor(point.y * devicePixelRatio);
+  const focusedWindow = async () =>
+    parseXdotoolDecimal(await run(["getwindowfocus", "-f"]));
+  if ((await focusedWindow()) !== windowId) {
+    await run(["windowfocus", "--sync", String(windowId)]);
+    if ((await focusedWindow()) !== windowId) {
+      throw new Error(
+        `focus did not reach verified scene-nav window ${windowId}`,
+      );
+    }
+  }
+  let pointerSource;
+  if (action !== "move") {
+    let pointer = xdotoolShellNumbers(
+      await run(["getmouselocation", "--shell"]),
+      ["X", "Y", "SCREEN", "WINDOW"],
+    );
+    pointerSource = "xdotool";
+    if (pointer.WINDOW === 0 && readRootPointer) {
+      // Without WM_STATE, xdotool may lose the raw root-child window ID.
+      pointer = xdotoolShellNumbers(await readRootPointer(), [
+        "X",
+        "Y",
+        "SCREEN",
+        "WINDOW",
+      ]);
+      pointerSource = "xquerypointer";
+    }
+    if (
+      pointer.WINDOW !== windowId ||
+      pointer.SCREEN !== geometry.SCREEN ||
+      pointer.X !== x ||
+      pointer.Y !== y
+    ) {
+      throw new Error(
+        `pointer no longer belongs to verified scene-nav target in window ${windowId}: ${JSON.stringify({ pointer, expected: { x, y } })}`,
+      );
+    }
+  }
+  // xdotool's --sync can hang when the pointer is already at the target.
+  await run(
+    action === "move"
+      ? ["mousemove", String(x), String(y)]
+      : SCENE_NAV_POINTER_ACTIONS[action],
+  );
+  if ((await focusedWindow()) !== windowId) {
+    throw new Error(
+      `focus left verified scene-nav window ${windowId} during ${action}`,
+    );
+  }
+  return {
+    action,
+    appPid,
+    windowId,
+    x,
+    y,
+    ...(pointerSource ? { pointerSource } : {}),
+  };
 }
 
 /**

@@ -4,6 +4,10 @@ import { pathToFileURL } from "node:url";
 import { compile } from "svelte/compiler";
 import { render } from "svelte/server";
 import {
+  assertSceneNavTabProgress,
+  assertSceneNavWheelProgress,
+} from "../scripts/e2e-x11-trusted-input.mjs";
+import {
   advanceDialogueUntil,
   captureMockupViewport,
   collectKagamiSummaryEvidence,
@@ -21,6 +25,7 @@ import {
   resetE2eStorage,
   seedStoryCleared,
   sendXvfbTrustedKey,
+  sendXvfbTrustedSceneNavPointer,
   startFromMenu,
   waitForPackagedGameState,
 } from "./helpers";
@@ -262,6 +267,30 @@ async function enterSublocationThroughNav(
       state.scene.currentSublocationId === sublocation.id
     );
   });
+  await browser.waitUntil(
+    () =>
+      browser.execute((label: string) => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        );
+        const active = chips?.querySelector<HTMLElement>("button.active");
+        if (
+          !chips ||
+          !active ||
+          active.querySelector(".label")?.textContent?.trim() !== label
+        )
+          return false;
+        const viewport = chips.getBoundingClientRect();
+        const button = active.getBoundingClientRect();
+        return (
+          button.left >= viewport.left - 1 && button.right <= viewport.right + 1
+        );
+      }, sublocation.label),
+    {
+      timeout: 10000,
+      timeoutMsg: `Active scene chip ${sublocation.id} did not scroll into view`,
+    },
+  );
 }
 
 /** The keyed surface re-rendered for the newly entered sublocation. */
@@ -1440,7 +1469,7 @@ describe("investigation layout surface", () => {
     );
   });
 
-  it("exercises the real five-chip scene navigation overflow", async () => {
+  it("exercises the real five-chip scene navigation overflow", async function () {
     await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
     await ensureMinimumWindowViewport();
     const state = await getPackagedGameState();
@@ -1463,100 +1492,39 @@ describe("investigation layout surface", () => {
     expect(nav.heights.every((height) => height >= 44)).toBe(true);
     expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
     const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
-    // WebDriver pointer/wheel is attempted on the real overflow container.
-    // An unsupported embedded executor is reported, never replaced by a click
-    // or a synthetic scroll masquerading as pointer input.
-    const wheelOrigin = await browser.execute(() => {
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            reason: "Private-Xvfb XTEST was not opted in.",
+          },
+          null,
+          2,
+        ),
+      );
+      console.warn(
+        "[SceneNav] trusted pointer coverage inconclusive: XTEST not opted in",
+      );
+      this.skip();
+    }
+    await browser.execute(() => {
       const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
       chips.scrollLeft = 0;
-      chips.addEventListener(
-        "wheel",
-        (event) => {
-          chips.dataset.hpa852WheelTrusted = String(event.isTrusted);
-        },
-        { once: true },
-      );
-      const rect = chips.getBoundingClientRect();
-      return {
-        x: Math.round((rect.left + rect.right) / 2),
-        y: Math.round((rect.top + rect.bottom) / 2),
-      };
-    });
-    let wheelError = "";
-    try {
-      await browser
-        .action("wheel")
-        .scroll({
-          ...wheelOrigin,
-          deltaX: 10000,
-          deltaY: 0,
-          duration: 200,
-        })
-        .perform();
-    } catch (error) {
-      wheelError = error instanceof Error ? error.message : String(error);
-    }
-    const wheel = await browser.execute(() => {
-      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
-      const last = chips.querySelector<HTMLElement>("button:last-child")!;
-      const bounds = chips.getBoundingClientRect();
-      const lastBounds = last.getBoundingClientRect();
-      return {
-        position: chips.scrollLeft,
-        trusted: chips.dataset.hpa852WheelTrusted ?? null,
-        lastVisible:
-          lastBounds.left >= bounds.left - 1 &&
-          lastBounds.right <= bounds.right + 1,
-      };
-    });
-    if (wheel.trusted === "true") {
-      expect(wheel.position).toBeGreaterThan(0);
-      expect(wheel.lastVisible).toBe(true);
-    }
-    let drag: {
-      position: number;
-      trusted: string | null;
-      lastVisible: boolean;
-      error: string;
-    } | null = null;
-    if (wheel.trusted !== "true" || !wheel.lastVisible) {
-      const scrollbar = await browser.execute(() => {
-        const chips = document.querySelector<HTMLElement>(
-          ".explore-hud .chips",
-        )!;
-        chips.scrollLeft = 0;
-        const bounds = chips.getBoundingClientRect();
-        const thumbWidth =
-          bounds.width * (chips.clientWidth / chips.scrollWidth);
-        delete document.documentElement.dataset.hpa852PointerTrusted;
-        document.addEventListener(
-          "pointerdown",
-          (event) => {
-            document.documentElement.dataset.hpa852PointerTrusted = String(
-              event.isTrusted,
-            );
-          },
-          { once: true, capture: true },
-        );
-        return {
-          startX: Math.round(bounds.left + thumbWidth / 2),
-          endX: Math.round(bounds.right - 3),
-          y: Math.round(bounds.bottom - 2),
-        };
+      chips.dataset.hpa852Wheels = "[]";
+      chips.addEventListener("wheel", (event) => {
+        const events = JSON.parse(chips.dataset.hpa852Wheels ?? "[]");
+        events.push({
+          trusted: event.isTrusted,
+          deltaX: event.deltaX,
+          deltaY: event.deltaY,
+        });
+        chips.dataset.hpa852Wheels = JSON.stringify(events);
       });
-      let error = "";
-      try {
-        await browser
-          .action("pointer")
-          .move({ x: scrollbar.startX, y: scrollbar.y, duration: 0 })
-          .down({ button: 0 })
-          .move({ x: scrollbar.endX, y: scrollbar.y, duration: 300 })
-          .up({ button: 0 })
-          .perform();
-      } catch (failure) {
-        error = failure instanceof Error ? failure.message : String(failure);
-      }
-      drag = await browser.execute((actionError: string) => {
+    });
+    const wheelState = () =>
+      browser.execute(() => {
         const chips = document.querySelector<HTMLElement>(
           ".explore-hud .chips",
         )!;
@@ -1565,35 +1533,81 @@ describe("investigation layout surface", () => {
         const lastBounds = last.getBoundingClientRect();
         return {
           position: chips.scrollLeft,
-          trusted:
-            document.documentElement.dataset.hpa852PointerTrusted ?? null,
+          events: JSON.parse(chips.dataset.hpa852Wheels ?? "[]") as Array<{
+            trusted: boolean;
+            deltaX: number;
+            deltaY: number;
+          }>,
           lastVisible:
             lastBounds.left >= bounds.left - 1 &&
             lastBounds.right <= bounds.right + 1,
-          error: actionError,
         };
-      }, error);
+      });
+    let pointerError = "";
+    const transport: Array<
+      Awaited<ReturnType<typeof sendXvfbTrustedSceneNavPointer>>
+    > = [];
+    let wheel = await wheelState();
+    for (let attempt = 0; attempt < 8 && !wheel.lastVisible; attempt += 1) {
+      const before = wheel;
+      try {
+        transport.push(await sendXvfbTrustedSceneNavPointer("move", "chips"));
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("wheel-press", "chips"),
+        );
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("wheel-release", "chips"),
+        );
+      } catch (error) {
+        pointerError = error instanceof Error ? error.message : String(error);
+      }
+      await browser
+        .waitUntil(
+          async () => (await wheelState()).events.length > before.events.length,
+          { timeout: 2000, interval: 50 },
+        )
+        .catch(() => {});
+      wheel = await wheelState();
+      const delivered = wheel.events.slice(before.events.length);
+      if (delivered.some((event) => event.trusted)) {
+        await browser
+          .waitUntil(
+            async () => (await wheelState()).position > before.position,
+            { timeout: 2000, interval: 50 },
+          )
+          .catch(() => {});
+        wheel = await wheelState();
+      }
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-events.json"),
+        JSON.stringify({ wheel, pointerError, transport }, null, 2),
+      );
+      const trusted = assertSceneNavWheelProgress(
+        delivered,
+        before.position,
+        wheel.position,
+      );
+      if (pointerError || !trusted) break;
     }
-    const pointer = drag ?? wheel;
-    if (pointer.position <= 0 || !pointer.lastVisible) {
+    const pointerDelivered = wheel.events.some((event) => event.trusted);
+    if (pointerError || !pointerDelivered) {
       console.warn(
-        `[SceneNav] pointer scrolling is inconclusive: ${JSON.stringify({ wheelError, wheel, drag })}`,
+        `[SceneNav] pointer delivery is inconclusive: ${JSON.stringify({ pointerError, wheel })}`,
       );
       writeFileSync(
         path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),
         JSON.stringify(
-          {
-            coverage: "inconclusive",
-            wheelError,
-            wheel,
-            drag,
-          },
+          { coverage: "inconclusive", pointerError, wheel, transport },
           null,
           2,
         ),
       );
+      this.skip();
     } else {
-      console.log(`[SceneNav] pointer scroll: ${JSON.stringify(pointer)}`);
+      expect(wheel.lastVisible).toBe(true);
+      console.log(
+        `[SceneNav] trusted pointer scroll: ${JSON.stringify(wheel)}`,
+      );
       await browser.saveScreenshot(
         path.join(outputDir, "scene-nav-scrolled.png"),
       );
@@ -1601,51 +1615,67 @@ describe("investigation layout surface", () => {
         const last = document.querySelector<HTMLButtonElement>(
           ".explore-hud .chips button:last-child",
         )!;
-        last.addEventListener(
-          "click",
-          (event) => {
-            document.documentElement.dataset.hpa852ClickTrusted = String(
-              event.isTrusted,
-            );
-          },
-          { once: true },
-        );
+        document.documentElement.dataset.hpa852PointerEvents = "[]";
+        for (const type of ["pointerdown", "pointerup", "click"]) {
+          last.addEventListener(type, (event) => {
+            const root = document.documentElement;
+            const events = JSON.parse(root.dataset.hpa852PointerEvents ?? "[]");
+            events.push({ type, trusted: event.isTrusted });
+            root.dataset.hpa852PointerEvents = JSON.stringify(events);
+          });
+        }
       });
-      const last = await $(".explore-hud .chips button:last-child");
-      await last.click();
-      await advanceDialogueUntil(async () => {
-        const state = await getPackagedGameState();
-        return (
-          state.scene.kind === "investigation" &&
-          state.scene.id === "investigation_scene_4" &&
-          state.scene.currentSublocationId === "police_review_van" &&
-          state.mode.type === "explore"
+      let clickError = "";
+      try {
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("move", "last-chip"),
         );
-      });
-      await browser.waitUntil(
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("click-press", "last-chip"),
+        );
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("click-release", "last-chip"),
+        );
+      } catch (error) {
+        clickError = error instanceof Error ? error.message : String(error);
+      }
+      const pointerEvents = await browser.execute(
         () =>
-          browser.execute(() => {
-            const chips = document.querySelector<HTMLElement>(
-              ".explore-hud .chips",
-            )!;
-            const active = chips.querySelector<HTMLElement>("button.active");
-            if (!active || active !== chips.lastElementChild) return false;
-            const bounds = chips.getBoundingClientRect();
-            const selected = active.getBoundingClientRect();
-            return (
-              selected.left >= bounds.left - 1 &&
-              selected.right <= bounds.right + 1
-            );
-          }),
-        {
-          timeout: 10000,
-          timeoutMsg: "Active final scene chip was not scrolled into view",
-        },
+          JSON.parse(
+            document.documentElement.dataset.hpa852PointerEvents ?? "[]",
+          ) as Array<{
+            type: string;
+            trusted: boolean;
+          }>,
       );
-      const clickTrusted = await browser.execute(
-        () => document.documentElement.dataset.hpa852ClickTrusted ?? null,
+      const delivered = ["pointerdown", "pointerup"].every((type) =>
+        pointerEvents.some((event) => event.type === type && event.trusted),
       );
-      const measured = pointer.trusted === "true" && clickTrusted === "true";
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-events.json"),
+        JSON.stringify(
+          { wheel, pointerEvents, clickError, transport },
+          null,
+          2,
+        ),
+      );
+      if (delivered) {
+        expect(
+          pointerEvents.some(
+            (event) => event.type === "click" && event.trusted,
+          ),
+        ).toBe(true);
+        await advanceDialogueUntil(async () => {
+          const state = await getPackagedGameState();
+          return (
+            state.scene.kind === "investigation" &&
+            state.scene.id === "investigation_scene_4" &&
+            state.scene.currentSublocationId === "police_review_van" &&
+            state.mode.type === "explore"
+          );
+        });
+      }
+      const measured = delivered && !clickError;
       writeFileSync(
         path.join(
           outputDir,
@@ -1657,72 +1687,188 @@ describe("investigation layout surface", () => {
           {
             coverage: measured ? "measured" : "inconclusive",
             wheel,
-            drag,
-            clickTrusted,
+            pointerEvents,
+            clickError,
+            transport,
           },
           null,
           2,
         ),
       );
+      if (!measured) this.skip();
     }
+  });
 
+  it("traverses and activates the last scene chip with trusted keyboard input", async function () {
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            reason: "Private-Xvfb XTEST was not opted in.",
+          },
+          null,
+          2,
+        ),
+      );
+      console.warn(
+        "[SceneNav] trusted keyboard coverage inconclusive: XTEST not opted in",
+      );
+      this.skip();
+    }
     await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
     await browser.execute(() => {
       const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
       const first = chips.querySelector<HTMLButtonElement>("button")!;
+      chips.scrollLeft = 0;
       first.focus();
-      chips.dataset.hpa852Keys = "[]";
-      chips.addEventListener("keydown", (event) => {
-        const events = JSON.parse(chips.dataset.hpa852Keys ?? "[]") as Array<{
-          key: string;
-          trusted: boolean;
-        }>;
-        events.push({ key: event.key, trusted: event.isTrusted });
-        chips.dataset.hpa852Keys = JSON.stringify(events);
-      });
-    });
-    for (let index = 0; index < 4; index += 1) await browser.keys("Tab");
-    const keyboard = await browser.execute(() => {
-      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
-      const buttons = Array.from(chips.querySelectorAll("button"));
-      const bounds = chips.getBoundingClientRect();
-      const last = buttons[buttons.length - 1]!.getBoundingClientRect();
-      return {
-        activeIndex: buttons.indexOf(
-          document.activeElement as HTMLButtonElement,
-        ),
-        scrollLeft: chips.scrollLeft,
-        lastVisible:
-          last.left >= bounds.left - 1 && last.right <= bounds.right + 1,
-        events: JSON.parse(chips.dataset.hpa852Keys ?? "[]") as Array<{
-          key: string;
-          trusted: boolean;
-        }>,
-      };
-    });
-    if (
-      keyboard.activeIndex === 4 &&
-      keyboard.lastVisible &&
-      keyboard.events.filter((event) => event.key === "Tab" && event.trusted)
-        .length === 4
-    ) {
-      await browser.execute(() => {
-        document.addEventListener(
-          "keydown",
-          (event) => {
-            if (event.key === "Enter") {
-              document.documentElement.dataset.hpa852EnterTrusted = String(
-                event.isTrusted,
-              );
-            }
-          },
-          { once: true, capture: true },
-        );
-      });
-      await browser.keys("Enter");
-      const enterTrusted = await browser.execute(
-        () => document.documentElement.dataset.hpa852EnterTrusted ?? null,
+      document.documentElement.dataset.hpa852Keys = "[]";
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          const root = document.documentElement;
+          const events = JSON.parse(root.dataset.hpa852Keys ?? "[]") as Array<{
+            key: string;
+            trusted: boolean;
+          }>;
+          events.push({ key: event.key, trusted: event.isTrusted });
+          root.dataset.hpa852Keys = JSON.stringify(events);
+        },
+        { capture: true },
       );
+    });
+    const keyboardState = () =>
+      browser.execute(() => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        )!;
+        const buttons = Array.from(chips.querySelectorAll("button"));
+        const bounds = chips.getBoundingClientRect();
+        const last = buttons[buttons.length - 1]!.getBoundingClientRect();
+        return {
+          activeIndex: buttons.indexOf(
+            document.activeElement as HTMLButtonElement,
+          ),
+          scrollLeft: chips.scrollLeft,
+          lastVisible:
+            last.left >= bounds.left - 1 && last.right <= bounds.right + 1,
+          events: JSON.parse(
+            document.documentElement.dataset.hpa852Keys ?? "[]",
+          ) as Array<{
+            key: string;
+            trusted: boolean;
+          }>,
+        };
+      });
+    let keyboard = await keyboardState();
+    expect(keyboard.activeIndex).toBe(0);
+    let keyError = "";
+    const traversal: Array<{
+      step: number;
+      activeIndex: number;
+      scrollLeft: number;
+      lastVisible: boolean;
+      event: { key: string; trusted: boolean } | undefined;
+    }> = [];
+    for (let index = 0; index < 4; index += 1) {
+      try {
+        await sendXvfbTrustedKey("Tab");
+      } catch (error) {
+        keyError = error instanceof Error ? error.message : String(error);
+      }
+      await browser
+        .waitUntil(async () => (await keyboardState()).events.length > index, {
+          timeout: 2000,
+          interval: 50,
+        })
+        .catch(() => {});
+      keyboard = await keyboardState();
+      const event = keyboard.events[index];
+      if (event?.trusted && event.key === "Tab") {
+        await browser
+          .waitUntil(
+            async () => (await keyboardState()).activeIndex === index + 1,
+            { timeout: 2000, interval: 50 },
+          )
+          .catch(() => {});
+        keyboard = await keyboardState();
+      }
+      traversal.push({
+        step: index + 1,
+        activeIndex: keyboard.activeIndex,
+        scrollLeft: keyboard.scrollLeft,
+        lastVisible: keyboard.lastVisible,
+        event,
+      });
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-events.json"),
+        JSON.stringify({ keyboard, traversal, keyError }, null, 2),
+      );
+      const trusted = assertSceneNavTabProgress(
+        event,
+        index + 1,
+        keyboard.activeIndex,
+      );
+      if (keyError || !trusted) break;
+    }
+    const tabsDelivered =
+      keyboard.events.filter((event) => event.key === "Tab" && event.trusted)
+        .length === 4;
+    if (!tabsDelivered || keyError) {
+      console.warn(
+        `[SceneNav] keyboard delivery is inconclusive: ${JSON.stringify({ keyboard, keyError })}`,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
+        JSON.stringify(
+          { coverage: "inconclusive", keyboard, traversal, keyError },
+          null,
+          2,
+        ),
+      );
+      this.skip();
+    }
+    expect(keyboard.activeIndex).toBe(4);
+    expect(keyboard.lastVisible).toBe(true);
+    await browser.saveScreenshot(
+      path.join(outputDir, "scene-nav-keyboard-focused.png"),
+    );
+    try {
+      await sendXvfbTrustedKey("Enter");
+    } catch (error) {
+      keyError = error instanceof Error ? error.message : String(error);
+    }
+    await browser
+      .waitUntil(
+        async () =>
+          (
+            await browser.execute(
+              () =>
+                JSON.parse(
+                  document.documentElement.dataset.hpa852Keys ?? "[]",
+                ) as Array<{ key: string }>,
+            )
+          ).some((event) => event.key === "Enter"),
+        { timeout: 2000, interval: 50 },
+      )
+      .catch(() => {});
+    const events = await browser.execute(
+      () =>
+        JSON.parse(
+          document.documentElement.dataset.hpa852Keys ?? "[]",
+        ) as Array<{ key: string; trusted: boolean }>,
+    );
+    const enterTrusted = events.some(
+      (event) => event.key === "Enter" && event.trusted,
+    );
+    writeFileSync(
+      path.join(outputDir, "scene-nav-keyboard-events.json"),
+      JSON.stringify({ keyboard, traversal, events, keyError }, null, 2),
+    );
+    if (enterTrusted) {
       await advanceDialogueUntil(async () => {
         const state = await getPackagedGameState();
         return (
@@ -1731,42 +1877,26 @@ describe("investigation layout surface", () => {
           state.mode.type === "explore"
         );
       });
-      const measured = enterTrusted === "true";
-      writeFileSync(
-        path.join(
-          outputDir,
-          measured
-            ? "scene-nav-keyboard.json"
-            : "scene-nav-keyboard-coverage-gap.json",
-        ),
-        JSON.stringify(
-          {
-            coverage: measured ? "measured" : "inconclusive",
-            ...keyboard,
-            enterTrusted,
-          },
-          null,
-          2,
-        ),
-      );
-    } else {
-      console.warn(
-        `[SceneNav] keyboard traversal is inconclusive: ${JSON.stringify(keyboard)}`,
-      );
-      writeFileSync(
-        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
-        JSON.stringify(
-          {
-            coverage: "inconclusive",
-            reason:
-              "Private-Xvfb XTEST is authorized for the map and existing production-journey proof, not scene navigation; synthetic WebDriver Tab is not credited as trusted traversal.",
-            keyboard,
-          },
-          null,
-          2,
-        ),
-      );
     }
+    const measured = enterTrusted && !keyError;
+    const evidence = {
+      coverage: measured ? "measured" : "inconclusive",
+      keyboard,
+      traversal,
+      events,
+      keyError,
+    };
+    console.log("[SceneNav] keyboard evidence", JSON.stringify(evidence));
+    writeFileSync(
+      path.join(
+        outputDir,
+        measured
+          ? "scene-nav-keyboard.json"
+          : "scene-nav-keyboard-coverage-gap.json",
+      ),
+      JSON.stringify(evidence, null, 2),
+    );
+    if (!measured) this.skip();
   });
 
   for (const sceneNumber of HPA853_SCENE_NUMBERS) {
@@ -1886,6 +2016,20 @@ describe("investigation layout surface", () => {
     );
     for (const sublocation of investigation.visibleSublocations) {
       if (sublocation.id !== investigation.currentSublocationId) {
+        if (sublocation.id === "police_review_van") {
+          const hidden = await browser.execute(() => {
+            const chips = document.querySelector<HTMLElement>(
+              ".explore-hud .chips",
+            )!;
+            chips.scrollLeft = 0;
+            const last = chips.querySelector<HTMLElement>("button:last-child")!;
+            return (
+              last.getBoundingClientRect().right >
+              chips.getBoundingClientRect().right
+            );
+          });
+          expect(hidden).toBe(true);
+        }
         await enterSublocationThroughNav(sceneId, sublocation);
         await waitForSceneSurface(sublocation);
       }

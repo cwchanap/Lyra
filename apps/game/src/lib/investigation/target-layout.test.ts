@@ -95,8 +95,13 @@ describe("isTargetReachable", () => {
   it("keeps a target reachable on a residual span beside the panel", () => {
     // The target sits in the pill's band with a wide residual to its left.
     const viewport = { w: 800, h: 600 };
-    const wide = { x: 0.25, y: 0.92, w: 0.5, h: 0.08 };
+    const wide = { x: 0.25, y: 0.92, w: 0.625, h: 0.08 };
     const pill: ViewportRect = { left: 600, top: 480, right: 800, bottom: 600 };
+    const rect = targetViewportRect(wide, viewport, 72, 44);
+    expect(rect.right).toBeGreaterThan(pill.left);
+    expect(rect.left).toBeLessThan(pill.left - 44);
+    expect(rect.top).toBeGreaterThanOrEqual(pill.top);
+    expect(rect.bottom).toBeLessThanOrEqual(pill.bottom);
     expect(isTargetReachable(wide, viewport, 72, 44, pill)).toBe(true);
   });
 

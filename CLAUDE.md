@@ -157,30 +157,41 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   is best-effort, never guaranteed. Suites print the selected input mode;
   trusted-input macOS UAT and final packaged coverage gaps stay explicitly
   disclosed, never claimed as trusted proof.
-- Packaged E2E keyboard input on Linux (production-journey commission →
-  scene_2 focus segment, HPA-831, and gameplay's first-map Tab/Enter
-  proof, HPA-852): the embedded WebDriver `browser.keys`
+- Packaged E2E trusted input on Linux (production-journey commission →
+  scene_2 focus segment, gameplay's first-map Tab/Enter proof, and the
+  HPA-852 scene-nav pointer/keyboard proof): the embedded WebDriver `browser.keys`
   reaches the app only as synthetic DOM KeyboardEvents (no native focus
-  traversal), so a second, separately scoped opt-in routes only those
-  proofs' Tab/Enter through real XTEST keys via `xdotool`. Run it only inside a
-  private `xvfb-run` display:
+  traversal). The user newly authorized extending the existing private-Xvfb
+  opt-in to scene-nav pointer scrolling/clicking and Tab/Enter in Task 3 fix
+  round 1. This is not blanket OS-input permission: only those three proofs
+  may use XTEST via `xdotool`. Run it only inside a private `xvfb-run` display:
 
   `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a bun run --cwd apps/game test:e2e:all`
 
   Prerequisites: `xvfb` (provides `xvfb-run`/`Xvfb`; pulls `xauth`),
-  `xdotool`, and `x11-utils` (`xprop`, `xdpyinfo`). Even with the opt-in,
-  every key still requires the full verifier chain — `xvfb-run` as a
+  `xdotool`, `x11-utils` (`xprop`, `xdpyinfo`), Python 3 and `libX11.so.6`.
+  When xdotool cannot identify a client window, a read-only XQueryPointer
+  probe requires the pointer's direct root child to be the verified app window.
+  Even with the opt-in,
+  every input event still requires the full verifier chain — `xvfb-run` as a
   strict ancestor of the WDIO worker, exactly one `-auth`-bound Xvfb child
   serving `DISPLAY`, a securely permissioned `XAUTHORITY` with usable
   cookies plus live authorized/rejected `xdpyinfo` probes, the exact e2e
   binary as the app process, one visible window it owns, and X input
-  focus on it before and after the key. Any uncertainty fails
-  inconclusive; keys are never sent to a shared or unverified display.
+  focus on it before and after the event. Pointer events also require current
+  hit-tested scene-nav bounds, matching window/viewport geometry, and, for
+  presses/releases, the verified window and coordinates under the pointer.
+  Any uncertainty fails inconclusive; input is never sent to a shared or
+  unverified display. These checks cannot eliminate races between probes.
   The manual `E2E Full` workflow sets this opt-in separately on its
   gameplay and production-journey steps; the other suites and desktops never
-  send these trusted keys. Without the opt-in the map keyboard case is
+  send this trusted input. Without the opt-in the map keyboard case is
   skipped and explicitly reported as inconclusive; it never falls back to a
-  click or claims a keyboard pass. Without the opt-in the journey's focus
+  click or claims a keyboard pass. Scene-nav pointer and keyboard proof are
+  likewise inconclusive without trusted delivery, while the scripted
+  active-chip scroll check still runs. Once a trusted input is delivered,
+  broken scrolling, focus, visibility or activation fails the assertion.
+  Without the opt-in the journey's focus
   segment still runs its click-transition probes, records the
   keyboard-modality coverage gap (`focus-coverage-gap.json`), and drains
   the transition through the scripted DOM-click path so the organic

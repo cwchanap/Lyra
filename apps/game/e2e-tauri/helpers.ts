@@ -27,6 +27,7 @@ import {
   assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
   deliverXvfbTrustedKey,
+  deliverXvfbTrustedPointer,
   parseNetWmPid,
   parseXdotoolDecimal,
   selectUniqueX11WindowId,
@@ -172,15 +173,16 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
   }
 }
 
-// --- HPA-831 scoped Linux/Xvfb trusted keyboard transport -----------------
+// --- Scoped Linux/Xvfb trusted input transport ----------------------------
 //
 // On the packaged Linux runner the embedded WebDriver reaches the app only
 // as synthetic DOM KeyboardEvents (tauri-plugin-wdio-webdriver executor.rs
 // dispatches keydown/keyup), so Tab/Enter can never run native focus
 // traversal or trusted activation — run c0da417f showed six WebDriver Tabs
 // leave focus on body. The narrow fix for the commission -> scene_2 focus
-// segment and first-map Tab/Enter proof is real XTEST keys via xdotool,
-// gated as hard as the macOS path:
+// segment and first-map Tab/Enter proof is real XTEST keys via xdotool.
+// The user newly authorized this same private-Xvfb opt-in for the HPA-852
+// scene-nav pointer/keyboard proof only; it is not blanket OS-input consent.
 //
 //   * explicit opt-in: linux AND LYRA_E2E_XVFB_TRUSTED_KEYS=1;
 //   * a PRIVATE xvfb-run display owned by this run's ancestry — verified
@@ -438,6 +440,93 @@ export async function sendXvfbTrustedKey(
     key,
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
+  });
+}
+
+/** Each pointer action is restricted to a fresh hit-tested scene-nav target. */
+export async function sendXvfbTrustedSceneNavPointer(
+  action:
+    | "move"
+    | "wheel-press"
+    | "wheel-release"
+    | "click-press"
+    | "click-release",
+  region: "chips" | "last-chip",
+): Promise<{
+  action: string;
+  appPid: number;
+  windowId: number;
+  x: number;
+  y: number;
+  pointerSource?: string;
+}> {
+  if (
+    (action.startsWith("wheel-") && region !== "chips") ||
+    (action.startsWith("click-") && region !== "last-chip")
+  ) {
+    throw new Error("Scene-nav pointer action does not match its target");
+  }
+  const target = await browser.execute((requested: "chips" | "last-chip") => {
+    const chips = document.querySelector<HTMLElement>(".explore-hud .chips");
+    const last = chips?.querySelector<HTMLButtonElement>("button:last-child");
+    const element = requested === "chips" ? chips : last;
+    if (!chips || !element || (requested === "last-chip" && last?.disabled)) {
+      throw new Error("Scene-nav pointer target is absent or disabled");
+    }
+    const rect = element.getBoundingClientRect();
+    const clip = chips.getBoundingClientRect();
+    const bounds = {
+      left: Math.max(0, rect.left, clip.left),
+      top: Math.max(0, rect.top, clip.top),
+      right: Math.min(innerWidth, rect.right, clip.right),
+      bottom: Math.min(innerHeight, rect.bottom, clip.bottom),
+    };
+    if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+      throw new Error(
+        "Scene-nav pointer target is outside the visible viewport",
+      );
+    }
+    const point = {
+      x: Math.floor((bounds.left + bounds.right) / 2),
+      y: Math.floor((bounds.top + bounds.bottom) / 2),
+    };
+    const hit = document.elementFromPoint(point.x, point.y);
+    if (!hit || !element.contains(hit)) {
+      throw new Error("Scene-nav pointer target is occluded");
+    }
+    return {
+      point,
+      bounds,
+      viewport: { width: innerWidth, height: innerHeight },
+      devicePixelRatio,
+    };
+  }, region);
+  return deliverXvfbTrustedPointer({
+    action,
+    target,
+    resolveTarget: resolveXvfbTrustedTarget,
+    run: (args: string[]) => execBounded("xdotool", args),
+    readRootPointer: () =>
+      execBounded("python3", [
+        "-c",
+        `
+import ctypes
+x = ctypes.CDLL("libX11.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+x.XDefaultRootWindow.restype = ctypes.c_ulong
+display = x.XOpenDisplay(None)
+if not display:
+    raise RuntimeError("XOpenDisplay failed")
+display = ctypes.c_void_p(display)
+root = x.XDefaultRootWindow(display)
+returned_root, child = ctypes.c_ulong(), ctypes.c_ulong()
+root_x, root_y, win_x, win_y = (ctypes.c_int() for _ in range(4))
+mask = ctypes.c_uint()
+if not x.XQueryPointer(display, ctypes.c_ulong(root), ctypes.byref(returned_root), ctypes.byref(child), ctypes.byref(root_x), ctypes.byref(root_y), ctypes.byref(win_x), ctypes.byref(win_y), ctypes.byref(mask)) or returned_root.value != root:
+    raise RuntimeError("XQueryPointer failed")
+print(f"X={root_x.value}\\nY={root_y.value}\\nSCREEN={x.XDefaultScreen(display)}\\nWINDOW={child.value}")
+`,
+      ]),
   });
 }
 

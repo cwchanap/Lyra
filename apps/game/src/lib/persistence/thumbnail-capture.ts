@@ -960,6 +960,7 @@ async function waitForCurrentCrossfades(
   root: HTMLElement,
   deadline: number,
   now: () => number,
+  onSelected?: (winners: Set<Element>) => void,
 ): Promise<Set<Element>> {
   let state = currentCrossfadeLayers(root);
   if (state.pending) {
@@ -986,8 +987,16 @@ async function waitForCurrentCrossfades(
   if (state.pending || !state.valid) {
     throw new Error("Current crossfade image is unavailable.");
   }
+  onSelected?.(state.winners);
   return state.winners;
 }
+
+type CaptureCrossfadeSelection = {
+  ticket: string;
+  portraits: Array<{ winner: string; leaving: string[] }>;
+};
+
+let lastPackagedCrossfadeSelection: CaptureCrossfadeSelection | null = null;
 
 function gameplayCaptureOptions(
   root: HTMLElement,
@@ -1111,6 +1120,7 @@ function gameplayCaptureAssetLayers(
 export function createHtmlToImageGameplayCapture(input: {
   root: () => HTMLElement | null;
   now: () => number;
+  onCrossfadeSelection?: (selection: CaptureCrossfadeSelection) => void;
   onRenderDiagnostic?: (code: CaptureRenderDiagnosticCode) => void;
   onFontEmbedDiagnostic?: (diagnostic: ThumbnailFontEmbedDiagnostic) => void;
   embedFontForCapture?: (
@@ -1175,6 +1185,34 @@ export function createHtmlToImageGameplayCapture(input: {
           root,
           deadline,
           input.now,
+          input.onCrossfadeSelection
+            ? (selected) => {
+                const portraits = [...selected].flatMap((winner) => {
+                  if (
+                    !(winner instanceof HTMLImageElement) ||
+                    winner.getAttribute(THUMBNAIL_ASSET_ROLE_ATTRIBUTE) !==
+                      "portrait"
+                  ) {
+                    return [];
+                  }
+                  const leaving = Array.from(
+                    winner.parentElement?.children ?? [],
+                  )
+                    .filter(
+                      (layer): layer is HTMLImageElement =>
+                        layer instanceof HTMLImageElement &&
+                        layer.getAttribute("data-save-crossfade-state") ===
+                          "leaving",
+                    )
+                    .map((layer) => layer.src);
+                  return [{ winner: winner.src, leaving }];
+                });
+                input.onCrossfadeSelection?.({
+                  ticket: request.ticket,
+                  portraits,
+                });
+              }
+            : undefined,
         );
         phase = "render";
         const baseRenderOptions = gameplayCaptureOptions(
@@ -1228,6 +1266,7 @@ export type PackagedCaptureProofStatus = Readonly<{
   embeddedFontCssBytes: number;
   embeddedFontChunkCount: number;
   embeddedZhHantCodePointCount: number;
+  crossfadeEvidence?: CaptureCrossfadeSelection & { sha256: string };
 }>;
 
 export function createPackagedCaptureProofCapture(
@@ -1238,6 +1277,7 @@ export function createPackagedCaptureProofCapture(
     embeddedZhHantCodePointCount: 0,
     cssBytes: 0,
   }),
+  crossfadeSelection?: () => CaptureCrossfadeSelection | null,
 ): {
   capture: GameplayThumbnailCapture;
   forceNextUnavailable: () => void;
@@ -1248,10 +1288,12 @@ export function createPackagedCaptureProofCapture(
   let lastUnavailableReason = "";
   let calls = 0;
   let available = 0;
+  let crossfadeEvidence: PackagedCaptureProofStatus["crossfadeEvidence"];
   return {
     capture: {
       async capture(request) {
         calls += 1;
+        crossfadeEvidence = undefined;
         if (forceNext) {
           forceNext = false;
           lastUnavailableReason = "forcedUnavailable";
@@ -1266,6 +1308,22 @@ export function createPackagedCaptureProofCapture(
         } else {
           available += 1;
           lastUnavailableReason = "";
+          const selected = crossfadeSelection?.();
+          if (selected?.ticket === request.ticket) {
+            try {
+              const bytes = new ArrayBuffer(result.bytes.byteLength);
+              new Uint8Array(bytes).set(result.bytes);
+              const digest = await crypto.subtle.digest("SHA-256", bytes);
+              crossfadeEvidence = {
+                ...selected,
+                sha256: Array.from(new Uint8Array(digest), (byte) =>
+                  byte.toString(16).padStart(2, "0"),
+                ).join(""),
+              };
+            } catch {
+              // Missing digest leaves the proof inconclusive, not the save.
+            }
+          }
         }
         return result;
       },
@@ -1286,6 +1344,7 @@ export function createPackagedCaptureProofCapture(
         embeddedFontCssBytes: font.cssBytes,
         embeddedFontChunkCount: font.selectedChunkCount,
         embeddedZhHantCodePointCount: font.embeddedZhHantCodePointCount,
+        ...(crossfadeEvidence ? { crossfadeEvidence } : {}),
       };
     },
   };
@@ -1457,6 +1516,9 @@ const htmlToImageGameplayCapture = createHtmlToImageGameplayCapture({
         onFontEmbedDiagnostic: (diagnostic: ThumbnailFontEmbedDiagnostic) => {
           lastPackagedFontEmbedDiagnostic = diagnostic;
         },
+        onCrossfadeSelection: (selection: CaptureCrossfadeSelection) => {
+          lastPackagedCrossfadeSelection = selection;
+        },
       }
     : {}),
 });
@@ -1466,6 +1528,7 @@ const packagedCaptureProof = packagedCaptureProofEnabled
       htmlToImageGameplayCapture,
       () => lastPackagedRenderDiagnostic,
       () => lastPackagedFontEmbedDiagnostic,
+      () => lastPackagedCrossfadeSelection,
     )
   : null;
 
