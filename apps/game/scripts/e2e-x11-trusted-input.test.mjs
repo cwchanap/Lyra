@@ -1535,6 +1535,118 @@ test("named investigation pointer rejects wrong hits and foreign windows before 
   }
 });
 
+test("named investigation pointer rejects context or target changes during native preflight", async (t) => {
+  for (const [action, change] of [
+    ["move", "hit"],
+    ["move", "point"],
+    ["move", "mode"],
+    ["move", "bounds"],
+    ["click-press", "hit"],
+    ["click-press", "mode"],
+  ]) {
+    const pointerState = trackedPointerState(t);
+    const transport = pointerRun();
+    let preflight = false;
+    const run = async (args) => {
+      const result = await transport.run(args);
+      if (args[0] === "getwindowfocus") preflight = true;
+      return result;
+    };
+    await assert.rejects(
+      () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action,
+          readState: async () =>
+            preflight && change === "mode"
+              ? { ...namedInvestigationState, mode: { type: "dialogue" } }
+              : namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            point:
+              preflight && change === "point"
+                ? { x: 101, y: 100 }
+                : POINTER_TARGET.point,
+            bounds:
+              preflight && change === "bounds"
+                ? { ...POINTER_TARGET.bounds, right: 131 }
+                : POINTER_TARGET.bounds,
+            hitTarget:
+              preflight && change === "hit"
+                ? "access_permission_list"
+                : "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run,
+          pointerState,
+        }),
+      /Investigation pointer|Unauthorized investigation pointer/,
+    );
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+      `${action}: ${change}`,
+    );
+    assert.equal(pointerState.read().status, "safe");
+  }
+});
+
+test("late named-target mismatch rejects release and poisons the active display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let preflight = false;
+  pointerState.beginTest();
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action: "click-press",
+          readState: async () => namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run: press.run,
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action: "click-release",
+          readState: async () => namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: preflight ? "access_permission_list" : "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            const result = await release.run(args);
+            if (args[0] === "getmouselocation") preflight = true;
+            return result;
+          },
+          pointerState,
+        }),
+    }),
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+});
+
 test("named investigation pointer requires the complete trusted sequence on the exact target", () => {
   assert.equal(typeof x11.assertInvestigationPointerEvents, "function");
   const events = ["pointerdown", "pointerup", "click"].map((type) => ({

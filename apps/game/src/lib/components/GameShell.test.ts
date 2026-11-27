@@ -42,6 +42,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import GameShellHarness from "$lib/test-harnesses/GameShellHarness.svelte";
+import DialogueBox from "./DialogueBox.svelte";
 import GameShell from "./GameShell.svelte";
 
 function state(
@@ -305,6 +306,147 @@ describe("GameShell", () => {
         chapterSummary.compareDocumentPosition(objectiveHud) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).not.toBe(0);
+    },
+  );
+
+  it.each([
+    ["chapter summary", " ", () => screen.getByText("案件摘要")],
+    ["chapter summary", "Enter", () => screen.getByText("案件摘要")],
+    [
+      "compact objective",
+      " ",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+    [
+      "compact objective",
+      "Enter",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+  ])(
+    "does not advance or prevent %s focus with key %s",
+    (_name, key, getRegion) => {
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+
+      const region = getRegion();
+      region.focus();
+      expect(document.activeElement).toBe(region);
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      region.dispatchEvent(event);
+      expect(onAdvance).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    },
+  );
+
+  it.each([
+    ["chapter summary", () => screen.getByText("案件摘要")],
+    [
+      "compact objective",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+  ])(
+    "keeps the L history shortcut on the focused %s",
+    async (_name, getRegion) => {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance: vi.fn(),
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const region = getRegion();
+      region.focus();
+      expect(document.activeElement).toBe(region);
+      await user.keyboard("l");
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it.each([" ", "Enter"])(
+    "does not advance from a focused descendant of the compact objective on %s",
+    (key) => {
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const region = screen.getByRole("region", { name: "主要目標內容" });
+      const descendant = document.createElement("span");
+      descendant.tabIndex = -1;
+      region.appendChild(descendant);
+      descendant.focus();
+      expect(document.activeElement).toBe(descendant);
+
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      descendant.dispatchEvent(event);
+      expect(onAdvance).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    },
+  );
+
+  it.each([" ", "Enter"])(
+    "advances from an unrelated tabindex=0 element on %s",
+    (key) => {
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const unrelated = document.createElement("div");
+      unrelated.tabIndex = 0;
+      document.body.appendChild(unrelated);
+      try {
+        unrelated.focus();
+        expect(document.activeElement).toBe(unrelated);
+        const event = new KeyboardEvent("keydown", {
+          key,
+          bubbles: true,
+          cancelable: true,
+        });
+        unrelated.dispatchEvent(event);
+        expect(onAdvance).toHaveBeenCalledOnce();
+        expect(event.defaultPrevented).toBe(true);
+      } finally {
+        unrelated.remove();
+      }
     },
   );
 

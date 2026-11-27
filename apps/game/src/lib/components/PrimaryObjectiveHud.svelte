@@ -20,6 +20,7 @@
       role="region"
       aria-label="主要目標內容"
       tabindex={compact ? 0 : undefined}
+      data-dialogue-scroll-region={compact ? "" : undefined}
     >
       <p class="label">{objective.label}</p>
     </div>

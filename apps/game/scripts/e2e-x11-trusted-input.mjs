@@ -1019,22 +1019,26 @@ export async function deliverXvfbTrustedInvestigationPointer({
     throw new Error("Unauthorized investigation pointer request");
   }
   pointerState.assertAllowed(action);
-  const state = await readState();
   const [chapter, scene, sublocation] = INVESTIGATION_POINTER_TARGETS[id];
-  if (
-    state?.chapter?.id !== chapter ||
-    state?.scene?.kind !== "investigation" ||
-    state.scene.id !== scene ||
-    state.scene.currentSublocationId !== sublocation ||
-    state?.mode?.type !== "explore" ||
-    state.pendingAcquisition
-  ) {
-    throw new Error("Unauthorized investigation pointer scene or mode");
-  }
-  const target = await measureTarget(id);
-  if (target?.hitTarget !== id) {
-    throw new Error("Investigation pointer hit-test mismatch");
-  }
+  const sample = async () => {
+    const state = await readState();
+    if (
+      state?.chapter?.id !== chapter ||
+      state?.scene?.kind !== "investigation" ||
+      state.scene.id !== scene ||
+      state.scene.currentSublocationId !== sublocation ||
+      state?.mode?.type !== "explore" ||
+      state.pendingAcquisition
+    ) {
+      throw new Error("Unauthorized investigation pointer scene or mode");
+    }
+    const target = await measureTarget(id);
+    if (target?.hitTarget !== id) {
+      throw new Error("Investigation pointer hit-test mismatch");
+    }
+    return target;
+  };
+  const target = await sample();
   return deliverXvfbTrustedPointer({
     action,
     target,
@@ -1042,6 +1046,23 @@ export async function deliverXvfbTrustedInvestigationPointer({
     run,
     readRootPointer,
     pointerState,
+    revalidate: async () => {
+      const fresh = await sample();
+      if (
+        fresh.point?.x !== target.point?.x ||
+        fresh.point?.y !== target.point?.y ||
+        fresh.viewport?.width !== target.viewport?.width ||
+        fresh.viewport?.height !== target.viewport?.height ||
+        fresh.devicePixelRatio !== target.devicePixelRatio ||
+        ["left", "top", "right", "bottom"].some(
+          (key) => fresh.bounds?.[key] !== target.bounds?.[key],
+        )
+      ) {
+        throw new Error(
+          "Investigation pointer target changed during preflight",
+        );
+      }
+    },
   });
 }
 
@@ -1130,6 +1151,7 @@ export async function deliverXvfbTrustedPointer({
   run,
   readRootPointer,
   pointerState,
+  revalidate = undefined,
 }) {
   pointerState.assertAllowed(action);
   if (!Object.hasOwn(SCENE_NAV_POINTER_ACTIONS, action)) {
@@ -1219,6 +1241,7 @@ export async function deliverXvfbTrustedPointer({
       );
     }
   }
+  if (revalidate) await revalidate();
   const button = action.split("-")[0];
   if (action.endsWith("-press")) pointerState.beginPress(button);
   else pointerState.assertAllowed(action);

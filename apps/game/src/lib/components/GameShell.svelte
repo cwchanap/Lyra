@@ -466,6 +466,9 @@
         <p
           class="summary"
           tabindex={gameState.mode.type === "dialogue" ? 0 : undefined}
+          data-dialogue-scroll-region={gameState.mode.type === "dialogue"
+            ? ""
+            : undefined}
         >
           {gameState.chapter.summary}
         </p>
