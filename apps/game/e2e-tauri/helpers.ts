@@ -27,7 +27,7 @@ import {
   createX11PointerState,
   deliverXvfbTrustedInvestigationPointer,
   deliverXvfbTrustedKey,
-  deliverXvfbTrustedPointer,
+  deliverXvfbTrustedSceneNavPointer,
   parseNetWmPid,
   parseXdotoolDecimal,
   selectUniqueX11WindowId,
@@ -361,44 +361,52 @@ export async function sendXvfbTrustedSceneNavPointer(
   ) {
     throw new Error("Scene-nav pointer action does not match its target");
   }
-  const target = await browser.execute((requested: "chips" | "last-chip") => {
-    const chips = document.querySelector<HTMLElement>(".explore-hud .chips");
-    const last = chips?.querySelector<HTMLButtonElement>("button:last-child");
-    const element = requested === "chips" ? chips : last;
-    if (!chips || !element || (requested === "last-chip" && last?.disabled)) {
-      throw new Error("Scene-nav pointer target is absent or disabled");
-    }
-    const rect = element.getBoundingClientRect();
-    const clip = chips.getBoundingClientRect();
-    const bounds = {
-      left: Math.max(0, rect.left, clip.left),
-      top: Math.max(0, rect.top, clip.top),
-      right: Math.min(innerWidth, rect.right, clip.right),
-      bottom: Math.min(innerHeight, rect.bottom, clip.bottom),
-    };
-    if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
-      throw new Error(
-        "Scene-nav pointer target is outside the visible viewport",
-      );
-    }
-    const point = {
-      x: Math.floor((bounds.left + bounds.right) / 2),
-      y: Math.floor((bounds.top + bounds.bottom) / 2),
-    };
-    const hit = document.elementFromPoint(point.x, point.y);
-    if (!hit || !element.contains(hit)) {
-      throw new Error("Scene-nav pointer target is occluded");
-    }
-    return {
-      point,
-      bounds,
-      viewport: { width: innerWidth, height: innerHeight },
-      devicePixelRatio,
-    };
-  }, region);
-  return deliverXvfbTrustedPointer({
+  return deliverXvfbTrustedSceneNavPointer({
     action,
-    target,
+    region,
+    measureTarget: (region: "chips" | "last-chip") =>
+      browser.execute((requested: "chips" | "last-chip") => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        );
+        const last =
+          chips?.querySelector<HTMLButtonElement>("button:last-child");
+        const element = requested === "chips" ? chips : last;
+        if (
+          !chips ||
+          !element ||
+          (requested === "last-chip" && last?.disabled)
+        ) {
+          throw new Error("Scene-nav pointer target is absent or disabled");
+        }
+        const rect = element.getBoundingClientRect();
+        const clip = chips.getBoundingClientRect();
+        const bounds = {
+          left: Math.max(0, rect.left, clip.left),
+          top: Math.max(0, rect.top, clip.top),
+          right: Math.min(innerWidth, rect.right, clip.right),
+          bottom: Math.min(innerHeight, rect.bottom, clip.bottom),
+        };
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+          throw new Error(
+            "Scene-nav pointer target is outside the visible viewport",
+          );
+        }
+        const point = {
+          x: Math.floor((bounds.left + bounds.right) / 2),
+          y: Math.floor((bounds.top + bounds.bottom) / 2),
+        };
+        const hit = document.elementFromPoint(point.x, point.y);
+        if (!hit || !element.contains(hit)) {
+          throw new Error("Scene-nav pointer target is occluded");
+        }
+        return {
+          point,
+          bounds,
+          viewport: { width: innerWidth, height: innerHeight },
+          devicePixelRatio,
+        };
+      }, region),
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
     pointerState,

@@ -1458,6 +1458,41 @@ const namedInvestigationState = {
   mode: { type: "explore" },
 };
 
+test("scene-nav pointer rejects a changed late hit before native input", async (t) => {
+  for (const action of ["move", "click-press", "click-release"]) {
+    const pointerState = trackedPointerState(t);
+    if (action === "click-release") {
+      pointerState.beginPress("click");
+      pointerState.confirmPress("click");
+    }
+    const transport = pointerRun();
+    let samples = 0;
+    await assert.rejects(
+      () =>
+        x11.deliverXvfbTrustedSceneNavPointer({
+          action,
+          region: "last-chip",
+          measureTarget: async () => {
+            if (++samples === 2)
+              throw new Error("scene-nav target is occluded");
+            return POINTER_TARGET;
+          },
+          resolveTarget: okResolver(),
+          run: transport.run,
+          pointerState,
+        }),
+      /occluded/,
+    );
+    assert.equal(samples, 2);
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+    );
+  }
+});
+
 test("named investigation pointer accepts only the seven authorized ids in their live scene", async () => {
   assert.equal(typeof x11.deliverXvfbTrustedInvestigationPointer, "function");
   for (const id of ["phone_screenshot", "__proto__", "anything"]) {
@@ -2459,8 +2494,86 @@ test("press postcheck failure attempts only a fully verified release", async (t)
   assert.equal(releasePreflights, 1);
   assert.ok(release.calls.some(([command]) => command === "getmouselocation"));
   assert.ok(release.calls.some(([command]) => command === "mouseup"));
-  assert.equal(pointerState.read().status, "safe");
+  assert.equal(pointerState.read().status, "poisoned");
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Tab",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
 });
+
+for (const pending of ["press", "post-press focus"]) {
+  test(`revocation while ${pending} is in flight prevents later input`, async (t) => {
+    const pointerState = trackedPointerState(t);
+    const press = pointerRun();
+    const release = pointerRun();
+    let notifyStarted;
+    let resume;
+    const started = new Promise((resolve) => {
+      notifyStarted = resolve;
+    });
+    const delayed = new Promise((resolve) => {
+      resume = resolve;
+    });
+    let focusChecks = 0;
+    pointerState.beginTest();
+    const operation = x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-press",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            const result = await press.run(args);
+            const hold =
+              (pending === "press" && args[0] === "mousedown") ||
+              (pending === "post-press focus" &&
+                args[0] === "getwindowfocus" &&
+                ++focusChecks === 2);
+            if (hold) {
+              notifyStarted();
+              await delayed;
+            }
+            return result;
+          },
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-release",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: release.run,
+          pointerState,
+        }),
+    });
+    await started;
+    assert.equal(pointerState.read().status, "possible");
+    pointerState.finishTest(false);
+    resume();
+    await assert.rejects(operation);
+    assert.equal(pointerState.read().status, "poisoned");
+    assert.deepEqual(release.calls, []);
+    assert.throws(() => pointerState.beginTest(), /unsafe/);
+    const later = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedKey({
+        key: "Enter",
+        resolveTarget: okResolver(),
+        run: later.run,
+        pointerState,
+      }),
+    );
+    assert.deepEqual(later.calls, []);
+  });
+}
 
 test("a falsy press error is not swallowed after a verified release", async (t) => {
   const pointerState = trackedPointerState(t);
@@ -2497,7 +2610,7 @@ test("a falsy press error is not swallowed after a verified release", async (t) 
   } catch {
     rejected = true;
   }
-  assert.equal(pointerState.read().status, "safe");
+  assert.equal(pointerState.read().status, "poisoned");
   assert.equal(rejected, true);
 });
 

@@ -17,11 +17,30 @@
     /** Open targets per location; null hides the counts. */
     remaining?: Record<string, number> | null;
   } = $props();
+
+  let chips: HTMLDivElement;
 </script>
 
 <nav class={["nav", { scene: placement === "scene" }]} aria-label="地點導航">
   <span class="eyebrow">地點 · LOCATIONS</span>
-  <div class="chips">
+  <div
+    class="chips"
+    {@attach (node) => {
+      chips = node;
+      if (placement !== "scene") return;
+      if (typeof ResizeObserver === "undefined") {
+        node.classList.add("scrollbar-hidden");
+        return;
+      }
+      const observer = new ResizeObserver(() => {
+        if (node.clientHeight > 0 && node.clientHeight < 44) {
+          node.classList.add("scrollbar-hidden");
+        }
+      });
+      observer.observe(node);
+      return () => observer.disconnect();
+    }}
+  >
     {#each sublocations as sub, i (sub.id)}
       <button
         class={{ active: sub.id === currentId }}
@@ -46,6 +65,22 @@
       </button>
     {/each}
   </div>
+  {#if placement === "scene"}
+    <button
+      class="scroll-left"
+      type="button"
+      aria-label="向左捲動地點"
+      {disabled}
+      onclick={() => chips.scrollBy({ left: -160 })}>‹</button
+    >
+    <button
+      class="scroll-right"
+      type="button"
+      aria-label="向右捲動地點"
+      {disabled}
+      onclick={() => chips.scrollBy({ left: 160 })}>›</button
+    >
+  {/if}
 </nav>
 
 <style>
@@ -89,6 +124,7 @@
   }
 
   .scene .eyebrow {
+    order: -2;
     flex: none;
     padding-right: 8px;
     border-right: 0;
@@ -106,19 +142,51 @@
   }
 
   .scene .chips {
+    flex: 1;
     flex-wrap: nowrap;
     min-width: 0;
-    max-height: 48px;
+    height: 48px;
     overflow-x: auto;
-    scrollbar-width: thin;
+    scrollbar-width: none;
   }
 
   .scene .chips::-webkit-scrollbar {
-    height: 4px;
+    display: none;
   }
 
-  .scene .chips::-webkit-scrollbar-thumb {
-    background: var(--bone-faint);
+  @supports selector(::-webkit-scrollbar) {
+    .scene .chips {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+
+    .scene .chips::-webkit-scrollbar {
+      display: block;
+      height: 4px;
+    }
+
+    .scene .chips::-webkit-scrollbar-thumb {
+      background: var(--bone-faint);
+    }
+
+    .scene .chips:global(.scrollbar-hidden) {
+      scrollbar-width: none;
+    }
+
+    .scene .chips:global(.scrollbar-hidden)::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .scene .scroll-left,
+  .scene .scroll-right {
+    width: 44px;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  .scene .scroll-left {
+    order: -1;
   }
 
   button {

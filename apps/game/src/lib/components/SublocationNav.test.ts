@@ -118,6 +118,68 @@ describe("SublocationNav", () => {
     expect(container.querySelector("nav")).toHaveClass("scene");
   });
 
+  it("provides operable direction controls for scene navigation only", async () => {
+    const user = userEvent.setup();
+    const { container } = render(SublocationNav, {
+      sublocations,
+      currentId: "coffee_shop",
+      onEnter: vi.fn(),
+      placement: "scene",
+    });
+    const chips = container.querySelector<HTMLElement>(".chips")!;
+    chips.scrollBy = vi.fn();
+    await user.click(screen.getByRole("button", { name: "向右捲動地點" }));
+    await user.click(screen.getByRole("button", { name: "向左捲動地點" }));
+    expect(chips.scrollBy).toHaveBeenNthCalledWith(1, { left: 160 });
+    expect(chips.scrollBy).toHaveBeenNthCalledWith(2, { left: -160 });
+  });
+
+  it("hides an oversized scrollbar without shrinking the chips", async () => {
+    let resize: ResizeObserverCallback | undefined;
+    const disconnect = vi.fn();
+    class FakeResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback;
+      }
+      observe() {}
+      disconnect = disconnect;
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    try {
+      const { container, unmount } = render(SublocationNav, {
+        sublocations,
+        currentId: "coffee_shop",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      const chips = container.querySelector<HTMLElement>(".chips")!;
+      let height = 44;
+      Object.defineProperty(chips, "clientHeight", { get: () => height });
+      await waitFor(() => expect(resize).toBeDefined());
+      resize!([], {} as ResizeObserver);
+      expect(chips).not.toHaveClass("scrollbar-hidden");
+      height = 40;
+      resize!([], {} as ResizeObserver);
+      expect(chips).toHaveClass("scrollbar-hidden");
+      unmount();
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("disables scene direction controls while navigation is disabled", () => {
+    render(SublocationNav, {
+      sublocations,
+      currentId: "coffee_shop",
+      onEnter: vi.fn(),
+      placement: "scene",
+      disabled: true,
+    });
+    expect(screen.getByRole("button", { name: "向左捲動地點" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "向右捲動地點" })).toBeDisabled();
+  });
+
   it("brings the active scene chip into view on mount and selection change", async () => {
     const scroll = vi.fn();
     const original = HTMLElement.prototype.scrollIntoView;

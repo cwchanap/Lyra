@@ -1875,21 +1875,93 @@ describe("investigation layout surface", () => {
       throw new Error("Scene 4 checkpoint is not an investigation");
     }
     expect(state.scene.visibleSublocations).toHaveLength(5);
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            (document.querySelector<HTMLElement>(".explore-hud .chips")
+              ?.clientHeight ?? 0) >= 44,
+        ),
+      { timeout: 10000, timeoutMsg: "Scene-nav chip clipping did not settle" },
+    );
     const nav = await browser.execute(() => {
       const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
       const buttons = Array.from(chips.querySelectorAll("button"));
       return {
         clientWidth: chips.clientWidth,
+        clientHeight: chips.clientHeight,
         scrollWidth: chips.scrollWidth,
+        scrollbarThickness: chips.offsetHeight - chips.clientHeight,
+        scrollbarCssHeight: getComputedStyle(chips, "::-webkit-scrollbar")
+          .height,
+        scrollbarHidden: chips.classList.contains("scrollbar-hidden"),
+        supportsWebkit: CSS.supports("selector(::-webkit-scrollbar)"),
+        rowHeight: chips.closest("nav")!.getBoundingClientRect().height,
+        stageHeight: document
+          .querySelector<HTMLElement>(".scene-stage")!
+          .getBoundingClientRect().height,
         tops: buttons.map((button) => button.getBoundingClientRect().top),
         heights: buttons.map((button) => button.getBoundingClientRect().height),
+        visibleHeights: buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          const clip = chips.getBoundingClientRect();
+          return (
+            Math.min(
+              rect.bottom,
+              clip.top + chips.clientTop + chips.clientHeight,
+            ) - Math.max(rect.top, clip.top + chips.clientTop)
+          );
+        }),
       };
     });
     expect(nav.tops).toHaveLength(5);
     expect(new Set(nav.tops).size).toBe(1);
     expect(nav.heights.every((height) => height >= 44)).toBe(true);
+    expect(nav.visibleHeights.every((height) => height >= 44)).toBe(true);
+    expect(nav.scrollbarThickness).toBeLessThanOrEqual(4);
+    expect(nav.rowHeight).toBeLessThanOrEqual(54);
+    expect(nav.stageHeight).toBeGreaterThanOrEqual(450);
+    if (nav.supportsWebkit && !nav.scrollbarHidden) {
+      expect(nav.scrollbarCssHeight).toBe("4px");
+    }
     expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
     const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    const controls = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const nav = chips.closest("nav")!;
+      const left = nav.querySelector<HTMLButtonElement>(
+        '[aria-label="向左捲動地點"]',
+      )!;
+      const right = nav.querySelector<HTMLButtonElement>(
+        '[aria-label="向右捲動地點"]',
+      )!;
+      chips.scrollLeft = 0;
+      const start = chips.scrollLeft;
+      right.click();
+      const forward = chips.scrollLeft;
+      left.click();
+      return {
+        start,
+        forward,
+        back: chips.scrollLeft,
+        left: left.getBoundingClientRect().toJSON(),
+        right: right.getBoundingClientRect().toJSON(),
+        input: "synthetic DOM click",
+      };
+    });
+    expect(controls.forward).toBeGreaterThan(controls.start);
+    expect(controls.back).toBeLessThan(controls.forward);
+    for (const rect of [controls.left, controls.right]) {
+      expect(rect.width).toBeGreaterThanOrEqual(44);
+      expect(rect.height).toBeGreaterThanOrEqual(44);
+    }
+    await browser.saveScreenshot(
+      path.join(outputDir, "scene-nav-overflow-controls.png"),
+    );
+    writeFileSync(
+      path.join(outputDir, "scene-nav-overflow-controls.json"),
+      JSON.stringify({ nav, controls }, null, 2),
+    );
     if (!e2eXvfbTrustedKeysEnabled()) {
       writeFileSync(
         path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),

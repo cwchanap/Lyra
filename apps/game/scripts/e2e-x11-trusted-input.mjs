@@ -1066,6 +1066,56 @@ export async function deliverXvfbTrustedInvestigationPointer({
   });
 }
 
+export async function deliverXvfbTrustedSceneNavPointer({
+  action,
+  region,
+  measureTarget,
+  resolveTarget,
+  run,
+  readRootPointer,
+  pointerState,
+}) {
+  pointerState.assertAllowed(action);
+  if (
+    ![
+      "move",
+      "wheel-press",
+      "wheel-release",
+      "click-press",
+      "click-release",
+    ].includes(action) ||
+    !["chips", "last-chip"].includes(region) ||
+    (action.startsWith("wheel-") && region !== "chips") ||
+    (action.startsWith("click-") && region !== "last-chip")
+  ) {
+    throw new Error("Scene-nav pointer action does not match its target");
+  }
+  const target = await measureTarget(region);
+  return deliverXvfbTrustedPointer({
+    action,
+    target,
+    resolveTarget,
+    run,
+    readRootPointer,
+    pointerState,
+    revalidate: async () => {
+      const fresh = await measureTarget(region);
+      if (
+        fresh.point?.x !== target.point?.x ||
+        fresh.point?.y !== target.point?.y ||
+        fresh.viewport?.width !== target.viewport?.width ||
+        fresh.viewport?.height !== target.viewport?.height ||
+        fresh.devicePixelRatio !== target.devicePixelRatio ||
+        ["left", "top", "right", "bottom"].some(
+          (key) => fresh.bounds?.[key] !== target.bounds?.[key],
+        )
+      ) {
+        throw new Error("Scene-nav pointer target changed during preflight");
+      }
+    },
+  });
+}
+
 export function assertSceneNavWheelProgress(events, before, after) {
   const trusted = events.filter((event) => event.trusted);
   if (trusted.length === 0) return false;
@@ -1274,12 +1324,12 @@ export async function deliverXvfbTrustedPointer({
       ? ["mousemove", String(x), String(y)]
       : SCENE_NAV_POINTER_ACTIONS[action],
   );
-  if (action.endsWith("-press")) pointerState.confirmPress(button);
   if ((await focusedWindow()) !== windowId) {
     throw new Error(
       `focus left verified scene-nav window ${windowId} during ${action}`,
     );
   }
+  if (action.endsWith("-press")) pointerState.confirmPress(button);
   if (action.endsWith("-release")) pointerState.confirmRelease(button);
   return {
     action,

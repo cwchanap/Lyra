@@ -107,7 +107,7 @@ test("scene-nav trusted input is scoped and separates delivery from behavior", (
   const helper = readFileSync(new URL("helpers.ts", dir), "utf8");
   assert.match(
     helper,
-    /deliverXvfbTrustedPointer\(\{[\s\S]*?resolveTarget: resolveXvfbTrustedTarget/,
+    /deliverXvfbTrustedSceneNavPointer\(\{[\s\S]*?resolveTarget: resolveXvfbTrustedTarget/,
   );
   assert.match(helper, /readRootPointer:[\s\S]*?XQueryPointer/);
 });
