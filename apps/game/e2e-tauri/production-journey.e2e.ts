@@ -28,6 +28,7 @@ import {
   jumpToProductionScene,
   lastVisibleDialogueText,
   loadTitleSlot,
+  MINIMUM_WINDOW,
   observedCssViewport,
   openGameMenu,
   resetE2eStorage,
@@ -1800,6 +1801,124 @@ async function clickSublocationChip(label: string): Promise<void> {
   }
 }
 
+/**
+ * Task 5 representative screenshots, captured only on the scenes the organic
+ * route already visits: same-run packed WebView images for the acceptance
+ * record. These are evidence captures, not per-scene checkpoints; a screenshot
+ * is never an assertion.
+ */
+const REPRESENTATIVE_SCENE_ARTIFACT_DIR =
+  process.env.LYRA_E2E_OUTPUT_DIR ??
+  path.join(
+    process.cwd(),
+    "e2e-artifacts",
+    "save-e2e",
+    "hpa852-representative-scenes",
+  );
+
+const representativeSceneIds = new Set([
+  "chapter_1/investigation_scene_7",
+  "chapter_1/investigation_scene_8",
+  "chapter_1/investigation_scene_9",
+  "chapter_2/investigation_scene_4",
+  "chapter_1/interrogation_scene_4",
+  "chapter_2/interrogation_scene_6",
+  "chapter_1/interrogation_scene_10",
+  "chapter_2/interrogation_scene_19",
+]);
+
+const capturedRepresentativeScenes = new Set<string>();
+
+async function captureRepresentativeScene(
+  state: GameStateView,
+  details: Record<string, unknown> = {},
+): Promise<void> {
+  const key = `${state.chapter.id}/${state.scene.id}`;
+  if (
+    !representativeSceneIds.has(key) ||
+    capturedRepresentativeScenes.has(key)
+  ) {
+    return;
+  }
+  capturedRepresentativeScenes.add(key);
+  mkdirSync(REPRESENTATIVE_SCENE_ARTIFACT_DIR, { recursive: true });
+  // Best-effort settle for art/portrait decode: a slow image must not turn a
+  // representative capture into a route failure.
+  try {
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const background = document.querySelector<HTMLImageElement>(
+            "img.background-image.visible",
+          );
+          const portrait = document.querySelector<HTMLImageElement>(
+            "img.interrogation-subject-portrait",
+          );
+          const backgroundReady =
+            !background || (background.complete && background.naturalWidth > 0);
+          const portraitReady =
+            !portrait || (portrait.complete && portrait.naturalWidth > 0);
+          return backgroundReady && portraitReady;
+        }),
+      { timeout: 5000, interval: 100 },
+    );
+  } catch {
+    // Keep the capture even if an optional image is still decoding.
+  }
+  const slug = key.replace(/\//g, "-");
+  const screenshotPath = path.join(
+    REPRESENTATIVE_SCENE_ARTIFACT_DIR,
+    `scene-${slug}.png`,
+  );
+  await browser.saveScreenshot(screenshotPath);
+  const page = await browser.execute(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const chips = document.querySelector(".explore-hud .chips");
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      sceneTag: (
+        document.querySelector(".stamp .label") ??
+        document.querySelector(".scene-label strong")
+      )?.textContent?.trim(),
+      stage: rect(".scene-stage"),
+      chips: chips
+        ? {
+            count: chips.querySelectorAll("button").length,
+            tops: Array.from(
+              chips.querySelectorAll("button"),
+              (button) => button.getBoundingClientRect().top,
+            ),
+            clientWidth: chips.clientWidth,
+            scrollWidth: chips.scrollWidth,
+          }
+        : null,
+      subject: document
+        .querySelector(".subject-record h2")
+        ?.textContent?.trim(),
+      dialogue: document.querySelector(".box")?.textContent?.trim(),
+    };
+  });
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify(
+      { scene: key, mode: state.mode.type, ...details, ...page },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(`[Task5] representative screenshot: ${screenshotPath}`);
+}
+
 /** One exploration interaction: inspect, interview, or travel. */
 async function exploreStep(state: GameStateView): Promise<void> {
   const { scene, mode } = state;
@@ -1811,6 +1930,10 @@ async function exploreStep(state: GameStateView): Promise<void> {
       "organic drain reached a pending city map without its gate stop",
     );
   }
+  await captureRepresentativeScene(state, {
+    sublocation: scene.currentSublocationId,
+    sublocations: scene.visibleSublocations.map((item) => item.id),
+  });
   const current = scene.visibleSublocations.find(
     (candidate) => candidate.id === scene.currentSublocationId,
   );
@@ -1898,6 +2021,12 @@ async function interrogationStep(state: GameStateView): Promise<void> {
   if (!phase) {
     throw new Error(`phase ${mode.phaseId} is not visible`);
   }
+  await captureRepresentativeScene(state, {
+    phase: phase.id,
+    subject: phase.subject.name,
+    role: phase.subject.role,
+    questions: phase.questions.length,
+  });
   if (phase.crossExam?.presenting) {
     await presentChallengeEvidence(state, phase.crossExam.questionId);
     return;
@@ -3265,6 +3394,261 @@ async function runInv3EvidenceAndCaseFileGate(
   await crossGate(gate, crossedWrappers);
 }
 
+// --- Task 5 shipped complete -> title acceptance ---------------------------
+//
+// The last gates leg already reaches the real gameComplete state. These
+// captures and assertions extend that endpoint: no fabricated ending, no
+// checkpoint, no injected state. Clicks stay the ordinary WebDriver/DOM path
+// (isTrusted=false); no OS input is sent here.
+
+const TASK5_TITLE_ARTIFACT_DIR =
+  process.env.LYRA_E2E_OUTPUT_DIR ??
+  path.join(
+    process.cwd(),
+    "e2e-artifacts",
+    "save-e2e",
+    "hpa852-title-acceptance",
+  );
+
+type ArtifactRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type TitleScreenMeasurement = {
+  label: string;
+  viewport: { width: number; height: number };
+  scrollTop: number;
+  documentScrollTop: number;
+  windowScrollY: number;
+  activeElement: {
+    tag: string;
+    label: string | null;
+    text: string;
+    isEnabledCard: boolean;
+  } | null;
+  logo: ArtifactRect | null;
+  deck: ArtifactRect | null;
+  quit: {
+    found: boolean;
+    disabled: boolean;
+    rect: ArtifactRect;
+    hit: boolean;
+  } | null;
+  reachedScrollTop: number;
+  restoredScrollTop: number;
+};
+
+/** Waits for the title's automatic focus to land on an enabled menu card. */
+async function waitForTitleAutofocus(): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const active = document.activeElement;
+        return (
+          active instanceof HTMLElement &&
+          active.matches(".lyra-menu .card:not(:disabled)") &&
+          active.closest('[aria-label="主選單"]') !== null
+        );
+      }),
+    {
+      timeout: 20000,
+      interval: 100,
+      timeoutMsg: "title autofocus did not land on an enabled menu card",
+    },
+  );
+}
+
+/** Measures scroll/focus/logo/QUIT, captures a PNG+JSON pair. */
+async function captureTitleScreen(
+  label: string,
+): Promise<TitleScreenMeasurement> {
+  mkdirSync(TASK5_TITLE_ARTIFACT_DIR, { recursive: true });
+  const screenshotPath = path.join(TASK5_TITLE_ARTIFACT_DIR, `${label}.png`);
+  await browser.saveScreenshot(screenshotPath);
+  const measurement = await browser.execute((captureLabel: string) => {
+    const rect = (element: Element | null): ArtifactRect | null => {
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const menu = document.querySelector<HTMLElement>(".lyra-menu");
+    const active = document.activeElement;
+    const quitButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((button) => (button.textContent ?? "").includes("結束偵查"));
+    const initialScrollTop = menu?.scrollTop ?? 0;
+    let reachedScrollTop = initialScrollTop;
+    let quit: TitleScreenMeasurement["quit"] = null;
+    if (menu && quitButton) {
+      menu.scrollTop = menu.scrollHeight;
+      void menu.offsetHeight; // force the scrolled reflow before measuring
+      reachedScrollTop = menu.scrollTop;
+      const bounds = quitButton.getBoundingClientRect();
+      const hit = document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      );
+      quit = {
+        found: true,
+        disabled: quitButton.disabled,
+        rect: {
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+        },
+        hit: hit !== null && quitButton.contains(hit),
+      };
+      menu.scrollTop = 0;
+      void menu.offsetHeight;
+    }
+    return {
+      label: captureLabel,
+      viewport: { width: innerWidth, height: innerHeight },
+      scrollTop: initialScrollTop,
+      documentScrollTop:
+        document.scrollingElement?.scrollTop ?? document.body.scrollTop,
+      windowScrollY: window.scrollY,
+      activeElement:
+        active instanceof HTMLElement
+          ? {
+              tag: active.tagName.toLowerCase(),
+              label: active.getAttribute("aria-label"),
+              text: (active.textContent ?? "").trim().slice(0, 120),
+              isEnabledCard: active.matches(".lyra-menu .card:not(:disabled)"),
+            }
+          : null,
+      logo: rect(document.querySelector(".title-block")),
+      deck: rect(document.querySelector(".deck")),
+      quit,
+      reachedScrollTop,
+      restoredScrollTop: menu?.scrollTop ?? 0,
+    };
+  }, label);
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify(measurement, null, 2)}\n`,
+  );
+  console.log(
+    `[Task5] ${label}: viewport=${measurement.viewport.width}x${measurement.viewport.height} scrollTop=${measurement.scrollTop} active=${measurement.activeElement?.label ?? "none"} logo=${JSON.stringify(measurement.logo)}`,
+  );
+  return measurement;
+}
+
+/** The fresh/return title contract at the 800x600 minimum window. */
+function expectTitleAtTop(
+  measurement: TitleScreenMeasurement,
+  label: string,
+): void {
+  expect(measurement.viewport).toEqual({ width: 800, height: 600 });
+  expect(measurement.scrollTop).toBe(0);
+  expect(measurement.documentScrollTop).toBe(0);
+  expect(measurement.windowScrollY).toBe(0);
+  expect(measurement.activeElement?.isEnabledCard).toBe(true);
+  const logo = measurement.logo;
+  if (!logo) throw new Error(`${label}: title logo block is missing`);
+  expect(logo.width).toBeGreaterThan(0);
+  expect(logo.height).toBeGreaterThan(0);
+  expect(logo.y).toBeGreaterThanOrEqual(-0.5);
+  expect(logo.y + logo.height).toBeLessThanOrEqual(600.5);
+  expect(measurement.deck).not.toBeNull();
+  // QUIT is found through the title's own scroll container (DOM scroll in the
+  // page — no OS input) and must resolve under the pointer once visible.
+  const quit = measurement.quit;
+  if (!quit) throw new Error(`${label}: QUIT (結束偵查) is missing`);
+  expect(quit.disabled).toBe(false);
+  expect(quit.rect.y).toBeGreaterThanOrEqual(-0.5);
+  expect(quit.rect.y + quit.rect.height).toBeLessThanOrEqual(600.5);
+  expect(quit.hit).toBe(true);
+  expect(measurement.restoredScrollTop).toBe(0);
+}
+
+type CompleteEndCardMeasurement = {
+  viewport: { width: number; height: number };
+  complete: ArtifactRect | null;
+  cta: ArtifactRect | null;
+  ctaText: string;
+  ctaDisabled: boolean;
+  ctaHit: boolean;
+};
+
+/** Captures the shipped end card and proves its CTA is on-screen. */
+async function captureCompleteEndCard(): Promise<CompleteEndCardMeasurement> {
+  mkdirSync(TASK5_TITLE_ARTIFACT_DIR, { recursive: true });
+  const screenshotPath = path.join(
+    TASK5_TITLE_ARTIFACT_DIR,
+    "complete-end-card-800x600.png",
+  );
+  await browser.saveScreenshot(screenshotPath);
+  const measurement = await browser.execute(() => {
+    const rect = (element: Element | null): ArtifactRect | null => {
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const cta = document.querySelector<HTMLButtonElement>(
+      '[data-focus-target="return-to-title"]',
+    );
+    const ctaBox = cta?.getBoundingClientRect();
+    const hit =
+      cta && ctaBox
+        ? document.elementFromPoint(
+            ctaBox.left + ctaBox.width / 2,
+            ctaBox.top + ctaBox.height / 2,
+          )
+        : null;
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      complete: rect(document.querySelector(".complete")),
+      cta: rect(cta),
+      ctaText: (cta?.textContent ?? "").trim(),
+      ctaDisabled: cta?.disabled ?? true,
+      ctaHit: cta !== null && hit !== null && cta.contains(hit),
+    };
+  });
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify(measurement, null, 2)}\n`,
+  );
+  console.log(
+    `[Task5] complete end card: viewport=${measurement.viewport.width}x${measurement.viewport.height} cta=${JSON.stringify(measurement.cta)}`,
+  );
+  return measurement;
+}
+
+/** Waits for the CTA's real persistence-backed return to install the title. */
+async function waitForTitleScreenAfterReturn(): Promise<void> {
+  await browser.pause(500);
+  await browser.waitUntil(
+    async () =>
+      browser.execute(
+        (titleSelector: string, rootAttribute: string) =>
+          document.querySelector(titleSelector) !== null &&
+          document.querySelector(`[${rootAttribute}]`) === null,
+        `[aria-label="${anchors.mainMenu}"]`,
+        anchors.gameplayRootAttribute,
+      ),
+    {
+      timeout: 90000,
+      interval: 500,
+      timeoutMsg: "return-to-title did not install the title screen",
+    },
+  );
+}
+
 describe("fresh production journey", () => {
   afterEach(function () {
     assertSafeXvfbDisplay(this, true);
@@ -3573,6 +3957,40 @@ describe("fresh production journey", () => {
     // final hearing's ≥74-record tray — a shorter inventory must fail here,
     // never silently skip the geometry proof.
     expect(evidenceTrayGeometryGateDone).toBe(true);
+
+    // Task 5 (HPA-852): extend this real shipped endpoint through the new
+    // complete-card CTA into the title. No ending or checkpoint is fabricated;
+    // the click is the ordinary WebDriver/DOM path, not trusted OS input.
+    await ensureMinimumWindowViewport();
+    const endCard = await captureCompleteEndCard();
+    expect(endCard.viewport).toEqual(MINIMUM_WINDOW);
+    if (!endCard.cta) throw new Error("complete-card CTA is missing");
+    expect(endCard.ctaText).toContain(anchors.returnToTitle);
+    expect(endCard.ctaDisabled).toBe(false);
+    expect(endCard.cta.x).toBeGreaterThanOrEqual(-0.5);
+    expect(endCard.cta.y).toBeGreaterThanOrEqual(-0.5);
+    expect(endCard.cta.x + endCard.cta.width).toBeLessThanOrEqual(800.5);
+    expect(endCard.cta.y + endCard.cta.height).toBeLessThanOrEqual(600.5);
+    expect(endCard.ctaHit).toBe(true);
+    await clickButton(anchors.returnToTitle);
+    await waitForTitleScreenAfterReturn();
+    await waitForTitleAutofocus();
+    const returnTitle = await captureTitleScreen("title-return-800x600");
+    expectTitleAtTop(returnTitle, "return title");
+    // The title now shows the returned-to-title discovery snapshot and the
+    // auto-clear was already asserted above; no fresh session is started here.
+  });
+
+  it("keeps the fresh title autofocus at the top with QUIT reachable at 800x600", async function () {
+    this.timeout(120_000);
+    await resetE2eStorage();
+    await ensureMinimumWindowViewport();
+    await waitForTitleAutofocus();
+    const title = await captureTitleScreen("title-fresh-800x600");
+    expectTitleAtTop(title, "fresh title");
+    // Leave the usual larger viewport for whatever runs after this spec;
+    // the 800x600 title evidence above is already captured.
+    await ensureCaseFileViewport();
   });
 
   it("keeps the drain deterministic when several destinations are enabled", async () => {

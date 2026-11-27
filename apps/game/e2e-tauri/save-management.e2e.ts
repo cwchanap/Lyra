@@ -107,6 +107,13 @@ async function seedOwnedManualSlotWithThumbnail(
 
 async function seedRotationAndOverwrite(): Promise<void> {
   await waitForShell();
+  // Save-core and save-management share the runner's persistence root in the
+  // canonical full run. save-resume leaves legitimate no-thumbnail autosaves
+  // in that root: HPA-549 acquisition-acknowledgement autosaves are
+  // deliberately no-thumbnail, and HPA-129 makes capture failure
+  // presentation-only. Only autosaves written by THIS phase must prove
+  // thumbnail availability; inherited slots still participate in rotation.
+  const phaseStartedAt = Date.now();
   await resetE2eStorageWithStoryClearance();
   await startFromMenu();
   const documentIdentity = await currentPackagedDocumentIdentity();
@@ -155,7 +162,10 @@ async function seedRotationAndOverwrite(): Promise<void> {
     expect(orderedByMtime[0]!.modifiedAtMs).toBeLessThan(newer.modifiedAtMs!);
   }
   for (const slot of retained) {
-    expect(slot.envelope!.thumbnail.type).toBe("available");
+    const inherited = Date.parse(slot.envelope!.savedAt) < phaseStartedAt;
+    if (!inherited) {
+      expect(slot.envelope!.thumbnail.type).toBe("available");
+    }
     if (slot.envelope!.thumbnail.type === "available") {
       expect(slot.envelope!.thumbnail.objectId).toBe(slot.envelope!.saveId);
       expect(slot.sidecarSha256).toBe(slot.envelope!.thumbnail.sha256);
