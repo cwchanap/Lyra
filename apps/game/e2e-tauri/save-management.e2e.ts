@@ -109,10 +109,11 @@ async function seedRotationAndOverwrite(): Promise<void> {
   await waitForShell();
   // Save-core and save-management share the runner's persistence root in the
   // canonical full run. save-resume leaves legitimate no-thumbnail autosaves
-  // in that root: HPA-549 acquisition-acknowledgement autosaves are
-  // deliberately no-thumbnail, and HPA-129 makes capture failure
-  // presentation-only. Only autosaves written by THIS phase must prove
-  // thumbnail availability; inherited slots still participate in rotation.
+  // in that root: HPA-549 acquisition-acknowledgement autosaves and HPA-550
+  // Withdraw autosaves are deliberately no-thumbnail, and HPA-129 makes any
+  // other capture failure presentation-only. Only autosaves written by THIS
+  // phase must prove thumbnail availability; inherited slots still
+  // participate in rotation and available descriptors are still validated.
   const phaseStartedAt = Date.now();
   await resetE2eStorageWithStoryClearance();
   await startFromMenu();

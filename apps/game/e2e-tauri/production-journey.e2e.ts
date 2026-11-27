@@ -1919,6 +1919,233 @@ async function captureRepresentativeScene(
   console.log(`[Task5] representative screenshot: ${screenshotPath}`);
 }
 
+/**
+ * Fix-round compact hearing evidence: captured from the organic production
+ * route at the real 800x600 minimum, then the usual case-file viewport is
+ * restored for the rest of the journey. No checkpoint or fixture is added.
+ */
+const compactEvidence = {
+  kamiya: false,
+  saegusa: false,
+  saegusaScans: 0,
+};
+
+type CompactInterrogationEvidence = {
+  viewport: { width: number; height: number };
+  subject: string | null;
+  stage: ArtifactRect | null;
+  leftStack: ArtifactRect | null;
+  toolbar: ArtifactRect | null;
+  subjectArt: ArtifactRect | null;
+  questionRecord: ArtifactRect | null;
+  dialogueFrame: ArtifactRect | null;
+  portrait: {
+    rect: ArtifactRect | null;
+    complete: boolean;
+    naturalWidth: number;
+    naturalHeight: number;
+    src: string | null;
+  } | null;
+  dialogue: string | null;
+};
+
+async function captureCompactInterrogationEvidence(
+  label: string,
+  state: GameStateView,
+  details: Record<string, unknown> = {},
+): Promise<CompactInterrogationEvidence> {
+  mkdirSync(REPRESENTATIVE_SCENE_ARTIFACT_DIR, { recursive: true });
+  const viewport = await observedCssViewport();
+  expect({ width: viewport.width, height: viewport.height }).toEqual({
+    width: 800,
+    height: 600,
+  });
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const stage = document.querySelector(".interrogation-stage.active");
+        const portrait = document.querySelector<HTMLImageElement>(
+          'img.interrogation-subject-portrait[data-save-crossfade-state="visible"]',
+        );
+        return (
+          stage !== null &&
+          (!portrait || (portrait.complete && portrait.naturalWidth > 0))
+        );
+      }),
+    {
+      timeout: 15000,
+      interval: 100,
+      timeoutMsg: `${label}: compact interrogation stage/portrait did not settle`,
+    },
+  );
+  await browser.pause(100);
+  const screenshotPath = path.join(
+    REPRESENTATIVE_SCENE_ARTIFACT_DIR,
+    `${label}-800x600.png`,
+  );
+  await browser.saveScreenshot(screenshotPath);
+  const evidence = (await browser.execute(() => {
+    const rect = (selector: string): ArtifactRect | null => {
+      const element = document.querySelector(selector);
+      if (!element) return null;
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const portrait = document.querySelector<HTMLImageElement>(
+      'img.interrogation-subject-portrait[data-save-crossfade-state="visible"]',
+    );
+    const box = portrait?.getBoundingClientRect();
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      subject:
+        document.querySelector(".subject-record h2")?.textContent?.trim() ??
+        null,
+      stage: rect(".interrogation-stage.active"),
+      leftStack: rect(".stage-left-stack"),
+      toolbar: rect(".interrogation-menu-toolbar"),
+      subjectArt: rect("[data-interrogation-subject-art]"),
+      questionRecord: rect("[data-interrogation-question-record]"),
+      dialogueFrame: rect("[data-interrogation-dialogue-frame]"),
+      portrait:
+        portrait && box
+          ? {
+              rect: {
+                x: box.x,
+                y: box.y,
+                width: box.width,
+                height: box.height,
+              },
+              complete: portrait.complete,
+              naturalWidth: portrait.naturalWidth,
+              naturalHeight: portrait.naturalHeight,
+              src: portrait.getAttribute("src"),
+            }
+          : null,
+      dialogue: document.querySelector(".box")?.textContent?.trim() ?? null,
+    };
+  })) as CompactInterrogationEvidence;
+  expect(evidence.viewport).toEqual({ width: 800, height: 600 });
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify(
+      {
+        scene: `${state.chapter.id}/${state.scene.id}`,
+        mode: state.mode.type,
+        ...details,
+        ...evidence,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  console.log(`[Task5] compact interrogation evidence: ${screenshotPath}`);
+  return evidence;
+}
+
+async function captureCompactKamiyaHearing(
+  state: GameStateView,
+  phase: { id: string; subject: { name: string; role: string } },
+): Promise<void> {
+  if (compactEvidence.kamiya) return;
+  if (
+    state.chapter.id !== "chapter_2" ||
+    state.scene.id !== "interrogation_scene_6" ||
+    !phase.subject.name.includes("神谷")
+  ) {
+    return;
+  }
+  try {
+    await ensureMinimumWindowViewport();
+    const evidence = await captureCompactInterrogationEvidence(
+      "hearing-kamiya-ch2-inv6",
+      state,
+      {
+        phase: phase.id,
+        subjectName: phase.subject.name,
+        subjectRole: phase.subject.role,
+      },
+    );
+    expect(evidence.subject).toContain("神谷");
+    expect(evidence.portrait?.complete).toBe(true);
+    compactEvidence.kamiya = true;
+  } finally {
+    await ensureCaseFileViewport();
+  }
+}
+
+async function captureCompactSaegusaSpeaking(
+  state: GameStateView,
+): Promise<boolean> {
+  if (compactEvidence.saegusa) return false;
+  if (
+    state.chapter.id !== "chapter_2" ||
+    state.scene.id !== "interrogation_scene_19" ||
+    state.mode.type !== "dialogue"
+  ) {
+    return false;
+  }
+  const current = state.mode.current;
+  if (
+    current.kind !== "line" ||
+    current.portrait?.characterId !== "saegusa_yuma"
+  ) {
+    return false;
+  }
+  try {
+    await ensureMinimumWindowViewport();
+    const evidence = await captureCompactInterrogationEvidence(
+      "speaking-saegusa-ch2-inv19",
+      state,
+      {
+        speaker: current.speaker,
+        lineText: current.text,
+        portraitAssetId: current.portrait.assetId,
+        portraitCharacterId: current.portrait.characterId,
+      },
+    );
+    expect(evidence.portrait).not.toBeNull();
+    expect(evidence.portrait?.complete).toBe(true);
+    expect(evidence.portrait?.naturalWidth).toBeGreaterThan(0);
+    compactEvidence.saegusa = true;
+  } finally {
+    await ensureCaseFileViewport();
+  }
+  return compactEvidence.saegusa;
+}
+
+/**
+ * Walks the Ch2 inv19 dialogue one authored item at a time until the current
+ * line is spoken by Saegusa, so the compact capture is his actual portrait,
+ * not the Kamiya hearing subject. Stops on mode/cross-exam/pending changes
+ * and lets the main drain handle them; bounded by the scan counter.
+ */
+async function scanForSaegusaLine(
+  stop: (state: GameStateView) => boolean,
+): Promise<void> {
+  if (compactEvidence.saegusa || compactEvidence.saegusaScans >= 3) return;
+  compactEvidence.saegusaScans += 1;
+  await advanceDialogueUntil(async () => {
+    const next = await getPackagedGameState();
+    return (
+      next.mode.type !== "dialogue" ||
+      next.scene.id !== "interrogation_scene_19" ||
+      next.mode.crossExamLineId !== null ||
+      next.pendingAcquisition !== null ||
+      (next.mode.type === "dialogue" &&
+        next.mode.current.kind === "line" &&
+        next.mode.current.portrait?.characterId === "saegusa_yuma") ||
+      stop(next)
+    );
+  }, 200);
+  const next = await getPackagedGameState();
+  await captureCompactSaegusaSpeaking(next);
+}
+
 /** One exploration interaction: inspect, interview, or travel. */
 async function exploreStep(state: GameStateView): Promise<void> {
   const { scene, mode } = state;
@@ -2027,6 +2254,7 @@ async function interrogationStep(state: GameStateView): Promise<void> {
     role: phase.subject.role,
     questions: phase.questions.length,
   });
+  await captureCompactKamiyaHearing(state, phase);
   if (phase.crossExam?.presenting) {
     await presentChallengeEvidence(state, phase.crossExam.questionId);
     return;
@@ -2369,6 +2597,18 @@ async function drainOrganicRoute(
     }
     switch (state.mode.type) {
       case "dialogue":
+        if (
+          state.chapter.id === "chapter_2" &&
+          state.scene.id === "interrogation_scene_19" &&
+          !compactEvidence.saegusa &&
+          state.mode.crossExamLineId === null
+        ) {
+          if (await captureCompactSaegusaSpeaking(state)) continue;
+          if (compactEvidence.saegusaScans < 3) {
+            await scanForSaegusaLine(stop);
+            continue;
+          }
+        }
         if (state.mode.crossExamLineId !== null) {
           // Unbroken testimony is on stage: the inline 反駁 control is the
           // only way forward; plain advancing would loop the testimony.
@@ -3423,6 +3663,13 @@ type TitleScreenMeasurement = {
   scrollTop: number;
   documentScrollTop: number;
   windowScrollY: number;
+  expectedCard: string;
+  continueCard: {
+    found: boolean;
+    enabled: boolean;
+    isActive: boolean;
+    rect: ArtifactRect | null;
+  } | null;
   activeElement: {
     tag: string;
     label: string | null;
@@ -3431,108 +3678,176 @@ type TitleScreenMeasurement = {
   } | null;
   logo: ArtifactRect | null;
   deck: ArtifactRect | null;
-  quit: {
+  quitInitial: {
     found: boolean;
     disabled: boolean;
     rect: ArtifactRect;
-    hit: boolean;
+    fullyVisible: boolean;
   } | null;
-  reachedScrollTop: number;
-  restoredScrollTop: number;
 };
 
-/** Waits for the title's automatic focus to land on an enabled menu card. */
-async function waitForTitleAutofocus(): Promise<void> {
+type TitleFocusState = {
+  scrollTop: number;
+  documentScrollTop: number;
+  windowScrollY: number;
+  activeLabel: string | null;
+  activeText: string;
+  quitFocused: boolean;
+  quitRect: ArtifactRect | null;
+  quitFullyVisible: boolean;
+  quitHit: boolean;
+};
+
+type TitleArrowMeasurement = {
+  label: string;
+  synthetic: string;
+  initial: TitleFocusState;
+  presses: number;
+  final: TitleFocusState;
+};
+
+/** Serialized DOM reader; must not capture outer-scope values. */
+function readTitleFocusState(): TitleFocusState {
+  const menu = document.querySelector<HTMLElement>(".lyra-menu");
+  const active = document.activeElement;
+  const quit = Array.from(
+    document.querySelectorAll<HTMLButtonElement>("button"),
+  ).find((button) => (button.textContent ?? "").includes("結束偵查"));
+  const quitBox = quit?.getBoundingClientRect();
+  const hit =
+    quit && quitBox
+      ? document.elementFromPoint(
+          quitBox.left + quitBox.width / 2,
+          quitBox.top + quitBox.height / 2,
+        )
+      : null;
+  return {
+    scrollTop: menu?.scrollTop ?? 0,
+    documentScrollTop:
+      document.scrollingElement?.scrollTop ?? document.body.scrollTop,
+    windowScrollY: window.scrollY,
+    activeLabel:
+      active instanceof HTMLElement ? active.getAttribute("aria-label") : null,
+    activeText:
+      active instanceof HTMLElement
+        ? (active.textContent ?? "").trim().slice(0, 120)
+        : "",
+    quitFocused:
+      active instanceof HTMLElement &&
+      (active.textContent ?? "").includes("結束偵查"),
+    quitRect: quitBox
+      ? {
+          x: quitBox.x,
+          y: quitBox.y,
+          width: quitBox.width,
+          height: quitBox.height,
+        }
+      : null,
+    quitFullyVisible:
+      quitBox !== undefined &&
+      quitBox.top >= -0.5 &&
+      quitBox.bottom <= window.innerHeight + 0.5,
+    quitHit: quit !== undefined && hit !== null && quit.contains(hit),
+  };
+}
+
+/** Waits for the saved-profile title to focus the shipped Continue card. */
+async function waitForTitleContinueFocus(): Promise<void> {
   await browser.waitUntil(
     async () =>
-      browser.execute(() => {
-        const active = document.activeElement;
-        return (
-          active instanceof HTMLElement &&
-          active.matches(".lyra-menu .card:not(:disabled)") &&
-          active.closest('[aria-label="主選單"]') !== null
+      browser.execute((label: string) => {
+        const card = document.querySelector<HTMLButtonElement>(
+          `button[aria-label="${label}"]`,
         );
-      }),
+        return (
+          card !== null && !card.disabled && document.activeElement === card
+        );
+      }, anchors.continueGame),
     {
       timeout: 20000,
       interval: 100,
-      timeoutMsg: "title autofocus did not land on an enabled menu card",
+      timeoutMsg: `title autofocus did not land on the enabled ${anchors.continueGame} card`,
     },
   );
 }
 
-/** Measures scroll/focus/logo/QUIT, captures a PNG+JSON pair. */
+/** Measures the untouched top-of-title state; never moves the scrollbar. */
 async function captureTitleScreen(
   label: string,
 ): Promise<TitleScreenMeasurement> {
   mkdirSync(TASK5_TITLE_ARTIFACT_DIR, { recursive: true });
   const screenshotPath = path.join(TASK5_TITLE_ARTIFACT_DIR, `${label}.png`);
   await browser.saveScreenshot(screenshotPath);
-  const measurement = await browser.execute((captureLabel: string) => {
-    const rect = (element: Element | null): ArtifactRect | null => {
-      if (!element) return null;
-      const bounds = element.getBoundingClientRect();
-      return {
-        x: bounds.x,
-        y: bounds.y,
-        width: bounds.width,
-        height: bounds.height,
-      };
-    };
-    const menu = document.querySelector<HTMLElement>(".lyra-menu");
-    const active = document.activeElement;
-    const quitButton = Array.from(
-      document.querySelectorAll<HTMLButtonElement>("button"),
-    ).find((button) => (button.textContent ?? "").includes("結束偵查"));
-    const initialScrollTop = menu?.scrollTop ?? 0;
-    let reachedScrollTop = initialScrollTop;
-    let quit: TitleScreenMeasurement["quit"] = null;
-    if (menu && quitButton) {
-      menu.scrollTop = menu.scrollHeight;
-      void menu.offsetHeight; // force the scrolled reflow before measuring
-      reachedScrollTop = menu.scrollTop;
-      const bounds = quitButton.getBoundingClientRect();
-      const hit = document.elementFromPoint(
-        bounds.left + bounds.width / 2,
-        bounds.top + bounds.height / 2,
-      );
-      quit = {
-        found: true,
-        disabled: quitButton.disabled,
-        rect: {
+  const measurement = (await browser.execute(
+    (args: { label: string; expectedCard: string }) => {
+      const rect = (element: Element | null): ArtifactRect | null => {
+        if (!element) return null;
+        const bounds = element.getBoundingClientRect();
+        return {
           x: bounds.x,
           y: bounds.y,
           width: bounds.width,
           height: bounds.height,
-        },
-        hit: hit !== null && quitButton.contains(hit),
+        };
       };
-      menu.scrollTop = 0;
-      void menu.offsetHeight;
-    }
-    return {
-      label: captureLabel,
-      viewport: { width: innerWidth, height: innerHeight },
-      scrollTop: initialScrollTop,
-      documentScrollTop:
-        document.scrollingElement?.scrollTop ?? document.body.scrollTop,
-      windowScrollY: window.scrollY,
-      activeElement:
-        active instanceof HTMLElement
+      const menu = document.querySelector<HTMLElement>(".lyra-menu");
+      const active = document.activeElement;
+      const expected = document.querySelector<HTMLButtonElement>(
+        `button[aria-label="${args.expectedCard}"]`,
+      );
+      const quit = Array.from(
+        document.querySelectorAll<HTMLButtonElement>("button"),
+      ).find((button) => (button.textContent ?? "").includes("結束偵查"));
+      const quitBox = quit?.getBoundingClientRect();
+      return {
+        label: args.label,
+        viewport: { width: innerWidth, height: innerHeight },
+        scrollTop: menu?.scrollTop ?? 0,
+        documentScrollTop:
+          document.scrollingElement?.scrollTop ?? document.body.scrollTop,
+        windowScrollY: window.scrollY,
+        expectedCard: args.expectedCard,
+        continueCard: expected
           ? {
-              tag: active.tagName.toLowerCase(),
-              label: active.getAttribute("aria-label"),
-              text: (active.textContent ?? "").trim().slice(0, 120),
-              isEnabledCard: active.matches(".lyra-menu .card:not(:disabled)"),
+              found: true,
+              enabled: !expected.disabled,
+              isActive: document.activeElement === expected,
+              rect: rect(expected),
             }
           : null,
-      logo: rect(document.querySelector(".title-block")),
-      deck: rect(document.querySelector(".deck")),
-      quit,
-      reachedScrollTop,
-      restoredScrollTop: menu?.scrollTop ?? 0,
-    };
-  }, label);
+        activeElement:
+          active instanceof HTMLElement
+            ? {
+                tag: active.tagName.toLowerCase(),
+                label: active.getAttribute("aria-label"),
+                text: (active.textContent ?? "").trim().slice(0, 120),
+                isEnabledCard: active.matches(
+                  ".lyra-menu .card:not(:disabled)",
+                ),
+              }
+            : null,
+        logo: rect(document.querySelector(".title-block")),
+        deck: rect(document.querySelector(".deck")),
+        quitInitial:
+          quit && quitBox
+            ? {
+                found: true,
+                disabled: quit.disabled,
+                rect: {
+                  x: quitBox.x,
+                  y: quitBox.y,
+                  width: quitBox.width,
+                  height: quitBox.height,
+                },
+                fullyVisible:
+                  quitBox.top >= -0.5 &&
+                  quitBox.bottom <= window.innerHeight + 0.5,
+              }
+            : null,
+      };
+    },
+    { label, expectedCard: anchors.continueGame },
+  )) as TitleScreenMeasurement;
   writeFileSync(
     screenshotPath.replace(/\.png$/, ".json"),
     `${JSON.stringify(measurement, null, 2)}\n`,
@@ -3543,7 +3858,7 @@ async function captureTitleScreen(
   return measurement;
 }
 
-/** The fresh/return title contract at the 800x600 minimum window. */
+/** The saved-profile title contract at the 800x600 minimum window. */
 function expectTitleAtTop(
   measurement: TitleScreenMeasurement,
   label: string,
@@ -3552,6 +3867,13 @@ function expectTitleAtTop(
   expect(measurement.scrollTop).toBe(0);
   expect(measurement.documentScrollTop).toBe(0);
   expect(measurement.windowScrollY).toBe(0);
+  expect(measurement.expectedCard).toBe(anchors.continueGame);
+  const continueCard = measurement.continueCard;
+  if (!continueCard)
+    throw new Error(`${label}: ${anchors.continueGame} card is missing`);
+  expect(continueCard.enabled).toBe(true);
+  expect(continueCard.isActive).toBe(true);
+  expect(measurement.activeElement?.label).toBe(anchors.continueGame);
   expect(measurement.activeElement?.isEnabledCard).toBe(true);
   const logo = measurement.logo;
   if (!logo) throw new Error(`${label}: title logo block is missing`);
@@ -3560,15 +3882,113 @@ function expectTitleAtTop(
   expect(logo.y).toBeGreaterThanOrEqual(-0.5);
   expect(logo.y + logo.height).toBeLessThanOrEqual(600.5);
   expect(measurement.deck).not.toBeNull();
-  // QUIT is found through the title's own scroll container (DOM scroll in the
-  // page — no OS input) and must resolve under the pointer once visible.
-  const quit = measurement.quit;
+  // QUIT must exist and be enabled at the untouched top; the shipped Arrow
+  // handler below is what has to reveal and focus it.
+  const quit = measurement.quitInitial;
   if (!quit) throw new Error(`${label}: QUIT (結束偵查) is missing`);
   expect(quit.disabled).toBe(false);
-  expect(quit.rect.y).toBeGreaterThanOrEqual(-0.5);
-  expect(quit.rect.y + quit.rect.height).toBeLessThanOrEqual(600.5);
-  expect(quit.hit).toBe(true);
-  expect(measurement.restoredScrollTop).toBe(0);
+}
+
+/**
+ * Exercises the shipped MainMenu ArrowDown handler with synthetic
+ * KeyboardEvents. This is not native Tab/wheel/XTest proof: it verifies the
+ * real window listener, card cycling, focus and focus-scroll behavior.
+ */
+async function exerciseTitleArrowNavigation(
+  label: string,
+): Promise<TitleArrowMeasurement> {
+  const initial = (await browser.execute(
+    readTitleFocusState,
+  )) as TitleFocusState;
+  if (initial.activeLabel !== anchors.continueGame) {
+    throw new Error(
+      `${label}: Arrow navigation must start from ${anchors.continueGame}, found ${String(initial.activeLabel)}`,
+    );
+  }
+  let presses = 0;
+  let quitFocused = false;
+  let lastActive = initial.activeText;
+  while (!quitFocused && presses < 12) {
+    const pressed = (await browser.execute(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "ArrowDown",
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+      const active = document.activeElement;
+      return {
+        activeLabel:
+          active instanceof HTMLElement
+            ? active.getAttribute("aria-label")
+            : null,
+        activeText:
+          active instanceof HTMLElement
+            ? (active.textContent ?? "").trim().slice(0, 120)
+            : "",
+        quitFocused:
+          active instanceof HTMLElement &&
+          (active.textContent ?? "").includes("結束偵查"),
+      };
+    })) as {
+      activeLabel: string | null;
+      activeText: string;
+      quitFocused: boolean;
+    };
+    presses += 1;
+    quitFocused = pressed.quitFocused;
+    lastActive = pressed.activeText;
+  }
+  if (!quitFocused) {
+    throw new Error(
+      `${label}: synthetic ArrowDown did not focus QUIT after ${presses} presses (active ${JSON.stringify(lastActive)})`,
+    );
+  }
+  await browser.pause(100);
+  const final = (await browser.execute(readTitleFocusState)) as TitleFocusState;
+  const screenshotPath = path.join(
+    TASK5_TITLE_ARTIFACT_DIR,
+    `${label}-quit-focused.png`,
+  );
+  await browser.saveScreenshot(screenshotPath);
+  const measurement: TitleArrowMeasurement = {
+    label,
+    synthetic:
+      "synthetic KeyboardEvent ArrowDown through the shipped MainMenu window handler (not native Tab/wheel/XTest)",
+    initial,
+    presses,
+    final,
+  };
+  writeFileSync(
+    screenshotPath.replace(/\.png$/, ".json"),
+    `${JSON.stringify(measurement, null, 2)}\n`,
+  );
+  console.log(
+    `[Task5] ${label} ArrowDown: presses=${presses} quit=${final.quitFocused} scrollTop=${final.scrollTop} rect=${JSON.stringify(final.quitRect)}`,
+  );
+  return measurement;
+}
+
+function expectTitleQuitReached(
+  arrow: TitleArrowMeasurement,
+  label: string,
+): void {
+  expect(arrow.initial.activeLabel).toBe(anchors.continueGame);
+  expect(arrow.presses).toBeGreaterThan(0);
+  expect(arrow.presses).toBeLessThanOrEqual(12);
+  expect(arrow.final.quitFocused).toBe(true);
+  expect(arrow.final.quitFullyVisible).toBe(true);
+  expect(arrow.final.quitHit).toBe(true);
+  const quit = arrow.final.quitRect;
+  if (!quit) throw new Error(`${label}: QUIT rect is missing after ArrowDown`);
+  expect(quit.y).toBeGreaterThanOrEqual(-0.5);
+  expect(quit.y + quit.height).toBeLessThanOrEqual(600.5);
+  expect(arrow.final.documentScrollTop).toBe(0);
+  if (!arrow.initial.quitFullyVisible) {
+    expect(arrow.final.scrollTop).toBeGreaterThan(arrow.initial.scrollTop);
+    expect(arrow.final.scrollTop).toBeGreaterThan(0);
+  }
 }
 
 type CompleteEndCardMeasurement = {
@@ -3953,6 +4373,10 @@ describe("fresh production journey", () => {
     );
     expect(cleared).toBe("true");
     expect(crossedWrappers).toEqual(leg.gates.map((gate) => gate.wrapper));
+    // Fix-round visual evidence must have actually been captured from the
+    // named characters, not merely reached their scenes.
+    expect(compactEvidence.kamiya).toBe(true);
+    expect(compactEvidence.saegusa).toBe(true);
     // HPA-705: the 800x600 tray gate must have actually executed at the
     // final hearing's ≥74-record tray — a shorter inventory must fail here,
     // never silently skip the geometry proof.
@@ -3974,9 +4398,16 @@ describe("fresh production journey", () => {
     expect(endCard.ctaHit).toBe(true);
     await clickButton(anchors.returnToTitle);
     await waitForTitleScreenAfterReturn();
-    await waitForTitleAutofocus();
+    await waitForTitleContinueFocus();
+    // The review requires the 1.5-second MainMenu timer window to close
+    // without moving the untouched top position before measuring.
+    await browser.pause(1700);
     const returnTitle = await captureTitleScreen("title-return-800x600");
     expectTitleAtTop(returnTitle, "return title");
+    const returnArrow = await exerciseTitleArrowNavigation(
+      "title-return-800x600",
+    );
+    expectTitleQuitReached(returnArrow, "return title");
     // The title now shows the returned-to-title discovery snapshot and the
     // auto-clear was already asserted above; no fresh session is started here.
   });
@@ -3985,9 +4416,12 @@ describe("fresh production journey", () => {
     this.timeout(120_000);
     await resetE2eStorage();
     await ensureMinimumWindowViewport();
-    await waitForTitleAutofocus();
+    await waitForTitleContinueFocus();
+    await browser.pause(1700);
     const title = await captureTitleScreen("title-fresh-800x600");
     expectTitleAtTop(title, "fresh title");
+    const arrow = await exerciseTitleArrowNavigation("title-fresh-800x600");
+    expectTitleQuitReached(arrow, "fresh title");
     // Leave the usual larger viewport for whatever runs after this spec;
     // the 800x600 title evidence above is already captured.
     await ensureCaseFileViewport();
