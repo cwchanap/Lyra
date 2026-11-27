@@ -55,6 +55,11 @@ import {
   evidenceTraySearchFilterApplied,
   evidenceTraySearchProbeObserved,
 } from "../src/lib/e2e/evidence-tray-search-verify";
+import {
+  checkPortraitCapture,
+  type PortraitCaptureExpectation,
+  type RenderedPortraitSnapshot,
+} from "../src/lib/e2e/portrait-capture-gate";
 import { missingCompositorReceipts } from "../src/lib/e2e/acquisition-compositor-gate";
 import {
   runCaseFileRecordGate,
@@ -1949,9 +1954,64 @@ type CompactInterrogationEvidence = {
   dialogue: string | null;
 };
 
+type PortraitGateSnapshot = {
+  stage: boolean;
+  portrait: RenderedPortraitSnapshot | null;
+  dialogueText: string | null;
+};
+
+/**
+ * Waits until the actual visible crossfade portrait decodes to the expected
+ * character asset and, for a spoken line, the authored dialogue text is
+ * already rendered. A merely decoded / wrong character / placeholder portrait
+ * is rejected before the screenshot is taken.
+ */
+async function waitForExpectedPortrait(
+  expectation: PortraitCaptureExpectation,
+): Promise<PortraitGateSnapshot> {
+  const deadline = Date.now() + 15000;
+  let last: PortraitGateSnapshot | null = null;
+  let lastReason = "stage/visible portrait is missing";
+  while (Date.now() < deadline) {
+    last = (await browser.execute(() => {
+      const stage =
+        document.querySelector(".interrogation-stage.active") !== null;
+      const portrait = document.querySelector<HTMLImageElement>(
+        'img.interrogation-subject-portrait[data-save-crossfade-state="visible"]',
+      );
+      return {
+        stage,
+        portrait: portrait
+          ? {
+              src: portrait.getAttribute("src"),
+              complete: portrait.complete,
+              naturalWidth: portrait.naturalWidth,
+              naturalHeight: portrait.naturalHeight,
+            }
+          : null,
+        dialogueText: document.querySelector(".box")?.textContent ?? null,
+      };
+    })) as PortraitGateSnapshot;
+    if (last.stage && last.portrait) {
+      const check = checkPortraitCapture(
+        expectation,
+        last.portrait,
+        last.dialogueText,
+      );
+      if (check.ok) return last;
+      lastReason = check.reason;
+    }
+    await browser.pause(100);
+  }
+  throw new Error(
+    `${expectation.label}: rendered portrait/dialogue gate did not match: ${lastReason}; last=${JSON.stringify(last)}`,
+  );
+}
+
 async function captureCompactInterrogationEvidence(
   label: string,
   state: GameStateView,
+  expectation: PortraitCaptureExpectation,
   details: Record<string, unknown> = {},
 ): Promise<CompactInterrogationEvidence> {
   mkdirSync(REPRESENTATIVE_SCENE_ARTIFACT_DIR, { recursive: true });
@@ -1960,24 +2020,7 @@ async function captureCompactInterrogationEvidence(
     width: 800,
     height: 600,
   });
-  await browser.waitUntil(
-    () =>
-      browser.execute(() => {
-        const stage = document.querySelector(".interrogation-stage.active");
-        const portrait = document.querySelector<HTMLImageElement>(
-          'img.interrogation-subject-portrait[data-save-crossfade-state="visible"]',
-        );
-        return (
-          stage !== null &&
-          (!portrait || (portrait.complete && portrait.naturalWidth > 0))
-        );
-      }),
-    {
-      timeout: 15000,
-      interval: 100,
-      timeoutMsg: `${label}: compact interrogation stage/portrait did not settle`,
-    },
-  );
+  const gate = await waitForExpectedPortrait(expectation);
   await browser.pause(100);
   const screenshotPath = path.join(
     REPRESENTATIVE_SCENE_ARTIFACT_DIR,
@@ -2036,6 +2079,11 @@ async function captureCompactInterrogationEvidence(
       {
         scene: `${state.chapter.id}/${state.scene.id}`,
         mode: state.mode.type,
+        portraitGate: {
+          expectation,
+          rendered: gate.portrait,
+          dialogueText: gate.dialogueText,
+        },
         ...details,
         ...evidence,
       },
@@ -2049,7 +2097,14 @@ async function captureCompactInterrogationEvidence(
 
 async function captureCompactKamiyaHearing(
   state: GameStateView,
-  phase: { id: string; subject: { name: string; role: string } },
+  phase: {
+    id: string;
+    subject: {
+      name: string;
+      role: string;
+      portrait: { characterId: string; assetId: string } | null;
+    };
+  },
 ): Promise<void> {
   if (compactEvidence.kamiya) return;
   if (
@@ -2059,11 +2114,21 @@ async function captureCompactKamiyaHearing(
   ) {
     return;
   }
+  const portrait = phase.subject.portrait;
+  if (!portrait) {
+    throw new Error("Kamiya hearing phase has no authored subject portrait");
+  }
+  const expectation: PortraitCaptureExpectation = {
+    label: "hearing-kamiya-ch2-inv6",
+    characterId: portrait.characterId,
+    assetPath: publicPathForAssetId(portrait.assetId, "portrait"),
+  };
   try {
     await ensureMinimumWindowViewport();
     const evidence = await captureCompactInterrogationEvidence(
       "hearing-kamiya-ch2-inv6",
       state,
+      expectation,
       {
         phase: phase.id,
         subjectName: phase.subject.name,
@@ -2090,22 +2155,27 @@ async function captureCompactSaegusaSpeaking(
     return false;
   }
   const current = state.mode.current;
-  if (
-    current.kind !== "line" ||
-    current.portrait?.characterId !== "saegusa_yuma"
-  ) {
-    return false;
-  }
+  if (current.kind !== "line") return false;
+  const portrait = current.portrait;
+  if (!portrait || portrait.characterId !== "saegusa_yuma") return false;
+  const expectation: PortraitCaptureExpectation = {
+    label: "speaking-saegusa-ch2-inv19",
+    characterId: portrait.characterId,
+    assetPath: publicPathForAssetId(portrait.assetId, "portrait"),
+    speaker: current.speaker,
+    text: current.text,
+  };
   try {
     await ensureMinimumWindowViewport();
     const evidence = await captureCompactInterrogationEvidence(
       "speaking-saegusa-ch2-inv19",
       state,
+      expectation,
       {
         speaker: current.speaker,
         lineText: current.text,
-        portraitAssetId: current.portrait.assetId,
-        portraitCharacterId: current.portrait.characterId,
+        portraitAssetId: portrait.assetId,
+        portraitCharacterId: portrait.characterId,
       },
     );
     expect(evidence.portrait).not.toBeNull();
