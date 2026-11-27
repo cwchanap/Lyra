@@ -5,6 +5,7 @@
     type ResolvedStoryAsset,
   } from "$lib/assets/story-assets";
   import CrossfadeImage from "./CrossfadeImage.svelte";
+  import SceneStamp from "./SceneStamp.svelte";
 
   let {
     sceneTag,
@@ -47,10 +48,7 @@
       onImageError={handleBackgroundError}
     />
     {#if sceneTag}
-      <span class="stamp" data-save-thumbnail-layer="over-portrait">
-        <span class="kana">場 / SCENE</span>
-        <span class="label">{sceneTag}</span>
-      </span>
+      <SceneStamp {sceneTag} />
     {/if}
   </div>
 {/if}
@@ -58,7 +56,7 @@
 <style>
   .backdrop {
     position: relative;
-    padding: 18px clamp(20px, 3vw, 40px);
+    padding: 6px clamp(20px, 3vw, 40px) calc(6px + 1.1vw);
     min-height: 1px;
   }
 
@@ -70,56 +68,5 @@
     height: 100vh;
     object-fit: cover;
     pointer-events: none;
-  }
-
-  .stamp {
-    position: relative;
-    /* Above the dialogue portrait (fixed, z-index 20 in the same <main>
-       stacking context) and below the dialogue box (30): a left-placed
-       portrait starts at 20vh and otherwise covers a wrapped scene tag.
-       Save thumbnails draw portraits between two layers, so the stamp is
-       marked for the layer above them too. */
-    z-index: 25;
-    max-width: 100%;
-    display: inline-flex;
-    align-items: stretch;
-    border: 1px solid var(--rule-strong);
-    background: rgba(20, 20, 31, 0.6);
-    backdrop-filter: blur(2px);
-    transform: rotate(-1.2deg);
-    font-family: var(--serif-jp);
-    box-shadow: 4px 4px 0 var(--cell);
-  }
-
-  .kana {
-    padding: 6px 10px 5px;
-    font-family: var(--impact);
-    font-weight: 500;
-    font-size: 10px;
-    letter-spacing: 0.32em;
-    color: var(--bone);
-    background: var(--crimson);
-    text-transform: uppercase;
-    display: inline-flex;
-    flex: none;
-    align-items: center;
-    /* A long scene tag must not squeeze the badge into a tall column. */
-    white-space: nowrap;
-  }
-
-  .label {
-    padding: 6px 14px 5px;
-    font-family: var(--serif-jp);
-    font-weight: 500;
-    font-size: 13px;
-    color: var(--bone);
-    letter-spacing: 0.08em;
-    display: inline-flex;
-    min-width: 0;
-    align-items: center;
-    line-height: 1.5;
-    /* Even out a wrapped scene tag instead of leaving one orphaned
-       character on its last line. */
-    text-wrap: balance;
   }
 </style>

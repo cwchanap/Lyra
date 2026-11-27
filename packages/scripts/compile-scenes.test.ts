@@ -2602,6 +2602,35 @@ describe("compile (tracked production corpus compatibility)", () => {
     }
   });
 
+  it("keeps the three reply-packet targets adjacent inside the visible packet", () => {
+    const investigation = JSON.parse(
+      readFileSync(
+        resolve(liveOutRoot, "chapter_1/investigation_scene_9.json"),
+        "utf-8",
+      ),
+    );
+    const desk = investigation.sublocations.find(
+      (entry: { id: string }) => entry.id === "contractor_desk",
+    );
+    const boxes = [
+      "workorder",
+      "access_permission_list",
+      "material_kit_list",
+    ].map(
+      (id) =>
+        desk.hotspots.find((entry: { id: string }) => entry.id === id).layout,
+    );
+    expect(boxes.map(({ x }: { x: number }) => x)).toEqual([
+      0.62, 0.648, 0.675,
+    ]);
+    expect(boxes.map(({ w }: { w: number }) => w)).toEqual([
+      0.028, 0.027, 0.028,
+    ]);
+    expect(boxes[0].x + boxes[0].w).toBeCloseTo(boxes[1].x);
+    expect(boxes[1].x + boxes[1].w).toBeCloseTo(boxes[2].x);
+    expect(boxes[2].x + boxes[2].w).toBeCloseTo(0.703);
+  });
+
   it("compiles the canonical HPA-265 Analysis scene with only the requested outputs", () => {
     // Break caught: the production manifest can keep the superseded linear
     // scene (or drift from the canonical three-board contract) while the

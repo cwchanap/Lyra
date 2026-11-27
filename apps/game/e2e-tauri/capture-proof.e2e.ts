@@ -9,6 +9,7 @@ import {
   dismissAllPendingAcquisitions,
   drainCurrentDialogue,
   elementExists,
+  ensureMinimumWindowViewport,
   getPackagedGameState,
   jumpToProductionScene,
   resetCaptureProofStorage,
@@ -743,6 +744,58 @@ async function exportProofThumbnailArtifact(): Promise<string> {
   return artifact;
 }
 
+async function recordPortraitGeometry(name: string): Promise<void> {
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        Array.from(
+          document.querySelectorAll<HTMLImageElement>("img.portrait"),
+        ).some((image) => image.complete && image.naturalWidth > 0),
+      ),
+    { timeout: 30000, timeoutMsg: `${name}: portrait did not load` },
+  );
+  const geometry = await browser.execute(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return {
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+        bottom: box.bottom,
+        right: box.right,
+        text: element.textContent?.trim() ?? "",
+      };
+    };
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      header: rect(".shell > header"),
+      backdrop: rect(".backdrop"),
+      stamp: rect(".stamp"),
+      portrait: rect("img.portrait.visible"),
+      portraitFrame: rect(".interrogation-subject-art"),
+      toolbar: rect(".interrogation-menu-toolbar"),
+      leftStack: rect(".stage-left-stack"),
+      dialogue: rect(".wrapper .box"),
+      questions: rect(".interrogation[data-interrogation-question-record]"),
+    };
+  });
+  await browser.saveScreenshot(path.join(output, `${name}.png`));
+  writeFileSync(
+    path.join(output, `${name}.json`),
+    JSON.stringify(geometry, null, 2),
+  );
+  if (name === "ordinary-dialogue-800x600") {
+    if (!geometry.stamp || !geometry.portrait) {
+      throw new Error("ordinary portrait or stamp is missing");
+    }
+    expect(geometry.portrait.y).toBeGreaterThanOrEqual(geometry.stamp.bottom);
+  }
+}
+
 describe("packaged gameplay thumbnail proof", () => {
   it("captures the real gameplay root and keeps failure injection one-shot", async () => {
     let rootAspect: number | null = null;
@@ -773,6 +826,8 @@ describe("packaged gameplay thumbnail proof", () => {
         },
       );
       await waitForDialogueText(anchors.captureProof.preSwapDialogue);
+      await ensureMinimumWindowViewport();
+      await recordPortraitGeometry("ordinary-dialogue-800x600");
 
       const attemptRootAspect = await browser.execute((selector: string) => {
         const root = document.querySelector(selector);
@@ -1175,6 +1230,8 @@ describe("packaged gameplay thumbnail proof", () => {
       "Interrogation capture proof did not reach the question menu",
     );
 
+    await ensureMinimumWindowViewport();
+    await recordPortraitGeometry("interrogation-question-800x600");
     await clickButton("二十二點五十六分左右在哪裡");
     await waitForPackagedGameState(
       (state) =>
@@ -1185,6 +1242,7 @@ describe("packaged gameplay thumbnail proof", () => {
       30000,
       "Interrogation capture proof did not reach the standard testimony portrait",
     );
+    await recordPortraitGeometry("interrogation-testimony-800x600");
     await advanceDialogueUntil(
       async () =>
         browser.execute(

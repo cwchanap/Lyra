@@ -202,6 +202,7 @@
   // dismissal. Mirrors the acquisitionReturnFocus capture/restore pattern.
   let recoveryReturnFocus = $state<HTMLElement | null>(null);
   let gameplayRoot: HTMLDivElement | null = $state(null);
+  let dialogueBackdropHeight = $state(0);
   let titleDiscovery = $state<SaveBrowserOpenResultView | null>(null);
   let titleDiscoveryGeneration = 0;
   let titleBrowserOpen = $state(false);
@@ -1392,11 +1393,18 @@
         >
           {#if gameState.value.mode.type === "dialogue"}
             {#if !interrogationPresentationActive}
-              <SceneBackdrop
-                sceneTag={gameState.value.mode.sceneTag}
-                backgroundAssetId={gameState.value.mode.backgroundAssetId ??
-                  null}
-              />
+              <div
+                bind:offsetHeight={dialogueBackdropHeight}
+                {@attach () => () => {
+                  dialogueBackdropHeight = 0;
+                }}
+              >
+                <SceneBackdrop
+                  sceneTag={gameState.value.mode.sceneTag}
+                  backgroundAssetId={gameState.value.mode.backgroundAssetId ??
+                    null}
+                />
+              </div>
             {/if}
             <DialogueBox
               current={gameState.value.mode.current}
@@ -1409,6 +1417,7 @@
               history={gameState.value.dialogueHistory}
               disabled={gameState.inFlight}
               interrogationStageActive={interrogationPresentationActive}
+              backdropHeight={dialogueBackdropHeight}
               crossExam={gameState.value.mode.crossExamLineId
                 ? {
                     lineId: gameState.value.mode.crossExamLineId,

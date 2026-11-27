@@ -42,6 +42,7 @@
     interrogationStageActive = false,
     textRevealDurationMs = dialogueTransitionDurationMs,
     chapterId = null,
+    backdropHeight = 0,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
@@ -66,6 +67,7 @@
     /** Chapter of the current line; voice clips are looked up per chapter.
      * Without it the box stays silent. */
     chapterId?: string | null;
+    backdropHeight?: number;
   } = $props();
 
   const rightSidePortraitCharacterIds = new Set([
@@ -544,7 +546,10 @@
 <svelte:window onkeydown={handleKey} />
 
 {#if !interrogationStageActive}
-  <div class="portrait-shell">
+  <div
+    class="portrait-shell"
+    style:--top-chrome-height={`calc(var(--shell-header-height, 0px) + ${backdropHeight}px)`}
+  >
     <CrossfadeImage
       src={portraitSource}
       transitionKey={portraitTransitionKey}
@@ -560,7 +565,7 @@
         // production CSS, which keys off the .portrait/.left/.right classes.
         layer: "behind-dialogue",
       }}
-      imageStyle="--portrait-height: min(1536px, 80vh);"
+      imageStyle="--portrait-height: min(1536px, 80vh, max(0px, calc(100vh - var(--top-chrome-height))));"
       onImageError={handlePortraitError}
     />
   </div>

@@ -16,6 +16,7 @@ import {
   captureMockupViewport,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
+  drainCurrentDialogue,
   e2eXvfbTrustedKeysEnabled,
   elementExists,
   enabledMapDestinationIds,
@@ -23,6 +24,7 @@ import {
   getPackagedGameState,
   jsClick,
   jumpToProductionScene,
+  jumpToProductionChapterScene,
   loadPackagedCheckpoint,
   MINIMUM_WINDOW,
   openGameMenu,
@@ -716,6 +718,121 @@ async function expectCrossedToRainBellInvestigation(): Promise<void> {
   expect(await elementExists(anchors.cityMapSelector)).toBe(false);
 }
 
+async function inspectNamedTarget(
+  id: string,
+  expectedEvidence: string | null,
+): Promise<void> {
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  const selector = `button.hotspot-target[data-target-id="${id}"]`;
+  await browser.waitUntil(async () => elementExists(selector), {
+    timeout: 30000,
+    timeoutMsg: `named target ${id} was not visible`,
+  });
+  const before = await browser.execute((sel: string) => {
+    const button = document.querySelector<HTMLButtonElement>(sel)!;
+    const box = button.getBoundingClientRect();
+    const x = box.left + box.width / 2;
+    const y = box.top + box.height / 2;
+    const hit = document.elementFromPoint(x, y);
+    document.documentElement.dataset.hpa852TargetClick = "";
+    button.addEventListener(
+      "click",
+      (event) => {
+        document.documentElement.dataset.hpa852TargetClick = JSON.stringify({
+          trusted: event.isTrusted,
+          target: (event.target as Element | null)
+            ?.closest("[data-target-id]")
+            ?.getAttribute("data-target-id"),
+        });
+      },
+      { once: true },
+    );
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      center: { x, y },
+      hitTarget:
+        hit?.closest("[data-target-id]")?.getAttribute("data-target-id") ??
+        null,
+    };
+  }, selector);
+  await browser.saveScreenshot(path.join(output, `target-${id}.png`));
+  expect(before.hitTarget).toBe(id);
+  let error: string | null = null;
+  try {
+    await (await $(selector)).click();
+  } catch (cause) {
+    error = String(cause);
+  }
+  const event = await browser.execute(() =>
+    document.documentElement.dataset.hpa852TargetClick
+      ? JSON.parse(document.documentElement.dataset.hpa852TargetClick)
+      : null,
+  );
+  const transport = event ? "webdriver" : "synthetic-dom-fallback";
+  if (!event) await jsClick(selector);
+  writeFileSync(
+    path.join(output, `target-${id}.json`),
+    JSON.stringify(
+      { id, expectedEvidence, before, transport, event, error },
+      null,
+      2,
+    ),
+  );
+  const state = await waitForPackagedGameState(
+    (view) =>
+      view.scene.kind === "investigation" &&
+      view.scene.visibleSublocations.some((location) =>
+        location.hotspots.some(
+          (hotspot) => hotspot.id === id && hotspot.inspected,
+        ),
+      ),
+    30000,
+    `${id} did not become inspected`,
+  );
+  if (expectedEvidence) {
+    expect(
+      state.inventory.evidence.some((item) => item.id === expectedEvidence),
+    ).toBe(true);
+  }
+  await dismissAllPendingAcquisitions();
+  if (state.mode.type === "dialogue") await drainCurrentDialogue("explore");
+  await dismissAllPendingAcquisitions();
+}
+
+async function recordSceneCharacter(id: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const background = document.querySelector<HTMLImageElement>(
+          "img.background-image.visible",
+        );
+        return Boolean(background?.complete && background.naturalWidth);
+      }),
+    { timeout: 30000, timeoutMsg: `${id}: background did not load` },
+  );
+  const measurement = await browser.execute((characterId: string) => {
+    const target = document.querySelector<HTMLElement>(
+      `[data-target-id="${characterId}"]`,
+    );
+    const box = target?.getBoundingClientRect();
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      target: box
+        ? { x: box.x, y: box.y, width: box.width, height: box.height }
+        : null,
+    };
+  }, id);
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.saveScreenshot(
+    path.join(output, `character-${id}-800x600.png`),
+  );
+  writeFileSync(
+    path.join(output, `character-${id}-800x600.json`),
+    JSON.stringify(measurement, null, 2),
+  );
+}
+
 describe("investigation layout surface", () => {
   beforeEach(async function () {
     assertSafeXvfbDisplay(this, true);
@@ -723,6 +840,78 @@ describe("investigation layout surface", () => {
   });
   afterEach(function () {
     assertSafeXvfbDisplay(this, true);
+  });
+
+  it("records named chapter 1 packet and ledger interactions", async function () {
+    this.timeout(1_800_000);
+    await seedStoryCleared();
+    await startFromMenu();
+    await jumpToProductionChapterScene("chapter_1", "investigation_scene_8");
+    await drainCurrentDialogue("explore");
+    await ensureMinimumWindowViewport();
+    await recordSceneCharacter("takase");
+    await inspectNamedTarget("stacked_ledgers", null);
+    await inspectNamedTarget("phone_screenshot", null);
+    const scene8 = await getPackagedGameState();
+    if (scene8.scene.kind !== "investigation")
+      throw new Error("expected investigation");
+    const fixed = scene8.scene.visibleSublocations.find(
+      (item) => item.id === "fixed_panel",
+    );
+    if (!fixed) throw new Error("missing fixed_panel");
+    await enterSublocationThroughNav(scene8.scene.id, fixed);
+    await waitForSceneSurface(fixed);
+    await recordSceneCharacter("kurose");
+    await jumpToProductionChapterScene("chapter_1", "investigation_scene_9");
+    await drainCurrentDialogue("explore");
+    for (const [id, evidence] of [
+      ["workorder", "temp_maintenance_workorder"],
+      ["access_permission_list", "kitami_external_access"],
+      ["material_kit_list", "contractor_umbrella_sleeve_match"],
+    ]) {
+      await inspectNamedTarget(id, evidence);
+    }
+    await inspectNamedTarget("to_confront", null);
+    const state = await getPackagedGameState();
+    expect(state.scene.kind).toBe("investigation");
+    if (state.scene.kind === "investigation") {
+      expect(
+        state.scene.visibleSublocations.some(
+          (item) => item.id === "confront_kitami",
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("records named chapter 2 scene 4 targets", async function () {
+    this.timeout(1_800_000);
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    for (const [locationId, targetId, evidence] of [
+      ["stream_wall_plaza", "stream_wall_screen", null],
+      ["control_room_perimeter", "ob_van_monitor", "program_composite_label"],
+    ]) {
+      const state = await getPackagedGameState();
+      if (state.scene.kind !== "investigation")
+        throw new Error("expected investigation");
+      const location = state.scene.visibleSublocations.find(
+        (item) => item.id === locationId,
+      );
+      if (!location) throw new Error(`missing ${locationId}`);
+      await enterSublocationThroughNav(state.scene.id, location);
+      await waitForSceneSurface(location);
+      await inspectNamedTarget(targetId!, evidence);
+    }
+    const state = await getPackagedGameState();
+    if (state.scene.kind !== "investigation")
+      throw new Error("expected investigation");
+    const fan = state.scene.visibleSublocations.find(
+      (item) => item.id === "fan_support_area",
+    );
+    if (!fan) throw new Error("missing fan_support_area");
+    await enterSublocationThroughNav(state.scene.id, fan);
+    await waitForSceneSurface(fan);
+    await recordSceneCharacter("togawa_miu");
   });
 
   it("collects a placed investigation hotspot through the real player UI", async () => {

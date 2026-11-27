@@ -88,6 +88,7 @@
     gameState.mode.type !== "gameComplete",
   );
   let resumeButton: HTMLButtonElement | undefined = $state();
+  let headerHeight = $state(0);
   let submenuBackButton: HTMLButtonElement | undefined = $state();
   let gameMenuPanel: HTMLDivElement | undefined = $state();
   let activeMenuPanel = $state<MenuPanel>(null);
@@ -430,14 +431,23 @@
 </script>
 
 <div
-  class="shell"
-  class:analysis-presentation={analysisPresentation}
-  class:interrogation-presentation={interrogationPresentation}
+  class={[
+    "shell",
+    {
+      "analysis-presentation": analysisPresentation,
+      "interrogation-presentation": interrogationPresentation,
+      "ordinary-dialogue":
+        gameState.mode.type === "dialogue" &&
+        !interrogationPresentation &&
+        !analysisPresentation,
+    },
+  ]}
+  style:--shell-header-height={showChapterHud ? `${headerHeight + 1}px` : "0px"}
 >
   <GameAtmosphere intensity={0.55} />
 
   {#if showChapterHud}
-    <header inert={open || gameplayInert}>
+    <header inert={open || gameplayInert} bind:offsetHeight={headerHeight}>
       <div class="left">
         <span class="case-marker">
           <span class="diamond"></span>
@@ -452,9 +462,18 @@
           </p>
           <h1>{gameState.chapter.title}</h1>
         </div>
-        <p class="summary">{gameState.chapter.summary}</p>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <p
+          class="summary"
+          tabindex={gameState.mode.type === "dialogue" ? 0 : undefined}
+        >
+          {gameState.chapter.summary}
+        </p>
         {#if showPrimaryObjectiveHud}
-          <PrimaryObjectiveHud objective={activePrimaryObjective} />
+          <PrimaryObjectiveHud
+            objective={activePrimaryObjective}
+            compact={gameState.mode.type === "dialogue"}
+          />
         {/if}
       </div>
       <MenuTrigger {disabled} onOpen={tryOpenGameMenu} />
@@ -709,6 +728,35 @@
     font-size: 13px;
     line-height: 1.55;
     max-width: 56ch;
+  }
+
+  @media (max-height: 700px) {
+    .ordinary-dialogue header {
+      gap: 6px;
+      padding-top: 8px;
+      padding-bottom: 8px;
+      flex-wrap: nowrap;
+    }
+
+    .ordinary-dialogue .left {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      align-items: center;
+      gap: 6px 12px;
+    }
+
+    .ordinary-dialogue .summary {
+      margin: 0;
+      max-height: 4.65em;
+      overflow-y: auto;
+      overflow-wrap: anywhere;
+      scrollbar-width: thin;
+    }
+
+    .ordinary-dialogue .left :global(.primary-objective-hud) {
+      max-height: 60px;
+      padding: 4px 8px;
+    }
   }
 
   .rule {

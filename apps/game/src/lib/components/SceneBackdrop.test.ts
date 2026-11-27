@@ -143,7 +143,7 @@ describe("SceneBackdrop", () => {
 
   it("keeps the SCENE badge on one line above the dialogue portrait", () => {
     const source = readFileSync(
-      resolve(import.meta.dirname!, "SceneBackdrop.svelte"),
+      resolve(import.meta.dirname!, "SceneStamp.svelte"),
       "utf-8",
     );
     const stamp = cssRule(source, ".stamp");

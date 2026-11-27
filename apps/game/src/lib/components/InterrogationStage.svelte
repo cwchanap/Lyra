@@ -19,6 +19,7 @@
   import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
   import PrimaryObjectiveHud from "./PrimaryObjectiveHud.svelte";
   import SceneBackdrop from "./SceneBackdrop.svelte";
+  import SceneStamp from "./SceneStamp.svelte";
   import MenuTrigger from "./MenuTrigger.svelte";
 
   let {
@@ -67,6 +68,7 @@
   let trayReturnFocus = $state<HTMLElement | null>(null);
   let stageHistoryOpen = $state(false);
   let stageLogButton: HTMLButtonElement | undefined = $state();
+  let toolbarHeight = $state(0);
   let wasPresenting = false;
 
   let phase = $derived(currentInterrogationPhase(scene));
@@ -151,12 +153,15 @@
   class="interrogation-stage"
   class:active
   data-interrogation-mode={mode.type}
+  style:--interrogation-toolbar-height={presenting
+    ? "0px"
+    : `${toolbarHeight}px`}
   tabindex="-1"
 >
   {#if active}
     {#if stageBackdrop}
       <SceneBackdrop
-        sceneTag={stageBackdrop.sceneTag}
+        sceneTag={null}
         backgroundAssetId={stageBackdrop.backgroundAssetId}
       />
     {/if}
@@ -165,6 +170,9 @@
 
     <section class="stage-chrome" aria-label="訊問舞台">
       <div class="stage-left-stack">
+        {#if stageBackdrop?.sceneTag}
+          <SceneStamp sceneTag={stageBackdrop.sceneTag} />
+        {/if}
         <PrimaryObjectiveHud objective={activePrimaryObjective} />
         {#if phase}
           <div class="subject-record">
@@ -200,7 +208,11 @@
       </div>
 
       {#if !presenting}
-        <div class="interrogation-menu-toolbar" aria-label="訊問工具">
+        <div
+          class="interrogation-menu-toolbar"
+          aria-label="訊問工具"
+          bind:offsetHeight={toolbarHeight}
+        >
           {#if menuChromeVisible}
             <button
               bind:this={stageLogButton}
@@ -285,8 +297,10 @@
   .stage-chrome {
     position: absolute;
     z-index: 4;
-    inset: 0;
-    width: 100%;
+    inset: 24px 26px auto;
+    display: grid;
+    grid-template-columns: min(360px, 46vw) minmax(0, 1fr);
+    gap: 12px;
     margin: 0;
     padding: 0;
     color: var(--bone);
@@ -300,12 +314,9 @@
   }
 
   .stage-left-stack {
-    position: absolute;
-    top: 24px;
-    left: 26px;
     display: grid;
-    width: min(560px, calc(100% - 52px));
-    gap: 14px;
+    align-content: start;
+    gap: 12px;
     pointer-events: none;
   }
 
@@ -420,15 +431,12 @@
   }
 
   .interrogation-menu-toolbar {
-    position: absolute;
-    top: 24px;
-    right: 26px;
     z-index: 1;
+    align-self: start;
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 6px;
-    max-width: min(560px, calc(100% - 52px));
     pointer-events: auto;
   }
 
@@ -471,21 +479,8 @@
   }
 
   @media (max-width: 720px) {
-    .stage-left-stack {
-      top: 18px;
-      left: 20px;
-      width: min(420px, calc(100% - 40px));
-      gap: 10px;
-    }
-
     .stage-left-stack .subject-record {
       padding: 10px 14px 12px;
-    }
-
-    .interrogation-menu-toolbar {
-      top: 18px;
-      right: 20px;
-      max-width: calc(100% - 40px);
     }
   }
 

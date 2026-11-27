@@ -209,6 +209,23 @@ function isInert(element: HTMLElement): boolean {
 }
 
 describe("InterrogationStage", () => {
+  it("keeps the dialogue scene stamp in the left chrome, not the background layer", () => {
+    const portrait = {
+      characterId: "soma_ritsu",
+      expression: "standard",
+      assetId: "portrait.soma_ritsu.standard",
+    };
+    const { container } = render(
+      InterrogationStageHarness,
+      props({ mode: dialogueWithPortrait(portrait) }),
+    );
+    const stamp = container.querySelector(".stamp");
+    expect(stamp).toHaveTextContent("訊問室");
+    expect(stamp?.closest(".stage-left-stack")).toBeTruthy();
+    expect(container.querySelector(".backdrop .stamp")).toBeNull();
+    expect(stamp).toHaveAttribute("data-save-thumbnail-layer", "over-portrait");
+  });
+
   it("applies LOG typography only to the LOG control, not the first toolbar button", () => {
     const source = readFileSync(
       import.meta.filename.replace(/\.test\.ts$/, ".svelte"),

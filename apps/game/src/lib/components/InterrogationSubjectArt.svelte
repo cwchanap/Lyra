@@ -134,50 +134,29 @@
   .interrogation-subject-art {
     position: absolute;
     z-index: 1;
-    left: clamp(24px, 8vw, 120px);
+    left: calc(26px + min(360px, 46vw) + 12px);
+    right: 26px;
+    top: calc(24px + var(--interrogation-toolbar-height, 0px) + 8px);
     bottom: 0;
-    width: min(42vw, 520px);
-    height: calc(100% - 32px);
-    min-height: 260px;
     pointer-events: none;
   }
 
   .interrogation-subject-art :global(img.interrogation-subject-portrait) {
     position: absolute;
-    right: auto;
-    bottom: 0;
+    top: 0;
     left: 0;
     width: auto;
-    max-width: none;
-    height: calc(100% / var(--crop-height, 1));
+    height: auto;
+    max-width: calc(100% / var(--crop-width, 1));
+    max-height: calc(100% / var(--crop-height, 1));
     object-fit: contain;
-    object-position: left bottom;
+    object-position: left top;
     transform: translate(
       calc(-100% * var(--crop-left, 0)),
-      calc(100% * (1 - var(--crop-top, 0) - var(--crop-height, 1)))
+      calc(-100% * var(--crop-top, 0))
     );
-    transform-origin: left bottom;
+    transform-origin: left top;
     pointer-events: none;
-  }
-
-  .interrogation-subject-art
-    :global(img.interrogation-subject-portrait:not([style*="--crop-height"])) {
-    inset: auto auto 0 0;
-    width: 100%;
-    max-width: 100%;
-    height: 100%;
-    transform: none;
-    object-position: left bottom;
-  }
-
-  @media (max-width: 720px) {
-    .interrogation-subject-art {
-      left: 20px;
-      width: min(58vw, 360px);
-      height: 52%;
-      min-height: 180px;
-      opacity: 0.45;
-    }
   }
 
   @media (prefers-reduced-motion: reduce) {
