@@ -121,6 +121,13 @@ describe("InvestigationSceneSurface", () => {
     // Unitless, so the pending cue can place the target in the viewport.
     expect(button.style.getPropertyValue("--x-ratio")).toBe("0.1");
     expect(button.style.getPropertyValue("--y-ratio")).toBe("0.2");
+    expect(button.style.getPropertyValue("--w-ratio")).toBe("0.3");
+  });
+
+  it("anchors the pending hotspot cue to the authored width, not the minimum hit width", () => {
+    expect(cssRule(surfaceSource(), ".target-pending")).toContain(
+      "var(--w-ratio) * var(--scene-plane-width)",
+    );
   });
 
   it("renders placed characters with normalized top-left bounding boxes", () => {

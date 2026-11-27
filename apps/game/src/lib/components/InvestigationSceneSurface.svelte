@@ -1225,7 +1225,10 @@
   .target-pending {
     --pending-inset: 6px;
     --pending-size: 12px;
-    --pending-left: calc(100% - var(--pending-inset) - var(--pending-size));
+    --pending-left: calc(
+      var(--w-ratio) * var(--scene-plane-width) - var(--pending-inset) -
+        var(--pending-size)
+    );
     --pending-target-left: calc(
       var(--x-ratio) * var(--scene-plane-width) -
         (var(--scene-plane-width) - 100vw) / 2

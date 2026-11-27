@@ -146,6 +146,42 @@ test("scene-nav observes pointer delivery at document capture", () => {
   assert.match(keyboard, /expect\(enterEvent\.targetIndex\)\.toBe\(4\)/);
 });
 
+test("named investigation XTEST is limited to the guarded target helper and documents real events", () => {
+  const dir = new URL("../e2e-tauri/", import.meta.url);
+  const source = readFileSync(
+    new URL("investigation-layout.e2e.ts", dir),
+    "utf8",
+  );
+  const start = source.indexOf("async function inspectNamedTarget(");
+  const end = source.indexOf("async function recordSceneCharacter(", start);
+  assert.ok(start >= 0 && end > start);
+  const proof = source.slice(start, end);
+  assert.match(
+    proof,
+    /e2eXvfbTrustedKeysEnabled\(\) && isAuthorizedInvestigationPointerId\(id\)/,
+  );
+  assert.match(proof, /document\.addEventListener\([\s\S]*?capture: true/);
+  for (const type of ["pointerdown", "pointerup", "click"]) {
+    assert.ok(proof.includes(`"${type}"`));
+  }
+  for (const action of ["move", "click-press", "click-release"]) {
+    assert.ok(proof.includes(`"${action}"`));
+  }
+  assert.match(proof, /deliverX11PointerPair\(/);
+  assert.match(proof, /assertInvestigationPointerEvents\(pointerEvents, id\)/);
+  assert.match(proof, /coverage: trusted \? "measured" : "inconclusive"/);
+  assert.match(proof, /if \(opted && \(error \|\| !trusted\)\)/);
+  assert.match(proof, /expectedEvidence[\s\S]*?evidenceAcquired/);
+  for (const file of readdirSync(dir).filter((name) => name.endsWith(".ts"))) {
+    if (file === "helpers.ts" || file === "investigation-layout.e2e.ts")
+      continue;
+    assert.doesNotMatch(
+      readFileSync(new URL(file, dir), "utf8"),
+      /sendXvfbTrustedInvestigationPointer/,
+    );
+  }
+});
+
 test("poisoned X11 state prevents later test bodies and runner retries", () => {
   const source = readFileSync(
     new URL("../e2e-tauri/investigation-layout.e2e.ts", import.meta.url),

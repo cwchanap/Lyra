@@ -25,6 +25,7 @@ import {
   assertX11WindowOwnership,
   assertXvfbDisplayClaim,
   createX11PointerState,
+  deliverXvfbTrustedInvestigationPointer,
   deliverXvfbTrustedKey,
   deliverXvfbTrustedPointer,
   parseNetWmPid,
@@ -181,7 +182,8 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
 // leave focus on body. The narrow fix for the commission -> scene_2 focus
 // segment and first-map Tab/Enter proof is real XTEST keys via xdotool.
 // The user newly authorized this same private-Xvfb opt-in for the HPA-852
-// scene-nav pointer/keyboard proof only; it is not blanket OS-input consent.
+// scene-nav pointer/keyboard proof and seven named investigation targets only;
+// it is not blanket OS-input consent.
 //
 //   * explicit opt-in: linux AND LYRA_E2E_XVFB_TRUSTED_KEYS=1;
 //   * a PRIVATE xvfb-run display owned by this run's ancestry — verified
@@ -400,10 +402,14 @@ export async function sendXvfbTrustedSceneNavPointer(
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
     pointerState,
-    readRootPointer: () =>
-      execBounded("python3", [
-        "-c",
-        `
+    readRootPointer: readXvfbRootPointer,
+  });
+}
+
+async function readXvfbRootPointer(): Promise<string> {
+  return execBounded("python3", [
+    "-c",
+    `
 import ctypes
 x = ctypes.CDLL("libX11.so.6")
 x.XOpenDisplay.restype = ctypes.c_void_p
@@ -420,7 +426,84 @@ if not x.XQueryPointer(display, ctypes.c_ulong(root), ctypes.byref(returned_root
     raise RuntimeError("XQueryPointer failed")
 print(f"X={root_x.value}\\nY={root_y.value}\\nSCREEN={x.XDefaultScreen(display)}\\nWINDOW={child.value}")
 `,
-      ]),
+  ]);
+}
+
+/** Only the seven allowlisted production targets can reach this XTEST path. */
+export async function sendXvfbTrustedInvestigationPointer(
+  id: string,
+  action: "move" | "click-press" | "click-release",
+) {
+  return deliverXvfbTrustedInvestigationPointer({
+    id,
+    action,
+    readState: getPackagedGameState,
+    measureTarget: (approvedId: string) =>
+      browser.execute((targetId: string) => {
+        const candidates = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(
+            ".scene-coordinate-plane button.hotspot-target",
+          ),
+        ).filter((button) => button.dataset.targetId === targetId);
+        if (candidates.length !== 1) {
+          throw new Error("Named investigation target is absent or ambiguous");
+        }
+        const button = candidates[0];
+        if (button.disabled || button.closest("[inert]")) {
+          throw new Error("Named investigation target is disabled or inert");
+        }
+        const plane = button.closest<HTMLElement>(".scene-coordinate-plane");
+        if (!plane) throw new Error("Named investigation plane is missing");
+        const planeRect = plane.getBoundingClientRect();
+        const ratios = ["--x", "--y", "--w", "--h"].map((name) => {
+          const value = button.style.getPropertyValue(name);
+          if (!/^\d+(?:\.\d+)?%$/.test(value)) {
+            throw new Error(
+              "Named investigation target has invalid authored ratios",
+            );
+          }
+          return Number.parseFloat(value) / 100;
+        });
+        const [x, y, width, height] = ratios;
+        if (
+          x < 0 ||
+          y < 0 ||
+          width <= 0 ||
+          height <= 0 ||
+          x + width > 1.000001 ||
+          y + height > 1.000001
+        ) {
+          throw new Error(
+            "Named investigation target has invalid authored bounds",
+          );
+        }
+        const rect = button.getBoundingClientRect();
+        const bounds = {
+          left: Math.max(0, rect.left),
+          top: Math.max(0, rect.top),
+          right: Math.min(innerWidth, rect.right),
+          bottom: Math.min(innerHeight, rect.bottom),
+        };
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+          throw new Error("Named investigation target is outside the viewport");
+        }
+        const point = {
+          x: Math.floor(planeRect.left + (x + width / 2) * planeRect.width),
+          y: Math.floor(planeRect.top + (y + height / 2) * planeRect.height),
+        };
+        const hit = document.elementFromPoint(point.x, point.y);
+        return {
+          point,
+          bounds,
+          viewport: { width: innerWidth, height: innerHeight },
+          devicePixelRatio,
+          hitTarget: hit && button.contains(hit) ? targetId : null,
+        };
+      }, approvedId),
+    resolveTarget: resolveXvfbTrustedTarget,
+    run: (args: string[]) => execBounded("xdotool", args),
+    pointerState: xvfbPointerState(),
+    readRootPointer: readXvfbRootPointer,
   });
 }
 

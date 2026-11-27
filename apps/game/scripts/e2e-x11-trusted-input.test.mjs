@@ -1448,6 +1448,224 @@ function pointerRun({
   };
 }
 
+const namedInvestigationState = {
+  chapter: { id: "chapter_1" },
+  scene: {
+    kind: "investigation",
+    id: "investigation_scene_9",
+    currentSublocationId: "contractor_desk",
+  },
+  mode: { type: "explore" },
+};
+
+test("named investigation pointer accepts only the seven authorized ids in their live scene", async () => {
+  assert.equal(typeof x11.deliverXvfbTrustedInvestigationPointer, "function");
+  for (const id of ["phone_screenshot", "__proto__", "anything"]) {
+    let sampled = false;
+    const transport = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id,
+        action: "move",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          sampled = true;
+          return { ...POINTER_TARGET, hitTarget: id };
+        },
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.equal(sampled, false);
+    assert.deepEqual(transport.calls, []);
+  }
+  for (const state of [
+    { ...namedInvestigationState, chapter: { id: "chapter_2" } },
+    { ...namedInvestigationState, mode: { type: "dialogue" } },
+    {
+      ...namedInvestigationState,
+      scene: {
+        ...namedInvestigationState.scene,
+        currentSublocationId: "confront_kitami",
+      },
+    },
+  ]) {
+    const transport = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "move",
+        readState: async () => state,
+        measureTarget: async () => ({
+          ...POINTER_TARGET,
+          hitTarget: "workorder",
+        }),
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.deepEqual(transport.calls, []);
+  }
+});
+
+test("named investigation pointer rejects wrong hits and foreign windows before injection", async () => {
+  assert.equal(typeof x11.deliverXvfbTrustedInvestigationPointer, "function");
+  for (const [hitTarget, geometry] of [
+    ["access_permission_list", undefined],
+    ["workorder", "WINDOW=999\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n"],
+  ]) {
+    const transport = pointerRun({ geometry });
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "move",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => ({ ...POINTER_TARGET, hitTarget }),
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.equal(
+      transport.calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("named investigation pointer requires the complete trusted sequence on the exact target", () => {
+  assert.equal(typeof x11.assertInvestigationPointerEvents, "function");
+  const events = ["pointerdown", "pointerup", "click"].map((type) => ({
+    type,
+    trusted: true,
+    targetId: "workorder",
+  }));
+  assert.equal(x11.assertInvestigationPointerEvents(events, "workorder"), true);
+  assert.equal(x11.assertInvestigationPointerEvents([], "workorder"), false);
+  for (const broken of [
+    events.slice(0, 2),
+    [
+      events[0],
+      { ...events[1], targetId: "access_permission_list" },
+      events[2],
+    ],
+    [events[0], { ...events[1], trusted: false }, events[2]],
+  ]) {
+    assert.throws(() =>
+      x11.assertInvestigationPointerEvents(broken, "workorder"),
+    );
+  }
+});
+
+test("the named pointer allowlist binds every id to one chapter, scene and location", async () => {
+  for (const [id, chapter, scene, location] of [
+    ["stacked_ledgers", "chapter_1", "investigation_scene_8", "office_corner"],
+    ["workorder", "chapter_1", "investigation_scene_9", "contractor_desk"],
+    [
+      "access_permission_list",
+      "chapter_1",
+      "investigation_scene_9",
+      "contractor_desk",
+    ],
+    [
+      "material_kit_list",
+      "chapter_1",
+      "investigation_scene_9",
+      "contractor_desk",
+    ],
+    ["to_confront", "chapter_1", "investigation_scene_9", "contractor_desk"],
+    [
+      "stream_wall_screen",
+      "chapter_2",
+      "investigation_scene_4",
+      "stream_wall_plaza",
+    ],
+    [
+      "ob_van_monitor",
+      "chapter_2",
+      "investigation_scene_4",
+      "control_room_perimeter",
+    ],
+  ]) {
+    const transport = pointerRun();
+    await x11.deliverXvfbTrustedInvestigationPointer({
+      id,
+      action: "move",
+      readState: async () => ({
+        chapter: { id: chapter },
+        scene: {
+          kind: "investigation",
+          id: scene,
+          currentSublocationId: location,
+        },
+        mode: { type: "explore" },
+      }),
+      measureTarget: async (approved) => {
+        assert.equal(approved, id);
+        return { ...POINTER_TARGET, hitTarget: approved };
+      },
+      resolveTarget: okResolver(),
+      run: transport.run,
+      pointerState: untrackedPointerState,
+    });
+    assert.deepEqual(transport.calls.at(-2), ["mousemove", "110", "120"]);
+  }
+});
+
+test("a named pointer pair never releases at a mismatched hit and poisons the display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  const common = {
+    id: "workorder",
+    readState: async () => namedInvestigationState,
+    resolveTarget: okResolver(),
+    pointerState,
+  };
+  pointerState.beginTest();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedInvestigationPointer({
+            ...common,
+            action: "click-press",
+            measureTarget: async () => ({
+              ...POINTER_TARGET,
+              hitTarget: "workorder",
+            }),
+            run: press.run,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedInvestigationPointer({
+            ...common,
+            action: "click-release",
+            measureTarget: async () => ({
+              ...POINTER_TARGET,
+              hitTarget: "access_permission_list",
+            }),
+            run: release.run,
+          }),
+      }),
+    /hit-test mismatch/,
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+  assert.throws(() => pointerState.assertAllowed("move"), /unsafe/);
+});
+
 test("test ownership remains active through a verified pointer pair", async (t) => {
   const pointerState = trackedPointerState(t);
   const press = pointerRun();

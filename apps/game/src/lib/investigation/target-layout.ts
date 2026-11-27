@@ -164,5 +164,5 @@ export function targetCounterpart(
  * against the target instead of the plane.
  */
 export function targetLayoutStyle(layout: TargetLayout): string {
-  return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)}; --x-ratio: ${layout.x}; --y-ratio: ${layout.y};`;
+  return `--x: ${percent(layout.x)}; --y: ${percent(layout.y)}; --w: ${percent(layout.w)}; --h: ${percent(layout.h)}; --x-ratio: ${layout.x}; --y-ratio: ${layout.y}; --w-ratio: ${layout.w};`;
 }

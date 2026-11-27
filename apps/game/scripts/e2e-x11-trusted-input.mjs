@@ -49,13 +49,13 @@ import { promisify } from "node:util";
  *   8. xdotool finds exactly one visible window owned by that app pid, and
  *      both `_NET_WM_PID` and `getwindowpid` agree with it.
  *   9. The X input focus sits on that window before and after each event.
- *  10. Scene-nav pointer events additionally require a hit-tested target,
- *      matching native window geometry and verified pointer ownership.
+ *  10. Scene-nav and allowlisted investigation pointer events additionally
+ *      require a hit-tested target, matching window geometry and pointer ownership.
  *
  * Every function throws rather than guess: the caller must surface the
  * failure as inconclusive coverage and must NOT fall back to OS-global
- * input on a shared or unverified display. The newly authorized scene-nav
- * pointer/keyboard proof is not permission to expand other XTEST scopes.
+ * input on a shared or unverified display. Authorization also covers only
+ * the seven named investigation targets below, never arbitrary targets.
  */
 
 export const TRUSTED_XVFB_KEYS_ENV = "LYRA_E2E_XVFB_TRUSTED_KEYS";
@@ -952,6 +952,98 @@ const SCENE_NAV_POINTER_ACTIONS = {
   "click-press": ["mousedown", "1"],
   "click-release": ["mouseup", "1"],
 };
+
+const INVESTIGATION_POINTER_TARGETS = Object.freeze({
+  stacked_ledgers: ["chapter_1", "investigation_scene_8", "office_corner"],
+  workorder: ["chapter_1", "investigation_scene_9", "contractor_desk"],
+  access_permission_list: [
+    "chapter_1",
+    "investigation_scene_9",
+    "contractor_desk",
+  ],
+  material_kit_list: ["chapter_1", "investigation_scene_9", "contractor_desk"],
+  to_confront: ["chapter_1", "investigation_scene_9", "contractor_desk"],
+  stream_wall_screen: [
+    "chapter_2",
+    "investigation_scene_4",
+    "stream_wall_plaza",
+  ],
+  ob_van_monitor: [
+    "chapter_2",
+    "investigation_scene_4",
+    "control_room_perimeter",
+  ],
+});
+
+export function isAuthorizedInvestigationPointerId(id) {
+  return (
+    typeof id === "string" && Object.hasOwn(INVESTIGATION_POINTER_TARGETS, id)
+  );
+}
+
+export function assertInvestigationPointerEvents(events, id) {
+  if (!isAuthorizedInvestigationPointerId(id)) {
+    throw new Error("Unauthorized investigation pointer target");
+  }
+  const trusted = events.filter((event) => event.trusted);
+  if (trusted.length === 0) return false;
+  if (
+    trusted.length !== 3 ||
+    trusted.some(
+      (event, index) =>
+        event.type !== ["pointerdown", "pointerup", "click"][index] ||
+        event.targetId !== id,
+    )
+  ) {
+    throw new Error(
+      "Trusted investigation pointer delivery was partial or retargeted",
+    );
+  }
+  return true;
+}
+
+export async function deliverXvfbTrustedInvestigationPointer({
+  id,
+  action,
+  readState,
+  measureTarget,
+  resolveTarget,
+  run,
+  readRootPointer,
+  pointerState,
+}) {
+  if (
+    !isAuthorizedInvestigationPointerId(id) ||
+    !["move", "click-press", "click-release"].includes(action)
+  ) {
+    throw new Error("Unauthorized investigation pointer request");
+  }
+  pointerState.assertAllowed(action);
+  const state = await readState();
+  const [chapter, scene, sublocation] = INVESTIGATION_POINTER_TARGETS[id];
+  if (
+    state?.chapter?.id !== chapter ||
+    state?.scene?.kind !== "investigation" ||
+    state.scene.id !== scene ||
+    state.scene.currentSublocationId !== sublocation ||
+    state?.mode?.type !== "explore" ||
+    state.pendingAcquisition
+  ) {
+    throw new Error("Unauthorized investigation pointer scene or mode");
+  }
+  const target = await measureTarget(id);
+  if (target?.hitTarget !== id) {
+    throw new Error("Investigation pointer hit-test mismatch");
+  }
+  return deliverXvfbTrustedPointer({
+    action,
+    target,
+    resolveTarget,
+    run,
+    readRootPointer,
+    pointerState,
+  });
+}
 
 export function assertSceneNavWheelProgress(events, before, after) {
   const trusted = events.filter((event) => event.trusted);

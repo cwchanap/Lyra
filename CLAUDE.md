@@ -159,12 +159,16 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   disclosed, never claimed as trusted proof.
 - Packaged E2E trusted input on Linux (production-journey commission →
   scene_2 focus segment, gameplay's first-map Tab/Enter proof, and the
-  HPA-852 scene-nav pointer/keyboard proof): the embedded WebDriver `browser.keys`
+  HPA-852 scene-nav pointer/keyboard and seven named investigation target proofs):
+  the embedded WebDriver `browser.keys`
   reaches the app only as synthetic DOM KeyboardEvents (no native focus
   traversal). The user newly authorized extending the existing private-Xvfb
   opt-in to scene-nav pointer scrolling/clicking and Tab/Enter in Task 3 fix
-  round 1. This is not blanket OS-input permission: only those three proofs
-  may use XTEST via `xdotool`. Run it only inside a private `xvfb-run` display:
+  round 1. The user additionally authorized only `stacked_ledgers`,
+  `workorder`, `access_permission_list`, `material_kit_list`, `to_confront`,
+  `stream_wall_screen`, and `ob_van_monitor` in their fixed authored scenes.
+  This is not blanket OS-input permission: only these scopes may use XTEST via
+  `xdotool`. Run it only inside a private `xvfb-run` display:
 
   `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a bun run --cwd apps/game test:e2e:all`
 
@@ -179,7 +183,7 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   cookies plus live authorized/rejected `xdpyinfo` probes, the exact e2e
   binary as the app process, one visible window it owns, and X input
   focus on it before and after the event. Pointer events also require current
-  hit-tested scene-nav bounds, matching window/viewport geometry, and, for
+  hit-tested allowlisted target bounds, matching window/viewport geometry, and, for
   presses/releases, the verified window and coordinates under the pointer.
   Unproven delivery is inconclusive; input is never sent to a shared or
   unverified display. A press is tracked before its command is sent; cleanup
@@ -216,7 +220,7 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   locally (`test:e2e:smoke`, or `test:e2e:all` for a full-job failure —
   the workflow's gameplay and production-journey steps additionally need the
   `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for their
-  keyboard coverage) and inspect its `run-result.json` and failure
+  keyboard and named-target pointer coverage) and inspect its `run-result.json` and failure
   artifacts under `e2e-artifacts/save-e2e/runs/`.
 - `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and
   `wdio.conf.ts` via `tsconfig.e2e.json` (separate from svelte-check, which

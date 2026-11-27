@@ -89,10 +89,10 @@ jobs:
           xvfb-run -a node apps/game/scripts/run-save-e2e.mjs
           ${{ steps.unopted_suites.outputs.flags }} --attempts 2
 
-      - name: Run gameplay with verified map and scene-nav input
-        # The existing map proof and newly authorized scene-nav proof only;
+      - name: Run gameplay with verified scoped input
+        # The map, scene-nav, and seven allowlisted investigation targets only;
         # every event requires private-display, ownership and focus checks.
-        # Scene-nav pointer events also require verified target coordinates.
+        # Pointer events also require verified target coordinates.
         # A second attempt is allowed only for a safe, cleaned-up failure
         # before any WDIO phase starts; a started phase is not retried here.
         if: ${{ always() }}

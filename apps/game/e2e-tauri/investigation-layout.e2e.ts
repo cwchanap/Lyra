@@ -7,8 +7,10 @@ import {
   assertSceneNavPointerEvents,
   assertSceneNavTabProgress,
   assertSceneNavWheelProgress,
+  assertInvestigationPointerEvents,
   describeX11InputError,
   deliverX11PointerPair,
+  isAuthorizedInvestigationPointerId,
 } from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   advanceDialogueUntil,
@@ -31,6 +33,7 @@ import {
   resetE2eStorage,
   seedStoryCleared,
   sendXvfbTrustedKey,
+  sendXvfbTrustedInvestigationPointer,
   sendXvfbTrustedSceneNavPointer,
   startFromMenu,
   waitForPackagedGameState,
@@ -731,9 +734,45 @@ async function inspectNamedTarget(
   const before = await browser.execute((sel: string) => {
     const button = document.querySelector<HTMLButtonElement>(sel)!;
     const box = button.getBoundingClientRect();
-    const x = box.left + box.width / 2;
-    const y = box.top + box.height / 2;
+    const plane = button.closest<HTMLElement>(".scene-coordinate-plane")!;
+    const planeRect = plane.getBoundingClientRect();
+    const authored = (target: HTMLElement) => ({
+      x:
+        planeRect.left +
+        (parseFloat(target.style.getPropertyValue("--x")) / 100) *
+          planeRect.width,
+      y:
+        planeRect.top +
+        (parseFloat(target.style.getPropertyValue("--y")) / 100) *
+          planeRect.height,
+      width:
+        (parseFloat(target.style.getPropertyValue("--w")) / 100) *
+        planeRect.width,
+      height:
+        (parseFloat(target.style.getPropertyValue("--h")) / 100) *
+        planeRect.height,
+    });
+    const targetArt = authored(button);
+    const x = Math.floor(targetArt.x + targetArt.width / 2);
+    const y = Math.floor(targetArt.y + targetArt.height / 2);
     const hit = document.elementFromPoint(x, y);
+    const cues = Array.from(
+      plane.querySelectorAll<HTMLElement>("button.hotspot-target"),
+    ).flatMap((target) => {
+      const cue = target.querySelector<HTMLElement>(".target-pending");
+      if (!cue) return [];
+      const animation = cue.style.animation;
+      cue.style.animation = "none";
+      const rect = cue.getBoundingClientRect();
+      cue.style.animation = animation;
+      return [
+        {
+          id: target.dataset.targetId,
+          authored: authored(target),
+          cue: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        },
+      ];
+    });
     document.documentElement.dataset.hpa852TargetClick = "";
     button.addEventListener(
       "click",
@@ -751,6 +790,8 @@ async function inspectNamedTarget(
       viewport: { width: innerWidth, height: innerHeight },
       rect: { x: box.x, y: box.y, width: box.width, height: box.height },
       center: { x, y },
+      authored: targetArt,
+      cues,
       hitTarget:
         hit?.closest("[data-target-id]")?.getAttribute("data-target-id") ??
         null,
@@ -758,27 +799,123 @@ async function inspectNamedTarget(
   }, selector);
   await browser.saveScreenshot(path.join(output, `target-${id}.png`));
   expect(before.hitTarget).toBe(id);
-  let error: string | null = null;
-  try {
-    await (await $(selector)).click();
-  } catch (cause) {
-    error = String(cause);
+  if (id === "material_kit_list") {
+    const cue = before.cues.find((item) => item.id === id);
+    if (!cue) throw new Error("material-kit pending cue is missing");
+    expect(cue.cue.x).toBeGreaterThanOrEqual(cue.authored.x - 0.5);
+    expect(cue.cue.x + cue.cue.width).toBeLessThanOrEqual(
+      cue.authored.x + cue.authored.width + 0.5,
+    );
   }
-  const event = await browser.execute(() =>
-    document.documentElement.dataset.hpa852TargetClick
-      ? JSON.parse(document.documentElement.dataset.hpa852TargetClick)
-      : null,
-  );
-  const transport = event ? "webdriver" : "synthetic-dom-fallback";
-  if (!event) await jsClick(selector);
+  let error: string | null = null;
+  let event: { trusted: boolean; target: string | null } | null = null;
+  let pointerEvents: Array<{
+    type: string;
+    trusted: boolean;
+    targetId: string | null;
+  }> = [];
+  const trustedTransport: Array<
+    Awaited<ReturnType<typeof sendXvfbTrustedInvestigationPointer>>
+  > = [];
+  const opted =
+    e2eXvfbTrustedKeysEnabled() && isAuthorizedInvestigationPointerId(id);
+  if (opted) {
+    await browser.execute(() => {
+      document.documentElement.dataset.hpa852NamedPointerEvents = "[]";
+      for (const type of ["pointerdown", "pointerup", "click"]) {
+        document.addEventListener(
+          type,
+          (observed) => {
+            const root = document.documentElement;
+            const events = JSON.parse(
+              root.dataset.hpa852NamedPointerEvents ?? "[]",
+            );
+            events.push({
+              type,
+              trusted: observed.isTrusted,
+              targetId:
+                (observed.target as Element | null)
+                  ?.closest(".scene-coordinate-plane button.hotspot-target")
+                  ?.getAttribute("data-target-id") ?? null,
+            });
+            root.dataset.hpa852NamedPointerEvents = JSON.stringify(events);
+          },
+          { capture: true, once: true },
+        );
+      }
+    });
+    try {
+      trustedTransport.push(
+        await sendXvfbTrustedInvestigationPointer(id, "move"),
+      );
+      await deliverX11PointerPair({
+        pointerState: xvfbPointerState(),
+        button: "click",
+        press: async () => {
+          trustedTransport.push(
+            await sendXvfbTrustedInvestigationPointer(id, "click-press"),
+          );
+        },
+        release: async () => {
+          trustedTransport.push(
+            await sendXvfbTrustedInvestigationPointer(id, "click-release"),
+          );
+        },
+      });
+    } catch (cause) {
+      error = describeX11InputError(cause);
+    }
+    pointerEvents = await browser.execute(() =>
+      JSON.parse(
+        document.documentElement.dataset.hpa852NamedPointerEvents ?? "[]",
+      ),
+    );
+  } else {
+    if (isAuthorizedInvestigationPointerId(id)) {
+      try {
+        await (await $(selector)).click();
+      } catch (cause) {
+        error = String(cause);
+      }
+    } else {
+      await jsClick(selector);
+    }
+    event = await browser.execute(() =>
+      document.documentElement.dataset.hpa852TargetClick
+        ? JSON.parse(document.documentElement.dataset.hpa852TargetClick)
+        : null,
+    );
+    if (!event) await jsClick(selector);
+  }
+  const transport = opted
+    ? "verified-xvfb-xtest"
+    : isAuthorizedInvestigationPointerId(id) && event
+      ? "webdriver"
+      : "synthetic-dom-fallback";
   writeFileSync(
     path.join(output, `target-${id}.json`),
     JSON.stringify(
-      { id, expectedEvidence, before, transport, event, error },
+      {
+        id,
+        expectedEvidence,
+        before,
+        transport,
+        event,
+        pointerEvents,
+        trustedTransport,
+        coverage: opted ? "pending" : "inconclusive",
+        error,
+      },
       null,
       2,
     ),
   );
+  const trusted = opted && assertInvestigationPointerEvents(pointerEvents, id);
+  if (opted && (error || !trusted)) {
+    throw new Error(
+      `${id}: trusted pointer delivery failed: ${error ?? "no trusted sequence"}`,
+    );
+  }
   const state = await waitForPackagedGameState(
     (view) =>
       view.scene.kind === "investigation" &&
@@ -795,6 +932,38 @@ async function inspectNamedTarget(
       state.inventory.evidence.some((item) => item.id === expectedEvidence),
     ).toBe(true);
   }
+  const confrontUnlocked =
+    id === "to_confront" &&
+    state.scene.kind === "investigation" &&
+    state.scene.visibleSublocations.some(
+      (item) => item.id === "confront_kitami",
+    );
+  if (id === "to_confront") expect(confrontUnlocked).toBe(true);
+  writeFileSync(
+    path.join(output, `target-${id}.json`),
+    JSON.stringify(
+      {
+        id,
+        expectedEvidence,
+        before,
+        transport,
+        event,
+        pointerEvents,
+        trustedTransport,
+        coverage: trusted ? "measured" : "inconclusive",
+        error,
+        inspected: true,
+        evidenceAcquired: expectedEvidence
+          ? state.inventory.evidence.some(
+              (item) => item.id === expectedEvidence,
+            )
+          : null,
+        confrontUnlocked: id === "to_confront" ? confrontUnlocked : null,
+      },
+      null,
+      2,
+    ),
+  );
   await dismissAllPendingAcquisitions();
   if (state.mode.type === "dialogue") await drainCurrentDialogue("explore");
   await dismissAllPendingAcquisitions();
@@ -1043,8 +1212,10 @@ describe("investigation layout surface", () => {
           const planeRect = plane.getBoundingClientRect();
           const results: Array<{
             id: string;
+            kind: "hotspot" | "character";
             target: Box;
             cue: Box;
+            authored: Box;
             center: { x: number; y: number };
           }> = [];
           for (const entry of entries) {
@@ -1059,8 +1230,19 @@ describe("investigation layout surface", () => {
               if (compact) target.classList.add("compact");
               results.push({
                 id: compact ? `${entry.id} (compact)` : entry.id,
+                kind: entry.kind,
                 target: box(target.getBoundingClientRect()),
                 cue: box(cue.getBoundingClientRect()),
+                authored: {
+                  left: planeRect.left + entry.layout.x * planeRect.width,
+                  top: planeRect.top + entry.layout.y * planeRect.height,
+                  right:
+                    planeRect.left +
+                    (entry.layout.x + entry.layout.w) * planeRect.width,
+                  bottom:
+                    planeRect.top +
+                    (entry.layout.y + entry.layout.h) * planeRect.height,
+                },
                 center: {
                   x:
                     planeRect.left +
@@ -1149,7 +1331,14 @@ describe("investigation layout surface", () => {
       expect(measured.plane.bottom).toBeLessThanOrEqual(
         measured.stage.bottom + 0.5,
       );
-      for (const { id, target, cue, center } of measured.results) {
+      for (const {
+        id,
+        kind,
+        target,
+        cue,
+        authored,
+        center,
+      } of measured.results) {
         if (
           center.x < measured.stage.left - 0.5 ||
           center.x > measured.stage.right + 0.5 ||
@@ -1197,6 +1386,17 @@ describe("investigation layout surface", () => {
         ) {
           misplaced.push(
             `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+          );
+        }
+        if (
+          kind === "hotspot" &&
+          authored.right - authored.left >= 12 &&
+          authored.left >= measured.stage.left &&
+          authored.right <= measured.stage.right &&
+          (cue.left < authored.left - 0.5 || cue.right > authored.right + 0.5)
+        ) {
+          misplaced.push(
+            `${id}: cue ${JSON.stringify(cue)} outside authored art ${JSON.stringify(authored)}`,
           );
         }
       }
