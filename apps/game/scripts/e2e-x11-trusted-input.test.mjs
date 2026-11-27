@@ -1647,6 +1647,141 @@ test("late named-target mismatch rejects release and poisons the active display"
   assert.equal(pointerState.read().status, "poisoned");
 });
 
+for (const [action, change] of [
+  ["move", "geometry"],
+  ["move", "focus"],
+  ["click-press", "geometry"],
+  ["click-press", "focus"],
+  ["click-press", "pointer-window"],
+  ["click-press", "pointer-position"],
+]) {
+  test(`named ${action} rejects changed native ${change} during DOM recheck`, async (t) => {
+    const pointerState = trackedPointerState(t);
+    const transport = pointerRun();
+    let samples = 0;
+    const run = async (args) => {
+      const result = await transport.run(args);
+      if (samples < 2) return result;
+      if (change === "geometry" && args[0] === "getwindowgeometry")
+        return result.replace("X=10", "X=11");
+      if (change === "focus" && args[0] === "getwindowfocus") return "999";
+      if (change === "pointer-window" && args[0] === "getmouselocation")
+        return result.replace(`WINDOW=${TARGET_WINDOW}`, "WINDOW=999");
+      if (change === "pointer-position" && args[0] === "getmouselocation")
+        return result.replace("X=110", "X=111");
+      return result;
+    };
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action,
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          samples++;
+          return { ...POINTER_TARGET, hitTarget: "workorder" };
+        },
+        resolveTarget: okResolver(),
+        run,
+        pointerState,
+      }),
+    );
+    assert.equal(samples, 2);
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+    );
+    assert.equal(pointerState.read().status, "safe");
+  });
+}
+
+test("named press rechecks the root-pointer fallback after DOM recheck", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const transport = pointerRun({
+    pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+  });
+  let samples = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "click-press",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          samples++;
+          return { ...POINTER_TARGET, hitTarget: "workorder" };
+        },
+        resolveTarget: okResolver(),
+        run: transport.run,
+        readRootPointer: async () =>
+          `X=110\nY=120\nSCREEN=0\nWINDOW=${samples >= 2 ? 999 : TARGET_WINDOW}\n`,
+        pointerState,
+      }),
+    /pointer no longer belongs/,
+  );
+  assert.equal(
+    transport.calls.some(([command]) => command === "mousedown"),
+    false,
+  );
+  assert.equal(pointerState.read().status, "safe");
+});
+
+test("named release rejects native pointer change during DOM recheck and poisons display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let samples = 0;
+  const common = {
+    id: "workorder",
+    readState: async () => namedInvestigationState,
+    resolveTarget: okResolver(),
+    pointerState,
+  };
+  pointerState.beginTest();
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          ...common,
+          action: "click-press",
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: "workorder",
+          }),
+          run: press.run,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          ...common,
+          action: "click-release",
+          measureTarget: async () => {
+            samples++;
+            return { ...POINTER_TARGET, hitTarget: "workorder" };
+          },
+          run: async (args) => {
+            const result = await release.run(args);
+            return samples >= 2 && args[0] === "getmouselocation"
+              ? result.replace(`WINDOW=${TARGET_WINDOW}`, "WINDOW=999")
+              : result;
+          },
+        }),
+    }),
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+});
+
 test("named investigation pointer requires the complete trusted sequence on the exact target", () => {
   assert.equal(typeof x11.assertInvestigationPointerEvents, "function");
   const events = ["pointerdown", "pointerup", "click"].map((type) => ({

@@ -1213,13 +1213,12 @@ export async function deliverXvfbTrustedPointer({
       );
     }
   }
-  let pointerSource;
-  if (action !== "move") {
+  const verifyPointer = async () => {
     let pointer = xdotoolShellNumbers(
       await run(["getmouselocation", "--shell"]),
       ["X", "Y", "SCREEN", "WINDOW"],
     );
-    pointerSource = "xdotool";
+    let pointerSource = "xdotool";
     if (pointer.WINDOW === 0 && readRootPointer) {
       // Without WM_STATE, xdotool may lose the raw root-child window ID.
       pointer = xdotoolShellNumbers(await readRootPointer(), [
@@ -1240,8 +1239,32 @@ export async function deliverXvfbTrustedPointer({
         `pointer no longer belongs to verified scene-nav target in window ${windowId}: ${JSON.stringify({ pointer, expected: { x, y } })}`,
       );
     }
+    return pointerSource;
+  };
+  let pointerSource;
+  if (action !== "move") {
+    pointerSource = await verifyPointer();
   }
-  if (revalidate) await revalidate();
+  if (revalidate) {
+    await revalidate();
+    const currentGeometry = xdotoolShellNumbers(
+      await run(["getwindowgeometry", "--shell", String(windowId)]),
+      ["WINDOW", "X", "Y", "WIDTH", "HEIGHT", "SCREEN"],
+    );
+    if (
+      ["WINDOW", "X", "Y", "WIDTH", "HEIGHT", "SCREEN"].some(
+        (key) => currentGeometry[key] !== geometry[key],
+      )
+    ) {
+      throw new Error(`geometry changed for verified window ${windowId}`);
+    }
+    if (action !== "move") pointerSource = await verifyPointer();
+    if ((await focusedWindow()) !== windowId) {
+      throw new Error(
+        `focus left verified window ${windowId} before ${action}`,
+      );
+    }
+  }
   const button = action.split("-")[0];
   if (action.endsWith("-press")) pointerState.beginPress(button);
   else pointerState.assertAllowed(action);
