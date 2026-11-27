@@ -1,9 +1,24 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import Mocha from "mocha";
+import { testFnWrapper } from "@wdio/utils";
+import { tsImport } from "tsx/esm/api";
 import { selectOwnedE2eAppProcessId } from "./e2e-trusted-key-process.mjs";
 import * as x11 from "./e2e-x11-trusted-input.mjs";
 import {
@@ -1144,6 +1159,269 @@ function trackedPointerState(t) {
   return state;
 }
 
+function displayClaimFixture(t) {
+  const directory = mkdtempSync(path.join(tmpdir(), "lyra-display-claim-"));
+  const xauthority = path.join(directory, "Xauthority");
+  writeFileSync(xauthority, xauthRecord(), { mode: 0o600 });
+  const fixture = {
+    directory,
+    identity: {
+      xauthority,
+      display: DISPLAY,
+      xvfbPid: 25,
+      xvfbRunPid: 20,
+      xvfbStart: "12345",
+      runnerPid: 30,
+      pointerStatePath: path.join(directory, "pointer-state.json"),
+    },
+  };
+  t.after(() => {
+    rmSync(displayClaimPath(fixture), { force: true });
+    if (existsSync(directory)) chmodSync(directory, 0o700);
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return fixture;
+}
+
+function displayClaimPath({ identity }) {
+  const key = createHash("sha256")
+    .update(path.resolve(identity.xauthority))
+    .digest("hex");
+  return path.join(
+    realpathSync(userInfo().homedir),
+    ".cache",
+    "lyra-e2e-x11-claims",
+    `.lyra-e2e-x11-claim-${key}.json`,
+  );
+}
+
+test(
+  "the display claim binds workers to one runner and Xvfb start identity",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { identity } = displayClaimFixture(t);
+    const processes = privateXvfbTable();
+    x11.claimXvfbDisplay(identity);
+    assert.doesNotThrow(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 700 }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...identity,
+        xvfbStart: "12346",
+        processes,
+        currentPid: 700,
+      }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...identity,
+        pointerStatePath: `${identity.pointerStatePath}.other`,
+        processes,
+        currentPid: 700,
+      }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 5 }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 30 }),
+    );
+    assert.throws(() => x11.claimXvfbDisplay(identity));
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...identity, xvfbStart: "12346" }),
+    );
+  },
+);
+
+test(
+  "a fresh private authority permits a fresh display with a reused display number",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const first = displayClaimFixture(t);
+    const second = displayClaimFixture(t);
+    x11.claimXvfbDisplay(first.identity);
+    assert.doesNotThrow(() => x11.claimXvfbDisplay(second.identity));
+  },
+);
+
+test(
+  "fresh Xvfb processes can use distinct authority files in one private directory",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const freshAuthority = path.join(directory, "Xauthority-fresh");
+    writeFileSync(freshAuthority, xauthRecord(), { mode: 0o600 });
+    const fresh = {
+      ...identity,
+      xauthority: freshAuthority,
+      xvfbStart: "12346",
+    };
+    t.after(() =>
+      rmSync(displayClaimPath({ identity: fresh }), { force: true }),
+    );
+    x11.claimXvfbDisplay(identity);
+    assert.doesNotThrow(() => x11.claimXvfbDisplay(fresh));
+  },
+);
+
+test(
+  "recreating an authority directory cannot erase its prior claim",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    x11.claimXvfbDisplay(identity);
+    rmSync(directory, { recursive: true });
+    mkdirSync(directory, { mode: 0o700 });
+    writeFileSync(identity.xauthority, xauthRecord(), { mode: 0o600 });
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...identity, xvfbStart: "12346" }),
+    );
+  },
+);
+
+test(
+  "changing HOME or TMPDIR cannot bypass an authority claim",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const home = process.env.HOME;
+    const temp = process.env.TMPDIR;
+    t.after(() => {
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+      if (temp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = temp;
+    });
+    x11.claimXvfbDisplay(identity);
+    process.env.HOME = directory;
+    process.env.TMPDIR = directory;
+    assert.throws(() => x11.claimXvfbDisplay(identity));
+  },
+);
+
+test(
+  "display claims fail closed on insecure, missing, symlinked, or corrupt files",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const insecure = displayClaimFixture(t);
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...insecure.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+    chmodSync(insecure.identity.xauthority, 0o644);
+    assert.throws(() => x11.claimXvfbDisplay(insecure.identity), /secure/i);
+    chmodSync(insecure.identity.xauthority, 0o600);
+    chmodSync(insecure.directory, 0o755);
+    assert.throws(() => x11.claimXvfbDisplay(insecure.identity), /secure/i);
+    chmodSync(insecure.directory, 0o700);
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, xvfbStart: "" }),
+    );
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, display: "remote:99" }),
+    );
+    assert.throws(() =>
+      x11.claimXvfbDisplay({
+        ...insecure.identity,
+        xauthority: path.join(insecure.directory, "missing"),
+      }),
+    );
+    const alias = path.join(insecure.directory, "alias");
+    symlinkSync(insecure.identity.xauthority, alias);
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, xauthority: alias }),
+    );
+    const hardlinked = displayClaimFixture(t);
+    linkSync(
+      hardlinked.identity.xauthority,
+      path.join(hardlinked.directory, "hardlink"),
+    );
+    assert.throws(() => x11.claimXvfbDisplay(hardlinked.identity));
+
+    const linked = displayClaimFixture(t);
+    const target = path.join(linked.directory, "do-not-touch");
+    writeFileSync(target, "unchanged", { mode: 0o600 });
+    x11.claimXvfbDisplay(linked.identity);
+    rmSync(displayClaimPath(linked));
+    symlinkSync(target, displayClaimPath(linked));
+    assert.throws(() => x11.claimXvfbDisplay(linked.identity));
+    assert.equal(readFileSync(target, "utf8"), "unchanged");
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...linked.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+
+    const linkedClaim = displayClaimFixture(t);
+    x11.claimXvfbDisplay(linkedClaim.identity);
+    linkSync(
+      displayClaimPath(linkedClaim),
+      path.join(linkedClaim.directory, "claim-hardlink"),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...linkedClaim.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+
+    const corrupt = displayClaimFixture(t);
+    x11.claimXvfbDisplay(corrupt.identity);
+    const claim = displayClaimPath(corrupt);
+    chmodSync(claim, 0o666);
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...corrupt.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+    chmodSync(claim, 0o600);
+    writeFileSync(claim, "{");
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...corrupt.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+  },
+);
+
+test(
+  "a non-regular authority file is rejected without waiting on it",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const fifo = path.join(directory, "fifo");
+    assert.equal(spawnSync("mkfifo", ["-m", "600", fifo]).status, 0);
+    const moduleUrl = new URL("./e2e-x11-trusted-input.mjs", import.meta.url)
+      .href;
+    const source = `import { claimXvfbDisplay } from ${JSON.stringify(moduleUrl)}; claimXvfbDisplay(JSON.parse(process.env.TEST_IDENTITY));`;
+    const child = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", source],
+      {
+        encoding: "utf8",
+        timeout: 5000,
+        env: {
+          ...process.env,
+          TEST_IDENTITY: JSON.stringify({ ...identity, xauthority: fifo }),
+        },
+      },
+    );
+    assert.equal(child.error, undefined, child.error?.message);
+    assert.notEqual(child.status, 0);
+  },
+);
+
 const deliverXvfbTrustedPointer = (options) =>
   x11.deliverXvfbTrustedPointer({
     pointerState: untrackedPointerState,
@@ -1169,6 +1447,75 @@ function pointerRun({
     },
   };
 }
+
+test("test ownership remains active through a verified pointer pair", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  pointerState.beginTest();
+  await x11.deliverX11PointerPair({
+    pointerState,
+    button: "click",
+    press: () =>
+      x11.deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run: press.run,
+        pointerState,
+      }),
+    release: () =>
+      x11.deliverXvfbTrustedPointer({
+        action: "click-release",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run: release.run,
+        pointerState,
+      }),
+  });
+  assert.equal(pointerState.isSafe(), false);
+  assert.equal(pointerState.read().testActive, true);
+  pointerState.finishTest(true);
+  assert.equal(pointerState.isSafe(), true);
+});
+
+test("revoked pending move and key preflights cannot change focus or send input", async (t) => {
+  for (const action of ["move", "key"]) {
+    const pointerState = trackedPointerState(t);
+    pointerState.beginTest();
+    let resume;
+    const preflight = new Promise((resolve) => {
+      resume = resolve;
+    });
+    const transport = pointerRun({ focus: [42, TARGET_WINDOW] });
+    const operation =
+      action === "move"
+        ? x11.deliverXvfbTrustedPointer({
+            action: "move",
+            target: POINTER_TARGET,
+            resolveTarget: () => preflight,
+            run: transport.run,
+            pointerState,
+          })
+        : x11.deliverXvfbTrustedKey({
+            key: "Tab",
+            resolveTarget: () => preflight,
+            run: transport.run,
+            pointerState,
+          });
+    pointerState.finishTest(false);
+    resume({ appPid: TARGET_PID, windowId: TARGET_WINDOW });
+    await assert.rejects(operation, /unsafe/i);
+    assert.deepEqual(
+      transport.calls.filter(([command]) =>
+        ["windowfocus", "mousemove", "mousedown", "mouseup", "key"].includes(
+          command,
+        ),
+      ),
+      [],
+    );
+  }
+});
 
 test("pointer preflight failure sends no XTEST commands", async () => {
   const { run, calls } = pointerRun();
@@ -1945,6 +2292,31 @@ test(
   },
 );
 
+test(
+  "failed timeout revocation blocks input across module instances",
+  { skip: !process.geteuid || process.geteuid() === 0 },
+  async (t) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lyra-revocation-io-"));
+    t.after(() => {
+      chmodSync(directory, 0o700);
+      rmSync(directory, { recursive: true, force: true });
+    });
+    const statePath = path.join(directory, "x11-pointer-state.json");
+    const state = x11.createX11PointerState(statePath);
+    state.initialize();
+    state.beginTest();
+    const secondModule = await tsImport(
+      "./e2e-x11-trusted-input.mjs",
+      import.meta.url,
+    );
+    const otherState = secondModule.createX11PointerState(statePath);
+    chmodSync(directory, 0o500);
+    assert.throws(() => state.finishTest(false));
+    assert.equal(state.isSafe(), false);
+    assert.throws(() => otherState.assertAllowed("key"), /unsafe/i);
+  },
+);
+
 test("a poisoned display bails before later Mocha tests can send input", async (t) => {
   const pointerState = trackedPointerState(t);
   const mocha = new Mocha({ reporter: class {} });
@@ -1994,3 +2366,117 @@ test("the afterEach poison guard also prevents later Mocha test bodies", async (
   assert.equal(failures, 1);
   assert.equal(laterActions, 0);
 });
+
+for (const timeout of ["WDIO", "Mocha"]) {
+  test(
+    `a ${timeout} timeout during pointer preflight prevents late and later input`,
+    { skip: process.platform !== "linux" },
+    async (t) => {
+      const directory = mkdtempSync(path.join(tmpdir(), "lyra-wdio-timeout-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const statePath = path.join(directory, "x11-pointer-state.json");
+      const pointerState = x11.createX11PointerState(statePath);
+      pointerState.initialize();
+      const previousOptIn = process.env.LYRA_E2E_XVFB_TRUSTED_KEYS;
+      const previousPath = process.env.LYRA_E2E_X11_POINTER_STATE;
+      process.env.LYRA_E2E_XVFB_TRUSTED_KEYS = "1";
+      process.env.LYRA_E2E_X11_POINTER_STATE = statePath;
+      t.after(() => {
+        if (previousOptIn === undefined)
+          delete process.env.LYRA_E2E_XVFB_TRUSTED_KEYS;
+        else process.env.LYRA_E2E_XVFB_TRUSTED_KEYS = previousOptIn;
+        if (previousPath === undefined)
+          delete process.env.LYRA_E2E_X11_POINTER_STATE;
+        else process.env.LYRA_E2E_X11_POINTER_STATE = previousPath;
+      });
+      const { config } = await tsImport("../wdio.conf.ts", import.meta.url);
+      const mocha = new Mocha({ reporter: class {} });
+      const suite = Mocha.Suite.create(mocha.suite, "private display timeout");
+      suite.timeout(timeout === "Mocha" ? 50 : 1500);
+      let resolvePreflight;
+      const preflight = new Promise((resolve) => {
+        resolvePreflight = resolve;
+      });
+      const press = pointerRun();
+      const release = pointerRun();
+      let operation;
+      let firstWrapper;
+      let laterInputs = 0;
+      const wrap = (body) =>
+        function () {
+          const wrapped = testFnWrapper.call(
+            { _runnable: { _timeout: timeout === "WDIO" ? 50 : 1000 } },
+            "Test",
+            { specFn: body, specFnArgs: [] },
+            {
+              beforeFn: config.beforeTest ? [config.beforeTest] : [],
+              beforeFnArgs: () => [{}, {}],
+            },
+            {
+              afterFn: config.afterTest ? [config.afterTest] : [],
+              afterFnArgs: () => [{}, {}],
+            },
+            "timeout-regression",
+          );
+          firstWrapper ??= wrapped;
+          return wrapped;
+        };
+      suite.afterEach(function () {
+        x11.assertX11DisplaySafe(
+          () => pointerState,
+          () => this.currentTest.parent.bail(true),
+          { abortActive: true },
+        );
+      });
+      suite.addTest(
+        new Mocha.Test(
+          "times out during native preflight",
+          wrap(() => {
+            operation = x11.deliverX11PointerPair({
+              pointerState,
+              button: "click",
+              press: () =>
+                x11.deliverXvfbTrustedPointer({
+                  action: "click-press",
+                  target: POINTER_TARGET,
+                  resolveTarget: () => preflight,
+                  run: press.run,
+                  pointerState,
+                }),
+              release: () =>
+                x11.deliverXvfbTrustedPointer({
+                  action: "click-release",
+                  target: POINTER_TARGET,
+                  resolveTarget: okResolver(),
+                  run: release.run,
+                  pointerState,
+                }),
+            });
+            return operation;
+          }),
+        ).timeout(timeout === "Mocha" ? 50 : 1000),
+      );
+      suite.addTest(
+        new Mocha.Test(
+          "later input",
+          wrap(() => {
+            laterInputs += 1;
+          }),
+        ),
+      );
+      const failures = await new Promise((resolve) => mocha.run(resolve));
+      assert.ok(failures >= 1);
+      resolvePreflight({ appPid: TARGET_PID, windowId: TARGET_WINDOW });
+      await operation.catch(() => {});
+      await firstWrapper.catch(() => {});
+      assert.deepEqual(
+        [...press.calls, ...release.calls].filter(([command]) =>
+          ["mousedown", "mouseup", "mousemove", "key"].includes(command),
+        ),
+        [],
+      );
+      assert.equal(laterInputs, 0);
+      assert.equal(pointerState.isSafe(), false);
+    },
+  );
+}

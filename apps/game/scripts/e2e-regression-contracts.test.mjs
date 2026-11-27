@@ -163,21 +163,22 @@ test("poisoned X11 state prevents later test bodies and runner retries", () => {
     new URL("./run-save-e2e.mjs", import.meta.url),
     "utf8",
   );
-  assert.match(
-    source,
-    /beforeEach\(async function[\s\S]*?assertSafeXvfbDisplay\(this\)[\s\S]*?resetE2eStorage/,
+  const journey = readFileSync(
+    new URL("../e2e-tauri/production-journey.e2e.ts", import.meta.url),
+    "utf8",
   );
   assert.match(
     source,
-    /afterEach\(function[\s\S]*?assertSafeXvfbDisplay\(this\)/,
+    /beforeEach\(async function[\s\S]*?assertSafeXvfbDisplay\(this, true\)[\s\S]*?resetE2eStorage/,
   );
-  assert.match(source, /suite\.bail\(true\)/);
+  assert.match(
+    source,
+    /afterEach\(function[\s\S]*?assertSafeXvfbDisplay\(this, true\)/,
+  );
+  assert.match(helper, /suite\.bail\(true\)/);
   assert.match(config, /maxInstances:\s*1/);
   assert.match(config, /specFileRetries:\s*0/);
-  assert.match(
-    config,
-    /bail:[\s\S]*?LYRA_E2E_RUNNER_PHASE[\s\S]*?LYRA_E2E_XVFB_TRUSTED_KEYS/,
-  );
+  assert.match(config, /bail:[\s\S]*?trustedXvfbKeysOptIn/);
   assert.match(
     helper,
     /deliverXvfbTrustedKey\(\{[\s\S]*?pointerState:\s*xvfbPointerState\(\)/,
@@ -187,6 +188,20 @@ test("poisoned X11 state prevents later test bodies and runner retries", () => {
     /pointerState\.assertAllowed\(action\)[\s\S]*?browser\.execute/,
   );
   assert.match(runner, /LYRA_E2E_X11_POINTER_STATE:\s*pointerStatePath/);
+  assert.match(config, /beforeTest\(\)[\s\S]*?\.beginTest\(\)/);
+  assert.match(config, /afterTest\([\s\S]*?\.finishTest\(/);
+  assert.match(
+    journey,
+    /afterEach\(function[\s\S]*?assertSafeXvfbDisplay\(this, true\)/,
+  );
+  assert.match(
+    runner,
+    /verifyLivePrivateXvfbSession\(\)[\s\S]*?claimXvfbDisplay\(/,
+  );
+  assert.match(
+    helper,
+    /verifyLivePrivateXvfbSession\(\)[\s\S]*?assertXvfbDisplayClaim\(/,
+  );
 });
 
 test("exit acquisition is acknowledged and quit without a later save or mutation", () => {

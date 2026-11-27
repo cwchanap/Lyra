@@ -1,12 +1,23 @@
-import { randomUUID } from "node:crypto";
-import { lstatSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import {
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
+import { userInfo } from "node:os";
+import { promisify } from "node:util";
 
 /**
- * Scoped Linux/Xvfb trusted input transport — pure, testable
- * verification logic. `e2e-tauri/helpers.ts` supplies the live `/proc`
- * process table and runs the bounded `xdotool`/`xprop` probes; this module
- * decides whether real XTEST input may be sent at all.
+ * Scoped Linux/Xvfb trusted input transport and shared runner/worker
+ * verification. `e2e-tauri/helpers.ts` supplies bounded window and pointer
+ * probes; this module decides whether real XTEST input may be sent at all.
  *
  * Never implicit: XTEST input requires BOTH Linux and an explicit
  * `LYRA_E2E_XVFB_TRUSTED_KEYS=1` environment opt-in. Even then every check
@@ -49,6 +60,8 @@ import path from "node:path";
 
 export const TRUSTED_XVFB_KEYS_ENV = "LYRA_E2E_XVFB_TRUSTED_KEYS";
 export const X11_POINTER_STATE_FILENAME = "x11-pointer-state.json";
+const revokedDisplaysKey = Symbol.for("lyra.e2e.x11.revokedDisplays");
+const locallyRevokedDisplays = (globalThis[revokedDisplaysKey] ??= new Set());
 
 export function createX11PointerState(statePath) {
   if (typeof statePath !== "string" || !path.isAbsolute(statePath)) {
@@ -76,7 +89,9 @@ export function createX11PointerState(statePath) {
     if (
       !state ||
       !["safe", "possible", "held", "poisoned"].includes(state.status) ||
-      (state.status !== "safe" && !["wheel", "click"].includes(state.button))
+      (["possible", "held"].includes(state.status) &&
+        !["wheel", "click"].includes(state.button)) ||
+      (state.testActive !== undefined && typeof state.testActive !== "boolean")
     ) {
       throw new Error("X11 pointer state is invalid.");
     }
@@ -91,6 +106,9 @@ export function createX11PointerState(statePath) {
     renameSync(temporary, statePath);
   };
   const assertAllowed = (action) => {
+    if (locallyRevokedDisplays.has(statePath)) {
+      throw new Error("X11 display is unsafe after test termination.");
+    }
     const state = read();
     if (
       (state.status === "safe" && !action.endsWith("-release")) ||
@@ -111,22 +129,55 @@ export function createX11PointerState(statePath) {
     read,
     isSafe() {
       try {
-        return read().status === "safe";
+        const state = read();
+        return state.status === "safe" && !state.testActive;
       } catch {
         return false;
       }
     },
     assertAllowed,
+    beginTest() {
+      assertAllowed("key");
+      const state = read();
+      if (state.status !== "safe" || state.testActive) {
+        throw new Error("X11 display is unsafe for a new test.");
+      }
+      write({ ...state, testActive: true });
+    },
+    finishTest(completed) {
+      const state = read();
+      if (!state.testActive) {
+        if (state.status === "poisoned") return;
+        throw new Error("X11 test ownership was lost.");
+      }
+      if (
+        locallyRevokedDisplays.has(statePath) ||
+        !completed ||
+        state.status !== "safe"
+      ) {
+        locallyRevokedDisplays.add(statePath);
+        write({ ...state, status: "poisoned", testActive: false });
+      } else {
+        write({ status: "safe" });
+      }
+    },
+    abortActiveTest() {
+      const state = read();
+      if (state.testActive) {
+        locallyRevokedDisplays.add(statePath);
+        write({ ...state, status: "poisoned", testActive: false });
+      }
+    },
     beginPress(button) {
       assertAllowed(`${button}-press`);
-      write({ status: "possible", button });
+      write({ ...read(), status: "possible", button });
     },
     confirmPress(button) {
       const state = read();
       if (state.status !== "possible" || state.button !== button) {
         throw new Error("X11 pointer press state changed unexpectedly.");
       }
-      write({ status: "held", button });
+      write({ ...state, status: "held", button });
     },
     confirmRelease(button) {
       const state = read();
@@ -136,11 +187,11 @@ export function createX11PointerState(statePath) {
       ) {
         throw new Error("X11 pointer release state changed unexpectedly.");
       }
-      write(
-        state.status === "held"
-          ? { status: "safe" }
-          : { status: "poisoned", button },
-      );
+      if (state.status === "held") {
+        write({ ...state, status: "safe", button: undefined });
+      } else {
+        write({ ...state, status: "poisoned" });
+      }
     },
   };
 }
@@ -170,7 +221,7 @@ export async function deliverX11PointerPair({
     throw new Error("X11 pointer press was not tracked.");
   }
   if (pressFailed) throw pressError;
-  if (!pointerState.isSafe()) {
+  if (pointerState.read().status !== "safe") {
     throw new Error("X11 pointer release was not verified.");
   }
 }
@@ -182,9 +233,15 @@ export function describeX11InputError(error) {
   );
 }
 
-export function assertX11DisplaySafe(getPointerState, bail) {
+export function assertX11DisplaySafe(
+  getPointerState,
+  bail,
+  { abortActive = false } = {},
+) {
   try {
-    getPointerState().assertAllowed("key");
+    const pointerState = getPointerState();
+    if (abortActive) pointerState.abortActiveTest();
+    pointerState.assertAllowed("key");
   } catch (error) {
     bail();
     throw error;
@@ -500,6 +557,246 @@ export function verifyPrivateXvfbAncestry({
   return { xvfbRunPid: xvfbRun.pid, xvfbPid: xvfb.pid };
 }
 
+function xvfbClaimPath(identity, create) {
+  const uid = process.geteuid?.();
+  const home = realpathSync(userInfo().homedir);
+  const homeStat = lstatSync(home);
+  if (
+    !Number.isInteger(uid) ||
+    !homeStat.isDirectory() ||
+    homeStat.uid !== uid ||
+    (homeStat.mode & 0o022) !== 0
+  ) {
+    throw new Error("Xvfb claim home directory is not secure.");
+  }
+  const cache = path.join(home, ".cache");
+  const registry = path.join(cache, "lyra-e2e-x11-claims");
+  for (const [directory, forbiddenMode] of [
+    [cache, 0o022],
+    [registry, 0o077],
+  ]) {
+    if (create) {
+      try {
+        mkdirSync(directory, { mode: 0o700 });
+      } catch (error) {
+        if (error?.code !== "EEXIST") throw error;
+      }
+    }
+    const metadata = lstatSync(directory);
+    if (
+      !metadata.isDirectory() ||
+      metadata.isSymbolicLink() ||
+      metadata.uid !== uid ||
+      (metadata.mode & forbiddenMode) !== 0
+    ) {
+      throw new Error("Xvfb claim registry is not secure.");
+    }
+  }
+  const authorityKey = createHash("sha256")
+    .update(path.resolve(identity.xauthority))
+    .digest("hex");
+  return path.join(registry, `.lyra-e2e-x11-claim-${authorityKey}.json`);
+}
+
+function readAuthorityEvidence(xauthority) {
+  if (typeof xauthority !== "string" || !path.isAbsolute(xauthority)) {
+    throw new Error("XAUTHORITY must be an absolute private file.");
+  }
+  const directory = path.dirname(xauthority);
+  const file = lstatSync(xauthority);
+  const dir = lstatSync(directory);
+  if (
+    file.nlink !== 1 ||
+    realpathSync(xauthority) !== path.resolve(xauthority) ||
+    realpathSync(directory) !== path.resolve(directory)
+  ) {
+    throw new Error("XAUTHORITY must not use symbolic or hard links.");
+  }
+  const evidence = {
+    isFile: file.isFile(),
+    mode: file.mode & 0o777,
+    uid: file.uid,
+    dirIsDirectory: dir.isDirectory(),
+    dirMode: dir.mode & 0o777,
+    dirUid: dir.uid,
+    euid: process.geteuid?.() ?? -1,
+  };
+  assertSecureAuthorityFile({ authorityFile: evidence, xauthority });
+  return { ...evidence, content: readFileSync(xauthority) };
+}
+
+function privateAuthorityDirectory(xauthority, display) {
+  const displayNumber = parseLocalDisplayNumber(display);
+  if (displayNumber === null)
+    throw new Error("X11 display identity is unknown.");
+  const authorityFile = readAuthorityEvidence(xauthority);
+  assertUsableAuthorityCookies({ authorityFile, displayNumber, xauthority });
+  return path.dirname(xauthority);
+}
+
+function linuxProcessTable() {
+  const entries = [];
+  for (const name of readdirSync("/proc")) {
+    if (!/^\d+$/.test(name)) continue;
+    try {
+      const stat = readFileSync(`/proc/${name}/stat`, "utf8");
+      const closeParen = stat.lastIndexOf(")");
+      if (closeParen === -1) continue;
+      const fields = stat
+        .slice(closeParen + 1)
+        .trim()
+        .split(/\s+/);
+      const ppid = Number(fields[1]);
+      if (!Number.isInteger(ppid)) continue;
+      const comm = readFileSync(`/proc/${name}/comm`, "utf8").trim();
+      const argv = readFileSync(`/proc/${name}/cmdline`, "utf8")
+        .split("\0")
+        .filter(Boolean);
+      let exe = null;
+      try {
+        exe = readlinkSync(`/proc/${name}/exe`);
+      } catch {
+        // An unreadable executable cannot identify the owned app.
+      }
+      entries.push({
+        pid: Number(name),
+        ppid,
+        comm,
+        argv,
+        exe,
+        start: fields[19],
+      });
+    } catch {
+      // Processes can disappear during the scan.
+    }
+  }
+  return entries;
+}
+
+export async function verifyLivePrivateXvfbSession({
+  env = process.env,
+  currentPid = process.pid,
+  probe = (authority) =>
+    promisify(execFile)("xdpyinfo", [], {
+      timeout: 10_000,
+      env: { ...env, XAUTHORITY: authority },
+    }),
+} = {}) {
+  assertTrustedXvfbKeysAllowed({ platform: process.platform, env });
+  const xauthority = env.XAUTHORITY;
+  const display = env.DISPLAY;
+  const processes = linuxProcessTable();
+  const authorityFile =
+    typeof xauthority === "string" && xauthority.length > 0
+      ? readAuthorityEvidence(xauthority)
+      : undefined;
+  const identity = verifyPrivateXvfbAncestry({
+    processes,
+    currentPid,
+    display,
+    xauthority,
+    authorityFile,
+  });
+  const xvfbStart = processes.find(
+    (entry) => entry.pid === identity.xvfbPid,
+  )?.start;
+  if (!/^[1-9]\d*$/.test(xvfbStart ?? "")) {
+    throw new Error("Xvfb process start identity is unknown.");
+  }
+  await assertX11AuthenticationEnforced({ display, xauthority, probe });
+  return { ...identity, xvfbStart, display, xauthority, processes };
+}
+
+function validateXvfbClaimIdentity(identity) {
+  if (
+    !Number.isSafeInteger(identity.xvfbPid) ||
+    identity.xvfbPid <= 0 ||
+    !Number.isSafeInteger(identity.xvfbRunPid) ||
+    identity.xvfbRunPid <= 0 ||
+    !Number.isSafeInteger(identity.runnerPid) ||
+    identity.runnerPid <= 0 ||
+    typeof identity.xvfbStart !== "string" ||
+    !/^[1-9]\d*$/.test(identity.xvfbStart) ||
+    typeof identity.pointerStatePath !== "string" ||
+    !path.isAbsolute(identity.pointerStatePath)
+  ) {
+    throw new Error("Xvfb runner identity is unknown.");
+  }
+  return privateAuthorityDirectory(identity.xauthority, identity.display);
+}
+
+export function claimXvfbDisplay(identity) {
+  validateXvfbClaimIdentity(identity);
+  const {
+    xauthority,
+    display,
+    xvfbPid,
+    xvfbRunPid,
+    xvfbStart,
+    runnerPid,
+    pointerStatePath,
+  } = identity;
+  writeFileSync(
+    xvfbClaimPath(identity, true),
+    JSON.stringify({
+      xauthority,
+      display,
+      xvfbPid,
+      xvfbRunPid,
+      xvfbStart,
+      runnerPid,
+      pointerStatePath,
+    }),
+    { flag: "wx", mode: 0o600 },
+  );
+}
+
+export function assertXvfbDisplayClaim({ processes, currentPid, ...identity }) {
+  validateXvfbClaimIdentity({ ...identity, runnerPid: 1 });
+  const claimPath = xvfbClaimPath(identity, false);
+  const metadata = lstatSync(claimPath);
+  if (
+    !metadata.isFile() ||
+    metadata.isSymbolicLink() ||
+    metadata.nlink !== 1 ||
+    metadata.uid !== process.geteuid?.() ||
+    (metadata.mode & 0o077) !== 0 ||
+    metadata.size > 4096
+  ) {
+    throw new Error("Xvfb runner claim is not a secure regular file.");
+  }
+  const claim = JSON.parse(readFileSync(claimPath, "utf8"));
+  if (!Number.isSafeInteger(claim?.runnerPid) || claim.runnerPid <= 0) {
+    throw new Error("Xvfb runner identity is unknown.");
+  }
+  for (const key of [
+    "xauthority",
+    "display",
+    "xvfbPid",
+    "xvfbRunPid",
+    "xvfbStart",
+    "pointerStatePath",
+  ]) {
+    if (claim?.[key] !== identity[key]) {
+      throw new Error("Xvfb runner claim does not match this display.");
+    }
+  }
+  const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
+  const seen = new Set();
+  const worker = byPid.get(currentPid);
+  let cursor = worker && byPid.get(worker.ppid);
+  while (
+    cursor &&
+    !seen.has(cursor.pid) &&
+    cursor.pid !== identity.xvfbRunPid
+  ) {
+    seen.add(cursor.pid);
+    if (cursor.pid === claim.runnerPid) return;
+    cursor = byPid.get(cursor.ppid);
+  }
+  throw new Error("Xvfb runner claim is not an ancestor of this worker.");
+}
+
 /** Parse `xdotool search --onlyvisible --pid` stdout into window ids. */
 export function parseXdotoolWindowIds(output) {
   return output
@@ -629,6 +926,7 @@ export async function deliverXvfbTrustedKey({
     parseXdotoolDecimal(await xdotool(["getwindowfocus", "-f"]));
 
   if ((await focusedWindow()) !== windowId) {
+    pointerState.assertAllowed("key");
     await xdotool(["windowfocus", "--sync", String(windowId)]);
     const focused = await focusedWindow();
     if (focused !== windowId) {
@@ -637,6 +935,7 @@ export async function deliverXvfbTrustedKey({
       );
     }
   }
+  pointerState.assertAllowed("key");
   await xdotool(["key", keyName]);
   const focusedAfter = await focusedWindow();
   if (focusedAfter !== windowId) {
@@ -792,6 +1091,7 @@ export async function deliverXvfbTrustedPointer({
   const focusedWindow = async () =>
     parseXdotoolDecimal(await run(["getwindowfocus", "-f"]));
   if ((await focusedWindow()) !== windowId) {
+    pointerState.assertAllowed(action);
     await run(["windowfocus", "--sync", String(windowId)]);
     if ((await focusedWindow()) !== windowId) {
       throw new Error(
@@ -829,6 +1129,7 @@ export async function deliverXvfbTrustedPointer({
   }
   const button = action.split("-")[0];
   if (action.endsWith("-press")) pointerState.beginPress(button);
+  else pointerState.assertAllowed(action);
   // xdotool's --sync can hang when the pointer is already at the target.
   await run(
     action === "move"

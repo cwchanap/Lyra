@@ -1,15 +1,18 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   mkdtempSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
@@ -21,6 +24,7 @@ import {
   runE2eRunner,
 } from "./e2e-runner-lifecycle.mjs";
 import { createSaveE2eAppDataDir } from "./save-e2e-paths.mjs";
+import * as x11 from "./e2e-x11-trusted-input.mjs";
 
 const holders = [];
 
@@ -28,6 +32,34 @@ function holder(prefix = "lyra-e2e-runner-test-") {
   const directory = mkdtempSync(path.join(tmpdir(), prefix));
   holders.push(directory);
   return directory;
+}
+
+function authorityFixture(display = "99") {
+  const field = (value) => {
+    const bytes = Buffer.from(value);
+    const length = Buffer.alloc(2);
+    length.writeUInt16BE(bytes.length);
+    return Buffer.concat([length, bytes]);
+  };
+  return Buffer.concat([
+    Buffer.from([1, 0]),
+    field("host"),
+    field(display),
+    field("MIT-MAGIC-COOKIE-1"),
+    field(Buffer.alloc(16, 1)),
+  ]);
+}
+
+function claimPathFor(xauthority) {
+  const key = createHash("sha256")
+    .update(path.resolve(xauthority))
+    .digest("hex");
+  return path.join(
+    realpathSync(userInfo().homedir),
+    ".cache",
+    "lyra-e2e-x11-claims",
+    `.lyra-e2e-x11-claim-${key}.json`,
+  );
 }
 
 test.afterEach(() => {
@@ -302,6 +334,144 @@ test("runner retry preserves a failed attempt while using fresh roots and output
   for (const root of roots) assert.equal(existsSync(root), false);
 });
 
+test("a claimed display is never retried after a worker failure", async () => {
+  let calls = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["gameplay"],
+    attempts: 2,
+    runDirectory: holder(),
+    supervisor: { cancelledSignal: null },
+    claimDisplay: async () => {},
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["gameplay"],
+    createRoot: createSaveE2eAppDataDir,
+    buildPhasePlan(_suiteIds, directories) {
+      return [
+        { id: "ordinary", root: "gameplay", appDataDir: directories.gameplay },
+      ];
+    },
+    suiteForPhase: () => "gameplay",
+    applyCheckpoint() {},
+    async runPhase() {
+      calls += 1;
+      return { exitCode: 1 };
+    },
+    captureFailureArtifacts() {},
+  });
+  assert.notEqual(runner.exitCode, 0);
+  assert.equal(runner.result.attempts.used, 1);
+  assert.equal(calls, 1);
+});
+
+test("a claimed display can retry a cleaned-up failure before any worker starts", async () => {
+  let allocations = 0;
+  let phaseCalls = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["gameplay"],
+    attempts: 2,
+    runDirectory: holder(),
+    supervisor: { cancelledSignal: null },
+    claimDisplay: async () => {},
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["gameplay"],
+    createRoot() {
+      allocations += 1;
+      if (allocations === 1)
+        throw new Error("temporary root allocation failure");
+      return createSaveE2eAppDataDir();
+    },
+    buildPhasePlan(_suiteIds, directories) {
+      return [
+        { id: "ordinary", root: "gameplay", appDataDir: directories.gameplay },
+      ];
+    },
+    suiteForPhase: () => "gameplay",
+    applyCheckpoint() {},
+    async runPhase() {
+      phaseCalls += 1;
+      return { exitCode: 0 };
+    },
+    captureFailureArtifacts() {},
+  });
+  assert.equal(runner.exitCode, 0);
+  assert.equal(runner.result.attempts.used, 2);
+  assert.equal(allocations, 2);
+  assert.equal(phaseCalls, 1);
+});
+
+test("a claimed display does not retry an uncertain launched or unknown attempt", async () => {
+  for (const mode of ["phase-throws", "unknown-attempt"]) {
+    let calls = 0;
+    const runner = await runE2eRunner({
+      suiteIds: ["gameplay"],
+      attempts: 2,
+      runDirectory: holder(),
+      supervisor: { cancelledSignal: null },
+      claimDisplay: async () => {},
+      runGuard: async () => ({ exitCode: 0 }),
+      rootKeys: ["gameplay"],
+      createRoot: createSaveE2eAppDataDir,
+      buildPhasePlan(_suiteIds, directories) {
+        return [
+          {
+            id: "ordinary",
+            root: "gameplay",
+            appDataDir: directories.gameplay,
+          },
+        ];
+      },
+      suiteForPhase: () => "gameplay",
+      applyCheckpoint() {},
+      async runPhase() {
+        calls += 1;
+        throw new Error("uncertain phase failure");
+      },
+      captureFailureArtifacts() {},
+      ...(mode === "unknown-attempt"
+        ? {
+            async runAttempt() {
+              calls += 1;
+              return 1;
+            },
+          }
+        : {}),
+    });
+    assert.notEqual(runner.exitCode, 0);
+    assert.equal(calls, 1);
+  }
+});
+
+test("a pre-launch failure cannot retry if the ledger is unsafe", async () => {
+  const runDirectory = holder();
+  let allocations = 0;
+  const runner = await runE2eRunner({
+    suiteIds: ["gameplay"],
+    attempts: 2,
+    runDirectory,
+    supervisor: { cancelledSignal: null },
+    claimDisplay: async () => {},
+    runGuard: async () => ({ exitCode: 0 }),
+    rootKeys: ["gameplay"],
+    createRoot() {
+      allocations += 1;
+      writeFileSync(
+        path.join(runDirectory, "x11-pointer-state.json"),
+        JSON.stringify({ status: "possible", button: "click" }),
+      );
+      throw new Error("root allocation failed with unsafe ledger");
+    },
+    buildPhasePlan: () => [{ id: "ordinary", root: "gameplay" }],
+    suiteForPhase: () => "gameplay",
+    applyCheckpoint() {},
+    runPhase: async () => ({ exitCode: 0 }),
+    captureFailureArtifacts() {},
+  });
+  assert.notEqual(runner.exitCode, 0);
+  assert.equal(runner.result.displayPoisoned, true);
+  assert.equal(runner.result.attempts.used, 1);
+  assert.equal(allocations, 1);
+});
+
 test("runner refuses later phases and retries when a pointer press may remain held", async () => {
   const runDirectory = holder();
   const phases = [];
@@ -406,6 +576,131 @@ test("outer runner refuses success or retry when an attempt leaves X11 state uns
   assert.equal(runner.result.displayPoisoned, true);
   assert.equal(attempts, 1);
 });
+
+test(
+  "a second runner cannot reuse the same live Xvfb after a poisoned run",
+  { skip: process.platform !== "linux" },
+  async () => {
+    const identityDirectory = holder("lyra-xvfb-identity-");
+    const xauthority = path.join(identityDirectory, "Xauthority");
+    writeFileSync(xauthority, authorityFixture(), { mode: 0o600 });
+    holders.push(claimPathFor(xauthority));
+    let phaseCalls = 0;
+    const invokeRunner = (poison) =>
+      runE2eRunner({
+        suiteIds: ["gameplay"],
+        attempts: 2,
+        runDirectory: holder(),
+        supervisor: { cancelledSignal: null },
+        claimDisplay: ({ pointerStatePath }) =>
+          x11.claimXvfbDisplay({
+            xauthority,
+            display: ":99",
+            xvfbPid: 25,
+            xvfbRunPid: 20,
+            xvfbStart: "12345",
+            runnerPid: process.pid,
+            pointerStatePath,
+          }),
+        runGuard: async () => ({ exitCode: 0 }),
+        rootKeys: ["gameplay"],
+        createRoot: createSaveE2eAppDataDir,
+        buildPhasePlan(_suiteIds, directories) {
+          return [
+            {
+              id: "ordinary",
+              root: "gameplay",
+              appDataDir: directories.gameplay,
+            },
+          ];
+        },
+        suiteForPhase: () => "gameplay",
+        applyCheckpoint() {},
+        async runPhase(_phase, { pointerStatePath }) {
+          phaseCalls += 1;
+          if (poison) {
+            writeFileSync(
+              pointerStatePath,
+              JSON.stringify({ status: "possible", button: "click" }),
+            );
+          }
+          return { exitCode: 0 };
+        },
+        captureFailureArtifacts() {},
+      });
+    const first = await invokeRunner(true);
+    const second = await invokeRunner(false);
+    assert.notEqual(first.exitCode, 0);
+    assert.equal(first.result.displayPoisoned, true);
+    assert.notEqual(second.exitCode, 0);
+    assert.equal(second.result.attempts.used, 0);
+    assert.equal(phaseCalls, 1);
+  },
+);
+
+test(
+  "independent runner processes cannot reclaim a poisoned display",
+  { skip: process.platform !== "linux" },
+  () => {
+    const authorityDirectory = holder("lyra-xvfb-process-");
+    const freshDirectory = holder("lyra-xvfb-process-fresh-");
+    for (const directory of [authorityDirectory, freshDirectory]) {
+      writeFileSync(path.join(directory, "Xauthority"), authorityFixture(), {
+        mode: 0o600,
+      });
+      holders.push(claimPathFor(path.join(directory, "Xauthority")));
+    }
+    const lifecycleUrl = new URL("./e2e-runner-lifecycle.mjs", import.meta.url)
+      .href;
+    const x11Url = new URL("./e2e-x11-trusted-input.mjs", import.meta.url).href;
+    const script = `
+    import { writeFileSync } from "node:fs";
+    import { runE2eRunner } from ${JSON.stringify(lifecycleUrl)};
+    import { claimXvfbDisplay } from ${JSON.stringify(x11Url)};
+    const result = await runE2eRunner({
+      suiteIds: ["gameplay"], attempts: 2, runDirectory: process.env.TEST_RUN_DIR,
+      supervisor: { cancelledSignal: null }, runGuard: async () => ({ exitCode: 0 }),
+      claimDisplay: ({ pointerStatePath }) => claimXvfbDisplay({
+        xauthority: process.env.TEST_AUTH, display: ":99", xvfbPid: 25,
+        xvfbRunPid: 20, xvfbStart: "12345", runnerPid: process.pid, pointerStatePath,
+      }),
+      rootKeys: [], createRoot() {}, buildPhasePlan: () => [], suiteForPhase() {},
+      applyCheckpoint() {}, runPhase() {}, captureFailureArtifacts() {},
+      async runAttempt({ pointerStatePath }) {
+        if (process.env.TEST_POISON === "1")
+          writeFileSync(pointerStatePath, JSON.stringify({ status: "possible", button: "click" }));
+        return 0;
+      },
+    });
+    console.log(JSON.stringify({ exitCode: result.exitCode, ...result.result }));
+  `;
+    const invoke = (directory, poison) => {
+      const child = spawnSync(
+        process.execPath,
+        ["--input-type=module", "-e", script],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            TEST_AUTH: path.join(directory, "Xauthority"),
+            TEST_RUN_DIR: holder(),
+            TEST_POISON: poison ? "1" : "0",
+          },
+        },
+      );
+      assert.equal(child.status, 0, child.stderr);
+      return JSON.parse(child.stdout.trim());
+    };
+    const first = invoke(authorityDirectory, true);
+    const second = invoke(authorityDirectory, false);
+    const fresh = invoke(freshDirectory, false);
+    assert.equal(first.displayPoisoned, true);
+    assert.notEqual(first.exitCode, 0);
+    assert.notEqual(second.exitCode, 0);
+    assert.equal(second.attempts.used, 0);
+    assert.equal(fresh.exitCode, 0);
+  },
+);
 
 test("runner applies an external mutation before starting its fresh discovery child", async () => {
   const runDirectory = holder();

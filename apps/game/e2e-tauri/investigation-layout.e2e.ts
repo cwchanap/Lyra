@@ -7,12 +7,12 @@ import {
   assertSceneNavPointerEvents,
   assertSceneNavTabProgress,
   assertSceneNavWheelProgress,
-  assertX11DisplaySafe,
   describeX11InputError,
   deliverX11PointerPair,
 } from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   advanceDialogueUntil,
+  assertSafeXvfbDisplay,
   captureMockupViewport,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
@@ -716,22 +716,13 @@ async function expectCrossedToRainBellInvestigation(): Promise<void> {
   expect(await elementExists(anchors.cityMapSelector)).toBe(false);
 }
 
-function assertSafeXvfbDisplay(context: Mocha.Context): void {
-  if (!e2eXvfbTrustedKeysEnabled()) return;
-  assertX11DisplaySafe(xvfbPointerState, () => {
-    const suite = (context.currentTest ?? context.test)?.parent;
-    if (!suite) process.exit(1);
-    suite.bail(true);
-  });
-}
-
 describe("investigation layout surface", () => {
   beforeEach(async function () {
-    assertSafeXvfbDisplay(this);
+    assertSafeXvfbDisplay(this, true);
     await resetE2eStorage();
   });
   afterEach(function () {
-    assertSafeXvfbDisplay(this);
+    assertSafeXvfbDisplay(this, true);
   });
 
   it("collects a placed investigation hotspot through the real player UI", async () => {

@@ -93,6 +93,8 @@ jobs:
         # The existing map proof and newly authorized scene-nav proof only;
         # every event requires private-display, ownership and focus checks.
         # Scene-nav pointer events also require verified target coordinates.
+        # A second attempt is allowed only for a safe, cleaned-up failure
+        # before any WDIO phase starts; a started phase is not retried here.
         if: ${{ always() }}
         env:
           LYRA_E2E_XVFB_TRUSTED_KEYS: "1"

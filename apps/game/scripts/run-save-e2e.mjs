@@ -23,6 +23,11 @@ import {
   createRunId,
   runE2eRunner,
 } from "./e2e-runner-lifecycle.mjs";
+import {
+  claimXvfbDisplay,
+  trustedXvfbKeysOptIn,
+  verifyLivePrivateXvfbSession,
+} from "./e2e-x11-trusted-input.mjs";
 
 let options;
 let suiteIds;
@@ -98,6 +103,19 @@ async function main() {
       attempts: options.attempts,
       runDirectory,
       supervisor,
+      claimDisplay: trustedXvfbKeysOptIn({
+        platform: process.platform,
+        env: process.env,
+      })
+        ? async ({ pointerStatePath }) => {
+            const session = await verifyLivePrivateXvfbSession();
+            claimXvfbDisplay({
+              ...session,
+              pointerStatePath,
+              runnerPid: process.pid,
+            });
+          }
+        : undefined,
       runGuard: () =>
         supervisor.run({
           command: process.execPath,

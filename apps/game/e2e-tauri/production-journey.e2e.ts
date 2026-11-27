@@ -6,6 +6,7 @@ import {
   advanceDialogueUntil,
   assertInspectedImage,
   assertScreenshotRegionPainted,
+  assertSafeXvfbDisplay,
   captureImageFailureDiagnostics,
   clickButton,
   clickSoleMapDestination,
@@ -3265,6 +3266,9 @@ async function runInv3EvidenceAndCaseFileGate(
 }
 
 describe("fresh production journey", () => {
+  afterEach(function () {
+    assertSafeXvfbDisplay(this, true);
+  });
   // WDIO's testFnWrapper snapshots each runnable's _timeout before the test
   // body runs (see wdio.conf.ts), so an in-body this.timeout() can never
   // raise the armed cap — a bigger budget must be declared at registration

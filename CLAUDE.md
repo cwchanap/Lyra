@@ -184,9 +184,17 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   Unproven delivery is inconclusive; input is never sent to a shared or
   unverified display. A press is tracked before its command is sent; cleanup
   releases use the full verifier. If a release cannot be verified, or press
-  delivery remains ambiguous, the run fails and neither later tests nor
-  retries may use that display. These checks cannot eliminate races between
-  probes.
+  delivery remains ambiguous, or a test times out, the run fails and neither
+  later tests nor retries may use that display. Each verified Xvfb instance
+  is claimed by exactly one opted-in runner, even after a successful run;
+  start a fresh `xvfb-run` with a fresh authority pathname for another
+  invocation. Claims persist in the OS account's
+  `~/.cache/lyra-e2e-x11-claims/` even if an Xauthority directory is removed;
+  that directory and its parents must be securely owned and not writable by
+  other users. With `--attempts 2`, an opted-in run retries only a safe,
+  cleaned-up failure before any WDIO phase starts; once a phase starts,
+  failures are not retried on that display.
+  These checks cannot eliminate races between probes.
   The manual `E2E Full` workflow sets this opt-in separately on its
   gameplay and production-journey steps; the other suites and desktops never
   send this trusted input. Without the opt-in the map keyboard case is

@@ -497,6 +497,7 @@ export async function runE2eRunner({
   runDirectory,
   supervisor,
   runGuard,
+  claimDisplay,
   rootKeys,
   createRoot,
   buildPhasePlan,
@@ -526,6 +527,14 @@ export async function runE2eRunner({
   try {
     const pointerState = createX11PointerState(pointerStatePath);
     pointerState.initialize();
+    if (claimDisplay) {
+      try {
+        await claimDisplay({ pointerStatePath });
+      } catch (error) {
+        result.displayPoisoned = true;
+        throw error;
+      }
+    }
     const guard = await runGuard();
     if (guard.exitCode !== 0) {
       result.phase = "binary-guard";
@@ -539,6 +548,7 @@ export async function runE2eRunner({
           exitCode = 1;
           break;
         }
+        let phaseStarted = false;
         exitCode = await runAttempt({
           attempt,
           runDirectory,
@@ -553,7 +563,10 @@ export async function runE2eRunner({
           suiteForPhase,
           applyCheckpoint,
           createOutputDirectory,
-          runPhase,
+          runPhase: (...args) => {
+            phaseStarted = true;
+            return runPhase(...args);
+          },
           captureFailureArtifacts,
           writeResult,
           now,
@@ -567,6 +580,9 @@ export async function runE2eRunner({
         if (
           exitCode === 0 ||
           result.displayPoisoned ||
+          (claimDisplay &&
+            exitCode !== 0 &&
+            (phaseStarted || runAttempt !== runE2eAttempt)) ||
           lastCleanup?.state === "failed" ||
           supervisor.cancelledSignal
         )

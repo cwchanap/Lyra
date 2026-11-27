@@ -1,9 +1,7 @@
 import {
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
-  readlinkSync,
   realpathSync,
   statSync,
   writeFileSync,
@@ -23,9 +21,9 @@ import {
 } from "../scripts/e2e-trusted-keys.mjs";
 import {
   X11_TRUSTED_KEY_NAMES,
-  assertTrustedXvfbKeysAllowed,
-  assertX11AuthenticationEnforced,
+  assertX11DisplaySafe,
   assertX11WindowOwnership,
+  assertXvfbDisplayClaim,
   createX11PointerState,
   deliverXvfbTrustedKey,
   deliverXvfbTrustedPointer,
@@ -33,7 +31,7 @@ import {
   parseXdotoolDecimal,
   selectUniqueX11WindowId,
   trustedXvfbKeysOptIn,
-  verifyPrivateXvfbAncestry,
+  verifyLivePrivateXvfbSession,
 } from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   anchors,
@@ -222,29 +220,6 @@ export function xvfbPointerState() {
   return createX11PointerState(process.env.LYRA_E2E_X11_POINTER_STATE);
 }
 
-type LinuxProcEntry = {
-  pid: number;
-  ppid: number;
-  comm: string;
-  argv: string[];
-  exe: string | null;
-};
-
-/** fs.stat + content evidence for the run-private authority file,
- * evaluated by assertSecureAuthorityFile/assertUsableAuthorityCookies in
- * e2e-x11-trusted-input.mjs. `content` holds the Xauthority bytes — the
- * verifier never logs cookie data. */
-type X11AuthorityFileEvidence = {
-  isFile: boolean;
-  mode: number;
-  uid: number;
-  dirIsDirectory: boolean;
-  dirMode: number;
-  dirUid: number;
-  euid: number;
-  content: Uint8Array;
-};
-
 /**
  * True only when this run explicitly opted into the scoped XTEST path via
  * `LYRA_E2E_XVFB_TRUSTED_KEYS=1` on Linux. Callers must still send through
@@ -255,96 +230,28 @@ export function e2eXvfbTrustedKeysEnabled(): boolean {
   return trustedXvfbKeysOptIn({ platform: process.platform, env: process.env });
 }
 
-/** Bounded, shell-free external probe used for every xdotool/xprop/
- * xdpyinfo call; `env` lets the auth probes pin XAUTHORITY per attempt. */
-async function execBounded(
-  file: string,
-  args: string[],
-  options: { env?: NodeJS.ProcessEnv } = {},
-): Promise<string> {
+export function assertSafeXvfbDisplay(
+  context: Mocha.Context,
+  abortActive = false,
+): void {
+  if (!e2eXvfbTrustedKeysEnabled()) return;
+  assertX11DisplaySafe(
+    xvfbPointerState,
+    () => {
+      const suite = (context.currentTest ?? context.test)?.parent;
+      if (!suite) process.exit(1);
+      suite.bail(true);
+    },
+    { abortActive },
+  );
+}
+
+/** Bounded, shell-free external probe for window and pointer checks. */
+async function execBounded(file: string, args: string[]): Promise<string> {
   const { stdout } = await promisify(execFile)(file, args, {
     timeout: X11_EXTERNAL_COMMAND_TIMEOUT_MS,
-    env: options.env ?? process.env,
   });
   return stdout;
-}
-
-/**
- * The live Linux process table from /proc: pid/ppid from stat (parsed after
- * the final ')' so a comm containing parentheses cannot shift the fields),
- * argv from its NUL-separated file, and the kernel-resolved
- * executable target of /proc/<pid>/exe — the robust executable identity
- * `ps comm` cannot provide on Linux. Processes that exit mid-scan or deny
- * a read contribute only the fields that could be proven.
- */
-function linuxProcessTable(): LinuxProcEntry[] {
-  const entries: LinuxProcEntry[] = [];
-  for (const name of readdirSync("/proc")) {
-    if (!/^\d+$/.test(name)) continue;
-    try {
-      const stat = readFileSync(`/proc/${name}/stat`, "utf8");
-      const closeParen = stat.lastIndexOf(")");
-      if (closeParen === -1) continue;
-      const fields = stat
-        .slice(closeParen + 1)
-        .trim()
-        .split(/\s+/);
-      const ppid = Number(fields[1]);
-      if (!Number.isInteger(ppid)) continue;
-      const comm = readFileSync(`/proc/${name}/comm`, "utf8").trim();
-      const argv = readFileSync(`/proc/${name}/cmdline`, "utf8")
-        .split("\0")
-        .filter((part) => part.length > 0);
-      let exe: string | null = null;
-      try {
-        // A " (deleted)" suffix is kept verbatim: a binary replaced since
-        // launch can never equal the configured e2e path, so the entry
-        // fails the exact-path check instead of matching a stale process.
-        exe = readlinkSync(`/proc/${name}/exe`);
-      } catch {
-        // Unreadable or exited — a null exe can never equal the configured
-        // e2e binary path, so the entry fails closed on its own.
-      }
-      entries.push({ pid: Number(name), ppid, comm, argv, exe });
-    } catch {
-      // Process exited between readdir and the reads; skip it.
-    }
-  }
-  return entries;
-}
-
-/**
- * fs.stat + content evidence for the run-private authority file xvfb-run
- * created for this display: a regular file owned by this user with no
- * group/other access, inside an equally private directory, whose bytes
- * parse to usable Xau cookie records — an Xauthority another principal
- * could read or replace, or one loading zero records, leaves the
- * "private" display forgeable or unenforced. An unreadable path is itself
- * unprovable privacy: throw, never guess. The bytes are evidence only —
- * cookie contents are never logged.
- */
-function readAuthorityFileEvidence(
-  xauthority: string,
-): X11AuthorityFileEvidence {
-  try {
-    const fileStat = statSync(xauthority);
-    const dirStat = statSync(path.dirname(xauthority));
-    return {
-      isFile: fileStat.isFile(),
-      mode: fileStat.mode & 0o777,
-      uid: fileStat.uid,
-      dirIsDirectory: dirStat.isDirectory(),
-      dirMode: dirStat.mode & 0o777,
-      dirUid: dirStat.uid,
-      euid: process.geteuid?.() ?? -1,
-      content: readFileSync(xauthority),
-    };
-  } catch (error) {
-    throw new Error(
-      `cannot inspect run-private XAUTHORITY ${xauthority} — display privacy cannot be proven; refusing XTEST keys`,
-      { cause: error },
-    );
-  }
 }
 
 /**
@@ -358,34 +265,12 @@ async function resolveXvfbTrustedTarget(): Promise<{
   appPid: number;
   windowId: number;
 }> {
-  assertTrustedXvfbKeysAllowed({
-    platform: process.platform,
-    env: process.env,
-  });
-  const processes = linuxProcessTable();
-  const xauthority = process.env.XAUTHORITY;
-  verifyPrivateXvfbAncestry({
-    processes,
+  const session = await verifyLivePrivateXvfbSession();
+  const { processes } = session;
+  assertXvfbDisplayClaim({
+    ...session,
     currentPid: process.pid,
-    display: process.env.DISPLAY,
-    xauthority,
-    authorityFile:
-      typeof xauthority === "string" && xauthority.length > 0
-        ? readAuthorityFileEvidence(xauthority)
-        : undefined,
-  });
-  // The ancestry/-auth/cookie checks above prove the authority SHOULD be
-  // in force; these two bounded xdpyinfo probes prove it IS — the
-  // authorized connection succeeds, then an unauthenticated one is
-  // actively rejected for a connection-level reason (never a timeout or
-  // unrelated failure). An authority file Xorg ignores is not enforcement.
-  await assertX11AuthenticationEnforced({
-    display: process.env.DISPLAY,
-    xauthority,
-    probe: (probeXauthority: string) =>
-      execBounded("xdpyinfo", [], {
-        env: { ...process.env, XAUTHORITY: probeXauthority },
-      }),
+    pointerStatePath: process.env.LYRA_E2E_X11_POINTER_STATE,
   });
   const appPid = selectOwnedE2eAppProcessId({
     entries: processes.flatMap((entry) =>
