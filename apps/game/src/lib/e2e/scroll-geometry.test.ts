@@ -139,6 +139,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     if (!visual || !image) throw new Error("fixture missing nodes");
     registerPin(image);
     setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setRect(image, { left: 60, top: 60, width: 100, height: 80 });
     const src = expectedSrc("/assets/evidence/cctv.png");
     const probe = probeScrollGeometryDom(
       ".acquisition-card .visual",
@@ -148,6 +149,14 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       PIN,
     );
     expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+    // The pinned image's own rect is reported separately: the crop must prove
+    // the image, not the wrapper that happens to contain it.
+    expect(probe?.imageRect).toEqual({
+      left: 60,
+      top: 60,
+      width: 100,
+      height: 80,
+    });
     expect(probe?.imageBinding).toEqual({ status: "bound", src, pin: PIN });
   });
 
@@ -171,6 +180,12 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       PIN,
     );
     expect(probe?.rect).toEqual({ left: 10, top: 20, width: 300, height: 200 });
+    expect(probe?.imageRect).toEqual({
+      left: 10,
+      top: 20,
+      width: 300,
+      height: 200,
+    });
     expect(probe?.imageBinding).toEqual({ status: "bound", src, pin: PIN });
   });
 
@@ -195,6 +210,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/expected.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "detached", pin: PIN });
   });
 
@@ -213,6 +229,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/cctv.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "stale", pin: PIN });
   });
 
@@ -225,6 +242,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/expected.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "missing", pin: PIN });
   });
 
@@ -243,6 +261,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/expected.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "stale", pin: PIN });
   });
 
@@ -261,6 +280,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/expected.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "ambiguous", count: 2 });
   });
 
@@ -279,6 +299,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
       expectedSrc("/assets/evidence/cctv.png"),
       PIN,
     );
+    expect(probe?.imageRect).toBeNull();
     expect(probe?.imageBinding).toEqual({ status: "ambiguous", count: 2 });
   });
 

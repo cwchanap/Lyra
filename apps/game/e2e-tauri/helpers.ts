@@ -2092,16 +2092,20 @@ export async function assertScreenshotRegionPainted(input: {
 }): Promise<ScreenshotRegionPaintResult> {
   // The serialized page script lives in src/lib/e2e/scroll-geometry.ts so
   // the identical function WebDriver serializes is exercised by vitest.
-  const readTarget = () =>
+  const readTarget = (scroll: boolean) =>
     browser.execute(
       probeScrollGeometryDom,
       input.selector,
-      input.scrollIntoView === true,
+      scroll,
       input.imageSelector,
       input.expectedImageSrc,
       input.pin,
     );
-  const requireBoundTarget = (probe: ScrollGeometryProbe) => {
+  const rectKey = (rect: CssRectLike | null): string =>
+    rect === null
+      ? "null"
+      : `${rect.left},${rect.top},${rect.width},${rect.height}`;
+  const requireBoundTarget = (probe: ScrollGeometryProbe): CssRectLike => {
     const binding = probe.imageBinding;
     if (
       binding.status !== "bound" ||
@@ -2114,6 +2118,13 @@ export async function assertScreenshotRegionPainted(input: {
           `binding=${JSON.stringify(binding)})`,
       );
     }
+    if (probe.imageRect === null) {
+      throw new Error(
+        `${input.label}: crop target ${input.selector} has no measurable ` +
+          `pinned image for ${input.expectedImageSrc}`,
+      );
+    }
+    return probe.imageRect;
   };
   const invalidate: (
     reason: string,
@@ -2140,6 +2151,7 @@ export async function assertScreenshotRegionPainted(input: {
             before: {
               rect: before.rect,
               scrollport: before.scrollport,
+              imageRect: before.imageRect,
               imageBinding: before.imageBinding,
             },
             after,
@@ -2156,17 +2168,20 @@ export async function assertScreenshotRegionPainted(input: {
       );
     }
     throw new Error(
-      `${input.label}: screenshot capture invalidated — ${reason} (before=${JSON.stringify({ rect: before.rect, scrollport: before.scrollport, imageBinding: before.imageBinding })}, after=${JSON.stringify(after)})`,
+      `${input.label}: screenshot capture invalidated — ${reason} (before=${JSON.stringify({ rect: before.rect, scrollport: before.scrollport, imageRect: before.imageRect, imageBinding: before.imageBinding })}, after=${JSON.stringify(after)})`,
     );
   };
 
-  let target = await readTarget();
+  // Setup is the ONLY phase allowed to scroll: a post/settle probe that
+  // called scrollIntoView could undo the very scroll change it is meant to
+  // detect (reviewer: offset 100 -> 190 restored to 100 before measuring).
+  let target = await readTarget(input.scrollIntoView === true);
   if (!target) {
     throw new Error(
       `${input.label}: element ${input.selector} is not mounted for the screenshot crop`,
     );
   }
-  requireBoundTarget(target);
+  let targetImageRect = requireBoundTarget(target);
   if (target.rect.width <= 0 || target.rect.height <= 0) {
     throw new Error(
       `${input.label}: ${input.selector} has an empty rect ${JSON.stringify(target.rect)}`,
@@ -2185,16 +2200,20 @@ export async function assertScreenshotRegionPainted(input: {
     let settled = false;
     for (let attempt = 0; attempt < 6 && !settled; attempt += 1) {
       await browser.pause(150);
-      const next = await readTarget();
+      // Measure only — re-scrolling here would hide movement.
+      const next = await readTarget(false);
       if (!next) {
         throw new Error(
           `${input.label}: element ${input.selector} unmounted while scrolling into view`,
         );
       }
-      requireBoundTarget(next);
-      target = next;
+      const nextImageRect = requireBoundTarget(next);
       samples.push({ rect: next.rect, scrollport: next.scrollport });
-      settled = scrollGeometrySettled(samples);
+      settled =
+        scrollGeometrySettled(samples) &&
+        rectKey(targetImageRect) === rectKey(nextImageRect);
+      target = next;
+      targetImageRect = nextImageRect;
     }
     if (!settled) {
       throw new Error(
@@ -2210,14 +2229,23 @@ export async function assertScreenshotRegionPainted(input: {
     width: target.viewport.width,
     height: target.viewport.height,
   };
+  // The crop must prove the PINNED IMAGE, not the wrapper around it: intersect
+  // the image's own rect with the crop target, its scrollport and the
+  // viewport. An image moved completely outside its wrapper yields an empty
+  // intersection and fails here, before any screenshot.
   const visibleCssRect = intersectCssRects(
-    intersectCssRects(target.rect, target.scrollport ?? viewportRect),
+    intersectCssRects(
+      intersectCssRects(target.rect, targetImageRect),
+      target.scrollport ?? viewportRect,
+    ),
     viewportRect,
   );
   if (visibleCssRect.width <= 0 || visibleCssRect.height <= 0) {
     throw new Error(
-      `${input.label}: ${input.selector} has no painted area inside its ` +
-        `scrollport/viewport (rect=${JSON.stringify(target.rect)}, ` +
+      `${input.label}: the inspected image ${input.expectedImageSrc} has no ` +
+        `visible area inside ${input.selector} / its scrollport and viewport ` +
+        `(imageRect=${JSON.stringify(targetImageRect)}, ` +
+        `targetRect=${JSON.stringify(target.rect)}, ` +
         `scrollport=${JSON.stringify(target.scrollport)}, ` +
         `viewport=${JSON.stringify(target.viewport)})`,
     );
@@ -2229,7 +2257,7 @@ export async function assertScreenshotRegionPainted(input: {
   // the capture if the target was replaced, retargeted or moved while it was
   // pending; a change that fully reverts inside the call window is not
   // observable from the page and stays a documented limit.
-  const afterCapture = await readTarget();
+  const afterCapture = await readTarget(false);
   if (!afterCapture) {
     invalidate(
       "the crop target unmounted while the screenshot was pending",
@@ -2246,21 +2274,40 @@ export async function assertScreenshotRegionPainted(input: {
     afterCapture.viewport.width !== target.viewport.width ||
     afterCapture.viewport.height !== target.viewport.height ||
     afterCapture.devicePixelRatio !== target.devicePixelRatio;
+  // A lost binding invalidates on identity alone; only a still-bound probe
+  // has a meaningful image rect to compare.
+  if (bindingChanged) {
+    invalidate(
+      "the crop target is no longer bound to the inspected node",
+      target,
+      {
+        rect: afterCapture.rect,
+        scrollport: afterCapture.scrollport,
+        imageRect: afterCapture.imageRect,
+        viewport: afterCapture.viewport,
+        devicePixelRatio: afterCapture.devicePixelRatio,
+        imageBinding: afterBinding,
+      },
+    );
+  }
+  const afterImageRect = requireBoundTarget(afterCapture);
+  const imageMoved = rectKey(targetImageRect) !== rectKey(afterImageRect);
   if (
-    bindingChanged ||
     viewportChanged ||
+    imageMoved ||
     !scrollGeometryEqual(target, afterCapture)
   ) {
     invalidate(
-      bindingChanged
-        ? "the crop target is no longer bound to the inspected node"
-        : viewportChanged
-          ? "the viewport changed while the screenshot was pending"
+      viewportChanged
+        ? "the viewport changed while the screenshot was pending"
+        : imageMoved
+          ? "the inspected image moved while the screenshot was pending"
           : "the crop geometry changed while the screenshot was pending",
       target,
       {
         rect: afterCapture.rect,
         scrollport: afterCapture.scrollport,
+        imageRect: afterCapture.imageRect,
         viewport: afterCapture.viewport,
         devicePixelRatio: afterCapture.devicePixelRatio,
         imageBinding: afterBinding,
@@ -2290,7 +2337,9 @@ export async function assertScreenshotRegionPainted(input: {
         expectedImageSrc: input.expectedImageSrc,
         pin: input.pin,
         imageBinding: target.imageBinding,
+        imageRect: target.imageRect,
         validatedAfterCapture: afterCapture.imageBinding,
+        validatedImageRectAfterCapture: afterCapture.imageRect,
         cssRect: target.rect,
         scrollportRect: target.scrollport,
         visibleCssRect,
@@ -2307,7 +2356,7 @@ export async function assertScreenshotRegionPainted(input: {
     )}\n`,
   );
   console.log(
-    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} scrollport=${JSON.stringify(target.scrollport)} visible=${JSON.stringify(visibleCssRect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
+    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} imageRect=${JSON.stringify(target.imageRect)} scrollport=${JSON.stringify(target.scrollport)} visible=${JSON.stringify(visibleCssRect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
   );
   expectPaintedRegion(metrics, input.label);
   return {
@@ -2472,16 +2521,23 @@ export async function inspectImageElement(input: {
         if (!image.isConnected) {
           return "image detached from the document during inspection";
         }
-        if (
-          !Array.from(
-            document.querySelectorAll<HTMLImageElement>(sel),
-          ).includes(image)
-        ) {
-          return `image no longer matches selector ${sel} during inspection`;
-        }
         const liveSrc = image.currentSrc || image.src;
         if (liveSrc !== pinnedSrc) {
           return `image source changed during inspection (${liveSrc}), expected ${pinnedSrc}`;
+        }
+        // Re-check uniqueness on every attempt: a duplicate introduced after
+        // selection (e.g. during decode) makes the node unpaintable-as-proof,
+        // and the crop could otherwise only catch it if it persisted.
+        const liveMatches = Array.from(
+          document.querySelectorAll<HTMLImageElement>(sel),
+        ).filter(
+          (candidate) => (candidate.currentSrc || candidate.src) === pinnedSrc,
+        );
+        if (liveMatches.length > 1) {
+          return `image ${sel} now matches ${liveMatches.length} elements with ${pinnedSrc} — refusing to sample an ambiguous source`;
+        }
+        if (!liveMatches.includes(image)) {
+          return `image no longer matches selector ${sel} during inspection`;
         }
         return null;
       };

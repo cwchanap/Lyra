@@ -38,6 +38,10 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
   viewport: { width: number; height: number };
   devicePixelRatio: number;
   imageBinding: ImageBinding;
+  /** The pinned image's own client rect when bound; null otherwise. The
+   * crop must measure this rect, not just the wrapper, or an image moved
+   * outside its wrapper could still "pass" on unrelated wrapper pixels. */
+  imageRect: CssRect | null;
 };
 
 /**
@@ -71,6 +75,7 @@ export function probeScrollGeometryDom(
 
   let element: Element = first;
   let imageBinding: ImageBinding = { status: "unbound" };
+  let boundImage: HTMLImageElement | null = null;
   if (
     typeof imageSelector === "string" &&
     typeof expectedImageSrc === "string" &&
@@ -104,6 +109,7 @@ export function probeScrollGeometryDom(
       // Image-selector crop: measure the pinned node, never a same-selector
       // sibling that happens to come first in the DOM.
       element = pinned;
+      boundImage = pinned;
       imageBinding = { status: "bound", src: expectedImageSrc, pin };
     } else {
       const targetMatches = document.querySelectorAll(selector).length;
@@ -112,6 +118,7 @@ export function probeScrollGeometryDom(
       } else if (!first.contains(pinned)) {
         imageBinding = { status: "outside-target", src: expectedImageSrc };
       } else {
+        boundImage = pinned;
         imageBinding = { status: "bound", src: expectedImageSrc, pin };
       }
     }
@@ -152,6 +159,7 @@ export function probeScrollGeometryDom(
     },
     devicePixelRatio: window.devicePixelRatio,
     imageBinding,
+    imageRect: boundImage === null ? null : rectOf(boundImage),
   };
 }
 

@@ -674,6 +674,25 @@ describe("inspectImageElement source identity and canvas sampling", () => {
     );
   });
 
+  it("rejects a duplicate exact-URL node introduced during decode", async () => {
+    const image = mountCaseFileImage();
+    Object.assign(image, {
+      decode: async () => {
+        appendCaseFileImage();
+      },
+    });
+    stubCanvasSampler(["pattern-bottom"]);
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("now matches 2 elements"),
+    });
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /source canvas sample failed/,
+    );
+  });
+
   it("releases each page-owned pin after the proof and never reuses a token", async () => {
     stubCanvasSampler(["pattern-bottom"]);
     const pinsSeen: string[] = [];
@@ -742,27 +761,90 @@ describe("inspectImageElement source identity and canvas sampling", () => {
  * with the same URL/rect, a duplicated match or a mutation during
  * `saveScreenshot` invalidates the capture and can never produce a receipt.
  */
+/**
+ * The compositor crop must measure the exact DOM node the source proof
+ * inspected. Two independent classes of bypass are covered here:
+ *  - identity: a same-URL replacement, duplicated match or stale pin can never
+ *    bind (canned probe responses);
+ *  - geometry: the pinned image's own rect — not just the wrapper — has to be
+ *    visible and stable across the capture, and the geometry probe must not
+ *    scroll except during setup (real `probeScrollGeometryDom` callback).
+ * A mutation during `saveScreenshot` invalidates the capture and can never
+ * produce a receipt.
+ */
 describe("assertScreenshotRegionPainted crop identity and capture validity", () => {
   const EXPECTED_SRC = `http://localhost:1420/assets/evidence/timecard_record.png`;
   const PIN = "pin-crop-test";
   const RECT = { left: 100, top: 100, width: 200, height: 150 };
   const MOVED = { left: 120, top: 100, width: 200, height: 150 };
+  const VIEWPORT = { width: 800, height: 600 };
+
+  type CropRect = {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
 
   type Probe = {
-    rect: { left: number; top: number; width: number; height: number };
-    scrollport: null;
+    rect: CropRect;
+    scrollport: CropRect | null;
     viewport: { width: number; height: number };
     devicePixelRatio: number;
     imageBinding: Record<string, unknown>;
+    imageRect: CropRect | null;
   };
+
+  // jsdom has no layout: feed rects through the prototype (same approach as
+  // focus-probe/scroll-geometry tests) so the REAL geometry callback can be
+  // driven end to end. Defaults to a zero rect, matching jsdom.
+  const CROP_RECTS = new Map<Element, CropRect>();
+  const scrollCalls: Element[] = [];
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    const rect = CROP_RECTS.get(this) ?? {
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+    };
+    return {
+      ...rect,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => rect,
+    } as DOMRect;
+  };
+  Element.prototype.scrollIntoView = function (this: Element) {
+    scrollCalls.push(this);
+  };
+
+  function setCropRect(element: Element, rect: CropRect): void {
+    CROP_RECTS.set(element, { ...rect });
+  }
+  function shiftCropRects(dy: number, keep: readonly Element[] = []): void {
+    for (const [element, rect] of CROP_RECTS.entries()) {
+      if (keep.includes(element)) continue;
+      CROP_RECTS.set(element, { ...rect, top: rect.top + dy });
+    }
+  }
+
+  function registerCropPin(node: Element, pin = PIN): void {
+    const pageGlobal = globalThis as typeof globalThis & {
+      __lyraImageEvidencePins?: Record<string, Element | undefined>;
+    };
+    (pageGlobal.__lyraImageEvidencePins ??= {})[pin] = node;
+  }
 
   const boundProbe = (
     rect = RECT,
     overrides: Record<string, unknown> = {},
+    imageRect: CropRect | null = rect,
   ): Probe => ({
     rect,
     scrollport: null,
-    viewport: { width: 800, height: 600 },
+    viewport: VIEWPORT,
     devicePixelRatio: 1,
     imageBinding: {
       status: "bound",
@@ -770,6 +852,7 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
       pin: PIN,
       ...overrides,
     },
+    imageRect,
   });
 
   let cropDir: string;
@@ -784,6 +867,18 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
     vi.stubGlobal("browser", {
       execute: async () =>
         probes[Math.min(index++, probes.length - 1)] ?? probes[0],
+      pause: async () => {},
+      saveScreenshot,
+    });
+    return saveScreenshot;
+  }
+
+  /** Runs the REAL serialized geometry callback (as WebDriver does). */
+  function stubRealProbe(save?: () => Promise<void>): ReturnType<typeof vi.fn> {
+    const saveScreenshot = vi.fn(save ?? (async () => {}));
+    vi.stubGlobal("browser", {
+      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+        Promise.resolve(fn(...args)),
       pause: async () => {},
       saveScreenshot,
     });
@@ -843,13 +938,36 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
   });
 
   beforeEach(() => {
+    // The real geometry callback reads the jsdom viewport: pin it to the
+    // 800x600 window the crop proof is specified against.
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: VIEWPORT.width,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: VIEWPORT.height,
+    });
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 1,
+    });
     cropDir = mkdtempSync(path.join(tmpdir(), "hpa852-crop-"));
     screenshotPath = path.join(cropDir, "case-file-timecard_record.png");
+    CROP_RECTS.clear();
+    document.body.innerHTML = "";
+    scrollCalls.length = 0;
+    delete (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    document.body.innerHTML = "";
     rmSync(cropDir, { recursive: true, force: true });
   });
 
@@ -858,6 +976,7 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
       {
         ...boundProbe(),
         imageBinding: { status: "outside-target", src: EXPECTED_SRC },
+        imageRect: null,
       },
     ]);
 
@@ -895,7 +1014,11 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
     const saveScreenshot = stubProbeSequence(
       [
         boundProbe(),
-        { ...boundProbe(), imageBinding: { status: "detached", pin: PIN } },
+        {
+          ...boundProbe(),
+          imageBinding: { status: "detached", pin: PIN },
+          imageRect: null,
+        },
       ],
       async () => writeFileSync(screenshotPath, "capture-bytes"),
     );
@@ -915,7 +1038,7 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
   });
 
   it("invalidates the capture when the geometry moves while the screenshot is pending", async () => {
-    stubProbeSequence([boundProbe(), boundProbe(MOVED)], async () =>
+    stubProbeSequence([boundProbe(), boundProbe(MOVED, {}, RECT)], async () =>
       writeFileSync(screenshotPath, "capture-bytes"),
     );
 
@@ -932,7 +1055,7 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
     expect(invalidation.after.rect).toEqual(MOVED);
   });
 
-  it("accepts a capture that stays bound to the same node and geometry", async () => {
+  it("accepts a capture that stays bound to the same node, image and geometry", async () => {
     stubProbeSequence([boundProbe(), boundProbe()], async () =>
       writeFileSync(screenshotPath, paintedPng(800, 600)),
     );
@@ -950,9 +1073,11 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
       readFileSync(screenshotPath.replace(/\.png$/, ".json"), "utf8"),
     ) as {
       pin: string;
+      imageRect: CropRect;
       validatedAfterCapture: { status: string; pin: string };
     };
     expect(written.pin).toBe(PIN);
+    expect(written.imageRect).toEqual(RECT);
     expect(written.validatedAfterCapture).toMatchObject({
       status: "bound",
       pin: PIN,
@@ -962,11 +1087,189 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
     ).toThrow();
   });
 
+  it("crops the pinned image's own visible rect, not the wrapper, with the real callback", async () => {
+    // Acquisition popup shape: wrapper .visual is larger than the image.
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () =>
+      writeFileSync(screenshotPath, paintedPng(800, 600)),
+    );
+
+    const result = await helpers.assertScreenshotRegionPainted({
+      selector: ".acquisition-card .visual",
+      imageSelector: "img.evidence-image",
+      expectedImageSrc: EXPECTED_SRC,
+      pin: PIN,
+      label: "acquisition popup",
+      screenshotPath,
+    });
+
+    expect(result.region).toEqual({ x: 60, y: 60, width: 100, height: 80 });
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("rejects a pinned image that sits entirely outside the crop wrapper", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 100, height: 100 });
+    setCropRect(image, { left: 400, top: 400, width: 50, height: 50 });
+    registerCropPin(image);
+    const saveScreenshot = stubRealProbe();
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        selector: ".acquisition-card .visual",
+        imageSelector: "img.evidence-image",
+        expectedImageSrc: EXPECTED_SRC,
+        pin: PIN,
+        label: "acquisition popup",
+        screenshotPath,
+      }),
+    ).rejects.toThrow(/no visible area/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("scrolls only during setup — a scroll change during the capture is invalidated (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="game-menu-extra"><img class="case-file-record-image" src="${EXPECTED_SRC}"></div>
+    `;
+    const scroller = document.querySelector(".game-menu-extra");
+    const image = document.querySelector("img.case-file-record-image");
+    if (!scroller || !image) throw new Error("fixture missing nodes");
+    (scroller as HTMLElement).style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { value: 387 });
+    setCropRect(scroller, { left: 49, top: 164, width: 702, height: 387 });
+    setCropRect(image, { left: 49, top: 375, width: 512, height: 512 });
+    registerCropPin(image);
+    // Setup scroll centers the image; a scroll during the capture moves the
+    // content back (simulating the reviewer's 100 -> 190 offset change).
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrollCalls.push(this);
+      // The scrollport is fixed in the viewport; only the content moves.
+      shiftCropRects(-90, [scroller]);
+    };
+    const saveScreenshot = stubRealProbe(async () => {
+      shiftCropRects(180, [scroller]);
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        ...cropInput(),
+        scrollIntoView: true,
+      }),
+    ).rejects.toThrow(/invalidated/);
+    expect(saveScreenshot).toHaveBeenCalledTimes(1);
+    // Setup scrolled once; settle and post-capture reads never scroll.
+    expect(scrollCalls).toHaveLength(1);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { invalidated: boolean; before: { rect: CropRect } };
+    expect(invalidation.invalidated).toBe(true);
+    expect(invalidation.before.rect.top).toBe(285);
+  });
+
+  it("invalidates when the pinned image moves inside the wrapper during the capture (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () => {
+      setCropRect(image, { left: 120, top: 60, width: 100, height: 80 });
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        selector: ".acquisition-card .visual",
+        imageSelector: "img.evidence-image",
+        expectedImageSrc: EXPECTED_SRC,
+        pin: PIN,
+        label: "acquisition popup",
+        screenshotPath,
+      }),
+    ).rejects.toThrow(/inspected image moved/);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { before: { imageRect: CropRect }; after: { imageRect: CropRect } };
+    expect(invalidation.before.imageRect.left).toBe(60);
+    expect(invalidation.after.imageRect.left).toBe(120);
+  });
+
+  it("proves a valid scrolled Case File capture with the real callback", async () => {
+    document.body.innerHTML = `
+      <div class="game-menu-extra"><img class="case-file-record-image" src="${EXPECTED_SRC}"></div>
+    `;
+    const scroller = document.querySelector(".game-menu-extra");
+    const image = document.querySelector("img.case-file-record-image");
+    if (!scroller || !image) throw new Error("fixture missing nodes");
+    (scroller as HTMLElement).style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { value: 387 });
+    setCropRect(scroller, { left: 49, top: 164, width: 702, height: 387 });
+    setCropRect(image, { left: 49, top: 375, width: 512, height: 512 });
+    registerCropPin(image);
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrollCalls.push(this);
+      // Setup scroll only; the scrollport stays fixed. Centers the image so
+      // the scrollport clips its top and bottom, as in the packaged run.
+      shiftCropRects(-300, [scroller]);
+    };
+    stubRealProbe(async () =>
+      writeFileSync(screenshotPath, paintedPng(800, 600)),
+    );
+
+    const result = await helpers.assertScreenshotRegionPainted({
+      ...cropInput(),
+      scrollIntoView: true,
+      insetCssPx: 0,
+    });
+
+    // After the single setup scroll the image sits at top 75; the crop is
+    // image ∩ scrollport ∩ viewport (the scrollport clips top and bottom).
+    expect(scrollCalls).toHaveLength(1);
+    expect(result.region).toEqual({ x: 49, y: 164, width: 512, height: 387 });
+    expect(result.metrics.distinctBuckets).toBeGreaterThanOrEqual(4);
+  });
+
   it("never produces a receipt when the crop capture is invalidated", async () => {
     stubProbeSequence(
       [
         boundProbe(),
-        { ...boundProbe(), imageBinding: { status: "detached", pin: PIN } },
+        {
+          ...boundProbe(),
+          imageBinding: { status: "detached", pin: PIN },
+          imageRect: null,
+        },
       ],
       async () => writeFileSync(screenshotPath, "capture-bytes"),
     );
@@ -986,6 +1289,45 @@ describe("assertScreenshotRegionPainted crop identity and capture validity", () 
         captureFailure: async () => {},
       }),
     ).rejects.toThrow(/invalidated/);
+    expect(onReceipt).not.toHaveBeenCalled();
+  });
+
+  it("never produces a receipt when the inspected image moves during the capture (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () => {
+      setCropRect(image, { left: 120, top: 60, width: 100, height: 80 });
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+    const onReceipt = vi.fn();
+
+    await expect(
+      runImageEvidenceProof({
+        inspect: async () => ({ pin: PIN, sourceUrl: EXPECTED_SRC }),
+        assert: () => {},
+        provePainted: async (inspection) => {
+          await helpers.assertScreenshotRegionPainted({
+            selector: ".acquisition-card .visual",
+            imageSelector: "img.evidence-image",
+            expectedImageSrc: EXPECTED_SRC,
+            pin: inspection.pin,
+            label: "acquisition popup",
+            screenshotPath,
+          });
+        },
+        onReceipt,
+        captureFailure: async () => {},
+      }),
+    ).rejects.toThrow(/inspected image moved/);
     expect(onReceipt).not.toHaveBeenCalled();
   });
 });
