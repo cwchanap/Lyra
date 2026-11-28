@@ -50,7 +50,9 @@ jobs:
             libgtk-3-dev \
             xvfb \
             xdotool \
-            x11-utils
+            x11-utils \
+            python3 \
+            libx11-6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -72,31 +74,42 @@ jobs:
       - name: Build the packaged E2E binary
         run: node apps/game/scripts/build-e2e.mjs
 
-      - name: Resolve non-journey suites from registry
-        id: non_journey_suites
+      - name: Resolve unopted suites from registry
+        id: unopted_suites
         run: |
           node --input-type=module -e '
             import { appendFileSync } from "node:fs";
-            import { e2eNonJourneySuiteFlags } from "./apps/game/scripts/e2e-suite-registry.mjs";
-            appendFileSync(process.env.GITHUB_OUTPUT, `flags=${e2eNonJourneySuiteFlags()}\n`);
+            import { e2eUnoptedSuiteFlags } from "./apps/game/scripts/e2e-suite-registry.mjs";
+            appendFileSync(process.env.GITHUB_OUTPUT, `flags=${e2eUnoptedSuiteFlags()}\n`);
           '
 
-      - name: Run packaged E2E suites (production-journey excluded)
-        # Derived from apps/game/scripts/e2e-suite-registry.mjs — every id
-        # except production-journey, which runs once below.
+      - name: Run packaged E2E suites without trusted keys
+        # Derived from the registry; gameplay and production-journey run below.
         run: >-
           xvfb-run -a node apps/game/scripts/run-save-e2e.mjs
-          ${{ steps.non_journey_suites.outputs.flags }} --attempts 2
+          ${{ steps.unopted_suites.outputs.flags }} --attempts 2
+
+      - name: Run gameplay with verified scoped input
+        # The map, scene-nav, and seven allowlisted investigation targets only;
+        # every event requires private-display, ownership and focus checks.
+        # Pointer events also require verified target coordinates.
+        # A second attempt is allowed only for a safe, cleaned-up failure
+        # before any WDIO phase starts; a started phase is not retried here.
+        if: ${{ always() }}
+        env:
+          LYRA_E2E_XVFB_TRUSTED_KEYS: "1"
+        run: >-
+          xvfb-run -a node apps/game/scripts/run-save-e2e.mjs
+          --suite gameplay --attempts 2
 
       - name: Run the production journey once
         # always(): an earlier suite's Red must not skip the journey — its
-        # evidence uploads independently. Opt ONLY this step's private
+        # evidence uploads independently. Opt this step's private
         # xvfb-run display into the scoped XTEST trusted-keys path (HPA-831
         # production-journey focus segment): xdotool/xprop/xdpyinfo prove
         # display privacy, exact process and window ownership before every
-        # key and fail closed on any uncertainty. The smoke job and every
-        # other suite keep the default synthetic WebDriver keys — no
-        # OS-global input without an explicit opt-in.
+        # key and fail closed on any uncertainty. The smoke job and unopted
+        # suites never send OS-global input.
         if: ${{ always() }}
         env:
           LYRA_E2E_XVFB_TRUSTED_KEYS: "1"

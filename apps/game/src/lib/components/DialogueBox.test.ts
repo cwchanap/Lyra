@@ -82,6 +82,7 @@ function renderDialogueBox(
     } | null;
     interrogationStageActive?: boolean;
     textRevealDurationMs?: number;
+    backdropHeight?: number;
   },
 ) {
   const onAdvance = vi.fn();
@@ -95,6 +96,7 @@ function renderDialogueBox(
     crossExam: overrides?.crossExam ?? null,
     interrogationStageActive: overrides?.interrogationStageActive,
     textRevealDurationMs: overrides?.textRevealDurationMs ?? 0,
+    backdropHeight: overrides?.backdropHeight,
   });
   return { onAdvance, ...result };
 }
@@ -363,10 +365,39 @@ describe("DialogueBox", () => {
       expect(image).toHaveAttribute("data-layer", "behind-dialogue");
       expect(image).toHaveClass("right");
       expect(image.style.getPropertyValue("--portrait-height")).toBe(
-        "min(1536px, 80vh)",
+        "min(1536px, 80vh, max(0px, calc(100vh - var(--top-chrome-height))))",
       );
     },
   );
+
+  it("updates the portrait clearance when the measured backdrop changes", async () => {
+    const { container, rerender } = renderDialogueBox(
+      {
+        kind: "line",
+        speaker: "測試",
+        text: "檢查站位。",
+        portrait: {
+          characterId: "katase",
+          expression: "standard",
+          assetId: "portrait.katase.standard",
+        },
+      },
+      { backdropHeight: 53 },
+    );
+    const image = await waitFor(() => {
+      const portrait = container.querySelector("img.portrait");
+      expect(portrait).toBeTruthy();
+      return portrait as HTMLImageElement;
+    });
+    const shell = image.closest<HTMLElement>(".portrait-shell")!;
+    expect(shell.style.getPropertyValue("--top-chrome-height")).toBe(
+      "calc(var(--shell-header-height, 0px) + 53px)",
+    );
+    await rerender({ backdropHeight: 87 });
+    expect(shell.style.getPropertyValue("--top-chrome-height")).toBe(
+      "calc(var(--shell-header-height, 0px) + 87px)",
+    );
+  });
 
   it("keeps side portraits inside the viewport instead of translating them offscreen", () => {
     renderDialogueBox({
@@ -413,7 +444,7 @@ describe("DialogueBox", () => {
     expect(image).toHaveAttribute("data-layer", "behind-dialogue");
     expect(image).toHaveClass("left");
     expect(image.style.getPropertyValue("--portrait-height")).toBe(
-      "min(1536px, 80vh)",
+      "min(1536px, 80vh, max(0px, calc(100vh - var(--top-chrome-height))))",
     );
   });
 
@@ -466,6 +497,52 @@ describe("DialogueBox", () => {
         "/assets/portraits/hayasaka_akane/concerned.png",
       );
     });
+  });
+
+  it("updates clearance for both outgoing and incoming portrait layers", async () => {
+    const line = {
+      kind: "line" as const,
+      speaker: "早坂茜",
+      text: "第一句。",
+      portrait: {
+        characterId: "hayasaka_akane",
+        expression: "standard",
+        assetId: "portrait.hayasaka_akane.standard",
+      },
+    };
+    const { container, rerender } = renderDialogueBox(line, {
+      backdropHeight: 53,
+    });
+    await waitFor(() =>
+      expect(container.querySelector("img.portrait")).toBeTruthy(),
+    );
+    await rerender({
+      current: {
+        ...line,
+        portrait: {
+          ...line.portrait,
+          expression: "concerned",
+          assetId: "portrait.hayasaka_akane.concerned",
+        },
+      },
+      backdropHeight: 53,
+    });
+    await waitFor(() =>
+      expect(container.querySelectorAll("img.portrait")).toHaveLength(2),
+    );
+    await rerender({ backdropHeight: 87 });
+    const shell = container.querySelector<HTMLElement>(".portrait-shell")!;
+    expect(shell.style.getPropertyValue("--top-chrome-height")).toBe(
+      "calc(var(--shell-header-height, 0px) + 87px)",
+    );
+    for (const image of shell.querySelectorAll<HTMLImageElement>(
+      "img.portrait",
+    )) {
+      expect(image.style.getPropertyValue("--top-chrome-height")).toBe("");
+      expect(image.style.getPropertyValue("--portrait-height")).toContain(
+        "var(--top-chrome-height)",
+      );
+    }
   });
 
   it("fades out the portrait when a line transitions to a portraitless action", async () => {

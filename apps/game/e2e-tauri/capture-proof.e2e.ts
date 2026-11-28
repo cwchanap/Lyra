@@ -9,6 +9,7 @@ import {
   dismissAllPendingAcquisitions,
   drainCurrentDialogue,
   elementExists,
+  ensureMinimumWindowViewport,
   getPackagedGameState,
   jumpToProductionScene,
   resetCaptureProofStorage,
@@ -57,6 +58,11 @@ type CaptureWrapperStatus = {
   embeddedFontCssBytes: number;
   embeddedFontChunkCount: number;
   embeddedZhHantCodePointCount: number;
+  crossfadeEvidence: {
+    ticket: string;
+    portraits: Array<{ winner: string; leaving: string[] }>;
+    sha256: string;
+  } | null;
 };
 
 type FreshNativeAutosave = {
@@ -65,6 +71,7 @@ type FreshNativeAutosave = {
   savedAt: string;
   thumbnailType: "available" | "unavailable";
   modifiedAtMs: number | null;
+  sidecarSha256: string | null;
 };
 
 function autosaveSaveIds(): string[] {
@@ -83,6 +90,7 @@ function newestNativeAutosave(): FreshNativeAutosave | null {
     savedAt: envelope.savedAt,
     thumbnailType: envelope.thumbnail.type,
     modifiedAtMs: slot.modifiedAtMs,
+    sidecarSha256: slot.sidecarSha256,
   };
 }
 
@@ -132,6 +140,10 @@ async function captureWrapperStatus(): Promise<CaptureWrapperStatus> {
       embeddedZhHantCodePointCount: Number(
         element?.getAttribute("data-capture-proof-font-zh-hant-code-points") ??
           "0",
+      ),
+      crossfadeEvidence: JSON.parse(
+        element?.getAttribute("data-capture-proof-crossfade-evidence") ||
+          "null",
       ),
     };
   }, anchors.captureProof.probe);
@@ -732,6 +744,58 @@ async function exportProofThumbnailArtifact(): Promise<string> {
   return artifact;
 }
 
+async function recordPortraitGeometry(name: string): Promise<void> {
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() =>
+        Array.from(
+          document.querySelectorAll<HTMLImageElement>("img.portrait"),
+        ).some((image) => image.complete && image.naturalWidth > 0),
+      ),
+    { timeout: 30000, timeoutMsg: `${name}: portrait did not load` },
+  );
+  const geometry = await browser.execute(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector<HTMLElement>(selector);
+      if (!element) return null;
+      const box = element.getBoundingClientRect();
+      return {
+        x: box.x,
+        y: box.y,
+        width: box.width,
+        height: box.height,
+        bottom: box.bottom,
+        right: box.right,
+        text: element.textContent?.trim() ?? "",
+      };
+    };
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      header: rect(".shell > header"),
+      backdrop: rect(".backdrop"),
+      stamp: rect(".stamp"),
+      portrait: rect("img.portrait.visible"),
+      portraitFrame: rect(".interrogation-subject-art"),
+      toolbar: rect(".interrogation-menu-toolbar"),
+      leftStack: rect(".stage-left-stack"),
+      dialogue: rect(".wrapper .box"),
+      questions: rect(".interrogation[data-interrogation-question-record]"),
+    };
+  });
+  await browser.saveScreenshot(path.join(output, `${name}.png`));
+  writeFileSync(
+    path.join(output, `${name}.json`),
+    JSON.stringify(geometry, null, 2),
+  );
+  if (name === "ordinary-dialogue-800x600") {
+    if (!geometry.stamp || !geometry.portrait) {
+      throw new Error("ordinary portrait or stamp is missing");
+    }
+    expect(geometry.portrait.y).toBeGreaterThanOrEqual(geometry.stamp.bottom);
+  }
+}
+
 describe("packaged gameplay thumbnail proof", () => {
   it("captures the real gameplay root and keeps failure injection one-shot", async () => {
     let rootAspect: number | null = null;
@@ -741,6 +805,7 @@ describe("packaged gameplay thumbnail proof", () => {
       captureAfterSwap: CaptureWrapperStatus;
     }> = [];
     const crossfadeFailures: number[] = [];
+    let proofSaveId = "";
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       if (attempt > 1) {
         await waitForPersistenceIdle();
@@ -761,6 +826,8 @@ describe("packaged gameplay thumbnail proof", () => {
         },
       );
       await waitForDialogueText(anchors.captureProof.preSwapDialogue);
+      await ensureMinimumWindowViewport();
+      await recordPortraitGeometry("ordinary-dialogue-800x600");
 
       const attemptRootAspect = await browser.execute((selector: string) => {
         const root = document.querySelector(selector);
@@ -773,64 +840,15 @@ describe("packaged gameplay thumbnail proof", () => {
       const captureBeforeSwap = await captureWrapperStatus();
       const autosaveIdsBeforeSwap = autosaveSaveIds();
       await advanceCaptureProofDialogueOnce();
-      let exposed: boolean;
-      try {
-        exposed = await browser.waitUntil(
-          async () => {
-            const observed = await browser.execute(
-              (oldFragment: string, newestFragment: string) => {
-                const layers = Array.from(
-                  document.querySelectorAll(
-                    ".portrait-shell [data-save-crossfade-layer]",
-                  ),
-                ) as HTMLImageElement[];
-                return {
-                  leaving: layers.some(
-                    (layer) =>
-                      layer.src.includes(oldFragment) &&
-                      layer.dataset.saveCrossfadeState === "leaving",
-                  ),
-                  newest: layers.some(
-                    (layer) =>
-                      layer.src.includes(newestFragment) &&
-                      layer.dataset.saveCrossfadeState === "visible" &&
-                      layer.dataset.saveCrossfadeOrder ===
-                        layer.dataset.saveCrossfadeRequest,
-                  ),
-                };
-              },
-              anchors.captureProof.leavingPortrait,
-              anchors.captureProof.newestPortrait,
-            );
-            return observed.leaving && observed.newest;
-          },
-          {
-            timeout: 1400,
-            interval: 25,
-            timeoutMsg:
-              "production portrait swap never exposed leaving + newest metadata",
-          },
-        );
-      } catch {
-        exposed = false;
-      }
-      if (!exposed) {
-        crossfadeFailures.push(attempt);
-        console.warn(
-          `[capture proof] attempt ${attempt} never exposed leaving + newest metadata; replaying the same capture transition once`,
-        );
-        continue;
-      }
-
       const captureAfterSwap = await captureWrapperStatus();
-      if (captureAfterSwap.calls <= captureBeforeSwap.calls) {
+      if (captureAfterSwap.calls !== captureBeforeSwap.calls + 1) {
         throw new Error(
-          `capture proof wrapper recorded no capture request before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+          `capture proof expected exactly one capture request before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
         );
       }
-      if (captureAfterSwap.available <= captureBeforeSwap.available) {
+      if (captureAfterSwap.available !== captureBeforeSwap.available + 1) {
         throw new Error(
-          `capture proof wrapper recorded no available capture before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
+          `capture proof expected exactly one available capture before list_saves; baseline=${JSON.stringify(captureBeforeSwap)} current=${JSON.stringify(captureAfterSwap)}`,
         );
       }
       if (captureAfterSwap.lastClosedReason !== "") {
@@ -860,6 +878,42 @@ describe("packaged gameplay thumbnail proof", () => {
           currentThumbnailType: nativeAutosave.thumbnailType,
         })
       ) {
+        const selection = captureAfterSwap.crossfadeEvidence;
+        if (
+          !selection?.ticket ||
+          !selection.portraits.some(
+            (portrait) =>
+              portrait.winner.includes(anchors.captureProof.newestPortrait) &&
+              portrait.leaving.some((src) =>
+                src.includes(anchors.captureProof.leavingPortrait),
+              ),
+          )
+        ) {
+          crossfadeFailures.push(attempt);
+          console.warn(
+            `[capture proof] attempt ${attempt} lacked portrait coexistence at winner selection: ${JSON.stringify(selection)}`,
+          );
+          continue;
+        }
+        expect(nativeAutosave.sidecarSha256).toBe(`sha256:${selection.sha256}`);
+        proofSaveId = nativeAutosave.saveId;
+        const evidence = {
+          selection,
+          nativeAutosave,
+          captureBeforeSwap,
+          captureAfterSwap,
+        };
+        console.log(
+          "[capture proof winner selection]",
+          JSON.stringify(evidence),
+        );
+        writeFileSync(
+          path.join(
+            process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+            "capture-winner-selection.json",
+          ),
+          JSON.stringify(evidence, null, 2),
+        );
         rootAspect = attemptRootAspect;
         break;
       }
@@ -883,6 +937,7 @@ describe("packaged gameplay thumbnail proof", () => {
       const element = document.querySelector(probe);
       return {
         status: element?.getAttribute("data-capture-proof-status"),
+        saveId: element?.getAttribute("data-capture-proof-save-id"),
         errorCode: element?.getAttribute("data-capture-proof-error-code"),
         errorMessage: element?.getAttribute("data-capture-proof-error-message"),
         errorStage: element?.getAttribute("data-capture-proof-error-stage"),
@@ -893,6 +948,7 @@ describe("packaged gameplay thumbnail proof", () => {
     }, anchors.captureProof.probe);
     expect(proofState).toEqual({
       status: "ready",
+      saveId: proofSaveId,
       errorCode: "",
       errorMessage: "",
       errorStage: "",
@@ -1174,6 +1230,8 @@ describe("packaged gameplay thumbnail proof", () => {
       "Interrogation capture proof did not reach the question menu",
     );
 
+    await ensureMinimumWindowViewport();
+    await recordPortraitGeometry("interrogation-question-800x600");
     await clickButton("二十二點五十六分左右在哪裡");
     await waitForPackagedGameState(
       (state) =>
@@ -1184,6 +1242,7 @@ describe("packaged gameplay thumbnail proof", () => {
       30000,
       "Interrogation capture proof did not reach the standard testimony portrait",
     );
+    await recordPortraitGeometry("interrogation-testimony-800x600");
     await advanceDialogueUntil(
       async () =>
         browser.execute(

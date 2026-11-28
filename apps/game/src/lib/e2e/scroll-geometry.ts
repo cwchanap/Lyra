@@ -17,43 +17,113 @@ export type ScrollGeometrySample = {
   scrollport: CssRect | null;
 };
 
+/**
+ * Whether the crop geometry is bound to the EXACT DOM node the source proof
+ * inspected. The source script stores that node in a page-owned pin registry
+ * (`__lyraImageEvidencePins`, key = a per-inspection token); the probe
+ * resolves the token and requires the same live, connected node, still the
+ * selector's only match with the exact pinned URL, and inside the crop
+ * target. A same-URL replacement node has no pin, so it can never stand in.
+ */
+export type ImageBinding =
+  | { status: "unbound" }
+  | { status: "missing"; pin: string }
+  | { status: "detached"; pin: string }
+  | { status: "stale"; pin: string }
+  | { status: "ambiguous"; count: number }
+  | { status: "outside-target"; src: string }
+  | { status: "bound"; src: string; pin: string };
+
 export type ScrollGeometryProbe = ScrollGeometrySample & {
   viewport: { width: number; height: number };
   devicePixelRatio: number;
+  imageBinding: ImageBinding;
+  /** The pinned image's own client rect when bound; null otherwise. The
+   * crop must measure this rect, not just the wrapper, or an image moved
+   * outside its wrapper could still "pass" on unrelated wrapper pixels. */
+  imageRect: CssRect | null;
 };
 
 /**
  * THE serialized WDIO page script — passed verbatim to
  * `browser.execute(probeScrollGeometryDom, selector, scrollIntoView,
- * srcFragment?)`,
+ * imageSelector?, expectedImageSrc?, pin?)`,
  * so it must stay self-contained (parameters + DOM globals only; module
  * scope does not survive WebDriver serialization). Unit tests invoke the
  * identical function against jsdom.
  *
  * Reads the target element's rect plus its nearest y-scrollable ancestor
  * (the scrollport that clips the painted area); `scrollIntoView` scrolls
- * every clipped ancestor synchronously first, matching the pre-extraction
- * inline script byte for byte.
+ * every clipped ancestor synchronously first.
  *
- * When `srcFragment` is passed the target is resolved the same way
- * inspectImageElement resolves it — the matched element must be an
- * <img> whose src contains the fragment — so a crop can never measure a
- * different (e.g. stale or sibling) element than the one inspected.
+ * When `imageSelector`/`expectedImageSrc`/`pin` are passed the probe binds
+ * the geometry to the page-pinned node: the token must still resolve to the
+ * same live element, that element must be the ONLY selector match carrying
+ * the exact expected URL, and it must be (or live inside) the crop target.
+ * A stale sibling, a same-URL replacement or a duplicated match is reported
+ * as such, never guessed at.
  */
 export function probeScrollGeometryDom(
   selector: string,
   scrollIntoView: boolean,
-  srcFragment?: string | null,
+  imageSelector?: string | null,
+  expectedImageSrc?: string | null,
+  pin?: string | null,
 ): ScrollGeometryProbe | null {
-  const element =
-    typeof srcFragment !== "string"
-      ? document.querySelector(selector)
-      : (Array.from(document.querySelectorAll(selector)).find(
-          (candidate) =>
-            candidate instanceof HTMLImageElement &&
-            (candidate.currentSrc || candidate.src).includes(srcFragment),
-        ) ?? null);
-  if (!element) return null;
+  const first = document.querySelector(selector);
+  if (!first) return null;
+
+  let element: Element = first;
+  let imageBinding: ImageBinding = { status: "unbound" };
+  let boundImage: HTMLImageElement | null = null;
+  if (
+    typeof imageSelector === "string" &&
+    typeof expectedImageSrc === "string" &&
+    typeof pin === "string"
+  ) {
+    const registry = (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
+    const pinned = registry?.[pin];
+    const selectorMatches = Array.from(
+      document.querySelectorAll(imageSelector),
+    ).filter(
+      (candidate): candidate is HTMLImageElement =>
+        candidate instanceof HTMLImageElement &&
+        (candidate.currentSrc || candidate.src) === expectedImageSrc,
+    );
+    if (!(pinned instanceof HTMLImageElement)) {
+      imageBinding = { status: "missing", pin };
+    } else if (!pinned.isConnected) {
+      imageBinding = { status: "detached", pin };
+    } else if ((pinned.currentSrc || pinned.src) !== expectedImageSrc) {
+      imageBinding = { status: "stale", pin };
+    } else if (selectorMatches.length > 1) {
+      imageBinding = { status: "ambiguous", count: selectorMatches.length };
+    } else if (selectorMatches[0] !== pinned) {
+      // The selector/URL now resolves to a different node than the pin.
+      imageBinding = { status: "stale", pin };
+    } else if (first instanceof HTMLImageElement) {
+      // Image-selector crop: measure the pinned node, never a same-selector
+      // sibling that happens to come first in the DOM.
+      element = pinned;
+      boundImage = pinned;
+      imageBinding = { status: "bound", src: expectedImageSrc, pin };
+    } else {
+      const targetMatches = document.querySelectorAll(selector).length;
+      if (targetMatches > 1) {
+        imageBinding = { status: "ambiguous", count: targetMatches };
+      } else if (!first.contains(pinned)) {
+        imageBinding = { status: "outside-target", src: expectedImageSrc };
+      } else {
+        boundImage = pinned;
+        imageBinding = { status: "bound", src: expectedImageSrc, pin };
+      }
+    }
+  }
+
   if (scrollIntoView) {
     element.scrollIntoView({ block: "center", inline: "nearest" });
   }
@@ -88,6 +158,8 @@ export function probeScrollGeometryDom(
       height: window.innerHeight,
     },
     devicePixelRatio: window.devicePixelRatio,
+    imageBinding,
+    imageRect: boundImage === null ? null : rectOf(boundImage),
   };
 }
 

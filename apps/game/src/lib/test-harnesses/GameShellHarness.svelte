@@ -51,7 +51,11 @@
     menuInitialFocusLabel?: string | null;
     activePrimaryObjective?: ObjectiveView | null;
     interrogationPresentation?: boolean;
-    gameMenuRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
+    gameMenuRequest?: {
+      id: number;
+      returnFocusTo: HTMLElement | null;
+      allowWhileEscapeClaimed?: boolean;
+    } | null;
     onGameMenuRequestHandled?: (id: number) => void;
     caseFileRequest?: { id: number; returnFocusTo: HTMLElement | null } | null;
     onCaseFileRequestHandled?: (id: number) => void;

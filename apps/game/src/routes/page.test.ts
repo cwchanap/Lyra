@@ -3161,14 +3161,168 @@ describe("+page close case flow", () => {
 
   afterEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     gameState.value = null;
     gameState.error = null;
     gameState.loading = false;
     gameState.inFlight = false;
   });
 
+  it.each([true, false])(
+    "returns from the end-card via persistence and blocks duplicate actions (storyCleared=%s)",
+    async (storyCleared) => {
+      const user = userEvent.setup();
+      gameState.value = gameCompleteState(storyCleared);
+      const returned = titleDiscovery();
+      returned.browser.slots[5] = {
+        reference: { type: "manual", slot: 1 },
+        modifiedAt: "2026-07-27T12:00:00Z",
+        status: validSlotStatus("manual-save"),
+      };
+      returned.continueCandidate = { type: "manual", slot: 1 };
+      let finishReturn!: (snapshot: SaveBrowserOpenResultView) => void;
+      mocks.invoke.mockImplementation(async (command: string) => {
+        if (command === "return_to_title") {
+          return await new Promise<SaveBrowserOpenResultView>((resolve) => {
+            finishReturn = resolve;
+          });
+        }
+        if (command === "reset_game") {
+          return {
+            state: gameCompleteState(storyCleared),
+            thumbnailCapture: null,
+          };
+        }
+        if (command === "list_scenes") return sceneNavigationIndex;
+        if (command === "get_persistence_status") return { type: "healthy" };
+        if (command === "get_thumbnail_activity") return { type: "idle" };
+        if (command === "get_exit_status") return { type: "idle" };
+        return {};
+      });
+      const focus = vi.spyOn(HTMLElement.prototype, "focus");
+      render(Page);
+
+      const cta = screen.getByRole("button", { name: /返回標題畫面/ });
+      await user.click(cta);
+      expect(mocks.invoke.mock.calls.map(([command]) => command)).toContain(
+        "return_to_title",
+      );
+      await waitFor(() => expect(cta).toBeDisabled());
+      await user.click(cta);
+      expect(
+        mocks.invoke.mock.calls.filter(
+          ([command]) => command === "return_to_title",
+        ),
+      ).toHaveLength(1);
+
+      finishReturn(returned);
+      const continueButton = await screen.findByRole("button", {
+        name: "繼續遊戲",
+      });
+      await waitFor(() => expect(continueButton).toHaveFocus());
+      const focusIndex = focus.mock.contexts.lastIndexOf(continueButton);
+      expect(focus.mock.calls[focusIndex]).toEqual([{ preventScroll: true }]);
+      expect(
+        screen.getByRole("region", { name: "繼續遊戲摘要" }),
+      ).toHaveTextContent("手動存檔");
+      const commands = mocks.invoke.mock.calls.map(([command]) => command);
+      expect(commands).not.toContain("reset_game");
+      expect(commands).not.toContain("start_game");
+      expect(commands).not.toContain("delete_save");
+    },
+  );
+
+  it("keeps the end-card on return failure and supports cancel and retry", async () => {
+    const user = userEvent.setup();
+    gameState.value = gameCompleteState(false);
+    let attempts = 0;
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "return_to_title") {
+        attempts += 1;
+        if (attempts < 3) {
+          throw {
+            code: "saveWriteFailed",
+            message: "返回標題前無法儲存",
+            failureToken: "end-card-return-token",
+          };
+        }
+        return titleDiscovery();
+      }
+      if (command === "reset_game") {
+        return { state: gameCompleteState(false), thumbnailCapture: null };
+      }
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+    render(Page);
+
+    const cta = screen.getByRole("button", { name: /返回標題畫面/ });
+    await user.click(cta);
+    expect(attempts).toBe(1);
+    let failure = await screen.findByRole("dialog", {
+      name: "無法返回標題畫面",
+    });
+    expect(screen.getByText("未完待續")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(failure).getByRole("button", { name: "重試" }),
+      ).toHaveFocus(),
+    );
+    await user.click(within(failure).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(failure).not.toBeInTheDocument());
+    await waitFor(() => expect(cta).toHaveFocus());
+    expect(mocks.invoke).toHaveBeenCalledWith("cancel_persistence_failure", {
+      failureToken: "end-card-return-token",
+    });
+
+    await user.click(screen.getByRole("button", { name: /返回標題畫面/ }));
+    failure = await screen.findByRole("dialog", { name: "無法返回標題畫面" });
+    await user.click(within(failure).getByRole("button", { name: "重試" }));
+    expect(
+      await screen.findByRole("main", { name: "主選單" }),
+    ).toBeInTheDocument();
+    expect(attempts).toBe(3);
+  });
+
+  it("restores focus to the open game menu, not the covered end-card, on return cancellation", async () => {
+    const user = userEvent.setup();
+    gameState.value = gameCompleteState();
+    mocks.invoke.mockImplementation(async (command: string) => {
+      if (command === "return_to_title") {
+        throw {
+          code: "saveWriteFailed",
+          message: "返回標題前無法儲存",
+          failureToken: "menu-return-token",
+        };
+      }
+      if (command === "list_scenes") return sceneNavigationIndex;
+      if (command === "get_persistence_status") return { type: "healthy" };
+      if (command === "get_thumbnail_activity") return { type: "idle" };
+      if (command === "get_exit_status") return { type: "idle" };
+      return {};
+    });
+    render(Page);
+
+    await user.keyboard("{Escape}");
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    const returnButton = within(menu).getByRole("button", {
+      name: "返回標題畫面",
+    });
+    await user.click(returnButton);
+    const failure = await screen.findByRole("dialog", {
+      name: "無法返回標題畫面",
+    });
+    await user.click(within(failure).getByRole("button", { name: "取消" }));
+
+    await waitFor(() => expect(returnButton).toHaveFocus());
+  });
+
   it("returns the Rust discovery snapshot to title without rediscovering and focuses Continue", async () => {
     const user = userEvent.setup();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
     const returned = titleDiscovery(validSlotStatus("return-save"));
     let listCalls = 0;
     mocks.invoke.mockImplementation(async (command: string) => {
@@ -3206,11 +3360,16 @@ describe("+page close case flow", () => {
       screen.queryByRole("dialog", { name: "遊戲選單" }),
     ).not.toBeInTheDocument();
     expect(listCalls).toBe(0);
-    expect(screen.getByRole("button", { name: "繼續遊戲" })).toHaveFocus();
+    const continueButton = screen.getByRole("button", { name: "繼續遊戲" });
+    expect(continueButton).toHaveFocus();
+    expect(
+      focus.mock.calls[focus.mock.contexts.lastIndexOf(continueButton)],
+    ).toEqual([{ preventScroll: true }]);
   });
 
   it("keeps gameplay on Return failure and retains the exact token through the second confirmation", async () => {
     const user = userEvent.setup();
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
     let discardArgs: Record<string, unknown> | null = null;
     mocks.invoke.mockImplementation(
       async (command: string, args?: Record<string, unknown>) => {
@@ -3277,7 +3436,11 @@ describe("+page close case flow", () => {
     await waitFor(() => expect(discardArgs).not.toBeNull());
     expect(discardArgs).toEqual({ failureToken: "opaque-return-token" });
     expect(gameState.value).toBeNull();
-    expect(screen.getByRole("button", { name: "開始新遊戲" })).toHaveFocus();
+    const newGameButton = screen.getByRole("button", { name: "開始新遊戲" });
+    expect(newGameButton).toHaveFocus();
+    expect(
+      focus.mock.calls[focus.mock.contexts.lastIndexOf(newGameButton)],
+    ).toEqual([{ preventScroll: true }]);
   });
 
   it("cancels a Return challenge with its exact token before Escape restores the game menu", async () => {
@@ -3640,6 +3803,7 @@ describe("+page active primary objective HUD", () => {
   });
 
   it("shows only the active uncompleted primary objective in the exploration HUD", async () => {
+    const user = userEvent.setup();
     const state = currentState();
     state.scene = {
       kind: "investigation",
@@ -3653,7 +3817,7 @@ describe("+page active primary objective HUD", () => {
       visibleSublocations: [
         {
           id: "coffee_shop",
-          label: "喫茶店",
+          label: "KAGAMI 證據摘要審查室",
           sceneTag: "雨夜喫茶店",
           hotspots: [],
           characters: [],
@@ -3671,7 +3835,7 @@ describe("+page active primary objective HUD", () => {
     state.story.objectives = [
       {
         id: "objective_follow_witness",
-        label: "追查雨夜目擊者",
+        label: "追查雨夜目擊者並確認每份證詞與現場紀錄之間的矛盾",
         summary: "找出目擊者隱瞞的證詞。",
         kind: "primary",
         sortOrder: 10,
@@ -3695,12 +3859,92 @@ describe("+page active primary objective HUD", () => {
     const objectiveHud = await screen.findByRole("status", {
       name: "主要目標",
     });
-    expect(objectiveHud).toHaveTextContent("追查雨夜目擊者");
+    expect(
+      within(objectiveHud).getByRole("region", { name: "主要目標內容" }),
+    ).toHaveAttribute("tabindex", "0");
+    expect(objectiveHud).toHaveTextContent(
+      "追查雨夜目擊者並確認每份證詞與現場紀錄之間的矛盾",
+    );
+    expect(screen.getAllByText("KAGAMI 證據摘要審查室")).toHaveLength(2);
     expect(objectiveHud).not.toHaveTextContent("已完成的舊目標");
     expect(screen.getAllByRole("status", { name: "主要目標" })).toHaveLength(1);
     expect(
       screen.getByRole("navigation", { name: "地點導航" }),
     ).toBeInTheDocument();
+
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    await user.click(trigger);
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /繼續調查/ }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  });
+});
+
+describe("+page Analysis dialogue menu", () => {
+  beforeEach(() => {
+    mocks.invoke.mockReset();
+    stubInvokeForSceneNavigation();
+    mocks.currentWindow.isFullscreen.mockResolvedValue(false);
+    seedGameState();
+  });
+
+  afterEach(() => {
+    cleanup();
+    gameState.value = null;
+    gameState.error = null;
+    gameState.loading = false;
+    gameState.inFlight = false;
+  });
+
+  it("opens and restores focus from a same-scene Analysis intro dialogue", async () => {
+    const state = currentState();
+    state.scene = {
+      kind: "analysis",
+      id: "analysis_scene_8_5",
+      title: "分析工作台",
+      summary: "",
+      index: 0,
+      total: 1,
+      activeBoardId: "board_1",
+      actionToken: {
+        sceneId: "analysis_scene_8_5",
+        activeBoardId: "board_1",
+        durableRevision: 0,
+      },
+      availableBoardIds: ["board_1"],
+      backgroundAssetId: null,
+      bgm: null,
+      bgs: null,
+      visibleBoards: [],
+    };
+    if (state.mode.type !== "dialogue") throw new Error("expected dialogue");
+    state.mode.queueToken.sceneId = state.scene.id;
+    gameState.value = state;
+
+    const user = userEvent.setup();
+    render(Page);
+    expect(
+      document.querySelector(".shell.analysis-presentation"),
+    ).not.toBeNull();
+    expect(document.querySelector(".shell > header")).toBeNull();
+    const trigger = screen.getByRole("button", { name: "遊戲選單" });
+    await user.click(trigger);
+    const menu = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(menu).getByRole("button", { name: /繼續調查/ }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+    for (const key of ["{Enter}", " "]) {
+      await user.keyboard(key);
+      const reopened = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await user.click(
+        within(reopened).getByRole("button", { name: /繼續調查/ }),
+      );
+      await waitFor(() => expect(trigger).toHaveFocus());
+    }
+    expect(
+      mocks.invoke.mock.calls.some(
+        ([command]) => command === "advance_dialogue",
+      ),
+    ).toBe(false);
   });
 });
 

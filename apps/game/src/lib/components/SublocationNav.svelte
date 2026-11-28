@@ -17,17 +17,41 @@
     /** Open targets per location; null hides the counts. */
     remaining?: Record<string, number> | null;
   } = $props();
+
+  let chips: HTMLDivElement;
 </script>
 
-<nav class="nav" class:scene={placement === "scene"} aria-label="地點導航">
+<nav class={["nav", { scene: placement === "scene" }]} aria-label="地點導航">
   <span class="eyebrow">地點 · LOCATIONS</span>
-  <div class="chips">
+  <div
+    class="chips"
+    {@attach (node) => {
+      chips = node;
+      if (placement !== "scene") return;
+      if (typeof ResizeObserver === "undefined") {
+        node.classList.add("scrollbar-hidden");
+        return;
+      }
+      const observer = new ResizeObserver(() => {
+        if (node.clientHeight > 0 && node.clientHeight < 44) {
+          node.classList.add("scrollbar-hidden");
+        }
+      });
+      observer.observe(node);
+      return () => observer.disconnect();
+    }}
+  >
     {#each sublocations as sub, i (sub.id)}
       <button
-        class:active={sub.id === currentId}
+        class={{ active: sub.id === currentId }}
         {disabled}
         onclick={() => onEnter(sub.id)}
         type="button"
+        {@attach (button) => {
+          if (placement === "scene" && sub.id === currentId) {
+            button.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+          }
+        }}
       >
         <span class="idx">{String(i + 1).padStart(2, "0")}</span>
         <span class="label">{sub.label}</span>
@@ -41,6 +65,22 @@
       </button>
     {/each}
   </div>
+  {#if placement === "scene"}
+    <button
+      class="scroll-left"
+      type="button"
+      aria-label="向左捲動地點"
+      {disabled}
+      onclick={() => chips.scrollBy({ left: -160 })}>‹</button
+    >
+    <button
+      class="scroll-right"
+      type="button"
+      aria-label="向右捲動地點"
+      {disabled}
+      onclick={() => chips.scrollBy({ left: 160 })}>›</button
+    >
+  {/if}
 </nav>
 
 <style>
@@ -54,9 +94,13 @@
   }
 
   .nav.scene {
-    max-width: min(760px, 100%);
+    box-sizing: border-box;
+    min-width: 0;
+    max-width: 100%;
+    max-height: 54px;
     gap: 8px;
-    padding: 6px 10px;
+    padding: 2px 10px;
+    flex-wrap: nowrap;
     border: 1px solid var(--rule-strong);
     background: rgba(20, 20, 31, 0.72);
     backdrop-filter: blur(2px);
@@ -80,16 +124,69 @@
   }
 
   .scene .eyebrow {
+    order: -2;
+    flex: none;
     padding-right: 8px;
     border-right: 0;
     letter-spacing: 0.18em;
+    white-space: nowrap;
   }
 
   .scene button {
+    flex: none;
     min-height: 44px;
     gap: 4px;
     padding: 6px 7px;
     letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  .scene .chips {
+    flex: 1;
+    flex-wrap: nowrap;
+    min-width: 0;
+    height: 48px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .scene .chips::-webkit-scrollbar {
+    display: none;
+  }
+
+  @supports selector(::-webkit-scrollbar) {
+    .scene .chips {
+      scrollbar-width: auto;
+      scrollbar-color: auto;
+    }
+
+    .scene .chips::-webkit-scrollbar {
+      display: block;
+      height: 4px;
+    }
+
+    .scene .chips::-webkit-scrollbar-thumb {
+      background: var(--bone-faint);
+    }
+
+    .scene .chips:global(.scrollbar-hidden) {
+      scrollbar-width: none;
+    }
+
+    .scene .chips:global(.scrollbar-hidden)::-webkit-scrollbar {
+      display: none;
+    }
+  }
+
+  .scene .scroll-left,
+  .scene .scroll-right {
+    width: 44px;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  .scene .scroll-left {
+    order: -1;
   }
 
   button {

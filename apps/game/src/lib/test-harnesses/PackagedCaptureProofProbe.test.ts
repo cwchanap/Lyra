@@ -221,6 +221,11 @@ describe("PackagedCaptureProofProbe", () => {
       embeddedFontCssBytes: 175_000,
       embeddedFontChunkCount: 3,
       embeddedZhHantCodePointCount: 12,
+      crossfadeEvidence: {
+        ticket: "fresh-ticket",
+        portraits: [{ winner: "/new.png", leaving: ["/old.png"] }],
+        sha256: "digest",
+      },
     };
     await rendered.rerender({ captureCommandInFlight: false });
 
@@ -250,6 +255,12 @@ describe("PackagedCaptureProofProbe", () => {
     expect(
       rendered.container.querySelector("[data-capture-proof]"),
     ).toHaveAttribute("data-capture-proof-font-zh-hant-code-points", "12");
+    expect(
+      rendered.container.querySelector("[data-capture-proof]"),
+    ).toHaveAttribute(
+      "data-capture-proof-crossfade-evidence",
+      JSON.stringify(captureStatus.crossfadeEvidence),
+    );
   });
 
   it("reports the newest autosave's unavailable thumbnail without falling back", async () => {

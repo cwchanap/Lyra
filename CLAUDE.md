@@ -116,11 +116,11 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   run in CI.
 - `bun run --cwd apps/game test:e2e:all` - packaged E2E **full** proof: same
   build, then every suite in the canonical registry (`--attempts 2`). The
-  manual `E2E Full` workflow runs the same registry split across two steps
-  so the ~2.5h production-journey can never burn a retry inside the
-  360-minute job ceiling: every suite except production-journey with
-  `--attempts 2`, then production-journey alone with `--attempts 1` under
-  the XTEST trusted-keys opt-in.
+  manual `E2E Full` workflow runs the same registry split across three
+  steps: unopted suites with `--attempts 2`, gameplay with `--attempts 2`
+  and scoped XTEST opt-in, then production-journey with `--attempts 1`
+  and scoped XTEST opt-in. The journey cannot burn a retry inside the
+  360-minute job ceiling.
 - Focused packaged E2E commands (`test:e2e:gameplay`, `test:e2e:capture-proof`,
   `test:e2e:save`, or a bare `test:e2e:<suite>:run` /
   `node apps/game/scripts/run-save-e2e.mjs --suite <id>`) are for **local
@@ -157,27 +157,57 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   is best-effort, never guaranteed. Suites print the selected input mode;
   trusted-input macOS UAT and final packaged coverage gaps stay explicitly
   disclosed, never claimed as trusted proof.
-- Packaged E2E keyboard input on Linux (production-journey commission →
-  scene_2 focus segment, HPA-831): the embedded WebDriver `browser.keys`
+- Packaged E2E trusted input on Linux (production-journey commission →
+  scene_2 focus segment, gameplay's first-map Tab/Enter proof, and the
+  HPA-852 scene-nav pointer/keyboard and seven named investigation target proofs):
+  the embedded WebDriver `browser.keys`
   reaches the app only as synthetic DOM KeyboardEvents (no native focus
-  traversal), so a second, separately scoped opt-in routes that segment's
-  Tab/Enter through real XTEST keys via `xdotool`. Run it only inside a
-  private `xvfb-run` display:
+  traversal). The user newly authorized extending the existing private-Xvfb
+  opt-in to scene-nav pointer scrolling/clicking and Tab/Enter in Task 3 fix
+  round 1. The user additionally authorized only `stacked_ledgers`,
+  `workorder`, `access_permission_list`, `material_kit_list`, `to_confront`,
+  `stream_wall_screen`, and `ob_van_monitor` in their fixed authored scenes.
+  This is not blanket OS-input permission: only these scopes may use XTEST via
+  `xdotool`. Run it only inside a private `xvfb-run` display:
 
   `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a bun run --cwd apps/game test:e2e:all`
 
   Prerequisites: `xvfb` (provides `xvfb-run`/`Xvfb`; pulls `xauth`),
-  `xdotool`, and `x11-utils` (`xprop`, `xdpyinfo`). Even with the opt-in,
-  every key still requires the full verifier chain — `xvfb-run` as a
+  `xdotool`, `x11-utils` (`xprop`, `xdpyinfo`), Python 3 and `libX11.so.6`.
+  When xdotool cannot identify a client window, a read-only XQueryPointer
+  probe requires the pointer's direct root child to be the verified app window.
+  Even with the opt-in,
+  every input event still requires the full verifier chain — `xvfb-run` as a
   strict ancestor of the WDIO worker, exactly one `-auth`-bound Xvfb child
   serving `DISPLAY`, a securely permissioned `XAUTHORITY` with usable
   cookies plus live authorized/rejected `xdpyinfo` probes, the exact e2e
   binary as the app process, one visible window it owns, and X input
-  focus on it before and after the key. Any uncertainty fails
-  inconclusive; keys are never sent to a shared or unverified display.
-  The manual `E2E Full` workflow sets this opt-in on its
-  production-journey step only; every other suite and desktop stays on
-  the default synthetic WebDriver keys. Without the opt-in the focus
+  focus on it before and after the event. Pointer events also require current
+  hit-tested allowlisted target bounds, matching window/viewport geometry, and, for
+  presses/releases, the verified window and coordinates under the pointer.
+  Unproven delivery is inconclusive; input is never sent to a shared or
+  unverified display. A press is tracked before its command is sent; cleanup
+  releases use the full verifier. If a release cannot be verified, or press
+  delivery remains ambiguous, or a test times out, the run fails and neither
+  later tests nor retries may use that display. Each verified Xvfb instance
+  is claimed by exactly one opted-in runner, even after a successful run;
+  start a fresh `xvfb-run` with a fresh authority pathname for another
+  invocation. Claims persist in the OS account's
+  `~/.cache/lyra-e2e-x11-claims/` even if an Xauthority directory is removed;
+  that directory and its parents must be securely owned and not writable by
+  other users. With `--attempts 2`, an opted-in run retries only a safe,
+  cleaned-up failure before any WDIO phase starts; once a phase starts,
+  failures are not retried on that display.
+  These checks cannot eliminate races between probes.
+  The manual `E2E Full` workflow sets this opt-in separately on its
+  gameplay and production-journey steps; the other suites and desktops never
+  send this trusted input. Without the opt-in the map keyboard case is
+  skipped and explicitly reported as inconclusive; it never falls back to a
+  click or claims a keyboard pass. Scene-nav pointer and keyboard proof are
+  likewise inconclusive without trusted delivery, while the scripted
+  active-chip scroll check still runs. Once a trusted input is delivered,
+  broken scrolling, focus, visibility or activation fails the assertion.
+  Without the opt-in the journey's focus
   segment still runs its click-transition probes, records the
   keyboard-modality coverage gap (`focus-coverage-gap.json`), and drains
   the transition through the scripted DOM-click path so the organic
@@ -188,9 +218,9 @@ Tauri app dev loops, not browser-only dev as a primary workflow.
   per-attempt output directories; CI uploads a single `tauri-e2e-smoke` or
   `tauri-e2e-full` artifact. To reproduce a CI failure, run the same command
   locally (`test:e2e:smoke`, or `test:e2e:all` for a full-job failure —
-  the workflow's production-journey step additionally needs the
-  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for its
-  keyboard coverage) and inspect its `run-result.json` and failure
+  the workflow's gameplay and production-journey steps additionally need the
+  `LYRA_E2E_XVFB_TRUSTED_KEYS=1 xvfb-run -a` prefix shown above for their
+  keyboard and named-target pointer coverage) and inspect its `run-result.json` and failure
   artifacts under `e2e-artifacts/save-e2e/runs/`.
 - `bun run --cwd apps/game check:e2e` - type-check the WDIO e2e specs and
   `wdio.conf.ts` via `tsconfig.e2e.json` (separate from svelte-check, which

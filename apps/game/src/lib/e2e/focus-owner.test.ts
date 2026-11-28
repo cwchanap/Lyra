@@ -41,6 +41,7 @@ const GAMEPLAY_DOM = `
       <div class="unrelated-panel"><button class="hotspot">熱點</button></div>
     </div>
     <div class="wrapper">
+      <button data-game-menu-trigger="">遊戲選單</button>
       <button class="log-button">LOG</button>
       <button class="advance-button" aria-label="推進對話">▶</button>
       <div class="box"><span class="text-line">台詞</span></div>
@@ -101,6 +102,7 @@ describe("focusOwnerFacts + isExpectedFocusOwner over DOM", () => {
   it.each([
     ".advance-button",
     ".log-button",
+    "[data-game-menu-trigger]",
     ".character-target",
     ".topic-actions button",
     ".close-topics",

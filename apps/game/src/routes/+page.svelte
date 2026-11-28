@@ -6,7 +6,6 @@
     loadPersistedGameDiscardingCurrent,
     startPersistedGame,
     startGameWithoutSaving,
-    resetGame,
     resetFrontendForTitle,
     returnPersistedToTitle,
     returnPersistedToTitleWithoutSaving,
@@ -124,6 +123,7 @@
   let gameMenuRequest = $state<{
     id: number;
     returnFocusTo: HTMLElement | null;
+    allowWhileEscapeClaimed?: boolean;
   } | null>(null);
   let observedCaseFileEpoch = presentationState.sessionEpoch;
 
@@ -202,6 +202,7 @@
   // dismissal. Mirrors the acquisitionReturnFocus capture/restore pattern.
   let recoveryReturnFocus = $state<HTMLElement | null>(null);
   let gameplayRoot: HTMLDivElement | null = $state(null);
+  let dialogueBackdropHeight = $state(0);
   let titleDiscovery = $state<SaveBrowserOpenResultView | null>(null);
   let titleDiscoveryGeneration = 0;
   let titleBrowserOpen = $state(false);
@@ -652,9 +653,14 @@
       void cancelPersistenceChallenge(failureToken, () => {
         returnToTitleFailure = null;
         void tick().then(() => {
-          document
-            .querySelector<HTMLElement>('[data-focus-target="return-to-title"]')
-            ?.focus();
+          (
+            document.querySelector<HTMLElement>(
+              '.game-menu-scrim [data-focus-target="return-to-title"]',
+            ) ??
+            document.querySelector<HTMLElement>(
+              '[data-focus-target="return-to-title"]',
+            )
+          )?.focus();
         });
       });
       return;
@@ -980,7 +986,7 @@
       document.querySelector<HTMLElement>(
         '[aria-label="繼續遊戲"]:not(:disabled)',
       ) ?? document.querySelector<HTMLElement>('[aria-label="開始新遊戲"]');
-    focusTarget?.focus();
+    focusTarget?.focus({ preventScroll: true });
   }
 
   async function handleReturnToTitle(
@@ -1255,14 +1261,6 @@
     void loadSceneNavigationIndex();
   }
 
-  async function handleReset() {
-    await resetGame();
-    if (gameState.error) {
-      return;
-    }
-    gameState.error = null;
-  }
-
   // Reexamine from the dossier (inside the Escape menu) installs a dialogue
   // queue and flips the mode to dialogue. If the menu stayed mounted, its
   // scrim (z-index 40) would hide the dialogue (z-index 30, in <main inert>)
@@ -1296,11 +1294,15 @@
     };
   }
 
-  function openInterrogationGameMenu(trigger: HTMLElement) {
+  function requestGameMenu(
+    trigger: HTMLElement,
+    options: { allowWhileEscapeClaimed?: boolean } = {},
+  ) {
     gameMenuRequestId += 1;
     gameMenuRequest = {
       id: gameMenuRequestId,
       returnFocusTo: trigger,
+      ...options,
     };
   }
 
@@ -1383,7 +1385,7 @@
           history={gameState.value.dialogueHistory}
           onPresent={presentInterrogationEvidence}
           onResume={resumeInterrogationTestimony}
-          onOpenGameMenu={openInterrogationGameMenu}
+          onOpenGameMenu={requestGameMenu}
           onOpenCaseFile={openInterrogationCaseFile}
           {activePrimaryObjective}
           disabled={gameState.inFlight}
@@ -1391,11 +1393,18 @@
         >
           {#if gameState.value.mode.type === "dialogue"}
             {#if !interrogationPresentationActive}
-              <SceneBackdrop
-                sceneTag={gameState.value.mode.sceneTag}
-                backgroundAssetId={gameState.value.mode.backgroundAssetId ??
-                  null}
-              />
+              <div
+                bind:offsetHeight={dialogueBackdropHeight}
+                {@attach () => () => {
+                  dialogueBackdropHeight = 0;
+                }}
+              >
+                <SceneBackdrop
+                  sceneTag={gameState.value.mode.sceneTag}
+                  backgroundAssetId={gameState.value.mode.backgroundAssetId ??
+                    null}
+                />
+              </div>
             {/if}
             <DialogueBox
               current={gameState.value.mode.current}
@@ -1408,6 +1417,7 @@
               history={gameState.value.dialogueHistory}
               disabled={gameState.inFlight}
               interrogationStageActive={interrogationPresentationActive}
+              backdropHeight={dialogueBackdropHeight}
               crossExam={gameState.value.mode.crossExamLineId
                 ? {
                     lineId: gameState.value.mode.crossExamLineId,
@@ -1427,11 +1437,15 @@
               onEnterSublocation={enterSublocation}
               inventory={gameState.value.inventory}
               onPresent={presentToCharacter}
+              onOpenGameMenu={requestGameMenu}
               presentFeedback={gameState.value.mode.presentFeedback}
               disabled={gameState.inFlight}
             >
               {#snippet hud()}
-                <PrimaryObjectiveHud objective={activePrimaryObjective} />
+                <PrimaryObjectiveHud
+                  objective={activePrimaryObjective}
+                  compact
+                />
               {/snippet}
             </ExploreView>
           {:else if gameState.value.mode.type === "interrogation"}
@@ -1453,12 +1467,13 @@
               onSelectBoard={selectAnalysisBoard}
               onUpdateDraft={updateAnalysisDraft}
               onSubmit={submitAnalysisBoard}
+              onOpenGameMenu={requestGameMenu}
               disabled={gameState.inFlight}
             />
           {:else if gameState.value.mode.type === "gameComplete"}
             <GameComplete
               storyCleared={gameState.value.mode.storyCleared}
-              onReset={handleReset}
+              onReturnToTitle={() => handleReturnToTitle()}
               disabled={gameState.inFlight}
             />
           {/if}

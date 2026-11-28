@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/svelte";
+import { render, screen, waitFor, within } from "@testing-library/svelte";
 import { userEvent } from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import SublocationNav from "./SublocationNav.svelte";
@@ -118,6 +118,104 @@ describe("SublocationNav", () => {
     expect(container.querySelector("nav")).toHaveClass("scene");
   });
 
+  it("provides operable direction controls for scene navigation only", async () => {
+    const user = userEvent.setup();
+    const { container } = render(SublocationNav, {
+      sublocations,
+      currentId: "coffee_shop",
+      onEnter: vi.fn(),
+      placement: "scene",
+    });
+    const chips = container.querySelector<HTMLElement>(".chips")!;
+    chips.scrollBy = vi.fn();
+    await user.click(screen.getByRole("button", { name: "向右捲動地點" }));
+    await user.click(screen.getByRole("button", { name: "向左捲動地點" }));
+    expect(chips.scrollBy).toHaveBeenNthCalledWith(1, { left: 160 });
+    expect(chips.scrollBy).toHaveBeenNthCalledWith(2, { left: -160 });
+  });
+
+  it("hides an oversized scrollbar without shrinking the chips", async () => {
+    let resize: ResizeObserverCallback | undefined;
+    const disconnect = vi.fn();
+    class FakeResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        resize = callback;
+      }
+      observe() {}
+      disconnect = disconnect;
+    }
+    vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+    try {
+      const { container, unmount } = render(SublocationNav, {
+        sublocations,
+        currentId: "coffee_shop",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      const chips = container.querySelector<HTMLElement>(".chips")!;
+      let height = 44;
+      Object.defineProperty(chips, "clientHeight", { get: () => height });
+      await waitFor(() => expect(resize).toBeDefined());
+      resize!([], {} as ResizeObserver);
+      expect(chips).not.toHaveClass("scrollbar-hidden");
+      height = 40;
+      resize!([], {} as ResizeObserver);
+      expect(chips).toHaveClass("scrollbar-hidden");
+      unmount();
+      expect(disconnect).toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("disables scene direction controls while navigation is disabled", () => {
+    render(SublocationNav, {
+      sublocations,
+      currentId: "coffee_shop",
+      onEnter: vi.fn(),
+      placement: "scene",
+      disabled: true,
+    });
+    expect(screen.getByRole("button", { name: "向左捲動地點" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "向右捲動地點" })).toBeDisabled();
+  });
+
+  it("brings the active scene chip into view on mount and selection change", async () => {
+    const scroll = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    try {
+      const { rerender } = render(SublocationNav, {
+        sublocations,
+        currentId: "coffee_shop",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      await waitFor(() =>
+        expect(scroll).toHaveBeenCalledWith({
+          inline: "nearest",
+          block: "nearest",
+        }),
+      );
+      expect(scroll.mock.instances[0]).toBe(
+        screen.getByRole("button", { name: /喫茶店/ }),
+      );
+      scroll.mockClear();
+      await rerender({
+        sublocations,
+        currentId: "office",
+        onEnter: vi.fn(),
+        placement: "scene",
+      });
+      await waitFor(() => expect(scroll).toHaveBeenCalledOnce());
+      expect(scroll.mock.instances[0]).toBe(
+        screen.getByRole("button", { name: /事務所/ }),
+      );
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
+  });
+
   it("does not add scene class when placement is page", () => {
     const { container } = render(SublocationNav, {
       sublocations,
@@ -127,6 +225,24 @@ describe("SublocationNav", () => {
     });
 
     expect(container.querySelector("nav")).not.toHaveClass("scene");
+  });
+
+  it("does not auto-scroll the page variant", async () => {
+    const scroll = vi.fn();
+    const original = HTMLElement.prototype.scrollIntoView;
+    HTMLElement.prototype.scrollIntoView = scroll;
+    try {
+      render(SublocationNav, {
+        sublocations,
+        currentId: "office",
+        onEnter: vi.fn(),
+        placement: "page",
+      });
+      await Promise.resolve();
+      expect(scroll).not.toHaveBeenCalled();
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original;
+    }
   });
 
   it("renders no active button when currentId is null", () => {

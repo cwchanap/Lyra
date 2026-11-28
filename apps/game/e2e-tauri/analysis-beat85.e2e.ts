@@ -1266,7 +1266,7 @@ describe("packaged Analysis Beat 8.5 journey", () => {
     expect(p4).toBeDefined();
   });
 
-  it("matches the Interrogation mockup geometry contract", async () => {
+  it("matches the Interrogation two-column geometry contract", async () => {
     expect(geometry.menu).toBeDefined();
     expect(geometry.testimony).toBeDefined();
     expect(geometry.present).toBeDefined();
@@ -1298,13 +1298,20 @@ describe("packaged Analysis Beat 8.5 journey", () => {
 
     expectEdgesAligned(menu.stage, menu.main);
     expectInside(menu.art, menu.stage);
-    const intendedLeftInset = Math.min(
-      120,
-      Math.max(24, viewport.width * 0.08),
-    );
-    const observedLeftInset = menu.art.left - menu.stage.left;
-    expect(observedLeftInset).toBeGreaterThanOrEqual(intendedLeftInset - 2);
-    expect(observedLeftInset).toBeLessThanOrEqual(intendedLeftInset + 2);
+    // HPA-852 §2.4: the interrogation stage is a two-column grid — a left
+    // stack of at most min(360px, 46vw) and a right subject-art frame inset
+    // 26px from the stage edges with a 12px column gap. The old single-column
+    // mockup put the art at a viewport-scaled left inset; only that art
+    // placement is superseded. The question-record panel remains the
+    // bottom-centred panel measured below.
+    const leftColumnWidth = Math.min(360, viewport.width * 0.46);
+    const intendedArtLeft = 26 + leftColumnWidth + 12;
+    const observedArtLeft = menu.art.left - menu.stage.left;
+    expect(observedArtLeft).toBeGreaterThanOrEqual(intendedArtLeft - 2);
+    expect(observedArtLeft).toBeLessThanOrEqual(intendedArtLeft + 2);
+    expect(
+      Math.abs(menu.art.right - (menu.stage.right - 26)),
+    ).toBeLessThanOrEqual(2);
     expect(menu.art.height / menu.stage.height).toBeGreaterThanOrEqual(0.88);
     expect(menu.art.height / menu.stage.height).toBeLessThanOrEqual(1.01);
     expect(menu.record.width).toBeLessThanOrEqual(1004);

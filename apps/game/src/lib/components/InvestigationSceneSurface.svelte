@@ -134,12 +134,10 @@
     sublocation.characters.filter((character) => character.layout === null),
   );
 
-  // The cover plane overhangs every non-16:9 scene viewport, and whenever the fallback
-  // panel has entries it paints a fixed band over the viewport bottom
-  // (Chapter 1 scene 7's masuda_paperback sits at y≈785–829 under the
-  // expanded panel at 800×900). Either can leave a placed target fully
-  // unclickable — or reduce it to an undiscoverable sliver — so a target
-  // that can't keep MIN_VISIBLE_SPAN_PX clear of BOTH the crop and the
+  // The fallback panel can paint a fixed band over the viewport bottom,
+  // and a minimum-size hit box can extend beyond the stage. Either can leave
+  // a placed target unclickable or reduce it to an undiscoverable sliver, so a target
+  // that can't keep MIN_VISIBLE_SPAN_PX clear of BOTH the stage edge and the
   // panel is rerouted to the fallback list. Routed targets stay mounted
   // but inert: their element never unmounts mid-resize (which would
   // destroy keyboard focus) and their hit box can no longer steal clicks,
@@ -173,7 +171,7 @@
   // sidecar declared them in intentionalOverlaps, which keeps the minimum
   // size as authored intent. Characters (z-index 2, never expanded) can only
   // be stolen from, so the hotspot side compacts.
-  // The smallest cover plane at the minimum window width is 800×450px.
+  // The minimum scene plane at the minimum window is 800×450px.
   // Only active targets join the collision set: inert boxes cannot steal clicks.
   const MIN_TARGET_PX = { w: 72, h: 44 };
   const MIN_VIEWPORT_PX = { w: 800, h: 450 };
@@ -662,8 +660,13 @@
   />
 
   <div class="scene-surface">
-    <div class="scene-hud" bind:offsetHeight={headerHeight}>
-      <div class="scene-label">
+    <div
+      class="scene-hud"
+      bind:offsetHeight={headerHeight}
+      inert={presentingCharacter !== null}
+    >
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+      <div class="scene-label" role="region" aria-label="目前地點" tabindex="0">
         <span class="eyebrow">INVESTIGATION</span>
         <strong>{sublocation.label}</strong>
       </div>
@@ -992,13 +995,13 @@
 
   .scene-coordinate-plane {
     --scene-area-height: calc(100vh - var(--scene-header-height));
-    --scene-cover-width: max(100vw, var(--scene-area-height) * 1.777777778);
-    --scene-cover-height: max(var(--scene-area-height), 56.25vw);
+    --scene-plane-width: min(100vw, var(--scene-area-height) * 1.777777778);
+    --scene-plane-height: min(var(--scene-area-height), 56.25vw);
     position: absolute;
     left: 50%;
     top: 50%;
-    width: var(--scene-cover-width);
-    height: var(--scene-cover-height);
+    width: var(--scene-plane-width);
+    height: var(--scene-plane-height);
     transform: translate(-50%, -50%);
     pointer-events: none;
   }
@@ -1009,19 +1012,29 @@
     z-index: -1;
     width: 100vw;
     height: calc(100vh - var(--scene-header-height));
-    object-fit: cover;
+    object-fit: contain;
     pointer-events: none;
   }
 
   .scene-label {
     grid-column: 1;
     grid-row: 1;
+    min-width: 0;
+    max-height: 74px;
     display: flex;
     flex-direction: column;
     gap: 4px;
     color: var(--bone);
     text-shadow: 0 1px 10px var(--cell);
-    pointer-events: none;
+    overflow: auto;
+    overflow-wrap: anywhere;
+    pointer-events: auto;
+    scrollbar-width: thin;
+  }
+
+  .scene-label:focus-visible {
+    outline: 1px solid var(--cyan);
+    outline-offset: -1px;
   }
 
   .eyebrow {
@@ -1045,10 +1058,10 @@
     inset: 0 0 auto;
     z-index: 9;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
+    grid-template-columns: minmax(120px, 1fr) minmax(0, auto);
+    gap: 6px;
     box-sizing: border-box;
-    padding: 12px clamp(20px, 3vw, 40px);
+    padding: 8px clamp(20px, 3vw, 40px);
     background: var(--ink);
     pointer-events: none;
   }
@@ -1205,23 +1218,24 @@
      outro's remaining work can be found without hovering every prop. It
      sits where the inspected check appears and, like it, never extends the
      hit area.
-     The scene plane overhangs any window that is not 16:9 (about 133px off
-     each side at 800×600), so a target's corner can sit offscreen. The cue
-     keeps its preferred corner but is clamped into the part of its target
-     that is inside the viewport; the target's viewport offset comes from
-     the plane's cover size and the layout ratios, so no hit box moves. A
+     A minimum-size target can extend beyond the stage. The cue keeps its
+     preferred corner but is clamped into the part of its target that is
+     inside the stage; the offset comes from the plane size and layout ratios. A
      target with no visible part keeps its cue on itself, offscreen. */
   .target-pending {
     --pending-inset: 6px;
     --pending-size: 12px;
-    --pending-left: calc(100% - var(--pending-inset) - var(--pending-size));
+    --pending-left: calc(
+      var(--w-ratio) * var(--scene-plane-width) - var(--pending-inset) -
+        var(--pending-size)
+    );
     --pending-target-left: calc(
-      var(--x-ratio) * var(--scene-cover-width) -
-        (var(--scene-cover-width) - 100vw) / 2
+      var(--x-ratio) * var(--scene-plane-width) -
+        (var(--scene-plane-width) - 100vw) / 2
     );
     --pending-target-top: calc(
-      var(--y-ratio) * var(--scene-cover-height) -
-        (var(--scene-cover-height) - var(--scene-area-height)) / 2
+      var(--y-ratio) * var(--scene-plane-height) -
+        (var(--scene-plane-height) - var(--scene-area-height)) / 2
     );
     position: absolute;
     left: clamp(

@@ -42,6 +42,7 @@ vi.mock("@tauri-apps/api/window", () => ({
 }));
 
 import GameShellHarness from "$lib/test-harnesses/GameShellHarness.svelte";
+import DialogueBox from "./DialogueBox.svelte";
 import GameShell from "./GameShell.svelte";
 
 function state(
@@ -308,6 +309,147 @@ describe("GameShell", () => {
     },
   );
 
+  it.each([
+    ["chapter summary", " ", () => screen.getByText("案件摘要")],
+    ["chapter summary", "Enter", () => screen.getByText("案件摘要")],
+    [
+      "compact objective",
+      " ",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+    [
+      "compact objective",
+      "Enter",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+  ])(
+    "does not advance or prevent %s focus with key %s",
+    (_name, key, getRegion) => {
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+
+      const region = getRegion();
+      region.focus();
+      expect(document.activeElement).toBe(region);
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      region.dispatchEvent(event);
+      expect(onAdvance).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    },
+  );
+
+  it.each([
+    ["chapter summary", () => screen.getByText("案件摘要")],
+    [
+      "compact objective",
+      () => screen.getByRole("region", { name: "主要目標內容" }),
+    ],
+  ])(
+    "keeps the L history shortcut on the focused %s",
+    async (_name, getRegion) => {
+      const user = userEvent.setup();
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance: vi.fn(),
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const region = getRegion();
+      region.focus();
+      expect(document.activeElement).toBe(region);
+      await user.keyboard("l");
+      expect(
+        screen.getByRole("dialog", { name: "對話紀錄" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it.each([" ", "Enter"])(
+    "does not advance from a focused descendant of the compact objective on %s",
+    (key) => {
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        activePrimaryObjective,
+      });
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const region = screen.getByRole("region", { name: "主要目標內容" });
+      const descendant = document.createElement("span");
+      descendant.tabIndex = -1;
+      region.appendChild(descendant);
+      descendant.focus();
+      expect(document.activeElement).toBe(descendant);
+
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      descendant.dispatchEvent(event);
+      expect(onAdvance).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(false);
+    },
+  );
+
+  it.each([" ", "Enter"])(
+    "advances from an unrelated tabindex=0 element on %s",
+    (key) => {
+      const onAdvance = vi.fn();
+      render(DialogueBox, {
+        current: { kind: "action", text: "幕開" },
+        queueToken: { sceneId: "scene_1", queueGen: 1, cursor: 0 },
+        onAdvance,
+        history: [],
+        textRevealDurationMs: 0,
+      });
+      const unrelated = document.createElement("div");
+      unrelated.tabIndex = 0;
+      document.body.appendChild(unrelated);
+      try {
+        unrelated.focus();
+        expect(document.activeElement).toBe(unrelated);
+        const event = new KeyboardEvent("keydown", {
+          key,
+          bubbles: true,
+          cancelable: true,
+        });
+        unrelated.dispatchEvent(event);
+        expect(onAdvance).toHaveBeenCalledOnce();
+        expect(event.defaultPrevented).toBe(true);
+      } finally {
+        unrelated.remove();
+      }
+    },
+  );
+
   it("does not render the primary objective HUD after game completion", () => {
     render(GameShellHarness, {
       gameState: state({ type: "gameComplete", storyCleared: true }),
@@ -438,11 +580,7 @@ describe("GameShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("updates the focus origin when a game menu request arrives while the menu is already open", async () => {
-    // When the menu is already open and a new request supplies a focus
-    // origin, openGameMenu's `else if (suppliedFocusOrigin)` branch must
-    // update previouslyFocusedElement so closing the menu restores focus
-    // to the supplied trigger, not the element that opened the menu.
+  it("acknowledges an already-open request without stealing the original return focus", async () => {
     const firstTrigger = document.createElement("button");
     firstTrigger.textContent = "first trigger";
     document.body.append(firstTrigger);
@@ -453,29 +591,29 @@ describe("GameShell", () => {
     document.body.append(secondTrigger);
 
     try {
+      const onGameMenuRequestHandled = vi.fn();
       const { rerender } = render(GameShellHarness, {
         gameState: state(),
         onCloseCase: vi.fn(),
-        open: true,
       });
 
-      // Menu is already open. Now send a game menu request with a different
-      // focus origin.
+      window.dispatchEvent(escapeKeydown());
       await screen.findByRole("dialog", { name: "遊戲選單" });
-      rerender({
+      await rerender({
         gameState: state(),
         onCloseCase: vi.fn(),
-        open: true,
         gameMenuRequest: { id: 1, returnFocusTo: secondTrigger },
-        onGameMenuRequestHandled: vi.fn(),
+        onGameMenuRequestHandled,
       });
+      await vi.waitFor(() =>
+        expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1),
+      );
 
-      // Close the menu — focus must go to the second trigger, not the first.
       const user = userEvent.setup();
       await user.click(screen.getByRole("button", { name: /繼續調查/ }));
 
       await vi.waitFor(() => {
-        expect(secondTrigger).toHaveFocus();
+        expect(firstTrigger).toHaveFocus();
       });
     } finally {
       firstTrigger.remove();
@@ -1654,11 +1792,7 @@ describe("GameShell", () => {
     }
   });
 
-  it("opens the game menu despite a disconnected focus origin in a game menu request", async () => {
-    // openGameMenu checks `focusOrigin?.isConnected` — when the supplied
-    // focus origin is disconnected, suppliedFocusOrigin becomes null and
-    // the function falls back to document.activeElement. The menu must
-    // still open and the request must be acknowledged.
+  it("rejects and acknowledges a disconnected focus origin", async () => {
     const trigger = document.createElement("button");
     trigger.textContent = "disconnected trigger";
     document.body.append(trigger);
@@ -1676,10 +1810,301 @@ describe("GameShell", () => {
       onGameMenuRequestHandled,
     });
 
-    await screen.findByRole("dialog", { name: "遊戲選單" });
     await vi.waitFor(() => {
       expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(1);
     });
+    expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+  });
+
+  it("opens the header trigger and restores focus after Resume", async () => {
+    const user = userEvent.setup();
+    render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
+    const trigger = within(screen.getByRole("banner")).getByRole("button", {
+      name: "遊戲選單",
+    });
+    expect(trigger).toHaveAttribute("data-game-menu-trigger");
+    await user.click(trigger);
+    const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+    await user.click(within(dialog).getByRole("button", { name: /繼續調查/ }));
+    await vi.waitFor(() => expect(trigger).toHaveFocus());
+  });
+
+  it("offers the same header trigger after game completion", () => {
+    render(GameShellHarness, {
+      gameState: state({ type: "gameComplete", storyCleared: true }),
+      onCloseCase: vi.fn(),
+    });
+    expect(
+      within(screen.getByRole("banner")).getByRole("button", {
+        name: "遊戲選單",
+      }),
+    ).toHaveAttribute("data-game-menu-trigger");
+  });
+
+  it("does not consume an overlay's Escape claim when the header trigger is clicked", async () => {
+    const closer = vi.fn();
+    const release = claimEscape(closer);
+    try {
+      render(GameShellHarness, { gameState: state(), onCloseCase: vi.fn() });
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: "遊戲選單" }));
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      expect(closer).not.toHaveBeenCalled();
+      window.dispatchEvent(escapeKeydown());
+      expect(closer).toHaveBeenCalledOnce();
+    } finally {
+      release();
+    }
+  });
+
+  it.each(["disabled", "topLayerOpen", "gameplayInert"] as const)(
+    "rejects and acknowledges a request while %s, without opening later",
+    async (guard) => {
+      const trigger = document.createElement("button");
+      document.body.append(trigger);
+      const onGameMenuRequestHandled = vi.fn();
+      try {
+        const base = {
+          gameState: state(),
+          onCloseCase: vi.fn(),
+          gameMenuRequest: { id: 17, returnFocusTo: trigger },
+          onGameMenuRequestHandled,
+        };
+        const { rerender } = render(GameShellHarness, {
+          ...base,
+          [guard]: true,
+        });
+        await vi.waitFor(() =>
+          expect(onGameMenuRequestHandled).toHaveBeenCalledExactlyOnceWith(17),
+        );
+        await rerender({ ...base, [guard]: false });
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      } finally {
+        trigger.remove();
+      }
+    },
+  );
+
+  it.each(["inert", "disabled"] as const)(
+    "rejects a %s origin and acknowledges it",
+    async (kind) => {
+      const parent = document.createElement("div");
+      const trigger = document.createElement("button");
+      if (kind === "inert") parent.setAttribute("inert", "");
+      else trigger.disabled = true;
+      parent.append(trigger);
+      document.body.append(parent);
+      const handled = vi.fn();
+      try {
+        render(GameShellHarness, {
+          gameState: state(),
+          onCloseCase: vi.fn(),
+          gameMenuRequest: { id: 18, returnFocusTo: trigger },
+          onGameMenuRequestHandled: handled,
+        });
+        await vi.waitFor(() =>
+          expect(handled).toHaveBeenCalledExactlyOnceWith(18),
+        );
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      } finally {
+        parent.remove();
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "does not consume an Escape claim for an ordinary or forged request (bypass=%s)",
+    async (allowWhileEscapeClaimed) => {
+      const trigger = document.createElement("button");
+      document.body.append(trigger);
+      const closer = vi.fn();
+      const release = claimEscape(closer);
+      const handled = vi.fn();
+      try {
+        render(GameShellHarness, {
+          gameState: state(),
+          onCloseCase: vi.fn(),
+          gameMenuRequest: {
+            id: 19,
+            returnFocusTo: trigger,
+            allowWhileEscapeClaimed,
+          },
+          onGameMenuRequestHandled: handled,
+        });
+        await vi.waitFor(() =>
+          expect(handled).toHaveBeenCalledExactlyOnceWith(19),
+        );
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+        expect(closer).not.toHaveBeenCalled();
+        window.dispatchEvent(escapeKeydown());
+        expect(closer).toHaveBeenCalledOnce();
+      } finally {
+        release();
+        trigger.remove();
+      }
+    },
+  );
+
+  it("does not replay a rejected request after the Escape claim is released", async () => {
+    const trigger = document.createElement("button");
+    document.body.append(trigger);
+    const release = claimEscape(vi.fn());
+    const handled = vi.fn();
+    try {
+      const base = {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: { id: 22, returnFocusTo: trigger },
+        onGameMenuRequestHandled: handled,
+      };
+      const { rerender } = render(GameShellHarness, base);
+      await vi.waitFor(() =>
+        expect(handled).toHaveBeenCalledExactlyOnceWith(22),
+      );
+      release();
+      await rerender({ ...base, disabled: true });
+      await rerender({ ...base, disabled: false });
+      expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+    } finally {
+      release();
+      trigger.remove();
+    }
+  });
+
+  it("allows the valid Present tray origin through its Escape claim and restores focus", async () => {
+    const trigger = document.createElement("button");
+    trigger.setAttribute("data-interrogation-game-menu", "");
+    document.body.append(trigger);
+    const release = claimEscape(vi.fn());
+    const handled = vi.fn();
+    try {
+      render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: {
+          id: 20,
+          returnFocusTo: trigger,
+          allowWhileEscapeClaimed: true,
+        },
+        onGameMenuRequestHandled: handled,
+      });
+      const dialog = await screen.findByRole("dialog", { name: "遊戲選單" });
+      await userEvent
+        .setup()
+        .click(within(dialog).getByRole("button", { name: /繼續調查/ }));
+      await vi.waitFor(() => expect(trigger).toHaveFocus());
+      expect(handled).toHaveBeenCalledExactlyOnceWith(20);
+    } finally {
+      release();
+      trigger.remove();
+    }
+  });
+
+  it.each(["disabled", "topLayerOpen", "gameplayInert"] as const)(
+    "does not let Present bypass the %s guard",
+    async (guard) => {
+      const trigger = document.createElement("button");
+      trigger.setAttribute("data-interrogation-game-menu", "");
+      document.body.append(trigger);
+      const release = claimEscape(vi.fn());
+      const handled = vi.fn();
+      try {
+        render(GameShellHarness, {
+          gameState: state(),
+          onCloseCase: vi.fn(),
+          [guard]: true,
+          gameMenuRequest: {
+            id: 21,
+            returnFocusTo: trigger,
+            allowWhileEscapeClaimed: true,
+          },
+          onGameMenuRequestHandled: handled,
+        });
+        await vi.waitFor(() =>
+          expect(handled).toHaveBeenCalledExactlyOnceWith(21),
+        );
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      } finally {
+        release();
+        trigger.remove();
+      }
+    },
+  );
+
+  it.each(["inert", "disconnected"] as const)(
+    "does not allow a %s Present origin to bypass an Escape claim",
+    async (kind) => {
+      const parent = document.createElement("div");
+      const trigger = document.createElement("button");
+      trigger.setAttribute("data-interrogation-game-menu", "");
+      parent.append(trigger);
+      if (kind === "inert") {
+        parent.setAttribute("inert", "");
+        document.body.append(parent);
+      }
+      const release = claimEscape(vi.fn());
+      const handled = vi.fn();
+      try {
+        render(GameShellHarness, {
+          gameState: state(),
+          onCloseCase: vi.fn(),
+          gameMenuRequest: {
+            id: 23,
+            returnFocusTo: trigger,
+            allowWhileEscapeClaimed: true,
+          },
+          onGameMenuRequestHandled: handled,
+        });
+        await vi.waitFor(() =>
+          expect(handled).toHaveBeenCalledExactlyOnceWith(23),
+        );
+        expect(screen.queryByRole("dialog", { name: "遊戲選單" })).toBeNull();
+      } finally {
+        release();
+        parent.remove();
+      }
+    },
+  );
+
+  it("acknowledges a Present bypass while already open without replacing its focus origin", async () => {
+    const origin = document.createElement("button");
+    const present = document.createElement("button");
+    present.setAttribute("data-interrogation-game-menu", "");
+    document.body.append(origin, present);
+    origin.focus();
+    let release = () => {};
+    try {
+      const handled = vi.fn();
+      const { rerender } = render(GameShellHarness, {
+        gameState: state(),
+        onCloseCase: vi.fn(),
+      });
+      window.dispatchEvent(escapeKeydown());
+      await screen.findByRole("dialog", { name: "遊戲選單" });
+      release = claimEscape(vi.fn());
+      await rerender({
+        gameState: state(),
+        onCloseCase: vi.fn(),
+        gameMenuRequest: {
+          id: 24,
+          returnFocusTo: present,
+          allowWhileEscapeClaimed: true,
+        },
+        onGameMenuRequestHandled: handled,
+      });
+      await vi.waitFor(() =>
+        expect(handled).toHaveBeenCalledExactlyOnceWith(24),
+      );
+      await userEvent
+        .setup()
+        .click(screen.getByRole("button", { name: /繼續調查/ }));
+      await vi.waitFor(() => expect(origin).toHaveFocus());
+    } finally {
+      release();
+      origin.remove();
+      present.remove();
+    }
   });
 
   it("does not update the focus origin when a game menu request arrives while the menu is already open with a null focus origin", async () => {

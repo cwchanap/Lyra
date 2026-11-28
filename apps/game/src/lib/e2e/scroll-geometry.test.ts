@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   probeScrollGeometryDom,
   scrollGeometryEqual,
@@ -56,7 +56,33 @@ const sample = (
   scrollport: scrollport === null ? null : { ...scrollport },
 });
 
+type PagePins = Record<string, Element | undefined>;
+
+const PIN = "pin-probe-test";
+
+function registerPin(node: Element, pin = PIN): void {
+  const registry = ((
+    globalThis as typeof globalThis & { __lyraImageEvidencePins?: PagePins }
+  ).__lyraImageEvidencePins ??= {});
+  registry[pin] = node;
+}
+
 describe("probeScrollGeometryDom — the actual serialized WDIO page script", () => {
+  const expectedSrc = (assetPath: string) =>
+    new URL(assetPath, document.baseURI).href;
+
+  beforeEach(() => {
+    delete (
+      globalThis as typeof globalThis & { __lyraImageEvidencePins?: PagePins }
+    ).__lyraImageEvidencePins;
+  });
+
+  afterEach(() => {
+    delete (
+      globalThis as typeof globalThis & { __lyraImageEvidencePins?: PagePins }
+    ).__lyraImageEvidencePins;
+  });
+
   it("returns null when the selector matches nothing", () => {
     document.body.innerHTML = `<div class="other"></div>`;
     expect(probeScrollGeometryDom(".missing", false)).toBeNull();
@@ -72,6 +98,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     expect(probe?.scrollport).toBeNull();
     expect(probe?.viewport.width).toBe(window.innerWidth);
     expect(probe?.devicePixelRatio).toBe(window.devicePixelRatio);
+    expect(probe?.imageBinding).toEqual({ status: "unbound" });
     expect(SCROLLED).toHaveLength(0);
   });
 
@@ -99,9 +126,41 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     });
   });
 
-  it("picks the img whose src matches the fragment, not the first selector match", () => {
-    // The crop must measure the element inspectImageElement inspected —
-    // a stale or sibling record image earlier in the DOM cannot stand in.
+  it("binds a container crop target to the exact pinned image node inside it", () => {
+    // The acquisition popup crops `.visual` (a wrapper) but must prove the
+    // geometry belongs to the <img> the source proof decoded.
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector(".evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    registerPin(image);
+    setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    const src = expectedSrc("/assets/evidence/cctv.png");
+    const probe = probeScrollGeometryDom(
+      ".acquisition-card .visual",
+      false,
+      "img.evidence-image",
+      src,
+      PIN,
+    );
+    expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+    // The pinned image's own rect is reported separately: the crop must prove
+    // the image, not the wrapper that happens to contain it.
+    expect(probe?.imageRect).toEqual({
+      left: 60,
+      top: 60,
+      width: 100,
+      height: 80,
+    });
+    expect(probe?.imageBinding).toEqual({ status: "bound", src, pin: PIN });
+  });
+
+  it("measures the pinned node, not a same-selector stale sibling that comes first", () => {
     document.body.innerHTML = `
       <img class="record-image" src="/assets/evidence/stale.png">
       <img class="record-image" src="/assets/evidence/expected.png">
@@ -109,31 +168,166 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     const stale = document.querySelector(".record-image");
     const expected = document.querySelectorAll(".record-image")[1];
     if (!stale || !expected) throw new Error("fixture missing images");
+    registerPin(expected);
     setRect(stale, { left: 0, top: 0, width: 10, height: 10 });
     setRect(expected, { left: 10, top: 20, width: 300, height: 200 });
+    const src = expectedSrc("/assets/evidence/expected.png");
     const probe = probeScrollGeometryDom(
       ".record-image",
       false,
-      "/assets/evidence/expected.png",
+      ".record-image",
+      src,
+      PIN,
     );
     expect(probe?.rect).toEqual({ left: 10, top: 20, width: 300, height: 200 });
+    expect(probe?.imageRect).toEqual({
+      left: 10,
+      top: 20,
+      width: 300,
+      height: 200,
+    });
+    expect(probe?.imageBinding).toEqual({ status: "bound", src, pin: PIN });
   });
 
-  it("returns null when the fragment matches no mounted image", () => {
-    document.body.innerHTML = `<img class="record-image" src="/assets/evidence/stale.png">`;
-    expect(
-      probeScrollGeometryDom(
-        ".record-image",
-        false,
-        "/assets/evidence/expected.png",
-      ),
-    ).toBeNull();
+  it("reports detached when the pinned node is replaced by an equal-URL node", () => {
+    // The same-URL replacement has the same URL and even the same rect, but
+    // it is a different DOM node with no pin — it can never stand in.
+    document.body.innerHTML = `<img class="record-image" src="/assets/evidence/expected.png">`;
+    const ready = document.querySelector(".record-image");
+    if (!ready) throw new Error("fixture missing image");
+    registerPin(ready);
+    setRect(ready, { left: 10, top: 20, width: 300, height: 200 });
+    ready.remove();
+    const replacement = document.createElement("img");
+    replacement.className = "record-image";
+    replacement.src = "/assets/evidence/expected.png";
+    document.body.appendChild(replacement);
+    setRect(replacement, { left: 10, top: 20, width: 300, height: 200 });
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "detached", pin: PIN });
   });
 
-  it("resolves a non-img wrapper when WebDriver JSON-round-trips omitted srcFragment as null", () => {
-    // WebDriver serializes browser.execute(fn, sel, false, undefined) as
-    // [sel, false, null]; the acquisition popup crops .acquisition-card .visual
-    // (a wrapper div, not an <img>) without expectedPathFragment.
+  it("reports stale when the pinned node stops matching the image selector", () => {
+    document.body.innerHTML = `
+      <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
+    `;
+    const image = document.querySelector(".evidence-image");
+    if (!image) throw new Error("fixture missing image");
+    registerPin(image);
+    image.className = "no-longer-the-evidence-image";
+    const probe = probeScrollGeometryDom(
+      ".visual",
+      false,
+      "img.evidence-image",
+      expectedSrc("/assets/evidence/cctv.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "stale", pin: PIN });
+  });
+
+  it("reports missing when the pin token is unknown to the page registry", () => {
+    document.body.innerHTML = `<img class="record-image" src="/assets/evidence/expected.png">`;
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "missing", pin: PIN });
+  });
+
+  it("reports stale for a pinned path-suffix impostor (never a lookalike pass)", () => {
+    document.body.innerHTML = `
+      <img class="record-image" src="/assets/evidence/expected.png.backup">
+    `;
+    const image = document.querySelector(".record-image");
+    if (!image) throw new Error("fixture missing image");
+    registerPin(image);
+    setRect(image, { left: 10, top: 20, width: 300, height: 200 });
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "stale", pin: PIN });
+  });
+
+  it("reports ambiguous when two nodes carry the exact same URL", () => {
+    document.body.innerHTML = `
+      <img class="record-image" src="/assets/evidence/expected.png">
+      <img class="record-image" src="/assets/evidence/expected.png">
+    `;
+    const first = document.querySelector(".record-image");
+    if (!first) throw new Error("fixture missing image");
+    registerPin(first);
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "ambiguous", count: 2 });
+  });
+
+  it("reports ambiguous when several crop-container selectors match", () => {
+    document.body.innerHTML = `
+      <div class="visual"></div>
+      <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
+    `;
+    const image = document.querySelector(".evidence-image");
+    if (!image) throw new Error("fixture missing image");
+    registerPin(image);
+    const probe = probeScrollGeometryDom(
+      ".visual",
+      false,
+      "img.evidence-image",
+      expectedSrc("/assets/evidence/cctv.png"),
+      PIN,
+    );
+    expect(probe?.imageRect).toBeNull();
+    expect(probe?.imageBinding).toEqual({ status: "ambiguous", count: 2 });
+  });
+
+  it("reports outside-target when the pinned image is not inside the crop target", () => {
+    document.body.innerHTML = `
+      <div class="visual"><img class="other-image" src="/assets/evidence/other.png"></div>
+      <img class="evidence-image" src="/assets/evidence/cctv.png">
+    `;
+    const visual = document.querySelector(".visual");
+    const image = document.querySelector(".evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    registerPin(image);
+    setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    const src = expectedSrc("/assets/evidence/cctv.png");
+    const probe = probeScrollGeometryDom(
+      ".visual",
+      false,
+      "img.evidence-image",
+      src,
+      PIN,
+    );
+    expect(probe?.imageBinding).toEqual({ status: "outside-target", src });
+  });
+
+  it("stays unbound when WebDriver round-trips omitted identity params as null", () => {
+    // WebDriver serializes browser.execute(fn, sel, false, undefined,
+    // undefined, undefined) as [sel, false, null, null, null]; only callers
+    // that bind a crop to an inspected node pass the extra arguments.
     document.body.innerHTML = `
       <div class="acquisition-card">
         <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
@@ -142,12 +336,26 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     const visual = document.querySelector(".acquisition-card .visual");
     if (!visual) throw new Error("fixture missing visual wrapper");
     setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
-    const [selector, scrollIntoView, srcFragment] = JSON.parse(
-      JSON.stringify([".acquisition-card .visual", false, undefined]),
-    ) as [string, boolean, string | null];
-    expect(srcFragment).toBeNull();
-    const probe = probeScrollGeometryDom(selector, scrollIntoView, srcFragment);
+    const [selector, scrollIntoView, imageSelector, expectedImageSrc, pin] =
+      JSON.parse(
+        JSON.stringify([
+          ".acquisition-card .visual",
+          false,
+          undefined,
+          undefined,
+          undefined,
+        ]),
+      ) as [string, boolean, string | null, string | null, string | null];
+    expect(pin).toBeNull();
+    const probe = probeScrollGeometryDom(
+      selector,
+      scrollIntoView,
+      imageSelector,
+      expectedImageSrc,
+      pin,
+    );
     expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+    expect(probe?.imageBinding).toEqual({ status: "unbound" });
   });
 
   it("skips an overflowY:auto ancestor that does not actually overflow", () => {

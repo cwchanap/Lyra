@@ -291,8 +291,15 @@ describe("InvestigationMapView", () => {
     };
     await renderMap({ map: twoNodeMap, sublocations: extendedSublocations });
 
-    const buttons = screen.getAllByRole("button");
+    const menu = screen.getByRole("button", { name: "遊戲選單" });
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".map-plane button"),
+    );
     expect(buttons).toHaveLength(2);
+    expect(
+      menu.compareDocumentPosition(buttons[0]!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
     expect(buttons[0]).toHaveAttribute(
       "data-map-destination",
       "rain_bell_cafe",
@@ -592,9 +599,13 @@ describe("InvestigationMapView", () => {
     expect(mapSource()).not.toContain("display: none");
     expect(cssRule(mapSource(), ".map-pin")).toContain("min-height: 44px");
 
-    // One navigation surface: every button is a map control and there is no
-    // secondary textual destination list.
-    const buttons = screen.getAllByRole("button");
+    // The menu is separate from the single destination surface.
+    expect(
+      screen.getByRole("button", { name: "遊戲選單" }),
+    ).toBeInTheDocument();
+    const buttons = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".map-plane button"),
+    );
     expect(buttons).toHaveLength(1);
     expect(buttons[0]).toHaveAttribute(
       "data-map-destination",

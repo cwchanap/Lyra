@@ -23,6 +23,11 @@ import {
   createRunId,
   runE2eRunner,
 } from "./e2e-runner-lifecycle.mjs";
+import {
+  claimXvfbDisplay,
+  trustedXvfbKeysOptIn,
+  verifyLivePrivateXvfbSession,
+} from "./e2e-x11-trusted-input.mjs";
 
 let options;
 let suiteIds;
@@ -98,6 +103,19 @@ async function main() {
       attempts: options.attempts,
       runDirectory,
       supervisor,
+      claimDisplay: trustedXvfbKeysOptIn({
+        platform: process.platform,
+        env: process.env,
+      })
+        ? async ({ pointerStatePath }) => {
+            const session = await verifyLivePrivateXvfbSession();
+            claimXvfbDisplay({
+              ...session,
+              pointerStatePath,
+              runnerPid: process.pid,
+            });
+          }
+        : undefined,
       runGuard: () =>
         supervisor.run({
           command: process.execPath,
@@ -110,7 +128,7 @@ async function main() {
       buildPhasePlan: buildE2ePhasePlan,
       suiteForPhase: e2eSuiteForPhase,
       applyCheckpoint: applyCheckpointAction,
-      async runPhase(phase, { attempt, outputDirectory }) {
+      async runPhase(phase, { attempt, outputDirectory, pointerStatePath }) {
         console.log(`save e2e phase: ${phase.id} (attempt ${attempt})`);
         return supervisor.run({
           command: "bun",
@@ -130,6 +148,7 @@ async function main() {
               }),
               LYRA_E2E_RUNNER_PHASE: phase.id,
               LYRA_E2E_ATTEMPT: String(attempt),
+              LYRA_E2E_X11_POINTER_STATE: pointerStatePath,
               LYRA_E2E_CAPTURE_BACKEND_LOGS: "1",
             },
             stdio: "inherit",

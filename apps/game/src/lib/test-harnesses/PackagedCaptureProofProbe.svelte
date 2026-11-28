@@ -50,6 +50,11 @@
   let captureEmbeddedFontCssBytes = $state(0);
   let captureEmbeddedFontChunkCount = $state(0);
   let captureEmbeddedZhHantCodePointCount = $state(0);
+  let captureCrossfadeEvidence = $derived(
+    captureCommandInFlight
+      ? ""
+      : JSON.stringify(captureStatus().crossfadeEvidence ?? null),
+  );
   $effect(() => {
     const inFlight = captureCommandInFlight;
     const snapshot = captureStatus();
@@ -191,6 +196,7 @@
   data-capture-proof-font-css-bytes={captureEmbeddedFontCssBytes}
   data-capture-proof-font-chunks={captureEmbeddedFontChunkCount}
   data-capture-proof-font-zh-hant-code-points={captureEmbeddedZhHantCodePointCount}
+  data-capture-proof-crossfade-evidence={captureCrossfadeEvidence}
   data-save-thumbnail-exclude=""
   aria-label="Packaged capture proof"
   style="pointer-events: none"

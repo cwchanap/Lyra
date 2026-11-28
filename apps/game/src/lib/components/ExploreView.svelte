@@ -5,6 +5,7 @@
   import InvestigationSceneSurface from "./InvestigationSceneSurface.svelte";
   import InvestigationMapView from "./InvestigationMapView.svelte";
   import InvestigationProgressHud from "./InvestigationProgressHud.svelte";
+  import MenuTrigger from "./MenuTrigger.svelte";
   import { remainingTargetsBySublocation } from "$lib/investigation/progress";
 
   let {
@@ -16,6 +17,7 @@
     inventory = { evidence: [], statements: [] },
     onPresent = () => {},
     presentFeedback = null,
+    onOpenGameMenu,
     disabled = false,
     hud,
   }: {
@@ -31,6 +33,7 @@
       itemId: string,
     ) => void;
     presentFeedback?: { characterId: string; line: FeedbackLine } | null;
+    onOpenGameMenu?: (trigger: HTMLElement) => void;
     disabled?: boolean;
     hud?: Snippet;
   } = $props();
@@ -70,6 +73,7 @@
         {#if hud}
           {@render hud()}
         {/if}
+        <MenuTrigger {disabled} onOpen={onOpenGameMenu} />
       </div>
     </div>
   {/snippet}
@@ -93,6 +97,7 @@
       sublocations={inv.visibleSublocations}
       summary={inv.summary}
       onTravel={onEnterSublocation}
+      {onOpenGameMenu}
       {disabled}
     />
   {/key}
@@ -118,16 +123,24 @@
   }
 
   .explore-hud :global(.primary-objective-hud) {
-    max-width: min(280px, 100%);
+    flex: 1 1 280px;
+    min-width: 0;
+    max-width: 280px;
+    padding: 6px 10px;
+  }
+
+  .explore-hud :global(.investigation-progress) {
+    flex: none;
   }
 
   .hud-side {
     grid-column: 2;
     grid-row: 1;
     display: flex;
-    flex-wrap: wrap;
+    min-width: 0;
+    max-height: 74px;
+    flex-wrap: nowrap;
     justify-content: flex-end;
     gap: 8px;
-    max-width: min(600px, 100%);
   }
 </style>

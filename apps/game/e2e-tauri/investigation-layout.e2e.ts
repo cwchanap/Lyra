@@ -1,29 +1,48 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { compile } from "svelte/compiler";
+import { render } from "svelte/server";
+import {
+  assertSceneNavPointerEvents,
+  assertSceneNavTabProgress,
+  assertSceneNavWheelProgress,
+  assertInvestigationPointerEvents,
+  describeX11InputError,
+  deliverX11PointerPair,
+  isAuthorizedInvestigationPointerId,
+} from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   advanceDialogueUntil,
+  assertSafeXvfbDisplay,
+  captureMockupViewport,
   collectKagamiSummaryEvidence,
   dismissAllPendingAcquisitions,
+  drainCurrentDialogue,
+  e2eXvfbTrustedKeysEnabled,
   elementExists,
   enabledMapDestinationIds,
   ensureMinimumWindowViewport,
   getPackagedGameState,
   jsClick,
   jumpToProductionScene,
+  jumpToProductionChapterScene,
   loadPackagedCheckpoint,
   MINIMUM_WINDOW,
   openGameMenu,
   resetE2eStorage,
   seedStoryCleared,
+  sendXvfbTrustedKey,
+  sendXvfbTrustedInvestigationPointer,
+  sendXvfbTrustedSceneNavPointer,
   startFromMenu,
   waitForPackagedGameState,
+  xvfbPointerState,
 } from "./helpers";
 import { anchors } from "./production-anchors";
 import type { E2eCheckpointId } from "$lib/e2e/checkpoints";
 import {
-  coverPlaneSize,
   targetLayoutStyle,
-  targetViewportRect,
   type TargetLayout,
 } from "$lib/investigation/target-layout";
 import type { GameStateView, SublocationView } from "$lib/state/types";
@@ -51,19 +70,14 @@ type Box = { left: number; top: number; right: number; bottom: number };
 const HPA853_SCENE_NUMBERS = [8, 10, 12, 14, 16, 17] as const;
 
 /**
- * The pinned unplaced set: empty since HPA-1143's five targets shipped —
- * the stage-relative header shrinks the 800x600 cover enough that all
- * five objects sit inside the revealed band (scene 8's uploader_header
- * clears the nav outright; the four edge objects survive the ~3% side
- * crop). The gate below requires this set to stay empty — any compiled
- * target losing its layout fails loudly here.
+ * The pinned unplaced set: empty since HPA-1143's five targets shipped.
+ * Any compiled target losing its layout fails loudly here.
  */
 const EXPECTED_UNPLACED_TARGETS: string[] = [];
 
 /**
- * Authored sublocation count per HPA-853 scene: the max location bar must
- * show every chip at once — the 4-chip NAV of scenes 12/14 included — not
- * the initial 1-chip state a fresh playthrough would give.
+ * Authored sublocation count per HPA-853 scene: every chip must be present,
+ * including the 4-chip NAV of scenes 12/14.
  */
 const HPA853_SUBLOCATION_COUNTS = {
   investigation_scene_8: 3,
@@ -90,14 +104,12 @@ const HPA853_LAYOUT_CHECKPOINTS = {
   E2eCheckpointId
 >;
 
-/** Center-gate tolerance for authored decimal coordinates. */
-const CENTER_EPSILON = 1e-6;
-
 type HudRects = {
   nav: Box | null;
   progress: Box | null;
   primaryObjective: Box | null;
   sceneLabel: Box | null;
+  menu: Box | null;
 };
 
 type TargetMeasurement = {
@@ -116,6 +128,10 @@ type TargetMeasurement = {
 
 type SublocationMeasurement = {
   viewport: { width: number; height: number };
+  hudHeight: number;
+  stageHeight: number;
+  rowOneHeight: number;
+  rowTwoHeight: number;
   hud: HudRects;
   targets: TargetMeasurement[];
   projectedLocked: Array<{ id: string; rect: Box }>;
@@ -261,6 +277,30 @@ async function enterSublocationThroughNav(
       state.scene.currentSublocationId === sublocation.id
     );
   });
+  await browser.waitUntil(
+    () =>
+      browser.execute((label: string) => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        );
+        const active = chips?.querySelector<HTMLElement>("button.active");
+        if (
+          !chips ||
+          !active ||
+          active.querySelector(".label")?.textContent?.trim() !== label
+        )
+          return false;
+        const viewport = chips.getBoundingClientRect();
+        const button = active.getBoundingClientRect();
+        return (
+          button.left >= viewport.left - 1 && button.right <= viewport.right + 1
+        );
+      }, sublocation.label),
+    {
+      timeout: 10000,
+      timeoutMsg: `Active scene chip ${sublocation.id} did not scroll into view`,
+    },
+  );
 }
 
 /** The keyed surface re-rendered for the newly entered sublocation. */
@@ -404,6 +444,8 @@ async function expectHpa853SublocationSurface(
       if (!stageElement || !planeElement)
         throw new Error("Scene stage missing");
       const stage = stageElement.getBoundingClientRect();
+      const header = document.querySelector(".scene-hud");
+      if (!header) throw new Error("Scene HUD missing");
       const plane = planeElement.getBoundingClientRect();
       const clipped = (rect: DOMRect): Box => ({
         left: Math.max(rect.left, stage.left),
@@ -416,7 +458,13 @@ async function expectHpa853SublocationSurface(
         progress: rectOf(".investigation-progress"),
         primaryObjective: rectOf(".primary-objective-hud"),
         sceneLabel: rectOf(".scene-label"),
+        menu: rectOf(".scene-hud [data-game-menu-trigger]"),
       };
+      const rowOneHeight = Math.max(
+        ...[hud.progress, hud.primaryObjective, hud.sceneLabel, hud.menu].map(
+          (rect) => (rect ? rect.bottom - rect.top : 0),
+        ),
+      );
       const authoredById = new Map(authored.map((entry) => [entry.id, entry]));
       const targets: TargetMeasurement[] = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -510,16 +558,30 @@ async function expectHpa853SublocationSurface(
           ? null
           : Number((fallbackEyebrow.textContent ?? "").split("·")[1]?.trim()) ||
             0;
-      return { viewport, hud, targets, projectedLocked, fallbackCount };
+      return {
+        viewport,
+        hudHeight: header.getBoundingClientRect().height,
+        stageHeight: stage.height,
+        rowOneHeight,
+        rowTwoHeight: hud.nav ? hud.nav.bottom - hud.nav.top : 0,
+        hud,
+        targets,
+        projectedLocked,
+        fallbackCount,
+      };
     },
     lockedStyles,
     authoredLayouts,
   );
 
   expect(measurement.viewport).toEqual(MINIMUM_WINDOW);
+  expect(measurement.hudHeight).toBeLessThanOrEqual(150);
+  expect(measurement.stageHeight).toBeGreaterThanOrEqual(450);
+  expect(measurement.rowOneHeight).toBeLessThanOrEqual(74);
+  expect(measurement.rowTwoHeight).toBeLessThanOrEqual(54);
 
-  // A placed target production routed into the fallback list means the crop
-  // or the panel band ate its hit box — never acceptable for these scenes.
+  // A placed target routed into fallback means the stage edge or panel band
+  // ate its hit box — never acceptable for these scenes.
   const routedIds = measurement.targets
     .filter((target) => target.routed)
     .map((target) => target.id);
@@ -553,20 +615,21 @@ async function expectHpa853SublocationSurface(
   const missingHud: string[] = [];
   if (measurement.hud.nav === null) missingHud.push(".explore-hud nav");
   if (measurement.hud.sceneLabel === null) missingHud.push(".scene-label");
+  if (measurement.hud.menu === null)
+    missingHud.push("[data-game-menu-trigger]");
   if (outroTotal > 0 && measurement.hud.progress === null) {
     missingHud.push(".investigation-progress");
   }
   expect(missingHud).toEqual([]);
 
-  // Visual occlusion is decided from the DOM rects: PROGRESS, PRIMARY
-  // OBJECTIVE and the scene label are pointer-events:none, so no hit test
-  // can discover them covering a target. Not nav.bottom/600 as a full-width
-  // floor — flex-wrap can move PROGRESS under the nav.
+  // Visual occlusion is decided from each HUD element's DOM rectangle,
+  // rather than treating the nav bottom as a full-width obstruction.
   const hudCandidates = [
     { name: ".explore-hud nav", rect: measurement.hud.nav },
     { name: ".investigation-progress", rect: measurement.hud.progress },
     { name: ".primary-objective-hud", rect: measurement.hud.primaryObjective },
     { name: ".scene-label", rect: measurement.hud.sceneLabel },
+    { name: "[data-game-menu-trigger]", rect: measurement.hud.menu },
   ];
   const hudRects: Array<{ name: string; rect: Box }> = [];
   for (const candidate of hudCandidates) {
@@ -625,6 +688,11 @@ async function expectHpa853SublocationSurface(
       (target) => `${target.id} was hit at ${target.authoredHitDescription}`,
     );
   expect(authoredMisrouted).toEqual([]);
+  expect(
+    measurement.targets
+      .filter((target) => !target.authoredCenterProbed)
+      .map((target) => target.id),
+  ).toEqual([]);
 }
 
 /** Fresh setup that parks gameplay on the first map wrapper's pending map. */
@@ -653,9 +721,366 @@ async function expectCrossedToRainBellInvestigation(): Promise<void> {
   expect(await elementExists(anchors.cityMapSelector)).toBe(false);
 }
 
+async function inspectNamedTarget(
+  id: string,
+  expectedEvidence: string | null,
+): Promise<void> {
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  const selector = `button.hotspot-target[data-target-id="${id}"]`;
+  await browser.waitUntil(async () => elementExists(selector), {
+    timeout: 30000,
+    timeoutMsg: `named target ${id} was not visible`,
+  });
+  const before = await browser.execute((sel: string) => {
+    const button = document.querySelector<HTMLButtonElement>(sel)!;
+    const box = button.getBoundingClientRect();
+    const plane = button.closest<HTMLElement>(".scene-coordinate-plane")!;
+    const planeRect = plane.getBoundingClientRect();
+    const authored = (target: HTMLElement) => ({
+      x:
+        planeRect.left +
+        (parseFloat(target.style.getPropertyValue("--x")) / 100) *
+          planeRect.width,
+      y:
+        planeRect.top +
+        (parseFloat(target.style.getPropertyValue("--y")) / 100) *
+          planeRect.height,
+      width:
+        (parseFloat(target.style.getPropertyValue("--w")) / 100) *
+        planeRect.width,
+      height:
+        (parseFloat(target.style.getPropertyValue("--h")) / 100) *
+        planeRect.height,
+    });
+    const targetArt = authored(button);
+    const x = Math.floor(targetArt.x + targetArt.width / 2);
+    const y = Math.floor(targetArt.y + targetArt.height / 2);
+    const hit = document.elementFromPoint(x, y);
+    const cues = Array.from(
+      plane.querySelectorAll<HTMLElement>("button.hotspot-target"),
+    ).flatMap((target) => {
+      const cue = target.querySelector<HTMLElement>(".target-pending");
+      if (!cue) return [];
+      const animation = cue.style.animation;
+      cue.style.animation = "none";
+      const rect = cue.getBoundingClientRect();
+      cue.style.animation = animation;
+      return [
+        {
+          id: target.dataset.targetId,
+          authored: authored(target),
+          cue: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        },
+      ];
+    });
+    document.documentElement.dataset.hpa852TargetClick = "";
+    button.addEventListener(
+      "click",
+      (event) => {
+        document.documentElement.dataset.hpa852TargetClick = JSON.stringify({
+          trusted: event.isTrusted,
+          target: (event.target as Element | null)
+            ?.closest("[data-target-id]")
+            ?.getAttribute("data-target-id"),
+        });
+      },
+      { once: true },
+    );
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      center: { x, y },
+      authored: targetArt,
+      cues,
+      hitTarget:
+        hit?.closest("[data-target-id]")?.getAttribute("data-target-id") ??
+        null,
+    };
+  }, selector);
+  await browser.saveScreenshot(path.join(output, `target-${id}.png`));
+  expect(before.hitTarget).toBe(id);
+  if (id === "material_kit_list") {
+    const cue = before.cues.find((item) => item.id === id);
+    if (!cue) throw new Error("material-kit pending cue is missing");
+    expect(cue.cue.x).toBeGreaterThanOrEqual(cue.authored.x - 0.5);
+    expect(cue.cue.x + cue.cue.width).toBeLessThanOrEqual(
+      cue.authored.x + cue.authored.width + 0.5,
+    );
+  }
+  let error: string | null = null;
+  let event: { trusted: boolean; target: string | null } | null = null;
+  let pointerEvents: Array<{
+    type: string;
+    trusted: boolean;
+    targetId: string | null;
+  }> = [];
+  const trustedTransport: Array<
+    Awaited<ReturnType<typeof sendXvfbTrustedInvestigationPointer>>
+  > = [];
+  const opted =
+    e2eXvfbTrustedKeysEnabled() && isAuthorizedInvestigationPointerId(id);
+  if (opted) {
+    await browser.execute(() => {
+      document.documentElement.dataset.hpa852NamedPointerEvents = "[]";
+      for (const type of ["pointerdown", "pointerup", "click"]) {
+        document.addEventListener(
+          type,
+          (observed) => {
+            const root = document.documentElement;
+            const events = JSON.parse(
+              root.dataset.hpa852NamedPointerEvents ?? "[]",
+            );
+            events.push({
+              type,
+              trusted: observed.isTrusted,
+              targetId:
+                (observed.target as Element | null)
+                  ?.closest(".scene-coordinate-plane button.hotspot-target")
+                  ?.getAttribute("data-target-id") ?? null,
+            });
+            root.dataset.hpa852NamedPointerEvents = JSON.stringify(events);
+          },
+          { capture: true, once: true },
+        );
+      }
+    });
+    try {
+      trustedTransport.push(
+        await sendXvfbTrustedInvestigationPointer(id, "move"),
+      );
+      await deliverX11PointerPair({
+        pointerState: xvfbPointerState(),
+        button: "click",
+        press: async () => {
+          trustedTransport.push(
+            await sendXvfbTrustedInvestigationPointer(id, "click-press"),
+          );
+        },
+        release: async () => {
+          trustedTransport.push(
+            await sendXvfbTrustedInvestigationPointer(id, "click-release"),
+          );
+        },
+      });
+    } catch (cause) {
+      error = describeX11InputError(cause);
+    }
+    pointerEvents = await browser.execute(() =>
+      JSON.parse(
+        document.documentElement.dataset.hpa852NamedPointerEvents ?? "[]",
+      ),
+    );
+  } else {
+    if (isAuthorizedInvestigationPointerId(id)) {
+      try {
+        await (await $(selector)).click();
+      } catch (cause) {
+        error = String(cause);
+      }
+    } else {
+      await jsClick(selector);
+    }
+    event = await browser.execute(() =>
+      document.documentElement.dataset.hpa852TargetClick
+        ? JSON.parse(document.documentElement.dataset.hpa852TargetClick)
+        : null,
+    );
+    if (!event) await jsClick(selector);
+  }
+  const transport = opted
+    ? "verified-xvfb-xtest"
+    : isAuthorizedInvestigationPointerId(id) && event
+      ? "webdriver"
+      : "synthetic-dom-fallback";
+  writeFileSync(
+    path.join(output, `target-${id}.json`),
+    JSON.stringify(
+      {
+        id,
+        expectedEvidence,
+        before,
+        transport,
+        event,
+        pointerEvents,
+        trustedTransport,
+        coverage: opted ? "pending" : "inconclusive",
+        error,
+      },
+      null,
+      2,
+    ),
+  );
+  const trusted = opted && assertInvestigationPointerEvents(pointerEvents, id);
+  if (opted && (error || !trusted)) {
+    throw new Error(
+      `${id}: trusted pointer delivery failed: ${error ?? "no trusted sequence"}`,
+    );
+  }
+  const state = await waitForPackagedGameState(
+    (view) =>
+      view.scene.kind === "investigation" &&
+      view.scene.visibleSublocations.some((location) =>
+        location.hotspots.some(
+          (hotspot) => hotspot.id === id && hotspot.inspected,
+        ),
+      ),
+    30000,
+    `${id} did not become inspected`,
+  );
+  if (expectedEvidence) {
+    expect(
+      state.inventory.evidence.some((item) => item.id === expectedEvidence),
+    ).toBe(true);
+  }
+  const confrontUnlocked =
+    id === "to_confront" &&
+    state.scene.kind === "investigation" &&
+    state.scene.visibleSublocations.some(
+      (item) => item.id === "confront_kitami",
+    );
+  if (id === "to_confront") expect(confrontUnlocked).toBe(true);
+  writeFileSync(
+    path.join(output, `target-${id}.json`),
+    JSON.stringify(
+      {
+        id,
+        expectedEvidence,
+        before,
+        transport,
+        event,
+        pointerEvents,
+        trustedTransport,
+        coverage: trusted ? "measured" : "inconclusive",
+        error,
+        inspected: true,
+        evidenceAcquired: expectedEvidence
+          ? state.inventory.evidence.some(
+              (item) => item.id === expectedEvidence,
+            )
+          : null,
+        confrontUnlocked: id === "to_confront" ? confrontUnlocked : null,
+      },
+      null,
+      2,
+    ),
+  );
+  await dismissAllPendingAcquisitions();
+  if (state.mode.type === "dialogue") await drainCurrentDialogue("explore");
+  await dismissAllPendingAcquisitions();
+}
+
+async function recordSceneCharacter(id: string): Promise<void> {
+  await browser.waitUntil(
+    async () =>
+      browser.execute(() => {
+        const background = document.querySelector<HTMLImageElement>(
+          "img.background-image.visible",
+        );
+        return Boolean(background?.complete && background.naturalWidth);
+      }),
+    { timeout: 30000, timeoutMsg: `${id}: background did not load` },
+  );
+  const measurement = await browser.execute((characterId: string) => {
+    const target = document.querySelector<HTMLElement>(
+      `[data-target-id="${characterId}"]`,
+    );
+    const box = target?.getBoundingClientRect();
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      target: box
+        ? { x: box.x, y: box.y, width: box.width, height: box.height }
+        : null,
+    };
+  }, id);
+  const output = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.saveScreenshot(
+    path.join(output, `character-${id}-800x600.png`),
+  );
+  writeFileSync(
+    path.join(output, `character-${id}-800x600.json`),
+    JSON.stringify(measurement, null, 2),
+  );
+}
+
 describe("investigation layout surface", () => {
-  beforeEach(async () => {
+  beforeEach(async function () {
+    assertSafeXvfbDisplay(this, true);
     await resetE2eStorage();
+  });
+  afterEach(function () {
+    assertSafeXvfbDisplay(this, true);
+  });
+
+  it("records named chapter 1 packet and ledger interactions", async function () {
+    this.timeout(1_800_000);
+    await seedStoryCleared();
+    await startFromMenu();
+    await jumpToProductionChapterScene("chapter_1", "investigation_scene_8");
+    await drainCurrentDialogue("explore");
+    await ensureMinimumWindowViewport();
+    await recordSceneCharacter("takase");
+    await inspectNamedTarget("stacked_ledgers", null);
+    await inspectNamedTarget("phone_screenshot", null);
+    const scene8 = await getPackagedGameState();
+    if (scene8.scene.kind !== "investigation")
+      throw new Error("expected investigation");
+    const fixed = scene8.scene.visibleSublocations.find(
+      (item) => item.id === "fixed_panel",
+    );
+    if (!fixed) throw new Error("missing fixed_panel");
+    await enterSublocationThroughNav(scene8.scene.id, fixed);
+    await waitForSceneSurface(fixed);
+    await recordSceneCharacter("kurose");
+    await jumpToProductionChapterScene("chapter_1", "investigation_scene_9");
+    await drainCurrentDialogue("explore");
+    for (const [id, evidence] of [
+      ["workorder", "temp_maintenance_workorder"],
+      ["access_permission_list", "kitami_external_access"],
+      ["material_kit_list", "contractor_umbrella_sleeve_match"],
+    ]) {
+      await inspectNamedTarget(id, evidence);
+    }
+    await inspectNamedTarget("to_confront", null);
+    const state = await getPackagedGameState();
+    expect(state.scene.kind).toBe("investigation");
+    if (state.scene.kind === "investigation") {
+      expect(
+        state.scene.visibleSublocations.some(
+          (item) => item.id === "confront_kitami",
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("records named chapter 2 scene 4 targets", async function () {
+    this.timeout(1_800_000);
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    for (const [locationId, targetId, evidence] of [
+      ["stream_wall_plaza", "stream_wall_screen", null],
+      ["control_room_perimeter", "ob_van_monitor", "program_composite_label"],
+    ]) {
+      const state = await getPackagedGameState();
+      if (state.scene.kind !== "investigation")
+        throw new Error("expected investigation");
+      const location = state.scene.visibleSublocations.find(
+        (item) => item.id === locationId,
+      );
+      if (!location) throw new Error(`missing ${locationId}`);
+      await enterSublocationThroughNav(state.scene.id, location);
+      await waitForSceneSurface(location);
+      await inspectNamedTarget(targetId!, evidence);
+    }
+    const state = await getPackagedGameState();
+    if (state.scene.kind !== "investigation")
+      throw new Error("expected investigation");
+    const fan = state.scene.visibleSublocations.find(
+      (item) => item.id === "fan_support_area",
+    );
+    if (!fan) throw new Error("missing fan_support_area");
+    await enterSublocationThroughNav(state.scene.id, fan);
+    await waitForSceneSurface(fan);
+    await recordSceneCharacter("togawa_miu");
   });
 
   it("collects a placed investigation hotspot through the real player UI", async () => {
@@ -713,20 +1138,10 @@ describe("investigation layout surface", () => {
     );
   });
 
-  it("keeps every shipped placement usable and its pending cue on it at 800x600", async () => {
-    // Scene 3's front room has both an unfinished hotspot and a witness
-    // with open topics, so both cue variants are live.
-    await seedStoryCleared();
-    await startFromMenu();
-    await jumpToProductionScene("investigation_scene_3");
-    await advanceDialogueUntil(async () => {
-      const state = await getPackagedGameState();
-      return (
-        state.mode.type === "explore" &&
-        state.scene.kind === "investigation" &&
-        state.scene.currentSublocationId !== null
-      );
-    });
+  it("keeps every shipped placement usable and its cue on it at 800x600 and 800x720", async () => {
+    // The existing five-location checkpoint supplies actual pending controls
+    // to exercise both cue variants without adding a checkpoint.
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
     const hotspotSel = "button.hotspot-target";
     const characterSel = "button.character-target";
     await browser.waitUntil(
@@ -742,15 +1157,14 @@ describe("investigation layout surface", () => {
         ),
       {
         timeout: 15000,
-        timeoutMsg: "scene 3 targets did not show their pending cues",
+        timeoutMsg: "scene 4 targets did not show their pending cues",
       },
     );
     await ensureMinimumWindowViewport();
 
     const placements = shippedPlacements();
     const ids = placements.map((placement) => placement.id);
-    // Where the 800x600 clipping was found: two markers, and two targets
-    // the crop once hid almost or entirely.
+    // Keep the original edge-placement examples in the corpus sweep.
     for (const id of [
       "chapter_1/investigation_scene_3/inner_entry/tall_shelf",
       "chapter_1/investigation_scene_3/front/katase",
@@ -765,117 +1179,229 @@ describe("investigation layout surface", () => {
     // contract, and read back where the target and its cue land. Hotspots
     // are read both with and without the collision compaction, which only
     // drops the minimum hit size.
-    const measured = await browser.execute(
-      (
-        entries: ShippedPlacement[],
-        hotspotSelector: string,
-        characterSelector: string,
-      ) => {
-        const box = (rect: DOMRect) => ({
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-        });
-        const unfinished = (selector: string) =>
-          Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
-            (target) => target.querySelector(".target-pending") !== null,
-          )!;
-        const targets = {
-          hotspot: unfinished(hotspotSelector),
-          character: unfinished(characterSelector),
-        };
-        const saved = Object.values(targets).map((target) => ({
-          target,
-          style: target.getAttribute("style"),
-          className: target.className,
-        }));
-        const compactClasses = ["compact", "compact-x", "compact-y"];
-        const results: Array<{ id: string; target: Box; cue: Box }> = [];
-        for (const entry of entries) {
-          const target = targets[entry.kind];
-          const cue = target.querySelector<HTMLElement>(".target-pending")!;
-          target.setAttribute("style", entry.style);
-          // The pulse scales the cue; measure its resting box.
-          cue.style.animation = "none";
-          const variants = entry.kind === "hotspot" ? [false, true] : [false];
-          for (const compact of variants) {
-            target.classList.remove(...compactClasses);
-            if (compact) target.classList.add("compact");
-            results.push({
-              id: compact ? `${entry.id} (compact)` : entry.id,
-              target: box(target.getBoundingClientRect()),
-              cue: box(cue.getBoundingClientRect()),
-            });
+    const measure = async () =>
+      browser.execute(
+        (
+          entries: ShippedPlacement[],
+          hotspotSelector: string,
+          characterSelector: string,
+        ) => {
+          const box = (rect: DOMRect) => ({
+            left: rect.left,
+            top: rect.top,
+            right: rect.right,
+            bottom: rect.bottom,
+          });
+          const unfinished = (selector: string) =>
+            Array.from(document.querySelectorAll<HTMLElement>(selector)).find(
+              (target) => target.querySelector(".target-pending") !== null,
+            )!;
+          const targets = {
+            hotspot: unfinished(hotspotSelector),
+            character: unfinished(characterSelector),
+          };
+          const saved = Object.values(targets).map((target) => ({
+            target,
+            style: target.getAttribute("style"),
+            className: target.className,
+          }));
+          const compactClasses = ["compact", "compact-x", "compact-y"];
+          const stage = document.querySelector(".scene-stage");
+          const plane = document.querySelector(".scene-coordinate-plane");
+          if (!stage || !plane) throw new Error("Scene stage or plane missing");
+          const planeRect = plane.getBoundingClientRect();
+          const results: Array<{
+            id: string;
+            kind: "hotspot" | "character";
+            target: Box;
+            cue: Box;
+            authored: Box;
+            center: { x: number; y: number };
+          }> = [];
+          for (const entry of entries) {
+            const target = targets[entry.kind];
+            const cue = target.querySelector<HTMLElement>(".target-pending")!;
+            target.setAttribute("style", entry.style);
+            // The pulse scales the cue; measure its resting box.
+            cue.style.animation = "none";
+            const variants = entry.kind === "hotspot" ? [false, true] : [false];
+            for (const compact of variants) {
+              target.classList.remove(...compactClasses);
+              if (compact) target.classList.add("compact");
+              results.push({
+                id: compact ? `${entry.id} (compact)` : entry.id,
+                kind: entry.kind,
+                target: box(target.getBoundingClientRect()),
+                cue: box(cue.getBoundingClientRect()),
+                authored: {
+                  left: planeRect.left + entry.layout.x * planeRect.width,
+                  top: planeRect.top + entry.layout.y * planeRect.height,
+                  right:
+                    planeRect.left +
+                    (entry.layout.x + entry.layout.w) * planeRect.width,
+                  bottom:
+                    planeRect.top +
+                    (entry.layout.y + entry.layout.h) * planeRect.height,
+                },
+                center: {
+                  x:
+                    planeRect.left +
+                    (entry.layout.x + entry.layout.w / 2) * planeRect.width,
+                  y:
+                    planeRect.top +
+                    (entry.layout.y + entry.layout.h / 2) * planeRect.height,
+                },
+              });
+            }
+            cue.style.removeProperty("animation");
           }
-          cue.style.removeProperty("animation");
-        }
-        for (const { target, style, className } of saved) {
-          if (style === null) target.removeAttribute("style");
-          else target.setAttribute("style", style);
-          target.className = className;
-        }
-        const stage = document.querySelector(".scene-stage");
-        if (!stage) throw new Error("Scene stage missing");
-        return {
-          viewport: { width: window.innerWidth, height: window.innerHeight },
-          stage: box(stage.getBoundingClientRect()),
-          results,
-        };
-      },
-      placements,
-      hotspotSel,
-      characterSel,
+          for (const { target, style, className } of saved) {
+            if (style === null) target.removeAttribute("style");
+            else target.setAttribute("style", style);
+            target.className = className;
+          }
+          return {
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            stage: box(stage.getBoundingClientRect()),
+            plane: box(planeRect),
+            results,
+          };
+        },
+        placements,
+        hotspotSel,
+        characterSel,
+      );
+
+    const measurements = [await measure()];
+    await browser.saveScreenshot(
+      path.join(
+        process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+        "placement-800x600.png",
+      ),
+    );
+    await captureMockupViewport({
+      name: "placement-tall",
+      requested: { width: 800, height: 720 },
+      outputDirectory: process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+    });
+    measurements.push(await measure());
+    await ensureMinimumWindowViewport();
+    writeFileSync(
+      path.join(
+        process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+        "placement-geometry.json",
+      ),
+      JSON.stringify(
+        measurements.map(({ viewport, stage, plane }) => ({
+          viewport,
+          stage,
+          plane,
+        })),
+        null,
+        2,
+      ),
     );
 
-    expect(measured.viewport).toEqual(MINIMUM_WINDOW);
-    expect(measured.results.length).toBeGreaterThan(placements.length);
+    expect(measurements[0].viewport).toEqual(MINIMUM_WINDOW);
+    expect(measurements[0].results.length).toBeGreaterThan(placements.length);
+    expect(measurements[1].viewport.height).toBeGreaterThan(
+      MINIMUM_WINDOW.height,
+    );
+    expect(measurements[1].viewport.width * MINIMUM_WINDOW.height).not.toBe(
+      measurements[1].viewport.height * MINIMUM_WINDOW.width,
+    );
 
-    // Every placed target is one the player may need, so the window's crop
-    // must leave enough of it to click, and its cue must sit on that part.
+    // Every placed target must retain a usable stage intersection and cue.
     const unusable: string[] = [];
     const misplaced: string[] = [];
-    for (const { id, target, cue } of measured.results) {
-      const visible: Box = {
-        left: Math.max(target.left, measured.stage.left),
-        top: Math.max(target.top, measured.stage.top),
-        right: Math.min(target.right, measured.stage.right),
-        bottom: Math.min(target.bottom, measured.stage.bottom),
-      };
-      const needWidth = Math.min(
-        target.right - target.left,
-        MIN_USABLE_TARGET_PX,
+    const offstageCenters: string[] = [];
+    for (const measured of measurements) {
+      expect(measured.stage.bottom - measured.stage.top).toBeGreaterThanOrEqual(
+        450,
       );
-      const needHeight = Math.min(
-        target.bottom - target.top,
-        MIN_USABLE_TARGET_PX,
+      expect(measured.plane.left).toBeGreaterThanOrEqual(
+        measured.stage.left - 0.5,
       );
-      if (
-        visible.right - visible.left < needWidth - 0.5 ||
-        visible.bottom - visible.top < needHeight - 0.5
-      ) {
-        unusable.push(
-          `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+      expect(measured.plane.right).toBeLessThanOrEqual(
+        measured.stage.right + 0.5,
+      );
+      expect(measured.plane.top).toBeGreaterThanOrEqual(
+        measured.stage.top - 0.5,
+      );
+      expect(measured.plane.bottom).toBeLessThanOrEqual(
+        measured.stage.bottom + 0.5,
+      );
+      for (const {
+        id,
+        kind,
+        target,
+        cue,
+        authored,
+        center,
+      } of measured.results) {
+        if (
+          center.x < measured.stage.left - 0.5 ||
+          center.x > measured.stage.right + 0.5 ||
+          center.y < measured.stage.top - 0.5 ||
+          center.y > measured.stage.bottom + 0.5
+        ) {
+          offstageCenters.push(
+            `${id} at ${measured.viewport.width}x${measured.viewport.height}: ${JSON.stringify(center)}`,
+          );
+        }
+        const visible: Box = {
+          left: Math.max(target.left, measured.stage.left),
+          top: Math.max(target.top, measured.stage.top),
+          right: Math.min(target.right, measured.stage.right),
+          bottom: Math.min(target.bottom, measured.stage.bottom),
+        };
+        const needWidth = Math.min(
+          target.right - target.left,
+          MIN_USABLE_TARGET_PX,
         );
-        continue;
-      }
-      const cueWidth = cue.right - cue.left;
-      const cueHeight = cue.bottom - cue.top;
-      if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
-        misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
-        continue;
-      }
-      if (
-        cue.left < visible.left ||
-        cue.top < visible.top ||
-        cue.right > visible.right ||
-        cue.bottom > visible.bottom
-      ) {
-        misplaced.push(
-          `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+        const needHeight = Math.min(
+          target.bottom - target.top,
+          MIN_USABLE_TARGET_PX,
         );
+        if (
+          visible.right - visible.left < needWidth - 0.5 ||
+          visible.bottom - visible.top < needHeight - 0.5
+        ) {
+          unusable.push(
+            `${id}: only ${JSON.stringify(visible)} of ${JSON.stringify(target)} is in the window`,
+          );
+          continue;
+        }
+        const cueWidth = cue.right - cue.left;
+        const cueHeight = cue.bottom - cue.top;
+        if (Math.round(cueWidth) !== 12 || Math.round(cueHeight) !== 12) {
+          misplaced.push(`${id}: cue is ${cueWidth}x${cueHeight}, not 12x12`);
+          continue;
+        }
+        if (
+          cue.left < visible.left ||
+          cue.top < visible.top ||
+          cue.right > visible.right ||
+          cue.bottom > visible.bottom
+        ) {
+          misplaced.push(
+            `${id}: cue ${JSON.stringify(cue)} outside visible target ${JSON.stringify(visible)}`,
+          );
+        }
+        if (
+          kind === "hotspot" &&
+          authored.right - authored.left >= 12 &&
+          authored.left >= measured.stage.left &&
+          authored.right <= measured.stage.right &&
+          (cue.left < authored.left - 0.5 || cue.right > authored.right + 0.5)
+        ) {
+          misplaced.push(
+            `${id}: cue ${JSON.stringify(cue)} outside authored art ${JSON.stringify(authored)}`,
+          );
+        }
       }
     }
+    expect(offstageCenters).toEqual([]);
     expect(unusable).toEqual([]);
     expect(misplaced).toEqual([]);
   });
@@ -1004,7 +1530,23 @@ describe("investigation layout surface", () => {
     await expectCrossedToRainBellInvestigation();
   });
 
-  it("crosses the same first destination with Tab and Enter from fresh setup", async () => {
+  it("crosses the same first destination with Tab and Enter from fresh setup", async function () {
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      const reason =
+        "Map keyboard coverage is inconclusive: verified private-Xvfb XTEST is not opted in or unavailable.";
+      console.warn(`[MapKeyboard] ${reason}`);
+      if (process.env.LYRA_E2E_OUTPUT_DIR) {
+        writeFileSync(
+          path.join(
+            process.env.LYRA_E2E_OUTPUT_DIR,
+            "map-keyboard-coverage-gap.json",
+          ),
+          `${JSON.stringify({ coverage: "inconclusive", reason }, null, 2)}\n`,
+        );
+      }
+      this.skip();
+      return;
+    }
     await setupAtFirstMapGate();
     expect(await enabledMapDestinationIds()).toEqual([
       anchors.firstMapDestination,
@@ -1015,66 +1557,101 @@ describe("investigation layout surface", () => {
     // starting point inside the gameplay focus order first; the acceptance
     // stays on the native path: Tab must still reach the pin, Enter activate
     // it.
+    const seeded = await browser.execute((selector: string) => {
+      const control = document.querySelector<HTMLButtonElement>(selector);
+      if (
+        !control ||
+        control.disabled ||
+        control.hasAttribute("data-map-destination")
+      )
+        return false;
+      control.focus();
+      return document.activeElement === control;
+    }, anchors.mapOverviewSelector);
+    expect(seeded).toBe(true);
+
     await browser.execute(() => {
-      document
-        .querySelector<HTMLButtonElement>(
-          "[data-gameplay-root] button:not(:disabled)",
-        )
-        ?.focus();
+      const observed = window as Window & {
+        mapKeyEvents?: {
+          key: string;
+          trusted: boolean;
+          destination: string | null;
+        }[];
+      };
+      observed.mapKeyEvents = [];
+      window.addEventListener(
+        "keydown",
+        (event) => {
+          if (event.key === "Tab" || event.key === "Enter") {
+            observed.mapKeyEvents?.push({
+              key: event.key,
+              trusted: event.isTrusted,
+              destination:
+                (event.target as HTMLElement | null)?.getAttribute(
+                  "data-map-destination",
+                ) ?? null,
+            });
+          }
+        },
+        { capture: true },
+      );
     });
 
-    // Tab until the map pin itself holds focus, then activate with Enter so
-    // the journey stays on the native keyboard path.
-    await browser.waitUntil(
-      async () => {
-        await browser.keys("Tab");
-        return browser.execute(
+    const deliverMapKey = async (key: "Tab" | "Enter") => {
+      try {
+        await sendXvfbTrustedKey(key);
+      } catch (cause) {
+        throw new Error(
+          `[MapKeyboard] verified ${key} delivery failed; keyboard coverage is inconclusive`,
+          { cause },
+        );
+      }
+    };
+    let focused = false;
+    for (let attempt = 0; attempt < 7 && !focused; attempt += 1) {
+      await deliverMapKey("Tab");
+      for (let poll = 0; poll < 12 && !focused; poll += 1) {
+        focused = await browser.execute(
           (destinationId: string) =>
             (document.activeElement as HTMLElement | null)?.getAttribute(
               "data-map-destination",
             ) === destinationId,
           anchors.firstMapDestination,
         );
-      },
-      {
-        timeout: 30000,
-        interval: 100,
-        timeoutMsg: "Tab never focused the sole city-map destination",
-      },
-    );
-    await browser.keys("Enter");
-    try {
-      await waitForPackagedGameState(
-        (state) =>
-          state.scene.kind === "investigation" &&
-          state.scene.id === anchors.firstGateSuccessor,
-        5000,
-        "Enter did not activate the destination",
-      );
-    } catch {
-      // WebKit's WebDriver synthesizes key events without running default
-      // actions: Tab focus traversal is special-cased (and worked above), but
-      // Enter cannot produce the button's activation click. A native button
-      // focused by Tab activates on Enter in real browsers; click the focused
-      // pin to stand in for that default activation behavior.
-      const activated = await browser.execute((destinationId: string) => {
-        const element = document.activeElement as HTMLButtonElement | null;
-        if (element?.getAttribute("data-map-destination") !== destinationId) {
-          return false;
-        }
-        element.click();
-        return true;
-      }, anchors.firstMapDestination);
-      if (!activated) {
-        throw new Error("Enter lost focus of the sole destination pin");
+        if (!focused) await browser.pause(100);
       }
     }
+    if (!focused) {
+      throw new Error("Tab never focused the sole city-map destination");
+    }
+    await deliverMapKey("Enter");
     await expectCrossedToRainBellInvestigation();
+    const keys = await browser.execute(() => {
+      const observed = window as Window & {
+        mapKeyEvents?: {
+          key: string;
+          trusted: boolean;
+          destination: string | null;
+        }[];
+      };
+      return observed.mapKeyEvents ?? [];
+    });
+    expect(keys.some((event) => event.key === "Tab" && event.trusted)).toBe(
+      true,
+    );
+    expect(
+      keys.some(
+        (event) =>
+          event.key === "Enter" &&
+          event.trusted &&
+          event.destination === anchors.firstMapDestination,
+      ),
+    ).toBe(true);
   });
 
   // --- HPA-853 chapter-2 placement surface ---------------------------------
 
-  it("pins the fully-placed 72-target inventory and keeps every HPA-853 target center inside the stage-relative crop band", () => {
+  it("pins the fully-placed 72-target HPA-853 inventory", () => {
     const hpa853Targets = shippedTargets().filter((target) =>
       HPA853_SCENE_NUMBERS.some((scene) =>
         target.id.startsWith(`chapter_2/investigation_scene_${scene}/`),
@@ -1099,52 +1676,782 @@ describe("investigation layout surface", () => {
       .toSorted();
     expect(unplacedIds).toEqual([...EXPECTED_UNPLACED_TARGETS].toSorted());
 
-    // Strict center gate for the six new scenes only (design §4.2),
-    // derived from the stage-relative cover rather than a fixed band:
-    // the visible x-range is the centered cover minus its symmetric
-    // crop. The worst case is the widest cover, which the shortest
-    // .scene-hud produces — every measured header at 800x600 across
-    // these scenes is >= ~129px (nav bottom), so bounding it at 120px
-    // gives a 480px stage -> 853x480 cover -> ~3.1% side crops. That
-    // tighter cover is what moved HPA-1143's four edge objects inside
-    // the revealed band. Existing chapter-1 and chapter-2 scene-4 edge
-    // placements are deliberately out of scope and are not moved.
-    const stageViewport = {
-      w: MINIMUM_WINDOW.width,
-      h: MINIMUM_WINDOW.height - 120,
-    };
-    const cover = coverPlaneSize(stageViewport);
-    const cropFraction = (cover.w - stageViewport.w) / 2 / cover.w;
-    const offCenter: string[] = [];
-    const cropped: string[] = [];
-    for (const target of hpa853Targets) {
-      if (target.layout === null) continue;
-      const centerX = target.layout.x + target.layout.w / 2;
-      if (
-        centerX < cropFraction - CENTER_EPSILON ||
-        centerX > 1 - cropFraction + CENTER_EPSILON
-      ) {
-        offCenter.push(
-          `${target.id}: center x ${centerX.toFixed(4)} outside [${cropFraction.toFixed(4)}, ${(1 - cropFraction).toFixed(4)}]`,
-        );
-        continue;
+    // The packaged all-placement sweep checks authored centers on the actual
+    // stage; live sublocation probes below also reject unprobed centers.
+  });
+
+  it("physically measures a synthetic long-title and objective HUD", async () => {
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    const title = "雨夜證物調查室".repeat(40);
+    const objective = "追查雨夜目擊者並核對所有證詞。".repeat(40);
+
+    // Render the actual component as static test markup with the packaged CSS
+    // scope; the checkpoint, backend and story remain unchanged.
+    const scope = await browser.execute(() => {
+      for (const sheet of Array.from(document.styleSheets)) {
+        try {
+          for (const rule of Array.from(sheet.cssRules)) {
+            if (rule instanceof CSSStyleRule) {
+              const match = rule.selectorText.match(
+                /\.primary-objective-hud\.(svelte-[\w-]+)/,
+              );
+              if (match) return match[1];
+            }
+          }
+        } catch {
+          // Some WebViews deny CSSOM access to unrelated stylesheets.
+        }
       }
-      const rect = targetViewportRect(target.layout, stageViewport);
-      const centerXInView = (rect.left + rect.right) / 2;
-      const centerYInView = (rect.top + rect.bottom) / 2;
-      if (
-        centerXInView < 0 ||
-        centerXInView > stageViewport.w ||
-        centerYInView < 0 ||
-        centerYInView > stageViewport.h
-      ) {
-        cropped.push(
-          `${target.id}: center ${centerXInView.toFixed(1)},${centerYInView.toFixed(1)} outside ${stageViewport.w}x${stageViewport.h}`,
-        );
-      }
+      return null;
+    });
+    if (!scope) throw new Error("Packaged objective CSS scope not found");
+    const sourcePath = path.join(
+      process.cwd(),
+      "src/lib/components/PrimaryObjectiveHud.svelte",
+    );
+    const compiled = compile(readFileSync(sourcePath, "utf8"), {
+      filename: sourcePath,
+      generate: "server",
+      cssHash: () => scope,
+    });
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    const modulePath = path.join(outputDir, `hud-fixture-${process.pid}.mjs`);
+    writeFileSync(modulePath, compiled.js.code);
+    let body: string;
+    try {
+      const component = (await import(pathToFileURL(modulePath).href)).default;
+      body = render(component, {
+        props: {
+          compact: true,
+          objective: { label: objective },
+        },
+      }).body;
+    } finally {
+      unlinkSync(modulePath);
     }
-    expect(offCenter).toEqual([]);
-    expect(cropped).toEqual([]);
+
+    await browser.execute(
+      (fixtureTitle: string, fixtureBody: string) => {
+        const location = document.querySelector<HTMLElement>(
+          ".scene-label strong",
+        );
+        const activeChip = document.querySelector<HTMLElement>(
+          ".explore-hud .chips button.active .label",
+        );
+        const menu = document.querySelector<HTMLElement>(
+          ".explore-hud [data-game-menu-trigger]",
+        );
+        if (
+          !location ||
+          !activeChip ||
+          !menu ||
+          document.querySelector(".explore-hud .primary-objective-hud")
+        ) {
+          throw new Error("Unexpected synthetic HUD fixture host");
+        }
+        location.textContent = fixtureTitle;
+        activeChip.textContent = fixtureTitle;
+        menu.insertAdjacentHTML("beforebegin", fixtureBody);
+      },
+      title,
+      body,
+    );
+    await browser.waitUntil(
+      () =>
+        browser.execute(() => {
+          const header = document.querySelector(".scene-hud");
+          const stage = document.querySelector(".scene-stage");
+          return (
+            !!header &&
+            !!stage &&
+            Math.abs(
+              header.getBoundingClientRect().bottom -
+                stage.getBoundingClientRect().top,
+            ) < 1
+          );
+        }),
+      { timeout: 10000, timeoutMsg: "Synthetic HUD height did not settle" },
+    );
+    const fixture = await browser.execute(() => {
+      const location = document.querySelector<HTMLElement>(".scene-label")!;
+      const objectiveRegion = document.querySelector<HTMLElement>(
+        '.primary-objective-hud [aria-label="主要目標內容"]',
+      )!;
+      const header = document.querySelector<HTMLElement>(".scene-hud")!;
+      const stage = document.querySelector<HTMLElement>(".scene-stage")!;
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const side = document.querySelector<HTMLElement>(
+        ".explore-hud .hud-side",
+      )!;
+      const nav = chips.closest("nav")!;
+      const region = (element: HTMLElement) => ({
+        text: element.textContent ?? "",
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        tabIndex: element.tabIndex,
+        overflowY: getComputedStyle(element).overflowY,
+      });
+      return {
+        provenance: "synthetic-static-svelte-component-in-packaged-hud",
+        viewport: { width: innerWidth, height: innerHeight },
+        header: header.getBoundingClientRect().height,
+        stage: stage.getBoundingClientRect().height,
+        rowOne: Math.max(
+          location.getBoundingClientRect().height,
+          side.getBoundingClientRect().height,
+        ),
+        rowTwo: nav.getBoundingClientRect().height,
+        location: region(location),
+        objective: region(objectiveRegion),
+        chipTops: Array.from(
+          chips.querySelectorAll("button"),
+          (button) => button.getBoundingClientRect().top,
+        ),
+        chipHeights: Array.from(
+          chips.querySelectorAll("button"),
+          (button) => button.getBoundingClientRect().height,
+        ),
+        chipClientWidth: chips.clientWidth,
+        chipScrollWidth: chips.scrollWidth,
+      };
+    });
+    expect(fixture.viewport).toEqual(MINIMUM_WINDOW);
+    expect(fixture.header).toBeLessThanOrEqual(150);
+    expect(fixture.stage).toBeGreaterThanOrEqual(450);
+    expect(fixture.rowOne).toBeLessThanOrEqual(74);
+    expect(fixture.rowTwo).toBeLessThanOrEqual(54);
+    expect(fixture.location.text).toContain(title);
+    expect(fixture.objective.text).toBe(objective);
+    for (const region of [fixture.location, fixture.objective]) {
+      expect(region.tabIndex).toBe(0);
+      expect(region.overflowY).toBe("auto");
+      expect(region.scrollHeight).toBeGreaterThan(region.clientHeight);
+    }
+    expect(fixture.chipTops).toHaveLength(5);
+    expect(new Set(fixture.chipTops).size).toBe(1);
+    expect(fixture.chipHeights.every((height) => height >= 44)).toBe(true);
+    expect(fixture.chipScrollWidth).toBeGreaterThan(fixture.chipClientWidth);
+    await browser.saveScreenshot(
+      path.join(outputDir, "synthetic-long-hud-top.png"),
+    );
+    const scrolled = await browser.execute(() => {
+      const location = document.querySelector<HTMLElement>(".scene-label")!;
+      const objectiveRegion = document.querySelector<HTMLElement>(
+        '.primary-objective-hud [aria-label="主要目標內容"]',
+      )!;
+      return [location, objectiveRegion].map((element) => {
+        element.focus();
+        const focused = document.activeElement === element;
+        element.scrollTop = element.scrollHeight;
+        return {
+          focused,
+          top: element.scrollTop,
+          reachesEnd:
+            element.scrollTop + element.clientHeight >=
+            element.scrollHeight - 1,
+        };
+      });
+    });
+    expect(
+      scrolled.every(
+        (region) => region.focused && region.top > 0 && region.reachesEnd,
+      ),
+    ).toBe(true);
+    await browser.saveScreenshot(
+      path.join(outputDir, "synthetic-long-hud-bottom.png"),
+    );
+    writeFileSync(
+      path.join(outputDir, "synthetic-long-hud.json"),
+      JSON.stringify({ ...fixture, scrolled }, null, 2),
+    );
+  });
+
+  it("exercises the real five-chip scene navigation overflow", async function () {
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    const state = await getPackagedGameState();
+    if (state.scene.kind !== "investigation") {
+      throw new Error("Scene 4 checkpoint is not an investigation");
+    }
+    expect(state.scene.visibleSublocations).toHaveLength(5);
+    await browser.waitUntil(
+      () =>
+        browser.execute(
+          () =>
+            (document.querySelector<HTMLElement>(".explore-hud .chips")
+              ?.clientHeight ?? 0) >= 44,
+        ),
+      { timeout: 10000, timeoutMsg: "Scene-nav chip clipping did not settle" },
+    );
+    const nav = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const buttons = Array.from(chips.querySelectorAll("button"));
+      return {
+        clientWidth: chips.clientWidth,
+        clientHeight: chips.clientHeight,
+        scrollWidth: chips.scrollWidth,
+        scrollbarThickness: chips.offsetHeight - chips.clientHeight,
+        scrollbarCssHeight: getComputedStyle(chips, "::-webkit-scrollbar")
+          .height,
+        scrollbarHidden: chips.classList.contains("scrollbar-hidden"),
+        supportsWebkit: CSS.supports("selector(::-webkit-scrollbar)"),
+        rowHeight: chips.closest("nav")!.getBoundingClientRect().height,
+        stageHeight: document
+          .querySelector<HTMLElement>(".scene-stage")!
+          .getBoundingClientRect().height,
+        tops: buttons.map((button) => button.getBoundingClientRect().top),
+        heights: buttons.map((button) => button.getBoundingClientRect().height),
+        visibleHeights: buttons.map((button) => {
+          const rect = button.getBoundingClientRect();
+          const clip = chips.getBoundingClientRect();
+          return (
+            Math.min(
+              rect.bottom,
+              clip.top + chips.clientTop + chips.clientHeight,
+            ) - Math.max(rect.top, clip.top + chips.clientTop)
+          );
+        }),
+      };
+    });
+    expect(nav.tops).toHaveLength(5);
+    expect(new Set(nav.tops).size).toBe(1);
+    expect(nav.heights.every((height) => height >= 44)).toBe(true);
+    expect(nav.visibleHeights.every((height) => height >= 44)).toBe(true);
+    expect(nav.scrollbarThickness).toBeLessThanOrEqual(4);
+    expect(nav.rowHeight).toBeLessThanOrEqual(54);
+    expect(nav.stageHeight).toBeGreaterThanOrEqual(450);
+    if (nav.supportsWebkit && !nav.scrollbarHidden) {
+      expect(nav.scrollbarCssHeight).toBe("4px");
+    }
+    expect(nav.scrollWidth).toBeGreaterThan(nav.clientWidth);
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    const controls = await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const nav = chips.closest("nav")!;
+      const left = nav.querySelector<HTMLButtonElement>(
+        '[aria-label="向左捲動地點"]',
+      )!;
+      const right = nav.querySelector<HTMLButtonElement>(
+        '[aria-label="向右捲動地點"]',
+      )!;
+      chips.scrollLeft = 0;
+      const start = chips.scrollLeft;
+      right.click();
+      const forward = chips.scrollLeft;
+      left.click();
+      return {
+        start,
+        forward,
+        back: chips.scrollLeft,
+        left: left.getBoundingClientRect().toJSON(),
+        right: right.getBoundingClientRect().toJSON(),
+        input: "synthetic DOM click",
+      };
+    });
+    expect(controls.forward).toBeGreaterThan(controls.start);
+    expect(controls.back).toBeLessThan(controls.forward);
+    for (const rect of [controls.left, controls.right]) {
+      expect(rect.width).toBeGreaterThanOrEqual(44);
+      expect(rect.height).toBeGreaterThanOrEqual(44);
+    }
+    await browser.saveScreenshot(
+      path.join(outputDir, "scene-nav-overflow-controls.png"),
+    );
+    writeFileSync(
+      path.join(outputDir, "scene-nav-overflow-controls.json"),
+      JSON.stringify({ nav, controls }, null, 2),
+    );
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            reason: "Private-Xvfb XTEST was not opted in.",
+          },
+          null,
+          2,
+        ),
+      );
+      console.warn(
+        "[SceneNav] trusted pointer coverage inconclusive: XTEST not opted in",
+      );
+      this.skip();
+    }
+    await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      chips.scrollLeft = 0;
+      document.documentElement.dataset.hpa852Wheels = "[]";
+      document.addEventListener(
+        "wheel",
+        (event) => {
+          const root = document.documentElement;
+          const events = JSON.parse(root.dataset.hpa852Wheels ?? "[]");
+          events.push({
+            trusted: event.isTrusted,
+            deltaX: event.deltaX,
+            deltaY: event.deltaY,
+            targetInChips:
+              event.target instanceof Node && chips.contains(event.target),
+          });
+          root.dataset.hpa852Wheels = JSON.stringify(events);
+        },
+        { capture: true },
+      );
+    });
+    const wheelState = () =>
+      browser.execute(() => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        )!;
+        const last = chips.querySelector<HTMLElement>("button:last-child")!;
+        const bounds = chips.getBoundingClientRect();
+        const lastBounds = last.getBoundingClientRect();
+        return {
+          position: chips.scrollLeft,
+          events: JSON.parse(
+            document.documentElement.dataset.hpa852Wheels ?? "[]",
+          ) as Array<{
+            trusted: boolean;
+            deltaX: number;
+            deltaY: number;
+            targetInChips: boolean;
+          }>,
+          lastVisible:
+            lastBounds.left >= bounds.left - 1 &&
+            lastBounds.right <= bounds.right + 1,
+        };
+      });
+    let pointerError = "";
+    const transport: Array<
+      Awaited<ReturnType<typeof sendXvfbTrustedSceneNavPointer>>
+    > = [];
+    let wheel = await wheelState();
+    for (let attempt = 0; attempt < 8 && !wheel.lastVisible; attempt += 1) {
+      const before = wheel;
+      try {
+        transport.push(await sendXvfbTrustedSceneNavPointer("move", "chips"));
+        await deliverX11PointerPair({
+          pointerState: xvfbPointerState(),
+          button: "wheel",
+          press: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("wheel-press", "chips"),
+            );
+          },
+          release: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("wheel-release", "chips"),
+            );
+          },
+        });
+      } catch (error) {
+        pointerError = describeX11InputError(error);
+        writeFileSync(
+          path.join(outputDir, "scene-nav-pointer-events.json"),
+          JSON.stringify({ wheel, pointerError, transport }, null, 2),
+        );
+        assertSafeXvfbDisplay(this);
+      }
+      await browser
+        .waitUntil(
+          async () => (await wheelState()).events.length > before.events.length,
+          { timeout: 2000, interval: 50 },
+        )
+        .catch(() => {});
+      wheel = await wheelState();
+      const delivered = wheel.events.slice(before.events.length);
+      if (delivered.some((event) => event.trusted)) {
+        await browser
+          .waitUntil(
+            async () => (await wheelState()).position > before.position,
+            { timeout: 2000, interval: 50 },
+          )
+          .catch(() => {});
+        wheel = await wheelState();
+      }
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-events.json"),
+        JSON.stringify({ wheel, pointerError, transport }, null, 2),
+      );
+      const trusted = assertSceneNavWheelProgress(
+        delivered,
+        before.position,
+        wheel.position,
+      );
+      if (trusted && pointerError) throw new Error(pointerError);
+      if (pointerError || !trusted) break;
+    }
+    const pointerDelivered = wheel.events.some((event) => event.trusted);
+    if (pointerError && pointerDelivered) throw new Error(pointerError);
+    if (pointerError || !pointerDelivered) {
+      console.warn(
+        `[SceneNav] pointer delivery is inconclusive: ${JSON.stringify({ pointerError, wheel })}`,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-coverage-gap.json"),
+        JSON.stringify(
+          { coverage: "inconclusive", pointerError, wheel, transport },
+          null,
+          2,
+        ),
+      );
+      this.skip();
+    } else {
+      expect(wheel.lastVisible).toBe(true);
+      console.log(
+        `[SceneNav] trusted pointer scroll: ${JSON.stringify(wheel)}`,
+      );
+      await browser.saveScreenshot(
+        path.join(outputDir, "scene-nav-scrolled.png"),
+      );
+      await browser.execute(() => {
+        document.documentElement.dataset.hpa852PointerEvents = "[]";
+        for (const type of ["pointerdown", "pointerup", "click"]) {
+          document.addEventListener(
+            type,
+            (event) => {
+              const root = document.documentElement;
+              const last = document.querySelector<HTMLButtonElement>(
+                ".explore-hud .chips button:last-child",
+              );
+              const chips = document.querySelector<HTMLElement>(
+                ".explore-hud .chips",
+              );
+              const lastBounds = last?.getBoundingClientRect();
+              const bounds = chips?.getBoundingClientRect();
+              const events = JSON.parse(
+                root.dataset.hpa852PointerEvents ?? "[]",
+              );
+              events.push({
+                type,
+                trusted: event.isTrusted,
+                targetIsLast:
+                  !!last &&
+                  event.target instanceof Node &&
+                  last.contains(event.target),
+                lastVisible:
+                  !!lastBounds &&
+                  !!bounds &&
+                  lastBounds.left >= bounds.left - 1 &&
+                  lastBounds.right <= bounds.right + 1,
+              });
+              root.dataset.hpa852PointerEvents = JSON.stringify(events);
+            },
+            { capture: true },
+          );
+        }
+      });
+      let clickError = "";
+      try {
+        transport.push(
+          await sendXvfbTrustedSceneNavPointer("move", "last-chip"),
+        );
+        await deliverX11PointerPair({
+          pointerState: xvfbPointerState(),
+          button: "click",
+          press: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer("click-press", "last-chip"),
+            );
+          },
+          release: async () => {
+            transport.push(
+              await sendXvfbTrustedSceneNavPointer(
+                "click-release",
+                "last-chip",
+              ),
+            );
+          },
+        });
+      } catch (error) {
+        clickError = describeX11InputError(error);
+        writeFileSync(
+          path.join(outputDir, "scene-nav-pointer-events.json"),
+          JSON.stringify({ wheel, clickError, transport }, null, 2),
+        );
+        assertSafeXvfbDisplay(this);
+      }
+      const pointerEvents = await browser.execute(
+        () =>
+          JSON.parse(
+            document.documentElement.dataset.hpa852PointerEvents ?? "[]",
+          ) as Array<{
+            type: string;
+            trusted: boolean;
+            targetIsLast: boolean;
+            lastVisible: boolean;
+          }>,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-pointer-events.json"),
+        JSON.stringify(
+          { wheel, pointerEvents, clickError, transport },
+          null,
+          2,
+        ),
+      );
+      const delivered = assertSceneNavPointerEvents(pointerEvents);
+      if ((delivered.down && delivered.up) || delivered.click) {
+        await advanceDialogueUntil(async () => {
+          const state = await getPackagedGameState();
+          return (
+            state.scene.kind === "investigation" &&
+            state.scene.id === "investigation_scene_4" &&
+            state.scene.currentSublocationId === "police_review_van" &&
+            state.mode.type === "explore"
+          );
+        });
+      }
+      if (clickError && (delivered.down || delivered.up || delivered.click)) {
+        throw new Error(clickError);
+      }
+      const measured = delivered.down && delivered.up && delivered.click;
+      writeFileSync(
+        path.join(
+          outputDir,
+          measured
+            ? "scene-nav-pointer.json"
+            : "scene-nav-pointer-coverage-gap.json",
+        ),
+        JSON.stringify(
+          {
+            coverage: measured ? "measured" : "inconclusive",
+            wheel,
+            pointerEvents,
+            clickError,
+            transport,
+          },
+          null,
+          2,
+        ),
+      );
+      if (!measured) this.skip();
+    }
+  });
+
+  it("traverses and activates the last scene chip with trusted keyboard input", async function () {
+    const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+    if (!e2eXvfbTrustedKeysEnabled()) {
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
+        JSON.stringify(
+          {
+            coverage: "inconclusive",
+            reason: "Private-Xvfb XTEST was not opted in.",
+          },
+          null,
+          2,
+        ),
+      );
+      console.warn(
+        "[SceneNav] trusted keyboard coverage inconclusive: XTEST not opted in",
+      );
+      this.skip();
+    }
+    await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
+    await ensureMinimumWindowViewport();
+    await browser.execute(() => {
+      const chips = document.querySelector<HTMLElement>(".explore-hud .chips")!;
+      const first = chips.querySelector<HTMLButtonElement>("button")!;
+      chips.scrollLeft = 0;
+      first.focus();
+      document.documentElement.dataset.hpa852Keys = "[]";
+      document.addEventListener(
+        "keydown",
+        (event) => {
+          const root = document.documentElement;
+          const events = JSON.parse(root.dataset.hpa852Keys ?? "[]") as Array<{
+            key: string;
+            trusted: boolean;
+            targetIndex: number;
+          }>;
+          const buttons = Array.from(
+            document.querySelectorAll(".explore-hud .chips button"),
+          );
+          events.push({
+            key: event.key,
+            trusted: event.isTrusted,
+            targetIndex: buttons.findIndex(
+              (button) =>
+                event.target instanceof Node && button.contains(event.target),
+            ),
+          });
+          root.dataset.hpa852Keys = JSON.stringify(events);
+        },
+        { capture: true },
+      );
+    });
+    const keyboardState = () =>
+      browser.execute(() => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        )!;
+        const buttons = Array.from(chips.querySelectorAll("button"));
+        const bounds = chips.getBoundingClientRect();
+        const last = buttons[buttons.length - 1]!.getBoundingClientRect();
+        return {
+          activeIndex: buttons.indexOf(
+            document.activeElement as HTMLButtonElement,
+          ),
+          scrollLeft: chips.scrollLeft,
+          lastVisible:
+            last.left >= bounds.left - 1 && last.right <= bounds.right + 1,
+          events: JSON.parse(
+            document.documentElement.dataset.hpa852Keys ?? "[]",
+          ) as Array<{
+            key: string;
+            trusted: boolean;
+            targetIndex: number;
+          }>,
+        };
+      });
+    let keyboard = await keyboardState();
+    expect(keyboard.activeIndex).toBe(0);
+    let keyError = "";
+    const traversal: Array<{
+      step: number;
+      activeIndex: number;
+      scrollLeft: number;
+      lastVisible: boolean;
+      event: { key: string; trusted: boolean; targetIndex: number } | undefined;
+    }> = [];
+    for (let index = 0; index < 4; index += 1) {
+      try {
+        await sendXvfbTrustedKey("Tab");
+      } catch (error) {
+        keyError = describeX11InputError(error);
+      }
+      await browser
+        .waitUntil(async () => (await keyboardState()).events.length > index, {
+          timeout: 2000,
+          interval: 50,
+        })
+        .catch(() => {});
+      keyboard = await keyboardState();
+      const event = keyboard.events[index];
+      if (event?.trusted && event.key === "Tab") {
+        await browser
+          .waitUntil(
+            async () => {
+              const current = await keyboardState();
+              return (
+                current.activeIndex === index + 1 &&
+                (index !== 3 || current.lastVisible)
+              );
+            },
+            { timeout: 2000, interval: 50 },
+          )
+          .catch(() => {});
+        keyboard = await keyboardState();
+      }
+      traversal.push({
+        step: index + 1,
+        activeIndex: keyboard.activeIndex,
+        scrollLeft: keyboard.scrollLeft,
+        lastVisible: keyboard.lastVisible,
+        event,
+      });
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-events.json"),
+        JSON.stringify({ keyboard, traversal, keyError }, null, 2),
+      );
+      const trusted = assertSceneNavTabProgress(
+        event,
+        index + 1,
+        keyboard.activeIndex,
+        keyboard.lastVisible,
+      );
+      if (trusted && keyError) throw new Error(keyError);
+      if (keyError || !trusted) break;
+    }
+    const tabsDelivered =
+      keyboard.events.filter((event) => event.key === "Tab" && event.trusted)
+        .length === 4;
+    if (!tabsDelivered || keyError) {
+      console.warn(
+        `[SceneNav] keyboard delivery is inconclusive: ${JSON.stringify({ keyboard, keyError })}`,
+      );
+      writeFileSync(
+        path.join(outputDir, "scene-nav-keyboard-coverage-gap.json"),
+        JSON.stringify(
+          { coverage: "inconclusive", keyboard, traversal, keyError },
+          null,
+          2,
+        ),
+      );
+      this.skip();
+    }
+    expect(keyboard.activeIndex).toBe(4);
+    expect(keyboard.lastVisible).toBe(true);
+    await browser.saveScreenshot(
+      path.join(outputDir, "scene-nav-keyboard-focused.png"),
+    );
+    try {
+      await sendXvfbTrustedKey("Enter");
+    } catch (error) {
+      keyError = describeX11InputError(error);
+    }
+    await browser
+      .waitUntil(
+        async () =>
+          (
+            await browser.execute(
+              () =>
+                JSON.parse(
+                  document.documentElement.dataset.hpa852Keys ?? "[]",
+                ) as Array<{ key: string }>,
+            )
+          ).some((event) => event.key === "Enter"),
+        { timeout: 2000, interval: 50 },
+      )
+      .catch(() => {});
+    const events = await browser.execute(
+      () =>
+        JSON.parse(
+          document.documentElement.dataset.hpa852Keys ?? "[]",
+        ) as Array<{ key: string; trusted: boolean; targetIndex: number }>,
+    );
+    const enterEvent = events.find(
+      (event) => event.key === "Enter" && event.trusted,
+    );
+    const enterTrusted = !!enterEvent;
+    writeFileSync(
+      path.join(outputDir, "scene-nav-keyboard-events.json"),
+      JSON.stringify({ keyboard, traversal, events, keyError }, null, 2),
+    );
+    if (enterTrusted) {
+      expect(enterEvent.targetIndex).toBe(4);
+      await advanceDialogueUntil(async () => {
+        const state = await getPackagedGameState();
+        return (
+          state.scene.kind === "investigation" &&
+          state.scene.currentSublocationId === "police_review_van" &&
+          state.mode.type === "explore"
+        );
+      });
+      if (keyError) throw new Error(keyError);
+    }
+    const measured = enterTrusted && !keyError;
+    const evidence = {
+      coverage: measured ? "measured" : "inconclusive",
+      keyboard,
+      traversal,
+      events,
+      keyError,
+    };
+    console.log("[SceneNav] keyboard evidence", JSON.stringify(evidence));
+    writeFileSync(
+      path.join(
+        outputDir,
+        measured
+          ? "scene-nav-keyboard.json"
+          : "scene-nav-keyboard-coverage-gap.json",
+      ),
+      JSON.stringify(evidence, null, 2),
+    );
+    if (!measured) this.skip();
   });
 
   for (const sceneNumber of HPA853_SCENE_NUMBERS) {
@@ -1170,9 +2477,8 @@ describe("investigation layout surface", () => {
       }
       const investigation = state.scene;
 
-      // The fixture's whole point: the location bar shows every authored
-      // chip at once (scenes 12/14 with 4 chips included), because the
-      // fixture unlocked every sublocation without doing any puzzle work.
+      // The fixture unlocks every authored chip without puzzle work; overflow
+      // stays on one scrollable row instead of removing a location.
       const expectedChips = HPA853_SUBLOCATION_COUNTS[sceneId];
       expect(investigation.visibleSublocations.length).toBe(expectedChips);
       expect(
@@ -1220,12 +2526,8 @@ describe("investigation layout surface", () => {
   }
 
   // Scene 4 is the shared-header regression guard, not an HPA-853 scene:
-  // its five-chip location bar is the widest existing nav, so the measured
-  // .scene-hud header it produces is the tallest any shipped scene gets.
-  // The stage subtracts that header from the 800x600 window for every
-  // scene — this pins that none of scene 4's already-placed targets gets
-  // rerouted into the OFF-SCENE panel by the shorter stage. The broader
-  // HUD rework for this scene stays with HPA-852.
+  // its five-chip bar exercises the shared header alongside the six HPA-853
+  // checkpoints.
   it("keeps existing scene 4 placements on the art under the shared stage header at 800x600", async () => {
     const sceneId = "investigation_scene_4";
     await loadPackagedCheckpoint("chapter-2-investigation-layout-scene-4");
@@ -1248,8 +2550,7 @@ describe("investigation layout surface", () => {
     }
     const investigation = state.scene;
 
-    // All five authored chips at once, unlocked by the checkpoint fixture
-    // — the max-width nav the shared header has to accommodate.
+    // All five authored chips are rendered in one row by this checkpoint.
     expect(investigation.visibleSublocations.length).toBe(5);
     expect(
       await browser.execute(
@@ -1257,12 +2558,33 @@ describe("investigation layout surface", () => {
           document.querySelectorAll(".explore-hud nav .chips button").length,
       ),
     ).toBe(5);
+    const chipTops = await browser.execute(() =>
+      Array.from(
+        document.querySelectorAll(".explore-hud nav .chips button"),
+        (chip) => chip.getBoundingClientRect().top,
+      ),
+    );
+    expect(new Set(chipTops).size).toBe(1);
 
     const scenePlacements = shippedPlacements().filter((placement) =>
       placement.id.startsWith(`chapter_2/${sceneId}/`),
     );
     for (const sublocation of investigation.visibleSublocations) {
       if (sublocation.id !== investigation.currentSublocationId) {
+        if (sublocation.id === "police_review_van") {
+          const hidden = await browser.execute(() => {
+            const chips = document.querySelector<HTMLElement>(
+              ".explore-hud .chips",
+            )!;
+            chips.scrollLeft = 0;
+            const last = chips.querySelector<HTMLElement>("button:last-child")!;
+            return (
+              last.getBoundingClientRect().right >
+              chips.getBoundingClientRect().right
+            );
+          });
+          expect(hidden).toBe(true);
+        }
         await enterSublocationThroughNav(sceneId, sublocation);
         await waitForSceneSurface(sublocation);
       }
@@ -1386,7 +2708,7 @@ describe("investigation layout surface", () => {
           );
           if (!image) throw new Error(`Background ${bounds.id} missing`);
           const rect = image.getBoundingClientRect();
-          const scale = Math.max(
+          const scale = Math.min(
             rect.width / image.naturalWidth,
             rect.height / image.naturalHeight,
           );

@@ -42,6 +42,7 @@
     interrogationStageActive = false,
     textRevealDurationMs = dialogueTransitionDurationMs,
     chapterId = null,
+    backdropHeight = 0,
   }: {
     current: DialogueItem;
     queueToken: QueueToken;
@@ -66,6 +67,7 @@
     /** Chapter of the current line; voice clips are looked up per chapter.
      * Without it the box stays silent. */
     chapterId?: string | null;
+    backdropHeight?: number;
   } = $props();
 
   const rightSidePortraitCharacterIds = new Set([
@@ -367,21 +369,18 @@
     return Boolean(active.closest(interactiveFocusSelector));
   }
 
-  // Returns true when focus is on an interactive control (button, link, input,
-  // etc.) so the window-level Space/Enter fallback should NOT fire — the
-  // focused control's native activation owns those keys (e.g. Space on the
-  // focused LOG button toggles history; Space on the focused advance button
-  // advances via its own click handler). Returns false for <body> and
-  // non-interactive elements, where there is no native activation to fall
-  // back to, so the window-level fallback must advance dialogue. This guard
-  // is what lets the global handler coexist with the visible advance button
-  // without double-advancing or stealing Space from focused controls.
+  // Focused controls and marked scroll regions own Space/Enter. Other
+  // elements use the window-level advance fallback.
   function isAdvanceBlockedByFocusedControl() {
     const active = document.activeElement;
     if (!(active instanceof HTMLElement) || active === document.body) {
       return false;
     }
-    return Boolean(active.closest(interactiveFocusSelector));
+    return Boolean(
+      active.closest(
+        `${interactiveFocusSelector},[data-dialogue-scroll-region]`,
+      ),
+    );
   }
 
   function isModifiedHistoryShortcut(e: KeyboardEvent) {
@@ -544,7 +543,10 @@
 <svelte:window onkeydown={handleKey} />
 
 {#if !interrogationStageActive}
-  <div class="portrait-shell">
+  <div
+    class="portrait-shell"
+    style:--top-chrome-height={`calc(var(--shell-header-height, 0px) + ${backdropHeight}px)`}
+  >
     <CrossfadeImage
       src={portraitSource}
       transitionKey={portraitTransitionKey}
@@ -560,7 +562,7 @@
         // production CSS, which keys off the .portrait/.left/.right classes.
         layer: "behind-dialogue",
       }}
-      imageStyle="--portrait-height: min(1536px, 80vh);"
+      imageStyle="--portrait-height: min(1536px, 80vh, max(0px, calc(100vh - var(--top-chrome-height))));"
       onImageError={handlePortraitError}
     />
   </div>

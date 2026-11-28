@@ -2,6 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { E2E_SMOKE_SPECS } from "./scripts/e2e-suite-registry.mjs";
 import { resolveE2eBinaryPath } from "./scripts/e2e-binary-path.mjs";
+import {
+  createX11PointerState,
+  trustedXvfbKeysOptIn,
+} from "./scripts/e2e-x11-trusted-input.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Dedicated e2e target dir (CARGO_TARGET_DIR=src-tauri/target-e2e) so that
@@ -17,6 +21,10 @@ export const config: WebdriverIO.Config = {
   // revalidates the app-data directory lifecycle.
   specs: [...E2E_SMOKE_SPECS],
   maxInstances: 1,
+  // A failed trusted-input run must not reach another spec on this display.
+  bail: trustedXvfbKeysOptIn({ platform: process.platform, env: process.env })
+    ? 1
+    : 0,
   // Runner-managed retries allocate a fresh guarded root, retain first-attempt
   // diagnostics, and never let WDIO retry against contaminated app data.
   specFileRetries: 0,
@@ -34,6 +42,28 @@ export const config: WebdriverIO.Config = {
   connectionRetryCount: 2,
   framework: "mocha",
   reporters: ["spec"],
+  beforeTest() {
+    if (!trustedXvfbKeysOptIn({ platform: process.platform, env: process.env }))
+      return;
+    try {
+      createX11PointerState(process.env.LYRA_E2E_X11_POINTER_STATE).beginTest();
+    } catch (error) {
+      console.error("Cannot begin X11 test safely:", error);
+      process.exit(1);
+    }
+  },
+  afterTest(_test, _context, result) {
+    if (!trustedXvfbKeysOptIn({ platform: process.platform, env: process.env }))
+      return;
+    try {
+      createX11PointerState(process.env.LYRA_E2E_X11_POINTER_STATE).finishTest(
+        result.passed || result.skipped,
+      );
+    } catch (error) {
+      console.error("Cannot finish X11 test safely:", error);
+      process.exit(1);
+    }
+  },
   mochaOpts: {
     ui: "bdd",
     // WDIO v9's executeAsync (see @wdio/utils testFnWrapper) reads

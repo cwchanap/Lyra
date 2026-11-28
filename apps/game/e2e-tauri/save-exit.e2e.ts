@@ -4,6 +4,9 @@ import {
   advanceDialogueOnce,
   assertSaveE2ePhase,
   clickButton,
+  clickDialogButton,
+  clickSaveCardButton,
+  closePersistenceBrowserToGameplay,
   continueFromTitle,
   currentPackagedDocumentIdentity,
   dialogueFingerprint,
@@ -14,9 +17,11 @@ import {
   invokePackagedCommand,
   jsClick,
   jumpToProductionScene,
+  openGameMenu,
   requestApplicationQuit,
   requestWindowClose,
   resetE2eStorageWithStoryClearance,
+  saveManualSlot,
   settlePackagedCommand,
   startFromMenu,
   waitForAcquisitionOrdinal,
@@ -25,17 +30,21 @@ import {
   waitForPackagedDisconnect,
   waitForPackagedGameState,
   waitForPersistenceIdle,
+  waitForPersistenceLayersClosed,
   waitForShell,
 } from "./helpers";
 import {
   SAVE_E2E_PHASE_NAMES,
   newestAutosaveSlot,
+  readSaveE2eOwnershipSnapshot,
   readSaveE2eExpectation,
   setNextPersistenceFault,
   writeSaveE2eExpectation,
 } from "./save-fixtures";
 import { anchors } from "./production-anchors";
 import type { ExitStatusView } from "$lib/persistence/types";
+import path from "node:path";
+import { copyFileSync, writeFileSync } from "node:fs";
 
 const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitCloseSeed,
@@ -44,6 +53,8 @@ const EXIT_PHASES = [
   SAVE_E2E_PHASE_NAMES.exitFailureBypass,
   SAVE_E2E_PHASE_NAMES.exitFinalVerification,
 ] as const;
+
+const KAGAMI_SUMMARY_RECORD_ID = "kagami_summary";
 
 type ExitCheckpoint = {
   documentIdentity: string;
@@ -161,10 +172,166 @@ async function resumeSuccessfulExit(source: "close" | "quit"): Promise<void> {
   expect(dialogueFingerprint(state)).toBe(expected.currentDialogueFingerprint);
 }
 
+async function proveExploreMenuSaveLoad(): Promise<void> {
+  const beforeSave = await getPackagedGameState();
+  expect(beforeSave.scene.id).toBe(anchors.firstGateSuccessor);
+  expect(beforeSave.mode.type).toBe("explore");
+  expect(
+    beforeSave.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(1);
+  console.log(
+    `[ExploreSaveLoad] before save: ${beforeSave.scene.id}/${beforeSave.mode.type}, evidence=${beforeSave.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
+  const outputDir = process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd();
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const image = document.querySelector<HTMLImageElement>(
+          '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+        );
+        return (
+          !!image &&
+          image.complete &&
+          image.naturalWidth > 0 &&
+          document.querySelector("button:not([inert]) .target-pending") !== null
+        );
+      }),
+    {
+      timeout: 30000,
+      timeoutMsg: "Explore artwork or pending cue did not settle",
+    },
+  );
+  const captureGeometry = await browser.execute(() => {
+    const rect = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing ${selector}`);
+      const bounds = element.getBoundingClientRect();
+      return {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+    const image = document.querySelector<HTMLImageElement>(
+      '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+    )!;
+    return {
+      viewport: { width: innerWidth, height: innerHeight },
+      root: rect("[data-save-thumbnail-root]"),
+      stage: rect(".scene-stage"),
+      plane: rect(".scene-coordinate-plane"),
+      background: rect(
+        '.surface-shell > img.background-image[data-save-crossfade-state="visible"]',
+      ),
+      natural: { width: image.naturalWidth, height: image.naturalHeight },
+      source: image.src,
+      objectFit: getComputedStyle(image).objectFit,
+      cue: rect("button:not([inert]) .target-pending"),
+    };
+  });
+  expect(captureGeometry.viewport).toEqual({ width: 800, height: 600 });
+  expect(captureGeometry.objectFit).toBe("contain");
+  writeFileSync(
+    path.join(outputDir, "explore-save-geometry.json"),
+    JSON.stringify(captureGeometry, null, 2),
+  );
+  await browser.saveScreenshot(path.join(outputDir, "explore-save-live.png"));
+  const menuTrigger = await $(anchors.gameMenuTriggerSelector);
+  await menuTrigger.waitForClickable({ timeout: 30000 });
+  await menuTrigger.click();
+  await waitForDialog(anchors.gameMenu);
+  await browser.saveScreenshot(
+    path.join(
+      process.env.LYRA_E2E_OUTPUT_DIR ?? process.cwd(),
+      "explore-game-menu.png",
+    ),
+  );
+  await saveManualSlot(1, "探索選單保存");
+  const saved = readSaveE2eOwnershipSnapshot().slots.find(
+    (slot) => slot.fixedSlotName === "manual-1",
+  );
+  expect(saved?.envelope?.thumbnail.type).toBe("available");
+  if (!saved?.sidecarPath)
+    throw new Error("Explore save thumbnail sidecar missing");
+  copyFileSync(
+    saved.sidecarPath,
+    path.join(outputDir, "explore-save-thumbnail.png"),
+  );
+  await browser.waitUntil(
+    () =>
+      browser.execute(() => {
+        const img = document.querySelector<HTMLImageElement>(
+          'article[data-slot-type="manual"][data-slot-number="1"] .thumbnail-frame img',
+        );
+        return !!img && img.complete && img.naturalWidth > 0;
+      }),
+    {
+      timeout: 30000,
+      timeoutMsg: "Saved Explore thumbnail card did not decode",
+    },
+  );
+  await browser.saveScreenshot(path.join(outputDir, "explore-save-card.png"));
+  await closePersistenceBrowserToGameplay();
+
+  await jumpToProductionScene("scene_0");
+  const displaced = await getPackagedGameState();
+  expect(displaced.scene.id).toBe("scene_0");
+  expect(
+    displaced.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(0);
+  console.log(
+    `[ExploreSaveLoad] displaced: ${displaced.scene.id}/${displaced.mode.type}, evidence=${displaced.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
+  await openGameMenu();
+  await clickButton(anchors.loadGame);
+  await browser.waitUntil(
+    async () => elementExists('[aria-label="存檔瀏覽器"]'),
+    {
+      timeout: 30000,
+      timeoutMsg: "gameplay load browser did not open",
+    },
+  );
+  await clickSaveCardButton("manual", 1, "載入");
+  await waitForDialog("載入手動存檔 1");
+  await clickDialogButton("載入手動存檔 1", "確認載入");
+  await waitForPersistenceLayersClosed();
+  const loaded = await waitForPackagedGameState(
+    (state) =>
+      state.scene.id === beforeSave.scene.id && state.mode.type === "explore",
+    30000,
+    "Explore menu save did not load the original scene and mode",
+  );
+  expect(loaded.scene).toEqual(beforeSave.scene);
+  expect(loaded.inventory).toEqual(beforeSave.inventory);
+  expect(loaded.mode).toEqual(beforeSave.mode);
+  expect(
+    loaded.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(1);
+  console.log(
+    `[ExploreSaveLoad] after load: ${loaded.scene.id}/${loaded.mode.type}, evidence=${loaded.inventory.evidence.map((record) => record.id).join(",")}`,
+  );
+}
+
 async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   const inherited = readSaveE2eExpectation<ExitControl>("exit-state");
-  await jumpToProductionScene(anchors.investigationSceneId);
+  await jumpToProductionScene(anchors.firstGateSuccessor);
   await drainCurrentDialogue("explore");
+  await waitForPersistenceIdle();
+  await proveExploreMenuSaveLoad();
+  await jumpToProductionScene(anchors.investigationSceneId);
+  const reacquisitionState = await drainCurrentDialogue("explore");
+  expect(
+    reacquisitionState.inventory.evidence.filter(
+      (record) => record.id === KAGAMI_SUMMARY_RECORD_ID,
+    ),
+  ).toHaveLength(0);
   await waitForPersistenceIdle();
   const hotspot = `button[aria-label="${anchors.hotspotEvidence.label}"]`;
   await browser.waitUntil(async () => elementExists(hotspot), {
@@ -184,6 +351,8 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
   if (!current) {
     throw new Error("acknowledged-exit event is missing");
   }
+  expect(current.recordKind).toBe("evidence");
+  expect(current.recordId).toBe(KAGAMI_SUMMARY_RECORD_ID);
   writeSaveE2eExpectation("exit-state", {
     ...inherited,
     acknowledgedExit: {
@@ -193,9 +362,7 @@ async function exitAfterOrdinaryAcknowledgement(): Promise<void> {
     },
   } satisfies ExitControl);
 
-  // Ordinary acknowledgement, then an ordinary quit: the exit flush must
-  // persist the acknowledged revision, and the next process must resume
-  // without the popup and with the record granted exactly once.
+  // The acknowledgement is the last mutation before the ordinary quit.
   await acknowledgeAcquisitionDomFirst(current);
   await waitForPackagedGameState(
     (state) => state.pendingAcquisition === null,
@@ -230,17 +397,44 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   await waitForPersistenceIdle();
   const documentIdentity = await currentPackagedDocumentIdentity();
   const authoritativeState = await getPackagedGameState();
+  const authoritativeCheckpoint = checkpoint(
+    documentIdentity,
+    authoritativeState,
+  );
+  // Healthy status alone does not mean the jump's debounced autosave is written.
+  await browser.waitUntil(
+    async () => {
+      const snapshot = newestAutosaveSlot()?.envelope?.snapshot;
+      if (!snapshot) return false;
+      const records =
+        acknowledgedExit.recordKind === "evidence"
+          ? snapshot.inventory.evidence
+          : snapshot.inventory.statements;
+      return (
+        snapshot.sceneId === authoritativeCheckpoint.sceneId &&
+        snapshot.activeDialogue?.queueGen ===
+          authoritativeCheckpoint.queueGen &&
+        records.filter(
+          (record) => record.recordId === acknowledgedExit.recordId,
+        ).length === 1
+      );
+    },
+    {
+      timeout: 90000,
+      interval: 100,
+      timeoutMsg: "scene jump did not reach the authoritative autosave",
+    },
+  );
   const authoritativeSlot = newestAutosaveSlot();
   if (!authoritativeSlot?.envelope) {
     throw new Error("authoritative pre-bypass autosave is missing");
   }
   const authoritative = {
-    ...checkpoint(documentIdentity, authoritativeState),
+    ...authoritativeCheckpoint,
     saveId: authoritativeSlot.envelope.saveId,
   };
-  const unsaved = await mutateBeforeDebounce();
-
   await setNextPersistenceFault("exitFlush");
+  const unsaved = await mutateBeforeDebounce();
   await requestWindowClose();
   await waitForDialog("無法結束遊戲", 30000);
   const failed = await invokePackagedCommand<ExitStatusView>("get_exit_status");
@@ -263,6 +457,7 @@ async function proveFailureCancelAndBypass(): Promise<void> {
   }
   expect(staleRejection.error.code).toBe("stalePersistenceFailureToken");
 
+  expect(newestAutosaveSlot()?.envelope?.saveId).toBe(authoritative.saveId);
   await setNextPersistenceFault("exitFlush");
   await requestWindowClose();
   await waitForDialog("無法結束遊戲", 30000);

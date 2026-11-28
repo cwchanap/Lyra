@@ -1,6 +1,26 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir, userInfo } from "node:os";
+import path from "node:path";
 import test from "node:test";
+import Mocha from "mocha";
+import { testFnWrapper } from "@wdio/utils";
+import { tsImport } from "tsx/esm/api";
 import { selectOwnedE2eAppProcessId } from "./e2e-trusted-key-process.mjs";
+import * as x11 from "./e2e-x11-trusted-input.mjs";
 import {
   EMPTY_XAUTHORITY_PROBE,
   TRUSTED_XVFB_KEYS_ENV,
@@ -8,7 +28,6 @@ import {
   assertUsableAuthorityCookies,
   assertX11AuthenticationEnforced,
   assertX11WindowOwnership,
-  deliverXvfbTrustedKey,
   parseLocalDisplayNumber,
   parseNetWmPid,
   parseXauthorityRecords,
@@ -17,6 +36,18 @@ import {
   trustedXvfbKeysOptIn,
   verifyPrivateXvfbAncestry,
 } from "./e2e-x11-trusted-input.mjs";
+
+const untrackedPointerState = {
+  assertAllowed() {},
+  beginPress() {},
+  confirmPress() {},
+  confirmRelease() {},
+};
+const deliverXvfbTrustedKey = (options) =>
+  x11.deliverXvfbTrustedKey({
+    pointerState: untrackedPointerState,
+    ...options,
+  });
 
 // Security gate regression (HPA-831): the scoped Linux/Xvfb XTEST path must
 // fail closed on every unverifiable shape — missing/shared display, wrong
@@ -1110,3 +1141,1920 @@ test("delivery sends no xdotool command when the authorized probe fails", async 
   );
   assert.deepEqual(calls, []);
 });
+
+const POINTER_TARGET = {
+  point: { x: 100, y: 100 },
+  bounds: { left: 90, top: 90, right: 130, bottom: 130 },
+  viewport: { width: 800, height: 600 },
+  devicePixelRatio: 1,
+};
+
+function trackedPointerState(t) {
+  const directory = mkdtempSync(path.join(tmpdir(), "lyra-pointer-state-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const state = x11.createX11PointerState(
+    path.join(directory, "x11-pointer-state.json"),
+  );
+  state.initialize();
+  return state;
+}
+
+function displayClaimFixture(t) {
+  const directory = mkdtempSync(path.join(tmpdir(), "lyra-display-claim-"));
+  const xauthority = path.join(directory, "Xauthority");
+  writeFileSync(xauthority, xauthRecord(), { mode: 0o600 });
+  const fixture = {
+    directory,
+    identity: {
+      xauthority,
+      display: DISPLAY,
+      xvfbPid: 25,
+      xvfbRunPid: 20,
+      xvfbStart: "12345",
+      runnerPid: 30,
+      pointerStatePath: path.join(directory, "pointer-state.json"),
+    },
+  };
+  t.after(() => {
+    rmSync(displayClaimPath(fixture), { force: true });
+    if (existsSync(directory)) chmodSync(directory, 0o700);
+    rmSync(directory, { recursive: true, force: true });
+  });
+  return fixture;
+}
+
+function displayClaimPath({ identity }) {
+  const key = createHash("sha256")
+    .update(path.resolve(identity.xauthority))
+    .digest("hex");
+  return path.join(
+    realpathSync(userInfo().homedir),
+    ".cache",
+    "lyra-e2e-x11-claims",
+    `.lyra-e2e-x11-claim-${key}.json`,
+  );
+}
+
+test(
+  "the display claim binds workers to one runner and Xvfb start identity",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { identity } = displayClaimFixture(t);
+    const processes = privateXvfbTable();
+    x11.claimXvfbDisplay(identity);
+    assert.doesNotThrow(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 700 }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...identity,
+        xvfbStart: "12346",
+        processes,
+        currentPid: 700,
+      }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...identity,
+        pointerStatePath: `${identity.pointerStatePath}.other`,
+        processes,
+        currentPid: 700,
+      }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 5 }),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({ ...identity, processes, currentPid: 30 }),
+    );
+    assert.throws(() => x11.claimXvfbDisplay(identity));
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...identity, xvfbStart: "12346" }),
+    );
+  },
+);
+
+test(
+  "a fresh private authority permits a fresh display with a reused display number",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const first = displayClaimFixture(t);
+    const second = displayClaimFixture(t);
+    x11.claimXvfbDisplay(first.identity);
+    assert.doesNotThrow(() => x11.claimXvfbDisplay(second.identity));
+  },
+);
+
+test(
+  "fresh Xvfb processes can use distinct authority files in one private directory",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const freshAuthority = path.join(directory, "Xauthority-fresh");
+    writeFileSync(freshAuthority, xauthRecord(), { mode: 0o600 });
+    const fresh = {
+      ...identity,
+      xauthority: freshAuthority,
+      xvfbStart: "12346",
+    };
+    t.after(() =>
+      rmSync(displayClaimPath({ identity: fresh }), { force: true }),
+    );
+    x11.claimXvfbDisplay(identity);
+    assert.doesNotThrow(() => x11.claimXvfbDisplay(fresh));
+  },
+);
+
+test(
+  "recreating an authority directory cannot erase its prior claim",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    x11.claimXvfbDisplay(identity);
+    rmSync(directory, { recursive: true });
+    mkdirSync(directory, { mode: 0o700 });
+    writeFileSync(identity.xauthority, xauthRecord(), { mode: 0o600 });
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...identity, xvfbStart: "12346" }),
+    );
+  },
+);
+
+test(
+  "changing HOME or TMPDIR cannot bypass an authority claim",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const home = process.env.HOME;
+    const temp = process.env.TMPDIR;
+    t.after(() => {
+      if (home === undefined) delete process.env.HOME;
+      else process.env.HOME = home;
+      if (temp === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = temp;
+    });
+    x11.claimXvfbDisplay(identity);
+    process.env.HOME = directory;
+    process.env.TMPDIR = directory;
+    assert.throws(() => x11.claimXvfbDisplay(identity));
+  },
+);
+
+test(
+  "display claims fail closed on insecure, missing, symlinked, or corrupt files",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const insecure = displayClaimFixture(t);
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...insecure.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+    chmodSync(insecure.identity.xauthority, 0o644);
+    assert.throws(() => x11.claimXvfbDisplay(insecure.identity), /secure/i);
+    chmodSync(insecure.identity.xauthority, 0o600);
+    chmodSync(insecure.directory, 0o755);
+    assert.throws(() => x11.claimXvfbDisplay(insecure.identity), /secure/i);
+    chmodSync(insecure.directory, 0o700);
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, xvfbStart: "" }),
+    );
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, display: "remote:99" }),
+    );
+    assert.throws(() =>
+      x11.claimXvfbDisplay({
+        ...insecure.identity,
+        xauthority: path.join(insecure.directory, "missing"),
+      }),
+    );
+    const alias = path.join(insecure.directory, "alias");
+    symlinkSync(insecure.identity.xauthority, alias);
+    assert.throws(() =>
+      x11.claimXvfbDisplay({ ...insecure.identity, xauthority: alias }),
+    );
+    const hardlinked = displayClaimFixture(t);
+    linkSync(
+      hardlinked.identity.xauthority,
+      path.join(hardlinked.directory, "hardlink"),
+    );
+    assert.throws(() => x11.claimXvfbDisplay(hardlinked.identity));
+
+    const linked = displayClaimFixture(t);
+    const target = path.join(linked.directory, "do-not-touch");
+    writeFileSync(target, "unchanged", { mode: 0o600 });
+    x11.claimXvfbDisplay(linked.identity);
+    rmSync(displayClaimPath(linked));
+    symlinkSync(target, displayClaimPath(linked));
+    assert.throws(() => x11.claimXvfbDisplay(linked.identity));
+    assert.equal(readFileSync(target, "utf8"), "unchanged");
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...linked.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+
+    const linkedClaim = displayClaimFixture(t);
+    x11.claimXvfbDisplay(linkedClaim.identity);
+    linkSync(
+      displayClaimPath(linkedClaim),
+      path.join(linkedClaim.directory, "claim-hardlink"),
+    );
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...linkedClaim.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+
+    const corrupt = displayClaimFixture(t);
+    x11.claimXvfbDisplay(corrupt.identity);
+    const claim = displayClaimPath(corrupt);
+    chmodSync(claim, 0o666);
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...corrupt.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+    chmodSync(claim, 0o600);
+    writeFileSync(claim, "{");
+    assert.throws(() =>
+      x11.assertXvfbDisplayClaim({
+        ...corrupt.identity,
+        processes: privateXvfbTable(),
+        currentPid: 700,
+      }),
+    );
+  },
+);
+
+test(
+  "a non-regular authority file is rejected without waiting on it",
+  { skip: process.platform !== "linux" },
+  (t) => {
+    const { directory, identity } = displayClaimFixture(t);
+    const fifo = path.join(directory, "fifo");
+    assert.equal(spawnSync("mkfifo", ["-m", "600", fifo]).status, 0);
+    const moduleUrl = new URL("./e2e-x11-trusted-input.mjs", import.meta.url)
+      .href;
+    const source = `import { claimXvfbDisplay } from ${JSON.stringify(moduleUrl)}; claimXvfbDisplay(JSON.parse(process.env.TEST_IDENTITY));`;
+    const child = spawnSync(
+      process.execPath,
+      ["--input-type=module", "-e", source],
+      {
+        encoding: "utf8",
+        timeout: 5000,
+        env: {
+          ...process.env,
+          TEST_IDENTITY: JSON.stringify({ ...identity, xauthority: fifo }),
+        },
+      },
+    );
+    assert.equal(child.error, undefined, child.error?.message);
+    assert.notEqual(child.status, 0);
+  },
+);
+
+const deliverXvfbTrustedPointer = (options) =>
+  x11.deliverXvfbTrustedPointer({
+    pointerState: untrackedPointerState,
+    ...options,
+  });
+
+function pointerRun({
+  geometry = `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n`,
+  pointer = `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+  focus = [TARGET_WINDOW, TARGET_WINDOW],
+} = {}) {
+  const calls = [];
+  const remaining = [...focus];
+  return {
+    calls,
+    run: async (args) => {
+      calls.push(args);
+      if (args[0] === "getwindowgeometry") return geometry;
+      if (args[0] === "getmouselocation") return pointer;
+      if (args[0] === "getwindowfocus")
+        return String(remaining.shift() ?? TARGET_WINDOW);
+      return "";
+    },
+  };
+}
+
+const namedInvestigationState = {
+  chapter: { id: "chapter_1" },
+  scene: {
+    kind: "investigation",
+    id: "investigation_scene_9",
+    currentSublocationId: "contractor_desk",
+  },
+  mode: { type: "explore" },
+};
+
+test("scene-nav pointer rejects a changed late hit before native input", async (t) => {
+  for (const action of ["move", "click-press", "click-release"]) {
+    const pointerState = trackedPointerState(t);
+    if (action === "click-release") {
+      pointerState.beginPress("click");
+      pointerState.confirmPress("click");
+    }
+    const transport = pointerRun();
+    let samples = 0;
+    await assert.rejects(
+      () =>
+        x11.deliverXvfbTrustedSceneNavPointer({
+          action,
+          region: "last-chip",
+          measureTarget: async () => {
+            if (++samples === 2)
+              throw new Error("scene-nav target is occluded");
+            return POINTER_TARGET;
+          },
+          resolveTarget: okResolver(),
+          run: transport.run,
+          pointerState,
+        }),
+      /occluded/,
+    );
+    assert.equal(samples, 2);
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+    );
+  }
+});
+
+test("named investigation pointer accepts only the seven authorized ids in their live scene", async () => {
+  assert.equal(typeof x11.deliverXvfbTrustedInvestigationPointer, "function");
+  for (const id of ["phone_screenshot", "__proto__", "anything"]) {
+    let sampled = false;
+    const transport = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id,
+        action: "move",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          sampled = true;
+          return { ...POINTER_TARGET, hitTarget: id };
+        },
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.equal(sampled, false);
+    assert.deepEqual(transport.calls, []);
+  }
+  for (const state of [
+    { ...namedInvestigationState, chapter: { id: "chapter_2" } },
+    { ...namedInvestigationState, mode: { type: "dialogue" } },
+    {
+      ...namedInvestigationState,
+      scene: {
+        ...namedInvestigationState.scene,
+        currentSublocationId: "confront_kitami",
+      },
+    },
+  ]) {
+    const transport = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "move",
+        readState: async () => state,
+        measureTarget: async () => ({
+          ...POINTER_TARGET,
+          hitTarget: "workorder",
+        }),
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.deepEqual(transport.calls, []);
+  }
+});
+
+test("named investigation pointer rejects wrong hits and foreign windows before injection", async () => {
+  assert.equal(typeof x11.deliverXvfbTrustedInvestigationPointer, "function");
+  for (const [hitTarget, geometry] of [
+    ["access_permission_list", undefined],
+    ["workorder", "WINDOW=999\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n"],
+  ]) {
+    const transport = pointerRun({ geometry });
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "move",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => ({ ...POINTER_TARGET, hitTarget }),
+        resolveTarget: okResolver(),
+        run: transport.run,
+        pointerState: untrackedPointerState,
+      }),
+    );
+    assert.equal(
+      transport.calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("named investigation pointer rejects context or target changes during native preflight", async (t) => {
+  for (const [action, change] of [
+    ["move", "hit"],
+    ["move", "point"],
+    ["move", "mode"],
+    ["move", "bounds"],
+    ["click-press", "hit"],
+    ["click-press", "mode"],
+  ]) {
+    const pointerState = trackedPointerState(t);
+    const transport = pointerRun();
+    let preflight = false;
+    const run = async (args) => {
+      const result = await transport.run(args);
+      if (args[0] === "getwindowfocus") preflight = true;
+      return result;
+    };
+    await assert.rejects(
+      () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action,
+          readState: async () =>
+            preflight && change === "mode"
+              ? { ...namedInvestigationState, mode: { type: "dialogue" } }
+              : namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            point:
+              preflight && change === "point"
+                ? { x: 101, y: 100 }
+                : POINTER_TARGET.point,
+            bounds:
+              preflight && change === "bounds"
+                ? { ...POINTER_TARGET.bounds, right: 131 }
+                : POINTER_TARGET.bounds,
+            hitTarget:
+              preflight && change === "hit"
+                ? "access_permission_list"
+                : "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run,
+          pointerState,
+        }),
+      /Investigation pointer|Unauthorized investigation pointer/,
+    );
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+      `${action}: ${change}`,
+    );
+    assert.equal(pointerState.read().status, "safe");
+  }
+});
+
+test("late named-target mismatch rejects release and poisons the active display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let preflight = false;
+  pointerState.beginTest();
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action: "click-press",
+          readState: async () => namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run: press.run,
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          id: "workorder",
+          action: "click-release",
+          readState: async () => namedInvestigationState,
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: preflight ? "access_permission_list" : "workorder",
+          }),
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            const result = await release.run(args);
+            if (args[0] === "getmouselocation") preflight = true;
+            return result;
+          },
+          pointerState,
+        }),
+    }),
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+});
+
+for (const [action, change] of [
+  ["move", "geometry"],
+  ["move", "focus"],
+  ["click-press", "geometry"],
+  ["click-press", "focus"],
+  ["click-press", "pointer-window"],
+  ["click-press", "pointer-position"],
+]) {
+  test(`named ${action} rejects changed native ${change} during DOM recheck`, async (t) => {
+    const pointerState = trackedPointerState(t);
+    const transport = pointerRun();
+    let samples = 0;
+    const run = async (args) => {
+      const result = await transport.run(args);
+      if (samples < 2) return result;
+      if (change === "geometry" && args[0] === "getwindowgeometry")
+        return result.replace("X=10", "X=11");
+      if (change === "focus" && args[0] === "getwindowfocus") return "999";
+      if (change === "pointer-window" && args[0] === "getmouselocation")
+        return result.replace(`WINDOW=${TARGET_WINDOW}`, "WINDOW=999");
+      if (change === "pointer-position" && args[0] === "getmouselocation")
+        return result.replace("X=110", "X=111");
+      return result;
+    };
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action,
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          samples++;
+          return { ...POINTER_TARGET, hitTarget: "workorder" };
+        },
+        resolveTarget: okResolver(),
+        run,
+        pointerState,
+      }),
+    );
+    assert.equal(samples, 2);
+    assert.equal(
+      transport.calls.some(([command]) =>
+        ["mousemove", "mousedown", "mouseup"].includes(command),
+      ),
+      false,
+    );
+    assert.equal(pointerState.read().status, "safe");
+  });
+}
+
+test("named press rechecks the root-pointer fallback after DOM recheck", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const transport = pointerRun({
+    pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+  });
+  let samples = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverXvfbTrustedInvestigationPointer({
+        id: "workorder",
+        action: "click-press",
+        readState: async () => namedInvestigationState,
+        measureTarget: async () => {
+          samples++;
+          return { ...POINTER_TARGET, hitTarget: "workorder" };
+        },
+        resolveTarget: okResolver(),
+        run: transport.run,
+        readRootPointer: async () =>
+          `X=110\nY=120\nSCREEN=0\nWINDOW=${samples >= 2 ? 999 : TARGET_WINDOW}\n`,
+        pointerState,
+      }),
+    /pointer no longer belongs/,
+  );
+  assert.equal(
+    transport.calls.some(([command]) => command === "mousedown"),
+    false,
+  );
+  assert.equal(pointerState.read().status, "safe");
+});
+
+test("named release rejects native pointer change during DOM recheck and poisons display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let samples = 0;
+  const common = {
+    id: "workorder",
+    readState: async () => namedInvestigationState,
+    resolveTarget: okResolver(),
+    pointerState,
+  };
+  pointerState.beginTest();
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          ...common,
+          action: "click-press",
+          measureTarget: async () => ({
+            ...POINTER_TARGET,
+            hitTarget: "workorder",
+          }),
+          run: press.run,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedInvestigationPointer({
+          ...common,
+          action: "click-release",
+          measureTarget: async () => {
+            samples++;
+            return { ...POINTER_TARGET, hitTarget: "workorder" };
+          },
+          run: async (args) => {
+            const result = await release.run(args);
+            return samples >= 2 && args[0] === "getmouselocation"
+              ? result.replace(`WINDOW=${TARGET_WINDOW}`, "WINDOW=999")
+              : result;
+          },
+        }),
+    }),
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+});
+
+test("named investigation pointer requires the complete trusted sequence on the exact target", () => {
+  assert.equal(typeof x11.assertInvestigationPointerEvents, "function");
+  const events = ["pointerdown", "pointerup", "click"].map((type) => ({
+    type,
+    trusted: true,
+    targetId: "workorder",
+  }));
+  assert.equal(x11.assertInvestigationPointerEvents(events, "workorder"), true);
+  assert.equal(x11.assertInvestigationPointerEvents([], "workorder"), false);
+  for (const broken of [
+    events.slice(0, 2),
+    [
+      events[0],
+      { ...events[1], targetId: "access_permission_list" },
+      events[2],
+    ],
+    [events[0], { ...events[1], trusted: false }, events[2]],
+  ]) {
+    assert.throws(() =>
+      x11.assertInvestigationPointerEvents(broken, "workorder"),
+    );
+  }
+});
+
+test("the named pointer allowlist binds every id to one chapter, scene and location", async () => {
+  for (const [id, chapter, scene, location] of [
+    ["stacked_ledgers", "chapter_1", "investigation_scene_8", "office_corner"],
+    ["workorder", "chapter_1", "investigation_scene_9", "contractor_desk"],
+    [
+      "access_permission_list",
+      "chapter_1",
+      "investigation_scene_9",
+      "contractor_desk",
+    ],
+    [
+      "material_kit_list",
+      "chapter_1",
+      "investigation_scene_9",
+      "contractor_desk",
+    ],
+    ["to_confront", "chapter_1", "investigation_scene_9", "contractor_desk"],
+    [
+      "stream_wall_screen",
+      "chapter_2",
+      "investigation_scene_4",
+      "stream_wall_plaza",
+    ],
+    [
+      "ob_van_monitor",
+      "chapter_2",
+      "investigation_scene_4",
+      "control_room_perimeter",
+    ],
+  ]) {
+    const transport = pointerRun();
+    await x11.deliverXvfbTrustedInvestigationPointer({
+      id,
+      action: "move",
+      readState: async () => ({
+        chapter: { id: chapter },
+        scene: {
+          kind: "investigation",
+          id: scene,
+          currentSublocationId: location,
+        },
+        mode: { type: "explore" },
+      }),
+      measureTarget: async (approved) => {
+        assert.equal(approved, id);
+        return { ...POINTER_TARGET, hitTarget: approved };
+      },
+      resolveTarget: okResolver(),
+      run: transport.run,
+      pointerState: untrackedPointerState,
+    });
+    assert.deepEqual(transport.calls.at(-2), ["mousemove", "110", "120"]);
+  }
+});
+
+test("a named pointer pair never releases at a mismatched hit and poisons the display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  const common = {
+    id: "workorder",
+    readState: async () => namedInvestigationState,
+    resolveTarget: okResolver(),
+    pointerState,
+  };
+  pointerState.beginTest();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedInvestigationPointer({
+            ...common,
+            action: "click-press",
+            measureTarget: async () => ({
+              ...POINTER_TARGET,
+              hitTarget: "workorder",
+            }),
+            run: press.run,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedInvestigationPointer({
+            ...common,
+            action: "click-release",
+            measureTarget: async () => ({
+              ...POINTER_TARGET,
+              hitTarget: "access_permission_list",
+            }),
+            run: release.run,
+          }),
+      }),
+    /hit-test mismatch/,
+  );
+  assert.equal(
+    press.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  pointerState.finishTest(false);
+  assert.equal(pointerState.read().status, "poisoned");
+  assert.throws(() => pointerState.assertAllowed("move"), /unsafe/);
+});
+
+test("test ownership remains active through a verified pointer pair", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  pointerState.beginTest();
+  await x11.deliverX11PointerPair({
+    pointerState,
+    button: "click",
+    press: () =>
+      x11.deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run: press.run,
+        pointerState,
+      }),
+    release: () =>
+      x11.deliverXvfbTrustedPointer({
+        action: "click-release",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run: release.run,
+        pointerState,
+      }),
+  });
+  assert.equal(pointerState.isSafe(), false);
+  assert.equal(pointerState.read().testActive, true);
+  pointerState.finishTest(true);
+  assert.equal(pointerState.isSafe(), true);
+});
+
+test("revoked pending move and key preflights cannot change focus or send input", async (t) => {
+  for (const action of ["move", "key"]) {
+    const pointerState = trackedPointerState(t);
+    pointerState.beginTest();
+    let resume;
+    const preflight = new Promise((resolve) => {
+      resume = resolve;
+    });
+    const transport = pointerRun({ focus: [42, TARGET_WINDOW] });
+    const operation =
+      action === "move"
+        ? x11.deliverXvfbTrustedPointer({
+            action: "move",
+            target: POINTER_TARGET,
+            resolveTarget: () => preflight,
+            run: transport.run,
+            pointerState,
+          })
+        : x11.deliverXvfbTrustedKey({
+            key: "Tab",
+            resolveTarget: () => preflight,
+            run: transport.run,
+            pointerState,
+          });
+    pointerState.finishTest(false);
+    resume({ appPid: TARGET_PID, windowId: TARGET_WINDOW });
+    await assert.rejects(operation, /unsafe/i);
+    assert.deepEqual(
+      transport.calls.filter(([command]) =>
+        ["windowfocus", "mousemove", "mousedown", "mouseup", "key"].includes(
+          command,
+        ),
+      ),
+      [],
+    );
+  }
+});
+
+test("pointer preflight failure sends no XTEST commands", async () => {
+  const { run, calls } = pointerRun();
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          throw new Error("unverified display");
+        },
+        run,
+      }),
+    /unverified display/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer sends no XTEST commands when private authority cannot be proven", async () => {
+  const { run, calls } = pointerRun();
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          verifyPrivateXvfbAncestry({
+            processes: privateXvfbTable(),
+            currentPid: 700,
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            authorityFile: {
+              ...PRIVATE_AUTHORITY_FILE,
+              content: Buffer.alloc(0),
+            },
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /no usable cookie/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer sends no XTEST commands when X authentication is unenforced", async () => {
+  const { run, calls } = pointerRun();
+  const { probe } = scriptedProbe(["ok", "ok"]);
+  await assert.rejects(
+    () =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: async () => {
+          await assertX11AuthenticationEnforced({
+            display: DISPLAY,
+            xauthority: XAUTHORITY,
+            probe,
+          });
+          return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+        },
+        run,
+      }),
+    /was ACCEPTED/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test("pointer refuses coordinates outside the verified window or target", async () => {
+  for (const target of [
+    { ...POINTER_TARGET, point: { x: 801, y: 100 } },
+    { ...POINTER_TARGET, point: { x: 85, y: 100 } },
+    { ...POINTER_TARGET, point: { x: NaN, y: 100 } },
+    { ...POINTER_TARGET, devicePixelRatio: 2 },
+  ]) {
+    const { run, calls } = pointerRun();
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses malformed or foreign window geometry", async () => {
+  for (const geometry of [
+    "X=10\nY=20\nWIDTH=800\nHEIGHT=600\n",
+    "WINDOW=999\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n",
+    `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=801\nHEIGHT=600\nSCREEN=0\n`,
+  ]) {
+    const { run, calls } = pointerRun({ geometry });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "move",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousemove"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses presses when pointer location or ownership changed", async () => {
+  for (const pointer of [
+    "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    "X=110\nY=120\nSCREEN=0\nWINDOW=999\n",
+    `X=111\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+    "malformed",
+  ]) {
+    const { run, calls } = pointerRun({ pointer });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer can verify the raw root child when xdotool reports no client window", async () => {
+  const { run, calls } = pointerRun({
+    pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+  });
+  const result = await deliverXvfbTrustedPointer({
+    action: "wheel-press",
+    target: POINTER_TARGET,
+    resolveTarget: okResolver(),
+    run,
+    readRootPointer: async () =>
+      `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+  });
+  assert.deepEqual(calls.at(-2), ["mousedown", "7"]);
+  assert.equal(result.pointerSource, "xquerypointer");
+});
+
+test("pointer refuses a foreign or mismatched raw root-child result", async () => {
+  for (const raw of [
+    "X=110\nY=120\nSCREEN=0\nWINDOW=999\n",
+    "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    `X=111\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`,
+    "malformed",
+  ]) {
+    const { run, calls } = pointerRun({
+      pointer: "X=110\nY=120\nSCREEN=0\nWINDOW=0\n",
+    });
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "wheel-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+        readRootPointer: async () => raw,
+      }),
+    );
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer refuses a failed raw probe and never uses it for a foreign client", async () => {
+  for (const reported of [0, 999]) {
+    const { run, calls } = pointerRun({
+      pointer: `X=110\nY=120\nSCREEN=0\nWINDOW=${reported}\n`,
+    });
+    let probes = 0;
+    await assert.rejects(() =>
+      deliverXvfbTrustedPointer({
+        action: "click-press",
+        target: POINTER_TARGET,
+        resolveTarget: okResolver(),
+        run,
+        readRootPointer: async () => {
+          probes += 1;
+          throw new Error("raw query unavailable");
+        },
+      }),
+    );
+    assert.equal(probes, reported === 0 ? 1 : 0);
+    assert.equal(
+      calls.some(([command]) => command === "mousedown"),
+      false,
+    );
+  }
+});
+
+test("pointer checks focus before and after every injected event", async () => {
+  const before = pointerRun({ focus: [42, 42] });
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: before.run,
+    }),
+  );
+  assert.equal(
+    before.calls.some(([command]) => command === "mousemove"),
+    false,
+  );
+
+  const after = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "click-press",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: after.run,
+    }),
+  );
+  assert.equal(
+    after.calls.some(([command]) => command === "mousedown"),
+    true,
+  );
+});
+
+test("pointer delivers only verified scene-nav actions to the owned window", async () => {
+  const move = pointerRun();
+  const verifiedMove = await deliverXvfbTrustedPointer({
+    action: "move",
+    target: POINTER_TARGET,
+    resolveTarget: okResolver(),
+    run: move.run,
+  });
+  assert.deepEqual(verifiedMove, {
+    action: "move",
+    appPid: TARGET_PID,
+    windowId: TARGET_WINDOW,
+    x: 110,
+    y: 120,
+  });
+  assert.deepEqual(move.calls.at(-2), ["mousemove", "110", "120"]);
+  for (const [action, expected] of [
+    ["wheel-press", ["mousedown", "7"]],
+    ["wheel-release", ["mouseup", "7"]],
+    ["click-press", ["mousedown", "1"]],
+    ["click-release", ["mouseup", "1"]],
+  ]) {
+    const { run, calls } = pointerRun();
+    await deliverXvfbTrustedPointer({
+      action,
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run,
+    });
+    assert.deepEqual(calls.at(-2), expected);
+    assert.deepEqual(calls.at(-1), ["getwindowfocus", "-f"]);
+  }
+  const bad = pointerRun();
+  await assert.rejects(() =>
+    deliverXvfbTrustedPointer({
+      action: "anything-else",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: bad.run,
+    }),
+  );
+  assert.deepEqual(bad.calls, []);
+});
+
+test("trusted scene-nav input failures are not reported as unavailable", () => {
+  assert.equal(
+    x11.assertSceneNavWheelProgress([{ trusted: false, deltaX: 1 }], 0, 0),
+    false,
+  );
+  assert.throws(
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 1, targetInChips: true }],
+        0,
+        0,
+      ),
+    /trusted.*scroll/i,
+  );
+  assert.throws(
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 0, targetInChips: true }],
+        0,
+        5,
+      ),
+    /trusted.*direction/i,
+  );
+  assert.equal(
+    x11.assertSceneNavWheelProgress(
+      [{ trusted: true, deltaX: 1, targetInChips: true }],
+      0,
+      5,
+    ),
+    true,
+  );
+  assert.equal(
+    x11.assertSceneNavTabProgress({ key: "Tab", trusted: false }, 1, 0),
+    false,
+  );
+  assert.throws(
+    () =>
+      x11.assertSceneNavTabProgress(
+        { key: "Tab", trusted: true, targetIndex: 0 },
+        1,
+        0,
+      ),
+    /trusted.*focus/i,
+  );
+  assert.equal(
+    x11.assertSceneNavTabProgress(
+      { key: "Tab", trusted: true, targetIndex: 0 },
+      1,
+      1,
+    ),
+    true,
+  );
+});
+
+test("a delivered fourth Tab must reveal the final scene chip", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavTabProgress(
+        { key: "Tab", trusted: true, targetIndex: 3 },
+        4,
+        4,
+        false,
+      ),
+    /trusted.*visib/i,
+  );
+});
+
+test("trusted pointer release retargeted away from the last chip fails", () => {
+  assert.equal(typeof x11.assertSceneNavPointerEvents, "function");
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerdown",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: false,
+          lastVisible: true,
+        },
+      ]),
+    /trusted.*target/i,
+  );
+});
+
+test("a partially delivered trusted click cannot be marked inconclusive", () => {
+  for (const type of ["pointerdown", "pointerup", "click"]) {
+    assert.throws(
+      () =>
+        x11.assertSceneNavPointerEvents([
+          { type, trusted: true, targetIsLast: true, lastVisible: true },
+        ]),
+      /incomplete|missing/i,
+    );
+  }
+});
+
+test("trusted wheel and click delivery cannot hide wrong targets or a missing click", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavWheelProgress(
+        [{ trusted: true, deltaX: 86, targetInChips: false }],
+        0,
+        86,
+      ),
+    /target/i,
+  );
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerdown",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: true,
+        },
+      ]),
+    /incomplete/i,
+  );
+  assert.deepEqual(
+    x11.assertSceneNavPointerEvents([
+      {
+        type: "pointerdown",
+        trusted: true,
+        targetIsLast: true,
+        lastVisible: true,
+      },
+      {
+        type: "pointerup",
+        trusted: true,
+        targetIsLast: true,
+        lastVisible: true,
+      },
+      { type: "click", trusted: true, targetIsLast: true, lastVisible: true },
+      { type: "click", trusted: false, targetIsLast: false },
+    ]),
+    { down: true, up: true, click: true },
+  );
+});
+
+test("trusted pointer delivery requires the last chip to be visible", () => {
+  assert.throws(
+    () =>
+      x11.assertSceneNavPointerEvents([
+        {
+          type: "pointerup",
+          trusted: true,
+          targetIsLast: true,
+          lastVisible: false,
+        },
+      ]),
+    /visible/i,
+  );
+});
+
+test("press postcheck failure attempts only a fully verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  const release = pointerRun();
+  let releasePreflights = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              releasePreflights += 1;
+              return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /focus left/,
+  );
+  assert.equal(releasePreflights, 1);
+  assert.ok(release.calls.some(([command]) => command === "getmouselocation"));
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.read().status, "poisoned");
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Tab",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
+});
+
+for (const pending of ["press", "post-press focus"]) {
+  test(`revocation while ${pending} is in flight prevents later input`, async (t) => {
+    const pointerState = trackedPointerState(t);
+    const press = pointerRun();
+    const release = pointerRun();
+    let notifyStarted;
+    let resume;
+    const started = new Promise((resolve) => {
+      notifyStarted = resolve;
+    });
+    const delayed = new Promise((resolve) => {
+      resume = resolve;
+    });
+    let focusChecks = 0;
+    pointerState.beginTest();
+    const operation = x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-press",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            const result = await press.run(args);
+            const hold =
+              (pending === "press" && args[0] === "mousedown") ||
+              (pending === "post-press focus" &&
+                args[0] === "getwindowfocus" &&
+                ++focusChecks === 2);
+            if (hold) {
+              notifyStarted();
+              await delayed;
+            }
+            return result;
+          },
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-release",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: release.run,
+          pointerState,
+        }),
+    });
+    await started;
+    assert.equal(pointerState.read().status, "possible");
+    pointerState.finishTest(false);
+    resume();
+    await assert.rejects(operation);
+    assert.equal(pointerState.read().status, "poisoned");
+    assert.deepEqual(release.calls, []);
+    assert.throws(() => pointerState.beginTest(), /unsafe/);
+    const later = pointerRun();
+    await assert.rejects(() =>
+      x11.deliverXvfbTrustedKey({
+        key: "Enter",
+        resolveTarget: okResolver(),
+        run: later.run,
+        pointerState,
+      }),
+    );
+    assert.deepEqual(later.calls, []);
+  });
+}
+
+test("a falsy press error is not swallowed after a verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let focusChecks = 0;
+  let rejected = false;
+  try {
+    await x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-press",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: async (args) => {
+            if (args[0] === "getwindowfocus" && ++focusChecks === 2) {
+              throw undefined;
+            }
+            return press.run(args);
+          },
+          pointerState,
+        }),
+      release: () =>
+        x11.deliverXvfbTrustedPointer({
+          action: "click-release",
+          target: POINTER_TARGET,
+          resolveTarget: okResolver(),
+          run: release.run,
+          pointerState,
+        }),
+    });
+  } catch {
+    rejected = true;
+  }
+  assert.equal(pointerState.read().status, "poisoned");
+  assert.equal(rejected, true);
+});
+
+test("empty trusted-input errors remain classifiable as errors", () => {
+  assert.equal(x11.describeX11InputError(""), "Unknown X11 input error");
+  assert.equal(
+    x11.describeX11InputError(new Error("")),
+    "Unknown X11 input error",
+  );
+  assert.equal(
+    x11.describeX11InputError(new Error("focus lost")),
+    "focus lost",
+  );
+});
+
+test("press precheck failure never attempts a cleanup release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  let releases = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "wheel",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-press",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              throw new Error("press target unverified");
+            },
+            run: press.run,
+            pointerState,
+          }),
+        release: async () => {
+          releases += 1;
+        },
+      }),
+    /press target unverified/,
+  );
+  assert.equal(releases, 0);
+  assert.deepEqual(press.calls, []);
+  assert.equal(pointerState.read().status, "safe");
+});
+
+test("release precheck failure blocks all later pointer and keyboard input", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  const release = pointerRun();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              throw new Error("release target unverified");
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /release target unverified/,
+  );
+  assert.equal(
+    release.calls.some(([command]) => command === "mouseup"),
+    false,
+  );
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Tab",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
+});
+
+test("ambiguous press delivery stays poisoned even after verified release", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun();
+  let releasePreflights = 0;
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "wheel",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: async (args) => {
+              await press.run(args);
+              if (args[0] === "mousedown") throw new Error("press timed out");
+              return args[0] === "getwindowgeometry"
+                ? `WINDOW=${TARGET_WINDOW}\nX=10\nY=20\nWIDTH=800\nHEIGHT=600\nSCREEN=0\n`
+                : args[0] === "getmouselocation"
+                  ? `X=110\nY=120\nSCREEN=0\nWINDOW=${TARGET_WINDOW}\n`
+                  : args[0] === "getwindowfocus"
+                    ? String(TARGET_WINDOW)
+                    : "";
+            },
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "wheel-release",
+            target: POINTER_TARGET,
+            resolveTarget: async () => {
+              releasePreflights += 1;
+              return { appPid: TARGET_PID, windowId: TARGET_WINDOW };
+            },
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /press timed out/,
+  );
+  assert.equal(releasePreflights, 1);
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.read().status, "poisoned");
+  const later = pointerRun();
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedKey({
+      key: "Enter",
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  await assert.rejects(() =>
+    x11.deliverXvfbTrustedPointer({
+      action: "move",
+      target: POINTER_TARGET,
+      resolveTarget: okResolver(),
+      run: later.run,
+      pointerState,
+    }),
+  );
+  assert.deepEqual(later.calls, []);
+});
+
+test("release postcheck failure leaves the display unsafe", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  const release = pointerRun({ focus: [TARGET_WINDOW, 42] });
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-release",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: release.run,
+            pointerState,
+          }),
+      }),
+    /focus left/,
+  );
+  assert.ok(release.calls.some(([command]) => command === "mouseup"));
+  assert.equal(pointerState.isSafe(), false);
+  assert.throws(() => pointerState.assertAllowed("key"), /unsafe/);
+});
+
+test("a release callback that does not clear tracked state cannot succeed", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const press = pointerRun();
+  await assert.rejects(
+    () =>
+      x11.deliverX11PointerPair({
+        pointerState,
+        button: "click",
+        press: () =>
+          x11.deliverXvfbTrustedPointer({
+            action: "click-press",
+            target: POINTER_TARGET,
+            resolveTarget: okResolver(),
+            run: press.run,
+            pointerState,
+          }),
+        release: async () => {},
+      }),
+    /release.*verified/i,
+  );
+  assert.equal(pointerState.isSafe(), false);
+});
+
+test("a new pointer pair never attempts cleanup on an already unsafe display", async (t) => {
+  const pointerState = trackedPointerState(t);
+  pointerState.beginPress("click");
+  let presses = 0;
+  let releases = 0;
+  await assert.rejects(() =>
+    x11.deliverX11PointerPair({
+      pointerState,
+      button: "click",
+      press: async () => {
+        presses += 1;
+        throw new Error("blocked press");
+      },
+      release: async () => {
+        releases += 1;
+      },
+    }),
+  );
+  assert.equal(presses, 0);
+  assert.equal(releases, 0);
+});
+
+test(
+  "foreign-writable pointer state is not trusted",
+  { skip: !process.geteuid },
+  (t) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lyra-pointer-mode-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
+    const statePath = path.join(directory, "x11-pointer-state.json");
+    const pointerState = x11.createX11PointerState(statePath);
+    pointerState.initialize();
+    chmodSync(statePath, 0o666);
+    assert.equal(pointerState.isSafe(), false);
+    assert.throws(() => pointerState.assertAllowed("key"));
+  },
+);
+
+test(
+  "failed timeout revocation blocks input across module instances",
+  { skip: !process.geteuid || process.geteuid() === 0 },
+  async (t) => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lyra-revocation-io-"));
+    t.after(() => {
+      chmodSync(directory, 0o700);
+      rmSync(directory, { recursive: true, force: true });
+    });
+    const statePath = path.join(directory, "x11-pointer-state.json");
+    const state = x11.createX11PointerState(statePath);
+    state.initialize();
+    state.beginTest();
+    const secondModule = await tsImport(
+      "./e2e-x11-trusted-input.mjs",
+      import.meta.url,
+    );
+    const otherState = secondModule.createX11PointerState(statePath);
+    chmodSync(directory, 0o500);
+    assert.throws(() => state.finishTest(false));
+    assert.equal(state.isSafe(), false);
+    assert.throws(() => otherState.assertAllowed("key"), /unsafe/i);
+  },
+);
+
+test("a poisoned display bails before later Mocha tests can send input", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const mocha = new Mocha({ reporter: class {} });
+  const suite = Mocha.Suite.create(mocha.suite, "private display");
+  let laterActions = 0;
+  suite.addTest(
+    new Mocha.Test("detect poisoned display", function () {
+      pointerState.beginPress("click");
+      x11.assertX11DisplaySafe(
+        () => pointerState,
+        () => this.test.parent.bail(true),
+      );
+    }),
+  );
+  suite.addTest(
+    new Mocha.Test("later pointer and keyboard", () => {
+      laterActions += 1;
+    }),
+  );
+  const failures = await new Promise((resolve) => mocha.run(resolve));
+  assert.equal(failures, 1);
+  assert.equal(laterActions, 0);
+});
+
+test("the afterEach poison guard also prevents later Mocha test bodies", async (t) => {
+  const pointerState = trackedPointerState(t);
+  const mocha = new Mocha({ reporter: class {} });
+  const suite = Mocha.Suite.create(mocha.suite, "private display");
+  let laterActions = 0;
+  suite.afterEach("check held pointer", function () {
+    x11.assertX11DisplaySafe(
+      () => pointerState,
+      () => this.currentTest.parent.bail(true),
+    );
+  });
+  suite.addTest(
+    new Mocha.Test("leave an uncertain press", () => {
+      pointerState.beginPress("wheel");
+    }),
+  );
+  suite.addTest(
+    new Mocha.Test("later pointer and keyboard", () => {
+      laterActions += 1;
+    }),
+  );
+  const failures = await new Promise((resolve) => mocha.run(resolve));
+  assert.equal(failures, 1);
+  assert.equal(laterActions, 0);
+});
+
+for (const timeout of ["WDIO", "Mocha"]) {
+  test(
+    `a ${timeout} timeout during pointer preflight prevents late and later input`,
+    { skip: process.platform !== "linux" },
+    async (t) => {
+      const directory = mkdtempSync(path.join(tmpdir(), "lyra-wdio-timeout-"));
+      t.after(() => rmSync(directory, { recursive: true, force: true }));
+      const statePath = path.join(directory, "x11-pointer-state.json");
+      const pointerState = x11.createX11PointerState(statePath);
+      pointerState.initialize();
+      const previousOptIn = process.env.LYRA_E2E_XVFB_TRUSTED_KEYS;
+      const previousPath = process.env.LYRA_E2E_X11_POINTER_STATE;
+      process.env.LYRA_E2E_XVFB_TRUSTED_KEYS = "1";
+      process.env.LYRA_E2E_X11_POINTER_STATE = statePath;
+      t.after(() => {
+        if (previousOptIn === undefined)
+          delete process.env.LYRA_E2E_XVFB_TRUSTED_KEYS;
+        else process.env.LYRA_E2E_XVFB_TRUSTED_KEYS = previousOptIn;
+        if (previousPath === undefined)
+          delete process.env.LYRA_E2E_X11_POINTER_STATE;
+        else process.env.LYRA_E2E_X11_POINTER_STATE = previousPath;
+      });
+      const { config } = await tsImport("../wdio.conf.ts", import.meta.url);
+      const mocha = new Mocha({ reporter: class {} });
+      const suite = Mocha.Suite.create(mocha.suite, "private display timeout");
+      suite.timeout(timeout === "Mocha" ? 50 : 1500);
+      let resolvePreflight;
+      const preflight = new Promise((resolve) => {
+        resolvePreflight = resolve;
+      });
+      const press = pointerRun();
+      const release = pointerRun();
+      let operation;
+      let firstWrapper;
+      let laterInputs = 0;
+      const wrap = (body) =>
+        function () {
+          const wrapped = testFnWrapper.call(
+            { _runnable: { _timeout: timeout === "WDIO" ? 50 : 1000 } },
+            "Test",
+            { specFn: body, specFnArgs: [] },
+            {
+              beforeFn: config.beforeTest ? [config.beforeTest] : [],
+              beforeFnArgs: () => [{}, {}],
+            },
+            {
+              afterFn: config.afterTest ? [config.afterTest] : [],
+              afterFnArgs: () => [{}, {}],
+            },
+            "timeout-regression",
+          );
+          firstWrapper ??= wrapped;
+          return wrapped;
+        };
+      suite.afterEach(function () {
+        x11.assertX11DisplaySafe(
+          () => pointerState,
+          () => this.currentTest.parent.bail(true),
+          { abortActive: true },
+        );
+      });
+      suite.addTest(
+        new Mocha.Test(
+          "times out during native preflight",
+          wrap(() => {
+            operation = x11.deliverX11PointerPair({
+              pointerState,
+              button: "click",
+              press: () =>
+                x11.deliverXvfbTrustedPointer({
+                  action: "click-press",
+                  target: POINTER_TARGET,
+                  resolveTarget: () => preflight,
+                  run: press.run,
+                  pointerState,
+                }),
+              release: () =>
+                x11.deliverXvfbTrustedPointer({
+                  action: "click-release",
+                  target: POINTER_TARGET,
+                  resolveTarget: okResolver(),
+                  run: release.run,
+                  pointerState,
+                }),
+            });
+            return operation;
+          }),
+        ).timeout(timeout === "Mocha" ? 50 : 1000),
+      );
+      suite.addTest(
+        new Mocha.Test(
+          "later input",
+          wrap(() => {
+            laterInputs += 1;
+          }),
+        ),
+      );
+      const failures = await new Promise((resolve) => mocha.run(resolve));
+      assert.ok(failures >= 1);
+      resolvePreflight({ appPid: TARGET_PID, windowId: TARGET_WINDOW });
+      await operation.catch(() => {});
+      await firstWrapper.catch(() => {});
+      assert.deepEqual(
+        [...press.calls, ...release.calls].filter(([command]) =>
+          ["mousedown", "mouseup", "mousemove", "key"].includes(command),
+        ),
+        [],
+      );
+      assert.equal(laterInputs, 0);
+      assert.equal(pointerState.isSafe(), false);
+    },
+  );
+}

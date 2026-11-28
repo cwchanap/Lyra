@@ -12,6 +12,10 @@ import {
   assertSafeSaveE2eAppDataDir,
   removeSaveE2eAppDataDir,
 } from "./save-e2e-paths.mjs";
+import {
+  createX11PointerState,
+  X11_POINTER_STATE_FILENAME,
+} from "./e2e-x11-trusted-input.mjs";
 
 export const E2E_RUN_OWNERSHIP_SCHEMA_VERSION = 1;
 export const E2E_RUN_RESULT_SCHEMA_VERSION = 2;
@@ -301,6 +305,7 @@ function createRunnerResult({ runId, suiteIds, attempts, start }) {
     firstAttemptFailures: [],
     recoveredFlakes: [],
     finalFailedSuite: null,
+    displayPoisoned: false,
     phaseCount: 0,
     processCount: 0,
     cleanup: { state: "pending", attempts: [] },
@@ -313,6 +318,7 @@ function createRunnerResult({ runId, suiteIds, attempts, start }) {
 export async function runE2eAttempt({
   attempt,
   runDirectory,
+  pointerStatePath,
   result,
   resultPath,
   supervisor,
@@ -332,6 +338,7 @@ export async function runE2eAttempt({
   now = () => new Date().toISOString(),
   nowMs = Date.now,
 }) {
+  const pointerState = createX11PointerState(pointerStatePath);
   const attemptDirectory = path.join(runDirectory, `attempt-${attempt}`);
   const ownershipPath = path.join(attemptDirectory, "run-ownership.json");
   let ownership;
@@ -375,6 +382,11 @@ export async function runE2eAttempt({
     );
     const phases = buildPhasePlan(suiteIds, directories);
     for (const phase of phases) {
+      if (!pointerState.isSafe()) {
+        result.displayPoisoned = true;
+        exitCode = 1;
+        break;
+      }
       if (supervisor.cancelledSignal) {
         exitCode = supervisor.cancelledSignal === "SIGINT" ? 130 : 143;
         break;
@@ -389,14 +401,22 @@ export async function runE2eAttempt({
         });
         const start = now();
         const startedMs = nowMs();
-        const child = await runPhase(phase, { attempt, outputDirectory });
+        const child = await runPhase(phase, {
+          attempt,
+          outputDirectory,
+          pointerStatePath,
+        });
+        if (!pointerState.isSafe()) result.displayPoisoned = true;
+        const phaseExitCode = result.displayPoisoned
+          ? child.exitCode || 1
+          : child.exitCode;
         const phaseResult = {
           phase: phase.id,
           suite: suiteForPhase(phase.id),
           attempt,
           durationMs: nowMs() - startedMs,
-          result: child.exitCode === 0 ? "passed" : "failed",
-          exitCode: child.exitCode,
+          result: phaseExitCode === 0 ? "passed" : "failed",
+          exitCode: phaseExitCode,
           start,
           finish: now(),
           outputDirectory,
@@ -411,26 +431,27 @@ export async function runE2eAttempt({
         result.phaseCount += 1;
         result.processCount += 1;
         result.phaseResults.push(phaseResult);
-        if (child.exitCode !== 0 && attempt === 1) {
+        if (phaseExitCode !== 0 && attempt === 1) {
           result.firstAttemptFailures.push({
             phase: phaseResult.phase,
             suite: phaseResult.suite,
             exitCode: phaseResult.exitCode,
           });
         }
-        if (child.exitCode !== 0) result.finalFailedSuite = phaseResult.suite;
+        if (phaseExitCode !== 0) result.finalFailedSuite = phaseResult.suite;
         writeResult(resultPath, result);
-        if (child.exitCode !== 0) {
+        if (phaseExitCode !== 0) {
           captureFailureArtifacts({
             phase,
-            code: child.exitCode,
+            code: phaseExitCode,
             attempt,
             runDirectory,
           });
-          exitCode = child.exitCode;
+          exitCode = phaseExitCode;
           break;
         }
       } catch (error) {
+        if (!pointerState.isSafe()) result.displayPoisoned = true;
         console.error(`save e2e phase ${phase.id} setup failed:`, error);
         result.phase = phase.id;
         result.suite = suiteForPhase(phase.id);
@@ -476,6 +497,7 @@ export async function runE2eRunner({
   runDirectory,
   supervisor,
   runGuard,
+  claimDisplay,
   rootKeys,
   createRoot,
   buildPhasePlan,
@@ -491,6 +513,7 @@ export async function runE2eRunner({
   runAttempt = runE2eAttempt,
 }) {
   mkdirSync(runDirectory, { recursive: true });
+  const pointerStatePath = path.join(runDirectory, X11_POINTER_STATE_FILENAME);
   const runId = createRun();
   const resultPath = path.join(runDirectory, "run-result.json");
   const runnerStartedMs = nowMs();
@@ -502,6 +525,16 @@ export async function runE2eRunner({
   });
   let exitCode = 1;
   try {
+    const pointerState = createX11PointerState(pointerStatePath);
+    pointerState.initialize();
+    if (claimDisplay) {
+      try {
+        await claimDisplay({ pointerStatePath });
+      } catch (error) {
+        result.displayPoisoned = true;
+        throw error;
+      }
+    }
     const guard = await runGuard();
     if (guard.exitCode !== 0) {
       result.phase = "binary-guard";
@@ -510,9 +543,16 @@ export async function runE2eRunner({
       exitCode = guard.exitCode;
     } else {
       for (let attempt = 1; attempt <= attempts; attempt += 1) {
+        if (!pointerState.isSafe()) {
+          result.displayPoisoned = true;
+          exitCode = 1;
+          break;
+        }
+        let phaseStarted = false;
         exitCode = await runAttempt({
           attempt,
           runDirectory,
+          pointerStatePath,
           result,
           resultPath,
           supervisor,
@@ -523,15 +563,26 @@ export async function runE2eRunner({
           suiteForPhase,
           applyCheckpoint,
           createOutputDirectory,
-          runPhase,
+          runPhase: (...args) => {
+            phaseStarted = true;
+            return runPhase(...args);
+          },
           captureFailureArtifacts,
           writeResult,
           now,
           nowMs,
         });
+        if (!pointerState.isSafe()) {
+          result.displayPoisoned = true;
+          exitCode ||= 1;
+        }
         const lastCleanup = result.cleanup.attempts.at(-1);
         if (
           exitCode === 0 ||
+          result.displayPoisoned ||
+          (claimDisplay &&
+            exitCode !== 0 &&
+            (phaseStarted || runAttempt !== runE2eAttempt)) ||
           lastCleanup?.state === "failed" ||
           supervisor.cancelledSignal
         )

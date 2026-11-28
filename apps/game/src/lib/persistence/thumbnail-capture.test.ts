@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { webcrypto } from "node:crypto";
 import type { Options } from "html-to-image/lib/types";
 import * as thumbnailCaptureModule from "./thumbnail-capture";
 
@@ -931,6 +932,94 @@ describe("html-to-image gameplay capture", () => {
     expect(winner.style.transition).toBe("");
   });
 
+  it("reports portrait coexistence at winner selection for the capture ticket", async () => {
+    const root = captureRoot();
+    const leaving = loadedImage({
+      src: "/portrait-old.png",
+      "data-save-thumbnail-asset-role": "portrait",
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "2",
+      "data-save-crossfade-order": "1",
+      "data-save-crossfade-state": "leaving",
+    });
+    const winner = loadedImage({
+      src: "/portrait-new.png",
+      "data-save-thumbnail-asset-role": "portrait",
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "2",
+      "data-save-crossfade-order": "2",
+      "data-save-crossfade-state": "visible",
+    });
+    root.append(leaving, winner);
+    installFontsReady();
+    const onCrossfadeSelection = vi.fn();
+    const request = { ticket: "coexistence-ticket", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+    const capture = createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      onCrossfadeSelection,
+      renderToBlob: async () => {
+        leaving.remove();
+        return new Blob(["png"]);
+      },
+    });
+
+    await expect(capture.capture(request)).resolves.toMatchObject({
+      type: "available",
+    });
+    expect(onCrossfadeSelection).toHaveBeenCalledExactlyOnceWith({
+      ticket: "coexistence-ticket",
+      portraits: [
+        {
+          winner: expect.stringContaining("/portrait-new.png"),
+          leaving: [expect.stringContaining("/portrait-old.png")],
+        },
+      ],
+    });
+  });
+
+  it("does not report overlap that disappears before winner selection", async () => {
+    const root = captureRoot();
+    const leaving = loadedImage({
+      src: "/portrait-old.png",
+      "data-save-thumbnail-asset-role": "portrait",
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "2",
+      "data-save-crossfade-order": "1",
+      "data-save-crossfade-state": "leaving",
+    });
+    const winner = loadedImage({
+      src: "/portrait-new.png",
+      "data-save-thumbnail-asset-role": "portrait",
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "2",
+      "data-save-crossfade-order": "2",
+      "data-save-crossfade-state": "visible",
+    });
+    root.append(leaving, winner);
+    let fontsReady!: () => void;
+    installFontsReady(new Promise<void>((resolve) => (fontsReady = resolve)));
+    const onCrossfadeSelection = vi.fn();
+    const request = { ticket: "late-ticket", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+    const pending = createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      onCrossfadeSelection,
+      renderToBlob: async () => new Blob(["png"]),
+    }).capture(request);
+    leaving.remove();
+    fontsReady();
+    await pending;
+    expect(onCrossfadeSelection).toHaveBeenCalledExactlyOnceWith({
+      ticket: "late-ticket",
+      portraits: [
+        { winner: expect.stringContaining("/portrait-new.png"), leaving: [] },
+      ],
+    });
+  });
+
   it("spends the same fixed ticket deadline while preparing embedded fonts", async () => {
     vi.useFakeTimers();
     const root = captureRoot();
@@ -1056,6 +1145,50 @@ describe("html-to-image gameplay capture", () => {
         role: "portrait",
         source: { x: 0, y: 0, width: 800, height: 1_200 },
         destination: { x: 300, y: 0, width: 120, height: 180 },
+      },
+    ]);
+  });
+
+  it("maps a contained background below the header without cropping or moving its overlays", async () => {
+    const root = captureRoot();
+    const background = loadedImage({
+      "data-save-crossfade-layer": "",
+      "data-save-crossfade-request": "1",
+      "data-save-crossfade-order": "1",
+      "data-save-crossfade-state": "visible",
+      "data-save-thumbnail-asset-role": "background",
+    });
+    Object.defineProperties(background, {
+      naturalWidth: { configurable: true, value: 1600 },
+      naturalHeight: { configurable: true, value: 900 },
+    });
+    background.style.objectFit = "contain";
+    background.style.setProperty("--crossfade-visible-opacity", "0.52");
+    vi.spyOn(background, "getBoundingClientRect").mockReturnValue(
+      new DOMRect(0, 120, 800, 480),
+    );
+    root.append(background);
+    installFontsReady();
+    const renderToBlob = vi.fn(
+      async (..._args: unknown[]) => new Blob(["png"]),
+    );
+    const request = { ticket: "capture-contained", timeoutMs: 725 };
+    pinThumbnailCaptureDeadline(request, 0);
+
+    const result = await createHtmlToImageGameplayCapture({
+      root: () => root,
+      now: () => 0,
+      renderToBlob,
+    }).capture(request);
+
+    expect(result.type).toBe("available");
+    expect(renderToBlob.mock.calls[0]?.[2]).toEqual([
+      {
+        image: background,
+        opacity: 0.52,
+        role: "background",
+        source: { x: 0, y: 0, width: 1600, height: 900 },
+        destination: { x: 0, y: 81, width: 480, height: 270 },
       },
     ]);
   });
@@ -1359,6 +1492,60 @@ describe("html-to-image gameplay capture", () => {
 });
 
 describe("packaged capture proof wrapper", () => {
+  it("binds winner-selection evidence and PNG digest to the same ticket", async () => {
+    vi.stubGlobal("crypto", webcrypto);
+    try {
+      const selection = {
+        ticket: "proof-ticket",
+        portraits: [{ winner: "/new.png", leaving: ["/old.png"] }],
+      };
+      const delegate = {
+        capture: vi.fn().mockResolvedValue({
+          type: "available" as const,
+          bytes: new Uint8Array([1, 2, 3]),
+        }),
+      };
+      const proof = createPackagedCaptureProofCapture(
+        delegate,
+        undefined,
+        undefined,
+        () => selection,
+      );
+      await proof.capture.capture({ ticket: "different", timeoutMs: 725 });
+      expect(proof.status().crossfadeEvidence).toBeUndefined();
+      await proof.capture.capture({ ticket: "proof-ticket", timeoutMs: 725 });
+      expect(proof.status().crossfadeEvidence).toEqual({
+        ...selection,
+        sha256:
+          "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      });
+      proof.forceNextUnavailable();
+      await proof.capture.capture({ ticket: "next-ticket", timeoutMs: 725 });
+      expect(proof.status().crossfadeEvidence).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("keeps the save available but omits proof when SHA-256 is unavailable", async () => {
+    vi.stubGlobal("crypto", {});
+    try {
+      const result = { type: "available" as const, bytes: new Uint8Array([1]) };
+      const proof = createPackagedCaptureProofCapture(
+        { capture: vi.fn().mockResolvedValue(result) },
+        undefined,
+        undefined,
+        () => ({ ticket: "proof-ticket", portraits: [] }),
+      );
+      await expect(
+        proof.capture.capture({ ticket: "proof-ticket", timeoutMs: 725 }),
+      ).resolves.toEqual(result);
+      expect(proof.status().crossfadeEvidence).toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("stores only the closed render diagnostic code", () => {
     const delegate = {
       capture: vi.fn(),

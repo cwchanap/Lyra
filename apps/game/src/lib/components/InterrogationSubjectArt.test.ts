@@ -3,6 +3,8 @@ import { tick } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PortraitRef } from "$lib/state/types";
 import InterrogationSubjectArt from "./InterrogationSubjectArt.svelte";
+import { readFileSync } from "node:fs";
+import { cssRule } from "$lib/test-utils";
 
 const resolveStoryAssetMock = vi.hoisted(() => vi.fn());
 const placeholderForMissingStoryAssetMock = vi.hoisted(() => vi.fn());
@@ -52,6 +54,19 @@ function setImageSize(image: HTMLImageElement, width = 4, height = 4): void {
 }
 
 describe("InterrogationSubjectArt", () => {
+  it("constrains the cropped art by both frame dimensions and aligns its visible top", () => {
+    const source = readFileSync(
+      import.meta.filename.replace(/\.test\.ts$/, ".svelte"),
+      "utf8",
+    );
+    const image = cssRule(
+      source,
+      ".interrogation-subject-art :global(img.interrogation-subject-portrait)",
+    );
+    expect(image).toContain("max-width: calc(100% / var(--crop-width, 1))");
+    expect(image).toContain("max-height: calc(100% / var(--crop-height, 1))");
+    expect(image).toContain("calc(-100% * var(--crop-top, 0))");
+  });
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();

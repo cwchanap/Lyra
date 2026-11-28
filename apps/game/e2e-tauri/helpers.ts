@@ -1,9 +1,7 @@
 import {
   existsSync,
   mkdirSync,
-  readdirSync,
   readFileSync,
-  readlinkSync,
   realpathSync,
   statSync,
   writeFileSync,
@@ -23,15 +21,18 @@ import {
 } from "../scripts/e2e-trusted-keys.mjs";
 import {
   X11_TRUSTED_KEY_NAMES,
-  assertTrustedXvfbKeysAllowed,
-  assertX11AuthenticationEnforced,
+  assertX11DisplaySafe,
   assertX11WindowOwnership,
+  assertXvfbDisplayClaim,
+  createX11PointerState,
+  deliverXvfbTrustedInvestigationPointer,
   deliverXvfbTrustedKey,
+  deliverXvfbTrustedSceneNavPointer,
   parseNetWmPid,
   parseXdotoolDecimal,
   selectUniqueX11WindowId,
   trustedXvfbKeysOptIn,
-  verifyPrivateXvfbAncestry,
+  verifyLivePrivateXvfbSession,
 } from "../scripts/e2e-x11-trusted-input.mjs";
 import {
   anchors,
@@ -70,7 +71,9 @@ import {
 } from "../src/lib/e2e/screenshot-pixels";
 import {
   probeScrollGeometryDom,
+  scrollGeometryEqual,
   scrollGeometrySettled,
+  type ScrollGeometryProbe,
   type ScrollGeometrySample,
 } from "../src/lib/e2e/scroll-geometry";
 import {
@@ -172,14 +175,17 @@ export async function sendTrustedKey(key: TrustedMacKeyName): Promise<void> {
   }
 }
 
-// --- HPA-831 scoped Linux/Xvfb trusted keyboard transport -----------------
+// --- Scoped Linux/Xvfb trusted input transport ----------------------------
 //
 // On the packaged Linux runner the embedded WebDriver reaches the app only
 // as synthetic DOM KeyboardEvents (tauri-plugin-wdio-webdriver executor.rs
 // dispatches keydown/keyup), so Tab/Enter can never run native focus
 // traversal or trusted activation — run c0da417f showed six WebDriver Tabs
 // leave focus on body. The narrow fix for the commission -> scene_2 focus
-// segment is real XTEST keys via xdotool, gated as hard as the macOS path:
+// segment and first-map Tab/Enter proof is real XTEST keys via xdotool.
+// The user newly authorized this same private-Xvfb opt-in for the HPA-852
+// scene-nav pointer/keyboard proof and seven named investigation targets only;
+// it is not blanket OS-input consent.
 //
 //   * explicit opt-in: linux AND LYRA_E2E_XVFB_TRUSTED_KEYS=1;
 //   * a PRIVATE xvfb-run display owned by this run's ancestry — verified
@@ -214,28 +220,9 @@ export type TrustedX11KeyName = keyof typeof X11_TRUSTED_KEY_NAMES;
 
 const X11_EXTERNAL_COMMAND_TIMEOUT_MS = 10_000;
 
-type LinuxProcEntry = {
-  pid: number;
-  ppid: number;
-  comm: string;
-  argv: string[];
-  exe: string | null;
-};
-
-/** fs.stat + content evidence for the run-private authority file,
- * evaluated by assertSecureAuthorityFile/assertUsableAuthorityCookies in
- * e2e-x11-trusted-input.mjs. `content` holds the Xauthority bytes — the
- * verifier never logs cookie data. */
-type X11AuthorityFileEvidence = {
-  isFile: boolean;
-  mode: number;
-  uid: number;
-  dirIsDirectory: boolean;
-  dirMode: number;
-  dirUid: number;
-  euid: number;
-  content: Uint8Array;
-};
+export function xvfbPointerState() {
+  return createX11PointerState(process.env.LYRA_E2E_X11_POINTER_STATE);
+}
 
 /**
  * True only when this run explicitly opted into the scoped XTEST path via
@@ -247,96 +234,28 @@ export function e2eXvfbTrustedKeysEnabled(): boolean {
   return trustedXvfbKeysOptIn({ platform: process.platform, env: process.env });
 }
 
-/** Bounded, shell-free external probe used for every xdotool/xprop/
- * xdpyinfo call; `env` lets the auth probes pin XAUTHORITY per attempt. */
-async function execBounded(
-  file: string,
-  args: string[],
-  options: { env?: NodeJS.ProcessEnv } = {},
-): Promise<string> {
+export function assertSafeXvfbDisplay(
+  context: Mocha.Context,
+  abortActive = false,
+): void {
+  if (!e2eXvfbTrustedKeysEnabled()) return;
+  assertX11DisplaySafe(
+    xvfbPointerState,
+    () => {
+      const suite = (context.currentTest ?? context.test)?.parent;
+      if (!suite) process.exit(1);
+      suite.bail(true);
+    },
+    { abortActive },
+  );
+}
+
+/** Bounded, shell-free external probe for window and pointer checks. */
+async function execBounded(file: string, args: string[]): Promise<string> {
   const { stdout } = await promisify(execFile)(file, args, {
     timeout: X11_EXTERNAL_COMMAND_TIMEOUT_MS,
-    env: options.env ?? process.env,
   });
   return stdout;
-}
-
-/**
- * The live Linux process table from /proc: pid/ppid from stat (parsed after
- * the final ')' so a comm containing parentheses cannot shift the fields),
- * argv from its NUL-separated file, and the kernel-resolved
- * executable target of /proc/<pid>/exe — the robust executable identity
- * `ps comm` cannot provide on Linux. Processes that exit mid-scan or deny
- * a read contribute only the fields that could be proven.
- */
-function linuxProcessTable(): LinuxProcEntry[] {
-  const entries: LinuxProcEntry[] = [];
-  for (const name of readdirSync("/proc")) {
-    if (!/^\d+$/.test(name)) continue;
-    try {
-      const stat = readFileSync(`/proc/${name}/stat`, "utf8");
-      const closeParen = stat.lastIndexOf(")");
-      if (closeParen === -1) continue;
-      const fields = stat
-        .slice(closeParen + 1)
-        .trim()
-        .split(/\s+/);
-      const ppid = Number(fields[1]);
-      if (!Number.isInteger(ppid)) continue;
-      const comm = readFileSync(`/proc/${name}/comm`, "utf8").trim();
-      const argv = readFileSync(`/proc/${name}/cmdline`, "utf8")
-        .split("\0")
-        .filter((part) => part.length > 0);
-      let exe: string | null = null;
-      try {
-        // A " (deleted)" suffix is kept verbatim: a binary replaced since
-        // launch can never equal the configured e2e path, so the entry
-        // fails the exact-path check instead of matching a stale process.
-        exe = readlinkSync(`/proc/${name}/exe`);
-      } catch {
-        // Unreadable or exited — a null exe can never equal the configured
-        // e2e binary path, so the entry fails closed on its own.
-      }
-      entries.push({ pid: Number(name), ppid, comm, argv, exe });
-    } catch {
-      // Process exited between readdir and the reads; skip it.
-    }
-  }
-  return entries;
-}
-
-/**
- * fs.stat + content evidence for the run-private authority file xvfb-run
- * created for this display: a regular file owned by this user with no
- * group/other access, inside an equally private directory, whose bytes
- * parse to usable Xau cookie records — an Xauthority another principal
- * could read or replace, or one loading zero records, leaves the
- * "private" display forgeable or unenforced. An unreadable path is itself
- * unprovable privacy: throw, never guess. The bytes are evidence only —
- * cookie contents are never logged.
- */
-function readAuthorityFileEvidence(
-  xauthority: string,
-): X11AuthorityFileEvidence {
-  try {
-    const fileStat = statSync(xauthority);
-    const dirStat = statSync(path.dirname(xauthority));
-    return {
-      isFile: fileStat.isFile(),
-      mode: fileStat.mode & 0o777,
-      uid: fileStat.uid,
-      dirIsDirectory: dirStat.isDirectory(),
-      dirMode: dirStat.mode & 0o777,
-      dirUid: dirStat.uid,
-      euid: process.geteuid?.() ?? -1,
-      content: readFileSync(xauthority),
-    };
-  } catch (error) {
-    throw new Error(
-      `cannot inspect run-private XAUTHORITY ${xauthority} — display privacy cannot be proven; refusing XTEST keys`,
-      { cause: error },
-    );
-  }
 }
 
 /**
@@ -350,34 +269,12 @@ async function resolveXvfbTrustedTarget(): Promise<{
   appPid: number;
   windowId: number;
 }> {
-  assertTrustedXvfbKeysAllowed({
-    platform: process.platform,
-    env: process.env,
-  });
-  const processes = linuxProcessTable();
-  const xauthority = process.env.XAUTHORITY;
-  verifyPrivateXvfbAncestry({
-    processes,
+  const session = await verifyLivePrivateXvfbSession();
+  const { processes } = session;
+  assertXvfbDisplayClaim({
+    ...session,
     currentPid: process.pid,
-    display: process.env.DISPLAY,
-    xauthority,
-    authorityFile:
-      typeof xauthority === "string" && xauthority.length > 0
-        ? readAuthorityFileEvidence(xauthority)
-        : undefined,
-  });
-  // The ancestry/-auth/cookie checks above prove the authority SHOULD be
-  // in force; these two bounded xdpyinfo probes prove it IS — the
-  // authorized connection succeeds, then an unauthenticated one is
-  // actively rejected for a connection-level reason (never a timeout or
-  // unrelated failure). An authority file Xorg ignores is not enforcement.
-  await assertX11AuthenticationEnforced({
-    display: process.env.DISPLAY,
-    xauthority,
-    probe: (probeXauthority: string) =>
-      execBounded("xdpyinfo", [], {
-        env: { ...process.env, XAUTHORITY: probeXauthority },
-      }),
+    pointerStatePath: process.env.LYRA_E2E_X11_POINTER_STATE,
   });
   const appPid = selectOwnedE2eAppProcessId({
     entries: processes.flatMap((entry) =>
@@ -437,6 +334,186 @@ export async function sendXvfbTrustedKey(
     key,
     resolveTarget: resolveXvfbTrustedTarget,
     run: (args: string[]) => execBounded("xdotool", args),
+    pointerState: xvfbPointerState(),
+  });
+}
+
+/** Each pointer action is restricted to a fresh hit-tested scene-nav target. */
+export async function sendXvfbTrustedSceneNavPointer(
+  action:
+    | "move"
+    | "wheel-press"
+    | "wheel-release"
+    | "click-press"
+    | "click-release",
+  region: "chips" | "last-chip",
+): Promise<{
+  action: string;
+  appPid: number;
+  windowId: number;
+  x: number;
+  y: number;
+  pointerSource?: string;
+}> {
+  const pointerState = xvfbPointerState();
+  pointerState.assertAllowed(action);
+  if (
+    (action.startsWith("wheel-") && region !== "chips") ||
+    (action.startsWith("click-") && region !== "last-chip")
+  ) {
+    throw new Error("Scene-nav pointer action does not match its target");
+  }
+  return deliverXvfbTrustedSceneNavPointer({
+    action,
+    region,
+    measureTarget: (region: "chips" | "last-chip") =>
+      browser.execute((requested: "chips" | "last-chip") => {
+        const chips = document.querySelector<HTMLElement>(
+          ".explore-hud .chips",
+        );
+        const last =
+          chips?.querySelector<HTMLButtonElement>("button:last-child");
+        const element = requested === "chips" ? chips : last;
+        if (
+          !chips ||
+          !element ||
+          (requested === "last-chip" && last?.disabled)
+        ) {
+          throw new Error("Scene-nav pointer target is absent or disabled");
+        }
+        const rect = element.getBoundingClientRect();
+        const clip = chips.getBoundingClientRect();
+        const bounds = {
+          left: Math.max(0, rect.left, clip.left),
+          top: Math.max(0, rect.top, clip.top),
+          right: Math.min(innerWidth, rect.right, clip.right),
+          bottom: Math.min(innerHeight, rect.bottom, clip.bottom),
+        };
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+          throw new Error(
+            "Scene-nav pointer target is outside the visible viewport",
+          );
+        }
+        const point = {
+          x: Math.floor((bounds.left + bounds.right) / 2),
+          y: Math.floor((bounds.top + bounds.bottom) / 2),
+        };
+        const hit = document.elementFromPoint(point.x, point.y);
+        if (!hit || !element.contains(hit)) {
+          throw new Error("Scene-nav pointer target is occluded");
+        }
+        return {
+          point,
+          bounds,
+          viewport: { width: innerWidth, height: innerHeight },
+          devicePixelRatio,
+        };
+      }, region),
+    resolveTarget: resolveXvfbTrustedTarget,
+    run: (args: string[]) => execBounded("xdotool", args),
+    pointerState,
+    readRootPointer: readXvfbRootPointer,
+  });
+}
+
+async function readXvfbRootPointer(): Promise<string> {
+  return execBounded("python3", [
+    "-c",
+    `
+import ctypes
+x = ctypes.CDLL("libX11.so.6")
+x.XOpenDisplay.restype = ctypes.c_void_p
+x.XDefaultRootWindow.restype = ctypes.c_ulong
+display = x.XOpenDisplay(None)
+if not display:
+    raise RuntimeError("XOpenDisplay failed")
+display = ctypes.c_void_p(display)
+root = x.XDefaultRootWindow(display)
+returned_root, child = ctypes.c_ulong(), ctypes.c_ulong()
+root_x, root_y, win_x, win_y = (ctypes.c_int() for _ in range(4))
+mask = ctypes.c_uint()
+if not x.XQueryPointer(display, ctypes.c_ulong(root), ctypes.byref(returned_root), ctypes.byref(child), ctypes.byref(root_x), ctypes.byref(root_y), ctypes.byref(win_x), ctypes.byref(win_y), ctypes.byref(mask)) or returned_root.value != root:
+    raise RuntimeError("XQueryPointer failed")
+print(f"X={root_x.value}\\nY={root_y.value}\\nSCREEN={x.XDefaultScreen(display)}\\nWINDOW={child.value}")
+`,
+  ]);
+}
+
+/** Only the seven allowlisted production targets can reach this XTEST path. */
+export async function sendXvfbTrustedInvestigationPointer(
+  id: string,
+  action: "move" | "click-press" | "click-release",
+) {
+  return deliverXvfbTrustedInvestigationPointer({
+    id,
+    action,
+    readState: getPackagedGameState,
+    measureTarget: (approvedId: string) =>
+      browser.execute((targetId: string) => {
+        const candidates = Array.from(
+          document.querySelectorAll<HTMLButtonElement>(
+            ".scene-coordinate-plane button.hotspot-target",
+          ),
+        ).filter((button) => button.dataset.targetId === targetId);
+        if (candidates.length !== 1) {
+          throw new Error("Named investigation target is absent or ambiguous");
+        }
+        const button = candidates[0];
+        if (button.disabled || button.closest("[inert]")) {
+          throw new Error("Named investigation target is disabled or inert");
+        }
+        const plane = button.closest<HTMLElement>(".scene-coordinate-plane");
+        if (!plane) throw new Error("Named investigation plane is missing");
+        const planeRect = plane.getBoundingClientRect();
+        const ratios = ["--x", "--y", "--w", "--h"].map((name) => {
+          const value = button.style.getPropertyValue(name);
+          if (!/^\d+(?:\.\d+)?%$/.test(value)) {
+            throw new Error(
+              "Named investigation target has invalid authored ratios",
+            );
+          }
+          return Number.parseFloat(value) / 100;
+        });
+        const [x, y, width, height] = ratios;
+        if (
+          x < 0 ||
+          y < 0 ||
+          width <= 0 ||
+          height <= 0 ||
+          x + width > 1.000001 ||
+          y + height > 1.000001
+        ) {
+          throw new Error(
+            "Named investigation target has invalid authored bounds",
+          );
+        }
+        const rect = button.getBoundingClientRect();
+        const bounds = {
+          left: Math.max(0, rect.left),
+          top: Math.max(0, rect.top),
+          right: Math.min(innerWidth, rect.right),
+          bottom: Math.min(innerHeight, rect.bottom),
+        };
+        if (bounds.right <= bounds.left || bounds.bottom <= bounds.top) {
+          throw new Error("Named investigation target is outside the viewport");
+        }
+        const point = {
+          x: Math.floor(planeRect.left + (x + width / 2) * planeRect.width),
+          y: Math.floor(planeRect.top + (y + height / 2) * planeRect.height),
+        };
+        const hit = document.elementFromPoint(point.x, point.y);
+        return {
+          point,
+          bounds,
+          viewport: { width: innerWidth, height: innerHeight },
+          devicePixelRatio,
+          hitTarget: hit && button.contains(hit) ? targetId : null,
+        };
+      }, approvedId),
+    resolveTarget: resolveXvfbTrustedTarget,
+    run: (args: string[]) => execBounded("xdotool", args),
+    pointerState: xvfbPointerState(),
+    readRootPointer: readXvfbRootPointer,
   });
 }
 
@@ -1872,6 +1949,8 @@ export type AcquisitionImageCanvasMetrics =
       luminanceStdDev: number;
       minLuminance: number;
       maxLuminance: number;
+      /** Canvas draws spent proving the decoded frame (1 = no re-sample). */
+      sampleAttempts: number;
     }
   | { error: string };
 
@@ -1977,6 +2056,18 @@ function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
  * Callers pass the painted element: `.acquisition-card .visual` for the
  * popup, `img.case-file-record-image` for Case File.
  *
+ * Every geometry read is BOUND to the exact image the source proof
+ * inspected: `imageSelector` must resolve to the one image whose effective
+ * URL is exactly `expectedImageSrc` (the URL pinned by
+ * `inspectImageElement`), `pin` must resolve to that same live node, and the
+ * node must be the target itself or live inside it. A missing, replaced,
+ * duplicated, lookalike-URL or wrapper-foreign image throws before the
+ * screenshot, so a crop can never certify a different element than the one
+ * whose pixels were just proven. Identity and geometry are re-read AFTER the
+ * screenshot too: a replacement, retarget or move while the capture was
+ * pending invalidates the capture (throw + `-invalidation.json`) and can
+ * therefore never produce a receipt.
+ *
  * `scrollIntoView` is for elements inside a scrollable container (the Case
  * File submenu's `.game-menu-extra` at 800x600): the element is scrolled
  * into view, its rect is re-read until stable, and the crop is intersected
@@ -1985,6 +2076,12 @@ function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
  */
 export async function assertScreenshotRegionPainted(input: {
   selector: string;
+  /** Selector of the image the geometry must bind to. */
+  imageSelector: string;
+  /** Exact effective URL pinned by `inspectImageElement`. */
+  expectedImageSrc: string;
+  /** Page-owned token for the exact node `inspectImageElement` decoded. */
+  pin: string;
   label: string;
   screenshotPath: string;
   /** CSS px to shave off each side (skips 1px borders + AA fringe). */
@@ -1992,27 +2089,99 @@ export async function assertScreenshotRegionPainted(input: {
   /** Scroll the element into view and intersect the crop with its nearest
    * y-scrollable ancestor. Required for elements inside a scrollport. */
   scrollIntoView?: boolean;
-  /** When set, resolve the target as the <img> whose src contains this
-   * fragment (the same predicate inspectImageElement uses) so the crop
-   * measures the inspected element, not the selector's first match. */
-  expectedPathFragment?: string;
 }): Promise<ScreenshotRegionPaintResult> {
   // The serialized page script lives in src/lib/e2e/scroll-geometry.ts so
   // the identical function WebDriver serializes is exercised by vitest.
-  const readTarget = () =>
+  const readTarget = (scroll: boolean) =>
     browser.execute(
       probeScrollGeometryDom,
       input.selector,
-      input.scrollIntoView === true,
-      input.expectedPathFragment,
+      scroll,
+      input.imageSelector,
+      input.expectedImageSrc,
+      input.pin,
     );
+  const rectKey = (rect: CssRectLike | null): string =>
+    rect === null
+      ? "null"
+      : `${rect.left},${rect.top},${rect.width},${rect.height}`;
+  const requireBoundTarget = (probe: ScrollGeometryProbe): CssRectLike => {
+    const binding = probe.imageBinding;
+    if (
+      binding.status !== "bound" ||
+      binding.src !== input.expectedImageSrc ||
+      binding.pin !== input.pin
+    ) {
+      throw new Error(
+        `${input.label}: crop target ${input.selector} is not bound to the ` +
+          `inspected image ${input.expectedImageSrc} (pin=${input.pin}, ` +
+          `binding=${JSON.stringify(binding)})`,
+      );
+    }
+    if (probe.imageRect === null) {
+      throw new Error(
+        `${input.label}: crop target ${input.selector} has no measurable ` +
+          `pinned image for ${input.expectedImageSrc}`,
+      );
+    }
+    return probe.imageRect;
+  };
+  const invalidate: (
+    reason: string,
+    before: ScrollGeometryProbe,
+    after: unknown,
+  ) => never = (reason, before, after) => {
+    const invalidationPath = input.screenshotPath.replace(
+      /\.png$/,
+      "-invalidation.json",
+    );
+    try {
+      mkdirSync(path.dirname(invalidationPath), { recursive: true });
+      writeFileSync(
+        invalidationPath,
+        `${JSON.stringify(
+          {
+            label: input.label,
+            selector: input.selector,
+            imageSelector: input.imageSelector,
+            expectedImageSrc: input.expectedImageSrc,
+            pin: input.pin,
+            invalidated: true,
+            reason,
+            before: {
+              rect: before.rect,
+              scrollport: before.scrollport,
+              imageRect: before.imageRect,
+              imageBinding: before.imageBinding,
+            },
+            after,
+            screenshotPath: input.screenshotPath,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } catch (writeError) {
+      console.error(
+        `[ScreenshotCrop] ${input.label}: invalidation write failed:`,
+        writeError,
+      );
+    }
+    throw new Error(
+      `${input.label}: screenshot capture invalidated — ${reason} (before=${JSON.stringify({ rect: before.rect, scrollport: before.scrollport, imageRect: before.imageRect, imageBinding: before.imageBinding })}, after=${JSON.stringify(after)})`,
+    );
+  };
 
-  let target = await readTarget();
+  // Setup is the ONLY phase allowed to scroll: a post/settle probe that
+  // called scrollIntoView could undo the very scroll change it is meant to
+  // detect (reviewer: offset 100 -> 190 restored to 100 before measuring).
+  let target = await readTarget(input.scrollIntoView === true);
   if (!target) {
     throw new Error(
       `${input.label}: element ${input.selector} is not mounted for the screenshot crop`,
     );
   }
+  let targetImageRect = requireBoundTarget(target);
   if (target.rect.width <= 0 || target.rect.height <= 0) {
     throw new Error(
       `${input.label}: ${input.selector} has an empty rect ${JSON.stringify(target.rect)}`,
@@ -2031,15 +2200,20 @@ export async function assertScreenshotRegionPainted(input: {
     let settled = false;
     for (let attempt = 0; attempt < 6 && !settled; attempt += 1) {
       await browser.pause(150);
-      const next = await readTarget();
+      // Measure only — re-scrolling here would hide movement.
+      const next = await readTarget(false);
       if (!next) {
         throw new Error(
           `${input.label}: element ${input.selector} unmounted while scrolling into view`,
         );
       }
-      target = next;
+      const nextImageRect = requireBoundTarget(next);
       samples.push({ rect: next.rect, scrollport: next.scrollport });
-      settled = scrollGeometrySettled(samples);
+      settled =
+        scrollGeometrySettled(samples) &&
+        rectKey(targetImageRect) === rectKey(nextImageRect);
+      target = next;
+      targetImageRect = nextImageRect;
     }
     if (!settled) {
       throw new Error(
@@ -2055,20 +2229,91 @@ export async function assertScreenshotRegionPainted(input: {
     width: target.viewport.width,
     height: target.viewport.height,
   };
+  // The crop must prove the PINNED IMAGE, not the wrapper around it: intersect
+  // the image's own rect with the crop target, its scrollport and the
+  // viewport. An image moved completely outside its wrapper yields an empty
+  // intersection and fails here, before any screenshot.
   const visibleCssRect = intersectCssRects(
-    intersectCssRects(target.rect, target.scrollport ?? viewportRect),
+    intersectCssRects(
+      intersectCssRects(target.rect, targetImageRect),
+      target.scrollport ?? viewportRect,
+    ),
     viewportRect,
   );
   if (visibleCssRect.width <= 0 || visibleCssRect.height <= 0) {
     throw new Error(
-      `${input.label}: ${input.selector} has no painted area inside its ` +
-        `scrollport/viewport (rect=${JSON.stringify(target.rect)}, ` +
+      `${input.label}: the inspected image ${input.expectedImageSrc} has no ` +
+        `visible area inside ${input.selector} / its scrollport and viewport ` +
+        `(imageRect=${JSON.stringify(targetImageRect)}, ` +
+        `targetRect=${JSON.stringify(target.rect)}, ` +
         `scrollport=${JSON.stringify(target.scrollport)}, ` +
         `viewport=${JSON.stringify(target.viewport)})`,
     );
   }
   mkdirSync(path.dirname(input.screenshotPath), { recursive: true });
   await browser.saveScreenshot(input.screenshotPath);
+  // The PNG is only evidence for the pinned node if that node — and its
+  // geometry — survived the capture. Re-read AFTER the screenshot and refuse
+  // the capture if the target was replaced, retargeted or moved while it was
+  // pending; a change that fully reverts inside the call window is not
+  // observable from the page and stays a documented limit.
+  const afterCapture = await readTarget(false);
+  if (!afterCapture) {
+    invalidate(
+      "the crop target unmounted while the screenshot was pending",
+      target,
+      null,
+    );
+  }
+  const afterBinding = afterCapture.imageBinding;
+  const bindingChanged =
+    afterBinding.status !== "bound" ||
+    afterBinding.src !== input.expectedImageSrc ||
+    afterBinding.pin !== input.pin;
+  const viewportChanged =
+    afterCapture.viewport.width !== target.viewport.width ||
+    afterCapture.viewport.height !== target.viewport.height ||
+    afterCapture.devicePixelRatio !== target.devicePixelRatio;
+  // A lost binding invalidates on identity alone; only a still-bound probe
+  // has a meaningful image rect to compare.
+  if (bindingChanged) {
+    invalidate(
+      "the crop target is no longer bound to the inspected node",
+      target,
+      {
+        rect: afterCapture.rect,
+        scrollport: afterCapture.scrollport,
+        imageRect: afterCapture.imageRect,
+        viewport: afterCapture.viewport,
+        devicePixelRatio: afterCapture.devicePixelRatio,
+        imageBinding: afterBinding,
+      },
+    );
+  }
+  const afterImageRect = requireBoundTarget(afterCapture);
+  const imageMoved = rectKey(targetImageRect) !== rectKey(afterImageRect);
+  if (
+    viewportChanged ||
+    imageMoved ||
+    !scrollGeometryEqual(target, afterCapture)
+  ) {
+    invalidate(
+      viewportChanged
+        ? "the viewport changed while the screenshot was pending"
+        : imageMoved
+          ? "the inspected image moved while the screenshot was pending"
+          : "the crop geometry changed while the screenshot was pending",
+      target,
+      {
+        rect: afterCapture.rect,
+        scrollport: afterCapture.scrollport,
+        imageRect: afterCapture.imageRect,
+        viewport: afterCapture.viewport,
+        devicePixelRatio: afterCapture.devicePixelRatio,
+        imageBinding: afterBinding,
+      },
+    );
+  }
   const png = decodePng(readFileSync(input.screenshotPath));
   const screenshotScale = {
     x: png.width / target.viewport.width,
@@ -2088,6 +2333,13 @@ export async function assertScreenshotRegionPainted(input: {
       {
         label: input.label,
         selector: input.selector,
+        imageSelector: input.imageSelector,
+        expectedImageSrc: input.expectedImageSrc,
+        pin: input.pin,
+        imageBinding: target.imageBinding,
+        imageRect: target.imageRect,
+        validatedAfterCapture: afterCapture.imageBinding,
+        validatedImageRectAfterCapture: afterCapture.imageRect,
         cssRect: target.rect,
         scrollportRect: target.scrollport,
         visibleCssRect,
@@ -2104,7 +2356,7 @@ export async function assertScreenshotRegionPainted(input: {
     )}\n`,
   );
   console.log(
-    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} scrollport=${JSON.stringify(target.scrollport)} visible=${JSON.stringify(visibleCssRect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
+    `[ScreenshotCrop] ${input.label}: cssRect=${JSON.stringify(target.rect)} imageRect=${JSON.stringify(target.imageRect)} scrollport=${JSON.stringify(target.scrollport)} visible=${JSON.stringify(visibleCssRect)} viewport=${target.viewport.width}x${target.viewport.height} dpr=${target.devicePixelRatio} png=${png.width}x${png.height} scale=${screenshotScale.x.toFixed(3)}x${screenshotScale.y.toFixed(3)} region=${JSON.stringify(region)} buckets=${metrics.distinctBuckets} lumMean=${metrics.luminanceMean.toFixed(1)} lumStd=${metrics.luminanceStdDev.toFixed(2)} dominant=${metrics.dominantBucketShare.toFixed(3)} png=${input.screenshotPath}`,
   );
   expectPaintedRegion(metrics, input.label);
   return {
@@ -2125,20 +2377,49 @@ export async function assertScreenshotRegionPainted(input: {
 export type ImageElementInspection = {
   mountWaitMs: number;
   inspection: AcquisitionImageInspection;
+  /** Effective URL pinned before decode — the exact image the crop proof
+   * must re-bind to (never a path-substring lookalike). */
+  sourceUrl: string;
+  /** Page-owned token for the exact node that was decoded; the crop resolves
+   * it so a same-URL replacement node can never earn the receipt. Released by
+   * `releaseImageElementPin` after the proof. */
+  pin: string;
 };
 
 /**
- * The shared source-image proof (plan B.4): wait for the image matching
- * `expectedPathFragment` under `selector`, then inspect it — pre-decode
- * `complete`/`currentSrc`, resource-timing entries (absence is reported as
- * `unavailable`, never fatal), `img.decode()`, post-decode dimensions and a
- * capture-proof-style canvas pixel sample. Used by the acquisition popup
+ * Release the page-owned node pin once the proof (source + crop) is done, so
+ * repeated proofs cannot leak or collide. Best-effort: the caller's proof
+ * result must never be masked by a cleanup failure.
+ */
+export async function releaseImageElementPin(pin: string): Promise<void> {
+  await browser.execute((token: string) => {
+    const registry = (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
+    if (registry !== undefined) delete registry[token];
+  }, pin);
+}
+
+/**
+ * The shared source-image proof (plan B.4): wait for the image whose
+ * effective URL is EXACTLY `expectedPath` resolved against the document
+ * (never a path substring, so `x.png.backup` cannot stand in), require a
+ * single candidate, pin that node and URL in a page-owned registry, then
+ * inspect it — pre-decode `complete`/`currentSrc`, resource-timing entries
+ * (absence is reported as `unavailable`, never fatal), `img.decode()`,
+ * post-decode dimensions and a capture-proof-style canvas pixel sample. The
+ * same pin (node still the selector's match, URL unchanged) is re-proven
+ * after decode and on every re-sample, so a source swapped during the proof
+ * fails instead of being silently adopted. Used by the acquisition popup
  * (`.acquisition-card img.evidence-image`) and Case File
  * (`img.case-file-record-image`).
  */
 export async function inspectImageElement(input: {
   selector: string;
-  expectedPathFragment: string;
+  /** Asset path such as `/assets/evidence/cctv_screenshot.png`. */
+  expectedPath: string;
   label: string;
   timeoutMs?: number;
 }): Promise<ImageElementInspection> {
@@ -2146,45 +2427,122 @@ export async function inspectImageElement(input: {
   await browser.waitUntil(
     async () =>
       browser.execute(
-        (sel: string, pathFragment: string) => {
+        (sel: string, expectedPath: string) => {
+          const expectedSrc = new URL(expectedPath, document.baseURI).href;
           return Array.from(
             document.querySelectorAll<HTMLImageElement>(sel),
-          ).some((image) =>
-            (image.currentSrc || image.src).includes(pathFragment),
-          );
+          ).some((image) => (image.currentSrc || image.src) === expectedSrc);
         },
         input.selector,
-        input.expectedPathFragment,
+        input.expectedPath,
       ),
     {
       timeout: input.timeoutMs ?? 30000,
       interval: 100,
-      timeoutMsg: `${input.label}: image ${input.selector} for ${input.expectedPathFragment} did not mount`,
+      timeoutMsg: `${input.label}: image ${input.selector} for the exact URL of ${input.expectedPath} did not mount`,
     },
   );
   const mountWaitMs = Date.now() - mountStart;
 
   const inspection = await browser.executeAsync<
-    AcquisitionImageInspection | { error: string },
+    (AcquisitionImageInspection & { pin: string }) | { error: string },
     [string, string]
   >(
     async (
       sel: string,
-      pathFragment: string,
-      done: (result: AcquisitionImageInspection | { error: string }) => void,
+      expectedPath: string,
+      done: (
+        result:
+          | (AcquisitionImageInspection & { pin: string })
+          | { error: string },
+      ) => void,
     ) => {
-      const image = Array.from(
+      const expectedSrc = new URL(expectedPath, document.baseURI).href;
+      const candidates = Array.from(
         document.querySelectorAll<HTMLImageElement>(sel),
-      ).find((candidate) =>
-        (candidate.currentSrc || candidate.src).includes(pathFragment),
+      ).filter(
+        (candidate) => (candidate.currentSrc || candidate.src) === expectedSrc,
       );
-      if (!image) {
+      if (candidates.length === 0) {
         done({
-          error: `image ${sel} for ${pathFragment} unmounted before inspection`,
+          error: `image ${sel} for ${expectedSrc} unmounted before inspection`,
         });
         return;
       }
-      const currentSrc = image.currentSrc || image.src;
+      if (candidates.length > 1) {
+        done({
+          error: `image ${sel} matched ${candidates.length} elements with ${expectedSrc} — the proof cannot tell which node is painted`,
+        });
+        return;
+      }
+      const image = candidates[0];
+      if (image === undefined) {
+        done({
+          error: `image ${sel} for ${expectedSrc} unmounted before inspection`,
+        });
+        return;
+      }
+      // Pin BEFORE decoding: the proof is about this node and this exact
+      // URL. Any later substitution, detach or URL change fails closed
+      // instead of being measured as if it were the requested asset.
+      const pinnedSrc = image.currentSrc || image.src;
+      if (pinnedSrc !== expectedSrc) {
+        done({
+          error: `image ${sel} resolved to ${pinnedSrc}, expected ${expectedSrc}`,
+        });
+        return;
+      }
+      // Page-owned identity for the crop phase: the node itself, not a URL
+      // lookup that a same-URL replacement could satisfy. The token is
+      // unique per inspection and released by the caller after the proof.
+      const pageGlobal = globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      };
+      if (pageGlobal.__lyraImageEvidencePins === undefined) {
+        pageGlobal.__lyraImageEvidencePins = Object.create(null) as Record<
+          string,
+          Element | undefined
+        >;
+      }
+      const pins = pageGlobal.__lyraImageEvidencePins;
+      let pin = "";
+      for (let attempt = 0; attempt < 4 && pin === ""; attempt += 1) {
+        const candidate = `pin-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}-${attempt}`;
+        if (pins[candidate] === undefined) pin = candidate;
+      }
+      if (pin === "") {
+        done({ error: "could not allocate a page-owned image pin" });
+        return;
+      }
+      pins[pin] = image;
+      const pinFailure = (): string | null => {
+        if (!image.isConnected) {
+          return "image detached from the document during inspection";
+        }
+        const liveSrc = image.currentSrc || image.src;
+        if (liveSrc !== pinnedSrc) {
+          return `image source changed during inspection (${liveSrc}), expected ${pinnedSrc}`;
+        }
+        // Re-check uniqueness on every attempt: a duplicate introduced after
+        // selection (e.g. during decode) makes the node unpaintable-as-proof,
+        // and the crop could otherwise only catch it if it persisted.
+        const liveMatches = Array.from(
+          document.querySelectorAll<HTMLImageElement>(sel),
+        ).filter(
+          (candidate) => (candidate.currentSrc || candidate.src) === pinnedSrc,
+        );
+        if (liveMatches.length > 1) {
+          return `image ${sel} now matches ${liveMatches.length} elements with ${pinnedSrc} — refusing to sample an ambiguous source`;
+        }
+        if (!liveMatches.includes(image)) {
+          return `image no longer matches selector ${sel} during inspection`;
+        }
+        return null;
+      };
+      const currentSrc = pinnedSrc;
+
       let resourceTiming: AcquisitionImageTiming;
       try {
         const entries = performance.getEntriesByName(currentSrc);
@@ -2245,62 +2603,95 @@ export async function inspectImageElement(input: {
         surface.height = image.naturalHeight;
         const context = surface.getContext("2d", { willReadFrequently: true });
         if (!context) throw new Error("canvas 2d context unavailable");
-        context.drawImage(image, 0, 0);
-        const pixels = context.getImageData(
-          0,
-          0,
-          surface.width,
-          surface.height,
-        ).data;
-        let alphaPixels = 0;
-        for (let offset = 3; offset < pixels.length; offset += 4) {
-          if ((pixels[offset] ?? 0) > 0) alphaPixels += 1;
+        // Hosted E2E Full 46100294798 read back one fully transparent canvas
+        // for an element that `img.decode()` had accepted and that visibly
+        // painted a moment later, after the same URL had sampled real pixels
+        // earlier in the run. A transient sampling failure is proven; the
+        // WebKit-internal cause is not. Re-sample on later turns instead of
+        // trusting a single draw — bounded, and the pin is re-proven on every
+        // attempt so a blank or substituted source never satisfies this.
+        const resampleWaitsMs = [16, 32, 64, 128, 256, 512];
+        let sampled: AcquisitionImageCanvasMetrics | null = null;
+        for (let attempt = 1; ; attempt += 1) {
+          const beforeDraw = pinFailure();
+          if (beforeDraw !== null) throw new Error(beforeDraw);
+          context.clearRect(0, 0, surface.width, surface.height);
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(
+            0,
+            0,
+            surface.width,
+            surface.height,
+          ).data;
+          let alphaPixels = 0;
+          for (let offset = 3; offset < pixels.length; offset += 4) {
+            if ((pixels[offset] ?? 0) > 0) alphaPixels += 1;
+          }
+          const buckets = new Set<number>();
+          let sampleCount = 0;
+          let lumSum = 0;
+          let lumSq = 0;
+          let lumMin = 0;
+          let lumMax = 0;
+          // Every 64th byte = every 16th pixel, the capture-proof sample stride.
+          for (let offset = 0; offset < pixels.length; offset += 64) {
+            const r = pixels[offset] ?? 0;
+            const g = pixels[offset + 1] ?? 0;
+            const b = pixels[offset + 2] ?? 0;
+            buckets.add(((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5));
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            sampleCount += 1;
+            lumSum += lum;
+            lumSq += lum * lum;
+            if (sampleCount === 1 || lum < lumMin) lumMin = lum;
+            if (lum > lumMax) lumMax = lum;
+          }
+          const mean = sampleCount === 0 ? 0 : lumSum / sampleCount;
+          const variance =
+            sampleCount === 0 ? 0 : lumSq / sampleCount - mean * mean;
+          sampled = {
+            alphaPixels,
+            distinctBuckets: buckets.size,
+            luminanceMean: mean,
+            luminanceStdDev: Math.sqrt(Math.max(0, variance)),
+            minLuminance: lumMin,
+            maxLuminance: lumMax,
+            sampleAttempts: attempt,
+          };
+          if (alphaPixels > 0 && buckets.size >= 4) {
+            // The pixels only count if they came from the pinned source —
+            // the last check narrows the window between draw and verdict.
+            const afterDraw = pinFailure();
+            if (afterDraw !== null) throw new Error(afterDraw);
+            break;
+          }
+          const waitMs = resampleWaitsMs[attempt - 1];
+          if (waitMs === undefined) break;
+          await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         }
-        const buckets = new Set<number>();
-        let sampleCount = 0;
-        let lumSum = 0;
-        let lumSq = 0;
-        let lumMin = 0;
-        let lumMax = 0;
-        // Every 64th byte = every 16th pixel, the capture-proof sample stride.
-        for (let offset = 0; offset < pixels.length; offset += 64) {
-          const r = pixels[offset] ?? 0;
-          const g = pixels[offset + 1] ?? 0;
-          const b = pixels[offset + 2] ?? 0;
-          buckets.add(((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5));
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          sampleCount += 1;
-          lumSum += lum;
-          lumSq += lum * lum;
-          if (sampleCount === 1 || lum < lumMin) lumMin = lum;
-          if (lum > lumMax) lumMax = lum;
-        }
-        const mean = sampleCount === 0 ? 0 : lumSum / sampleCount;
-        const variance =
-          sampleCount === 0 ? 0 : lumSq / sampleCount - mean * mean;
-        canvas = {
-          alphaPixels,
-          distinctBuckets: buckets.size,
-          luminanceMean: mean,
-          luminanceStdDev: Math.sqrt(Math.max(0, variance)),
-          minLuminance: lumMin,
-          maxLuminance: lumMax,
-        };
+        if (sampled === null)
+          throw new Error("canvas sampling produced no sample");
+        canvas = sampled;
       } catch (error) {
         canvas = {
           error: error instanceof Error ? error.message : String(error),
         };
       }
-      done({ preDecode, resourceTiming, decode, postDecode, canvas });
+      done({ preDecode, resourceTiming, decode, postDecode, canvas, pin });
     },
     input.selector,
-    input.expectedPathFragment,
+    input.expectedPath,
   );
 
   if ("error" in inspection) {
     throw new Error(`${input.label}: ${inspection.error}`);
   }
-  return { mountWaitMs, inspection };
+  return {
+    mountWaitMs,
+    inspection,
+    sourceUrl: inspection.preDecode.currentSrc,
+    pin: inspection.pin,
+  };
 }
 
 /** One-line diagnostics for an inspected image — every log carries the full
@@ -2325,7 +2716,7 @@ export function formatImageInspection(
     `src=${inspection.postDecode.currentSrc} ` +
     ("error" in inspection.canvas
       ? `canvasError=${inspection.canvas.error}`
-      : `canvas={alphaPx:${inspection.canvas.alphaPixels},buckets:${inspection.canvas.distinctBuckets},lumMean:${inspection.canvas.luminanceMean.toFixed(1)},lumStd:${inspection.canvas.luminanceStdDev.toFixed(2)},lumRange:${inspection.canvas.minLuminance.toFixed(0)}-${inspection.canvas.maxLuminance.toFixed(0)}}`)
+      : `canvas={alphaPx:${inspection.canvas.alphaPixels},buckets:${inspection.canvas.distinctBuckets},tries:${inspection.canvas.sampleAttempts},lumMean:${inspection.canvas.luminanceMean.toFixed(1)},lumStd:${inspection.canvas.luminanceStdDev.toFixed(2)},lumRange:${inspection.canvas.minLuminance.toFixed(0)}-${inspection.canvas.maxLuminance.toFixed(0)}}`)
   );
 }
 
@@ -2479,7 +2870,7 @@ async function verifyAcquisitionEvidenceImage(
     inspect: () =>
       inspectImageElement({
         selector: anchors.acquisitionEvidenceImageSelector,
-        expectedPathFragment: expectedPath,
+        expectedPath,
         label,
       }),
     report: ({ mountWaitMs, inspection }) =>
@@ -2489,15 +2880,21 @@ async function verifyAcquisitionEvidenceImage(
       ),
     assert: ({ inspection }) => assertInspectedImage(inspection, label),
     provePainted: scoped
-      ? async () => {
+      ? async (inspection) => {
           await assertScreenshotRegionPainted({
             selector: anchors.acquisitionVisualSelector,
+            imageSelector: anchors.acquisitionEvidenceImageSelector,
+            expectedImageSrc: inspection.sourceUrl,
+            pin: inspection.pin,
             label: `acquisition popup ${imageAssetId} (${current.id})`,
             screenshotPath,
             insetCssPx: 2,
           });
         }
       : undefined,
+    // Free the page-owned node pin on every path, so a failed or repeated
+    // proof cannot leak or collide with the next inspection.
+    releaseInspection: ({ pin }) => releaseImageElementPin(pin),
     // The receipt lands only after a passing crop — a thrown proof must
     // never count this record as covered.
     onReceipt: scoped

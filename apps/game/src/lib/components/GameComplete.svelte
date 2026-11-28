@@ -1,7 +1,7 @@
 <script lang="ts">
   let {
     storyCleared,
-    onReset,
+    onReturnToTitle,
     disabled = false,
   }: {
     /**
@@ -9,7 +9,7 @@
      * continued" end card instead of the case-closed stamp.
      */
     storyCleared: boolean;
-    onReset: () => void;
+    onReturnToTitle: () => void;
     disabled?: boolean;
   } = $props();
 </script>
@@ -38,11 +38,16 @@
     {/if}
   </p>
 
-  <button onclick={onReset} type="button" {disabled}>
+  <button
+    onclick={onReturnToTitle}
+    type="button"
+    data-focus-target="return-to-title"
+    {disabled}
+  >
     <span class="num">00</span>
     <span class="label">
-      <span class="lbl-zh">重新開啟</span>
-      <span class="lbl-en">RESTART&nbsp;CASE</span>
+      <span class="lbl-zh">返回標題畫面</span>
+      <span class="lbl-en">RETURN&nbsp;TO&nbsp;TITLE</span>
     </span>
     <span class="chip">▶</span>
   </button>
@@ -53,9 +58,8 @@
     position: relative;
     display: grid;
     place-items: center;
-    min-height: 70vh;
-    gap: 32px;
-    padding: 64px 24px;
+    gap: 16px;
+    padding: 16px 24px 24px;
     color: var(--bone);
     text-align: center;
   }

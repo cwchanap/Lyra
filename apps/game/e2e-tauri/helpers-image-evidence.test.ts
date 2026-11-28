@@ -1,3 +1,4 @@
+import { deflateSync } from "node:zlib";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -208,7 +209,7 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
 
   it("keeps the original source-proof error and still saves evidence when screenshot capture fails", async () => {
     const expectedPath = `/assets/evidence/cctv_screenshot.png`;
-    mountPopupDom(`http://localhost${expectedPath}`);
+    mountPopupDom(`http://localhost:1420${expectedPath}`);
     const saveScreenshot = vi.fn(async () => {
       throw new Error("compositor unavailable");
     });
@@ -393,5 +394,940 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
     expect(diagnostics.diagnostics.missing).toEqual(["cctv_screenshot"]);
     expect(diagnostics.diagnostics.stage).toBe("compositor-receipts");
     expect(helpers.acquisitionCompositorReceipts().size).toBe(0);
+  });
+});
+
+/**
+ * Source-proof target identity + bounded canvas re-sampling.
+ *
+ * Observed on hosted E2E Full 46100294798: img.decode() resolved, the element
+ * was complete at 512x512 with the expected URL and visibly painted a moment
+ * after the failed readback, yet one drawImage+getImageData readback was fully
+ * transparent while the same URL had produced real pixels earlier in the
+ * journey. That is consistent with a transient sampling failure; it does not
+ * establish a product regression or the WebKit-internal cause. The proof must
+ * therefore (a) require a single candidate for the exact URL, pin that exact
+ * node and URL in a page-owned registry before decoding and keep proving the
+ * pin after decode and on every retry, and (b) re-sample the canvas on later
+ * turns instead of trusting one draw — while a blank, corrupt or substituted
+ * source still fails.
+ */
+describe("inspectImageElement source identity and canvas sampling", () => {
+  const SELECTOR = "img.case-file-record-image";
+  const PATH = "/assets/evidence/timecard_record.png";
+  const EXPECTED_SRC = `http://localhost:1420${PATH}`;
+  const LABEL = "Case File timecard_record (三宅打卡紀錄)";
+
+  type Frame = "blank" | "solid-top" | "pattern-bottom";
+
+  type PagePins = Record<string, Element | undefined>;
+  function pinRegistry(): PagePins | undefined {
+    return (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: PagePins;
+      }
+    ).__lyraImageEvidencePins;
+  }
+
+  function mountCaseFileImage(src = EXPECTED_SRC): HTMLImageElement {
+    document.body.innerHTML = "";
+    return appendCaseFileImage(src);
+  }
+
+  function appendCaseFileImage(src = EXPECTED_SRC): HTMLImageElement {
+    const image = document.createElement("img");
+    image.className = "case-file-record-image";
+    image.src = src;
+    Object.defineProperty(image, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    Object.defineProperty(image, "naturalWidth", {
+      configurable: true,
+      get: () => 8,
+    });
+    Object.defineProperty(image, "naturalHeight", {
+      configurable: true,
+      get: () => 8,
+    });
+    Object.defineProperty(image, "currentSrc", {
+      configurable: true,
+      get: () => image.src,
+    });
+    Object.assign(image, { decode: () => Promise.resolve() });
+    document.body.appendChild(image);
+    return image;
+  }
+
+  /**
+   * Stateful 8x8 canvas: the buffer starts transparent and keeps whatever a
+   * draw wrote until `clearRect` zeroes it, exactly like a real canvas. That
+   * statefulness is what makes a missing `clearRect` between re-samples
+   * observable (the assertions below pin exact alpha/bucket counts).
+   */
+  function stubCanvasSampler(
+    frames: readonly Frame[],
+    onDraw?: (drawCount: number) => void,
+  ): () => number {
+    const size = 8;
+    let drawCount = 0;
+    let buffer = new Uint8ClampedArray(size * size * 4);
+    const paint = (kind: Frame) => {
+      if (kind === "blank") return;
+      const rows = kind === "solid-top" ? [0, 1, 2, 3] : [2, 3, 4, 5, 6, 7];
+      for (const y of rows) {
+        for (let x = 0; x < size; x += 1) {
+          const at = (y * size + x) * 4;
+          const single = kind === "solid-top";
+          buffer[at] = single ? 64 : 40 * y;
+          buffer[at + 1] = single ? 64 : 20 * y;
+          buffer[at + 2] = single ? 64 : 10 * y;
+          buffer[at + 3] = 255;
+        }
+      }
+    };
+    const context = {
+      clearRect: (_x: number, _y: number, width: number, height: number) => {
+        buffer = new Uint8ClampedArray(width * height * 4);
+      },
+      drawImage: () => {
+        drawCount += 1;
+        onDraw?.(drawCount);
+        paint(frames[Math.min(drawCount, frames.length) - 1] ?? "blank");
+      },
+      getImageData: (
+        _x: number,
+        _y: number,
+        width: number,
+        height: number,
+      ) => ({
+        data: buffer.slice(0, width * height * 4),
+        width,
+        height,
+        colorSpace: "srgb",
+      }),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      (() => context) as unknown as HTMLCanvasElement["getContext"],
+    );
+    return () => drawCount;
+  }
+
+  const pageFns: {
+    execute: Array<(...args: unknown[]) => unknown>;
+    executeAsync: Array<(...args: unknown[]) => unknown>;
+  } = { execute: [], executeAsync: [] };
+
+  function stubBrowser(): void {
+    pageFns.execute.length = 0;
+    pageFns.executeAsync.length = 0;
+    vi.stubGlobal("browser", {
+      waitUntil: async (
+        condition: () => Promise<boolean>,
+        options?: { timeoutMsg?: string },
+      ) => {
+        if (!(await condition())) {
+          throw new Error(options?.timeoutMsg ?? "condition never became true");
+        }
+        return true;
+      },
+      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
+        pageFns.execute.push(fn);
+        return Promise.resolve(fn(...args));
+      },
+      executeAsync: (fn: (...args: unknown[]) => void, ...args: unknown[]) =>
+        new Promise((resolve) => {
+          pageFns.executeAsync.push(fn);
+          // WebDriver serializes this function's source into the page. The
+          // stub invokes it directly in this realm; the standalone test
+          // below re-creates it from its serialized source.
+          void fn(...args, resolve);
+        }),
+    });
+  }
+
+  const input = {
+    selector: SELECTOR,
+    expectedPath: PATH,
+    label: LABEL,
+    timeoutMs: 1000,
+  };
+
+  beforeEach(() => {
+    stubBrowser();
+    delete (
+      globalThis as typeof globalThis & { __lyraImageEvidencePins?: PagePins }
+    ).__lyraImageEvidencePins;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+    delete (
+      globalThis as typeof globalThis & { __lyraImageEvidencePins?: PagePins }
+    ).__lyraImageEvidencePins;
+  });
+
+  it("re-samples the canvas until the pending decode lands and keeps the real-pixel proof", async () => {
+    mountCaseFileImage();
+    stubCanvasSampler(["solid-top", "pattern-bottom"]);
+
+    const { inspection, sourceUrl, pin } =
+      await helpers.inspectImageElement(input);
+
+    expect(sourceUrl).toBe(EXPECTED_SRC);
+    expect(pin).toMatch(/^pin-/);
+    // The pin is a page-owned reference to the exact inspected node.
+    expect(pinRegistry()?.[pin]).toBe(
+      document.querySelector("img.case-file-record-image"),
+    );
+    expect(inspection.decode.ok).toBe(true);
+    // Draw 1 (solid, 2 buckets) must be cleared before draw 2 lands: with a
+    // missing clearRect the top-frame pixels survive and these counts differ.
+    expect(inspection.canvas).toMatchObject({
+      alphaPixels: 48,
+      distinctBuckets: 4,
+      sampleAttempts: 2,
+    });
+    expect(() =>
+      helpers.assertInspectedImage(inspection, input.label),
+    ).not.toThrow();
+  });
+
+  it("still fails when every bounded re-sample is blank — an empty source is never accepted", async () => {
+    mountCaseFileImage();
+    const drawCount = stubCanvasSampler(["blank"]);
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      alphaPixels: 0,
+      distinctBuckets: 1,
+      sampleAttempts: 7,
+    });
+    expect(drawCount()).toBe(7);
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /no real pixels/,
+    );
+  });
+
+  it("rejects a source that changes during decode instead of adopting the new URL", async () => {
+    const image = mountCaseFileImage();
+    Object.assign(image, {
+      decode: async () => {
+        image.src = `http://localhost:1420/assets/evidence/cctv_screenshot.png`;
+      },
+    });
+    stubCanvasSampler(["pattern-bottom"]);
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("source changed during inspection"),
+    });
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /source canvas sample failed/,
+    );
+  });
+
+  it("rejects a still-connected node that stops matching the selector on a retry", async () => {
+    const image = mountCaseFileImage();
+    stubCanvasSampler(["blank", "pattern-bottom"], (drawCount) => {
+      if (drawCount === 1) image.className = "no-longer-the-record-image";
+    });
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("no longer matches selector"),
+    });
+  });
+
+  it("rejects duplicate exact-URL nodes — the proof cannot tell which one is painted", async () => {
+    mountCaseFileImage();
+    appendCaseFileImage();
+    stubCanvasSampler(["pattern-bottom"]);
+
+    await expect(helpers.inspectImageElement(input)).rejects.toThrow(
+      /matched 2 elements/,
+    );
+  });
+
+  it("does not mount a lookalike file whose path only ends with the expected asset path", async () => {
+    mountCaseFileImage(`${EXPECTED_SRC}.backup`);
+    stubCanvasSampler(["pattern-bottom"]);
+
+    await expect(helpers.inspectImageElement(input)).rejects.toThrow(
+      /did not mount/,
+    );
+  });
+
+  it("does not mount the expected path from another origin", async () => {
+    mountCaseFileImage(
+      `https://cdn.example/assets/evidence/timecard_record.png`,
+    );
+    stubCanvasSampler(["pattern-bottom"]);
+
+    await expect(helpers.inspectImageElement(input)).rejects.toThrow(
+      /did not mount/,
+    );
+  });
+
+  it("rejects a duplicate exact-URL node introduced during decode", async () => {
+    const image = mountCaseFileImage();
+    Object.assign(image, {
+      decode: async () => {
+        appendCaseFileImage();
+      },
+    });
+    stubCanvasSampler(["pattern-bottom"]);
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("now matches 2 elements"),
+    });
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /source canvas sample failed/,
+    );
+  });
+
+  it("releases each page-owned pin after the proof and never reuses a token", async () => {
+    stubCanvasSampler(["pattern-bottom"]);
+    const pinsSeen: string[] = [];
+    const captureFailure = vi.fn(async () => {});
+
+    const runProof = async (): Promise<void> => {
+      await runImageEvidenceProof({
+        inspect: () => helpers.inspectImageElement(input),
+        assert: ({ inspection }) =>
+          helpers.assertInspectedImage(inspection, input.label),
+        releaseInspection: async ({ pin }) => {
+          pinsSeen.push(pin);
+          // The pin is released only after the caller is done with it.
+          expect(pinRegistry()?.[pin]).toBeDefined();
+          await helpers.releaseImageElementPin(pin);
+        },
+        captureFailure,
+      });
+    };
+
+    mountCaseFileImage();
+    await runProof();
+    expect(pinRegistry()).toEqual({});
+    mountCaseFileImage();
+    await runProof();
+
+    expect(captureFailure).not.toHaveBeenCalled();
+    expect(pinsSeen).toHaveLength(2);
+    expect(new Set(pinsSeen).size).toBe(2);
+    expect(pinRegistry()).toEqual({});
+  });
+
+  it("runs the inspection page script standalone from its serialized source", async () => {
+    // WebDriver ships the function's SOURCE into the page, so the script may
+    // not close over this realm's module scope. Re-create it the same way and
+    // drive it with the same DOM: proves self-containment. This is a
+    // source-level evaluation, not a real WebDriver transport exercise.
+    mountCaseFileImage();
+    stubCanvasSampler(["pattern-bottom"]);
+    vi.stubGlobal("__name", (fn: unknown) => fn); // WebDriver's page polyfill
+    await helpers.inspectImageElement(input);
+
+    const pageScript = pageFns.executeAsync.at(-1);
+    expect(pageScript).toBeTypeOf("function");
+    const standalone = new Function(`return (${String(pageScript)})`)() as (
+      selector: string,
+      path: string,
+      done: (v: unknown) => void,
+    ) => void;
+    const result = await new Promise((resolve) => {
+      standalone(SELECTOR, PATH, resolve);
+    });
+
+    expect(result).toMatchObject({
+      decode: { ok: true },
+      canvas: { alphaPixels: 48, distinctBuckets: 4, sampleAttempts: 1 },
+      pin: expect.stringMatching(/^pin-/),
+    });
+  });
+});
+
+/**
+ * The compositor crop must measure the exact DOM node the source proof
+ * inspected, and the capture must still show that node when it completes.
+ * `probeScrollGeometryDom` resolves the page-owned pin; a replacement node
+ * with the same URL/rect, a duplicated match or a mutation during
+ * `saveScreenshot` invalidates the capture and can never produce a receipt.
+ */
+/**
+ * The compositor crop must measure the exact DOM node the source proof
+ * inspected. Two independent classes of bypass are covered here:
+ *  - identity: a same-URL replacement, duplicated match or stale pin can never
+ *    bind (canned probe responses);
+ *  - geometry: the pinned image's own rect — not just the wrapper — has to be
+ *    visible and stable across the capture, and the geometry probe must not
+ *    scroll except during setup (real `probeScrollGeometryDom` callback).
+ * A mutation during `saveScreenshot` invalidates the capture and can never
+ * produce a receipt.
+ */
+describe("assertScreenshotRegionPainted crop identity and capture validity", () => {
+  const EXPECTED_SRC = `http://localhost:1420/assets/evidence/timecard_record.png`;
+  const PIN = "pin-crop-test";
+  const RECT = { left: 100, top: 100, width: 200, height: 150 };
+  const MOVED = { left: 120, top: 100, width: 200, height: 150 };
+  const VIEWPORT = { width: 800, height: 600 };
+
+  type CropRect = {
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+  };
+
+  type Probe = {
+    rect: CropRect;
+    scrollport: CropRect | null;
+    viewport: { width: number; height: number };
+    devicePixelRatio: number;
+    imageBinding: Record<string, unknown>;
+    imageRect: CropRect | null;
+  };
+
+  // jsdom has no layout: feed rects through the prototype (same approach as
+  // focus-probe/scroll-geometry tests) so the REAL geometry callback can be
+  // driven end to end. Defaults to a zero rect, matching jsdom.
+  const CROP_RECTS = new Map<Element, CropRect>();
+  const scrollCalls: Element[] = [];
+  Element.prototype.getBoundingClientRect = function (this: Element) {
+    const rect = CROP_RECTS.get(this) ?? {
+      left: 0,
+      top: 0,
+      width: 0,
+      height: 0,
+    };
+    return {
+      ...rect,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => rect,
+    } as DOMRect;
+  };
+  Element.prototype.scrollIntoView = function (this: Element) {
+    scrollCalls.push(this);
+  };
+
+  function setCropRect(element: Element, rect: CropRect): void {
+    CROP_RECTS.set(element, { ...rect });
+  }
+  function shiftCropRects(dy: number, keep: readonly Element[] = []): void {
+    for (const [element, rect] of CROP_RECTS.entries()) {
+      if (keep.includes(element)) continue;
+      CROP_RECTS.set(element, { ...rect, top: rect.top + dy });
+    }
+  }
+
+  function registerCropPin(node: Element, pin = PIN): void {
+    const pageGlobal = globalThis as typeof globalThis & {
+      __lyraImageEvidencePins?: Record<string, Element | undefined>;
+    };
+    (pageGlobal.__lyraImageEvidencePins ??= {})[pin] = node;
+  }
+
+  const boundProbe = (
+    rect = RECT,
+    overrides: Record<string, unknown> = {},
+    imageRect: CropRect | null = rect,
+  ): Probe => ({
+    rect,
+    scrollport: null,
+    viewport: VIEWPORT,
+    devicePixelRatio: 1,
+    imageBinding: {
+      status: "bound",
+      src: EXPECTED_SRC,
+      pin: PIN,
+      ...overrides,
+    },
+    imageRect,
+  });
+
+  let cropDir: string;
+  let screenshotPath: string;
+
+  function stubProbeSequence(
+    probes: readonly Probe[],
+    save?: () => Promise<void>,
+  ): ReturnType<typeof vi.fn> {
+    let index = 0;
+    const saveScreenshot = vi.fn(save ?? (async () => {}));
+    vi.stubGlobal("browser", {
+      execute: async () =>
+        probes[Math.min(index++, probes.length - 1)] ?? probes[0],
+      pause: async () => {},
+      saveScreenshot,
+    });
+    return saveScreenshot;
+  }
+
+  /** Runs the REAL serialized geometry callback (as WebDriver does). */
+  function stubRealProbe(save?: () => Promise<void>): ReturnType<typeof vi.fn> {
+    const saveScreenshot = vi.fn(save ?? (async () => {}));
+    vi.stubGlobal("browser", {
+      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+        Promise.resolve(fn(...args)),
+      pause: async () => {},
+      saveScreenshot,
+    });
+    return saveScreenshot;
+  }
+
+  /** Minimal 8-bit RGB PNG with a colorful gradient (deflate rows). */
+  function paintedPng(width: number, height: number): Uint8Array {
+    const rowBytes = width * 3 + 1;
+    const raw = new Uint8Array(rowBytes * height);
+    for (let y = 0; y < height; y += 1) {
+      const row = y * rowBytes;
+      for (let x = 0; x < width; x += 1) {
+        const at = row + 1 + x * 3;
+        raw[at] = (x * 7 + y * 3) % 256;
+        raw[at + 1] = (x * 3 + y * 7) % 256;
+        raw[at + 2] = (x * 11 + y * 5) % 256;
+      }
+    }
+    const chunk = (type: string, data: Uint8Array): Uint8Array => {
+      const out = new Uint8Array(12 + data.length);
+      new DataView(out.buffer).setUint32(0, data.length);
+      for (let i = 0; i < 4; i += 1) out[4 + i] = type.charCodeAt(i);
+      out.set(data, 8);
+      return out; // CRC left zero — the decoder does not verify it.
+    };
+    const ihdr = new Uint8Array(13);
+    const view = new DataView(ihdr.buffer);
+    view.setUint32(0, width);
+    view.setUint32(4, height);
+    ihdr[8] = 8;
+    ihdr[9] = 2;
+    const parts = [
+      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", ihdr),
+      chunk("IDAT", deflateSync(raw)),
+      chunk("IEND", new Uint8Array(0)),
+    ];
+    const out = new Uint8Array(
+      parts.reduce((total, part) => total + part.length, 0),
+    );
+    let offset = 0;
+    for (const part of parts) {
+      out.set(part, offset);
+      offset += part.length;
+    }
+    return out;
+  }
+
+  const cropInput = () => ({
+    selector: "img.case-file-record-image",
+    imageSelector: "img.case-file-record-image",
+    expectedImageSrc: EXPECTED_SRC,
+    pin: PIN,
+    label: "Case File timecard_record",
+    screenshotPath,
+  });
+
+  beforeEach(() => {
+    // The real geometry callback reads the jsdom viewport: pin it to the
+    // 800x600 window the crop proof is specified against.
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: VIEWPORT.width,
+    });
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: VIEWPORT.height,
+    });
+    Object.defineProperty(window, "devicePixelRatio", {
+      configurable: true,
+      value: 1,
+    });
+    cropDir = mkdtempSync(path.join(tmpdir(), "hpa852-crop-"));
+    screenshotPath = path.join(cropDir, "case-file-timecard_record.png");
+    CROP_RECTS.clear();
+    document.body.innerHTML = "";
+    scrollCalls.length = 0;
+    delete (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+    rmSync(cropDir, { recursive: true, force: true });
+  });
+
+  it("fails before any screenshot when the target is not bound to the inspected node", async () => {
+    const saveScreenshot = stubProbeSequence([
+      {
+        ...boundProbe(),
+        imageBinding: { status: "outside-target", src: EXPECTED_SRC },
+        imageRect: null,
+      },
+    ]);
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput()),
+    ).rejects.toThrow(/is not bound to the inspected image/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a probe whose bound URL is not exactly the inspected one", async () => {
+    const saveScreenshot = stubProbeSequence([
+      boundProbe(RECT, {
+        src: `http://localhost:1420/assets/evidence/cctv_screenshot.png`,
+      }),
+    ]);
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput()),
+    ).rejects.toThrow(/is not bound to the inspected image/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a same-URL node that carries a different pin", async () => {
+    const saveScreenshot = stubProbeSequence([
+      boundProbe(RECT, { pin: "pin-some-other-node" }),
+    ]);
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput()),
+    ).rejects.toThrow(/is not bound to the inspected image/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("invalidates the capture when the pinned node is replaced while the screenshot is pending", async () => {
+    const saveScreenshot = stubProbeSequence(
+      [
+        boundProbe(),
+        {
+          ...boundProbe(),
+          imageBinding: { status: "detached", pin: PIN },
+          imageRect: null,
+        },
+      ],
+      async () => writeFileSync(screenshotPath, "capture-bytes"),
+    );
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput()),
+    ).rejects.toThrow(/invalidated/);
+    expect(saveScreenshot).toHaveBeenCalledTimes(1);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { invalidated: boolean; reason: string };
+    expect(invalidation.invalidated).toBe(true);
+    expect(invalidation.reason).toContain("no longer bound");
+  });
+
+  it("invalidates the capture when the geometry moves while the screenshot is pending", async () => {
+    stubProbeSequence([boundProbe(), boundProbe(MOVED, {}, RECT)], async () =>
+      writeFileSync(screenshotPath, "capture-bytes"),
+    );
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput()),
+    ).rejects.toThrow(/geometry changed while the screenshot was pending/);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { invalidated: boolean; after: { rect: typeof MOVED } };
+    expect(invalidation.invalidated).toBe(true);
+    expect(invalidation.after.rect).toEqual(MOVED);
+  });
+
+  it("accepts a capture that stays bound to the same node, image and geometry", async () => {
+    stubProbeSequence([boundProbe(), boundProbe()], async () =>
+      writeFileSync(screenshotPath, paintedPng(800, 600)),
+    );
+
+    const result = await helpers.assertScreenshotRegionPainted(cropInput());
+
+    expect(result.region).toEqual({
+      x: 100,
+      y: 100,
+      width: 200,
+      height: 150,
+    });
+    expect(result.metrics.distinctBuckets).toBeGreaterThanOrEqual(4);
+    const written = JSON.parse(
+      readFileSync(screenshotPath.replace(/\.png$/, ".json"), "utf8"),
+    ) as {
+      pin: string;
+      imageRect: CropRect;
+      validatedAfterCapture: { status: string; pin: string };
+    };
+    expect(written.pin).toBe(PIN);
+    expect(written.imageRect).toEqual(RECT);
+    expect(written.validatedAfterCapture).toMatchObject({
+      status: "bound",
+      pin: PIN,
+    });
+    expect(() =>
+      readFileSync(screenshotPath.replace(/\.png$/, "-invalidation.json")),
+    ).toThrow();
+  });
+
+  it("crops the pinned image's own visible rect, not the wrapper, with the real callback", async () => {
+    // Acquisition popup shape: wrapper .visual is larger than the image.
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () =>
+      writeFileSync(screenshotPath, paintedPng(800, 600)),
+    );
+
+    const result = await helpers.assertScreenshotRegionPainted({
+      selector: ".acquisition-card .visual",
+      imageSelector: "img.evidence-image",
+      expectedImageSrc: EXPECTED_SRC,
+      pin: PIN,
+      label: "acquisition popup",
+      screenshotPath,
+    });
+
+    expect(result.region).toEqual({ x: 60, y: 60, width: 100, height: 80 });
+    expect(scrollCalls).toHaveLength(0);
+  });
+
+  it("rejects a pinned image that sits entirely outside the crop wrapper", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 100, height: 100 });
+    setCropRect(image, { left: 400, top: 400, width: 50, height: 50 });
+    registerCropPin(image);
+    const saveScreenshot = stubRealProbe();
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        selector: ".acquisition-card .visual",
+        imageSelector: "img.evidence-image",
+        expectedImageSrc: EXPECTED_SRC,
+        pin: PIN,
+        label: "acquisition popup",
+        screenshotPath,
+      }),
+    ).rejects.toThrow(/no visible area/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("scrolls only during setup — a scroll change during the capture is invalidated (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="game-menu-extra"><img class="case-file-record-image" src="${EXPECTED_SRC}"></div>
+    `;
+    const scroller = document.querySelector(".game-menu-extra");
+    const image = document.querySelector("img.case-file-record-image");
+    if (!scroller || !image) throw new Error("fixture missing nodes");
+    (scroller as HTMLElement).style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { value: 387 });
+    setCropRect(scroller, { left: 49, top: 164, width: 702, height: 387 });
+    setCropRect(image, { left: 49, top: 375, width: 512, height: 512 });
+    registerCropPin(image);
+    // Setup scroll centers the image; a scroll during the capture moves the
+    // content back (simulating the reviewer's 100 -> 190 offset change).
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrollCalls.push(this);
+      // The scrollport is fixed in the viewport; only the content moves.
+      shiftCropRects(-90, [scroller]);
+    };
+    const saveScreenshot = stubRealProbe(async () => {
+      shiftCropRects(180, [scroller]);
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        ...cropInput(),
+        scrollIntoView: true,
+      }),
+    ).rejects.toThrow(/invalidated/);
+    expect(saveScreenshot).toHaveBeenCalledTimes(1);
+    // Setup scrolled once; settle and post-capture reads never scroll.
+    expect(scrollCalls).toHaveLength(1);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { invalidated: boolean; before: { rect: CropRect } };
+    expect(invalidation.invalidated).toBe(true);
+    expect(invalidation.before.rect.top).toBe(285);
+  });
+
+  it("invalidates when the pinned image moves inside the wrapper during the capture (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () => {
+      setCropRect(image, { left: 120, top: 60, width: 100, height: 80 });
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted({
+        selector: ".acquisition-card .visual",
+        imageSelector: "img.evidence-image",
+        expectedImageSrc: EXPECTED_SRC,
+        pin: PIN,
+        label: "acquisition popup",
+        screenshotPath,
+      }),
+    ).rejects.toThrow(/inspected image moved/);
+    const invalidation = JSON.parse(
+      readFileSync(
+        screenshotPath.replace(/\.png$/, "-invalidation.json"),
+        "utf8",
+      ),
+    ) as { before: { imageRect: CropRect }; after: { imageRect: CropRect } };
+    expect(invalidation.before.imageRect.left).toBe(60);
+    expect(invalidation.after.imageRect.left).toBe(120);
+  });
+
+  it("proves a valid scrolled Case File capture with the real callback", async () => {
+    document.body.innerHTML = `
+      <div class="game-menu-extra"><img class="case-file-record-image" src="${EXPECTED_SRC}"></div>
+    `;
+    const scroller = document.querySelector(".game-menu-extra");
+    const image = document.querySelector("img.case-file-record-image");
+    if (!scroller || !image) throw new Error("fixture missing nodes");
+    (scroller as HTMLElement).style.overflowY = "auto";
+    Object.defineProperty(scroller, "scrollHeight", { value: 800 });
+    Object.defineProperty(scroller, "clientHeight", { value: 387 });
+    setCropRect(scroller, { left: 49, top: 164, width: 702, height: 387 });
+    setCropRect(image, { left: 49, top: 375, width: 512, height: 512 });
+    registerCropPin(image);
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrollCalls.push(this);
+      // Setup scroll only; the scrollport stays fixed. Centers the image so
+      // the scrollport clips its top and bottom, as in the packaged run.
+      shiftCropRects(-300, [scroller]);
+    };
+    stubRealProbe(async () =>
+      writeFileSync(screenshotPath, paintedPng(800, 600)),
+    );
+
+    const result = await helpers.assertScreenshotRegionPainted({
+      ...cropInput(),
+      scrollIntoView: true,
+      insetCssPx: 0,
+    });
+
+    // After the single setup scroll the image sits at top 75; the crop is
+    // image ∩ scrollport ∩ viewport (the scrollport clips top and bottom).
+    expect(scrollCalls).toHaveLength(1);
+    expect(result.region).toEqual({ x: 49, y: 164, width: 512, height: 387 });
+    expect(result.metrics.distinctBuckets).toBeGreaterThanOrEqual(4);
+  });
+
+  it("never produces a receipt when the crop capture is invalidated", async () => {
+    stubProbeSequence(
+      [
+        boundProbe(),
+        {
+          ...boundProbe(),
+          imageBinding: { status: "detached", pin: PIN },
+          imageRect: null,
+        },
+      ],
+      async () => writeFileSync(screenshotPath, "capture-bytes"),
+    );
+    const onReceipt = vi.fn();
+
+    await expect(
+      runImageEvidenceProof({
+        inspect: async () => ({ pin: PIN, sourceUrl: EXPECTED_SRC }),
+        assert: () => {},
+        provePainted: async (inspection) => {
+          await helpers.assertScreenshotRegionPainted({
+            ...cropInput(),
+            pin: inspection.pin,
+          });
+        },
+        onReceipt,
+        captureFailure: async () => {},
+      }),
+    ).rejects.toThrow(/invalidated/);
+    expect(onReceipt).not.toHaveBeenCalled();
+  });
+
+  it("never produces a receipt when the inspected image moves during the capture (real callback)", async () => {
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="${EXPECTED_SRC}"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    const image = document.querySelector("img.evidence-image");
+    if (!visual || !image) throw new Error("fixture missing nodes");
+    setCropRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    setCropRect(image, { left: 60, top: 60, width: 100, height: 80 });
+    registerCropPin(image);
+    stubRealProbe(async () => {
+      setCropRect(image, { left: 120, top: 60, width: 100, height: 80 });
+      writeFileSync(screenshotPath, "capture-bytes");
+    });
+    const onReceipt = vi.fn();
+
+    await expect(
+      runImageEvidenceProof({
+        inspect: async () => ({ pin: PIN, sourceUrl: EXPECTED_SRC }),
+        assert: () => {},
+        provePainted: async (inspection) => {
+          await helpers.assertScreenshotRegionPainted({
+            selector: ".acquisition-card .visual",
+            imageSelector: "img.evidence-image",
+            expectedImageSrc: EXPECTED_SRC,
+            pin: inspection.pin,
+            label: "acquisition popup",
+            screenshotPath,
+          });
+        },
+        onReceipt,
+        captureFailure: async () => {},
+      }),
+    ).rejects.toThrow(/inspected image moved/);
+    expect(onReceipt).not.toHaveBeenCalled();
   });
 });

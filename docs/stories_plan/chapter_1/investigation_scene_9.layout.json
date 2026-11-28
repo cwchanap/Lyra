@@ -40,23 +40,23 @@
         },
         "workorder": {
           "kind": "rect",
-          "x": 0.622,
+          "x": 0.62,
           "y": 0.488,
-          "w": 0.026,
+          "w": 0.028,
           "h": 0.073
         },
         "access_permission_list": {
           "kind": "rect",
-          "x": 0.649,
+          "x": 0.648,
           "y": 0.488,
-          "w": 0.025,
+          "w": 0.027,
           "h": 0.073
         },
         "material_kit_list": {
           "kind": "rect",
-          "x": 0.674,
+          "x": 0.675,
           "y": 0.488,
-          "w": 0.025,
+          "w": 0.028,
           "h": 0.073
         },
         "window_rain_glass": {

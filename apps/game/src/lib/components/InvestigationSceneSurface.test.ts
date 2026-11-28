@@ -121,6 +121,13 @@ describe("InvestigationSceneSurface", () => {
     // Unitless, so the pending cue can place the target in the viewport.
     expect(button.style.getPropertyValue("--x-ratio")).toBe("0.1");
     expect(button.style.getPropertyValue("--y-ratio")).toBe("0.2");
+    expect(button.style.getPropertyValue("--w-ratio")).toBe("0.3");
+  });
+
+  it("anchors the pending hotspot cue to the authored width, not the minimum hit width", () => {
+    expect(cssRule(surfaceSource(), ".target-pending")).toContain(
+      "var(--w-ratio) * var(--scene-plane-width)",
+    );
   });
 
   it("renders placed characters with normalized top-left bounding boxes", () => {
@@ -155,22 +162,25 @@ describe("InvestigationSceneSurface", () => {
     expect(surfaceRule).not.toContain("border-block");
   });
 
-  it("maps placed evidence to the same cover-fitted 16:9 plane as the layout editor", () => {
+  it("maps placed evidence to the same contained 16:9 plane as the artwork", () => {
     const source = surfaceSource();
     const planeRule = cssRule(source, ".scene-coordinate-plane");
 
     expect(source).toContain('class="scene-coordinate-plane"');
     expect(planeRule).toContain(
-      "--scene-cover-width: max(100vw, var(--scene-area-height) * 1.777777778)",
+      "--scene-plane-width: min(100vw, var(--scene-area-height) * 1.777777778)",
     );
     expect(planeRule).toContain(
-      "--scene-cover-height: max(var(--scene-area-height), 56.25vw)",
+      "--scene-plane-height: min(var(--scene-area-height), 56.25vw)",
     );
     expect(planeRule).toContain("left: 50%");
     expect(planeRule).toContain("top: 50%");
-    expect(planeRule).toContain("width: var(--scene-cover-width)");
-    expect(planeRule).toContain("height: var(--scene-cover-height)");
+    expect(planeRule).toContain("width: var(--scene-plane-width)");
+    expect(planeRule).toContain("height: var(--scene-plane-height)");
     expect(planeRule).toContain("transform: translate(-50%, -50%)");
+    expect(
+      cssRule(source, ".surface-shell > :global(img.background-image)"),
+    ).toContain("object-fit: contain");
   });
 
   it("reserves the measured HUD height above the scene", () => {
@@ -715,8 +725,7 @@ describe("InvestigationSceneSurface", () => {
   });
 
   it("drops the minimum-target clamp only where it would steal a neighbour's clicks", async () => {
-    // At the 800×600 minimum window the cover plane is ~1067px wide, so the
-    // scene-9 packet slices (~27px each) render far below the 72px
+    // At the 800×450 minimum stage the scene-9 packet slices render below the 72px
     // min-width clamp: each expanded button would overlap its neighbour and
     // later DOM order would win the hit-test. The collision is horizontal
     // only, so each culprit loses just its x-axis clamp — compact-x restores
@@ -799,8 +808,6 @@ describe("InvestigationSceneSurface", () => {
           label: "防火門",
           description: "",
           inspected: false,
-          // x must keep the target reachable in jsdom's 1024×768 viewport
-          // (the cover plane crops normalized x below 0.125 there).
           layout: { kind: "rect", x: 0.15, y: 0.3, w: 0.08, h: 0.02 },
         },
         {
@@ -1215,10 +1222,7 @@ describe("InvestigationSceneSurface", () => {
     expect(screen.getByText("已詢問")).toBeInTheDocument();
   });
 
-  it("routes placed targets the cover plane crops away into fallback controls", async () => {
-    // At 800×720 the 1280px cover plane only shows normalized x through
-    // 0.8125: the ledger rect is fully offscreen and the off-plane witness
-    // too, so both must stay reachable through the fallback panel.
+  it("keeps formerly cropped ledger and witness targets on the art", async () => {
     window.innerWidth = 800;
     window.innerHeight = 720;
     const clippedView: SublocationView = {
@@ -1264,26 +1268,20 @@ describe("InvestigationSceneSurface", () => {
     const user = userEvent.setup();
     const onInspect = vi.fn();
 
-    const { container } = render(InvestigationSceneSurface, {
+    render(InvestigationSceneSurface, {
       sublocation: clippedView,
       onInspect,
       onInterview: vi.fn(),
     });
 
-    // Clipped targets stay mounted but inert — the element must not take
-    // clicks or keyboard focus while its interactive copy lives in the
-    // fallback list.
-    // jsdom has no `inert` IDL reflection: Svelte assigns the property, so
-    // assert .inert rather than the attribute (the browser sets both).
     expect(screen.getByRole("button", { name: /調查：帳本/ })).toHaveProperty(
       "inert",
-      true,
+      false,
     );
     expect(
       screen.getByRole("button", { name: /詢問：對面店主/ }),
-    ).toHaveProperty("inert", true);
-    // The unplaced 櫃子 starts the panel expanded — no 展開 click needed.
-    await user.click(screen.getByRole("button", { name: /畫面外：帳本/ }));
+    ).toHaveProperty("inert", false);
+    await user.click(screen.getByRole("button", { name: /調查：帳本/ }));
     expect(onInspect).toHaveBeenCalledWith("ledger");
     // Reachable targets stay on the plane and interactive.
     expect(screen.getByRole("button", { name: /調查：桌面/ })).toHaveProperty(
@@ -1294,12 +1292,8 @@ describe("InvestigationSceneSurface", () => {
       "inert",
       false,
     );
-    // The clipped witness renders through the witness fallback block (the
-    // name also survives inside the hidden inert plane copy — scope to the
-    // witness block).
-    expect(
-      container.querySelector(".fallback-witness strong"),
-    ).toHaveTextContent("對面店主");
+    expect(screen.queryByRole("button", { name: /畫面外：帳本/ })).toBeNull();
+    await user.click(screen.getByRole("button", { name: /詢問：對面店主/ }));
     expect(screen.getByRole("button", { name: /打招呼/ })).toBeInTheDocument();
   });
 
@@ -1319,7 +1313,7 @@ describe("InvestigationSceneSurface", () => {
           label: "帳本",
           description: "手寫帳本。",
           inspected: false,
-          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+          layout: { kind: "rect", x: 0.99, y: 0.32, w: 0.01, h: 0.19 },
         },
       ],
     };
@@ -1373,7 +1367,7 @@ describe("InvestigationSceneSurface", () => {
           label: "帳本",
           description: "手寫帳本。",
           inspected: false,
-          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+          layout: { kind: "rect", x: 0.99, y: 0.32, w: 0.01, h: 0.19 },
         },
       ],
     };
@@ -1415,7 +1409,7 @@ describe("InvestigationSceneSurface", () => {
           label: "帳本",
           description: "手寫帳本。",
           inspected: false,
-          layout: { kind: "rect", x: 0.815, y: 0.32, w: 0.105, h: 0.19 },
+          layout: { kind: "rect", x: 0.99, y: 0.32, w: 0.01, h: 0.19 },
         },
       ],
     };
@@ -1470,7 +1464,7 @@ describe("InvestigationSceneSurface", () => {
 
   it("routes a placed target the fallback panel itself occludes into the list", async () => {
     // The expanded panel is a fixed bottom band: a target can clear the
-    // cover-plane crop yet still sit under the panel. A mocked panel rect
+    // contained art yet still sit under the panel. A mocked panel rect
     // over a low hotspot must route it — otherwise the panel swallows its
     // clicks while routing claims it reachable.
     window.innerWidth = 800;
@@ -1485,7 +1479,7 @@ describe("InvestigationSceneSurface", () => {
           label: "地板夾層",
           description: "地毯下的暗格。",
           inspected: false,
-          layout: { kind: "rect", x: 0.5, y: 0.85, w: 0.08, h: 0.08 },
+          layout: { kind: "rect", x: 0.5, y: 0.94, w: 0.08, h: 0.06 },
         },
       ],
     };
@@ -1532,6 +1526,47 @@ describe("InvestigationSceneSurface", () => {
       "inert",
       false,
     );
+  });
+
+  it("keeps an occluded witness available through fallback topics", async () => {
+    window.innerWidth = 800;
+    window.innerHeight = 600;
+    vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: Element) {
+        return this.classList.contains("fallback-controls")
+          ? new DOMRect(0, 480, 800, 120)
+          : new DOMRect();
+      },
+    );
+    const onInterview = vi.fn();
+    render(InvestigationSceneSurface, {
+      sublocation: {
+        ...sublocation,
+        characters: [
+          {
+            ...sublocation.characters[0],
+            layout: {
+              ...sublocation.characters[0].layout,
+              x: 0.7,
+              y: 0.9,
+              w: 0.18,
+              h: 0.1,
+            },
+          },
+        ],
+      },
+      onInspect: vi.fn(),
+      onInterview,
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /詢問：目擊者/ }),
+      ).toHaveProperty("inert", true);
+    });
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /不在場證明/ }));
+    expect(onInterview).toHaveBeenCalledWith("witness", "alibi");
   });
 
   it("routes panel occlusion relative to the measured HUD height", async () => {
@@ -1595,6 +1630,78 @@ describe("InvestigationSceneSurface", () => {
         screen.getByRole("button", { name: /調查：地板夾層/ }),
       ).toHaveProperty("inert", false);
     });
+  });
+
+  it("transfers a focused target to its fallback when the panel occludes it", async () => {
+    window.innerWidth = 800;
+    window.innerHeight = 600;
+    const inert = Object.getOwnPropertyDescriptor(
+      HTMLElement.prototype,
+      "inert",
+    );
+    Object.defineProperty(HTMLElement.prototype, "inert", {
+      configurable: true,
+      get(this: HTMLElement) {
+        return this.hasAttribute("inert");
+      },
+      set(this: HTMLElement, value: boolean) {
+        this.toggleAttribute("inert", value);
+      },
+    });
+    try {
+      vi.spyOn(Element.prototype, "getBoundingClientRect").mockImplementation(
+        function (this: Element) {
+          if (this.classList.contains("fallback-controls")) {
+            return window.innerHeight === 600
+              ? new DOMRect(0, 540, 800, 60)
+              : new DOMRect(0, 480, 800, 240);
+          }
+          return new DOMRect();
+        },
+      );
+      const view: SublocationView = {
+        ...sublocation,
+        characters: [],
+        hotspots: [
+          ...sublocation.hotspots,
+          {
+            id: "floor_safe",
+            label: "地板夾層",
+            description: "",
+            inspected: false,
+            layout: { kind: "rect", x: 0.5, y: 0.8, w: 0.08, h: 0.1 },
+          },
+        ],
+      };
+      render(InvestigationSceneSurface, {
+        sublocation: view,
+        onInspect: vi.fn(),
+        onInterview: vi.fn(),
+      });
+      const target = screen.getByRole("button", { name: /調查：地板夾層/ });
+      await waitFor(() => expect(target).not.toHaveAttribute("inert"));
+      target.focus();
+      expect(target).toHaveFocus();
+      window.innerHeight = 720;
+      window.dispatchEvent(new Event("resize"));
+      // A browser drops focus when the formerly focused button becomes inert.
+      target.blur();
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: /畫面外：地板夾層/ }),
+        ).toHaveFocus();
+      });
+      expect(target).toHaveAttribute("inert");
+      const fallback = screen.getByRole("button", { name: /畫面外：地板夾層/ });
+      window.innerHeight = 600;
+      window.dispatchEvent(new Event("resize"));
+      fallback.blur();
+      await waitFor(() => expect(target).toHaveFocus());
+      expect(target).not.toHaveAttribute("inert");
+    } finally {
+      if (inert) Object.defineProperty(HTMLElement.prototype, "inert", inert);
+      else Reflect.deleteProperty(HTMLElement.prototype, "inert");
+    }
   });
 
   it("keeps the fallback toggle outside the panel's scroll area", () => {
