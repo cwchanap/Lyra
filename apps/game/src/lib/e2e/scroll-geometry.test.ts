@@ -57,6 +57,9 @@ const sample = (
 });
 
 describe("probeScrollGeometryDom — the actual serialized WDIO page script", () => {
+  const expectedSrc = (assetPath: string) =>
+    new URL(assetPath, document.baseURI).href;
+
   it("returns null when the selector matches nothing", () => {
     document.body.innerHTML = `<div class="other"></div>`;
     expect(probeScrollGeometryDom(".missing", false)).toBeNull();
@@ -72,6 +75,7 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     expect(probe?.scrollport).toBeNull();
     expect(probe?.viewport.width).toBe(window.innerWidth);
     expect(probe?.devicePixelRatio).toBe(window.devicePixelRatio);
+    expect(probe?.imageBinding).toEqual({ status: "unbound" });
     expect(SCROLLED).toHaveLength(0);
   });
 
@@ -99,9 +103,32 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     });
   });
 
-  it("picks the img whose src matches the fragment, not the first selector match", () => {
-    // The crop must measure the element inspectImageElement inspected —
-    // a stale or sibling record image earlier in the DOM cannot stand in.
+  it("binds a container crop target to the exact inspected image URL inside it", () => {
+    // The acquisition popup crops `.visual` (a wrapper) but must prove the
+    // geometry belongs to the <img> the source proof inspected.
+    document.body.innerHTML = `
+      <div class="acquisition-card">
+        <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
+      </div>
+    `;
+    const visual = document.querySelector(".acquisition-card .visual");
+    if (!visual) throw new Error("fixture missing visual wrapper");
+    setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    const src = expectedSrc("/assets/evidence/cctv.png");
+    const probe = probeScrollGeometryDom(
+      ".acquisition-card .visual",
+      false,
+      "img.evidence-image",
+      src,
+    );
+    expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+    expect(probe?.imageBinding).toEqual({ status: "bound", src });
+  });
+
+  it("measures the bound image, not a same-selector stale sibling that comes first", () => {
+    // A stale or sibling record image earlier in the DOM cannot anchor the
+    // crop: the target is an <img> selector, so geometry comes from the node
+    // whose URL was pinned by the source proof.
     document.body.innerHTML = `
       <img class="record-image" src="/assets/evidence/stale.png">
       <img class="record-image" src="/assets/evidence/expected.png">
@@ -111,29 +138,69 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     if (!stale || !expected) throw new Error("fixture missing images");
     setRect(stale, { left: 0, top: 0, width: 10, height: 10 });
     setRect(expected, { left: 10, top: 20, width: 300, height: 200 });
+    const src = expectedSrc("/assets/evidence/expected.png");
     const probe = probeScrollGeometryDom(
       ".record-image",
       false,
-      "/assets/evidence/expected.png",
+      ".record-image",
+      src,
     );
     expect(probe?.rect).toEqual({ left: 10, top: 20, width: 300, height: 200 });
+    expect(probe?.imageBinding).toEqual({ status: "bound", src });
   });
 
-  it("returns null when the fragment matches no mounted image", () => {
-    document.body.innerHTML = `<img class="record-image" src="/assets/evidence/stale.png">`;
-    expect(
-      probeScrollGeometryDom(
-        ".record-image",
-        false,
-        "/assets/evidence/expected.png",
-      ),
-    ).toBeNull();
+  it("reports missing (never a lookalike) for a path-suffix impostor", () => {
+    document.body.innerHTML = `
+      <img class="record-image" src="/assets/evidence/expected.png.backup">
+    `;
+    const image = document.querySelector(".record-image");
+    if (!image) throw new Error("fixture missing image");
+    setRect(image, { left: 10, top: 20, width: 300, height: 200 });
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+    );
+    expect(probe?.imageBinding).toEqual({ status: "missing" });
   });
 
-  it("resolves a non-img wrapper when WebDriver JSON-round-trips omitted srcFragment as null", () => {
-    // WebDriver serializes browser.execute(fn, sel, false, undefined) as
-    // [sel, false, null]; the acquisition popup crops .acquisition-card .visual
-    // (a wrapper div, not an <img>) without expectedPathFragment.
+  it("reports ambiguous when two nodes carry the exact same URL", () => {
+    document.body.innerHTML = `
+      <img class="record-image" src="/assets/evidence/expected.png">
+      <img class="record-image" src="/assets/evidence/expected.png">
+    `;
+    const probe = probeScrollGeometryDom(
+      ".record-image",
+      false,
+      ".record-image",
+      expectedSrc("/assets/evidence/expected.png"),
+    );
+    expect(probe?.imageBinding).toEqual({ status: "ambiguous", count: 2 });
+  });
+
+  it("reports outside-target when the bound image is not inside the crop target", () => {
+    document.body.innerHTML = `
+      <div class="visual"><img class="other-image" src="/assets/evidence/other.png"></div>
+      <img class="evidence-image" src="/assets/evidence/cctv.png">
+    `;
+    const visual = document.querySelector(".visual");
+    if (!visual) throw new Error("fixture missing visual");
+    setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
+    const src = expectedSrc("/assets/evidence/cctv.png");
+    const probe = probeScrollGeometryDom(
+      ".visual",
+      false,
+      "img.evidence-image",
+      src,
+    );
+    expect(probe?.imageBinding).toEqual({ status: "outside-target", src });
+  });
+
+  it("stays unbound when WebDriver round-trips omitted image params as null", () => {
+    // WebDriver serializes browser.execute(fn, sel, false, undefined,
+    // undefined) as [sel, false, null, null]; only callers that bind a crop
+    // to an inspected image pass the two extra arguments.
     document.body.innerHTML = `
       <div class="acquisition-card">
         <div class="visual"><img class="evidence-image" src="/assets/evidence/cctv.png"></div>
@@ -142,12 +209,25 @@ describe("probeScrollGeometryDom — the actual serialized WDIO page script", ()
     const visual = document.querySelector(".acquisition-card .visual");
     if (!visual) throw new Error("fixture missing visual wrapper");
     setRect(visual, { left: 20, top: 30, width: 240, height: 180 });
-    const [selector, scrollIntoView, srcFragment] = JSON.parse(
-      JSON.stringify([".acquisition-card .visual", false, undefined]),
-    ) as [string, boolean, string | null];
-    expect(srcFragment).toBeNull();
-    const probe = probeScrollGeometryDom(selector, scrollIntoView, srcFragment);
+    const [selector, scrollIntoView, imageSelector, expectedImageSrc] =
+      JSON.parse(
+        JSON.stringify([
+          ".acquisition-card .visual",
+          false,
+          undefined,
+          undefined,
+        ]),
+      ) as [string, boolean, string | null, string | null];
+    expect(imageSelector).toBeNull();
+    expect(expectedImageSrc).toBeNull();
+    const probe = probeScrollGeometryDom(
+      selector,
+      scrollIntoView,
+      imageSelector,
+      expectedImageSrc,
+    );
     expect(probe?.rect).toEqual({ left: 20, top: 30, width: 240, height: 180 });
+    expect(probe?.imageBinding).toEqual({ status: "unbound" });
   });
 
   it("skips an overflowY:auto ancestor that does not actually overflow", () => {

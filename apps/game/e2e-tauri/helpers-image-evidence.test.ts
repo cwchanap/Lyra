@@ -208,7 +208,7 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
 
   it("keeps the original source-proof error and still saves evidence when screenshot capture fails", async () => {
     const expectedPath = `/assets/evidence/cctv_screenshot.png`;
-    mountPopupDom(`http://localhost${expectedPath}`);
+    mountPopupDom(`http://localhost:1420${expectedPath}`);
     const saveScreenshot = vi.fn(async () => {
       throw new Error("compositor unavailable");
     });
@@ -397,21 +397,31 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
 });
 
 /**
- * WebKitGTK's `BitmapImage::draw` returns `DidRequestDecoding` — drawing
- * nothing — when the canvas asks for a decode variant the image cache has not
- * produced yet, and `img.decode()` only proves the *natural-size* image, not
- * that variant. The source proof therefore has to re-sample the canvas on
- * later turns instead of trusting the first draw, while a genuinely blank or
- * corrupt source must still fail after the bounded retries.
+ * Source-proof target identity + bounded canvas re-sampling.
+ *
+ * Observed on hosted E2E Full 46100294798: img.decode() resolved, the element
+ * was complete at 512x512 with the expected URL and visibly painted a moment
+ * later, yet one drawImage+getImageData readback was fully transparent while
+ * the same URL had produced real pixels earlier in the journey. A transient
+ * sampling failure is proven; the WebKit-internal cause is not. The proof
+ * must therefore (a) pin the exact node and its exact asset URL before
+ * decoding and keep proving that same pin after decode and on every retry,
+ * and (b) re-sample the canvas on later turns instead of trusting one draw —
+ * while a blank, corrupt or substituted source still fails.
  */
-describe("inspectImageElement canvas sampling under WebKit's blank first draw", () => {
-  const PATH_FRAGMENT = "/assets/evidence/timecard_record.png";
+describe("inspectImageElement source identity and canvas sampling", () => {
+  const SELECTOR = "img.case-file-record-image";
+  const PATH = "/assets/evidence/timecard_record.png";
+  const EXPECTED_SRC = `http://localhost:1420${PATH}`;
+  const LABEL = "Case File timecard_record (三宅打卡紀錄)";
 
-  function mountCaseFileImage(): HTMLImageElement {
+  type Frame = "blank" | "solid-top" | "pattern-bottom";
+
+  function mountCaseFileImage(src = EXPECTED_SRC): HTMLImageElement {
     document.body.innerHTML = "";
     const image = document.createElement("img");
     image.className = "case-file-record-image";
-    image.src = `tauri://localhost${PATH_FRAGMENT}`;
+    image.src = src;
     Object.defineProperty(image, "complete", {
       configurable: true,
       get: () => true,
@@ -433,31 +443,53 @@ describe("inspectImageElement canvas sampling under WebKit's blank first draw", 
     return image;
   }
 
-  /** Simulates WebKit's canvas: the first `blankDraws` draws land before the
-   * frame the canvas asked for exists, so they write nothing. */
-  function stubCanvasSampler(options: {
-    blankDraws: number;
-    onDraw?: (drawCount: number) => void;
-  }): () => number {
+  /**
+   * Stateful 8x8 canvas: the buffer starts transparent and keeps whatever a
+   * draw wrote until `clearRect` zeroes it, exactly like a real canvas. That
+   * statefulness is what makes a missing `clearRect` between re-samples
+   * observable (the assertions below pin exact alpha/bucket counts).
+   */
+  function stubCanvasSampler(
+    frames: readonly Frame[],
+    onDraw?: (drawCount: number) => void,
+  ): () => number {
+    const size = 8;
     let drawCount = 0;
+    let buffer = new Uint8ClampedArray(size * size * 4);
+    const paint = (kind: Frame) => {
+      if (kind === "blank") return;
+      const rows = kind === "solid-top" ? [0, 1, 2, 3] : [2, 3, 4, 5, 6, 7];
+      for (const y of rows) {
+        for (let x = 0; x < size; x += 1) {
+          const at = (y * size + x) * 4;
+          const single = kind === "solid-top";
+          buffer[at] = single ? 64 : 40 * y;
+          buffer[at + 1] = single ? 64 : 20 * y;
+          buffer[at + 2] = single ? 64 : 10 * y;
+          buffer[at + 3] = 255;
+        }
+      }
+    };
     const context = {
-      clearRect: () => {},
+      clearRect: (_x: number, _y: number, width: number, height: number) => {
+        buffer = new Uint8ClampedArray(width * height * 4);
+      },
       drawImage: () => {
         drawCount += 1;
-        options.onDraw?.(drawCount);
+        onDraw?.(drawCount);
+        paint(frames[Math.min(drawCount, frames.length) - 1] ?? "blank");
       },
-      getImageData: (x: number, y: number, width: number, height: number) => {
-        const data = new Uint8ClampedArray(width * height * 4);
-        if (drawCount > options.blankDraws) {
-          for (let offset = 0; offset < data.length; offset += 4) {
-            data[offset] = (offset * 3) % 256;
-            data[offset + 1] = (offset * 7) % 256;
-            data[offset + 2] = (offset * 11) % 256;
-            data[offset + 3] = 255;
-          }
-        }
-        return { data, width, height, colorSpace: "srgb" };
-      },
+      getImageData: (
+        _x: number,
+        _y: number,
+        width: number,
+        height: number,
+      ) => ({
+        data: buffer.slice(0, width * height * 4),
+        width,
+        height,
+        colorSpace: "srgb",
+      }),
     };
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
       (() => context) as unknown as HTMLCanvasElement["getContext"],
@@ -465,26 +497,43 @@ describe("inspectImageElement canvas sampling under WebKit's blank first draw", 
     return () => drawCount;
   }
 
+  const pageFns: {
+    execute: Array<(...args: unknown[]) => unknown>;
+    executeAsync: Array<(...args: unknown[]) => unknown>;
+  } = { execute: [], executeAsync: [] };
+
   function stubBrowser(): void {
+    pageFns.execute.length = 0;
+    pageFns.executeAsync.length = 0;
     vi.stubGlobal("browser", {
-      waitUntil: async (condition: () => Promise<boolean>) => {
-        if (!(await condition()))
-          throw new Error("condition never became true");
+      waitUntil: async (
+        condition: () => Promise<boolean>,
+        options?: { timeoutMsg?: string },
+      ) => {
+        if (!(await condition())) {
+          throw new Error(options?.timeoutMsg ?? "condition never became true");
+        }
         return true;
       },
-      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
-        Promise.resolve(fn(...args)),
+      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) => {
+        pageFns.execute.push(fn);
+        return Promise.resolve(fn(...args));
+      },
       executeAsync: (fn: (...args: unknown[]) => void, ...args: unknown[]) =>
         new Promise((resolve) => {
+          pageFns.executeAsync.push(fn);
+          // WebDriver serializes this function's source into the page. The
+          // stub invokes it directly in this realm; the standalone test
+          // below re-creates it from its serialized source.
           void fn(...args, resolve);
         }),
     });
   }
 
   const input = {
-    selector: "img.case-file-record-image",
-    expectedPathFragment: PATH_FRAGMENT,
-    label: "Case File timecard_record (三宅打卡紀錄)",
+    selector: SELECTOR,
+    expectedPath: PATH,
+    label: LABEL,
     timeoutMs: 1000,
   };
 
@@ -500,13 +549,17 @@ describe("inspectImageElement canvas sampling under WebKit's blank first draw", 
 
   it("re-samples the canvas until the pending decode lands and keeps the real-pixel proof", async () => {
     mountCaseFileImage();
-    stubCanvasSampler({ blankDraws: 1 });
+    stubCanvasSampler(["solid-top", "pattern-bottom"]);
 
-    const { inspection } = await helpers.inspectImageElement(input);
+    const { inspection, sourceUrl } = await helpers.inspectImageElement(input);
 
+    expect(sourceUrl).toBe(EXPECTED_SRC);
     expect(inspection.decode.ok).toBe(true);
+    // Draw 1 (solid, 2 buckets) must be cleared before draw 2 lands: with a
+    // missing clearRect the top-frame pixels survive and these counts differ.
     expect(inspection.canvas).toMatchObject({
-      alphaPixels: 64,
+      alphaPixels: 48,
+      distinctBuckets: 4,
       sampleAttempts: 2,
     });
     expect(() =>
@@ -516,9 +569,7 @@ describe("inspectImageElement canvas sampling under WebKit's blank first draw", 
 
   it("still fails when every bounded re-sample is blank — an empty source is never accepted", async () => {
     mountCaseFileImage();
-    const drawCount = stubCanvasSampler({
-      blankDraws: Number.POSITIVE_INFINITY,
-    });
+    const drawCount = stubCanvasSampler(["blank"]);
 
     const { inspection } = await helpers.inspectImageElement(input);
 
@@ -533,24 +584,147 @@ describe("inspectImageElement canvas sampling under WebKit's blank first draw", 
     );
   });
 
-  it("fails closed when the sampled image source changes mid-retry", async () => {
+  it("rejects a source that changes during decode instead of adopting the new URL", async () => {
     const image = mountCaseFileImage();
-    stubCanvasSampler({
-      blankDraws: Number.POSITIVE_INFINITY,
-      onDraw: (drawCount) => {
-        if (drawCount === 1) {
-          image.src = "tauri://localhost/assets/evidence/cctv_screenshot.png";
-        }
+    Object.assign(image, {
+      decode: async () => {
+        image.src = `http://localhost:1420/assets/evidence/cctv_screenshot.png`;
       },
+    });
+    stubCanvasSampler(["pattern-bottom"]);
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("source changed during inspection"),
+    });
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /source canvas sample failed/,
+    );
+  });
+
+  it("rejects a still-connected node that stops matching the selector on a retry", async () => {
+    const image = mountCaseFileImage();
+    stubCanvasSampler(["blank", "pattern-bottom"], (drawCount) => {
+      if (drawCount === 1) image.className = "no-longer-the-record-image";
     });
 
     const { inspection } = await helpers.inspectImageElement(input);
 
     expect(inspection.canvas).toMatchObject({
-      error: expect.stringContaining("source changed during sampling"),
+      error: expect.stringContaining("no longer matches selector"),
     });
-    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
-      /source canvas sample failed/,
+  });
+
+  it("does not mount a lookalike file whose path only ends with the expected asset path", async () => {
+    mountCaseFileImage(`${EXPECTED_SRC}.backup`);
+    stubCanvasSampler(["pattern-bottom"]);
+
+    await expect(helpers.inspectImageElement(input)).rejects.toThrow(
+      /did not mount/,
     );
+  });
+
+  it("does not mount the expected path from another origin", async () => {
+    mountCaseFileImage(
+      `https://cdn.example/assets/evidence/timecard_record.png`,
+    );
+    stubCanvasSampler(["pattern-bottom"]);
+
+    await expect(helpers.inspectImageElement(input)).rejects.toThrow(
+      /did not mount/,
+    );
+  });
+
+  it("runs the inspection page script standalone from its serialized source", async () => {
+    // WebDriver ships the function's SOURCE into the page, so the script may
+    // not close over this realm's module scope. Re-create it the same way and
+    // drive it with the same DOM: proves self-containment. This is a
+    // source-level evaluation, not a real WebDriver transport exercise.
+    mountCaseFileImage();
+    stubCanvasSampler(["pattern-bottom"]);
+    vi.stubGlobal("__name", (fn: unknown) => fn); // WebDriver's page polyfill
+    await helpers.inspectImageElement(input);
+
+    const pageScript = pageFns.executeAsync.at(-1);
+    expect(pageScript).toBeTypeOf("function");
+    const standalone = new Function(`return (${String(pageScript)})`)() as (
+      selector: string,
+      path: string,
+      done: (v: unknown) => void,
+    ) => void;
+    const result = await new Promise((resolve) => {
+      standalone(SELECTOR, PATH, resolve);
+    });
+
+    expect(result).toMatchObject({
+      decode: { ok: true },
+      canvas: { alphaPixels: 48, distinctBuckets: 4, sampleAttempts: 1 },
+    });
+  });
+});
+
+/**
+ * The compositor crop must measure the same node the source proof inspected.
+ * `probeScrollGeometryDom` reports an identity binding; a crop whose binding
+ * is not exactly the inspected URL is refused BEFORE the screenshot is taken,
+ * so no receipt can ever come from a sibling/stale/placeholder element.
+ */
+describe("assertScreenshotRegionPainted crop identity", () => {
+  const EXPECTED_SRC = `http://localhost:1420/assets/evidence/timecard_record.png`;
+  const SCREENSHOT = path.join(tmpdir(), "hpa852-crop-identity.png");
+
+  function stubProbe(binding: unknown): {
+    saveScreenshot: ReturnType<typeof vi.fn>;
+  } {
+    const saveScreenshot = vi.fn(async () => {});
+    vi.stubGlobal("browser", {
+      execute: async () => ({
+        rect: { left: 10, top: 20, width: 300, height: 200 },
+        scrollport: null,
+        viewport: { width: 800, height: 600 },
+        devicePixelRatio: 1,
+        imageBinding: binding,
+      }),
+      pause: async () => {},
+      saveScreenshot,
+    });
+    return { saveScreenshot };
+  }
+
+  const cropInput = {
+    selector: "img.case-file-record-image",
+    imageSelector: "img.case-file-record-image",
+    expectedImageSrc: EXPECTED_SRC,
+    label: "Case File timecard_record",
+    screenshotPath: SCREENSHOT,
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("fails before any screenshot when the target is not bound to the inspected image", async () => {
+    const { saveScreenshot } = stubProbe({
+      status: "outside-target",
+      src: EXPECTED_SRC,
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput),
+    ).rejects.toThrow(/is not bound to the inspected image/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects a probe whose bound URL is not exactly the inspected one", async () => {
+    const { saveScreenshot } = stubProbe({
+      status: "bound",
+      src: `http://localhost:1420/assets/evidence/cctv_screenshot.png`,
+    });
+
+    await expect(
+      helpers.assertScreenshotRegionPainted(cropInput),
+    ).rejects.toThrow(/is not bound to the inspected image/);
+    expect(saveScreenshot).not.toHaveBeenCalled();
   });
 });

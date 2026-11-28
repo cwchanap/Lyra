@@ -72,6 +72,7 @@ import {
 import {
   probeScrollGeometryDom,
   scrollGeometrySettled,
+  type ScrollGeometryProbe,
   type ScrollGeometrySample,
 } from "../src/lib/e2e/scroll-geometry";
 import {
@@ -2054,6 +2055,14 @@ function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
  * Callers pass the painted element: `.acquisition-card .visual` for the
  * popup, `img.case-file-record-image` for Case File.
  *
+ * Every geometry read is BOUND to the exact image the source proof
+ * inspected: `imageSelector` must resolve to the one image whose effective
+ * URL is exactly `expectedImageSrc` (the URL pinned by
+ * `inspectImageElement`), and that image must be the target itself or live
+ * inside it. A missing, duplicated, lookalike-URL or wrapper-foreign image
+ * throws before the screenshot, so a crop can never certify a different
+ * element than the one whose pixels were just proven.
+ *
  * `scrollIntoView` is for elements inside a scrollable container (the Case
  * File submenu's `.game-menu-extra` at 800x600): the element is scrolled
  * into view, its rect is re-read until stable, and the crop is intersected
@@ -2062,6 +2071,10 @@ function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
  */
 export async function assertScreenshotRegionPainted(input: {
   selector: string;
+  /** Selector of the image the geometry must bind to. */
+  imageSelector: string;
+  /** Exact effective URL pinned by `inspectImageElement`. */
+  expectedImageSrc: string;
   label: string;
   screenshotPath: string;
   /** CSS px to shave off each side (skips 1px borders + AA fringe). */
@@ -2069,10 +2082,6 @@ export async function assertScreenshotRegionPainted(input: {
   /** Scroll the element into view and intersect the crop with its nearest
    * y-scrollable ancestor. Required for elements inside a scrollport. */
   scrollIntoView?: boolean;
-  /** When set, resolve the target as the <img> whose src contains this
-   * fragment (the same predicate inspectImageElement uses) so the crop
-   * measures the inspected element, not the selector's first match. */
-  expectedPathFragment?: string;
 }): Promise<ScreenshotRegionPaintResult> {
   // The serialized page script lives in src/lib/e2e/scroll-geometry.ts so
   // the identical function WebDriver serializes is exercised by vitest.
@@ -2081,8 +2090,18 @@ export async function assertScreenshotRegionPainted(input: {
       probeScrollGeometryDom,
       input.selector,
       input.scrollIntoView === true,
-      input.expectedPathFragment,
+      input.imageSelector,
+      input.expectedImageSrc,
     );
+  const requireBoundTarget = (probe: ScrollGeometryProbe) => {
+    const binding = probe.imageBinding;
+    if (binding.status !== "bound" || binding.src !== input.expectedImageSrc) {
+      throw new Error(
+        `${input.label}: crop target ${input.selector} is not bound to the ` +
+          `inspected image ${input.expectedImageSrc} (binding=${JSON.stringify(binding)})`,
+      );
+    }
+  };
 
   let target = await readTarget();
   if (!target) {
@@ -2090,6 +2109,7 @@ export async function assertScreenshotRegionPainted(input: {
       `${input.label}: element ${input.selector} is not mounted for the screenshot crop`,
     );
   }
+  requireBoundTarget(target);
   if (target.rect.width <= 0 || target.rect.height <= 0) {
     throw new Error(
       `${input.label}: ${input.selector} has an empty rect ${JSON.stringify(target.rect)}`,
@@ -2114,6 +2134,7 @@ export async function assertScreenshotRegionPainted(input: {
           `${input.label}: element ${input.selector} unmounted while scrolling into view`,
         );
       }
+      requireBoundTarget(next);
       target = next;
       samples.push({ rect: next.rect, scrollport: next.scrollport });
       settled = scrollGeometrySettled(samples);
@@ -2165,6 +2186,9 @@ export async function assertScreenshotRegionPainted(input: {
       {
         label: input.label,
         selector: input.selector,
+        imageSelector: input.imageSelector,
+        expectedImageSrc: input.expectedImageSrc,
+        imageBinding: target.imageBinding,
         cssRect: target.rect,
         scrollportRect: target.scrollport,
         visibleCssRect,
@@ -2202,20 +2226,28 @@ export async function assertScreenshotRegionPainted(input: {
 export type ImageElementInspection = {
   mountWaitMs: number;
   inspection: AcquisitionImageInspection;
+  /** Effective URL pinned before decode — the exact image the crop proof
+   * must re-bind to (never a path-substring lookalike). */
+  sourceUrl: string;
 };
 
 /**
- * The shared source-image proof (plan B.4): wait for the image matching
- * `expectedPathFragment` under `selector`, then inspect it — pre-decode
- * `complete`/`currentSrc`, resource-timing entries (absence is reported as
- * `unavailable`, never fatal), `img.decode()`, post-decode dimensions and a
- * capture-proof-style canvas pixel sample. Used by the acquisition popup
- * (`.acquisition-card img.evidence-image`) and Case File
- * (`img.case-file-record-image`).
+ * The shared source-image proof (plan B.4): wait for the image whose
+ * effective URL is EXACTLY `expectedPath` resolved against the document
+ * (never a path substring, so `x.png.backup` cannot stand in), pin that node
+ * and URL, then inspect it — pre-decode `complete`/`currentSrc`,
+ * resource-timing entries (absence is reported as `unavailable`, never
+ * fatal), `img.decode()`, post-decode dimensions and a capture-proof-style
+ * canvas pixel sample. The same pin (node still the selector's match, URL
+ * unchanged) is re-proven after decode and on every re-sample, so a source
+ * swapped during the proof fails instead of being silently adopted. Used by
+ * the acquisition popup (`.acquisition-card img.evidence-image`) and Case
+ * File (`img.case-file-record-image`).
  */
 export async function inspectImageElement(input: {
   selector: string;
-  expectedPathFragment: string;
+  /** Asset path such as `/assets/evidence/cctv_screenshot.png`. */
+  expectedPath: string;
   label: string;
   timeoutMs?: number;
 }): Promise<ImageElementInspection> {
@@ -2223,20 +2255,19 @@ export async function inspectImageElement(input: {
   await browser.waitUntil(
     async () =>
       browser.execute(
-        (sel: string, pathFragment: string) => {
+        (sel: string, expectedPath: string) => {
+          const expectedSrc = new URL(expectedPath, document.baseURI).href;
           return Array.from(
             document.querySelectorAll<HTMLImageElement>(sel),
-          ).some((image) =>
-            (image.currentSrc || image.src).includes(pathFragment),
-          );
+          ).some((image) => (image.currentSrc || image.src) === expectedSrc);
         },
         input.selector,
-        input.expectedPathFragment,
+        input.expectedPath,
       ),
     {
       timeout: input.timeoutMs ?? 30000,
       interval: 100,
-      timeoutMsg: `${input.label}: image ${input.selector} for ${input.expectedPathFragment} did not mount`,
+      timeoutMsg: `${input.label}: image ${input.selector} for the exact URL of ${input.expectedPath} did not mount`,
     },
   );
   const mountWaitMs = Date.now() - mountStart;
@@ -2247,21 +2278,50 @@ export async function inspectImageElement(input: {
   >(
     async (
       sel: string,
-      pathFragment: string,
+      expectedPath: string,
       done: (result: AcquisitionImageInspection | { error: string }) => void,
     ) => {
+      const expectedSrc = new URL(expectedPath, document.baseURI).href;
       const image = Array.from(
         document.querySelectorAll<HTMLImageElement>(sel),
-      ).find((candidate) =>
-        (candidate.currentSrc || candidate.src).includes(pathFragment),
+      ).find(
+        (candidate) => (candidate.currentSrc || candidate.src) === expectedSrc,
       );
       if (!image) {
         done({
-          error: `image ${sel} for ${pathFragment} unmounted before inspection`,
+          error: `image ${sel} for ${expectedSrc} unmounted before inspection`,
         });
         return;
       }
-      const currentSrc = image.currentSrc || image.src;
+      // Pin BEFORE decoding: the proof is about this node and this exact
+      // URL. Any later substitution, detach or URL change fails closed
+      // instead of being measured as if it were the requested asset.
+      const pinnedSrc = image.currentSrc || image.src;
+      if (pinnedSrc !== expectedSrc) {
+        done({
+          error: `image ${sel} resolved to ${pinnedSrc}, expected ${expectedSrc}`,
+        });
+        return;
+      }
+      const pinFailure = (): string | null => {
+        if (!image.isConnected) {
+          return "image detached from the document during inspection";
+        }
+        if (
+          !Array.from(
+            document.querySelectorAll<HTMLImageElement>(sel),
+          ).includes(image)
+        ) {
+          return `image no longer matches selector ${sel} during inspection`;
+        }
+        const liveSrc = image.currentSrc || image.src;
+        if (liveSrc !== pinnedSrc) {
+          return `image source changed during inspection (${liveSrc}), expected ${pinnedSrc}`;
+        }
+        return null;
+      };
+      const currentSrc = pinnedSrc;
+
       let resourceTiming: AcquisitionImageTiming;
       try {
         const entries = performance.getEntriesByName(currentSrc);
@@ -2322,23 +2382,18 @@ export async function inspectImageElement(input: {
         surface.height = image.naturalHeight;
         const context = surface.getContext("2d", { willReadFrequently: true });
         if (!context) throw new Error("canvas 2d context unavailable");
-        // WebKitGTK's BitmapImage::draw returns DidRequestDecoding — drawing
-        // nothing — when the canvas asks for a decode variant the image cache
-        // has not produced yet, and img.decode() only proves the natural-size
-        // image, not that variant (a blank first draw is a known state, see
-        // WebKit's m_blankDrawCountForTesting). Re-sample on later turns until
-        // the draw lands; an image with no pixels never satisfies this.
+        // Hosted E2E Full 46100294798 read back one fully transparent canvas
+        // for an element that `img.decode()` had accepted and that visibly
+        // painted a moment later, after the same URL had sampled real pixels
+        // earlier in the run. A transient sampling failure is proven; the
+        // WebKit-internal cause is not. Re-sample on later turns instead of
+        // trusting a single draw — bounded, and the pin is re-proven on every
+        // attempt so a blank or substituted source never satisfies this.
         const resampleWaitsMs = [16, 32, 64, 128, 256, 512];
         let sampled: AcquisitionImageCanvasMetrics | null = null;
         for (let attempt = 1; ; attempt += 1) {
-          if (!image.isConnected) {
-            throw new Error("image detached from the document during sampling");
-          }
-          if ((image.currentSrc || image.src) !== postDecode.currentSrc) {
-            throw new Error(
-              `image source changed during sampling (${image.currentSrc || image.src})`,
-            );
-          }
+          const beforeDraw = pinFailure();
+          if (beforeDraw !== null) throw new Error(beforeDraw);
           context.clearRect(0, 0, surface.width, surface.height);
           context.drawImage(image, 0, 0);
           const pixels = context.getImageData(
@@ -2382,8 +2437,14 @@ export async function inspectImageElement(input: {
             maxLuminance: lumMax,
             sampleAttempts: attempt,
           };
+          if (alphaPixels > 0 && buckets.size >= 4) {
+            // The pixels only count if they came from the pinned source —
+            // the last check narrows the window between draw and verdict.
+            const afterDraw = pinFailure();
+            if (afterDraw !== null) throw new Error(afterDraw);
+            break;
+          }
           const waitMs = resampleWaitsMs[attempt - 1];
-          if (alphaPixels > 0 && buckets.size >= 4) break;
           if (waitMs === undefined) break;
           await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         }
@@ -2398,13 +2459,17 @@ export async function inspectImageElement(input: {
       done({ preDecode, resourceTiming, decode, postDecode, canvas });
     },
     input.selector,
-    input.expectedPathFragment,
+    input.expectedPath,
   );
 
   if ("error" in inspection) {
     throw new Error(`${input.label}: ${inspection.error}`);
   }
-  return { mountWaitMs, inspection };
+  return {
+    mountWaitMs,
+    inspection,
+    sourceUrl: inspection.preDecode.currentSrc,
+  };
 }
 
 /** One-line diagnostics for an inspected image — every log carries the full
@@ -2583,7 +2648,7 @@ async function verifyAcquisitionEvidenceImage(
     inspect: () =>
       inspectImageElement({
         selector: anchors.acquisitionEvidenceImageSelector,
-        expectedPathFragment: expectedPath,
+        expectedPath,
         label,
       }),
     report: ({ mountWaitMs, inspection }) =>
@@ -2593,9 +2658,11 @@ async function verifyAcquisitionEvidenceImage(
       ),
     assert: ({ inspection }) => assertInspectedImage(inspection, label),
     provePainted: scoped
-      ? async () => {
+      ? async (inspection) => {
           await assertScreenshotRegionPainted({
             selector: anchors.acquisitionVisualSelector,
+            imageSelector: anchors.acquisitionEvidenceImageSelector,
+            expectedImageSrc: inspection.sourceUrl,
             label: `acquisition popup ${imageAssetId} (${current.id})`,
             screenshotPath,
             insetCssPx: 2,

@@ -65,8 +65,9 @@ export type ImageEvidenceProofOptions<Inspection> = {
   inspect: () => Promise<Inspection>;
   report?: (inspection: Inspection) => void;
   assert: (inspection: Inspection) => void | Promise<void>;
-  /** The gated screenshot-crop compositor proof. */
-  provePainted?: () => Promise<void>;
+  /** The gated screenshot-crop compositor proof; receives the source proof
+   * so the crop can bind to the exact inspected image URL. */
+  provePainted?: (inspection: Inspection) => Promise<void>;
   /** Record the scoped compositor receipt — runs only after a passing
    * provePainted so a failed crop can never count as coverage. */
   onReceipt?: () => void;
@@ -89,7 +90,7 @@ export async function runImageEvidenceProof<Inspection>(
     options.report?.(inspection);
     await options.assert(inspection);
     if (options.provePainted !== undefined) {
-      await options.provePainted();
+      await options.provePainted(inspection);
       options.onReceipt?.();
     }
   } catch (error) {

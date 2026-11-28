@@ -3512,7 +3512,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       inspect: () =>
         inspectImageElement({
           selector: anchors.caseFileRecordImageSelector,
-          expectedPathFragment: expectedPath,
+          expectedPath,
           label,
         }),
       report: ({ mountWaitMs, inspection }) =>
@@ -3526,9 +3526,11 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
       // for stable geometry, and crop image-rect ∩ scrollport ∩ viewport —
       // sampling the raw DOM rect could read pixels the scrollport clips or
       // unrelated menu furniture (review: image-only painted region).
-      provePainted: async () => {
+      provePainted: async (inspection) => {
         await assertScreenshotRegionPainted({
           selector: anchors.caseFileRecordImageSelector,
+          imageSelector: anchors.caseFileRecordImageSelector,
+          expectedImageSrc: inspection.sourceUrl,
           label,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
@@ -3536,10 +3538,6 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
           ),
           insetCssPx: 1,
           scrollIntoView: true,
-          // Resolve the crop target by the same expected-src predicate the
-          // inspection used — a bare querySelector could measure a stale or
-          // sibling record image and green-light the wrong element.
-          expectedPathFragment: expectedPath,
         });
       },
       captureFailure: ({ error, inspection }) =>

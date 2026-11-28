@@ -17,43 +17,80 @@ export type ScrollGeometrySample = {
   scrollport: CssRect | null;
 };
 
+/**
+ * Whether the crop geometry is provably bound to the image the source proof
+ * inspected. Binding is by exact effective URL (never a path substring, so
+ * `timecard_record.png.backup` cannot stand in) plus containment in the crop
+ * target; the Node side refuses any verdict other than `bound` with the
+ * top-level source URL, so a stale, sibling, duplicated or wrapper-foreign
+ * image can never anchor the crop.
+ */
+export type ImageBinding =
+  | { status: "unbound" }
+  | { status: "bound"; src: string }
+  | { status: "missing" }
+  | { status: "ambiguous"; count: number }
+  | { status: "outside-target"; src: string };
+
 export type ScrollGeometryProbe = ScrollGeometrySample & {
   viewport: { width: number; height: number };
   devicePixelRatio: number;
+  imageBinding: ImageBinding;
 };
 
 /**
  * THE serialized WDIO page script — passed verbatim to
  * `browser.execute(probeScrollGeometryDom, selector, scrollIntoView,
- * srcFragment?)`,
+ * imageSelector?, expectedImageSrc?)`,
  * so it must stay self-contained (parameters + DOM globals only; module
  * scope does not survive WebDriver serialization). Unit tests invoke the
  * identical function against jsdom.
  *
  * Reads the target element's rect plus its nearest y-scrollable ancestor
  * (the scrollport that clips the painted area); `scrollIntoView` scrolls
- * every clipped ancestor synchronously first, matching the pre-extraction
- * inline script byte for byte.
+ * every clipped ancestor synchronously first.
  *
- * When `srcFragment` is passed the target is resolved the same way
- * inspectImageElement resolves it — the matched element must be an
- * <img> whose src contains the fragment — so a crop can never measure a
- * different (e.g. stale or sibling) element than the one inspected.
+ * When `imageSelector`/`expectedImageSrc` are passed the probe binds the
+ * geometry to the image whose effective URL is EXACTLY `expectedImageSrc`
+ * (the URL pinned by `inspectImageElement`): an <img> target resolves to the
+ * bound node itself (a stale sibling can never win), a container target must
+ * contain it, and zero/duplicate matches are reported instead of guessed at.
  */
 export function probeScrollGeometryDom(
   selector: string,
   scrollIntoView: boolean,
-  srcFragment?: string | null,
+  imageSelector?: string | null,
+  expectedImageSrc?: string | null,
 ): ScrollGeometryProbe | null {
-  const element =
-    typeof srcFragment !== "string"
-      ? document.querySelector(selector)
-      : (Array.from(document.querySelectorAll(selector)).find(
-          (candidate) =>
-            candidate instanceof HTMLImageElement &&
-            (candidate.currentSrc || candidate.src).includes(srcFragment),
-        ) ?? null);
-  if (!element) return null;
+  const first = document.querySelector(selector);
+  if (!first) return null;
+
+  let element: Element = first;
+  let imageBinding: ImageBinding = { status: "unbound" };
+  if (
+    typeof imageSelector === "string" &&
+    typeof expectedImageSrc === "string"
+  ) {
+    const matches = Array.from(
+      document.querySelectorAll<HTMLImageElement>(imageSelector),
+    ).filter((image) => (image.currentSrc || image.src) === expectedImageSrc);
+    const [image] = matches;
+    if (matches.length === 0) {
+      imageBinding = { status: "missing" };
+    } else if (matches.length > 1 || image === undefined) {
+      imageBinding = { status: "ambiguous", count: matches.length };
+    } else if (first instanceof HTMLImageElement) {
+      // The crop targets the image itself: measure the bound node, never a
+      // same-selector sibling that happens to come first in the DOM.
+      element = image;
+      imageBinding = { status: "bound", src: expectedImageSrc };
+    } else if (first.contains(image)) {
+      imageBinding = { status: "bound", src: expectedImageSrc };
+    } else {
+      imageBinding = { status: "outside-target", src: expectedImageSrc };
+    }
+  }
+
   if (scrollIntoView) {
     element.scrollIntoView({ block: "center", inline: "nearest" });
   }
@@ -88,6 +125,7 @@ export function probeScrollGeometryDom(
       height: window.innerHeight,
     },
     devicePixelRatio: window.devicePixelRatio,
+    imageBinding,
   };
 }
 
