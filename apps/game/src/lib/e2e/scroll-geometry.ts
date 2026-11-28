@@ -18,19 +18,21 @@ export type ScrollGeometrySample = {
 };
 
 /**
- * Whether the crop geometry is provably bound to the image the source proof
- * inspected. Binding is by exact effective URL (never a path substring, so
- * `timecard_record.png.backup` cannot stand in) plus containment in the crop
- * target; the Node side refuses any verdict other than `bound` with the
- * top-level source URL, so a stale, sibling, duplicated or wrapper-foreign
- * image can never anchor the crop.
+ * Whether the crop geometry is bound to the EXACT DOM node the source proof
+ * inspected. The source script stores that node in a page-owned pin registry
+ * (`__lyraImageEvidencePins`, key = a per-inspection token); the probe
+ * resolves the token and requires the same live, connected node, still the
+ * selector's only match with the exact pinned URL, and inside the crop
+ * target. A same-URL replacement node has no pin, so it can never stand in.
  */
 export type ImageBinding =
   | { status: "unbound" }
-  | { status: "bound"; src: string }
-  | { status: "missing" }
+  | { status: "missing"; pin: string }
+  | { status: "detached"; pin: string }
+  | { status: "stale"; pin: string }
   | { status: "ambiguous"; count: number }
-  | { status: "outside-target"; src: string };
+  | { status: "outside-target"; src: string }
+  | { status: "bound"; src: string; pin: string };
 
 export type ScrollGeometryProbe = ScrollGeometrySample & {
   viewport: { width: number; height: number };
@@ -41,7 +43,7 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
 /**
  * THE serialized WDIO page script — passed verbatim to
  * `browser.execute(probeScrollGeometryDom, selector, scrollIntoView,
- * imageSelector?, expectedImageSrc?)`,
+ * imageSelector?, expectedImageSrc?, pin?)`,
  * so it must stay self-contained (parameters + DOM globals only; module
  * scope does not survive WebDriver serialization). Unit tests invoke the
  * identical function against jsdom.
@@ -50,17 +52,19 @@ export type ScrollGeometryProbe = ScrollGeometrySample & {
  * (the scrollport that clips the painted area); `scrollIntoView` scrolls
  * every clipped ancestor synchronously first.
  *
- * When `imageSelector`/`expectedImageSrc` are passed the probe binds the
- * geometry to the image whose effective URL is EXACTLY `expectedImageSrc`
- * (the URL pinned by `inspectImageElement`): an <img> target resolves to the
- * bound node itself (a stale sibling can never win), a container target must
- * contain it, and zero/duplicate matches are reported instead of guessed at.
+ * When `imageSelector`/`expectedImageSrc`/`pin` are passed the probe binds
+ * the geometry to the page-pinned node: the token must still resolve to the
+ * same live element, that element must be the ONLY selector match carrying
+ * the exact expected URL, and it must be (or live inside) the crop target.
+ * A stale sibling, a same-URL replacement or a duplicated match is reported
+ * as such, never guessed at.
  */
 export function probeScrollGeometryDom(
   selector: string,
   scrollIntoView: boolean,
   imageSelector?: string | null,
   expectedImageSrc?: string | null,
+  pin?: string | null,
 ): ScrollGeometryProbe | null {
   const first = document.querySelector(selector);
   if (!first) return null;
@@ -69,25 +73,47 @@ export function probeScrollGeometryDom(
   let imageBinding: ImageBinding = { status: "unbound" };
   if (
     typeof imageSelector === "string" &&
-    typeof expectedImageSrc === "string"
+    typeof expectedImageSrc === "string" &&
+    typeof pin === "string"
   ) {
-    const matches = Array.from(
-      document.querySelectorAll<HTMLImageElement>(imageSelector),
-    ).filter((image) => (image.currentSrc || image.src) === expectedImageSrc);
-    const [image] = matches;
-    if (matches.length === 0) {
-      imageBinding = { status: "missing" };
-    } else if (matches.length > 1 || image === undefined) {
-      imageBinding = { status: "ambiguous", count: matches.length };
+    const registry = (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
+    const pinned = registry?.[pin];
+    const selectorMatches = Array.from(
+      document.querySelectorAll(imageSelector),
+    ).filter(
+      (candidate): candidate is HTMLImageElement =>
+        candidate instanceof HTMLImageElement &&
+        (candidate.currentSrc || candidate.src) === expectedImageSrc,
+    );
+    if (!(pinned instanceof HTMLImageElement)) {
+      imageBinding = { status: "missing", pin };
+    } else if (!pinned.isConnected) {
+      imageBinding = { status: "detached", pin };
+    } else if ((pinned.currentSrc || pinned.src) !== expectedImageSrc) {
+      imageBinding = { status: "stale", pin };
+    } else if (selectorMatches.length > 1) {
+      imageBinding = { status: "ambiguous", count: selectorMatches.length };
+    } else if (selectorMatches[0] !== pinned) {
+      // The selector/URL now resolves to a different node than the pin.
+      imageBinding = { status: "stale", pin };
     } else if (first instanceof HTMLImageElement) {
-      // The crop targets the image itself: measure the bound node, never a
-      // same-selector sibling that happens to come first in the DOM.
-      element = image;
-      imageBinding = { status: "bound", src: expectedImageSrc };
-    } else if (first.contains(image)) {
-      imageBinding = { status: "bound", src: expectedImageSrc };
+      // Image-selector crop: measure the pinned node, never a same-selector
+      // sibling that happens to come first in the DOM.
+      element = pinned;
+      imageBinding = { status: "bound", src: expectedImageSrc, pin };
     } else {
-      imageBinding = { status: "outside-target", src: expectedImageSrc };
+      const targetMatches = document.querySelectorAll(selector).length;
+      if (targetMatches > 1) {
+        imageBinding = { status: "ambiguous", count: targetMatches };
+      } else if (!first.contains(pinned)) {
+        imageBinding = { status: "outside-target", src: expectedImageSrc };
+      } else {
+        imageBinding = { status: "bound", src: expectedImageSrc, pin };
+      }
     }
   }
 

@@ -71,6 +71,7 @@ import {
 } from "../src/lib/e2e/screenshot-pixels";
 import {
   probeScrollGeometryDom,
+  scrollGeometryEqual,
   scrollGeometrySettled,
   type ScrollGeometryProbe,
   type ScrollGeometrySample,
@@ -2058,10 +2059,14 @@ function intersectCssRects(a: CssRectLike, b: CssRectLike): CssRectLike {
  * Every geometry read is BOUND to the exact image the source proof
  * inspected: `imageSelector` must resolve to the one image whose effective
  * URL is exactly `expectedImageSrc` (the URL pinned by
- * `inspectImageElement`), and that image must be the target itself or live
- * inside it. A missing, duplicated, lookalike-URL or wrapper-foreign image
- * throws before the screenshot, so a crop can never certify a different
- * element than the one whose pixels were just proven.
+ * `inspectImageElement`), `pin` must resolve to that same live node, and the
+ * node must be the target itself or live inside it. A missing, replaced,
+ * duplicated, lookalike-URL or wrapper-foreign image throws before the
+ * screenshot, so a crop can never certify a different element than the one
+ * whose pixels were just proven. Identity and geometry are re-read AFTER the
+ * screenshot too: a replacement, retarget or move while the capture was
+ * pending invalidates the capture (throw + `-invalidation.json`) and can
+ * therefore never produce a receipt.
  *
  * `scrollIntoView` is for elements inside a scrollable container (the Case
  * File submenu's `.game-menu-extra` at 800x600): the element is scrolled
@@ -2075,6 +2080,8 @@ export async function assertScreenshotRegionPainted(input: {
   imageSelector: string;
   /** Exact effective URL pinned by `inspectImageElement`. */
   expectedImageSrc: string;
+  /** Page-owned token for the exact node `inspectImageElement` decoded. */
+  pin: string;
   label: string;
   screenshotPath: string;
   /** CSS px to shave off each side (skips 1px borders + AA fringe). */
@@ -2092,15 +2099,65 @@ export async function assertScreenshotRegionPainted(input: {
       input.scrollIntoView === true,
       input.imageSelector,
       input.expectedImageSrc,
+      input.pin,
     );
   const requireBoundTarget = (probe: ScrollGeometryProbe) => {
     const binding = probe.imageBinding;
-    if (binding.status !== "bound" || binding.src !== input.expectedImageSrc) {
+    if (
+      binding.status !== "bound" ||
+      binding.src !== input.expectedImageSrc ||
+      binding.pin !== input.pin
+    ) {
       throw new Error(
         `${input.label}: crop target ${input.selector} is not bound to the ` +
-          `inspected image ${input.expectedImageSrc} (binding=${JSON.stringify(binding)})`,
+          `inspected image ${input.expectedImageSrc} (pin=${input.pin}, ` +
+          `binding=${JSON.stringify(binding)})`,
       );
     }
+  };
+  const invalidate: (
+    reason: string,
+    before: ScrollGeometryProbe,
+    after: unknown,
+  ) => never = (reason, before, after) => {
+    const invalidationPath = input.screenshotPath.replace(
+      /\.png$/,
+      "-invalidation.json",
+    );
+    try {
+      mkdirSync(path.dirname(invalidationPath), { recursive: true });
+      writeFileSync(
+        invalidationPath,
+        `${JSON.stringify(
+          {
+            label: input.label,
+            selector: input.selector,
+            imageSelector: input.imageSelector,
+            expectedImageSrc: input.expectedImageSrc,
+            pin: input.pin,
+            invalidated: true,
+            reason,
+            before: {
+              rect: before.rect,
+              scrollport: before.scrollport,
+              imageBinding: before.imageBinding,
+            },
+            after,
+            screenshotPath: input.screenshotPath,
+          },
+          null,
+          2,
+        )}\n`,
+      );
+    } catch (writeError) {
+      console.error(
+        `[ScreenshotCrop] ${input.label}: invalidation write failed:`,
+        writeError,
+      );
+    }
+    throw new Error(
+      `${input.label}: screenshot capture invalidated — ${reason} (before=${JSON.stringify({ rect: before.rect, scrollport: before.scrollport, imageBinding: before.imageBinding })}, after=${JSON.stringify(after)})`,
+    );
   };
 
   let target = await readTarget();
@@ -2167,6 +2224,49 @@ export async function assertScreenshotRegionPainted(input: {
   }
   mkdirSync(path.dirname(input.screenshotPath), { recursive: true });
   await browser.saveScreenshot(input.screenshotPath);
+  // The PNG is only evidence for the pinned node if that node — and its
+  // geometry — survived the capture. Re-read AFTER the screenshot and refuse
+  // the capture if the target was replaced, retargeted or moved while it was
+  // pending; a change that fully reverts inside the call window is not
+  // observable from the page and stays a documented limit.
+  const afterCapture = await readTarget();
+  if (!afterCapture) {
+    invalidate(
+      "the crop target unmounted while the screenshot was pending",
+      target,
+      null,
+    );
+  }
+  const afterBinding = afterCapture.imageBinding;
+  const bindingChanged =
+    afterBinding.status !== "bound" ||
+    afterBinding.src !== input.expectedImageSrc ||
+    afterBinding.pin !== input.pin;
+  const viewportChanged =
+    afterCapture.viewport.width !== target.viewport.width ||
+    afterCapture.viewport.height !== target.viewport.height ||
+    afterCapture.devicePixelRatio !== target.devicePixelRatio;
+  if (
+    bindingChanged ||
+    viewportChanged ||
+    !scrollGeometryEqual(target, afterCapture)
+  ) {
+    invalidate(
+      bindingChanged
+        ? "the crop target is no longer bound to the inspected node"
+        : viewportChanged
+          ? "the viewport changed while the screenshot was pending"
+          : "the crop geometry changed while the screenshot was pending",
+      target,
+      {
+        rect: afterCapture.rect,
+        scrollport: afterCapture.scrollport,
+        viewport: afterCapture.viewport,
+        devicePixelRatio: afterCapture.devicePixelRatio,
+        imageBinding: afterBinding,
+      },
+    );
+  }
   const png = decodePng(readFileSync(input.screenshotPath));
   const screenshotScale = {
     x: png.width / target.viewport.width,
@@ -2188,7 +2288,9 @@ export async function assertScreenshotRegionPainted(input: {
         selector: input.selector,
         imageSelector: input.imageSelector,
         expectedImageSrc: input.expectedImageSrc,
+        pin: input.pin,
         imageBinding: target.imageBinding,
+        validatedAfterCapture: afterCapture.imageBinding,
         cssRect: target.rect,
         scrollportRect: target.scrollport,
         visibleCssRect,
@@ -2229,20 +2331,41 @@ export type ImageElementInspection = {
   /** Effective URL pinned before decode — the exact image the crop proof
    * must re-bind to (never a path-substring lookalike). */
   sourceUrl: string;
+  /** Page-owned token for the exact node that was decoded; the crop resolves
+   * it so a same-URL replacement node can never earn the receipt. Released by
+   * `releaseImageElementPin` after the proof. */
+  pin: string;
 };
+
+/**
+ * Release the page-owned node pin once the proof (source + crop) is done, so
+ * repeated proofs cannot leak or collide. Best-effort: the caller's proof
+ * result must never be masked by a cleanup failure.
+ */
+export async function releaseImageElementPin(pin: string): Promise<void> {
+  await browser.execute((token: string) => {
+    const registry = (
+      globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      }
+    ).__lyraImageEvidencePins;
+    if (registry !== undefined) delete registry[token];
+  }, pin);
+}
 
 /**
  * The shared source-image proof (plan B.4): wait for the image whose
  * effective URL is EXACTLY `expectedPath` resolved against the document
- * (never a path substring, so `x.png.backup` cannot stand in), pin that node
- * and URL, then inspect it — pre-decode `complete`/`currentSrc`,
- * resource-timing entries (absence is reported as `unavailable`, never
- * fatal), `img.decode()`, post-decode dimensions and a capture-proof-style
- * canvas pixel sample. The same pin (node still the selector's match, URL
- * unchanged) is re-proven after decode and on every re-sample, so a source
- * swapped during the proof fails instead of being silently adopted. Used by
- * the acquisition popup (`.acquisition-card img.evidence-image`) and Case
- * File (`img.case-file-record-image`).
+ * (never a path substring, so `x.png.backup` cannot stand in), require a
+ * single candidate, pin that node and URL in a page-owned registry, then
+ * inspect it — pre-decode `complete`/`currentSrc`, resource-timing entries
+ * (absence is reported as `unavailable`, never fatal), `img.decode()`,
+ * post-decode dimensions and a capture-proof-style canvas pixel sample. The
+ * same pin (node still the selector's match, URL unchanged) is re-proven
+ * after decode and on every re-sample, so a source swapped during the proof
+ * fails instead of being silently adopted. Used by the acquisition popup
+ * (`.acquisition-card img.evidence-image`) and Case File
+ * (`img.case-file-record-image`).
  */
 export async function inspectImageElement(input: {
   selector: string;
@@ -2273,21 +2396,38 @@ export async function inspectImageElement(input: {
   const mountWaitMs = Date.now() - mountStart;
 
   const inspection = await browser.executeAsync<
-    AcquisitionImageInspection | { error: string },
+    (AcquisitionImageInspection & { pin: string }) | { error: string },
     [string, string]
   >(
     async (
       sel: string,
       expectedPath: string,
-      done: (result: AcquisitionImageInspection | { error: string }) => void,
+      done: (
+        result:
+          | (AcquisitionImageInspection & { pin: string })
+          | { error: string },
+      ) => void,
     ) => {
       const expectedSrc = new URL(expectedPath, document.baseURI).href;
-      const image = Array.from(
+      const candidates = Array.from(
         document.querySelectorAll<HTMLImageElement>(sel),
-      ).find(
+      ).filter(
         (candidate) => (candidate.currentSrc || candidate.src) === expectedSrc,
       );
-      if (!image) {
+      if (candidates.length === 0) {
+        done({
+          error: `image ${sel} for ${expectedSrc} unmounted before inspection`,
+        });
+        return;
+      }
+      if (candidates.length > 1) {
+        done({
+          error: `image ${sel} matched ${candidates.length} elements with ${expectedSrc} — the proof cannot tell which node is painted`,
+        });
+        return;
+      }
+      const image = candidates[0];
+      if (image === undefined) {
         done({
           error: `image ${sel} for ${expectedSrc} unmounted before inspection`,
         });
@@ -2303,6 +2443,31 @@ export async function inspectImageElement(input: {
         });
         return;
       }
+      // Page-owned identity for the crop phase: the node itself, not a URL
+      // lookup that a same-URL replacement could satisfy. The token is
+      // unique per inspection and released by the caller after the proof.
+      const pageGlobal = globalThis as typeof globalThis & {
+        __lyraImageEvidencePins?: Record<string, Element | undefined>;
+      };
+      if (pageGlobal.__lyraImageEvidencePins === undefined) {
+        pageGlobal.__lyraImageEvidencePins = Object.create(null) as Record<
+          string,
+          Element | undefined
+        >;
+      }
+      const pins = pageGlobal.__lyraImageEvidencePins;
+      let pin = "";
+      for (let attempt = 0; attempt < 4 && pin === ""; attempt += 1) {
+        const candidate = `pin-${Date.now().toString(36)}-${Math.random()
+          .toString(36)
+          .slice(2, 10)}-${attempt}`;
+        if (pins[candidate] === undefined) pin = candidate;
+      }
+      if (pin === "") {
+        done({ error: "could not allocate a page-owned image pin" });
+        return;
+      }
+      pins[pin] = image;
       const pinFailure = (): string | null => {
         if (!image.isConnected) {
           return "image detached from the document during inspection";
@@ -2456,7 +2621,7 @@ export async function inspectImageElement(input: {
           error: error instanceof Error ? error.message : String(error),
         };
       }
-      done({ preDecode, resourceTiming, decode, postDecode, canvas });
+      done({ preDecode, resourceTiming, decode, postDecode, canvas, pin });
     },
     input.selector,
     input.expectedPath,
@@ -2469,6 +2634,7 @@ export async function inspectImageElement(input: {
     mountWaitMs,
     inspection,
     sourceUrl: inspection.preDecode.currentSrc,
+    pin: inspection.pin,
   };
 }
 
@@ -2663,12 +2829,16 @@ async function verifyAcquisitionEvidenceImage(
             selector: anchors.acquisitionVisualSelector,
             imageSelector: anchors.acquisitionEvidenceImageSelector,
             expectedImageSrc: inspection.sourceUrl,
+            pin: inspection.pin,
             label: `acquisition popup ${imageAssetId} (${current.id})`,
             screenshotPath,
             insetCssPx: 2,
           });
         }
       : undefined,
+    // Free the page-owned node pin on every path, so a failed or repeated
+    // proof cannot leak or collide with the next inspection.
+    releaseInspection: ({ pin }) => releaseImageElementPin(pin),
     // The receipt lands only after a passing crop — a thrown proof must
     // never count this record as covered.
     onReceipt: scoped

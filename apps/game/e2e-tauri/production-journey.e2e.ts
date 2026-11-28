@@ -31,6 +31,7 @@ import {
   MINIMUM_WINDOW,
   observedCssViewport,
   openGameMenu,
+  releaseImageElementPin,
   resetE2eStorage,
   returnToTitle,
   saveManualSlot,
@@ -3531,6 +3532,7 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
           selector: anchors.caseFileRecordImageSelector,
           imageSelector: anchors.caseFileRecordImageSelector,
           expectedImageSrc: inspection.sourceUrl,
+          pin: inspection.pin,
           label,
           screenshotPath: path.join(
             HPA831_ARTIFACT_DIR,
@@ -3540,6 +3542,8 @@ async function verifyHpa831CaseFileRecords(gate: MapGate): Promise<void> {
           scrollIntoView: true,
         });
       },
+      // Release the page-owned node pin on every path.
+      releaseInspection: ({ pin }) => releaseImageElementPin(pin),
       captureFailure: ({ error, inspection }) =>
         captureImageFailureDiagnostics({
           label,

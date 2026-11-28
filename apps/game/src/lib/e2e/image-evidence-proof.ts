@@ -71,6 +71,9 @@ export type ImageEvidenceProofOptions<Inspection> = {
   /** Record the scoped compositor receipt — runs only after a passing
    * provePainted so a failed crop can never count as coverage. */
   onReceipt?: () => void;
+  /** Free page-owned inspection state (the image node pin) on EVERY path,
+   * success or failure, so a retried/failed proof cannot leak or collide. */
+  releaseInspection?: (inspection: Inspection) => Promise<void>;
   /** Save the required failure evidence; may itself reject without
    * suppressing the original error. `inspection` is null when the image
    * never produced one. */
@@ -98,6 +101,14 @@ export async function runImageEvidenceProof<Inspection>(
       options.captureFailure({ error, inspection }),
     );
     throw error;
+  } finally {
+    const inspected = inspection;
+    if (inspected !== null && options.releaseInspection !== undefined) {
+      // Cleanup must never mask the proof's own result.
+      await capturePreservingError(
+        () => options.releaseInspection?.(inspected) ?? Promise.resolve(),
+      );
+    }
   }
 }
 
