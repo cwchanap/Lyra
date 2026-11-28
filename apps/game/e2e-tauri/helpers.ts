@@ -1947,6 +1947,8 @@ export type AcquisitionImageCanvasMetrics =
       luminanceStdDev: number;
       minLuminance: number;
       maxLuminance: number;
+      /** Canvas draws spent proving the decoded frame (1 = no re-sample). */
+      sampleAttempts: number;
     }
   | { error: string };
 
@@ -2320,47 +2322,74 @@ export async function inspectImageElement(input: {
         surface.height = image.naturalHeight;
         const context = surface.getContext("2d", { willReadFrequently: true });
         if (!context) throw new Error("canvas 2d context unavailable");
-        context.drawImage(image, 0, 0);
-        const pixels = context.getImageData(
-          0,
-          0,
-          surface.width,
-          surface.height,
-        ).data;
-        let alphaPixels = 0;
-        for (let offset = 3; offset < pixels.length; offset += 4) {
-          if ((pixels[offset] ?? 0) > 0) alphaPixels += 1;
+        // WebKitGTK's BitmapImage::draw returns DidRequestDecoding — drawing
+        // nothing — when the canvas asks for a decode variant the image cache
+        // has not produced yet, and img.decode() only proves the natural-size
+        // image, not that variant (a blank first draw is a known state, see
+        // WebKit's m_blankDrawCountForTesting). Re-sample on later turns until
+        // the draw lands; an image with no pixels never satisfies this.
+        const resampleWaitsMs = [16, 32, 64, 128, 256, 512];
+        let sampled: AcquisitionImageCanvasMetrics | null = null;
+        for (let attempt = 1; ; attempt += 1) {
+          if (!image.isConnected) {
+            throw new Error("image detached from the document during sampling");
+          }
+          if ((image.currentSrc || image.src) !== postDecode.currentSrc) {
+            throw new Error(
+              `image source changed during sampling (${image.currentSrc || image.src})`,
+            );
+          }
+          context.clearRect(0, 0, surface.width, surface.height);
+          context.drawImage(image, 0, 0);
+          const pixels = context.getImageData(
+            0,
+            0,
+            surface.width,
+            surface.height,
+          ).data;
+          let alphaPixels = 0;
+          for (let offset = 3; offset < pixels.length; offset += 4) {
+            if ((pixels[offset] ?? 0) > 0) alphaPixels += 1;
+          }
+          const buckets = new Set<number>();
+          let sampleCount = 0;
+          let lumSum = 0;
+          let lumSq = 0;
+          let lumMin = 0;
+          let lumMax = 0;
+          // Every 64th byte = every 16th pixel, the capture-proof sample stride.
+          for (let offset = 0; offset < pixels.length; offset += 64) {
+            const r = pixels[offset] ?? 0;
+            const g = pixels[offset + 1] ?? 0;
+            const b = pixels[offset + 2] ?? 0;
+            buckets.add(((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5));
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            sampleCount += 1;
+            lumSum += lum;
+            lumSq += lum * lum;
+            if (sampleCount === 1 || lum < lumMin) lumMin = lum;
+            if (lum > lumMax) lumMax = lum;
+          }
+          const mean = sampleCount === 0 ? 0 : lumSum / sampleCount;
+          const variance =
+            sampleCount === 0 ? 0 : lumSq / sampleCount - mean * mean;
+          sampled = {
+            alphaPixels,
+            distinctBuckets: buckets.size,
+            luminanceMean: mean,
+            luminanceStdDev: Math.sqrt(Math.max(0, variance)),
+            minLuminance: lumMin,
+            maxLuminance: lumMax,
+            sampleAttempts: attempt,
+          };
+          const waitMs = resampleWaitsMs[attempt - 1];
+          if (alphaPixels > 0 && buckets.size >= 4) break;
+          if (waitMs === undefined) break;
+          await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
         }
-        const buckets = new Set<number>();
-        let sampleCount = 0;
-        let lumSum = 0;
-        let lumSq = 0;
-        let lumMin = 0;
-        let lumMax = 0;
-        // Every 64th byte = every 16th pixel, the capture-proof sample stride.
-        for (let offset = 0; offset < pixels.length; offset += 64) {
-          const r = pixels[offset] ?? 0;
-          const g = pixels[offset + 1] ?? 0;
-          const b = pixels[offset + 2] ?? 0;
-          buckets.add(((r >> 5) << 6) | ((g >> 5) << 3) | (b >> 5));
-          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-          sampleCount += 1;
-          lumSum += lum;
-          lumSq += lum * lum;
-          if (sampleCount === 1 || lum < lumMin) lumMin = lum;
-          if (lum > lumMax) lumMax = lum;
-        }
-        const mean = sampleCount === 0 ? 0 : lumSum / sampleCount;
-        const variance =
-          sampleCount === 0 ? 0 : lumSq / sampleCount - mean * mean;
-        canvas = {
-          alphaPixels,
-          distinctBuckets: buckets.size,
-          luminanceMean: mean,
-          luminanceStdDev: Math.sqrt(Math.max(0, variance)),
-          minLuminance: lumMin,
-          maxLuminance: lumMax,
-        };
+        if (sampled === null)
+          throw new Error("canvas sampling produced no sample");
+        canvas = sampled;
       } catch (error) {
         canvas = {
           error: error instanceof Error ? error.message : String(error),
@@ -2400,7 +2429,7 @@ export function formatImageInspection(
     `src=${inspection.postDecode.currentSrc} ` +
     ("error" in inspection.canvas
       ? `canvasError=${inspection.canvas.error}`
-      : `canvas={alphaPx:${inspection.canvas.alphaPixels},buckets:${inspection.canvas.distinctBuckets},lumMean:${inspection.canvas.luminanceMean.toFixed(1)},lumStd:${inspection.canvas.luminanceStdDev.toFixed(2)},lumRange:${inspection.canvas.minLuminance.toFixed(0)}-${inspection.canvas.maxLuminance.toFixed(0)}}`)
+      : `canvas={alphaPx:${inspection.canvas.alphaPixels},buckets:${inspection.canvas.distinctBuckets},tries:${inspection.canvas.sampleAttempts},lumMean:${inspection.canvas.luminanceMean.toFixed(1)},lumStd:${inspection.canvas.luminanceStdDev.toFixed(2)},lumRange:${inspection.canvas.minLuminance.toFixed(0)}-${inspection.canvas.maxLuminance.toFixed(0)}}`)
   );
 }
 

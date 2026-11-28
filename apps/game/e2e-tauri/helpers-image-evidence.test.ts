@@ -395,3 +395,162 @@ describe("startAcquisitionAcknowledgement failure evidence (real helpers.ts orch
     expect(helpers.acquisitionCompositorReceipts().size).toBe(0);
   });
 });
+
+/**
+ * WebKitGTK's `BitmapImage::draw` returns `DidRequestDecoding` — drawing
+ * nothing — when the canvas asks for a decode variant the image cache has not
+ * produced yet, and `img.decode()` only proves the *natural-size* image, not
+ * that variant. The source proof therefore has to re-sample the canvas on
+ * later turns instead of trusting the first draw, while a genuinely blank or
+ * corrupt source must still fail after the bounded retries.
+ */
+describe("inspectImageElement canvas sampling under WebKit's blank first draw", () => {
+  const PATH_FRAGMENT = "/assets/evidence/timecard_record.png";
+
+  function mountCaseFileImage(): HTMLImageElement {
+    document.body.innerHTML = "";
+    const image = document.createElement("img");
+    image.className = "case-file-record-image";
+    image.src = `tauri://localhost${PATH_FRAGMENT}`;
+    Object.defineProperty(image, "complete", {
+      configurable: true,
+      get: () => true,
+    });
+    Object.defineProperty(image, "naturalWidth", {
+      configurable: true,
+      get: () => 8,
+    });
+    Object.defineProperty(image, "naturalHeight", {
+      configurable: true,
+      get: () => 8,
+    });
+    Object.defineProperty(image, "currentSrc", {
+      configurable: true,
+      get: () => image.src,
+    });
+    Object.assign(image, { decode: () => Promise.resolve() });
+    document.body.appendChild(image);
+    return image;
+  }
+
+  /** Simulates WebKit's canvas: the first `blankDraws` draws land before the
+   * frame the canvas asked for exists, so they write nothing. */
+  function stubCanvasSampler(options: {
+    blankDraws: number;
+    onDraw?: (drawCount: number) => void;
+  }): () => number {
+    let drawCount = 0;
+    const context = {
+      clearRect: () => {},
+      drawImage: () => {
+        drawCount += 1;
+        options.onDraw?.(drawCount);
+      },
+      getImageData: (x: number, y: number, width: number, height: number) => {
+        const data = new Uint8ClampedArray(width * height * 4);
+        if (drawCount > options.blankDraws) {
+          for (let offset = 0; offset < data.length; offset += 4) {
+            data[offset] = (offset * 3) % 256;
+            data[offset + 1] = (offset * 7) % 256;
+            data[offset + 2] = (offset * 11) % 256;
+            data[offset + 3] = 255;
+          }
+        }
+        return { data, width, height, colorSpace: "srgb" };
+      },
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(
+      (() => context) as unknown as HTMLCanvasElement["getContext"],
+    );
+    return () => drawCount;
+  }
+
+  function stubBrowser(): void {
+    vi.stubGlobal("browser", {
+      waitUntil: async (condition: () => Promise<boolean>) => {
+        if (!(await condition()))
+          throw new Error("condition never became true");
+        return true;
+      },
+      execute: (fn: (...args: unknown[]) => unknown, ...args: unknown[]) =>
+        Promise.resolve(fn(...args)),
+      executeAsync: (fn: (...args: unknown[]) => void, ...args: unknown[]) =>
+        new Promise((resolve) => {
+          void fn(...args, resolve);
+        }),
+    });
+  }
+
+  const input = {
+    selector: "img.case-file-record-image",
+    expectedPathFragment: PATH_FRAGMENT,
+    label: "Case File timecard_record (三宅打卡紀錄)",
+    timeoutMs: 1000,
+  };
+
+  beforeEach(() => {
+    stubBrowser();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    document.body.innerHTML = "";
+  });
+
+  it("re-samples the canvas until the pending decode lands and keeps the real-pixel proof", async () => {
+    mountCaseFileImage();
+    stubCanvasSampler({ blankDraws: 1 });
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.decode.ok).toBe(true);
+    expect(inspection.canvas).toMatchObject({
+      alphaPixels: 64,
+      sampleAttempts: 2,
+    });
+    expect(() =>
+      helpers.assertInspectedImage(inspection, input.label),
+    ).not.toThrow();
+  });
+
+  it("still fails when every bounded re-sample is blank — an empty source is never accepted", async () => {
+    mountCaseFileImage();
+    const drawCount = stubCanvasSampler({
+      blankDraws: Number.POSITIVE_INFINITY,
+    });
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      alphaPixels: 0,
+      distinctBuckets: 1,
+      sampleAttempts: 7,
+    });
+    expect(drawCount()).toBe(7);
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /no real pixels/,
+    );
+  });
+
+  it("fails closed when the sampled image source changes mid-retry", async () => {
+    const image = mountCaseFileImage();
+    stubCanvasSampler({
+      blankDraws: Number.POSITIVE_INFINITY,
+      onDraw: (drawCount) => {
+        if (drawCount === 1) {
+          image.src = "tauri://localhost/assets/evidence/cctv_screenshot.png";
+        }
+      },
+    });
+
+    const { inspection } = await helpers.inspectImageElement(input);
+
+    expect(inspection.canvas).toMatchObject({
+      error: expect.stringContaining("source changed during sampling"),
+    });
+    expect(() => helpers.assertInspectedImage(inspection, input.label)).toThrow(
+      /source canvas sample failed/,
+    );
+  });
+});
